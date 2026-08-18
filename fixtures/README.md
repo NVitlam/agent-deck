@@ -44,11 +44,22 @@ that would drift from reality.
 The capture was scoped to this repo's *own* sessions (agent-deck building itself) to keep exposure
 low. **That scoping is not absolute**, and Phase 5 sanitization must not assume it is:
 
-- No PROJ-REDACTED or PROJ-REDACTED *session files* are committed, but PROJ-REDACTED/PROJ-REDACTED **content is** embedded inside
-  `agent-a56d2cc00c4b5908d.jsonl` — the implementer ran audits against those projects and their
-  output (agent descriptions such as "P1 database runner", tool_use ids) was captured as tool results.
-- `phase0-evidence/real-hook-events.jsonl` contains **170 verbatim `tool_input` payloads** (largest
-  ~9.6 KB), including full file contents from `Write` calls. It is the highest-exposure file here.
+- No PROJ-REDACTED or PROJ-REDACTED *session files* are committed, but their **content is**, in **four** committed
+  data files (`git grep -l -E 'PROJ-REDACTED|PROJ-REDACTED' -- fixtures`):
+  - `7dc3481d-….jsonl` — the main transcript, which embeds a full listing of every project slug
+    under `~/.claude` plus absolute session paths
+  - `agent-a56d2cc00c4b5908d.jsonl` — audit output naming PROJ-REDACTED/PROJ-REDACTED agents ("P1 database runner")
+    and their tool_use ids
+  - `agent-a68c75d33e3d38b01.jsonl` — PROJ-REDACTED audit commands and console output
+  - `phase0-evidence/real-hook-events.jsonl`
+- `phase0-evidence/real-hook-events.jsonl` is the highest-exposure file: **170 verbatim `tool_input`
+  payloads** (largest ~9.6 KB) including full file contents from `Write` calls — among them earlier
+  verbatim drafts of `PHASE0-VERDICT.md` itself.
+
+**Not present, and needed:** no committed fixture contains a `tool-results/` directory, a malformed
+line, a corrupt `.meta.json`, an `UNRESOLVED` case, or a mid-file CC version change. Phase 1's DoD
+requires tests for several of those, so it must capture or synthesize them before it can pin
+behavior under G6.
 
 **PLAN.md Phase 5 carries a blocking open question:** before the repo goes public, these fixtures must
 be sanitized in place *and* scrubbed from git history (`git filter-repo`), or replaced with sanitized

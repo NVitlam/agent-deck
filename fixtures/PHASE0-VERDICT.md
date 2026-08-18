@@ -63,8 +63,11 @@ join ambiguous — were explicitly checked for: **0 occurrences**.
 
 Two additional synthetic proofs were run by the implementer and are not counted above: an in-memory
 replay where a `meta.json` arrives *before* its parent `tool_use` (out-of-order grafting, depth 3,
-7/7 checks passed), and an on-disk fake-HOME run with a concurrent writer (depth 2, mid-run file
-discovery, split-line reassembly).
+reported 7/7 checks passed), and an on-disk fake-HOME run with a concurrent writer (depth 2, mid-run
+file discovery, split-line reassembly). **Neither run was retained as an artifact**; both are recorded
+here as implementer claims, not verified evidence, and neither contributes to the gate count above.
+Phase 1 should re-establish both as real tests once a harness exists — out-of-order arrival and
+mid-write line splitting are exactly the conditions the production tailer must survive.
 
 ### Depth >= 2 was unproven, so it was generated
 
@@ -83,10 +86,11 @@ deliberately does not rely on.
 
 ## 3. Live tailing, concurrency, latency
 
-150-second live run against the workspace with three sessions open, two actively appending
-(full per-render samples: `fixtures/phase0-evidence/latency-2026-08-18_21-57-28.log`; an earlier
-single-session run is retained as `latency-2026-08-18_21-34-24.log`, median 165 ms / max 197 ms over
-55 samples):
+150-second live run against the workspace with three sessions open, two actively appending. The
+`LATENCY SUMMARY` block below is verbatim from the committed
+`fixtures/phase0-evidence/latency-2026-08-18_21-57-28.log`; the `TOTALS:` line above it was console
+output of the same run and is **not** in that log. An earlier single-session run is retained as
+`latency-2026-08-18_21-34-24.log` (median 165 ms / max 197 ms over 55 samples):
 
 ```
 TOTALS: sessions=3 transcripts=9 (agents=6, grafted=6) tool nodes=239 jsonl lines=816 malformed skipped=0
@@ -101,7 +105,9 @@ LATENCY SUMMARY (renders=18, live entries=35, initial entries=781)
   cross-contamination; each session's agents grafted only under their own tool nodes.
 - **Mid-session file discovery works.** Subagent transcripts created *while* the tailer ran were
   picked up and grafted (6/6 grafted).
-- **0 malformed lines** over 816 lines live, and 3,581 lines across the PROJ-REDACTED and PROJ-REDACTED fixture scans.
+- **0 malformed lines** over 816 lines live, and 3,628 lines across the PROJ-REDACTED and PROJ-REDACTED scans
+  (1,708 + 1,920 as re-measured at close; those two sessions are live user projects that keep
+  growing, so the line count drifts while the 0-malformed result reproduces).
 
 ## 4. Hook liveness tap
 
@@ -110,21 +116,28 @@ installed by hand into the project's `.claude/settings.local.json` — **not** b
 into `~/.claude` at all. `~/.claude/settings.json` md5 was verified unchanged (`d7c2cbe8…`, mtime
 2026-06-16) after the whole phase (G1).
 
-Real CC traffic captured over the phase — 179 events, all five configured types
+Real CC traffic captured over the phase — 181 events, all five configured types
 (`fixtures/phase0-evidence/real-hook-events.jsonl`):
 
 | Event | Count | Source |
 |---|---|---|
-| PreToolUse | 85 | real CC 2.1.234 |
-| PostToolUse | 83 | real CC 2.1.234 |
+| PreToolUse | 86 | real CC 2.1.234 |
+| PostToolUse | 84 | real CC 2.1.234 |
 | Stop | 6 | real CC 2.1.234 |
 | SubagentStop | 4 | real CC 2.1.234 |
 | SessionStart | 1 | real CC **2.1.178** — see caveat |
 
-Multiple live sessions appear in the stream and are correlated by `session_id`; agents are
-distinguished by `agent_id` (`main`, plus distinct `Explore` and `phase-implementer` agents). All five
-types were additionally exercised end-to-end with synthetic payloads driven through the exact
-paste-block command string.
+Multiple live sessions appear in the stream and are correlated by `session_id`; subagents are
+distinguished by `agent_id` (4 distinct values observed). All five types were additionally exercised
+end-to-end with synthetic payloads driven through the exact paste-block command string.
+
+**Trap for the Phase 2 correlator — main-thread events have NO `agent_id` at all.** CC does not emit
+`agent_id: "main"`; it omits the field entirely for the main thread. Measured over the committed
+capture: 46 events absent / 135 present, split by type as PreToolUse 20/66, PostToolUse 19/65,
+SubagentStop 0/4, Stop 6/0, SessionStart 1/0. Occurrences of the literal value `"main"`: **0**.
+`'main'` is an internal convention of the spike stitcher (`ev.agentId || 'main'`), not part of the
+hook contract. A correlator that matches the string `"main"` will silently drop every main-thread
+event; absence of the key is the signal.
 
 **Caveat on `SessionStart`:** every 2.1.234 session in this workspace was already running before the
 listener came up, so none of them fired it. The one real `SessionStart` on record

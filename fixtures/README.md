@@ -16,6 +16,8 @@ cc-2.1.234/projects/c--Users-dev-projects-agent-deck/
 phase0-evidence/
   latency-*.log                        measured append→render latency samples
   synthetic-hook-events.jsonl          7 synthetic hook payloads (P0-2 evidence)
+  real-hook-events.jsonl               181 real CC hook payloads, verbatim — see privacy note
+  hook-mechanism-timing.txt            node -e vs curl.exe cost with the listener down
 PHASE0-VERDICT.md                      the Phase 0 gate decision, with evidence
 ```
 
@@ -40,7 +42,13 @@ committed raw so that parser behavior is pinned to real bytes rather than to san
 that would drift from reality.
 
 The capture was scoped to this repo's *own* sessions (agent-deck building itself) to keep exposure
-low; no other project's sessions are included.
+low. **That scoping is not absolute**, and Phase 5 sanitization must not assume it is:
+
+- No PROJ-REDACTED or PROJ-REDACTED *session files* are committed, but PROJ-REDACTED/PROJ-REDACTED **content is** embedded inside
+  `agent-a56d2cc00c4b5908d.jsonl` — the implementer ran audits against those projects and their
+  output (agent descriptions such as "P1 database runner", tool_use ids) was captured as tool results.
+- `phase0-evidence/real-hook-events.jsonl` contains **170 verbatim `tool_input` payloads** (largest
+  ~9.6 KB), including full file contents from `Write` calls. It is the highest-exposure file here.
 
 **PLAN.md Phase 5 carries a blocking open question:** before the repo goes public, these fixtures must
 be sanitized in place *and* scrubbed from git history (`git filter-repo`), or replaced with sanitized

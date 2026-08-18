@@ -44,22 +44,42 @@ that would drift from reality.
 The capture was scoped to this repo's *own* sessions (agent-deck building itself) to keep exposure
 low. **That scoping is not absolute**, and Phase 5 sanitization must not assume it is:
 
-- No PROJ-REDACTED or PROJ-REDACTED *session files* are committed, but their **content is**, in **four** committed
-  data files (`git grep -l -E 'PROJ-REDACTED|PROJ-REDACTED' -- fixtures`):
-  - `7dc3481d-….jsonl` — the main transcript, which embeds a full listing of every project slug
-    under `~/.claude` plus absolute session paths
-  - `agent-a56d2cc00c4b5908d.jsonl` — audit output naming PROJ-REDACTED/PROJ-REDACTED agents ("P1 database runner")
-    and their tool_use ids
-  - `agent-a68c75d33e3d38b01.jsonl` — PROJ-REDACTED audit commands and console output
-  - `phase0-evidence/real-hook-events.jsonl`
-- `phase0-evidence/real-hook-events.jsonl` is the highest-exposure file: **170 verbatim `tool_input`
-  payloads** (largest ~9.6 KB) including full file contents from `Write` calls — among them earlier
-  verbatim drafts of `PHASE0-VERDICT.md` itself.
+**Scope of exposure — established by audit, after being understated twice.** This is not an
+PROJ-REDACTED/PROJ-REDACTED problem; grepping for those two names finds the right files by luck, not by construction:
+
+- **Every project name under `~/.claude` is committed** — 16 `projects-*` slugs (PROJ-REDACTED,
+  PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED,
+  PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, Testing, agent-deck) plus
+  `PROJ-REDACTED` and the `PROJ-REDACTED`/`PROJ-REDACTED`/`PROJ-REDACTED` temp benchmark dirs — via captured directory
+  listings.
+- **Four committed data files** under `fixtures/`: the main transcript `7dc3481d-….jsonl`,
+  `agent-a56d2cc00c4b5908d.jsonl`, `agent-a68c75d33e3d38b01.jsonl`, and
+  `phase0-evidence/real-hook-events.jsonl`. The full slug listing appears in **three** of them, not
+  one — redacting file-by-file from a per-file description will under-redact.
+- **Seven committed files OUTSIDE `fixtures/`** also carry project names, full session UUIDs, and (in
+  the agent-memory files) the `~/.claude/settings.json` md5: `CLAUDE.md`, `PLAN.md`, `HANDOVER.md`,
+  and `.claude/agent-memory/phase-verifier/*` (4 files). **The documents describing the leak
+  reproduce it** — so any sanitization grep scoped to `-- fixtures` is wrong.
+- `real-hook-events.jsonl` additionally embeds captured `git show` output containing the author's
+  name and email address, and verbatim earlier drafts of `PHASE0-VERDICT.md`.
+- **Clean on secrets:** a scan of all committed files for `sk-…`, `ghp_…`, `api_key`, `password` and
+  `authorization` returned zero hits.
 
 **Not present, and needed:** no committed fixture contains a `tool-results/` directory, a malformed
-line, a corrupt `.meta.json`, an `UNRESOLVED` case, or a mid-file CC version change. Phase 1's DoD
-requires tests for several of those, so it must capture or synthesize them before it can pin
-behavior under G6.
+line, a corrupt `.meta.json`, an `UNRESOLVED` case, a mid-file CC version change, or a `<slug>/memory/`
+directory. Phase 1's DoD requires tests for several of those, so it must capture or synthesize them
+before it can pin behavior under G6.
+
+Two notes for whoever does that capture:
+
+- **A `tool-results/` fixture is now free.** agent-deck's own session grew one
+  (`7dc3481d-…/tool-results/`) during the Phase 0 audit, so it can be captured without pulling in
+  another project's data.
+- **`<slug>/memory/` is a discovery trap.** It sits as a sibling of every `<sessionId>/` directory in
+  the live tree and is absent here, so no fixture-backed test will catch a discovery routine that
+  enumerates subdirectories of the slug dir and mistakes it for a session. The spike is immune
+  because `spike/tail.mjs` finds sessions from `<sessionId>.jsonl` *files* and only then looks for the
+  matching directory — keep that ordering in the production port.
 
 **PLAN.md Phase 5 carries a blocking open question:** before the repo goes public, these fixtures must
 be sanitized in place *and* scrubbed from git history (`git filter-repo`), or replaced with sanitized

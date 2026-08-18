@@ -196,10 +196,14 @@ re-establish them as real tests once a harness exists.
 4. **Add `SubagentStart`** to the Phase 2 listener's accepted event set.
 5. **`tool-results/*.txt` offloading exists** and is not yet consumed — large tool payloads live
    outside the JSONL entirely. Phase 1 redaction and truncation must cover that path, or previews
-   will silently miss content.
-6. **Session files can span CC versions.** PROJ-REDACTED `REDACTED-UUID` contains both 2.1.231 and 2.1.232 `version`
-   values, so the fingerprint must tolerate the value changing mid-file rather than treating it as a
-   mismatch.
+   will silently miss content. **Unfixtured at HEAD:** no committed fixture contains a
+   `tool-results/` directory, so this cannot be pinned under G6 until one is captured. agent-deck's
+   own session grew one during the Phase 0 audit, so that capture costs nothing in privacy surface.
+6. **Session files can span CC versions.** PROJ-REDACTED `REDACTED-UUID` contains both 2.1.231 (466 lines) and
+   2.1.232 (2 lines), so the fingerprint should tolerate the value changing mid-file rather than
+   treating it as a mismatch. **Unfixtured at HEAD:** the committed fixtures are 740/740 `2.1.234`,
+   and PROJ-REDACTED is a live user session that is not committed. Capture a drift fixture before pinning
+   behavior to this rule, or record it explicitly as shipping unpinned.
 
 ## 6. Reproducing this verdict
 

@@ -3,3 +3,6 @@ dist/
 out/
 *.vsix
 .DS_Store
+spike/latency-*.log
+spike/hook-events.jsonl
+.claude/worktrees/

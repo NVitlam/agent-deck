@@ -1,0 +1,61 @@
+# agent-deck spike latency log 2026-08-18T21:34:24.732Z
+# project=c:\Users\dev\projects\agent-deck
+2026-08-18T21:34:26.119Z entry->render=171ms detect->render=50ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:34:28.780Z entry->render=170ms detect->render=59ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:29.803Z entry->render=168ms detect->render=57ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:31.985Z entry->render=158ms detect->render=45ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:34.420Z entry->render=166ms detect->render=53ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:35.012Z entry->render=169ms detect->render=58ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:36.882Z entry->render=158ms detect->render=46ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:39.195Z entry->render=161ms detect->render=50ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:41.039Z entry->render=161ms detect->render=50ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:43.419Z entry->render=157ms detect->render=46ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:44.149Z entry->render=162ms detect->render=51ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:34:44.957Z entry->render=158ms detect->render=47ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:34:45.241Z entry->render=159ms detect->render=47ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:47.342Z entry->render=157ms detect->render=47ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:47.622Z entry->render=160ms detect->render=49ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:49.492Z entry->render=174ms detect->render=55ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:34:49.864Z entry->render=170ms detect->render=60ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:50.144Z entry->render=155ms detect->render=43ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:51.079Z entry->render=163ms detect->render=52ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:34:53.180Z entry->render=164ms detect->render=54ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:53.867Z entry->render=165ms detect->render=64ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:54.799Z entry->render=156ms detect->render=46ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:34:55.545Z entry->render=162ms detect->render=51ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:34:59.761Z entry->render=153ms detect->render=45ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:02.017Z entry->render=165ms detect->render=54ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:04.906Z entry->render=167ms detect->render=59ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:06.040Z entry->render=166ms detect->render=56ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:06.383Z entry->render=162ms detect->render=52ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:07.141Z entry->render=171ms detect->render=57ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:08.918Z entry->render=162ms detect->render=52ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:10.738Z entry->render=163ms detect->render=51ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:27.531Z entry->render=156ms detect->render=45ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:31.208Z entry->render=173ms detect->render=55ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:32.254Z entry->render=167ms detect->render=62ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:34.565Z entry->render=167ms detect->render=53ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:36.497Z entry->render=175ms detect->render=61ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:39.755Z entry->render=165ms detect->render=53ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:40.811Z entry->render=180ms detect->render=56ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:40.946Z entry->render=167ms detect->render=55ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:42.000Z entry->render=164ms detect->render=49ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:44.536Z entry->render=172ms detect->render=51ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:45.202Z entry->render=173ms detect->render=60ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:46.277Z entry->render=171ms detect->render=58ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:47.535Z entry->render=169ms detect->render=48ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:48.530Z entry->render=197ms detect->render=69ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:48.796Z entry->render=171ms detect->render=57ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:49.183Z entry->render=175ms detect->render=54ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:50.518Z entry->render=164ms detect->render=53ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:51.971Z entry->render=163ms detect->render=46ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:52.262Z entry->render=88ms detect->render=51ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:54.994Z entry->render=164ms detect->render=53ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:55.256Z entry->render=159ms detect->render=48ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:56.950Z entry->render=159ms detect->render=46ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad6eb49511d236bbb file=agent-ad6eb49511d236bbb.jsonl
+2026-08-18T21:35:57.275Z entry->render=168ms detect->render=56ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+2026-08-18T21:35:59.184Z entry->render=170ms detect->render=53ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=a56d2cc00c4b5908d file=agent-a56d2cc00c4b5908d.jsonl
+
+LATENCY SUMMARY (renders=58, live entries=56, initial entries=305)
+  entry.timestamp -> render: count=55 min=88ms median=165ms p95=175ms max=197ms
+  fs-detect       -> render: count=55 min=43ms median=53ms p95=61ms max=69ms

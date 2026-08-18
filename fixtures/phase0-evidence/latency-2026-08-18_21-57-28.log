@@ -1,0 +1,21 @@
+# agent-deck spike latency log 2026-08-18T21:57:28.779Z
+# project=c:\Users\dev\projects\agent-deck
+2026-08-18T21:57:29.170Z entry->render=nullms detect->render=46ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=main file=7dc3481d-0657-490a-8b9a-380568401920.jsonl
+2026-08-18T21:57:30.825Z entry->render=159ms detect->render=55ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad03eb25e5542efca file=agent-ad03eb25e5542efca.jsonl
+2026-08-18T21:57:30.994Z entry->render=141ms detect->render=48ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=main file=7dc3481d-0657-490a-8b9a-380568401920.jsonl
+2026-08-18T21:57:32.406Z entry->render=168ms detect->render=58ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad03eb25e5542efca file=agent-ad03eb25e5542efca.jsonl
+2026-08-18T21:57:32.951Z entry->render=179ms detect->render=69ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad03eb25e5542efca file=agent-ad03eb25e5542efca.jsonl
+2026-08-18T21:57:33.249Z entry->render=171ms detect->render=60ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad03eb25e5542efca file=agent-ad03eb25e5542efca.jsonl
+2026-08-18T21:57:37.086Z entry->render=179ms detect->render=57ms session=4299490e-4a09-46a0-a544-7ffb0429e7e7 agent=a5e718f3cb731b607 file=agent-a5e718f3cb731b607.jsonl
+2026-08-18T21:57:37.832Z entry->render=178ms detect->render=50ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=main file=7dc3481d-0657-490a-8b9a-380568401920.jsonl
+2026-08-18T21:57:38.048Z entry->render=168ms detect->render=58ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=ad03eb25e5542efca file=agent-ad03eb25e5542efca.jsonl
+2026-08-18T21:57:38.984Z entry->render=nullms detect->render=33ms session=4299490e-4a09-46a0-a544-7ffb0429e7e7 agent=main file=4299490e-4a09-46a0-a544-7ffb0429e7e7.jsonl
+2026-08-18T21:57:39.796Z entry->render=103ms detect->render=51ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=main file=7dc3481d-0657-490a-8b9a-380568401920.jsonl
+2026-08-18T21:57:44.507Z entry->render=179ms detect->render=48ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=main file=7dc3481d-0657-490a-8b9a-380568401920.jsonl
+2026-08-18T21:57:46.814Z entry->render=151ms detect->render=56ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=main file=7dc3481d-0657-490a-8b9a-380568401920.jsonl
+2026-08-18T21:57:57.514Z entry->render=186ms detect->render=53ms session=4299490e-4a09-46a0-a544-7ffb0429e7e7 agent=main file=4299490e-4a09-46a0-a544-7ffb0429e7e7.jsonl
+2026-08-18T21:58:04.356Z entry->render=184ms detect->render=61ms session=7dc3481d-0657-490a-8b9a-380568401920 agent=main file=7dc3481d-0657-490a-8b9a-380568401920.jsonl
+
+LATENCY SUMMARY (renders=18, live entries=35, initial entries=781)
+  entry.timestamp -> render: count=13 min=103ms median=171ms p95=184ms max=186ms
+  fs-detect       -> render: count=15 min=33ms median=55ms p95=61ms max=69ms

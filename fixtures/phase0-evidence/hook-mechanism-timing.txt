@@ -1,0 +1,17 @@
+Hook mechanism timing, measured 2026-08-18T22:13:08Z
+Question: what does a hook cost the user's CC session when Agent Deck is NOT running?
+Method: port 47822 is closed (listener runs on 47821). 5 runs each, same payload.
+
+--- node -e (the mechanism the paste block uses), listener DOWN ---
+run1 exit=0 ms=185
+run2 exit=0 ms=178
+run3 exit=0 ms=187
+run4 exit=0 ms=193
+run5 exit=0 ms=185
+
+--- curl.exe -m 2 --connect-timeout 1, listener DOWN ---
+run1 exit=28 ms=1152
+run2 exit=28 ms=1148
+run3 exit=28 ms=1143
+run4 exit=28 ms=1154
+run5 exit=28 ms=1139

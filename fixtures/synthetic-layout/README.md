@@ -60,5 +60,5 @@ Refused, each for its own distinct reason code:
 
 Cases 05 and 08 are the ones worth re-reading before changing anything. 05 is the directory
 convention tripwire: subagent attribution rests on an undocumented convention, so a rename must be
-loud. 08 is the withdrawn drift-tolerance proposal (`HANDOVER.md` §5.5) held to G9 — one pinned
+loud. 08 is the withdrawn drift-tolerance proposal (Phase 0 handover, trap 5) held to G9 — one pinned
 version, mid-file drift refuses.

@@ -87,7 +87,10 @@ see `README.md`; the replay now reports `RESOLVED 5, AMBIGUOUS 0, UNRESOLVED 0`.
 
 ## Still true after the scrub
 
-The remote history is only clean once the rewritten refs are force-pushed. Until then
-`https://github.com/dev/agent-deck` (private) holds the pre-scrub objects, and GitHub keeps
-unreferenced objects reachable for a while after a force-push besides. **Do not make the repo public
-on the strength of this document alone** — re-run the audit against the remote first.
+**The force-push has been done.** `origin` (`https://github.com/dev/agent-deck`, private) was
+updated to the rewritten refs in Phase 1 and verified: every `projects-*` token in remote history is
+`agent-deck`, the redaction marker, or the bare prose glob.
+
+What remains true: GitHub keeps unreferenced objects reachable for a while after a force-push, so the
+remote is not provably clean the instant a rewrite lands. **Do not make the repo public on the
+strength of this document alone** — re-run the audit against the remote first.

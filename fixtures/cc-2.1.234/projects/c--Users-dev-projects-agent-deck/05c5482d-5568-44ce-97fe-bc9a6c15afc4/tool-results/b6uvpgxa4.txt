@@ -1,0 +1,1476 @@
+===== run.mjs =====
+     1	// spike/run.mjs — Phase 0 spike CLI. Wires tail.mjs -> stitch.mjs.
+     2	//
+     3	//   node spike/run.mjs --project "<abs workspace path>"                       live tree, Ctrl-C to stop
+     4	//   node spike/run.mjs --project "<path>" --session <uuid> --once             parse once, print tree, exit
+     5	//   node spike/run.mjs --audit --project "<path>" [--session <uuid>]          attribution audit
+     6	//
+     7	// Options: --duration <sec> (live auto-stop) --max-tools <n> (0 = all)
+     8	//          --all (ignore the mtime recency filter on sessions) --quiet (final render only)
+     9	//
+    10	// READ-ONLY against ~/.claude (G1). No network (G5). No deps.
+    11	
+    12	import fs from 'node:fs';
+    13	import path from 'node:path';
+    14	import { fileURLToPath } from 'node:url';
+    15	import { Tailer, scanOnce, resolveSlugDir } from './tail.mjs';
+    16	import { Stitcher } from './stitch.mjs';
+    17	
+    18	const HERE = path.dirname(fileURLToPath(import.meta.url));
+    19	
+    20	function parseArgs(argv) {
+    21	  const a = { sessions: [], maxTools: 12, duration: 0 };
+    22	  for (let i = 0; i < argv.length; i++) {
+    23	    const v = argv[i];
+    24	    if (v === '--project') a.project = argv[++i];
+    25	    else if (v === '--session') a.sessions.push(argv[++i]);
+    26	    else if (v === '--once') a.once = true;
+    27	    else if (v === '--audit') a.audit = true;
+    28	    else if (v === '--all') a.all = true;
+    29	    else if (v === '--quiet') a.quiet = true;
+    30	    else if (v === '--max-tools') a.maxTools = Number(argv[++i]);
+    31	    else if (v === '--duration') a.duration = Number(argv[++i]);
+    32	    else if (v === '--help' || v === '-h') a.help = true;
+    33	    else throw new Error(`unknown argument: ${v}`);
+    34	  }
+    35	  return a;
+    36	}
+    37	
+    38	function usage() {
+    39	  return [
+    40	    'usage:',
+    41	    '  node spike/run.mjs --project "<abs workspace path>" [--duration <sec>] [--max-tools <n>]',
+    42	    '  node spike/run.mjs --project "<path>" --session <uuid> --once',
+    43	    '  node spike/run.mjs --audit --project "<path>" [--session <uuid>] [--all]',
+    44	  ].join('\n');
+    45	}
+    46	
+    47	function runId() {
+    48	  return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+    49	}
+    50	
+    51	// ---------------------------------------------------------------- audit mode
+    52	
+    53	async function audit(args) {
+    54	  const filter = args.sessions.length ? new Set(args.sessions) : null;
+    55	  const sinceMs = args.all ? 0 : filter ? 0 : 7 * 24 * 60 * 60 * 1000;
+    56	
+    57	  const st = new Stitcher({ maxTools: args.maxTools });
+    58	  // occurrence index: sessionId -> toolUseId -> Map<transcriptKey, count>
+    59	  const index = new Map();
+    60	  const agents = new Map(); // sessionId -> Map<agentId, {meta, file, entries, tools}>
+    61	  let entries = 0;
+    62	
+    63	  const onEvent = (ev) => {
+    64	    st.handle(ev);
+    65	    if (ev.kind === 'meta') {
+    66	      if (!agents.has(ev.sessionId)) agents.set(ev.sessionId, new Map());
+    67	      agents.get(ev.sessionId).set(ev.agentId, { meta: ev.meta, file: ev.file });
+    68	    } else if (ev.kind === 'file' && ev.agentId) {
+    69	      if (!agents.has(ev.sessionId)) agents.set(ev.sessionId, new Map());
+    70	      if (!agents.get(ev.sessionId).has(ev.agentId)) agents.get(ev.sessionId).set(ev.agentId, { meta: null, file: ev.file });
+    71	    } else if (ev.kind === 'entry') {
+    72	      entries++;
+    73	      const content = ev.obj && ev.obj.message && ev.obj.message.content;
+    74	      if (!Array.isArray(content)) return;
+    75	      const key = ev.agentId || 'main';
+    76	      for (const b of content) {
+    77	        if (b && b.type === 'tool_use' && typeof b.id === 'string') {
+    78	          if (!index.has(ev.sessionId)) index.set(ev.sessionId, new Map());
+    79	          const per = index.get(ev.sessionId);
+    80	          if (!per.has(b.id)) per.set(b.id, new Map());
+    81	          const m = per.get(b.id);
+    82	          m.set(key, (m.get(key) || 0) + 1);
+    83	        }
+    84	      }
+    85	    }
+    86	  };
+    87	
+    88	  const t0 = Date.now();
+    89	  const tailer = await scanOnce({ projectPath: args.project, sessionFilter: filter, onEvent, sinceMs });
+    90	  const elapsed = Date.now() - t0;
+    91	
+    92	  const depthOf = (session, agentId, seen = new Set()) => {
+    93	    const tr = session.transcripts.get(agentId);
+    94	    if (!tr || !tr.graftedInto) return null;
+    95	    if (seen.has(agentId)) return null; // cycle guard
+    96	    seen.add(agentId);
+    97	    const parentKey = tr.graftedInto.transcriptKey;
+    98	    if (parentKey === 'main') return 1;
+    99	    const d = depthOf(session, parentKey, seen);
+   100	    return d == null ? null : d + 1;
+   101	  };
+   102	
+   103	  const lines = [];
+   104	  lines.push(`ATTRIBUTION AUDIT  project=${args.project}`);
+   105	  lines.push(`slug dir: ${tailer.slugDir}`);
+   106	  if (tailer.slugCollisions.length > 1) lines.push(`WARNING: ${tailer.slugCollisions.length} case-variant slug dirs: ${tailer.slugCollisions.join(', ')}`);
+   107	  lines.push(`sessions scanned: ${st.sessions.size}  transcripts: ${tailer.files.size}  jsonl lines: ${tailer.stats().lines}  malformed skipped: ${tailer.stats().malformed}  scan ${elapsed}ms`);
+   108	  lines.push('');
+   109	
+   110	  let resolved = 0;
+   111	  let ambiguous = 0;
+   112	  let unresolved = 0;
+   113	  let noMeta = 0;
+   114	  let depthMismatch = 0;
+   115	  let totalAgents = 0;
+   116	
+   117	  for (const [sessionId, session] of [...st.sessions].sort()) {
+   118	    const per = index.get(sessionId) || new Map();
+   119	    const ag = agents.get(sessionId) || new Map();
+   120	    const mainTools = session.transcripts.get('main') ? session.transcripts.get('main').tools.size : 0;
+   121	    lines.push(`SESSION ${sessionId}: agent transcripts=${ag.size} distinct tool_use ids=${per.size} (main transcript tool nodes=${mainTools})`);
+   122	    for (const [agentId, rec] of [...ag].sort()) {
+   123	      totalAgents++;
+   124	      const meta = rec.meta;
+   125	      if (!meta || typeof meta.toolUseId !== 'string') {
+   126	        noMeta++;
+   127	        unresolved++;
+   128	        lines.push(`  UNRESOLVED  agent-${agentId}  reason=missing meta.toolUseId`);
+   129	        continue;
+   130	      }
+   131	      const owners = per.get(meta.toolUseId);
+   132	      const distinct = owners ? [...owners.keys()] : [];
+   133	      const occurrences = owners ? [...owners.values()].reduce((a, b) => a + b, 0) : 0;
+   134	      const label = `[${meta.agentType || '?'}] "${meta.description || ''}"`;
+   135	      if (distinct.length === 1) {
+   136	        resolved++;
+   137	        const parentKey = distinct[0];
+   138	        const parentTr = session.transcripts.get(parentKey);
+   139	        const node = parentTr && parentTr.tools.get(meta.toolUseId);
+   140	        const computed = depthOf(session, agentId);
+   141	        const metaDepth = meta.spawnDepth;
+   142	        const dm = computed != null && metaDepth != null && computed !== metaDepth;
+   143	        if (dm) depthMismatch++;
+   144	        lines.push(
+   145	          `  RESOLVED    agent-${agentId}  ${label}  parent=${parentKey} tool=${node ? node.name : '?'} id=${meta.toolUseId}` +
+   146	            `  depth meta=${metaDepth ?? 'n/a'} computed=${computed ?? 'n/a'}${dm ? ' MISMATCH' : ''}` +
+   147	            (occurrences > 1 ? `  (id repeated ${occurrences}x in that transcript)` : ''),
+   148	        );
+   149	      } else if (distinct.length > 1) {
+   150	        ambiguous++;
+   151	        lines.push(`  AMBIGUOUS   agent-${agentId}  ${label}  id=${meta.toolUseId} owned by ${distinct.length} transcripts: ${distinct.join(', ')}`);
+   152	      } else {
+   153	        unresolved++;
+   154	        lines.push(`  UNRESOLVED  agent-${agentId}  ${label}  id=${meta.toolUseId} matches no tool_use in this session`);
+   155	      }
+   156	    }
+   157	    if (session.dupToolIds.size) {
+   158	      lines.push(`  NOTE: ${session.dupToolIds.size} tool_use id(s) appear in more than one transcript of this session`);
+   159	      for (const [id, keys] of session.dupToolIds) lines.push(`    ${id}: ${keys.join(', ')}`);
+   160	    }
+   161	    lines.push('');
+   162	  }
+   163	
+   164	  lines.push('TOTALS');
+   165	  lines.push(`  agent transcripts : ${totalAgents}`);
+   166	  lines.push(`  RESOLVED          : ${resolved}`);
+   167	  lines.push(`  AMBIGUOUS         : ${ambiguous}`);
+   168	  lines.push(`  UNRESOLVED        : ${unresolved}${noMeta ? ` (of which ${noMeta} had no meta.toolUseId)` : ''}`);
+   169	  lines.push(`  spawnDepth mismatches (meta vs computed): ${depthMismatch}`);
+   170	  lines.push(`  malformed lines skipped: ${tailer.stats().malformed}`);
+   171	  lines.push(`  VERDICT: ${totalAgents === 0 ? 'NO DATA' : resolved === totalAgents ? 'DETERMINISTIC (100% resolved)' : 'NOT FULLY DETERMINISTIC'}`);
+   172	  process.stdout.write(`${lines.join('\n')}\n`);
+   173	  return ambiguous > 0 || unresolved > 0 ? 1 : 0;
+   174	}
+   175	
+   176	// ----------------------------------------------------------------- once mode
+   177	
+   178	async function once(args) {
+   179	  const filter = args.sessions.length ? new Set(args.sessions) : null;
+   180	  const st = new Stitcher({ maxTools: args.maxTools });
+   181	  const t0 = Date.now();
+   182	  const tailer = await scanOnce({
+   183	    projectPath: args.project,
+   184	    sessionFilter: filter,
+   185	    onEvent: (ev) => st.handle(ev),
+   186	    sinceMs: args.all || filter ? 0 : 7 * 24 * 60 * 60 * 1000,
+   187	  });
+   188	  const ms = Date.now() - t0;
+   189	  const { text } = st.render();
+   190	  const tot = st.totals();
+   191	  process.stdout.write(`${text}\n`);
+   192	  process.stdout.write(
+   193	    `PARSED ONCE in ${ms}ms: sessions=${tot.sessions} transcripts=${tot.transcripts} (agents=${tot.agents}, grafted=${tot.grafted}) tool nodes=${tot.tools} jsonl lines=${tailer.stats().lines} malformed skipped=${tot.malformed}\n`,
+   194	  );
+   195	  return 0;
+   196	}
+   197	
+   198	// ----------------------------------------------------------------- live mode
+   199	
+   200	async function live(args) {
+   201	  const filter = args.sessions.length ? new Set(args.sessions) : null;
+   202	  const st = new Stitcher({ maxTools: args.maxTools });
+   203	  const id = runId();
+   204	  const logPath = path.join(HERE, `latency-${id}.log`);
+   205	  fs.writeFileSync(logPath, `# agent-deck spike latency log ${new Date().toISOString()}\n# project=${args.project}\n`);
+   206	
+   207	  let dirty = false;
+   208	  let timer = null;
+   209	  const DEBOUNCE_MS = 40;
+   210	
+   211	  const doRender = () => {
+   212	    timer = null;
+   213	    dirty = false;
+   214	    const { text, sample } = st.render();
+   215	    if (sample) {
+   216	      fs.appendFileSync(
+   217	        logPath,
+   218	        `${new Date(sample.at).toISOString()} entry->render=${sample.entryToRenderMs}ms detect->render=${sample.detectToRenderMs}ms session=${sample.sessionId} agent=${sample.agentId || 'main'} file=${path.basename(sample.file)}\n`,
+   219	      );
+   220	    }
+   221	    if (!args.quiet) {
+   222	      if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[H');
+   223	      process.stdout.write(`${text}\n`);
+   224	    }
+   225	  };
+   226	
+   227	  const schedule = () => {
+   228	    if (timer) return;
+   229	    timer = setTimeout(doRender, DEBOUNCE_MS);
+   230	  };
+   231	
+   232	  const tailer = new Tailer({
+   233	    projectPath: args.project,
+   234	    sessionFilter: filter,
+   235	    sinceMs: args.all ? 0 : 24 * 60 * 60 * 1000,
+   236	    onEvent: (ev) => {
+   237	      st.handle(ev);
+   238	      if (ev.kind === 'ready') {
+   239	        doRender();
+   240	        return;
+   241	      }
+   242	      if (!ev.initial) {
+   243	        dirty = true;
+   244	        schedule();
+   245	      }
+   246	    },
+   247	  });
+   248	
+   249	  await tailer.start();
+   250	  process.stderr.write(`[live] slug=${tailer.slug} files=${tailer.files.size} log=${logPath}\n`);
+   251	
+   252	  let finished = false;
+   253	  const finish = () => {
+   254	    if (finished) return;
+   255	    finished = true;
+   256	    if (timer) clearTimeout(timer);
+   257	    if (dirty) doRender();
+   258	    tailer.stop();
+   259	    const tot = st.totals();
+   260	    const summary = [
+   261	      '',
+   262	      `FINAL TREE`,
+   263	      st.render().text,
+   264	      '',
+   265	      st.formatLatencySummary(),
+   266	      `TOTALS: sessions=${tot.sessions} transcripts=${tot.transcripts} (agents=${tot.agents}, grafted=${tot.grafted}) tool nodes=${tot.tools} jsonl lines=${tailer.stats().lines} malformed skipped=${tot.malformed}`,
+   267	      `latency log: ${logPath}`,
+   268	    ].join('\n');
+   269	    fs.appendFileSync(logPath, `\n${st.formatLatencySummary()}\n`);
+   270	    process.stdout.write(`${summary}\n`);
+   271	    process.exit(0);
+   272	  };
+   273	
+   274	  process.on('SIGINT', finish);
+   275	  process.on('SIGTERM', finish);
+   276	  if (args.duration > 0) setTimeout(finish, args.duration * 1000);
+   277	  return new Promise(() => {});
+   278	}
+   279	
+   280	// --------------------------------------------------------------------- main
+   281	
+   282	async function main() {
+   283	  let args;
+   284	  try {
+   285	    args = parseArgs(process.argv.slice(2));
+   286	  } catch (e) {
+   287	    process.stderr.write(`${e.message}\n${usage()}\n`);
+   288	    process.exit(2);
+   289	  }
+   290	  if (args.help || !args.project) {
+   291	    process.stdout.write(`${usage()}\n`);
+   292	    process.exit(args.help ? 0 : 2);
+   293	  }
+   294	  try {
+   295	    resolveSlugDir(args.project);
+   296	  } catch (e) {
+   297	    process.stderr.write(`${e.message}\n`);
+   298	    process.exit(2);
+   299	  }
+   300	  if (args.audit) process.exit(await audit(args));
+   301	  else if (args.once) process.exit(await once(args));
+   302	  else await live(args);
+   303	}
+   304	
+   305	main().catch((e) => {
+   306	  process.stderr.write(`fatal: ${e && e.stack}\n`);
+   307	  process.exit(1);
+   308	});
+===== stitch.mjs =====
+     1	// spike/stitch.mjs — Phase 0 spike: tree reconstruction + terminal renderer + latency recorder.
+     2	//
+     3	// Builds, per session:
+     4	//   main transcript = root
+     5	//   each tool_use block in an assistant message = tool node
+     6	//   each tool_result (matched by tool_use id) sets status done/error
+     7	//   each subagent transcript is grafted as a CHILD of the tool node whose id
+     8	//   equals that transcript's meta.toolUseId — searched across ALL transcripts of
+     9	//   the session (main + every agent file), so spawnDepth >= 2 nests correctly.
+    10	//
+    11	// No third-party deps. No writes outside the worktree.
+    12	
+    13	const ICON = { running: '*', done: 'v', error: 'x' };
+    14	
+    15	function fmtTokens(u) {
+    16	  const k = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+    17	  return `in ${k(u.input)} out ${k(u.output)} cacheR ${k(u.cacheRead)} cacheW ${k(u.cacheCreate)}`;
+    18	}
+    19	
+    20	function summarizeInput(name, input) {
+    21	  if (!input || typeof input !== 'object') return '';
+    22	  const s = (v, n = 60) => {
+    23	    const t = String(v).replace(/\s+/g, ' ');
+    24	    return t.length > n ? `${t.slice(0, n)}...` : t;
+    25	  };
+    26	  switch (name) {
+    27	    case 'Read':
+    28	    case 'Write':
+    29	      return s(input.file_path);
+    30	    case 'Edit':
+    31	      return s(input.file_path);
+    32	    case 'Bash':
+    33	      return s(input.command);
+    34	    case 'Grep':
+    35	      return s(input.pattern);
+    36	    case 'Glob':
+    37	      return s(input.pattern);
+    38	    case 'Agent':
+    39	    case 'Task':
+    40	      return s(`${input.subagent_type || '?'} "${input.description || ''}"`, 70);
+    41	    default: {
+    42	      try {
+    43	        return s(JSON.stringify(input), 60);
+    44	      } catch {
+    45	        return '';
+    46	      }
+    47	    }
+    48	  }
+    49	}
+    50	
+    51	class Transcript {
+    52	  constructor(key, agentId, file) {
+    53	    this.key = key;
+    54	    this.agentId = agentId;
+    55	    this.file = file;
+    56	    this.meta = null;
+    57	    this.tools = new Map(); // toolUseId -> node
+    58	    this.order = [];
+    59	    this.usageByMsg = new Map(); // message.id -> usage (last write wins; dedupes repeated lines)
+    60	    this.entries = 0;
+    61	    this.firstTs = null;
+    62	    this.lastTs = null;
+    63	    this.graftedInto = null; // {transcriptKey, toolUseId} once attached
+    64	  }
+    65	
+    66	  tokens() {
+    67	    const t = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+    68	    for (const u of this.usageByMsg.values()) {
+    69	      t.input += u.input_tokens || 0;
+    70	      t.output += u.output_tokens || 0;
+    71	      t.cacheRead += u.cache_read_input_tokens || 0;
+    72	      t.cacheCreate += u.cache_creation_input_tokens || 0;
+    73	    }
+    74	    return t;
+    75	  }
+    76	
+    77	  counts() {
+    78	    let running = 0;
+    79	    let done = 0;
+    80	    let error = 0;
+    81	    for (const n of this.tools.values()) {
+    82	      if (n.status === 'running') running++;
+    83	      else if (n.status === 'error') error++;
+    84	      else done++;
+    85	    }
+    86	    return { total: this.tools.size, running, done, error };
+    87	  }
+    88	}
+    89	
+    90	class Session {
+    91	  constructor(id) {
+    92	    this.id = id;
+    93	    this.transcripts = new Map(); // 'main' | agentId -> Transcript
+    94	    this.toolOwner = new Map(); // toolUseId -> transcript key (first owner)
+    95	    this.dupToolIds = new Map(); // toolUseId -> [keys...] when seen in >1 transcript
+    96	    this.pendingGrafts = new Map(); // toolUseId -> [agentId,...] waiting for parent tool
+    97	    this.malformed = 0;
+    98	    this.lastTs = null;
+    99	  }
+   100	
+   101	  transcript(key, agentId, file) {
+   102	    let t = this.transcripts.get(key);
+   103	    if (!t) {
+   104	      t = new Transcript(key, agentId, file);
+   105	      this.transcripts.set(key, t);
+   106	    }
+   107	    if (file && !t.file) t.file = file;
+   108	    return t;
+   109	  }
+   110	}
+   111	
+   112	export class Stitcher {
+   113	  constructor(opts = {}) {
+   114	    this.sessions = new Map();
+   115	    this.maxTools = opts.maxTools == null ? 12 : opts.maxTools;
+   116	    this.malformed = 0;
+   117	    this.lastTrigger = null; // {entryTsMs, detectedAt}
+   118	    this.samples = [];
+   119	    this.renders = 0;
+   120	    this.liveEntries = 0;
+   121	    this.initialEntries = 0;
+   122	  }
+   123	
+   124	  session(id) {
+   125	    let s = this.sessions.get(id);
+   126	    if (!s) {
+   127	      s = new Session(id);
+   128	      this.sessions.set(id, s);
+   129	    }
+   130	    return s;
+   131	  }
+   132	
+   133	  handle(ev) {
+   134	    switch (ev.kind) {
+   135	      case 'file': {
+   136	        const s = this.session(ev.sessionId);
+   137	        s.transcript(ev.agentId || 'main', ev.agentId || null, ev.file);
+   138	        return true;
+   139	      }
+   140	      case 'meta': {
+   141	        const s = this.session(ev.sessionId);
+   142	        const t = s.transcript(ev.agentId, ev.agentId, null);
+   143	        t.meta = ev.meta;
+   144	        this.tryGraft(s, ev.agentId);
+   145	        return true;
+   146	      }
+   147	      case 'malformed': {
+   148	        this.malformed++;
+   149	        if (ev.sessionId) this.session(ev.sessionId).malformed++;
+   150	        return true;
+   151	      }
+   152	      case 'entry':
+   153	        return this.handleEntry(ev);
+   154	      default:
+   155	        return false;
+   156	    }
+   157	  }
+   158	
+   159	  handleEntry(ev) {
+   160	    const o = ev.obj;
+   161	    if (!o || typeof o !== 'object') return false;
+   162	    const s = this.session(ev.sessionId);
+   163	    const key = ev.agentId || 'main';
+   164	    const t = s.transcript(key, ev.agentId || null, ev.file);
+   165	    t.entries++;
+   166	    let changed = false;
+   167	
+   168	    const tsMs = typeof o.timestamp === 'string' ? Date.parse(o.timestamp) : NaN;
+   169	    if (!Number.isNaN(tsMs)) {
+   170	      if (t.firstTs == null) t.firstTs = tsMs;
+   171	      t.lastTs = tsMs;
+   172	      if (s.lastTs == null || tsMs > s.lastTs) s.lastTs = tsMs;
+   173	    }
+   174	
+   175	    const msg = o.message;
+   176	    const content = msg && msg.content;
+   177	
+   178	    if (o.type === 'assistant' && msg && msg.usage && msg.id) {
+   179	      t.usageByMsg.set(msg.id, msg.usage);
+   180	      changed = true;
+   181	    }
+   182	
+   183	    if (Array.isArray(content)) {
+   184	      for (const b of content) {
+   185	        if (!b || typeof b !== 'object') continue;
+   186	        if (b.type === 'tool_use' && typeof b.id === 'string') {
+   187	          if (!t.tools.has(b.id)) {
+   188	            t.tools.set(b.id, {
+   189	              id: b.id,
+   190	              name: b.name || '?',
+   191	              summary: summarizeInput(b.name, b.input),
+   192	              status: 'running',
+   193	              childAgents: [],
+   194	              tsStart: tsMs,
+   195	              tsEnd: null,
+   196	            });
+   197	            t.order.push(b.id);
+   198	            changed = true;
+   199	          }
+   200	          const prev = s.toolOwner.get(b.id);
+   201	          if (prev == null) {
+   202	            s.toolOwner.set(b.id, key);
+   203	            this.resolvePending(s, b.id);
+   204	          } else if (prev !== key) {
+   205	            const list = s.dupToolIds.get(b.id) || [prev];
+   206	            if (!list.includes(key)) list.push(key);
+   207	            s.dupToolIds.set(b.id, list);
+   208	          }
+   209	        } else if (b.type === 'tool_result' && typeof b.tool_use_id === 'string') {
+   210	          const owner = s.toolOwner.get(b.tool_use_id);
+   211	          const ot = owner ? s.transcripts.get(owner) : null;
+   212	          const node = ot && ot.tools.get(b.tool_use_id);
+   213	          if (node && node.status === 'running') {
+   214	            node.status = b.is_error === true ? 'error' : 'done';
+   215	            node.tsEnd = tsMs;
+   216	            changed = true;
+   217	          }
+   218	        }
+   219	      }
+   220	    }
+   221	
+   222	    if (ev.initial) this.initialEntries++;
+   223	    else {
+   224	      this.liveEntries++;
+   225	      if (changed || t.entries) {
+   226	        this.lastTrigger = {
+   227	          entryTsMs: Number.isNaN(tsMs) ? null : tsMs,
+   228	          detectedAt: ev.detectedAt || null,
+   229	          file: ev.file,
+   230	          sessionId: ev.sessionId,
+   231	          agentId: ev.agentId,
+   232	        };
+   233	      }
+   234	    }
+   235	    return changed;
+   236	  }
+   237	
+   238	  resolvePending(s, toolUseId) {
+   239	    const waiting = s.pendingGrafts.get(toolUseId);
+   240	    if (!waiting) return;
+   241	    s.pendingGrafts.delete(toolUseId);
+   242	    for (const agentId of waiting) this.tryGraft(s, agentId);
+   243	  }
+   244	
+   245	  /** Attach agent transcript to the tool node that owns its meta.toolUseId, anywhere in the session. */
+   246	  tryGraft(s, agentId) {
+   247	    const t = s.transcripts.get(agentId);
+   248	    if (!t || !t.meta || t.graftedInto) return;
+   249	    const tuid = t.meta.toolUseId;
+   250	    if (typeof tuid !== 'string') return;
+   251	    const ownerKey = s.toolOwner.get(tuid);
+   252	    if (!ownerKey) {
+   253	      const list = s.pendingGrafts.get(tuid) || [];
+   254	      if (!list.includes(agentId)) list.push(agentId);
+   255	      s.pendingGrafts.set(tuid, list);
+   256	      return;
+   257	    }
+   258	    const owner = s.transcripts.get(ownerKey);
+   259	    const node = owner && owner.tools.get(tuid);
+   260	    if (!node) return;
+   261	    if (!node.childAgents.includes(agentId)) node.childAgents.push(agentId);
+   262	    t.graftedInto = { transcriptKey: ownerKey, toolUseId: tuid };
+   263	  }
+   264	
+   265	  // ---------------- rendering ----------------
+   266	
+   267	  renderSession(s) {
+   268	    const out = [];
+   269	    const main = s.transcripts.get('main');
+   270	    const attached = new Set();
+   271	    for (const t of s.transcripts.values()) if (t.graftedInto) attached.add(t.key);
+   272	
+   273	    const header = (t, label) => {
+   274	      const c = t.counts();
+   275	      const tok = fmtTokens(t.tokens());
+   276	      return `${label}  entries=${t.entries} tools=${c.total} (${c.running} running, ${c.done} done, ${c.error} err)  ${tok}`;
+   277	    };
+   278	
+   279	    const renderTranscript = (t, indent, isRootOfSession) => {
+   280	      if (isRootOfSession) {
+   281	        out.push(`${indent}${header(t, `SESSION ${s.id}  [main]`)}`);
+   282	      }
+   283	      const ids = t.order;
+   284	      const shown = this.maxTools > 0 && ids.length > this.maxTools ? ids.slice(-this.maxTools) : ids;
+   285	      if (shown.length < ids.length) {
+   286	        out.push(`${indent}|  ... ${ids.length - shown.length} earlier tool calls omitted`);
+   287	      }
+   288	      shown.forEach((id, i) => {
+   289	        const n = t.tools.get(id);
+   290	        const last = i === shown.length - 1;
+   291	        const branch = last ? '`- ' : '|- ';
+   292	        const contInd = indent + (last ? '   ' : '|  ');
+   293	        out.push(`${indent}${branch}${ICON[n.status]} ${n.name}${n.summary ? ` ${n.summary}` : ''}`);
+   294	        for (const agentId of n.childAgents) {
+   295	          const at = s.transcripts.get(agentId);
+   296	          if (!at) continue;
+   297	          const m = at.meta || {};
+   298	          const lbl = `AGENT ${agentId} [${m.agentType || '?'}] "${m.description || ''}" depth=${m.spawnDepth ?? '?'}`;
+   299	          out.push(`${contInd}   ${header(at, lbl)}`);
+   300	          renderTranscript(at, `${contInd}   `, false);
+   301	        }
+   302	      });
+   303	    };
+   304	
+   305	    if (main) renderTranscript(main, '', true);
+   306	    else out.push(`SESSION ${s.id}  [main transcript not found]`);
+   307	
+   308	    const orphans = [...s.transcripts.values()].filter((t) => t.key !== 'main' && !t.graftedInto);
+   309	    for (const t of orphans) {
+   310	      const m = t.meta || {};
+   311	      out.push(`  [UNATTACHED] ${header(t, `AGENT ${t.key} [${m.agentType || '?'}] "${m.description || ''}" toolUseId=${m.toolUseId || 'n/a'}`)}`);
+   312	      renderTranscript(t, '  ', false);
+   313	    }
+   314	    if (s.malformed) out.push(`  malformed lines skipped: ${s.malformed}`);
+   315	    if (s.dupToolIds.size) out.push(`  DUPLICATE tool_use ids across transcripts: ${s.dupToolIds.size}`);
+   316	    return out.join('\n');
+   317	  }
+   318	
+   319	  /** Render all sessions. Returns {text, sample}. sample is null when no live trigger yet. */
+   320	  render() {
+   321	    const now = Date.now();
+   322	    const parts = [];
+   323	    const ids = [...this.sessions.keys()].sort();
+   324	    parts.push(`==== agent-deck spike | ${new Date(now).toISOString()} | sessions=${ids.length} ====`);
+   325	    for (const id of ids) {
+   326	      parts.push(this.renderSession(this.sessions.get(id)));
+   327	      parts.push('');
+   328	    }
+   329	    let sample = null;
+   330	    const trig = this.lastTrigger;
+   331	    if (trig) {
+   332	      sample = {
+   333	        at: now,
+   334	        entryToRenderMs: trig.entryTsMs == null ? null : now - trig.entryTsMs,
+   335	        detectToRenderMs: trig.detectedAt == null ? null : now - trig.detectedAt,
+   336	        file: trig.file,
+   337	        sessionId: trig.sessionId,
+   338	        agentId: trig.agentId,
+   339	      };
+   340	      this.samples.push(sample);
+   341	      this.lastTrigger = null;
+   342	      parts.push(
+   343	        `LATENCY render#${this.renders + 1}: entry->render ${sample.entryToRenderMs}ms | detect->render ${sample.detectToRenderMs}ms | ${trig.agentId ? `agent ${trig.agentId}` : 'main'} of ${trig.sessionId}`,
+   344	      );
+   345	    }
+   346	    this.renders++;
+   347	    return { text: parts.join('\n'), sample };
+   348	  }
+   349	
+   350	  latencySummary() {
+   351	    const pick = (f) => this.samples.map(f).filter((n) => typeof n === 'number' && Number.isFinite(n)).sort((a, b) => a - b);
+   352	    const stat = (arr) => {
+   353	      if (!arr.length) return null;
+   354	      const q = (p) => arr[Math.min(arr.length - 1, Math.floor(p * (arr.length - 1)))];
+   355	      return { count: arr.length, min: arr[0], median: q(0.5), p95: q(0.95), max: arr[arr.length - 1] };
+   356	    };
+   357	    return {
+   358	      entryToRender: stat(pick((s) => s.entryToRenderMs)),
+   359	      detectToRender: stat(pick((s) => s.detectToRenderMs)),
+   360	      renders: this.renders,
+   361	      liveEntries: this.liveEntries,
+   362	      initialEntries: this.initialEntries,
+   363	    };
+   364	  }
+   365	
+   366	  formatLatencySummary() {
+   367	    const s = this.latencySummary();
+   368	    const fmt = (label, st) =>
+   369	      st
+   370	        ? `${label}: count=${st.count} min=${st.min}ms median=${st.median}ms p95=${st.p95}ms max=${st.max}ms`
+   371	        : `${label}: no samples`;
+   372	    return [
+   373	      `LATENCY SUMMARY (renders=${s.renders}, live entries=${s.liveEntries}, initial entries=${s.initialEntries})`,
+   374	      `  ${fmt('entry.timestamp -> render', s.entryToRender)}`,
+   375	      `  ${fmt('fs-detect       -> render', s.detectToRender)}`,
+   376	    ].join('\n');
+   377	  }
+   378	
+   379	  totals() {
+   380	    let transcripts = 0;
+   381	    let agents = 0;
+   382	    let tools = 0;
+   383	    let grafted = 0;
+   384	    for (const s of this.sessions.values()) {
+   385	      for (const t of s.transcripts.values()) {
+   386	        transcripts++;
+   387	        if (t.key !== 'main') agents++;
+   388	        if (t.graftedInto) grafted++;
+   389	        tools += t.tools.size;
+   390	      }
+   391	    }
+   392	    return { sessions: this.sessions.size, transcripts, agents, grafted, tools, malformed: this.malformed };
+   393	  }
+   394	}
+===== tail.mjs =====
+     1	// spike/tail.mjs — Phase 0 spike: incremental multi-file tailer for Claude Code exhaust.
+     2	//
+     3	// READ-ONLY (G1): every file handle here is opened with flag 'r'. Nothing under
+     4	// ~/.claude is ever created, written, renamed or deleted by this module.
+     5	// NO NETWORK (G5). NO third-party deps — Node built-ins only.
+     6	// Malformed lines are counted and skipped, never thrown (G3).
+     7	//
+     8	// Observed CC layout (verified on this machine, see report):
+     9	//   <projects>/<slug>/<sessionId>.jsonl                                main transcript
+    10	//   <projects>/<slug>/<sessionId>/subagents/agent-<agentId>.jsonl      subagent transcript
+    11	//   <projects>/<slug>/<sessionId>/subagents/agent-<agentId>.meta.json  {agentType,description,toolUseId,spawnDepth,...}
+    12	//   <projects>/<slug>/<sessionId>/tool-results/<id>.txt                offloaded tool results (not tailed)
+    13	
+    14	import fs from 'node:fs';
+    15	import fsp from 'node:fs/promises';
+    16	import path from 'node:path';
+    17	import os from 'node:os';
+    18	import { StringDecoder } from 'node:string_decoder';
+    19	
+    20	/** Workspace path -> CC project slug. ':' and both slashes collapse to '-'. */
+    21	export function slugify(workspacePath) {
+    22	  return workspacePath.replace(/[:\\/]/g, '-');
+    23	}
+    24	
+    25	export function projectsRoot() {
+    26	  // CLAUDE_PROJECTS_ROOT lets the spike replay a captured fixture tree instead of
+    27	  // the live ~/.claude/projects. Read-only either way (G1); fixtures are law (G6).
+    28	  return process.env.CLAUDE_PROJECTS_ROOT || path.join(os.homedir(), '.claude', 'projects');
+    29	}
+    30	
+    31	/** Case-insensitive slug directory resolution (drive-letter case varies on Windows). */
+    32	export function resolveSlugDir(workspacePath) {
+    33	  const want = slugify(workspacePath).toLowerCase();
+    34	  const root = projectsRoot();
+    35	  let entries;
+    36	  try {
+    37	    entries = fs.readdirSync(root, { withFileTypes: true });
+    38	  } catch (e) {
+    39	    throw new Error(`cannot read projects root ${root}: ${e.message}`);
+    40	  }
+    41	  const hits = entries.filter((e) => e.isDirectory() && e.name.toLowerCase() === want);
+    42	  if (hits.length === 0) throw new Error(`no project slug dir for ${workspacePath} (looked for ${want} in ${root})`);
+    43	  return { dir: path.join(root, hits[0].name), slug: hits[0].name, collisions: hits.map((h) => h.name) };
+    44	}
+    45	
+    46	const AGENT_RE = /^agent-(.+)\.jsonl$/i;
+    47	const SESSION_RE = /^([0-9a-f-]{8,})\.jsonl$/i;
+    48	
+    49	/**
+    50	 * Tailer. Emits events to onEvent(ev):
+    51	 *   {kind:'file',      file, sessionId, agentId}                       new transcript discovered
+    52	 *   {kind:'meta',      file, sessionId, agentId, meta}                 agent-*.meta.json read
+    53	 *   {kind:'entry',     file, sessionId, agentId, obj, initial, detectedAt, lineNo}
+    54	 *   {kind:'malformed', file, sessionId, agentId, total}
+    55	 *   {kind:'ready'}                                                     initial backlog drained
+    56	 */
+    57	export class Tailer {
+    58	  constructor(opts) {
+    59	    this.projectPath = opts.projectPath;
+    60	    this.sessionFilter = opts.sessionFilter || null; // Set<sessionId> | null
+    61	    this.sinceMs = opts.sinceMs == null ? 24 * 60 * 60 * 1000 : opts.sinceMs; // main-session mtime window
+    62	    this.pollMs = opts.pollMs == null ? 150 : opts.pollMs;
+    63	    this.onEvent = opts.onEvent;
+    64	    this.files = new Map(); // absPath -> {sessionId, agentId, offset, decoder, partial, malformed, reading, dirty, detectedAt, initial, lines}
+    65	    this.metaSeen = new Set();
+    66	    this.watchers = [];
+    67	    this.stopped = false;
+    68	    this.ready = false;
+    69	    const r = resolveSlugDir(this.projectPath);
+    70	    this.slugDir = r.dir;
+    71	    this.slug = r.slug;
+    72	    this.slugCollisions = r.collisions;
+    73	  }
+    74	
+    75	  emit(ev) {
+    76	    try {
+    77	      this.onEvent(ev);
+    78	    } catch (e) {
+    79	      process.stderr.write(`[tail] consumer error: ${e && e.stack}\n`);
+    80	    }
+    81	  }
+    82	
+    83	  /** One discovery sweep of the slug dir. Registers any new transcripts. */
+    84	  scan() {
+    85	    let top;
+    86	    try {
+    87	      top = fs.readdirSync(this.slugDir, { withFileTypes: true });
+    88	    } catch {
+    89	      return;
+    90	    }
+    91	    const now = Date.now();
+    92	    const sessions = [];
+    93	    for (const e of top) {
+    94	      if (!e.isFile()) continue;
+    95	      const m = SESSION_RE.exec(e.name);
+    96	      if (!m) continue;
+    97	      const sessionId = m[1];
+    98	      if (this.sessionFilter && !this.sessionFilter.has(sessionId)) continue;
+    99	      const abs = path.join(this.slugDir, e.name);
+   100	      if (!this.files.has(abs) && this.sinceMs > 0) {
+   101	        let st;
+   102	        try {
+   103	          st = fs.statSync(abs);
+   104	        } catch {
+   105	          continue;
+   106	        }
+   107	        if (now - st.mtimeMs > this.sinceMs) continue; // stale session, skip
+   108	      }
+   109	      sessions.push(sessionId);
+   110	      this.register(abs, sessionId, null);
+   111	    }
+   112	    // subagent transcripts (may appear mid-run)
+   113	    for (const sessionId of sessions) {
+   114	      const subDir = path.join(this.slugDir, sessionId, 'subagents');
+   115	      let subs;
+   116	      try {
+   117	        subs = fs.readdirSync(subDir, { withFileTypes: true });
+   118	      } catch {
+   119	        continue;
+   120	      }
+   121	      for (const e of subs) {
+   122	        if (!e.isFile()) continue;
+   123	        const m = AGENT_RE.exec(e.name);
+   124	        if (!m) continue;
+   125	        const agentId = m[1];
+   126	        const abs = path.join(subDir, e.name);
+   127	        this.readMeta(subDir, sessionId, agentId);
+   128	        this.register(abs, sessionId, agentId);
+   129	      }
+   130	    }
+   131	  }
+   132	
+   133	  readMeta(subDir, sessionId, agentId) {
+   134	    const key = `${sessionId}/${agentId}`;
+   135	    if (this.metaSeen.has(key)) return;
+   136	    const metaPath = path.join(subDir, `agent-${agentId}.meta.json`);
+   137	    let raw;
+   138	    try {
+   139	      raw = fs.readFileSync(metaPath, { encoding: 'utf8', flag: 'r' });
+   140	    } catch {
+   141	      return; // meta not written yet; retried on next sweep
+   142	    }
+   143	    let meta = null;
+   144	    try {
+   145	      meta = JSON.parse(raw);
+   146	    } catch {
+   147	      this.metaSeen.add(key);
+   148	      this.emit({ kind: 'malformed', file: metaPath, sessionId, agentId, total: 1 });
+   149	      return;
+   150	    }
+   151	    this.metaSeen.add(key);
+   152	    this.emit({ kind: 'meta', file: metaPath, sessionId, agentId, meta });
+   153	  }
+   154	
+   155	  register(abs, sessionId, agentId) {
+   156	    if (this.files.has(abs)) return;
+   157	    this.files.set(abs, {
+   158	      file: abs,
+   159	      sessionId,
+   160	      agentId,
+   161	      offset: 0,
+   162	      decoder: new StringDecoder('utf8'),
+   163	      partial: '',
+   164	      malformed: 0,
+   165	      lines: 0,
+   166	      reading: false,
+   167	      dirty: true,
+   168	      detectedAt: Date.now(),
+   169	      initial: !this.ready,
+   170	    });
+   171	    this.emit({ kind: 'file', file: abs, sessionId, agentId });
+   172	    this.pump(abs);
+   173	  }
+   174	
+   175	  /** Mark a file dirty with a detection timestamp (fs.watch hit or poll size delta). */
+   176	  touch(abs, at) {
+   177	    const st = this.files.get(abs);
+   178	    if (!st) return;
+   179	    if (st.detectedAt == null) st.detectedAt = at;
+   180	    st.dirty = true;
+   181	    this.pump(abs);
+   182	  }
+   183	
+   184	  async pump(abs) {
+   185	    const st = this.files.get(abs);
+   186	    if (!st || st.reading || !st.dirty || this.stopped) return;
+   187	    st.reading = true;
+   188	    try {
+   189	      while (st.dirty && !this.stopped) {
+   190	        st.dirty = false;
+   191	        await this.readChunk(st);
+   192	      }
+   193	    } catch (e) {
+   194	      process.stderr.write(`[tail] read error ${abs}: ${e && e.message}\n`);
+   195	    } finally {
+   196	      st.reading = false;
+   197	    }
+   198	  }
+   199	
+   200	  async readChunk(st) {
+   201	    let fh;
+   202	    try {
+   203	      fh = await fsp.open(st.file, 'r'); // READ-ONLY
+   204	    } catch {
+   205	      return;
+   206	    }
+   207	    try {
+   208	      const stat = await fh.stat();
+   209	      if (stat.size < st.offset) {
+   210	        // truncated/replaced: restart (should not happen for CC append-only files)
+   211	        st.offset = 0;
+   212	        st.partial = '';
+   213	        st.decoder = new StringDecoder('utf8');
+   214	      }
+   215	      if (stat.size === st.offset) return;
+   216	      const len = stat.size - st.offset;
+   217	      const buf = Buffer.allocUnsafe(len);
+   218	      const { bytesRead } = await fh.read(buf, 0, len, st.offset);
+   219	      st.offset += bytesRead;
+   220	      const detectedAt = st.detectedAt == null ? Date.now() : st.detectedAt;
+   221	      st.detectedAt = null;
+   222	      const text = st.partial + st.decoder.write(buf.subarray(0, bytesRead));
+   223	      const parts = text.split('\n');
+   224	      st.partial = parts.pop(); // trailing partial line held until '\n' arrives
+   225	      for (const raw of parts) {
+   226	        const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+   227	        if (!line.trim()) continue;
+   228	        st.lines++;
+   229	        let obj;
+   230	        try {
+   231	          obj = JSON.parse(line);
+   232	        } catch {
+   233	          st.malformed++;
+   234	          this.emit({
+   235	            kind: 'malformed', file: st.file, sessionId: st.sessionId, agentId: st.agentId, total: st.malformed,
+   236	          });
+   237	          continue;
+   238	        }
+   239	        this.emit({
+   240	          kind: 'entry',
+   241	          file: st.file,
+   242	          sessionId: st.sessionId,
+   243	          agentId: st.agentId,
+   244	          obj,
+   245	          initial: st.initial,
+   246	          detectedAt,
+   247	          lineNo: st.lines,
+   248	        });
+   249	      }
+   250	    } finally {
+   251	      await fh.close();
+   252	    }
+   253	  }
+   254	
+   255	  /** Read every currently-known file to EOF and return when the backlog is drained. */
+   256	  async drain() {
+   257	    for (let guard = 0; guard < 1000; guard++) {
+   258	      const pending = [];
+   259	      for (const abs of [...this.files.keys()]) {
+   260	        const st = this.files.get(abs);
+   261	        if (st.reading) {
+   262	          pending.push(abs);
+   263	          continue;
+   264	        }
+   265	        st.dirty = true;
+   266	        pending.push(abs);
+   267	        await this.pump(abs);
+   268	      }
+   269	      const busy = pending.some((a) => {
+   270	        const st = this.files.get(a);
+   271	        return st && (st.reading || st.dirty);
+   272	      });
+   273	      if (!busy) return;
+   274	      await new Promise((r) => setTimeout(r, 5));
+   275	    }
+   276	  }
+   277	
+   278	  async start() {
+   279	    this.scan();
+   280	    await this.drain();
+   281	    for (const st of this.files.values()) st.initial = false;
+   282	    this.ready = true;
+   283	    this.emit({ kind: 'ready' });
+   284	    // fs.watch (recursive works on Windows) for low-latency detection...
+   285	    try {
+   286	      const w = fs.watch(this.slugDir, { recursive: true }, (_type, name) => {
+   287	        const at = Date.now();
+   288	        if (!name) return;
+   289	        const abs = path.join(this.slugDir, name.toString());
+   290	        if (this.files.has(abs)) this.touch(abs, at);
+   291	        else this.pendingScan(at);
+   292	      });
+   293	      w.on('error', () => {});
+   294	      this.watchers.push(w);
+   295	    } catch (e) {
+   296	      process.stderr.write(`[tail] fs.watch unavailable, polling only: ${e && e.message}\n`);
+   297	    }
+   298	    // ...plus a poll as the safety net (watch on Windows/projects can miss events).
+   299	    this.timer = setInterval(() => this.tick(), this.pollMs);
+   300	    this.timer.unref?.();
+   301	  }
+   302	
+   303	  pendingScan(at) {
+   304	    if (this._scanQueued) return;
+   305	    this._scanQueued = true;
+   306	    setTimeout(() => {
+   307	      this._scanQueued = false;
+   308	      const before = this.files.size;
+   309	      this.scan();
+   310	      if (this.files.size > before) {
+   311	        for (const st of this.files.values()) if (st.detectedAt == null && st.dirty) st.detectedAt = at;
+   312	      }
+   313	    }, 0);
+   314	  }
+   315	
+   316	  tick() {
+   317	    if (this.stopped) return;
+   318	    this.scan();
+   319	    const at = Date.now();
+   320	    for (const [abs, st] of this.files) {
+   321	      let size;
+   322	      try {
+   323	        size = fs.statSync(abs).size;
+   324	      } catch {
+   325	        continue;
+   326	      }
+   327	      if (size !== st.offset && !st.reading) this.touch(abs, at);
+   328	    }
+   329	  }
+   330	
+   331	  stop() {
+   332	    this.stopped = true;
+   333	    if (this.timer) clearInterval(this.timer);
+   334	    for (const w of this.watchers) {
+   335	      try {
+   336	        w.close();
+   337	      } catch {}
+   338	    }
+   339	  }
+   340	
+   341	  stats() {
+   342	    let malformed = 0;
+   343	    let lines = 0;
+   344	    for (const st of this.files.values()) {
+   345	      malformed += st.malformed;
+   346	      lines += st.lines;
+   347	    }
+   348	    return { files: this.files.size, lines, malformed };
+   349	  }
+   350	}
+   351	
+   352	/** One-shot: read every transcript of a project (optionally one session) to EOF. */
+   353	export function scanOnce({ projectPath, sessionFilter, onEvent, sinceMs = 0 }) {
+   354	  const t = new Tailer({ projectPath, sessionFilter, onEvent, sinceMs });
+   355	  t.scan();
+   356	  return t.drain().then(() => {
+   357	    t.stop();
+   358	    return t;
+   359	  });
+   360	}
+===== listen.mjs =====
+     1	#!/usr/bin/env node
+     2	// spike/listen.mjs — Phase 0 tap validation: loopback hook-event listener.
+     3	// THROWAWAY SPIKE SCRIPT. Not extension code. Node built-ins only, zero deps.
+     4	//
+     5	// Grounding contract obligations enforced here:
+     6	//   G1 read-only  : the ONLY file this process writes is spike/hook-events.jsonl
+     7	//                   (repo-local evidence artifact). Nothing under ~/.claude is
+     8	//                   ever opened for write. Hook install is manual (see HOOKS.md).
+     9	//   G3 refuse     : malformed / oversize / non-object bodies are counted, logged
+    10	//                   and answered with 4xx. The process never exits on bad input.
+    11	//   G5 zero egress: one socket only, bound explicitly to 127.0.0.1. Never
+    12	//                   0.0.0.0. The remote address is validated as loopback on every
+    13	//                   request; anything else gets 403 and is counted. Proxy headers
+    14	//                   (X-Forwarded-For & friends) are NEVER trusted.
+    15	//
+    16	// Usage:
+    17	//   node spike/listen.mjs [--port 47821] [--interval 15] [--max-body 524288]
+    18	//                         [--out <path>] [--spoof-remote <ip>] [--quiet]
+    19	//
+    20	// Endpoints:
+    21	//   POST /event     accept a CC hook payload (JSON body, stored verbatim)
+    22	//   GET  /status    print + return the correlation table
+    23	//   POST /shutdown  print the table and exit 0 (test affordance; loopback only)
+    24	//
+    25	// --spoof-remote is a TEST-ONLY affordance: it makes the server treat every
+    26	// request as if it arrived from the given address, so the non-loopback rejection
+    27	// path can be exercised end-to-end without ever binding a non-loopback socket.
+    28	
+    29	import http from 'node:http';
+    30	import fs from 'node:fs';
+    31	import path from 'node:path';
+    32	import { fileURLToPath } from 'node:url';
+    33	
+    34	const HERE = path.dirname(fileURLToPath(import.meta.url));
+    35	
+    36	// ---------------------------------------------------------------- args -----
+    37	function parseArgs(argv) {
+    38	  const o = {
+    39	    port: 47821,
+    40	    interval: 15,
+    41	    maxBody: 512 * 1024,
+    42	    out: path.join(HERE, 'hook-events.jsonl'),
+    43	    spoofRemote: null,
+    44	    quiet: false,
+    45	  };
+    46	  for (let i = 0; i < argv.length; i++) {
+    47	    const a = argv[i];
+    48	    if (a === '--port') o.port = Number(argv[++i]);
+    49	    else if (a === '--interval') o.interval = Number(argv[++i]);
+    50	    else if (a === '--max-body') o.maxBody = Number(argv[++i]);
+    51	    else if (a === '--out') o.out = path.resolve(argv[++i]);
+    52	    else if (a === '--spoof-remote') o.spoofRemote = argv[++i];
+    53	    else if (a === '--quiet') o.quiet = true;
+    54	    else if (a === '--help' || a === '-h') { console.log('see header of spike/listen.mjs'); process.exit(0); }
+    55	    else { console.error(`unknown arg: ${a}`); process.exit(2); }
+    56	  }
+    57	  if (!Number.isFinite(o.port) || o.port < 1 || o.port > 65535) { console.error('bad --port'); process.exit(2); }
+    58	  if (!Number.isFinite(o.maxBody) || o.maxBody < 1) { console.error('bad --max-body'); process.exit(2); }
+    59	  return o;
+    60	}
+    61	const OPT = parseArgs(process.argv.slice(2));
+    62	
+    63	// ------------------------------------------------------------ loopback -----
+    64	// Exported so the guard can be exercised directly as a unit, independent of any
+    65	// socket. Accepts 127.0.0.0/8, ::1 and IPv4-mapped loopback; rejects all else.
+    66	export function isLoopbackAddress(addr) {
+    67	  if (typeof addr !== 'string' || addr.length === 0) return false;
+    68	  let a = addr.trim().toLowerCase();
+    69	  const pct = a.indexOf('%');            // strip IPv6 zone id (fe80::1%eth0)
+    70	  if (pct !== -1) a = a.slice(0, pct);
+    71	  if (a === '::1' || a === '0:0:0:0:0:0:0:1') return true;
+    72	  if (a.startsWith('::ffff:')) a = a.slice(7);
+    73	  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
+    74	  if (!m) return false;
+    75	  const oct = m.slice(1).map(Number);
+    76	  if (oct.some((n) => n > 255)) return false;
+    77	  return oct[0] === 127;
+    78	}
+    79	
+    80	// -------------------------------------------------------------- counters ---
+    81	const counters = {
+    82	  accepted: 0,
+    83	  malformed_json: 0,
+    84	  empty_body: 0,
+    85	  not_an_object: 0,
+    86	  oversize: 0,
+    87	  dropped_non_loopback: 0,
+    88	  bad_route: 0,
+    89	  socket_errors: 0,
+    90	  client_disconnects: 0,   // benign: hook process exits before the socket closes
+    91	};
+    92	
+    93	// --------------------------------------------------------- session model ---
+    94	/** session_id -> { firstSeen, lastSeen, total, events:Map, agents:Map, inFlight:Map, ... } */
+    95	const sessions = new Map();
+    96	const START = Date.now();
+    97	let seq = 0;
+    98	
+    99	function pick(obj, key) {
+   100	  try {
+   101	    const v = obj?.[key];
+   102	    return v === undefined || v === null ? undefined : v;
+   103	  } catch { return undefined; }
+   104	}
+   105	function str(v) {
+   106	  if (v === undefined) return undefined;
+   107	  if (typeof v === 'string') return v;
+   108	  try { return String(v); } catch { return undefined; }
+   109	}
+   110	function short(id) { return typeof id === 'string' && id.length > 8 ? id.slice(0, 8) : (id ?? '-'); }
+   111	
+   112	// Identity / correlation fields observed in the CC 2.1.234 hook payload builder.
+   113	// All optional: absence must never throw.
+   114	const IDENTITY_KEYS = [
+   115	  'agent_id', 'agent_type', 'subagent_id', 'subagent_type', 'parent_agent_id',
+   116	  'agent_transcript_path', 'tool_use_id', 'prompt_id', 'permission_mode',
+   117	  'source', 'reason', 'trigger', 'stop_hook_active', 'model', 'session_title',
+   118	];
+   119	// Keys we already know about; anything else is reported as unknown so Phase 0
+   120	// learns the real payload surface instead of assuming it.
+   121	const KNOWN_KEYS = new Set([
+   122	  'hook_event_name', 'session_id', 'transcript_path', 'cwd', 'tool_name',
+   123	  'tool_input', 'tool_response', 'last_assistant_message', 'effort',
+   124	  ...IDENTITY_KEYS,
+   125	]);
+   126	
+   127	function log(msg) { process.stdout.write(`${msg}\n`); }
+   128	const warn = log;
+   129	
+   130	function record(ev, recvMs, rawBytes) {
+   131	  const sid = str(pick(ev, 'session_id')) ?? '(no session_id)';
+   132	  const type = str(pick(ev, 'hook_event_name')) ?? '(no hook_event_name)';
+   133	  const agentId = str(pick(ev, 'agent_id')) ?? str(pick(ev, 'subagent_id'));
+   134	  const agentType = str(pick(ev, 'agent_type')) ?? str(pick(ev, 'subagent_type'));
+   135	  const toolName = str(pick(ev, 'tool_name'));
+   136	  const toolUseId = str(pick(ev, 'tool_use_id'));
+   137	
+   138	  let s = sessions.get(sid);
+   139	  if (!s) {
+   140	    s = {
+   141	      firstSeen: recvMs, lastSeen: recvMs, total: 0,
+   142	      events: new Map(), agents: new Map(), inFlight: new Map(),
+   143	      cwd: undefined, transcript: undefined, unknownKeys: new Set(),
+   144	    };
+   145	    sessions.set(sid, s);
+   146	  }
+   147	  s.lastSeen = recvMs;
+   148	  s.total++;
+   149	  s.events.set(type, (s.events.get(type) ?? 0) + 1);
+   150	  s.cwd = str(pick(ev, 'cwd')) ?? s.cwd;
+   151	  s.transcript = str(pick(ev, 'transcript_path')) ?? s.transcript;
+   152	
+   153	  const agentKey = agentId ? `${short(agentId)}/${agentType ?? '?'}` : `main/${agentType ?? '-'}`;
+   154	  const ag = s.agents.get(agentKey) ?? { count: 0, firstSeen: recvMs, lastSeen: recvMs };
+   155	  ag.count++; ag.lastSeen = recvMs;
+   156	  s.agents.set(agentKey, ag);
+   157	
+   158	  try {
+   159	    for (const k of Object.keys(ev)) if (!KNOWN_KEYS.has(k)) s.unknownKeys.add(k);
+   160	  } catch { /* never throw on input */ }
+   161	
+   162	  // In-flight tool tracking: PreToolUse opens, Post*/PermissionDenied closes.
+   163	  const flightKey = toolUseId ?? `${agentKey}|${toolName ?? '?'}`;
+   164	  if (type === 'PreToolUse') {
+   165	    s.inFlight.set(flightKey, { tool: toolName ?? '?', agent: agentKey, since: recvMs });
+   166	  } else if (type === 'PostToolUse' || type === 'PostToolUseFailure' || type === 'PermissionDenied') {
+   167	    if (!s.inFlight.delete(flightKey)) {
+   168	      // no tool_use_id match (or Pre never arrived): drop the oldest same-tool entry
+   169	      for (const [k, v] of s.inFlight) {
+   170	        if (v.tool === (toolName ?? '?')) { s.inFlight.delete(k); break; }
+   171	      }
+   172	    }
+   173	  }
+   174	
+   175	  const ident = [];
+   176	  for (const k of IDENTITY_KEYS) {
+   177	    const v = pick(ev, k);
+   178	    if (v === undefined) continue;
+   179	    ident.push(typeof v === 'object' ? `${k}=<${Array.isArray(v) ? 'array' : 'object'}>` : `${k}=${str(v)}`);
+   180	  }
+   181	
+   182	  seq++;
+   183	  if (!OPT.quiet) {
+   184	    log(
+   185	      `EVENT #${String(seq).padStart(4, '0')} ` +
+   186	      `t=${new Date(recvMs).toISOString()} ` +
+   187	      `+${((recvMs - START) / 1000).toFixed(3)}s ` +
+   188	      `event=${type} session_id=${sid} ` +
+   189	      (toolName ? `tool_name=${toolName} ` : '') +
+   190	      (ident.length ? `${ident.join(' ')} ` : '') +
+   191	      `bytes=${rawBytes} inflight=${s.inFlight.size}`
+   192	    );
+   193	  }
+   194	}
+   195	
+   196	function tableText(reason) {
+   197	  const now = Date.now();
+   198	  const L = [];
+   199	  L.push(`=== CORRELATION TABLE (${reason}) @ ${new Date(now).toISOString()} uptime=${((now - START) / 1000).toFixed(1)}s ===`);
+   200	  L.push(
+   201	    `counters: accepted=${counters.accepted} malformed_json=${counters.malformed_json} ` +
+   202	    `empty_body=${counters.empty_body} not_an_object=${counters.not_an_object} ` +
+   203	    `oversize=${counters.oversize} dropped_non_loopback=${counters.dropped_non_loopback} ` +
+   204	    `bad_route=${counters.bad_route} socket_errors=${counters.socket_errors} ` +
+   205	    `client_disconnects=${counters.client_disconnects}`
+   206	  );
+   207	  if (sessions.size === 0) L.push('  (no sessions seen yet)');
+   208	  for (const [sid, s] of sessions) {
+   209	    L.push(`  session ${sid}  events=${s.total}  first=+${((s.firstSeen - START) / 1000).toFixed(3)}s  last=+${((s.lastSeen - START) / 1000).toFixed(3)}s`);
+   210	    if (s.cwd) L.push(`    cwd=${s.cwd}`);
+   211	    if (s.transcript) L.push(`    transcript=${s.transcript}`);
+   212	    L.push(`    by_type: ${[...s.events].map(([k, v]) => `${k}=${v}`).join(' ') || '(none)'}`);
+   213	    L.push(`    agents:  ${[...s.agents].map(([k, v]) => `${k}=${v.count}`).join(' ') || '(none)'}`);
+   214	    if (s.inFlight.size === 0) {
+   215	      L.push('    in_flight: (none)');
+   216	    } else {
+   217	      for (const [k, v] of s.inFlight) {
+   218	        L.push(`    in_flight: ${v.tool} agent=${v.agent} key=${k} for=${((now - v.since) / 1000).toFixed(3)}s`);
+   219	      }
+   220	    }
+   221	    if (s.unknownKeys.size) L.push(`    unknown_top_level_keys: ${[...s.unknownKeys].join(',')}`);
+   222	  }
+   223	  L.push('=== END TABLE ===');
+   224	  return L.join('\n');
+   225	}
+   226	function printTable(reason) { log(tableText(reason)); }
+   227	
+   228	// ------------------------------------------------------------- evidence ----
+   229	// Append-only, repo-local. A WriteStream serialises writes so concurrent hook
+   230	// POSTs cannot interleave partial lines.
+   231	let out = null;
+   232	try {
+   233	  out = fs.createWriteStream(OPT.out, { flags: 'a' });
+   234	  out.on('error', (e) => warn(`[warn] evidence file write error: ${e.message}`));
+   235	} catch (e) {
+   236	  warn(`[warn] could not open evidence file ${OPT.out}: ${e.message}`);
+   237	}
+   238	function appendEvidence(ev) {
+   239	  if (!out) return;
+   240	  let line;
+   241	  try { line = JSON.stringify(ev); } catch { return; }   // circular etc: skip
+   242	  if (typeof line !== 'string') return;
+   243	  out.write(`${line}\n`);
+   244	}
+   245	
+   246	// --------------------------------------------------------------- server ----
+   247	const server = http.createServer((req, res) => {
+   248	  const remote = OPT.spoofRemote ?? req.socket.remoteAddress ?? '';
+   249	  const recvMs = Date.now();
+   250	
+   251	  // G5: socket-level origin check. Headers are never consulted.
+   252	  if (!isLoopbackAddress(remote)) {
+   253	    counters.dropped_non_loopback++;
+   254	    warn(`[DROP] non-loopback remote=${remote} ${req.method} ${req.url} -> 403 (dropped_non_loopback=${counters.dropped_non_loopback})`);
+   255	    res.writeHead(403, { 'content-type': 'text/plain', 'content-length': 0 });
+   256	    res.end();
+   257	    return;
+   258	  }
+   259	
+   260	  const url = (req.url ?? '').split('?')[0];
+   261	
+   262	  if (req.method === 'GET' && url === '/status') {
+   263	    const t = tableText('GET /status');
+   264	    log(t);
+   265	    const buf = Buffer.from(`${t}\n`, 'utf8');
+   266	    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'content-length': buf.length });
+   267	    res.end(buf);
+   268	    return;
+   269	  }
+   270	
+   271	  if (url === '/shutdown' && (req.method === 'POST' || req.method === 'GET')) {
+   272	    res.writeHead(200, { 'content-type': 'text/plain', 'content-length': 0 });
+   273	    res.end();
+   274	    log('[info] /shutdown requested');
+   275	    shutdown('shutdown request');
+   276	    return;
+   277	  }
+   278	
+   279	  if (req.method !== 'POST' || url !== '/event') {
+   280	    counters.bad_route++;
+   281	    warn(`[404] ${req.method} ${req.url} from ${remote} (bad_route=${counters.bad_route})`);
+   282	    res.writeHead(404, { 'content-type': 'text/plain', 'content-length': 0 });
+   283	    res.end();
+   284	    return;
+   285	  }
+   286	
+   287	  const chunks = [];
+   288	  let size = 0;
+   289	  let aborted = false;
+   290	
+   291	  req.on('error', (e) => {
+   292	    counters.socket_errors++;
+   293	    warn(`[warn] request socket error: ${e.message} (socket_errors=${counters.socket_errors})`);
+   294	  });
+   295	
+   296	  req.on('data', (c) => {
+   297	    if (aborted) return;
+   298	    size += c.length;
+   299	    if (size > OPT.maxBody) {
+   300	      aborted = true;
+   301	      counters.oversize++;
+   302	      warn(`[REJECT] body over --max-body (${size} > ${OPT.maxBody} bytes) -> 413 (oversize=${counters.oversize})`);
+   303	      if (!res.headersSent) res.writeHead(413, { 'content-type': 'text/plain', 'content-length': 0 });
+   304	      res.end();
+   305	      req.destroy();
+   306	      return;
+   307	    }
+   308	    chunks.push(c);
+   309	  });
+   310	
+   311	  req.on('end', () => {
+   312	    if (aborted) return;
+   313	    const raw = Buffer.concat(chunks);
+   314	
+   315	    if (raw.length === 0) {
+   316	      counters.empty_body++;
+   317	      warn(`[REJECT] empty body -> 400 (empty_body=${counters.empty_body})`);
+   318	      res.writeHead(400, { 'content-type': 'text/plain', 'content-length': 0 });
+   319	      res.end();
+   320	      return;
+   321	    }
+   322	
+   323	    let ev;
+   324	    try {
+   325	      ev = JSON.parse(raw.toString('utf8'));
+   326	    } catch (e) {
+   327	      counters.malformed_json++;
+   328	      const preview = raw.toString('utf8').slice(0, 120).replace(/[\r\n]+/g, '\\n');
+   329	      warn(`[REJECT] malformed JSON (${raw.length} bytes): ${e.message} | preview="${preview}" -> 400 (malformed_json=${counters.malformed_json})`);
+   330	      res.writeHead(400, { 'content-type': 'text/plain', 'content-length': 0 });
+   331	      res.end();
+   332	      return;
+   333	    }
+   334	
+   335	    if (ev === null || typeof ev !== 'object' || Array.isArray(ev)) {
+   336	      counters.not_an_object++;
+   337	      warn(`[REJECT] JSON body is not an object (got ${Array.isArray(ev) ? 'array' : typeof ev}) -> 400 (not_an_object=${counters.not_an_object})`);
+   338	      res.writeHead(400, { 'content-type': 'text/plain', 'content-length': 0 });
+   339	      res.end();
+   340	      return;
+   341	    }
+   342	
+   343	    // Answer first, think later: the hook process sits in CC's critical path.
+   344	    counters.accepted++;
+   345	    res.writeHead(200, { 'content-length': 0 });
+   346	    res.end();
+   347	
+   348	    setImmediate(() => {
+   349	      try {
+   350	        appendEvidence(ev);
+   351	        record(ev, recvMs, raw.length);
+   352	      } catch (e) {
+   353	        // G3: a surprising payload must never take the listener down.
+   354	        warn(`[warn] post-accept processing failed: ${e && e.message}`);
+   355	      }
+   356	    });
+   357	  });
+   358	});
+   359	
+   360	server.on('clientError', (e, socket) => {
+   361	  // A hook process that exits right after reading the response resets its idle
+   362	  // keep-alive socket. That is normal, not an error: count it separately.
+   363	  if (e && (e.code === 'ECONNRESET' || e.code === 'ECONNABORTED')) {
+   364	    counters.client_disconnects++;
+   365	    try { socket.destroy(); } catch { /* ignore */ }
+   366	    return;
+   367	  }
+   368	  counters.socket_errors++;
+   369	  warn(`[warn] clientError: ${e && e.message} (socket_errors=${counters.socket_errors})`);
+   370	  try { socket.end('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n'); } catch { /* ignore */ }
+   371	});
+   372	server.on('error', (e) => {
+   373	  console.error(`[fatal] server error: ${e.message}`);
+   374	  process.exit(1);
+   375	});
+   376	server.requestTimeout = 10000;
+   377	server.headersTimeout = 5000;
+   378	server.keepAliveTimeout = 2000;
+   379	
+   380	let timer = null;
+   381	let shuttingDown = false;
+   382	function shutdown(reason) {
+   383	  if (shuttingDown) return;
+   384	  shuttingDown = true;
+   385	  if (timer) clearInterval(timer);
+   386	  printTable(`final - ${reason}`);
+   387	  try { server.close(); } catch { /* ignore */ }
+   388	  if (out) out.end();
+   389	  // give the evidence stream a tick to flush, then exit deterministically
+   390	  setTimeout(() => process.exit(0), 150).unref();
+   391	}
+   392	
+   393	for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP']) {
+   394	  try { process.on(sig, () => { log(`[info] ${sig} received`); shutdown(sig); }); } catch { /* unsupported on this platform */ }
+   395	}
+   396	process.on('uncaughtException', (e) => {
+   397	  // G3: never die on input. Log loudly and keep serving.
+   398	  warn(`[warn] uncaughtException (kept running): ${e && e.stack}`);
+   399	});
+   400	
+   401	// HOST is hard-coded and deliberately not configurable: G5.
+   402	const HOST = '127.0.0.1';
+   403	server.listen(OPT.port, HOST, () => {
+   404	  const a = server.address();
+   405	  log(`[start] agent-deck spike listener bound host=${a.address} port=${a.port} family=${a.family} pid=${process.pid}`);
+   406	  log(`[start] routes: POST /event | GET /status | POST /shutdown (loopback-only, max-body=${OPT.maxBody} bytes)`);
+   407	  log(`[start] evidence file: ${OPT.out}`);
+   408	  if (OPT.spoofRemote) log(`[start] TEST MODE: remote address forced to ${OPT.spoofRemote}`);
+   409	  timer = setInterval(() => printTable('interval'), Math.max(1, OPT.interval) * 1000);
+   410	});

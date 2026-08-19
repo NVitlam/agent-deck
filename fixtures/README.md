@@ -8,6 +8,10 @@ changing code.
 
 ```
 cc-2.1.234/projects/c--Users-dev-projects-agent-deck/
+  05c5482d-….jsonl                     main transcript (Phase 1 harvest)
+  05c5482d-…/subagents/agent-*.jsonl   4 subagent transcripts, one at spawnDepth 2
+  05c5482d-…/subagents/agent-*.meta.json
+  05c5482d-…/tool-results/b6uvpgxa4.txt  63.7 KB offloaded tool payload
   4299490e-….jsonl                     main transcript
   4299490e-…/subagents/agent-*.jsonl   1 subagent transcript
   4299490e-…/subagents/agent-*.meta.json
@@ -19,11 +23,21 @@ PHASE0-VERDICT.md                      the Phase 0 gate decision, with evidence
 SCRUB-EVIDENCE.md                      the Phase 1 history scrub, with verification output
 ```
 
-**This set is deliberately thin.** The Phase 1 history scrub (see `SCRUB-EVIDENCE.md`) removed the
-Phase 0 orchestrator session — its main transcript, its five subagent transcripts, and
-`real-hook-events.jsonl` — because they carried foreign-project content. What remains is one
-complete, clean session. Phase 1 re-harvests a full set from agent-deck's own sessions to restore
-depth-2, multi-subagent, and `tool-results/` coverage.
+The Phase 1 history scrub (see `SCRUB-EVIDENCE.md`) removed the Phase 0 orchestrator session and
+`real-hook-events.jsonl` for carrying foreign-project content. The `05c5482d-…` session replaces
+that coverage and was **manufactured, not found**: a fresh CC window in this workspace ran a scripted
+burst that spawned three subagents in parallel, one of which spawned a child of its own, and one of
+which produced an output large enough to force CC to offload it. That is why the set now has a
+`spawnDepth: 2` agent carrying `parentAgentId`, and a `tool-results/` directory.
+
+Privacy-checked before commit: zero hits for any foreign project name, the only `projects-*` token
+present is `agent-deck`, and every `cwd` in every entry is this repo (G8).
+
+**What it still does not cover:** a malformed line, a corrupt `.meta.json`, a missing join key, a
+mutated layout, or a mid-file CC version change. The first four are supplied by the `synthetic-*`
+corpus (G6 requires those be clearly labelled and never confused with captured data). The fifth is
+**not covered by design** — G9 pins one CC version, so mid-file drift is a `SchemaMismatch`, not a
+tolerated case.
 
 Captured 2026-08-19 from CC **2.1.234**, Windows 11 native. Both sessions were live when captured, so
 they are snapshots of a file still being appended — which is exactly the condition the tailer must

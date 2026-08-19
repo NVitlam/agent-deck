@@ -74,8 +74,9 @@ TOTALS
   VERDICT: DETERMINISTIC (100% resolved)
 ```
 
-Deterministic on what survives, but the surviving set no longer covers depth ≥ 2, multiple
-concurrent subagents, or `tool-results/`. Restoring that coverage is the next Phase 1 work package.
+Deterministic on what survived, but that set no longer covered depth ≥ 2, multiple concurrent
+subagents, or `tool-results/`. **Coverage has since been restored** by the `05c5482d-…` harvest —
+see `README.md`; the replay now reports `RESOLVED 5, AMBIGUOUS 0, UNRESOLVED 0`.
 
 ## Still true after the scrub
 

@@ -206,7 +206,8 @@ re-establish them as real tests once a harness exists.
    it has never been observed — zero occurrences across the 7 synthetic payloads, the 246-event live
    log and the 181-event capture — and it is absent from the installed hook block, so it cannot appear
    until someone adds it there. Confirm before relying on it.
-5. **`tool-results/*.txt` offloading exists** and is not yet consumed — large tool payloads live
+5. **`tool-results/*.txt` offloading exists.** ~~and is not yet consumed~~ — **consumed in Phase 1**
+   by `redact.ts` (`readRedactedToolResult`). Large tool payloads live
    outside the JSONL entirely. Phase 1 redaction and truncation must cover that path, or previews
    will silently miss content. ~~**Unfixtured at HEAD**~~ — **fixtured in Phase 1**:
    `05c5482d-…/tool-results/b6uvpgxa4.txt` (63,774 bytes) is committed, and `redact.ts` is pinned to

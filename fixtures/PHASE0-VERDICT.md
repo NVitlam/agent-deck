@@ -215,5 +215,6 @@ CLAUDE_PROJECTS_ROOT=fixtures/cc-2.1.234/projects \
 ```
 
 Expected at the time of the gate: `agent transcripts: 6, RESOLVED 6, AMBIGUOUS 0, UNRESOLVED 0,
-VERDICT: DETERMINISTIC`. After the Phase 1 scrub the surviving set gives `1, RESOLVED 1, 0, 0`,
+VERDICT: DETERMINISTIC`. The scrub then removed the contaminated session and the Phase 1 harvest
+added a new one, so the current set gives `5, RESOLVED 5, 0, 0`,
 exit 0.

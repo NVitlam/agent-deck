@@ -116,8 +116,11 @@ installed by hand into the project's `.claude/settings.local.json` — **not** b
 into `~/.claude` at all. `~/.claude/settings.json` md5 was verified unchanged (`d7c2cbe8…`, mtime
 2026-06-16) after the whole phase (G1).
 
-Real CC traffic captured over the phase — 181 events, all five configured types
-(`fixtures/phase0-evidence/real-hook-events.jsonl`):
+Real CC traffic captured over the phase — 181 events, all five configured types. **The file these
+numbers were measured from is no longer committed:** `phase0-evidence/real-hook-events.jsonl` was
+purged by the Phase 1 history scrub for carrying verbatim `tool_input` payloads. The counts below
+stand as the record of what was measured; they are no longer reproducible from this repo. Phase 2
+must re-derive them from a fresh capture, and must redact before committing one.
 
 | Event | Count | Source |
 |---|---|---|
@@ -132,8 +135,7 @@ distinguished by `agent_id` (4 distinct values observed). All five types were ad
 end-to-end with synthetic payloads driven through the exact paste-block command string.
 
 **Trap for the Phase 2 correlator — main-thread events have NO `agent_id` at all.** CC does not emit
-`agent_id: "main"`; it omits the field entirely for the main thread. Measured over the committed
-capture: 46 events absent / 135 present, split by type as PreToolUse 20/66, PostToolUse 19/65,
+`agent_id: "main"`; it omits the field entirely for the main thread. Measured over that capture: 46 events absent / 135 present, split by type as PreToolUse 20/66, PostToolUse 19/65,
 SubagentStop 0/4, Stop 6/0, SessionStart 1/0. Occurrences of the literal value `"main"`: **0**.
 `'main'` is an internal convention of the spike stitcher (`ev.agentId || 'main'`), not part of the
 hook contract. A correlator that matches the string `"main"` will silently drop every main-thread

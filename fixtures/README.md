@@ -21,7 +21,16 @@ phase0-evidence/
   hook-mechanism-timing.txt            node -e vs curl.exe cost with the listener down
 PHASE0-VERDICT.md                      the Phase 0 gate decision, with evidence
 SCRUB-EVIDENCE.md                      the Phase 1 history scrub, with verification output
+
+synthetic-layout/                      21 hand-mutated trees the fingerprint must refuse,
+                                       incl. two carrying a <slug>/memory/ directory
+synthetic-lines/                       8 malformed / drift line cases for the parser
+synthetic-graft/                       7 join cases: unresolved, ambiguous, depth mismatch
 ```
+
+Everything under `synthetic-*` is **hand-made, not captured**. Each tree says so in its slug
+directory name (`SYNTHETIC-hand-mutated-not-captured`) and each corpus has its own README with a
+per-case expectation table. Never treat them as evidence about CC's real behavior (G6).
 
 The Phase 1 history scrub (see `SCRUB-EVIDENCE.md`) removed the Phase 0 orchestrator session and
 `real-hook-events.jsonl` for carrying foreign-project content. The `05c5482d-…` session replaces
@@ -85,12 +94,15 @@ construction:
 **Coverage, re-stated after Phase 1.** The gaps this section used to list are closed. A
 `tool-results/` directory, malformed lines, a corrupt `.meta.json`, and an `UNRESOLVED` join case all
 exist now — the first from the capture, the rest from the clearly-labelled `synthetic-*` corpora
-above. `<slug>/memory/` remains **deliberately unfixtured**: it is a live-tree discovery trap with no
-committed example, so nothing fixture-backed will catch a discovery routine that enumerates
-subdirectories of the slug dir and mistakes `memory/` for a session. Both `spike/tail.mjs` and
-`src/parser/tailer.ts` are immune because they find sessions from `<sessionId>.jsonl` **files** and
-only then look for the matching directory. Keep that ordering; "improving" it to a directory scan is
-the regression, and no test will tell you.
+above. `<slug>/memory/` **is now fixtured too**, as a side effect of the layout corpus:
+`synthetic-layout/00-valid-control/…/memory/` and `synthetic-layout/15-no-session-transcripts/…/memory/`.
+The second is the strong form — a slug directory holding `memory/` and no session transcript at all.
+Phase 2's DoD asks for exactly this fixture; it already exists, so do not go capturing one.
+
+The trap itself still matters: a discovery routine that enumerates subdirectories of the slug dir
+mistakes `memory/` for a session. Both `spike/tail.mjs` and `src/parser/tailer.ts` are immune because
+they find sessions from `<sessionId>.jsonl` **files** and only then look for the matching directory.
+Keep that ordering; "improving" it to a directory scan is the regression.
 
 A mid-file CC version change is also absent, and stays absent **by design** — G9 pins one CC version,
 so drift is a `SchemaMismatch`, not a case to cover. Do not add a drift fixture.

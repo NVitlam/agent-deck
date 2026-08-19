@@ -241,3 +241,179 @@ export function isSchemaMismatch(value: unknown): value is SchemaMismatch {
 export type ParseResult<T> =
   | { ok: true; value: T; diagnostics: ParseDiagnostics }
   | { ok: false; mismatch: SchemaMismatch; diagnostics: ParseDiagnostics };
+
+// ---------------------------------------------------------------------------
+// (d) Hook-event contract — the liveness source (spec v2 §C4 and §3)
+// ---------------------------------------------------------------------------
+//
+// Additive to Phase 1. Nothing above this banner changed.
+//
+// This section is deliberately free of any string literal naming the main
+// thread. Main-thread-ness is a boolean derived from key absence, never a
+// sentinel id, because CC omits `agent_id` on main-thread events rather than
+// sending a placeholder. A correlator matching a placeholder string would
+// silently drop every main-thread event.
+
+/**
+ * A hook payload exactly as it arrives on the wire: CC's JSON, unmodified.
+ *
+ * Every field is optional, and deliberately so. The payload shape is NOT
+ * uniform across event types — the join keys appear independently:
+ *
+ *   PreToolUse / PostToolUse   carry `tool_use_id` and `tool_name`
+ *   SubagentStop               carries `agent_id`, no `tool_use_id`
+ *   Stop                       carries neither join key
+ *   SubagentStart              carries `agent_id`, and NO `tool_use_id`
+ *                              (confirmed absent, 3/3 measured events)
+ *
+ * Because `SubagentStart` has no `tool_use_id`, a subagent's parent
+ * `tool_use` block cannot be recovered from hook events alone; that join comes
+ * from the JSONL sidecar's `meta.toolUseId` (see {@link SubagentMeta}). Never
+ * infer a parent from a hook event.
+ *
+ * The index signature keeps unknown keys rather than stripping them. That is
+ * not hypothetical: the measured `SubagentStart` payload carries `prompt_id`,
+ * a key absent from every previously documented event.
+ *
+ * Key names here are CC's snake_case wire names, not Agent Deck's camelCase.
+ */
+export interface RawHookPayload {
+  /** e.g. 'PreToolUse'. See {@link CONFIRMED_HOOK_EVENT_NAMES}. */
+  hook_event_name?: string;
+  session_id?: string;
+  transcript_path?: string;
+  cwd?: string;
+  /**
+   * Subagent join key. The key is ABSENT ENTIRELY on main-thread events; CC
+   * does not substitute a placeholder. Measured over 181 real events on CC
+   * 2.1.234: `Stop` lacks it 6/6, `SubagentStop` carries it 4/4. A later
+   * capture added `SubagentStart`, which carries it 3/3.
+   */
+  agent_id?: string;
+  agent_type?: string;
+  /**
+   * Parent `tool_use` join key. Present on `PreToolUse`/`PostToolUse`.
+   * Confirmed ABSENT on `SubagentStart` (3/3). Optional per event type — do
+   * not treat it as a required field of the payload.
+   */
+  tool_use_id?: string;
+  tool_name?: string;
+  tool_input?: unknown;
+  tool_response?: unknown;
+  /** Observed on the measured `SubagentStart` payload (3/3), a 36-char uuid. */
+  prompt_id?: string;
+  /** CC adds fields between versions; keep them rather than dropping them. */
+  [key: string]: unknown;
+}
+
+/**
+ * Hook event names actually received from real CC on the pinned version
+ * 2.1.234.
+ *
+ * The first four were measured over a 181-event capture. `SubagentStart` was
+ * added after it was registered in this repo's hook block and a later loopback
+ * capture received it 3/3, all well-formed — it is no longer speculative.
+ *
+ * `SessionStart` is NOT here. It is registered in the hook block but its
+ * arrival has not been measured on the pinned version; it lives in
+ * {@link KNOWN_HOOK_EVENT_NAMES} only.
+ */
+export const CONFIRMED_HOOK_EVENT_NAMES = [
+  'PreToolUse',
+  'PostToolUse',
+  'SubagentStart',
+  'SubagentStop',
+  'Stop',
+] as const;
+
+export type ConfirmedHookEventName = (typeof CONFIRMED_HOOK_EVENT_NAMES)[number];
+
+/**
+ * Names Agent Deck expects to see: the confirmed five plus `SessionStart`,
+ * which is registered but unmeasured. This list is documentation, not a filter
+ * — the listener accepts any `hook_event_name` and flags anything outside
+ * {@link CONFIRMED_HOOK_EVENT_NAMES} as unconfirmed, so a future capture can
+ * prove or disprove it. Nothing is ever rejected for its name.
+ */
+export const KNOWN_HOOK_EVENT_NAMES = [
+  ...CONFIRMED_HOOK_EVENT_NAMES,
+  'SessionStart',
+] as const;
+
+export type KnownHookEventName = (typeof KNOWN_HOOK_EVENT_NAMES)[number];
+
+/** True only for names measured on the pinned CC version. Never throws. */
+export function isConfirmedHookEventName(
+  value: unknown,
+): value is ConfirmedHookEventName {
+  return (
+    typeof value === 'string' &&
+    (CONFIRMED_HOOK_EVENT_NAMES as readonly string[]).includes(value)
+  );
+}
+
+/** True for the confirmed five plus the registered-but-unmeasured one. */
+export function isKnownHookEventName(
+  value: unknown,
+): value is KnownHookEventName {
+  return (
+    typeof value === 'string' &&
+    (KNOWN_HOOK_EVENT_NAMES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * A hook payload after normalization, as consumers (the liveness engine) see
+ * it.
+ *
+ * Two properties carry the whole correlation contract:
+ *
+ * - {@link isMainThread} is a boolean derived purely from whether the payload
+ *   object had an `agent_id` key. It is not a string, not an id, and not
+ *   comparable to any id. There is no sentinel value meaning "the thread with
+ *   no agent" — ask this boolean.
+ * - {@link agentId} is OMITTED from the object when the payload had no
+ *   `agent_id` key. It is never defaulted and never filled with a placeholder,
+ *   so `'agentId' in event === false` is a valid and meaningful test.
+ *
+ * The combination `isMainThread === false` with `agentId` omitted means the
+ * `agent_id` key was present but unusable (null, empty, or not a string). Real
+ * CC has not been observed to send that; it surfaces as an unattributable
+ * subagent event rather than being silently promoted, because guessing is
+ * worse than refusing (G3).
+ */
+export interface NormalizedHookEvent {
+  /** Monotonic per-listener arrival counter, starting at 1. */
+  seq: number;
+  /** `Date.now()` at the moment the request body finished arriving. */
+  receivedAt: number;
+  /** Omitted when the payload carried no usable `hook_event_name`. */
+  eventName?: string;
+  /**
+   * False when {@link eventName} is absent or is not one of
+   * {@link CONFIRMED_HOOK_EVENT_NAMES}. An unconfirmed event is still
+   * delivered — this flag is the explicit "not a confirmed type" marker, so a
+   * consumer can count it without the listener having to reject it.
+   */
+  eventNameConfirmed: boolean;
+  /** Omitted when the payload carried no usable `session_id`. */
+  sessionId?: string;
+  /**
+   * The subagent join key. OMITTED, not defaulted, when `agent_id` was absent
+   * or unusable. See the note on {@link isMainThread}.
+   */
+  agentId?: string;
+  /** True exactly when the payload object had no `agent_id` key at all. */
+  isMainThread: boolean;
+  /**
+   * Parent `tool_use` join key, when the event type carries one. Omitted on
+   * event types that do not — notably `SubagentStart`, which has no such key
+   * at all. Its absence is normal, not an error.
+   */
+  toolUseId?: string;
+  toolName?: string;
+  transcriptPath?: string;
+  cwd?: string;
+  /** The payload as received, unmodified. In-memory only (G7). */
+  raw: RawHookPayload;
+}

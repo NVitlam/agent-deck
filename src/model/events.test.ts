@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
+  CONFIRMED_HOOK_EVENT_NAMES,
   emptyDiagnostics,
   isAgentNode,
+  isConfirmedHookEventName,
+  isKnownHookEventName,
   isSchemaMismatch,
   isToolNode,
+  KNOWN_HOOK_EVENT_NAMES,
   type AgentNode,
+  type NormalizedHookEvent,
+  type RawHookPayload,
   type HostToWebviewMessage,
   type ParseResult,
   type SchemaMismatch,
@@ -282,5 +288,116 @@ describe('parser-facing types', () => {
       expect(ok.value.sessionId).toBe('4299490e-4a09-46a0-a544-7ffb0429e7e7');
       expect(ok.diagnostics.malformedLines).toBe(2);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (d) Hook-event contract
+// ---------------------------------------------------------------------------
+//
+// Behaviour of the listener that produces these values is tested in
+// src/hooks/listener.test.ts. What is pinned here is the contract itself: the
+// event-name lists, their guards, and the fact that a main-thread event is
+// representable with the agent id genuinely absent rather than defaulted.
+
+describe('hook event name lists', () => {
+  it('confirms exactly the names measured on the pinned CC version', () => {
+    expect([...CONFIRMED_HOOK_EVENT_NAMES]).toEqual([
+      'PreToolUse',
+      'PostToolUse',
+      'SubagentStart',
+      'SubagentStop',
+      'Stop',
+    ]);
+    for (const name of CONFIRMED_HOOK_EVENT_NAMES) {
+      expect(isConfirmedHookEventName(name), name).toBe(true);
+      expect(isKnownHookEventName(name), name).toBe(true);
+    }
+  });
+
+  it('lists SessionStart as known but not confirmed', () => {
+    // Registered in the repo's hook block; its arrival has not been measured
+    // on CC 2.1.234. Known-but-unconfirmed is the honest position.
+    expect(isKnownHookEventName('SessionStart')).toBe(true);
+    expect(isConfirmedHookEventName('SessionStart')).toBe(false);
+    expect(KNOWN_HOOK_EVENT_NAMES).toHaveLength(
+      CONFIRMED_HOOK_EVENT_NAMES.length + 1,
+    );
+  });
+
+  it('both guards reject non-strings and unknown names without throwing', () => {
+    for (const value of [undefined, null, 0, {}, [], true, '', 'preTooluse']) {
+      expect(isConfirmedHookEventName(value)).toBe(false);
+      expect(isKnownHookEventName(value)).toBe(false);
+    }
+  });
+});
+
+describe('NormalizedHookEvent shape', () => {
+  it('represents a main-thread event with the agent id absent, not defaulted', () => {
+    const mainThread: NormalizedHookEvent = {
+      seq: 1,
+      receivedAt: 1_700_000_000_000,
+      eventName: 'Stop',
+      eventNameConfirmed: true,
+      sessionId: '9f1c2ad4-77b1-4e0e-9f3a-0b5c1d2e3f40',
+      isMainThread: true,
+      raw: { hook_event_name: 'Stop' },
+    };
+
+    // Main-thread-ness is a boolean, not a magic id: nothing here is a string
+    // a correlator could match against an agent id.
+    expect(typeof mainThread.isMainThread).toBe('boolean');
+    expect('agentId' in mainThread).toBe(false);
+  });
+
+  it('represents a subagent event carrying the join keys', () => {
+    const subagent: NormalizedHookEvent = {
+      seq: 2,
+      receivedAt: 1_700_000_000_001,
+      eventName: 'PostToolUse',
+      eventNameConfirmed: true,
+      sessionId: '9f1c2ad4-77b1-4e0e-9f3a-0b5c1d2e3f40',
+      agentId: 'a1a53f42c5eca8824',
+      isMainThread: false,
+      toolUseId: 'toolu_018fbDjBX1ah7FTXs727doeC',
+      toolName: 'Bash',
+      raw: { hook_event_name: 'PostToolUse' },
+    };
+
+    expect(subagent.isMainThread).toBe(false);
+    expect(subagent.agentId).toBe('a1a53f42c5eca8824');
+    expect(subagent.toolUseId).toBe('toolu_018fbDjBX1ah7FTXs727doeC');
+  });
+
+  it('allows a SubagentStart-shaped event with no tool_use_id at all', () => {
+    // Measured 3/3: SubagentStart carries agent_id but no tool_use_id, so the
+    // parent tool_use join must come from the JSONL sidecar, not from hooks.
+    const start: NormalizedHookEvent = {
+      seq: 3,
+      receivedAt: 1_700_000_000_002,
+      eventName: 'SubagentStart',
+      eventNameConfirmed: true,
+      sessionId: '9f1c2ad4-77b1-4e0e-9f3a-0b5c1d2e3f40',
+      agentId: 'a1a53f42c5eca8824',
+      isMainThread: false,
+      raw: {
+        hook_event_name: 'SubagentStart',
+        prompt_id: '5b2e0d31-6c44-4f0a-9f11-77d0c9a5e112',
+      },
+    };
+
+    expect('toolUseId' in start).toBe(false);
+    expect(start.raw.prompt_id).toBe('5b2e0d31-6c44-4f0a-9f11-77d0c9a5e112');
+  });
+
+  it('keeps unknown payload keys on RawHookPayload', () => {
+    const raw: RawHookPayload = {
+      hook_event_name: 'PreToolUse',
+      a_key_no_cc_version_has_sent_yet: { nested: [1, 2, 3] },
+    };
+    expect(raw['a_key_no_cc_version_has_sent_yet']).toEqual({
+      nested: [1, 2, 3],
+    });
   });
 });

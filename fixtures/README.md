@@ -22,7 +22,14 @@ phase0-evidence/
 PHASE0-VERDICT.md                      the Phase 0 gate decision, with evidence
 SCRUB-EVIDENCE.md                      the Phase 1 history scrub, with verification output
 
-synthetic-layout/                      21 hand-mutated trees the fingerprint must refuse,
+hook-events/
+  cc-2.1.234-redacted.jsonl            285 real hook payloads, content destroyed, key
+                                       presence/absence preserved exactly (Phase 2)
+  redact-capture.mjs                   derives the above from a gitignored raw capture
+golden/graft/                          2 grafted-tree goldens + regeneration README
+golden/session/                        2 SessionState goldens + regeneration README
+
+synthetic-layout/                      22 hand-mutated trees the fingerprint must refuse,
                                        incl. two carrying a <slug>/memory/ directory
 synthetic-lines/                       8 malformed / drift line cases for the parser
 synthetic-graft/                       7 join cases: unresolved, ambiguous, depth mismatch

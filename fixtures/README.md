@@ -83,5 +83,10 @@ Two notes for whoever does that capture:
 
 **PLAN.md Phase 5 carries a blocking open question:** before the repo goes public, these fixtures must
 be sanitized in place *and* scrubbed from git history (`git filter-repo`), or replaced with sanitized
-equivalents and the parser suite re-pinned. Committing them raw is safe only while the repo has no
-remote — which is the case today (`git remote -v` is empty).
+equivalents and the parser suite re-pinned.
+
+**As of 2026-08-19 this content is on a remote.** `origin` =
+`https://github.com/dev/agent-deck`, **private**. Privacy now rests on that repo staying private
+rather than on there being no remote at all, and the Phase 5 scrub must therefore also **force-push**
+the rewritten history — the raw content exists in remote history from this point on. Do not flip the
+repo public before that scrub.

@@ -1,5 +1,12 @@
 # Phase 0 — Tap Validation Spike: VERDICT
 
+> **HISTORICAL — this is the Phase 0 gate record, dated 2026-08-19.** It states what was
+> believed and measured *at that gate*. Phase 1 falsified several of its forward-looking
+> recommendations. Where this file disagrees with `PLAN.md`, `CLAUDE.md` or
+> `agent-deck-spec.md`, **they win and this loses.** Corrections are struck through inline
+> rather than deleted, so the record of what was believed stays readable. Do not act on a
+> recommendation from this file without checking the current documents first.
+
 **VERDICT: GO.**
 
 Sidechain/subagent entries are attributable to their parent agent **deterministically**, not
@@ -195,17 +202,23 @@ re-establish them as real tests once a harness exists.
 3. **New risk, replacing the old one:** everything now depends on the `subagents/` directory
    convention and the `meta.json` sidecar, which are undocumented and can change without notice. The
    Phase 1 fingerprint must assert the **layout**, not just field names.
-4. **Add `SubagentStart`** to the Phase 2 listener's accepted event set.
+4. ~~**Add `SubagentStart`** to the Phase 2 listener's accepted event set.~~ **Downgraded in Phase 1:**
+   it has never been observed — zero occurrences across the 7 synthetic payloads, the 246-event live
+   log and the 181-event capture — and it is absent from the installed hook block, so it cannot appear
+   until someone adds it there. Confirm before relying on it.
 5. **`tool-results/*.txt` offloading exists** and is not yet consumed — large tool payloads live
    outside the JSONL entirely. Phase 1 redaction and truncation must cover that path, or previews
-   will silently miss content. **Unfixtured at HEAD:** no committed fixture contains a
-   `tool-results/` directory, so this cannot be pinned under G6 until one is captured. agent-deck's
-   own session grew one during the Phase 0 audit, so that capture costs nothing in privacy surface.
-6. **Session files can span CC versions.** Foreign session F1 contains both 2.1.231 (466 lines) and
-   2.1.232 (2 lines), so the fingerprint should tolerate the value changing mid-file rather than
-   treating it as a mismatch. **Unfixtured at HEAD:** the committed fixtures are 740/740 `2.1.234`,
-   and F1 is a live foreign session that is not committed. Capture a drift fixture before pinning
-   behavior to this rule, or record it explicitly as shipping unpinned.
+   will silently miss content. ~~**Unfixtured at HEAD**~~ — **fixtured in Phase 1**:
+   `05c5482d-…/tool-results/b6uvpgxa4.txt` (63,774 bytes) is committed, and `redact.ts` is pinned to
+   those bytes. The capture came from agent-deck's own session, costing nothing in privacy surface.
+6. **Session files can span CC versions.** Foreign session F1 contained both 2.1.231 (466 lines) and
+   2.1.232 (2 lines). That observation stands. ~~The conclusion drawn from it — that the fingerprint
+   should tolerate the value changing mid-file — and the recommendation to capture a drift fixture~~
+   were **withdrawn in Phase 1 under G9**: one pinned CC version, and a mid-file `version` change is a
+   `SchemaMismatch` (`fingerprint.ts` → `versionChangedMidFile`, asserted by
+   `synthetic-layout/08-version-changes-midfile`). **Do not capture a drift fixture.** The "740/740"
+   count also predates the Phase 1 scrub and re-harvest; the committed set is now 124 lines carrying
+   112 `version` tokens, all `2.1.234`.
 
 ## 6. Reproducing this verdict
 

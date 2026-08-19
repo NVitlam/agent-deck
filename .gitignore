@@ -9,3 +9,4 @@ spike/hook-events.jsonl
 spike/hook-events-real.jsonl
 coverage/
 *.tsbuildinfo
+spike/hook-events-r3.jsonl

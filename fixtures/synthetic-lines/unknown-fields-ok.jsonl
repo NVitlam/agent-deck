@@ -1,0 +1,2 @@
+{"type":"assistant","uuid":"66666666-6666-4666-8666-666666666666","parentUuid":null,"sessionId":"00000000-0000-4000-8000-000000000000","version":"2.1.999","futureField":{"nested":["cc","added","this"]},"anotherUnknownKey":123,"message":{"role":"assistant","content":[{"type":"text","text":"ok"}],"unknownMessageKey":true}}
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-08-19T07:05:10.556Z","sessionId":"00000000-0000-4000-8000-000000000000","brandNewField":"ignored without error"}

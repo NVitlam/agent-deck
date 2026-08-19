@@ -1,0 +1,5 @@
+"a bare JSON string where an object was expected"
+[{"type":"user"},{"type":"assistant"}]
+42
+null
+{"uuid":"44444444-4444-4444-8444-444444444444","message":{"role":"user"}}

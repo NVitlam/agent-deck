@@ -40,6 +40,13 @@
  * Liveness is NOT decided here — {@link toSessionState} takes it as a required
  * argument rather than inventing one, because "is it still running" is the
  * hooks source's answer and the JSONL source must never fake it (G2).
+ *
+ * `totals.costUsd` is always 0, and 0 here means NOT YET COMPUTED — it does not
+ * mean the session was free. There is no price table in this repo, and a
+ * number derived from a rate held in an LLM's memory would be a fabrication
+ * shown to a user as a fact. Whoever adds pricing must also change this field
+ * from "unset" to "computed", and until then the renderer should present it as
+ * unknown rather than as a dollar amount.
  */
 
 import { createHash } from 'node:crypto';
@@ -654,8 +661,9 @@ export class TreeGrafter {
       root,
       parked,
       edges,
-      // costUsd stays 0: there is no price table in this repo and inventing
-      // one would put a fabricated number in front of the user.
+      // costUsd 0 means NOT YET COMPUTED, never "free". There is no price
+      // table in this repo and inventing one would put a fabricated number in
+      // front of the user. See the file header.
       totals: { inputTokens, outputTokens, costUsd: 0 },
       counts: { grafted: grafted.size, parked: parked.length, toolNodes },
       depthMismatches: report.depthMismatches.map((d) => ({

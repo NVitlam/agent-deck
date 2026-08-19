@@ -1,0 +1,1 @@
+SYNTHETIC: the .jsonl path is a directory

@@ -163,7 +163,7 @@ rather than guessed:
 - base: `{session_id, transcript_path, cwd, prompt_id, permission_mode, agent_id, agent_type, effort}`
 - `PreToolUse` adds `tool_name`, `tool_input`, `tool_use_id`
 - `SubagentStop` adds `stop_hook_active`, `agent_id`, `agent_transcript_path`, `agent_type`, `last_assistant_message`
-- 2.1.234 also emits **`SubagentStart`**, which PLAN.md did not list
+- ~~2.1.234 also emits **`SubagentStart`**, which PLAN.md did not list~~ — **binary string only, never observed. Downgraded in Phase 1; see §5 item 4.**
 
 **Hook mechanism matters.** Measured against a closed loopback port, 5 runs each
 (`fixtures/phase0-evidence/hook-mechanism-timing.txt`):

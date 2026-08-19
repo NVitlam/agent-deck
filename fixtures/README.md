@@ -82,28 +82,36 @@ construction:
 - **Clean on secrets:** a scan of all committed files for `sk-…`, `ghp_…`, `api_key`, `password` and
   `authorization` returned zero hits.
 
-**Not present, and needed:** no committed fixture contains a `tool-results/` directory, a malformed
-line, a corrupt `.meta.json`, an `UNRESOLVED` case, a mid-file CC version change, or a `<slug>/memory/`
-directory. Phase 1's DoD requires tests for several of those, so it must capture or synthesize them
-before it can pin behavior under G6.
+**Coverage, re-stated after Phase 1.** The gaps this section used to list are closed. A
+`tool-results/` directory, malformed lines, a corrupt `.meta.json`, and an `UNRESOLVED` join case all
+exist now — the first from the capture, the rest from the clearly-labelled `synthetic-*` corpora
+above. `<slug>/memory/` remains **deliberately unfixtured**: it is a live-tree discovery trap with no
+committed example, so nothing fixture-backed will catch a discovery routine that enumerates
+subdirectories of the slug dir and mistakes `memory/` for a session. Both `spike/tail.mjs` and
+`src/parser/tailer.ts` are immune because they find sessions from `<sessionId>.jsonl` **files** and
+only then look for the matching directory. Keep that ordering; "improving" it to a directory scan is
+the regression, and no test will tell you.
 
-Two notes for whoever does that capture:
+A mid-file CC version change is also absent, and stays absent **by design** — G9 pins one CC version,
+so drift is a `SchemaMismatch`, not a case to cover. Do not add a drift fixture.
 
-- **A `tool-results/` fixture is now free.** agent-deck's own session grew one
-  (`7dc3481d-…/tool-results/`) during the Phase 0 audit, so it can be captured without pulling in
-  another project's data.
-- **`<slug>/memory/` is a discovery trap.** It sits as a sibling of every `<sessionId>/` directory in
-  the live tree and is absent here, so no fixture-backed test will catch a discovery routine that
-  enumerates subdirectories of the slug dir and mistakes it for a session. The spike is immune
-  because `spike/tail.mjs` finds sessions from `<sessionId>.jsonl` *files* and only then looks for the
-  matching directory — keep that ordering in the production port.
+## Privacy — status after the Phase 1 scrub
 
-**PLAN.md Phase 5 carries a blocking open question:** before the repo goes public, these fixtures must
-be sanitized in place *and* scrubbed from git history (`git filter-repo`), or replaced with sanitized
-equivalents and the parser suite re-pinned.
+The history scrub described in `SCRUB-EVIDENCE.md` **has been executed and force-pushed**: the
+contaminated data files are gone from every ref, the documents that reproduced the purged strings were
+sanitized, and no foreign project slug survives anywhere in `git log -p --all`. Every `cwd` in every
+committed fixture is this repo (G8).
 
-**As of 2026-08-19 this content is on a remote.** `origin` =
-`https://github.com/dev/agent-deck`, **private**. Privacy now rests on that repo staying private
-rather than on there being no remote at all, and the Phase 5 scrub must therefore also **force-push**
-the rewritten history — the raw content exists in remote history from this point on. Do not flip the
-repo public before that scrub.
+`origin` = `https://github.com/dev/agent-deck`, **private**. Two things remain true and gate any
+public flip:
+
+- GitHub keeps unreferenced objects reachable for a while after a force-push, so the remote is not
+  provably clean the instant the rewrite lands. Re-audit against the remote before flipping, rather
+  than trusting this file.
+- `fixtures/phase0-evidence/latency-*.log` still contain the session and agent ids of the purged
+  session. That content is agent-deck's own and carries no foreign data, so it was left in place —
+  but it means "the contaminated files are gone" is true of *paths*, not of every string that ever
+  appeared in them.
+
+The fixtures are still committed **raw and unredacted by deliberate choice** (G6 pins parser behavior
+to real bytes). They contain this repo's own file paths, tool output, and transcript content.

@@ -37,11 +37,18 @@ All refs (`main`, `master`, `phase-0-tap-validation`) rewritten; 10 commits, all
 the root.
 
 ```
-$ git log -p --all | grep -o 'projects-[A-Za-z0-9_-]*' | sort | uniq -c
+$ git log -p --all | grep -ao 'projects-[A-Za-z0-9_-]*' | sort | uniq -c
      12 projects-
       2 projects-PROJ-REDACTED
      11 projects-agent-deck
 ```
+
+**Note the `-a`, and do not drop it.** The counts above are from the scrub commit. Re-running this
+later without `-a` prints `Binary file (standard input) matches` and almost nothing else: a tracked
+test file (`src/parser/parse.test.ts`) deliberately contains a NUL byte as fuzz input, and GNU grep
+abandons the whole stream on seeing it. The result looks clean and means nothing. Counts grow as
+history grows — what matters is that every token is `agent-deck`, the redaction marker, or the bare
+prose glob.
 
 Every project slug appearing anywhere in history is agent-deck, the redaction marker, or the literal
 glob `projects-*` in prose.

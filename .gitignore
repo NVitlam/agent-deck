@@ -7,3 +7,5 @@ spike/latency-*.log
 spike/hook-events.jsonl
 .claude/worktrees/
 spike/hook-events-real.jsonl
+coverage/
+*.tsbuildinfo

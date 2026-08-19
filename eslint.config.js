@@ -1,0 +1,38 @@
+// Flat config. TypeScript-aware, no type-checked rules that duplicate or
+// fight `tsc --strict` (typecheck is its own script).
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  {
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      'out/**',
+      'spike/**',
+      'fixtures/**',
+      '.claude/**',
+    ],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    files: ['**/*.ts'],
+    rules: {
+      // Exported signatures must be `any`-free; flag it everywhere.
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      // Interfaces vs type aliases: both are used deliberately here.
+      '@typescript-eslint/consistent-type-definitions': 'off',
+    },
+  },
+  {
+    files: ['**/*.mjs', '**/*.js'],
+    languageOptions: {
+      globals: { process: 'readonly' },
+    },
+  },
+);

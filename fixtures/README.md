@@ -44,14 +44,13 @@ that would drift from reality.
 The capture was scoped to this repo's *own* sessions (agent-deck building itself) to keep exposure
 low. **That scoping is not absolute**, and Phase 5 sanitization must not assume it is:
 
-**Scope of exposure — established by audit, after being understated twice.** This is not an
-PROJ-REDACTED/PROJ-REDACTED problem; grepping for those two names finds the right files by luck, not by construction:
+**Scope of exposure — established by audit, after being understated twice.** It was never confined to the two
+project names an earlier draft grepped for; that grep found the right files by luck, not by
+construction:
 
-- **Every project name under `~/.claude` is committed** — 16 `projects-*` slugs (PROJ-REDACTED,
-  PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED,
-  PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, PROJ-REDACTED, Testing, agent-deck) plus
-  `PROJ-REDACTED` and the `PROJ-REDACTED`/`PROJ-REDACTED`/`PROJ-REDACTED` temp benchmark dirs — via captured directory
-  listings.
+- **Every project name under `~/.claude` was committed** — 16 sibling project slugs, a shared agents
+  directory, and three temp benchmark directories, carried in by captured directory listings. The
+  names are not reproduced here; removing them is the point of the scrub.
 - **Four committed data files** under `fixtures/`: the main transcript `7dc3481d-….jsonl`,
   `agent-a56d2cc00c4b5908d.jsonl`, `agent-a68c75d33e3d38b01.jsonl`, and
   `phase0-evidence/real-hook-events.jsonl`. The full slug listing appears in **three** of them, not

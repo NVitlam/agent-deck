@@ -23,7 +23,7 @@ that interleaving "the core engineering problem".
 
 On CC 2.1.234 that is not what happens. Measured:
 
-- `"isSidechain":true` occurrences in main transcripts: **0** (PROJ-REDACTED, PROJ-REDACTED, agent-deck — all main files)
+- `"isSidechain":true` occurrences in main transcripts: **0** (two foreign sessions plus agent-deck — all main files)
 - `"name":"Task"` tool calls across 127 session files: **0**. The spawning tool is named **`Agent`**.
 
 Subagents are written to **separate files**:
@@ -52,8 +52,8 @@ RESOLVED / AMBIGUOUS / UNRESOLVED. It also recomputes depth from the graft chain
 
 | Session | CC ver | Agent transcripts | RESOLVED | AMBIGUOUS | UNRESOLVED | Depth mismatch |
 |---|---|---|---|---|---|---|
-| PROJ-REDACTED `REDACTED-UUID` | 2.1.231/232 | 12 | 12 | 0 | 0 | 0 |
-| PROJ-REDACTED `REDACTED-UUID` | 2.1.231/232 | 9 | 9 | 0 | 0 | 0 |
+| foreign session F1 | 2.1.231/232 | 12 | 12 | 0 | 0 | 0 |
+| foreign session F2 | 2.1.231/232 | 9 | 9 | 0 | 0 | 0 |
 | agent-deck `7dc3481d` (live) | 2.1.234 | 5 | 5 | 0 | 0 | 0 |
 | agent-deck `4299490e` (live, 2nd window) | 2.1.234 | 1 | 1 | 0 | 0 | 0 |
 | **total** | | **27** | **27** | **0** | **0** | **0** |
@@ -105,7 +105,7 @@ LATENCY SUMMARY (renders=18, live entries=35, initial entries=781)
   cross-contamination; each session's agents grafted only under their own tool nodes.
 - **Mid-session file discovery works.** Subagent transcripts created *while* the tailer ran were
   picked up and grafted (6/6 grafted).
-- **0 malformed lines** over 816 lines live, and 3,628 lines across the PROJ-REDACTED and PROJ-REDACTED scans
+- **0 malformed lines** over 816 lines live, and 3,628 lines across the two foreign-session scans
   (1,708 + 1,920 as re-measured at close; those two sessions are live user projects that keep
   growing, so the line count drifts while the 0-malformed result reproduces).
 
@@ -199,10 +199,10 @@ re-establish them as real tests once a harness exists.
    will silently miss content. **Unfixtured at HEAD:** no committed fixture contains a
    `tool-results/` directory, so this cannot be pinned under G6 until one is captured. agent-deck's
    own session grew one during the Phase 0 audit, so that capture costs nothing in privacy surface.
-6. **Session files can span CC versions.** PROJ-REDACTED `REDACTED-UUID` contains both 2.1.231 (466 lines) and
+6. **Session files can span CC versions.** Foreign session F1 contains both 2.1.231 (466 lines) and
    2.1.232 (2 lines), so the fingerprint should tolerate the value changing mid-file rather than
    treating it as a mismatch. **Unfixtured at HEAD:** the committed fixtures are 740/740 `2.1.234`,
-   and PROJ-REDACTED is a live user session that is not committed. Capture a drift fixture before pinning
+   and F1 is a live foreign session that is not committed. Capture a drift fixture before pinning
    behavior to this rule, or record it explicitly as shipping unpinned.
 
 ## 6. Reproducing this verdict

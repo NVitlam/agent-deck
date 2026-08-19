@@ -234,3 +234,17 @@ Expected at the time of the gate: `agent transcripts: 6, RESOLVED 6, AMBIGUOUS 0
 VERDICT: DETERMINISTIC`. The scrub then removed the contaminated session and the Phase 1 harvest
 added a new one, so the current set gives `5, RESOLVED 5, 0, 0`,
 exit 0.
+
+---
+
+## Forward pointer added 2026-08-19 (Phase 2) — do not edit the frozen text above
+
+The two struck-through `SubagentStart` items above (§ "2.1.234 also emits SubagentStart", and item 4
+of §5) were downgraded in Phase 1 to "binary string only, never observed". **Phase 2 measured it and
+it is confirmed** — 3/3 well-formed events on this same pinned 2.1.234, pinned redacted in
+`fixtures/hook-events/`. Both the original claim and its Phase 1 downgrade were reasoning from
+absence: the event had never been *registered* in the hook block, so no capture could have contained
+it. Registering it produced it immediately.
+
+The frozen text is left exactly as written, because it is the Phase 0 evidence record. This note is
+the correction; `fixtures/hook-events/README.md` carries the measurement.

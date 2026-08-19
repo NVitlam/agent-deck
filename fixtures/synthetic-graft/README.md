@@ -23,9 +23,12 @@ Markers that keep the two apart, matching `fixtures/synthetic-layout/`:
   are `toolu_GRAFT…`.
 
 Each case is a complete miniature projects tree — `<case>/<slug>/…` — of two or three lines per
-file, so the mutation is readable at a glance. Every case is a *layout-valid* session:
-`fingerprintSession` accepts all seven, because the point is what happens **after** the schema
-fingerprint passes. Layout refusals are `fixtures/synthetic-layout/`'s job, not this directory's.
+file, so the mutation is readable at a glance. Six of the seven are *layout-valid* sessions:
+`fingerprintSession` accepts them, because the point is what happens **after** the schema
+fingerprint passes. Layout refusals are `fixtures/synthetic-layout/`'s job, not this directory's —
+with one deliberate overlap, `02-tool-use-id-whitespace`, noted below. Since Phase 2 the layout
+fingerprint refuses a blank `toolUseId`, so that case is now refused twice: once at the layout
+boundary and once at the join.
 All files use LF endings (`.gitattributes` marks `fixtures/** -text`).
 
 ## Cases
@@ -52,8 +55,14 @@ every case failed for the wrong reason.
 - **`02-tool-use-id-whitespace`** is the "only one candidate left" trap. The session contains
   exactly one `Agent` `tool_use` block and exactly one subagent, so a resolver that falls back to
   the sole remaining candidate produces a confident, plausible, wrong answer. The key is a
-  whitespace-only string, which `fingerprint.ts` accepts (it type-checks the field, and `"   "` is
-  a string), so this case is caught by the resolver or not at all.
+  whitespace-only string. `fingerprint.ts` used to accept it — it type-checked the field, and
+  `"   "` is a string — which made the resolver the only thing standing between this sidecar and a
+  wrong parent. Phase 2 moved that refusal to the layout boundary as well
+  (`metaFieldMissing` / `actual: 'blank'`, pinned by
+  `fixtures/synthetic-layout/21-meta-tooluseid-whitespace`), so `attribution.test.ts` now feeds
+  this case to `attributeSubagents` **directly**, without the fingerprint in front. That is defence
+  in depth, not redundancy: `attributeSubagents` is a pure function other callers can reach, and a
+  key can be well-formed at the layout boundary and still unjoinable at the join.
 - **`04-parent-agent-missing`** is the "reattach to main" trap. The orphan's `toolUseId` really
   does match a `tool_use` block in the main transcript, so the tempting wrong answer is available
   and looks correct. `parentAgentId` names an agent that has no transcript and no sidecar, so the

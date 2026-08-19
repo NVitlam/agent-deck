@@ -57,6 +57,7 @@ Refused, each for its own distinct reason code:
 | `17-meta-spawndepth-wrong-type` | `metaFieldType` (`spawnDepth` as a string) |
 | `18-session-id-mismatch` | `sessionIdMismatch` |
 | `20-subagents-is-a-file` | `subagentsPathNotDirectory` |
+| `21-meta-tooluseid-whitespace` | `metaFieldMissing` (`toolUseId` is `"   "`; `actual: 'blank'`, where 03 is `actual: 'absent'`) |
 
 Cases 05 and 08 are the ones worth re-reading before changing anything. 05 is the directory
 convention tripwire: subagent attribution rests on an undocumented convention, so a rename must be

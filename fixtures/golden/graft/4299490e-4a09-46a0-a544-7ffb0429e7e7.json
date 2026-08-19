@@ -1,0 +1,166 @@
+{
+  "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "epochAnchor": "2026-08-18T21:56:22.855Z",
+  "root": {
+    "node": "agent",
+    "id": "root",
+    "kind": "main",
+    "label": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+    "status": "running",
+    "spawnDepth": 0,
+    "tokens": {
+      "in": 4,
+      "out": 1998
+    },
+    "startedAtOffsetMs": 0,
+    "endedAtOffsetMs": null,
+    "children": [
+      {
+        "node": "tool",
+        "id": "toolu_018fbDjBX1ah7FTXs727doeC",
+        "toolName": "Agent",
+        "status": "done",
+        "inputPreview": "sha256:1959cd632d131a23:565",
+        "resultPreview": "sha256:9f0e01fa63461b84:566",
+        "durationMs": 69943
+      },
+      {
+        "node": "agent",
+        "id": "a5e718f3cb731b607",
+        "kind": "subagent",
+        "label": "Explore: List contents of spike/",
+        "status": "done",
+        "spawnDepth": 1,
+        "tokens": {
+          "in": 14,
+          "out": 4863
+        },
+        "startedAtOffsetMs": 8244,
+        "endedAtOffsetMs": 75962,
+        "children": [
+          {
+            "node": "tool",
+            "id": "toolu_011nTykNQkdSbgEZRZy3oNLA",
+            "toolName": "Bash",
+            "status": "done",
+            "inputPreview": "sha256:f8b937e60703bbe2:267",
+            "resultPreview": "sha256:424d95fa8e7f45ba:387",
+            "durationMs": 3931
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01FHSx2pnp4BRAi7vx14Rvjn",
+            "toolName": "Bash",
+            "status": "done",
+            "inputPreview": "sha256:47147faba15d6781:301",
+            "resultPreview": "sha256:16908e0d9c6700f2:109",
+            "durationMs": 3663
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01N7By6ZusBvjfxi53mooTa2",
+            "toolName": "Read",
+            "status": "done",
+            "inputPreview": "sha256:c08b2d3cc379f493:85",
+            "resultPreview": "sha256:1b5d69012bc6937b:566",
+            "durationMs": 384
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01YSoSzgLbvgcyCqGbsubsC3",
+            "toolName": "Read",
+            "status": "done",
+            "inputPreview": "sha256:4b39b0334c4bbedd:88",
+            "resultPreview": "sha256:c8d6d00d971d07c0:566",
+            "durationMs": 338
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01UEhyCRWLpoqVNe1h5W3sJm",
+            "toolName": "Read",
+            "status": "done",
+            "inputPreview": "sha256:34f75d4b301b4d06:97",
+            "resultPreview": "sha256:f01a2151aeb92dcf:566",
+            "durationMs": 348
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01UuJXnFE8fFhwaMxZaJyaY1",
+            "toolName": "Read",
+            "status": "done",
+            "inputPreview": "sha256:9d9e855c6c674089:99",
+            "resultPreview": "sha256:e625b791991d45dd:566",
+            "durationMs": 316
+          },
+          {
+            "node": "tool",
+            "id": "toolu_017NKCMxJb5XpZUf2U1jQTdC",
+            "toolName": "Read",
+            "status": "done",
+            "inputPreview": "sha256:3e7a9cf408ae1c23:86",
+            "resultPreview": "sha256:d75308657382d3fb:566",
+            "durationMs": 305
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01AVV2rC7MzgrLELpdhdQ7rN",
+            "toolName": "Bash",
+            "status": "done",
+            "inputPreview": "sha256:b19c2f571152cac9:340",
+            "resultPreview": "sha256:f7d3bdc57cc1bd16:241",
+            "durationMs": 838
+          },
+          {
+            "node": "tool",
+            "id": "toolu_017RzoiVeMaTR129YtyEkpvS",
+            "toolName": "Grep",
+            "status": "done",
+            "inputPreview": "sha256:051f0118cf87e1a8:185",
+            "resultPreview": "sha256:74198b9c2dd9ea18:111",
+            "durationMs": 414
+          },
+          {
+            "node": "tool",
+            "id": "toolu_019WMq2qnQ3wR6MxHTNgyKHu",
+            "toolName": "Bash",
+            "status": "done",
+            "inputPreview": "sha256:210ba3beb3bfe2de:181",
+            "resultPreview": "sha256:47ccefc99d9ea6d4:276",
+            "durationMs": 519
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01U6zdM6JSvkptyWkiddCj4V",
+            "toolName": "Bash",
+            "status": "done",
+            "inputPreview": "sha256:4ff325969151fede:565",
+            "resultPreview": "sha256:e66b2f50c94e3782:565",
+            "durationMs": 2579
+          }
+        ]
+      }
+    ]
+  },
+  "parked": [],
+  "edges": [
+    {
+      "toolUseId": "toolu_018fbDjBX1ah7FTXs727doeC",
+      "agentId": "a5e718f3cb731b607",
+      "parentNodeId": "root",
+      "depth": 1,
+      "recordedDepth": 1
+    }
+  ],
+  "totals": {
+    "inputTokens": 18,
+    "outputTokens": 6861,
+    "costUsd": 0
+  },
+  "counts": {
+    "grafted": 1,
+    "parked": 0,
+    "toolNodes": 12
+  },
+  "depthMismatches": []
+}

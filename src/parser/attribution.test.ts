@@ -29,8 +29,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type {
   AmbiguousAttribution,
   Attribution,
+  AttributionInput,
   AttributionReport,
   ResolvedAttribution,
+  SubagentSource,
+  TranscriptSource,
   UnresolvedAttribution,
   UnresolvedCode,
 } from './attribution.js';
@@ -41,6 +44,7 @@ import {
   splitTranscript,
 } from './attribution.js';
 import { fingerprintSession, fingerprintSlugDirectory } from './fingerprint.js';
+import { parseLines, parseSubagentMeta } from './parse.js';
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -77,6 +81,57 @@ async function attributeCase(mainTranscript: string): Promise<AttributionReport>
   expect(loaded.unreadable).toEqual([]);
   expect(loaded.malformedLines).toBe(0);
   return attributeSubagents(loaded.input);
+}
+
+/**
+ * Load + join, WITHOUT the layout fingerprint in front.
+ *
+ * Used for the one case whose sidecar the layout boundary now refuses outright
+ * (a blank `toolUseId`; see `fingerprint.ts` -> `metaFieldMissing` /
+ * `actual: 'blank'`, pinned by
+ * `fixtures/synthetic-layout/21-meta-tooluseid-whitespace`). Going straight to
+ * `attributeSubagents` is not a workaround for a broken fixture: this module's
+ * refusal to guess must hold on its own, for callers that never ran the
+ * fingerprint and for keys that only turn out to be unjoinable at join time.
+ * Two layers refusing the same input is defence in depth, so the assertion
+ * below is unchanged in substance — only the path that reaches it moved.
+ */
+async function attributeCaseUnfingerprinted(
+  mainTranscript: string,
+): Promise<{ input: AttributionInput; report: AttributionReport }> {
+  const slugDir = join(mainTranscript, '..');
+  const sessionId = mainTranscript.split(sep).slice(-1)[0]?.replace(/\.jsonl$/, '') ?? '';
+  const subagentsDir = join(slugDir, sessionId, 'subagents');
+
+  const entriesOf = async (path: string) => {
+    const batch = parseLines(splitTranscript(await readFile(path, 'utf8')));
+    expect(batch.diagnostics.malformedLines).toBe(0);
+    return batch.ok ? batch.value.entries : [];
+  };
+
+  const transcripts: TranscriptSource[] = [
+    { kind: 'main', path: mainTranscript, entries: await entriesOf(mainTranscript) },
+  ];
+  const subagents: SubagentSource[] = [];
+  for (const name of (await readdir(subagentsDir)).sort()) {
+    const match = /^agent-(.+)\.jsonl$/.exec(name);
+    if (match === null) continue;
+    const agentId = match[1] as string;
+    transcripts.push({
+      kind: 'subagent',
+      path: join(subagentsDir, name),
+      agentId,
+      entries: await entriesOf(join(subagentsDir, name)),
+    });
+    const metaPath = join(subagentsDir, `agent-${agentId}.meta.json`);
+    const parsed = parseSubagentMeta(await readFile(metaPath, 'utf8'), metaPath);
+    const source: SubagentSource = { agentId, metaPath };
+    if (parsed.ok) source.meta = parsed.value;
+    else source.metaFailure = parsed.mismatch.reason;
+    subagents.push(source);
+  }
+  const input: AttributionInput = { transcripts, subagents };
+  return { input, report: attributeSubagents(input) };
 }
 
 function attributionOf(report: AttributionReport, agentId: string): Attribution {
@@ -379,18 +434,40 @@ describe('synthetic-graft: absence produces UNRESOLVED, never a guess', () => {
   });
 
   it('02 a whitespace-only key is unresolved even when it is the only candidate', async () => {
+    // NOT a weakening of this case. The layout fingerprint now refuses a blank
+    // `toolUseId` outright (`metaFieldMissing` / `actual: 'blank'`, pinned by
+    // `fixtures/synthetic-layout/21-meta-tooluseid-whitespace`), so the
+    // production pipeline never reaches the join with this sidecar. This test
+    // therefore feeds the join DIRECTLY, because the join's own refusal has to
+    // hold without the fingerprint standing in front of it: `attributeSubagents`
+    // is a pure function other callers can reach, and a key can be
+    // well-formed at the layout boundary and still unjoinable here. Two layers
+    // refusing the same input is defence in depth; the assertion below is the
+    // original one, unchanged.
     const main = graftMain('02-tool-use-id-whitespace');
-    const report = await attributeCase(main);
+    const { input, report } = await attributeCaseUnfingerprinted(main);
     expectUnresolved(report, GRAFT_A1, 'missingJoinKey');
     expect(report.counts.resolved).toBe(0);
 
     // Load-bearing detail: exactly one Agent tool_use and exactly one subagent.
     // A resolver that took "the only candidate left" would be confidently wrong.
-    const fp = await fingerprintSession(main);
-    if (!fp.ok) throw new Error('case 02 must fingerprint (the key type-checks)');
-    expect(fp.value.subagents).toHaveLength(1);
-    const index = indexToolUses((await loadSessionForAttribution(fp.value)).input.transcripts);
-    expect(index.size).toBe(1);
+    expect(input.subagents).toHaveLength(1);
+    // The sidecar really does carry a whitespace-only key — `parse.ts` accepts
+    // it (it rejects only `''`), so the key reaches the join intact and the
+    // refusal below is the join's, not a parse failure upstream of it.
+    expect(input.subagents[0]?.meta?.toolUseId).toBe('   ');
+    expect(indexToolUses(input.transcripts).size).toBe(1);
+  });
+
+  it('02 the layout fingerprint refuses the same sidecar before the join sees it', async () => {
+    // The other half of the defence in depth, asserted here so this file states
+    // which layer refuses first rather than leaving it implied.
+    const fp = await fingerprintSession(graftMain('02-tool-use-id-whitespace'));
+    expect(fp.ok).toBe(false);
+    if (fp.ok) return;
+    expect(fp.mismatch.code).toBe('metaFieldMissing');
+    expect(fp.mismatch.field).toBe('toolUseId');
+    expect(fp.mismatch.actual).toBe('blank');
   });
 
   it('03 a key present in two transcripts is ambiguous, not the first match', async () => {

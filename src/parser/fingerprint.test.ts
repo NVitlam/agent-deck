@@ -129,6 +129,72 @@ afterEach(async () => {
   await rm(temp, { recursive: true, force: true });
 });
 
+const BLANK_KEY_AGENT = 'asynthetic0000001';
+const BLANK_KEY_TOOL_USE = 'toolu_SYNTHETIC00000000000001';
+
+/**
+ * A minimal valid session under `dir`, with the sidecar's `toolUseId` set to
+ * `toolUseId` and any extra sidecar fields overridden.
+ *
+ * Built under the OS temp directory so the whitespace matrix does not need a
+ * committed fixture per variant; the one variant worth committing is
+ * `synthetic-layout/21-meta-tooluseid-whitespace`, which pins the rule.
+ */
+async function buildBlankKeyCase(
+  dir: string,
+  toolUseId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<void> {
+  const subagents = join(dir, SYNTHETIC_SESSION, 'subagents');
+  await mkdir(subagents, { recursive: true });
+  const common = {
+    isSidechain: false,
+    sessionId: SYNTHETIC_SESSION,
+    version: PINNED_CC_VERSION,
+    timestamp: '2026-08-19T00:00:00.000Z',
+  };
+  await writeFile(
+    join(dir, `${SYNTHETIC_SESSION}.jsonl`),
+    `${JSON.stringify({
+      ...common,
+      parentUuid: null,
+      type: 'assistant',
+      uuid: '00000001-0000-4000-8000-000000000001',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: BLANK_KEY_TOOL_USE, name: 'Agent', input: {} }],
+      },
+    })}
+`,
+    'utf8',
+  );
+  await writeFile(
+    join(subagents, `agent-${BLANK_KEY_AGENT}.jsonl`),
+    `${JSON.stringify({
+      ...common,
+      parentUuid: null,
+      isSidechain: true,
+      type: 'user',
+      uuid: '00000002-0000-4000-8000-000000000002',
+      agentId: BLANK_KEY_AGENT,
+      message: { role: 'user', content: [{ type: 'text', text: 'SYNTHETIC SUBAGENT PROMPT' }] },
+    })}
+`,
+    'utf8',
+  );
+  await writeFile(
+    join(subagents, `agent-${BLANK_KEY_AGENT}.meta.json`),
+    JSON.stringify({
+      agentType: 'general-purpose',
+      description: 'synthetic',
+      toolUseId,
+      spawnDepth: 1,
+      ...overrides,
+    }),
+    'utf8',
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Positive case — the captured tree is ground truth
 // ---------------------------------------------------------------------------
@@ -274,6 +340,72 @@ describe('mutated-layout fixtures are refused, each for its own reason', () => {
     expect(mismatch.actual).toBe('absent');
   });
 
+  it('21 sidecar whose join key is whitespace-only -> metaFieldMissing(toolUseId)', async () => {
+    // `"   "` type-checks as a string, so before this rule the layout
+    // fingerprint handed the grafter a key that can never join and the refusal
+    // happened downstream or nowhere. A blank join key IS a missing join key,
+    // so it shares case 03's code and is told apart by `actual`.
+    const mismatch = expectRefusal(
+      await fingerprintCase('21-meta-tooluseid-whitespace'),
+      'metaFieldMissing',
+    );
+    expect(mismatch.field).toBe('toolUseId');
+    expect(mismatch.actual).toBe('blank');
+    expect(mismatch.expected).toBe('non-blank string');
+    expect(mismatch.reason).toContain('blank');
+  });
+
+  it('21 is one edit away from 03: same code, different `actual`', async () => {
+    const blank = expectRefusal(
+      await fingerprintCase('21-meta-tooluseid-whitespace'),
+      'metaFieldMissing',
+    );
+    const absent = expectRefusal(
+      await fingerprintCase('03-meta-missing-tooluseid'),
+      'metaFieldMissing',
+    );
+    expect(blank.actual).not.toBe(absent.actual);
+  });
+
+  it('every flavour of blank toolUseId is refused, and a padded real key is not', async () => {
+    // Built in the OS temp directory, never inside the repo.
+    const cases: [string, boolean][] = [
+      ['', false],
+      [' ', false],
+      ['   ', false],
+      ['\t', false],
+      ['\n', false],
+      ['\r', false],
+      [' \t\r\n ', false],
+      ['\u00a0', false],
+      ['toolu_SYNTHETIC00000000000001', true],
+      [' toolu_SYNTHETIC00000000000001 ', true],
+    ];
+    for (const [key, shouldAccept] of cases) {
+      const dir = join(temp, `blank-${Buffer.from(key).toString('hex')}`);
+      await buildBlankKeyCase(dir, key);
+      const result = await fingerprintSession(join(dir, `${SYNTHETIC_SESSION}.jsonl`));
+      if (shouldAccept) {
+        // A key with surrounding whitespace is NOT blank; it is a key we have
+        // no business trimming. It is accepted here and fails to join
+        // downstream, which is the honest outcome.
+        expect(result.ok, JSON.stringify(key)).toBe(true);
+        continue;
+      }
+      const mismatch = expectRefusal(result, 'metaFieldMissing');
+      expect(mismatch.actual, JSON.stringify(key)).toBe('blank');
+    }
+  });
+
+  it('a blank agentType or description is NOT a refusal (the join does not read them)', async () => {
+    const dir = join(temp, 'blank-label-fields');
+    await buildBlankKeyCase(dir, 'toolu_SYNTHETIC00000000000001', {
+      agentType: '   ',
+      description: '',
+    });
+    expectAccepted(await fingerprintSession(join(dir, `${SYNTHETIC_SESSION}.jsonl`)));
+  });
+
   it('04 unparseable sidecar -> metaInvalidJson', async () => {
     const mismatch = expectRefusal(await fingerprintCase('04-meta-invalid-json'), 'metaInvalidJson');
     expect(mismatch.path).toContain('.meta.json');
@@ -393,6 +525,9 @@ describe('mutated-layout fixtures are refused, each for its own reason', () => {
       ['17-meta-spawndepth-wrong-type', 'metaFieldType'],
       ['18-session-id-mismatch', 'sessionIdMismatch'],
       ['20-subagents-is-a-file', 'subagentsPathNotDirectory'],
+      // 21 is deliberately absent: it shares 03's `metaFieldMissing` code
+      // because a blank join key IS a missing one. The two are told apart by
+      // `actual` ('blank' vs 'absent'), asserted above.
     ];
     const observed: string[] = [];
     for (const [name, code] of cases) {
@@ -432,6 +567,7 @@ describe('mutated-layout fixtures are refused, each for its own reason', () => {
       '18-session-id-mismatch',
       '19-tool-results-present',
       '20-subagents-is-a-file',
+      '21-meta-tooluseid-whitespace',
     ]);
   });
 });

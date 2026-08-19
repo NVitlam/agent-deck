@@ -9,7 +9,16 @@
  * No test sleeps. The debounce tests drive an injected clock/scheduler.
  */
 
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,6 +77,82 @@ async function makeSlugDir(root: string, slug = SLUG): Promise<string> {
 
 function jsonl(...objects: Record<string, unknown>[]): string {
   return objects.map((o) => `${JSON.stringify(o)}\n`).join('');
+}
+
+/**
+ * Independent re-implementation of "what the fixture tree contains", built
+ * from plain readdir rather than the module under test, so fixture assertions
+ * are a cross-check and not a tautology.
+ *
+ * Everything about the committed capture is DERIVED here. The capture is
+ * re-harvested between phases — it grew from one session to two while this
+ * package was being written — so no test may hard-code its counts.
+ */
+interface FixtureSession {
+  sessionId: string;
+  mainTranscript: string;
+  subagentTranscripts: string[];
+  subagentMetaFiles: string[];
+  /** Entry names directly inside <sessionId>/, e.g. subagents, tool-results. */
+  sessionDirEntries: string[];
+}
+
+async function readFixtureLayout(): Promise<{ slugDir: string; sessions: FixtureSession[] }> {
+  const rootEntries = await readdir(FIXTURE_ROOT, { withFileTypes: true });
+  const slugEntry = rootEntries.find((e) => e.isDirectory());
+  if (slugEntry === undefined) throw new Error(`no slug directory under ${FIXTURE_ROOT}`);
+  const slugDir = join(FIXTURE_ROOT, slugEntry.name);
+
+  const sessions: FixtureSession[] = [];
+  for (const entry of await readdir(slugDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+    const sessionId = entry.name.slice(0, -'.jsonl'.length);
+    const sessionDir = join(slugDir, sessionId);
+
+    let sessionDirEntries: string[] = [];
+    try {
+      sessionDirEntries = (await readdir(sessionDir)).sort();
+    } catch {
+      sessionDirEntries = []; // no session directory for this transcript
+    }
+
+    const subagentTranscripts: string[] = [];
+    const subagentMetaFiles: string[] = [];
+    const subagentsDir = join(sessionDir, 'subagents');
+    try {
+      for (const sub of await readdir(subagentsDir, { withFileTypes: true })) {
+        if (!sub.isFile()) continue;
+        if (sub.name.endsWith('.meta.json')) subagentMetaFiles.push(join(subagentsDir, sub.name));
+        else if (sub.name.endsWith('.jsonl')) subagentTranscripts.push(join(subagentsDir, sub.name));
+      }
+    } catch {
+      // no subagents/ directory: this session spawned none
+    }
+
+    sessions.push({
+      sessionId,
+      mainTranscript: join(slugDir, entry.name),
+      subagentTranscripts: subagentTranscripts.sort(),
+      subagentMetaFiles: subagentMetaFiles.sort(),
+      sessionDirEntries,
+    });
+  }
+  sessions.sort((a, b) => a.sessionId.localeCompare(b.sessionId));
+  return { slugDir, sessions };
+}
+
+/** Every transcript in the capture: main transcripts plus subagent transcripts. */
+function allTranscriptsOf(sessions: FixtureSession[]): string[] {
+  return sessions.flatMap((s) => [s.mainTranscript, ...s.subagentTranscripts]).sort();
+}
+
+/** Complete (newline-terminated, non-blank) lines of a file, read independently. */
+async function completeLinesOf(file: string): Promise<string[]> {
+  const parts = (await readFile(file, 'utf8')).split('\n');
+  parts.pop(); // text after the final newline is not yet a complete line
+  return parts
+    .filter((l) => l.trim() !== '')
+    .map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
 }
 
 // ---------------------------------------------------------------------------
@@ -315,8 +400,69 @@ describe('discoverSessions — CLAUDE_PROJECTS_ROOT override', () => {
   });
 });
 
+describe('discoverSessions — a session directory holds more than subagents/', () => {
+  it('ignores tool-results/ and stray files sitting beside subagents/', async () => {
+    const root = await makeProjectsRoot();
+    const slugDir = await makeSlugDir(root);
+    const main = join(slugDir, `${SESSION_A}.jsonl`);
+    await writeFile(main, jsonl({ n: 1 }));
+
+    const sessionDir = join(slugDir, SESSION_A);
+    const subDir = join(sessionDir, 'subagents');
+    await mkdir(subDir, { recursive: true });
+    const agent = join(subDir, 'agent-aaa111.jsonl');
+    await writeFile(agent, jsonl({ src: 'agent' }));
+    await writeFile(join(subDir, 'agent-aaa111.meta.json'), '{"agentType":"x"}');
+
+    // Both of these occur in real session directories beside subagents/.
+    await mkdir(join(sessionDir, 'tool-results'), { recursive: true });
+    await writeFile(join(sessionDir, 'tool-results', 'b6uvpgxa4.txt'), 'offloaded payload');
+    await writeFile(join(sessionDir, 'auto-mode-classifier-error.txt'), 'boom');
+
+    const result = await discoverSessions(WORKSPACE, { projectsRoot: root, env: {} });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]?.subagents.map((s) => s.transcriptPath)).toEqual([agent]);
+    expect(result.sessions[0]?.toolResultsDir).toBe(join(sessionDir, 'tool-results'));
+
+    // tool-results/*.txt is not JSONL and must never be tailed as a transcript.
+    const tailer = new SessionTailer({ workspacePath: WORKSPACE, projectsRoot: root, env: {} });
+    const batch = await tailer.poll();
+    expect(tailer.trackedFiles().sort()).toEqual([main, agent].sort());
+    expect(batch.lines.map((l) => l.text)).toEqual(['{"n":1}', '{"src":"agent"}']);
+  });
+
+  it('treats a subagents path that is a FILE as zero subagents, not a crash', async () => {
+    const root = await makeProjectsRoot();
+    const slugDir = await makeSlugDir(root);
+    await writeFile(join(slugDir, `${SESSION_A}.jsonl`), jsonl({ n: 1 }));
+    await mkdir(join(slugDir, SESSION_A), { recursive: true });
+    await writeFile(join(slugDir, SESSION_A, 'subagents'), 'not a directory');
+
+    const result = await discoverSessions(WORKSPACE, { projectsRoot: root, env: {} });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sessions[0]?.subagents).toEqual([]);
+  });
+
+  it('ignores a directory inside subagents/ that is named like a transcript', async () => {
+    const root = await makeProjectsRoot();
+    const slugDir = await makeSlugDir(root);
+    await writeFile(join(slugDir, `${SESSION_A}.jsonl`), jsonl({ n: 1 }));
+    const subDir = join(slugDir, SESSION_A, 'subagents');
+    await mkdir(join(subDir, 'agent-bogus.jsonl'), { recursive: true });
+
+    const result = await discoverSessions(WORKSPACE, { projectsRoot: root, env: {} });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sessions[0]?.subagents).toEqual([]);
+  });
+});
+
 describe('discoverSessions — committed fixture', () => {
-  it('finds the fixture session and its one subagent without CLAUDE_PROJECTS_ROOT in the ambient env', async () => {
+  it('discovers exactly the sessions the fixture slug directory actually contains', async () => {
+    const layout = await readFixtureLayout();
     const result = await discoverSessions(FIXTURE_WORKSPACE, {
       projectsRoot: FIXTURE_ROOT,
       env: {},
@@ -324,9 +470,69 @@ describe('discoverSessions — committed fixture', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.sessions).toHaveLength(1);
-    expect(result.sessions[0]?.sessionId).toBe(FIXTURE_SESSION);
-    expect(result.sessions[0]?.subagents).toHaveLength(1);
+    expect(layout.sessions.length).toBeGreaterThan(0);
+    // Derived from the directory, never a literal: the capture is re-harvested
+    // between phases and grew from one session to two mid-package.
+    expect(result.sessions.map((s) => s.sessionId).sort()).toEqual(
+      layout.sessions.map((s) => s.sessionId),
+    );
+    // The session this package was originally written against is still present.
+    expect(result.sessions.map((s) => s.sessionId)).toContain(FIXTURE_SESSION);
+  });
+
+  it("matches each session's subagents to the files its subagents/ directory holds", async () => {
+    const layout = await readFixtureLayout();
+    const result = await discoverSessions(FIXTURE_WORKSPACE, {
+      projectsRoot: FIXTURE_ROOT,
+      env: {},
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    for (const expected of layout.sessions) {
+      const found = result.sessions.find((s) => s.sessionId === expected.sessionId);
+      expect(found, `session ${expected.sessionId} was not discovered`).toBeDefined();
+      if (found === undefined) continue;
+
+      expect(found.subagents.map((s) => s.transcriptPath).sort()).toEqual(
+        expected.subagentTranscripts,
+      );
+      for (const subagent of found.subagents) {
+        // A sidecar is never mistaken for a transcript...
+        expect(subagent.transcriptPath.endsWith('.meta.json')).toBe(false);
+        // ...and every transcript names its own sidecar.
+        expect(subagent.metaPath).toBe(subagent.transcriptPath.replace(/\.jsonl$/, '.meta.json'));
+        // Subagent transcripts live under subagents/, never loose in <sessionId>/.
+        expect(subagent.transcriptPath.startsWith(join(found.sessionDir, 'subagents'))).toBe(true);
+      }
+      // Every sidecar on disk is reachable from a discovered subagent.
+      const metaPaths = found.subagents.map((s) => s.metaPath);
+      for (const meta of expected.subagentMetaFiles) expect(metaPaths).toContain(meta);
+    }
+  });
+
+  it('reports tool-results/ as a path and never mistakes a session-directory entry for a session', async () => {
+    const layout = await readFixtureLayout();
+    const result = await discoverSessions(FIXTURE_WORKSPACE, {
+      projectsRoot: FIXTURE_ROOT,
+      env: {},
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const discoveredIds = result.sessions.map((s) => s.sessionId);
+    for (const expected of layout.sessions) {
+      const found = result.sessions.find((s) => s.sessionId === expected.sessionId);
+      if (found === undefined) continue;
+      expect(found.toolResultsDir).toBe(join(found.sessionDir, 'tool-results'));
+      // Whatever else the session directory holds — tool-results/ in the
+      // re-harvested capture, stray .txt files in live trees — is not a session.
+      for (const name of expected.sessionDirEntries) {
+        expect(discoveredIds).not.toContain(name);
+      }
+    }
   });
 });
 
@@ -715,7 +921,11 @@ describe('SessionTailer — multi-file tailing', () => {
     expect(batch.lines.map((l) => l.text)).toEqual(['{"n":9}']);
   });
 
-  it('reads the committed fixture session end to end', async () => {
+  it('tails exactly the transcripts the committed fixture contains, and reads each to EOF', async () => {
+    const layout = await readFixtureLayout();
+    const expectedFiles = allTranscriptsOf(layout.sessions);
+    expect(expectedFiles.length).toBeGreaterThan(0);
+
     const tailer = new SessionTailer({
       workspacePath: FIXTURE_WORKSPACE,
       projectsRoot: FIXTURE_ROOT,
@@ -724,12 +934,35 @@ describe('SessionTailer — multi-file tailing', () => {
 
     const batch = await tailer.poll();
 
-    expect(batch.newFiles).toHaveLength(2); // main + one subagent
-    expect(batch.lines.length).toBeGreaterThan(0);
+    // Derived from the directory: every transcript on disk and nothing else.
+    // This is what proves tool-results/*.txt and the .meta.json sidecars are
+    // not tailed, whatever the next re-harvest adds.
+    expect([...batch.newFiles].sort()).toEqual(expectedFiles);
+    expect(tailer.trackedFiles().sort()).toEqual(expectedFiles);
+
+    // "End to end", per file: the emitted lines are exactly the complete lines
+    // on disk, in order, and the offset landed on EOF.
+    for (const file of expectedFiles) {
+      const onDisk = await completeLinesOf(file);
+      const emitted = batch.lines.filter((l) => l.path === file);
+      expect(emitted.map((l) => l.text), file).toEqual(onDisk);
+      expect(emitted.map((l) => l.lineNo)).toEqual(onDisk.map((_line, i) => i + 1));
+      expect(tailer.offsetOf(file), file).toBe((await stat(file)).size);
+    }
+
+    // Nothing was invented or dropped between files.
+    const totalOnDisk = (
+      await Promise.all(expectedFiles.map(async (f) => (await completeLinesOf(f)).length))
+    ).reduce((a, b) => a + b, 0);
+    expect(batch.lines).toHaveLength(totalOnDisk);
+    expect(batch.diagnostics.emittedLines).toBe(totalOnDisk);
+    expect(batch.diagnostics.skippedFiles).toEqual([]);
+
     // Every emitted line is a complete JSON record.
     for (const line of batch.lines) {
       expect(() => JSON.parse(line.text)).not.toThrow();
     }
+
     // A second poll on an unchanged tree yields nothing new.
     const second = await tailer.poll();
     expect(second.lines).toEqual([]);

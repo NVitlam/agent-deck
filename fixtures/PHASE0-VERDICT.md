@@ -214,5 +214,6 @@ CLAUDE_PROJECTS_ROOT=fixtures/cc-2.1.234/projects \
   node spike/run.mjs --audit --project "<this repo's absolute path>" --all
 ```
 
-Expected: `agent transcripts: 6, RESOLVED 6, AMBIGUOUS 0, UNRESOLVED 0, VERDICT: DETERMINISTIC`,
+Expected at the time of the gate: `agent transcripts: 6, RESOLVED 6, AMBIGUOUS 0, UNRESOLVED 0,
+VERDICT: DETERMINISTIC`. After the Phase 1 scrub the surviving set gives `1, RESOLVED 1, 0, 0`,
 exit 0.

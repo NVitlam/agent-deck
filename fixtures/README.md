@@ -8,18 +8,22 @@ changing code.
 
 ```
 cc-2.1.234/projects/c--Users-dev-projects-agent-deck/
-  7dc3481d-….jsonl                     main transcript (Phase 0 orchestrator session)
-  7dc3481d-…/subagents/agent-*.jsonl   5 subagent transcripts, incl. one spawnDepth:2
-  7dc3481d-…/subagents/agent-*.meta.json
-  4299490e-….jsonl                     main transcript (second concurrent session)
+  4299490e-….jsonl                     main transcript
   4299490e-…/subagents/agent-*.jsonl   1 subagent transcript
+  4299490e-…/subagents/agent-*.meta.json
 phase0-evidence/
   latency-*.log                        measured append→render latency samples
   synthetic-hook-events.jsonl          7 synthetic hook payloads (P0-2 evidence)
-  real-hook-events.jsonl               181 real CC hook payloads, verbatim — see privacy note
   hook-mechanism-timing.txt            node -e vs curl.exe cost with the listener down
 PHASE0-VERDICT.md                      the Phase 0 gate decision, with evidence
+SCRUB-EVIDENCE.md                      the Phase 1 history scrub, with verification output
 ```
+
+**This set is deliberately thin.** The Phase 1 history scrub (see `SCRUB-EVIDENCE.md`) removed the
+Phase 0 orchestrator session — its main transcript, its five subagent transcripts, and
+`real-hook-events.jsonl` — because they carried foreign-project content. What remains is one
+complete, clean session. Phase 1 re-harvests a full set from agent-deck's own sessions to restore
+depth-2, multi-subagent, and `tool-results/` coverage.
 
 Captured 2026-08-19 from CC **2.1.234**, Windows 11 native. Both sessions were live when captured, so
 they are snapshots of a file still being appended — which is exactly the condition the tailer must

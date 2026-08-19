@@ -19,6 +19,36 @@ export interface SessionState {
   schemaOk: boolean;
   root: AgentNode;
   totals: { inputTokens: number; outputTokens: number; costUsd: number };
+  /**
+   * Phase 2 additive, and optional so every Phase 1 construction of this
+   * interface stays valid. The spec'd fields above are untouched.
+   *
+   * `ToolNode` has no `children` field and that stays true, so a subagent
+   * `AgentNode` does NOT nest inside the `ToolNode` that spawned it: the
+   * grafter places it adjacent in the parent agent's `children`. The real
+   * spawn relationship therefore exists only here. A renderer that wants to
+   * draw a subagent under its spawning tool call reads these edges; without
+   * them that relationship is not recoverable from `root` alone.
+   */
+  spawnEdges?: readonly SpawnEdge[];
+}
+
+/**
+ * One `tool_use` block -> one subagent. The primary-key join, taken from the
+ * sidecar's `meta.toolUseId`; never inferred, and never derived from a hook
+ * event (`SubagentStart` carries no `tool_use_id` at all).
+ */
+export interface SpawnEdge {
+  /** The `tool_use` block that spawned the agent — the join key. */
+  toolUseId: string;
+  /** The spawned agent's id; matches an `AgentNode.id` in the tree. */
+  agentId: string;
+  /** `AgentNode.id` the agent was attached under: `'root'`, or a parent agent. */
+  parentNodeId: string;
+  /** Depth walked from the root. 1 = child of root. */
+  depth: number;
+  /** `spawnDepth` as written in the sidecar, kept even when it disagrees. */
+  recordedDepth: number;
 }
 
 export interface AgentNode {
@@ -66,10 +96,91 @@ export function isToolNode(node: TreeNode): node is ToolNode {
 // ---------------------------------------------------------------------------
 
 /**
- * The `diff` payload shape is deliberately unspecified at Phase 1.
- * Phase 2 defines it. Do not narrow this without amending the spec.
+ * How one `SessionState` becomes the next.
+ *
+ * Phase 1 left this as `unknown` and said "Phase 2 defines it". This is that
+ * definition. Do not narrow it further without amending the spec.
+ *
+ * The contract is exact, not advisory: for any two states the session model
+ * produces, `applySessionPatch(prev, diffSessionState(prev, next))`
+ * deep-equals `next`. `src/model/session.test.ts` asserts that round trip over
+ * captured-fixture replays, so a patch shape that cannot express some change
+ * fails a test rather than silently rendering a wrong tree.
+ *
+ * Absence means "unchanged", everywhere. An empty patch is never produced:
+ * `diffSessionState` returns `undefined` when nothing changed, so a `diff`
+ * message always carries a real difference.
  */
-export type SessionPatch = unknown;
+export interface SessionPatch {
+  /** Session-level scalars. Only the keys that changed are present. */
+  fields?: SessionFieldPatch;
+  /**
+   * Tree edits. Order matters, with one exception: every `removeNode` is
+   * applied before any other op, so a node moving between parents cannot
+   * transiently exist twice. See `applySessionPatch` in `session.ts`.
+   */
+  tree?: readonly TreeOp[];
+  /** Whole-list replacement; present only when the edge set changed. */
+  spawnEdges?: readonly SpawnEdge[];
+}
+
+/** Session-level scalar changes. Absent key = unchanged. */
+export interface SessionFieldPatch {
+  projectSlug?: string;
+  workspaceMatch?: boolean;
+  liveness?: SessionState['liveness'];
+  schemaOk?: boolean;
+  /** Replaced whole; the three numbers are never patched independently. */
+  totals?: SessionState['totals'];
+}
+
+/**
+ * A change to an `AgentNode`'s own scalars. `children` is never patched here
+ * — child membership is expressed by `insertNode` / `removeNode` /
+ * `reorderChildren`, so a node keeps its identity when its parent changes.
+ *
+ * `null` on an optional field means CLEARED (the field became absent);
+ * an absent key means unchanged. The two are different, and the diff producer
+ * distinguishes them.
+ */
+export interface AgentNodeFieldPatch {
+  kind?: AgentNode['kind'];
+  label?: string;
+  status?: AgentNode['status'];
+  spawnDepth?: number;
+  tokens?: { in: number; out: number };
+  startedAt?: number;
+  endedAt?: number | null;
+}
+
+/** A change to a `ToolNode`'s scalars. `null` = cleared; see {@link AgentNodeFieldPatch}. */
+export interface ToolNodeFieldPatch {
+  toolName?: string;
+  status?: ToolNode['status'];
+  inputPreview?: string;
+  resultPreview?: string | null;
+  durationMs?: number | null;
+}
+
+/**
+ * One tree edit.
+ *
+ * `replaceRoot` exists because the root's id can change, and `replaceNode`
+ * cannot address a node whose id is absent from the previous tree.
+ */
+export type TreeOp =
+  /** The whole tree, when the root's identity changed. */
+  | { op: 'replaceRoot'; node: AgentNode }
+  /** Replace the node with this id, and its whole subtree, in place. */
+  | { op: 'replaceNode'; id: string; node: TreeNode }
+  /** Insert under `parentId` at `index` in the resulting child list. */
+  | { op: 'insertNode'; parentId: string; index: number; node: TreeNode }
+  /** Detach the node with this id, and its subtree, from wherever it is. */
+  | { op: 'removeNode'; id: string }
+  /** Set `parentId`'s child order; `order` must be the resulting id set. */
+  | { op: 'reorderChildren'; parentId: string; order: readonly string[] }
+  | { op: 'updateAgent'; id: string; fields: AgentNodeFieldPatch }
+  | { op: 'updateTool'; id: string; fields: ToolNodeFieldPatch };
 
 export interface SnapshotMessage {
   type: 'snapshot';

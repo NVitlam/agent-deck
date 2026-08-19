@@ -150,7 +150,9 @@ describe('message contract', () => {
   it('host -> webview messages are a union keyed on type', () => {
     const messages: HostToWebviewMessage[] = [
       { type: 'snapshot', sessions: [buildSession()] },
-      { type: 'diff', sessionId: 's1', patch: { op: 'replace' } },
+      // `patch` was an arbitrary placeholder while `SessionPatch` was
+      // `unknown`. Phase 2 gave it a real shape, so this is now a real patch.
+      { type: 'diff', sessionId: 's1', patch: { fields: { liveness: 'idle' } } },
       { type: 'schemaMismatch', sessionId: 's1' },
     ];
 

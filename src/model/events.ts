@@ -124,12 +124,18 @@ export type JsonValue =
 /**
  * One parsed JSONL line from a main or subagent transcript.
  *
- * Only `type` is present on every observed line — the committed CC 2.1.234
- * fixtures contain 51 lines of which 51 have `type`, 50 `sessionId`,
- * 47 `timestamp`, 45 `uuid`/`parentUuid`/`version`/`cwd`/`gitBranch`,
- * 37 `message`, 33 `agentId` (`queue-operation` lines carry almost nothing).
- * Everything else is therefore optional, and the index signature keeps
+ * Only `type` is present on every observed line. Re-measured after the Phase 1
+ * re-harvest across all 7 committed CC 2.1.234 transcripts (124 lines):
+ * `type` 124/124, and `agentId` appears on all 84 subagent lines but 0 of the
+ * 40 main-transcript lines. `queue-operation` carries only
+ * `type`/`operation`/`timestamp`/`sessionId`; `attachment` never carries
+ * `message`; `file-history-snapshot` carries nothing beyond `type`.
+ * Everything except `type` is therefore optional, and the index signature keeps
  * unknown/extra fields rather than forcing callers to strip them.
+ *
+ * Do not tighten this from memory — re-count against the fixtures. Requiring a
+ * field that real data omits refuses valid sessions, which is worse than the
+ * drift the requirement would catch.
  */
 export interface TranscriptEntry {
   /** e.g. 'user', 'assistant', 'system', 'queue-operation'. Never absent. */

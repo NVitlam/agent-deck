@@ -11,7 +11,7 @@ cc-2.1.234/projects/c--Users-dev-projects-agent-deck/
   05c5482d-….jsonl                     main transcript (Phase 1 harvest)
   05c5482d-…/subagents/agent-*.jsonl   4 subagent transcripts, one at spawnDepth 2
   05c5482d-…/subagents/agent-*.meta.json
-  05c5482d-…/tool-results/b6uvpgxa4.txt  63.7 KB offloaded tool payload
+  05c5482d-…/tool-results/b6uvpgxa4.txt  63,774-byte offloaded tool payload
   4299490e-….jsonl                     main transcript
   4299490e-…/subagents/agent-*.jsonl   1 subagent transcript
   4299490e-…/subagents/agent-*.meta.json

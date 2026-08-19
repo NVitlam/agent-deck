@@ -794,7 +794,17 @@ describe('G3: a schema mismatch produces no tree at all', () => {
 // Whitespace-only join key
 // ---------------------------------------------------------------------------
 
-describe('a whitespace-only toolUseId never resolves at the graft layer', () => {
+describe('a whitespace-only toolUseId is refused twice over', () => {
+  it('the layout fingerprint refuses it, so no tree is built at all', async () => {
+    const result = await graftSession(layoutMain('21-meta-tooluseid-whitespace'));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.mismatch.code).toBe('metaFieldMissing');
+    expect(result.mismatch.field).toBe('toolUseId');
+    expect(result.mismatch.actual).toBe('blank');
+    expect('snapshot' in result).toBe(false);
+  });
+
   it('parks with missingJoinKey even though it is the only candidate', () => {
     // Fed in memory so this holds regardless of what the layout fingerprint
     // does with a blank key: the grafter refuses it independently.

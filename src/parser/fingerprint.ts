@@ -614,6 +614,28 @@ async function checkMeta(metaPath: string, agentId: string): Promise<MetaCheck> 
         }),
       };
     }
+    // A blank join key is a MISSING join key, not a present one. `"   "`
+    // type-checks as a string, so without this the layout fingerprint would
+    // hand the grafter a key that can never join, and the refusal would happen
+    // downstream or nowhere. Refusal belongs at the layout boundary (G3).
+    // Scoped to `toolUseId` deliberately: it is the only field the primary-key
+    // join reads, and a blank `agentType`/`description` costs a label, not a
+    // parent edge.
+    if (spec.name === 'toolUseId' && typeof value === 'string' && value.trim() === '') {
+      return {
+        ok: false,
+        mismatch: mismatch(
+          'metaFieldMissing',
+          'sidecar `toolUseId` is blank; attribution would have to be guessed',
+          {
+            path: metaPath,
+            field: spec.name,
+            expected: 'non-blank string',
+            actual: 'blank',
+          },
+        ),
+      };
+    }
   }
 
   // Conditional key, verified against the capture: `parentAgentId` is present

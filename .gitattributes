@@ -1,0 +1,12 @@
+# Default: let git normalize text in the repo, and let core.autocrlf do what it
+# likes in the working tree. Source files do not care.
+* text=auto
+
+# Fixtures are CAPTURED BYTES, not text. G6 pins parser behavior to real bytes,
+# so line-ending translation is corruption: core.autocrlf=true (set on the dev
+# machine) would rewrite every LF to CRLF on checkout, shifting every byte
+# offset in every transcript and silently breaking the tailer's offset tests and
+# any byte-exact golden assertion. -text disables that translation in both
+# directions. Do not remove this rule; verify it with a fresh clone, not by
+# inspecting the working tree you already have.
+fixtures/** -text

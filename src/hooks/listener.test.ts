@@ -15,7 +15,7 @@
 import { Buffer } from 'node:buffer';
 import { readdir, readFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
-import { createServer as createNetServer } from 'node:net';
+import { connect as netConnect, createServer as createNetServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -773,6 +773,60 @@ describe('HookListener over a real loopback socket', () => {
       expect(listener.listening).toBe(true);
       const reply = await postJson(port, mainThreadPayload());
       expect(reply.status).toBe(200);
+    });
+
+    it('a connection reset while replies are in flight is counted, and the server keeps serving', async () => {
+      // Covers the request-stream 'error' handler and the clientError handler
+      // in listener.ts. An unhandled 'error' on either is an uncaught
+      // exception, which in the extension host means the host dies because a
+      // hook process went away mid-exchange — the G3 failure this module must
+      // not have.
+      //
+      // Forcing it: pipeline many requests on one raw socket, never read the
+      // replies, then reset. The server is mid-read and mid-write when the peer
+      // vanishes. Pipelining rather than a single request because one 0-length
+      // reply is written long before any reset could land — measured: 400
+      // pipelined requests all complete and only clientDisconnects moves.
+      //
+      // What this does NOT cover, stated plainly so nobody mistakes it: the
+      // `res.on('error')` handler. Measured on Node v24, `res` never emits
+      // 'error' here — every reply is a zero-length body written in one go, so
+      // the reset surfaces on the request stream and via 'clientError'. This
+      // test passes unchanged with those three production lines deleted. They
+      // are kept as asymmetric-cost insurance, not as tested behaviour.
+      const before = listener.counters.socketErrors;
+      const body = JSON.stringify(mainThreadPayload());
+      const one =
+        `POST ${DEFAULT_EVENT_PATH} HTTP/1.1\r\n` +
+        `Host: ${LOOPBACK}\r\n` +
+        `Content-Type: application/json\r\n` +
+        `Content-Length: ${String(Buffer.byteLength(body))}\r\n` +
+        `\r\n${body}`;
+
+      await new Promise<void>((resolve) => {
+        const sock = netConnect({ host: LOOPBACK, port }, () => {
+          // Never read: no 'data' handler and an explicit pause, so the
+          // server's replies have nowhere to go.
+          sock.pause();
+          sock.write(one.repeat(20_000));
+          setTimeout(() => {
+            sock.resetAndDestroy();
+            resolve();
+          }, 150);
+        });
+        sock.on('error', () => resolve());
+      });
+
+      // Give the server a tick to observe the reset on its own sockets.
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(listener.counters.socketErrors).toBeGreaterThan(before);
+      expect(listener.listening).toBe(true);
+
+      // Still serving, and the counters that matter are unharmed.
+      const reply = await postJson(port, mainThreadPayload());
+      expect(reply.status).toBe(200);
+      expect(received[received.length - 1]?.isMainThread).toBe(true);
     });
 
     it('a consumer that throws is counted and does not break the response', async () => {

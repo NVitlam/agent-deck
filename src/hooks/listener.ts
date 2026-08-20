@@ -425,10 +425,20 @@ export class HookListener {
   }
 
   #handleRequest(req: IncomingMessage, res: ServerResponse): void {
-    // G3: a hook process that dies mid-reply resets the socket. Without a
-    // listener here that becomes an unhandled 'error' event, i.e. an uncaught
-    // exception that takes the whole extension host down. Count it and carry
-    // on. The same applies to the request stream, handled further below.
+    // G3: an unhandled 'error' on either stream is an uncaught exception, and
+    // in the extension host that means the host dies because a hook process
+    // went away mid-exchange. Count and carry on.
+    //
+    // Honest note on this specific listener: the RESPONSE branch below is
+    // defensive, not load-bearing. Measured on Node v24 — every reply this
+    // server writes is a header block with a zero-length body, handed to the
+    // socket in one write, so a peer reset is reported through 'clientError'
+    // and the REQUEST stream, never through `res`. A test that resets the
+    // connection mid-exchange therefore moves `socketErrors` via the request
+    // handler and passes with these three lines deleted; see the reset test in
+    // listener.test.ts, which says so too. It is kept because the cost of
+    // being wrong is asymmetric: three uncovered lines against an uncaught
+    // exception in the extension host. Do not read it as tested behaviour.
     res.on('error', () => {
       this.#counters.socketErrors += 1;
     });

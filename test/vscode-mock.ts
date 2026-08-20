@@ -122,7 +122,17 @@ export class MockWebviewPanel {
     this.webview = {
       html: '',
       options,
-      cspSource: 'vscode-resource://agent-deck-test',
+      // VS Code's ACTUAL desktop `webview.cspSource`, byte for byte. Read from
+      // the installed VS Code 1.134.0 (commit
+      // 110a328ea54b42367b803ec53ee0bf52ef26b419),
+      // resources/app/out/vs/workbench/api/node/extensionHostProcess.js:
+      //   const BASE = `'self' https://*.vscode-cdn.net`;
+      //   get cspSource() { ...http/https extensionLocation prefix...; return BASE }
+      // The value that stood here before — 'vscode-resource://agent-deck-test'
+      // — was invented, and that is why the suite was green while the panel
+      // could not open: src/bridge/html.ts refused the real string. Re-measure
+      // from that file; do not re-invent.
+      cspSource: "'self' https://*.vscode-cdn.net",
       asWebviewUri: (uri: Uri) => uri,
       postMessage: (message: unknown) => {
         posted.push(message);

@@ -8,8 +8,34 @@ import {
   webviewHtml,
 } from './html.js';
 
-/** Shaped like VS Code's real `webview.cspSource` on the desktop host. */
-const CSP_SOURCE = 'vscode-webview://0f7c2b1a-4d3e-4a55-9c0b-8a1d2e3f4a5b';
+/**
+ * VS Code's ACTUAL `webview.cspSource` on the desktop host, byte for byte.
+ *
+ * Provenance, so the next person re-measures instead of re-inventing: read out
+ * of the installed VS Code 1.134.0 (commit
+ * 110a328ea54b42367b803ec53ee0bf52ef26b419), file
+ * `resources/app/out/vs/workbench/api/node/extensionHostProcess.js`. The getter
+ * there is `get cspSource(){let t=this.#r.extensionLocation;if(t.scheme===B.https
+ * ||t.scheme===B.http){let e=t.toString();return e.endsWith("/")||(e+="/"),e+" "
+ * +aI}return aI}` with `aI=\`'self' https://*.${Tz}\`` and `Tz="vscode-cdn.net"`.
+ *
+ * What stood here before was `vscode-webview://<uuid>`, under a comment
+ * claiming it was "shaped like VS Code's real cspSource". It was invented. The
+ * whole suite was green while the extension could not open its panel: a human
+ * side-loaded the VSIX into VS Code 1.134.0 and got a modal reading
+ * "cspSource contains characters that could inject a CSP directive" — this
+ * file's own guard, refusing the real value over its space and its apostrophes.
+ */
+const CSP_SOURCE = "'self' https://*.vscode-cdn.net";
+
+/**
+ * The other branch of the same getter: an http/https `extensionLocation` is
+ * prefixed, slash-terminated, to the desktop value. We ship desktop only today,
+ * but the validator handles a source list of any length rather than
+ * special-casing two tokens, and this pins that.
+ */
+const CSP_SOURCE_REMOTE =
+  "https://main.vscode-cdn.net/stable/110a328ea54b42367b803ec53ee0bf52ef26b419/ 'self' https://*.vscode-cdn.net";
 const SCRIPT_URI =
   'https://file+.vscode-resource.vscode-cdn.net/c%3A/ext/dist/webview.js';
 const STYLE_URI =
@@ -57,17 +83,14 @@ describe('contentSecurityPolicy — what it permits', () => {
 // directive above AND permit everything; only absence proves it does not.
 describe('contentSecurityPolicy — what it must NOT contain', () => {
   /**
-   * `cspSource` is VS Code's, not ours, and on the desktop host it is an
-   * `https://…vscode-cdn.net` origin serving local extension files. Absence
-   * assertions are therefore made against the policy with that one value
-   * replaced by a placeholder: what is being asserted is that WE add no
-   * origin, scheme or wildcard of our own. Both observed shapes of the value
-   * are exercised so neither can smuggle something in.
+   * `cspSource` is VS Code's, not ours, and it carries `'self'` and an
+   * `https://*.vscode-cdn.net` wildcard that we would never write ourselves.
+   * Absence assertions are therefore made against the policy with that one
+   * value replaced by a placeholder: what is being asserted is that WE add no
+   * origin, scheme, wildcard or keyword of our own. Both branches of VS Code's
+   * getter are exercised so neither can smuggle something in.
    */
-  const CSP_SOURCE_SHAPES = [
-    CSP_SOURCE,
-    'https://file+.vscode-resource.vscode-cdn.net',
-  ];
+  const CSP_SOURCE_SHAPES = [CSP_SOURCE, CSP_SOURCE_REMOTE];
 
   function authored(cspSource: string): string {
     return contentSecurityPolicy({ nonce: createNonce(), cspSource })
@@ -121,8 +144,19 @@ describe('contentSecurityPolicy — what it must NOT contain', () => {
     );
   });
 
-  it('the document contains no remote origin anywhere outside the resource URIs', () => {
-    const document = html().split(SCRIPT_URI).join('').split(STYLE_URI).join('');
+  it('the document contains no remote origin of OUR authorship', () => {
+    // Three strings in the document come from VS Code, not from us: the two
+    // resource URIs and cspSource. All three now legitimately contain
+    // `https://…vscode-cdn.net`, because that is the origin VS Code serves
+    // local extension files from. Strip them and nothing remote may remain —
+    // that is the G5 assertion, and it is about what this file authors.
+    const document = html()
+      .split(SCRIPT_URI)
+      .join('')
+      .split(STYLE_URI)
+      .join('')
+      .split(CSP_SOURCE)
+      .join('');
     expect(document).not.toContain('http://');
     expect(document).not.toContain('https://');
     expect(document.toLowerCase()).not.toContain('cdn');
@@ -163,11 +197,123 @@ describe('nonce', () => {
     }
   });
 
-  it('rejects a cspSource that could append a directive', () => {
-    for (const bad of ["x; script-src 'unsafe-inline'", "'self'", 'a b', '']) {
+});
+
+/**
+ * The regression suite for the defect that shipped: a validator written from
+ * memory refused VS Code's real value, and the panel could not open.
+ *
+ * `cspSource` is a CSP *source list* - space-separated source expressions - so
+ * validation is per token. Every case below names what it protects.
+ */
+describe('cspSource - the source list VS Code actually supplies', () => {
+  function accepts(cspSource: string): boolean {
+    try {
+      contentSecurityPolicy({ nonce: 'AAAABBBBCCCCDDDD', cspSource });
+      return true;
+    } catch (error) {
+      if (error instanceof WebviewHtmlError) return false;
+      throw error;
+    }
+  }
+
+  const accepted: readonly [string, string][] = [
+    [CSP_SOURCE, 'VS Code 1.134.0 desktop, verbatim - THE case that was broken'],
+    [CSP_SOURCE_REMOTE, 'VS Code remote/web: extensionLocation prefixed to the desktop value'],
+    ['https://file+.vscode-resource.vscode-cdn.net', 'a bare host source, the pre-existing shape'],
+    ['vscode-webview://0f7c2b1a-4d3e-4a55-9c0b-8a1d2e3f4a5b', 'a bare host source with a custom scheme'],
+    ["'none'", 'a keyword that permits nothing'],
+    ["'self'", 'the keyword on its own'],
+    ["'self' 'none' https://a.example https://b.example", 'a longer list; not special-cased at two tokens'],
+  ];
+
+  for (const [value, why] of accepted) {
+    it(`accepts ${JSON.stringify(value)} - ${why}`, () => {
+      expect(accepts(value)).toBe(true);
+    });
+  }
+
+  const rejected: readonly [string, string][] = [
+    ["'self'; script-src 'unsafe-inline'", 'a `;` terminates style-src and opens a new directive'],
+    ["x; script-src 'unsafe-inline'", 'the same injection on a bare host token'],
+    ['https://a.example;', 'a trailing `;` alone is enough to end the directive'],
+    ["'unsafe-inline'", 'would make the nonce decorative'],
+    ["'unsafe-eval'", 'reopens the whole injection surface'],
+    ["'unsafe-hashes'", 'inline event handlers by hash are still inline'],
+    ["'strict-dynamic'", 'lets a nonced script load further scripts unchecked'],
+    ["'self' 'unsafe-inline'", 'one good token must not launder a bad one'],
+    ["'nonce-AAAABBBBCCCCDDDD'", 'we mint our own nonce; a host-supplied one can only widen'],
+    ["'sha256-abc='", 'a hash expression is not on the allowlist either'],
+    ["'self", 'an unbalanced opening quote'],
+    ["self'", 'an unbalanced closing quote'],
+    ["a'b", 'a quote in the middle of a host source'],
+    ["''", 'an empty quoted token'],
+    ['', 'the empty string is not a source list'],
+    [' ', 'a lone space is two empty tokens'],
+    ["'self'  https://a.example", 'a doubled space leaves an empty token'],
+    [" 'self'", 'a leading space leaves an empty token'],
+    ["'self' ", 'a trailing space leaves an empty token'],
+    ["'self'\nscript-src *", 'a newline must not be treated as a separator'],
+    ["'self'\tscript-src *", 'nor a tab'],
+    ["'self'\rscript-src *", 'nor a carriage return'],
+    ['https://a.example\u000cscript-src *', 'nor a form feed'],
+    ['"self"', 'double quotes are not CSP quoting, and would close the meta attribute'],
+    ["'SELF'", 'the allowlist is exact-match; refuse rather than guess at case folding'],
+  ];
+
+  for (const [value, why] of rejected) {
+    it(`rejects ${JSON.stringify(value)} - ${why}`, () => {
+      expect(accepts(value)).toBe(false);
       expect(() =>
-        contentSecurityPolicy({ nonce: createNonce(), cspSource: bad }),
+        contentSecurityPolicy({ nonce: 'AAAABBBBCCCCDDDD', cspSource: value }),
       ).toThrow(WebviewHtmlError);
+    });
+  }
+
+  it('the real desktop value lands in style-src and nowhere else', () => {
+    const csp = contentSecurityPolicy({
+      nonce: 'AAAABBBBCCCCDDDD',
+      cspSource: CSP_SOURCE,
+    });
+    expect(csp).toContain(`style-src 'nonce-AAAABBBBCCCCDDDD' ${CSP_SOURCE}`);
+    expect(csp.split('; ').filter((d) => d.includes(CSP_SOURCE))).toHaveLength(1);
+  });
+
+  it("script-src carries no 'self', so an unnonced same-origin script is still refused", () => {
+    // Why cspSource must never be added to script-src: VS Code's real value
+    // contains 'self', which would permit ANY same-origin script with no nonce
+    // at all. The invented value did not contain it, so this property used to
+    // hold by accident rather than by policy.
+    const csp = contentSecurityPolicy({
+      nonce: 'AAAABBBBCCCCDDDD',
+      cspSource: CSP_SOURCE,
+    });
+    expect(csp.split('; ').find((d) => d.startsWith('script-src '))).toBe(
+      "script-src 'nonce-AAAABBBBCCCCDDDD'",
+    );
+  });
+
+  it('a rejected cspSource never reaches the document either', () => {
+    expect(() =>
+      webviewHtml({
+        scriptUri: SCRIPT_URI,
+        nonce: createNonce(),
+        cspSource: "'self'; script-src 'unsafe-inline'",
+      }),
+    ).toThrow(WebviewHtmlError);
+  });
+
+  it('an accepted cspSource cannot put a double quote in the meta attribute', () => {
+    // The policy is interpolated unescaped. Both accepted branches - the
+    // keyword allowlist and the host charset - exclude the double quote by
+    // construction, so the attribute cannot be closed early.
+    for (const shape of [CSP_SOURCE, CSP_SOURCE_REMOTE]) {
+      const document = webviewHtml({
+        scriptUri: SCRIPT_URI,
+        nonce: 'AAAABBBBCCCCDDDD',
+        cspSource: shape,
+      });
+      expect(policyFromDocument(document)).toContain(shape);
     }
   });
 });

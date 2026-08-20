@@ -98,6 +98,24 @@ construction:
 - **Clean on secrets:** a scan of all committed files for `sk-…`, `ghp_…`, `api_key`, `password` and
   `authorization` returned zero hits.
 
+**Read the list above as history, not inventory.** It describes the exposure the Phase 1 scrub
+*removed*; those four data files are gone from every ref. `phase0-evidence/real-hook-events.jsonl` in
+particular is **not** committed — do not go looking for it, and do not cite it as present.
+
+### Phase 2 addition: `hook-events/` (read this before the public flip)
+
+`hook-events/cc-2.1.234-redacted.jsonl` is new in Phase 2 and is **deliberately not fully anonymous.**
+Content values are destroyed, but these are kept verbatim, because a fixture without them cannot test
+what it exists to test:
+
+- `cwd` and `transcript_path` — absolute paths containing `C:Usersdev…`, including worktree paths.
+- `session_id`, `agent_id`, `prompt_id` — real ids from this repo's own sessions.
+
+This is the same exposure class the committed transcripts under `cc-2.1.234/` already carry (their
+slug directory is literally `c--Users-dev-projects-agent-deck`), so it adds no
+*new* category — but Phase 5's privacy sweep must cover `hook-events/` explicitly rather than
+assuming "redacted" in the filename means anonymous. It does not. It means content-free.
+
 **Coverage, re-stated after Phase 1.** The gaps this section used to list are closed. A
 `tool-results/` directory, malformed lines, a corrupt `.meta.json`, and an `UNRESOLVED` join case all
 exist now — the first from the capture, the rest from the clearly-labelled `synthetic-*` corpora

@@ -33,6 +33,7 @@ import { isAgentNode } from './events.js';
 import type { GraftSnapshot, SidecarArrival, TranscriptBatch } from './graft.js';
 import {
   DEFAULT_PREVIEW_BYTES,
+  MIN_PARSE_CEILING_BYTES,
   ROOT_NODE_ID,
   TreeGrafter,
   agentNodes,
@@ -986,6 +987,26 @@ describe('previewBytes is the ceiling, and the marker states the ORIGINAL size',
         `previewBytes=${previewBytes}: the offloaded payload did not reach a preview`,
       ).toBe(true);
     }
+  });
+
+  it('MIN_PARSE_CEILING_BYTES exceeds the persisted-output stub actually on disk', async () => {
+    // The floor's whole justification is a size relationship with a string in
+    // the fixtures, so the relationship is measured here rather than asserted
+    // in a comment. Derived from the capture: a re-harvest with a longer stub
+    // fails this test instead of silently disabling offload hydration.
+    let largestStub = 0;
+    for (const sessionId of await capturedSessionIds()) {
+      for (const file of [join(CAPTURED_SLUG, `${sessionId}.jsonl`), ...(await subagentFiles(sessionId))]) {
+        for (const line of splitTranscript(await readFile(file, 'utf8'))) {
+          for (const block of toolResultBlocks(line)) {
+            if (!block.startsWith('<persisted-output>')) continue;
+            largestStub = Math.max(largestStub, Buffer.byteLength(block, 'utf8'));
+          }
+        }
+      }
+    }
+    expect(largestStub).toBeGreaterThan(0);
+    expect(MIN_PARSE_CEILING_BYTES).toBeGreaterThan(largestStub);
   });
 });
 

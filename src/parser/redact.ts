@@ -143,7 +143,11 @@ function cutToBytes(text: string, maxBytes: number): Cut {
 export interface ExistingTruncation {
   /** The string with its trailing marker removed. */
   payload: string;
-  /** Bytes the earlier pass says it kept. */
+  /**
+   * Bytes the earlier pass says it kept. VALIDATED: this equals the UTF-8
+   * length of {@link ExistingTruncation.payload}, or the marker was not
+   * recognised at all.
+   */
   keptBytes: number;
   /** Bytes the earlier pass says the ORIGINAL payload had. */
   originalBytes: number;
@@ -152,6 +156,28 @@ export interface ExistingTruncation {
 /**
  * Split a trailing {@link truncationMarker} off `text`, or `undefined` when
  * there is none. Never throws.
+ *
+ * A marker is recognised ONLY when its stated kept count measures the prefix
+ * beside it. That check is what separates a marker this code wrote from a
+ * marker-shaped suffix that arrived as content — and content is the common
+ * case here, not a hypothetical: this repo's own `redact.ts` holds the
+ * template literal, and `PLAN.md`, `HANDOVER.md` and `CLAUDE.md` all contain
+ * literal `8192 of 8248` strings. A tool result that reads one of those files
+ * can end at a marker-shaped suffix, and adopting its numbers would make the
+ * truncation marker report a figure taken from the observed content instead of
+ * from a measurement — the fabricated-`costUsd` class of defect, arriving from
+ * the opposite direction to the one this function was written to close.
+ *
+ * The validation needs no information we do not already have: a string that
+ * genuinely came out of a truncation pass has a prefix whose byte length IS
+ * its stated `keptBytes`, by construction — {@link truncateUtf8} and
+ * {@link truncatePreservingMarker} both count the prefix they emit. A mismatch
+ * therefore proves the suffix is content, and the caller re-measures from
+ * scratch with the whole string as the payload.
+ *
+ * The residual, stated rather than hidden: content ending in a marker whose
+ * kept count happens to equal its own prefix length is indistinguishable from
+ * a real one and is treated as real. Nothing in the string can settle that.
  */
 export function splitTruncationMarker(text: string): ExistingTruncation | undefined {
   if (typeof text !== 'string') return undefined;
@@ -160,7 +186,9 @@ export function splitTruncationMarker(text: string): ExistingTruncation | undefi
   const keptBytes = Number(m[1]);
   const originalBytes = Number(m[2]);
   if (!Number.isFinite(keptBytes) || !Number.isFinite(originalBytes)) return undefined;
-  return { payload: text.slice(0, text.length - m[0].length), keptBytes, originalBytes };
+  const payload = text.slice(0, text.length - m[0].length);
+  if (Buffer.byteLength(payload, 'utf8') !== keptBytes) return undefined;
+  return { payload, keptBytes, originalBytes };
 }
 
 /**
@@ -179,7 +207,18 @@ export function splitTruncationMarker(text: string): ExistingTruncation | undefi
  * states and (b) the payload actually in hand. The reported original therefore
  * never shrinks across passes and never claims less than what is displayed.
  *
- * An unmarked string is truncated exactly as {@link truncateUtf8} would.
+ * Both directions are guarded, and they are separate mechanisms:
+ *
+ *   under-reporting  `Math.max` above — a marker cannot claim an original
+ *                    smaller than the bytes sitting next to it.
+ *   over-reporting   {@link splitTruncationMarker} recognises a marker only
+ *                    when its kept count MEASURES the prefix. A payload that
+ *                    merely ends in marker-shaped content is re-measured from
+ *                    scratch, so a forged "of 88888888" cannot become our
+ *                    reported original.
+ *
+ * An unmarked string — or one whose marker fails that validation — is
+ * truncated exactly as {@link truncateUtf8} would truncate it.
  */
 export function truncatePreservingMarker(
   text: string,

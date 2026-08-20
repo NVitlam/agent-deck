@@ -226,15 +226,56 @@ describe('truncatePreservingMarker (Phase 4 carry-forward A, defect (b))', () =>
     }
   });
 
-  it('re-emits the marker as a MEASUREMENT, so a lying marker cannot survive', () => {
-    // Content that ends in something shaped like our marker cannot make the
-    // kept count disagree with the bytes beside it.
-    const spoofed = 'q'.repeat(100) + truncationMarker(999_999, 5);
-    const out = truncatePreservingMarker(spoofed, 8192);
+  it('DEFLATION: a marker cannot claim an original smaller than the bytes beside it', () => {
+    // A well-formed marker — its kept count does measure the prefix — whose
+    // stated original is absurdly small. `Math.max` floors the report at what
+    // is actually on screen.
+    const understated = 'q'.repeat(100) + truncationMarker(100, 5);
+    const out = truncatePreservingMarker(understated, 8192);
     const m = TRUNCATION_MARKER_RE.exec(out.text);
     expect(Number(m?.[1])).toBe(100);
-    // The reported original never claims less than what is on screen.
-    expect(Number(m?.[2])).toBeGreaterThanOrEqual(100);
+    expect(Number(m?.[2])).toBe(100);
+    expect(out.originalBytes).toBe(100);
+  });
+
+  it('INFLATION: a forged marker is re-measured, never adopted', () => {
+    // The realistic shape of this: a tool result that read a file containing
+    // the marker text (this repo's own PLAN.md, HANDOVER.md, CLAUDE.md and
+    // redact.ts all do) and ended at it. The forged kept count does NOT
+    // measure the prefix, which is what gives it away.
+    const forged = 'q'.repeat(20_000) + truncationMarker(999_999, 88_888_888);
+    const forgedBytes = Buffer.byteLength(forged, 'utf8');
+    expect(splitTruncationMarker(forged)).toBeUndefined();
+
+    const out = truncatePreservingMarker(forged, 8192);
+    const m = TRUNCATION_MARKER_RE.exec(out.text);
+    expect(Number(m?.[1])).toBe(8192);
+    // The measured size of the WHOLE string, marker-shaped tail included,
+    // because that tail is content.
+    expect(Number(m?.[2])).toBe(forgedBytes);
+    expect(Number(m?.[2])).not.toBe(88_888_888);
+    expect(out.originalBytes).toBe(forgedBytes);
+    // Byte-identical to treating it as the unmarked string it is.
+    expect(out).toEqual(truncateUtf8(forged, 8192));
+  });
+
+  it('INFLATION: a forged marker under the ceiling yields no claim of ours at all', () => {
+    const forged = 'q'.repeat(100) + truncationMarker(999_999, 88_888_888);
+    const out = truncatePreservingMarker(forged, 8192);
+    expect(out.truncated).toBe(false);
+    expect(out.text).toBe(forged); // content is not rewritten
+    expect(out.originalBytes).toBe(Buffer.byteLength(forged, 'utf8'));
+    expect(out.keptBytes).toBe(Buffer.byteLength(forged, 'utf8'));
+  });
+
+  it('the validation is a byte measurement, not a character one', () => {
+    // 50 'é' = 50 characters, 100 UTF-8 bytes. A marker stating the CHARACTER
+    // count is not one of ours.
+    const payload = 'é'.repeat(50);
+    expect(payload.length).toBe(50);
+    expect(Buffer.byteLength(payload, 'utf8')).toBe(100);
+    expect(splitTruncationMarker(payload + truncationMarker(50, 9999))).toBeUndefined();
+    expect(splitTruncationMarker(payload + truncationMarker(100, 9999))?.keptBytes).toBe(100);
   });
 
   it('splitTruncationMarker returns undefined for an unmarked string and never throws', () => {

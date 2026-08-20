@@ -215,6 +215,38 @@ export interface SidecarArrival {
 /** Preview budget for a single node, in UTF-8 bytes. Well under redaction's 8 KB. */
 export const DEFAULT_PREVIEW_BYTES = 512;
 
+/**
+ * Floor on the ceiling {@link graftSession} hands the parse/redaction layer,
+ * in UTF-8 bytes. **Do not remove this as a redundant clamp — it is load
+ * bearing, and its absence does not fail loudly.**
+ *
+ * `previewBytes` is otherwise the single ceiling: it governs the parse layer
+ * and the previews alike, so a payload is cut once. Below this floor that
+ * would break a different thing entirely. CC leaves a `<persisted-output>`
+ * stub in the JSONL where a large tool result used to be, and the stub is
+ * where the pointer to `tool-results/<id>.txt` lives:
+ *
+ *   <persisted-output>
+ *   Output too large (62.3KB). Full output saved to: ...\\tool-results\\b6uvpgxa4.txt
+ *   Preview (first 2KB): ...
+ *   </persisted-output>
+ *
+ * The measured stub in the committed capture is **2,186 bytes**. Truncating a
+ * transcript string below that cuts the closing `</persisted-output>` off, and
+ * `parsePersistedOutputPointer` matches on the closing tag: it returns
+ * `undefined`, hydration never runs, and the offloaded 63,774-byte payload is
+ * never opened at all. Nothing throws and no counter moves — the preview just
+ * shows a truncated stub. That is a silent loss of the entire G4 offload path,
+ * so a `previewBytes` under this floor narrows the PREVIEW (the second,
+ * marker-preserving pass in `preview()`) and never the parse.
+ *
+ * Set to redaction's own 8 KB default rather than to 2,186: that is the byte
+ * budget G4 already documents, and it leaves margin for a longer stub than the
+ * one CC happens to write today. `graft.test.ts` asserts this constant exceeds
+ * the stub actually on disk, and that a 128-byte `previewBytes` still hydrates.
+ */
+export const MIN_PARSE_CEILING_BYTES = DEFAULT_MAX_PAYLOAD_BYTES;
+
 export interface GraftOptions {
   /** Per-node preview ceiling in UTF-8 bytes. Defaults to {@link DEFAULT_PREVIEW_BYTES}. */
   previewBytes?: number;
@@ -992,17 +1024,12 @@ export async function graftSession(
   // kept payload at all — measured across all 8 payloads over 8 KB in the
   // committed capture, 7 of them inline and 1 offloaded.
   //
-  // MEASURED FLOOR, and it is not cosmetic. The parse ceiling is never taken
-  // BELOW the 8 KB redaction default, because the `<persisted-output>` stub
-  // that points at an offloaded payload is 2,186 bytes in the capture: cutting
-  // a transcript string at, say, 512 bytes destroys the stub's closing tag,
-  // `parsePersistedOutputPointer` then returns undefined, and the 63,774-byte
-  // `tool-results/*.txt` is never read at all. That is a silent loss of the
-  // whole G4 offload path, so a small `previewBytes` narrows the PREVIEW
-  // (second pass, in `preview()`) and not the parse. The second pass is
-  // marker-preserving, so the marker still quantifies the original payload.
+  // The floor is a decision, not a clamp: see MIN_PARSE_CEILING_BYTES for the
+  // mechanism (a 2,186-byte `<persisted-output>` stub, cut below its closing
+  // tag, silently disables the whole offload path). Removing it looks safe and
+  // is not.
   const previewBytes = options.previewBytes ?? DEFAULT_PREVIEW_BYTES;
-  const parseCeiling = Math.max(previewBytes, DEFAULT_MAX_PAYLOAD_BYTES);
+  const parseCeiling = Math.max(previewBytes, MIN_PARSE_CEILING_BYTES);
   // An explicit `parse.maxPayloadBytes` still wins: a caller who names the
   // parse ceiling means it.
   const parseOptions: ParseOptions = { maxPayloadBytes: parseCeiling, ...(options.parse ?? {}) };

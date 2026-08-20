@@ -13,10 +13,11 @@
  */
 
 import { Buffer } from 'node:buffer';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
+import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -852,18 +853,298 @@ describe('HookListener bind failures', () => {
 // source-level grounding guards
 // ---------------------------------------------------------------------------
 
+// DoD item 2, second clause: "a regression test asserts no code path matches
+// the string <sentinel>". The scan below covers the hook-event CONSUMERS, not
+// only the listener, because that is where the bug actually lands: a
+// correlator that string-matches the sentinel silently drops every main-thread
+// event, since CC omits the `agent_id` key rather than sending a placeholder.
+//
+// Two things made this non-trivial:
+//
+//   1. Several modules legitimately compare against the same word. Every such
+//      site in this repo is a NODE-KIND discriminant — `AgentNode.kind` or
+//      `AttributionSite.transcriptKind`, both declared `'main' | 'subagent'`
+//      in the domain model. Those must keep working.
+//   2. A scan that silently matches nothing is worse than no scan, because it
+//      reads as coverage. So the scan is allowlist-shaped, not blocklist-
+//      shaped: it finds EVERY comparison against the sentinel and then demands
+//      each one's operand end in a declared kind discriminant. Anything else —
+//      `agentId`, `raw['agent_id']`, a bare id — is a violation, and a
+//      comparison whose shape the extractor cannot parse is ALSO a failure, so
+//      a novel construct cannot slip through unexamined.
+//
+// The file set is walked off disk, never hard-coded, so a consumer module
+// added tomorrow is covered the day it lands.
+
+/** The sentinel word, assembled so this file's own source never contains it. */
+const SENTINEL_WORD = 'ma' + 'in';
+
+/** Left operand, then an equality operator, then the quoted sentinel. */
+const LEFT_COMPARISON =
+  /([A-Za-z_$][\w$]*(?:\s*(?:\??\.\s*[A-Za-z_$][\w$]*|\[\s*['"][^'"\]]*['"]\s*\]))*)\s*(?:===|!==|==|!=)\s*(['"`])ma[i]n\2/g;
+
+/** The quoted sentinel, then an equality operator, then the right operand. */
+const RIGHT_COMPARISON =
+  /(['"`])ma[i]n\1\s*(?:===|!==|==|!=)\s*([A-Za-z_$][\w$]*(?:\s*(?:\??\.\s*[A-Za-z_$][\w$]*|\[\s*['"][^'"\]]*['"]\s*\]))*)/g;
+
+/** Any equality comparison against the sentinel, whatever the operand shape. */
+const ANY_COMPARISON =
+  /(?:===|!==|==|!=)\s*(['"`])ma[i]n\1|(['"`])ma[i]n\2\s*(?:===|!==|==|!=)/g;
+
+/** Membership / switch tests. Never a legitimate kind discriminant here. */
+const MEMBERSHIP_TEST =
+  /(?:\.includes\(|\.indexOf\(|\.startsWith\(|\.endsWith\(|case\s+)\s*(['"`])ma[i]n\1/g;
+
+/** A quoted string literal whose entire content is the sentinel word. */
+const QUOTED_SENTINEL = /(['"`])ma[i]n\1/g;
+
+/**
+ * The only operands allowed to be compared against the sentinel: the declared
+ * discriminants of the domain model. Widening this set is a deliberate act to
+ * be argued in review, not something to do to make a test go green.
+ */
+const KIND_DISCRIMINANTS = new Set(['kind', 'transcriptKind']);
+
+/**
+ * The hook-event path proper. These modules consume `NormalizedHookEvent` and
+ * build no domain tree, so they have no legitimate reason to compare anything
+ * against the sentinel at all — zero tolerance here, not an allowlist.
+ */
+const HOOK_PATH_FILES = ['src/hooks/listener.ts', 'src/model/liveness.ts'];
+
+/** Consumers the scan must reach; a rename or move must fail loudly. */
+const REQUIRED_IN_SCAN = [
+  'src/hooks/listener.ts',
+  'src/model/events.ts',
+  'src/model/liveness.ts',
+  'src/model/correlate.ts',
+  'src/model/session.ts',
+];
+
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const SRC_ROOT = fileURLToPath(new URL('..', import.meta.url));
+
+function repoRelative(absolute: string): string {
+  return relative(REPO_ROOT, absolute).split(sep).join('/');
+}
+
+/** Every non-test .ts file under src/, discovered from disk rather than listed. */
+async function productionSources(): Promise<string[]> {
+  const found: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+        found.push(full);
+      }
+    }
+  };
+  await walk(SRC_ROOT);
+  return found.sort();
+}
+
+interface SentinelHit {
+  file: string;
+  line: number;
+  operand: string;
+  accessor: string;
+  isKindDiscriminant: boolean;
+  text: string;
+}
+
+interface ScanResult {
+  hits: SentinelHit[];
+  /** Comparisons the extractor could not attribute to an operand. */
+  unparsed: number;
+  /** Membership/switch tests against the sentinel; always a violation. */
+  membership: string[];
+}
+
+/** The trailing accessor of an operand chain: `a.b.kind` -> `kind`. */
+function lastAccessor(operand: string): string {
+  const cleaned = operand.replace(/\s+/g, '');
+  const bracketed = /\[['"]([^'"\]]*)['"]\]$/.exec(cleaned);
+  if (bracketed) return bracketed[1] ?? '';
+  const parts = cleaned.split(/\??\./);
+  return parts[parts.length - 1] ?? '';
+}
+
+function lineOf(source: string, index: number): number {
+  return source.slice(0, index).split('\n').length;
+}
+
+function scanSource(file: string, source: string): ScanResult {
+  const hits: SentinelHit[] = [];
+
+  for (const [pattern, group] of [
+    [LEFT_COMPARISON, 1],
+    [RIGHT_COMPARISON, 2],
+  ] as const) {
+    for (const match of source.matchAll(pattern)) {
+      const operand = match[group] ?? '';
+      const accessor = lastAccessor(operand);
+      hits.push({
+        file,
+        line: lineOf(source, match.index),
+        operand,
+        accessor,
+        isKindDiscriminant: KIND_DISCRIMINANTS.has(accessor),
+        text: match[0].replace(/\s+/g, ' '),
+      });
+    }
+  }
+
+  const total = [...source.matchAll(ANY_COMPARISON)].length;
+  const membership = [...source.matchAll(MEMBERSHIP_TEST)].map(
+    (m) => `${file}:${String(lineOf(source, m.index))} ${m[0].trim()}`,
+  );
+
+  return { hits, unparsed: total - hits.length, membership };
+}
+
+function describeHit(hit: SentinelHit): string {
+  return `${hit.file}:${String(hit.line)} ${hit.text} (operand ends in "${hit.accessor}")`;
+}
+
+describe('sentinel scan: the scanner itself', () => {
+  // These cases are independent of what the repo currently contains, so the
+  // scanner cannot rot into something that matches nothing and still passes.
+  const W = SENTINEL_WORD;
+
+  it('flags a hook-derived agent id compared against the sentinel', () => {
+    for (const sample of [
+      `if (event.agentId === '${W}') { drop(); }`,
+      `if (event.raw['agent_id'] === '${W}') { drop(); }`,
+      `return e.agentId !== '${W}';`,
+      `const isMainThread = '${W}' === event.agentId;`,
+      `if (event?.agentId === '${W}') { drop(); }`,
+      `if (agentId === "${W}") { drop(); }`,
+      `if (p.agent_id === '${W}') { drop(); }`,
+    ]) {
+      const result = scanSource('sample.ts', sample);
+      expect(result.hits, sample).toHaveLength(1);
+      expect(result.unparsed, sample).toBe(0);
+      expect(result.hits[0]?.isKindDiscriminant, sample).toBe(false);
+    }
+  });
+
+  it('allows a declared node-kind discriminant', () => {
+    for (const sample of [
+      `if (node.kind === '${W}') { return root; }`,
+      `const acc = batch.kind === '${W}' ? this.main : other;`,
+      `if (a.parent.transcriptKind === '${W}') return { depth };`,
+      `return site.transcriptKind === '${W}' ? x : y;`,
+      `if (kind === '${W}') { return root; }`,
+    ]) {
+      const result = scanSource('sample.ts', sample);
+      expect(result.hits, sample).toHaveLength(1);
+      expect(result.unparsed, sample).toBe(0);
+      expect(result.hits[0]?.isKindDiscriminant, sample).toBe(true);
+    }
+  });
+
+  it('ignores writes and prose, which are not comparisons', () => {
+    for (const sample of [
+      `const node = { kind: '${W}', id: 'root' };`,
+      `kind: '${W}' | 'subagent';`,
+      `// never compare an id to the literal ${W}`,
+      `/** CC omits the key; the literal \`"${W}"\` never appears. */`,
+    ]) {
+      const result = scanSource('sample.ts', sample);
+      expect(result.hits, sample).toHaveLength(0);
+      expect(result.unparsed, sample).toBe(0);
+      expect(result.membership, sample).toEqual([]);
+    }
+  });
+
+  it('reports a comparison whose operand shape it cannot parse', () => {
+    const result = scanSource(
+      'sample.ts',
+      `if (resolve() === '${W}') { drop(); }`,
+    );
+    expect(result.hits).toHaveLength(0);
+    expect(result.unparsed).toBe(1);
+  });
+
+  it('flags membership and switch tests against the sentinel', () => {
+    for (const sample of [
+      `if (ids.includes('${W}')) { drop(); }`,
+      `switch (x) { case '${W}': return null; }`,
+      `if (id.startsWith('${W}')) { drop(); }`,
+    ]) {
+      const result = scanSource('sample.ts', sample);
+      expect(result.membership, sample).toHaveLength(1);
+    }
+  });
+});
+
+describe('sentinel scan: every production source under src/', () => {
+  it('reaches the hook-event consumers, discovered from disk', async () => {
+    const files = (await productionSources()).map(repoRelative);
+    expect(files.length).toBeGreaterThan(0);
+    for (const required of REQUIRED_IN_SCAN) {
+      expect(files, `scan must reach ${required}`).toContain(required);
+    }
+  });
+
+  it('no production file compares a non-kind operand against the sentinel', async () => {
+    const violations: string[] = [];
+    const allowed: SentinelHit[] = [];
+    const unparsed: string[] = [];
+
+    for (const absolute of await productionSources()) {
+      const file = repoRelative(absolute);
+      const result = scanSource(file, await readFile(absolute, 'utf8'));
+
+      for (const hit of result.hits) {
+        if (hit.isKindDiscriminant) allowed.push(hit);
+        else violations.push(describeHit(hit));
+      }
+      violations.push(...result.membership);
+      if (result.unparsed > 0) {
+        unparsed.push(
+          `${file}: ${String(result.unparsed)} unrecognised comparison(s)`,
+        );
+      }
+    }
+
+    expect(violations).toEqual([]);
+    // A shape the extractor cannot attribute must be reviewed, never ignored.
+    expect(unparsed).toEqual([]);
+    // Anti-vacuity: the scanner must actually be finding comparisons in this
+    // repo. Deleting every legitimate discriminant fails this, so the guard
+    // cannot be satisfied by removing the sites it was built to allow.
+    expect(allowed.length).toBeGreaterThan(0);
+  });
+
+  it('the hook-event path compares nothing against the sentinel, kind or not', async () => {
+    const scanned: string[] = [];
+    const violations: string[] = [];
+
+    for (const absolute of await productionSources()) {
+      const file = repoRelative(absolute);
+      if (!HOOK_PATH_FILES.includes(file)) continue;
+      scanned.push(file);
+
+      const result = scanSource(file, await readFile(absolute, 'utf8'));
+      // These modules consume NormalizedHookEvent and build no domain tree, so
+      // even a kind discriminant would be out of place here.
+      violations.push(...result.hits.map(describeHit));
+      violations.push(...result.membership);
+      if (result.unparsed > 0) violations.push(`${file}: unrecognised comparison`);
+    }
+
+    expect(scanned.sort()).toEqual([...HOOK_PATH_FILES].sort());
+    expect(violations).toEqual([]);
+  });
+});
+
 describe('grounding guards, asserted against the source text', () => {
-  /** A quoted string literal whose entire content is the sentinel word. */
-  const QUOTED_SENTINEL = /(['"`])ma[i]n\1/g;
-
-  /** The sentinel word quoted and adjacent to an equality/membership test. */
-  const SENTINEL_COMPARISON =
-    /(?:===|!==|==|!=|\.includes\(|\.indexOf\(|case\s+)\s*(['"`])ma[i]n\1|(['"`])ma[i]n\2\s*(?:===|!==|==|!=)/g;
-
   it('src/hooks/listener.ts contains no quoted agent-id sentinel at all', async () => {
     const source = await readFile(LISTENER_SOURCE_PATH, 'utf8');
     expect(source.match(QUOTED_SENTINEL)).toBeNull();
-    expect(source.match(SENTINEL_COMPARISON)).toBeNull();
+    expect(scanSource('listener.ts', source).hits).toEqual([]);
   });
 
   it('src/hooks/listener.test.ts never compares an agent id against the sentinel', async () => {
@@ -873,7 +1154,10 @@ describe('grounding guards, asserted against the source text', () => {
       fileURLToPath(new URL('./listener.test.ts', import.meta.url)),
       'utf8',
     );
-    expect(source.match(SENTINEL_COMPARISON)).toBeNull();
+    const result = scanSource('listener.test.ts', source);
+    expect(result.hits).toEqual([]);
+    expect(result.unparsed).toBe(0);
+    expect(result.membership).toEqual([]);
   });
 
   it('the hook-event contract added to events.ts contains no quoted sentinel', async () => {
@@ -884,7 +1168,7 @@ describe('grounding guards, asserted against the source text', () => {
 
     const hookSection = source.slice(start);
     expect(hookSection.match(QUOTED_SENTINEL)).toBeNull();
-    expect(hookSection.match(SENTINEL_COMPARISON)).toBeNull();
+    expect(scanSource('events.ts#hooks', hookSection).hits).toEqual([]);
   });
 
   it('is not vacuous: events.ts does carry the legitimate AgentNode.kind literal', async () => {
@@ -895,10 +1179,10 @@ describe('grounding guards, asserted against the source text', () => {
     // The domain model's `kind` discriminant uses the same word deliberately
     // and must keep working. Its presence proves the scan above would have
     // fired had the hook contract used the word the same way.
-    expect(preHookSection).toContain("kind: 'main' | 'subagent'");
+    expect(preHookSection).toContain(`kind: '${SENTINEL_WORD}' | 'subagent'`);
     expect(preHookSection.match(QUOTED_SENTINEL)).not.toBeNull();
     // ...and even the pre-existing model never *compares* against it.
-    expect(preHookSection.match(SENTINEL_COMPARISON)).toBeNull();
+    expect(scanSource('events.ts#model', preHookSection).hits).toEqual([]);
   });
 
   it('G1: the listener imports no filesystem API and writes nothing', async () => {

@@ -895,6 +895,38 @@ describe('HookListener bind failures', () => {
 //
 // The file set is walked off disk, never hard-coded, so a consumer module
 // added tomorrow is covered the day it lands.
+//
+// WHAT THIS SCAN IS AND IS NOT
+// ----------------------------
+// It is a TEXTUAL scan, not a proof. It reads source as text and has no model
+// of value flow, so it catches the literal at the point of comparison or
+// binding and nothing further. Measured against 16 deliberate evasion shapes
+// by the phase verifier: 9 caught, 7 not.
+//
+//   Caught: direct comparison in any operand shape, bracket access
+//     (`raw['agent_id']`), optional chaining, reversed operands, membership
+//     and switch tests, and — via the `unparsed` counter — comparisons whose
+//     operand it cannot parse at all, e.g. wrapping the left side in a
+//     `String(...)` call. That counter is the safety net: an unrecognised
+//     shape FAILS rather than passing quietly.
+//   Not caught: value-flow indirection where the literal never appears next
+//     to the comparison — `Object.is(a, b)`, building the word by
+//     concatenation, `Set.has`, array `includes` against a list built
+//     elsewhere, a regex, `localeCompare`. A named constant is the one
+//     realistic member of that family, and it is closed in the
+//     zero-tolerance tier by flagging the BINDING (see SENTINEL_BINDINGS)
+//     rather than the comparison.
+//
+// Note that this comment block, like the ones below, avoids writing the
+// sentinel as a bare quoted literal. That is not squeamishness: the scan reads
+// this file too, and prose that spells out a violation would be flagged as
+// one. A false positive here fails loudly and is reworded in seconds, which is
+// the right trade against stripping comments and risking a false negative.
+//
+// Do not read a green run as proof that no code path matches the sentinel. It
+// is evidence that no path does so in a shape a reader would recognise. The
+// behavioural tests above — absence-of-key attribution and its sharp converse
+// — are what actually pin the semantics.
 
 /** The sentinel word, assembled so this file's own source never contains it. */
 const SENTINEL_WORD = 'ma' + 'in';
@@ -917,6 +949,28 @@ const MEMBERSHIP_TEST =
 
 /** A quoted string literal whose entire content is the sentinel word. */
 const QUOTED_SENTINEL = /(['"`])ma[i]n\1/g;
+
+/**
+ * The bare sentinel bound to a name — a `const`/`let`/`var` declaration, a
+ * plain assignment, or an object property whose value is the bare literal.
+ * Checked ONLY in the zero-tolerance tier, because the identical shape
+ * (`kind:` followed by the literal) is a legitimate object-property write in
+ * the domain-model files and must not be flagged there.
+ *
+ * This exists because a named constant is the way a developer would most
+ * naturally write the bug the whole scan is aimed at: declare the literal
+ * once under a name, then compare an agent id against that name. The
+ * comparison is invisible to any textual scan the moment the literal has a
+ * name, so catching the BINDING is what closes it.
+ */
+const SENTINEL_BINDINGS: readonly RegExp[] = [
+  // const / let / var NAME [: Type] = <sentinel>
+  /\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*(?::[^=;\n]+)?=\s*(['"`])ma[i]n\1/g,
+  // lhs = <sentinel>  (a single '=', never part of ==, ===, !=, <=, >=, =>)
+  /[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*(?<![=!<>])=(?![=>])\s*(['"`])ma[i]n\1/g,
+  // NAME: <sentinel> in an object-property position
+  /[A-Za-z_$][\w$]*\s*:\s*(['"`])ma[i]n\1/g,
+];
 
 /**
  * The only operands allowed to be compared against the sentinel: the declared
@@ -979,6 +1033,11 @@ interface ScanResult {
   unparsed: number;
   /** Membership/switch tests against the sentinel; always a violation. */
   membership: string[];
+  /**
+   * The bare sentinel bound to a name. Only meaningful in the zero-tolerance
+   * tier — see {@link SENTINEL_BINDINGS}.
+   */
+  bindings: string[];
 }
 
 /** The trailing accessor of an operand chain: `a.b.kind` -> `kind`. */
@@ -1020,7 +1079,24 @@ function scanSource(file: string, source: string): ScanResult {
     (m) => `${file}:${String(lineOf(source, m.index))} ${m[0].trim()}`,
   );
 
-  return { hits, unparsed: total - hits.length, membership };
+  // The binding patterns deliberately overlap — a declaration is also an
+  // assignment — so results are keyed by where the sentinel literal ends,
+  // which is identical across patterns for one occurrence. Without this a
+  // single `const X = <sentinel>` would be reported twice.
+  const byLiteralEnd = new Map<number, string>();
+  for (const pattern of SENTINEL_BINDINGS) {
+    for (const m of source.matchAll(pattern)) {
+      const key = m.index + m[0].length;
+      const text = `${file}:${String(lineOf(source, m.index))} ${m[0].replace(/\s+/g, ' ').trim()}`;
+      const existing = byLiteralEnd.get(key);
+      if (existing === undefined || text.length > existing.length) {
+        byLiteralEnd.set(key, text);
+      }
+    }
+  }
+  const bindings = [...byLiteralEnd.values()];
+
+  return { hits, unparsed: total - hits.length, membership, bindings };
 }
 
 function describeHit(hit: SentinelHit): string {
@@ -1085,6 +1161,32 @@ describe('sentinel scan: the scanner itself', () => {
     );
     expect(result.hits).toHaveLength(0);
     expect(result.unparsed).toBe(1);
+  });
+
+  it('flags the bare sentinel bound to a name', () => {
+    for (const sample of [
+      `const MAIN_ID = '${W}';`,
+      `const MAIN_ID: string = '${W}';`,
+      `let fallback = '${W}';`,
+      `var legacy = "${W}";`,
+      `this.mainId = '${W}';`,
+      `const cfg = { mainId: '${W}' };`,
+    ]) {
+      const result = scanSource('sample.ts', sample);
+      expect(result.bindings, sample).toHaveLength(1);
+    }
+  });
+
+  it('does not mistake a comparison or prose for a binding', () => {
+    for (const sample of [
+      `if (node.kind === '${W}') { return root; }`,
+      `if (x !== '${W}') { return; }`,
+      `const arrow = () => '${W}';`,
+      `// the literal \`"${W}"\` has never appeared in any capture`,
+    ]) {
+      const result = scanSource('sample.ts', sample);
+      expect(result.bindings, sample).toEqual([]);
+    }
   });
 
   it('flags membership and switch tests against the sentinel', () => {
@@ -1164,6 +1266,27 @@ describe('sentinel scan: every production source under src/', () => {
 
     expect(scanned.sort()).toEqual([...HOOK_PATH_FILES].sort());
     expect(violations).toEqual([]);
+  });
+
+  it('the hook-event path never binds the bare sentinel to a name', async () => {
+    // Closes the one non-contrived evasion: bind the literal to a constant,
+    // then compare an agent id against that constant. The comparison is
+    // invisible to any textual scan once the literal has a name, so the
+    // binding is what gets caught. Scoped to these two files precisely
+    // because the same shape (`kind:` followed by the literal) is a
+    // legitimate property write elsewhere in the model.
+    const scanned: string[] = [];
+    const bindings: string[] = [];
+
+    for (const absolute of await productionSources()) {
+      const file = repoRelative(absolute);
+      if (!HOOK_PATH_FILES.includes(file)) continue;
+      scanned.push(file);
+      bindings.push(...scanSource(file, await readFile(absolute, 'utf8')).bindings);
+    }
+
+    expect(scanned.sort()).toEqual([...HOOK_PATH_FILES].sort());
+    expect(bindings).toEqual([]);
   });
 });
 

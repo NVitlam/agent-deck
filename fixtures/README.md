@@ -54,8 +54,8 @@ present is `agent-deck`, and every `cwd` in every entry is this repo (G8).
 **What it still does not cover:** a malformed line, a corrupt `.meta.json`, a missing join key, a
 mutated layout, or a mid-file CC version change. The first four are supplied by the `synthetic-*`
 corpus (G6 requires those be clearly labelled and never confused with captured data). The fifth is
-**not covered by design** — G9 pins one CC version, so mid-file drift is a `SchemaMismatch`, not a
-tolerated case.
+covered as of Phase 4: versions are accepted within a window (patch ±5, minor ±1 off the anchor), so
+mid-file drift is a `SchemaMismatch` only when it leaves that window. In-window drift is accepted.
 
 Captured 2026-08-19 from CC **2.1.234**, Windows 11 native. Both sessions were live when captured, so
 they are snapshots of a file still being appended — which is exactly the condition the tailer must
@@ -137,8 +137,12 @@ mistakes `memory/` for a session. Both `spike/tail.mjs` and `src/parser/tailer.t
 they find sessions from `<sessionId>.jsonl` **files** and only then look for the matching directory.
 Keep that ordering; "improving" it to a directory scan is the regression.
 
-A mid-file CC version change is also absent, and stays absent **by design** — G9 pins one CC version,
-so drift is a `SchemaMismatch`, not a case to cover. Do not add a drift fixture.
+A mid-file CC version change is no longer refused outright. Phase 4 replaced the single pin with an
+acceptance window by user decision, so a file spanning versions is accepted when all of them are
+in-window and refused when the drift leaves it. Both directions are pinned in
+`src/parser/fingerprint.test.ts`; `synthetic-layout/07` and `08` were re-versioned to `2.1.400`
+because their old `2.1.235` is now accepted and both would otherwise have silently stopped testing
+refusal. Earlier text here said this stayed absent by design — that was true until Phase 4.
 
 ## Privacy — status after the Phase 1 scrub
 

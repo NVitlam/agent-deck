@@ -38,6 +38,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import {
   copyFile,
   mkdir,
@@ -86,6 +87,52 @@ const DENIED_MODULE_IDS = [
 // ---------------------------------------------------------------------------
 // staging
 // ---------------------------------------------------------------------------
+
+/**
+ * Port band for the census child.
+ *
+ * NOT arbitrary. Windows hands out 49152-65535 for OUTBOUND ephemeral sockets,
+ * including the ones this very suite opens, so a census port drawn from there
+ * can be taken by a client socket in another worker between being chosen and
+ * being bound. Measured: one full-suite run in fifteen failed exactly that way,
+ * with the census child unable to bind 49753 and reporting no TCP handle at
+ * all. The band below stops short of 49152 so the OS will never assign one of
+ * these numbers to anything on its own.
+ */
+const CENSUS_PORT_MIN = 40000;
+const CENSUS_PORT_MAX = 49150;
+
+/**
+ * A census port that was bindable a moment ago.
+ *
+ * Unlike the listener's own tests — which now bind port 0 on the listener
+ * itself and never handle a bare port number — this one CANNOT close the
+ * window. The census drives the real bundled `activate()`, which reads its port
+ * from configuration and refuses port 0 on purpose (that refusal is a shipped
+ * property, and a test-only escape hatch is not reachable through the vscode
+ * config the child stubs). A bound handle cannot be handed to a separate
+ * process portably either. So the window is made as small as it can be —
+ * probe-bind, close, spawn immediately, from a band the OS never assigns —
+ * and the caller retries a bounded number of times on a different port. See
+ * the retry note at the spawn site.
+ */
+async function reserveCensusPort(): Promise<number> {
+  const span = CENSUS_PORT_MAX - CENSUS_PORT_MIN;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const candidate = CENSUS_PORT_MIN + Math.floor(Math.random() * span);
+    const free = await new Promise<boolean>((resolve) => {
+      const probe = createServer();
+      probe.once('error', () => resolve(false));
+      probe.listen(candidate, '127.0.0.1', () => {
+        probe.close(() => resolve(true));
+      });
+    });
+    if (free) return candidate;
+  }
+  throw new Error(
+    `no free port in ${String(CENSUS_PORT_MIN)}..${String(CENSUS_PORT_MAX)} after 50 probes`,
+  );
+}
 
 const tempRoots: string[] = [];
 
@@ -565,30 +612,65 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
     await writeFile(join(stub, 'index.js'), VSCODE_STUB);
     await writeFile(join(stage, 'census.cjs'), CENSUS_PROGRAM);
 
-    // An ephemeral-but-known port. The extension refuses to bind port 0, and
-    // the live hook tap in this repo may well hold 47821 right now, so the
-    // census must not race it.
-    port = 40000 + Math.floor(Math.random() * 20000);
+    // A known port, probed free immediately before the spawn. The extension
+    // refuses to bind port 0 by design, and the live hook tap in this repo may
+    // well hold 47821 right now, so the census cannot use either.
+    //
+    // The retry, argued rather than assumed. Everywhere else in this package a
+    // port race was CLOSED, not narrowed — the listener binds port 0 itself and
+    // no bare number is ever handed around. That is unavailable here: the child
+    // runs the shipped `activate()`, which takes its port from configuration
+    // and refuses 0, and a bound socket cannot be handed to another process
+    // portably on Windows. What is left is to shrink the window (a band the OS
+    // never assigns, probed free microseconds earlier) and to retry on a
+    // DIFFERENT port when the child reports no listening socket. The retry is
+    // bounded and it cannot hide a product defect: a bind that fails on five
+    // separately-probed ports is not a race, and the assertions below then run
+    // against the last report and fail with it.
+    const MAX_BIND_ATTEMPTS = 5;
+    let attempts = 0;
+    let parsed: CensusReport | undefined;
+    let lastStdout = '';
+    for (;;) {
+      attempts += 1;
+      port = await reserveCensusPort();
 
-    const run = spawnSync(process.execPath, [join(stage, 'census.cjs')], {
-      encoding: 'utf8',
-      timeout: 60_000,
-      env: {
-        ...process.env,
-        CLAUDE_PROJECTS_ROOT: CAPTURED_ROOT,
-        CENSUS_WORKSPACE: await capturedWorkspacePath(),
-        CENSUS_PORT: String(port),
-      },
-    });
-    stderr = run.stderr ?? '';
-    const line = (run.stdout ?? '')
-      .split(/\r?\n/)
-      .find((l) => l.startsWith('__CENSUS__'));
+      const run = spawnSync(process.execPath, [join(stage, 'census.cjs')], {
+        encoding: 'utf8',
+        timeout: 60_000,
+        env: {
+          ...process.env,
+          CLAUDE_PROJECTS_ROOT: CAPTURED_ROOT,
+          CENSUS_WORKSPACE: await capturedWorkspacePath(),
+          CENSUS_PORT: String(port),
+        },
+      });
+      stderr = run.stderr ?? '';
+      lastStdout = run.stdout ?? '';
+      const line = lastStdout
+        .split(/\r?\n/)
+        .find((l) => l.startsWith('__CENSUS__'));
+      if (line !== undefined) {
+        parsed = JSON.parse(line.slice('__CENSUS__'.length)) as CensusReport;
+        const bound = (parsed.phases['activated'] ?? []).some(
+          (h) => h.handle === 'TCP',
+        );
+        if (bound) break;
+      }
+      if (attempts >= MAX_BIND_ATTEMPTS) break;
+    }
+    if (attempts > 1) {
+      // Never silent: a retried census is a fact a reviewer should see even on
+      // a green run, because a rising count means the band is getting crowded.
+      process.stderr.write(
+        `[census] the child needed ${String(attempts)} bind attempt(s)\n`,
+      );
+    }
     expect(
-      line,
-      `census child produced no report.\nstdout:\n${run.stdout ?? ''}\nstderr:\n${stderr}`,
+      parsed,
+      `census child produced no report after ${String(attempts)} attempt(s).\nstdout:\n${lastStdout}\nstderr:\n${stderr}`,
     ).toBeDefined();
-    report = JSON.parse((line as string).slice('__CENSUS__'.length)) as CensusReport;
+    report = parsed as CensusReport;
 
     // The census is evidence, and evidence nobody can print is hard to audit.
     // `AGENT_DECK_CENSUS_DEBUG=1 npx vitest run src/hooks/egress.test.ts`

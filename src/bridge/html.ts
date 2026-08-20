@@ -24,12 +24,18 @@
  *   script-src 'nonce-N'  One nonce, fresh per load. No 'unsafe-inline', no
  *                         'unsafe-eval', no host source at all — not even
  *                         cspSource, so an unnonced script from our own origin
- *                         is refused too.
+ *                         is refused too. That last property is load-bearing
+ *                         and got MORE load-bearing once cspSource was
+ *                         measured: VS Code's real value contains `'self'`, so
+ *                         putting cspSource in script-src would permit any
+ *                         same-origin script with no nonce at all. cspSource
+ *                         stays out of script-src; a test pins that.
  *   style-src 'nonce-N' <cspSource>
  *                         The stylesheet ships as a file under the extension's
  *                         own resource root. The nonce is there so a bundled
  *                         `<style nonce>` also works without ever reaching for
- *                         'unsafe-inline'.
+ *                         'unsafe-inline'. This is the only directive
+ *                         cspSource appears in, and a test pins that too.
  *
  * There is no `img-src` and no `font-src`. Both therefore fall back to
  * `default-src 'none'`, i.e. the webview cannot load an image or a font at all.
@@ -76,20 +82,90 @@ export function createNonce(): string {
 const NONCE_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
 /**
- * Characters allowed in a CSP source expression.
+ * `cspSource` validation.
  *
- * A `'`, `;` or space in `cspSource` would let the caller append directives to
- * the policy — CSP injection, from a value we interpolate. Throwing is right
- * here: unlike a webview message, this value comes from the host, and a
- * malformed one means the extension is wired wrong, not that someone is
- * probing us.
+ * MEASURED, not remembered. `vscode.Webview.cspSource` is a CSP **source
+ * list**: a space-separated sequence of source expressions, not a single
+ * origin. The getter, read out of the installed
+ * `resources/app/out/vs/workbench/api/node/extensionHostProcess.js` at VS Code
+ * 1.134.0 (commit 110a328ea54b42367b803ec53ee0bf52ef26b419), is:
  *
- * The charset admits both shapes VS Code is known to supply — the
- * `vscode-webview://<uuid>` origin and the desktop host's
- * `https://file+.vscode-resource.vscode-cdn.net`, whose `+` is why that
- * character is here — and nothing that could close a directive.
+ *     const CDN = "vscode-cdn.net";
+ *     const BASE = `'self' https://*.${CDN}`;
+ *     get cspSource() {
+ *       const loc = this.extensionLocation;
+ *       if (loc.scheme === https || loc.scheme === http) {
+ *         let e = loc.toString();
+ *         if (!e.endsWith("/")) e += "/";
+ *         return e + " " + BASE;
+ *       }
+ *       return BASE;
+ *     }
+ *
+ * So the value we actually receive on the desktop host is exactly
+ * `'self' https://*.vscode-cdn.net`, and on a remote/web host it is
+ * `<extensionLocation>/ 'self' https://*.vscode-cdn.net`. An earlier version of
+ * this file validated the whole string against a single-origin charset that
+ * admitted neither a space nor an apostrophe, and therefore refused VS Code's
+ * real value — the panel could not open, with this file's own error in the
+ * modal. That charset, and the claim above it about "both shapes VS Code is
+ * known to supply", were written from assumption. Re-measure with the getter
+ * above before changing anything here.
+ *
+ * The guard is not relaxed to accommodate this; it is moved down a level.
+ * Validating the whole string against a charset that included `'` and ` `
+ * would accept `'self'; script-src 'unsafe-inline'` and make this function
+ * decoration. Instead each token is validated on its own, and a token is
+ * legitimate in exactly one of two ways:
+ *
+ *   - a quoted CSP keyword, from a closed allowlist (below), or
+ *   - a host source, matching the origin charset (below).
+ *
+ * `;` is the directive separator and appears in neither, so no accepted value
+ * can terminate `style-src` or open a directive of its own. Whitespace other
+ * than a plain space — newline, tab, CR, form feed — is outside the host
+ * charset and is not a keyword, so it is refused rather than silently treated
+ * as a separator. An empty token, from a leading, trailing or doubled space,
+ * is refused by both branches.
+ *
+ * Throwing is right here: unlike a webview message, this value comes from the
+ * host, and a malformed one means the extension is wired wrong, not that
+ * someone is probing us.
  */
-const CSP_SOURCE_PATTERN = /^[A-Za-z0-9:/._+*-]+$/;
+const CSP_SOURCE_KEYWORDS: ReadonlySet<string> = new Set([
+  // The one VS Code actually sends.
+  "'self'",
+  // Harmless by construction: it permits nothing.
+  "'none'",
+]);
+// Deliberately NOT in that set, and this is the whole point of it being an
+// allowlist rather than a quoted-string pattern: `'unsafe-inline'`,
+// `'unsafe-eval'`, `'unsafe-hashes'`, `'strict-dynamic'`. Accepting any of
+// them would let the host value dismantle the policy this file exists to
+// enforce — the nonce would become decorative. Nonce and hash expressions are
+// excluded for the same reason: we mint our own nonce, so a host-supplied one
+// could only widen what is permitted.
+
+/**
+ * Characters allowed in a single host-source token.
+ *
+ * Unchanged from the charset this file has always carried, and it admits every
+ * host token measured above: `https://*.vscode-cdn.net` needs only `:/.*-`
+ * beyond alphanumerics. The `+` is for
+ * `https://file+.vscode-resource.vscode-cdn.net`, the origin `asWebviewUri`
+ * returns on the desktop host.
+ */
+const CSP_HOST_SOURCE_PATTERN = /^[A-Za-z0-9:/._+*-]+$/;
+
+/** One source expression: a keyword from the allowlist, or a host source. */
+function isCspSourceToken(token: string): boolean {
+  // Any apostrophe at all routes to the allowlist, so an unbalanced or
+  // misplaced quote (`'self`, `self'`, `a'b`) can never reach the charset
+  // branch. It would not have matched there either, but the ordering makes
+  // that a property rather than a coincidence.
+  if (token.includes("'")) return CSP_SOURCE_KEYWORDS.has(token);
+  return CSP_HOST_SOURCE_PATTERN.test(token);
+}
 
 export interface WebviewHtmlOptions {
   /** Webview-scoped URI of the script bundle. Must be same-origin (`asWebviewUri`). */
@@ -122,7 +198,10 @@ function requireNonce(nonce: string): string {
 }
 
 function requireCspSource(cspSource: string): string {
-  if (!CSP_SOURCE_PATTERN.test(cspSource)) {
+  // Split on the plain space only. Every other whitespace character is then an
+  // invalid character *inside* a token rather than a separator, so a newline
+  // cannot smuggle a second directive past this check.
+  if (!cspSource.split(' ').every(isCspSourceToken)) {
     throw new WebviewHtmlError(
       'cspSource contains characters that could inject a CSP directive',
     );
@@ -187,11 +266,13 @@ export function webviewHtml(options: WebviewHtmlOptions): string {
     cspSource: options.cspSource,
   });
   // The policy is interpolated into the attribute UNESCAPED, and may be: both
-  // interpolated values are charset-validated above, and every other character
-  // of it is a literal in this file, so it provably contains no `"` to close
-  // the attribute with. Escaping it would work too — entities are decoded
-  // before the policy is parsed — but it renders `'none'` as `&#39;none&#39;`,
-  // which makes the one string a reviewer must read by eye unreadable.
+  // interpolated values are validated above, and every other character of it
+  // is a literal in this file, so it provably contains no `"` to close the
+  // attribute with. The apostrophes in `'none'` and in cspSource's `'self'`
+  // are not a problem: the attribute is delimited by double quotes. Escaping
+  // would work too — entities are decoded before the policy is parsed — but it
+  // renders `'none'` as `&#39;none&#39;`, which makes the one string a
+  // reviewer must read by eye unreadable.
   const title = escapeText(options.title ?? 'Agent Deck');
   const script = escapeAttribute(options.scriptUri);
   const styleLink =

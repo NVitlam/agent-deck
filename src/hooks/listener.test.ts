@@ -1112,10 +1112,17 @@ describe('sentinel scan: every production source under src/', () => {
     expect(violations).toEqual([]);
     // A shape the extractor cannot attribute must be reviewed, never ignored.
     expect(unparsed).toEqual([]);
-    // Anti-vacuity: the scanner must actually be finding comparisons in this
-    // repo. Deleting every legitimate discriminant fails this, so the guard
-    // cannot be satisfied by removing the sites it was built to allow.
+    // Anti-vacuity. A scan that silently matches nothing reads as coverage
+    // while proving nothing, so the scanner must demonstrably be finding real
+    // comparisons in this repo — in more than one file, so a single refactor
+    // cannot quietly hollow it out. This is also why the guard cannot be
+    // satisfied by DELETING the legitimate sites it was built to allow.
     expect(allowed.length).toBeGreaterThan(0);
+    expect(new Set(allowed.map((hit) => hit.file)).size).toBeGreaterThan(1);
+    // Every allowed hit is a kind discriminant and nothing else.
+    expect([...new Set(allowed.map((hit) => hit.accessor))].sort()).toEqual(
+      [...KIND_DISCRIMINANTS].sort(),
+    );
   });
 
   it('the hook-event path compares nothing against the sentinel, kind or not', async () => {

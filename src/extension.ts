@@ -413,7 +413,12 @@ export class AgentDeckDataPath {
           message: error instanceof Error ? error.message : String(error),
         };
       }
-      this.liveness.setHookListenerRunning(false);
+      // Nothing to set on the engine here, and that is deliberate rather than
+      // an omission: it was CONSTRUCTED with `hookListenerRunning: false`, and
+      // only a successful bind above flips it true. A `setHookListenerRunning(
+      // false)` on this line would be unreachable-in-effect code — a mutation
+      // check confirmed removing it changes no behaviour — and unreachable
+      // safety code is the kind that rots into a false assurance.
       this.#onError(error);
     }
 

@@ -1234,6 +1234,52 @@ describe('the host bundle', () => {
     expect(text).not.toContain('new WebSocket(');
     expect(text).not.toContain('XMLHttpRequest');
   });
+
+  /**
+   * KNOWN DEFECT, recorded rather than described.
+   *
+   * `esbuild.config.mjs` emits the host entry as CommonJS into
+   * `dist/extension.js`, and `package.json` says `"type": "module"`. Node
+   * decides a `.js` file's format from the nearest `package.json`, so it parses
+   * the CJS bundle as ESM and `module.exports` never reaches the caller.
+   *
+   * Measured three ways, on Node v24.15.0:
+   *   - `require('./dist/extension.js')` from the repo root -> the CJS wrapper
+   *     runs and fails only on the external `vscode`;
+   *   - the packaged VSIX unzipped, with a stub `vscode` resolvable:
+   *     `activate` and `deactivate` are BOTH `undefined`;
+   *   - the byte-identical file copied outside a `"type": "module"` package, or
+   *     with a `dist/package.json` of `{"type":"commonjs"}` next to it:
+   *     `activate` and `deactivate` are both `function`.
+   *
+   * VS Code would install the VSIX and then report that the extension has no
+   * `activate`. The fix is one line, in a file this package does not own —
+   * either `esbuild.config.mjs` writing `dist/extension.cjs`, or the `"type"`
+   * field of `package.json`, which was set by the orchestrator and is outside
+   * this package's grant.
+   *
+   * `it.fails` is deliberate: this passes while the defect stands and turns RED
+   * the moment it is fixed, which is when this block must be deleted and the
+   * real end-to-end `require(main)` assertion put in its place.
+   */
+  it.fails(
+    'KNOWN DEFECT: "type":"module" makes VS Code load the CommonJS host bundle as ESM',
+    async () => {
+      const manifest = JSON.parse(
+        await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+      ) as { type?: string; main?: string };
+      const config = await readFile(
+        fileURLToPath(new URL('../esbuild.config.mjs', import.meta.url)),
+        'utf8',
+      );
+      // Precondition: the host bundle really is CommonJS.
+      expect(config).toContain("format: 'cjs'");
+      expect(manifest.main).toBe('./dist/extension.js');
+      // The assertion that must hold and does not: a bare `.js` main cannot
+      // live under `"type": "module"` if it is CommonJS.
+      expect(manifest.type === 'module' && manifest.main?.endsWith('.js')).toBe(false);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

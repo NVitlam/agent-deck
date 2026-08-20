@@ -48,3 +48,14 @@ PLAN.md
 CLAUDE.md
 HANDOVER.md
 agent-deck-spec.md
+
+# Historical v1 documents. `docs/README.md` is the only doc a user wants, and
+# it is deliberately NOT excluded — there is no root README yet (Phase 5 owns
+# it), so this is what the VSIX ships.
+docs/PLAN-v1.md
+docs/agent-deck-spec-v1.md
+
+# The VSIX itself. `--out dist/agent-deck.vsix` writes into a directory this
+# file otherwise ships wholesale, so without this line the second `npm run
+# package` embeds the first one's artifact.
+dist/*.vsix

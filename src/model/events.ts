@@ -198,10 +198,36 @@ export interface SchemaMismatchMessage {
   sessionId: string;
 }
 
+/**
+ * The hook tap's health, which is NOT a property of any session and therefore
+ * cannot travel on `SessionState`.
+ *
+ * G2 in message form. When no hook events are arriving — the user has not
+ * installed the hook block, or the listener failed to bind — the content tap
+ * still renders a full tree, but nothing can say what is running *right now*.
+ * The webview shows a banner and, per spec C4, does not nag.
+ *
+ * Global rather than per-session on purpose: the listener is one socket for
+ * the whole window, so a per-session degraded flag would repeat one fact N
+ * times and invite the two copies to disagree.
+ *
+ * Phase 3 addition. The spec listed three host -> webview messages and
+ * simultaneously required a degraded banner; those two statements were not
+ * satisfiable together, because no message carried the flag. This is the
+ * smaller change: a fourth message, rather than a field on every session.
+ */
+export interface DegradedMessage {
+  type: 'degraded';
+  degraded: boolean;
+  /** Absent when `degraded` is false. Mirrors `DegradedReason` in liveness.ts. */
+  reason?: 'noHookEvents' | 'listenerDown';
+}
+
 export type HostToWebviewMessage =
   | SnapshotMessage
   | DiffMessage
-  | SchemaMismatchMessage;
+  | SchemaMismatchMessage
+  | DegradedMessage;
 
 export interface ExpandNodeMessage {
   type: 'expandNode';

@@ -158,6 +158,8 @@ describe('message contract', () => {
       // `unknown`. Phase 2 gave it a real shape, so this is now a real patch.
       { type: 'diff', sessionId: 's1', patch: { fields: { liveness: 'idle' } } },
       { type: 'schemaMismatch', sessionId: 's1' },
+      // Phase 3: the hook tap's health is global, not a session field.
+      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
     ];
 
     const seen = messages.map((m) => {
@@ -168,10 +170,17 @@ describe('message contract', () => {
           return `diff:${m.sessionId}`;
         case 'schemaMismatch':
           return `mismatch:${m.sessionId}`;
+        case 'degraded':
+          return `degraded:${String(m.degraded)}:${m.reason ?? 'none'}`;
       }
     });
 
-    expect(seen).toEqual(['snapshot:1', 'diff:s1', 'mismatch:s1']);
+    expect(seen).toEqual([
+      'snapshot:1',
+      'diff:s1',
+      'mismatch:s1',
+      'degraded:true:noHookEvents',
+    ]);
   });
 
   it('webview -> host messages carry only UI intents', () => {

@@ -23,9 +23,10 @@
 
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { cp, mkdtemp, readFile, readdir, rm, stat, utimes } from 'node:fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { createRequire } from 'node:module';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -1143,17 +1144,94 @@ describe('activate', () => {
 
 describe('G1: the extension host writes nothing', () => {
   /**
-   * Comments are stripped before scanning, because the source deliberately
-   * NAMES the things it must not do ("no `workspaceState`, no `globalState`,
-   * no cache file"). A scan of the raw text would match its own promise not to
-   * do the thing and fail, which is how a guard gets deleted.
+   * Comments are stripped before the forbidden-token scans below, because the
+   * source deliberately NAMES the things it must not do ("no `workspaceState`,
+   * no `globalState`, no cache file"). A scan of the raw text would match the
+   * file's own promise not to do the thing and fail, which is how a guard gets
+   * deleted rather than fixed.
    *
-   * Safe here specifically: `src/extension.ts` contains no regex literals and
-   * no string literal containing `//`, so the naive strip cannot eat code.
+   * The strip is naive — a real tokenizer is not worth it here — so it could
+   * eat CODE that looks like a comment, and the scans would then report clean
+   * for the wrong reason, which is worse than no scan at all. The next test
+   * ASSERTS the strip only ever removed comments instead of this comment
+   * claiming it.
+   *
+   * Which hazards are real, measured by mutating `src/extension.ts` and
+   * re-running this file rather than reasoned about:
+   *
+   *   REAL      a string or regex literal containing `/*` (or `*` `/`). It opens
+   *             a block comment, and everything to the next closer vanishes —
+   *             a `writeFileSync` planted in between was hidden. CAUGHT.
+   *   REAL      a template literal spanning lines. The per-line rule below
+   *             cannot see inside it. CAUGHT.
+   *   NOT REAL  a mid-line `//` inside a string, e.g. a URL. The line-comment
+   *             regex is anchored with `^(\s*)`, so it only ever removes a line
+   *             whose FIRST non-whitespace is `//`. That mutant SURVIVED, and
+   *             survived correctly: the strip cannot reach it. An earlier
+   *             version of this comment named it as the hazard and was wrong.
+   *
+   * Line count is preserved (block-comment bodies become spaces, not nothing)
+   * precisely so that check can compare the two texts line by line.
    */
   function stripComments(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, ' '))
+      .replace(/^(\s*)\/\/.*$/gm, '$1');
   }
+
+  it('the strip removed only comments (precondition of the scans below)', async () => {
+    const raw = await readFile(EXTENSION_SOURCE, 'utf8');
+    const stripped = stripComments(raw);
+    const rawLines = raw.split('\n');
+    const strippedLines = stripped.split('\n');
+
+    // Line-preserving, so index i means the same line in both.
+    expect(strippedLines).toHaveLength(rawLines.length);
+
+    let changedLines = 0;
+    for (let i = 0; i < rawLines.length; i += 1) {
+      const before = rawLines[i] as string;
+      const after = strippedLines[i] as string;
+      if (before === after) continue;
+      changedLines += 1;
+
+      // Case 1: the whole line was comment. Nothing of substance was removed.
+      if (after.trim() === '') continue;
+
+      // Case 2: a trailing `//` comment after real code. Safe only if no quote
+      // or backtick opens before the `//` on that line — a `//` preceded only
+      // by non-quote characters cannot be inside a string literal.
+      const marker = before.indexOf('//');
+      expect(
+        marker,
+        `line ${i + 1} changed but has no // marker: ${before}`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        /['"`]/.test(before.slice(0, marker)),
+        `line ${i + 1}: the strip may have eaten a string, not a comment: ${before}`,
+      ).toBe(false);
+    }
+
+    // The residual hole in Case 2 is a template literal spanning lines, whose
+    // interior the per-line rule cannot see. Close it: every backtick in the
+    // stripped source must open and close on its own line.
+    for (let i = 0; i < strippedLines.length; i += 1) {
+      const backticks = (strippedLines[i] as string).split('`').length - 1;
+      expect(
+        backticks % 2,
+        `line ${i + 1} opens a multi-line template literal; the per-line rule above cannot see inside it`,
+      ).toBe(0);
+    }
+
+    // Positive controls. Without these, every assertion above passes vacuously
+    // on a strip that removed nothing, or on an empty read.
+    expect(changedLines).toBeGreaterThan(50);
+    expect(raw).toContain('Carry-forward A');
+    expect(stripped).not.toContain('Carry-forward A');
+    expect(stripped).toContain('export async function activate');
+    expect(stripped).toContain('createJsonlInferenceSource');
+    expect(stripped).toContain('new LivenessEngine({');
+  });
 
   it('names no filesystem-write API and no settings file', async () => {
     const source = stripComments(await readFile(EXTENSION_SOURCE, 'utf8'));
@@ -1211,75 +1289,110 @@ describe('G1: the extension host writes nothing', () => {
 // (10) The built artifact
 // ---------------------------------------------------------------------------
 
-describe('the host bundle', () => {
-  it('is CommonJS that exports activate and deactivate', async () => {
-    const bundlePath = fileURLToPath(new URL('../dist/extension.js', import.meta.url));
-    let exists = true;
-    try {
-      await stat(bundlePath);
-    } catch {
-      exists = false;
-    }
-    // The suite must not depend on a build having been run; when it has, this
-    // asserts the shape VS Code requires.
-    if (!exists) return;
+describe('the host bundle: the manifest and the build must agree', () => {
+  /**
+   * The path VS Code will actually load, read out of `package.json`'s `main`.
+   *
+   * Driven from the manifest rather than from a literal, on purpose. The defect
+   * this block exists for was never "the bundle is wrong" — the bundle was
+   * always correct CommonJS. It was that the MANIFEST and the BUILD disagreed
+   * about what the file IS, and neither side could see the other. A literal
+   * path here would rebuild exactly that blind spot.
+   */
+  async function readManifest(): Promise<{ main: string; type?: string }> {
+    const manifest = JSON.parse(
+      await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+    ) as { main?: string; type?: string };
+    expect(typeof manifest.main, 'package.json must declare a "main"').toBe('string');
+    return manifest as { main: string; type?: string };
+  }
 
-    const text = await readFile(bundlePath, 'utf8');
-    // esbuild's CJS output, with `vscode` left external as the host injects it.
+  function absoluteMain(main: string): string {
+    return fileURLToPath(new URL(`../${main.replace(/^\.\//, '')}`, import.meta.url));
+  }
+
+  /** The built artifact's text, or null when no build has been run. */
+  async function builtText(path: string): Promise<string | null> {
+    try {
+      await stat(path);
+    } catch {
+      return null;
+    }
+    return readFile(path, 'utf8');
+  }
+
+  it('esbuild writes exactly the file the manifest names, in the format it needs', async () => {
+    const { main } = await readManifest();
+    const config = await readFile(
+      fileURLToPath(new URL('../esbuild.config.mjs', import.meta.url)),
+      'utf8',
+    );
+    // `main` is './dist/x'; the build config says 'dist/x'. Same form, compared.
+    expect(config).toContain(`outfile: '${main.replace(/^\.\//, '')}'`);
+    expect(config).toContain("format: 'cjs'");
+  });
+
+  it('a CommonJS bundle under "type": "module" must be named .cjs', async () => {
+    const { main, type } = await readManifest();
+    // Node decides a `.js` file's format from the nearest `package.json`. Under
+    // `"type": "module"` a CommonJS `.js` bundle is parsed as ESM and produces
+    // an INERT module — no throw, no diagnostic, just `activate: undefined`,
+    // which is why this went unseen from Phase 1 until an entry point existed.
+    // `.cjs` is unambiguously CommonJS whatever `"type"` says.
+    if (type === 'module') {
+      expect(main.endsWith('.cjs'), `"type":"module" + ${main} yields an inert module`).toBe(
+        true,
+      );
+    }
+  });
+
+  it('requires as CommonJS and exports activate and deactivate', async () => {
+    const manifest = await readManifest();
+    const bundle = absoluteMain(manifest.main);
+    if ((await builtText(bundle)) === null) return; // no build in this checkout
+
+    // Reproduce the load EXACTLY as VS Code performs it: a plain `require` of
+    // `main`, with the manifest's own `"type"` field governing the file, and
+    // `vscode` resolvable because the host injects it. Staged in a temp tree
+    // rather than in the repo so the probe writes nothing here (G1) and cannot
+    // leave a stub `vscode` behind for another suite to trip over.
+    const stage = await makeTempDir();
+    const relative = manifest.main.replace(/^\.\//, '');
+    const staged = join(stage, relative);
+    await mkdir(dirname(staged), { recursive: true });
+    await copyFile(bundle, staged);
+    await writeFile(
+      join(stage, 'package.json'),
+      `${JSON.stringify({ name: 'agent-deck-load-probe', main: manifest.main, ...(manifest.type === undefined ? {} : { type: manifest.type }) })}\n`,
+    );
+    const stub = join(stage, 'node_modules', 'vscode');
+    await mkdir(stub, { recursive: true });
+    await writeFile(join(stub, 'package.json'), '{"name":"vscode","main":"index.js"}\n');
+    await writeFile(join(stub, 'index.js'), 'module.exports = {};\n');
+
+    const requireFromStage = createRequire(join(stage, 'probe.cjs'));
+    // Proves the stub is what resolution finds, so a failure below is about the
+    // bundle and not about a missing dependency.
+    expect(requireFromStage.resolve('vscode')).toBe(join(stub, 'index.js'));
+
+    const loaded = requireFromStage(staged) as Record<string, unknown>;
+    expect(typeof loaded['activate'], `${manifest.main} must export activate()`).toBe(
+      'function',
+    );
+    expect(typeof loaded['deactivate'], `${manifest.main} must export deactivate()`).toBe(
+      'function',
+    );
+  });
+
+  it('reaches the network through one module and no browser API (G5)', async () => {
+    const { main } = await readManifest();
+    const text = await builtText(absoluteMain(main));
+    if (text === null) return;
+    // `vscode` stays external because the host injects it.
     expect(text).toContain('require("vscode")');
-    expect(text).toContain('activate');
-    expect(text).toContain('deactivate');
-    // G5 at the artifact level: the host bundle reaches the network through
-    // exactly one module, and never through a browser API.
     expect(text).not.toContain('new WebSocket(');
     expect(text).not.toContain('XMLHttpRequest');
   });
-
-  /**
-   * KNOWN DEFECT, recorded rather than described.
-   *
-   * `esbuild.config.mjs` emits the host entry as CommonJS into
-   * `dist/extension.js`, and `package.json` says `"type": "module"`. Node
-   * decides a `.js` file's format from the nearest `package.json`, so it parses
-   * the CJS bundle as ESM and `module.exports` never reaches the caller.
-   *
-   * Measured three ways, on Node v24.15.0:
-   *   - `require('./dist/extension.js')` from the repo root -> the CJS wrapper
-   *     runs and fails only on the external `vscode`;
-   *   - the packaged VSIX unzipped, with a stub `vscode` resolvable:
-   *     `activate` and `deactivate` are BOTH `undefined`;
-   *   - the byte-identical file copied outside a `"type": "module"` package, or
-   *     with a `dist/package.json` of `{"type":"commonjs"}` next to it:
-   *     `activate` and `deactivate` are both `function`.
-   *
-   * VS Code would install the VSIX and then report that the extension has no
-   * `activate`. The fix is one line, in a file this package does not own —
-   * either `esbuild.config.mjs` writing `dist/extension.cjs`, or the `"type"`
-   * field of `package.json`, which was set by the orchestrator and is outside
-   * this package's grant.
-   *
-   * `it.fails` is deliberate: this passes while the defect stands and turns RED
-   * the moment it is fixed, which is when this block must be deleted and the
-   * real end-to-end `require(main)` assertion put in its place.
-   */
-  it.fails(
-    'KNOWN DEFECT: "type":"module" makes VS Code load the CommonJS host bundle as ESM',
-    async () => {
-      const manifest = JSON.parse(
-        await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
-      ) as { type?: string; main?: string };
-      const config = await readFile(
-        fileURLToPath(new URL('../esbuild.config.mjs', import.meta.url)),
-        'utf8',
-      );
-      // Precondition: the host bundle really is CommonJS.
-      expect(config).toContain("format: 'cjs'");
-      expect(manifest.main).toBe('./dist/extension.js');
-      // The assertion that must hold and does not: a bare `.js` main cannot
-      // live under `"type": "module"` if it is CommonJS.
-      expect(manifest.type === 'module' && manifest.main?.endsWith('.js')).toBe(false);
-    },
-  );
 });
 
 // ---------------------------------------------------------------------------

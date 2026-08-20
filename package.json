@@ -11,7 +11,7 @@
     "Other"
   ],
   "type": "module",
-  "main": "./dist/extension.js",
+  "main": "./dist/extension.cjs",
   "engines": {
     "node": ">=20",
     "vscode": "^1.90.0"

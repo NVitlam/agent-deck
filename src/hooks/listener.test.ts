@@ -108,13 +108,15 @@ const SESSIONSTART_FIXTURE_PATH = fileURLToPath(
  * There used to be a `freePort()` helper that bound port 0 on a throwaway
  * server, read the assigned number, CLOSED it and returned the bare number.
  * Between that close and the listener's bind, anything on the machine — most
- * often another worker in this same suite — could take the port. Measured over
- * 15 full-suite runs before the fix: 12 green, 2 red with
- * `HookListenerBindError: ... listen EADDRINUSE`, 1 that died mid-run. The
- * off-box replay alone ran roughly fourteen of those races back to back.
+ * often another worker in this same suite — could take the port. The off-box
+ * replay ran one such gap per distinct spoofed remote INSIDE a single test:
+ * 15 of them back to back, counted from the corpus rather than guessed. The
+ * Phase 4 audit that found this reported the suite red in 2 of 15 full runs.
+ * No tally for the state after the fix is written here — a live number in a
+ * comment is stale the moment anything else in the suite moves.
  *
  * Retrying on EADDRINUSE would have left the window open and made the failure
- * rarer, which is the worse answer: a suite that is green 14 times in 15 cannot
+ * rarer, which is the worse answer: a suite that is only usually green cannot
  * certify a "100% pass" gate. The window is closed instead — the listener binds
  * port 0 itself, so the number never exists outside a bound socket. Production
  * still refuses port 0; {@link HookListenerOptions.allowEphemeralPort} is a
@@ -139,14 +141,15 @@ async function startEphemeralListener(
 }
 
 /**
- * A loopback port with nothing bound to it, for the one test that needs a
- * request to be REFUSED rather than answered.
+ * A loopback port with nothing bound to it, for a test that needs a request to
+ * be REFUSED rather than answered.
  *
- * This is the single remaining place where a bare port number outlives its
- * socket, and it is the right shape here: the test wants nothing listening, so
- * the only way it can mislead is if some other process binds this exact port
- * AND speaks HTTP within milliseconds, which would fail the test loudly rather
- * than pass it quietly.
+ * A bare port number does outlive its socket here, and that is the point rather
+ * than an oversight: the caller WANTS nothing listening. The only way it can
+ * mislead is if some other process binds this exact port and speaks HTTP within
+ * milliseconds, which fails the test loudly instead of passing it quietly. The
+ * restart test below leans on the same property directly, by connecting to the
+ * port it has just released.
  */
 async function closedLoopbackPort(): Promise<number> {
   const { listener, port } = await startEphemeralListener();

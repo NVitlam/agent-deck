@@ -2129,6 +2129,135 @@ describe('malformed at the transport layer, not in the body', () => {
     await new Promise((r) => setTimeout(r, 25));
   }
 
+  /**
+   * Write raw frames and collect every byte the server writes back, settling on
+   * the socket's close so nothing outlives the test.
+   */
+  async function speakRawCollect(
+    frames: string[],
+    settleMs = 400,
+  ): Promise<string> {
+    return new Promise<string>((resolve) => {
+      let seen = '';
+      const sock = netConnect({ host: LOOPBACK, port }, () => {
+        for (const frame of frames) sock.write(frame);
+      });
+      sock.setEncoding('utf8');
+      sock.on('data', (d: string) => {
+        seen += d;
+      });
+      sock.on('error', () => undefined); // a server-side destroy is expected
+      sock.on('close', () => resolve(seen));
+      const timer = setTimeout(() => sock.destroy(), settleMs);
+      sock.on('close', () => clearTimeout(timer));
+    });
+  }
+
+  /** One HTTP/1.1 chunked-transfer frame. */
+  function chunkFrame(body: string): string {
+    return `${body.length.toString(16)}\r\n${body}\r\n`;
+  }
+
+  it('a chunked body with no Content-Length is capped WHILE it streams', async () => {
+    // THE point of this test, and it is not the status code.
+    //
+    // The declared-size early exit in listener.ts answers every oversize case
+    // the fuzz corpus can express, because the corpus speaks through an HTTP
+    // client that always sends a truthful Content-Length. So the streaming cap
+    // — the `size > this.maxBodyBytes` check inside the 'data' handler — was
+    // reachable by nothing in the suite: setting it to `if (false)` left the
+    // whole suite green. Chunked transfer sends NO Content-Length at all, so
+    // the early exit cannot fire and the streaming check is the only limit
+    // between this body and the buffer.
+    //
+    // Sized deliberately: 3 x 4096 is over the 4096 cap and under the
+    // 16x hard-abort multiple, so the refusal is the clean drain-then-413 path
+    // rather than a destroyed socket.
+    const chunk = 'a'.repeat(4096);
+    const reply = await speakRawCollect([
+      `POST ${DEFAULT_EVENT_PATH} HTTP/1.1\r\n` +
+        `Host: ${LOOPBACK}\r\n` +
+        'Content-Type: application/json\r\n' +
+        'Transfer-Encoding: chunked\r\n' +
+        'Connection: close\r\n\r\n',
+      chunkFrame(chunk),
+      chunkFrame(chunk),
+      chunkFrame(chunk),
+      '0\r\n\r\n',
+    ]);
+
+    expect(reply).toContain('HTTP/1.1 413');
+    // Exact deltas, as everywhere else: an oversize refusal, and specifically
+    // NOT the 400/malformedJson a listener that buffered the whole body and
+    // then tried to parse it would report.
+    expect(listener.counters.oversize).toBe(1);
+    expect(listener.counters.malformedJson).toBe(0);
+    expect(listener.counters.notAnObject).toBe(0);
+    expect(listener.counters.accepted).toBe(0);
+    expect(listener.listening).toBe(true);
+    expect((await postJson(port, mainThreadPayload())).status).toBe(200);
+  });
+
+  it('a Content-Length that UNDERSTATES the body frames the rest as a new request', async () => {
+    // Recorded because it is the other route people expect to reach the
+    // streaming cap, and MEASURED it does not: node's parser frames the body
+    // strictly by the declared length, so the handler is handed exactly
+    // `Content-Length` bytes and `size` can never exceed a cap the declared
+    // length was already under. The surplus bytes are re-read as the next
+    // request on the same connection. Chunked transfer, above, is the only way
+    // in.
+    //
+    // What this pins instead is the framing consequence, which is worth
+    // pinning on its own: the short body is judged on its own merits (it is
+    // truncated JSON, so 400/malformedJson), the surplus is not smuggled into
+    // it, and the server survives whatever the surplus parses as.
+    const declared = '{"hook_event_name":';
+
+    // The surplus is a complete second request whose own body is 4090 bytes,
+    // just under the 4096 cap. Sized that way on purpose: read as its own
+    // request it is accepted, but every byte on this wire concatenated into
+    // ONE body would run past the cap and answer 413. So 413-versus-200 is the
+    // discriminator between correct framing and smuggling.
+    const surplusPrefix = '{"session_id":"surplus","hook_event_name":"Stop","pad":"';
+    const surplusSuffix = '"}';
+    const surplusBody =
+      surplusPrefix +
+      'b'.repeat(4090 - surplusPrefix.length - surplusSuffix.length) +
+      surplusSuffix;
+    const surplus =
+      `POST ${DEFAULT_EVENT_PATH} HTTP/1.1\r\n` +
+      `Host: ${LOOPBACK}\r\n` +
+      'Content-Type: application/json\r\n' +
+      `Content-Length: ${String(surplusBody.length)}\r\n\r\n${surplusBody}`;
+
+    expect(surplusBody.length).toBeLessThan(listener.maxBodyBytes);
+    expect(declared.length + surplus.length).toBeGreaterThan(
+      listener.maxBodyBytes,
+    );
+
+    const reply = await speakRawCollect([
+      `POST ${DEFAULT_EVENT_PATH} HTTP/1.1\r\n` +
+        `Host: ${LOOPBACK}\r\n` +
+        'Content-Type: application/json\r\n' +
+        `Content-Length: ${String(declared.length)}\r\n\r\n`,
+      declared + surplus,
+    ]);
+
+    // Two replies on the one connection, in order: the truncated body judged
+    // alone, then the surplus judged as its own request.
+    expect(reply).toContain('HTTP/1.1 400');
+    expect(reply).toContain('HTTP/1.1 200');
+    expect(reply).not.toContain('HTTP/1.1 413');
+    expect(reply.indexOf('HTTP/1.1 400')).toBeLessThan(
+      reply.indexOf('HTTP/1.1 200'),
+    );
+    expect(listener.counters.malformedJson).toBe(1);
+    expect(listener.counters.accepted).toBe(1);
+    expect(listener.counters.oversize).toBe(0);
+    expect(listener.listening).toBe(true);
+    expect((await postJson(port, mainThreadPayload())).status).toBe(200);
+  });
+
   it('a Content-Length that overstates the body is refused, not believed', async () => {
     // The declared size is over the cap, so the allocation guard refuses it on
     // the header alone — the sender never gets to make the server buffer

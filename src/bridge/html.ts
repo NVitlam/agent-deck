@@ -51,7 +51,12 @@ import { randomBytes } from 'node:crypto';
  * knowledge: the renderer needs the same id this document emits, and a
  * mismatch is a blank panel with no error anywhere.
  */
-export const WEBVIEW_ROOT_ID = 'app';
+import { WEBVIEW_ROOT_ID } from './contract.js';
+
+// Re-exported so the host keeps importing the mount id from the module that
+// also emits the document. Defined in `contract.js`, which the webview can
+// import and this file can not be.
+export { WEBVIEW_ROOT_ID };
 
 /** Bytes of entropy per nonce. 16 bytes = 128 bits, base64 to 24 chars. */
 const NONCE_BYTES = 16;

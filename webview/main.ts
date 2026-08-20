@@ -22,6 +22,7 @@ import App from './App.svelte';
 import { createStore } from './store.js';
 import type { Store } from './store.js';
 import { mount, unmount } from 'svelte';
+import { WEBVIEW_ROOT_ID } from '../src/bridge/contract.js';
 
 /** The slice of the VS Code webview API this renderer uses. */
 interface VsCodeApi {
@@ -89,7 +90,7 @@ export function start(target: HTMLElement, api: VsCodeApi = acquireApi()): {
 
 // Auto-start, but only inside a real VS Code webview.
 //
-// The container is `#agent-deck-root` when the host's HTML provides one, and
+// The container is `#${WEBVIEW_ROOT_ID}` when the host's HTML provides one, and
 // `document.body` otherwise. That fallback removes a silent cross-package
 // dependency: the extension host owns the webview HTML, and if this file
 // required an element id the host did not happen to use, the panel would come
@@ -100,6 +101,6 @@ export function start(target: HTMLElement, api: VsCodeApi = acquireApi()): {
 // `start()` stays explicit.
 if (typeof globalThis.acquireVsCodeApi === 'function' && globalThis.document !== undefined) {
   const container =
-    globalThis.document.getElementById('agent-deck-root') ?? globalThis.document.body;
+    globalThis.document.getElementById(WEBVIEW_ROOT_ID) ?? globalThis.document.body;
   start(container);
 }

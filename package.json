@@ -1,17 +1,63 @@
 {
   "name": "agent-deck",
+  "displayName": "Agent Deck",
   "version": "0.0.0",
   "private": true,
   "publisher": "nvitlam",
   "description": "Read-only VS Code extension that renders live Claude Code session topology.",
   "license": "UNLICENSED",
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
   "type": "module",
+  "main": "./dist/extension.js",
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "vscode": "^1.90.0"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentDeck.open",
+        "title": "Open Session Deck",
+        "category": "Agent Deck"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Deck",
+      "properties": {
+        "agentDeck.port": {
+          "type": "integer",
+          "default": 47821,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Loopback port the hook listener binds on 127.0.0.1. Must match the port in the hook block you pasted into your settings. A collision is reported as an error; Agent Deck never picks a different port for you."
+        },
+        "agentDeck.livenessThresholdMs": {
+          "type": "integer",
+          "default": 120000,
+          "minimum": 1000,
+          "maximum": 86400000,
+          "description": "How long a session may go without activity before it stops counting as live, in milliseconds. Below about 60000 a single long tool call makes a healthy session flap between live and idle."
+        },
+        "agentDeck.previewBytes": {
+          "type": "integer",
+          "default": 8192,
+          "minimum": 0,
+          "maximum": 1048576,
+          "description": "Maximum bytes of tool payload kept per node for previews. Payloads are truncated with a marker; nothing is ever sent off the machine."
+        }
+      }
+    }
   },
   "scripts": {
     "build": "node esbuild.config.mjs",
     "lint": "eslint .",
+    "package": "vsce package --no-dependencies --out dist/agent-deck.vsix",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json"
   },
@@ -19,6 +65,7 @@
     "@eslint/js": "^9.0.0",
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.25.0",
     "esbuild-svelte": "^0.9.5",
     "eslint": "^9.0.0",

@@ -1,0 +1,50 @@
+# What does NOT go into the VSIX.
+#
+# The shipped artifact is `dist/` plus `package.json`, `README.md` and
+# `LICENSE`. Everything else here is source, fixtures or tooling.
+#
+# Two entries are load-bearing rather than tidy:
+#
+#   fixtures/**   The capture is CONTENT-FREE but not anonymous: it keeps
+#                 `cwd`, `transcript_path`, `session_id` and `agent_id`
+#                 verbatim because a fixture without them cannot pin the
+#                 main-thread rule. Shipping it inside a VSIX would publish
+#                 one developer's absolute paths. It is excluded here as well
+#                 as by `!` ordering so no future glob can readmit it.
+#   **/*.map      Source maps embed absolute source paths from the build
+#                 machine. `npm run build -- --production` emits none; this is
+#                 the belt to that braces, so a non-production build packaged
+#                 by accident still ships no paths.
+
+.vscode/**
+.vscode-test/**
+.claude/**
+.github/**
+.git/**
+.gitattributes
+.gitignore
+.vscodeignore
+
+src/**
+webview/**
+test/**
+spike/**
+fixtures/**
+node_modules/**
+
+**/*.ts
+**/*.svelte
+**/*.map
+**/*.test.*
+**/tsconfig*.json
+**/*.tsbuildinfo
+
+esbuild.config.mjs
+eslint.config.js
+vitest.config.ts
+package-lock.json
+
+PLAN.md
+CLAUDE.md
+HANDOVER.md
+agent-deck-spec.md

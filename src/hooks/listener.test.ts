@@ -47,8 +47,7 @@
 import { Buffer } from 'node:buffer';
 import { readdir, readFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
-import { connect as netConnect, createServer as createNetServer } from 'node:net';
-import type { AddressInfo } from 'node:net';
+import { connect as netConnect } from 'node:net';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -70,6 +69,7 @@ import {
   HookListener,
   HookListenerBindError,
   type HookListenerCounters,
+  type HookListenerOptions,
   isHookListenerBindError,
   isLoopbackAddress,
   normalizeHookEvent,
@@ -102,24 +102,56 @@ const SESSIONSTART_FIXTURE_PATH = fileURLToPath(
 // ---------------------------------------------------------------------------
 
 /**
- * Ask the OS for a currently-free port, then release it.
+ * Start a listener on an OS-assigned loopback port, ATOMICALLY, and report the
+ * port it got. Every socket test in this file goes through here.
  *
- * Production forbids ephemeral binding; tests may probe for one so that the
- * suite does not fight a real listener that may be bound to
- * {@link DEFAULT_HOOK_PORT} on the developer's machine.
+ * There used to be a `freePort()` helper that bound port 0 on a throwaway
+ * server, read the assigned number, CLOSED it and returned the bare number.
+ * Between that close and the listener's bind, anything on the machine — most
+ * often another worker in this same suite — could take the port. Measured over
+ * 15 full-suite runs before the fix: 12 green, 2 red with
+ * `HookListenerBindError: ... listen EADDRINUSE`, 1 that died mid-run. The
+ * off-box replay alone ran roughly fourteen of those races back to back.
+ *
+ * Retrying on EADDRINUSE would have left the window open and made the failure
+ * rarer, which is the worse answer: a suite that is green 14 times in 15 cannot
+ * certify a "100% pass" gate. The window is closed instead — the listener binds
+ * port 0 itself, so the number never exists outside a bound socket. Production
+ * still refuses port 0; {@link HookListenerOptions.allowEphemeralPort} is a
+ * TEST-ONLY opt-in, and a source scan below asserts nothing under `src/`
+ * outside `listener.ts` names it.
  */
-async function freePort(): Promise<number> {
-  return new Promise<number>((resolve, reject) => {
-    const probe = createNetServer();
-    probe.once('error', reject);
-    probe.listen(0, LOOPBACK, () => {
-      const addr = probe.address() as AddressInfo;
-      const port = addr.port;
-      probe.close(() => {
-        resolve(port);
-      });
-    });
+async function startEphemeralListener(
+  options: Omit<HookListenerOptions, 'port' | 'allowEphemeralPort'> = {},
+): Promise<{ listener: HookListener; port: number }> {
+  const listener = new HookListener({
+    ...options,
+    port: 0,
+    allowEphemeralPort: true,
   });
+  await listener.start();
+  const bound = listener.address();
+  if (bound === null || bound.port === 0) {
+    await listener.stop();
+    throw new Error('ephemeral listener reported no bound port');
+  }
+  return { listener, port: bound.port };
+}
+
+/**
+ * A loopback port with nothing bound to it, for the one test that needs a
+ * request to be REFUSED rather than answered.
+ *
+ * This is the single remaining place where a bare port number outlives its
+ * socket, and it is the right shape here: the test wants nothing listening, so
+ * the only way it can mislead is if some other process binds this exact port
+ * AND speaks HTTP within milliseconds, which would fail the test loudly rather
+ * than pass it quietly.
+ */
+async function closedLoopbackPort(): Promise<number> {
+  const { listener, port } = await startEphemeralListener();
+  await listener.stop();
+  return port;
 }
 
 interface HttpReply {
@@ -578,16 +610,13 @@ describe('HookListener over a real loopback socket', () => {
   let received: NormalizedHookEvent[];
 
   beforeEach(async () => {
-    port = await freePort();
     received = [];
-    listener = new HookListener({
-      port,
+    ({ listener, port } = await startEphemeralListener({
       maxBodyBytes: 4096,
       onEvent: (event) => {
         received.push(event);
       },
-    });
-    await listener.start();
+    }));
   });
 
   afterEach(async () => {
@@ -1034,9 +1063,7 @@ describe('HookListener over a real loopback socket', () => {
 
 describe('HookListener bind failures', () => {
   it('surfaces a port collision as a typed error and does not rebind elsewhere', async () => {
-    const port = await freePort();
-    const first = new HookListener({ port });
-    await first.start();
+    const { listener: first, port } = await startEphemeralListener();
 
     const second = new HookListener({ port });
     let caught: unknown;
@@ -1085,12 +1112,42 @@ describe('HookListener bind failures', () => {
     }
   });
 
+  it('the TEST-ONLY opt-in binds port 0 and still refuses every other bad port', async () => {
+    // The escape hatch that removed the freePort race. It must do exactly one
+    // thing: permit 0. It must not become a general relaxation of the port
+    // policy, and it must not touch the bind address.
+    const { listener, port } = await startEphemeralListener();
+    try {
+      expect(port).toBeGreaterThan(0);
+      expect(listener.address()?.address).toBe(HOOK_LISTENER_HOST);
+      expect(listener.address()?.port).toBe(port);
+      expect(listener.listening).toBe(true);
+      expect((await postJson(port, mainThreadPayload())).status).toBe(200);
+    } finally {
+      await listener.stop();
+    }
+
+    for (const bad of [-1, 65536, 1.5, Number.NaN]) {
+      const refused = new HookListener({ port: bad, allowEphemeralPort: true });
+      let caught: unknown;
+      try {
+        await refused.start();
+      } catch (err) {
+        caught = err;
+      }
+      expect(isHookListenerBindError(caught), String(bad)).toBe(true);
+      expect((caught as HookListenerBindError).code).toBe('EPORTINVALID');
+      expect(refused.listening).toBe(false);
+      await refused.stop();
+    }
+  });
+
   it('the test client still fails loudly when nothing answers', async () => {
     // Guards the change that made post-reply socket errors non-fatal. That
     // rule keys off "the reply was already complete"; an error with no reply
     // must still reject, or the helper would quietly pass tests whose request
     // never arrived. Nothing is bound on this port.
-    const dead = await freePort();
+    const dead = await closedLoopbackPort();
     await expect(postJson(dead, mainThreadPayload())).rejects.toThrow();
   });
 
@@ -1100,14 +1157,28 @@ describe('HookListener bind failures', () => {
     expect(listener.listening).toBe(false);
   });
 
-  it('can be restarted on the same port after stopping', async () => {
-    const port = await freePort();
-    const listener = new HookListener({ port });
-    await listener.start();
+  it('can be restarted after stopping, and stop() really releases the socket', async () => {
+    // This used to rebind a fixed number obtained from the old freePort()
+    // probe, which is the race this file exists to have removed. What it
+    // actually guarded was two things, and both are still guarded: start()
+    // works again after stop() cleared the server reference, and stop()
+    // released the socket rather than leaving it bound. The second is now
+    // asserted by connecting to the released port and being refused, which
+    // does not require rebinding it.
+    const { listener, port } = await startEphemeralListener();
+    expect((await postJson(port, mainThreadPayload())).status).toBe(200);
+
     await listener.stop();
     expect(listener.listening).toBe(false);
+    expect(listener.address()).toBeNull();
+    await expect(postJson(port, mainThreadPayload())).rejects.toThrow();
+
     await listener.start();
+    expect(listener.listening).toBe(true);
     expect(listener.address()?.address).toBe('127.0.0.1');
+    const rebound = listener.address()?.port ?? 0;
+    expect(rebound).toBeGreaterThan(0);
+    expect((await postJson(rebound, mainThreadPayload())).status).toBe(200);
     await listener.stop();
   });
 });
@@ -1698,6 +1769,36 @@ describe('grounding guards, asserted against the source text', () => {
     // The bind host is a constant, not read from options.
     expect(source).not.toMatch(/options\.host/);
   });
+
+  it('no production module outside listener.ts names either TEST-ONLY option', async () => {
+    // `spoofRemoteAddress` and `allowEphemeralPort` exist so the suite can
+    // exercise the non-loopback path without binding a non-loopback socket,
+    // and can bind a port without racing for it. Both are declared TEST-ONLY
+    // in the source, and a comment is not a guard. This is the guard: the only
+    // production file under src/ allowed to mention either name is the module
+    // that declares them.
+    const testOnlyOptions = ['spoofRemoteAddress', 'allowEphemeralPort'];
+    const offenders: string[] = [];
+    for (const absolute of await productionSources()) {
+      const file = repoRelative(absolute);
+      if (file === 'src/hooks/listener.ts') continue;
+      const source = await readFile(absolute, 'utf8');
+      for (const option of testOnlyOptions) {
+        if (source.includes(option)) offenders.push(`${file}: ${option}`);
+      }
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
+
+    // Not vacuous twice over: the scan really covers the extension host, which
+    // is the file that would set one of these by accident, and the declaring
+    // module really does contain both names.
+    const scanned = (await productionSources()).map(repoRelative);
+    expect(scanned).toContain('src/extension.ts');
+    const declaring = await readFile(LISTENER_SOURCE_PATH, 'utf8');
+    for (const option of testOnlyOptions) {
+      expect(declaring).toContain(option);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1909,16 +2010,13 @@ describe('fixtures/synthetic-hook-fuzz: hostile input never crashes the listener
     // corpus that silently emptied itself must not pass as coverage.
     expect(cases.length).toBeGreaterThan(0);
 
-    const port = await freePort();
     const received: NormalizedHookEvent[] = [];
     // The SHIPPED default cap, not a convenient small one: the oversize
     // boundary this asserts is the boundary the extension actually ships.
-    const listener = new HookListener({
-      port,
+    const { listener, port } = await startEphemeralListener({
       maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
       onEvent: (event) => received.push(event),
     });
-    await listener.start();
     try {
       for (const fuzzCase of cases) {
         await runFuzzCase(listener, port, fuzzCase);
@@ -1973,10 +2071,8 @@ describe('fixtures/synthetic-hook-fuzz: hostile input never crashes the listener
 
     for (const remote of remotes) {
       const cases = corpus.filter((c) => c.remote === remote);
-      const port = await freePort();
       const received: NormalizedHookEvent[] = [];
-      const listener = new HookListener({
-        port,
+      const { listener, port } = await startEphemeralListener({
         maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
         // TEST-ONLY. The socket is still bound to 127.0.0.1 and nothing else;
         // proving the non-loopback path by binding a non-loopback socket would
@@ -1984,7 +2080,6 @@ describe('fixtures/synthetic-hook-fuzz: hostile input never crashes the listener
         spoofRemoteAddress: remote,
         onEvent: (event) => received.push(event),
       });
-      await listener.start();
       try {
         expect(listener.address()?.address).toBe(HOOK_LISTENER_HOST);
         for (const fuzzCase of cases) {
@@ -2013,9 +2108,7 @@ describe('malformed at the transport layer, not in the body', () => {
   let port: number;
 
   beforeEach(async () => {
-    port = await freePort();
-    listener = new HookListener({ port, maxBodyBytes: 4096 });
-    await listener.start();
+    ({ listener, port } = await startEphemeralListener({ maxBodyBytes: 4096 }));
   });
 
   afterEach(async () => {

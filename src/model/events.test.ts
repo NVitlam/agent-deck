@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
+import { beforeAll, describe, it, expect } from 'vitest';
 import {
   CONFIRMED_HOOK_EVENT_NAMES,
   emptyDiagnostics,
@@ -8,6 +11,7 @@ import {
   isSchemaMismatch,
   isToolNode,
   KNOWN_HOOK_EVENT_NAMES,
+  UNCONFIRMED_KNOWN_HOOK_EVENT_NAMES,
   type AgentNode,
   type NormalizedHookEvent,
   type RawHookPayload,
@@ -302,9 +306,28 @@ describe('parser-facing types', () => {
 // event-name lists, their guards, and the fact that a main-thread event is
 // representable with the agent id genuinely absent rather than defaulted.
 
+const SESSIONSTART_FIXTURE_PATH = fileURLToPath(
+  new URL(
+    '../../fixtures/hook-events/cc-2.1.234-sessionstart.jsonl',
+    import.meta.url,
+  ),
+);
+const REDACTED_FIXTURE_PATH = fileURLToPath(
+  new URL('../../fixtures/hook-events/cc-2.1.234-redacted.jsonl', import.meta.url),
+);
+
+async function readPayloads(path: string): Promise<RawHookPayload[]> {
+  const text = await readFile(path, 'utf8');
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as RawHookPayload);
+}
+
 describe('hook event name lists', () => {
   it('confirms exactly the names measured on the pinned CC version', () => {
     expect([...CONFIRMED_HOOK_EVENT_NAMES]).toEqual([
+      'SessionStart',
       'PreToolUse',
       'PostToolUse',
       'SubagentStart',
@@ -317,14 +340,41 @@ describe('hook event name lists', () => {
     }
   });
 
-  it('lists SessionStart as known but not confirmed', () => {
-    // Registered in the repo's hook block; its arrival has not been measured
-    // on CC 2.1.234. Known-but-unconfirmed is the honest position.
+  it('lists SessionStart as CONFIRMED, not merely known', () => {
+    // Superseded answer: "registered but unmeasured". It was unmeasured only
+    // because every earlier capture bound a listener partway through a
+    // running session, and SessionStart fires at session onset. Binding the
+    // listener first and opening a fresh CC window produced
+    // fixtures/hook-events/cc-2.1.234-sessionstart.jsonl.
+    expect(isConfirmedHookEventName('SessionStart')).toBe(true);
     expect(isKnownHookEventName('SessionStart')).toBe(true);
-    expect(isConfirmedHookEventName('SessionStart')).toBe(false);
+    expect([...CONFIRMED_HOOK_EVENT_NAMES]).toContain('SessionStart');
+  });
+
+  it('keeps the known-but-unconfirmed mechanism, correct while empty', () => {
+    // Empty today. The list is not deleted: a future CC release will add
+    // names, and this is where one waits between registration and first
+    // observation. Empty must therefore behave, not just exist.
+    expect([...UNCONFIRMED_KNOWN_HOOK_EVENT_NAMES]).toEqual([]);
     expect(KNOWN_HOOK_EVENT_NAMES).toHaveLength(
-      CONFIRMED_HOOK_EVENT_NAMES.length + 1,
+      CONFIRMED_HOOK_EVENT_NAMES.length + UNCONFIRMED_KNOWN_HOOK_EVENT_NAMES.length,
     );
+    expect([...KNOWN_HOOK_EVENT_NAMES]).toEqual([...CONFIRMED_HOOK_EVENT_NAMES]);
+    // With no unconfirmed members the two guards must agree on every input,
+    // including junk ones.
+    for (const value of [
+      ...CONFIRMED_HOOK_EVENT_NAMES,
+      'SomeFutureHook',
+      'Notification',
+      '',
+      undefined,
+      null,
+      42,
+    ]) {
+      expect(isKnownHookEventName(value), String(value)).toBe(
+        isConfirmedHookEventName(value),
+      );
+    }
   });
 
   it('both guards reject non-strings and unknown names without throwing', () => {
@@ -332,6 +382,66 @@ describe('hook event name lists', () => {
       expect(isConfirmedHookEventName(value)).toBe(false);
       expect(isKnownHookEventName(value)).toBe(false);
     }
+  });
+});
+
+describe('the captured SessionStart payload (G6: pinned to fixture bytes)', () => {
+  let sessionStarts: RawHookPayload[] = [];
+  let others: RawHookPayload[] = [];
+
+  beforeAll(async () => {
+    sessionStarts = await readPayloads(SESSIONSTART_FIXTURE_PATH);
+    others = await readPayloads(REDACTED_FIXTURE_PATH);
+    // Counts derived from the files, never hard-coded: a re-harvest changes
+    // the data and the expectation together.
+    expect(sessionStarts.length).toBeGreaterThan(0);
+    expect(others.length).toBeGreaterThan(0);
+  });
+
+  it('carries exactly the measured key set on every captured event', () => {
+    const measuredKeySet = [
+      'session_id',
+      'transcript_path',
+      'cwd',
+      'hook_event_name',
+      'source',
+    ].sort();
+
+    for (const payload of sessionStarts) {
+      expect(payload.hook_event_name).toBe('SessionStart');
+      expect(Object.keys(payload).sort()).toEqual(measuredKeySet);
+      expect(payload['source']).toBe('startup');
+      expect(isConfirmedHookEventName(payload.hook_event_name)).toBe(true);
+    }
+  });
+
+  it('has no agent_id key at all — absence IS the main-thread signal', () => {
+    for (const payload of sessionStarts) {
+      expect(Object.prototype.hasOwnProperty.call(payload, 'agent_id')).toBe(
+        false,
+      );
+      // Not a placeholder either: the value-comparison a broken correlator
+      // would make finds nothing.
+      expect(payload['agent_id']).toBeUndefined();
+    }
+  });
+
+  it('is the only observed type without prompt_id, and carries no tool_use_id', () => {
+    for (const payload of sessionStarts) {
+      expect(Object.prototype.hasOwnProperty.call(payload, 'prompt_id')).toBe(
+        false,
+      );
+      expect(Object.prototype.hasOwnProperty.call(payload, 'tool_use_id')).toBe(
+        false,
+      );
+    }
+    // The contrast that gives the assertion above its meaning: every event of
+    // every other observed type does carry prompt_id.
+    const withPromptId = others.filter((p) =>
+      Object.prototype.hasOwnProperty.call(p, 'prompt_id'),
+    );
+    expect(withPromptId).toHaveLength(others.length);
+    expect(others.some((p) => p.hook_event_name === 'SessionStart')).toBe(false);
   });
 });
 

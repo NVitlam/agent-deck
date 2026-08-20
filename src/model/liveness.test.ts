@@ -32,6 +32,22 @@ const HOOK_FIXTURE_PATH = fileURLToPath(
   new URL('../../fixtures/hook-events/cc-2.1.234-redacted.jsonl', import.meta.url),
 );
 
+/** The onset capture: a listener bound first, then a fresh CC window. */
+const SESSIONSTART_FIXTURE_PATH = fileURLToPath(
+  new URL(
+    '../../fixtures/hook-events/cc-2.1.234-sessionstart.jsonl',
+    import.meta.url,
+  ),
+);
+
+async function readSessionStartPayloads(): Promise<RawHookPayload[]> {
+  const text = await readFile(SESSIONSTART_FIXTURE_PATH, 'utf8');
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as RawHookPayload);
+}
+
 const LIVENESS_SOURCE_PATH = fileURLToPath(
   new URL('./liveness.ts', import.meta.url),
 );
@@ -344,14 +360,64 @@ describe('SessionStart is never required', () => {
     expect(engine.livenessOf(SESSION)).toBe('live');
   });
 
-  it('accepts SessionStart when it does arrive, counting it as unconfirmed', () => {
+  it('becomes live from SessionStart, and counts it as CONFIRMED', () => {
     const engine = new LivenessEngine({ now: () => 2_000 });
     engine.ingest(ev(mainPayload('SessionStart'), 1_000));
     expect(engine.livenessOf(SESSION)).toBe('live');
     const counters = engine.counters();
     expect(counters.eventsApplied).toBe(1);
-    expect(counters.unconfirmedNameEvents).toBe(1);
+    // Superseded: this used to expect 1. SessionStart was unmeasured only
+    // because every earlier capture bound its listener mid-session, and the
+    // event fires at session onset.
+    expect(counters.unconfirmedNameEvents).toBe(0);
     expect(counters.eventsSkippedUnknownName).toBe(0);
+  });
+
+  it('REGRESSION: replaying the real onset capture leaves every counter clean', async () => {
+    // The behavioural consequence of the promotion, driven by committed bytes
+    // rather than a hand-written payload (G6). unconfirmedNameEvents exists to
+    // flag a name CC has never been measured sending; if an ordinary
+    // SessionStart tripped it, the drift signal would fire on every session
+    // and be ignored. Count derived from the file, never hard-coded.
+    const payloads = await readSessionStartPayloads();
+    expect(payloads.length).toBeGreaterThan(0);
+
+    const engine = new LivenessEngine({ now: () => 2_000 });
+    payloads.forEach((p, i) => {
+      engine.ingest(ev(p, 1_000 + i));
+    });
+
+    const counters = engine.counters();
+    expect(counters.eventsReceived).toBe(payloads.length);
+    expect(counters.eventsApplied).toBe(payloads.length);
+    expect(counters.unconfirmedNameEvents).toBe(0);
+    expect(counters.eventsSkippedUnknownName).toBe(0);
+    expect(counters.eventsSkippedNoSession).toBe(0);
+    expect(counters.eventsSkippedUnattributable).toBe(0);
+    expect(counters.ingestErrors).toBe(0);
+
+    // Each captured onset opens its own session, main thread only: the
+    // payload carries no agent_id key, and none is invented.
+    const expectedSessions = new Set(payloads.map((p) => p.session_id));
+    expect(new Set(engine.sessionIds())).toEqual(expectedSessions);
+    for (const sessionId of engine.sessionIds()) {
+      const snapshot = engine.snapshot(sessionId);
+      expect(snapshot?.liveness).toBe('live');
+      expect(snapshot?.main.isMainThread).toBe(true);
+      expect(snapshot?.subagents).toHaveLength(0);
+      expect('agentId' in (snapshot?.main ?? {})).toBe(false);
+    }
+  });
+
+  it('still counts a genuinely unmeasured name as unconfirmed', () => {
+    // The mechanism must keep working now that the known-but-unconfirmed list
+    // is empty: an unknown name is skipped and counted, never fatal (G3).
+    const engine = new LivenessEngine({ now: () => 2_000 });
+    engine.ingest(ev(mainPayload('SomeFutureHook'), 1_000));
+    const counters = engine.counters();
+    expect(counters.eventsSkippedUnknownName).toBe(1);
+    expect(counters.eventsApplied).toBe(0);
+    expect(counters.ingestErrors).toBe(0);
   });
 });
 

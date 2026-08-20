@@ -88,6 +88,13 @@ const HOOK_FIXTURE_PATH = fileURLToPath(
     import.meta.url,
   ),
 );
+/** The real onset capture: listener bound first, then a fresh CC window. */
+const SESSIONSTART_FIXTURE_PATH = fileURLToPath(
+  new URL(
+    '../../fixtures/hook-events/cc-2.1.234-sessionstart.jsonl',
+    import.meta.url,
+  ),
+);
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -232,12 +239,21 @@ function mainThreadPayload(): RawHookPayload {
   };
 }
 
-async function readFixturePayloads(): Promise<RawHookPayload[]> {
-  const text = await readFile(HOOK_FIXTURE_PATH, 'utf8');
+async function readPayloadsFrom(path: string): Promise<RawHookPayload[]> {
+  const text = await readFile(path, 'utf8');
   return text
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as RawHookPayload);
+}
+
+async function readFixturePayloads(): Promise<RawHookPayload[]> {
+  return readPayloadsFrom(HOOK_FIXTURE_PATH);
+}
+
+/** Never hard-code the count: derive it from the committed capture (G6). */
+async function readSessionStartPayloads(): Promise<RawHookPayload[]> {
+  return readPayloadsFrom(SESSIONSTART_FIXTURE_PATH);
 }
 
 // ---------------------------------------------------------------------------
@@ -384,20 +400,26 @@ describe('normalizeHookEvent — main-thread correlation rule', () => {
 });
 
 describe('confirmed vs unconfirmed hook event names', () => {
-  it('marks the five measured names confirmed', () => {
+  it('marks every measured name confirmed', () => {
     for (const name of CONFIRMED_HOOK_EVENT_NAMES) {
       expect(isConfirmedHookEventName(name), name).toBe(true);
       expect(normalizeHookEvent({ hook_event_name: name }).eventNameConfirmed).toBe(
         true,
       );
     }
-    expect(CONFIRMED_HOOK_EVENT_NAMES).toContain('SubagentStart');
+    expect([...CONFIRMED_HOOK_EVENT_NAMES]).toContain('SubagentStart');
   });
 
-  it('marks SessionStart known but NOT confirmed on the pinned CC version', () => {
+  it('marks SessionStart CONFIRMED on the pinned CC version', () => {
+    // It was unmeasured for two phases because a listener bound mid-session
+    // cannot observe an event that fires at session onset. Binding first and
+    // opening a fresh CC window produced the fixture replayed below.
+    expect(isConfirmedHookEventName('SessionStart')).toBe(true);
     expect(isKnownHookEventName('SessionStart')).toBe(true);
-    expect(isConfirmedHookEventName('SessionStart')).toBe(false);
-    expect(KNOWN_HOOK_EVENT_NAMES).toContain('SessionStart');
+    expect([...KNOWN_HOOK_EVENT_NAMES]).toContain('SessionStart');
+    expect(
+      normalizeHookEvent({ hook_event_name: 'SessionStart' }).eventNameConfirmed,
+    ).toBe(true);
   });
 
   it('accepts an entirely unknown name, flags it, and never throws', () => {
@@ -452,6 +474,52 @@ describe('SubagentStart payload shape', () => {
     // prompt_id was not in any previously documented key set; it survives.
     expect(event.raw['prompt_id']).toBe('5b2e0d31-6c44-4f0a-9f11-77d0c9a5e112');
   });
+});
+
+// ---------------------------------------------------------------------------
+// SessionStart, driven by the committed onset capture
+// ---------------------------------------------------------------------------
+
+describe('fixtures/hook-events/cc-2.1.234-sessionstart.jsonl', () => {
+  // Real bytes, not a hand-written literal. Nothing here asserts the file's
+  // size; every count is derived so a re-harvest cannot read as a regression.
+  let payloads: RawHookPayload[] = [];
+
+  beforeEach(async () => {
+    payloads = await readSessionStartPayloads();
+    expect(payloads.length).toBeGreaterThan(0);
+  });
+
+  it('normalizes as a confirmed main-thread event with no join keys', () => {
+    const measuredKeySet = [
+      'session_id',
+      'transcript_path',
+      'cwd',
+      'hook_event_name',
+      'source',
+    ].sort();
+
+    for (const payload of payloads) {
+      expect(Object.keys(payload).sort()).toEqual(measuredKeySet);
+      expect(payload['source']).toBe('startup');
+
+      const event = normalizeHookEvent(payload);
+      expect(event.eventName).toBe('SessionStart');
+      // The whole point of this package: a real SessionStart is confirmed.
+      expect(event.eventNameConfirmed).toBe(true);
+      // No agent_id key at all — absence IS the main-thread signal.
+      expect(event.isMainThread).toBe(true);
+      expect('agentId' in event).toBe(false);
+      // Neither join key is present; nothing invents one.
+      expect('toolUseId' in event).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(payload, 'prompt_id')).toBe(
+        false,
+      );
+      expect(typeof event.sessionId).toBe('string');
+      expect(typeof event.transcriptPath).toBe('string');
+    }
+  });
+
 });
 
 // ---------------------------------------------------------------------------
@@ -600,6 +668,28 @@ describe('HookListener over a real loopback socket', () => {
     expect(listener.counters.unconfirmedEventName).toBe(0);
     expect(received[0]?.eventNameConfirmed).toBe(true);
     expect('toolUseId' in (received[0] ?? {})).toBe(false);
+  });
+
+  it('REGRESSION: real SessionStart events never count as unconfirmed', async () => {
+    // The defect this test exists for: while SessionStart was listed as
+    // unconfirmed, every ordinary session permanently tripped the counter
+    // that is supposed to mean "CC sent a name we have never measured". A
+    // drift alarm that fires on normal operation is worse than no alarm.
+    // Replayed from the committed onset capture; the count is derived.
+    const payloads = await readSessionStartPayloads();
+    expect(payloads.length).toBeGreaterThan(0);
+
+    for (const payload of payloads) {
+      const reply = await postJson(port, payload);
+      expect(reply.status).toBe(200);
+    }
+
+    expect(listener.counters.accepted).toBe(payloads.length);
+    expect(received).toHaveLength(payloads.length);
+    expect(listener.counters.unconfirmedEventName).toBe(0);
+    expect(received.every((e) => e.eventNameConfirmed)).toBe(true);
+    expect(received.every((e) => e.isMainThread)).toBe(true);
+    expect(received.every((e) => e.eventName === 'SessionStart')).toBe(true);
   });
 
   it('replays every fixture payload over the wire', async () => {

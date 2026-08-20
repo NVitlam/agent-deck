@@ -116,20 +116,40 @@ function postRaw(
   }
 
   return new Promise<HttpReply>((resolve, reject) => {
+    // Several of these requests are answered early and the connection closed
+    // under the client on purpose (403/404/405/415 before the body is read, and
+    // stop() destroying keep-alive sockets). Both streams therefore need an
+    // 'error' listener: an unhandled 'error' on the RESPONSE stream is an
+    // uncaught exception that kills the vitest worker process outright, which
+    // surfaces as an unrelated-looking "Channel closed / ERR_IPC_CHANNEL_CLOSED".
+    // Late errors after the reply has been read are expected and ignored.
+    let settled = false;
+    const succeed = (reply: HttpReply): void => {
+      if (settled) return;
+      settled = true;
+      resolve(reply);
+    };
+    const fail = (err: Error): void => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+
     const req = httpRequest(
       { host: LOOPBACK, port, path, method, headers },
       (res) => {
         const chunks: Buffer[] = [];
+        res.on('error', fail);
         res.on('data', (c: Buffer) => chunks.push(c));
         res.on('end', () => {
-          resolve({
+          succeed({
             status: res.statusCode ?? 0,
             body: Buffer.concat(chunks).toString('utf8'),
           });
         });
       },
     );
-    req.on('error', reject);
+    req.on('error', fail);
     req.setTimeout(5_000, () => {
       req.destroy(new Error('test client timeout'));
     });

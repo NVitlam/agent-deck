@@ -1,0 +1,106 @@
+[
+  {
+    "id": "windows-drive-lower",
+    "form": "windows",
+    "workspacePath": "c:\\Users\\dev\\projects\\agent-deck",
+    "expectedSlug": "c--Users-dev-projects-agent-deck",
+    "witness": "cc-capture",
+    "note": "The only case witnessed from CC itself: this is literally the slug directory name under fixtures/cc-2.1.234/projects, and a test asserts the two are equal."
+  },
+  {
+    "id": "windows-drive-upper",
+    "form": "windows",
+    "workspacePath": "C:\\Users\\dev\\projects\\agent-deck",
+    "expectedSlug": "C--Users-dev-projects-agent-deck",
+    "witness": "encoding-rule",
+    "note": "Same workspace as windows-drive-lower. CC has written both spellings across versions, which is why slug matching is case-insensitive."
+  },
+  {
+    "id": "windows-forward-slashes",
+    "form": "windows",
+    "workspacePath": "c:/Users/dev/projects/agent-deck",
+    "expectedSlug": "c--Users-dev-projects-agent-deck",
+    "witness": "encoding-rule",
+    "note": "VS Code hands out forward-slash drive paths in several APIs. Both separators collapse to the same dash, so this slugs identically to windows-drive-lower."
+  },
+  {
+    "id": "windows-trailing-separator",
+    "form": "windows",
+    "workspacePath": "C:\\Users\\dev\\ws\\",
+    "expectedSlug": "C--Users-dev-ws",
+    "witness": "encoding-rule",
+    "note": "Trailing separators are stripped before encoding, so a path and the same path with a trailing slash do not produce two slugs."
+  },
+  {
+    "id": "windows-drive-root",
+    "form": "windows",
+    "workspacePath": "C:\\",
+    "expectedSlug": "C-",
+    "witness": "encoding-rule",
+    "note": "Degenerate: the trailing separator goes first, leaving the colon to become the single dash."
+  },
+  {
+    "id": "windows-space-in-name",
+    "form": "windows",
+    "workspacePath": "C:\\Users\\dev\\my ws",
+    "expectedSlug": "C--Users-dev-my ws",
+    "witness": "encoding-rule",
+    "note": "Spaces are preserved by our encoding. NOT witnessed from a CC capture - no observed session lives under a path with a space."
+  },
+  {
+    "id": "windows-unc-server",
+    "form": "unc",
+    "workspacePath": "\\\\server\\share\\ws",
+    "expectedSlug": "--server-share-ws",
+    "witness": "encoding-rule",
+    "note": "A UNC path has no colon; the two leading separators become two leading dashes."
+  },
+  {
+    "id": "unc-wsl-localhost",
+    "form": "unc",
+    "workspacePath": "\\\\wsl.localhost\\Ubuntu\\home\\dev\\agent-deck",
+    "expectedSlug": "--wsl.localhost-Ubuntu-home-dev-agent-deck",
+    "witness": "encoding-rule",
+    "note": "How Windows sees a WSL-side directory. Measured form: `wslpath -w /home/dev` returned exactly this prefix on the G1A (see wsl-environment.measured.json). Dots are not part of the substitution set and survive."
+  },
+  {
+    "id": "wsl-mount-of-windows-workspace",
+    "form": "wslMount",
+    "workspacePath": "/mnt/c/Users/dev/projects/agent-deck",
+    "expectedSlug": "-mnt-c-Users-dev-projects-agent-deck",
+    "witness": "encoding-rule",
+    "note": "The same physical directory as windows-drive-lower, spelled the way WSL sees it. Measured: `wslpath -u` of the Windows path returned exactly this path on the G1A. The two slugs differ and are not case variants - that divergence is the WSL finding."
+  },
+  {
+    "id": "wsl-mount-uppercase-drive",
+    "form": "wslMount",
+    "workspacePath": "/mnt/C/Users/dev/ws",
+    "expectedSlug": "-mnt-C-Users-dev-ws",
+    "witness": "encoding-rule",
+    "note": "Differs from the lowercase mount only by case, so it is a case variant - the WSL analogue of the Windows drive-letter variance."
+  },
+  {
+    "id": "wsl-linux-home",
+    "form": "posix",
+    "workspacePath": "/home/dev/agent-deck",
+    "expectedSlug": "-home-dev-agent-deck",
+    "witness": "encoding-rule",
+    "note": "A workspace living on the Linux side. Leading slash becomes a leading dash."
+  },
+  {
+    "id": "posix-trailing-separator",
+    "form": "posix",
+    "workspacePath": "/home/dev/ws/",
+    "expectedSlug": "-home-dev-ws",
+    "witness": "encoding-rule",
+    "note": "Same stripping rule as the Windows form."
+  },
+  {
+    "id": "posix-root-child",
+    "form": "posix",
+    "workspacePath": "/ws",
+    "expectedSlug": "-ws",
+    "witness": "encoding-rule",
+    "note": "Degenerate posix case."
+  }
+]

@@ -110,6 +110,28 @@ export function sameWorkspace(a: string, b: string): boolean {
   return normalizeSlug(workspaceSlug(a)) === normalizeSlug(workspaceSlug(b));
 }
 
+/**
+ * The WSL boundary — measured in Phase 4, and deliberately not bridged.
+ *
+ * One physical directory has two path spellings: the drive-letter form seen
+ * from Windows and the `/mnt/<drive>/...` form seen from inside WSL. CC's slug
+ * encoding is a pure string substitution, so the two spellings encode to two
+ * different slugs. They are not case variants of one another and no
+ * normalisation makes them equal — the measured pair for this repo's own
+ * workspace is pinned in `fixtures/synthetic-path-matrix/slug-cases.json` and
+ * exercised by `src/model/pathmatrix.test.ts`.
+ *
+ * That is correct, not a defect to paper over. A CC process running inside WSL
+ * writes to the *Linux* `$HOME/.claude/projects` under the `/mnt` slug; a CC
+ * process running on Windows writes to the Windows profile under the
+ * drive-letter slug. An extension host sees exactly one of those two worlds —
+ * VS Code Remote-WSL runs the host inside the distro — and translating a path
+ * across the boundary to go looking in the other world would mean reading a
+ * projects root the running host was never pointed at. There is therefore no
+ * mount-point translation anywhere in this module: correlation always runs
+ * forward, from the workspace path the host actually has.
+ */
+
 // ---------------------------------------------------------------------------
 // Correlation
 // ---------------------------------------------------------------------------

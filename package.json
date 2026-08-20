@@ -49,7 +49,7 @@
           "default": 8192,
           "minimum": 0,
           "maximum": 1048576,
-          "description": "Maximum bytes of tool payload kept per node for previews. Payloads are truncated with a marker; nothing is ever sent off the machine."
+          "description": "Maximum bytes of tool payload kept per node for previews. Payloads are truncated with a marker; nothing is ever sent off the machine. Measured limitation: values above 8192 do not increase the kept payload, because the redaction layer truncates at 8 KB before this setting is applied. At exactly 8192 the payload is cut twice and the marker under-reports the original size. Both are recorded as Phase 4 items."
         }
       }
     }

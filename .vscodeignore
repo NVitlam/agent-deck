@@ -1,7 +1,13 @@
 # What does NOT go into the VSIX.
 #
-# The shipped artifact is `dist/` plus `package.json`, `README.md` and
-# `LICENSE`. Everything else here is source, fixtures or tooling.
+# The shipped artifact is `dist/` plus `package.json`, `README.md`, `LICENSE`
+# and `SECURITY.md`. Everything else here is source, fixtures or tooling.
+#
+# `SECURITY.md` ships deliberately. Zero egress and the read-only posture are
+# this extension's trust anchor, so the document asserting them belongs inside
+# the artifact a user actually installs, not only in a repository they may
+# never visit. It was checked for absolute paths before that decision: it
+# contains none, which is the property that keeps `fixtures/**` out below.
 #
 # Two entries are load-bearing rather than tidy:
 #

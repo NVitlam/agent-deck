@@ -1069,7 +1069,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const correlation = await correlateWorkspace(workspacePath);
   if (!correlation.ok) {
-    inactiveReason = `Agent Deck: no Claude Code sessions for this workspace (${correlation.failure.kind}).`;
+    // `ambiguousSlug` is the one failure kind that is NOT an absence. The
+    // filesystem call succeeded and returned two project directories whose
+    // names differ only by case; the tailer refuses to guess which one is this
+    // workspace rather than picking one (G3). Sessions almost certainly exist,
+    // so the generic "no sessions" wording states something false — the same
+    // class of defect as a fabricated number, arriving as prose.
+    inactiveReason =
+      correlation.failure.kind === 'ambiguousSlug'
+        ? `Agent Deck: this workspace matches more than one Claude Code project directory, differing only by case. Refusing to guess which one (${correlation.failure.kind}).`
+        : `Agent Deck: no Claude Code sessions for this workspace (${correlation.failure.kind}).`;
     return;
   }
   inactiveReason = null;

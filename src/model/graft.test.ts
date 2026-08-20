@@ -805,6 +805,190 @@ describe('captured topology', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 4 carry-forward A: one ceiling, and an honest marker
+// ---------------------------------------------------------------------------
+
+describe('previewBytes is the ceiling, and the marker states the ORIGINAL size', () => {
+  /**
+   * Both halves of the Phase 4 defect, asserted against the captured tree.
+   *
+   * Before the fix, measured across ALL 8 payloads over 8 KB in the capture
+   * (7 inline, 1 offloaded — the offload path is one eighth of this, not the
+   * scope of it):
+   *
+   *   previewBytes=8192    8 markers, every one of them "8192 of 8248"
+   *   previewBytes=16384   8 markers, all "8192 of <real size>"
+   *   previewBytes=65536   identical to 16384 — kept bytes never exceeded 8192
+   *
+   * (a) is "kept bytes must follow the setting above 8192"; (b) is "the second
+   * number in the marker must be the payload's real size, not the length of an
+   * already-marked string".
+   *
+   * Every number here is UTF-8 BYTES. `Buffer.byteLength` is used rather than
+   * `String.length` throughout: the two differ on this very fixture (the
+   * 512-byte preview of the offloaded payload is 567 bytes and 566 characters),
+   * and an audit of this repo once produced a false accusation by comparing
+   * the two as if they were one quantity.
+   */
+
+  /** Sizes on disk of every payload the capture holds that exceeds 8 KB. */
+  async function payloadsOver8k(): Promise<number[]> {
+    const sizes: number[] = [];
+    for (const sessionId of await capturedSessionIds()) {
+      const dir = join(CAPTURED_SLUG, sessionId, 'tool-results');
+      let names: string[] = [];
+      try {
+        names = await readdir(dir);
+      } catch {
+        names = [];
+      }
+      for (const name of names) {
+        const bytes = Buffer.byteLength(await readFile(join(dir, name), 'utf8'), 'utf8');
+        if (bytes > 8192) sizes.push(bytes);
+      }
+      for (const file of [join(CAPTURED_SLUG, `${sessionId}.jsonl`), ...(await subagentFiles(sessionId))]) {
+        for (const line of splitTranscript(await readFile(file, 'utf8'))) {
+          for (const block of toolResultBlocks(line)) {
+            const bytes = Buffer.byteLength(block, 'utf8');
+            if (bytes > 8192) sizes.push(bytes);
+          }
+        }
+      }
+    }
+    return sizes.sort((a, b) => b - a);
+  }
+
+  async function subagentFiles(sessionId: string): Promise<string[]> {
+    const dir = join(CAPTURED_SLUG, sessionId, 'subagents');
+    try {
+      return (await readdir(dir)).filter((n) => n.endsWith('.jsonl')).map((n) => join(dir, n));
+    } catch {
+      return [];
+    }
+  }
+
+  /** `tool_result` blocks whose content is a plain string, from one JSONL line. */
+  function toolResultBlocks(line: string): string[] {
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      return [];
+    }
+    const content = (entry as { message?: { content?: unknown } }).message?.content;
+    if (!Array.isArray(content)) return [];
+    const out: string[] = [];
+    for (const block of content) {
+      const b = block as { type?: unknown; content?: unknown };
+      if (b.type === 'tool_result' && typeof b.content === 'string') out.push(b.content);
+    }
+    return out;
+  }
+
+  /** Every truncation marker in every preview of the whole capture, at one setting. */
+  async function markersAt(previewBytes: number): Promise<{ kept: number; original: number }[]> {
+    const out: { kept: number; original: number }[] = [];
+    for (const sessionId of await capturedSessionIds()) {
+      const result = await graftSession(join(CAPTURED_SLUG, `${sessionId}.jsonl`), { previewBytes });
+      if (!result.ok) throw new Error(`captured session must graft: ${result.mismatch.code}`);
+      walk(result.snapshot.root, (node) => {
+        if (isAgentNode(node)) return;
+        for (const text of [node.inputPreview, node.resultPreview]) {
+          if (text === undefined) continue;
+          const m = TRUNCATION_MARKER_RE.exec(text);
+          if (m === null) continue;
+          // The marker's kept count must MEASURE the payload beside it.
+          const payload = text.slice(0, text.length - m[0].length);
+          expect(Buffer.byteLength(payload, 'utf8')).toBe(Number(m[1]));
+          out.push({ kept: Number(m[1]), original: Number(m[2]) });
+        }
+      });
+    }
+    return out;
+  }
+
+  it('(a) raising previewBytes above 8192 raises the kept bytes', async () => {
+    const sizes = await payloadsOver8k();
+    expect(sizes.length).toBeGreaterThan(0);
+    const largest = sizes[0] as number;
+    expect(largest).toBeGreaterThan(16384);
+
+    const at8k = await markersAt(8192);
+    const at16k = await markersAt(16384);
+    expect(Math.max(...at8k.map((m) => m.kept))).toBe(8192);
+    // The number that was stuck at 8192 before the fix.
+    expect(Math.max(...at16k.map((m) => m.kept))).toBe(16384);
+
+    // Fewer payloads are big enough to be cut at the higher ceiling, and none
+    // is cut at a ceiling above its own size.
+    expect(at16k.length).toBeLessThan(at8k.length);
+    for (const m of at16k) expect(m.original).toBeGreaterThan(16384);
+  });
+
+  it('(a) a ceiling above the largest payload truncates nothing at all', async () => {
+    const sizes = await payloadsOver8k();
+    const ceiling = (sizes[0] as number) + 1024;
+    const markers = await markersAt(ceiling);
+    expect(markers).toEqual([]);
+  });
+
+  it('(b) at the shipped 8192 default every marker states the payload real size', async () => {
+    const sizes = await payloadsOver8k();
+    const markers = await markersAt(8192);
+    expect(markers.length).toBeGreaterThan(0);
+    for (const m of markers) {
+      expect(m.kept).toBe(8192);
+      // The old bug: 8192 + marker length. Named explicitly so a regression
+      // cannot pass by being merely "some number bigger than kept".
+      expect(m.original).not.toBe(8192 + '\n...[agent-deck: truncated, showing 8192 of 63774 bytes]'.length);
+      expect(sizes).toContain(m.original);
+    }
+    // Every over-8-KB payload on disk is accounted for by a marker.
+    expect([...markers.map((m) => m.original)].sort((a, b) => b - a)).toEqual(sizes);
+  });
+
+  it('(b) a preview ceiling BELOW the parse ceiling still names the original', async () => {
+    const sizes = await payloadsOver8k();
+    const markers = await markersAt(DEFAULT_PREVIEW_BYTES);
+    expect(markers.length).toBeGreaterThan(0);
+    for (const m of markers) {
+      expect(m.kept).toBeLessThanOrEqual(DEFAULT_PREVIEW_BYTES);
+      expect(m.original).toBeGreaterThan(m.kept);
+    }
+    // Payloads between 512 and 8192 bytes are also marked here and their
+    // originals are their own sizes, so only the over-8-KB ones are compared
+    // against the disk. Before the fix this set was eight copies of 8248 (the
+    // length of the string the second pass was handed) rather than the eight
+    // real sizes — which is exactly the equality below.
+    expect(markers.map((m) => m.original).filter((n) => n > 8192).sort((a, b) => b - a)).toEqual(sizes);
+  });
+
+  it('a small previewBytes does not destroy the persisted-output stub (offload still hydrates)', async () => {
+    // The stub is ~2.2 KB. Taking the PARSE ceiling down to previewBytes would
+    // cut its closing tag off, `parsePersistedOutputPointer` would return
+    // undefined, and the offloaded payload would never be read — a silent loss
+    // of the whole G4 offload path. The parse ceiling is floored at 8 KB for
+    // exactly this reason; this is the test that says so.
+    const session = await sessionWhere(
+      'a non-empty `tool-results/` directory (an offloaded tool payload)',
+      (candidate) => candidate.toolResultFiles.length > 0,
+    );
+    const payload = await readFile(session.toolResultFiles[0] as string, 'utf8');
+    const head = payload.slice(0, 40);
+    for (const previewBytes of [128, DEFAULT_PREVIEW_BYTES, 8192]) {
+      const result = await graftSession(session.mainTranscript, { previewBytes });
+      if (!result.ok) throw new Error('must graft');
+      const previews = collectResultPreviews(result.snapshot);
+      expect(previews.filter((t) => t.startsWith('<persisted-output>')), `previewBytes=${previewBytes}`).toEqual([]);
+      expect(
+        previews.some((t) => t.startsWith(head)),
+        `previewBytes=${previewBytes}: the offloaded payload did not reach a preview`,
+      ).toBe(true);
+    }
+  });
+});
+
 function collectResultPreviews(snapshot: GraftSnapshot): string[] {
   const out: string[] = [];
   walk(snapshot.root, (node) => {

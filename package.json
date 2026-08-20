@@ -49,7 +49,7 @@
           "default": 8192,
           "minimum": 0,
           "maximum": 1048576,
-          "description": "Maximum bytes of tool payload kept per node for previews. Payloads are truncated with a marker; nothing is ever sent off the machine. Measured limitation: values above 8192 do not increase the kept payload, because the redaction layer truncates at 8 KB before this setting is applied. At exactly 8192 the payload is cut twice and the marker under-reports the original size. Both are recorded as Phase 4 items."
+          "description": "Maximum bytes of tool payload kept per node for previews. This is the single ceiling: the redaction layer is given the same number (never below its own 8 KB default, because the stub that points at an offloaded tool-results file is about 2 KB and cutting it shorter loses the pointer), so raising this genuinely raises the kept payload. Truncated payloads carry a marker stating the kept bytes and the ORIGINAL size in bytes; the marker sits on top of the budget, so a preview is slightly longer than this value. Nothing is ever sent off the machine. Measured on the committed CC 2.1.234 capture, whose largest payload is 63,774 bytes: at 8192 it keeps 8,192 bytes and reports 63,774; at 16384 it keeps 16,384; at 65536 it is kept whole. No payload in that capture exceeds 65,536 bytes, so larger values are unexercised by it."
         }
       }
     }

@@ -154,7 +154,7 @@
                 "toolName": "Bash",
                 "status": "done",
                 "inputPreview": "sha256:f24c81c5eeddbe1a:247",
-                "resultPreview": "sha256:64970e056aedaa72:566",
+                "resultPreview": "sha256:b43cb62cd6cb1ff9:567",
                 "durationMs": 2592
               },
               {
@@ -163,7 +163,7 @@
                 "toolName": "Bash",
                 "status": "done",
                 "inputPreview": "sha256:41a7df04f1b663a2:147",
-                "resultPreview": "sha256:8f5649ca4c124666:566",
+                "resultPreview": "sha256:5d48053fa45ae06f:567",
                 "durationMs": 541
               },
               {
@@ -172,7 +172,7 @@
                 "toolName": "Bash",
                 "status": "done",
                 "inputPreview": "sha256:90491e59b470b37c:153",
-                "resultPreview": "sha256:5aae4e69905531fa:566",
+                "resultPreview": "sha256:9e27d81469c66bdc:567",
                 "durationMs": 542
               },
               {
@@ -181,7 +181,7 @@
                 "toolName": "Bash",
                 "status": "done",
                 "inputPreview": "sha256:528635feca4c5701:149",
-                "resultPreview": "sha256:b8d448d3755912fd:566",
+                "resultPreview": "sha256:6ee6b8183765deca:567",
                 "durationMs": 525
               },
               {
@@ -190,7 +190,7 @@
                 "toolName": "Bash",
                 "status": "done",
                 "inputPreview": "sha256:6087bc06f895a9b3:153",
-                "resultPreview": "sha256:c3588f351972a0e6:566",
+                "resultPreview": "sha256:aab185ee0919d701:567",
                 "durationMs": 586
               },
               {

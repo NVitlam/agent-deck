@@ -88,11 +88,39 @@ export interface TruncationResult {
  * end of the kept prefix.
  */
 export function truncateUtf8(text: string, maxBytes: number = DEFAULT_MAX_PAYLOAD_BYTES): TruncationResult {
+  const cut = cutToBytes(text, maxBytes);
+  if (!cut.truncated) {
+    return { text, truncated: false, originalBytes: cut.originalBytes, keptBytes: cut.keptBytes };
+  }
+  return {
+    text: cut.kept + truncationMarker(cut.keptBytes, cut.originalBytes),
+    truncated: true,
+    originalBytes: cut.originalBytes,
+    keptBytes: cut.keptBytes,
+  };
+}
+
+interface Cut {
+  /** The kept prefix. No marker: marking is the caller's decision. */
+  kept: string;
+  keptBytes: number;
+  originalBytes: number;
+  truncated: boolean;
+}
+
+/**
+ * The cut itself, with no marker attached.
+ *
+ * Split out from {@link truncateUtf8} because {@link truncatePreservingMarker}
+ * needs to cut with one original size and mark with another; sharing the cut
+ * keeps exactly one implementation of the UTF-8 boundary walk.
+ */
+function cutToBytes(text: string, maxBytes: number): Cut {
   const buf = Buffer.from(text, 'utf8');
   const originalBytes = buf.length;
   const limit = Number.isFinite(maxBytes) && maxBytes > 0 ? Math.floor(maxBytes) : 0;
   if (originalBytes <= limit) {
-    return { text, truncated: false, originalBytes, keptBytes: originalBytes };
+    return { kept: text, keptBytes: originalBytes, originalBytes, truncated: false };
   }
   // `end` is the index of the first EXCLUDED byte. If it is a UTF-8
   // continuation byte (0b10xxxxxx) we are mid-sequence; walk back until the
@@ -103,12 +131,73 @@ export function truncateUtf8(text: string, maxBytes: number = DEFAULT_MAX_PAYLOA
     if (byte === undefined || (byte & 0xc0) !== 0x80) break;
     end--;
   }
-  const kept = buf.subarray(0, end).toString('utf8');
   return {
-    text: kept + truncationMarker(end, originalBytes),
+    kept: buf.subarray(0, end).toString('utf8'),
+    keptBytes: end,
+    originalBytes,
+    truncated: true,
+  };
+}
+
+/** A marker already present on a string, split from the payload it annotates. */
+export interface ExistingTruncation {
+  /** The string with its trailing marker removed. */
+  payload: string;
+  /** Bytes the earlier pass says it kept. */
+  keptBytes: number;
+  /** Bytes the earlier pass says the ORIGINAL payload had. */
+  originalBytes: number;
+}
+
+/**
+ * Split a trailing {@link truncationMarker} off `text`, or `undefined` when
+ * there is none. Never throws.
+ */
+export function splitTruncationMarker(text: string): ExistingTruncation | undefined {
+  if (typeof text !== 'string') return undefined;
+  const m = TRUNCATION_MARKER_RE.exec(text);
+  if (m === null) return undefined;
+  const keptBytes = Number(m[1]);
+  const originalBytes = Number(m[2]);
+  if (!Number.isFinite(keptBytes) || !Number.isFinite(originalBytes)) return undefined;
+  return { payload: text.slice(0, text.length - m[0].length), keptBytes, originalBytes };
+}
+
+/**
+ * Truncate to `maxBytes`, but REFUSE to re-mark an already-marked string
+ * against the length of the string this pass was handed.
+ *
+ * This exists because a marker is a claim about the ORIGINAL payload, and a
+ * second truncation pass over a marked string does not know that payload — it
+ * only knows the marked string in front of it. Marking that length turns the
+ * marker into a fabricated number: measured on the committed capture, a
+ * 63,774-byte payload cut at 8,192 (string length 8,248) and then cut again at
+ * 8,192 reported "8192 of 8248", under-reporting the original by 7.73x.
+ *
+ * The rule: strip the existing marker, apply the ceiling to the PAYLOAD, and
+ * mark the result with the larger of (a) the original size the existing marker
+ * states and (b) the payload actually in hand. The reported original therefore
+ * never shrinks across passes and never claims less than what is displayed.
+ *
+ * An unmarked string is truncated exactly as {@link truncateUtf8} would.
+ */
+export function truncatePreservingMarker(
+  text: string,
+  maxBytes: number = DEFAULT_MAX_PAYLOAD_BYTES,
+): TruncationResult {
+  const existing = splitTruncationMarker(text);
+  if (existing === undefined) return truncateUtf8(text, maxBytes);
+  const cut = cutToBytes(existing.payload, maxBytes);
+  const originalBytes = Math.max(existing.originalBytes, cut.originalBytes);
+  // Re-emitted canonically even when nothing was cut, so the marker's kept
+  // count is always a MEASUREMENT of the payload beside it rather than a
+  // number inherited from an earlier pass (or from content pretending to be
+  // one). `truncated` is true either way: the payload IS a truncation.
+  return {
+    text: cut.kept + truncationMarker(cut.keptBytes, originalBytes),
     truncated: true,
     originalBytes,
-    keptBytes: end,
+    keptBytes: cut.keptBytes,
   };
 }
 

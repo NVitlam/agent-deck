@@ -25,7 +25,9 @@ SCRUB-EVIDENCE.md                      the Phase 1 history scrub, with verificat
 hook-events/
   cc-2.1.234-redacted.jsonl            285 real hook payloads, content destroyed, key
                                        presence/absence preserved exactly (Phase 2)
-  redact-capture.mjs                   derives the above from a gitignored raw capture
+  cc-2.1.234-sessionstart.jsonl        2 SessionStart events — the R3 onset proof, captured
+                                       with the listener bound BEFORE a fresh session opened
+  redact-capture.mjs                   derives both from a gitignored raw capture (--only filters)
 golden/graft/                          2 grafted-tree goldens + regeneration README
 golden/session/                        2 SessionState goldens + regeneration README
 
@@ -103,6 +105,11 @@ construction:
 particular is **not** committed — do not go looking for it, and do not cite it as present.
 
 ### Phase 2 addition: `hook-events/` (read this before the public flip)
+
+Two committed captures live here: `cc-2.1.234-redacted.jsonl` (285 events, the main liveness fixture)
+and `cc-2.1.234-sessionstart.jsonl` (2 events, the R3 onset proof). **Both** carry the retention
+described below; the second is small but is not more anonymous for it — each of its 2 lines holds a
+real `session_id` and a real absolute `transcript_path` and `cwd`.
 
 `hook-events/cc-2.1.234-redacted.jsonl` is new in Phase 2 and is **deliberately not fully anonymous.**
 Content values are destroyed, but these are kept verbatim, because a fixture without them cannot test

@@ -238,12 +238,19 @@ export const DEFAULT_PREVIEW_BYTES = 512;
  * never opened at all. Nothing throws and no counter moves — the preview just
  * shows a truncated stub. That is a silent loss of the entire G4 offload path,
  * so a `previewBytes` under this floor narrows the PREVIEW (the second,
- * marker-preserving pass in `preview()`) and never the parse.
+ * marker-preserving pass in `preview()`) and never the parse. The same holds
+ * for an explicit {@link GraftSessionOptions.parse} `maxPayloadBytes`: it may
+ * raise the parse ceiling and is clamped up to this floor if it is lower. That
+ * escape hatch was open until Phase 4 and cost nothing visible when used —
+ * which is exactly why it is closed here rather than documented and left.
  *
  * Set to redaction's own 8 KB default rather than to 2,186: that is the byte
  * budget G4 already documents, and it leaves margin for a longer stub than the
- * one CC happens to write today. `graft.test.ts` asserts this constant exceeds
- * the stub actually on disk, and that a 128-byte `previewBytes` still hydrates.
+ * one CC happens to write today. The alias means lowering
+ * `DEFAULT_MAX_PAYLOAD_BYTES` lowers this floor with it; `graft.test.ts`
+ * asserts this constant exceeds the stub actually on disk, so that coupling
+ * fails a test rather than silently disabling offload hydration. That test,
+ * and the one showing a 128-byte `previewBytes` still hydrates, are the guard.
  */
 export const MIN_PARSE_CEILING_BYTES = DEFAULT_MAX_PAYLOAD_BYTES;
 
@@ -976,11 +983,33 @@ export interface GraftSessionOptions extends GraftOptions, FingerprintOptions {
   /**
    * Parse options, forwarded to the parse/redaction layer.
    *
-   * `maxPayloadBytes` is DERIVED — `max(previewBytes, 8192)` — unless this
-   * object sets it explicitly; see {@link graftSession} for why the floor is
-   * there. Setting it here below `previewBytes` reintroduces a double cut; the
-   * marker still reports the original size, but the kept bytes are the smaller
-   * of the two.
+   * `maxPayloadBytes` is DERIVED — `max(previewBytes, MIN_PARSE_CEILING_BYTES)`
+   * — unless this object sets it explicitly. An explicit value still WINS over
+   * `previewBytes`, exactly as before, but it can no longer go below
+   * {@link MIN_PARSE_CEILING_BYTES}: the effective ceiling is
+   * `max(this, MIN_PARSE_CEILING_BYTES)`.
+   *
+   * The clamp is deliberate and it is a behaviour change from the version that
+   * let an explicit value win outright. Measured through the production path
+   * on the committed capture, with the offloaded 63,774-byte payload:
+   *
+   *     {previewBytes:512}                              -> "===== run.mjs =====…"
+   *                                                        marker "512 of 63774"
+   *     {previewBytes:512, parse:{maxPayloadBytes:512}} -> "<persisted-output>…"
+   *                                                        marker "512 of 2186"
+   *
+   * A ceiling under the floor cuts CC's ~2.2 KB `<persisted-output>` stub
+   * before its closing tag, `parsePersistedOutputPointer` returns `undefined`,
+   * the offloaded file is never opened, and the preview silently becomes the
+   * stub. No throw, no counter, no diagnostic — the G4 offload path just stops
+   * existing. G4 is build-time law, so it is not something a caller may switch
+   * off by naming one number; the knob for shorter previews is `previewBytes`,
+   * which narrows the preview without touching hydration.
+   *
+   * Any value at or above the floor is honoured as it always was, including
+   * one below `previewBytes`, which reintroduces a double cut: the marker
+   * reports the original size, and the kept bytes are the smaller of the two
+   * ceilings. Only the below-floor range changed.
    */
   parse?: ParseOptions;
   /** Read `tool-results/*.txt` payloads into previews. Default `true`. */
@@ -1029,10 +1058,24 @@ export async function graftSession(
   // tag, silently disables the whole offload path). Removing it looks safe and
   // is not.
   const previewBytes = options.previewBytes ?? DEFAULT_PREVIEW_BYTES;
-  const parseCeiling = Math.max(previewBytes, MIN_PARSE_CEILING_BYTES);
-  // An explicit `parse.maxPayloadBytes` still wins: a caller who names the
-  // parse ceiling means it.
-  const parseOptions: ParseOptions = { maxPayloadBytes: parseCeiling, ...(options.parse ?? {}) };
+  // An explicit `parse.maxPayloadBytes` still wins over `previewBytes` — a
+  // caller who names the parse ceiling means it — but it is clamped UP to the
+  // floor. It used to win outright, which left an unguarded escape
+  // hatch around the floor: `parse:{maxPayloadBytes:512}` cut the stub below
+  // its closing tag and silently disabled offload hydration — the preview
+  // became the stub itself, marked "512 of 2186" instead of the offloaded
+  // payload marked "512 of 63774". Measured on the committed capture; no
+  // production caller sets it (`session.ts` forwards `previewBytes` only), so
+  // the clamp changes no shipped behaviour. See GraftSessionOptions.parse.
+  const derivedCeiling = Math.max(previewBytes, MIN_PARSE_CEILING_BYTES);
+  const requested = options.parse?.maxPayloadBytes;
+  // A non-finite request is not a request: `Math.max(x, NaN)` is NaN, which
+  // would disable truncation altogether rather than clamp it.
+  const parseCeiling =
+    typeof requested === 'number' && Number.isFinite(requested)
+      ? Math.max(requested, MIN_PARSE_CEILING_BYTES)
+      : derivedCeiling;
+  const parseOptions: ParseOptions = { ...(options.parse ?? {}), maxPayloadBytes: parseCeiling };
 
   const loaded = await loadSessionForAttribution(fp, parseOptions);
   const diagnostics: ParseDiagnostics = {

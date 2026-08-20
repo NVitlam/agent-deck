@@ -989,6 +989,90 @@ describe('previewBytes is the ceiling, and the marker states the ORIGINAL size',
     }
   });
 
+  it('an explicit parse.maxPayloadBytes UNDER the floor is clamped, so offload still hydrates', async () => {
+    // The escape hatch, closed. `previewBytes` was floored for the parse layer
+    // but `parse.maxPayloadBytes` used to win outright, so a caller naming a
+    // number below the floor got the whole G4 offload path silently switched
+    // off. Measured through the production path before the clamp, at
+    // previewBytes=512 on the offloaded 63,774-byte payload:
+    //
+    //   {previewBytes:512}                              "===== run.mjs =====…"
+    //                                                    marker "512 of 63774"
+    //   {previewBytes:512, parse:{maxPayloadBytes:512}} "<persisted-output>…"
+    //                                                    marker "512 of 2186"
+    //
+    // All counts UTF-8 bytes.
+    const session = await sessionWhere(
+      'a non-empty `tool-results/` directory (an offloaded tool payload)',
+      (candidate) => candidate.toolResultFiles.length > 0,
+    );
+    const offloaded = await readFile(session.toolResultFiles[0] as string, 'utf8');
+    const head = offloaded.slice(0, 40);
+    const offloadedBytes = Buffer.byteLength(offloaded, 'utf8');
+    expect(offloadedBytes).toBeGreaterThan(MIN_PARSE_CEILING_BYTES);
+
+    for (const maxPayloadBytes of [1, 512, MIN_PARSE_CEILING_BYTES - 1]) {
+      const result = await graftSession(session.mainTranscript, {
+        previewBytes: 512,
+        parse: { maxPayloadBytes },
+      });
+      if (!result.ok) throw new Error('must graft');
+      const previews = collectResultPreviews(result.snapshot);
+      expect(
+        previews.filter((t) => t.startsWith('<persisted-output>')),
+        `parse.maxPayloadBytes=${maxPayloadBytes}: the stub reached a preview`,
+      ).toEqual([]);
+      const hydrated = previews.find((t) => t.startsWith(head));
+      expect(
+        hydrated,
+        `parse.maxPayloadBytes=${maxPayloadBytes}: the offloaded payload did not reach a preview`,
+      ).toBeTypeOf('string');
+      // The marker must name the offloaded file's real size, never the stub's:
+      // "512 of 2186" is what the unclamped hatch produced.
+      const marker = TRUNCATION_MARKER_RE.exec(hydrated as string);
+      expect(marker, `parse.maxPayloadBytes=${maxPayloadBytes}: preview was not marked`).not.toBeNull();
+      expect(Number((marker as RegExpExecArray)[1])).toBe(512);
+      expect(Number((marker as RegExpExecArray)[2])).toBe(offloadedBytes);
+    }
+  });
+
+  it('an explicit parse.maxPayloadBytes ABOVE the floor is still honoured, and still double-cuts', async () => {
+    // The clamp raises a low ceiling; it does not ignore the option. A ceiling
+    // above the floor but below `previewBytes` is the caller's business and
+    // still governs the kept bytes.
+    const sizes = await payloadsOver8k();
+    const largest = sizes[0] as number;
+    expect(largest).toBeGreaterThan(16384);
+
+    const ceiling = 16384;
+    const markers: { kept: number; original: number }[] = [];
+    for (const sessionId of await capturedSessionIds()) {
+      const result = await graftSession(join(CAPTURED_SLUG, `${sessionId}.jsonl`), {
+        previewBytes: largest + 1024,
+        parse: { maxPayloadBytes: ceiling },
+      });
+      if (!result.ok) throw new Error('captured session must graft');
+      walk(result.snapshot.root, (node) => {
+        if (isAgentNode(node)) return;
+        for (const text of [node.inputPreview, node.resultPreview]) {
+          if (text === undefined) continue;
+          const m = TRUNCATION_MARKER_RE.exec(text);
+          if (m === null) continue;
+          markers.push({ kept: Number(m[1]), original: Number(m[2]) });
+        }
+      });
+    }
+    // Cut by the explicit parse ceiling, not by the far larger preview ceiling
+    // — which would have left the largest payload uncut entirely.
+    expect(markers.length, 'no payload was cut at 16384').toBeGreaterThan(0);
+    for (const m of markers) {
+      expect(m.kept).toBeLessThanOrEqual(ceiling);
+      expect(m.original).toBeGreaterThan(m.kept);
+    }
+    expect(Math.max(...markers.map((m) => m.kept))).toBe(ceiling);
+    expect(markers.map((m) => m.original)).toContain(largest);
+  });
+
   it('MIN_PARSE_CEILING_BYTES exceeds the persisted-output stub actually on disk', async () => {
     // The floor's whole justification is a size relationship with a string in
     // the fixtures, so the relationship is measured here rather than asserted

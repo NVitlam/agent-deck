@@ -153,26 +153,53 @@ export interface SettingsReader {
 }
 
 /**
- * Accepted ranges. A value outside them is a user typo, not a request:
- * `port: 0` would mean "bind ephemeral", which the port decision explicitly
- * refuses, and `previewBytes: -1` has no meaning at all.
+ * Accepted ranges and defaults — ONE table, and the table `package.json` is
+ * checked against.
+ *
+ * Every number here is declared a second time in the manifest's
+ * `contributes.configuration`, because that is the only place VS Code's
+ * settings UI reads: the manifest supplies the default a user sees and the
+ * min/max the editor validates against, while this table supplies the default
+ * and range `readSettings` enforces at runtime. Six numbers, two files, and
+ * until Phase 4 nothing kept them equal — the manifest's `previewBytes`
+ * default could be changed from 8192 to 999 and its maximum from 1048576 to
+ * 4096 with the whole suite still green.
+ *
+ * That is the defect class CLAUDE.md names and says will recur, "the manifest
+ * and the build disagree", from the `"type": "module"` incident that shipped a
+ * silently inert extension. `extension.test.ts` now reads `package.json` at
+ * test time and asserts per setting that `default`/`minimum`/`maximum` equal
+ * the entries below, and that the two key sets match — so a setting added to
+ * one side alone fails as loudly as a number changed on one side alone.
+ *
+ * A value outside a range is a user typo, not a request: `port: 0` would mean
+ * "bind ephemeral", which the port decision explicitly refuses, and
+ * `previewBytes: -1` has no meaning at all.
  */
-const PORT_MIN = 1;
-const PORT_MAX = 65_535;
-const THRESHOLD_MIN_MS = 1_000;
-const THRESHOLD_MAX_MS = 24 * 60 * 60 * 1_000;
-const PREVIEW_MIN_BYTES = 0;
-const PREVIEW_MAX_BYTES = 1_048_576;
+export interface SettingBounds {
+  /** Used when the setting is unset or unusable. Equals the manifest's `default`. */
+  readonly default: number;
+  /** Inclusive lower bound. Equals the manifest's `minimum`. */
+  readonly minimum: number;
+  /** Inclusive upper bound. Equals the manifest's `maximum`. */
+  readonly maximum: number;
+}
 
-function integerInRange(
-  value: unknown,
-  min: number,
-  max: number,
-  fallback: number,
-): number {
-  if (typeof value !== 'number') return fallback;
-  if (!Number.isSafeInteger(value)) return fallback;
-  if (value < min || value > max) return fallback;
+export const SETTING_BOUNDS: Readonly<Record<keyof AgentDeckSettings, SettingBounds>> = {
+  port: { default: DEFAULT_PORT, minimum: 1, maximum: 65_535 },
+  livenessThresholdMs: {
+    default: DEFAULT_LIVENESS_THRESHOLD_MS,
+    minimum: 1_000,
+    maximum: 24 * 60 * 60 * 1_000,
+  },
+  previewBytes: { default: DEFAULT_PREVIEW_BYTES, minimum: 0, maximum: 1_048_576 },
+};
+
+function integerInRange(value: unknown, key: keyof AgentDeckSettings): number {
+  const bounds = SETTING_BOUNDS[key];
+  if (typeof value !== 'number') return bounds.default;
+  if (!Number.isSafeInteger(value)) return bounds.default;
+  if (value < bounds.minimum || value > bounds.maximum) return bounds.default;
   return value;
 }
 
@@ -188,27 +215,15 @@ function integerInRange(
  * an extension to fail to start because a number was mistyped.
  */
 export function readSettings(reader: SettingsReader | undefined): AgentDeckSettings {
-  if (reader === undefined) {
-    return {
-      port: DEFAULT_PORT,
-      livenessThresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
-      previewBytes: DEFAULT_PREVIEW_BYTES,
-    };
-  }
+  // An absent reader is not a special case: every key reads as `undefined`,
+  // which `integerInRange` already answers with the same default. Written this
+  // way so there is exactly one place a default is produced.
+  const get = (key: keyof AgentDeckSettings): unknown =>
+    reader === undefined ? undefined : reader.get(key);
   return {
-    port: integerInRange(reader.get('port'), PORT_MIN, PORT_MAX, DEFAULT_PORT),
-    livenessThresholdMs: integerInRange(
-      reader.get('livenessThresholdMs'),
-      THRESHOLD_MIN_MS,
-      THRESHOLD_MAX_MS,
-      DEFAULT_LIVENESS_THRESHOLD_MS,
-    ),
-    previewBytes: integerInRange(
-      reader.get('previewBytes'),
-      PREVIEW_MIN_BYTES,
-      PREVIEW_MAX_BYTES,
-      DEFAULT_PREVIEW_BYTES,
-    ),
+    port: integerInRange(get('port'), 'port'),
+    livenessThresholdMs: integerInRange(get('livenessThresholdMs'), 'livenessThresholdMs'),
+    previewBytes: integerInRange(get('previewBytes'), 'previewBytes'),
   };
 }
 

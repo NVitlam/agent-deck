@@ -32,6 +32,8 @@
  * snippet the user pastes names a fixed port and there is no discovery file to
  * tell it otherwise — writing one would violate G1. A port collision surfaces
  * as {@link HookListenerBindError}; the listener never silently rebinds.
+ * The one exception is the TEST-ONLY {@link HookListenerOptions.allowEphemeralPort}
+ * escape hatch, which no production module sets and a source-level test says so.
  */
 
 import { Buffer } from 'node:buffer';
@@ -161,6 +163,25 @@ export interface HookListenerOptions {
    * never widen what the socket accepts.
    */
   spoofRemoteAddress?: string;
+  /**
+   * TEST-ONLY affordance. Permits `port: 0` — an OS-assigned ephemeral port —
+   * which the port policy above otherwise refuses. Read
+   * {@link HookListener.address} afterwards to learn what was assigned.
+   *
+   * It exists because the alternative is worse. A test that probes for a free
+   * port by binding port 0, reading the number and closing the probe hands out
+   * a number that anything on the machine may take before the listener binds
+   * it. That gap is a real race, and it made this repo's suite intermittently
+   * red with `EADDRINUSE`. Binding port 0 on the listener itself closes the
+   * gap outright rather than making it narrower.
+   *
+   * It cannot widen the trust boundary: the bind host is still the hard-coded
+   * {@link HOOK_LISTENER_HOST} literal, every request still goes through the
+   * loopback origin check, and any port other than 0 outside 1..65535 is still
+   * refused. A source-level test asserts that no production module under
+   * `src/` names this option.
+   */
+  allowEphemeralPort?: boolean;
 }
 
 /**
@@ -279,12 +300,14 @@ export class HookListener {
   #handlers = new Set<HookEventHandler>();
   #seq = 0;
   #spoofRemoteAddress: string | undefined;
+  #allowEphemeralPort: boolean;
 
   constructor(options: HookListenerOptions = {}) {
     this.port = options.port ?? DEFAULT_HOOK_PORT;
     this.maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
     this.eventPath = options.eventPath ?? DEFAULT_EVENT_PATH;
     this.#spoofRemoteAddress = options.spoofRemoteAddress;
+    this.#allowEphemeralPort = options.allowEphemeralPort === true;
     if (options.onEvent) this.#handlers.add(options.onEvent);
   }
 
@@ -328,10 +351,11 @@ export class HookListener {
     if (this.#server !== null) {
       throw new Error('HookListener.start() called while already started');
     }
+    // TEST-ONLY: port 0 is bindable only when the caller opted in explicitly.
+    const ephemeral = this.#allowEphemeralPort && this.port === 0;
     if (
-      !Number.isInteger(this.port) ||
-      this.port < 1 ||
-      this.port > 65535
+      !ephemeral &&
+      (!Number.isInteger(this.port) || this.port < 1 || this.port > 65535)
     ) {
       // Port 0 lands here on purpose: an ephemeral port cannot be named by the
       // hook snippet the user pasted, and there is no discovery file (G1).

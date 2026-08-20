@@ -38,6 +38,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import {
   copyFile,
   mkdir,
@@ -86,6 +87,52 @@ const DENIED_MODULE_IDS = [
 // ---------------------------------------------------------------------------
 // staging
 // ---------------------------------------------------------------------------
+
+/**
+ * Port band for the census child.
+ *
+ * NOT arbitrary. Windows hands out 49152-65535 for OUTBOUND ephemeral sockets,
+ * including the ones this very suite opens, so a census port drawn from there
+ * can be taken by a client socket in another worker between being chosen and
+ * being bound. Measured: one full-suite run in fifteen failed exactly that way,
+ * with the census child unable to bind 49753 and reporting no TCP handle at
+ * all. The band below stops short of 49152 so the OS will never assign one of
+ * these numbers to anything on its own.
+ */
+const CENSUS_PORT_MIN = 40000;
+const CENSUS_PORT_MAX = 49150;
+
+/**
+ * A census port that was bindable a moment ago.
+ *
+ * Unlike the listener's own tests — which now bind port 0 on the listener
+ * itself and never handle a bare port number — this one CANNOT close the
+ * window. The census drives the real bundled `activate()`, which reads its port
+ * from configuration and refuses port 0 on purpose (that refusal is a shipped
+ * property, and a test-only escape hatch is not reachable through the vscode
+ * config the child stubs). A bound handle cannot be handed to a separate
+ * process portably either. So the window is made as small as it can be —
+ * probe-bind, close, spawn immediately, from a band the OS never assigns —
+ * and the caller retries a bounded number of times on a different port. See
+ * the retry note at the spawn site.
+ */
+async function reserveCensusPort(): Promise<number> {
+  const span = CENSUS_PORT_MAX - CENSUS_PORT_MIN;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const candidate = CENSUS_PORT_MIN + Math.floor(Math.random() * span);
+    const free = await new Promise<boolean>((resolve) => {
+      const probe = createServer();
+      probe.once('error', () => resolve(false));
+      probe.listen(candidate, '127.0.0.1', () => {
+        probe.close(() => resolve(true));
+      });
+    });
+    if (free) return candidate;
+  }
+  throw new Error(
+    `no free port in ${String(CENSUS_PORT_MIN)}..${String(CENSUS_PORT_MAX)} after 50 probes`,
+  );
+}
 
 const tempRoots: string[] = [];
 
@@ -150,6 +197,41 @@ async function capturedWorkspacePath(): Promise<string> {
   throw new Error('no cwd found in the captured transcripts');
 }
 
+/**
+ * Every module id the bundle names, in BOTH forms it can name one.
+ *
+ * The second form is the whole point of this function existing. esbuild leaves
+ * a dynamic `import("node:https")` in the output exactly as written — it is not
+ * rewritten to `require` — so a scan that matched only `require(...)` was blind
+ * to `node:net`, `node:dns` and `node:https` reached that way, while §4a of
+ * `SECURITY.md` claims those modules are not REACHABLE. The claim is the
+ * stronger one, so the scan is the thing that had to change.
+ *
+ * Both patterns are deliberately wide rather than precise: this feeds a
+ * denylist, so an over-match fails loudly and an under-match fails silently.
+ */
+function bundleModuleIds(text: string): Set<string> {
+  const ids = new Set<string>();
+  for (const m of text.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)) {
+    ids.add(m[1] as string);
+  }
+  for (const m of text.matchAll(/import\s*\(\s*["']([^"']+)["']\s*\)/g)) {
+    ids.add(m[1] as string);
+  }
+  return ids;
+}
+
+/** Denied ids present in `text`, in either the bare or the `node:` spelling. */
+function deniedModulesIn(text: string): string[] {
+  const ids = bundleModuleIds(text);
+  const found: string[] = [];
+  for (const denied of DENIED_MODULE_IDS) {
+    if (ids.has(denied)) found.push(denied);
+    if (ids.has(`node:${denied}`)) found.push(`node:${denied}`);
+  }
+  return found.sort();
+}
+
 // ---------------------------------------------------------------------------
 // (A) dependency review
 // ---------------------------------------------------------------------------
@@ -177,11 +259,9 @@ describe('G5 dependency review: what the shipped bundle can reach', () => {
     expect(Object.keys(manifest.dependencies ?? {}).length).toBeGreaterThanOrEqual(0);
   });
 
-  it('requires only node builtins and vscode — no third-party module survives bundling', () => {
-    const ids = new Set(
-      [...bundle.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string),
-    );
-    expect(ids.size, 'a bundle that requires nothing has not been built').toBeGreaterThan(0);
+  it('names only node builtins and vscode — no third-party module survives bundling', () => {
+    const ids = bundleModuleIds(bundle);
+    expect(ids.size, 'a bundle that names no module has not been built').toBeGreaterThan(0);
     for (const id of ids) {
       if (id === 'vscode') continue;
       expect(id, `${id} is neither a node: builtin nor vscode`).toMatch(/^node:/);
@@ -189,17 +269,36 @@ describe('G5 dependency review: what the shipped bundle can reach', () => {
   });
 
   it('reaches no network-capable module other than the listener', () => {
-    const ids = new Set(
-      [...bundle.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1] as string),
-    );
-    for (const denied of DENIED_MODULE_IDS) {
-      expect(ids, `${denied} must not be reachable from the host bundle`).not.toContain(
-        `node:${denied}`,
-      );
-      expect(ids).not.toContain(denied);
-    }
+    const found = deniedModulesIn(bundle);
+    expect(
+      found,
+      `network-capable module(s) reachable from the host bundle: ${found.join(', ')}`,
+    ).toStrictEqual([]);
     // The one sanctioned socket module is present, so this is not vacuous.
-    expect(ids).toContain('node:http');
+    expect(bundleModuleIds(bundle)).toContain('node:http');
+  });
+
+  it('the scan sees a dynamic import(), proven by injecting one', () => {
+    // Not asserted, INJECTED. esbuild emits `import("node:https")` verbatim, so
+    // a require-only scan reported a clean bundle while `node:https`,
+    // `node:net` and `node:dns` sat one dynamic import away. The runtime census
+    // in part (B) did catch that injection — layered checks are why — but §4a
+    // of SECURITY.md makes a static reachability claim, and this is what backs
+    // it. Each denied id is injected in the exact form esbuild would leave.
+    for (const denied of DENIED_MODULE_IDS) {
+      const injected = `${bundle}\nglobalThis.__leak = () => import("node:${denied}");\n`;
+      expect(
+        deniedModulesIn(injected),
+        `a dynamic import of node:${denied} slipped past the scan`,
+      ).toContain(`node:${denied}`);
+    }
+    // The bare spelling too, and the require form, so neither half rotted.
+    expect(deniedModulesIn(`${bundle}\nconst s = import('net');\n`)).toContain(
+      'net',
+    );
+    expect(
+      deniedModulesIn(`${bundle}\nconst t = require("node:tls");\n`),
+    ).toContain('node:tls');
   });
 
   it('contains a server and no client: no outbound request API is compiled in', () => {
@@ -513,30 +612,65 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
     await writeFile(join(stub, 'index.js'), VSCODE_STUB);
     await writeFile(join(stage, 'census.cjs'), CENSUS_PROGRAM);
 
-    // An ephemeral-but-known port. The extension refuses to bind port 0, and
-    // the live hook tap in this repo may well hold 47821 right now, so the
-    // census must not race it.
-    port = 40000 + Math.floor(Math.random() * 20000);
+    // A known port, probed free immediately before the spawn. The extension
+    // refuses to bind port 0 by design, and the live hook tap in this repo may
+    // well hold 47821 right now, so the census cannot use either.
+    //
+    // The retry, argued rather than assumed. Everywhere else in this package a
+    // port race was CLOSED, not narrowed — the listener binds port 0 itself and
+    // no bare number is ever handed around. That is unavailable here: the child
+    // runs the shipped `activate()`, which takes its port from configuration
+    // and refuses 0, and a bound socket cannot be handed to another process
+    // portably on Windows. What is left is to shrink the window (a band the OS
+    // never assigns, probed free microseconds earlier) and to retry on a
+    // DIFFERENT port when the child reports no listening socket. The retry is
+    // bounded and it cannot hide a product defect: a bind that fails on five
+    // separately-probed ports is not a race, and the assertions below then run
+    // against the last report and fail with it.
+    const MAX_BIND_ATTEMPTS = 5;
+    let attempts = 0;
+    let parsed: CensusReport | undefined;
+    let lastStdout = '';
+    for (;;) {
+      attempts += 1;
+      port = await reserveCensusPort();
 
-    const run = spawnSync(process.execPath, [join(stage, 'census.cjs')], {
-      encoding: 'utf8',
-      timeout: 60_000,
-      env: {
-        ...process.env,
-        CLAUDE_PROJECTS_ROOT: CAPTURED_ROOT,
-        CENSUS_WORKSPACE: await capturedWorkspacePath(),
-        CENSUS_PORT: String(port),
-      },
-    });
-    stderr = run.stderr ?? '';
-    const line = (run.stdout ?? '')
-      .split(/\r?\n/)
-      .find((l) => l.startsWith('__CENSUS__'));
+      const run = spawnSync(process.execPath, [join(stage, 'census.cjs')], {
+        encoding: 'utf8',
+        timeout: 60_000,
+        env: {
+          ...process.env,
+          CLAUDE_PROJECTS_ROOT: CAPTURED_ROOT,
+          CENSUS_WORKSPACE: await capturedWorkspacePath(),
+          CENSUS_PORT: String(port),
+        },
+      });
+      stderr = run.stderr ?? '';
+      lastStdout = run.stdout ?? '';
+      const line = lastStdout
+        .split(/\r?\n/)
+        .find((l) => l.startsWith('__CENSUS__'));
+      if (line !== undefined) {
+        parsed = JSON.parse(line.slice('__CENSUS__'.length)) as CensusReport;
+        const bound = (parsed.phases['activated'] ?? []).some(
+          (h) => h.handle === 'TCP',
+        );
+        if (bound) break;
+      }
+      if (attempts >= MAX_BIND_ATTEMPTS) break;
+    }
+    if (attempts > 1) {
+      // Never silent: a retried census is a fact a reviewer should see even on
+      // a green run, because a rising count means the band is getting crowded.
+      process.stderr.write(
+        `[census] the child needed ${String(attempts)} bind attempt(s)\n`,
+      );
+    }
     expect(
-      line,
-      `census child produced no report.\nstdout:\n${run.stdout ?? ''}\nstderr:\n${stderr}`,
+      parsed,
+      `census child produced no report after ${String(attempts)} attempt(s).\nstdout:\n${lastStdout}\nstderr:\n${stderr}`,
     ).toBeDefined();
-    report = JSON.parse((line as string).slice('__CENSUS__'.length)) as CensusReport;
+    report = parsed as CensusReport;
 
     // The census is evidence, and evidence nobody can print is hard to audit.
     // `AGENT_DECK_CENSUS_DEBUG=1 npx vitest run src/hooks/egress.test.ts`
@@ -618,9 +752,17 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
         'a DNS call from anywhere but the inbound bind is egress',
       ).toContain('Server.listen');
     }
-    // Not vacuous: the listener really did bind, so the one call really was
-    // observed rather than the instrumentation silently missing everything.
-    expect(report.dnsFinal.length).toBeGreaterThan(0);
+    // EXACTLY one, not merely "at least one". `SECURITY.md` §4a says exactly
+    // one, and a document that claims more than its test asserts is how a
+    // measured finding turns into a comfortable story. One bind, one lookup:
+    // a second call would mean something else in the run resolved something,
+    // and that is the event worth failing on.
+    expect(
+      report.dnsFinal.length,
+      `expected exactly one DNS call (the inbound bind); saw ${JSON.stringify(
+        report.dnsFinal.map((c) => c.target),
+      )}`,
+    ).toBe(1);
   });
 
   it('attempts zero outbound connections across the entire run', () => {

@@ -21,6 +21,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { readdirSync } from 'node:fs';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,8 +52,36 @@ import { TRUNCATION_MARKER_RE } from '../parser/redact.js';
 // ---------------------------------------------------------------------------
 
 const CAPTURED_ROOT = fileURLToPath(new URL('../../fixtures/cc-2.1.234/projects', import.meta.url));
-const CAPTURED_SLUG_NAME = 'c--Users-dev-projects-agent-deck';
-const CAPTURED_SLUG = join(CAPTURED_ROOT, CAPTURED_SLUG_NAME);
+
+/**
+ * The captured project-slug directory, DERIVED from the projects root.
+ *
+ * The slug is a capture artefact like every session id: it encodes the
+ * absolute path of the machine that recorded it, and on Windows even its
+ * drive-letter case varies (`c--Users-…` and `C--Users-…` both occur in real
+ * data). Spelling it out here would make this suite fail with ENOENT on the
+ * next harvest, which reads as a grafter bug and is not one.
+ *
+ * Resolved eagerly and synchronously so `CAPTURED_SLUG` stays a plain
+ * constant. Exactly one slug is required: more than one is a real ambiguity
+ * about which capture these tests are about, and picking the first would be a
+ * guess.
+ */
+const CAPTURED_SLUG = ((): string => {
+  const slugs = readdirSync(CAPTURED_ROOT, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  if (slugs.length !== 1) {
+    throw new Error(
+      `expected exactly one project-slug directory under\n${CAPTURED_ROOT}\nbut found ` +
+        `${slugs.length}: [${slugs.join(', ')}].\nThis is a fixture-layout change, not a grafter ` +
+        `bug: these tests are written against a single captured slug. Point them at one, or teach ` +
+        `them to iterate.`,
+    );
+  }
+  return join(CAPTURED_ROOT, slugs[0] as string);
+})();
 
 const GRAFT_ROOT = fileURLToPath(new URL('../../fixtures/synthetic-graft', import.meta.url));
 const LAYOUT_ROOT = fileURLToPath(new URL('../../fixtures/synthetic-layout', import.meta.url));
@@ -78,6 +107,273 @@ async function capturedSessionIds(): Promise<string[]> {
     .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
     .map((e) => e.name.replace(/\.jsonl$/, ''))
     .sort();
+}
+
+// ---------------------------------------------------------------------------
+// Fixture selection BY PROPERTY, never by literal id
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything a test needs to pick its subject without naming a session.
+ *
+ * Session ids, agent ids and `tool_use` ids are all capture artefacts: they
+ * change on every harvest. A test that names one breaks with ENOENT (or a
+ * silent `undefined`) the next time the fixtures are re-captured, which reads
+ * as a grafter bug and is not one. Every test below therefore states the
+ * PROPERTY it needs — "a session with a nested spawn", "a session with an
+ * offloaded payload" — and {@link sessionWhere} finds it or explains exactly
+ * what is missing.
+ */
+interface CapturedSession {
+  sessionId: string;
+  mainTranscript: string;
+  /** Sidecars in the session's `subagents/` directory, parsed where possible. */
+  sidecars: { agentId: string; transcriptPath: string; meta?: SubagentMeta }[];
+  /** Absolute paths of `tool-results/*` payloads. Empty when there are none. */
+  toolResultFiles: string[];
+  /** Distinct `tool_use` ids across the main transcript and every subagent file. */
+  toolUseIds: string[];
+}
+
+let capturedCache: Promise<CapturedSession[]> | undefined;
+
+async function readEntries(path: string): Promise<TranscriptEntry[]> {
+  const batch = parseLines(splitTranscript(await readFile(path, 'utf8')));
+  return batch.ok ? batch.value.entries : [];
+}
+
+function toolUseIdsIn(entries: readonly TranscriptEntry[]): string[] {
+  const ids: string[] = [];
+  for (const entry of entries) {
+    const message = entry['message'];
+    if (typeof message !== 'object' || message === null) continue;
+    const content = (message as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (typeof block !== 'object' || block === null) continue;
+      const b = block as { type?: unknown; id?: unknown };
+      if (b.type === 'tool_use' && typeof b.id === 'string' && b.id !== '') ids.push(b.id);
+    }
+  }
+  return ids;
+}
+
+/** Scan the captured slug once per test file. Read-only. */
+async function capturedSessions(): Promise<CapturedSession[]> {
+  capturedCache ??= (async () => {
+    const out: CapturedSession[] = [];
+    const names = await readdir(CAPTURED_SLUG, { withFileTypes: true });
+    for (const entry of names) {
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+      const sessionId = entry.name.replace(/\.jsonl$/, '');
+      const mainTranscript = join(CAPTURED_SLUG, entry.name);
+      const sessionDir = join(CAPTURED_SLUG, sessionId);
+
+      const ids = new Set(toolUseIdsIn(await readEntries(mainTranscript)));
+      const sidecars: CapturedSession['sidecars'] = [];
+      let subagentNames: string[] = [];
+      try {
+        subagentNames = (await readdir(join(sessionDir, 'subagents'))).sort();
+      } catch {
+        subagentNames = [];
+      }
+      for (const name of subagentNames) {
+        const match = /^agent-(.+)\.jsonl$/.exec(name);
+        if (match === null) continue;
+        const agentId = match[1] as string;
+        const transcriptPath = join(sessionDir, 'subagents', name);
+        for (const id of toolUseIdsIn(await readEntries(transcriptPath))) ids.add(id);
+        const record: CapturedSession['sidecars'][number] = { agentId, transcriptPath };
+        try {
+          const parsed = parseSubagentMeta(
+            await readFile(join(sessionDir, 'subagents', `agent-${agentId}.meta.json`), 'utf8'),
+          );
+          if (parsed.ok) record.meta = parsed.value;
+        } catch {
+          // An unreadable sidecar simply carries no meta; selection predicates
+          // treat it as not having whatever property they are looking for.
+        }
+        sidecars.push(record);
+      }
+
+      let toolResultFiles: string[] = [];
+      try {
+        toolResultFiles = (await readdir(join(sessionDir, 'tool-results')))
+          .sort()
+          .map((n) => join(sessionDir, 'tool-results', n));
+      } catch {
+        toolResultFiles = [];
+      }
+
+      out.push({
+        sessionId,
+        mainTranscript,
+        sidecars,
+        toolResultFiles,
+        toolUseIds: [...ids].sort(),
+      });
+    }
+    out.sort((a, b) => a.sessionId.localeCompare(b.sessionId));
+    return out;
+  })();
+  return capturedCache;
+}
+
+function describeCaptured(session: CapturedSession): string {
+  const depths = session.sidecars.map((s) => s.meta?.spawnDepth ?? -1);
+  return `${session.sessionId} (sidecars=${session.sidecars.length} spawnDepths=[${depths.join(',')}] toolUses=${session.toolUseIds.length} toolResults=${session.toolResultFiles.length})`;
+}
+
+/**
+ * The captured session with `property`, or a failure that says which property
+ * is missing and what the capture actually contains.
+ *
+ * The diagnostic matters more than the lookup: an ENOENT on a hard-coded
+ * session id looks like the grafter cannot open a file. This says, in one
+ * line, that the fixtures moved and the test lost its subject.
+ */
+async function sessionWhere(
+  property: string,
+  predicate: (session: CapturedSession) => boolean,
+): Promise<CapturedSession> {
+  const sessions = await capturedSessions();
+  const chosen = sessions.filter(predicate)[0];
+  if (chosen === undefined) {
+    throw new Error(
+      `no captured session has ${property}.\n` +
+        `This is a stale fixture reference, not a grafter bug: the capture under\n` +
+        `${CAPTURED_SLUG}\n` +
+        `was re-harvested and this test lost its subject. Scanned ${sessions.length} session(s):\n` +
+        sessions.map((s) => `  - ${describeCaptured(s)}`).join('\n') +
+        `\nEither capture a session with that property, or retire the test.`,
+    );
+  }
+  return chosen;
+}
+
+/** The sidecar of an agent that some other agent spawned (`spawnDepth >= 2`). */
+function nestedSidecarOf(
+  session: CapturedSession,
+): { agentId: string; meta: SubagentMeta } | undefined {
+  for (const sidecar of session.sidecars) {
+    const meta = sidecar.meta;
+    if (meta === undefined) continue;
+    if (meta.spawnDepth >= 2) return { agentId: sidecar.agentId, meta };
+  }
+  return undefined;
+}
+
+/**
+ * Token usage a captured transcript states more than once for one message.
+ *
+ * `naiveOut` and `dedupedOut` are the two candidate aggregation rules applied
+ * to the SAME lines: sum every line, versus sum the maximum per `message.id`.
+ * The selector only returns a subject where the two disagree, so a test using
+ * it pins a choice between two real numbers instead of restating the
+ * production rule to itself.
+ */
+interface RepeatedUsageSubject {
+  mainTranscript: string;
+  /** Node id in the grafted tree: an agent id, or `ROOT_NODE_ID` for the main file. */
+  agentId: string;
+  /** The `message.id` that appears on more than one line with differing usage. */
+  repeatedMessageId: string;
+  naiveOut: number;
+  dedupedOut: number;
+  dedupedIn: number;
+}
+
+interface UsageLine {
+  messageId: string;
+  in: number;
+  out: number;
+}
+
+function usageLinesIn(entries: readonly TranscriptEntry[]): UsageLine[] {
+  const lines: UsageLine[] = [];
+  for (const entry of entries) {
+    const message = entry['message'];
+    if (typeof message !== 'object' || message === null) continue;
+    const m = message as { id?: unknown; usage?: unknown };
+    if (typeof m.id !== 'string' || typeof m.usage !== 'object' || m.usage === null) continue;
+    const u = m.usage as { input_tokens?: unknown; output_tokens?: unknown };
+    lines.push({
+      messageId: m.id,
+      in: typeof u.input_tokens === 'number' && Number.isFinite(u.input_tokens) ? u.input_tokens : 0,
+      out: typeof u.output_tokens === 'number' && Number.isFinite(u.output_tokens) ? u.output_tokens : 0,
+    });
+  }
+  return lines;
+}
+
+/** `undefined` unless some `message.id` occurs twice with different `output_tokens`. */
+function repeatedUsageMessageId(lines: readonly UsageLine[]): string | undefined {
+  const seen = new Map<string, Set<number>>();
+  for (const line of lines) {
+    const values = seen.get(line.messageId);
+    if (values === undefined) seen.set(line.messageId, new Set([line.out]));
+    else values.add(line.out);
+  }
+  for (const [messageId, values] of seen) if (values.size > 1) return messageId;
+  return undefined;
+}
+
+/**
+ * A captured transcript whose streamed message usage is restated per content
+ * block, chosen by that property rather than by agent id.
+ *
+ * Subagent transcripts are tried before the main one only because they are
+ * shorter and make a failure easier to read; either would serve. The search is
+ * deterministic: sessions and agents are both scanned in sorted order.
+ */
+async function agentWithRepeatedUsage(): Promise<RepeatedUsageSubject> {
+  const sessions = await capturedSessions();
+  for (const session of sessions) {
+    const candidates: { agentId: string; path: string }[] = [
+      ...session.sidecars.map((s) => ({ agentId: s.agentId, path: s.transcriptPath })),
+      { agentId: ROOT_NODE_ID, path: session.mainTranscript },
+    ];
+    for (const candidate of candidates) {
+      const lines = usageLinesIn(await readEntries(candidate.path));
+      const repeatedMessageId = repeatedUsageMessageId(lines);
+      if (repeatedMessageId === undefined) continue;
+
+      const maxima = new Map<string, { in: number; out: number }>();
+      let naiveOut = 0;
+      for (const line of lines) {
+        naiveOut += line.out;
+        const prev = maxima.get(line.messageId);
+        maxima.set(line.messageId, {
+          in: prev === undefined ? line.in : Math.max(prev.in, line.in),
+          out: prev === undefined ? line.out : Math.max(prev.out, line.out),
+        });
+      }
+      let dedupedOut = 0;
+      let dedupedIn = 0;
+      for (const value of maxima.values()) {
+        dedupedOut += value.out;
+        dedupedIn += value.in;
+      }
+
+      return {
+        mainTranscript: session.mainTranscript,
+        agentId: candidate.agentId,
+        repeatedMessageId,
+        naiveOut,
+        dedupedOut,
+        dedupedIn,
+      };
+    }
+  }
+  throw new Error(
+    'no captured transcript restates one `message.id` across lines with differing ' +
+      '`output_tokens`.\nThis is a stale fixture reference, not a grafter bug: the capture under\n' +
+      `${CAPTURED_SLUG}\n` +
+      'was re-harvested and this test lost its subject. Without such a transcript the two ' +
+      'aggregation rules (sum every line, versus sum the maximum per message) agree and there ' +
+      `is nothing left to pin. Scanned ${sessions.length} session(s):\n` +
+      sessions.map((s) => `  - ${describeCaptured(s)}`).join('\n'),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -414,22 +710,60 @@ describe('captured topology', () => {
   });
 
   it('token totals de-duplicate the repeated per-block usage object', async () => {
-    // Measured: agent-a1a53f42c5eca8824.jsonl lines 3 and 4 share
-    // msg_011CeBgYk4Ci1ZkTxynEZh3j with output_tokens 1 then 518. Summing the
-    // lines would give 519 for one message; the max-per-message rule gives 518.
-    const main = join(CAPTURED_SLUG, '05c5482d-5568-44ce-97fe-bc9a6c15afc4.jsonl');
-    const result = await graftSession(main);
-    if (!result.ok) throw new Error('captured session must graft');
-    const agent = findNode(result.snapshot.root, 'a1a53f42c5eca8824');
-    expect(agent).toBeDefined();
+    // CC writes one JSONL line per content block of a streamed assistant
+    // message and repeats `message.usage` on every one of them, updated so
+    // far. The subject is therefore chosen by that PROPERTY - a transcript
+    // where one `message.id` appears on two or more lines carrying different
+    // `output_tokens` - not by naming an agent a re-harvest can rename.
+    const subject = await agentWithRepeatedUsage();
+    const result = await graftSession(subject.mainTranscript);
+    if (!result.ok) throw new Error(`captured session must graft: ${result.mismatch.code}`);
+    const agent = findNode(result.snapshot.root, subject.agentId);
+    expect(agent, `agent ${subject.agentId} must be in the tree`).toBeDefined();
     const node = agent as AgentNode;
-    // 518 (msg_…EZh3j) + 1099 (msg_…xoxen), not 1 + 518 + 2 + 1099.
-    expect(node.tokens.out).toBe(518 + 1099);
-    expect(node.tokens.in).toBe(2 + 2);
+
+    // The two candidate rules give different answers on this data, which is
+    // the whole point: naive line-summing double-counts a streamed message.
+    expect(subject.naiveOut).toBeGreaterThan(subject.dedupedOut);
+    expect(node.tokens.out).toBe(subject.dedupedOut);
+    expect(node.tokens.out).not.toBe(subject.naiveOut);
+    expect(node.tokens.in).toBe(subject.dedupedIn);
+  });
+
+  it('the de-duplicated total matches the hand-measured capture', async () => {
+    // The one place a captured literal is KEPT, deliberately. The test above
+    // re-derives its expectation with the same rule the production code uses,
+    // which cannot catch a rule that is wrong the same way twice. These
+    // numbers were read off the fixture by hand instead:
+    //
+    //   agent-a1a53f42c5eca8824.jsonl lines 3 and 4 share
+    //   msg_011CeBgYk4Ci1ZkTxynEZh3j with output_tokens 1 then 518; lines 6
+    //   and 7 share msg_011CeBgfTGMFk39bxRHxoxen with 2 then 1099.
+    //   Correct total 518 + 1099 = 1617. Naive line-sum would be 1620.
+    //
+    // If a re-harvest drops that agent this fails with the diagnostic from
+    // `sessionWhere`, naming the property it needed - not with an ENOENT that
+    // reads like a grafter bug.
+    const HAND_MEASURED = { agentId: 'a1a53f42c5eca8824', out: 518 + 1099, in: 2 + 2 };
+    const session = await sessionWhere(
+      `the hand-measured agent ${HAND_MEASURED.agentId}, whose token literals were read off that ` +
+        `exact capture and mean nothing without it (see the comment on this test)`,
+      (candidate) => candidate.sidecars.some((sidecar) => sidecar.agentId === HAND_MEASURED.agentId),
+    );
+    const result = await graftSession(session.mainTranscript);
+    if (!result.ok) throw new Error(`captured session must graft: ${result.mismatch.code}`);
+    const node = findNode(result.snapshot.root, HAND_MEASURED.agentId) as AgentNode | undefined;
+    expect(node, `agent ${HAND_MEASURED.agentId} must be in the tree`).toBeDefined();
+    expect(node?.tokens.out).toBe(HAND_MEASURED.out);
+    expect(node?.tokens.in).toBe(HAND_MEASURED.in);
   });
 
   it('an offloaded tool-results payload reaches the node preview, redacted', async () => {
-    const main = join(CAPTURED_SLUG, '05c5482d-5568-44ce-97fe-bc9a6c15afc4.jsonl');
+    const session = await sessionWhere(
+      'a non-empty `tool-results/` directory (an offloaded tool payload)',
+      (candidate) => candidate.toolResultFiles.length > 0,
+    );
+    const main = session.mainTranscript;
     const withHydration = await graftSession(main);
     const withoutHydration = await graftSession(main, { hydrateToolResults: false });
     if (!withHydration.ok || !withoutHydration.ok) throw new Error('must graft');
@@ -442,11 +776,17 @@ describe('captured topology', () => {
       t.startsWith('<persisted-output>'),
     );
     expect(hydrated).toEqual([]);
-    // The hydrated preview really is the offloaded file's content, not the
-    // stub's inline excerpt: `tool-results/b6uvpgxa4.txt` starts with this.
-    expect(collectResultPreviews(withHydration.snapshot).some((t) => t.startsWith('===== run.mjs ====='))).toBe(
-      true,
-    );
+    // The hydrated preview really is the offloaded FILE's content, not the
+    // stub's inline excerpt. Derived from the payload on disk rather than
+    // pinned to a literal: read the payload and require some preview to start
+    // with its own opening bytes.
+    const payloadPath = session.toolResultFiles[0] as string;
+    const payloadHead = (await readFile(payloadPath, 'utf8')).slice(0, 40);
+    expect(payloadHead.length).toBeGreaterThan(0);
+    expect(
+      collectResultPreviews(withHydration.snapshot).some((t) => t.startsWith(payloadHead)),
+      `no preview starts with the first 40 characters of ${payloadPath}`,
+    ).toBe(true);
 
     // Every preview stays inside the byte ceiling. The truncation marker is an
     // annotation that sits ON TOP of the budget (see `truncationMarker`), so
@@ -492,10 +832,23 @@ async function countCapturedSidecars(): Promise<number> {
 // ---------------------------------------------------------------------------
 
 describe('out-of-order arrival parks explicitly and re-joins on late data', () => {
-  const capturedMain = () => join(CAPTURED_SLUG, '05c5482d-5568-44ce-97fe-bc9a6c15afc4.jsonl');
+  /**
+   * The subject is "a captured session with a nested spawn", chosen by
+   * property. These tests need depth >= 2 on real data: the transitive
+   * `parentNotGrafted` park only exists when one agent's `tool_use` block
+   * lives in another agent's transcript, and a flat session would let a
+   * grafter that hoists orphans to the root pass every one of them.
+   */
+  const capturedMain = async (): Promise<string> =>
+    (
+      await sessionWhere(
+        'a subagent at spawnDepth >= 2 (a nested spawn)',
+        (candidate) => nestedSidecarOf(candidate) !== undefined,
+      )
+    ).mainTranscript;
 
   it('sidecar-first: every sidecar parks with noMatchingToolUse, then all resolve', async () => {
-    const session = await loadReplay(capturedMain());
+    const session = await loadReplay(await capturedMain());
     const grafter = newGrafter(session);
 
     // Sidecars only. No transcript has been seen, so no `tool_use` id exists.
@@ -525,7 +878,7 @@ describe('out-of-order arrival parks explicitly and re-joins on late data', () =
   });
 
   it('transcript-before-its-parent-tool_use-line: parks, then resolves when the line lands', async () => {
-    const session = await loadReplay(capturedMain());
+    const session = await loadReplay(await capturedMain());
     const firstToolUseLine = session.main.entries.findIndex((entry) => hasToolUse(entry));
     expect(firstToolUseLine).toBeGreaterThan(0);
 
@@ -560,7 +913,7 @@ describe('out-of-order arrival parks explicitly and re-joins on late data', () =
   });
 
   it('subagent-transcript-before-its-own-sidecar: parks sidecarMissing, then resolves', async () => {
-    const session = await loadReplay(capturedMain());
+    const session = await loadReplay(await capturedMain());
     const grafter = newGrafter(session);
 
     apply(grafter, session, { kind: 'main' });
@@ -587,7 +940,7 @@ describe('out-of-order arrival parks explicitly and re-joins on late data', () =
   });
 
   it('a depth-2 agent parks as parentNotGrafted while its parent is parked', async () => {
-    const session = await loadReplay(capturedMain());
+    const session = await loadReplay(await capturedMain());
     const inOrder = replay(session, inOrderScript(session));
     const deep = inOrder.edges.find((e) => e.depth >= 2);
     expect(deep, 'the capture must contain a nested spawn').toBeDefined();
@@ -621,7 +974,7 @@ describe('out-of-order arrival parks explicitly and re-joins on late data', () =
   });
 
   it('four different arrival orders all converge on the same tree', async () => {
-    const session = await loadReplay(capturedMain());
+    const session = await loadReplay(await capturedMain());
     const agentIds = session.agents.map((a) => a.batch.agentId as string);
     const expected = goldenText(replay(session, inOrderScript(session)));
 
@@ -891,8 +1244,12 @@ describe('snapshots are immutable and machine-independent', () => {
   });
 
   it('serializeSnapshot pins previews by digest, not verbatim', async () => {
-    const result = await graftSession(join(CAPTURED_SLUG, '05c5482d-5568-44ce-97fe-bc9a6c15afc4.jsonl'));
-    if (!result.ok) throw new Error('must graft');
+    const session = await sessionWhere(
+      'at least one `tool_use` block, so there is a preview to pin',
+      (candidate) => candidate.toolUseIds.length > 0,
+    );
+    const result = await graftSession(session.mainTranscript);
+    if (!result.ok) throw new Error(`must graft: ${result.mismatch.code}`);
     const serialized = serializeSnapshot(result.snapshot);
     const previews: unknown[] = [];
     const collect = (node: Record<string, unknown>): void => {
@@ -919,6 +1276,75 @@ describe('snapshots are immutable and machine-independent', () => {
 // ---------------------------------------------------------------------------
 // Degenerate input: nothing about input may crash (G3)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// The selection layer itself
+// ---------------------------------------------------------------------------
+
+describe('fixture subjects are selected by property, not by literal id', () => {
+  it('a missing property fails with a diagnostic naming it, not an ENOENT', async () => {
+    // The whole point of `sessionWhere`. Asserted rather than asserted-in-a-
+    // comment: a re-harvest is exactly when nobody is in a position to guess
+    // why the suite went red, so the message has to do the explaining.
+    const property = 'a subagent whose agentType is `a-role-that-was-never-captured`';
+    let thrown: unknown;
+    try {
+      await sessionWhere(property, (candidate) =>
+        candidate.sidecars.some((s) => s.meta?.agentType === 'a-role-that-was-never-captured'),
+      );
+    } catch (error: unknown) {
+      thrown = error;
+    }
+    expect(thrown, 'an impossible property must fail').toBeInstanceOf(Error);
+    const message = (thrown as Error).message;
+    // Names the property that is missing...
+    expect(message).toContain(property);
+    // ...says it is a fixture problem rather than a code problem...
+    expect(message).toContain('stale fixture reference, not a grafter bug');
+    // ...and shows what the capture actually holds, so the reader can choose.
+    for (const session of await capturedSessions()) expect(message).toContain(session.sessionId);
+    // Explicitly NOT a filesystem error.
+    expect(message).not.toContain('ENOENT');
+  });
+
+  it('every selector used by this file finds a subject in the current capture', async () => {
+    const nested = await sessionWhere(
+      'a nested spawn',
+      (candidate) => nestedSidecarOf(candidate) !== undefined,
+    );
+    expect(nestedSidecarOf(nested)?.meta.spawnDepth).toBeGreaterThanOrEqual(2);
+
+    const offloaded = await sessionWhere(
+      'an offloaded payload',
+      (candidate) => candidate.toolResultFiles.length > 0,
+    );
+    expect(offloaded.toolResultFiles.length).toBeGreaterThan(0);
+
+    const withTools = await sessionWhere(
+      'a tool_use block',
+      (candidate) => candidate.toolUseIds.length > 0,
+    );
+    expect(withTools.toolUseIds.length).toBeGreaterThan(0);
+  });
+
+  it('the usage subject is one where the two aggregation rules actually disagree', async () => {
+    // If they agreed, the token test would pass under either rule and prove
+    // nothing. The selector is required to hand back a discriminating case.
+    const subject = await agentWithRepeatedUsage();
+    expect(subject.repeatedMessageId.length).toBeGreaterThan(0);
+    expect(subject.naiveOut).toBeGreaterThan(subject.dedupedOut);
+    expect(subject.dedupedOut).toBeGreaterThan(0);
+  });
+
+  it('selection is deterministic: repeated calls choose the same subject', async () => {
+    const a = await agentWithRepeatedUsage();
+    const b = await agentWithRepeatedUsage();
+    expect(b).toEqual(a);
+    const first = await sessionWhere('any session', () => true);
+    const second = await sessionWhere('any session', () => true);
+    expect(second.sessionId).toBe(first.sessionId);
+  });
+});
 
 describe('degenerate input never throws', () => {
   it('an empty grafter yields a bare root', () => {

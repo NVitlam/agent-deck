@@ -38,7 +38,20 @@ const wantWebview = !onlyHost || onlyWebview;
 /** @type {import('esbuild').BuildOptions} */
 const hostOptions = {
   entryPoints: ['src/extension.ts'],
-  outfile: 'dist/extension.js',
+  // `.cjs`, NOT `.js`. This file emits CommonJS (`format: 'cjs'` below) and
+  // `package.json` carries `"type": "module"`, so Node decides a `.js` file's
+  // format from the nearest package.json and parses the bundle as ESM. It does
+  // not throw: it silently yields an inert module, and VS Code then reports
+  // that the extension has no `activate`. Measured on Node v24.15.0 against an
+  // unzipped VSIX: `require` gave `activate: undefined`, and the byte-identical
+  // file loaded outside a `"type": "module"` package gave `activate: function`.
+  //
+  // A `.cjs` extension is unambiguously CommonJS whatever any `"type"` field
+  // says, so the fix is local and self-describing. `package.json`'s `main` must
+  // stay in step; `src/extension.test.ts` drives its assertion FROM `main`
+  // rather than from a literal, so a future divergence fails a test instead of
+  // shipping an extension that installs and does nothing.
+  outfile: 'dist/extension.cjs',
   bundle: true,
   platform: 'node',
   format: 'cjs',

@@ -1,6 +1,25 @@
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  resolve: {
+    // `vscode` is injected by the extension host at runtime and has no package
+    // on disk, so `src/extension.ts`'s top-level import cannot resolve in a
+    // node test process. `test/vscode-mock.ts` is the runtime stand-in;
+    // production code still type-checks against the real `@types/vscode`, and
+    // esbuild keeps `vscode` external for the same reason.
+    //
+    // A RegExp anchored on both ends, not a bare string: vite treats a string
+    // `find` as a PREFIX, so `'vscode'` would also rewrite `vscode-uri` and
+    // any future `vscode-*` dependency into a nonexistent path.
+    alias: [
+      {
+        find: /^vscode$/,
+        replacement: fileURLToPath(new URL('./test/vscode-mock.ts', import.meta.url)),
+      },
+    ],
+  },
   test: {
     // `webview/` joined the glob in Phase 3. Webview tests that need a DOM opt
     // in per file with a `@vitest-environment jsdom` docblock rather than

@@ -70,11 +70,17 @@ These are build-time law in this repository, not guidelines. A change that break
   decision. A non-loopback origin is answered `403` and counted.
 - Refuses an ephemeral port. The pasted hook snippet names a fixed port literally, and there is no
   discovery file to tell it otherwise — writing one would break G1. A port collision surfaces as a
-  typed error the user is shown; the listener never silently rebinds somewhere else.
-- Caps request bodies. The cap is `DEFAULT_MAX_BODY_BYTES` in `src/hooks/listener.ts`; oversize
-  bodies are counted and answered `413`, and a body whose declared `Content-Length` already exceeds
-  the cap is never buffered at all. A body that keeps arriving past a hard multiple of the cap has
-  its socket destroyed rather than held open.
+  typed error the user is shown; the listener never silently rebinds somewhere else. The one way to
+  bind port 0 is an option marked TEST-ONLY in the source, which exists so the suite can bind a port
+  atomically instead of racing for one; a source scan asserts that no production module under `src/`
+  names it, and it cannot change the bind address either way.
+- Caps request bodies, by **two** guards, because one of them cannot see the other's cases. The cap
+  is `DEFAULT_MAX_BODY_BYTES` in `src/hooks/listener.ts`. A body whose declared `Content-Length`
+  already exceeds the cap is never buffered at all — that is an allocation guard on the headers
+  alone. A body that arrives with no declared length, i.e. `Transfer-Encoding: chunked`, is measured
+  as it streams and cut at the same cap. Either way the request is counted and answered `413`. A
+  body that keeps arriving past a hard multiple of the cap has its socket destroyed rather than held
+  open.
 - Never throws on input. Every refusal path increments a named counter and answers a status code.
   Consumer callbacks that throw are caught and counted, so a downstream bug cannot take the socket
   down.
@@ -89,9 +95,16 @@ as `\u` escapes, invalid UTF-8, BOM prefixes, lone surrogates, `__proto__` and
 `constructor.prototype` bodies, deeply nested JSON, type-confused fields, unknown forward-compatible
 fields, minimal-but-valid payloads, and spoofed off-box origins. Each case asserts the status code
 **and the exact counter deltas** — every counter not named must be unchanged — because "it did not
-crash" is satisfied by a listener that answers `200` to everything. Transport-level malformation
-(an overstated `Content-Length`, an unparseable request line, a header block that never terminates,
-pipelined requests) is driven separately from a bare socket. See that directory's `README.md`.
+crash" is satisfied by a listener that answers `200` to everything.
+
+The corpus speaks through an HTTP client, so every one of its bodies arrives with a truthful
+`Content-Length` and every oversize case is therefore answered by the declared-size guard. Reaching
+the *streaming* guard needs a request the corpus format cannot express, so those cases are driven
+from a bare socket in `src/hooks/listener.test.ts`: a `Transfer-Encoding: chunked` body with no
+declared length at all, an **understated** `Content-Length` (measured: node frames the body by the
+declared length, so the surplus becomes the next request rather than reaching the cap), an
+overstated `Content-Length`, an unparseable request line, a header block that never terminates, and
+pipelined requests. See that directory's `README.md`.
 
 **What the boundary does NOT protect against, stated plainly:** any process running as you on your
 own machine can POST to the loopback port and inject fabricated liveness events. There is no
@@ -118,10 +131,14 @@ lockfile.
 not rebuild `dist/` and there is no `vscode:prepublish`, so trusting the on-disk artifact could
 silently measure an old one):
 
-- every `require` id is either a `node:` builtin or `vscode` — nothing third-party survives
-  bundling as a separate module;
+- every module id the bundle names is either a `node:` builtin or `vscode` — nothing third-party
+  survives bundling as a separate module. Both spellings of "names" are scanned: `require("x")`
+  **and** dynamic `import("x")`, which esbuild leaves verbatim rather than rewriting, so a
+  require-only scan would have been blind to it;
 - none of `net`, `tls`, `https`, `http2`, `dns`, `dgram`, `child_process`, `worker_threads`,
-  `cluster` or `inspector` is reachable, in either the bare or `node:` spelling;
+  `cluster` or `inspector` is reachable, in either the bare or `node:` spelling, through either
+  form. That is proved by injection rather than asserted: the same check applied to the real bundle
+  with one dynamic import appended must report the injected module;
 - `node:http` **is** present, so the check is not vacuous — it is the listener;
 - no outbound client API is compiled in: no `http.request` / `https.request`, no `fetch(`, no
   `XMLHttpRequest`, no `new WebSocket(`, no `navigator.sendBeacon`;
@@ -165,8 +182,10 @@ entire run.** The file watchers are `FSEvent` handles — local filesystem, not 
 own `Server.listen(port, host)` routes through `lookupAndListen` → `dns.lookup(host, { all: true })`
 **even when the host is already a literal IP address**. So there is exactly one DNS call in the
 whole run, its argument is the string `127.0.0.1`, and its caller — captured from the stack — is the
-inbound bind. The test asserts that property rather than asserting the run is DNS-free: no *name* is
-ever resolved, so nothing can reach a host it did not already have an address for.
+inbound bind. The test asserts all three: the count is exactly one, the argument is a loopback
+literal, and the stack names the bind. Asserting the run is DNS-free would be false, and asserting
+merely "at least one lookup, and each looked fine" would be weaker than this paragraph claims —
+which is how a measured finding turns into a comfortable story.
 
 **Limits, honestly.** This measures one activation cycle on committed fixtures, on one OS and one
 Node version. Code paths that cycle never exercises are not covered by it. It measures the Node

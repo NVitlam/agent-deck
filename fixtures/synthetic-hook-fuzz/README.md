@@ -99,6 +99,14 @@ The count of records is deliberately **not** written here, and no test asserts i
 go stale on the next addition and then read as regressions. The test derives the set from the file
 and asserts that every class in this table is represented.
 
+**What the `oversize` class does NOT reach.** The replay speaks through an HTTP client, so every
+body here arrives with a truthful `Content-Length` and is refused by the listener's declared-size
+guard — the streaming guard inside the `data` handler never runs for any record in this file. That
+is not a gap in the corpus; the record format has no way to express a request with no declared
+length. The cases that do reach it are `Transfer-Encoding: chunked` requests written on a bare
+socket, and they live in the transport-level block of `src/hooks/listener.test.ts`. If you are
+adding a case because you want to exercise the streaming cap, add it there, not here.
+
 ## Regenerating
 
 ```

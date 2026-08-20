@@ -105,7 +105,7 @@ import { ProjectWatcher } from './watch/watcher.js';
 import type { WatchFactory } from './watch/watcher.js';
 import { createJsonlInferenceSource } from './watch/inference.js';
 import { systemScheduler } from './parser/tailer.js';
-import type { Scheduler, TailBatch, TimerHandle } from './parser/tailer.js';
+import type { DiscoveryFailure, Scheduler, TailBatch, TimerHandle } from './parser/tailer.js';
 
 // ---------------------------------------------------------------------------
 // (a) Settings
@@ -959,6 +959,34 @@ export function currentHost(): AgentDeckHost | null {
   return activeHost;
 }
 
+/**
+ * The message the command shows when correlation refused, one arm per meaning.
+ *
+ * `ambiguousSlug` is the one failure kind that is NOT an absence. The
+ * filesystem call succeeded and returned two project directories whose names
+ * differ only by case; the tailer refuses to guess which one is this workspace
+ * rather than picking one (G3). Sessions almost certainly exist, so the generic
+ * "no sessions" wording states something false — the same class of defect as a
+ * fabricated number, arriving as prose.
+ *
+ * Extracted from `activate()` rather than left inline so the branch can be
+ * driven directly. `ambiguousSlug` requires two sibling directories differing
+ * only by case, which NTFS cannot hold, so that arm is unreachable through the
+ * real filesystem on a Windows dev box — `pathmatrix.test.ts` records the same
+ * constraint for P4-B's probe ("case-insensitive filesystem", probe does not
+ * run). `extension.test.ts` covers every kind through this function, and
+ * separately ties `activate()`'s emitted message to this function's output on a
+ * kind that IS reachable, so the two cannot drift apart.
+ *
+ * A new `DiscoveryFailureKind` lands in the absence arm by default. That is a
+ * decision to make deliberately, not one to inherit.
+ */
+export function inactiveReasonFor(failure: DiscoveryFailure): string {
+  return failure.kind === 'ambiguousSlug'
+    ? `Agent Deck: this workspace matches more than one Claude Code project directory, differing only by case. Refusing to guess which one (${failure.kind}).`
+    : `Agent Deck: no Claude Code sessions for this workspace (${failure.kind}).`;
+}
+
 function firstWorkspacePath(): string | undefined {
   const folders = vscode.workspace.workspaceFolders;
   if (folders === undefined || folders.length === 0) return undefined;
@@ -1069,16 +1097,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const correlation = await correlateWorkspace(workspacePath);
   if (!correlation.ok) {
-    // `ambiguousSlug` is the one failure kind that is NOT an absence. The
-    // filesystem call succeeded and returned two project directories whose
-    // names differ only by case; the tailer refuses to guess which one is this
-    // workspace rather than picking one (G3). Sessions almost certainly exist,
-    // so the generic "no sessions" wording states something false — the same
-    // class of defect as a fabricated number, arriving as prose.
-    inactiveReason =
-      correlation.failure.kind === 'ambiguousSlug'
-        ? `Agent Deck: this workspace matches more than one Claude Code project directory, differing only by case. Refusing to guess which one (${correlation.failure.kind}).`
-        : `Agent Deck: no Claude Code sessions for this workspace (${correlation.failure.kind}).`;
+    inactiveReason = inactiveReasonFor(correlation.failure);
     return;
   }
   inactiveReason = null;

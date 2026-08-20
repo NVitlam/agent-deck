@@ -46,6 +46,7 @@ import {
   activate,
   currentHost,
   deactivate,
+  inactiveReasonFor,
   readSettings,
 } from './extension.js';
 import type {
@@ -62,7 +63,8 @@ import { WEBVIEW_ROOT_ID } from './bridge/contract.js';
 import type { HostToWebviewMessage, SessionState, TreeNode } from './model/events.js';
 import { isAgentNode } from './model/events.js';
 import { slugifyWorkspace, snapshotTree } from './parser/tailer.js';
-import type { TreeSnapshotEntry } from './parser/tailer.js';
+import type { DiscoveryFailure, DiscoveryFailureKind, TreeSnapshotEntry } from './parser/tailer.js';
+import { correlateWorkspace } from './model/correlate.js';
 import {
   createExtensionContext,
   mock,
@@ -1139,6 +1141,154 @@ describe('activate', () => {
 
   it('deactivate with nothing activated is a no-op', async () => {
     await expect(deactivate()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (8b) The correlation-failure message: an ambiguity is not an absence
+// ---------------------------------------------------------------------------
+
+describe('the inactive message distinguishes a refusal from an absence', () => {
+  /**
+   * P4-B added a fourth `DiscoveryFailureKind`, `ambiguousSlug`: the projects
+   * root holds two directories whose names differ only by case and neither is
+   * an exact match, so the tailer refuses to pick one rather than guessing —
+   * G3 applied to a directory choice instead of to a parse. It carries the
+   * non-errno code `EAMBIGUOUS` precisely because the filesystem call
+   * SUCCEEDED.
+   *
+   * The message previously interpolated the kind into "no Claude Code sessions
+   * for this workspace (<kind>)". For this one kind that sentence is false:
+   * two candidate directories exist and sessions are almost certainly among
+   * them. Telling a user there are none is a fabricated claim arriving as
+   * prose rather than as a number.
+   *
+   * These assertions are on the MEANING, not the sentence: `claimsAbsence` and
+   * `claimsRefusal` classify a message, so a copy edit is free and a collapsed
+   * branch is not.
+   *
+   * Why the branch is driven through {@link inactiveReasonFor} rather than
+   * through `activate()`: `ambiguousSlug` needs two sibling directories
+   * differing only by case, and NTFS cannot hold them — the same constraint
+   * `pathmatrix.test.ts` records for P4-B's probe, which does not run on a
+   * case-insensitive filesystem. No test here fakes a filesystem to get around
+   * that. The last test in this block ties `activate()`'s emitted message to
+   * this function on the kinds that ARE reachable, so the arm that cannot be
+   * reached is still the arm the host would use.
+   */
+
+  // `CLAUDE_PROJECTS_ROOT` is process-wide: the last test in this block sets
+  // it, so it is restored here rather than left for the next describe to
+  // inherit. Same guard the `activate` block uses, for the same reason.
+  const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
+
+  afterEach(() => {
+    if (previousRoot === undefined) delete process.env['CLAUDE_PROJECTS_ROOT'];
+    else process.env['CLAUDE_PROJECTS_ROOT'] = previousRoot;
+  });
+
+  /** Says, in whatever words, that this workspace has no sessions. */
+  function claimsAbsence(message: string): boolean {
+    return /\bno\b[^.]*\bsessions\b/i.test(message);
+  }
+
+  /** Says, in whatever words, that we declined to choose. */
+  function claimsRefusal(message: string): boolean {
+    return /refus/i.test(message);
+  }
+
+  function failure(kind: DiscoveryFailureKind): DiscoveryFailure {
+    return {
+      kind,
+      code: kind === 'ambiguousSlug' ? 'EAMBIGUOUS' : 'ENOENT',
+      path: join('projects', 'some-slug'),
+      message: `synthetic ${kind}`,
+    };
+  }
+
+  /**
+   * The three kinds that ARE absences. Listed rather than derived because
+   * `DiscoveryFailureKind` is a type and has no runtime members; a fourth
+   * absence kind added later must be added here deliberately, which is the
+   * point.
+   */
+  const ABSENCE_KINDS: DiscoveryFailureKind[] = [
+    'projectsRootNotFound',
+    'projectsRootUnreadable',
+    'projectSlugNotFound',
+  ];
+
+  it('ambiguousSlug does NOT claim the workspace has no sessions', () => {
+    const message = inactiveReasonFor(failure('ambiguousSlug'));
+    expect(claimsAbsence(message), `must not claim absence: ${message}`).toBe(false);
+    expect(claimsRefusal(message), `must say it refused: ${message}`).toBe(true);
+    // Still diagnosable: the kind is in the string either way.
+    expect(message).toContain('ambiguousSlug');
+    expect(message.startsWith('Agent Deck:')).toBe(true);
+  });
+
+  it('the other three kinds still get the absence wording', () => {
+    for (const kind of ABSENCE_KINDS) {
+      const message = inactiveReasonFor(failure(kind));
+      expect(claimsAbsence(message), `${kind} must claim absence: ${message}`).toBe(true);
+      expect(claimsRefusal(message), `${kind} must not claim a refusal: ${message}`).toBe(false);
+      expect(message).toContain(kind);
+      expect(message.startsWith('Agent Deck:')).toBe(true);
+    }
+  });
+
+  it('the two arms are different messages, not one message with two labels', () => {
+    // Guards the collapse in both directions: if the ternary is replaced by
+    // either arm alone, some pair here becomes equal after the kind name is
+    // removed from both.
+    const ambiguous = inactiveReasonFor(failure('ambiguousSlug')).replace('ambiguousSlug', '');
+    for (const kind of ABSENCE_KINDS) {
+      const absent = inactiveReasonFor(failure(kind)).replace(kind, '');
+      expect(absent, `${kind} must not read like the ambiguity refusal`).not.toBe(ambiguous);
+    }
+  });
+
+  it("activate() emits exactly inactiveReasonFor(failure) for the reachable kinds", async () => {
+    // The end-to-end tie. Both legs use the REAL `correlateWorkspace` over a
+    // real temp filesystem: the expectation is computed from the failure the
+    // production code path actually produces, so this fails if `activate()`
+    // stops calling the function, inlines a different string, or interpolates
+    // a different kind.
+    const legs: { name: string; root: string; workspace: string; expectKind: DiscoveryFailureKind }[] = [
+      {
+        name: 'projectSlugNotFound',
+        root: CAPTURED_ROOT,
+        workspace: join(await makeTempDir(), 'not-a-cc-project'),
+        expectKind: 'projectSlugNotFound',
+      },
+      {
+        name: 'projectsRootNotFound',
+        root: join(await makeTempDir(), 'no-such-projects-root'),
+        workspace: join(await makeTempDir(), 'ws'),
+        expectKind: 'projectsRootNotFound',
+      },
+    ];
+
+    for (const leg of legs) {
+      resetVscodeMock();
+      process.env['CLAUDE_PROJECTS_ROOT'] = leg.root;
+      mock.setWorkspaceFolder(leg.workspace);
+      mock.setConfig(CONFIG_SECTION, { port: await freePort() });
+
+      const correlation = await correlateWorkspace(leg.workspace);
+      expect(correlation.ok, `${leg.name}: expected a refusal`).toBe(false);
+      if (correlation.ok) throw new Error('unreachable');
+      expect(correlation.failure.kind).toBe(leg.expectKind);
+
+      await activate(extensionContext());
+      expect(currentHost()).toBeNull();
+      await mock.runCommand(OPEN_COMMAND);
+
+      expect(mock.informationMessages).toHaveLength(1);
+      expect(mock.informationMessages[0]).toBe(inactiveReasonFor(correlation.failure));
+      expect(claimsAbsence(mock.informationMessages[0] as string)).toBe(true);
+      await deactivate();
+    }
   });
 });
 

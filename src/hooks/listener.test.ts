@@ -116,40 +116,70 @@ function postRaw(
   }
 
   return new Promise<HttpReply>((resolve, reject) => {
-    // Several of these requests are answered early and the connection closed
-    // under the client on purpose (403/404/405/415 before the body is read, and
-    // stop() destroying keep-alive sockets). Both streams therefore need an
-    // 'error' listener: an unhandled 'error' on the RESPONSE stream is an
-    // uncaught exception that kills the vitest worker process outright, which
-    // surfaces as an unrelated-looking "Channel closed / ERR_IPC_CHANNEL_CLOSED".
-    // Late errors after the reply has been read are expected and ignored.
-    let settled = false;
-    const succeed = (reply: HttpReply): void => {
-      if (settled) return;
-      settled = true;
-      resolve(reply);
+    // Two rules, and the order matters.
+    //
+    // 1. A socket error is a REAL failure only if it arrives before the reply
+    //    is complete. Several listener paths answer and close before reading
+    //    the body (403/404/405/415), and stop() destroys keep-alive sockets,
+    //    so a reset routinely lands after a perfectly good response has been
+    //    received. `reply !== undefined` is the discriminator: once the
+    //    response has ended, later errors are the expected consequence of the
+    //    server closing first and are dropped. Before that, they reject and
+    //    fail the test they belong to.
+    //
+    // 2. Settle on the socket's 'close', not on the response's 'end'. A
+    //    promise that resolves at 'end' hands control back while the socket is
+    //    still tearing down, so a test file can finish with sockets mid-close.
+    //    Awaiting 'close' means no socket outlives the test that opened it.
+    //    `agent: false` guarantees a dedicated socket per request so 'close'
+    //    is prompt and never deferred by connection pooling.
+    let reply: HttpReply | undefined;
+    let failure: Error | undefined;
+    let done = false;
+
+    const finish = (): void => {
+      if (done) return;
+      if (reply !== undefined) {
+        done = true;
+        resolve(reply);
+      } else if (failure !== undefined) {
+        done = true;
+        reject(failure);
+      }
     };
-    const fail = (err: Error): void => {
-      if (settled) return;
-      settled = true;
-      reject(err);
+
+    const onError = (err: Error): void => {
+      if (reply !== undefined) return; // post-reply: expected, not a failure
+      failure ??= err;
+      finish();
     };
 
     const req = httpRequest(
-      { host: LOOPBACK, port, path, method, headers },
+      { host: LOOPBACK, port, path, method, headers, agent: false },
       (res) => {
         const chunks: Buffer[] = [];
-        res.on('error', fail);
+        res.on('error', onError);
         res.on('data', (c: Buffer) => chunks.push(c));
         res.on('end', () => {
-          succeed({
+          reply = {
             status: res.statusCode ?? 0,
             body: Buffer.concat(chunks).toString('utf8'),
-          });
+          };
+          // Do not settle yet; wait for the socket to be released below.
         });
       },
     );
-    req.on('error', fail);
+    req.on('error', onError);
+    // Fires once the request and its socket are fully done, on every path:
+    // clean response, error, or destroy.
+    req.on('close', () => {
+      if (reply === undefined && failure === undefined) {
+        // Closed with no reply and no error. That is a real failure, and
+        // saying so beats letting the promise hang until the test times out.
+        failure = new Error('connection closed before any reply was received');
+      }
+      finish();
+    });
     req.setTimeout(5_000, () => {
       req.destroy(new Error('test client timeout'));
     });
@@ -818,12 +848,13 @@ describe('HookListener over a real loopback socket', () => {
                 `Content-Length: 4096\r\n` +
                 `\r\n{"hook_event_name":"Stop","pad":"aaaa`,
             );
-            setTimeout(() => {
-              sock.resetAndDestroy();
-              resolve();
-            }, 25);
+            setTimeout(() => sock.resetAndDestroy(), 25);
           });
-          sock.on('error', () => resolve());
+          // Resolve on 'close', never on the reset call itself, so the socket
+          // is fully released before the next attempt or the end of the test.
+          // A reset is expected here, so 'error' is swallowed deliberately.
+          sock.on('error', () => undefined);
+          sock.on('close', () => resolve());
         });
         await new Promise((r) => setTimeout(r, 25));
       };
@@ -920,6 +951,15 @@ describe('HookListener bind failures', () => {
       expect(listener.address()).toBeNull();
       await listener.stop();
     }
+  });
+
+  it('the test client still fails loudly when nothing answers', async () => {
+    // Guards the change that made post-reply socket errors non-fatal. That
+    // rule keys off "the reply was already complete"; an error with no reply
+    // must still reject, or the helper would quietly pass tests whose request
+    // never arrived. Nothing is bound on this port.
+    const dead = await freePort();
+    await expect(postJson(dead, mainThreadPayload())).rejects.toThrow();
   });
 
   it('stop() on a never-started listener is a no-op', async () => {

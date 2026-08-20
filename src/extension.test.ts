@@ -1450,23 +1450,33 @@ describe('the agentDeck.previewBytes setting reaches the grafter', () => {
    * ---------------------------------------------------------------------------
    * MEASURED CEILING — the assertions below deliberately stay at or under 8192
    * ---------------------------------------------------------------------------
-   * An offloaded payload is truncated TWICE, and only the second cut sees the
-   * setting. `readRedactedToolResult` cuts first, at
+   * EVERY payload over 8 KB is truncated TWICE, and only the second cut sees
+   * the setting. The redaction path cuts first, at
    * `redact.DEFAULT_MAX_PAYLOAD_BYTES` (8192), because `graftSession` is not
    * given a `parse.maxPayloadBytes`; the grafter's `preview()` then cuts what
-   * survives, at `previewBytes`. Measured against the captured 63,774-byte
-   * `tool-results/*.txt`:
+   * survives, at `previewBytes`. This is NOT an offload-path defect, however
+   * naturally it reads as one: of the 8 affected payloads in the capture,
+   * seven are inline. Measured against the captured 63,774-byte
+   * `tool-results/*.txt`, which is merely the largest of them:
    *
    *   previewBytes=8192   marker reads "8192 of 8248"    <- shipped default
    *   previewBytes=16384  marker reads "8192 of 63774"
    *   previewBytes=65536  marker reads "8192 of 63774"
    *
    * Two consequences, neither of which this package changed on its own
-   * authority: `agentDeck.previewBytes` above 8192 has no effect on offloaded
-   * payloads, and at exactly the shipped default the double cut makes the
-   * marker UNDER-REPORT the original size by 7.8x — it says 8,248 bytes for a
-   * 63,774-byte file, which is the opposite of the "truncation is visible and
-   * quantified" the marker exists for. Reported, not fixed here: the one-line
+   * authority: `agentDeck.previewBytes` above 8192 has no effect on ANY
+   * payload over 8 KB — offloaded or inline, and the distinction matters
+   * because 7 of the 8 affected payloads in the capture are inline and never
+   * touch `tool-results/`, so a fix aimed at the offload path addresses one
+   * eighth of this. And at exactly the shipped default the double cut makes
+   * the marker UNDER-REPORT the original size by 7.73x — it says 8,248 bytes
+   * for a 63,774-byte payload, which is the opposite of the "truncation is
+   * visible and quantified" the marker exists for. (Not 7.8x: that is
+   * 63774/8192, the kept-bytes ratio, a different quantity. This comment was
+   * the last of four places carrying the wrong figure and the wrong scope,
+   * found by grep after the documents were corrected — a doc sweep that walks
+   * a list of documents misses the copy in a source file.)
+   * Reported, not fixed here: the one-line
    * candidate is passing `parse: { maxPayloadBytes: previewBytes }` from the
    * `graftSession` call in `extension.ts`, and that is a G4 semantics decision
    * the parser package owns the meaning of.

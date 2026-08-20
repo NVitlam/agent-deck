@@ -3,13 +3,12 @@
  * hand the result back as an evaluated module.
  *
  * See `harness.ts` for why the component tests go through a bundle instead of
- * importing `.svelte` files directly.
+ * importing `.svelte` files directly, and `build-harness.mjs` for why the
+ * bundling happens in a child process.
  *
  * Node-only. Nothing here is reachable from `webview/main.ts`.
  */
 
-import { build } from 'esbuild';
-import esbuildSvelte from 'esbuild-svelte';
 import type { WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 
@@ -25,29 +24,35 @@ export interface WebviewHarness {
 
 const GLOBAL_NAME = 'AgentDeckHarness';
 
+/**
+ * `node:child_process` held in a variable rather than imported statically.
+ *
+ * `tsconfig.webview.json` sets `types: []` so the browser project cannot see
+ * node globals — that is the compile-time half of "the webview has no fs and
+ * no network". A static `import ... from 'node:child_process'` here would put
+ * node's module graph into that project and fail the typecheck. The specifier
+ * is opaque to `tsc` and resolved at runtime by vitest.
+ */
+const CHILD_PROCESS = 'node:child_process';
+
+interface ChildProcessModule {
+  execFileSync(
+    file: string,
+    args: readonly string[],
+    options: { encoding: 'utf8'; maxBuffer: number },
+  ): string;
+}
+
 let cachedCode: string | undefined;
 
 /** Bundle `webview/harness.ts` to an iife string. Cached per test file. */
 export async function bundleHarness(): Promise<string> {
   if (cachedCode !== undefined) return cachedCode;
-  const result = await build({
-    entryPoints: ['webview/harness.ts'],
-    bundle: true,
-    write: false,
-    platform: 'browser',
-    format: 'iife',
-    globalName: GLOBAL_NAME,
-    target: 'es2022',
-    // Same resolution conditions as the shipped build, so the tests exercise
-    // Svelte's client runtime and not its SSR build.
-    conditions: ['svelte', 'browser'],
-    mainFields: ['svelte', 'browser', 'module', 'main'],
-    plugins: [esbuildSvelte({ compilerOptions: { css: 'injected' } })],
-    logLevel: 'silent',
+  const cp = (await import(/* @vite-ignore */ CHILD_PROCESS)) as unknown as ChildProcessModule;
+  cachedCode = cp.execFileSync('node', ['webview/build-harness.mjs'], {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
   });
-  const js = result.outputFiles?.find((f) => f.path.endsWith('.js'));
-  if (js === undefined) throw new Error('harness bundle produced no javascript');
-  cachedCode = js.text;
   return cachedCode;
 }
 

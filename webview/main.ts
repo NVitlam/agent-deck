@@ -21,7 +21,7 @@ import type { HostToWebviewMessage, WebviewToHostMessage } from '../src/model/ev
 import App from './App.svelte';
 import { createStore } from './store.js';
 import type { Store } from './store.js';
-import { mount } from 'svelte';
+import { mount, unmount } from 'svelte';
 
 /** The slice of the VS Code webview API this renderer uses. */
 interface VsCodeApi {
@@ -30,7 +30,8 @@ interface VsCodeApi {
 
 declare global {
   // Injected by VS Code into the webview document; absent everywhere else.
-  // eslint-disable-next-line no-var
+  // `var` is required: `declare global` only accepts var for a global
+  // binding, and `let`/`const` would not be visible on `globalThis`.
   var acquireVsCodeApi: (() => VsCodeApi) | undefined;
 }
 
@@ -75,17 +76,30 @@ export function start(target: HTMLElement, api: VsCodeApi = acquireApi()): {
   };
   globalThis.addEventListener('message', onMessage);
 
-  mount(App, { target, props: { store } });
+  const app = mount(App, { target, props: { store } });
 
   return {
     store,
     dispose: () => {
       globalThis.removeEventListener('message', onMessage);
+      void unmount(app, { outro: false });
     },
   };
 }
 
-const container = globalThis.document?.getElementById('agent-deck-root');
-if (container !== null && container !== undefined) {
+// Auto-start, but only inside a real VS Code webview.
+//
+// The container is `#agent-deck-root` when the host's HTML provides one, and
+// `document.body` otherwise. That fallback removes a silent cross-package
+// dependency: the extension host owns the webview HTML, and if this file
+// required an element id the host did not happen to use, the panel would come
+// up blank with no error anywhere.
+//
+// Gating on `acquireVsCodeApi` is what keeps this out of the tests: outside a
+// webview the global is absent, so importing this module mounts nothing and
+// `start()` stays explicit.
+if (typeof globalThis.acquireVsCodeApi === 'function' && globalThis.document !== undefined) {
+  const container =
+    globalThis.document.getElementById('agent-deck-root') ?? globalThis.document.body;
   start(container);
 }

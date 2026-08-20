@@ -805,37 +805,46 @@ describe('HookListener over a real loopback socket', () => {
       expect(reply.status).toBe(200);
     });
 
-    it('a connection reset while replies are in flight is counted, and the server keeps serving', async () => {
+    it('a connection dropped mid-request is counted, and the server keeps serving', async () => {
       // Covers the request-stream 'error' handler and the clientError handler
       // in listener.ts. An unhandled 'error' on either is an uncaught
       // exception, which in the extension host means the host dies because a
       // hook process went away mid-exchange — the G3 failure this module must
       // not have.
       //
-      // Forcing it: pipeline many requests on one raw socket, never read the
-      // replies, then reset. The server is mid-read and mid-write when the peer
-      // vanishes. Pipelining rather than a single request because one 0-length
-      // reply is written long before any reset could land — measured: 400
-      // pipelined requests all complete and only clientDisconnects moves.
+      // DO NOT change `sock.destroy()` below to `sock.resetAndDestroy()`.
+      // A real TCP RST is the more faithful simulation of a hook process being
+      // killed, and this test used to send one. Measured on Windows / Node
+      // v24.15.0, that RST made `npm test` exit 1 while still reporting every
+      // test passed, roughly one run in six:
+      //     reset test sending RST .................. 3 incidents / 20 runs
+      //     reset test skipped, all other sockets on . 0 / 12
+      //     all socket tests skipped ................. 0 / 12
+      //     this whole file excluded ................. 0 / 15
+      // The failure is `ERR_IPC_CHANNEL_CLOSED` raised in the *parent* vitest
+      // process (tinypool ProcessWorker.send), not an uncaught exception in
+      // this worker — an uncaughtException/unhandledRejection probe installed
+      // here caught nothing across 8 reproducing runs. An abrupt FIN provokes
+      // the same server-side socket error and does not trigger it.
       //
       // What this does NOT cover, stated plainly so nobody mistakes it: the
       // `res.on('error')` handler. Measured on Node v24, `res` never emits
       // 'error' here — every reply is a zero-length body written in one go, so
-      // the reset surfaces on the request stream and via 'clientError'. This
-      // test passes unchanged with those three production lines deleted. They
-      // are kept as asymmetric-cost insurance, not as tested behaviour.
+      // a dropped connection surfaces on the request stream and via
+      // 'clientError'. This test passes unchanged with those three production
+      // lines deleted. They are asymmetric-cost insurance, not tested behaviour.
       const before = listener.counters.socketErrors;
 
       // Announce a body and send only part of it, so the server is provably
       // mid-request — parked in its 'data' handler waiting for the rest — when
-      // the reset lands. That beats timing tricks: there is no window in which
-      // the exchange has already finished.
+      // the connection drops. That beats timing tricks: there is no window in
+      // which the exchange has already finished.
       //
       // Still retried, because "the server has parsed the headers by now" is
       // the one thing a client cannot observe, and a first attempt can lose
-      // that race on a loaded machine. Each attempt is a real reset; the
-      // assertion is that a handled socket error is reachable and survivable,
-      // not that it happens on attempt one. An earlier version of this test
+      // that race on a loaded machine. Each attempt is a real dropped
+      // connection; the assertion is that a handled socket error is reachable
+      // and survivable, not that it happens on attempt one. An earlier version
       // used a single 20k-request pipeline and flaked under full-suite load.
       const attempt = async (): Promise<void> => {
         await new Promise<void>((resolve) => {
@@ -848,11 +857,11 @@ describe('HookListener over a real loopback socket', () => {
                 `Content-Length: 4096\r\n` +
                 `\r\n{"hook_event_name":"Stop","pad":"aaaa`,
             );
-            setTimeout(() => sock.resetAndDestroy(), 25);
+            setTimeout(() => sock.destroy(), 25);
           });
-          // Resolve on 'close', never on the reset call itself, so the socket
+          // Resolve on 'close', never on the destroy call itself, so the socket
           // is fully released before the next attempt or the end of the test.
-          // A reset is expected here, so 'error' is swallowed deliberately.
+          // The drop is expected here, so 'error' is swallowed deliberately.
           sock.on('error', () => undefined);
           sock.on('close', () => resolve());
         });

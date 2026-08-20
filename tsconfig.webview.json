@@ -1,0 +1,19 @@
+{
+  /* The webview is a browser context, and it is type-checked SEPARATELY on
+     purpose. The host tsconfig has `lib: ["ES2022"]` with no DOM, so host code
+     cannot reach `fetch`, `XMLHttpRequest` or `WebSocket` without a type error
+     — a cheap, compile-time reinforcement of G5 (zero egress). Adding "DOM" to
+     the host config to accommodate the webview would delete that guarantee, so
+     the webview gets its own config instead.
+
+     Conversely `types: []` here keeps `node` globals out of the webview: the
+     webview has no fs and no network (CSP-enforced at runtime, and this is the
+     compile-time half of the same statement). */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["webview/**/*.ts", "webview/**/*.d.ts"],
+  "exclude": ["node_modules", "dist", "out"]
+}

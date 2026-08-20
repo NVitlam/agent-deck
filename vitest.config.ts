@@ -2,7 +2,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts'],
+    // `webview/` joined the glob in Phase 3. Webview tests that need a DOM opt
+    // in per file with a `@vitest-environment jsdom` docblock rather than
+    // switching the default: the host suites are node suites and stay that way.
+    include: ['src/**/*.test.ts', 'webview/**/*.test.ts'],
     environment: 'node',
     // The forks pool (vitest 3's default) intermittently exits non-zero while
     // reporting every test passed: the parent raises ERR_IPC_CHANNEL_CLOSED from

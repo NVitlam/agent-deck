@@ -5,6 +5,7 @@
   import SessionHeader from './SessionHeader.svelte';
   import SessionRail from './SessionRail.svelte';
   import TreeView from './TreeView.svelte';
+  import { displayLiveness } from './format.js';
 
   let { store }: { store: Store } = $props();
 
@@ -31,9 +32,25 @@
       view = store.getView();
     });
   });
+
+  // The whole panel's state in two attributes, so "which of the five states is
+  // this?" has exactly one answer rather than one per component. `none` is not
+  // a liveness value — it is the no-session-selected case, which is why it is
+  // spelled differently from the four that are.
+  let panelLiveness = $derived(
+    view.selected === undefined
+      ? 'none'
+      : displayLiveness(view.selected.liveness, view.refused),
+  );
 </script>
 
-<div class="app" data-testid="app">
+<div
+  class="app"
+  data-testid="app"
+  data-liveness={panelLiveness}
+  data-refused={String(view.refused)}
+  data-degraded={String(view.degraded)}
+>
   {#if view.degraded && !view.degradedDismissed}
     <DegradedBanner reason={view.degradedReason} ondismiss={() => store.dismissDegraded()} />
   {/if}
@@ -61,7 +78,7 @@
              the failure mode this screen exists to prevent. -->
         <RefusalScreen sessionId={view.selected.sessionId} />
       {:else}
-        <SessionHeader session={view.selected} />
+        <SessionHeader session={view.selected} degraded={view.degraded} />
         <TreeView session={view.selected} {store} toggled={view.toggledNodeIds} />
       {/if}
     </main>

@@ -1,6 +1,13 @@
 <script lang="ts">
   import type { SessionSummary } from './store.js';
-  import { livenessLabel } from './format.js';
+  import { displayLiveness, livenessLabel, livenessTitle } from './format.js';
+
+  // A refused session displays `unsupported` here even when the last snapshot
+  // said `live`: a `schemaMismatch` message refuses without changing the
+  // liveness on the wire, and a rail saying "live" beside a main pane showing
+  // the refusal screen is two surfaces disagreeing about one session.
+  const shown = (session: SessionSummary): 'live' | 'idle' | 'ended' | 'unsupported' =>
+    displayLiveness(session.liveness, session.refused);
 
   let {
     sessions,
@@ -28,14 +35,19 @@
             data-testid="rail-item"
             data-session-id={session.sessionId}
             data-selected={String(session.sessionId === selectedSessionId)}
+            data-liveness={shown(session)}
+            data-refused={String(session.refused)}
             aria-current={session.sessionId === selectedSessionId}
             onclick={() => onselect(session.sessionId)}
           >
             <span class="rail-label">{session.label}</span>
             <span class="rail-meta">
               <span
-                class="liveness liveness-{session.liveness}"
-                data-testid="rail-liveness">{livenessLabel(session.liveness)}</span
+                class="liveness liveness-{shown(session)}"
+                data-testid="rail-liveness"
+                data-liveness={shown(session)}
+                title={livenessTitle(shown(session))}
+                ><span class="dot" aria-hidden="true"></span>{livenessLabel(shown(session))}</span
               >
               {#if !session.workspaceMatch}
                 <span class="foreign" data-testid="rail-foreign">other workspace</span>
@@ -106,9 +118,48 @@
     opacity: 0.75;
   }
 
+  /* Same four-state treatment as the header: colour plus a filled/hollow dot,
+     so the states stay apart in greyscale and for a colour-blind reader. */
+  .liveness {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  .dot {
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    align-self: center;
+  }
+
   .liveness-live {
     color: var(--vscode-charts-green, inherit);
     opacity: 1;
+  }
+
+  .liveness-live .dot {
+    background: currentColor;
+  }
+
+  .liveness-idle {
+    color: var(--vscode-charts-yellow, inherit);
+    opacity: 1;
+  }
+
+  .liveness-ended .dot {
+    background: currentColor;
+    opacity: 0.5;
+  }
+
+  .liveness-unsupported {
+    color: var(--vscode-errorForeground, inherit);
+    opacity: 1;
+  }
+
+  .liveness-unsupported .dot {
+    border-style: dashed;
   }
 
   .foreign {

@@ -1,0 +1,383 @@
+// The determinism suite for `scripts/capture-states.mjs` and the evidence it
+// commits to `docs/evidence/ui-states/`.
+//
+// WHY THIS FILE IS NOT ANOTHER RENDER TEST
+// ----------------------------------------
+// `states.test.ts` and `fixture-render.test.ts` already assert what the five
+// UI states render. This file asserts something different and narrower: that
+// the COMMITTED EVIDENCE is trustworthy. Evidence that changes when nothing
+// changed is noise, and every future diff against it is a false positive; so
+// the central assertion here is that running the capture twice produces
+// byte-identical output, and that what is committed is what the current code
+// produces.
+//
+// A node suite, not a jsdom one. The capture builds its own jsdom in its own
+// process — running it under vitest's jsdom environment would put esbuild in
+// a realm it refuses to start in (see `webview/build-harness.mjs`).
+//
+// Node builtins are imported by their real specifiers. `tsconfig.webview.json`
+// sets `types: []`, which removes node's GLOBALS (`process`, `Buffer`) from
+// this project but does not stop an explicit `node:*` import resolving — the
+// same arrangement `fixture-render.test.ts` uses and for the same reason.
+// That is why paths below are resolved with `resolve()` against the process
+// working directory (vitest sets it to the repo root) rather than with
+// `process.cwd()`, and why file contents are compared as `latin1` strings:
+// latin1 maps one byte to one code point, so string equality IS byte
+// equality, without naming `Buffer`.
+
+import { execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+const REPO_ROOT = resolve('.');
+const SCRIPT = 'scripts/capture-states.mjs';
+const COMMITTED = resolve('docs/evidence/ui-states');
+const CAPTURED_FIXTURES = resolve('fixtures/cc-2.1.234/projects');
+
+/** The five states, plus the variant that carries the G3 row. */
+const STATES = ['live', 'idle', 'ended', 'unsupported', 'unsupported-with-tree', 'degraded'];
+
+/** The four values `SessionState.liveness` can take, and the fifth state. */
+const FIVE_STATES = ['live', 'idle', 'ended', 'unsupported', 'degraded'];
+
+interface StateFacts {
+  what: string;
+  howProduced: string;
+  panel: { dataLiveness: string; dataRefused: string; dataDegraded: string };
+  counts: {
+    treeNodes: number;
+    modelNodesInSelectedSession: number;
+    sessionHeaders: number;
+    refusalScreens: number;
+    degradedBanners: number;
+    livenessInferredMarkers: number;
+    statusChips: number;
+    payloadPreviews: number;
+    railItems: number;
+  };
+  header: { present: boolean; livenessText?: string | null; livenessTitle?: string | null };
+  banner: { present: boolean; dataReason?: string | null };
+  refusalScreen: { present: boolean };
+  rail: { selected: string | null; dataLiveness: string | null }[];
+}
+
+/** One capture run's files, keyed by name, byte-exact as latin1 strings. */
+type Capture = Map<string, string>;
+
+async function runCapture(outDir: string): Promise<Capture> {
+  execFileSync('node', [SCRIPT, '--out', outDir], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return readCapture(outDir);
+}
+
+async function readCapture(dir: string, encoding: 'latin1' | 'utf8' = 'latin1'): Promise<Capture> {
+  const out: Capture = new Map();
+  for (const name of (await readdir(dir)).sort()) {
+    if (name !== 'facts.json' && name !== 'README.md' && !name.endsWith('.dom.txt')) continue;
+    out.set(name, await readFile(join(dir, name), encoding));
+  }
+  return out;
+}
+
+/**
+ * `.gitattributes` marks everything but `fixtures/**` as text, and
+ * `core.autocrlf=true` is set on the dev machine — so a fresh checkout can
+ * hand these files back with CRLF while the capture always writes LF. That is
+ * a checkout artifact, not a capture defect, and normalising here is what
+ * keeps this assertion about the capture. The run-twice comparison below does
+ * NOT normalise: both sides came from the capture, so any difference is real.
+ */
+function lf(value: string): string {
+  return value.replace(/\r\n/g, '\n');
+}
+
+let tempRoot: string;
+/** Byte-exact (latin1). Used for the equality assertions and nothing else. */
+let runA: Capture;
+let runB: Capture;
+let committed: Capture;
+/** The same run decoded as UTF-8, for every assertion about CONTENT. */
+let text: Capture;
+let facts: Record<string, StateFacts>;
+
+beforeAll(async () => {
+  // Under `dist/` (gitignored, inside the repo) rather than the OS temp
+  // directory: this package writes nothing outside the repo.
+  await mkdir(resolve('dist'), { recursive: true });
+  tempRoot = await mkdtemp(resolve('dist', 'capture-test-'));
+  runA = await runCapture(join(tempRoot, 'a'));
+  runB = await runCapture(join(tempRoot, 'b'));
+  committed = await readCapture(COMMITTED);
+  text = await readCapture(join(tempRoot, 'a'), 'utf8');
+  facts = JSON.parse(text.get('facts.json') ?? '{}') as Record<string, StateFacts>;
+}, 120_000);
+
+afterAll(async () => {
+  if (tempRoot !== undefined) await rm(tempRoot, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// Determinism — the point of this file
+// ---------------------------------------------------------------------------
+
+describe('the capture is deterministic', () => {
+  it('produces the same file set twice', () => {
+    expect([...runB.keys()]).toStrictEqual([...runA.keys()]);
+    // Named rather than counted, so a state that silently stopped being
+    // captured fails here instead of quietly shrinking the evidence.
+    expect([...runA.keys()]).toStrictEqual(
+      ['README.md', 'facts.json', ...STATES.map((s) => `${s}.dom.txt`)].sort(),
+    );
+  });
+
+  it('produces byte-identical bytes twice, with no code change in between', () => {
+    for (const [name, bytes] of runA) {
+      const other = runB.get(name);
+      expect(other, `${name} missing from the second run`).toBeDefined();
+      expect(
+        other?.length,
+        `${name} differs in LENGTH between two runs of an unchanged capture`,
+      ).toBe(bytes.length);
+      expect(other, `${name} differs BYTE-FOR-BYTE between two runs`).toBe(bytes);
+    }
+  });
+
+  it('carries no wall-clock, no random run id, and no host path', () => {
+    // The three ways a capture normally becomes unreproducible. Checked
+    // against the text as well as against the second run, because a value
+    // that happens to be stable within one second would pass the run-twice
+    // check and still be a time bomb.
+    for (const [name, body] of text) {
+      expect(body, `${name} names a drive-letter path`).not.toMatch(/[A-Za-z]:\\/);
+      expect(body, `${name} names a POSIX home path`).not.toMatch(/\/(?:home|Users)\//);
+      expect(body, `${name} carries an ISO timestamp`).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:/);
+    }
+  });
+
+  it('matches what is committed under docs/evidence/ui-states', () => {
+    // Staleness detection. If this fails, the evidence describes a build that
+    // no longer exists: re-run `node scripts/capture-states.mjs` and commit
+    // the result. It is NOT a renderer regression on its own.
+    expect([...committed.keys()]).toStrictEqual([...runA.keys()]);
+    for (const [name, bytes] of runA) {
+      expect(
+        lf(committed.get(name) ?? ''),
+        `docs/evidence/ui-states/${name} is stale — re-run \`node ${SCRIPT}\``,
+      ).toBe(lf(bytes));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The evidence says what the DoD item needs it to say
+// ---------------------------------------------------------------------------
+
+describe('the captured evidence covers the five states', () => {
+  it('records every one of them, and the G3 variant', () => {
+    expect(Object.keys(facts)).toStrictEqual(STATES);
+    for (const state of FIVE_STATES) expect(Object.keys(facts)).toContain(state);
+  });
+
+  it('gives each state a distinguishable record', () => {
+    // The same requirement `states.test.ts` puts on the renderer, applied to
+    // the artifact: five captures that read identically would satisfy every
+    // per-state assertion and be useless beside a screenshot.
+    const signatures = STATES.map((state) => {
+      const f = facts[state];
+      if (f === undefined) throw new Error(`no facts captured for ${state}`);
+      return JSON.stringify([f.panel, f.counts, f.header.present, f.banner, f.refusalScreen]);
+    });
+    expect(new Set(signatures).size).toBe(STATES.length);
+  });
+
+  it('draws every node of a healthy session, and no more', () => {
+    for (const state of ['live', 'idle', 'ended', 'degraded']) {
+      const f = facts[state];
+      if (f === undefined) throw new Error(`no facts captured for ${state}`);
+      expect(f.panel.dataRefused, state).toBe('false');
+      expect(f.counts.treeNodes, state).toBeGreaterThan(0);
+      expect(f.counts.treeNodes, state).toBe(f.counts.modelNodesInSelectedSession);
+      expect(f.counts.refusalScreens, state).toBe(0);
+      expect(f.counts.sessionHeaders, state).toBe(1);
+    }
+  });
+
+  it('records the four liveness values as four different panel states', () => {
+    expect(facts['live']?.panel.dataLiveness).toBe('live');
+    expect(facts['idle']?.panel.dataLiveness).toBe('idle');
+    expect(facts['ended']?.panel.dataLiveness).toBe('ended');
+    expect(facts['unsupported']?.panel.dataLiveness).toBe('unsupported');
+    // degraded composes with a liveness value rather than replacing one (G2).
+    expect(facts['degraded']?.panel.dataDegraded).toBe('true');
+    expect(facts['degraded']?.panel.dataLiveness).toBe('live');
+    expect(facts['degraded']?.counts.degradedBanners).toBe(1);
+    expect(facts['degraded']?.counts.livenessInferredMarkers).toBe(1);
+    // G2: the hook tap's silence costs liveness, not the tree.
+    expect(facts['degraded']?.counts.treeNodes).toBeGreaterThan(0);
+  });
+
+  it('G3: a refusal draws ZERO tree elements, including when the model has a tree', () => {
+    // The single most important row in the matrix. `unsupported` alone is not
+    // enough to prove it — the layout the fingerprint refuses happens to have
+    // no children either, so 0 nodes there is consistent with "there was
+    // nothing to draw". `unsupported-with-tree` is the discriminating case:
+    // the model carries nodes and the DOM still shows none.
+    for (const state of ['unsupported', 'unsupported-with-tree']) {
+      const f = facts[state];
+      if (f === undefined) throw new Error(`no facts captured for ${state}`);
+      expect(f.panel.dataRefused, state).toBe('true');
+      expect(f.panel.dataLiveness, state).toBe('unsupported');
+      expect(f.counts.treeNodes, state).toBe(0);
+      expect(f.counts.statusChips, state).toBe(0);
+      expect(f.counts.payloadPreviews, state).toBe(0);
+      expect(f.counts.sessionHeaders, state).toBe(0);
+      expect(f.counts.refusalScreens, state).toBe(1);
+    }
+    const withTree = facts['unsupported-with-tree'];
+    expect(withTree?.counts.modelNodesInSelectedSession).toBeGreaterThan(1);
+
+    // ...and the DOM file agrees with the fact summary, so the two halves of
+    // the evidence cannot disagree with each other.
+    for (const state of ['unsupported', 'unsupported-with-tree']) {
+      const dom = text.get(`${state}.dom.txt`) ?? '';
+      expect(dom, state).toContain('[refusal-screen]');
+      expect(dom, state).not.toContain('[tree-node]');
+      expect(dom, state).not.toContain('[session-header]');
+    }
+  });
+
+  it('leaves the neighbouring sessions in the rail unrefused', () => {
+    // "Other sessions in the rail are unaffected" is a claim the refusal
+    // screen prints. The capture has to be able to back it.
+    const rail = facts['unsupported']?.rail ?? [];
+    expect(rail.length).toBeGreaterThan(1);
+    expect(rail.filter((r) => r.selected === 'true').map((r) => r.dataLiveness)).toStrictEqual([
+      'unsupported',
+    ]);
+    expect(rail.filter((r) => r.selected !== 'true').every((r) => r.dataLiveness === 'live')).toBe(
+      true,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The README is the human's half of the comparison
+// ---------------------------------------------------------------------------
+
+describe('the generated README', () => {
+  it('offers an empty real-window column for every state', () => {
+    const readme = text.get('README.md') ?? '';
+    for (const state of STATES) expect(readme).toContain(`### ${state}`);
+    expect(readme).toContain('| fact | double | real window |');
+    // Every checklist row ends with an EMPTY third cell. A pre-filled one
+    // would be this file claiming a result no human has produced.
+    const rows = readme.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| ---'));
+    expect(rows.length).toBeGreaterThan(STATES.length);
+    for (const row of rows) {
+      if (row === '| fact | double | real window |') continue;
+      expect(row, row).toMatch(/\| \|$/);
+    }
+  });
+
+  it('says plainly that the real-window pass has not been run', () => {
+    const readme = text.get('README.md') ?? '';
+    expect(readme).toContain('The real-window column is unfilled. That pass has not been run.');
+    expect(readme).not.toMatch(/verified in a real VS Code window/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// G4 — no thinking content, and no signature bytes, reach the evidence
+// ---------------------------------------------------------------------------
+//
+// PLAN requires this block in every phase's suite. Copy the describe block,
+// not fragments of it: the vacuous version of this check greps for thinking
+// TEXT, which is empty on disk in CC 2.1.234, and passes forever while
+// proving nothing. The `signature` field carries the bytes.
+
+/** Every reasoning-bearing string present in the RAW bytes of a transcript. */
+function thinkingStringsInRawBytes(rawFile: string): string[] {
+  const found: string[] = [];
+  for (const line of rawFile.split('\n')) {
+    if (line.trim() === '') continue;
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const content = (entry as { message?: { content?: unknown } }).message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      const b = block as { type?: unknown; thinking?: unknown; signature?: unknown };
+      if (b.type !== 'thinking') continue;
+      if (typeof b.thinking === 'string' && b.thinking.length > 0) found.push(b.thinking);
+      if (typeof b.signature === 'string' && b.signature.length > 0) found.push(b.signature);
+    }
+  }
+  return found;
+}
+
+/** Every transcript under the captured root, main and subagent alike. */
+async function allTranscripts(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...(await allTranscripts(path)));
+    else if (entry.name.endsWith('.jsonl')) out.push(path);
+  }
+  return out;
+}
+
+describe('G4: no thinking content reaches the committed evidence', () => {
+  let secrets: string[];
+
+  beforeAll(async () => {
+    secrets = [];
+    for (const path of await allTranscripts(CAPTURED_FIXTURES)) {
+      secrets.push(...thinkingStringsInRawBytes(await readFile(path, 'utf8')));
+    }
+  });
+
+  it('the fixtures really do carry signature bytes (otherwise this proves nothing)', () => {
+    // Derived from the files, never pinned to a count: a re-harvest must not
+    // read as a regression here.
+    expect(secrets.length).toBeGreaterThan(0);
+    expect(secrets.every((s) => s.length > 0)).toBe(true);
+  });
+
+  it('and none of them appears anywhere in the capture', () => {
+    for (const [name, body] of text) {
+      expect(body, `${name} names a thinking field`).not.toContain('"thinking"');
+      expect(body, `${name} names a signature field`).not.toContain('"signature"');
+      for (const secret of secrets) {
+        expect(body, `${name} leaks a captured secret`).not.toContain(secret);
+        // A prefix check catches a partial leak through truncation.
+        expect(body, `${name} leaks a truncated secret`).not.toContain(secret.slice(0, 64));
+      }
+    }
+  });
+
+  it('carries no tool payload text at all', () => {
+    // The structural half of the argument above: payload bodies are replaced
+    // wholesale, so there is no path by which a payload could carry anything
+    // into this directory.
+    let seen = 0;
+    for (const [name, body] of text) {
+      if (!name.endsWith('.dom.txt')) continue;
+      const previews = [...body.matchAll(/\[preview-body\][^\n]*/g)].map((m) => m[0]);
+      seen += previews.length;
+      for (const preview of previews) {
+        expect(preview, `${name}: ${preview}`).toMatch(/ "«payload»"$/);
+      }
+    }
+    // Otherwise a capture that stopped emitting previews altogether would
+    // satisfy every assertion above by vacuity.
+    expect(seen).toBeGreaterThan(0);
+  });
+});

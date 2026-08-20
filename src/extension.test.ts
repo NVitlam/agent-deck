@@ -1446,6 +1446,33 @@ describe('the agentDeck.previewBytes setting reaches the grafter', () => {
    * finds the offloaded `.txt` on disk and requires its opening bytes to appear
    * verbatim in a preview. That is the G4 "offloading exists, redaction must
    * cover it" path, proved to reach the emission rather than assumed to.
+   *
+   * ---------------------------------------------------------------------------
+   * MEASURED CEILING — the assertions below deliberately stay at or under 8192
+   * ---------------------------------------------------------------------------
+   * An offloaded payload is truncated TWICE, and only the second cut sees the
+   * setting. `readRedactedToolResult` cuts first, at
+   * `redact.DEFAULT_MAX_PAYLOAD_BYTES` (8192), because `graftSession` is not
+   * given a `parse.maxPayloadBytes`; the grafter's `preview()` then cuts what
+   * survives, at `previewBytes`. Measured against the captured 63,774-byte
+   * `tool-results/*.txt`:
+   *
+   *   previewBytes=8192   marker reads "8192 of 8248"    <- shipped default
+   *   previewBytes=16384  marker reads "8192 of 63774"
+   *   previewBytes=65536  marker reads "8192 of 63774"
+   *
+   * Two consequences, neither of which this package changed on its own
+   * authority: `agentDeck.previewBytes` above 8192 has no effect on offloaded
+   * payloads, and at exactly the shipped default the double cut makes the
+   * marker UNDER-REPORT the original size by 7.8x — it says 8,248 bytes for a
+   * 63,774-byte file, which is the opposite of the "truncation is visible and
+   * quantified" the marker exists for. Reported, not fixed here: the one-line
+   * candidate is passing `parse: { maxPayloadBytes: previewBytes }` from the
+   * `graftSession` call in `extension.ts`, and that is a G4 semantics decision
+   * the parser package owns the meaning of.
+   *
+   * Nothing below asserts a value above 8192, so none of it depends on which
+   * way that goes.
    */
 
   /** The offloaded payload committed under the captured session, found on disk. */

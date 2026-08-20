@@ -68,7 +68,8 @@ counts hard-coded against a capture read as regressions later. Derive from the f
   (layout drift), and a direct file pointer for liveness.
 - **The `Stop` / `SubagentStop` split reproduces**: `Stop` omits `agent_id`, `SubagentStop` carries
   it. Same 100%/0% split as the purged 181-event capture and the 246-event live log.
-- **Undocumented keys observed**: `prompt_id` (all events), `effort`, `permission_mode`,
+- **Undocumented keys observed**: `prompt_id` (all 285 events *in this capture* — but not on
+  `SessionStart`, see below), `effort`, `permission_mode`,
   `duration_ms` (PostToolUse), `background_tasks`, `session_crons`, `last_assistant_message`,
   `agent_transcript_path`. Consumers must preserve unknown keys rather than reject on them.
 - **`SessionStart` is CONFIRMED on pinned CC 2.1.234**, pinned in `cc-2.1.234-sessionstart.jsonl`

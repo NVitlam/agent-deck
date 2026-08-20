@@ -248,3 +248,18 @@ it. Registering it produced it immediately.
 
 The frozen text is left exactly as written, because it is the Phase 0 evidence record. This note is
 the correction; `fixtures/hook-events/README.md` carries the measurement.
+
+### Second correction, 2026-08-20 (Phase 2) — `SessionStart`
+
+The caveat above (§ "Caveat on `SessionStart`") says the event had been seen from real CC **2.1.178**
+but "not yet from the pinned 2.1.234", and asks a future phase to confirm it. **Confirmed** — 2 events,
+pinned in `fixtures/hook-events/cc-2.1.234-sessionstart.jsonl`.
+
+The caveat's own diagnosis was right and is worth keeping: every 2.1.234 session in this workspace was
+already running before the listener came up, so none of them could fire an *onset* event. Binding the
+listener first and then opening a fresh window produced it immediately.
+
+This is the second of the two `SessionStart`/`SubagentStart` corrections this file needed, and both
+had the same shape — **our own procedure prevented the observation, and the absence was read as a
+property of CC.** A file that receives a forward pointer for one correction and not the other is worse
+than one with none, so this note exists to keep the pair together.

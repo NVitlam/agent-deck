@@ -1,15 +1,16 @@
 // Bundles Agent Deck's two artifacts: the extension host entry and the webview.
 //
-// NOTE: `src/extension.ts` does not exist yet — Phase 3 owns the activation
-// entry point. Until it lands, the host build fails with a missing-entry
-// error. That is expected; `npm test`, `npm run lint` and `npm run typecheck`
-// do not depend on this file.
+// The two builds are separately selectable:
 //
-// Because of that, the two builds are separately selectable:
-//
-//   node esbuild.config.mjs             both (fails today on the host entry)
+//   node esbuild.config.mjs             both
 //   node esbuild.config.mjs --webview   webview only
 //   node esbuild.config.mjs --host      host only
+//
+// (This note used to say `src/extension.ts` does not exist and the host build
+// fails by design. True from Phase 1 until Phase 3 landed the entry point;
+// false since. Corrected from outside the commit that made it false, which is
+// the only vantage point from which a "current state" line can be written
+// accurately.)
 //
 // The webview build must stand alone: its egress-guard test (webview/bundle.test.ts)
 // reads the emitted `dist/webview/main.js` and would otherwise be blocked by an

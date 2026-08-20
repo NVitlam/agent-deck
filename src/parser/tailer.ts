@@ -125,6 +125,51 @@ export function slugifyWorkspace(workspacePath: string): string {
   return trimmed.replace(/[:\\/]/g, '-');
 }
 
+/**
+ * How a requested slug relates to the directory names actually present in a
+ * projects root.
+ *
+ * `ambiguous` is only reachable on a **case-sensitive filesystem**, where two
+ * directories may differ by case alone. Windows/NTFS cannot hold both, so this
+ * is a WSL/Linux case, and it is a refusal rather than a pick: on a
+ * case-sensitive filesystem `/home/u/WS` and `/home/u/ws` are two genuinely
+ * different workspaces, so choosing between their slugs by readdir order would
+ * show a *foreign* workspace's sessions (G3, and G8's single-subject rule).
+ */
+export type SlugSelection =
+  | { kind: 'exact'; name: string }
+  | { kind: 'caseInsensitive'; name: string }
+  | { kind: 'ambiguous'; candidates: string[] }
+  | { kind: 'none' };
+
+/**
+ * Pick the slug directory for `requestedSlug` out of the directory names a
+ * projects root holds.
+ *
+ * Exact spelling always wins, so an ambiguity can only arise when CC spelled
+ * the slug differently from our encoding *and* more than one such spelling
+ * exists. The Windows drive-letter variance (`c--Users-...` vs `C--Users-...`,
+ * both observed in real data) therefore still matches, because only one of the
+ * two can exist in a single NTFS directory.
+ *
+ * Pure — no filesystem access — so every branch is testable on any platform,
+ * including the branch the host filesystem cannot physically produce.
+ */
+export function selectSlugDirectory(
+  directoryNames: readonly string[],
+  requestedSlug: string,
+): SlugSelection {
+  for (const name of directoryNames) {
+    if (name === requestedSlug) return { kind: 'exact', name };
+  }
+  const want = requestedSlug.toLowerCase();
+  const matches = directoryNames.filter((name) => name.toLowerCase() === want);
+  const [first] = matches;
+  if (first === undefined) return { kind: 'none' };
+  if (matches.length === 1) return { kind: 'caseInsensitive', name: first };
+  return { kind: 'ambiguous', candidates: [...matches].sort() };
+}
+
 // ---------------------------------------------------------------------------
 // Discovery
 // ---------------------------------------------------------------------------
@@ -150,7 +195,8 @@ export interface DiscoveredSession {
 export type DiscoveryFailureKind =
   | 'projectsRootNotFound'
   | 'projectsRootUnreadable'
-  | 'projectSlugNotFound';
+  | 'projectSlugNotFound'
+  | 'ambiguousSlug';
 
 /**
  * A refusal, never an empty success. `projectsRootNotFound` is ENOENT-shaped
@@ -159,7 +205,11 @@ export type DiscoveryFailureKind =
  */
 export interface DiscoveryFailure {
   kind: DiscoveryFailureKind;
-  /** The errno code where one exists, e.g. 'ENOENT'. */
+  /**
+   * The errno code where one exists, e.g. 'ENOENT'. `ambiguousSlug` has no
+   * errno — the filesystem call succeeded and it is the *answer* we refuse —
+   * so it carries the non-errno string 'EAMBIGUOUS'.
+   */
   code: string;
   /** The path that was looked for. */
   path: string;
@@ -238,8 +288,9 @@ export async function discoverSessions(
   }
 
   const want = requestedSlug.toLowerCase();
-  const slugEntry = rootEntries.find((e) => e.isDirectory() && e.name.toLowerCase() === want);
-  if (slugEntry === undefined) {
+  const directoryNames = rootEntries.filter((e) => e.isDirectory()).map((e) => e.name);
+  const selection = selectSlugDirectory(directoryNames, requestedSlug);
+  if (selection.kind === 'none') {
     return {
       ok: false,
       failure: {
@@ -251,7 +302,22 @@ export async function discoverSessions(
     };
   }
 
-  const slugDir = join(projectsRoot, slugEntry.name);
+  if (selection.kind === 'ambiguous') {
+    return {
+      ok: false,
+      failure: {
+        kind: 'ambiguousSlug',
+        code: 'EAMBIGUOUS',
+        path: join(projectsRoot, requestedSlug),
+        message:
+          `${selection.candidates.length} slug directories differ only by case for ` +
+          `${workspacePath} in ${projectsRoot}: ${selection.candidates.join(', ')}`,
+      },
+    };
+  }
+
+  const slugName = selection.name;
+  const slugDir = join(projectsRoot, slugName);
   let slugEntries;
   try {
     slugEntries = await readdir(slugDir, { withFileTypes: true });
@@ -299,7 +365,7 @@ export async function discoverSessions(
     projectsRoot,
     rootSource,
     slugDir,
-    slug: slugEntry.name,
+    slug: slugName,
     requestedSlug,
     sessions,
   };

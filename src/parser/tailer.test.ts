@@ -32,6 +32,7 @@ import {
   SessionTailer,
   discoverSessions,
   resolveProjectsRoot,
+  selectSlugDirectory,
   slugifyWorkspace,
   snapshotTree,
   systemClock,
@@ -195,6 +196,40 @@ describe('resolveProjectsRoot', () => {
       homedir: () => join(tmpRoot, 'home'),
     });
     expect(resolved.source).toBe('home');
+  });
+});
+
+describe('selectSlugDirectory', () => {
+  // The full matrix, including the WSL/case-sensitive legs, lives in
+  // src/model/pathmatrix.test.ts. These are the contract points discovery
+  // itself depends on.
+  const want = 'c--Users-Test-Documents-ws';
+
+  it('prefers the exact spelling to a case variant', () => {
+    expect(selectSlugDirectory(['C--Users-Test-Documents-WS', want], want)).toEqual({
+      kind: 'exact',
+      name: want,
+    });
+  });
+
+  it('accepts a lone case variant, because CC varies the drive letter', () => {
+    expect(selectSlugDirectory(['C--Users-Test-Documents-ws'], want)).toEqual({
+      kind: 'caseInsensitive',
+      name: 'C--Users-Test-Documents-ws',
+    });
+  });
+
+  it('refuses two case variants rather than picking by readdir order', () => {
+    expect(
+      selectSlugDirectory(['C--Users-Test-Documents-ws', 'c--Users-Test-Documents-WS'], want),
+    ).toEqual({
+      kind: 'ambiguous',
+      candidates: ['C--Users-Test-Documents-ws', 'c--Users-Test-Documents-WS'],
+    });
+  });
+
+  it('reports none when nothing matches', () => {
+    expect(selectSlugDirectory(['-home-test-ws'], want)).toEqual({ kind: 'none' });
   });
 });
 

@@ -1,0 +1,49 @@
+{
+  "provenance": "MEASURED on the G1A (the development machine), not synthetic and not a Claude Code capture. Every value here was read back from a live WSL2 Ubuntu distro and from this repo's own resolution code executed by a real Linux Node inside it. It sits in a synthetic- directory because the directory's other file is hand-made; this one is not - see README.md.",
+  "measuredAt": "2026-08-20",
+  "howMeasured": "src/model/pathmatrix.probe.ts bundled with esbuild (esm, platform=node) and run as: wsl.exe -- <linuxNode> <bundle> --agent-deck-path-probe fixtures/synthetic-path-matrix/slug-cases.json. src/model/pathmatrix.test.ts re-runs exactly that and refuses to disagree with this file.",
+  "wsl": {
+    "distro": "Ubuntu",
+    "distroVersion": "Ubuntu 24.04.4 LTS",
+    "defaultVersion": 2,
+    "kernel": "6.6.87.2-microsoft-standard-WSL2",
+    "home": "/home/dev",
+    "claudeDirectoryPresent": false,
+    "claudeDirectoryNote": "No Claude Code has ever run inside this distro: $HOME/.claude does not exist, and the `claude` on the WSL PATH is the Windows npm shim reached through /mnt/c interop, not a Linux install. Consequence: no posix slug in slug-cases.json is witnessed from CC itself.",
+    "linuxNodeOnPath": false,
+    "linuxNodeUsed": "/home/dev/.local/opt/node-v24.19.0-linux-x64/bin/node",
+    "linuxNodeVersion": "v24.19.0",
+    "linuxNodeNote": "Unpacked from the official tarball for this leg; the distro ships no Node. Not part of any checkout, which is why the WSL leg announces a skip when it cannot find one.",
+    "wslpath": {
+      "windowsWorkspace": "C:\\Users\\dev\\projects\\agent-deck",
+      "wslMountForm": "/mnt/c/Users/dev/projects/agent-deck",
+      "linuxHome": "/home/dev",
+      "windowsFormOfLinuxHome": "\\\\wsl.localhost\\Ubuntu\\home\\dev"
+    }
+  },
+  "slugs": {
+    "windows": "C--Users-dev-projects-agent-deck",
+    "wslMount": "-mnt-c-Users-dev-projects-agent-deck",
+    "identical": false,
+    "caseVariants": false,
+    "note": "One physical directory, two spellings, two slugs. They are not case variants: lowercasing both leaves them different. Agent Deck never translates between the two - see the WSL boundary note in src/model/correlate.ts."
+  },
+  "probeLinux": {
+    "platform": "linux",
+    "nodeVersion": "v24.19.0",
+    "pathSeparator": "/",
+    "homedir": "/home/dev",
+    "rootFromHome": { "root": "/home/dev/.claude/projects", "source": "home" },
+    "tempFilesystemCaseSensitive": true,
+    "discoveryWorkspace": "/mnt/c/Users/Probe/ws",
+    "discoverySlug": "-mnt-c-Users-Probe-ws",
+    "negativeControlKind": "projectsRootNotFound",
+    "negativeControlCode": "ENOENT",
+    "caseInsensitiveOutcome": "matched",
+    "caseInsensitiveOnDisk": "-Mnt-c-Users-Probe-ws",
+    "ambiguousOutcome": "ambiguousSlug",
+    "ambiguousCode": "EAMBIGUOUS",
+    "ambiguousOnDisk": ["-Mnt-c-Users-Probe-ws", "-mNt-c-Users-Probe-ws"],
+    "exactBeatsCaseVariantOutcome": "exact"
+  }
+}

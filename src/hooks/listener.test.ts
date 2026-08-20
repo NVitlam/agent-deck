@@ -1052,22 +1052,37 @@ describe('HookListener bind failures', () => {
 // ----------------------------
 // It is a TEXTUAL scan, not a proof. It reads source as text and has no model
 // of value flow, so it catches the literal at the point of comparison or
-// binding and nothing further. Measured against 16 deliberate evasion shapes
-// by the phase verifier: 9 caught, 7 not.
+// binding and nothing further. Final measured position, against 25 deliberate
+// evasion shapes constructed by the phase verifier: 16 caught, 9 not.
 //
-//   Caught: direct comparison in any operand shape, bracket access
+//   Caught (16): direct comparison in any operand shape, bracket access
 //     (`raw['agent_id']`), optional chaining, reversed operands, membership
-//     and switch tests, and — via the `unparsed` counter — comparisons whose
-//     operand it cannot parse at all, e.g. wrapping the left side in a
-//     `String(...)` call. That counter is the safety net: an unrecognised
-//     shape FAILS rather than passing quietly.
-//   Not caught: value-flow indirection where the literal never appears next
-//     to the comparison — `Object.is(a, b)`, building the word by
+//     and switch tests; every BINDING form where the literal sits next to an
+//     operator — const/let/var, typed declaration, object property, default
+//     parameter, object destructuring; and — via the `unparsed` counter —
+//     comparisons whose operand it cannot parse at all, e.g. wrapping the
+//     left side in a `String(...)` call. That counter is the safety net: an
+//     unrecognised shape FAILS rather than passing quietly.
+//   Not caught (9): value-flow indirection where the literal never appears
+//     next to an operator — `Object.is(a, b)`, building the word by
 //     concatenation, `Set.has`, array `includes` against a list built
-//     elsewhere, a regex, `localeCompare`. A named constant is the one
-//     realistic member of that family, and it is closed in the
-//     zero-tolerance tier by flagging the BINDING (see SENTINEL_BINDINGS)
-//     rather than the comparison.
+//     elsewhere, a regex, `localeCompare`. No regex closes these.
+//
+// Coverage differs by file, deliberately:
+//
+//   every production file under src/  comparisons, allowlisted to operands
+//                                     ending in a kind discriminant
+//   listener.ts, liveness.ts          the above with NO allowance at all,
+//                                     plus no bindings
+//   session.ts                        no bindings either, except writing the
+//                                     literal into a kind-named field
+//
+// session.ts is in the binding tier because it consumes hook events through
+// `ingestHookEvent`. It is not in the no-comparisons tier because it also
+// builds the domain tree and may legitimately compare a node's `kind`. An
+// earlier version excluded it from both, which gave up more than it needed to:
+// the residual gap there is now the two-step named constant alone, not every
+// shape.
 //
 // Note that this comment block, like the ones below, avoids writing the
 // sentinel as a bare quoted literal. That is not squeamishness: the scan reads
@@ -1115,13 +1130,24 @@ const QUOTED_SENTINEL = /(['"`])ma[i]n\1/g;
  * comparison is invisible to any textual scan the moment the literal has a
  * name, so catching the BINDING is what closes it.
  */
-const SENTINEL_BINDINGS: readonly RegExp[] = [
-  // const / let / var NAME [: Type] = <sentinel>
-  /\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*(?::[^=;\n]+)?=\s*(['"`])ma[i]n\1/g,
-  // lhs = <sentinel>  (a single '=', never part of ==, ===, !=, <=, >=, =>)
-  /[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*(?<![=!<>])=(?![=>])\s*(['"`])ma[i]n\1/g,
-  // NAME: <sentinel> in an object-property position
-  /[A-Za-z_$][\w$]*\s*:\s*(['"`])ma[i]n\1/g,
+const SENTINEL_BINDINGS: readonly (readonly [RegExp, boolean])[] = [
+  // const / let / var NAME [: Type] = <sentinel>.
+  // Flagged whatever the name is: binding the bare literal to a variable is
+  // the two-step evasion this pattern exists to catch, and no legitimate node
+  // write needs one.
+  [
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;\n]+)?=\s*(['"`])ma[i]n\2/g,
+    false,
+  ],
+  // lhs = <sentinel>  (a single '=', never part of ==, ===, !=, <=, >=, =>).
+  // Writing into a kind-named field is a legitimate node write.
+  [
+    /([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*(?<![=!<>])=(?![=>])\s*(['"`])ma[i]n\2/g,
+    true,
+  ],
+  // NAME: <sentinel> in an object-property position. Same allowance: this is
+  // how the domain model declares a node's kind (session.ts:118).
+  [/([A-Za-z_$][\w$]*)\s*:\s*(['"`])ma[i]n\2/g, true],
 ];
 
 /**
@@ -1137,6 +1163,22 @@ const KIND_DISCRIMINANTS = new Set(['kind', 'transcriptKind']);
  * against the sentinel at all — zero tolerance here, not an allowlist.
  */
 const HOOK_PATH_FILES = ['src/hooks/listener.ts', 'src/model/liveness.ts'];
+
+/**
+ * Files where binding the bare sentinel to a name is never allowed, except as
+ * a write into a kind-named field (see {@link SENTINEL_BINDINGS}).
+ *
+ * A superset of {@link HOOK_PATH_FILES}: `session.ts` consumes hook events via
+ * `ingestHookEvent`, so it is a live site for this bug class, but it also
+ * builds the domain tree and so legitimately writes `kind:` followed by the
+ * literal and may one day legitimately compare against it. It therefore gets
+ * the binding rule but NOT the "no comparisons at all" rule above — which is
+ * the whole reason these are two lists rather than one.
+ */
+const BINDING_ZERO_TOLERANCE_FILES = [
+  ...HOOK_PATH_FILES,
+  'src/model/session.ts',
+];
 
 /** Consumers the scan must reach; a rename or move must fail loudly. */
 const REQUIRED_IN_SCAN = [
@@ -1235,18 +1277,29 @@ function scanSource(file: string, source: string): ScanResult {
   // assignment — so results are keyed by where the sentinel literal ends,
   // which is identical across patterns for one occurrence. Without this a
   // single `const X = <sentinel>` would be reported twice.
-  const byLiteralEnd = new Map<number, string>();
-  for (const pattern of SENTINEL_BINDINGS) {
+  // A literal is a violation if ANY matching pattern says so. That is what
+  // stops `const kind = <sentinel>` being excused by the assignment pattern's
+  // kind allowance — the declaration pattern still flags it.
+  const byLiteralEnd = new Map<number, { text: string; violation: boolean }>();
+  for (const [pattern, kindAllowed] of SENTINEL_BINDINGS) {
     for (const m of source.matchAll(pattern)) {
       const key = m.index + m[0].length;
+      const bound = lastAccessor(m[1] ?? '');
+      const violation = !(kindAllowed && KIND_DISCRIMINANTS.has(bound));
       const text = `${file}:${String(lineOf(source, m.index))} ${m[0].replace(/\s+/g, ' ').trim()}`;
       const existing = byLiteralEnd.get(key);
-      if (existing === undefined || text.length > existing.length) {
-        byLiteralEnd.set(key, text);
-      }
+      byLiteralEnd.set(key, {
+        text:
+          existing === undefined || text.length > existing.text.length
+            ? text
+            : existing.text,
+        violation: (existing?.violation ?? false) || violation,
+      });
     }
   }
-  const bindings = [...byLiteralEnd.values()];
+  const bindings = [...byLiteralEnd.values()]
+    .filter((b) => b.violation)
+    .map((b) => b.text);
 
   return { hits, unparsed: total - hits.length, membership, bindings };
 }
@@ -1323,9 +1376,28 @@ describe('sentinel scan: the scanner itself', () => {
       `var legacy = "${W}";`,
       `this.mainId = '${W}';`,
       `const cfg = { mainId: '${W}' };`,
+      // A variable named `kind` is still a violation: the kind allowance is
+      // for writing a node's field, never for parking the literal in a local.
+      `const kind = '${W}';`,
+      `let transcriptKind = '${W}';`,
     ]) {
       const result = scanSource('sample.ts', sample);
       expect(result.bindings, sample).toHaveLength(1);
+    }
+  });
+
+  it('allows the sentinel written into a kind-named field', () => {
+    // The same allowlist the comparison scan uses. This is how the domain
+    // model declares a node's type and it must keep working.
+    for (const sample of [
+      `const node = { id: 'root', kind: '${W}', children: [] };`,
+      `kind: '${W}',`,
+      `node.kind = '${W}';`,
+      `this.parent.transcriptKind = '${W}';`,
+      `transcriptKind: '${W}',`,
+    ]) {
+      const result = scanSource('sample.ts', sample);
+      expect(result.bindings, sample).toEqual([]);
     }
   });
 
@@ -1420,25 +1492,50 @@ describe('sentinel scan: every production source under src/', () => {
     expect(violations).toEqual([]);
   });
 
-  it('the hook-event path never binds the bare sentinel to a name', async () => {
+  it('no hook-event consumer binds the bare sentinel to a name', async () => {
     // Closes the one non-contrived evasion: bind the literal to a constant,
     // then compare an agent id against that constant. The comparison is
     // invisible to any textual scan once the literal has a name, so the
-    // binding is what gets caught. Scoped to these two files precisely
-    // because the same shape (`kind:` followed by the literal) is a
-    // legitimate property write elsewhere in the model.
+    // binding is what gets caught.
+    //
+    // This covers session.ts as well as the listener and the liveness engine.
+    // An earlier version excluded session.ts wholesale because of its
+    // legitimate `kind:` write on line 118; that gave up more than it needed
+    // to, since the kind allowlist already distinguishes the two. The residual
+    // gap in session.ts is now one shape rather than every shape.
     const scanned: string[] = [];
     const bindings: string[] = [];
 
     for (const absolute of await productionSources()) {
       const file = repoRelative(absolute);
-      if (!HOOK_PATH_FILES.includes(file)) continue;
+      if (!BINDING_ZERO_TOLERANCE_FILES.includes(file)) continue;
       scanned.push(file);
       bindings.push(...scanSource(file, await readFile(absolute, 'utf8')).bindings);
     }
 
-    expect(scanned.sort()).toEqual([...HOOK_PATH_FILES].sort());
+    expect(scanned.sort()).toEqual([...BINDING_ZERO_TOLERANCE_FILES].sort());
     expect(bindings).toEqual([]);
+  });
+
+  it('is not vacuous: session.ts really does carry the legitimate kind write', async () => {
+    // The test above passes for session.ts only because the kind allowlist
+    // excuses line 118. If that write ever vanished, the guard would be
+    // trivially satisfiable and this asserts otherwise.
+    const source = await readFile(
+      fileURLToPath(new URL('../model/session.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(source).toContain(`kind: '${SENTINEL_WORD}'`);
+
+    const result = scanSource('src/model/session.ts', source);
+    expect(result.bindings).toEqual([]);
+
+    // Renaming that property to anything outside the allowlist must flag it.
+    const renamed = source.replace(
+      `kind: '${SENTINEL_WORD}'`,
+      `mainId: '${SENTINEL_WORD}'`,
+    );
+    expect(scanSource('src/model/session.ts', renamed).bindings).toHaveLength(1);
   });
 });
 

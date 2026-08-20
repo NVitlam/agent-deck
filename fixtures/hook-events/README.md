@@ -71,7 +71,11 @@ counts hard-coded against a capture read as regressions later. Derive from the f
 - **Undocumented keys observed**: `prompt_id` (all events), `effort`, `permission_mode`,
   `duration_ms` (PostToolUse), `background_tasks`, `session_crons`, `last_assistant_message`,
   `agent_transcript_path`. Consumers must preserve unknown keys rather than reject on them.
-- **`SessionStart` is ABSENT from this capture, and that is not evidence about CC.** It fires at
-  session onset, and the observing session had already started when the listener bound. Confirming it
-  requires a session opened *after* a listener is bound. Until that capture exists, `SessionStart`
-  remains unconfirmed on 2.1.234 — and per spec §C4 liveness must never *require* it.
+- **`SessionStart` is CONFIRMED on pinned CC 2.1.234**, pinned in `cc-2.1.234-sessionstart.jsonl`
+  (2 events). It is absent from the main capture above, and that absence was never evidence about CC:
+  it fires at session *onset*, and every earlier capture was taken by a listener that bound after the
+  observing session had already started. Opening a fresh window with the listener up produced it
+  immediately. Measured payload — a **smaller** key set than any other event:
+  `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `source`. **No `agent_id`** (consistent
+  with the main-thread rule), **no `tool_use_id`**, and notably **no `prompt_id`**, which every other
+  event carries. `source` is `"startup"` on both. Per spec §C4 liveness must still never *require* it.

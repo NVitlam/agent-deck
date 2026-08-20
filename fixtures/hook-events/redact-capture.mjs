@@ -33,6 +33,10 @@ const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i === -1 ? d : args[i + 1]; };
 const IN = opt('--in', 'spike/hook-events-r3.jsonl');
 const OUT = opt('--out', 'fixtures/hook-events/cc-2.1.234-redacted.jsonl');
+// --only <EventName>: emit just that hook_event_name. Used for the small
+// single-purpose fixtures; the redaction path below is identical either way,
+// so a filtered fixture is never redacted differently from the main one.
+const ONLY = opt('--only', null);
 
 // Fields kept verbatim. Everything else is shape-only.
 const KEEP = new Set([
@@ -64,6 +68,7 @@ for (const line of lines) {
   try { rec = JSON.parse(line); } catch { malformed++; continue; }
   const p = rec.payload ?? rec.event ?? rec;
   if (!p || typeof p !== 'object') { malformed++; continue; }
+  if (ONLY && p.hook_event_name !== ONLY) continue;
 
   const red = {};
   // Object.keys order is preserved so the fixture mirrors the wire order.

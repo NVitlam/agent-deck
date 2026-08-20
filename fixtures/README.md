@@ -108,7 +108,8 @@ particular is **not** committed — do not go looking for it, and do not cite it
 Content values are destroyed, but these are kept verbatim, because a fixture without them cannot test
 what it exists to test:
 
-- `cwd` and `transcript_path` — absolute paths containing `C:Usersdev…`, including worktree paths.
+- `cwd` and `transcript_path` — absolute paths containing `C:\Users\dev\…`, including worktree paths
+  (backslash-separated; a sweep that greps a forward-slash or backslash-stripped form finds nothing).
 - `session_id`, `agent_id`, `prompt_id` — real ids from this repo's own sessions.
 
 This is the same exposure class the committed transcripts under `cc-2.1.234/` already carry (their

@@ -21,7 +21,8 @@
  * the fixture set.
  */
 
-import { createServer } from 'node:http';
+import { execFileSync } from 'node:child_process';
+import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -54,6 +55,9 @@ import type {
   Unsubscribe,
 } from './extension.js';
 import { webviewHtml } from './bridge/html.js';
+import { DEFAULT_PREVIEW_BYTES as GRAFTER_DEFAULT_PREVIEW_BYTES } from './model/graft.js';
+import type { GraftSessionResult } from './model/graft.js';
+import { TRUNCATION_MARKER_RE } from './parser/redact.js';
 import { WEBVIEW_ROOT_ID } from './bridge/contract.js';
 import type { HostToWebviewMessage, SessionState, TreeNode } from './model/events.js';
 import { isAgentNode } from './model/events.js';
@@ -1311,13 +1315,34 @@ describe('the host bundle: the manifest and the build must agree', () => {
     return fileURLToPath(new URL(`../${main.replace(/^\.\//, '')}`, import.meta.url));
   }
 
-  /** The built artifact's text, or null when no build has been run. */
-  async function builtText(path: string): Promise<string | null> {
+  /**
+   * Build the host bundle if it is not already on disk.
+   *
+   * The earlier version of this block early-returned when `dist/` was absent,
+   * which meant that on a fresh clone two of these four tests SKIPPED silently
+   * and the block reported `4 passed | 32 skipped` while asserting nothing
+   * about an artifact that did not exist. "Replay from a clean checkout" is a
+   * standing criterion here, and a test that quietly opts out is worse than an
+   * absent one because it reports as coverage.
+   *
+   * Shelling out to a child `node` follows `webview/bundle.test.ts`, which does
+   * the same for the same reason. The host build is measured at ~50-90 ms, so
+   * the cost of never skipping is negligible; `--host` exists precisely so this
+   * does not drag in the webview build too.
+   */
+  async function ensureBuilt(path: string): Promise<string> {
     try {
       await stat(path);
     } catch {
-      return null;
+      execFileSync('node', ['esbuild.config.mjs', '--host'], {
+        cwd: fileURLToPath(new URL('..', import.meta.url)),
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
     }
+    // Deliberately NOT in a try: if the build ran and the file still is not
+    // there, that is the manifest/build divergence this block exists to catch,
+    // and it must fail rather than skip.
     return readFile(path, 'utf8');
   }
 
@@ -1349,7 +1374,7 @@ describe('the host bundle: the manifest and the build must agree', () => {
   it('requires as CommonJS and exports activate and deactivate', async () => {
     const manifest = await readManifest();
     const bundle = absoluteMain(manifest.main);
-    if ((await builtText(bundle)) === null) return; // no build in this checkout
+    await ensureBuilt(bundle);
 
     // Reproduce the load EXACTLY as VS Code performs it: a plain `require` of
     // `main`, with the manifest's own `"type"` field governing the file, and
@@ -1386,12 +1411,359 @@ describe('the host bundle: the manifest and the build must agree', () => {
 
   it('reaches the network through one module and no browser API (G5)', async () => {
     const { main } = await readManifest();
-    const text = await builtText(absoluteMain(main));
-    if (text === null) return;
+    const text = await ensureBuilt(absoluteMain(main));
     // `vscode` stays external because the host injects it.
     expect(text).toContain('require("vscode")');
     expect(text).not.toContain('new WebSocket(');
     expect(text).not.toContain('XMLHttpRequest');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (11) agentDeck.previewBytes actually reaches the grafter
+// ---------------------------------------------------------------------------
+
+describe('the agentDeck.previewBytes setting reaches the grafter', () => {
+  /**
+   * Why this block exists, in one sentence: deleting
+   * `previewBytes: this.settings.previewBytes` from the `graftSession(...)`
+   * call left the entire suite green while every preview silently shrank to the
+   * grafter's own 512-byte default — a decided behaviour, correctly
+   * implemented, with no guard at all.
+   *
+   * Two things make the assertions here non-vacuous:
+   *
+   *   1. They read the TRUNCATION MARKER, not a string length. The marker
+   *      states `showing <kept> of <original> bytes`, so the test can assert
+   *      the exact byte ceiling that produced the preview. A length assertion
+   *      would pass on any number that happened to be big.
+   *   2. The values exercised are 4096 and 2048 — neither is the grafter's
+   *      default (512), the redactor's default (8192), nor the extension's own
+   *      default. A number that is a default somewhere cannot distinguish
+   *      "forwarded" from "fell back".
+   *
+   * The payload is tied to `tool-results/` by CONTENT, not by size: the test
+   * finds the offloaded `.txt` on disk and requires its opening bytes to appear
+   * verbatim in a preview. That is the G4 "offloading exists, redaction must
+   * cover it" path, proved to reach the emission rather than assumed to.
+   *
+   * ---------------------------------------------------------------------------
+   * MEASURED CEILING — the assertions below deliberately stay at or under 8192
+   * ---------------------------------------------------------------------------
+   * An offloaded payload is truncated TWICE, and only the second cut sees the
+   * setting. `readRedactedToolResult` cuts first, at
+   * `redact.DEFAULT_MAX_PAYLOAD_BYTES` (8192), because `graftSession` is not
+   * given a `parse.maxPayloadBytes`; the grafter's `preview()` then cuts what
+   * survives, at `previewBytes`. Measured against the captured 63,774-byte
+   * `tool-results/*.txt`:
+   *
+   *   previewBytes=8192   marker reads "8192 of 8248"    <- shipped default
+   *   previewBytes=16384  marker reads "8192 of 63774"
+   *   previewBytes=65536  marker reads "8192 of 63774"
+   *
+   * Two consequences, neither of which this package changed on its own
+   * authority: `agentDeck.previewBytes` above 8192 has no effect on offloaded
+   * payloads, and at exactly the shipped default the double cut makes the
+   * marker UNDER-REPORT the original size by 7.8x — it says 8,248 bytes for a
+   * 63,774-byte file, which is the opposite of the "truncation is visible and
+   * quantified" the marker exists for. Reported, not fixed here: the one-line
+   * candidate is passing `parse: { maxPayloadBytes: previewBytes }` from the
+   * `graftSession` call in `extension.ts`, and that is a G4 semantics decision
+   * the parser package owns the meaning of.
+   *
+   * Nothing below asserts a value above 8192, so none of it depends on which
+   * way that goes.
+   */
+
+  /** The offloaded payload committed under the captured session, found on disk. */
+  async function offloadedPayload(): Promise<{ text: string; bytes: number }> {
+    const slugDir = await capturedSlugDir();
+    const dirs = (await readdir(slugDir, { withFileTypes: true })).filter((e) =>
+      e.isDirectory(),
+    );
+    for (const dir of dirs) {
+      const toolResults = join(slugDir, dir.name, 'tool-results');
+      let names: string[];
+      try {
+        names = await readdir(toolResults);
+      } catch {
+        continue;
+      }
+      const first = names.find((n) => n.endsWith('.txt'));
+      if (first === undefined) continue;
+      const path = join(toolResults, first);
+      return { text: await readFile(path, 'utf8'), bytes: (await stat(path)).size };
+    }
+    throw new Error('no tool-results payload in the captured fixtures');
+  }
+
+  /** Every non-empty tool-result preview the emission carries, at one setting. */
+  async function previewsAt(previewBytes: number): Promise<string[]> {
+    const workspacePath = await capturedWorkspacePath();
+    const emissions: DataPathEmission[] = [];
+    const path = trackDataPath(
+      new AgentDeckDataPath({
+        workspacePath,
+        projectsRoot: CAPTURED_ROOT,
+        settings: settings({ port: await freePort(), previewBytes }),
+        tickMs: 0,
+        onEmission: (payload) => {
+          emissions.push(payload);
+        },
+      }),
+    );
+    await path.start();
+    const last = emissions[emissions.length - 1] as DataPathEmission;
+    const out: string[] = [];
+    for (const session of last.emission.sessions) {
+      for (const node of flatten(session.root)) {
+        if (isAgentNode(node)) continue;
+        const preview = node.resultPreview;
+        if (preview !== undefined && preview.length > 0) out.push(preview);
+      }
+    }
+    await path.dispose();
+    return out;
+  }
+
+  function keptBytes(preview: string): number | null {
+    const match = TRUNCATION_MARKER_RE.exec(preview);
+    return match === null ? null : Number(match[1]);
+  }
+
+  function originalBytes(preview: string): number | null {
+    const match = TRUNCATION_MARKER_RE.exec(preview);
+    return match === null ? null : Number(match[2]);
+  }
+
+  it('truncates the offloaded tool-results payload at exactly the configured byte count', async () => {
+    const payload = await offloadedPayload();
+    // Derived, not pinned: whatever the capture holds, it must be big enough
+    // for the two settings below to be distinguishable from each other and from
+    // the grafter's default.
+    expect(payload.bytes).toBeGreaterThan(GRAFTER_DEFAULT_PREVIEW_BYTES * 8);
+    const needle = payload.text.slice(0, 160);
+
+    const observed: number[] = [];
+    for (const previewBytes of [4096, 2048]) {
+      expect(previewBytes).not.toBe(GRAFTER_DEFAULT_PREVIEW_BYTES);
+      const previews = await previewsAt(previewBytes);
+      expect(previews.length).toBeGreaterThan(0);
+
+      // The offloaded bytes reached the emission. Content, not size.
+      const fromOffload = previews.filter((p) => p.includes(needle));
+      expect(
+        fromOffload,
+        'no preview carries the opening bytes of the tool-results payload',
+      ).toHaveLength(1);
+      const preview = fromOffload[0] as string;
+
+      // ...and it was cut at exactly the configured ceiling, not at a default.
+      expect(keptBytes(preview), `preview must be cut at ${previewBytes} bytes`).toBe(
+        previewBytes,
+      );
+      expect(originalBytes(preview) ?? 0).toBeGreaterThan(previewBytes);
+      expect(Buffer.byteLength(preview, 'utf8')).toBeGreaterThan(
+        GRAFTER_DEFAULT_PREVIEW_BYTES * 2,
+      );
+      observed.push(preview.length);
+
+      // Every OTHER truncated preview obeys the same ceiling, so this is the
+      // setting governing the grafter and not one lucky node.
+      for (const other of previews) {
+        const kept = keptBytes(other);
+        if (kept === null) continue;
+        expect(kept).toBe(previewBytes);
+      }
+    }
+
+    // The two runs differ, which is what "the number moves with the setting"
+    // means. Equal lengths would mean some other ceiling was in charge.
+    expect(observed[0]).toBeGreaterThan(observed[1] as number);
+  });
+
+  it('the decided default of 8192 is the value the emission actually uses', async () => {
+    // Taken from `readSettings` rather than written as a literal, so the
+    // decision and the assertion cannot drift apart.
+    const previewBytes = readSettings(undefined).previewBytes;
+    expect(previewBytes).toBe(8192);
+
+    const payload = await offloadedPayload();
+    const previews = await previewsAt(previewBytes);
+    const fromOffload = previews.filter((p) => p.includes(payload.text.slice(0, 160)));
+    expect(fromOffload).toHaveLength(1);
+    expect(keptBytes(fromOffload[0] as string)).toBe(previewBytes);
+    // 16x the grafter's default. This is the number the DoD is written in.
+    expect(keptBytes(fromOffload[0] as string)).toBe(GRAFTER_DEFAULT_PREVIEW_BYTES * 16);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (12) G2 at the extension level: a content failure cannot reach liveness
+// ---------------------------------------------------------------------------
+
+describe('G2: a throwing content path refuses one session and leaves the hook tap running', () => {
+  /**
+   * G2 is proved one layer down in `session.test.ts`, against `SessionModel`'s
+   * own guard. It was NOT proved here, and the host is where the two taps
+   * actually meet: rethrowing from `#graft`'s catch instead of calling
+   * `refuseSession` left all of this file's tests green, because nothing could
+   * make the content side fail. `DataPathOptions.graft` is the seam that closes
+   * that, and it exists for this test and no other reason.
+   *
+   * The liveness half is driven through a REAL loopback POST to the REAL
+   * listener, not by calling `model.onHookEvent` directly. Calling the handler
+   * would prove the model still works; posting proves the tap the user actually
+   * installs still works while the content path is on fire.
+   */
+
+  /**
+   * The status `listener.ts` answers an accepted event with. 200, measured, not
+   * 204 — an earlier draft of this test guessed 204 and failed, which is the
+   * cheap version of the lesson this repo keeps paying for.
+   */
+  const HOOK_ACCEPTED_STATUS = 200;
+
+  /** POST one hook payload to the bound listener. Resolves with the status. */
+  async function postHookEvent(port: number, payload: unknown): Promise<number> {
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    return new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/event',
+          method: 'POST',
+          agent: false,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': body.length,
+            connection: 'close',
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => {
+            resolve(res.statusCode ?? 0);
+          });
+        },
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+  }
+
+  it('refuses the session, keeps no tree, and still ingests hook events for it', async () => {
+    const workspacePath = await capturedWorkspacePath();
+    const port = await freePort();
+    let graftCalls = 0;
+    const path = trackDataPath(
+      new AgentDeckDataPath({
+        workspacePath,
+        projectsRoot: CAPTURED_ROOT,
+        settings: settings({ port }),
+        tickMs: 0,
+        onEmission: () => {},
+        graft: () => {
+          graftCalls += 1;
+          // Not a refusal — a THROW, from inside the content path.
+          return Promise.reject(new Error('grafter exploded'));
+        },
+      }),
+    );
+
+    // start() must not propagate it.
+    await expect(path.start()).resolves.toBeUndefined();
+
+    expect(graftCalls).toBeGreaterThan(0);
+    expect(path.diagnostics.graftErrors).toBe(graftCalls);
+    expect(path.diagnostics.lastGraftError).toContain('grafter exploded');
+
+    // The liveness tap is up despite the content path being dead. That is the
+    // whole of G2 in one assertion.
+    expect(path.diagnostics.listening).toBe(true);
+
+    const sessionIds = path.model.sessionIds();
+    expect(sessionIds.length).toBeGreaterThan(0);
+    const [victim] = sessionIds as [string];
+
+    // Every session refused, and none of them exposes a tree (G3).
+    for (const sessionId of sessionIds) {
+      const state = path.model.sessionState(sessionId);
+      expect(state?.schemaOk).toBe(false);
+      expect(state?.liveness).toBe('unsupported');
+      expect(state?.root.children).toStrictEqual([]);
+      expect(state?.spawnEdges).toStrictEqual([]);
+      expect(path.model.refusalOf(sessionId)?.thrown).toBeUndefined();
+      expect(path.model.refusalOf(sessionId)?.mismatch).toBeDefined();
+    }
+
+    // Now the other tap, over the wire.
+    const before = path.model.livenessSnapshot(victim)?.hookEventCount ?? -1;
+    expect(before).toBe(0);
+
+    expect(
+      await postHookEvent(port, {
+        session_id: victim,
+        hook_event_name: 'PreToolUse',
+        tool_use_id: 'toolu_g2_probe',
+        tool_name: 'Bash',
+        cwd: workspacePath,
+      }),
+    ).toBe(HOOK_ACCEPTED_STATUS);
+    expect(
+      await postHookEvent(port, {
+        session_id: victim,
+        hook_event_name: 'PostToolUse',
+        tool_use_id: 'toolu_g2_probe',
+        tool_name: 'Bash',
+        cwd: workspacePath,
+      }),
+    ).toBe(HOOK_ACCEPTED_STATUS);
+
+    const after = path.model.livenessSnapshot(victim);
+    expect(after?.hookEventCount).toBe(2);
+    // Main thread: CC omits `agent_id` entirely, and the snapshot must reflect
+    // that rather than inventing an id.
+    expect(after?.main.isMainThread).toBe(true);
+    expect(after?.main.agentId).toBeUndefined();
+    expect(path.model.counters().hookEventsIngested).toBe(2);
+    expect(path.liveness.counters().eventsApplied).toBe(2);
+    // No longer degraded: events are arriving.
+    expect(path.liveness.degradedState()).toStrictEqual({ degraded: false });
+
+    // The session is still refused — liveness flowing did not resurrect a tree.
+    expect(path.model.sessionState(victim)?.liveness).toBe('unsupported');
+    expect(path.model.sessionState(victim)?.root.children).toStrictEqual([]);
+  });
+
+  it('a content path that refuses cleanly is counted as a refusal, not a throw', async () => {
+    // The control for the test above: `ok: false` is a typed answer and must
+    // NOT increment the throw counter. Without this, `graftErrors` could count
+    // both and the assertion up there would prove less than it looks.
+    const workspacePath = await capturedWorkspacePath();
+    const refusal: GraftSessionResult = {
+      ok: false,
+      mismatch: { kind: 'schemaMismatch', code: 'subagentsDirectoryMisnamed', reason: 'injected refusal' },
+      diagnostics: { malformedLines: 0, parsedLines: 0, skippedFiles: [] },
+    };
+    const path = trackDataPath(
+      new AgentDeckDataPath({
+        workspacePath,
+        projectsRoot: CAPTURED_ROOT,
+        settings: settings({ port: await freePort() }),
+        tickMs: 0,
+        onEmission: () => {},
+        graft: () => Promise.resolve(refusal),
+      }),
+    );
+    await path.start();
+
+    expect(path.diagnostics.graftErrors).toBe(0);
+    expect(path.diagnostics.graftRefusals).toBe(path.diagnostics.grafts);
+    expect(path.model.counters().contentFailures).toBe(0);
+    const [victim] = path.model.sessionIds() as [string];
+    expect(path.model.refusalOf(victim)?.mismatch?.reason).toBe('injected refusal');
   });
 });
 
@@ -1407,6 +1779,16 @@ function maxSpawnDepth(node: TreeNode | undefined): number {
     deepest = Math.max(deepest, maxSpawnDepth(child));
   }
   return deepest;
+}
+
+/** Every node in a tree, root first. `ToolNode` has no children by design. */
+function flatten(node: TreeNode | undefined): TreeNode[] {
+  if (node === undefined) return [];
+  const out: TreeNode[] = [node];
+  if (isAgentNode(node)) {
+    for (const child of node.children) out.push(...flatten(child));
+  }
+  return out;
 }
 
 function countNodes(node: TreeNode | undefined): number {

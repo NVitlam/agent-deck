@@ -91,6 +91,7 @@ import type { BridgeDegradedState } from './bridge/messages.js';
 import { createNonce, webviewHtml } from './bridge/html.js';
 import { correlateWorkspace } from './model/correlate.js';
 import { graftSession } from './model/graft.js';
+import type { GraftSessionOptions, GraftSessionResult } from './model/graft.js';
 import { LivenessEngine } from './model/liveness.js';
 import { SessionModel } from './model/session.js';
 import type { SessionEmission } from './model/session.js';
@@ -246,6 +247,22 @@ export interface DataPathOptions {
   coalesceMs?: number;
   /** Defaults to {@link LIVENESS_TICK_MS}. 0 disables the tick. */
   tickMs?: number;
+  /**
+   * The content path. Defaults to {@link graftSession}.
+   *
+   * Injected for exactly one reason, and it is not convenience: G2 says a
+   * content-side failure must never reach the liveness side, and that property
+   * is only assertable if a test can make the content side FAIL. Without this
+   * seam the `catch` in `#graft` is unreachable from any test — rethrowing from
+   * it instead of refusing left the whole suite green, which is how an
+   * architectural bet turns into an untested comment.
+   *
+   * Production never passes this.
+   */
+  graft?: (
+    mainTranscript: string,
+    options: GraftSessionOptions,
+  ) => Promise<GraftSessionResult>;
 }
 
 export interface DataPathDiagnostics {
@@ -289,6 +306,10 @@ export class AgentDeckDataPath {
   readonly #scheduler: Scheduler;
   readonly #coalesceMs: number;
   readonly #tickMs: number;
+  readonly #graftFn: (
+    mainTranscript: string,
+    options: GraftSessionOptions,
+  ) => Promise<GraftSessionResult>;
 
   /** Session ids whose transcript changed and that need a fresh whole-session graft. */
   readonly #dirty = new Set<string>();
@@ -325,6 +346,7 @@ export class AgentDeckDataPath {
     this.#scheduler = options.scheduler ?? systemScheduler;
     this.#coalesceMs = options.coalesceMs ?? EMIT_COALESCE_MS;
     this.#tickMs = options.tickMs ?? LIVENESS_TICK_MS;
+    this.#graftFn = options.graft ?? graftSession;
 
     // ---- carry-forward A: the connection, made from outside session.ts ----
     const inferenceSource = createJsonlInferenceSource({
@@ -578,7 +600,13 @@ export class AgentDeckDataPath {
   async #graft(sessionId: string, slug: string, mainTranscript: string): Promise<void> {
     this.#grafts += 1;
     try {
-      const result = await graftSession(mainTranscript, {
+      const result = await this.#graftFn(mainTranscript, {
+        // `agentDeck.previewBytes`, forwarded to every node's preview. The
+        // grafter's own default is 512, so DROPPING this argument does not
+        // fail — it silently shrinks every preview by 16x. `extension.test.ts`
+        // asserts the truncation marker's kept-byte count equals this value,
+        // because a preview that is merely "long" proves nothing about which
+        // number produced it.
         previewBytes: this.settings.previewBytes,
       });
       if (this.#disposed) return;

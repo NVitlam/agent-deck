@@ -795,33 +795,50 @@ describe('HookListener over a real loopback socket', () => {
       // test passes unchanged with those three production lines deleted. They
       // are kept as asymmetric-cost insurance, not as tested behaviour.
       const before = listener.counters.socketErrors;
-      const body = JSON.stringify(mainThreadPayload());
-      const one =
-        `POST ${DEFAULT_EVENT_PATH} HTTP/1.1\r\n` +
-        `Host: ${LOOPBACK}\r\n` +
-        `Content-Type: application/json\r\n` +
-        `Content-Length: ${String(Buffer.byteLength(body))}\r\n` +
-        `\r\n${body}`;
 
-      await new Promise<void>((resolve) => {
-        const sock = netConnect({ host: LOOPBACK, port }, () => {
-          // Never read: no 'data' handler and an explicit pause, so the
-          // server's replies have nowhere to go.
-          sock.pause();
-          sock.write(one.repeat(20_000));
-          setTimeout(() => {
-            sock.resetAndDestroy();
-            resolve();
-          }, 150);
+      // Announce a body and send only part of it, so the server is provably
+      // mid-request — parked in its 'data' handler waiting for the rest — when
+      // the reset lands. That beats timing tricks: there is no window in which
+      // the exchange has already finished.
+      //
+      // Still retried, because "the server has parsed the headers by now" is
+      // the one thing a client cannot observe, and a first attempt can lose
+      // that race on a loaded machine. Each attempt is a real reset; the
+      // assertion is that a handled socket error is reachable and survivable,
+      // not that it happens on attempt one. An earlier version of this test
+      // used a single 20k-request pipeline and flaked under full-suite load.
+      const attempt = async (): Promise<void> => {
+        await new Promise<void>((resolve) => {
+          const sock = netConnect({ host: LOOPBACK, port }, () => {
+            sock.pause(); // never read the reply
+            sock.write(
+              `POST ${DEFAULT_EVENT_PATH} HTTP/1.1\r\n` +
+                `Host: ${LOOPBACK}\r\n` +
+                `Content-Type: application/json\r\n` +
+                `Content-Length: 4096\r\n` +
+                `\r\n{"hook_event_name":"Stop","pad":"aaaa`,
+            );
+            setTimeout(() => {
+              sock.resetAndDestroy();
+              resolve();
+            }, 25);
+          });
+          sock.on('error', () => resolve());
         });
-        sock.on('error', () => resolve());
-      });
+        await new Promise((r) => setTimeout(r, 25));
+      };
 
-      // Give the server a tick to observe the reset on its own sockets.
-      await new Promise((r) => setTimeout(r, 50));
+      for (let i = 0; i < 20; i++) {
+        await attempt();
+        if (listener.counters.socketErrors > before) break;
+      }
 
       expect(listener.counters.socketErrors).toBeGreaterThan(before);
       expect(listener.listening).toBe(true);
+      // The partial body was never a complete request, so nothing was accepted
+      // from it and no consumer saw a phantom event.
+      expect(listener.counters.accepted).toBe(0);
+      expect(received).toHaveLength(0);
 
       // Still serving, and the counters that matter are unharmed.
       const reply = await postJson(port, mainThreadPayload());

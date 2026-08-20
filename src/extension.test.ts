@@ -41,6 +41,7 @@ import {
   DEFAULT_PREVIEW_BYTES,
   OPEN_COMMAND,
   PanelController,
+  SETTING_BOUNDS,
   WEBVIEW_SCRIPT_SEGMENTS,
   WEBVIEW_STYLE_SEGMENTS,
   activate,
@@ -69,6 +70,7 @@ import {
   createExtensionContext,
   mock,
   resetVscodeMock,
+  window as vscodeWindowDouble,
 } from '../test/vscode-mock.js';
 
 // ---------------------------------------------------------------------------
@@ -217,6 +219,28 @@ function settings(overrides: Partial<AgentDeckSettings> = {}): AgentDeckSettings
 // A fake panel surface
 // ---------------------------------------------------------------------------
 
+/**
+ * VS Code's ACTUAL desktop `webview.cspSource`, byte for byte.
+ *
+ * MEASURED, not invented. Read from the installed VS Code 1.134.0 (commit
+ * 110a328ea54b42367b803ec53ee0bf52ef26b419),
+ * `resources/app/out/vs/workbench/api/node/extensionHostProcess.js`:
+ *
+ *     const BASE = `'self' https://*.vscode-cdn.net`;
+ *     get cspSource() { ...http/https extensionLocation prefix...; return BASE }
+ *
+ * The value that stood here before — `'vscode-resource://agent-deck-test'` —
+ * was made up, and every test using it passed while the shipped extension
+ * could not open its panel at all: `bridge/html.ts` refused the real string
+ * and the human side-loading the VSIX got our own guard's message in a modal.
+ * This repo applies "only measurements count" to Claude Code's format and had
+ * never applied it to VS Code's API.
+ *
+ * `test/vscode-mock.ts` carries the same value from the same measurement. If
+ * this ever needs changing, re-read the getter above; do not re-invent it.
+ */
+const MEASURED_CSP_SOURCE = "'self' https://*.vscode-cdn.net";
+
 interface FakePanel {
   surface: PanelSurface;
   posted: HostToWebviewMessage[];
@@ -260,7 +284,7 @@ function fakePanel(options: { throwOnPost?: boolean } = {}): FakePanel {
       for (const handler of [...disposeHandlers]) handler();
     },
     surface: {
-      cspSource: 'vscode-resource://agent-deck-test',
+      cspSource: MEASURED_CSP_SOURCE,
       setHtml: (html: string) => {
         fake.html = html;
       },
@@ -360,6 +384,107 @@ describe('readSettings', () => {
 });
 
 // ---------------------------------------------------------------------------
+// (1a) The settings manifest and the settings code must agree
+// ---------------------------------------------------------------------------
+
+/**
+ * Six numbers live twice: `package.json`'s `contributes.configuration` is what
+ * VS Code's settings UI shows and validates against, `SETTING_BOUNDS` is what
+ * `readSettings` enforces at runtime, and nothing connected them. Measured
+ * before this block existed: setting `agentDeck.previewBytes`'s manifest
+ * `default` to 999 and its `maximum` to 4096 left the full suite green.
+ *
+ * The manifest is READ here, never restated. Hard-coding its numbers would
+ * make this block a third copy of the same six values and it would agree with
+ * whichever copy was edited last.
+ *
+ * Same defect class as the block at the bottom of this file (`main` vs. the
+ * built bundle), which is why the wording matches: the manifest and the code
+ * disagree, both sides are internally consistent, and nothing fails.
+ */
+describe('the settings manifest and SETTING_BOUNDS must agree', () => {
+  interface ManifestProperty {
+    type?: unknown;
+    default?: unknown;
+    minimum?: unknown;
+    maximum?: unknown;
+    description?: unknown;
+  }
+
+  async function manifestProperties(): Promise<Record<string, ManifestProperty>> {
+    const manifest = JSON.parse(
+      await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+    ) as {
+      contributes?: { configuration?: { properties?: Record<string, ManifestProperty> } };
+    };
+    const properties = manifest.contributes?.configuration?.properties;
+    expect(
+      properties,
+      'package.json must declare contributes.configuration.properties',
+    ).toBeTypeOf('object');
+    return properties as Record<string, ManifestProperty>;
+  }
+
+  it('declares exactly the settings the code reads — no more, no fewer', async () => {
+    const properties = await manifestProperties();
+    const declared = Object.keys(properties).sort();
+    const enforced = Object.keys(SETTING_BOUNDS)
+      .map((key) => `${CONFIG_SECTION}.${key}`)
+      .sort();
+    // Both directions: a setting the manifest offers that the code ignores is
+    // a dead knob, and one the code reads that the manifest never declares is
+    // invisible in the settings UI.
+    expect(declared).toStrictEqual(enforced);
+  });
+
+  it('declares the same default, minimum and maximum the code enforces', async () => {
+    const properties = await manifestProperties();
+    for (const [key, bounds] of Object.entries(SETTING_BOUNDS)) {
+      const property = properties[`${CONFIG_SECTION}.${key}`];
+      expect(property, `package.json declares no ${CONFIG_SECTION}.${key}`).toBeTypeOf('object');
+      if (property === undefined) continue;
+      // `integerInRange` refuses a non-integer, so the manifest must not
+      // advertise the setting as anything else.
+      expect(property.type, `${key}.type`).toBe('integer');
+      expect(property.default, `${key}.default`).toBe(bounds.default);
+      expect(property.minimum, `${key}.minimum`).toBe(bounds.minimum);
+      expect(property.maximum, `${key}.maximum`).toBe(bounds.maximum);
+    }
+  });
+
+  it('the manifest default is the value an unconfigured extension actually uses', async () => {
+    const properties = await manifestProperties();
+    const fromManifest = Object.fromEntries(
+      Object.keys(SETTING_BOUNDS).map((key) => [
+        key,
+        (properties[`${CONFIG_SECTION}.${key}`] as ManifestProperty).default,
+      ]),
+    );
+    // Ties the manifest to behaviour, not just to a constant: whatever
+    // `package.json` promises is what `readSettings` hands the data path.
+    expect(readSettings(undefined)).toStrictEqual(fromManifest);
+  });
+
+  it('the manifest bounds are the bounds enforced: at the edge honoured, one past it refused', async () => {
+    const properties = await manifestProperties();
+    for (const key of Object.keys(SETTING_BOUNDS)) {
+      const property = properties[`${CONFIG_SECTION}.${key}`] as ManifestProperty;
+      const minimum = property.minimum as number;
+      const maximum = property.maximum as number;
+      const fallback = property.default as number;
+      const read = (value: unknown): number =>
+        readSettings({ get: (k) => (k === key ? value : undefined) })[
+          key as keyof AgentDeckSettings
+        ];
+      expect(read(minimum), `${key} at the manifest minimum`).toBe(minimum);
+      expect(read(maximum), `${key} at the manifest maximum`).toBe(maximum);
+      expect(read(minimum - 1), `${key} one below the manifest minimum`).toBe(fallback);
+      expect(read(maximum + 1), `${key} one above the manifest maximum`).toBe(fallback);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // (2) The panel
 // ---------------------------------------------------------------------------
 
@@ -420,14 +545,34 @@ describe('PanelController', () => {
       scriptUri: `webview://ext/${WEBVIEW_SCRIPT_SEGMENTS.join('/')}`,
       styleUri: `webview://ext/${WEBVIEW_STYLE_SEGMENTS.join('/')}`,
       nonce: 'AAAAAAAA',
-      cspSource: 'vscode-resource://agent-deck-test',
+      // Read off the panel rather than restated: this now checks that the
+      // controller forwards the surface's OWN cspSource, which a second copy
+      // of the literal could not distinguish from a hard-coded one.
+      cspSource: panel.surface.cspSource,
     });
+    expect(panel.surface.cspSource, 'the fake panel must supply the measured value').toBe(
+      MEASURED_CSP_SOURCE,
+    );
     expect(panel.html).toBe(expected);
+    // The measured value survives into the document rather than being dropped
+    // or rewritten: `'self'` is what VS Code sends and what style-src needs.
+    expect(panel.html).toContain(`style-src 'nonce-AAAAAAAA' ${MEASURED_CSP_SOURCE}`);
     // The three properties the bridge package flagged as silent breakers.
     expect(panel.html).toContain(`<div id="${WEBVIEW_ROOT_ID}"></div>`);
     expect(panel.html).not.toContain('type="module"');
     expect(panel.html).not.toContain('img-src');
     controller.dispose();
+  });
+
+  it('the fake panel supplies the same cspSource the vscode double does', () => {
+    // Two doubles of one VS Code value, in two files, is the shape that
+    // produced the shipped defect: `test/vscode-mock.ts` was corrected to the
+    // measured string while the literals in THIS file stayed invented, and
+    // nothing compared them. The panel VS Code really builds is the mock's, so
+    // the mock is the reference and this file must not drift from it.
+    const panel = vscodeWindowDouble.createWebviewPanel('agentDeck.probe', 'probe', 1, {});
+    expect(MEASURED_CSP_SOURCE).toBe(panel.webview.cspSource);
+    panel.dispose();
   });
 
   it('drops webview messages that fail the guard, and forwards the ones that pass', () => {

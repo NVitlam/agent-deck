@@ -41,7 +41,18 @@ import type { JsonValue } from '../model/events.js';
 // Truncation
 // ---------------------------------------------------------------------------
 
-/** 8 KB. Configurable per call; this is the default the DoD names. */
+/**
+ * 8 KB. Configurable per call; this is the default the DoD names.
+ *
+ * It has a SECOND job, and lowering it does more than shorten a default:
+ * `model/graft.ts` aliases this constant as `MIN_PARSE_CEILING_BYTES`, the
+ * floor under the ceiling the grafter hands this layer. Below ~2,186 bytes the
+ * `<persisted-output>` stub is cut before its closing tag and the whole G4
+ * offload path silently stops running. The coupling is guarded rather than
+ * merely written down: `graft.test.ts` measures the largest stub in the
+ * capture and asserts the floor exceeds it, so a lowered default fails a test
+ * instead of quietly disabling hydration.
+ */
 export const DEFAULT_MAX_PAYLOAD_BYTES = 8 * 1024;
 
 /**

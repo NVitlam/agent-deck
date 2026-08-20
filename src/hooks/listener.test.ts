@@ -69,6 +69,7 @@ import {
   HOOK_LISTENER_HOST,
   HookListener,
   HookListenerBindError,
+  type HookListenerCounters,
   isHookListenerBindError,
   isLoopbackAddress,
   normalizeHookEvent,
@@ -1696,5 +1697,406 @@ describe('grounding guards, asserted against the source text', () => {
     expect(source).not.toMatch(/listen\(\s*0\s*[,)]/);
     // The bind host is a constant, not read from options.
     expect(source).not.toMatch(/options\.host/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fixtures/synthetic-hook-fuzz — the hostile-input corpus
+// ---------------------------------------------------------------------------
+//
+// Every record is replayed over a REAL loopback socket against a REAL
+// HookListener at the SHIPPED default body cap, and each asserts three things:
+//
+//   1. the HTTP status,
+//   2. the EXACT counter deltas — every counter not named must be unchanged,
+//   3. that the listener is still serving afterwards.
+//
+// (3) alone is the DoD line and is far too weak on its own: a listener that
+// answered 200 to every byte sequence on earth would satisfy it. (2) is what
+// makes the corpus mean something, because G3 is "refuse, DON'T GUESS" — each
+// malformed shape has to earn its specific refusal, and a case that starts
+// passing for a new reason fails instead of quietly changing meaning.
+//
+// Nothing here skips. There is no environment in which a case opts out; if the
+// corpus file is missing, reading it throws and the block fails loudly. A test
+// that quietly opts out is worse than an absent one, because it reports as
+// coverage.
+// ---------------------------------------------------------------------------
+
+const FUZZ_CORPUS_PATH = fileURLToPath(
+  new URL('../../fixtures/synthetic-hook-fuzz/corpus.jsonl', import.meta.url),
+);
+
+type FuzzBody =
+  | { kind: 'base64'; data: string }
+  | { kind: 'pad'; overBy?: number; multiple?: number; valid?: boolean }
+  | { kind: 'nest'; depth: number; shape: 'array' | 'object' };
+
+interface FuzzCase {
+  id: string;
+  class: string;
+  note: string;
+  body: FuzzBody;
+  expect: {
+    status: number | number[];
+    counters: Record<string, number> | { anyOf: Record<string, number>[] };
+  };
+  headers?: Record<string, string | null>;
+  method?: string;
+  path?: string;
+  remote?: string;
+}
+
+async function readFuzzCorpus(): Promise<FuzzCase[]> {
+  const text = await readFile(FUZZ_CORPUS_PATH, 'utf8');
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as FuzzCase);
+}
+
+/**
+ * Materialize a record's body against the cap the listener is configured with.
+ *
+ * Sized cases are descriptors rather than committed blobs, so the same record
+ * exercises the shipped 512 KiB default and a small cap alike and the repo
+ * carries no megabytes of padding.
+ */
+function materializeFuzzBody(body: FuzzBody, cap: number): Buffer {
+  if (body.kind === 'base64') return Buffer.from(body.data, 'base64');
+  if (body.kind === 'nest') {
+    const text =
+      body.shape === 'array'
+        ? '['.repeat(body.depth) + ']'.repeat(body.depth)
+        : `${'{"n":'.repeat(body.depth)}1${'}'.repeat(body.depth)}`;
+    return Buffer.from(text, 'utf8');
+  }
+  const target =
+    body.multiple === undefined ? cap + (body.overBy ?? 0) : cap * body.multiple;
+  if (body.valid !== true) return Buffer.from('x'.repeat(target), 'utf8');
+  const prefix = '{"session_id":"x","hook_event_name":"Stop","pad":"';
+  const suffix = '"}';
+  const padding = target - prefix.length - suffix.length;
+  expect(padding, 'a valid padded body must have room for its own skeleton').
+    toBeGreaterThanOrEqual(0);
+  return Buffer.from(`${prefix}${'z'.repeat(padding)}${suffix}`, 'utf8');
+}
+
+/** Only the counters that MOVED, so an exact comparison names them all. */
+function counterDelta(
+  before: Readonly<HookListenerCounters>,
+  after: Readonly<HookListenerCounters>,
+): Record<string, number> {
+  const delta: Record<string, number> = {};
+  for (const key of Object.keys(after) as (keyof HookListenerCounters)[]) {
+    const moved = after[key] - before[key];
+    if (moved !== 0) delta[key] = moved;
+  }
+  return delta;
+}
+
+function headersFor(
+  fuzzCase: FuzzCase,
+): Record<string, string | undefined> | undefined {
+  if (fuzzCase.headers === undefined) return undefined;
+  const out: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(fuzzCase.headers)) {
+    // `null` in the fixture means "send no such header"; postRaw deletes on
+    // undefined. JSON has no undefined, hence the translation.
+    out[key] = value === null ? undefined : value;
+  }
+  return out;
+}
+
+/** Replay one record and assert status + exact counter deltas. */
+async function runFuzzCase(
+  listener: HookListener,
+  targetPort: number,
+  fuzzCase: FuzzCase,
+): Promise<void> {
+  const before = listener.counters;
+  const reply = await postRaw(targetPort, {
+    body: materializeFuzzBody(fuzzCase.body, listener.maxBodyBytes),
+    ...(fuzzCase.method === undefined ? {} : { method: fuzzCase.method }),
+    ...(fuzzCase.path === undefined ? {} : { path: fuzzCase.path }),
+    ...(headersFor(fuzzCase) === undefined
+      ? {}
+      : { headers: headersFor(fuzzCase) }),
+  });
+  const delta = counterDelta(before, listener.counters);
+
+  const allowedStatuses = Array.isArray(fuzzCase.expect.status)
+    ? fuzzCase.expect.status
+    : [fuzzCase.expect.status];
+  expect(allowedStatuses, `${fuzzCase.id}: ${fuzzCase.note}`).toContain(
+    reply.status,
+  );
+
+  // `anyOf` is used only where more than one outcome is genuinely correct —
+  // the two nesting cases, where whether V8's parser copes with the depth is
+  // not a property this repo controls. Each alternative is still a COMPLETE
+  // delta map and the observed delta must equal one of them outright, so the
+  // looser form stays exact: it never degrades into "some counter moved".
+  const declared = fuzzCase.expect.counters as {
+    anyOf?: Record<string, number>[];
+  };
+  const alternatives: Record<string, number>[] = declared.anyOf ?? [
+    fuzzCase.expect.counters as Record<string, number>,
+  ];
+  if (alternatives.length === 1) {
+    expect(delta, `${fuzzCase.id}: ${fuzzCase.note}`).toStrictEqual(alternatives[0]);
+    return;
+  }
+  const matched = alternatives.some(
+    (alternative) =>
+      Object.keys(delta).length === Object.keys(alternative).length &&
+      Object.entries(alternative).every(([key, value]) => delta[key] === value),
+  );
+  expect(
+    matched,
+    `${fuzzCase.id}: ${fuzzCase.note}\n  observed ${JSON.stringify(delta)}\n  expected one of ${JSON.stringify(alternatives)}`,
+  ).toBe(true);
+}
+
+describe('fixtures/synthetic-hook-fuzz: hostile input never crashes the listener', () => {
+  it('the corpus is printable ASCII, so it stays a reviewable text diff', async () => {
+    // Several cases are raw NUL bytes, invalid UTF-8 and lone surrogates. They
+    // are base64 in the file precisely so the file never becomes binary to git
+    // — this repo has already paid once for a source file that did, losing
+    // every future diff of it and compounding the `grep -a` hazard. Read as
+    // BYTES, not as text, so a stray high byte cannot hide behind a decoder.
+    const bytes = await readFile(FUZZ_CORPUS_PATH);
+    const offending = [...bytes].findIndex(
+      (b) => b !== 0x0a && (b < 0x20 || b > 0x7e),
+    );
+    expect(
+      offending,
+      offending === -1
+        ? ''
+        : `byte 0x${(bytes[offending] ?? 0).toString(16)} at offset ${offending} must be encoded, not embedded`,
+    ).toBe(-1);
+  });
+
+  it('covers every input class the hardening item names', async () => {
+    // The required set, not the actual set: asserting the full list of classes
+    // present would fail the next time someone ADDS one, and asserting a count
+    // would fail on every addition. This is the floor.
+    const corpus = await readFuzzCorpus();
+    const classes = new Set(corpus.map((c) => c.class));
+    for (const required of [
+      'malformed-json',
+      'truncated-json',
+      'oversize',
+      'content-type',
+      'missing-keys',
+      'non-loopback',
+      'control-characters',
+      'unknown-fields',
+    ]) {
+      expect(classes, `the corpus must cover ${required}`).toContain(required);
+    }
+    // Not vacuous: a corpus of nothing but refusals could not tell "refuses
+    // the right things" from "refuses everything".
+    expect(classes).toContain('well-formed');
+    // Every id unique, so a per-case failure names exactly one record.
+    expect(new Set(corpus.map((c) => c.id)).size).toBe(corpus.length);
+  });
+
+  it('replays every loopback case: exact status, exact counter deltas, still serving', async () => {
+    const corpus = await readFuzzCorpus();
+    const cases = corpus.filter((c) => c.remote === undefined);
+    // Not derived from a hard-coded number — derived from the file — but a
+    // corpus that silently emptied itself must not pass as coverage.
+    expect(cases.length).toBeGreaterThan(0);
+
+    const port = await freePort();
+    const received: NormalizedHookEvent[] = [];
+    // The SHIPPED default cap, not a convenient small one: the oversize
+    // boundary this asserts is the boundary the extension actually ships.
+    const listener = new HookListener({
+      port,
+      maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
+      onEvent: (event) => received.push(event),
+    });
+    await listener.start();
+    try {
+      for (const fuzzCase of cases) {
+        await runFuzzCase(listener, port, fuzzCase);
+        expect(listener.listening, `${fuzzCase.id} left the listener down`).toBe(
+          true,
+        );
+      }
+
+      // Still serving a real payload after the whole battery, and the socket
+      // is still the loopback one it started as.
+      const acceptedBefore = listener.counters.accepted;
+      const reply = await postJson(port, mainThreadPayload());
+      expect(reply.status).toBe(200);
+      expect(listener.counters.accepted).toBe(acceptedBefore + 1);
+      expect(received[received.length - 1]?.isMainThread).toBe(true);
+      expect(listener.address()?.address).toBe(HOOK_LISTENER_HOST);
+
+      // Not one hostile body reached a consumer as a phantom event: every
+      // dispatch corresponds to an accepted payload and nothing else.
+      expect(received).toHaveLength(listener.counters.accepted);
+
+      // A `__proto__` body must not have reached Object.prototype. Read
+      // through a fresh object so the check is about the prototype chain and
+      // not about the payload objects themselves.
+      expect(
+        Object.prototype.hasOwnProperty.call(Object.prototype, 'polluted'),
+      ).toBe(false);
+      expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+
+      // The main-thread rule survived the battery: every accepted event with
+      // no `agent_id` KEY is main-thread, every one with the key is not, and
+      // the value is never consulted.
+      for (const event of received) {
+        const hasKey = Object.prototype.hasOwnProperty.call(event.raw, 'agent_id');
+        expect(event.isMainThread).toBe(!hasKey);
+      }
+    } finally {
+      await listener.stop();
+    }
+  });
+
+  it('replays every off-box case through the spoofed origin: 403, body never read', async () => {
+    const corpus = await readFuzzCorpus();
+    const remotes = [
+      ...new Set(
+        corpus
+          .filter((c) => c.remote !== undefined)
+          .map((c) => c.remote as string),
+      ),
+    ];
+    expect(remotes.length).toBeGreaterThan(0);
+
+    for (const remote of remotes) {
+      const cases = corpus.filter((c) => c.remote === remote);
+      const port = await freePort();
+      const received: NormalizedHookEvent[] = [];
+      const listener = new HookListener({
+        port,
+        maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
+        // TEST-ONLY. The socket is still bound to 127.0.0.1 and nothing else;
+        // proving the non-loopback path by binding a non-loopback socket would
+        // itself break G5.
+        spoofRemoteAddress: remote,
+        onEvent: (event) => received.push(event),
+      });
+      await listener.start();
+      try {
+        expect(listener.address()?.address).toBe(HOOK_LISTENER_HOST);
+        for (const fuzzCase of cases) {
+          await runFuzzCase(listener, port, fuzzCase);
+        }
+        // Origin is decided before anything reads the body, so a well-formed
+        // payload from off-box moves droppedNonLoopback and NOTHING else.
+        expect(listener.counters.accepted).toBe(0);
+        expect(listener.counters.malformedJson).toBe(0);
+        expect(listener.counters.oversize).toBe(0);
+        expect(received).toHaveLength(0);
+        expect(listener.listening).toBe(true);
+      } finally {
+        await listener.stop();
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// transport-level malformation — things that cannot be expressed as a body
+// ---------------------------------------------------------------------------
+
+describe('malformed at the transport layer, not in the body', () => {
+  let listener: HookListener;
+  let port: number;
+
+  beforeEach(async () => {
+    port = await freePort();
+    listener = new HookListener({ port, maxBodyBytes: 4096 });
+    await listener.start();
+  });
+
+  afterEach(async () => {
+    await listener.stop();
+  });
+
+  /** Write bytes on a bare socket, then close. Never throws for the caller. */
+  async function speakRaw(text: string, closeAfterMs = 50): Promise<void> {
+    await new Promise<void>((resolve) => {
+      const sock = netConnect({ host: LOOPBACK, port }, () => {
+        sock.pause();
+        sock.write(text);
+        setTimeout(() => sock.destroy(), closeAfterMs);
+      });
+      sock.on('error', () => undefined); // the drop is the point
+      sock.on('close', () => resolve());
+    });
+    await new Promise((r) => setTimeout(r, 25));
+  }
+
+  it('a Content-Length that overstates the body is refused, not believed', async () => {
+    // The declared size is over the cap, so the allocation guard refuses it on
+    // the header alone — the sender never gets to make the server buffer
+    // 4 KiB, let alone the 4 GiB it claimed. The body that follows is a
+    // fraction of the declared length and the connection then drops.
+    await speakRaw(
+      `POST ${DEFAULT_EVENT_PATH} HTTP/1.1\r\n` +
+        `Host: ${LOOPBACK}\r\n` +
+        'Content-Type: application/json\r\n' +
+        'Content-Length: 4294967296\r\n' +
+        '\r\n{"hook_event_name":"Stop"}',
+    );
+
+    expect(listener.counters.oversize).toBe(1);
+    expect(listener.counters.accepted).toBe(0);
+    expect(listener.listening).toBe(true);
+    expect((await postJson(port, mainThreadPayload())).status).toBe(200);
+  });
+
+  it('an unparseable request line does not stop the next request', async () => {
+    // Node rejects this before any of the listener's own code runs; what is
+    // being asserted is that the resulting clientError is handled rather than
+    // thrown, and that the socket teardown does not take the server with it.
+    await speakRaw('NOT-HTTP / GARBAGE\r\n\r\n');
+    expect(listener.listening).toBe(true);
+    expect(listener.counters.accepted).toBe(0);
+    expect((await postJson(port, mainThreadPayload())).status).toBe(200);
+  });
+
+  it('a header block that never terminates is dropped, and the server keeps serving', async () => {
+    await speakRaw(
+      `POST ${DEFAULT_EVENT_PATH} HTTP/1.1\r\nHost: ${LOOPBACK}\r\nX-Never: ending`,
+    );
+    expect(listener.listening).toBe(true);
+    expect(listener.counters.accepted).toBe(0);
+    expect((await postJson(port, mainThreadPayload())).status).toBe(200);
+  });
+
+  it('two pipelined requests on one socket are both answered', async () => {
+    // The hook snippet sends `connection: close`, so pipelining is not how CC
+    // talks to this server. It is how anything else on the machine could, and
+    // a request framing bug shows up here first.
+    const body = '{"session_id":"pipelined","hook_event_name":"Stop"}';
+    const one =
+      `POST ${DEFAULT_EVENT_PATH} HTTP/1.1\r\nHost: ${LOOPBACK}\r\n` +
+      `Content-Type: application/json\r\nContent-Length: ${String(body.length)}\r\n\r\n${body}`;
+    const seen = await new Promise<string>((resolve) => {
+      let text = '';
+      const sock = netConnect({ host: LOOPBACK, port }, () => {
+        sock.write(one + one);
+      });
+      sock.setEncoding('utf8');
+      sock.on('data', (chunk: string) => {
+        text += chunk;
+        if (text.split('HTTP/1.1 200').length - 1 >= 2) sock.destroy();
+      });
+      sock.on('error', () => undefined);
+      sock.on('close', () => resolve(text));
+    });
+    expect(seen.split('HTTP/1.1 200').length - 1).toBe(2);
+    expect(listener.counters.accepted).toBe(2);
+    expect(listener.listening).toBe(true);
   });
 });

@@ -1,0 +1,198 @@
+# Security posture
+
+Agent Deck observes Claude Code's exhaust and renders it. It never writes to Claude Code, never
+launches or wraps it, and never sends anything anywhere. This document records **what is enforced,
+how it is enforced, and how that enforcement was measured** — not intentions.
+
+Scope note: this file is Phase 4 groundwork. It deliberately contains no vulnerability-disclosure
+address, no support commitment and no version-support matrix, because none of those exist yet.
+Phase 5 owns the published version. The repository is **private** at time of writing; before it is
+ever made public, read the privacy note in `fixtures/README.md` first — the committed fixtures are
+content-free but **not anonymous**.
+
+---
+
+## 1. The architecture is the guarantee
+
+Two independent taps, and neither of them is a network client.
+
+| tap | source | what it answers |
+| --- | --- | --- |
+| **hooks** | a user-installed hook snippet POSTs to a loopback HTTP listener | what is running right now |
+| **JSONL** | `~/.claude/projects/<slug>/…` read from local disk | what happened |
+
+Everything the extension knows comes from those two, both local. The host holds state in memory
+only and discards it when the window closes: no database, no cache file, no persistence.
+
+This matters because "we promise not to send telemetry" is a policy and policies drift. **There is
+no outbound HTTP client compiled into the shipped artifact at all** — see §4. Zero egress here is a
+property of what the build contains, and a test fails if that changes.
+
+---
+
+## 2. Grounding rules that this posture rests on
+
+These are build-time law in this repository, not guidelines. A change that breaks one fails review.
+
+- **G1 — read-only, always.** No writes to Claude Code settings, session files, or anything under
+  `~/.claude`, ever. Hook installation is a snippet the user pastes themselves; the extension never
+  edits a settings file to install it. In this repository the hook block lives in the repo-local
+  `.claude/settings.local.json` precisely so that `~/.claude` stays untouched.
+  `src/hooks/listener.ts` imports no filesystem API at all, and a test asserts that against the
+  source text — including that it never resolves a home directory.
+- **G2 — source separation.** A JSONL parse failure must never take liveness down, and vice versa.
+  The two taps do not share a failure path.
+- **G3 — refuse, don't guess.** Malformed input increments a counter and is skipped. A schema
+  fingerprint mismatch renders a session `unsupported` rather than a partial tree. Nothing about
+  input may crash the extension host — see §3.
+- **G4 — redaction is production code.** Thinking blocks are dropped at the parse boundary, and the
+  `signature` field is dropped with them: Claude Code writes thinking blocks to disk with an
+  **empty** `thinking` string and the bytes in `signature`, so a redaction that dropped only the
+  visible text would be doing nothing. Tool payloads are truncated with a marker, and large payloads
+  offloaded to `tool-results/*.txt` go through the same path. Current truncation behaviour, its
+  measured limits and its open items are tracked in `PLAN.md`; this document does not restate them,
+  because a live description written from inside the phase that is changing them would be wrong by
+  the time it merged.
+- **G5 — zero egress.** No network except the loopback hook listener. Non-loopback requests are
+  dropped. This is the subject of §4.
+- **G6 — fixtures are law.** Parser behaviour is pinned to bytes captured from real sessions.
+
+---
+
+## 3. The listener's trust boundary
+
+`src/hooks/listener.ts` is the only inbound surface. Its properties:
+
+- Binds the **literal** `127.0.0.1`, hard-coded, never a hostname and never the wildcard. The bind
+  host is a module constant and is not configurable; only the port is.
+- Validates the **socket's** remote address on every request. Proxy headers — `X-Forwarded-For`,
+  `X-Real-IP`, `Forwarded` — are attacker-controlled strings and are never consulted for that
+  decision. A non-loopback origin is answered `403` and counted.
+- Refuses an ephemeral port. The pasted hook snippet names a fixed port literally, and there is no
+  discovery file to tell it otherwise — writing one would break G1. A port collision surfaces as a
+  typed error the user is shown; the listener never silently rebinds somewhere else.
+- Caps request bodies. The cap is `DEFAULT_MAX_BODY_BYTES` in `src/hooks/listener.ts`; oversize
+  bodies are counted and answered `413`, and a body whose declared `Content-Length` already exceeds
+  the cap is never buffered at all. A body that keeps arriving past a hard multiple of the cap has
+  its socket destroyed rather than held open.
+- Never throws on input. Every refusal path increments a named counter and answers a status code.
+  Consumer callbacks that throw are caught and counted, so a downstream bug cannot take the socket
+  down.
+- Serves no files and reads no paths. The only route is the event path; every other path is a `404`,
+  including traversal attempts, which have nothing to traverse to.
+
+**Hostile-input testing.** `fixtures/synthetic-hook-fuzz/corpus.jsonl` is a synthetic corpus replayed
+over a real loopback socket against a real listener at the shipped default body cap. It covers
+malformed JSON, bodies truncated mid-token, oversized bodies and the exact byte at the cap boundary,
+wrong and absent content types, wrong methods and routes, raw C0 control bytes versus the same bytes
+as `\u` escapes, invalid UTF-8, BOM prefixes, lone surrogates, `__proto__` and
+`constructor.prototype` bodies, deeply nested JSON, type-confused fields, unknown forward-compatible
+fields, minimal-but-valid payloads, and spoofed off-box origins. Each case asserts the status code
+**and the exact counter deltas** — every counter not named must be unchanged — because "it did not
+crash" is satisfied by a listener that answers `200` to everything. Transport-level malformation
+(an overstated `Content-Length`, an unparseable request line, a header block that never terminates,
+pipelined requests) is driven separately from a bare socket. See that directory's `README.md`.
+
+**What the boundary does NOT protect against, stated plainly:** any process running as you on your
+own machine can POST to the loopback port and inject fabricated liveness events. There is no
+authentication, and adding one would mean a shared secret that the pasted hook snippet would have to
+carry. The consequence of that injection is bounded by what the extension does with an event: it
+renders it. Nothing is executed, nothing is written, nothing leaves the machine. An attacker already
+running code as you has far better options than lying to a read-only panel.
+
+---
+
+## 4. The zero-egress audit
+
+Two halves, both in `src/hooks/egress.test.ts`, both run in the ordinary suite. Neither can skip.
+
+### 4a. Dependency review — what could open a socket
+
+**Method.** The VSIX ships `dist/` and nothing else: `vsce` is invoked with `--no-dependencies` and
+`.vscodeignore` excludes `node_modules/**`. So the shipped runtime surface is the esbuild bundle,
+not a dependency tree that never gets installed on a user's machine. The audit therefore enumerates
+the module ids **the built bundle actually requires** and gates them, rather than auditing a
+lockfile.
+
+**What is asserted, on a bundle built on demand rather than read off disk** (`npm run package` does
+not rebuild `dist/` and there is no `vscode:prepublish`, so trusting the on-disk artifact could
+silently measure an old one):
+
+- every `require` id is either a `node:` builtin or `vscode` — nothing third-party survives
+  bundling as a separate module;
+- none of `net`, `tls`, `https`, `http2`, `dns`, `dgram`, `child_process`, `worker_threads`,
+  `cluster` or `inspector` is reachable, in either the bare or `node:` spelling;
+- `node:http` **is** present, so the check is not vacuous — it is the listener;
+- no outbound client API is compiled in: no `http.request` / `https.request`, no `fetch(`, no
+  `XMLHttpRequest`, no `new WebSocket(`, no `navigator.sendBeacon`;
+- the loopback literal appears and `0.0.0.0` does not, asserted against the **built artifact** so
+  that a build step rewriting a constant could not slip past the source-level guard.
+
+**Limits, honestly.** Nobody read every dependency's source. This is a reachability argument about
+the shipped bundle plus the runtime measurement below — not a proof that no dependency contains
+egress code somewhere. The webview is a separate artifact with its own bundle guard and its own
+strict CSP, and is not covered by this section.
+
+### 4b. Runtime socket census — what actually opens
+
+**Method.** A child `node` process stages the freshly built `dist/extension.cjs` beside a stub
+`vscode` module (module resolution is relative, so the stub is what `require('vscode')` finds —
+the same technique the extension-host load test uses). Before the bundle is loaded, the child wraps
+`net.Socket.prototype.connect`, `net.connect`, `http.request`/`get`, `https.request`/`get`,
+`tls.connect`, `dgram.createSocket`, the `dns` resolvers and `Module._load`. It then drives the real
+exported `activate()` against the committed fixtures, and counts live handles with
+`process._getActiveHandles()` at four points, classifying each by its underlying libuv handle —
+`TCP` is the only kind that can leave the machine.
+
+The harness's own probe POST deliberately speaks raw HTTP over a socket connected with the
+**pre-instrumentation** `connect`, so it does not appear in its own census; that it returned `200`
+proves the connection really happened and the listener really answered.
+
+**Result** (Node v24.15.0, Windows, one run; reproduce with
+`AGENT_DECK_CENSUS_DEBUG=1 npx vitest run src/hooks/egress.test.ts`):
+
+| phase | handles observed |
+| --- | --- |
+| bundle loaded, before `activate()` | none at all |
+| after `activate()` | `Server`/**TCP** on `127.0.0.1:<configured port>`, plus 19 `FSWatcher`/`FSEvent` |
+| after serving one hook event | the same, plus the harness's client socket and the child's stdout pipe |
+| after `deactivate()` | no TCP handle, no watcher |
+
+Outbound connections attempted by the extension: **0 at load, 0 through activation, 0 across the
+entire run.** The file watchers are `FSEvent` handles — local filesystem, not sockets.
+
+**One measured surprise, recorded rather than smoothed over.** The run is *not* DNS-silent. Node's
+own `Server.listen(port, host)` routes through `lookupAndListen` → `dns.lookup(host, { all: true })`
+**even when the host is already a literal IP address**. So there is exactly one DNS call in the
+whole run, its argument is the string `127.0.0.1`, and its caller — captured from the stack — is the
+inbound bind. The test asserts that property rather than asserting the run is DNS-free: no *name* is
+ever resolved, so nothing can reach a host it did not already have an address for.
+
+**Limits, honestly.** This measures one activation cycle on committed fixtures, on one OS and one
+Node version. Code paths that cycle never exercises are not covered by it. It measures the Node
+extension host, not the webview.
+
+---
+
+## 5. Installing the hook
+
+Hook installation is a manual paste block; the extension never writes it for you (G1). Two things
+about the command in that block matter for your own safety rather than ours:
+
+- **It must fail fast when nothing is listening**, because it runs inside your real Claude Code
+  session. The block uses `node -e` rather than `curl`: `node` takes `ECONNREFUSED` and exits `0`.
+  Measured once on this machine against a closed loopback port: `node -e` **81 ms, exit 0**;
+  `curl.exe` **2,098 ms, exit 7**. (An earlier measurement recorded in `CLAUDE.md` gives ~1.14 s and
+  exit 28 for `curl.exe` — the exit code differs because that port was filtered rather than refused.
+  The conclusion is the same either way and the ratio is not close.)
+- **The POST is unconditional.** With nothing bound, it is refused and nothing happens. Do not read
+  a quiet listener as evidence that hooks have stopped firing.
+
+---
+
+## 6. Hard exclusions
+
+Not implemented, and not accepted as contributions: writes of any kind · historical replay or
+persistence · wrapping or launching Claude Code · telemetry or any egress. v1's zero write
+capability is the trust anchor, and the point of writing it down is that it is easier to defend a
+boundary than to relocate one.

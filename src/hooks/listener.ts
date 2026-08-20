@@ -481,6 +481,22 @@ export class HookListener {
 
     const hardLimit = this.maxBodyBytes * HARD_ABORT_MULTIPLE;
 
+    // Declared-size pre-check. Purely an allocation guard: it changes no
+    // status code and no counter that the streaming check below would not
+    // reach anyway, it just declines to buffer the first `maxBodyBytes` of a
+    // body the sender has already announced is too large. Entering the
+    // overflow state here rather than answering immediately is deliberate —
+    // replying before the body has been drained truncates the reply on a peer
+    // that is still writing, and the drain path already has a correct 413.
+    //
+    // A missing, non-numeric or chunked Content-Length simply falls through:
+    // the streaming check is the real limit, this is only ever an early exit.
+    const declaredLength = Number(req.headers['content-length']);
+    if (Number.isFinite(declaredLength) && declaredLength > this.maxBodyBytes) {
+      overflowed = true;
+      this.#counters.oversize += 1;
+    }
+
     req.on('error', () => {
       this.#counters.socketErrors += 1;
     });

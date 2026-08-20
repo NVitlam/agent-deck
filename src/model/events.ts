@@ -425,11 +425,26 @@ export interface RawHookPayload {
  * added after it was registered in this repo's hook block and a later loopback
  * capture received it 3/3, all well-formed — it is no longer speculative.
  *
- * `SessionStart` is NOT here. It is registered in the hook block but its
- * arrival has not been measured on the pinned version; it lives in
- * {@link KNOWN_HOOK_EVENT_NAMES} only.
+ * `SessionStart` was the last to be confirmed, and *why* it stayed unmeasured
+ * for two phases is the reusable part: it fires once, at session onset. Every
+ * earlier capture was taken by a listener that bound partway through an
+ * already-running session, so the one moment it could have been observed had
+ * already passed. Its absence measured nothing about CC — it measured when the
+ * listener started. Settled by binding the listener FIRST and then opening a
+ * fresh CC window: `fixtures/hook-events/cc-2.1.234-sessionstart.jsonl` is
+ * that capture. Before recording any future name as unobserved, check that the
+ * observer could have been running at the moment it would have fired.
+ *
+ * The measured `SessionStart` key set is exactly `session_id`,
+ * `transcript_path`, `cwd`, `hook_event_name`, `source` (`source` =
+ * `startup`), identical on both captured events. No `agent_id` — consistent
+ * with the rule that absence of that key IS the main-thread signal — no
+ * `tool_use_id`, and no `prompt_id`, which makes it the only observed type
+ * lacking one (285/285 events in
+ * `fixtures/hook-events/cc-2.1.234-redacted.jsonl` carry `prompt_id`).
  */
 export const CONFIRMED_HOOK_EVENT_NAMES = [
+  'SessionStart',
   'PreToolUse',
   'PostToolUse',
   'SubagentStart',
@@ -440,18 +455,37 @@ export const CONFIRMED_HOOK_EVENT_NAMES = [
 export type ConfirmedHookEventName = (typeof CONFIRMED_HOOK_EVENT_NAMES)[number];
 
 /**
- * Names Agent Deck expects to see: the confirmed five plus `SessionStart`,
- * which is registered but unmeasured. This list is documentation, not a filter
- * — the listener accepts any `hook_event_name` and flags anything outside
+ * Registered in the hook block but never yet received on the pinned version.
+ *
+ * EMPTY TODAY — every registered name has now been measured at least once. The
+ * mechanism is kept rather than deleted: this is where a name waits between
+ * being registered and being observed, and a future CC release is expected to
+ * add names. While the list is empty {@link KNOWN_HOOK_EVENT_NAMES} equals
+ * {@link CONFIRMED_HOOK_EVENT_NAMES} and {@link isKnownHookEventName} agrees
+ * with {@link isConfirmedHookEventName} on every input; adding one literal
+ * here widens {@link KnownHookEventName} and both lists automatically.
+ */
+export const UNCONFIRMED_KNOWN_HOOK_EVENT_NAMES = [] as const;
+
+/** `never` while {@link UNCONFIRMED_KNOWN_HOOK_EVENT_NAMES} is empty. */
+export type UnconfirmedKnownHookEventName =
+  (typeof UNCONFIRMED_KNOWN_HOOK_EVENT_NAMES)[number];
+
+export type KnownHookEventName =
+  | ConfirmedHookEventName
+  | UnconfirmedKnownHookEventName;
+
+/**
+ * Names Agent Deck expects to see: the confirmed set plus anything registered
+ * but not yet measured. This list is documentation, not a filter — the
+ * listener accepts any `hook_event_name` and flags anything outside
  * {@link CONFIRMED_HOOK_EVENT_NAMES} as unconfirmed, so a future capture can
  * prove or disprove it. Nothing is ever rejected for its name.
  */
-export const KNOWN_HOOK_EVENT_NAMES = [
+export const KNOWN_HOOK_EVENT_NAMES: readonly KnownHookEventName[] = [
   ...CONFIRMED_HOOK_EVENT_NAMES,
-  'SessionStart',
-] as const;
-
-export type KnownHookEventName = (typeof KNOWN_HOOK_EVENT_NAMES)[number];
+  ...UNCONFIRMED_KNOWN_HOOK_EVENT_NAMES,
+];
 
 /** True only for names measured on the pinned CC version. Never throws. */
 export function isConfirmedHookEventName(
@@ -463,7 +497,7 @@ export function isConfirmedHookEventName(
   );
 }
 
-/** True for the confirmed five plus the registered-but-unmeasured one. */
+/** True for the confirmed set plus any registered-but-unmeasured name. */
 export function isKnownHookEventName(
   value: unknown,
 ): value is KnownHookEventName {

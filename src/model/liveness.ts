@@ -164,7 +164,16 @@ export interface LivenessCounters {
    * would be the guess G3 forbids. Never observed from real CC.
    */
   eventsSkippedUnattributable: number;
-  /** Known but not measured on the pinned CC version (today: SessionStart). */
+  /**
+   * Known but not measured on the pinned CC version. ZERO IS THE NORMAL
+   * READING: {@link UNCONFIRMED_KNOWN_HOOK_EVENT_NAMES} is empty, so nothing
+   * CC currently sends increments this. It exists to surface a name that was
+   * registered and never observed — a drift signal. `SessionStart` used to
+   * live here and no longer does: it was confirmed by measurement (see the
+   * note on {@link CONFIRMED_HOOK_EVENT_NAMES}), and leaving it unconfirmed
+   * would have made this counter climb on every normal session, which is how
+   * a diagnostic gets ignored.
+   */
   unconfirmedNameEvents: number;
   /** A {@link JsonlInferenceSource} call threw. */
   inferenceFailures: number;

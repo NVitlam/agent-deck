@@ -10,6 +10,38 @@
  * - Nothing derived from `fixtures/` is hard-coded. Counts come from reading
  *   the fixture, so the next harvest changes the expected numbers with the
  *   data instead of failing as a fake regression.
+ *
+ * ---------------------------------------------------------------------------
+ * KNOWN: `npm test` can exit 1 while reporting every test passed
+ * ---------------------------------------------------------------------------
+ * Symptom: `Unhandled Rejection: Error: Channel closed`, `ERR_IPC_CHANNEL_CLOSED`,
+ * raised in the PARENT vitest process at tinypool's `ProcessWorker.send`. Every
+ * test still passes; only the exit code is wrong. It is load-dependent.
+ *
+ * It is NOT an uncaught exception or unhandled rejection in this file's worker:
+ * `process.on('uncaughtException')` / `('unhandledRejection')` probes installed
+ * here caught nothing across 8 reproducing runs. The parent is posting to a
+ * forked child whose IPC channel has already closed.
+ *
+ * Measured on Windows / Node v24.15.0 / vitest 3.2.7, `npm test` full suite:
+ *
+ *   forks pool (the vitest 3 default), suite as it stands ....  1 / 24 runs
+ *   forks, the dropped-connection test skipped ...............  2 / 24
+ *   forks, ALL socket tests in this file skipped .............  0 / 12
+ *   forks, this whole file excluded from the run .............  0 / 15
+ *   THREADS pool (`vitest run --pool=threads`), nothing skipped  0 / 20
+ *
+ * So: it needs the socket tests in this file, and it needs the forks pool. It
+ * is not any one socket API — swapping RST for FIN, settling the client on
+ * socket 'close' instead of response 'end', and `agent: false` each changed
+ * nothing measurable. Do not go looking for the bug in a single test; four
+ * such attempts failed, and two apparent fixes were small samples of a ~5-15%
+ * event.
+ *
+ * The remedy is one line in `vitest.config.ts` (`pool: 'threads'`), which this
+ * package does not own. Until that lands, a red `npm test` whose summary says
+ * every test passed is THIS, not a regression in whatever you just touched —
+ * re-run before believing it.
  */
 
 import { Buffer } from 'node:buffer';

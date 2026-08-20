@@ -601,12 +601,17 @@ export class AgentDeckDataPath {
     this.#grafts += 1;
     try {
       const result = await this.#graftFn(mainTranscript, {
-        // `agentDeck.previewBytes`, forwarded to every node's preview. The
-        // grafter's own default is 512, so DROPPING this argument does not
+        // `agentDeck.previewBytes`. Since Phase 4 this is the ONE ceiling:
+        // `graftSession` gives the parse/redaction layer the same number
+        // (floored at 8192) and the grafter's previews use it directly, so a
+        // payload is cut once and the marker states its real original size.
+        //
+        // The grafter's own default is 512, so DROPPING this argument does not
         // fail — it silently shrinks every preview by 16x. `extension.test.ts`
         // asserts the truncation marker's kept-byte count equals this value,
-        // because a preview that is merely "long" proves nothing about which
-        // number produced it.
+        // at 2048, 4096, 8192 and 16384, because a preview that is merely
+        // "long" proves nothing about which number produced it. Verified red
+        // by deleting this line: 4 of 42 tests in that file fail.
         previewBytes: this.settings.previewBytes,
       });
       if (this.#disposed) return;

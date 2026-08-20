@@ -75,7 +75,7 @@ import type { FingerprintMismatch, FingerprintOptions } from '../parser/fingerpr
 import { fingerprintSession } from '../parser/fingerprint.js';
 import type { ParseOptions } from '../parser/parse.js';
 import { hydratePersistedOutputs } from '../parser/parse.js';
-import { redactText } from '../parser/redact.js';
+import { DEFAULT_MAX_PAYLOAD_BYTES, truncatePreservingMarker } from '../parser/redact.js';
 
 // ---------------------------------------------------------------------------
 // Parking — the explicit "not grafted" state
@@ -215,6 +215,38 @@ export interface SidecarArrival {
 /** Preview budget for a single node, in UTF-8 bytes. Well under redaction's 8 KB. */
 export const DEFAULT_PREVIEW_BYTES = 512;
 
+/**
+ * Floor on the ceiling {@link graftSession} hands the parse/redaction layer,
+ * in UTF-8 bytes. **Do not remove this as a redundant clamp — it is load
+ * bearing, and its absence does not fail loudly.**
+ *
+ * `previewBytes` is otherwise the single ceiling: it governs the parse layer
+ * and the previews alike, so a payload is cut once. Below this floor that
+ * would break a different thing entirely. CC leaves a `<persisted-output>`
+ * stub in the JSONL where a large tool result used to be, and the stub is
+ * where the pointer to `tool-results/<id>.txt` lives:
+ *
+ *   <persisted-output>
+ *   Output too large (62.3KB). Full output saved to: ...\\tool-results\\b6uvpgxa4.txt
+ *   Preview (first 2KB): ...
+ *   </persisted-output>
+ *
+ * The measured stub in the committed capture is **2,186 bytes**. Truncating a
+ * transcript string below that cuts the closing `</persisted-output>` off, and
+ * `parsePersistedOutputPointer` matches on the closing tag: it returns
+ * `undefined`, hydration never runs, and the offloaded 63,774-byte payload is
+ * never opened at all. Nothing throws and no counter moves — the preview just
+ * shows a truncated stub. That is a silent loss of the entire G4 offload path,
+ * so a `previewBytes` under this floor narrows the PREVIEW (the second,
+ * marker-preserving pass in `preview()`) and never the parse.
+ *
+ * Set to redaction's own 8 KB default rather than to 2,186: that is the byte
+ * budget G4 already documents, and it leaves margin for a longer stub than the
+ * one CC happens to write today. `graft.test.ts` asserts this constant exceeds
+ * the stub actually on disk, and that a 128-byte `previewBytes` still hydrates.
+ */
+export const MIN_PARSE_CEILING_BYTES = DEFAULT_MAX_PAYLOAD_BYTES;
+
 export interface GraftOptions {
   /** Per-node preview ceiling in UTF-8 bytes. Defaults to {@link DEFAULT_PREVIEW_BYTES}. */
   previewBytes?: number;
@@ -263,8 +295,23 @@ function safeStringify(value: unknown): string {
   }
 }
 
+/**
+ * A node preview: the payload cut to `previewBytes`, marked when it was cut.
+ *
+ * Marker-preserving, deliberately. `graftSession` hands the parse layer the
+ * SAME ceiling this uses, so in the loader path a payload is cut once — but
+ * that cut leaves a marker on the string, which makes the string longer than
+ * the ceiling, and this function would then cut the marker back off and
+ * re-mark against 8,248 bytes instead of the 63,774 the payload really had.
+ * {@link truncatePreservingMarker} keeps the marker quantifying the ORIGINAL.
+ *
+ * Callers other than the loader (the incremental `addTranscript` path, whose
+ * entries were parsed elsewhere at a ceiling this class never chose) get the
+ * same protection for free: any second pass over a marked string preserves the
+ * original count instead of inventing a smaller one.
+ */
 function preview(text: string, previewBytes: number): string {
-  return redactText(text, { maxPayloadBytes: previewBytes }).text;
+  return truncatePreservingMarker(text, previewBytes).text;
 }
 
 // ---------------------------------------------------------------------------
@@ -926,6 +973,15 @@ export function toSessionState(snapshot: GraftSnapshot, facts: SessionFacts): Se
 // ---------------------------------------------------------------------------
 
 export interface GraftSessionOptions extends GraftOptions, FingerprintOptions {
+  /**
+   * Parse options, forwarded to the parse/redaction layer.
+   *
+   * `maxPayloadBytes` is DERIVED — `max(previewBytes, 8192)` — unless this
+   * object sets it explicitly; see {@link graftSession} for why the floor is
+   * there. Setting it here below `previewBytes` reintroduces a double cut; the
+   * marker still reports the original size, but the kept bytes are the smaller
+   * of the two.
+   */
   parse?: ParseOptions;
   /** Read `tool-results/*.txt` payloads into previews. Default `true`. */
   hydrateToolResults?: boolean;
@@ -959,18 +1015,38 @@ export async function graftSession(
   }
 
   const fp = fingerprinted.value;
-  const loaded = await loadSessionForAttribution(fp, options.parse ?? {});
+
+  // ---- ONE ceiling, applied once above 8 KB (Phase 4 carry-forward A) ----
+  // The parse/redaction layer is given the ceiling the grafter's previews use,
+  // so `previewBytes` genuinely controls the kept payload. Before this, parse
+  // cut at `redact.DEFAULT_MAX_PAYLOAD_BYTES` (8192) and `preview()` cut
+  // whatever survived, so `previewBytes` above 8192 could not increase the
+  // kept payload at all — measured across all 8 payloads over 8 KB in the
+  // committed capture, 7 of them inline and 1 offloaded.
+  //
+  // The floor is a decision, not a clamp: see MIN_PARSE_CEILING_BYTES for the
+  // mechanism (a 2,186-byte `<persisted-output>` stub, cut below its closing
+  // tag, silently disables the whole offload path). Removing it looks safe and
+  // is not.
+  const previewBytes = options.previewBytes ?? DEFAULT_PREVIEW_BYTES;
+  const parseCeiling = Math.max(previewBytes, MIN_PARSE_CEILING_BYTES);
+  // An explicit `parse.maxPayloadBytes` still wins: a caller who names the
+  // parse ceiling means it.
+  const parseOptions: ParseOptions = { maxPayloadBytes: parseCeiling, ...(options.parse ?? {}) };
+
+  const loaded = await loadSessionForAttribution(fp, parseOptions);
   const diagnostics: ParseDiagnostics = {
     malformedLines: loaded.malformedLines,
     parsedLines: loaded.parsedLines,
     skippedFiles: loaded.unreadable.map((u) => ({ path: u.path, reason: u.reason })),
   };
 
-  const grafterOptions: GraftOptions = {};
-  if (options.previewBytes !== undefined) grafterOptions.previewBytes = options.previewBytes;
+  // `previewBytes` rather than `options.previewBytes`: the grafter and the
+  // parse layer must be given the same number, and reading it from one
+  // variable is what makes "the same" checkable rather than asserted.
   const grafter = new TreeGrafter(
     { sessionId: fp.sessionId, projectSlug: basename(fp.slugDir) },
-    grafterOptions,
+    { previewBytes },
   );
 
   for (const source of loaded.input.transcripts) {
@@ -1004,7 +1080,10 @@ export async function graftSession(
             projectsRoot,
             slug,
             sessionId: fp.sessionId,
-            ...(options.parse ?? {}),
+            // The same one ceiling. The offload path is 1 of the 8 payloads
+            // over 8 KB in the capture, not the defect's scope, but it is on
+            // the same rule as the other 7.
+            ...parseOptions,
           },
           diagnostics,
         );

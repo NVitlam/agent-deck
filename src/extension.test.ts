@@ -57,7 +57,7 @@ import type {
 import { webviewHtml } from './bridge/html.js';
 import { DEFAULT_PREVIEW_BYTES as GRAFTER_DEFAULT_PREVIEW_BYTES } from './model/graft.js';
 import type { GraftSessionResult } from './model/graft.js';
-import { TRUNCATION_MARKER_RE } from './parser/redact.js';
+import { TRUNCATION_MARKER_RE, truncationMarker } from './parser/redact.js';
 import { WEBVIEW_ROOT_ID } from './bridge/contract.js';
 import type { HostToWebviewMessage, SessionState, TreeNode } from './model/events.js';
 import { isAgentNode } from './model/events.js';
@@ -1448,41 +1448,33 @@ describe('the agentDeck.previewBytes setting reaches the grafter', () => {
    * cover it" path, proved to reach the emission rather than assumed to.
    *
    * ---------------------------------------------------------------------------
-   * MEASURED CEILING — the assertions below deliberately stay at or under 8192
+   * THE CEILING, AS FIXED IN PHASE 4 (carry-forward A)
    * ---------------------------------------------------------------------------
-   * EVERY payload over 8 KB is truncated TWICE, and only the second cut sees
-   * the setting. The redaction path cuts first, at
-   * `redact.DEFAULT_MAX_PAYLOAD_BYTES` (8192), because `graftSession` is not
-   * given a `parse.maxPayloadBytes`; the grafter's `preview()` then cuts what
-   * survives, at `previewBytes`. This is NOT an offload-path defect, however
-   * naturally it reads as one: of the 8 affected payloads in the capture,
-   * seven are inline. Measured against the captured 63,774-byte
-   * `tool-results/*.txt`, which is merely the largest of them:
+   * Until Phase 4, EVERY payload over 8 KB was truncated TWICE and only the
+   * second cut saw the setting: the redaction path cut first at
+   * `redact.DEFAULT_MAX_PAYLOAD_BYTES` (8192) because `graftSession` was not
+   * given a `parse.maxPayloadBytes`, and the grafter's `preview()` then cut
+   * what survived. Measured then, against the captured 63,774-byte
+   * `tool-results/*.txt` — which is merely the largest of the 8 affected
+   * payloads, 7 of which are inline and never touch `tool-results/`:
    *
-   *   previewBytes=8192   marker reads "8192 of 8248"    <- shipped default
-   *   previewBytes=16384  marker reads "8192 of 63774"
-   *   previewBytes=65536  marker reads "8192 of 63774"
+   *   previewBytes=8192   marker read "8192 of 8248"    <- shipped default
+   *   previewBytes=16384  marker read "8192 of 63774"
+   *   previewBytes=65536  marker read "8192 of 63774"
    *
-   * Two consequences, neither of which this package changed on its own
-   * authority: `agentDeck.previewBytes` above 8192 has no effect on ANY
-   * payload over 8 KB — offloaded or inline, and the distinction matters
-   * because 7 of the 8 affected payloads in the capture are inline and never
-   * touch `tool-results/`, so a fix aimed at the offload path addresses one
-   * eighth of this. And at exactly the shipped default the double cut makes
-   * the marker UNDER-REPORT the original size by 7.73x — it says 8,248 bytes
-   * for a 63,774-byte payload, which is the opposite of the "truncation is
-   * visible and quantified" the marker exists for. (Not 7.8x: that is
-   * 63774/8192, the kept-bytes ratio, a different quantity. This comment was
-   * the last of four places carrying the wrong figure and the wrong scope,
-   * found by grep after the documents were corrected — a doc sweep that walks
-   * a list of documents misses the copy in a source file.)
-   * Reported, not fixed here: the one-line
-   * candidate is passing `parse: { maxPayloadBytes: previewBytes }` from the
-   * `graftSession` call in `extension.ts`, and that is a G4 semantics decision
-   * the parser package owns the meaning of.
+   * `graftSession` now derives the parse ceiling from `previewBytes` (floored
+   * at 8192, because the `<persisted-output>` stub is ~2.2 KB and cutting it
+   * shorter destroys the pointer to the offloaded file), and `preview()` uses
+   * `truncatePreservingMarker`, which refuses to re-mark an already-marked
+   * string against the length it was handed. Measured after, same fixtures:
    *
-   * Nothing below asserts a value above 8192, so none of it depends on which
-   * way that goes.
+   *   previewBytes=8192   8 markers, "8192 of <real size>" for all 8
+   *   previewBytes=16384  4 markers, "16384 of <real size>"; the other 4 fit
+   *   previewBytes=65536  0 markers — the 63,774-byte payload is kept whole
+   *
+   * The two tests below therefore assert both halves: the kept-byte count
+   * follows the setting BELOW and ABOVE 8192, and the second number in the
+   * marker is the payload's size on disk rather than 8,248.
    */
 
   /** The offloaded payload committed under the captured session, found on disk. */
@@ -1590,6 +1582,47 @@ describe('the agentDeck.previewBytes setting reaches the grafter', () => {
     // The two runs differ, which is what "the number moves with the setting"
     // means. Equal lengths would mean some other ceiling was in charge.
     expect(observed[0]).toBeGreaterThan(observed[1] as number);
+  });
+
+  it('a previewBytes ABOVE 8192 increases the kept payload (carry-forward A, defect (a))', async () => {
+    const payload = await offloadedPayload();
+    // The subject must be big enough for 16384 to be a real cut and for
+    // `payload.bytes + slack` to be a real non-cut. Derived from the file.
+    expect(payload.bytes).toBeGreaterThan(16384);
+    const needle = payload.text.slice(0, 160);
+
+    const at16k = await previewsAt(16384);
+    const offload16k = at16k.filter((p) => p.includes(needle));
+    expect(offload16k).toHaveLength(1);
+    // 8192 before the fix, at every setting above it.
+    expect(keptBytes(offload16k[0] as string)).toBe(16384);
+    expect(originalBytes(offload16k[0] as string)).toBe(payload.bytes);
+    // Bytes, not characters: the marker counts UTF-8 bytes, and the two differ
+    // on this fixture.
+    expect(
+      Buffer.byteLength((offload16k[0] as string).replace(TRUNCATION_MARKER_RE, ''), 'utf8'),
+    ).toBe(16384);
+
+    // A ceiling above the payload keeps it whole: no marker at all, and the
+    // preview carries the payload's own byte count.
+    const ceiling = payload.bytes + 4096;
+    const whole = (await previewsAt(ceiling)).filter((p) => p.includes(needle));
+    expect(whole).toHaveLength(1);
+    expect(keptBytes(whole[0] as string)).toBeNull();
+    expect(Buffer.byteLength(whole[0] as string, 'utf8')).toBe(payload.bytes);
+  });
+
+  it('the marker states the ORIGINAL payload size, not 8248 (carry-forward A, defect (b))', async () => {
+    const payload = await offloadedPayload();
+    const previews = await previewsAt(8192);
+    const fromOffload = previews.filter((p) => p.includes(payload.text.slice(0, 160)));
+    expect(fromOffload).toHaveLength(1);
+    const marker = fromOffload[0] as string;
+    expect(keptBytes(marker)).toBe(8192);
+    // The number the fixture's own bytes say, read from disk in this test.
+    expect(originalBytes(marker)).toBe(payload.bytes);
+    // The old, fabricated number: 8192 plus the marker's own length.
+    expect(originalBytes(marker)).not.toBe(8192 + truncationMarker(8192, payload.bytes).length);
   });
 
   it('the decided default of 8192 is the value the emission actually uses', async () => {

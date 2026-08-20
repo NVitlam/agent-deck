@@ -63,7 +63,7 @@
             "toolName": "Read",
             "status": "done",
             "inputPreview": "sha256:c08b2d3cc379f493:85",
-            "resultPreview": "sha256:1b5d69012bc6937b:566",
+            "resultPreview": "sha256:45c3d51089f0efb0:567",
             "durationMs": 384
           },
           {
@@ -72,7 +72,7 @@
             "toolName": "Read",
             "status": "done",
             "inputPreview": "sha256:4b39b0334c4bbedd:88",
-            "resultPreview": "sha256:c8d6d00d971d07c0:566",
+            "resultPreview": "sha256:6c30f24c11c97d9b:567",
             "durationMs": 338
           },
           {
@@ -99,7 +99,7 @@
             "toolName": "Read",
             "status": "done",
             "inputPreview": "sha256:3e7a9cf408ae1c23:86",
-            "resultPreview": "sha256:d75308657382d3fb:566",
+            "resultPreview": "sha256:b8fd93640b9f8ca3:567",
             "durationMs": 305
           },
           {

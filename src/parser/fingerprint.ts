@@ -2,10 +2,10 @@
  * Agent Deck — schema fingerprint.
  *
  * The fingerprint is the compatibility story. Claude Code's on-disk exhaust is
- * undocumented, so instead of coping with drift we detect it and refuse:
- * exactly one CC version is pinned, and the *layout* — not merely a list of
- * field names — is the tripwire, because subagent attribution rests on an
- * undocumented directory convention:
+ * undocumented, so instead of coping with drift we detect it and refuse: a
+ * narrow *window* of CC versions around a pinned anchor is accepted, and the
+ * *layout* — not merely a list of field names — is the tripwire, because
+ * subagent attribution rests on an undocumented directory convention:
  *
  *   <slugDir>/<sessionId>.jsonl                                main transcript
  *   <slugDir>/<sessionId>/subagents/agent-<agentId>.jsonl      subagent transcript
@@ -29,9 +29,14 @@
  *   G6  Fixtures are law. Every rule below is derived from the committed
  *       capture under `fixtures/cc-2.1.234/`, never from memory. The measured
  *       counts are quoted at the rule they justify.
- *   G9  One pinned version. `2.1.234` and nothing else — including a `version`
- *       that changes partway through a single file, which is a refusal and not
- *       a tolerated case.
+ *   G9  SUPERSEDED by an explicit user decision (Phase 4). G9 required one
+ *       pinned version and nothing else; the shipped extension went dark the
+ *       moment CC updated itself past the pin. Measured on the live projects
+ *       directory on 2026-08-20 with the pin at 2.1.234: 6 of 12 of this
+ *       repo's own sessions were refused, including every session written by
+ *       2.1.237. The pin is now the ANCHOR of an acceptance window
+ *       ({@link VERSION_WINDOW}); out-of-window versions still refuse exactly
+ *       as before. See {@link isVersionAccepted}.
  */
 
 import { Buffer } from 'node:buffer';
@@ -51,11 +56,121 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * The single supported CC version. Multi-version support is a hard exclusion:
- * a different value renders the session `unsupported`, and the fix is to
- * capture new fixtures and move the pin — never to add a second code path.
+ * The anchor of the acceptance window: the CC version the committed fixtures
+ * under `fixtures/cc-2.1.234/` were captured from, and the only version whose
+ * behaviour is pinned byte-for-byte.
+ *
+ * It is no longer the *only* accepted version — see {@link VERSION_WINDOW} —
+ * but it is still the reference point, and moving it moves the whole window.
  */
 export const PINNED_CC_VERSION = '2.1.234';
+
+/**
+ * How far a `version` may sit from {@link PINNED_CC_VERSION} and still be read.
+ *
+ * The third component is the one that actually moves in CC releases (234 ->
+ * 235 -> 237 inside a single week of this repo's own sessions), so it gets the
+ * wider allowance; the second component gets one step in either direction so a
+ * rollover such as `2.1.239 -> 2.2.0` does not black the product out.
+ *
+ * The major component is NOT windowed. A major bump is the one release that
+ * may reasonably rearrange the layout this module exists to assert.
+ *
+ * This is a **box, not a lexicographic range**: `2.2.100` sits between the
+ * corners `2.0.229` and `2.2.239` and is refused, because its third component
+ * is 134 away from the anchor's. {@link VersionWindow.label} names the corners
+ * for humans; {@link isVersionAccepted} is the rule.
+ */
+export const VERSION_WINDOW: { readonly minor: number; readonly patch: number } = {
+  minor: 1,
+  patch: 5,
+};
+
+/** A CC version string decomposed. Exactly three components, no prerelease. */
+export interface CcVersion {
+  major: number;
+  minor: number;
+  patch: number;
+}
+
+/**
+ * Strictly `<major>.<minor>.<patch>`, each a decimal integer with no leading
+ * zero. Anything else — `2.1`, `2.1.234-beta`, `02.1.234`, `` — is *not*
+ * parsed into something plausible: it returns `undefined`, and the caller
+ * refuses (G3). Guessing at an unrecognised version string is exactly the
+ * failure mode the fingerprint exists to prevent.
+ */
+export function parseCcVersion(value: string): CcVersion | undefined {
+  const match = /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/.exec(value);
+  if (match === null) return undefined;
+  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+}
+
+/** The window around an anchor, materialised. `undefined` if the anchor is not parseable. */
+export interface VersionWindow {
+  anchor: string;
+  major: number;
+  minMinor: number;
+  maxMinor: number;
+  minPatch: number;
+  maxPatch: number;
+  /** `<min> - <max>`, the corners of the box. Reporting only; see {@link VERSION_WINDOW}. */
+  label: string;
+}
+
+/**
+ * Derive the window from an anchor. Every bound comes from {@link VERSION_WINDOW}
+ * applied to the anchor — the endpoints are never written down a second time,
+ * so moving the anchor or the allowance cannot leave a stale literal behind.
+ */
+export function versionWindow(anchor: string = PINNED_CC_VERSION): VersionWindow | undefined {
+  const parsed = parseCcVersion(anchor);
+  if (parsed === undefined) return undefined;
+  const minMinor = Math.max(0, parsed.minor - VERSION_WINDOW.minor);
+  const maxMinor = parsed.minor + VERSION_WINDOW.minor;
+  const minPatch = Math.max(0, parsed.patch - VERSION_WINDOW.patch);
+  const maxPatch = parsed.patch + VERSION_WINDOW.patch;
+  return {
+    anchor,
+    major: parsed.major,
+    minMinor,
+    maxMinor,
+    minPatch,
+    maxPatch,
+    label: `${parsed.major}.${minMinor}.${minPatch} - ${parsed.major}.${maxMinor}.${maxPatch}`,
+  };
+}
+
+/** Shared by every version check; the window is computed once per session. */
+function acceptsVersion(
+  version: string,
+  anchor: string,
+  window: VersionWindow | undefined,
+): boolean {
+  // An anchor that does not parse still accepts itself verbatim: a test may
+  // pin something exotic, and exact equality can never be a guess.
+  if (version === anchor) return true;
+  if (window === undefined) return false;
+  const parsed = parseCcVersion(version);
+  if (parsed === undefined) return false;
+  return (
+    parsed.major === window.major &&
+    parsed.minor >= window.minMinor &&
+    parsed.minor <= window.maxMinor &&
+    parsed.patch >= window.minPatch &&
+    parsed.patch <= window.maxPatch
+  );
+}
+
+/**
+ * Is `version` inside the acceptance window around `anchor`?
+ *
+ * The whole compatibility policy, in one predicate, exported so it can be
+ * asserted directly rather than only through a transcript.
+ */
+export function isVersionAccepted(version: string, anchor: string = PINNED_CC_VERSION): boolean {
+  return acceptsVersion(version, anchor, versionWindow(anchor));
+}
 
 /** `<sessionId>.jsonl` in the slug directory. Sessions come from FILES only. */
 const SESSION_FILE_RE = /^([0-9a-f][0-9a-f-]{7,})\.jsonl$/i;
@@ -104,8 +219,14 @@ export type MismatchCode =
   // --- entries
   | 'entryFieldMissing'
   | 'entryFieldType'
-  // --- version pin
+  // --- version window
+  /** A version outside the window around {@link PINNED_CC_VERSION}. */
   | 'unsupportedVersion'
+  /**
+   * A file whose `version` changed partway through **to one outside the
+   * window**. A change to another in-window version is accepted: that is a CC
+   * self-update landing under a live session, which is now a supported case.
+   */
   | 'versionChangedMidFile';
 
 /**
@@ -147,10 +268,20 @@ export interface SessionFingerprint {
   sessionDir: string;
   /**
    * The single CC version observed across the session's files, or `undefined`
-   * when no line carried one (a just-created transcript). Absence is not
-   * evidence of a *different* version, so it is not a refusal.
+   * when no line carried one (a just-created transcript) — and also when the
+   * session spans more than one in-window version, because there is then no
+   * single answer. Use {@link versions} for the full set.
+   *
+   * Absence is not evidence of a *different* version, so it is not a refusal.
    */
   version?: string;
+  /**
+   * Every distinct CC version observed across the session's files, sorted.
+   * Empty when no line carried one. More than one entry means CC updated
+   * itself while the session was live — accepted since Phase 4, provided every
+   * one of them is inside the window.
+   */
+  versions: string[];
   subagents: SubagentFingerprint[];
   /** Set only when `tool-results/` exists AND is a directory. Optional (G6). */
   toolResultsDir?: string;
@@ -198,7 +329,10 @@ export type SlugFingerprintResult =
   | { ok: false; mismatch: FingerprintMismatch };
 
 export interface FingerprintOptions {
-  /** Overrides {@link PINNED_CC_VERSION}. Tests only; there is one pin. */
+  /**
+   * Overrides {@link PINNED_CC_VERSION} as the window's anchor. Tests only;
+   * production has one anchor.
+   */
   pinnedVersion?: string;
 }
 
@@ -334,15 +468,22 @@ function sameId(a: string, b: string): boolean {
 
 interface TranscriptScan {
   mismatch?: FingerprintMismatch;
-  /** Version observed on this file, when any line carried one. */
-  version?: string;
+  /**
+   * Every distinct version observed on this file, in the order first seen.
+   * More than one is a CC self-update mid-file; each was window-checked as it
+   * was read, so the list only ever holds accepted versions.
+   */
+  versions: string[];
 }
 
 interface TranscriptExpectations {
   sessionId: string;
   /** Set for subagent transcripts only; the id encoded in the filename. */
   agentId?: string;
+  /** The window's anchor. */
   pinnedVersion: string;
+  /** Derived from `pinnedVersion` once per session, not once per line. */
+  versionWindow: VersionWindow | undefined;
   /** Which refusal code an unreadable file produces at this position. */
   unreadableCode: MismatchCode;
 }
@@ -368,6 +509,7 @@ async function scanTranscript(
   } catch (error) {
     diagnostics.skippedFiles.push({ path, reason: `open failed: ${errorCode(error)}` });
     return {
+      versions: [],
       mismatch: mismatch(expect.unreadableCode, `cannot read transcript: ${errorMessage(error)}`, {
         path,
         actual: errorCode(error),
@@ -380,6 +522,7 @@ async function scanTranscript(
   let pending = '';
   let lineNumber = 0;
   let fileVersion: string | undefined;
+  const versions: string[] = [];
 
   const consume = (raw: string): FingerprintMismatch | undefined => {
     lineNumber += 1;
@@ -402,7 +545,12 @@ async function scanTranscript(
     const entryMismatch = checkEntry(parsed, path, lineNumber, expect, fileVersion);
     if (entryMismatch !== undefined) return entryMismatch;
     const version = parsed['version'];
-    if (typeof version === 'string' && fileVersion === undefined) fileVersion = version;
+    if (typeof version === 'string') {
+      // `fileVersion` stays the FIRST version seen, so drift is measured
+      // against the file's origin rather than against its previous line.
+      if (fileVersion === undefined) fileVersion = version;
+      if (!versions.includes(version)) versions.push(version);
+    }
     return undefined;
   };
 
@@ -414,7 +562,7 @@ async function scanTranscript(
       let newline = pending.indexOf('\n');
       while (newline !== -1) {
         const found = consume(pending.slice(0, newline));
-        if (found !== undefined) return { mismatch: found, version: fileVersion };
+        if (found !== undefined) return { mismatch: found, versions };
         pending = pending.slice(newline + 1);
         newline = pending.indexOf('\n');
       }
@@ -422,7 +570,7 @@ async function scanTranscript(
     pending += decoder.end();
     if (pending !== '') {
       const found = consume(pending);
-      if (found !== undefined) return { mismatch: found, version: fileVersion };
+      if (found !== undefined) return { mismatch: found, versions };
     }
   } catch (error) {
     diagnostics.skippedFiles.push({ path, reason: `read failed: ${errorMessage(error)}` });
@@ -431,13 +579,13 @@ async function scanTranscript(
         path,
         actual: errorCode(error),
       }),
-      version: fileVersion,
+      versions,
     };
   } finally {
     await handle.close().catch(() => undefined);
   }
 
-  return { version: fileVersion };
+  return { versions };
 }
 
 /** One line's worth of assertions. Returns the first refusal, or undefined. */
@@ -517,18 +665,27 @@ function checkEntry(
 
   const version = entry['version'];
   if (typeof version === 'string') {
-    // Order matters: a file that starts pinned and drifts later must report the
-    // drift, not the generic "unsupported version".
+    const accepted = acceptsVersion(version, expect.pinnedVersion, expect.versionWindow);
+    // Order matters: a file that starts inside the window and then drifts OUT
+    // of it must report the drift, not the generic "unsupported version" — the
+    // two are different stories and the line number is the interesting part.
     if (fileVersion !== undefined && version !== fileVersion) {
-      return mismatch('versionChangedMidFile', '`version` changed partway through the file', {
-        path: where,
-        field: 'version',
-        expected: fileVersion,
-        actual: version,
-        observedVersion: version,
-      });
-    }
-    if (version !== expect.pinnedVersion) {
+      if (!accepted) {
+        return mismatch(
+          'versionChangedMidFile',
+          '`version` changed partway through the file to one outside the accepted window',
+          {
+            path: where,
+            field: 'version',
+            expected: fileVersion,
+            actual: version,
+            observedVersion: version,
+          },
+        );
+      }
+      // Both versions are in the window: CC updated itself under a live
+      // session. Accepted since Phase 4, and recorded by the caller.
+    } else if (!accepted) {
       return mismatch('unsupportedVersion', 'transcript was written by an unpinned CC version', {
         path: where,
         field: 'version',
@@ -705,6 +862,7 @@ export async function fingerprintSession(
 ): Promise<FingerprintResult> {
   const diagnostics = emptyDiagnostics();
   const pinnedVersion = options.pinnedVersion ?? PINNED_CC_VERSION;
+  const window = versionWindow(pinnedVersion);
   const slugDir = dirname(mainTranscript);
   const name = basename(mainTranscript);
   const sessionId = SESSION_FILE_RE.exec(name)?.[1] ?? name.replace(/\.jsonl$/i, '');
@@ -728,6 +886,7 @@ export async function fingerprintSession(
       sessionDir,
       subagents,
       ignored,
+      versions: [...versions].sort(),
     };
     if (versions.size === 1) value.version = [...versions][0];
     if (toolResultsDir !== undefined) value.toolResultsDir = toolResultsDir;
@@ -759,11 +918,11 @@ export async function fingerprintSession(
 
   const mainScan = await scanTranscript(
     mainTranscript,
-    { sessionId, pinnedVersion, unreadableCode: 'mainTranscriptUnreadable' },
+    { sessionId, pinnedVersion, versionWindow: window, unreadableCode: 'mainTranscriptUnreadable' },
     diagnostics,
   );
   if (mainScan.mismatch !== undefined) return refuse(mainScan.mismatch);
-  if (mainScan.version !== undefined) versions.add(mainScan.version);
+  for (const observed of mainScan.versions) versions.add(observed);
 
   // --- 2. session directory (absent is fine: no subagents yet) ------------
   let sessionDirents;
@@ -926,29 +1085,28 @@ export async function fingerprintSession(
     const transcriptPath = join(subagentsDir, transcriptName);
     const scan = await scanTranscript(
       transcriptPath,
-      { sessionId, agentId, pinnedVersion, unreadableCode: 'subagentTranscriptUnreadable' },
+      {
+        sessionId,
+        agentId,
+        pinnedVersion,
+        versionWindow: window,
+        unreadableCode: 'subagentTranscriptUnreadable',
+      },
       diagnostics,
     );
     if (scan.mismatch !== undefined) return refuse(scan.mismatch);
-    if (scan.version !== undefined) versions.add(scan.version);
+    for (const observed of scan.versions) versions.add(observed);
 
     subagents.push({ agentId, transcriptPath, metaPath, meta: metaCheck.meta });
   }
 
-  // Per-file drift is refused above; files that disagree with *each other* are
-  // the same failure one level up (G9 — one pinned version at a time).
-  if (versions.size > 1) {
-    const sorted = [...versions].sort();
-    return refuse(
-      mismatch('versionChangedMidFile', 'session files disagree about the CC version', {
-        path: sessionDir,
-        field: 'version',
-        expected: sorted[0] ?? pinnedVersion,
-        actual: sorted.join(', '),
-      }),
-    );
-  }
-
+  // No cross-file version check. There used to be one, refusing whenever the
+  // session's files disagreed; under a window it would be unreachable, because
+  // every version is checked against the window on the line that carries it,
+  // in whichever file that is. Files that disagree therefore disagree only
+  // about which IN-WINDOW version they were written by — a CC self-update
+  // landing mid-session, which is the case Phase 4 exists to accept. The set
+  // of versions is reported on the fingerprint instead of being refused.
   return accept();
 }
 

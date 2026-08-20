@@ -46,8 +46,8 @@ Refused, each for its own distinct reason code:
 | `04-meta-invalid-json` | `metaInvalidJson` |
 | `05-subagents-dir-renamed` | `subagentsDirectoryMisnamed` (`agents/` instead of `subagents/`) |
 | `06-agent-filename-convention` | `subagentFileNameConvention` (`asynthetic0000001.jsonl`, no `agent-` prefix) |
-| `07-version-not-pinned` | `unsupportedVersion` (whole file at `2.1.235`) |
-| `08-version-changes-midfile` | `versionChangedMidFile` (starts `2.1.234`, line 3 is `2.1.235`) |
+| `07-version-not-pinned` | `unsupportedVersion` (whole file at `2.1.400`, far outside the window) |
+| `08-version-changes-midfile` | `versionChangedMidFile` (starts `2.1.234`, line 3 is `2.1.400` — in-window, then out) |
 | `09-main-transcript-is-a-directory` | `mainTranscriptNotAFile` |
 | `10-meta-not-an-object` | `metaNotAnObject` |
 | `11-entry-missing-uuid` | `entryFieldMissing` |
@@ -61,5 +61,21 @@ Refused, each for its own distinct reason code:
 
 Cases 05 and 08 are the ones worth re-reading before changing anything. 05 is the directory
 convention tripwire: subagent attribution rests on an undocumented convention, so a rename must be
-loud. 08 is the withdrawn drift-tolerance proposal (Phase 0 handover, trap 5) held to G9 — one pinned
-version, mid-file drift refuses.
+loud. 08 is the withdrawn drift-tolerance proposal (Phase 0 handover, trap 5): a file whose CC
+version changes partway through.
+
+**07 and 08 were re-versioned in Phase 4 (2026-08-20), and this is the one thing about them that has
+ever changed.** Both used to carry `2.1.235`, chosen because it was "not `2.1.234`" back when exactly
+one version was pinned. P4-F replaced that pin with an acceptance window of +/-5 on the third
+component and +/-1 on the second, anchored on `2.1.234` — which puts `2.1.235` *inside* it, one step
+away. Left alone, both cases would have quietly stopped refusing and the corpus would have carried
+two files whose names lied. They now carry `2.1.400`, which is far outside any plausible window, so
+each case still demonstrates exactly the code its row claims. Their expectations did not change;
+their bytes did, to keep those expectations true.
+
+The accepted direction — a mid-file change where every observed version is inside the window, which
+is CC updating itself under a live session — is deliberately **not** a committed fixture. It is
+covered by temp-built sessions in `src/parser/fingerprint.test.ts`, because the window is a matrix
+and a fixture per row would be twenty trees each saying one thing. It also has a real witness that
+is not committed: live session `3f8e00ab-…` changes from `2.1.234` at line 3 to `2.1.235` at line 47
+of its main transcript, measured 2026-08-20.

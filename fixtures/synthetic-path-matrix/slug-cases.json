@@ -58,10 +58,10 @@
   {
     "id": "unc-wsl-localhost",
     "form": "unc",
-    "workspacePath": "\\\\wsl.localhost\\Ubuntu\\home\\dev\\agent-deck",
-    "expectedSlug": "--wsl.localhost-Ubuntu-home-dev-agent-deck",
+    "workspacePath": "\\\\wsl.localhost\\Ubuntu\\home\\probe\\agent-deck",
+    "expectedSlug": "--wsl.localhost-Ubuntu-home-probe-agent-deck",
     "witness": "encoding-rule",
-    "note": "How Windows sees a WSL-side directory. Measured form: `wslpath -w /home/dev` returned exactly this prefix on the G1A (see wsl-environment.measured.json). Dots are not part of the substitution set and survive."
+    "note": "How Windows sees a WSL-side directory. Measured form: `wslpath -w /home/probe/agent-deck` returned exactly this string on the G1A (see wsl-environment.measured.json -> wsl.wslpath.windowsFormOfNeutralLinuxPath). Dots are not part of the substitution set and survive. `probe` is a deliberately neutral account name, not the distro's real one: this row is hand-made, no capture depends on the name, and README.md's privacy section explains why the WSL-side account name is kept out of this directory."
   },
   {
     "id": "wsl-mount-of-windows-workspace",
@@ -82,16 +82,16 @@
   {
     "id": "wsl-linux-home",
     "form": "posix",
-    "workspacePath": "/home/dev/agent-deck",
-    "expectedSlug": "-home-dev-agent-deck",
+    "workspacePath": "/home/probe/agent-deck",
+    "expectedSlug": "-home-probe-agent-deck",
     "witness": "encoding-rule",
-    "note": "A workspace living on the Linux side. Leading slash becomes a leading dash."
+    "note": "A workspace living on the Linux side. Leading slash becomes a leading dash. The account name is the neutral `probe`, not the distro's real one - see README.md's privacy section; nothing here is witnessed, so nothing depends on it."
   },
   {
     "id": "posix-trailing-separator",
     "form": "posix",
-    "workspacePath": "/home/dev/ws/",
-    "expectedSlug": "-home-dev-ws",
+    "workspacePath": "/home/probe/ws/",
+    "expectedSlug": "-home-probe-ws",
     "witness": "encoding-rule",
     "note": "Same stripping rule as the Windows form."
   },

@@ -37,6 +37,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -75,6 +76,8 @@ interface MeasuredWslEnvironment {
     defaultVersion: number;
     kernel: string;
     home: string;
+    homeShape: string;
+    homeSha256: string;
     claudeDirectoryPresent: boolean;
     linuxNodeOnPath: boolean;
     wslpath: {
@@ -82,13 +85,24 @@ interface MeasuredWslEnvironment {
       wslMountForm: string;
       linuxHome: string;
       windowsFormOfLinuxHome: string;
+      windowsFormOfLinuxHomeSha256: string;
+      neutralLinuxPath: string;
+      windowsFormOfNeutralLinuxPath: string;
     };
+  };
+  redaction: {
+    appliedAt: string;
+    destroyed: string;
+    kept: string;
+    whyNotTheWindowsSide: string;
+    notASecret: string;
   };
   slugs: { windows: string; wslMount: string; identical: boolean };
   probeLinux: {
     platform: string;
     pathSeparator: string;
     homedir: string;
+    homedirSha256: string;
     rootFromHome: { root: string; source: string };
     tempFilesystemCaseSensitive: boolean;
     discoveryWorkspace: string;
@@ -105,6 +119,20 @@ interface MeasuredWslEnvironment {
 const MEASURED = JSON.parse(
   await readFile(join(MATRIX_DIR, 'wsl-environment.measured.json'), 'utf8'),
 ) as MeasuredWslEnvironment;
+
+/**
+ * The token the WSL-side account name is stored as. `wsl-environment.measured.json`
+ * carries digests instead of the literal home path; see that file's `redaction`
+ * block and README.md's privacy section for why the WSL side is redacted while
+ * the Windows side is not.
+ */
+const REDACTED_WSL_HOME = '/home/<redacted-user>';
+
+const sha256 = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
+
+/** Rewrite a live Linux path into the spelling the fixture stores. */
+const redactWslHome = (value: string, liveHome: string): string =>
+  value.replace(liveHome, REDACTED_WSL_HOME);
 
 function caseById(id: string): SlugCase {
   const found = SLUG_CASES.find((c) => c.id === id);
@@ -214,8 +242,8 @@ describe('projects root resolution', () => {
         'C:\\Users\\dev\\.claude\\projects',
       );
     } else {
-      expect(resolveProjectsRoot({ env: {}, homedir: () => '/home/dev' }).root).toBe(
-        '/home/dev/.claude/projects',
+      expect(resolveProjectsRoot({ env: {}, homedir: () => '/home/probe' }).root).toBe(
+        '/home/probe/.claude/projects',
       );
     }
   });
@@ -256,7 +284,7 @@ describe('selectSlugDirectory (pure: every branch runs on every platform)', () =
   });
 
   it('reports none when nothing matches', () => {
-    expect(selectSlugDirectory(['-home-dev-ws'], want)).toEqual({ kind: 'none' });
+    expect(selectSlugDirectory(['-home-probe-ws'], want)).toEqual({ kind: 'none' });
   });
 
   it('flipNthLetterCase makes variants that differ by case alone', () => {
@@ -588,11 +616,20 @@ describe.skipIf(!WSL.usable)('WSL leg: this repo\u2019s resolution code under re
         expect(report.platform).toBe('linux');
         expect(report.pathSeparator).toBe('/');
         expect(report.env.WSL_DISTRO_NAME).toBe(MEASURED.wsl.distro);
-        expect(report.homedir).toBe(MEASURED.wsl.home);
+        // The recorded home is REDACTED (README.md -> Privacy), so the identity
+        // check runs on the digest, not the literal: same strength as the
+        // string equality it replaces, without the account name in the file.
+        expect(report.homedir).toMatch(new RegExp(MEASURED.wsl.homeShape));
+        expect(sha256(report.homedir)).toBe(MEASURED.wsl.homeSha256);
         expect(report.rootFromHome).toEqual({
-          root: `${MEASURED.wsl.home}/.claude/projects`,
+          root: `${report.homedir}/.claude/projects`,
           source: 'home',
         });
+        // ... and the redacted spelling of the live root is the recorded one,
+        // so the fixture is still checked against the machine end to end.
+        expect(redactWslHome(report.rootFromHome.root, report.homedir)).toBe(
+          MEASURED.probeLinux.rootFromHome.root,
+        );
         expect(report.rootFromOverride.source).toBe('env');
 
         // --- slug encoding is identical to the Windows leg ---------------
@@ -626,7 +663,7 @@ describe.skipIf(!WSL.usable)('WSL leg: this repo\u2019s resolution code under re
 
         // --- the recorded measurement still holds ------------------------
         expect(report.platform).toBe(MEASURED.probeLinux.platform);
-        expect(report.rootFromHome.root).toBe(MEASURED.probeLinux.rootFromHome.root);
+        expect(sha256(report.homedir)).toBe(MEASURED.probeLinux.homedirSha256);
         expect(report.ambiguousSlug.outcome).toBe(MEASURED.probeLinux.ambiguousOutcome);
 
         // --- G1: WSL's own ~/.claude is exactly as we found it -----------
@@ -643,11 +680,30 @@ describe.skipIf(!WSL.usable)('WSL leg: this repo\u2019s resolution code under re
   );
 
   it('wslpath still reports the mount translation the fixture recorded', () => {
-    const { windowsWorkspace, wslMountForm, linuxHome, windowsFormOfLinuxHome } =
+    const { windowsWorkspace, wslMountForm, neutralLinuxPath, windowsFormOfNeutralLinuxPath } =
       MEASURED.wsl.wslpath;
     expect(wsl(['wslpath', '-u', forWslpath(windowsWorkspace)])).toBe(wslMountForm);
-    expect(wsl(['wslpath', '-w', linuxHome])).toBe(windowsFormOfLinuxHome);
-    expect(wsl(['sh', '-c', 'echo "$HOME"'])).toBe(MEASURED.wsl.home);
+    // The Linux -> UNC direction is pinned on a path that carries no account
+    // name. `wslpath -w` is pure string translation and never stats, so an
+    // absent /home/probe measures the same rule the real home did.
+    expect(wsl(['wslpath', '-w', neutralLinuxPath])).toBe(windowsFormOfNeutralLinuxPath);
+    expect(wsl(['sh', '-c', 'test -e /home/probe && echo present || echo absent'])).toBe('absent');
+  });
+
+  it('the UNC spelling of the REAL home matches the digest and the recorded shape, without naming the account', () => {
+    const home = wsl(['sh', '-c', 'echo "$HOME"']);
+    const unc = wsl(['wslpath', '-w', home]);
+    // Identity of the machine: digests, not literals.
+    expect(sha256(home)).toBe(MEASURED.wsl.homeSha256);
+    expect(sha256(unc)).toBe(MEASURED.wsl.wslpath.windowsFormOfLinuxHomeSha256);
+    // The rule itself, derived from the live values rather than compared to a
+    // stored literal: \\wsl.localhost\<distro>\<the same path, backslashed>.
+    expect(unc).toBe(`\\\\wsl.localhost\\${MEASURED.wsl.distro}${home.replace(/\//g, '\\')}`);
+    // And the redacted spelling of both is exactly what the fixture stores.
+    expect(redactWslHome(home, home)).toBe(MEASURED.wsl.wslpath.linuxHome);
+    expect(unc.replace(home.replace(/\//g, '\\'), '\\home\\<redacted-user>')).toBe(
+      MEASURED.wsl.wslpath.windowsFormOfLinuxHome,
+    );
   });
 });
 
@@ -691,6 +747,241 @@ describe('recorded WSL measurement (runs with or without WSL)', () => {
     expect(posixCases.length).toBeGreaterThan(0);
     for (const c of posixCases) {
       expect(c.witness).toBe('encoding-rule');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Privacy — the sweep, executable
+// ---------------------------------------------------------------------------
+
+/**
+ * This directory introduced two path SHAPES the repo had not carried before: a
+ * POSIX home (`/home/<user>`) and a WSL UNC (`\\wsl.localhost\<distro>\home\<user>`).
+ * A privacy sweep grepping `C:\Users\dev` or `projects` matches neither, so
+ * it would return clean while both sat in the tree — the same failure
+ * `fixtures/hook-events/` already has from the other direction, where the paths
+ * are backslash-separated and a forward-slash grep finds nothing.
+ *
+ * The patterns below are the ones README.md's privacy section publishes for
+ * Phase 5, in executable form, because prose nobody runs is how a sweep
+ * silently returns clean. Each carries a positive control (it must match a
+ * known-bad sample) and a presence control (it must still match something real
+ * in the fixtures), so a pattern that rots into matching nothing fails loudly
+ * instead of reporting coverage.
+ */
+describe('privacy sweep over fixtures/synthetic-path-matrix', () => {
+  /** Runs of backslashes collapse so one pattern covers both raw and JSON-escaped text. */
+  const flatten = (text: string): string => text.replace(/\\+/g, '\\');
+
+  /**
+   * The account segment of a real path: the separator is `/` or `\`, so a dash
+   * is part of the name (`<redacted-user>` has one).
+   */
+  const ACCOUNT = '[A-Za-z0-9._<>-]+';
+  /**
+   * The account segment of a SLUG: the dash is the separator there, so
+   * including it would swallow the rest of the slug and the allow-list check
+   * would compare the wrong string.
+   */
+  const SLUG_ACCOUNT = '[A-Za-z0-9._<>]+';
+
+  interface Category {
+    readonly id: string;
+    readonly pattern: RegExp;
+    /** Index of the capture group holding the account name. */
+    readonly account: number;
+    readonly allowed: readonly string[];
+    /** A string this pattern MUST match, or the sweep proves nothing. */
+    readonly positiveControl: string;
+    readonly mustAppearIn: readonly string[];
+    readonly why: string;
+  }
+
+  const CATEGORIES: readonly Category[] = [
+    {
+      id: 'posix-home',
+      pattern: new RegExp(`/home/(${ACCOUNT})`, 'g'),
+      account: 1,
+      // `<user>` is the placeholder README.md uses when it names the shape;
+      // the other two are the redaction token and the neutral fixture account.
+      allowed: ['<redacted-user>', 'probe', '<user>'],
+      positiveControl: '/home/exampleuser/agent-deck',
+      mustAppearIn: ['slug-cases.json', 'wsl-environment.measured.json', 'README.md'],
+      why: 'new category: a POSIX home path, invisible to any Windows-path sweep',
+    },
+    {
+      id: 'slug-posix-home',
+      pattern: new RegExp(`-home-(${SLUG_ACCOUNT})`, 'g'),
+      account: 1,
+      allowed: ['probe'],
+      positiveControl: '-home-exampleuser-agent-deck',
+      mustAppearIn: ['slug-cases.json'],
+      why: 'the same path after slug encoding, where the separators are gone',
+    },
+    {
+      id: 'unc-wsl',
+      pattern: new RegExp(`\\\\wsl\\.localhost\\\\([^\\\\]+)\\\\home\\\\(${ACCOUNT})`, 'g'),
+      account: 2,
+      allowed: ['<redacted-user>', 'probe', '<user>'],
+      positiveControl: '\\\\wsl.localhost\\Ubuntu\\home\\exampleuser',
+      mustAppearIn: ['slug-cases.json', 'wsl-environment.measured.json'],
+      why: 'new category: the UNC spelling Windows uses for a WSL-side path',
+    },
+    {
+      id: 'slug-unc-wsl',
+      pattern: new RegExp(`--wsl\\.localhost-([A-Za-z0-9._]+)-home-(${SLUG_ACCOUNT})`, 'g'),
+      account: 2,
+      allowed: ['probe'],
+      positiveControl: '--wsl.localhost-Ubuntu-home-exampleuser-agent-deck',
+      mustAppearIn: ['slug-cases.json'],
+      why: 'the UNC form after slug encoding',
+    },
+    {
+      id: 'windows-user',
+      pattern: new RegExp(`[A-Za-z]:[\\\\/]+Users[\\\\/]+(${ACCOUNT})`, 'g'),
+      account: 1,
+      allowed: ['dev', 'Probe'],
+      positiveControl: 'C:\\Users\\exampleuser\\ws',
+      mustAppearIn: ['slug-cases.json', 'wsl-environment.measured.json', 'README.md'],
+      why: 'the pre-existing category, RETAINED deliberately: CC wrote this name into the captured slug directory',
+    },
+    {
+      id: 'wsl-mount-user',
+      pattern: new RegExp(`/mnt/[A-Za-z]/Users/(${ACCOUNT})`, 'g'),
+      account: 1,
+      allowed: ['dev', 'Probe'],
+      positiveControl: '/mnt/c/Users/exampleuser/ws',
+      mustAppearIn: ['slug-cases.json', 'wsl-environment.measured.json', 'README.md'],
+      why: 'the Windows account name reached through the WSL mount - a forward-slash spelling a backslash sweep misses',
+    },
+    {
+      id: 'slug-wsl-mount-user',
+      pattern: new RegExp(`-mnt-[A-Za-z]-Users-(${SLUG_ACCOUNT})`, 'g'),
+      account: 1,
+      allowed: ['dev', 'Probe'],
+      positiveControl: '-mnt-c-Users-exampleuser-ws',
+      mustAppearIn: ['slug-cases.json', 'wsl-environment.measured.json'],
+      why: 'the mount form after slug encoding',
+    },
+  ];
+
+  let files: { name: string; text: string }[] = [];
+
+  beforeAll(async () => {
+    const names = (await readdir(MATRIX_DIR, { withFileTypes: true }))
+      .filter((e) => e.isFile())
+      .map((e) => e.name);
+    files = await Promise.all(
+      names.map(async (name) => ({
+        name,
+        text: flatten(await readFile(join(MATRIX_DIR, name), 'utf8')),
+      })),
+    );
+  });
+
+  for (const category of CATEGORIES) {
+    it(`${category.id}: matches its control, and every hit in the directory is on the allow-list`, () => {
+      // Positive control: a pattern that has stopped matching finds nothing and
+      // looks like a pass.
+      const control = new RegExp(category.pattern.source, 'g').exec(
+        flatten(category.positiveControl),
+      );
+      expect(control, `${category.id} pattern no longer matches its own control`).not.toBeNull();
+
+      const seen = new Map<string, string[]>();
+      for (const file of files) {
+        const re = new RegExp(category.pattern.source, 'g');
+        let match: RegExpExecArray | null;
+        while ((match = re.exec(file.text)) !== null) {
+          const account = match[category.account] ?? '';
+          const where = seen.get(account) ?? [];
+          if (!where.includes(file.name)) where.push(file.name);
+          seen.set(account, where);
+        }
+      }
+
+      for (const [account, where] of seen) {
+        expect(
+          category.allowed,
+          `${category.id}: account "${account}" in ${where.join(', ')} — ${category.why}`,
+        ).toContain(account);
+      }
+
+      // Presence control: the pattern must still be finding the real thing.
+      for (const name of category.mustAppearIn) {
+        const re = new RegExp(category.pattern.source, 'g');
+        const file = files.find((f) => f.name === name);
+        expect(file, `${name} is missing from ${MATRIX_DIR}`).toBeDefined();
+        expect(
+          re.test(file?.text ?? ''),
+          `${category.id} found nothing in ${name}: the pattern has rotted, or the fixture changed shape`,
+        ).toBe(true);
+      }
+    });
+  }
+
+  it('every file in the directory is covered by the sweep, so a new file cannot arrive unswept', () => {
+    const known = ['README.md', 'slug-cases.json', 'wsl-environment.measured.json'];
+    const names = files.map((f) => f.name).sort();
+    expect(
+      names,
+      'a new file landed in fixtures/synthetic-path-matrix: extend the privacy section of its README and the mustAppearIn lists above before committing it',
+    ).toEqual(known.sort());
+  });
+
+  it.skipIf(!WSL.usable)(
+    'the neutral account names are not the machine\u2019s real one',
+    () => {
+      const home = wsl(['sh', '-c', 'echo "$HOME"']);
+      const account = home.slice(home.lastIndexOf('/') + 1);
+      expect(account.length).toBeGreaterThan(0);
+      // If the distro's account were literally "probe", the allow-list above
+      // would be permitting the real name.
+      expect(account).not.toBe('probe');
+      expect(account).not.toBe('<redacted-user>');
+      for (const file of files) {
+        expect(
+          file.text.includes(`/home/${account}`),
+          `${file.name} contains the live WSL account name in POSIX form`,
+        ).toBe(false);
+        expect(
+          file.text.includes(`\\home\\${account}`),
+          `${file.name} contains the live WSL account name in UNC form`,
+        ).toBe(false);
+        expect(
+          file.text.includes(`-home-${account}`),
+          `${file.name} contains the live WSL account name in slug form`,
+        ).toBe(false);
+      }
+    },
+    60_000,
+  );
+
+  it('the measured fixture says what it destroyed, what it kept, and why the Windows side differs', () => {
+    expect(MEASURED.redaction.appliedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(MEASURED.redaction.destroyed).toMatch(/account name/i);
+    expect(MEASURED.redaction.kept).toMatch(/sha256/i);
+    expect(MEASURED.redaction.whyNotTheWindowsSide).toMatch(/cc-capture|witness/i);
+    // The digest is a stability pin, not protection, and the file must not
+    // claim otherwise.
+    expect(MEASURED.redaction.notASecret).toMatch(/not protection|low-entropy/i);
+    expect(MEASURED.wsl.home).toBe(REDACTED_WSL_HOME);
+    expect(MEASURED.probeLinux.homedir).toBe(REDACTED_WSL_HOME);
+    expect(MEASURED.wsl.homeSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(MEASURED.wsl.wslpath.windowsFormOfLinuxHomeSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(MEASURED.wsl.homeSha256).not.toBe(MEASURED.wsl.wslpath.windowsFormOfLinuxHomeSha256);
+  });
+
+  it('the README publishes the patterns rather than describing them', async () => {
+    const readme = await readFile(join(MATRIX_DIR, 'README.md'), 'utf8');
+    expect(readme).toMatch(/## Privacy/);
+    // Each category id is named in the README, so a reader can map a hit here
+    // back to the prose and vice versa.
+    for (const category of CATEGORIES) {
+      expect(readme, `README.md does not mention the ${category.id} pattern`).toContain(
+        category.id,
+      );
     }
   });
 });

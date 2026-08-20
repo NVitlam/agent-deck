@@ -1,24 +1,38 @@
 {
-  "provenance": "MEASURED on the G1A (the development machine), not synthetic and not a Claude Code capture. Every value here was read back from a live WSL2 Ubuntu distro and from this repo's own resolution code executed by a real Linux Node inside it. It sits in a synthetic- directory because the directory's other file is hand-made; this one is not - see README.md.",
+  "provenance": "MEASURED on the G1A (the development machine), not synthetic and not a Claude Code capture. Every value here was read back from a live WSL2 Ubuntu distro and from this repo's own resolution code executed by a real Linux Node inside it. It sits in a synthetic- directory because the directory's other file is hand-made; this one is not - see README.md. One class of value is REDACTED rather than verbatim: see the redaction block below, and do not read a <redacted-user> token as a measurement.",
   "measuredAt": "2026-08-20",
   "howMeasured": "src/model/pathmatrix.probe.ts bundled with esbuild (esm, platform=node) and run as: wsl.exe -- <linuxNode> <bundle> --agent-deck-path-probe fixtures/synthetic-path-matrix/slug-cases.json. src/model/pathmatrix.test.ts re-runs exactly that and refuses to disagree with this file.",
+  "redaction": {
+    "appliedAt": "2026-08-20",
+    "destroyed": "The WSL-side account name. Every Linux-side home path is stored as the literal token /home/<redacted-user>, and the UNC spelling of it as \\\\wsl.localhost\\Ubuntu\\home\\<redacted-user> - neither token is a path, and neither ever existed on any machine.",
+    "kept": "Everything the measurement is about: that $HOME is a posix absolute path under /home, that the Linux projects root is $HOME/.claude/projects joined with '/', that wslpath -w maps a Linux path to \\\\wsl.localhost\\<distro>\\<the same path, backslashed>, the distro and kernel identifiers that date the measurement, and both Windows spellings of the workspace. Also kept: sha256 digests of the two redacted strings, so a re-run can still prove it is describing THIS machine and not a different one.",
+    "whyNotTheWindowsSide": "The Windows-side account name stays verbatim here and in slug-cases.json because it is irreducible: Claude Code itself wrote the directory name c--Users-dev-projects-agent-deck under fixtures/cc-2.1.234/projects, that directory is the only cc-capture witness in the matrix, and redacting the path it decodes from would destroy the witness while removing nothing from the repo. The WSL side has the opposite property: claudeDirectoryPresent is false, no capture exists on that side of the boundary, and every posix/wslMount row is witness=encoding-rule, so no evidence depends on the account name.",
+    "notASecret": "These digests are stability pins, not protection. A short POSIX account name is low-entropy and a sha256 of it is trivially reversible from a username list; the name is in any case already present in the Windows paths this repo keeps deliberately. What the redaction buys is category containment: the POSIX-home and UNC-wsl shapes no longer appear here with an account name in them, so a later edit cannot silently reintroduce a category that a Windows-path privacy sweep does not look for. The patterns are in the privacy section of README.md and are enforced by a test.",
+    "sha256Of": "the exact byte string shown, with no trailing newline"
+  },
   "wsl": {
     "distro": "Ubuntu",
     "distroVersion": "Ubuntu 24.04.4 LTS",
     "defaultVersion": 2,
     "kernel": "6.6.87.2-microsoft-standard-WSL2",
-    "home": "/home/dev",
+    "home": "/home/<redacted-user>",
+    "homeShape": "^/home/[^/]+$",
+    "homeSha256": "39218bda437b09ef05fe50b232c5ef75af3ef7bdaaf108065fc2bbc96eaab66a",
     "claudeDirectoryPresent": false,
     "claudeDirectoryNote": "No Claude Code has ever run inside this distro: $HOME/.claude does not exist, and the `claude` on the WSL PATH is the Windows npm shim reached through /mnt/c interop, not a Linux install. Consequence: no posix slug in slug-cases.json is witnessed from CC itself.",
     "linuxNodeOnPath": false,
-    "linuxNodeUsed": "/home/dev/.local/opt/node-v24.19.0-linux-x64/bin/node",
+    "linuxNodeUsed": "$HOME/.local/opt/node-v24.19.0-linux-x64/bin/node",
     "linuxNodeVersion": "v24.19.0",
-    "linuxNodeNote": "Unpacked from the official tarball for this leg; the distro ships no Node. Not part of any checkout, which is why the WSL leg announces a skip when it cannot find one.",
+    "linuxNodeNote": "Unpacked from the official tarball for this leg; the distro ships no Node. Not part of any checkout, which is why the WSL leg announces a skip when it cannot find one. Recorded in $HOME-relative form for the same reason the home path is redacted; the test resolves it with `command -v`, which expands $HOME inside the distro.",
     "wslpath": {
       "windowsWorkspace": "C:\\Users\\dev\\projects\\agent-deck",
       "wslMountForm": "/mnt/c/Users/dev/projects/agent-deck",
-      "linuxHome": "/home/dev",
-      "windowsFormOfLinuxHome": "\\\\wsl.localhost\\Ubuntu\\home\\dev"
+      "linuxHome": "/home/<redacted-user>",
+      "windowsFormOfLinuxHome": "\\\\wsl.localhost\\Ubuntu\\home\\<redacted-user>",
+      "windowsFormOfLinuxHomeSha256": "652ccd54ea46958bb130e12314932617283afe3b8e41b329553b908154d0ab82",
+      "neutralLinuxPath": "/home/probe/agent-deck",
+      "windowsFormOfNeutralLinuxPath": "\\\\wsl.localhost\\Ubuntu\\home\\probe\\agent-deck",
+      "neutralLinuxPathNote": "MEASURED 2026-08-20: `wslpath -w /home/probe/agent-deck`. /home/probe does not exist in the distro - /home holds exactly one account - and wslpath -w never stats the path, so this pair pins the same UNC translation rule the real home did while carrying no account name. It is the path slug-cases.json's unc-wsl-localhost row decodes from."
     }
   },
   "slugs": {
@@ -32,8 +46,9 @@
     "platform": "linux",
     "nodeVersion": "v24.19.0",
     "pathSeparator": "/",
-    "homedir": "/home/dev",
-    "rootFromHome": { "root": "/home/dev/.claude/projects", "source": "home" },
+    "homedir": "/home/<redacted-user>",
+    "homedirSha256": "39218bda437b09ef05fe50b232c5ef75af3ef7bdaaf108065fc2bbc96eaab66a",
+    "rootFromHome": { "root": "/home/<redacted-user>/.claude/projects", "source": "home" },
     "tempFilesystemCaseSensitive": true,
     "discoveryWorkspace": "/mnt/c/Users/Probe/ws",
     "discoverySlug": "-mnt-c-Users-Probe-ws",

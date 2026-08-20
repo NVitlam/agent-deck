@@ -425,6 +425,14 @@ export class HookListener {
   }
 
   #handleRequest(req: IncomingMessage, res: ServerResponse): void {
+    // G3: a hook process that dies mid-reply resets the socket. Without a
+    // listener here that becomes an unhandled 'error' event, i.e. an uncaught
+    // exception that takes the whole extension host down. Count it and carry
+    // on. The same applies to the request stream, handled further below.
+    res.on('error', () => {
+      this.#counters.socketErrors += 1;
+    });
+
     // G5: socket-level origin check. Request headers are never consulted for
     // this decision — X-Forwarded-For, X-Real-IP and Forwarded are attacker-
     // controlled strings and grant nothing.

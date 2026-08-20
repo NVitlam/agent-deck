@@ -1,14 +1,47 @@
 <script lang="ts">
   import type { SessionState } from '../src/model/events.js';
-  import { COST_NOT_COMPUTED_TITLE, formatCost, formatTokens, livenessLabel } from './format.js';
+  import {
+    COST_NOT_COMPUTED_TITLE,
+    LIVENESS_INFERRED_LABEL,
+    LIVENESS_INFERRED_TITLE,
+    formatCost,
+    formatTokens,
+    livenessLabel,
+    livenessTitle,
+  } from './format.js';
 
-  let { session }: { session: SessionState } = $props();
+  // `degraded` is the hook tap's health, not a property of this session — it
+  // arrives on its own message (see `DegradedMessage`). It is passed in
+  // because the liveness value beside the session id means something weaker
+  // while the tap is silent, and the header is where that value is read.
+  let { session, degraded = false }: { session: SessionState; degraded?: boolean } = $props();
 </script>
 
-<header class="header" data-testid="session-header">
+<header
+  class="header"
+  data-testid="session-header"
+  data-liveness={session.liveness}
+  data-liveness-inferred={String(degraded)}
+>
   <div class="title">
     <span class="session-id" data-testid="header-session-id">{session.sessionId}</span>
-    <span class="liveness" data-testid="header-liveness">{livenessLabel(session.liveness)}</span>
+    <span
+      class="liveness liveness-{session.liveness}"
+      data-testid="header-liveness"
+      data-liveness={session.liveness}
+      title={livenessTitle(session.liveness)}
+    >
+      <span class="dot" aria-hidden="true"></span>{livenessLabel(session.liveness)}</span
+    >
+    {#if degraded}
+      <!-- Deliberately independent of `degradedDismissed`: dismissing the
+           banner silences one episode, it does not improve the source of this
+           number. Without this the user dismisses the banner and then reads
+           "live" with nothing saying where "live" came from. -->
+      <span class="inferred" data-testid="header-liveness-inferred" title={LIVENESS_INFERRED_TITLE}
+        >({LIVENESS_INFERRED_LABEL})</span
+      >
+    {/if}
   </div>
   <dl class="totals">
     <div class="total">
@@ -57,8 +90,63 @@
     white-space: nowrap;
   }
 
+  /* The four liveness states must be distinguishable in a screenshot, not
+     only in the DOM, so each gets a colour AND a filled/hollow dot — colour
+     alone fails for a colour-blind reader and fails again in a greyscale
+     screenshot. All colours are VS Code theme variables (G5: nothing is
+     fetched, and no palette is hard-coded to light or dark). */
   .liveness {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
     font-size: 0.85em;
+    opacity: 0.75;
+  }
+
+  .dot {
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    align-self: center;
+  }
+
+  .liveness-live {
+    color: var(--vscode-charts-green, inherit);
+    opacity: 1;
+  }
+
+  .liveness-live .dot {
+    background: currentColor;
+  }
+
+  .liveness-idle {
+    color: var(--vscode-charts-yellow, inherit);
+    opacity: 1;
+  }
+
+  .liveness-idle .dot {
+    background: transparent;
+  }
+
+  .liveness-ended .dot {
+    background: currentColor;
+    opacity: 0.5;
+  }
+
+  .liveness-unsupported {
+    color: var(--vscode-errorForeground, inherit);
+    opacity: 1;
+  }
+
+  .liveness-unsupported .dot {
+    background: transparent;
+    border-style: dashed;
+  }
+
+  .inferred {
+    font-size: 0.85em;
+    font-style: italic;
     opacity: 0.75;
   }
 

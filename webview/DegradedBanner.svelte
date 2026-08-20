@@ -15,7 +15,12 @@
      reappears only if the tap recovers and degrades again. The tree keeps
      rendering underneath: content and liveness are separate sources (G2), so
      losing the hook tap costs "what is running right now", not the session. -->
-<div class="banner" role="status" data-testid="degraded-banner">
+<div
+  class="banner"
+  role="status"
+  data-testid="degraded-banner"
+  data-reason={reason ?? 'unspecified'}
+>
   <span class="text">
     Liveness is degraded — {degradedReasonText(reason)}. The tree below is still
     accurate; only "running right now" is unavailable. See the README for the

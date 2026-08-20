@@ -104,7 +104,7 @@ export function statusLabel(status: 'running' | 'done' | 'error'): string {
   }
 }
 
-/** Human label for a session's liveness. */
+/** Human label for a session's liveness. See {@link Liveness}, declared below. */
 export function livenessLabel(
   liveness: 'live' | 'idle' | 'ended' | 'unsupported',
 ): string {
@@ -119,6 +119,84 @@ export function livenessLabel(
       return 'unsupported';
   }
 }
+
+// ---------------------------------------------------------------------------
+// The five UI states: live, idle, ended, unsupported, degraded
+// ---------------------------------------------------------------------------
+//
+// Four of the five are values of `SessionState.liveness`; the fifth (degraded)
+// is not a session property at all — it is the hook tap's health, which
+// arrives on its own message because the listener is one socket for the whole
+// window (see `DegradedMessage` in `src/model/events.ts`).
+//
+// Every string below describes the state machine in `src/model/liveness.ts`
+// and nothing else. In particular NONE of them names a number of seconds: the
+// recency threshold is `DEFAULT_MTIME_THRESHOLD_MS`, it is configurable, and
+// the webview is never told its value. Printing "120 s" here would be a number
+// the renderer cannot stand behind — the same class of defect as printing a
+// fabricated cost.
+
+/** The four values `SessionState.liveness` can take. */
+export type Liveness = 'live' | 'idle' | 'ended' | 'unsupported';
+
+/** The whole set, so a caller never has to re-list it. */
+export const LIVENESS_VALUES: readonly Liveness[] = [
+  'live',
+  'idle',
+  'ended',
+  'unsupported',
+];
+
+/**
+ * What a liveness value means, for a `title`.
+ *
+ * Straight off the transition table in `liveness.ts`: two independent signals,
+ * `running` and `recent`. Both good is `live`, both bad is `ended`, and a
+ * disagreement is `idle` — because a disagreement is exactly the case where
+ * claiming either extreme would be a guess. `unsupported` is never inferred;
+ * it is asserted from outside by a refusal (G3).
+ */
+export function livenessTitle(liveness: Liveness): string {
+  switch (liveness) {
+    case 'live':
+      return 'recently active, and something is still believed to be running';
+    case 'idle':
+      return 'only one of "recently active" and "still running" holds, so neither is claimed';
+    case 'ended':
+      return 'nothing is believed to be running, and there has been no recent activity';
+    case 'unsupported':
+      return 'the transcript layout was not recognised, so no tree is rendered for this session';
+  }
+}
+
+/**
+ * The liveness a session DISPLAYS, which is not always the one it carries.
+ *
+ * A `schemaMismatch` message refuses a session without changing the
+ * `SessionState.liveness` the last snapshot delivered, so a session refused
+ * mid-flight still says `live` on the wire while the main pane shows the
+ * refusal screen. Two surfaces disagreeing about one session is the seam this
+ * function closes: refused displays as `unsupported`, everywhere.
+ */
+export function displayLiveness(liveness: Liveness, refused: boolean): Liveness {
+  return refused ? 'unsupported' : liveness;
+}
+
+/**
+ * Marker shown beside a liveness value while the hook tap is degraded.
+ *
+ * Degraded means the documented tap is silent, so the liveness value came from
+ * transcript recency alone — the fallback `liveness.ts` takes for a session
+ * that has produced no hook events. That is the safe direction, but it is not
+ * the same claim, and the header must not present it as one. The marker does
+ * NOT depend on whether the banner was dismissed: dismissing the banner
+ * silences the episode, it does not make the value better-sourced.
+ */
+export const LIVENESS_INFERRED_LABEL = 'inferred';
+
+/** The tooltip that explains {@link LIVENESS_INFERRED_LABEL}. */
+export const LIVENESS_INFERRED_TITLE =
+  'the hook tap is not reporting, so this is inferred from transcript activity alone';
 
 /** Why the hook tap is degraded, in one short clause. */
 export function degradedReasonText(

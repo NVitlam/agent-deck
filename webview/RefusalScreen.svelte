@@ -6,7 +6,7 @@
      no tree, not even a partial one, and not a tree with a warning attached.
      A half-parsed tree looks authoritative and is not, which is worse than
      showing nothing. The caller must not render any tree node alongside this. -->
-<section class="refusal" data-testid="refusal-screen" role="alert">
+<section class="refusal" data-testid="refusal-screen" data-liveness="unsupported" role="alert">
   <h2>Unsupported session</h2>
   <p>
     Agent Deck did not recognise the transcript layout for
@@ -18,8 +18,13 @@
     that format does not match what it was pinned against, a partly-understood
     tree would be a confident guess. It refuses instead.
   </p>
+  <p class="why" data-testid="refusal-cause">
+    The usual cause is that Claude Code changed its on-disk format since this
+    version of Agent Deck was pinned to it.
+  </p>
   <p class="why">
-    Other sessions in the rail are unaffected.
+    Other sessions in the rail are unaffected, and nothing was changed on disk
+    — Agent Deck only ever reads.
   </p>
 </section>
 

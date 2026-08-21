@@ -32,6 +32,7 @@
 -->
 <script lang="ts">
   import type { AgentNode, ParkedGraft } from '../src/model/events.js';
+  import { isAgentNode } from '../src/model/events.js';
   import type { CellPlacement } from './canvas-contract.js';
   import {
     ANIMATED_CLASSES,
@@ -86,6 +87,8 @@
   const NUCLEUS_SUB_DY = 24;
   /** Baseline of a nested cell's sub-line. Mockup: `c.y + c.R + 16`. */
   const SUB_DY = 18;
+  /** The stats line sits under the token counts. */
+  const STATS_DY = 32;
   /** Stand-off of the `+n` badge above the membrane. */
   const BADGE_DY = 10;
   /** Length of the parked graft's dangling stub. Mockup: `58`. */
@@ -132,6 +135,29 @@
       ? AWAITING
       : `${formatTokens(agent.tokens.in)} in · ${formatTokens(agent.tokens.out)} out`,
   );
+
+  /**
+   * What this agent DID, counted.
+   *
+   * This line is why the tool dots could go. The dots showed that N things
+   * happened and roughly how they ended, at a size nobody could read at R2
+   * scale; the count says the same thing in words, and the inspector says
+   * WHICH. Nothing left the data — only the arcs left the picture.
+   *
+   * Errors are named only when there are some. A "0 errors" on every healthy
+   * cell is noise, and the absence of the word is the signal.
+   */
+  let stats = $derived.by(() => {
+    if (agent === undefined) return '';
+    const tools = agent.children.filter((child) => !isAgentNode(child));
+    if (tools.length === 0) return 'no actions yet';
+    const errors = tools.filter((t) => !isAgentNode(t) && t.status === 'error').length;
+    const running = tools.filter((t) => !isAgentNode(t) && t.status === 'running').length;
+    const parts = [`${tools.length} action${tools.length === 1 ? '' : 's'}`];
+    if (running > 0) parts.push(`${running} running`);
+    if (errors > 0) parts.push(`${errors} error${errors === 1 ? '' : 's'}`);
+    return parts.join(' · ');
+  });
   let d = $derived(blobPath(placement.x, placement.y, placement.R, hashSessionId(nodeId)));
 
   let membraneClass = $derived(
@@ -218,6 +244,7 @@
       <path class={membraneClass} {d} />
     </g>
     <text class="lbl" x={placement.x} y={roundCoord(placement.y + LABEL_DY)}>{name}</text>
+    <text class="stats" x={placement.x} y={roundCoord(placement.y + STATS_DY)}>{stats}</text>
     <text
       class="sub"
       x={placement.x}
@@ -320,6 +347,17 @@
     paint-order: stroke fill;
     stroke: var(--vscode-editor-background);
     stroke-width: 3.5;
+    stroke-linejoin: round;
+  }
+
+  .stats {
+    fill: var(--vscode-foreground);
+    font-size: 11px;
+    text-anchor: middle;
+    opacity: 0.8;
+    paint-order: stroke fill;
+    stroke: var(--vscode-editor-background);
+    stroke-width: 3;
     stroke-linejoin: round;
   }
 

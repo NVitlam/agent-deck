@@ -119,7 +119,7 @@
   interface Filamentish {
     toolUseId: string;
     agentId: string;
-    from: DotPlacement;
+    from: CellPlacement;
     to: CellPlacement;
     flowing: boolean;
   }
@@ -172,19 +172,20 @@
       });
 
       const subagents: AgentNode[] = [];
+      // TOOL DOTS ARE NOT DRAWN. Removed by the user's decision, 2026-08-21,
+      // after seeing a real session: at R2 scale the arcs read as noise rather
+      // than as structure, and the thing a person wants from a cell is what
+      // that agent did and how much it cost — which is now a line of text
+      // under its name, where it can actually be read.
+      //
+      // The per-tool grammar C7.3 defines (running dot, dim dot, red thorn)
+      // moves UP to the agent that owns them: the cell's stats line carries
+      // the counts, and an agent whose tool is running is itself running, so
+      // the motion channel still says "happening now" without a dot to put it
+      // on. Nothing is dropped from the DATA — the inspector lists every
+      // action, by description, and that is where per-action detail lives now.
       for (const child of agent.children) {
-        if (isAgentNode(child)) {
-          subagents.push(child);
-          continue;
-        }
-        if (drawnTools.has(child.id)) continue;
-        const dot = layout.dots.get(child.id);
-        // Elided by DOT_CAP, or an id another agent's tool call already owns.
-        // Either way there is no dot to draw and the `+n` badge carries the
-        // count instead.
-        if (dot === undefined) continue;
-        drawnTools.add(child.id);
-        nodes.push({ kind: 'tool', tool: child, placement: dot, root: depth === 0 });
+        if (isAgentNode(child)) subagents.push(child);
       }
 
       for (const sub of subagents) visit(sub, depth + 1);
@@ -211,10 +212,18 @@
     const claimed = new Set<string>();
     for (const edge of state.spawnEdges ?? []) {
       if (claimed.has(edge.agentId)) continue;
-      const from = layout.dots.get(edge.toolUseId);
+      // ANCHORED CELL-TO-CELL since the tool dots stopped being drawn.
+      //
+      // The filament is still the `toolUseId` join made visible — the edge it
+      // comes from is unchanged and still carries both halves of the key. Only
+      // the point it is drawn FROM moved, from the spawning dot to the centre
+      // of the agent that owns that dot. It says "this agent spawned that one,
+      // and here is the join that proves it" rather than "this exact call did".
+      // The precise call is one click away in the inspector.
+      const from = layout.cells.get(edge.parentNodeId);
       const to = layout.cells.get(edge.agentId);
-      // One end missing: the spawning dot was elided or duplicated away, or
-      // the agent is not placed. A filament needs both ends of the key.
+      // One end missing: the parent or the child is not placed. A filament
+      // needs both ends of the key.
       if (from === undefined || to === undefined) continue;
       claimed.add(edge.agentId);
       out.push({
@@ -292,7 +301,7 @@
   let lastX = 0;
   let lastY = 0;
 
-  const INTERACTIVE = '[data-testid="canvas-cell"],[data-testid="canvas-dot"],[data-testid="canvas-nucleus"]';
+  const INTERACTIVE = '[data-testid="canvas-cell"],[data-testid="canvas-nucleus"]';
 
   const onPointerDown = (event: PointerEvent): void => {
     if (event.button !== 0) return;

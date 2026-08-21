@@ -223,11 +223,6 @@ function cellFor(root: ParentNode, agentId: string): HTMLElement {
   return found;
 }
 
-function dotFor(root: ParentNode, toolId: string): HTMLElement {
-  const found = dots(root).find((d) => d.dataset['toolId'] === toolId);
-  if (found === undefined) throw new Error(`no dot for ${toolId}`);
-  return found;
-}
 
 function membraneOf(cell: HTMLElement): Element {
   const found = cell.querySelector('path.membrane');
@@ -285,73 +280,7 @@ function parkedSession(overrides: Partial<SessionState> = {}): SessionState {
   });
 }
 
-/**
- * A main agent with more tool calls than `DOT_CAP`, so the arc elides.
- *
- * The excess is derived from the constant rather than written as a number, so
- * raising the cap in `canvas-contract.ts` cannot leave a stale literal here.
- */
-function elidedSession(excess: number): SessionState {
-  const tools: ToolNode[] = [];
-  for (let i = 0; i < DOT_CAP + excess; i += 1) {
-    tools.push(tool({ id: `t-${i}`, status: 'done' }));
-  }
-  return liveSession({
-    sessionId: 'session-elided',
-    root: agent({
-      id: 'root',
-      kind: 'main',
-      label: 'main elided',
-      spawnDepth: 0,
-      status: 'running',
-      children: tools,
-    }),
-    spawnEdges: [],
-    parked: [],
-  });
-}
 
-/**
- * The same `tool_use` id in a main transcript AND in a subagent's.
- *
- * Measured shape, not invented: `toolu_GRAFT000000000000002` appears in both
- * halves of `fixtures/synthetic-graft/03-tool-use-id-duplicated`, which is what
- * makes `sessionLayout().dots` smaller than the tool-node count.
- */
-function duplicateToolIdSession(): SessionState {
-  const shared = 'toolu_DUPLICATED';
-  const child = agent({
-    id: 'agent-dup',
-    label: 'dup child',
-    status: 'done',
-    children: [tool({ id: shared, toolName: 'Read', status: 'error' })],
-  });
-  return liveSession({
-    sessionId: 'session-dup',
-    root: agent({
-      id: 'root',
-      kind: 'main',
-      label: 'main dup',
-      spawnDepth: 0,
-      status: 'running',
-      children: [
-        tool({ id: 'tool-spawn', toolName: 'Agent', status: 'done' }),
-        tool({ id: shared, toolName: 'Read', status: 'done' }),
-        child,
-      ],
-    }),
-    spawnEdges: [
-      {
-        toolUseId: 'tool-spawn',
-        agentId: 'agent-dup',
-        parentNodeId: 'root',
-        depth: 1,
-        recordedDepth: 1,
-      },
-    ],
-    parked: [],
-  });
-}
 
 /* ------------------------------------------------------------------------ *
  * The interior, and where its coordinates come from
@@ -377,13 +306,17 @@ describe('the session interior (C7.1)', () => {
     );
   });
 
-  it('draws one dot per PLACED tool call, and takes the set from the layout', () => {
+  it('draws NO tool dots, though the layout still places them', () => {
+    // `sessionLayout` is unchanged and still returns a dot per placed tool —
+    // the geometry is pure and its goldens are pinned, so removing dots from
+    // the picture was deliberately NOT done by changing the layout. The canvas
+    // simply stops drawing that map. If dots ever come back, the coordinates
+    // are already there and unchanged.
     const state = liveSession();
     const layout = sessionLayout(state);
     const container = render({ session: state });
-    expect(dots(container).map((d) => d.dataset['toolId']).sort()).toStrictEqual(
-      [...layout.dots.keys()].sort(),
-    );
+    expect(layout.dots.size).toBeGreaterThan(0);
+    expect(dots(container)).toHaveLength(0);
   });
 
   it('takes every coordinate from layout.ts and computes none of its own', () => {
@@ -397,17 +330,9 @@ describe('the session interior (C7.1)', () => {
         blobPath(placement.x, placement.y, placement.R, hashSessionId(agentId)),
       );
     }
-    for (const [toolId, placement] of layout.dots) {
-      const shape = dotFor(container, toolId).querySelector('circle, path');
-      const cx = shape?.getAttribute('cx');
-      // A thorn has no `cx`; its path starts at the placed point.
-      if (cx === null || cx === undefined) {
-        expect(shape?.getAttribute('d')).toContain(`${placement.x} `);
-      } else {
-        expect(Number(cx)).toBe(placement.x);
-        expect(Number(shape?.getAttribute('cy'))).toBe(placement.y);
-      }
-    }
+    // The dot half of this check went with the dots. Cells and parked cells
+    // are now the whole of what the canvas places, and both are asserted
+    // against `layout.ts` above and below.
   });
 
   it('fits the viewport with a viewBox of four finite numbers', () => {
@@ -439,7 +364,8 @@ describe('the session interior (C7.1)', () => {
     const expected: string[] = [];
     const walk = (node: AgentNode): void => {
       expected.push(node.id);
-      for (const child of node.children) if (!isAgentNode(child)) expected.push(child.id);
+      // Agents only: tool calls are no longer drawn, so they are no longer in
+      // the DOM order there is anything to assert about.
       for (const child of node.children) if (isAgentNode(child)) walk(child);
     };
     walk(state.root);
@@ -487,12 +413,16 @@ describe('the filament (C7.4)', () => {
     );
   });
 
-  it('starts at the SPAWNING dot and ends on the SPAWNED cell', () => {
+  it('starts at the SPAWNING AGENT and ends on the SPAWNED cell', () => {
+    // Anchored cell-to-cell since the tool dots stopped being drawn. The join
+    // itself is unchanged — the filament still comes from a `spawnEdges` entry
+    // carrying both halves of the key, and the test below still proves no line
+    // is drawn without one. Only the point it starts FROM moved.
     const state = liveSession();
     const layout = sessionLayout(state);
     const container = render({ session: state });
     for (const edge of state.spawnEdges ?? []) {
-      const from = layout.dots.get(edge.toolUseId);
+      const from = layout.cells.get(edge.parentNodeId);
       const to = layout.cells.get(edge.agentId);
       expect(from).toBeDefined();
       expect(to).toBeDefined();
@@ -523,7 +453,7 @@ describe('the filament (C7.4)', () => {
     expect(cells(b).length).toBeGreaterThan(0);
   });
 
-  it('draws nothing for an edge whose tool dot is not placed', () => {
+  it('draws nothing for an edge whose parent cell is not placed', () => {
     // Half a key is not a key. An edge naming a `tool_use` id the layout never
     // placed — elided, duplicated away, or simply absent — draws no filament
     // rather than a line from somewhere plausible.
@@ -532,7 +462,7 @@ describe('the filament (C7.4)', () => {
         {
           toolUseId: 'toolu_NOT_IN_THIS_TREE',
           agentId: 'agent-1',
-          parentNodeId: 'root',
+          parentNodeId: 'agent-THAT-IS-NOT-PLACED',
           depth: 1,
           recordedDepth: 1,
         },
@@ -698,29 +628,64 @@ describe('refused interiors render NOTHING (C7.4, G3)', () => {
  * C7.3 — the state matrix, interior rows
  * ------------------------------------------------------------------------ */
 
-describe('tool state rows (C7.3)', () => {
-  it('running -> a pulsing dot', () => {
+describe('tool state rows (C7.3), now carried by the agent stats line', () => {
+  // THE TOOL DOTS ARE GONE, by the user's decision on 2026-08-21 after seeing
+  // a real session: at R2 scale the arcs read as noise, not structure.
+  //
+  // C7.3's three tool rows did not disappear with them — they moved UP to the
+  // agent that owns the calls. The cell's stats line carries the counts, and
+  // an agent whose tool is running is itself running, so the motion channel
+  // still says "happening now" with a membrane instead of a dot. Per-action
+  // detail lives in the inspector, which lists every action by description.
+  //
+  // These assertions are deliberately written against the NEW encoding rather
+  // than deleted: a row of the state matrix with no test is a row nobody is
+  // holding anyone to.
+
+  function statsFor(container: HTMLElement, agentId: string): string {
+    const cell = [...all(container, TESTID.cell), ...all(container, TESTID.nucleus)].find(
+      (el) => el.dataset['agentId'] === agentId,
+    );
+    if (cell === undefined) throw new Error(`no cell for ${agentId}`);
+    return cell.querySelector('.stats')?.textContent ?? '';
+  }
+
+  it('no tool dot is drawn anywhere, at any status', () => {
     const container = render({ session: liveSession() });
-    const dot = dotFor(container, 'tool-agent-2');
-    expect(dot.dataset['status']).toBe('running');
-    expect(animated(dot).length).toBeGreaterThan(0);
-    expect(dot.querySelector('circle')?.classList.contains(ANIMATED_CLASSES[1])).toBe(true);
+    expect(all(container, TESTID.dot)).toHaveLength(0);
   });
 
-  it('done -> a settled dim dot, and it does not animate', () => {
-    const container = render({ session: liveSession() });
-    const dot = dotFor(container, 'tool-read');
-    expect(dot.dataset['status']).toBe('done');
-    expect(dot.querySelector('circle')).not.toBeNull();
-    expect(animated(dot)).toHaveLength(0);
+  it('running -> the owning agent says so, and animates', () => {
+    // Whichever agent owns the running call — found by property so the test
+    // does not encode which fixture node happens to be running today.
+    const state = liveSession();
+    const container = render({ session: state });
+    const running = [...all(container, TESTID.cell), ...all(container, TESTID.nucleus)].filter(
+      (el) => el.dataset['status'] === 'running',
+    );
+    expect(running.length).toBeGreaterThan(0);
+    const withRunningStat = running.filter((el) =>
+      (el.querySelector('.stats')?.textContent ?? '').includes('running'),
+    );
+    expect(withRunningStat.length).toBeGreaterThan(0);
+    expect(animated(withRunningStat[0] as HTMLElement).length).toBeGreaterThan(0);
   });
 
-  it('error -> a red thorn, not a circle', () => {
-    const container = render({ session: liveSession() });
-    const dot = dotFor(container, 'tool-bash');
-    expect(dot.dataset['status']).toBe('error');
-    expect(dot.querySelector('path.thorn')).not.toBeNull();
-    expect(dot.querySelector('circle')).toBeNull();
+  it('error -> the owning agent counts it, and keeps counting it when settled', () => {
+    const live = render({ session: liveSession() });
+    const owner = [...all(live, TESTID.cell), ...all(live, TESTID.nucleus)]
+      .map((el) => el.querySelector('.stats')?.textContent ?? '')
+      .filter((text) => text.includes('error'));
+    expect(owner.length).toBeGreaterThan(0);
+  });
+
+  it('an agent with no tool calls says so rather than showing nothing', () => {
+    const bare = liveSession({
+      root: agent({ id: 'root', kind: 'main', label: 'main', children: [] }),
+      spawnEdges: [],
+    });
+    const container = render({ session: bare });
+    expect(statsFor(container, 'root')).toBe('no actions yet');
   });
 
   it('the thorn PERSISTS after everything else has settled', () => {
@@ -753,7 +718,13 @@ describe('tool state rows (C7.3)', () => {
     });
     expect(toolsOf(state).some((t) => t.status === 'error')).toBe(false);
     const container = render({ session: withError });
-    expect(dotFor(container, 'tool-bash').querySelector('path.thorn')).not.toBeNull();
+    // The error is still COUNTED once everything else has settled: an error
+    // that stops being reported when the session ends is an error the user
+    // never sees. It moved from a thorn to the owning cell's stats line.
+    const stats = [...container.querySelectorAll(".stats")]
+      .map((el) => el.textContent ?? "")
+      .filter((t) => t.includes("error"));
+    expect(stats.length).toBeGreaterThan(0);
     expect(animated(container)).toHaveLength(0);
   });
 });
@@ -811,51 +782,43 @@ describe('degraded — hooks silent (C7.3, G2)', () => {
  * C7.5 — the dot cap, and tools with no dot
  * ------------------------------------------------------------------------ */
 
-describe('the dot cap and the +n badge (C7.5)', () => {
-  it('draws DOT_CAP dots and collapses the remainder into one badge', () => {
-    const excess = 7;
-    const state = elidedSession(excess);
-    const layout = sessionLayout(state);
-    const expected = layout.elided.get('root');
-    expect(expected).toBe(excess);
-    const container = render({ session: state });
-    expect(dots(container)).toHaveLength(DOT_CAP);
-    const badge = one(container, TESTID.elidedBadge);
-    expect(badge.dataset['count']).toBe(String(expected));
-    expect(badge.textContent).toBe(`+${expected}`);
-  });
+describe('the dot cap (C7.5), now a layout property only', () => {
+  // The dots are no longer drawn, so DOT_CAP cannot be asserted against the
+  // DOM any more. It is still real and still bounds the layout, so it is
+  // asserted where it now lives — a cap that stopped being checked anywhere
+  // would be a cap that quietly stopped applying.
 
-  it('renders no badge when nothing was elided — "+0" can never appear', () => {
-    const state = liveSession();
-    expect(sessionLayout(state).elided.size).toBe(0);
-    const container = render({ session: state });
-    expect(all(container, TESTID.elidedBadge)).toHaveLength(0);
-  });
-
-  it('draws no dot for a tool the layout did not place', () => {
-    // Elided tools have no entry in `dots`, so the renderer must not assume
-    // one exists. Derived from the layout rather than from the count.
-    const state = elidedSession(5);
-    const layout = sessionLayout(state);
-    const missing = toolsOf(state).filter((t) => !layout.dots.has(t.id));
-    expect(missing.length).toBeGreaterThan(0);
-    const container = render({ session: state });
-    for (const t of missing) {
-      expect(dots(container).map((d) => d.dataset['toolId'])).not.toContain(t.id);
-    }
-  });
-
-  it('draws ONE dot for a tool_use id that appears twice in the tree', () => {
-    // `dots.size` is legitimately lower than the tool-node count: a `tool_use`
-    // id is not unique across a session tree and placement is first-writer-wins.
-    const state = duplicateToolIdSession();
-    const layout = sessionLayout(state);
-    expect(layout.dots.size).toBeLessThan(toolsOf(state).length);
-    const container = render({ session: state });
-    expect(dots(container).filter((d) => d.dataset['toolId'] === 'toolu_DUPLICATED')).toHaveLength(
-      1,
+  it('still caps placed dots and records the remainder, though none are drawn', () => {
+    const many = Array.from({ length: DOT_CAP + 9 }, (_, i) =>
+      tool({ id: `t-${String(i)}`, toolName: 'Bash', inputPreview: 'x' }),
     );
-    expect(dots(container)).toHaveLength(layout.dots.size);
+    const state = liveSession({
+      root: agent({ id: 'root', kind: 'main', label: 'main', children: many }),
+      spawnEdges: [],
+    });
+
+    const layout = sessionLayout(state);
+    expect(layout.dots.size).toBe(DOT_CAP);
+    expect(layout.elided.get('root')).toBe(9);
+
+    // ...and the canvas draws none of them.
+    const container = render({ session: state });
+    expect(dots(container)).toHaveLength(0);
+  });
+
+  it('reports the whole action count on the cell, uncapped', () => {
+    // The count is what replaced the arc, so it must NOT inherit the arc's
+    // cap: an agent with 57 calls says 57, not 48.
+    const many = Array.from({ length: DOT_CAP + 9 }, (_, i) =>
+      tool({ id: `t-${String(i)}`, toolName: 'Bash', inputPreview: 'x' }),
+    );
+    const state = liveSession({
+      root: agent({ id: 'root', kind: 'main', label: 'main', children: many }),
+      spawnEdges: [],
+    });
+    const container = render({ session: state });
+    const stats = one(container, TESTID.nucleus).querySelector('.stats')?.textContent ?? '';
+    expect(stats).toContain(String(DOT_CAP + 9));
   });
 });
 
@@ -882,11 +845,22 @@ describe('the motion invariant (C7.6)', () => {
     }
   });
 
-  it('carries all three contract classes and no other animating class', () => {
+  it('carries only contract classes, and every class it carries is one', () => {
+    // NOT "all three" any more. `is-pulsing` was the running tool dot, and the
+    // dots are gone; it is still live on the DECK's pulse ring, which is a
+    // different surface with its own test. Asserting three here would fail for
+    // a reason that has nothing to do with this component.
+    //
+    // What still matters is the direction that catches a mistake: everything
+    // animating here is a contract class, so the negative control can see it.
     const container = render({ session: liveSession() });
     const classes = new Set<string>();
     for (const el of animated(container)) for (const c of el.classList) classes.add(c);
-    expect(ANIMATED_CLASSES.filter((c) => classes.has(c))).toStrictEqual([...ANIMATED_CLASSES]);
+    const carried = ANIMATED_CLASSES.filter((c) => classes.has(c));
+    expect(carried.length).toBeGreaterThan(0);
+    for (const c of classes) {
+      if (c.startsWith('is-')) expect(ANIMATED_CLASSES).toContain(c);
+    }
   });
 
   it('puts the animation-bearing classes on elements the stylesheet animates', () => {
@@ -939,15 +913,15 @@ describe('accessibility floor (C7.8)', () => {
     }
   });
 
-  it('reports the node id on click — a cell and a dot alike', () => {
+  it('reports the node id on click', () => {
     const picked: string[] = [];
     const container = render({
       session: liveSession(),
       onselect: (id: string) => picked.push(id),
     });
     click(cellFor(container, 'agent-1'));
-    click(dotFor(container, 'tool-read'));
-    expect(picked).toStrictEqual(['agent-1', 'tool-read']);
+    click(cellFor(container, 'agent-1'));
+    expect(picked).toStrictEqual(['agent-1', 'agent-1']);
   });
 
   for (const key of ['Enter', ' ']) {
@@ -957,8 +931,8 @@ describe('accessibility floor (C7.8)', () => {
         session: liveSession(),
         onselect: (id: string) => picked.push(id),
       });
-      const event = press(dotFor(container, 'tool-read'), key);
-      expect(picked).toStrictEqual(['tool-read']);
+      const event = press(cellFor(container, 'agent-1'), key);
+      expect(picked).toStrictEqual(['agent-1']);
       expect(event.defaultPrevented).toBe(true);
     });
   }
@@ -971,22 +945,22 @@ describe('accessibility floor (C7.8)', () => {
       session: liveSession(),
       onselect: (id: string) => picked.push(id),
     });
-    press(dotFor(container, 'tool-read'), 'Escape');
+    press(cellFor(container, 'agent-1'), 'Escape');
     press(cellFor(container, 'agent-1'), 'a');
     expect(picked).toStrictEqual([]);
   });
 
   it('marks the store’s selected node current', () => {
-    const container = render({ session: liveSession(), selectedNodeId: 'tool-read' });
-    expect(dotFor(container, 'tool-read').dataset['selected']).toBe('true');
-    expect(dotFor(container, 'tool-read').getAttribute('aria-current')).toBe('true');
-    expect(dotFor(container, 'tool-bash').dataset['selected']).toBe('false');
-    expect(cellFor(container, 'agent-1').getAttribute('aria-current')).toBe('false');
+    const container = render({ session: liveSession(), selectedNodeId: 'agent-1' });
+    expect(cellFor(container, 'agent-1').dataset['selected']).toBe('true');
+    expect(cellFor(container, 'agent-1').getAttribute('aria-current')).toBe('true');
+    expect(cellFor(container, 'agent-2').dataset['selected']).toBe('false');
+    expect(cellFor(container, 'agent-2').getAttribute('aria-current')).toBe('false');
   });
 
   it('does not throw when no handler is wired', () => {
     const container = render({ session: liveSession() });
-    expect(() => click(dotFor(container, 'tool-read'))).not.toThrow();
+    expect(() => click(cellFor(container, 'agent-1'))).not.toThrow();
   });
 
   it('carries a focus-ring rule rather than relying on the browser default', () => {

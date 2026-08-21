@@ -927,3 +927,59 @@ describe('theming', () => {
     }
   });
 });
+
+describe('dragging a blob aside', () => {
+  /** A pointer event jsdom will actually construct. */
+  function pointer(type: string, x: number, y: number): Event {
+    const Ctor = (globalThis as { PointerEvent?: typeof MouseEvent }).PointerEvent ?? MouseEvent;
+    const event = new Ctor(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+    Object.defineProperty(event, 'pointerId', { value: 1, configurable: true });
+    Object.defineProperty(event, 'button', { value: 0, configurable: true });
+    return event;
+  }
+
+  it('reports a drag past the threshold, and does NOT enter the session', () => {
+    const nudges: Array<[string, number, number]> = [];
+    const entered: string[] = [];
+    const container = render({
+      sessions: [summary('s1')],
+      onnudge: (id: string, dx: number, dy: number) => nudges.push([id, dx, dy]),
+      onenter: (id: string) => entered.push(id),
+    });
+
+    const blob = one(container, TESTID.deckBlob);
+    blob.dispatchEvent(pointer('pointerdown', 100, 100));
+    blob.dispatchEvent(pointer('pointermove', 140, 130));
+    blob.dispatchEvent(pointer('pointerup', 140, 130));
+    blob.dispatchEvent(pointer('click', 140, 130));
+
+    expect(nudges.length).toBeGreaterThan(0);
+    expect(nudges[0]?.[0]).toBe('s1');
+    // A drag must never also enter: that was the whole reason for the
+    // threshold, and getting it wrong makes the blob unmovable in practice.
+    expect(entered).toEqual([]);
+  });
+
+  it('still enters on a click that does not move', () => {
+    const entered: string[] = [];
+    const container = render({
+      sessions: [summary('s1')],
+      onenter: (id: string) => entered.push(id),
+    });
+    const blob = one(container, TESTID.deckBlob);
+    blob.dispatchEvent(pointer('pointerdown', 100, 100));
+    blob.dispatchEvent(pointer('pointerup', 101, 100));
+    blob.dispatchEvent(pointer('click', 101, 100));
+    expect(entered).toEqual(['s1']);
+  });
+
+  it('renders the nudge as a transform on the blob group', () => {
+    const container = render({
+      sessions: [summary('s1')],
+      blobNudges: { s1: { dx: 40, dy: -25 } },
+    });
+    const blob = one(container, TESTID.deckBlob);
+    expect(blob.getAttribute('transform')).toBe('translate(40 -25)');
+    expect(blob.dataset['nudged']).toBe('true');
+  });
+});

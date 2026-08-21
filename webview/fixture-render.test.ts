@@ -708,7 +708,7 @@ describe('the canvas surface, fed the same host-produced states', () => {
     }
   });
 
-  it('draws every agent as a cell and every placed tool as a dot', async () => {
+  it('draws every agent as a cell, and no tool dots at all', async () => {
     const panel = render('canvas');
     const run = await hostRun(panel);
 
@@ -731,16 +731,12 @@ describe('the canvas surface, fed the same host-produced states', () => {
     expect(cellIds).toStrictEqual(agentIds);
     expect(agentIds.length).toBeGreaterThan(1);
 
-    // Tool dots are a SUBSET, never a superset: a `tool_use` id is not unique
-    // across a session tree and placement is first-writer-wins, so the layout
-    // may hold fewer entries than there are tool nodes. What must never happen
-    // is a dot for a tool the host did not send.
+    // NO tool dots, on real host-produced state as well as on fixtures. The
+    // tree still HAS the tool nodes - they reach the inspector, by
+    // description - they are simply not drawn on the canvas any more.
     const toolIds = new Set(walkState(state).filter((n) => !isAgentNode(n)).map((n) => n.id));
-    const dotIds = all(panel.container, TESTID.dot).map((d) => d.dataset['toolId'] ?? '');
-    expect(dotIds.length).toBeGreaterThan(0);
-    expect(dotIds.length).toBeLessThanOrEqual(toolIds.size);
-    for (const id of dotIds) expect(toolIds.has(id)).toBe(true);
-    expect(new Set(dotIds).size).toBe(dotIds.length);
+    expect(toolIds.size).toBeGreaterThan(0);
+    expect(all(panel.container, TESTID.dot)).toHaveLength(0);
   });
 
   it('draws the filament for every spawn edge whose two ends are both placed', async () => {
@@ -760,8 +756,10 @@ describe('the canvas surface, fed the same host-produced states', () => {
           (c) => c.dataset['agentId'],
         ),
       );
-      const dots = new Set(all(panel.container, TESTID.dot).map((d) => d.dataset['toolId']));
-      const placed = edges.filter((e) => cells.has(e.agentId) && dots.has(e.toolUseId));
+      // Both ends are CELLS now: the filament runs parent agent to child
+      // agent since the dots stopped being drawn. The join it comes from is
+      // unchanged and still carries both halves of the key.
+      const placed = edges.filter((e) => cells.has(e.agentId) && cells.has(e.parentNodeId));
 
       const drawn = all(panel.container, TESTID.filament).map((f) => [
         f.dataset['toolUseId'],

@@ -317,8 +317,15 @@
 </g>
 
 <style>
+  /* `grab`, not `pointer`: the blob both enters a session and drags aside,
+     and the drag is the one a person will not guess. The cursor is the only
+     affordance a canvas has. */
   .blob {
-    cursor: pointer;
+    cursor: grab;
+  }
+
+  .blob:active {
+    cursor: grabbing;
   }
 
   /* C7.8: a real focusable element with a VISIBLE focus ring. Both an outline

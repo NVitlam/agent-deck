@@ -64,10 +64,6 @@ jobs:
     # robust for any Windows developer whose TEMP has a short component too.
     # Those files belong to earlier phases; the defect is recorded in
     # HANDOVER.md rather than fixed from inside a CI change.
-    env:
-      TMP: ${{ runner.temp }}
-      TEMP: ${{ runner.temp }}
-
     steps:
       # See ci.yml: repo-local setting, must be set before the working tree
       # exists, otherwise checkout fails with 'Filename too long'.
@@ -76,6 +72,18 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Set here rather than in a job-level `env:` block: the `runner` context
+      # is NOT available to `jobs.<id>.env` (only github/needs/strategy/matrix/
+      # vars/secrets/inputs are), and using it there makes the whole workflow
+      # unparseable - GitHub reports "This run likely failed because of a
+      # workflow file issue" with a 0s duration and no log. Measured on run
+      # 32521872781.
+      - name: Use a long TEMP path
+        shell: bash
+        run: |
+          echo "TMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TEMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Use Node 24
         uses: actions/setup-node@v4

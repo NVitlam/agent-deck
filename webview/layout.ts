@@ -187,6 +187,45 @@ function deckRadius(nodeCount: number): number {
  */
 export const SEPARATION = 14;
 
+/**
+ * Extra clearance a CELL claims for its label, beyond its membrane.
+ *
+ * The membrane is ~35 units across; the label under it is a truncated agent
+ * name at 15px, which is several times wider. Separating on the membrane alone
+ * produced exactly what the first attempt shipped: circles with clear space
+ * between them and text written straight through the neighbour's text.
+ *
+ * Circular, which over-separates vertically for what is a wide, short piece of
+ * text. That is the deliberate trade: an elliptical footprint would pack
+ * tighter and is a great deal more machinery for a picture whose problem was
+ * that things were on top of each other.
+ *
+ * Derived from {@link LABEL_MAX_CHARS} rather than typed as a round number, so
+ * shortening the label actually tightens the layout instead of leaving a hole.
+ */
+export const LABEL_MAX_CHARS = 26;
+
+/** Rough advance width per character at the label's font size, in units. */
+export const LABEL_CHAR_WIDTH = 7.4;
+
+/** Half the widest label a cell can draw. */
+export const LABEL_PAD = roundCoord((LABEL_MAX_CHARS * LABEL_CHAR_WIDTH) / 2);
+
+/**
+ * The clearance every cell claims, whatever it draws.
+ *
+ * CONSTANT, and that is the load-bearing part. `cellRadius` grows with a
+ * cell's child count, so separating on the drawn radius meant that adding one
+ * tool call changed a radius, changed a collision, and MOVED A CELL ALREADY ON
+ * SCREEN - breaking "a spawn adds, it never reflows". The incremental test
+ * caught it, which is the whole reason that test exists.
+ *
+ * Sized for the worst case a cell can draw (`CELL_RADIUS_MAX`, spelled as a
+ * literal here only because that constant is declared further down the file).
+ * `layout.test.ts` asserts the two agree, so the literal cannot drift.
+ */
+export const CELL_FOOTPRINT = roundCoord(LABEL_PAD + 72);
+
 /** How far a colliding candidate is pushed per attempt. */
 export const SEPARATION_STEP = 9;
 
@@ -203,13 +242,23 @@ interface Circle {
   x: number;
   y: number;
   R: number;
+  /**
+   * Clearance claimed for collision ONLY, never drawn. Lets a cell reserve
+   * room for its label without inflating the membrane the label sits on.
+   */
+  pad?: number;
+}
+
+/** What a circle occupies for separation purposes. */
+function footprint(c: Circle): number {
+  return c.R + (c.pad ?? 0);
 }
 
 /** True when two circles are closer than {@link SEPARATION} apart. */
 function collides(a: Circle, b: Circle): boolean {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
-  return Math.hypot(dx, dy) < a.R + b.R + SEPARATION;
+  return Math.hypot(dx, dy) < footprint(a) + footprint(b) + SEPARATION;
 }
 
 /**
@@ -238,11 +287,12 @@ function separate(candidate: Circle, placed: readonly Circle[]): Circle {
     const angle = distance < 1e-9 ? attempt * GOLDEN_ANGLE_RAD : Math.atan2(dy, dx);
     // Push to exactly clear this collider, plus a step, so a long chain of
     // near-misses resolves in a few passes rather than a few hundred.
-    const needed = hit.R + current.R + SEPARATION - distance + SEPARATION_STEP;
+    const needed = footprint(hit) + footprint(current) + SEPARATION - distance + SEPARATION_STEP;
     current = {
       x: roundCoord(current.x + needed * Math.cos(angle)),
       y: roundCoord(current.y + needed * Math.sin(angle)),
       R: current.R,
+      ...(current.pad === undefined ? {} : { pad: current.pad }),
     };
   }
   return current;
@@ -700,11 +750,19 @@ export function sessionLayout(session: SessionState): SessionLayout {
     // depth the lifts shrink until they all pile onto the parent. Separating
     // against what is already placed is what makes the picture readable
     // without asking the user to drag anything apart by hand.
+    // Collision uses the CONSTANT footprint, not the drawn radius, so a cell
+     // that gains a child changes size without moving - or moving anyone else.
     const separated = separate(
-      { x: cx, y: cy, R: cellRadius(directChildren, depth) },
-      [...cells.values()],
+      { x: cx, y: cy, R: 0, pad: CELL_FOOTPRINT },
+      [...cells.values()].map((c) => ({ x: c.x, y: c.y, R: 0, pad: CELL_FOOTPRINT })),
     );
-    cells.set(agent.id, separated);
+    // `pad` is a separation concern and must not reach the renderer, which
+    // would otherwise draw a membrane the size of the label.
+    cells.set(agent.id, {
+      x: separated.x,
+      y: separated.y,
+      R: cellRadius(directChildren, depth),
+    });
 
     // Everything below hangs off where this cell ACTUALLY landed, not where it
     // was first proposed — otherwise a separated parent would keep spawning

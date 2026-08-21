@@ -40,7 +40,7 @@
     PARKED_CLASS,
     TESTID,
   } from './canvas-contract.js';
-  import { blobPath, hashSessionId, roundCoord } from './layout.js';
+  import { blobPath, hashSessionId, LABEL_MAX_CHARS, roundCoord } from './layout.js';
   import { formatTokens } from './format.js';
 
   let {
@@ -121,7 +121,22 @@
      status invented for it would be a value nobody measured. */
   let status = $derived(agent?.status);
   let running = $derived(status === 'running');
-  let name = $derived(
+  /**
+   * Cut a label to what the layout reserved room for.
+   *
+   * `LABEL_MAX_CHARS` is the SAME constant `layout.ts` derives `LABEL_PAD`
+   * from, so the space kept clear and the text drawn into it cannot disagree —
+   * the two-agreeing-literals defect, on a surface where the symptom is
+   * unreadable overlapping text rather than a crash.
+   *
+   * The full name is on the cell's `aria-label` and in the inspector, so
+   * nothing is lost, only shortened.
+   */
+  function fit(text: string): string {
+    return text.length <= LABEL_MAX_CHARS ? text : `${text.slice(0, LABEL_MAX_CHARS - 1)}…`;
+  }
+
+  let fullName = $derived(
     agent === undefined
       ? nodeId
       : agent.label !== ''
@@ -130,6 +145,7 @@
           ? agent.kind
           : agent.id,
   );
+  let name = $derived(fit(fullName));
   let subline = $derived(
     agent === undefined
       ? AWAITING

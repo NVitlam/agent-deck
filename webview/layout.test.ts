@@ -56,6 +56,10 @@ import {
   hashSessionId,
   sessionLayout,
   toDeckSession,
+  CELL_FOOTPRINT,
+  roundCoord,
+  CELL_RADIUS_MAX,
+  LABEL_PAD,
 } from './layout.js';
 import type { DeckSession } from './layout.js';
 
@@ -1345,5 +1349,22 @@ describe('nothing overlaps: separation is why the picture is readable', () => {
       expect(Number.isFinite(p.x)).toBe(true);
       expect(Number.isFinite(p.y)).toBe(true);
     }
+  });
+});
+
+describe('CELL_FOOTPRINT agrees with the constants it was derived from', () => {
+  it('equals LABEL_PAD + CELL_RADIUS_MAX', () => {
+    // CELL_FOOTPRINT spells CELL_RADIUS_MAX as a literal, because that
+    // constant is declared further down layout.ts than the footprint is used.
+    // This is the guard that keeps the literal honest: change the max cell
+    // radius and this fails rather than the layout quietly under-separating.
+    expect(CELL_FOOTPRINT).toBe(roundCoord(LABEL_PAD + CELL_RADIUS_MAX));
+  });
+
+  it('reserves more room for the label than for the membrane', () => {
+    // The point of the whole change: the text is the wide thing, not the
+    // circle. If this ever inverts, separating on the membrane would be
+    // enough again and the pad would be dead weight.
+    expect(LABEL_PAD).toBeGreaterThan(CELL_RADIUS_MAX / 2);
   });
 });

@@ -44,6 +44,30 @@ jobs:
   package:
     runs-on: windows-latest
 
+    # The suite's watcher tests mkdtemp under os.tmpdir() and point a real
+    # fs.watch at it. On GitHub's Windows runners os.tmpdir() resolves through
+    # an 8.3 SHORT NAME (C:\Users\RUNNER~1\AppData\Local\Temp), and libuv
+    # asserts that the filename it reports starts with the directory it was
+    # given -- long name vs short name -- so the whole Node process ABORTS:
+    #
+    #   Assertion failed: !_wcsnicmp(filename, dir, dirlen),
+    #   file src\win\fs-event.c, line 72
+    #
+    # It is not a test failure and there is no failing assertion to read: the
+    # process dies ~1 s into the run with no summary. Measured on run
+    # 32521608054. runner.temp is a long path, so pointing TMP/TEMP at it makes
+    # os.tmpdir() return a name libuv can compare.
+    #
+    # THIS IS A WORKAROUND, NOT THE FIX. The real defect is in the tests --
+    # src/watch/watcher.test.ts:47 and src/watch/inference.test.ts:40 should
+    # resolve realpathSync.native() before watching, which would make them
+    # robust for any Windows developer whose TEMP has a short component too.
+    # Those files belong to earlier phases; the defect is recorded in
+    # HANDOVER.md rather than fixed from inside a CI change.
+    env:
+      TMP: ${{ runner.temp }}
+      TEMP: ${{ runner.temp }}
+
     steps:
       # See ci.yml: repo-local setting, must be set before the working tree
       # exists, otherwise checkout fails with 'Filename too long'.

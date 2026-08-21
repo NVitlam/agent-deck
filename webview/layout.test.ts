@@ -26,19 +26,31 @@ import { env } from 'node:process';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { AgentNode, SessionState, SpawnEdge, ToolNode } from '../src/model/events.js';
+import type {
+  AgentNode,
+  ParkedGraft,
+  SessionState,
+  SpawnEdge,
+  ToolNode,
+} from '../src/model/events.js';
 import { isAgentNode } from '../src/model/events.js';
 import type { GraftSnapshot } from '../src/model/graft.js';
 import { graftSession, toSessionState } from '../src/model/graft.js';
 import { DOT_CAP } from './canvas-contract.js';
 import type { DeckPlacement, SessionLayout } from './canvas-contract.js';
 import {
+  BLOB_AMPLITUDE,
   CELL_RADIUS_MAX,
+  CONSTELLATION_CAP,
+  CONSTELLATION_INSET,
   DOTS_PER_RING,
   DOT_RINGS,
   DOT_RING_BASE,
   DOT_SLOT_PERIOD,
+  PARKED_ORBIT,
+  PARKED_ORBIT_SPREAD,
   blobPath,
+  constellationPoints,
   countNodes,
   deckLayout,
   hashSessionId,
@@ -99,12 +111,13 @@ async function golden(name: string, actual: unknown): Promise<void> {
   expect(JSON.parse(stored)).toStrictEqual(JSON.parse(text));
 }
 
-/** `SessionLayout` as JSON: Maps become sorted entry arrays. */
+/** `SessionLayout` as JSON: Maps become entry arrays, in insertion order. */
 function serializeLayout(layout: SessionLayout): unknown {
   return {
     cells: [...layout.cells.entries()],
     dots: [...layout.dots.entries()],
     elided: [...layout.elided.entries()],
+    parked: [...layout.parked.entries()],
   };
 }
 
@@ -187,7 +200,9 @@ function parkedSubject(): Subject {
 
 /**
  * The state the model publishes: `toSessionState` plus the resolved spawn
- * edges, exactly as `SessionModel.viewFromSnapshot` assembles them.
+ * edges AND the parked list, exactly as `SessionModel.viewFromSnapshot`
+ * assembles them — see `toWireParked` in `src/model/session.ts`, which this
+ * mirrors field for field, absent optionals left absent.
  */
 function modelState(snapshot: GraftSnapshot): SessionState {
   const edges: SpawnEdge[] = snapshot.edges.map((e) => ({
@@ -197,10 +212,24 @@ function modelState(snapshot: GraftSnapshot): SessionState {
     depth: e.depth,
     recordedDepth: e.recordedDepth,
   }));
+  const parked: ParkedGraft[] = snapshot.parked.map((p) => {
+    const out: ParkedGraft = { agentId: p.agentId, code: p.code, reason: p.reason };
+    if (p.toolUseId !== undefined) out.toolUseId = p.toolUseId;
+    if (p.parentAgentId !== undefined) out.parentAgentId = p.parentAgentId;
+    return out;
+  });
   return {
     ...toSessionState(snapshot, { liveness: 'live', workspaceMatch: true }),
     spawnEdges: edges,
+    parked,
   };
+}
+
+/** Every committed graft fixture whose graft parks at least one agent. */
+function parkedSubjects(): Subject[] {
+  const out = [...synthetic, ...captured].filter((s) => s.snapshot.parked.length > 0);
+  if (out.length === 0) throw new Error('no committed fixture parks an agent');
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -495,6 +524,197 @@ describe('blobPath', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 3b. The deck constellation (C7.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The minimum distance from `(cx, cy)` to the silhouette `blobPath` emitted.
+ *
+ * The containment claim is measured against the REAL curve, not against the
+ * arithmetic that produced it: the path text is parsed back and every cubic
+ * segment is sampled. Asserting `reach < R * (1 - BLOB_AMPLITUDE)` would only
+ * restate `constellationPoints`'s own formula, and the silhouette dips inside
+ * that bound between vertices — which is exactly the gap an eyeball misses.
+ */
+function minSilhouetteRadius(d: string, cx: number, cy: number, samples: number): number {
+  const tokens = d.split(' ').filter((t) => t !== '');
+  const numbers: number[] = [];
+  const commands: string[] = [];
+  for (const token of tokens) {
+    if (token === 'M' || token === 'C' || token === 'Z') commands.push(token);
+    else numbers.push(Number(token));
+  }
+  expect(commands[0]).toBe('M');
+  expect(commands[commands.length - 1]).toBe('Z');
+
+  let at = 0;
+  const next = (): number => {
+    const value = numbers[at];
+    at += 1;
+    if (value === undefined || !Number.isFinite(value)) {
+      throw new Error(`bad path number at ${at - 1}`);
+    }
+    return value;
+  };
+
+  let x0 = next();
+  let y0 = next();
+  let min = Number.POSITIVE_INFINITY;
+  const consider = (px: number, py: number): void => {
+    min = Math.min(min, Math.hypot(px - cx, py - cy));
+  };
+  consider(x0, y0);
+
+  while (at < numbers.length) {
+    const c1x = next();
+    const c1y = next();
+    const c2x = next();
+    const c2y = next();
+    const x1 = next();
+    const y1 = next();
+    for (let s = 1; s <= samples; s += 1) {
+      const t = s / samples;
+      const u = 1 - t;
+      const bx = u * u * u * x0 + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * x1;
+      const by = u * u * u * y0 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y1;
+      consider(bx, by);
+    }
+    x0 = x1;
+    y0 = y1;
+  }
+  return min;
+}
+
+describe('the deck constellation: one dot per node, density without a number', () => {
+  it('is pinned as coordinate numbers at 0, a small count, and above the cap', async () => {
+    const seeds = captured.map((s) => ({
+      sessionId: s.snapshot.sessionId,
+      seed: hashSessionId(s.snapshot.sessionId),
+    }));
+    expect(seeds.length).toBeGreaterThan(0);
+
+    const counts = [0, 7, CONSTELLATION_CAP + 25];
+    const entries: unknown[] = [];
+    for (const { sessionId, seed } of seeds) {
+      for (const count of counts) {
+        entries.push({
+          sessionId,
+          seed,
+          count,
+          points: constellationPoints(0, 0, 60, count, seed),
+        });
+      }
+    }
+    await golden('deck-constellation', {
+      source: repoPath(CAPTURED_ROOT),
+      cap: CONSTELLATION_CAP,
+      inset: CONSTELLATION_INSET,
+      radius: 60,
+      entries,
+    });
+  });
+
+  it('count 0 is a real case and yields no points', () => {
+    expect(constellationPoints(10, -4, 50, 0, 1)).toStrictEqual([]);
+    // Nonsense counts refuse to draw rather than throwing: this is renderer
+    // input, and refusing is the safe direction.
+    expect(constellationPoints(10, -4, 50, -3, 1)).toStrictEqual([]);
+    expect(constellationPoints(10, -4, 50, Number.NaN, 1)).toStrictEqual([]);
+    expect(constellationPoints(10, -4, 50, Number.POSITIVE_INFINITY, 1)).toStrictEqual([]);
+  });
+
+  it('is deterministic: same arguments, identical numbers', () => {
+    const one = constellationPoints(3, 9, 44, 30, hashSessionId('a'));
+    const two = constellationPoints(3, 9, 44, 30, hashSessionId('a'));
+    expect(one).toStrictEqual(two);
+    // The seed rotates the pattern, so two sessions are distinguishable.
+    expect(constellationPoints(3, 9, 44, 30, hashSessionId('b'))).not.toStrictEqual(one);
+  });
+
+  it('is incremental by index: a node arriving never shuffles the constellation', () => {
+    const seed = hashSessionId('c--Users-dev-projects-agent-deck');
+    // Walk the whole range including the boundary, so the cap itself is
+    // covered rather than assumed to behave like the interior.
+    for (let count = 0; count < CONSTELLATION_CAP + 4; count += 1) {
+      const before = constellationPoints(12, -7, 55, count, seed);
+      const after = constellationPoints(12, -7, 55, count + 1, seed);
+      expect(after.length).toBeGreaterThanOrEqual(before.length);
+      for (let i = 0; i < before.length; i += 1) {
+        const a = before[i];
+        const b = after[i];
+        expect(a).toBeDefined();
+        expect(b).toBeDefined();
+        if (a === undefined || b === undefined) continue;
+        // Byte-identical, not approximately equal — a tolerance here is how a
+        // slow drift gets through.
+        expect(Object.is(b.x, a.x), `point ${i} x moved at count ${count}`).toBe(true);
+        expect(Object.is(b.y, a.y), `point ${i} y moved at count ${count}`).toBe(true);
+      }
+    }
+  });
+
+  it(`saturates at CONSTELLATION_CAP = ${CONSTELLATION_CAP} and never grows again`, () => {
+    const seed = hashSessionId('cap');
+    expect(constellationPoints(0, 0, 50, CONSTELLATION_CAP - 1, seed)).toHaveLength(
+      CONSTELLATION_CAP - 1,
+    );
+    const atCap = constellationPoints(0, 0, 50, CONSTELLATION_CAP, seed);
+    expect(atCap).toHaveLength(CONSTELLATION_CAP);
+    // An R2-scale session. The blob does not thin out, re-space or change at
+    // all: identical output, so the element count per blob is bounded by the cap.
+    for (const huge of [CONSTELLATION_CAP + 1, 1_000, 250_000]) {
+      expect(constellationPoints(0, 0, 50, huge, seed)).toStrictEqual(atCap);
+    }
+  });
+
+  it('every point lies inside the silhouette blobPath draws for the same seed', () => {
+    // A broad seed sample, because the wobble is per-seed: a containment claim
+    // checked on one silhouette says nothing about the next one.
+    const SEED_SAMPLE = 400;
+    const R = 60;
+    let worstMargin = Number.POSITIVE_INFINITY;
+    for (let n = 0; n < SEED_SAMPLE; n += 1) {
+      const seed = hashSessionId(`containment-${n}`);
+      const centre = { x: n % 7, y: -(n % 5) };
+      const d = blobPath(centre.x, centre.y, R, seed);
+      const inner = minSilhouetteRadius(d, centre.x, centre.y, 40);
+      let furthest = 0;
+      for (const p of constellationPoints(centre.x, centre.y, R, CONSTELLATION_CAP, seed)) {
+        furthest = Math.max(furthest, Math.hypot(p.x - centre.x, p.y - centre.y));
+      }
+      expect(furthest).toBeGreaterThan(0);
+      expect(
+        furthest,
+        `seed ${seed}: a dot at ${furthest} is outside a membrane that dips to ${inner}`,
+      ).toBeLessThan(inner);
+      worstMargin = Math.min(worstMargin, inner - furthest);
+    }
+    // The margin is BANDED rather than pinned. Measured over this sample:
+    // 17.43 on R = 60 — the tightest silhouette dip still clears the outermost
+    // dot by 29% of R. A band catches the two failures that matter (the margin
+    // shrinking toward zero, or the constellation collapsing to the centre and
+    // making the containment assertion above trivially true) without breaking
+    // on a last-ulp difference somewhere else.
+    expect(worstMargin).toBeGreaterThan(R * 0.2);
+    expect(worstMargin).toBeLessThan(R * 0.45);
+  });
+
+  it('the reach is derived from BLOB_AMPLITUDE, not chosen independently of it', () => {
+    // Raising the wobble in blobPath without revisiting the inset would push
+    // dots outside a membrane that moved; this ties the two together.
+    const R = 100;
+    const points = constellationPoints(0, 0, R, CONSTELLATION_CAP, hashSessionId('reach'));
+    let furthest = 0;
+    for (const p of points) furthest = Math.max(furthest, Math.hypot(p.x, p.y));
+    const reach = R * (1 - BLOB_AMPLITUDE) * CONSTELLATION_INSET;
+    expect(furthest).toBeLessThanOrEqual(reach);
+    // ...and it reaches most of the way out, so the containment test above is
+    // not trivially satisfied by a constellation clustered at the centre.
+    expect(furthest).toBeGreaterThan(reach * 0.98);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 4. Session-layout goldens, from committed fixture trees
 // ---------------------------------------------------------------------------
 
@@ -533,13 +753,19 @@ describe('session layout goldens, derived from committed fixture trees', () => {
     const state = modelState(subject.snapshot);
     const layout = sessionLayout(state);
 
-    // The parked agent is NOT in `root` — the grafter deliberately leaves it
-    // off the tree — and `SessionState` carries no parked list, so it gets no
-    // cell. Asserted rather than left implicit, so that if a later phase adds
-    // a channel for parked grafts this test fails and says where to look.
-    for (const p of subject.snapshot.parked) {
-      expect(layout.cells.has(p.agentId)).toBe(false);
+    // PARKED AND CELLS ARE DISJOINT, from both directions. The parked agent is
+    // not in `root` — the grafter deliberately leaves it off — so it gets no
+    // cell; and it IS placed, on its own orbit, from `session.parked`. Before
+    // that field existed this assertion held for the empty reason: there was no
+    // channel and nothing was ever placed. It now holds for the real one, which
+    // is why the second half is asserted rather than assumed.
+    for (const entry of subject.snapshot.parked) {
+      expect(layout.cells.has(entry.agentId)).toBe(false);
+      expect(layout.parked.has(entry.agentId)).toBe(true);
     }
+    for (const agentId of layout.parked.keys()) expect(layout.cells.has(agentId)).toBe(false);
+    for (const agentId of layout.cells.keys()) expect(layout.parked.has(agentId)).toBe(false);
+    expect(layout.parked.size).toBe(subject.snapshot.parked.length);
 
     await golden('session-parked-graft', {
       source: repoPath(subject.path),
@@ -608,17 +834,225 @@ describe('session layout goldens, derived from committed fixture trees', () => {
     });
   });
 
-  it('G3: a refused session lays out to nothing at all', () => {
+  it('G3: a refused session lays out to nothing at all, parked included', () => {
+    const subject = parkedSubject();
+    // A subject that DOES park, and whose parked list is carried into the
+    // refused state on purpose. Refusing a session that parks nothing would
+    // pass this test while proving nothing about the field that was added
+    // after the refusal path was written — which is exactly where a refusal
+    // quietly stops applying.
+    const base = modelState(subject.snapshot);
+    expect(base.parked?.length ?? 0).toBeGreaterThan(0);
+    expect(sessionLayout(base).parked.size).toBeGreaterThan(0);
+
+    for (const refused of [
+      { ...base, schemaOk: false, liveness: 'unsupported' as const },
+      // Each half of the OR on its own, because the model sets them together
+      // and a test that only ever sends both cannot tell which one is doing
+      // the work.
+      { ...base, schemaOk: false },
+      { ...base, liveness: 'unsupported' as const },
+    ]) {
+      const layout = sessionLayout(refused);
+      expect(layout.cells.size).toBe(0);
+      expect(layout.dots.size).toBe(0);
+      expect(layout.elided.size).toBe(0);
+      expect(layout.parked.size).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4b. Parked grafts: the agents that are not in the tree at all
+// ---------------------------------------------------------------------------
+
+describe('parked grafts, placed from session.parked and never from the tree', () => {
+  it('covers every park code the committed fixtures actually produce', async () => {
+    const subjects = parkedSubjects();
+    const entries = subjects.map((subject) => {
+      const state = modelState(subject.snapshot);
+      const layout = sessionLayout(state);
+      return {
+        source: repoPath(subject.path),
+        parked: (state.parked ?? []).map((entry) => ({
+          agentId: entry.agentId,
+          code: entry.code,
+          // Recorded because one fixture carries it and the others do not;
+          // `null` rather than an absent key so the golden shows the difference.
+          parentAgentId: entry.parentAgentId ?? null,
+          toolUseId: entry.toolUseId ?? null,
+        })),
+        placements: [...layout.parked.entries()],
+      };
+    });
+
+    // Derived from the fixtures, never listed here: a re-harvest that adds a
+    // park code widens this golden instead of silently leaving it uncovered.
+    const codes = [
+      ...new Set(subjects.flatMap((s) => s.snapshot.parked.map((p) => p.code))),
+    ].sort();
+    // More than one distinct refusal reason is on record, so this is a suite
+    // rather than one case wearing a plural name.
+    expect(codes.length).toBeGreaterThan(1);
+    // At least one fixture states a parent it could not find, which is the
+    // shape that carries `parentAgentId`.
+    expect(
+      subjects.some((s) => s.snapshot.parked.some((p) => p.parentAgentId !== undefined)),
+    ).toBe(true);
+
+    await golden('session-parked-codes', { codes, entries });
+  });
+
+  it('places every parked agent, and never one that is in the tree', () => {
+    for (const subject of parkedSubjects()) {
+      const state = modelState(subject.snapshot);
+      const layout = sessionLayout(state);
+      expect(layout.parked.size).toBe(subject.snapshot.parked.length);
+      for (const entry of subject.snapshot.parked) {
+        expect(layout.parked.has(entry.agentId), `${entry.agentId} not placed`).toBe(true);
+        expect(layout.cells.has(entry.agentId), `${entry.agentId} in both maps`).toBe(false);
+      }
+    }
+  });
+
+  it('drops a contradictory entry rather than drawing one agent twice', () => {
+    // A host that named a grafted agent as parked is contradicting itself. The
+    // tree is the half with a node, a parent and children behind it, so the
+    // parked claim is the one dropped. Hand-built, because no fixture produces
+    // a contradiction and no fixture should.
     const subject = deepestCapture();
-    const refused: SessionState = {
-      ...modelState(subject.snapshot),
-      schemaOk: false,
-      liveness: 'unsupported',
+    const state = modelState(subject.snapshot);
+    const inTree = agentIds(state).find((id) => id !== state.root.id);
+    expect(inTree).toBeDefined();
+    if (inTree === undefined) return;
+
+    const contradictory: SessionState = {
+      ...state,
+      parked: [{ agentId: inTree, code: 'noMatchingToolUse', reason: 'contradiction' }],
     };
-    const layout = sessionLayout(refused);
-    expect(layout.cells.size).toBe(0);
-    expect(layout.dots.size).toBe(0);
-    expect(layout.elided.size).toBe(0);
+    const layout = sessionLayout(contradictory);
+    expect(layout.cells.has(inTree)).toBe(true);
+    expect(layout.parked.has(inTree)).toBe(false);
+    expect(layout.parked.size).toBe(0);
+  });
+
+  it('is placed from the agentId, so the host\'s list order cannot move anything', () => {
+    const subject = parkedSubject();
+    const state = modelState(subject.snapshot);
+    const list = [...(state.parked ?? [])];
+    expect(list.length).toBeGreaterThan(0);
+
+    // The grafter sorts `parked` by agentId — verified here rather than taken
+    // on trust, because the placement rule below exists precisely BECAUSE that
+    // sort means a new entry lands in the middle of the list.
+    const sorted = [...list].sort((a, b) => a.agentId.localeCompare(b.agentId));
+    expect(list.map((p) => p.agentId)).toStrictEqual(sorted.map((p) => p.agentId));
+
+    // Reversed, and every placement is identical: order is not an input.
+    const reversed = sessionLayout({ ...state, parked: [...list].reverse() });
+    const forward = sessionLayout(state);
+    for (const [id, placement] of forward.parked) {
+      const other = reversed.parked.get(id);
+      expect(other).toBeDefined();
+      if (other === undefined) continue;
+      expect(Object.is(other.x, placement.x)).toBe(true);
+      expect(Object.is(other.y, placement.y)).toBe(true);
+      expect(Object.is(other.R, placement.R)).toBe(true);
+    }
+    expect(reversed.parked.size).toBe(forward.parked.size);
+  });
+
+  it('a parked graft arriving never moves one already placed', () => {
+    const subject = deepestCapture();
+    const base = modelState(subject.snapshot);
+    // Ids chosen to sort BEFORE and BETWEEN the ones already there, because an
+    // append-only test would pass under a positional rule and prove nothing.
+    const growing: ParkedGraft[] = [];
+    let previous = sessionLayout({ ...base, parked: [] });
+    for (const agentId of ['zzz-late', 'aaa-early', 'mmm-middle', 'aaa-earlier']) {
+      growing.push({ agentId, code: 'noMatchingToolUse', reason: 'synthetic' });
+      // Sorted the way the host sends it, so each arrival really does shift
+      // every later entry's position in the list.
+      const parked = [...growing].sort((a, b) => a.agentId.localeCompare(b.agentId));
+      const next = sessionLayout({ ...base, parked });
+      expect(next.parked.size).toBe(growing.length);
+      for (const [id, placement] of previous.parked) {
+        const after = next.parked.get(id);
+        expect(after, `${id} vanished`).toBeDefined();
+        if (after === undefined) continue;
+        expect(Object.is(after.x, placement.x), `${id} x moved`).toBe(true);
+        expect(Object.is(after.y, placement.y), `${id} y moved`).toBe(true);
+        expect(Object.is(after.R, placement.R), `${id} R changed`).toBe(true);
+      }
+      previous = next;
+    }
+  });
+
+  it('a parked graft that later resolves leaves parked and appears in cells', () => {
+    // The state transition the product cares about: attribution arrives, the
+    // agent stops being a refusal and becomes a node. Driven through the same
+    // helpers rather than by hand-editing a layout.
+    const subject = deepestCapture();
+    const state = modelState(subject.snapshot);
+    const resolved = agentIds(state).find((id) => id !== state.root.id);
+    expect(resolved).toBeDefined();
+    if (resolved === undefined) return;
+
+    // Before: the tree without that agent, and the agent named as parked.
+    const stripped: SessionState = {
+      ...state,
+      root: {
+        ...state.root,
+        children: state.root.children.filter((c) => !isAgentNode(c) || c.id !== resolved),
+      },
+      parked: [{ agentId: resolved, code: 'noMatchingToolUse', reason: 'awaiting attribution' }],
+    };
+    const before = sessionLayout(stripped);
+    expect(before.parked.has(resolved)).toBe(true);
+    expect(before.cells.has(resolved)).toBe(false);
+
+    // After: the real state, where the join resolved and `parked` no longer
+    // names it.
+    const after = sessionLayout(state);
+    expect(after.parked.has(resolved)).toBe(false);
+    expect(after.cells.has(resolved)).toBe(true);
+  });
+
+  it('sits outside every cell and dot on the real fixtures', () => {
+    // A measurement on the committed data, not a universal claim: nesting is
+    // depth-scaled but unbounded, so no fixed orbit can be outside every
+    // conceivable tree. What is load-bearing is the separate map and the
+    // absent filament; this is the visual separation, measured where it counts.
+    let checked = 0;
+    for (const subject of parkedSubjects()) {
+      const state = modelState(subject.snapshot);
+      const layout = sessionLayout(state);
+      let furthestContent = 0;
+      for (const c of layout.cells.values()) {
+        furthestContent = Math.max(furthestContent, Math.hypot(c.x, c.y) + c.R);
+      }
+      for (const d of layout.dots.values()) {
+        furthestContent = Math.max(furthestContent, Math.hypot(d.x, d.y));
+      }
+      for (const [id, placement] of layout.parked) {
+        const inner = Math.hypot(placement.x, placement.y) - placement.R;
+        expect(inner, `${id} overlaps the interior`).toBeGreaterThan(furthestContent);
+        expect(Math.hypot(placement.x, placement.y)).toBeGreaterThanOrEqual(PARKED_ORBIT);
+        expect(Math.hypot(placement.x, placement.y)).toBeLessThanOrEqual(
+          PARKED_ORBIT + PARKED_ORBIT_SPREAD,
+        );
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('an absent parked field is the same as an empty one', () => {
+    const subject = deepestCapture();
+    const state = modelState(subject.snapshot);
+    const { parked: _dropped, ...without } = state;
+    expect(sessionLayout(without as SessionState).parked.size).toBe(0);
+    expect(sessionLayout({ ...state, parked: [] }).parked.size).toBe(0);
   });
 });
 

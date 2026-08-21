@@ -5,7 +5,12 @@
  *
  *     deckLayout(sessions)                      -> { sessionId, x, y, R }[]
  *     blobPath(x, y, R, seed = hash(sessionId)) -> SVG path data
- *     sessionLayout(session)                    -> { cells, dots, elided }
+ *     sessionLayout(session)                    -> { cells, dots, elided, parked }
+ *
+ * A fourth exported generator, constellationPoints, answers C7.1 rather than
+ * C7.5: "a faint interior constellation of one dot per node makes density
+ * readable without a number". It obeys the same three properties, and the
+ * incremental one is what shapes it — see CONSTELLATION_CAP.
  *
  * Three properties are normative, and every one of them is a constraint on how
  * the arithmetic below is allowed to be written:
@@ -283,6 +288,93 @@ export function blobPath(
 }
 
 /* ------------------------------------------------------------------------ *
+ * Deck constellation
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Constellation points drawn on one blob before the pattern SATURATES.
+ *
+ * C7.1 asks for "a faint interior constellation of one dot per node" so that
+ * density is readable without a number. One per node is unbounded, and an R2
+ * session runs to thousands of nodes on a deck that may hold twelve blobs, so
+ * "one per node" has to stop somewhere or the deck carries tens of thousands
+ * of SVG elements to say something the eye stopped reading at about forty.
+ *
+ * ABOVE THIS COUNT NOTHING IS ADDED. Points 0..CAP-1 are returned and the rest
+ * of the nodes contribute no point at all — the blob does not thin out, does
+ * not re-space, and does not change in any way as node 65 and node 6,500
+ * arrive. Density is still encoded above the cap, by the blob's RADIUS, which
+ * C7.1 derives from `log(nodeCount)` and which has no ceiling until
+ * {@link DECK_RADIUS_MAX}. So the two channels hand off: dots read density up
+ * to the cap, size reads it after.
+ *
+ * Named as an exported constant for the same reason `DOT_CAP` is: it makes the
+ * geometry a pure function of the capped count, which is what lets a golden pin
+ * it. 64 is a decision, not a measurement.
+ */
+export const CONSTELLATION_CAP = 64;
+
+/**
+ * How far out the constellation is allowed to reach, as a fraction of the
+ * blob's minimum membrane radius `R * (1 - BLOB_AMPLITUDE)`.
+ *
+ * Expressed against the MINIMUM rather than against R because the silhouette
+ * is not a circle: {@link blobPath} perturbs each vertex radius by up to
+ * {@link BLOB_AMPLITUDE}, and the curve between two perturbed vertices dips
+ * further in again. A dot outside the membrane is a visual defect, so this
+ * leaves a wide margin and `layout.test.ts` measures the real silhouette —
+ * sampling the emitted Bezier segments — rather than trusting the arithmetic.
+ */
+export const CONSTELLATION_INSET = 0.62;
+
+/**
+ * The faint interior dots on a deck blob: one per node, up to the cap.
+ *
+ * Sunflower placement, and the radius of point `i` is normalised by
+ * {@link CONSTELLATION_CAP} rather than by `count`. That distinction is the
+ * whole incremental property here: normalising by `count` would re-space every
+ * dot each time a node arrived, which is exactly the reflow C7.5 forbids.
+ * Normalising by the cap makes point `i` a function of `i` alone, so
+ * `constellationPoints(x, y, R, n + 1, seed)` starts with the `n` points
+ * `constellationPoints(x, y, R, n, seed)` returned, byte-identical.
+ *
+ * `seed` is the caller's `hashSessionId(sessionId)`, the same seed
+ * {@link blobPath} takes, and it only rotates the pattern — it never changes a
+ * radius. Two sessions of the same size are therefore distinguishable without
+ * either one's dots leaving its own membrane.
+ *
+ * A `count` that is negative or not a finite number yields no points rather
+ * than throwing: this is a renderer input path, and refusing to draw is the
+ * safe direction.
+ */
+export function constellationPoints(
+  x: number,
+  y: number,
+  R: number,
+  count: number,
+  seed: number,
+): DotPlacement[] {
+  const out: DotPlacement[] = [];
+  if (!Number.isFinite(count) || count <= 0) return out;
+  const drawn = Math.min(Math.floor(count), CONSTELLATION_CAP);
+  const reach = R * (1 - BLOB_AMPLITUDE) * CONSTELLATION_INSET;
+  // Index BLOB_POINTS is one past the last vertex index blobPath mixes, so the
+  // rotation cannot repeat a value already spent on the silhouette.
+  const rotation = mix(seed, BLOB_POINTS) * 2 * Math.PI;
+  for (let i = 0; i < drawn; i += 1) {
+    // The +0.5 keeps point 0 off the exact centre, where it would sit under
+    // whatever the blob carries in the middle.
+    const radius = reach * Math.sqrt((i + 0.5) / CONSTELLATION_CAP);
+    const angle = rotation + i * GOLDEN_ANGLE_RAD;
+    out.push({
+      x: roundCoord(x + radius * Math.cos(angle)),
+      y: roundCoord(y + radius * Math.sin(angle)),
+    });
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------------ *
  * Session interior geometry (altitude 1)
  * ------------------------------------------------------------------------ */
 
@@ -335,14 +427,52 @@ export const CELL_LIFT = 74;
 /** Extra lift per additional cell spawned by the SAME dot, at depth 0. */
 export const CELL_SIBLING_GAP = 48;
 
-/** Ring radius for a cell with no spawn edge to hang from, at depth 0. */
-export const PARKED_ORBIT = 214;
+/* ---- In-tree agent children that no spawn edge claims -------------------- *
+ *
+ * RENAMED from PARKED_* in the parked round, and the rename is the point. An
+ * agent that IS in `children` but that no spawn edge joined to a sibling tool
+ * call is UNANCHORED — there is no dot to draw a filament from. A PARKED graft
+ * is a different thing entirely: it is not in the tree at all, and arrives on
+ * `SessionState.parked`. Both existed before that field did, under one name,
+ * and one name for two states is how a renderer ends up drawing the wrong one.
+ * The PARKED_* names below now mean parked grafts and nothing else.
+ */
 
-/** Angle of the first unanchored cell. */
-export const PARKED_ANGLE_START = Math.PI / 2;
+/** Ring radius for an in-tree cell with no spawn edge to hang from, at depth 0. */
+export const UNANCHORED_ORBIT = 214;
+
+/** Angle of the first unanchored cell under one parent. */
+export const UNANCHORED_ANGLE_START = Math.PI / 2;
 
 /** Angle step between successive unanchored cells under one parent. */
-export const PARKED_ANGLE_STEP = 0.42;
+export const UNANCHORED_ANGLE_STEP = 0.42;
+
+/* ---- Parked grafts: agents that are not in the tree at all --------------- */
+
+/**
+ * Inner radius of the band parked grafts are scattered into.
+ *
+ * Chosen to sit outside the interior a typical session draws, so a parked cell
+ * reads as debris rather than as part of the structure. That is a HEURISTIC and
+ * is stated as one: nesting is depth-scaled but unbounded, and enough sibling
+ * cells at one dot can push content out past any fixed constant. The
+ * load-bearing signal of parked-ness is not the distance — it is that the id is
+ * in `SessionLayout.parked` and not in `cells`, and that no filament reaches it.
+ * `layout.test.ts` measures the separation on the real fixtures rather than
+ * claiming it universally.
+ */
+export const PARKED_ORBIT = 560;
+
+/** Radial width of that band. Keeps the scatter from reading as a perfect ring. */
+export const PARKED_ORBIT_SPREAD = 96;
+
+/**
+ * The depth a parked cell is SIZED as. It has no depth of its own: the grafter
+ * refused to say where it belongs, which is exactly what parking means, so
+ * inventing a nesting level for it would be the guess G3 forbids. Sized like a
+ * first-level cell because that is the shallowest thing it could have been.
+ */
+export const PARKED_DEPTH = 1;
 
 function cellRadius(directChildren: number, depth: number): number {
   const raw = CELL_RADIUS_MIN + CELL_RADIUS_SCALE * Math.log(1 + directChildren);
@@ -398,6 +528,44 @@ function joinSpawns(
 }
 
 /**
+ * Where a parked graft sits, as a pure function of ITS OWN `agentId`.
+ *
+ * Not of its index in `session.parked`, and that is the whole design. Every
+ * other placement in this module indexes by position among siblings, which is
+ * safe because a sibling is appended at the end. `parked` is not like that: the
+ * grafter emits it SORTED BY `agentId` (verified in `layout.test.ts`, not
+ * assumed), so a newly parked agent whose id sorts early is inserted in the
+ * MIDDLE of the list and every positional index after it shifts. Under a
+ * positional rule that would move cells already on screen — the reflow C7.5
+ * forbids — so the id itself is the coordinate source and nothing ever moves,
+ * whatever order the host sends or how the set changes around it.
+ *
+ * Angle from the full 32-bit hash and radius from a second mix of it, both
+ * continuous rather than slotted: an exact overlap then needs a full hash
+ * collision instead of a collision modulo some slot count. Two parked agents
+ * can still land visually near each other, which is a cosmetic risk accepted
+ * deliberately — the alternative is a collision nudge that depends on who else
+ * is parked, which is the reflow again.
+ *
+ * The size is `cellRadius(0, PARKED_DEPTH)`: a parked agent has no children in
+ * the tree because it has no node in the tree, and its depth is precisely what
+ * the grafter refused to decide.
+ */
+function placeParked(agentId: string): CellPlacement {
+  const h = hashSessionId(agentId);
+  const angle = (h / 0x1_0000_0000) * 2 * Math.PI;
+  // BLOB_POINTS + 1 is one past the index the constellation rotation spends,
+  // which is itself one past the last silhouette vertex, so no two seeded
+  // values in this module are drawn from the same mixer input.
+  const radius = PARKED_ORBIT + mix(h, BLOB_POINTS + 1) * PARKED_ORBIT_SPREAD;
+  return {
+    x: roundCoord(radius * Math.cos(angle)),
+    y: roundCoord(radius * Math.sin(angle)),
+    R: cellRadius(0, PARKED_DEPTH),
+  };
+}
+
+/**
  * Place every agent cell and every tool dot in a session interior.
  *
  * The main agent is the nucleus at the origin. Coordinates are in an abstract,
@@ -410,22 +578,24 @@ function joinSpawns(
  * making that a property of the layout rather than of a component means no
  * component can accidentally draw a partial tree for a refused session. Keyed
  * on `schemaOk === false` OR `liveness === 'unsupported'` — the model sets both
- * together, and refusing on either is the safe direction.
+ * together, and refusing on either is the safe direction. ALL FOUR maps come
+ * back empty on that path, `parked` included: an additive field is exactly
+ * where a refusal quietly stops applying if nobody says otherwise.
  */
 export function sessionLayout(session: SessionState): SessionLayout {
   const cells = new Map<string, CellPlacement>();
   const dots = new Map<string, DotPlacement>();
   const elided = new Map<string, number>();
-  // PLACEHOLDER, awaiting the P2-LAYOUT parked round. `SessionState.parked`
-  // only began reaching the webview one commit ago; placing those agents is the
-  // layout package's next piece of work. This empty Map exists so the contract
-  // can REQUIRE the member without leaving the tree red in between, and an empty
-  // Map is the honest value today: nothing is placed, so nothing renders, which
-  // is exactly the behaviour before the field existed.
+  // Parked grafts (UNRESOLVED joins). Populated at the END of this function,
+  // after the tree walk, because the disjointness rule needs a finished `cells`
+  // to check against.
   //
-  // It stays empty on the refusal path below whatever happens next: G3 says a
-  // refused session renders no interior, and parked entries are ids and reasons
-  // read out of a transcript whose schema we just refused to understand.
+  // It stays EMPTY on the refusal path below, and that is not a formality: G3
+  // says a refused session renders no interior at all, and a parked entry is an
+  // agent id and a reason read out of a transcript whose layout the fingerprint
+  // just refused to understand. A new field is not a hole to leak content
+  // through. The host sends an empty list for a refused session for the same
+  // reason; this refuses independently rather than trusting that.
   const parked = new Map<string, CellPlacement>();
 
   if (session.schemaOk === false || session.liveness === 'unsupported') {
@@ -508,13 +678,13 @@ export function sessionLayout(session: SessionState): SessionLayout {
     // Unanchored agent children: no edge joined them to a sibling tool call,
     // so there is no dot and no filament. They go on their own ring, in
     // `children` order, which keeps them incremental like everything else.
-    let parkedIndex = 0;
+    let unanchoredIndex = 0;
     for (const child of agent.children) {
       if (!isAgentNode(child)) continue;
       if (claimed.has(child.id)) continue;
-      const angle = PARKED_ANGLE_START + parkedIndex * PARKED_ANGLE_STEP;
-      const radius = PARKED_ORBIT * DEPTH_SCALE ** depth;
-      parkedIndex += 1;
+      const angle = UNANCHORED_ANGLE_START + unanchoredIndex * UNANCHORED_ANGLE_STEP;
+      const radius = UNANCHORED_ORBIT * DEPTH_SCALE ** depth;
+      unanchoredIndex += 1;
       place(
         child,
         depth + 1,
@@ -525,5 +695,25 @@ export function sessionLayout(session: SessionState): SessionLayout {
   };
 
   place(session.root, 0, 0, 0);
+
+  // Parked grafts, from `session.parked` and NEVER from a tree walk: a parked
+  // agent has no node in the tree, so that list is the only record it exists.
+  // Placed after the walk so `cells` is complete.
+  for (const entry of session.parked ?? []) {
+    const agentId = entry.agentId;
+    if (agentId === '') continue;
+    // PARKED AND CELLS ARE DISJOINT, enforced rather than hoped for. An agent
+    // that is in the tree is grafted by definition, so an id in both places is
+    // a contradiction in the state, and the tree is the half with a node, a
+    // parent and children behind it. Drawing it twice would put one agent in
+    // two places on screen, which is worse than dropping the claim that it is
+    // parked. `layout.test.ts` asserts the disjointness from both directions.
+    if (cells.has(agentId)) continue;
+    // First writer wins, as everywhere else here, so a duplicated entry cannot
+    // move a placement that is already made.
+    if (parked.has(agentId)) continue;
+    parked.set(agentId, placeParked(agentId));
+  }
+
   return { cells, dots, elided, parked };
 }

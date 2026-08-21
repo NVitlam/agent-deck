@@ -10,14 +10,22 @@ than screenshots, and these are them.
 |---|---|
 | `deck-n00 / n01 / n02 / n06 / n12.json` | `deckLayout` at the five sizes PLAN names. Each file holds both the `input` list and the `output` placements, so a re-harvest that changes the input reads as a legible diff instead of an unexplained coordinate move. |
 | `blob-paths.json` | `blobPath` output for the captured session ids plus three fixed strings, with the `hashSessionId` seed alongside each. |
+| `deck-constellation.json` | `constellationPoints` at count 0, 7 and `CONSTELLATION_CAP + 25`, per captured session-id hash. C7.1's density channel; the cap and the inset are recorded in the file. |
 | `session-deepest-capture.json` | `sessionLayout` of the captured session with the deepest spawn chain, laid out with its resolved spawn edges. `maxSpawnDepth` is recorded in the file. |
-| `session-parked-graft.json` | `sessionLayout` of a committed graft fixture whose graft **parks** an agent. The parked agents and their `ParkCode` are recorded in the file; they get no cell, because a parked agent is not in `root` and `SessionState` carries no parked list. |
+| `session-parked-graft.json` | `sessionLayout` of a committed graft fixture whose graft **parks** an agent. The parked agents and their `ParkCode` are recorded in the file. They get no **cell** — a parked agent has no node in `root` — and they do get a **`parked` placement**, from `SessionState.parked`. |
+| `session-parked-codes.json` | Every committed fixture that parks anything, one entry each, with the distinct `ParkCode` set derived from the fixtures rather than listed. Covers `noMatchingToolUse`, `ambiguousJoinKey` and `parentAgentMissing`, one of them carrying `parentAgentId`. |
 | `session-unanchored-cells.json` | The same captured tree with **no** spawn edges, which is what `toSessionState` in `src/model/graft.ts` returns. Every subagent cell is then unanchored — the geometry the parked visual grammar needs. |
 
 Every file also records `source`: the repo-relative path the subject was read
 from. Subjects are selected **by property** ("the deepest capture", "the first
 fixture that parks an agent"), never by naming a session id, so a re-harvest
 moves the subject and the `source` line says so.
+
+A parked placement is a pure function of its own `agentId`, not of its index in
+`session.parked`. That is why the same agent id gets identical coordinates in
+several files here: the host sorts `parked` by `agentId`, so a newly parked
+agent lands in the MIDDLE of the list, and a positional rule would move cells
+already on screen.
 
 ## Regenerating
 

@@ -7,6 +7,11 @@
  *     blobPath(x, y, R, seed = hash(sessionId)) -> SVG path data
  *     sessionLayout(session)                    -> { cells, dots, elided }
  *
+ * A fourth exported generator, constellationPoints, answers C7.1 rather than
+ * C7.5: "a faint interior constellation of one dot per node makes density
+ * readable without a number". It obeys the same three properties, and the
+ * incremental one is what shapes it — see CONSTELLATION_CAP.
+ *
  * Three properties are normative, and every one of them is a constraint on how
  * the arithmetic below is allowed to be written:
  *
@@ -280,6 +285,93 @@ export function blobPath(
       ` ${coordText(at(px, j + 1))} ${coordText(at(py, j + 1))}`;
   }
   return `${d} Z`;
+}
+
+/* ------------------------------------------------------------------------ *
+ * Deck constellation
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Constellation points drawn on one blob before the pattern SATURATES.
+ *
+ * C7.1 asks for "a faint interior constellation of one dot per node" so that
+ * density is readable without a number. One per node is unbounded, and an R2
+ * session runs to thousands of nodes on a deck that may hold twelve blobs, so
+ * "one per node" has to stop somewhere or the deck carries tens of thousands
+ * of SVG elements to say something the eye stopped reading at about forty.
+ *
+ * ABOVE THIS COUNT NOTHING IS ADDED. Points 0..CAP-1 are returned and the rest
+ * of the nodes contribute no point at all — the blob does not thin out, does
+ * not re-space, and does not change in any way as node 65 and node 6,500
+ * arrive. Density is still encoded above the cap, by the blob's RADIUS, which
+ * C7.1 derives from `log(nodeCount)` and which has no ceiling until
+ * {@link DECK_RADIUS_MAX}. So the two channels hand off: dots read density up
+ * to the cap, size reads it after.
+ *
+ * Named as an exported constant for the same reason `DOT_CAP` is: it makes the
+ * geometry a pure function of the capped count, which is what lets a golden pin
+ * it. 64 is a decision, not a measurement.
+ */
+export const CONSTELLATION_CAP = 64;
+
+/**
+ * How far out the constellation is allowed to reach, as a fraction of the
+ * blob's minimum membrane radius `R * (1 - BLOB_AMPLITUDE)`.
+ *
+ * Expressed against the MINIMUM rather than against R because the silhouette
+ * is not a circle: {@link blobPath} perturbs each vertex radius by up to
+ * {@link BLOB_AMPLITUDE}, and the curve between two perturbed vertices dips
+ * further in again. A dot outside the membrane is a visual defect, so this
+ * leaves a wide margin and `layout.test.ts` measures the real silhouette —
+ * sampling the emitted Bezier segments — rather than trusting the arithmetic.
+ */
+export const CONSTELLATION_INSET = 0.62;
+
+/**
+ * The faint interior dots on a deck blob: one per node, up to the cap.
+ *
+ * Sunflower placement, and the radius of point `i` is normalised by
+ * {@link CONSTELLATION_CAP} rather than by `count`. That distinction is the
+ * whole incremental property here: normalising by `count` would re-space every
+ * dot each time a node arrived, which is exactly the reflow C7.5 forbids.
+ * Normalising by the cap makes point `i` a function of `i` alone, so
+ * `constellationPoints(x, y, R, n + 1, seed)` starts with the `n` points
+ * `constellationPoints(x, y, R, n, seed)` returned, byte-identical.
+ *
+ * `seed` is the caller's `hashSessionId(sessionId)`, the same seed
+ * {@link blobPath} takes, and it only rotates the pattern — it never changes a
+ * radius. Two sessions of the same size are therefore distinguishable without
+ * either one's dots leaving its own membrane.
+ *
+ * A `count` that is negative or not a finite number yields no points rather
+ * than throwing: this is a renderer input path, and refusing to draw is the
+ * safe direction.
+ */
+export function constellationPoints(
+  x: number,
+  y: number,
+  R: number,
+  count: number,
+  seed: number,
+): DotPlacement[] {
+  const out: DotPlacement[] = [];
+  if (!Number.isFinite(count) || count <= 0) return out;
+  const drawn = Math.min(Math.floor(count), CONSTELLATION_CAP);
+  const reach = R * (1 - BLOB_AMPLITUDE) * CONSTELLATION_INSET;
+  // Index BLOB_POINTS is one past the last vertex index blobPath mixes, so the
+  // rotation cannot repeat a value already spent on the silhouette.
+  const rotation = mix(seed, BLOB_POINTS) * 2 * Math.PI;
+  for (let i = 0; i < drawn; i += 1) {
+    // The +0.5 keeps point 0 off the exact centre, where it would sit under
+    // whatever the blob carries in the middle.
+    const radius = reach * Math.sqrt((i + 0.5) / CONSTELLATION_CAP);
+    const angle = rotation + i * GOLDEN_ANGLE_RAD;
+    out.push({
+      x: roundCoord(x + radius * Math.cos(angle)),
+      y: roundCoord(y + radius * Math.sin(angle)),
+    });
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------------ *

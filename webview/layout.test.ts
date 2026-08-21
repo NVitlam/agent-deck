@@ -33,12 +33,16 @@ import { graftSession, toSessionState } from '../src/model/graft.js';
 import { DOT_CAP } from './canvas-contract.js';
 import type { DeckPlacement, SessionLayout } from './canvas-contract.js';
 import {
+  BLOB_AMPLITUDE,
   CELL_RADIUS_MAX,
+  CONSTELLATION_CAP,
+  CONSTELLATION_INSET,
   DOTS_PER_RING,
   DOT_RINGS,
   DOT_RING_BASE,
   DOT_SLOT_PERIOD,
   blobPath,
+  constellationPoints,
   countNodes,
   deckLayout,
   hashSessionId,
@@ -491,6 +495,197 @@ describe('blobPath', () => {
       expect(h).toBeGreaterThanOrEqual(0);
       expect(h).toBeLessThanOrEqual(0xffff_ffff);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3b. The deck constellation (C7.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The minimum distance from `(cx, cy)` to the silhouette `blobPath` emitted.
+ *
+ * The containment claim is measured against the REAL curve, not against the
+ * arithmetic that produced it: the path text is parsed back and every cubic
+ * segment is sampled. Asserting `reach < R * (1 - BLOB_AMPLITUDE)` would only
+ * restate `constellationPoints`'s own formula, and the silhouette dips inside
+ * that bound between vertices — which is exactly the gap an eyeball misses.
+ */
+function minSilhouetteRadius(d: string, cx: number, cy: number, samples: number): number {
+  const tokens = d.split(' ').filter((t) => t !== '');
+  const numbers: number[] = [];
+  const commands: string[] = [];
+  for (const token of tokens) {
+    if (token === 'M' || token === 'C' || token === 'Z') commands.push(token);
+    else numbers.push(Number(token));
+  }
+  expect(commands[0]).toBe('M');
+  expect(commands[commands.length - 1]).toBe('Z');
+
+  let at = 0;
+  const next = (): number => {
+    const value = numbers[at];
+    at += 1;
+    if (value === undefined || !Number.isFinite(value)) {
+      throw new Error(`bad path number at ${at - 1}`);
+    }
+    return value;
+  };
+
+  let x0 = next();
+  let y0 = next();
+  let min = Number.POSITIVE_INFINITY;
+  const consider = (px: number, py: number): void => {
+    min = Math.min(min, Math.hypot(px - cx, py - cy));
+  };
+  consider(x0, y0);
+
+  while (at < numbers.length) {
+    const c1x = next();
+    const c1y = next();
+    const c2x = next();
+    const c2y = next();
+    const x1 = next();
+    const y1 = next();
+    for (let s = 1; s <= samples; s += 1) {
+      const t = s / samples;
+      const u = 1 - t;
+      const bx = u * u * u * x0 + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * x1;
+      const by = u * u * u * y0 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y1;
+      consider(bx, by);
+    }
+    x0 = x1;
+    y0 = y1;
+  }
+  return min;
+}
+
+describe('the deck constellation: one dot per node, density without a number', () => {
+  it('is pinned as coordinate numbers at 0, a small count, and above the cap', async () => {
+    const seeds = captured.map((s) => ({
+      sessionId: s.snapshot.sessionId,
+      seed: hashSessionId(s.snapshot.sessionId),
+    }));
+    expect(seeds.length).toBeGreaterThan(0);
+
+    const counts = [0, 7, CONSTELLATION_CAP + 25];
+    const entries: unknown[] = [];
+    for (const { sessionId, seed } of seeds) {
+      for (const count of counts) {
+        entries.push({
+          sessionId,
+          seed,
+          count,
+          points: constellationPoints(0, 0, 60, count, seed),
+        });
+      }
+    }
+    await golden('deck-constellation', {
+      source: repoPath(CAPTURED_ROOT),
+      cap: CONSTELLATION_CAP,
+      inset: CONSTELLATION_INSET,
+      radius: 60,
+      entries,
+    });
+  });
+
+  it('count 0 is a real case and yields no points', () => {
+    expect(constellationPoints(10, -4, 50, 0, 1)).toStrictEqual([]);
+    // Nonsense counts refuse to draw rather than throwing: this is renderer
+    // input, and refusing is the safe direction.
+    expect(constellationPoints(10, -4, 50, -3, 1)).toStrictEqual([]);
+    expect(constellationPoints(10, -4, 50, Number.NaN, 1)).toStrictEqual([]);
+    expect(constellationPoints(10, -4, 50, Number.POSITIVE_INFINITY, 1)).toStrictEqual([]);
+  });
+
+  it('is deterministic: same arguments, identical numbers', () => {
+    const one = constellationPoints(3, 9, 44, 30, hashSessionId('a'));
+    const two = constellationPoints(3, 9, 44, 30, hashSessionId('a'));
+    expect(one).toStrictEqual(two);
+    // The seed rotates the pattern, so two sessions are distinguishable.
+    expect(constellationPoints(3, 9, 44, 30, hashSessionId('b'))).not.toStrictEqual(one);
+  });
+
+  it('is incremental by index: a node arriving never shuffles the constellation', () => {
+    const seed = hashSessionId('c--Users-dev-projects-agent-deck');
+    // Walk the whole range including the boundary, so the cap itself is
+    // covered rather than assumed to behave like the interior.
+    for (let count = 0; count < CONSTELLATION_CAP + 4; count += 1) {
+      const before = constellationPoints(12, -7, 55, count, seed);
+      const after = constellationPoints(12, -7, 55, count + 1, seed);
+      expect(after.length).toBeGreaterThanOrEqual(before.length);
+      for (let i = 0; i < before.length; i += 1) {
+        const a = before[i];
+        const b = after[i];
+        expect(a).toBeDefined();
+        expect(b).toBeDefined();
+        if (a === undefined || b === undefined) continue;
+        // Byte-identical, not approximately equal — a tolerance here is how a
+        // slow drift gets through.
+        expect(Object.is(b.x, a.x), `point ${i} x moved at count ${count}`).toBe(true);
+        expect(Object.is(b.y, a.y), `point ${i} y moved at count ${count}`).toBe(true);
+      }
+    }
+  });
+
+  it(`saturates at CONSTELLATION_CAP = ${CONSTELLATION_CAP} and never grows again`, () => {
+    const seed = hashSessionId('cap');
+    expect(constellationPoints(0, 0, 50, CONSTELLATION_CAP - 1, seed)).toHaveLength(
+      CONSTELLATION_CAP - 1,
+    );
+    const atCap = constellationPoints(0, 0, 50, CONSTELLATION_CAP, seed);
+    expect(atCap).toHaveLength(CONSTELLATION_CAP);
+    // An R2-scale session. The blob does not thin out, re-space or change at
+    // all: identical output, so the element count per blob is bounded by the cap.
+    for (const huge of [CONSTELLATION_CAP + 1, 1_000, 250_000]) {
+      expect(constellationPoints(0, 0, 50, huge, seed)).toStrictEqual(atCap);
+    }
+  });
+
+  it('every point lies inside the silhouette blobPath draws for the same seed', () => {
+    // A broad seed sample, because the wobble is per-seed: a containment claim
+    // checked on one silhouette says nothing about the next one.
+    const SEED_SAMPLE = 400;
+    const R = 60;
+    let worstMargin = Number.POSITIVE_INFINITY;
+    for (let n = 0; n < SEED_SAMPLE; n += 1) {
+      const seed = hashSessionId(`containment-${n}`);
+      const centre = { x: n % 7, y: -(n % 5) };
+      const d = blobPath(centre.x, centre.y, R, seed);
+      const inner = minSilhouetteRadius(d, centre.x, centre.y, 40);
+      let furthest = 0;
+      for (const p of constellationPoints(centre.x, centre.y, R, CONSTELLATION_CAP, seed)) {
+        furthest = Math.max(furthest, Math.hypot(p.x - centre.x, p.y - centre.y));
+      }
+      expect(furthest).toBeGreaterThan(0);
+      expect(
+        furthest,
+        `seed ${seed}: a dot at ${furthest} is outside a membrane that dips to ${inner}`,
+      ).toBeLessThan(inner);
+      worstMargin = Math.min(worstMargin, inner - furthest);
+    }
+    // The margin is BANDED rather than pinned. Measured over this sample:
+    // 17.43 on R = 60 — the tightest silhouette dip still clears the outermost
+    // dot by 29% of R. A band catches the two failures that matter (the margin
+    // shrinking toward zero, or the constellation collapsing to the centre and
+    // making the containment assertion above trivially true) without breaking
+    // on a last-ulp difference somewhere else.
+    expect(worstMargin).toBeGreaterThan(R * 0.2);
+    expect(worstMargin).toBeLessThan(R * 0.45);
+  });
+
+  it('the reach is derived from BLOB_AMPLITUDE, not chosen independently of it', () => {
+    // Raising the wobble in blobPath without revisiting the inset would push
+    // dots outside a membrane that moved; this ties the two together.
+    const R = 100;
+    const points = constellationPoints(0, 0, R, CONSTELLATION_CAP, hashSessionId('reach'));
+    let furthest = 0;
+    for (const p of points) furthest = Math.max(furthest, Math.hypot(p.x, p.y));
+    const reach = R * (1 - BLOB_AMPLITUDE) * CONSTELLATION_INSET;
+    expect(furthest).toBeLessThanOrEqual(reach);
+    // ...and it reaches most of the way out, so the containment test above is
+    // not trivially satisfied by a constellation clustered at the centre.
+    expect(furthest).toBeGreaterThan(reach * 0.98);
   });
 });
 

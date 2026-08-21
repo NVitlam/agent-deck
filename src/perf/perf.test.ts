@@ -26,7 +26,8 @@
  *      "the update is not vacuous" against the ops in the emitted patch. None
  *      of those can be perturbed by a loaded machine.
  *   3. The DoD's own 100 ms is NOT enforced by default, because it is not met
- *      (288 ms median; see `budgets.ts`). It is recorded as data and enforced
+ *      (medians of 235-555 ms across the runs on record; see `budgets.ts`
+ *      and `evidence/perf-full.json`). It is recorded as data and enforced
  *      on demand with `AGENT_DECK_PERF_ASSERT=1`. A known-red test in the
  *      default suite would be worse than a flaky one.
  *
@@ -70,10 +71,20 @@ const ASSERT_ALL = process.env['AGENT_DECK_PERF_ASSERT'] === '1';
 const RECORD_TO = process.env['AGENT_DECK_PERF_RECORD'];
 
 /**
- * Sample counts. The default set is sized so this file adds roughly 12 s to a
- * suite that otherwise runs in ~9 s; the evidence in `EVIDENCE.md` was taken
- * with `AGENT_DECK_PERF_FULL=1`, which is where the larger counts matter.
- * Each post-append cycle costs ~290 ms, so these numbers are seconds, stated.
+ * Sample counts, and what they cost. MEASURED, because the first draft of this
+ * comment guessed and was wrong by 2.7x: the suite WITHOUT this file is 9.19 s
+ * over 28 files / 919 tests, and WITH it 40.4-41.2 s over 29 / 937. So the
+ * default counts add ~31 s, not the ~12 s once claimed here.
+ *
+ * Worse, they add it to the CRITICAL PATH. This file is ~41 s of serial work
+ * and vitest runs files in parallel threads, so the whole suite's wall time is
+ * now essentially this one file's. Each post-append cycle costs ~330 ms and
+ * nothing here is parallelisable -- that is the price of measuring the real
+ * path against a 17 MB session, and it is stated rather than discovered by
+ * whoever next wonders why the suite got four times slower.
+ *
+ * `EVIDENCE.md` and `evidence/perf-full.json` were taken with
+ * `AGENT_DECK_PERF_FULL=1`, which is where the larger counts matter.
  */
 const COUNTS = FULL
   ? { warmups: 3, samples: 15, heapCycles: 40, heapWarmups: 4 }
@@ -345,7 +356,8 @@ describe('post-append tree update — what the measured path actually did', () =
     // Pinned deliberately. `src/extension.ts` re-grafts the whole session on
     // every append because a tree built from tail lines would be content
     // accepted before the layout was asserted -- the partial tree G3 forbids.
-    // That decision is what costs 274 of the 288 ms, so it is asserted here
+    // That decision is ~95% of the total in every run on record (315.9 of
+    // 332.3 ms at full counts), so it is asserted here
     // rather than left as a claim in a comment: if someone makes the graft
     // incremental, this test fails and the budget numbers get revisited.
     for (const sample of postAppend.samples) {

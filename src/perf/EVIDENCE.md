@@ -41,7 +41,7 @@ All values in milliseconds, n = 15.
 **The DoD's 100 ms is not met, by 3.3× on this run.** The cause is not a slow function, and the
 breakdown is the whole argument: `graftSession` is **95.1%** of the total, because `src/extension.ts`
 re-grafts the *whole* session on every append. The genuinely incremental stages — read the appended
-bytes, apply the patch — total **16.2 ms**, comfortably inside 100 ms.
+bytes, apply the patch — total **16.1 ms**, comfortably inside 100 ms.
 
 That re-graft is not an oversight. A tree built from tail lines alone would be content accepted
 before the layout was asserted, which is the partial tree G3 forbids. So the budget is missed by a
@@ -92,12 +92,21 @@ Measured, because the first estimate in `perf.test.ts` was wrong by 2.7× and wa
 these figures:
 
 ```
-npx vitest run --exclude 'src/perf/**'    28 files / 919 tests    9.19s
-npx vitest run                            29 files / 937 tests    40.4-41.2s
+npx vitest run --exclude 'src/perf/**'   28 files / 919 tests   6.49-35.91 s  (n=5)
+npx vitest run                           29 files / 937 tests   37.15-41.90 s (n=7)
+src/perf/perf.test.ts alone, in-suite                           36.0-42.1 s   (n=4)
 ```
 
-This file adds ~31 s and becomes the suite's critical path: it is ~41 s of serial work, vitest runs
-files in parallel threads, so the whole suite's wall time is now essentially this one file's.
+**Ranges, not point values, and the spread is the point.** The exclude-perf figure spans 5.5x across
+five runs; its 35.91 s outlier reported `environment 94.75 s / prepare 31.20 s` against a typical
+~4 s / ~5 s, which is machine state — the same variance source that made the first draft of the
+regression budget wrong. On a quiet machine the exclude-perf figure is ~6.5-9.7 s. Quoting any one
+of these as a number would contradict this file's own thesis.
+
+What survives the spread is the shape: this file adds **~29-33 s**, and it becomes the suite's
+critical path. That last claim is confirmed directly rather than inferred — the perf file alone runs
+36.0-42.1 s while the whole suite runs 37.2-41.9 s, so vitest's parallelism across every other file
+is hidden entirely behind this one.
 
 ## Why the regression budget is 2500 ms and not 1200 ms
 
@@ -110,7 +119,8 @@ threshold in this repo must not do.
 2500 ms restores the headroom the original reasoning intended (4.5× the slowest median, 3.4× the
 slowest sample). It was **not** widened to turn a red test green: no run on record has ever exceeded
 1200 ms, let alone 2500. The cost is stated plainly in `budgets.ts` — it catches an order-of-magnitude
-regression against a ~330 ms typical median and nothing smaller.
+regression against a "~350 ms typical median" and nothing smaller — quoted at its own worst-case
+framing, which is deliberately slower than this run's 332.3 ms.
 
 The original reasoning was also wrong about the mechanism. It sized the margin for "a machine running
 the rest of the suite in parallel threads", but the full-suite run came out *faster* than an isolated

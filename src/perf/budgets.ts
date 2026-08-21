@@ -152,8 +152,12 @@ export const TIMING_BUDGETS: readonly TimingBudget[] = [
  * depending only on how many high-mode samples happened to land in each half.
  * Asserting on it would be asserting on sampling luck.
  *
- * Measured floor ratio over 36 cycles after 4 warm-ups: 1.002. The limit of
- * 1.10 leaves 50x headroom over that drift while still catching a leak of
+ * Measured floor ratio over 36 cycles after 4 warm-ups: 1.0012, in the run
+ * committed as `evidence/perf-full.json` -- re-derivable from its raw
+ * `heapUsedSeries` rather than taken on trust. An earlier draft recorded 1.002
+ * here from a run that was never committed; the figure is close, and that is
+ * exactly why it needed replacing with one a reader can check. The limit of
+ * 1.10 leaves ~80x headroom over that drift while still catching a leak of
  * roughly 120 KB or more per update cycle on a 42 MB floor.
  */
 export const HEAP_FLOOR_RATIO_LIMIT = 1.1;

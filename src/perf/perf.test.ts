@@ -71,10 +71,14 @@ const ASSERT_ALL = process.env['AGENT_DECK_PERF_ASSERT'] === '1';
 const RECORD_TO = process.env['AGENT_DECK_PERF_RECORD'];
 
 /**
- * Sample counts, and what they cost. MEASURED, because the first draft of this
- * comment guessed and was wrong by 2.7x: the suite WITHOUT this file is 9.19 s
- * over 28 files / 919 tests, and WITH it 40.4-41.2 s over 29 / 937. So the
- * default counts add ~31 s, not the ~12 s once claimed here.
+ * Sample counts, and what they cost. MEASURED over repeated runs, because the
+ * first draft of this comment guessed and was wrong by 2.7x: the suite WITHOUT
+ * this file runs 6.5-35.9 s over 28 files / 919 tests (n=5), and WITH it
+ * 37.2-41.9 s over 29 / 937 (n=7). So the default counts add ~29-33 s, not the
+ * ~12 s once claimed here. Ranges rather than point values on purpose -- the
+ * exclude-perf figure spans 5.5x on machine state alone, and a file arguing
+ * that single wall-clock samples are not properties of the code should not
+ * quote one.
  *
  * Worse, they add it to the CRITICAL PATH. This file is ~41 s of serial work
  * and vitest runs files in parallel threads, so the whole suite's wall time is

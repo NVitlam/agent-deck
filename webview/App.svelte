@@ -251,6 +251,8 @@
         onpan={(dx, dy) => store.panDeck(dx, dy)}
         onzoom={(factor, x, y) => store.zoomDeck(factor, x, y)}
         onreset={() => store.resetDeckView()}
+        blobNudges={view.blobNudges}
+        onnudge={(id, dx, dy) => store.nudgeBlob(id, dx, dy)}
       />
     </main>
   {:else}

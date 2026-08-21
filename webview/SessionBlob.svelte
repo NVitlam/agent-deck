@@ -65,6 +65,9 @@
     degraded = false,
     selected = false,
     onenter,
+    nudge = { dx: 0, dy: 0 },
+    onnudge,
+    scale = 1,
   }: {
     /**
      * The store's summary of this session. Read, never mutated (G1).
@@ -82,8 +85,74 @@
     /** This blob is the store's selected session. */
     selected?: boolean;
     /** The user chose this session. Wired to `Store.enterSession` (C7.8). */
+    /** The user chose this session. Wired to Store.enterSession (C7.8). */
     onenter?: ((sessionId: string) => void) | undefined;
+    /** Where the user dragged this blob, relative to where layout put it. */
+    nudge?: { dx: number; dy: number };
+    /** Report a drag delta in stage units. */
+    onnudge?: ((dx: number, dy: number) => void) | undefined;
+    /** Current stage zoom, so a drag tracks the pointer at any zoom level. */
+    scale?: number;
   } = $props();
+
+  // DRAG TO MOVE, WITHOUT LOSING CLICK-TO-ENTER.
+  //
+  // Blobs are placed on a golden-angle spiral and can overlap, so one has to
+  // be movable to see what is under it. The catch is that the same gesture
+  // starts a click, and a blob that entered a session every time you tried to
+  // move it would be worse than not being movable at all.
+  //
+  // The discriminator is distance, not a modifier or a double-click: under
+  // DRAG_THRESHOLD px the gesture is a click and enters the session; past it,
+  // it is a drag and the click is suppressed. That is how every map does it,
+  // and it needs nothing explained to the user.
+  const DRAG_THRESHOLD = 4;
+  let pointerDown = false;
+  let moved = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  const onPointerDown = (event: PointerEvent): void => {
+    if (event.button !== 0) return;
+    pointerDown = true;
+    moved = false;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+  };
+
+  const onPointerMove = (event: PointerEvent): void => {
+    if (!pointerDown) return;
+    const dx = event.clientX - lastX;
+    const dy = event.clientY - lastY;
+    if (!moved && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
+    moved = true;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    // Divided by the zoom so the blob stays under the pointer: at 2x, one
+    // screen pixel is half a stage unit.
+    onnudge?.(dx / (scale || 1), dy / (scale || 1));
+  };
+
+  const onPointerUp = (event: PointerEvent): void => {
+    if (!pointerDown) return;
+    pointerDown = false;
+    (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
+  };
+
+  /** Swallow the click that ends a drag; let a real click through. */
+  const onClick = (event: MouseEvent): void => {
+    if (moved) {
+      moved = false;
+      event.stopPropagation();
+      return;
+    }
+    enter();
+  };
+
+  let nudgeTransform = $derived(
+    nudge.dx === 0 && nudge.dy === 0 ? undefined : `translate(${nudge.dx} ${nudge.dy})`,
+  );
 
   /* The two animation-bearing classes this altitude uses, taken from the
      contract rather than typed out. `is-flowing` belongs to the filament in
@@ -192,7 +261,13 @@
       ? `, ${summary.errorCount} tool ${summary.errorCount === 1 ? 'error' : 'errors'}`
       : ''
   }`}
-  onclick={enter}
+  data-nudged={String(nudge.dx !== 0 || nudge.dy !== 0)}
+  transform={nudgeTransform}
+  onclick={onClick}
+  onpointerdown={onPointerDown}
+  onpointermove={onPointerMove}
+  onpointerup={onPointerUp}
+  onpointercancel={onPointerUp}
   onkeydown={onKeyDown}
 >
   {#if isLive}

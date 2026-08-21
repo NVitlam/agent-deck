@@ -81,11 +81,11 @@
   const BREATHING = ANIMATED_CLASSES[0];
 
   /** Baseline of the cell's name, relative to its centre. Mockup: `c.y + 4`. */
-  const LABEL_DY = 4;
+  const LABEL_DY = 2;
   /** Baseline of the nucleus's sub-line. Mockup: `c.y + 22`. */
-  const NUCLEUS_SUB_DY = 22;
+  const NUCLEUS_SUB_DY = 24;
   /** Baseline of a nested cell's sub-line. Mockup: `c.y + c.R + 16`. */
-  const SUB_DY = 16;
+  const SUB_DY = 18;
   /** Stand-off of the `+n` badge above the membrane. */
   const BADGE_DY = 10;
   /** Length of the parked graft's dangling stub. Mockup: `58`. */
@@ -130,7 +130,7 @@
   let subline = $derived(
     agent === undefined
       ? AWAITING
-      : `${formatTokens(agent.tokens.in)} / ${formatTokens(agent.tokens.out)}`,
+      : `${formatTokens(agent.tokens.in)} in · ${formatTokens(agent.tokens.out)} out`,
   );
   let d = $derived(blobPath(placement.x, placement.y, placement.R, hashSessionId(nodeId)));
 
@@ -307,17 +307,32 @@
     opacity: 0.7;
   }
 
+  /* Titles sit ON the membrane, so they need to survive whatever colour is
+     under them. `paint-order: stroke fill` draws a halo in the editor's own
+     background first and the glyph over it — legible on a green live cell, a
+     grey ended one and a red thorn alike, without a plate behind the text
+     that would cover the shape the cell is trying to show. */
   .lbl {
     fill: var(--vscode-foreground);
-    font-size: 12px;
+    font-size: 15px;
+    font-weight: 600;
     text-anchor: middle;
+    paint-order: stroke fill;
+    stroke: var(--vscode-editor-background);
+    stroke-width: 3.5;
+    stroke-linejoin: round;
   }
 
   .sub {
-    fill: var(--vscode-descriptionForeground, currentColor);
-    font-size: 10px;
+    fill: var(--vscode-foreground);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     text-anchor: middle;
+    opacity: 0.9;
+    paint-order: stroke fill;
+    stroke: var(--vscode-editor-background);
+    stroke-width: 3;
+    stroke-linejoin: round;
   }
 
   .badge {

@@ -50,6 +50,8 @@
     onpan,
     onzoom,
     onreset,
+    onnudge,
+    blobNudges = {},
     total,
   }: {
     /**
@@ -78,6 +80,10 @@
     onpan?: ((dx: number, dy: number) => void) | undefined;
     onzoom?: ((factor: number, originX: number, originY: number) => void) | undefined;
     onreset?: (() => void) | undefined;
+    /** Report that one blob was dragged aside. */
+    onnudge?: ((sessionId: string, dx: number, dy: number) => void) | undefined;
+    /** Where each blob has been dragged, keyed by sessionId. */
+    blobNudges?: Readonly<Record<string, { dx: number; dy: number }>>;
     /** How many sessions exist before filtering. Defaults to what is shown. */
     total?: number | undefined;
   } = $props();
@@ -225,6 +231,9 @@
               placement={blob.placement}
               {degraded}
               selected={blob.summary.sessionId === selectedSessionId}
+              nudge={blobNudges[blob.summary.sessionId] ?? { dx: 0, dy: 0 }}
+              scale={deckView.k}
+              onnudge={(dx, dy) => onnudge?.(blob.placement.sessionId, dx, dy)}
               {onenter}
             />
           {/if}

@@ -23,6 +23,7 @@
 
 import type {
   AgentNode,
+  ParkedGraft,
   SessionPatch,
   SessionState,
   SpawnEdge,
@@ -54,6 +55,17 @@ export function deepFreeze<T>(value: T): T {
 /** A session's spawn edges, with the optional field normalized to a list. */
 export function edgesOf(state: SessionState): readonly SpawnEdge[] {
   return state.spawnEdges ?? [];
+}
+
+/**
+ * A session's parked grafts, with the optional field normalized to a list.
+ *
+ * Same shape as {@link edgesOf} and for the same reason: `parked` is optional
+ * on the wire, so every reader would otherwise repeat the `?? []` and one of
+ * them would eventually forget.
+ */
+export function parkedOf(state: SessionState): readonly ParkedGraft[] {
+  return state.parked ?? [];
 }
 
 /** Thrown by {@link applySessionPatch} when a patch cannot be applied. */
@@ -249,6 +261,15 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
   const fields = patch.fields ?? {};
   const totals = fields.totals ?? prev.totals;
   const edges = patch.spawnEdges ?? edgesOf(prev);
+  // Absent means unchanged, so a parked graft carried by an earlier snapshot
+  // survives every diff that does not mention it. Getting this wrong is silent:
+  // the parked list would appear once and then vanish on the next patch.
+  //
+  // `parkedOf` is deliberately NOT used here. A state that never carried the
+  // field must come out without it, exactly as it went in — the host always
+  // sets it, so this only affects states built before it existed, and writing
+  // `parked: []` onto those would change what an unrelated round trip compares.
+  const parked = patch.parked ?? prev.parked;
 
   const next: SessionState = {
     sessionId: prev.sessionId,
@@ -264,5 +285,6 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
     },
     spawnEdges: edges.map((e) => ({ ...e })),
   };
+  if (parked !== undefined) next.parked = parked.map((p) => ({ ...p }));
   return deepFreeze(next);
 }

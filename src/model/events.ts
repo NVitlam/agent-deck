@@ -31,6 +31,25 @@ export interface SessionState {
    * them that relationship is not recoverable from `root` alone.
    */
   spawnEdges?: readonly SpawnEdge[];
+  /**
+   * Agents the grafter knows exist and deliberately did NOT attach to the
+   * tree, each with the machine-readable code saying why.
+   *
+   * Phase 4.5 additive, and optional for the same reason `spawnEdges` is:
+   * every earlier construction of this interface stays valid, and no field
+   * above changes meaning.
+   *
+   * A parked agent is absent from `root` on purpose — G3 refuses rather than
+   * guessing a parent — so without this field a parked agent reaches the
+   * webview through no channel at all, and "refuse, don't guess" is a decision
+   * the renderer cannot see. `root` cannot recover it: there is nothing in the
+   * tree to recover it from.
+   *
+   * An empty list is the honest value for a session that parks nothing, and it
+   * is also what a refused (`schemaOk: false`) session carries: a refusal
+   * renders nothing, and a new field is not a hole to smuggle content through.
+   */
+  parked?: readonly ParkedGraft[];
 }
 
 /**
@@ -49,6 +68,47 @@ export interface SpawnEdge {
   depth: number;
   /** `spawnDepth` as written in the sidecar, kept even when it disagrees. */
   recordedDepth: number;
+}
+
+/**
+ * Why an agent is known to exist and is deliberately not in the tree.
+ *
+ * The same vocabulary `graft.ts` produces, where every member is documented
+ * with the join outcome behind it. It is restated here rather than imported
+ * because this module imports nothing at all, and that is load-bearing:
+ * `bridge/apply.ts` is bundled into a CSP-strict browser context and reaches
+ * only this file — a property `bridge/apply.test.ts` re-derives from disk by
+ * walking the real import graph. Importing `graft.ts` here would drag
+ * `node:crypto` and the parser's filesystem code into the webview bundle.
+ *
+ * The two definitions are held together by assignment, not by agreement:
+ * `session.ts` maps a `GraftSnapshot`'s `parked` entries field by field into
+ * this shape, so a code or a property added on the grafter's side and not here
+ * is a compile error at that mapping rather than a value that silently never
+ * arrives.
+ */
+export type ParkCode =
+  | 'sidecarMissing'
+  | 'sidecarUnusable'
+  | 'missingJoinKey'
+  | 'noMatchingToolUse'
+  | 'ambiguousJoinKey'
+  | 'parentAgentMissing'
+  | 'parentAgentContradiction'
+  | 'parentNotGrafted';
+
+/** One agent that is known to exist and is deliberately not in the tree. */
+export interface ParkedGraft {
+  /** The agent that did not graft. It matches no `AgentNode.id` under `root`. */
+  agentId: string;
+  /** Machine-readable refusal reason. */
+  code: ParkCode;
+  /** The join key as read, when there was one worth quoting. */
+  toolUseId?: string;
+  /** Human-readable explanation, carried through from the join where possible. */
+  reason: string;
+  /** `parentAgentId` from the sidecar, when the sidecar supplied one. */
+  parentAgentId?: string;
 }
 
 export interface AgentNode {
@@ -122,6 +182,14 @@ export interface SessionPatch {
   tree?: readonly TreeOp[];
   /** Whole-list replacement; present only when the edge set changed. */
   spawnEdges?: readonly SpawnEdge[];
+  /**
+   * Whole-list replacement; present only when the parked set changed.
+   *
+   * Absence means unchanged, like every other key here — so a session that
+   * parked an agent on one snapshot keeps it across every later diff that does
+   * not mention it.
+   */
+  parked?: readonly ParkedGraft[];
 }
 
 /** Session-level scalar changes. Absent key = unchanged. */

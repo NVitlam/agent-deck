@@ -508,9 +508,20 @@ export function sessionLayout(session: SessionState): SessionLayout {
   const cells = new Map<string, CellPlacement>();
   const dots = new Map<string, DotPlacement>();
   const elided = new Map<string, number>();
+  // PLACEHOLDER, awaiting the P2-LAYOUT parked round. `SessionState.parked`
+  // only began reaching the webview one commit ago; placing those agents is the
+  // layout package's next piece of work. This empty Map exists so the contract
+  // can REQUIRE the member without leaving the tree red in between, and an empty
+  // Map is the honest value today: nothing is placed, so nothing renders, which
+  // is exactly the behaviour before the field existed.
+  //
+  // It stays empty on the refusal path below whatever happens next: G3 says a
+  // refused session renders no interior, and parked entries are ids and reasons
+  // read out of a transcript whose schema we just refused to understand.
+  const parked = new Map<string, CellPlacement>();
 
   if (session.schemaOk === false || session.liveness === 'unsupported') {
-    return { cells, dots, elided };
+    return { cells, dots, elided, parked };
   }
 
   const edges = session.spawnEdges ?? [];
@@ -606,5 +617,5 @@ export function sessionLayout(session: SessionState): SessionLayout {
   };
 
   place(session.root, 0, 0, 0);
-  return { cells, dots, elided };
+  return { cells, dots, elided, parked };
 }

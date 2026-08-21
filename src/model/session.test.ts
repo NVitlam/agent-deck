@@ -49,7 +49,7 @@ import type {
 } from './events.js';
 import { isAgentNode } from './events.js';
 import { normalizeHookEvent } from '../hooks/listener.js';
-import type { SidecarArrival, TranscriptBatch } from './graft.js';
+import type { GraftSnapshot, SidecarArrival, TranscriptBatch } from './graft.js';
 import { agentNodes, graftSession, walk } from './graft.js';
 import { LivenessEngine } from './liveness.js';
 import { correlateWorkspace } from './correlate.js';
@@ -1315,5 +1315,228 @@ describe('G1: the session model writes nothing', () => {
     const before = await digest();
     await replayInterleaved();
     expect(await digest()).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Parked grafts on the wire
+// ---------------------------------------------------------------------------
+
+/**
+ * A parked graft is an agent the grafter knows exists and refused to attach,
+ * because its join to a spawning `tool_use` block did not resolve. It is
+ * deliberately absent from `root` and carries no spawn edge, so
+ * `SessionState.parked` is the ONLY channel by which it reaches a renderer.
+ *
+ * Everything below is driven by `fixtures/synthetic-graft/` through
+ * `graftSession` and `SessionModel` — the production path. No `SessionState`
+ * literal with a parked entry appears here: a hand-built one would assert that
+ * a field can hold a value it was handed, which is true of any field.
+ *
+ * Fixtures are chosen by PROPERTY — graft it, then ask whether it parked —
+ * never by directory name and never by count. A re-harvest that renames, adds
+ * or drops cases changes which subject is used and changes no assertion.
+ */
+const SYNTHETIC_GRAFT_ROOT = fileURLToPath(
+  new URL('../../fixtures/synthetic-graft', import.meta.url),
+);
+
+interface GraftSubject {
+  /** Case directory name. Used in failure messages only, never to select. */
+  caseName: string;
+  mainPath: string;
+  sessionId: string;
+  snapshot: GraftSnapshot;
+}
+
+let graftSubjectCache: GraftSubject[] | undefined;
+
+/** Every committed synthetic-graft transcript that fingerprints, grafted once. */
+async function graftSubjects(): Promise<GraftSubject[]> {
+  if (graftSubjectCache !== undefined) return graftSubjectCache;
+  const subdirs = async (dir: string): Promise<string[]> =>
+    (await readdir(dir, { withFileTypes: true }))
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+
+  const out: GraftSubject[] = [];
+  for (const caseName of await subdirs(SYNTHETIC_GRAFT_ROOT)) {
+    const caseDir = join(SYNTHETIC_GRAFT_ROOT, caseName);
+    for (const slugName of await subdirs(caseDir)) {
+      const slugDir = join(caseDir, slugName);
+      const mains = (await readdir(slugDir, { withFileTypes: true }))
+        .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+        .map((e) => e.name)
+        .sort();
+      for (const main of mains) {
+        const mainPath = join(slugDir, main);
+        const result = await graftSession(mainPath);
+        if (!result.ok) continue;
+        out.push({
+          caseName,
+          mainPath,
+          sessionId: main.replace(/\.jsonl$/, ''),
+          snapshot: result.snapshot,
+        });
+      }
+    }
+  }
+  graftSubjectCache = out;
+  return out;
+}
+
+/** The committed cases whose graft actually parks something. */
+async function parkingSubjects(): Promise<GraftSubject[]> {
+  return (await graftSubjects()).filter((s) => s.snapshot.parked.length > 0);
+}
+
+/** A committed case that parks nothing — the "before" half of a diff. */
+async function cleanSubject(): Promise<GraftSubject> {
+  const found = (await graftSubjects()).find((s) => s.snapshot.parked.length === 0);
+  if (found === undefined) throw new Error('no committed graft fixture parks nothing');
+  return found;
+}
+
+describe('SessionState.parked — the parked graft reaches the wire', () => {
+  it('at least one committed fixture parks, so nothing below is vacuous', async () => {
+    const parking = await parkingSubjects();
+    expect(parking.length, 'no committed graft fixture parks an agent').toBeGreaterThan(0);
+    for (const subject of parking) {
+      for (const p of subject.snapshot.parked) {
+        expect(p.agentId.length, subject.caseName).toBeGreaterThan(0);
+        expect(p.code.length, subject.caseName).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('every parking fixture carries its parked list into SessionState verbatim', async () => {
+    const { workspacePath } = await fixtures();
+    const slug = slugifyWorkspace(workspacePath);
+    for (const subject of await parkingSubjects()) {
+      const model = makeModel(workspacePath);
+      model.ingestGraftResult(subject.sessionId, slug, await graftSession(subject.mainPath));
+      const state = model.sessionState(subject.sessionId);
+
+      expect(state?.parked, subject.caseName).toBeDefined();
+      expect(state?.parked?.length, subject.caseName).toBe(subject.snapshot.parked.length);
+      for (const p of subject.snapshot.parked) {
+        const onWire = state?.parked?.find((w) => w.agentId === p.agentId);
+        expect(onWire, `${subject.caseName}: ${p.agentId} did not reach the wire`).toBeDefined();
+        expect(onWire?.code).toBe(p.code);
+        expect(onWire?.reason).toBe(p.reason);
+        expect(onWire?.toolUseId).toBe(p.toolUseId);
+        expect(onWire?.parentAgentId).toBe(p.parentAgentId);
+      }
+    }
+  });
+
+  it('the parked agent is in no tree and on no edge, so the field is its only channel', async () => {
+    const { workspacePath } = await fixtures();
+    const slug = slugifyWorkspace(workspacePath);
+    for (const subject of await parkingSubjects()) {
+      const model = makeModel(workspacePath);
+      model.ingestGraftResult(subject.sessionId, slug, await graftSession(subject.mainPath));
+      const state = model.sessionState(subject.sessionId) as SessionState;
+      const inTree = agentNodes(state.root).map((n) => n.id);
+      for (const p of state.parked ?? []) {
+        expect(inTree, `${subject.caseName}: ${p.agentId} is in the tree`).not.toContain(
+          p.agentId,
+        );
+        expect(
+          (state.spawnEdges ?? []).some((e) => e.agentId === p.agentId),
+          `${subject.caseName}: ${p.agentId} has a spawn edge`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('parked survives a snapshot, then a diff that introduces it, then one that ignores it', async () => {
+    const { workspacePath } = await fixtures();
+    const slug = slugifyWorkspace(workspacePath);
+    const clean = await cleanSubject();
+    const parking = (await parkingSubjects())[0] as GraftSubject;
+    const sessionId = clean.sessionId;
+    const model = makeModel(workspacePath);
+
+    // (1) SNAPSHOT — the only message a fresh webview can be started from. A
+    // clean graft: the field is present and empty, not absent.
+    model.ingestGraftResult(sessionId, slug, await graftSession(clean.mainPath));
+    const first = model.emit();
+    expect(first.addedSessionIds).toContain(sessionId);
+    let webview = first.sessions.find((s) => s.sessionId === sessionId) as SessionState;
+    expect(webview.parked).toStrictEqual([]);
+
+    // (2) DIFF that introduces parked. From here the webview never sees this
+    // session's state again, only patches — so a `parked` the patch does not
+    // carry is a parked graft that never arrives.
+    model.ingestGraftResult(sessionId, slug, await graftSession(parking.mainPath));
+    const second = model.emit();
+    const introducing = second.diffs.find((d) => d.sessionId === sessionId);
+    expect(introducing, 'the parking graft produced no diff at all').toBeDefined();
+    if (introducing === undefined) return;
+    expect(introducing.patch.parked, 'the patch did not carry parked').toBeDefined();
+    webview = applySessionPatch(webview, introducing.patch);
+    expect(webview.parked?.length).toBe(parking.snapshot.parked.length);
+    expect(webview).toStrictEqual(second.sessions.find((s) => s.sessionId === sessionId));
+
+    // (3) DIFF that says nothing about parked. This is the failure mode the
+    // test exists for: a field carried on the snapshot and dropped by the
+    // reducer appears once and then silently vanishes. Liveness moves here;
+    // the tree and the parked set do not.
+    model.ingestHookEvent(
+      mainThreadEvents(sessionId, ['PreToolUse'], 1)[0] as NormalizedHookEvent,
+    );
+    const third = model.emit();
+    const quiet = third.diffs.find((d) => d.sessionId === sessionId);
+    expect(quiet, 'the hook event produced no diff').toBeDefined();
+    if (quiet === undefined) return;
+    expect(quiet.patch.parked, 'a patch that changed no parked graft named parked').toBeUndefined();
+    expect(quiet.patch.fields?.liveness).toBeDefined();
+    webview = applySessionPatch(webview, quiet.patch);
+    expect(webview.parked?.length, 'parked vanished across a diff that ignored it').toBe(
+      parking.snapshot.parked.length,
+    );
+    expect(webview).toStrictEqual(third.sessions.find((s) => s.sessionId === sessionId));
+  });
+
+  it('a refused session carries an empty parked list, never the agents it had parked', async () => {
+    const { workspacePath } = await fixtures();
+    const slug = slugifyWorkspace(workspacePath);
+    const parking = (await parkingSubjects())[0] as GraftSubject;
+    const model = makeModel(workspacePath);
+
+    // Fed through the INCREMENTAL path, not `ingestGraftResult`, so the session's
+    // own grafter really holds the parked agent. A refusal that reached back
+    // into the grafter would then have something to leak; fed the other way this
+    // test could not tell "withheld" from "never computed".
+    const replay = await loadReplay(parking.mainPath);
+    const sessionId = replay.sessionId;
+    for (const sidecar of replay.sidecars) model.ingestSidecar(sessionId, slug, sidecar);
+    model.ingestTranscript(sessionId, slug, {
+      kind: 'main',
+      path: replay.main.path,
+      entries: replay.main.entries,
+    });
+    for (const file of replay.agents) {
+      const batch: TranscriptBatch = {
+        kind: 'subagent',
+        path: file.path,
+        entries: file.entries,
+      };
+      if (file.agentId !== undefined) batch.agentId = file.agentId;
+      model.ingestTranscript(sessionId, slug, batch);
+    }
+    expect(model.sessionState(sessionId)?.parked?.length).toBeGreaterThan(0);
+
+    model.refuseSession(sessionId, slug, {
+      kind: 'schemaMismatch',
+      reason: 'injected refusal',
+    });
+    const refused = model.sessionState(sessionId);
+    expect(refused?.schemaOk).toBe(false);
+    expect(refused?.parked).toStrictEqual([]);
+    expect(refused?.root.children).toStrictEqual([]);
+    expect(refused?.spawnEdges).toStrictEqual([]);
   });
 });

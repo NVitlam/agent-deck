@@ -31,7 +31,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import type { SessionState } from '../model/events.js';
-import { SessionPatchError, applySessionPatch, deepFreeze } from './apply.js';
+import { SessionPatchError, applySessionPatch, deepFreeze, parkedOf } from './apply.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const APPLY = fileURLToPath(new URL('./apply.ts', import.meta.url));
@@ -238,5 +238,106 @@ describe('applySessionPatch — the properties the bridge relies on', () => {
       // expected
     }
     expect(JSON.stringify(base)).toBe(before);
+  });
+});
+
+/**
+ * `parked` is optional on the wire and absent from every state built before it
+ * existed, so the reducer has to answer three questions and each of them has a
+ * wrong answer that is silent rather than loud.
+ *
+ * The proof that a REAL fixture's parked list survives a real snapshot and a
+ * real diff is in `src/model/session.test.ts` and `src/bridge/messages.test.ts`,
+ * driven by `graftSession`; this file owns the reducer's own contract, which is
+ * why the states here are literals.
+ */
+describe('applySessionPatch — parked', () => {
+  const base: SessionState = deepFreeze({
+    sessionId: 's1',
+    projectSlug: 'c--Users-dev-repo',
+    workspaceMatch: true,
+    liveness: 'live',
+    schemaOk: true,
+    root: {
+      id: 'root',
+      kind: 'main',
+      label: 'root',
+      status: 'running',
+      spawnDepth: 0,
+      children: [],
+      tokens: { in: 0, out: 0 },
+      startedAt: 1,
+    },
+    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    spawnEdges: [],
+  });
+
+  const withParked: SessionState = deepFreeze({
+    ...base,
+    parked: [
+      {
+        agentId: 'a-parked',
+        code: 'noMatchingToolUse' as const,
+        reason: 'no tool_use block carries toolu_missing',
+        toolUseId: 'toolu_missing',
+      },
+    ],
+  });
+
+  it('normalizes an absent list to an empty one, so no caller repeats the ?? []', () => {
+    expect(parkedOf(base)).toStrictEqual([]);
+    expect(parkedOf(withParked)).toHaveLength(1);
+  });
+
+  it('a patch that does not mention parked keeps it — absence means unchanged', () => {
+    const next = applySessionPatch(withParked, { fields: { liveness: 'idle' } });
+    expect(next.liveness).toBe('idle');
+    expect(next.parked).toStrictEqual(withParked.parked);
+  });
+
+  it('a patch that mentions parked replaces the whole list, including with empty', () => {
+    const cleared = applySessionPatch(withParked, { parked: [] });
+    expect(cleared.parked).toStrictEqual([]);
+    const replaced = applySessionPatch(withParked, {
+      parked: [{ agentId: 'a-other', code: 'sidecarMissing', reason: 'sidecar has not arrived' }],
+    });
+    expect(replaced.parked).toStrictEqual([
+      { agentId: 'a-other', code: 'sidecarMissing', reason: 'sidecar has not arrived' },
+    ]);
+  });
+
+  it('a state that never carried parked comes out without it, not with an empty one', () => {
+    // The field is optional, and states built before it existed — the webview's
+    // own test data among them — must survive a patch unchanged. Writing
+    // `parked: []` onto them would make `apply(prev, diff)` stop deep-equalling
+    // `next` for every such state, which is someone else's test failing for a
+    // reason that has nothing to do with parking.
+    const next = applySessionPatch(base, { fields: { liveness: 'ended' } });
+    expect('parked' in next).toBe(false);
+    expect(parkedOf(next)).toStrictEqual([]);
+  });
+
+  it('copies the entries rather than aliasing the patch, and freezes them', () => {
+    const patchEntries = [
+      { agentId: 'a-parked', code: 'ambiguousJoinKey' as const, reason: 'two candidates' },
+    ];
+    const next = applySessionPatch(base, { parked: patchEntries });
+    expect(next.parked?.[0]).not.toBe(patchEntries[0]);
+    expect(Object.isFrozen(next.parked?.[0])).toBe(true);
+    // Mutating the patch afterwards must not reach into the produced state.
+    patchEntries[0] = { agentId: 'mutated', code: 'ambiguousJoinKey', reason: 'mutated' };
+    expect(next.parked?.[0]?.agentId).toBe('a-parked');
+  });
+
+  it('an optional key absent on the way in stays absent on the way out', () => {
+    // `toStrictEqual` distinguishes a missing key from one holding `undefined`,
+    // and so does the round-trip contract the bridge relies on. A reducer that
+    // wrote `toolUseId: undefined` would make apply(prev, diff) stop deep-
+    // equalling next for every parked graft that never had a join key.
+    const next = applySessionPatch(base, {
+      parked: [{ agentId: 'a-parked', code: 'missingJoinKey', reason: 'no toolUseId' }],
+    });
+    expect('toolUseId' in (next.parked?.[0] as object)).toBe(false);
+    expect('parentAgentId' in (next.parked?.[0] as object)).toBe(false);
   });
 });

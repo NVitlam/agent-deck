@@ -59,6 +59,7 @@ import type {
   AgentNode,
   AgentNodeFieldPatch,
   NormalizedHookEvent,
+  ParkedGraft,
   SchemaMismatch,
   SessionFieldPatch,
   SessionPatch,
@@ -76,6 +77,7 @@ import type {
   GraftOptions,
   GraftSessionResult,
   GraftSnapshot,
+  ParkedGraft as GraftParkedGraft,
   SidecarArrival,
   TranscriptBatch,
 } from './graft.js';
@@ -84,7 +86,7 @@ import type { SessionLivenessSnapshot } from './liveness.js';
 import { LivenessEngine } from './liveness.js';
 import type { WorkspaceCorrelation } from './correlate.js';
 import { isOpenWorkspaceSlug } from './correlate.js';
-import { deepFreeze, edgesOf } from '../bridge/apply.js';
+import { deepFreeze, edgesOf, parkedOf } from '../bridge/apply.js';
 
 // The patch reducer lives in `src/bridge/apply.ts` so the webview can import it
 // without dragging `node:` builtins into a CSP-strict browser bundle. Re-exported
@@ -103,10 +105,12 @@ function errorMessage(err: unknown): string {
  * The tree a refused session exposes: nothing.
  *
  * G3 says a schema/layout mismatch renders `unsupported` and never a partial
- * tree. "Partial" includes token totals and spawn edges, so those are zeroed
- * and emptied too — a number computed from half a session is a wrong number,
- * not a smaller one. `status` is `'running'`: we do not know that the session
- * ended, and claiming it did would be the guess G3 forbids.
+ * tree. "Partial" includes token totals, spawn edges and parked grafts, so
+ * those are zeroed and emptied too — a number computed from half a session is
+ * a wrong number, not a smaller one, and a parked-agent id read out of a
+ * transcript we have refused to understand is content we have no grounds to
+ * show. `status` is `'running'`: we do not know that the session ended, and
+ * claiming it did would be the guess G3 forbids.
  */
 function refusedRoot(): AgentNode {
   return {
@@ -119,6 +123,26 @@ function refusedRoot(): AgentNode {
     tokens: { in: 0, out: 0 },
     startedAt: 0,
   };
+}
+
+/**
+ * One parked graft, converted from the grafter's shape to the wire's.
+ *
+ * The argument is typed as `graft.ts`'s own `ParkedGraft` and the return as
+ * `events.ts`'s, which is the whole point: `events.ts` imports nothing (so the
+ * webview bundle can reach it without dragging `node:crypto` in), so the two
+ * declarations are separate and this function is the single place the compiler
+ * is made to compare them.
+ *
+ * An absent optional key is left absent rather than written as `undefined`,
+ * because `applySessionPatch` copies these by spread and a state that survived
+ * a patch must deep-equal one that did not.
+ */
+function toWireParked(p: GraftParkedGraft): ParkedGraft {
+  const out: ParkedGraft = { agentId: p.agentId, code: p.code, reason: p.reason };
+  if (p.toolUseId !== undefined) out.toolUseId = p.toolUseId;
+  if (p.parentAgentId !== undefined) out.parentAgentId = p.parentAgentId;
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +168,25 @@ function sameEdges(a: readonly SpawnEdge[], b: readonly SpawnEdge[]): boolean {
       x.parentNodeId !== y.parentNodeId ||
       x.depth !== y.depth ||
       x.recordedDepth !== y.recordedDepth
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function sameParked(a: readonly ParkedGraft[], b: readonly ParkedGraft[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i];
+    const y = b[i];
+    if (x === undefined || y === undefined) return false;
+    if (
+      x.agentId !== y.agentId ||
+      x.code !== y.code ||
+      x.reason !== y.reason ||
+      x.toolUseId !== y.toolUseId ||
+      x.parentAgentId !== y.parentAgentId
     ) {
       return false;
     }
@@ -331,6 +374,11 @@ export function diffSessionState(
     changed = true;
   }
 
+  if (!sameParked(parkedOf(prev), parkedOf(next))) {
+    patch.parked = parkedOf(next).map((p) => ({ ...p }));
+    changed = true;
+  }
+
   const ops: TreeOp[] = [];
   if (prev.root.id !== next.root.id) {
     ops.push({ op: 'replaceRoot', node: next.root });
@@ -509,6 +557,7 @@ interface ContentView {
   root: AgentNode;
   totals: SessionState['totals'];
   spawnEdges: readonly SpawnEdge[];
+  parked: readonly ParkedGraft[];
 }
 
 interface SessionRecord {
@@ -529,6 +578,8 @@ const REFUSED_TOTALS: SessionState['totals'] = Object.freeze({
 });
 
 const NO_EDGES: readonly SpawnEdge[] = Object.freeze([]);
+
+const NO_PARKED: readonly ParkedGraft[] = Object.freeze([]);
 
 export class SessionModel {
   /** The hook tap's engine. Public so the host can wire the listener to it. */
@@ -769,6 +820,11 @@ export class SessionModel {
         depth: e.depth,
         recordedDepth: e.recordedDepth,
       })),
+      // Field by field, and typed as the grafter's own `ParkedGraft`, so this
+      // line is where the two definitions of the shape are checked against each
+      // other. A code or a property added on the grafter's side stops the build
+      // here instead of silently never reaching the webview.
+      parked: snapshot.parked.map(toWireParked),
     });
   }
 
@@ -792,6 +848,12 @@ export class SessionModel {
         root: refusedRoot(),
         totals: REFUSED_TOTALS,
         spawnEdges: NO_EDGES,
+        // G3: a refused session renders nothing. Parked grafts are content read
+        // out of a session whose schema we have just refused to understand, so
+        // carrying them would make the new field the one hole a refusal leaks
+        // through. Empty, deliberately — not "undefined", which would read as
+        // "not computed" rather than "withheld".
+        parked: NO_PARKED,
       });
       return record.view;
     }
@@ -823,6 +885,7 @@ export class SessionModel {
       root: view.root,
       totals: view.totals,
       spawnEdges: view.spawnEdges,
+      parked: view.parked,
     });
   }
 

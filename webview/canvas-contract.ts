@@ -90,6 +90,16 @@ export interface SessionLayout {
    * a value of 0 must never be written, so `+n` badges cannot render "+0".
    */
   elided: Map<string, number>;
+  /**
+   * Parked grafts (`UNRESOLVED`), placed on their own orbit, keyed by agentId.
+   *
+   * SEPARATE FROM `cells` because a parked agent has NO NODE IN THE TREE. The
+   * grafter deliberately leaves it off `root`, so `SessionState.parked` is the
+   * only record that it exists at all — these are placed from that list, never
+   * from a tree walk. That is also why they cannot be anchored: there is no
+   * spawning dot to draw a filament to, which is the whole point of the state.
+   */
+  parked: Map<string, CellPlacement>;
 }
 
 /* ------------------------------------------------------------------------ *

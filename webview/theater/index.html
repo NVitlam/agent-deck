@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agent Deck — replay theater (dev only)</title>
+    <!--
+      DEV-ONLY PAGE. Built by `node esbuild.config.mjs --theater`, which is not
+      part of `npm run build`, so nothing here reaches the VSIX. Open
+      `dist/theater/index.html` in a browser; the corpus is inlined into the
+      script, so this works from `file://` with no server and no network.
+
+      The `--vscode-*` variables below are the theme values the panel would get
+      from VS Code. Approximations, on purpose: this page reviews STRUCTURE and
+      MOTION, and its colours are not evidence about the shipped panel's.
+    -->
+    <style>
+      :root {
+        color-scheme: dark;
+        --vscode-editor-background: #1f1f1f;
+        --vscode-editor-foreground: #cccccc;
+        --vscode-foreground: #cccccc;
+        --vscode-descriptionForeground: #9d9d9d;
+        --vscode-panel-border: #2b2b2b;
+        --vscode-list-hoverBackground: #2a2d2e;
+        --vscode-list-activeSelectionBackground: #04395e;
+        --vscode-list-activeSelectionForeground: #ffffff;
+        --vscode-button-background: #0e639c;
+        --vscode-button-foreground: #ffffff;
+        --vscode-button-hoverBackground: #1177bb;
+        --vscode-textLink-foreground: #4daafc;
+        --vscode-errorForeground: #f48771;
+        --vscode-charts-green: #89d185;
+        --vscode-charts-yellow: #cca700;
+        --vscode-charts-red: #f14c4c;
+        --vscode-inputValidation-warningBackground: #352a05;
+        --vscode-inputValidation-warningBorder: #cca700;
+        --vscode-font-family: "Segoe UI", system-ui, sans-serif;
+        --vscode-editor-font-family: "Cascadia Mono", Consolas, monospace;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+
+      body {
+        background: var(--vscode-editor-background);
+        color: var(--vscode-editor-foreground);
+        font-family: var(--vscode-font-family);
+        font-size: 13px;
+      }
+
+      #theater-root {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      .theater-transport {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--vscode-panel-border);
+      }
+
+      .theater-scrubber {
+        flex: 1 1 240px;
+        min-width: 160px;
+      }
+
+      .theater-speed {
+        width: 110px;
+      }
+
+      .theater-position,
+      .theater-speed-label {
+        font-family: var(--vscode-editor-font-family);
+        white-space: pre;
+      }
+
+      .theater-step,
+      .theater-title,
+      .theater-intent,
+      .theater-sep {
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .theater-title,
+      .theater-intent {
+        flex-basis: 100%;
+      }
+
+      .theater-empty {
+        font-family: var(--vscode-editor-font-family);
+      }
+
+      .theater-stage {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .theater-panel {
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="theater-root"></div>
+    <script src="./main.js"></script>
+  </body>
+</html>

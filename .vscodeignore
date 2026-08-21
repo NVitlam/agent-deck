@@ -61,6 +61,16 @@ agent-deck-spec.md
 docs/PLAN-v1.md
 docs/agent-deck-spec-v1.md
 
+# Dev tooling and design artifacts. None of it is part of the product, and
+# `vsce ls` was shipping all three before this: the two recorder/capture
+# scripts, the frozen canvas design docs (a 38 KB mockup), and the UI-state
+# evidence. Checked for leaked absolute paths first - there are none, so this
+# is bloat rather than a privacy defect - but a VSIX should carry the product,
+# not the workshop.
+scripts/**
+docs/ui/**
+docs/evidence/**
+
 # The replay theater is DEV-ONLY and must never reach a user. It is unreachable
 # from `webview/main.ts` (asserted on esbuild's import graph), and `webview/**`
 # below already keeps its source out -- but `node esbuild.config.mjs --theater`

@@ -1,0 +1,44 @@
+{
+  "source": "fixtures/synthetic-graft/03-tool-use-id-duplicated/SYNTHETIC-hand-mutated-not-captured/deadbeef-0000-4000-8000-0000000000a1.jsonl",
+  "parked": [
+    {
+      "agentId": "agraft0000000002",
+      "code": "ambiguousJoinKey"
+    }
+  ],
+  "cells": [
+    [
+      "root",
+      {
+        "x": 0,
+        "y": 0,
+        "R": 34.477
+      }
+    ],
+    [
+      "agraft0000000001",
+      {
+        "x": 0,
+        "y": -170,
+        "R": 15.531
+      }
+    ]
+  ],
+  "dots": [
+    [
+      "toolu_GRAFT000000000000001",
+      {
+        "x": 0,
+        "y": -96
+      }
+    ],
+    [
+      "toolu_GRAFT000000000000002",
+      {
+        "x": 36.738,
+        "y": -88.692
+      }
+    ]
+  ],
+  "elided": []
+}

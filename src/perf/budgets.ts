@@ -10,34 +10,46 @@
  * future reader can tell "this budget is tight because the code is fast" from
  * "this budget is tight because someone typed a round number".
  *
- * ONE BUDGET IS DELIBERATELY NOT ENFORCED. `postAppend.total.dod` is the DoD's
- * own 100 ms and it is NOT met: medians of 235-555 ms across four runs on the
- * synthetic corpus, because `src/extension.ts` re-grafts the WHOLE session on
- * every append (`graftSession` is ~95% of the total in every run). That is not a defect this
- * package may fix -- `src/extension.ts` and `src/model/graft.ts` belong to
- * other owners -- and it is not something to hide behind a skipped test
- * either. It is recorded here as data, with the measurement, and
- * `AGENT_DECK_PERF_ASSERT=1` enforces it on demand. Flipping `enforced` to
- * true is the one-line change that turns it into a gate once the architecture
- * can pass it.
+ * EVERY BUDGET IN THE TABLE IS NOW ENFORCED. Until Wave 0 of Phase 4.5 one was
+ * not: `postAppend.total.dod` carried the DoD's 100 ms against the post-append
+ * TOTAL, was never met, and sat here at `enforced: false` with a note saying so.
+ * The user re-scoped it on 2026-08-21 -- see {@link RESCOPED_DOD_TOTAL}, which
+ * keeps the original number, what it measured and why it is unmet, because the
+ * point of the re-scope is honesty rather than a green light. What replaced it
+ * is `postAppend.incremental.dod`: the same 100 ms, applied to the stages the
+ * DoD's sentence was actually reaching for. The literal was not softened; its
+ * SCOPE changed and its enforcement went from off to on.
  *
  * ALL MEASUREMENTS BELOW were taken on the SYNTHETIC corpus (10,400 lines,
- * 17,041,245 bytes) on the Windows 11 development machine, 2026-08-21, across
- * FOUR completed runs -- three via `npx vitest run src/perf` in isolation and
- * one inside the full 29-file suite. They are calibration, not the DoD's
- * harvest -- see `fixtures/synthetic-perf/README.md`.
+ * 17,041,245 bytes) on the Windows 11 development machine, on 2026-08-21. The
+ * three `regression` entries were first set from four runs -- three via
+ * `npx vitest run src/perf` in isolation, one inside the full 29-file suite --
+ * and their notes now also carry the four runs the Phase 4.5 Wave 0 re-scope
+ * added, NINE in total. `postAppend.incremental.dod` was set from the three of
+ * those nine that measured the derived series directly, one
+ * `AGENT_DECK_PERF_FULL=1` (n=15) and two at default counts (n=7). The series
+ * did not exist before that wave, so the earlier runs cannot contribute to it,
+ * and later runs will print medians this table does not list: what is recorded
+ * here is what each limit was SET from, not a running total.
+ * They are calibration, not the DoD's harvest -- see
+ * `fixtures/synthetic-perf/README.md`.
  *
  * Each `measured.valueMs` is the SLOWEST value observed for that statistic, not
  * a representative one, so every margin stated here is the worst case rather
  * than a flattering one. The wall-clock numbers are machine- and state-
  * dependent and are not properties of the code; the stage RATIO -- incremental
  * work in single-digit ms, whole-session re-graft dominating -- reproduced in
- * all four and is the durable observation.
+ * every run and is the durable observation.
  */
 
 export interface TimingBudget {
   id: string;
-  /** What is being timed, in the vocabulary of `measure.ts`'s stage names. */
+  /**
+   * What is being timed. Four of the five values are `measure.ts` stage names
+   * (`total`, `tailPoll`, `graft`, `apply`); `incremental` is the one derived
+   * series -- `tailPoll + apply` summed PER SAMPLE, not median plus median --
+   * and `perf.test.ts`'s `statFor` is where all five are resolved.
+   */
   what: string;
   /** Which order statistic the budget is compared against. Never a single sample. */
   statistic: 'median' | 'trimmedMean';
@@ -56,26 +68,83 @@ export interface TimingBudget {
   };
 }
 
+/**
+ * The DoD number as it was originally written, and why it is not met.
+ *
+ * THIS IS NOT DEAD TEXT AND MUST NOT BE DELETED. PLAN's Phase 4 DoD item 2 says
+ * "post-append tree update < 100 ms". Read as the TOTAL, that number has never
+ * been met on any run this repo has taken, and the re-scope above does not
+ * change that -- it changes which quantity carries the 100 ms, and says so out
+ * loud here rather than quietly retiring a red budget. A reader who finds
+ * `postAppend.incremental.dod` green is one field away from learning that the
+ * post-append TOTAL is 2.3-5.6x over the same 100 ms.
+ *
+ * WHAT THE ORIGINAL NUMBER MEASURED: `SessionTailer.poll` + `graftSession` +
+ * `ingestGraftResult` + `emit`, end to end, per appended line.
+ *
+ * WHY IT IS UNMET, and why that is not a defect to fix here: `src/extension.ts`
+ * re-grafts the WHOLE session on every append. A tree built from tail lines
+ * alone would be content accepted before the layout was asserted -- the partial
+ * tree G3 forbids -- so the re-read is deliberate. `graftSession` is ~95% of the
+ * total in every run on record, so the budget is missed by that architectural
+ * choice and not by any one slow function. `perf.test.ts` pins the choice
+ * behaviourally (`parsedLines >= mainLines`): make the graft incremental and
+ * that test goes red, which is the signal to revisit this record.
+ *
+ * The three options were fix / accept-and-carry / re-scope. The user chose
+ * re-scope on 2026-08-21. `AGENT_DECK_PERF_ASSERT=1` no longer enforces
+ * anything extra -- every budget in the table is enforced by default now -- so
+ * the total is checked against this record by `perf.test.ts` instead.
+ */
+export const RESCOPED_DOD_TOTAL = {
+  /** Verbatim from PLAN's Phase 4 DoD item 2. */
+  sentence: 'post-append tree update < 100 ms',
+  /** What the sentence's number was read as before the re-scope. */
+  originalWhat: 'total',
+  originalLimitMs: 100,
+  /**
+   * Medians of the post-append TOTAL, in ms, from the runs on record when this
+   * was written (2026-08-21). Not a running total -- later runs will print
+   * medians this list does not contain, and that does not falsify it.
+   */
+  observedMedianMs: [234.9, 287.9, 555.3, 355.7, 332.3, 342.5, 345.8, 343.6, 351.6],
+  /** Slowest single post-append total ever observed, in ms. */
+  slowestSampleMs: 727.1,
+  /** Share of the total spent in `graftSession`, every run on record. */
+  graftShareOfTotal: 0.95,
+  status: 'NOT MET as a total, by 2.3-5.6x across nine runs, and not fixable in this package',
+} as const;
+
 export const TIMING_BUDGETS: readonly TimingBudget[] = [
   {
-    id: 'postAppend.total.dod',
-    what: 'total',
+    id: 'postAppend.incremental.dod',
+    what: 'incremental',
     statistic: 'median',
     limitMs: 100,
     source: 'dod',
-    enforced: false,
+    enforced: true,
     measured: {
-      valueMs: 355.7,
-      on: 'synthetic 10,400 lines / 17,041,245 bytes, inside the full 29-file suite',
-      marginX: 0.28,
+      valueMs: 17.1,
+      on: 'synthetic 10,400 lines / 17,041,245 bytes; SLOWER of the two runs that measured it',
+      marginX: 5.8,
       note:
-        'NOT MET, by 3.6x on this run and by 2.3-5.6x across the four runs on record. Stage ' +
-        'breakdown of this run: SessionTailer.poll 9.8 ms, graftSession 339.3 ms, ' +
-        'ingestGraftResult+emit 6.6 ms. The whole-session re-graft is 95% of the total in ' +
-        'EVERY run, which is the durable finding; the absolute totals are not. The incremental ' +
-        'stages together are 16.4 ms, comfortably inside 100 ms, so the budget is missed by ' +
-        'the architecture -- extension.ts re-grafts the whole session on every append -- rather ' +
-        'than by any one slow function. Enforce with AGENT_DECK_PERF_ASSERT=1.',
+        'THE RE-SCOPED DoD NUMBER. `SessionTailer.poll` + `ingestGraftResult` + `emit`, summed ' +
+        'PER SAMPLE -- everything a post-append update does EXCEPT the deliberate whole-session ' +
+        're-graft. See RESCOPED_DOD_TOTAL for the number this replaced and why it is unmet. ' +
+        'THREE runs measured this series directly, all on 2026-08-21 in the worktree that ' +
+        'added it: AGENT_DECK_PERF_FULL=1 gave median 16.2 (tmean 16.4, p90 18.2, min 14.3, ' +
+        'max 24.3, n=15); the default counts gave 17.1 (tmean 17.0, p90 22.1, min 15.0, ' +
+        'max 22.1, n=7) and 16.4 (tmean 16.3, p90 17.8, min 14.9, max 17.8, n=7). 17.1 is the ' +
+        'slowest of the three medians, so 100 ms is 5.8x it and 4.1x ' +
+        'the slowest single sample any of them saw (24.3 ms). MARGIN JUSTIFICATION: the three ' +
+        'medians span 5.5% while the post-append TOTAL on the same machine has spanned ' +
+        '234.9-555.3 ms (2.4x) across nine runs -- so the incremental stages are the stable ' +
+        'part of the measurement, not the volatile one. The margin is 480% above the slowest ' +
+        'median against a 5.5% observed spread across the three runs of it, i.e. ~87x the ' +
+        'run-to-run variation seen so far; three runs is a thin base for a variance claim and ' +
+        'that is exactly why the margin is not tighter. The stage that could still move it is ' +
+        'tailPoll, whose per-poll readdir sweep grows with the session directory; that is ' +
+        'guarded separately and more tightly at 150 ms.',
     },
   },
   {
@@ -87,16 +156,19 @@ export const TIMING_BUDGETS: readonly TimingBudget[] = [
     enforced: true,
     measured: {
       valueMs: 555.3,
-      on: 'synthetic 10,400 lines / 17,041,245 bytes; SLOWEST of four completed runs',
+      on: 'synthetic 10,400 lines / 17,041,245 bytes; SLOWEST of nine completed runs',
       marginX: 4.5,
       note:
-        'FOUR runs, all on the same machine, medians: 234.9 (n=12, isolated), 287.9 (n=15, ' +
-        'isolated), 555.3 (n=7, isolated), 355.7 (n=7, inside the full 29-file suite). Slowest ' +
+        'NINE runs, all on the same machine, medians: 234.9 (n=12, isolated), 287.9 (n=15, ' +
+        'isolated), 555.3 (n=7, isolated), 355.7 (n=7, inside the full 29-file suite), 332.3 ' +
+        '(n=15, FULL, the committed evidence/perf-full.json), and three more added by the ' +
+        'Phase 4.5 Wave 0 re-scope -- 342.5 (n=15, FULL), 345.8 (n=15, FULL), 343.6 (n=7, ' +
+        'default), 351.6 (n=7, default). Slowest ' +
         'single sample anywhere: 727.1 ms. 2500 ms is 4.5x the slowest median and 3.4x the ' +
         'slowest single sample, which is the headroom the first draft of this budget INTENDED ' +
         'at 1200 ms and did not have: 1200 was 2.2x the slowest median and 1.65x the slowest ' +
         'sample, because the first two runs were the only ones then in hand. Note what the ' +
-        'four runs actually show -- the full-suite run was FASTER than an isolated one, so ' +
+        'runs actually show -- the full-suite run was FASTER than an isolated one, so ' +
         'parallel suite load is not the dominant source of variance and sizing the budget ' +
         'against it was the wrong model. Machine state is. It still catches an order-of-' +
         'magnitude regression against a ~350 ms typical median and nothing smaller -- that is ' +
@@ -112,11 +184,13 @@ export const TIMING_BUDGETS: readonly TimingBudget[] = [
     enforced: true,
     measured: {
       valueMs: 8.7,
-      on: 'synthetic 10,400 lines / 17,041,245 bytes; SLOWEST of four runs',
+      on: 'synthetic 10,400 lines / 17,041,245 bytes; SLOWEST median of nine runs',
       marginX: 17.2,
       note:
         'ingestGraftResult + emit + diffSessionState over a tree with ~2,400 tool nodes. ' +
-        'Medians across four runs 5.8 / 6.6 / 8.7 ms; slowest single sample anywhere 11.0 ms. This is the stage that would betray a ' +
+        'Medians 5.8 / 6.6 / 8.7 ms across the first four runs and 5.9 / 5.9 / 5.9 / 5.9 ms ' +
+        'across the four added by the Phase 4.5 Wave 0 re-scope; slowest single sample ' +
+        'anywhere 11.0 ms. This is the stage that would betray a ' +
         'quadratic diff, so it gets its own budget rather than hiding inside the total, where ' +
         'a 20x regression here would still be under 3% of it.',
     },
@@ -130,10 +204,12 @@ export const TIMING_BUDGETS: readonly TimingBudget[] = [
     enforced: true,
     measured: {
       valueMs: 12.0,
-      on: 'synthetic 10,400 lines / 17,041,245 bytes; SLOWEST of four runs',
+      on: 'synthetic 10,400 lines / 17,041,245 bytes; SLOWEST median of nine runs',
       marginX: 12.5,
       note:
-        'Medians across four runs 8.0 / 9.8 / 12.0 ms; slowest single sample anywhere 24.9 ms. Mostly the per-poll discovery sweep (readdir of the slug ' +
+        'Medians 8.0 / 9.8 / 12.0 ms across the first four runs and 10.4 / 9.7 / 11.1 / 10.0 ' +
+        'ms across the four added by the Phase 4.5 Wave 0 re-scope; slowest single sample ' +
+        'anywhere 24.9 ms. Mostly the per-poll discovery sweep (readdir of the slug ' +
         'and subagents directories); the byte-offset read itself is a few hundred bytes. ' +
         'A LOOSE guard on purpose: the property that matters for this stage is that it reads ' +
         'only the appended bytes, and that is asserted behaviourally against ' +

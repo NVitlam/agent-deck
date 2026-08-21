@@ -10,6 +10,14 @@ The machine-readable record is [`evidence/perf-full.json`](evidence/perf-full.js
 summary and the reasoning around it. Re-running the command above overwrites the JSON; anything
 inconsistent between the two means this file is stale and the JSON wins.
 
+**One exception, stated because it is exactly the kind of drift that section warns about.** That JSON
+was taken BEFORE the Phase 4.5 Wave 0 re-scope, so its `budgets` array still names
+`postAppend.total.dod` and carries no `postAppend.incremental` series. Its *measurements* are
+untouched by the re-scope and remain good; only its budget table is superseded, by
+[`budgets.ts`](budgets.ts) and by the four runs transcribed under "The Wave 0 re-scope" below.
+Regenerating it was outside the file ownership of the wave that re-scoped the budget, so it was left
+alone rather than half-updated.
+
 **Taken 2026-08-21, Windows 11 development machine, on the SYNTHETIC corpus.** These numbers are
 calibration and cannot be cited against PLAN's DoD item 2, which requires a harvested live R2 run —
 see [`../../fixtures/synthetic-perf/README.md`](../../fixtures/synthetic-perf/README.md). The record
@@ -29,7 +37,8 @@ accident.
 
 ## Post-append tree update — the DoD's `< 100 ms`
 
-All values in milliseconds, n = 15.
+All values in milliseconds, n = 15. This is the run of 2026-08-21 recorded as
+`evidence/perf-full.json`, quoted as it was taken — before the re-scope.
 
 | stage | median | trimmed mean | p90 | min | max |
 |---|---|---|---|---|---|
@@ -50,9 +59,9 @@ sits — not a perf tweak. `perf.test.ts` pins the property (`parsedLines >= mai
 anyone makes the graft incremental, the test fails and these numbers get revisited rather than
 silently rotting.
 
-The budget is therefore **recorded, not enforced**: a known-red test in a suite every phase gates on
-would be worse than a flaky one. `AGENT_DECK_PERF_ASSERT=1` enforces it on demand, and flipping
-`enforced: true` in `budgets.ts` is the one-line change the day the architecture can pass it.
+At the time of this run the budget was therefore **recorded, not enforced**: a known-red test in a
+suite every phase gates on would be worse than a flaky one. **That is no longer the state of
+`budgets.ts`** — see "The Wave 0 re-scope" below, which is what replaced it.
 
 **Expect the harvest to be worse, not better.** It is larger than this corpus in exactly the
 dimensions that drive graft cost — real offloading, real depth, real concurrency.
@@ -79,12 +88,115 @@ do grow during the run. That growth accounts for 0.120% of heap movement.
 
 ## Timing budgets at this run
 
+The table `budgets.ts` held when this run was taken. `postAppend.total.dod` no longer exists; what
+replaced it is below.
+
 | budget | statistic | value | limit | verdict | enforced |
 |---|---|---|---|---|---|
 | `postAppend.total.dod` | median | 332.3 | 100 | **NOT MET** | no — recorded |
 | `postAppend.total.regression` | median | 332.3 | 2500 | MET | yes |
 | `postAppend.apply.regression` | median | 5.9 | 150 | MET | yes |
 | `postAppend.tailPoll.regression` | median | 10.3 | 150 | MET | yes |
+
+## The Wave 0 re-scope (Phase 4.5, 2026-08-21)
+
+`postAppend.total.dod` was a budget that had never been met and never could be without changing
+`src/extension.ts`. The user chose **re-scope** over **fix** over **accept-and-carry**. What that
+means concretely:
+
+- The DoD sentence's literal — **100 ms** — is unchanged.
+- What it bounds changed, from the post-append **total** to the post-append **incremental** stages:
+  `SessionTailer.poll` + `ingestGraftResult` + `emit`, summed per sample. Everything a post-append
+  update does *except* the deliberate whole-session re-graft.
+- It went from `enforced: false` to `enforced: true`. Every budget in the table is now enforced.
+- The original reading is kept, not deleted, as `RESCOPED_DOD_TOTAL` in `budgets.ts`, with the eight
+  medians that miss it and the reason. `perf.test.ts` asserts that record still exists and that
+  every median in it is still over 100 ms.
+
+**The total is still not met and is not claimed to be.** Nine runs on record, medians 234.9 / 287.9 /
+555.3 / 355.7 / 332.3 / 342.5 / 345.8 / 343.6 / 351.6 ms against a 100 ms limit — 2.3-5.6x over. The
+`postAppend.total.regression` tripwire at 2500 ms is what bounds it, and that is unchanged.
+
+### The three runs the new budget was set from
+
+Both taken in the worktree that made the change, on the same Windows 11 machine and the same
+synthetic corpus. Transcribed verbatim from the harness rather than retyped, because these are the
+numbers `budgets.ts` quotes.
+
+`AGENT_DECK_PERF_FULL=1 AGENT_DECK_PERF_RECORD=<scratch>/perf-rescope.json npx vitest run src/perf`:
+
+```
+[perf] corpus origin=synthetic lines=10400 bytes=17041245 session=5eed0000-0000-4000-8000-00000000feed
+[perf] postAppend.total: median 345.8 tmean 345.6 p90 356.2 min 334.9 max 384.3 (n=15)
+[perf]   .tailPoll     : median 9.7 tmean 10.3 p90 12.5 min 9.2 max 17.6 (n=15)
+[perf]   .graft        : median 325.7 tmean 328.8 p90 340.7 min 319.3 max 366.9 (n=15)
+[perf]   .apply        : median 5.9 tmean 6.0 p90 6.8 min 4.7 max 7.8 (n=15)
+[perf]   .incremental  : median 16.2 tmean 16.4 p90 18.2 min 14.3 max 24.3 (n=15)
+[perf] heap gcForced=true floor 52.64MB -> 52.69MB ratio 1.0009 | trimmed-mean ratio 1.0005 | corpus grew 0.120%
+[perf] budget postAppend.incremental.dod (dod, enforced): 16.2 vs 100 ms -> MET
+[perf] budget postAppend.total.regression (regression, enforced): 345.8 vs 2500 ms -> MET
+[perf] budget postAppend.apply.regression (regression, enforced): 5.9 vs 150 ms -> MET
+[perf] budget postAppend.tailPoll.regression (regression, enforced): 9.7 vs 150 ms -> MET
+```
+
+`npx vitest run src/perf src/extension.test.ts` (default counts) — the slowest incremental median of
+the three, and the one `budgets.ts` records:
+
+```
+[perf] postAppend.total: median 343.6 tmean 374.0 p90 630.5 min 329.9 max 630.5 (n=7)
+[perf]   .tailPoll     : median 11.1 tmean 10.9 p90 12.4 min 9.4 max 12.4 (n=7)
+[perf]   .graft        : median 326.7 tmean 357.3 p90 608.3 min 312.9 max 608.3 (n=7)
+[perf]   .apply        : median 5.9 tmean 6.2 p90 9.8 min 5.1 max 9.8 (n=7)
+[perf]   .incremental  : median 17.1 tmean 17.0 p90 22.1 min 15.0 max 22.1 (n=7)
+[perf] budget postAppend.incremental.dod (dod, enforced): 17.1 vs 100 ms -> MET
+[perf] budget postAppend.total.regression (regression, enforced): 343.6 vs 2500 ms -> MET
+[perf] budget postAppend.apply.regression (regression, enforced): 5.9 vs 150 ms -> MET
+[perf] budget postAppend.tailPoll.regression (regression, enforced): 11.1 vs 150 ms -> MET
+```
+
+The same command again, once the table had been filled in and everything was green:
+
+```
+[perf] postAppend.total: median 351.6 tmean 350.8 p90 389.7 min 339.5 max 389.7 (n=7)
+[perf]   .tailPoll     : median 10.0 tmean 10.0 p90 11.5 min 9.1 max 11.5 (n=7)
+[perf]   .graft        : median 335.4 tmean 334.9 p90 371.9 min 323.1 max 371.9 (n=7)
+[perf]   .apply        : median 5.9 tmean 6.1 p90 7.0 min 5.4 max 7.0 (n=7)
+[perf]   .incremental  : median 16.4 tmean 16.3 p90 17.8 min 14.9 max 17.8 (n=7)
+[perf] budget postAppend.incremental.dod (dod, enforced): 16.4 vs 100 ms -> MET
+[perf] budget postAppend.total.regression (regression, enforced): 351.6 vs 2500 ms -> MET
+[perf] budget postAppend.apply.regression (regression, enforced): 5.9 vs 150 ms -> MET
+[perf] budget postAppend.tailPoll.regression (regression, enforced): 10.0 vs 150 ms -> MET
+```
+
+**What this table records is what the limit was SET from, not a running total.** Later runs of the
+suite will print incremental medians that are not listed here; the claim being made is that 17.1 ms
+was the slowest median of the three runs behind the number, not that no run will ever be slower.
+
+### Why 100 ms is a safe limit on this series, in the margin vocabulary the table uses
+
+| | |
+|---|---|
+| limit | 100 ms |
+| statistic | median of `tailPoll + apply`, summed **per sample** |
+| slowest of the three medians | **17.1 ms** |
+| margin over it | **5.8×** |
+| slowest single sample any of them saw | 24.3 ms → 4.1× |
+| spread across the three medians | 16.2 → 17.1 ms, **5.5%** |
+
+The margin is 480% above the slowest median against a 5.5% observed spread — roughly 87× the
+run-to-run variation seen so far. **Three runs is a thin base for a variance claim, and that is
+exactly why the margin is not tighter.** For contrast, the post-append *total* on this same machine
+has spanned 234.9-555.3 ms (2.4×) across nine runs: the incremental stages are the stable part of the
+measurement, not the volatile one.
+
+The stage that could realistically move this series is `tailPoll`, whose per-poll `readdir` sweep
+grows with the session directory. It is guarded separately and much more tightly, at 150 ms against a
+12.0 ms worst median.
+
+**How the series is built is part of the budget.** It is `tailPoll + apply` summed per sample and
+then summarised — not median plus median, which is a smaller and easier quantity whenever the two
+stages' slow cycles do not coincide. `perf.test.ts` asserts the construction directly, including
+that `total - graft` equals it to floating-point slack.
 
 ## What this run cost the suite
 
@@ -96,6 +208,14 @@ npx vitest run --exclude 'src/perf/**'   28 files / 919 tests   6.49-35.91 s  (n
 npx vitest run                           29 files / 937 tests   37.15-41.90 s (n=7)
 src/perf/perf.test.ts alone, in-suite                           36.0-42.1 s   (n=4)
 ```
+
+**Those file and test counts are the ones the timings were taken with, on 2026-08-21, and they have
+since moved.** Phase 4.5's Wave 0 added 3 tests to `src/perf/perf.test.ts` (18 → 21) and 4 to
+`src/extension.test.ts` (51 → 55), both counted in this worktree. The wall-clock figures were not
+re-taken for the whole suite, so they are left as measured rather than adjusted by arithmetic; the
+three added perf tests are constant-time table assertions and cost ~14 ms of the file's ~90 s at
+`FULL=1`. Wave 0's own runs: `src/perf` alone at `FULL=1` took 89.1 s and 92.7 s, and
+`src/perf src/extension.test.ts` at default counts took 40.7 s and 40.2 s.
 
 **Ranges, not point values, and the spread is the point.** The exclude-perf figure spans 5.5x across
 five runs; its 35.91 s outlier reported `environment 94.75 s / prepare 31.20 s` against a typical
@@ -131,8 +251,10 @@ representative one, so the margins stated there are worst-case rather than flatt
 
 ### Provenance of those figures, stated because it is uneven
 
-Five runs are on record. **Only this one is committed as machine-readable JSON**; the other four
-survive as medians quoted in `budgets.ts` and in the `8abee37` commit message:
+Nine runs are on record. **Only one is committed as machine-readable JSON** — the `FULL=1` run this
+file summarises. Four survive only as medians quoted in `budgets.ts` and in the `8abee37` commit
+message; the four added by Phase 4.5's Wave 0 are transcribed verbatim in this file, which is
+weaker than JSON and stronger than a remembered number:
 
 | run | mode | n | median | slowest sample | committed |
 |---|---|---|---|---|---|
@@ -140,7 +262,26 @@ survive as medians quoted in `budgets.ts` and in the `8abee37` commit message:
 | worker, isolated | default | 15 | 287.9 | 346 | no |
 | orchestrator, isolated | default | 7 | 555.3 | 727.1 | no |
 | orchestrator, in full suite | default | 7 | 355.7 | 378.8 | no |
-| **this run** | **`FULL=1`** | **15** | **332.3** | **351.1** | **yes** |
+| **the run above** | **`FULL=1`** | **15** | **332.3** | **351.1** | **yes, as JSON** |
+| Wave 0 baseline, isolated | `FULL=1` | 15 | 342.5 | 359.6 | transcribed below |
+| Wave 0 re-scope, isolated | `FULL=1` | 15 | 345.8 | 384.3 | transcribed above |
+| Wave 0, with `src/extension.test.ts` | default | 7 | 343.6 | 630.5 | transcribed above |
+| Wave 0, green re-run | default | 7 | 351.6 | 389.7 | transcribed above |
+
+The four Wave 0 rows are committed as harness output in this file rather than as JSON, because
+`evidence/perf-full.json` was not that wave's file to overwrite. The baseline row — taken before any
+edit, so the re-scope could be shown not to have moved the underlying measurement — reads:
+
+```
+[perf] postAppend.total: median 342.5 tmean 344.4 p90 355.1 min 334.9 max 359.6 (n=15)
+[perf]   .tailPoll     : median 10.4 tmean 10.5 p90 12.6 min 8.7 max 13.6 (n=15)
+[perf]   .graft        : median 326.0 tmean 327.8 p90 336.6 min 319.1 max 342.8 (n=15)
+[perf]   .apply        : median 5.9 tmean 5.9 p90 6.5 min 4.9 max 7.2 (n=15)
+[perf] budget postAppend.total.dod (dod, recorded): 342.5 vs 100 ms -> NOT MET
+```
+
+It has no `.incremental` line because the series did not exist yet; that run is the last one taken
+against the old table, and its `NOT MET` verdict is the state the re-scope started from.
 
 The 555.3 / 727.1 pair that justifies the 2500 ms limit therefore rests on a run nobody can re-read —
 and it did not have to, because `AGENT_DECK_PERF_RECORD` existed the whole time and was not used. A

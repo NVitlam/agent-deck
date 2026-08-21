@@ -5,6 +5,7 @@ import type {
   WebviewToHostMessage,
 } from '../src/model/events.js';
 import { createStore } from './store.js';
+import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
 import { liveSession, unsupportedSession } from './testdata.js';
 
 /**
@@ -358,5 +359,287 @@ describe('statelessness', () => {
       status: 'done',
       inputPreview: 'x',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Canvas UI state (spec C7.1, C7.2, C7.7, C7.8)
+// ---------------------------------------------------------------------------
+//
+// Altitude, node selection and the renderer toggle are webview-local. The
+// whole reason the canvas costs no host diff is that none of them is on the
+// wire, so "no new message" is asserted here as often as the behaviour is.
+
+describe('altitude and node selection', () => {
+  it('starts at the deck with nothing inspected, before any message arrives', () => {
+    const view = createStore().getView();
+    expect(view.altitude).toBe('deck');
+    expect(view.selectedNodeId).toBeUndefined();
+    expect(view.selectedNode).toBeUndefined();
+  });
+
+  it('stays at the deck when a snapshot arrives and auto-selects a session', () => {
+    // Auto-selection is a rail concern; it must not zoom the canvas for the
+    // user. A reload therefore lands on the deck, which C7.7 calls correct.
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    const view = store.getView();
+    expect(view.selectedSessionId).toBe('session-live');
+    expect(view.altitude).toBe('deck');
+  });
+
+  it('enterSession zooms to the interior and posts only the existing intent', () => {
+    const { sink, sent } = collect();
+    const store = createStore(sink);
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    expect(store.getView().altitude).toBe('session');
+    expect(sent).toEqual([{ type: 'selectSession', sessionId: 'session-live' }]);
+  });
+
+  it('selectSession alone does not move the altitude', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession(), unsupportedSession()] });
+    store.selectSession('session-unsupported');
+    expect(store.getView().altitude).toBe('deck');
+  });
+
+  it('selectNode opens the inspector and sends the host NOTHING', () => {
+    const { sink, sent } = collect();
+    const store = createStore(sink);
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    sent.length = 0;
+    store.selectNode('tool-bash');
+    const view = store.getView();
+    expect(view.altitude).toBe('inspector');
+    expect(view.selectedNodeId).toBe('tool-bash');
+    expect(view.selectedNode?.id).toBe('tool-bash');
+    expect(sent).toEqual([]);
+  });
+
+  it('finds a node at any depth, agent or tool', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    // `agent-2` is a depth-2 subagent, two levels below the root.
+    store.selectNode('agent-2');
+    expect(store.getView().selectedNode?.id).toBe('agent-2');
+    expect((store.getView().selectedNode as { label: string }).label).toBe(
+      'code-reviewer: check the diff',
+    );
+    store.selectNode('root');
+    expect(store.getView().selectedNode?.id).toBe('root');
+  });
+
+  it('ignores a node id that is not in the tree', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    store.selectNode('no-such-node');
+    expect(store.getView().altitude).toBe('session');
+    expect(store.getView().selectedNodeId).toBeUndefined();
+  });
+
+  it('refuses to inspect a node of a refused session (G3, C7.4)', () => {
+    // Entering an unsupported session shows the refusal card and an interior
+    // of zero elements. There is nothing to select, so selecting is a no-op
+    // rather than an inspector opened onto a tree we declined to draw.
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [unsupportedSession()] });
+    store.enterSession('session-unsupported');
+    expect(store.getView().refused).toBe(true);
+    store.selectNode('tool-read');
+    expect(store.getView().altitude).toBe('session');
+    expect(store.getView().selectedNodeId).toBeUndefined();
+  });
+
+  it('notifies subscribers on selectNode', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    let calls = 0;
+    const off = store.subscribe(() => (calls += 1));
+    store.selectNode('tool-read');
+    expect(calls).toBe(1);
+    off();
+  });
+});
+
+describe('Escape walks the altitudes up (C7.8)', () => {
+  function atInspector(): ReturnType<typeof createStore> {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    store.selectNode('tool-read');
+    return store;
+  }
+
+  it('goes inspector -> session interior -> deck, dropping the node on the way', () => {
+    const store = atInspector();
+    expect(store.getView().altitude).toBe('inspector');
+
+    store.escape();
+    expect(store.getView().altitude).toBe('session');
+    expect(store.getView().selectedNodeId).toBeUndefined();
+
+    store.escape();
+    expect(store.getView().altitude).toBe('deck');
+    // The session stays selected: Escape changes altitude, not selection, so
+    // the list view (the same store, a different projection) is unaffected.
+    expect(store.getView().selectedSessionId).toBe('session-live');
+  });
+
+  it('is a silent no-op at the deck', () => {
+    const store = atInspector();
+    store.escape();
+    store.escape();
+    let calls = 0;
+    const off = store.subscribe(() => (calls += 1));
+    store.escape();
+    expect(store.getView().altitude).toBe('deck');
+    // A keystroke that changed nothing must not look like a change.
+    expect(calls).toBe(0);
+    off();
+  });
+});
+
+describe('the in-panel view toggle (C7.2)', () => {
+  it('starts on the canvas, with no setting and nothing remembered', () => {
+    expect(createStore().getView().viewMode).toBe('canvas');
+    expect(createStore().getView().viewMode).toBe(DEFAULT_VIEW_MODE);
+  });
+
+  it('toggles canvas -> list -> canvas', () => {
+    const store = createStore();
+    store.toggleViewMode();
+    expect(store.getView().viewMode).toBe('list');
+    store.toggleViewMode();
+    expect(store.getView().viewMode).toBe('canvas');
+  });
+
+  it('does not touch altitude or selection', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    store.selectNode('tool-read');
+    store.toggleViewMode();
+    const view = store.getView();
+    expect(view.viewMode).toBe('list');
+    expect(view.altitude).toBe('inspector');
+    expect(view.selectedNodeId).toBe('tool-read');
+  });
+
+  it('sends the host nothing, in either direction', () => {
+    const { sink, sent } = collect();
+    const store = createStore(sink);
+    store.setViewMode('list');
+    store.toggleViewMode();
+    expect(sent).toEqual([]);
+  });
+
+  it('does not notify when the mode is set to the one already showing', () => {
+    const store = createStore();
+    let calls = 0;
+    const off = store.subscribe(() => (calls += 1));
+    store.setViewMode('canvas');
+    expect(calls).toBe(0);
+    store.setViewMode('list');
+    expect(calls).toBe(1);
+    off();
+  });
+
+  it('starts a fresh store back on the canvas — nothing survives a reload (G7)', () => {
+    // A reload is a new store. Nothing is read back from anywhere, because
+    // there is nowhere to read it back from: no storage, no history, nothing
+    // on the wire. The shipped-bundle guard in `bundle.test.ts` pins the
+    // absence of the storage APIs themselves.
+    const before = createStore();
+    before.setViewMode('list');
+    expect(before.getView().viewMode).toBe('list');
+    expect(createStore().getView().viewMode).toBe('canvas');
+  });
+});
+
+describe('canvas state accumulates nothing either', () => {
+  it('drops the inspected node when it leaves the tree, and falls back one altitude', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    store.selectNode('tool-bash');
+    expect(store.getView().altitude).toBe('inspector');
+
+    // Same session, a tree that no longer contains that node.
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [liveSession({ root: { ...liveSession().root, children: [] } })],
+    });
+    const view = store.getView();
+    expect(view.selectedNodeId).toBeUndefined();
+    expect(view.selectedNode).toBeUndefined();
+    expect(view.altitude).toBe('session');
+  });
+
+  it('drops to the deck when the session being inspected leaves the snapshot', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession(), unsupportedSession()] });
+    store.enterSession('session-live');
+    store.selectNode('tool-read');
+
+    store.handleMessage({ type: 'snapshot', sessions: [unsupportedSession()] });
+    const view = store.getView();
+    expect(view.selectedSessionId).toBe('session-unsupported');
+    // Re-pointing the same interior frame at a different session would show
+    // the user something else without saying so.
+    expect(view.altitude).toBe('deck');
+    expect(view.selectedNodeId).toBeUndefined();
+  });
+
+  it('drops to the deck when the host reports no sessions at all', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    store.selectNode('tool-read');
+    store.handleMessage({ type: 'snapshot', sessions: [] });
+    const view = store.getView();
+    expect(view.selectedSessionId).toBeUndefined();
+    expect(view.altitude).toBe('deck');
+    expect(view.selectedNodeId).toBeUndefined();
+  });
+
+  it('closes the inspector when the session is refused mid-flight', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    store.selectNode('tool-read');
+    store.handleMessage({ type: 'schemaMismatch', sessionId: 'session-live' });
+    const view = store.getView();
+    expect(view.refused).toBe(true);
+    expect(view.altitude).toBe('session');
+    expect(view.selectedNodeId).toBeUndefined();
+    expect(view.selectedNode).toBeUndefined();
+  });
+
+  it('forgets the inspected node when the user switches session', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession(), unsupportedSession()] });
+    store.enterSession('session-live');
+    store.selectNode('tool-read');
+    store.selectSession('session-unsupported');
+    expect(store.getView().selectedNodeId).toBeUndefined();
+    store.selectSession('session-live');
+    // Not remembered on the way back either: one slot, not a per-session map.
+    expect(store.getView().selectedNodeId).toBeUndefined();
+  });
+
+  it('holds altitude and selection steady across 50 identical snapshots', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    store.selectNode('tool-read');
+    const first = store.getView();
+    for (let i = 0; i < 50; i += 1) {
+      store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    }
+    expect(store.getView()).toEqual(first);
   });
 });

@@ -4,8 +4,16 @@
  * The webview is a **pure renderer**. Every piece of session data in here
  * arrived from the extension host in a `snapshot` or `diff` message; nothing
  * is derived and cached across messages, and nothing survives a reload. The
- * only state this module owns is *view* state: which session is selected and
- * which nodes the user toggled open or shut.
+ * only state this module owns is *view* state: which session is selected,
+ * which nodes the user toggled open or shut, which node the inspector is
+ * looking at, which zoom altitude the canvas is at, and which of the two
+ * renderers is showing.
+ *
+ * The canvas altitudes and the selected node live here by design, not by
+ * omission (spec C7.7): keeping them webview-local is what makes the canvas a
+ * webview-only change, with no new message in either direction and no host
+ * diff. A reload therefore starts at the deck with nothing selected — correct
+ * behaviour, not a defect.
  *
  * No Svelte, no DOM, no timers. That is deliberate — it is what lets the
  * store's tests run in the node environment, and it keeps the reactive layer
@@ -14,15 +22,20 @@
  *
  * G1: writes nothing. G5: opens nothing. G7: no `localStorage`, no history,
  * no persistence of any kind — a reload starts empty and waits for the host's
- * snapshot.
+ * snapshot. That covers the altitude and the view mode as much as the session
+ * data: neither is remembered across a reload.
  */
 
 import type {
   HostToWebviewMessage,
   SessionState,
+  TreeNode,
   WebviewToHostMessage,
 } from '../src/model/events.js';
+import { isAgentNode } from '../src/model/events.js';
 import { applySessionPatch } from '../src/bridge/apply.js';
+import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
+import type { Altitude, ViewMode } from './canvas-contract.js';
 
 /** One row of the left rail. */
 export interface SessionSummary {
@@ -74,6 +87,34 @@ export interface WebviewView {
    * accumulation "stateless" forbids.
    */
   toggledNodeIds: readonly string[];
+  /**
+   * Which renderer is showing. The canvas is the default immediately and
+   * there is no setting (C7.2) — a setting would be a `package.json`
+   * contribution, i.e. the host-manifest diff this surface is defined by not
+   * making. The list view is kept for one release behind an in-panel toggle.
+   */
+  viewMode: ViewMode;
+  /**
+   * Which of the three canvas altitudes the panel is at (C7.1).
+   *
+   * Never independent of the two ids below, and the store — not a component —
+   * is what keeps them consistent: `inspector` implies `selectedNodeId`, and
+   * `session`/`inspector` imply `selectedSessionId`. A component that had to
+   * defend against `inspector` with nothing selected would be defending
+   * against a state this reducer does not produce.
+   */
+  altitude: Altitude;
+  /**
+   * The node the inspector is looking at, scoped to the selected session.
+   *
+   * Absent whenever the altitude is not `inspector`. Absent as soon as the
+   * node stops appearing in the selected session's tree, because a selection
+   * that outlives its node is the same unbounded-growth defect the toggle set
+   * is keyed and pruned to avoid.
+   */
+  selectedNodeId?: string;
+  /** The selected node itself, looked up on demand. Never cached. */
+  selectedNode?: TreeNode;
 }
 
 export interface Store {
@@ -82,8 +123,43 @@ export interface Store {
   subscribe(listener: () => void): () => void;
   /** Feed one host message. Never throws. */
   handleMessage(message: HostToWebviewMessage): void;
-  /** UI intent: select a session. */
+  /**
+   * UI intent: select a session, without changing altitude.
+   *
+   * Unchanged from Phase 3, deliberately: the list view's rail selects a
+   * session without zooming anywhere, and the canvas's deck→interior move is
+   * {@link Store.enterSession}. Two names because they are two actions, not
+   * one action with a flag.
+   */
   selectSession(sessionId: string): void;
+  /**
+   * UI intent: select a session AND zoom into its interior (deck → altitude
+   * `session`). Posts the same `selectSession` message and no other; the
+   * altitude itself is never told to the host (C7.7).
+   */
+  enterSession(sessionId: string): void;
+  /**
+   * Open the inspector on a node of the selected session (altitude
+   * `inspector`). Posts NOTHING: node selection is webview-local UI state,
+   * and the payload is already in the snapshot the host sent.
+   *
+   * Ignored for an unknown node id and for a refused session, whose interior
+   * must render nothing at all (C7.4, G3).
+   */
+  selectNode(nodeId: string): void;
+  /**
+   * Walk one altitude up: inspector → session interior → deck (C7.8, the
+   * Escape key). A no-op at the deck, and it notifies nobody there — a
+   * keystroke that changes nothing must not look like a change.
+   *
+   * Lives here rather than in a component so both surfaces walk the same
+   * ladder and neither owns the transition.
+   */
+  escape(): void;
+  /** Switch renderers (C7.2). Not persisted, not a setting, not a message. */
+  setViewMode(mode: ViewMode): void;
+  /** The in-panel toggle: canvas ⇄ list. */
+  toggleViewMode(): void;
   /** UI intent: toggle a node's expansion. */
   toggleNode(nodeId: string): void;
   /** True when the user toggled this node away from its default. */
@@ -104,6 +180,24 @@ function expansionKey(sessionId: string, nodeId: string): string {
   return `${sessionId} ${nodeId}`;
 }
 
+/**
+ * The node with this id, or `undefined`.
+ *
+ * Walked on demand rather than indexed, for the same reason nothing else here
+ * is cached: an index would have to be invalidated on every diff, and a stale
+ * index is how a selection starts pointing at a node that is no longer in the
+ * tree. `ToolNode` has no `children`, so only agents recurse.
+ */
+function findNode(root: TreeNode, id: string): TreeNode | undefined {
+  if (root.id === id) return root;
+  if (!isAgentNode(root)) return undefined;
+  for (const child of root.children) {
+    const found = findNode(child, id);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 function summarize(state: SessionState, refused: boolean): SessionSummary {
   return {
     sessionId: state.sessionId,
@@ -122,6 +216,9 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
   const mismatched = new Set<string>();
   const toggled = new Set<string>();
   let selectedSessionId: string | undefined;
+  let selectedNodeId: string | undefined;
+  let altitude: Altitude = 'deck';
+  let viewMode: ViewMode = DEFAULT_VIEW_MODE;
   let degraded = false;
   let degradedReason: 'noHookEvents' | 'listenerDown' | undefined;
   let degradedDismissed = false;
@@ -134,6 +231,39 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
 
   const isRefused = (state: SessionState): boolean =>
     !state.schemaOk || state.liveness === 'unsupported' || mismatched.has(state.sessionId);
+
+  /**
+   * Bring altitude and node selection back into agreement with the session
+   * data, after anything that could have moved either.
+   *
+   * Idempotent, and that is load-bearing: `getView()` reads these fields
+   * directly, so feeding the same snapshot twice has to leave them identical.
+   * Everything here is a demotion — an altitude only ever falls, a selection
+   * is only ever dropped — so the reducer can never invent a state the host
+   * did not support.
+   */
+  const normalize = (): void => {
+    const selected =
+      selectedSessionId === undefined ? undefined : sessions.get(selectedSessionId);
+    if (selected === undefined) {
+      // Nothing selected at all: there is no interior to be inside of.
+      selectedNodeId = undefined;
+      altitude = 'deck';
+      return;
+    }
+    if (isRefused(selected)) {
+      // G3, C7.4: a refused session's interior renders nothing, so there is
+      // nothing to inspect. Entering it is still allowed — that is where the
+      // refusal card lives — but the inspector altitude is not reachable.
+      selectedNodeId = undefined;
+      if (altitude === 'inspector') altitude = 'session';
+      return;
+    }
+    if (selectedNodeId !== undefined && findNode(selected.root, selectedNodeId) === undefined) {
+      selectedNodeId = undefined;
+      if (altitude === 'inspector') altitude = 'session';
+    }
+  };
 
   const applySnapshot = (incoming: SessionState[]): void => {
     const nextOrder: string[] = [];
@@ -160,7 +290,17 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     patchFailure = undefined;
 
     if (selectedSessionId === undefined || !seen.has(selectedSessionId)) {
+      const previous = selectedSessionId;
       selectedSessionId = order[0];
+      if (previous !== undefined) {
+        // The interior the user was looking at no longer exists. Re-pointing
+        // the same frame at a DIFFERENT session's interior would show them
+        // something else without saying so, so fall back to the deck instead
+        // and let them choose again. The node selection goes with it: it
+        // belonged to the session that left.
+        selectedNodeId = undefined;
+        altitude = 'deck';
+      }
     }
   };
 
@@ -185,11 +325,23 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         degraded,
         degradedDismissed,
         toggledNodeIds,
+        viewMode,
+        altitude,
       };
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
       if (selected !== undefined) view.selected = selected;
       if (degradedReason !== undefined) view.degradedReason = degradedReason;
       if (patchFailure !== undefined) view.patchFailure = patchFailure;
+      if (selectedNodeId !== undefined && selected !== undefined) {
+        // Looked up every time. Caching the node would survive a diff that
+        // replaced it, which is how a panel ends up describing a tree that no
+        // longer exists.
+        const node = findNode(selected.root, selectedNodeId);
+        if (node !== undefined) {
+          view.selectedNodeId = selectedNodeId;
+          view.selectedNode = node;
+        }
+      }
       return view;
     },
 
@@ -245,13 +397,64 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
           if (!message.degraded) degradedDismissed = false;
           break;
       }
+      normalize();
       notify();
     },
 
     selectSession(sessionId: string): void {
       if (!sessions.has(sessionId)) return;
+      if (sessionId !== selectedSessionId) selectedNodeId = undefined;
       selectedSessionId = sessionId;
       postIntent({ type: 'selectSession', sessionId });
+      normalize();
+      notify();
+    },
+
+    enterSession(sessionId: string): void {
+      if (!sessions.has(sessionId)) return;
+      if (sessionId !== selectedSessionId) selectedNodeId = undefined;
+      selectedSessionId = sessionId;
+      altitude = 'session';
+      postIntent({ type: 'selectSession', sessionId });
+      normalize();
+      notify();
+    },
+
+    selectNode(nodeId: string): void {
+      if (selectedSessionId === undefined) return;
+      const selected = sessions.get(selectedSessionId);
+      if (selected === undefined) return;
+      // A refused session has no interior to select from (G3): the refusal
+      // card is the whole of it. Refuse, do not guess a node.
+      if (isRefused(selected)) return;
+      if (findNode(selected.root, nodeId) === undefined) return;
+      selectedNodeId = nodeId;
+      altitude = 'inspector';
+      // No message. The host is not told which node is being inspected, and
+      // does not need to be — the payload arrived with the snapshot.
+      notify();
+    },
+
+    escape(): void {
+      if (altitude === 'inspector') {
+        altitude = 'session';
+        selectedNodeId = undefined;
+      } else if (altitude === 'session') {
+        altitude = 'deck';
+      } else {
+        return;
+      }
+      notify();
+    },
+
+    setViewMode(mode: ViewMode): void {
+      if (mode === viewMode) return;
+      viewMode = mode;
+      notify();
+    },
+
+    toggleViewMode(): void {
+      viewMode = viewMode === 'canvas' ? 'list' : 'canvas';
       notify();
     },
 

@@ -131,6 +131,8 @@ export const TESTID = {
   deckBlob: 'deck-blob',
   deckEmpty: 'deck-empty',
   deckErrorBadge: 'deck-error-badge',
+  /** The faint interior dots on a blob: one per node, density without a number (C7.1). */
+  deckConstellation: 'deck-constellation',
 
   /* Session interior */
   canvas: 'session-canvas',

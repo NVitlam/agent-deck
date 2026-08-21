@@ -379,3 +379,110 @@ describe('accessibility floor (C7.8)', () => {
     expect(all(container, 'inspector-close')).toHaveLength(0);
   });
 });
+
+describe('the action list: what an agent DID, by description', () => {
+  /** A Bash payload shaped exactly like the real ones. */
+  function bash(command: string, description?: string): string {
+    return JSON.stringify(description === undefined ? { command } : { command, description });
+  }
+
+  function agentWithActions(actions: readonly ToolNode[]): AgentNode {
+    return agent({ id: 'root', kind: 'main', label: 'main', children: [...actions] });
+  }
+
+  function summaries(container: HTMLElement): string[] {
+    return all(container, TESTID.actionSummary).map((el) => el.textContent ?? '');
+  }
+
+  it('shows the payload\u2019s description field, not the command and never the id', () => {
+    const container = render({
+      node: agentWithActions([
+        tool({
+          id: 'toolu_01Ha4yefRArHsdDCeCJ318nd',
+          toolName: 'Bash',
+          inputPreview: bash('wc -l PLAN.md && grep -n "^## Phase" PLAN.md', 'List phase headings in PLAN.md'),
+        }),
+      ]),
+    });
+
+    // The description is written by the caller, in words, and says WHY. The
+    // command says how, and the id says nothing to a person at all.
+    expect(summaries(container)).toEqual(['List phase headings in PLAN.md']);
+    const row = one(container, TESTID.actionRow);
+    expect(row.textContent).not.toContain('toolu_01Ha4yefRArHsdDCeCJ318nd');
+    expect(row.textContent).not.toContain('wc -l PLAN.md');
+  });
+
+  it('falls back to the command when the payload carries no description', () => {
+    const container = render({
+      node: agentWithActions([
+        tool({ id: 't1', toolName: 'Bash', inputPreview: bash('git status --short') }),
+      ]),
+    });
+    expect(summaries(container)).toEqual(['git status --short']);
+  });
+
+  it('still finds the description in a payload too TRUNCATED to parse', () => {
+    // G4 cuts payloads at 8 KB, so a JSON.parse of inputPreview fails far more
+    // often than it succeeds. This is the path that matters in production.
+    const whole = bash('x'.repeat(40), 'Rebuild the extension bundle');
+    const cut = whole.slice(0, whole.indexOf('Rebuild the extension bundle') + 28) + '"}';
+    expect(() => JSON.parse(cut.slice(0, cut.length - 2)) as unknown).toThrow();
+    const container = render({
+      node: agentWithActions([tool({ id: 't2', toolName: 'Bash', inputPreview: cut })]),
+    });
+    expect(summaries(container)).toEqual(['Rebuild the extension bundle']);
+  });
+
+  it('does not let a description INSIDE another value win when the payload parses', () => {
+    // A command that happens to echo the word. The whole-payload parse is what
+    // makes this safe; the regex alone would take the first textual match.
+    const container = render({
+      node: agentWithActions([
+        tool({
+          id: 't3',
+          toolName: 'Bash',
+          inputPreview: JSON.stringify({
+            command: 'echo "description": "WRONG"',
+            description: 'RIGHT',
+          }),
+        }),
+      ]),
+    });
+    expect(summaries(container)).toEqual(['RIGHT']);
+  });
+
+  it('never renders an empty row: an unusable payload falls back to the tool name', () => {
+    const container = render({
+      node: agentWithActions([tool({ id: 't4', toolName: 'Read', inputPreview: '' })]),
+    });
+    expect(summaries(container)).toEqual(['Read']);
+  });
+
+  it('lists every action in order and expands one downward in place', () => {
+    const actions = [
+      tool({ id: 'a1', toolName: 'Bash', inputPreview: bash('one', 'First thing') }),
+      tool({ id: 'a2', toolName: 'Bash', inputPreview: bash('two', 'Second thing') }),
+      tool({ id: 'a3', toolName: 'Bash', inputPreview: bash('three', 'Third thing') }),
+    ];
+    const container = render({ node: agentWithActions(actions), toggled: ['a2'] });
+
+    expect(summaries(container)).toEqual(['First thing', 'Second thing', 'Third thing']);
+
+    const rows = all(container, TESTID.actionRow);
+    expect(rows.map((r) => r.dataset['open'])).toEqual(['false', 'true', 'false']);
+
+    // Expanding opens the payload UNDER its own row, so the list stays the
+    // frame of reference: the open row still sits second of three.
+    const open = rows[1];
+    expect(open?.dataset['actionId']).toBe('a2');
+    expect(all(open as HTMLElement, 'payload-preview').length).toBeGreaterThan(0);
+    expect(all(rows[0] as HTMLElement, 'payload-preview')).toHaveLength(0);
+  });
+
+  it('shows a tool node no action list of its own', () => {
+    // Actions belong to an agent. A tool is one.
+    const container = render({ node: tool({ id: 't', toolName: 'Bash', inputPreview: bash('x', 'y') }) });
+    expect(all(container, TESTID.actionRow)).toHaveLength(0);
+  });
+});

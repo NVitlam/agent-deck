@@ -66,25 +66,71 @@
   );
 
   /**
-   * The line a person actually wants to read.
+   * What a person actually wants to read on an action row.
    *
-   * NOT the `tool_use` id. The id is the graft key — it is how attribution is
-   * proved, and it is meaningless to a reader. What identifies an action to a
-   * human is the tool and the first line of what it was given: the command,
-   * the path, the pattern. Falls back to the tool name alone when the payload
-   * has no usable first line, and never to the id.
+   * **The `description` field, when the payload carries one.** Most tools take
+   * one and it is written BY the caller, in words, saying why the call is being
+   * made — "List phase headings in PLAN.md" rather than the shell one-liner
+   * that does it. Nothing else in the payload comes close: the command, the
+   * path and the pattern are all the *how*.
    *
-   * Reads the ALREADY-REDACTED `inputPreview`, so nothing here can widen what
-   * G4 decided may be shown.
+   * Never the `tool_use` id. The id is the graft key — it is how attribution is
+   * proved and it is meaningless to a reader.
+   *
+   * The fallbacks descend from intent to mechanism, and the last one is the
+   * tool name rather than nothing, so a row is never blank.
+   *
+   * Reads the ALREADY-REDACTED, ALREADY-TRUNCATED `inputPreview`, so nothing
+   * here can widen what G4 decided may be shown — and truncation is exactly why
+   * the JSON parse cannot be trusted: an 8 KB cut lands mid-object far more
+   * often than not, which is what the regex path below is for.
    */
-  function summarize(node: ToolNode): string {
-    const first = node.inputPreview
+  const INTENT_KEYS = ['description', 'command', 'prompt', 'pattern', 'query', 'file_path', 'url'];
+
+  /** `"description": "..."` out of a payload too truncated to parse. */
+  function scrapeKey(raw: string, key: string): string | undefined {
+    const re = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`);
+    const m = re.exec(raw);
+    if (m?.[1] === undefined) return undefined;
+    // Unescape the JSON string body by hand: `JSON.parse` on the whole payload
+    // is what already failed, and wrapping the captured body in quotes to parse
+    // it would throw again on a capture cut mid-escape.
+    return m[1]
+      .replace(/\\n/g, ' ')
+      .replace(/\\t/g, ' ')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\')
+      .trim();
+  }
+
+  function describe(node: ToolNode): string {
+    const raw = node.inputPreview;
+
+    // Whole-payload parse first: it is the only path that cannot be fooled by a
+    // `"description"` appearing inside some other string value.
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === 'object' && parsed !== null) {
+        const record = parsed as Record<string, unknown>;
+        for (const key of INTENT_KEYS) {
+          const value = record[key];
+          if (typeof value === 'string' && value.trim() !== '') return value.trim();
+        }
+      }
+    } catch {
+      // Truncated, or not JSON at all. Fall through.
+    }
+
+    for (const key of INTENT_KEYS) {
+      const scraped = scrapeKey(raw, key);
+      if (scraped !== undefined && scraped !== '') return scraped;
+    }
+
+    const first = raw
       .split('\n')
       .map((line) => line.trim())
       .find((line) => line.length > 0);
-    if (first === undefined) return node.toolName;
-    const trimmed = first.length > 96 ? `${first.slice(0, 96)}…` : first;
-    return trimmed;
+    return first === undefined || first === '' ? node.toolName : first;
   }
 
   let agent = $derived(node !== undefined && isAgentNode(node) ? node : undefined);
@@ -172,7 +218,9 @@
               >
                 <StatusChip status={action.status} />
                 <span class="tool">{action.toolName}</span>
-                <span class="summary" data-testid={TESTID.actionSummary}>{summarize(action)}</span>
+                <span class="summary" data-testid={TESTID.actionSummary} title={describe(action)}
+                  >{describe(action)}</span
+                >
                 <span class="chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
               </button>
               {#if open}

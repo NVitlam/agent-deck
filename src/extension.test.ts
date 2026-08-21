@@ -174,7 +174,26 @@ function extensionContext(): Parameters<typeof activate>[0] {
   return createExtensionContext() as unknown as Parameters<typeof activate>[0];
 }
 
-/** A free loopback port, taken and released. */
+/**
+ * A free loopback port, taken and released.
+ *
+ * THIS FUNCTION HAS AN UNCLOSEABLE TOCTOU WINDOW, which is why only
+ * {@link onFreePort} and one commented exception call it directly. It binds
+ * port 0, reads what the OS assigned, closes the socket, and hands the number
+ * out; between that close and the real bind inside `AgentDeckDataPath.start()`
+ * or `activate()`, anything on the machine can take the port. Historical red
+ * rate ~15%.
+ *
+ * The window cannot be removed here, because the production listener binds
+ * exactly the port it is configured with and refuses to pick another when that
+ * port is taken -- two tests in this file assert that refusal ("a port
+ * collision is an explicit error and never a silent rebind" and "a port
+ * collision surfaces an error message and still renders content"), and it is
+ * the behaviour a user relies on. So the window is TOLERATED and lost races are
+ * RETRIED, at the call sites, by {@link onFreePort}. No production code changes
+ * for a test-harness flake; in particular `allowEphemeralPort` stays a
+ * `listener.ts`-only concept, which `src/hooks/listener.test.ts` asserts.
+ */
 async function freePort(): Promise<number> {
   return new Promise<number>((resolve, reject) => {
     const server = createServer();
@@ -186,6 +205,141 @@ async function freePort(): Promise<number> {
         resolve(port);
       });
     });
+  });
+}
+
+/**
+ * How many free ports one call site will try before giving up.
+ *
+ * Six. Each attempt asks the OS for a fresh ephemeral port out of a range
+ * thousands wide, and the window it can be stolen in is sub-millisecond, so six
+ * consecutive losses is not a flake to design around -- it is a machine with no
+ * usable loopback ports, and {@link portsExhausted} says exactly that rather
+ * than letting the run die as a generic timeout or a confusing assertion.
+ */
+const PORT_ATTEMPTS = 6;
+
+function isAddrInUse(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'EADDRINUSE'
+  );
+}
+
+/** The loud failure. Names EADDRINUSE and every port tried, never a timeout. */
+function portsExhausted(tried: readonly number[]): Error {
+  return new Error(
+    `EADDRINUSE on all ${String(tried.length)} loopback ports this test tried ` +
+      `(${tried.join(', ')}): every port freePort() handed out was taken between the ` +
+      `probe and the bind. That is not the usual race -- suspect no free ephemeral ` +
+      `ports on this machine.`,
+  );
+}
+
+/**
+ * Run something that binds a loopback port, on a port that was free, retrying
+ * on `EADDRINUSE`.
+ *
+ * TWO WAYS A LOST RACE SHOWS UP, and both are handled, because handling only
+ * the first would close the window for `holdPort` and leave it wide open for
+ * every `activate()`:
+ *
+ *   - as a THROW, when the caller binds the socket itself (`holdPort`);
+ *   - as a RETURNED VALUE, when the production path swallows the error into
+ *     `diagnostics.bindError` and reports it through `onError` -- which is what
+ *     `AgentDeckDataPath.start()` deliberately does, and is the only reason
+ *     `collided` exists.
+ *
+ * `discard` undoes a collided attempt before the next one, so a retried test
+ * does not leave a half-built data path holding a watcher and a timer.
+ */
+interface PortAttempt<T> {
+  use: (port: number) => Promise<T>;
+  /** `true` when what `use` returned reported EADDRINUSE instead of throwing. */
+  collided?: (made: T) => boolean;
+  discard?: (made: T) => Promise<void>;
+}
+
+async function onFreePort<T>(attempt: PortAttempt<T>): Promise<T> {
+  const tried: number[] = [];
+  for (;;) {
+    const port = await freePort();
+    tried.push(port);
+    let made: T;
+    try {
+      made = await attempt.use(port);
+    } catch (error) {
+      if (!isAddrInUse(error)) throw error;
+      if (tried.length >= PORT_ATTEMPTS) throw portsExhausted(tried);
+      continue;
+    }
+    if (attempt.collided?.(made) !== true) return made;
+    await attempt.discard?.(made);
+    if (tried.length >= PORT_ATTEMPTS) throw portsExhausted(tried);
+  }
+}
+
+/**
+ * The dominant shape: build a data path on a free port, start it, and retry the
+ * whole thing if the port was stolen in between.
+ *
+ * `make` builds but must not start -- `start()` is where the bind happens, so
+ * it has to be inside the retried region.
+ */
+async function startDataPathOnFreePort(
+  make: (port: number) => AgentDeckDataPath,
+): Promise<AgentDeckDataPath> {
+  return onFreePort<AgentDeckDataPath>({
+    use: async (port) => {
+      const path = make(port);
+      await path.start();
+      return path;
+    },
+    collided: (path) => path.diagnostics.bindError?.code === 'EADDRINUSE',
+    discard: (path) => path.dispose(),
+  });
+}
+
+/** The same, for an `AgentDeckHost`, whose bind is its data path's. */
+async function startHostOnFreePort(
+  make: (port: number) => AgentDeckHost,
+  beforeStart?: (host: AgentDeckHost) => void,
+): Promise<AgentDeckHost> {
+  return onFreePort<AgentDeckHost>({
+    use: async (port) => {
+      const host = make(port);
+      beforeStart?.(host);
+      await host.start();
+      return host;
+    },
+    collided: (host) => host.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+    discard: (host) => host.dispose(),
+  });
+}
+
+/**
+ * `activate()` on a free port, retried if the port was stolen in between.
+ *
+ * `activate` binds through the module-level singleton, so a discarded attempt
+ * has to be `deactivate`d before the next one or the second `activate` would
+ * find a host already installed. `configure` is where the test puts the port
+ * into the `vscode` double, because `activate` reads it from there.
+ */
+async function activateOnFreePort(
+  configure: (port: number) => void | Promise<void>,
+): Promise<number> {
+  return onFreePort<number>({
+    use: async (port) => {
+      resetVscodeMock();
+      await configure(port);
+      await activate(extensionContext());
+      return port;
+    },
+    collided: () => currentHost()?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+    discard: async () => {
+      await deactivate();
+    },
   });
 }
 
@@ -204,6 +358,20 @@ async function holdPort(port: number): Promise<() => Promise<void>> {
         resolve();
       });
     });
+}
+
+/**
+ * A port that is free and then deliberately taken, for the tests that assert
+ * what a collision does.
+ *
+ * `holdPort` binds for real, so it loses the same race every other call site
+ * can lose -- and it loses it by THROWING rather than by reporting a
+ * `bindError`, which is {@link onFreePort}'s other branch.
+ */
+async function heldPort(): Promise<{ port: number; release: () => Promise<void> }> {
+  return onFreePort({
+    use: async (port) => ({ port, release: await holdPort(port) }),
+  });
 }
 
 function settings(overrides: Partial<AgentDeckSettings> = {}): AgentDeckSettings {
@@ -335,6 +503,145 @@ afterEach(async () => {
   for (const dir of tempRoots.splice(0)) {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// (0) The harness's own port race — demonstrated closed, not asserted absent
+// ---------------------------------------------------------------------------
+
+/**
+ * `freePort` closes the socket before the real bind happens, so every call site
+ * in this file has a window in which the machine can take the port. Historical
+ * red rate ~15%.
+ *
+ * A GREEN SUITE IS NOT EVIDENCE THAT THE WINDOW IS CLOSED -- it is evidence the
+ * race did not fire on that run, which is what a 15% flake looks like 85% of
+ * the time. So these tests FIRE IT ON PURPOSE, with `holdPort`, and check that
+ * the retry recovers: both the way the production path reports a lost race (a
+ * returned `bindError`, never a throw) and the way `holdPort` reports one (a
+ * throw). The exhaustion message is exercised too, because a retry that gave up
+ * as a generic timeout would trade a visible flake for an invisible one.
+ */
+describe('onFreePort closes the freePort/bind race', () => {
+  it('recovers a REAL AgentDeckDataPath bind when the port is stolen first', async () => {
+    const workspacePath = await capturedWorkspacePath();
+    const releases: (() => Promise<void>)[] = [];
+    const stolen: number[] = [];
+    let attempts = 0;
+    try {
+      const path = await onFreePort<AgentDeckDataPath>({
+        use: async (port) => {
+          attempts += 1;
+          if (attempts === 1) {
+            // The race, fired deliberately: the port freePort() just handed
+            // out is taken by something else before start() can bind it.
+            stolen.push(port);
+            releases.push(await holdPort(port));
+          }
+          const built = trackDataPath(
+            new AgentDeckDataPath({
+              workspacePath,
+              projectsRoot: CAPTURED_ROOT,
+              settings: settings({ port }),
+              tickMs: 0,
+              onEmission: () => {},
+            }),
+          );
+          await built.start();
+          return built;
+        },
+        collided: (built) => built.diagnostics.bindError?.code === 'EADDRINUSE',
+        discard: (built) => built.dispose(),
+      });
+
+      // Two attempts, and the second one is genuinely listening: the recovery
+      // is asserted on the production socket, not on the helper's bookkeeping.
+      expect(attempts).toBe(2);
+      expect(stolen).toHaveLength(1);
+      expect(path.settings.port).not.toBe(stolen[0]);
+      expect(path.diagnostics.listening).toBe(true);
+      expect(path.diagnostics.bindError).toBeUndefined();
+      // And the first attempt really did collide, rather than being skipped:
+      // the port it was given is still held by this test.
+      await expect(holdPort(stolen[0] as number)).rejects.toMatchObject({
+        code: 'EADDRINUSE',
+      });
+    } finally {
+      for (const release of releases) await release();
+    }
+  });
+
+  it('recovers the throwing branch: a bind that raises EADDRINUSE outright', async () => {
+    const releases: (() => Promise<void>)[] = [];
+    const stolen: number[] = [];
+    let attempts = 0;
+    let held: { port: number; release: () => Promise<void> } | undefined;
+    try {
+      held = await onFreePort<{ port: number; release: () => Promise<void> }>({
+        use: async (port) => {
+          attempts += 1;
+          if (attempts === 1) {
+            stolen.push(port);
+            releases.push(await holdPort(port));
+          }
+          // On attempt 1 this throws EADDRINUSE, which is the branch `heldPort`
+          // and the two collision tests depend on.
+          return { port, release: await holdPort(port) };
+        },
+      });
+      expect(attempts).toBe(2);
+      expect(held.port).not.toBe(stolen[0]);
+    } finally {
+      if (held !== undefined) await held.release();
+      for (const release of releases) await release();
+    }
+  });
+
+  it('gives up loudly after PORT_ATTEMPTS, naming EADDRINUSE and every port', async () => {
+    const releases: (() => Promise<void>)[] = [];
+    const tried: number[] = [];
+    let error: unknown;
+    try {
+      error = await onFreePort<number>({
+        use: async (port) => {
+          tried.push(port);
+          // Steal every port, so no attempt can ever win.
+          releases.push(await holdPort(port));
+          await holdPort(port);
+          return port;
+        },
+      }).then(
+        () => undefined,
+        (thrown: unknown) => thrown,
+      );
+    } finally {
+      for (const release of releases) await release();
+    }
+
+    expect(tried).toHaveLength(PORT_ATTEMPTS);
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    // The failure has to name the cause and the ports. A generic timeout here
+    // is the outcome this whole section exists to prevent.
+    expect(message).toContain('EADDRINUSE');
+    for (const port of tried) expect(message).toContain(String(port));
+    expect(message.toLowerCase()).not.toContain('timeout');
+  });
+
+  it('does not retry a failure that is not EADDRINUSE', async () => {
+    // Without this, a real bug inside a call site would be run six times and
+    // reported as the wrong thing.
+    let attempts = 0;
+    await expect(
+      onFreePort<number>({
+        use: () => {
+          attempts += 1;
+          return Promise.reject(new Error('nothing to do with ports'));
+        },
+      }),
+    ).rejects.toThrow('nothing to do with ports');
+    expect(attempts).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -707,18 +1014,21 @@ describe('AgentDeckDataPath', () => {
   ): Promise<{ path: AgentDeckDataPath; emissions: DataPathEmission[] }> {
     const workspacePath = await capturedWorkspacePath();
     const emissions: DataPathEmission[] = [];
-    const path = trackDataPath(
-      new AgentDeckDataPath({
-        workspacePath,
-        projectsRoot: CAPTURED_ROOT,
-        settings: settings({ port: await freePort(), ...overrides }),
-        tickMs: 0,
-        onEmission: (payload) => {
-          emissions.push(payload);
-        },
-      }),
-    );
-    await path.start();
+    const path = await startDataPathOnFreePort((port) => {
+      // A retried attempt must not inherit the lost one's emissions.
+      emissions.length = 0;
+      return trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port, ...overrides }),
+          tickMs: 0,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      );
+    });
     return { path, emissions };
   }
 
@@ -766,8 +1076,7 @@ describe('AgentDeckDataPath', () => {
   });
 
   it('a port collision is an explicit error and never a silent rebind', async () => {
-    const port = await freePort();
-    const release = await holdPort(port);
+    const { port, release } = await heldPort();
     try {
       const workspacePath = await capturedWorkspacePath();
       const errors: unknown[] = [];
@@ -806,16 +1115,17 @@ describe('AgentDeckDataPath', () => {
 
   it('dispose leaves no watcher, no socket and no timer', async () => {
     const workspacePath = await capturedWorkspacePath();
-    const path = trackDataPath(
-      new AgentDeckDataPath({
-        workspacePath,
-        projectsRoot: CAPTURED_ROOT,
-        settings: settings({ port: await freePort() }),
-        // The real tick interval, so a leaked tick would be a real leaked timer.
-        onEmission: () => {},
-      }),
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          // The real tick interval, so a leaked tick would be a real leaked timer.
+          onEmission: () => {},
+        }),
+      ),
     );
-    await path.start();
     expect(path.diagnostics.timersArmed).toBe(1);
     expect(path.diagnostics.listening).toBe(true);
 
@@ -848,17 +1158,18 @@ describe('carry-forward A: liveness from a transcript mtime with zero hook event
     await utimes(transcript, new Date(MTIME_MS), new Date(MTIME_MS));
 
     let now = MTIME_MS + 1_000;
-    const path = trackDataPath(
-      new AgentDeckDataPath({
-        workspacePath: staged.workspacePath,
-        projectsRoot: staged.projectsRoot,
-        settings: settings({ port: await freePort(), livenessThresholdMs: 120_000 }),
-        now: () => now,
-        tickMs: 0,
-        onEmission: () => {},
-      }),
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: staged.workspacePath,
+          projectsRoot: staged.projectsRoot,
+          settings: settings({ port, livenessThresholdMs: 120_000 }),
+          now: () => now,
+          tickMs: 0,
+          onEmission: () => {},
+        }),
+      ),
     );
-    await path.start();
 
     // Preconditions, so a pass cannot come from the hook tap by accident.
     expect(path.liveness.counters().eventsReceived).toBe(0);
@@ -898,19 +1209,21 @@ describe('carry-forward A: liveness from a transcript mtime with zero hook event
     // the transition it proves cannot be an artefact of time passing.
     const now = BASE + 500_000; // far past the threshold
     const emissions: DataPathEmission[] = [];
-    const path = trackDataPath(
-      new AgentDeckDataPath({
-        workspacePath: staged.workspacePath,
-        projectsRoot: staged.projectsRoot,
-        settings: settings({ port: await freePort() }),
-        now: () => now,
-        tickMs: 0,
-        onEmission: (payload) => {
-          emissions.push(payload);
-        },
-      }),
-    );
-    await path.start();
+    const path = await startDataPathOnFreePort((port) => {
+      emissions.length = 0;
+      return trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: staged.workspacePath,
+          projectsRoot: staged.projectsRoot,
+          settings: settings({ port }),
+          now: () => now,
+          tickMs: 0,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      );
+    });
     expect(path.model.sessionState(sessionId)?.liveness).toBe('idle');
 
     // The transcript is touched — the same thing an append does to mtime — and
@@ -940,20 +1253,28 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
     );
     const [sessionId] = staged.sessionIds as [string];
 
-    const panel = fakePanel();
-    const host = trackHost(
-      new AgentDeckHost({
-        workspacePath: staged.workspacePath,
-        projectsRoot: staged.projectsRoot,
-        settings: settings({ port: await freePort() }),
-        tickMs: 0,
-        nonce: 'AAAAAAAA',
-        createPanel: () => panel.surface,
-        onEmission: () => {},
-      }),
+    // Rebuilt per attempt: a retried bind must not inherit the lost attempt's
+    // posted messages, which the `schemaMismatch` counts below would double.
+    let panel = fakePanel();
+    const host = await startHostOnFreePort(
+      (port) => {
+        panel = fakePanel();
+        return trackHost(
+          new AgentDeckHost({
+            workspacePath: staged.workspacePath,
+            projectsRoot: staged.projectsRoot,
+            settings: settings({ port }),
+            tickMs: 0,
+            nonce: 'AAAAAAAA',
+            createPanel: () => panel.surface,
+            onEmission: () => {},
+          }),
+        );
+      },
+      (built) => {
+        built.open();
+      },
     );
-    host.open();
-    await host.start();
 
     const path = host.dataPath;
     expect(path.diagnostics.graftRefusals).toBe(1);
@@ -1020,16 +1341,17 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
       join(LAYOUT_ROOT, '00-valid-control', SYNTHETIC_SLUG),
     );
     const [sessionId] = staged.sessionIds as [string];
-    const path = trackDataPath(
-      new AgentDeckDataPath({
-        workspacePath: staged.workspacePath,
-        projectsRoot: staged.projectsRoot,
-        settings: settings({ port: await freePort() }),
-        tickMs: 0,
-        onEmission: () => {},
-      }),
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: staged.workspacePath,
+          projectsRoot: staged.projectsRoot,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: () => {},
+        }),
+      ),
     );
-    await path.start();
 
     expect(path.diagnostics.graftRefusals).toBe(0);
     const state = path.model.sessionState(sessionId);
@@ -1045,24 +1367,28 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
 describe('degraded mode', () => {
   it('announces "no hook events" once, however many times the model emits', async () => {
     const workspacePath = await capturedWorkspacePath();
-    const panel = fakePanel();
-    const host = trackHost(
-      new AgentDeckHost({
-        workspacePath,
-        projectsRoot: CAPTURED_ROOT,
-        settings: settings({ port: await freePort() }),
-        tickMs: 0,
-        nonce: 'AAAAAAAA',
-        createPanel: () => panel.surface,
-        onEmission: () => {},
-      }),
-    );
+    // Rebuilt per attempt: the `degraded` messages counted below are
+    // per-panel, so a retried bind must not inherit an earlier panel.
+    let panel = fakePanel();
+    const host = await startHostOnFreePort((port) => {
+      panel = fakePanel();
+      return trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => panel.surface,
+          onEmission: () => {},
+        }),
+      );
+    });
     // Production order: `activate()` starts the data path and the command opens
     // the panel later. Opening BEFORE the bind would publish a real, honest
     // `listenerDown` first (the socket genuinely is not bound yet) and this
     // test would then be measuring its own setup rather than the no-nagging
-    // rule.
-    await host.start();
+    // rule. `startHostOnFreePort` has already started it.
     host.open();
 
     for (let i = 0; i < 20; i += 1) host.dataPath.pump();
@@ -1082,30 +1408,39 @@ describe('degraded mode', () => {
 // ---------------------------------------------------------------------------
 
 describe('AgentDeckHost', () => {
+  /**
+   * A STARTED host. `start()` is where the port is bound, so it has to be
+   * inside the retried region -- which is why this helper starts the host
+   * rather than handing back an unstarted one for each test to start.
+   */
   async function makeHost(): Promise<{ host: AgentDeckHost; panels: FakePanel[] }> {
     const workspacePath = await capturedWorkspacePath();
     const panels: FakePanel[] = [];
-    const host = trackHost(
-      new AgentDeckHost({
-        workspacePath,
-        projectsRoot: CAPTURED_ROOT,
-        settings: settings({ port: await freePort() }),
-        tickMs: 0,
-        nonce: 'AAAAAAAA',
-        createPanel: () => {
-          const panel = fakePanel();
-          panels.push(panel);
-          return panel.surface;
-        },
-        onEmission: () => {},
-      }),
-    );
+    const host = await startHostOnFreePort((port) => {
+      // A retried attempt starts from no panels, so `panelsCreated` and
+      // `panels.length` still agree.
+      panels.length = 0;
+      return trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => {
+            const panel = fakePanel();
+            panels.push(panel);
+            return panel.surface;
+          },
+          onEmission: () => {},
+        }),
+      );
+    });
     return { host, panels };
   }
 
   it('opens one panel and reveals it on every later open', async () => {
     const { host, panels } = await makeHost();
-    await host.start();
 
     const first = host.open();
     expect(host.panelsCreated).toBe(1);
@@ -1120,7 +1455,6 @@ describe('AgentDeckHost', () => {
 
   it('a brand-new panel is sent a full snapshot before anything else', async () => {
     const { host, panels } = await makeHost();
-    await host.start();
     host.open();
     const first = panels[0]?.posted[0];
     expect(first?.type).toBe('snapshot');
@@ -1128,7 +1462,6 @@ describe('AgentDeckHost', () => {
 
   it('closing the panel frees it, and the next open builds a new one', async () => {
     const { host, panels } = await makeHost();
-    await host.start();
     host.open();
     panels[0]?.fireDisposed();
     expect(host.panel).toBeNull();
@@ -1142,7 +1475,6 @@ describe('AgentDeckHost', () => {
 
   it('dispose closes the panel and the data path together', async () => {
     const { host, panels } = await makeHost();
-    await host.start();
     host.open();
     await host.dispose();
 
@@ -1168,12 +1500,11 @@ describe('activate', () => {
 
   it('a matching workspace starts the data path and the command opens the panel', async () => {
     process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
-    const port = await freePort();
-    mock.setWorkspaceFolder(await capturedWorkspacePath());
-    mock.setConfig(CONFIG_SECTION, { port, previewBytes: 4096 });
-
-    const context = extensionContext();
-    await activate(context);
+    const workspacePath = await capturedWorkspacePath();
+    const port = await activateOnFreePort((attemptPort) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port: attemptPort, previewBytes: 4096 });
+    });
 
     const host = currentHost();
     expect(host).not.toBeNull();
@@ -1213,23 +1544,36 @@ describe('activate', () => {
 
   it('a NON-matching workspace starts nothing: no watcher, no socket, no timer', async () => {
     process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
-    const port = await freePort();
     const foreign = join(await makeTempDir(), 'not-a-cc-project');
-    mock.setWorkspaceFolder(foreign);
-    mock.setConfig(CONFIG_SECTION, { port });
 
-    const context = extensionContext();
-    await activate(context);
+    // The positive proof below binds the configured port itself, so the whole
+    // activate-then-probe sequence is the retried region: a port stolen by the
+    // rest of the machine would otherwise read as "the extension bound it".
+    // The two causes stay distinguishable because `currentHost()` is asserted
+    // null BEFORE the probe -- with no host there is nothing of ours that
+    // could be holding the port, so an EADDRINUSE here can only be foreign.
+    await onFreePort<number>({
+      use: async (port) => {
+        resetVscodeMock();
+        mock.setWorkspaceFolder(foreign);
+        mock.setConfig(CONFIG_SECTION, { port });
+        await activate(extensionContext());
 
-    // No host means no `AgentDeckDataPath`, which is the only thing that
-    // constructs a watcher, a listener or a timer.
-    expect(currentHost()).toBeNull();
-    expect(mock.panels).toHaveLength(0);
+        // No host means no `AgentDeckDataPath`, which is the only thing that
+        // constructs a watcher, a listener or a timer.
+        expect(currentHost()).toBeNull();
+        expect(mock.panels).toHaveLength(0);
 
-    // Proved positively rather than by absence of a host: the configured port
-    // is still free, so nothing bound it.
-    const release = await holdPort(port);
-    await release();
+        // Proved positively rather than by absence of a host: the configured
+        // port is still free, so nothing bound it.
+        const release = await holdPort(port);
+        await release();
+        return port;
+      },
+      discard: async () => {
+        await deactivate();
+      },
+    });
 
     // The command still exists and explains itself instead of erroring.
     expect(mock.hasCommand(OPEN_COMMAND)).toBe(true);
@@ -1251,8 +1595,7 @@ describe('activate', () => {
 
   it('a port collision surfaces an error message and still renders content', async () => {
     process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
-    const port = await freePort();
-    const release = await holdPort(port);
+    const { port, release } = await heldPort();
     try {
       mock.setWorkspaceFolder(await capturedWorkspacePath());
       mock.setConfig(CONFIG_SECTION, { port });
@@ -1274,9 +1617,11 @@ describe('activate', () => {
 
   it('a threshold change takes effect without a reload', async () => {
     process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
-    mock.setWorkspaceFolder(await capturedWorkspacePath());
-    mock.setConfig(CONFIG_SECTION, { port: await freePort() });
-    await activate(extensionContext());
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
 
     expect(currentHost()?.dataPath.liveness.mtimeThresholdMs).toBe(120000);
     mock.setConfig(CONFIG_SECTION, { livenessThresholdMs: 300000 });
@@ -1418,6 +1763,11 @@ describe('the inactive message distinguishes a refusal from an absence', () => {
       resetVscodeMock();
       process.env['CLAUDE_PROJECTS_ROOT'] = leg.root;
       mock.setWorkspaceFolder(leg.workspace);
+      // The ONE call site that is deliberately not retried, because it cannot
+      // lose the race: both legs are correlation refusals, `activate` builds no
+      // host, and nothing here ever binds the port. It is configured only so
+      // the settings are complete. `expect(currentHost()).toBeNull()` below is
+      // what makes that claim checkable rather than assumed.
       mock.setConfig(CONFIG_SECTION, { port: await freePort() });
 
       const correlation = await correlateWorkspace(leg.workspace);
@@ -1798,18 +2148,20 @@ describe('the agentDeck.previewBytes setting reaches the grafter', () => {
   async function previewsAt(previewBytes: number): Promise<string[]> {
     const workspacePath = await capturedWorkspacePath();
     const emissions: DataPathEmission[] = [];
-    const path = trackDataPath(
-      new AgentDeckDataPath({
-        workspacePath,
-        projectsRoot: CAPTURED_ROOT,
-        settings: settings({ port: await freePort(), previewBytes }),
-        tickMs: 0,
-        onEmission: (payload) => {
-          emissions.push(payload);
-        },
-      }),
-    );
-    await path.start();
+    const path = await startDataPathOnFreePort((port) => {
+      emissions.length = 0;
+      return trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port, previewBytes }),
+          tickMs: 0,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      );
+    });
     const last = emissions[emissions.length - 1] as DataPathEmission;
     const out: string[] = [];
     for (const session of last.emission.sessions) {
@@ -1993,25 +2345,33 @@ describe('G2: a throwing content path refuses one session and leaves the hook ta
 
   it('refuses the session, keeps no tree, and still ingests hook events for it', async () => {
     const workspacePath = await capturedWorkspacePath();
-    const port = await freePort();
     let graftCalls = 0;
-    const path = trackDataPath(
-      new AgentDeckDataPath({
-        workspacePath,
-        projectsRoot: CAPTURED_ROOT,
-        settings: settings({ port }),
-        tickMs: 0,
-        onEmission: () => {},
-        graft: () => {
-          graftCalls += 1;
-          // Not a refusal — a THROW, from inside the content path.
-          return Promise.reject(new Error('grafter exploded'));
-        },
-      }),
-    );
-
-    // start() must not propagate it.
-    await expect(path.start()).resolves.toBeUndefined();
+    let port = 0;
+    const path = await onFreePort<AgentDeckDataPath>({
+      use: async (attemptPort) => {
+        port = attemptPort;
+        graftCalls = 0;
+        const built = trackDataPath(
+          new AgentDeckDataPath({
+            workspacePath,
+            projectsRoot: CAPTURED_ROOT,
+            settings: settings({ port: attemptPort }),
+            tickMs: 0,
+            onEmission: () => {},
+            graft: () => {
+              graftCalls += 1;
+              // Not a refusal — a THROW, from inside the content path.
+              return Promise.reject(new Error('grafter exploded'));
+            },
+          }),
+        );
+        // start() must not propagate it.
+        await expect(built.start()).resolves.toBeUndefined();
+        return built;
+      },
+      collided: (built) => built.diagnostics.bindError?.code === 'EADDRINUSE',
+      discard: (built) => built.dispose(),
+    });
 
     expect(graftCalls).toBeGreaterThan(0);
     expect(path.diagnostics.graftErrors).toBe(graftCalls);
@@ -2085,17 +2445,18 @@ describe('G2: a throwing content path refuses one session and leaves the hook ta
       mismatch: { kind: 'schemaMismatch', code: 'subagentsDirectoryMisnamed', reason: 'injected refusal' },
       diagnostics: { malformedLines: 0, parsedLines: 0, skippedFiles: [] },
     };
-    const path = trackDataPath(
-      new AgentDeckDataPath({
-        workspacePath,
-        projectsRoot: CAPTURED_ROOT,
-        settings: settings({ port: await freePort() }),
-        tickMs: 0,
-        onEmission: () => {},
-        graft: () => Promise.resolve(refusal),
-      }),
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: () => {},
+          graft: () => Promise.resolve(refusal),
+        }),
+      ),
     );
-    await path.start();
 
     expect(path.diagnostics.graftErrors).toBe(0);
     expect(path.diagnostics.graftRefusals).toBe(path.diagnostics.grafts);

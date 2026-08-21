@@ -25,15 +25,23 @@
  *      re-graft is whole-session" against `ParseDiagnostics.parsedLines`;
  *      "the update is not vacuous" against the ops in the emitted patch. None
  *      of those can be perturbed by a loaded machine.
- *   3. The DoD's own 100 ms is NOT enforced by default, because it is not met
- *      (medians of 235-555 ms across the runs on record; see `budgets.ts`
- *      and `evidence/perf-full.json`). It is recorded as data and enforced
- *      on demand with `AGENT_DECK_PERF_ASSERT=1`. A known-red test in the
- *      default suite would be worse than a flaky one.
+ *   3. Every budget in the table is enforced by default, and each one's margin
+ *      is justified from the measurements recorded beside it in `budgets.ts`.
+ *      That is a change made in Wave 0 of Phase 4.5: the DoD's 100 ms used to
+ *      sit here unenforced against the post-append TOTAL, which it has never
+ *      met (medians of 235-555 ms across the runs on record). The user
+ *      re-scoped it -- the same 100 ms now bounds the INCREMENTAL stages,
+ *      which do meet it -- and `budgets.ts`'s `RESCOPED_DOD_TOTAL` keeps the
+ *      original number, what it measured and why it is unmet. A known-red
+ *      test in the default suite would be worse than a flaky one; a re-scope
+ *      that quietly deleted the red number would be worse than both, so the
+ *      last test in "timing budgets" asserts the record is still there and
+ *      still describes reality.
  *
  * KNOBS:
  *   AGENT_DECK_PERF_ROOT=<projects root>   measure a supplied corpus
- *   AGENT_DECK_PERF_ASSERT=1               enforce every budget, DoD included
+ *   AGENT_DECK_PERF_ASSERT=1               force-enforce every budget (no-op
+ *                                          today: all four already are)
  *   AGENT_DECK_PERF_FULL=1                 longer runs (evidence-grade counts)
  *   AGENT_DECK_PERF_RECORD=<path>          write the measurements as JSON
  *
@@ -60,10 +68,11 @@ import type { PerfCorpus } from './corpus.js';
 import {
   CORPUS_GROWTH_FRACTION_LIMIT,
   HEAP_FLOOR_RATIO_LIMIT,
+  RESCOPED_DOD_TOTAL,
   TIMING_BUDGETS,
 } from './budgets.js';
 import type { TimingBudget } from './budgets.js';
-import { idsTouched, measureHeap, measurePostAppend, resolveGc } from './measure.js';
+import { idsTouched, measureHeap, measurePostAppend, resolveGc, stats } from './measure.js';
 import type { HeapResult, PostAppendResult, Stats } from './measure.js';
 
 const FULL = process.env['AGENT_DECK_PERF_FULL'] === '1';
@@ -73,12 +82,18 @@ const RECORD_TO = process.env['AGENT_DECK_PERF_RECORD'];
 /**
  * Sample counts, and what they cost. MEASURED over repeated runs, because the
  * first draft of this comment guessed and was wrong by 2.7x: the suite WITHOUT
- * this file runs 6.5-35.9 s over 28 files / 919 tests (n=5), and WITH it
+ * this file ran 6.5-35.9 s over 28 files / 919 tests (n=5), and WITH it
  * 37.2-41.9 s over 29 / 937 (n=7). So the default counts add ~29-33 s, not the
  * ~12 s once claimed here. Ranges rather than point values on purpose -- the
  * exclude-perf figure spans 5.5x on machine state alone, and a file arguing
  * that single wall-clock samples are not properties of the code should not
  * quote one.
+ *
+ * PAST TENSE ON PURPOSE: those file/test counts are what the timings were taken
+ * with on 2026-08-21 and are no longer current -- Phase 4.5's Wave 0 took this
+ * file from 18 tests to 21 and `src/extension.test.ts` from 51 to 55, without
+ * re-timing the whole suite. The three tests added here are constant-time table
+ * assertions costing ~14 ms; the wall-clock shape below is unaffected.
  *
  * Worse, they add it to the CRITICAL PATH. This file is ~41 s of serial work
  * and vitest runs files in parallel threads, so the whole suite's wall time is
@@ -158,6 +173,7 @@ function report(): void {
     `[perf] ${line('  .tailPoll     ', postAppend.tailPoll)}`,
     `[perf] ${line('  .graft        ', postAppend.graft)}`,
     `[perf] ${line('  .apply        ', postAppend.apply)}`,
+    `[perf] ${line('  .incremental  ', incrementalStats())}`,
     `[perf] patched ${String(postAppend.patched)}/${String(
       postAppend.samples.length,
     )} refusals ${String(postAppend.refusals)} ops ${JSON.stringify(postAppend.opCounts)}`,
@@ -180,6 +196,24 @@ function report(): void {
   console.log(out.join('\n'));
 }
 
+/**
+ * The genuinely incremental half of a post-append update: read the appended
+ * bytes, apply the resulting patch. Everything except the deliberate
+ * whole-session re-graft.
+ *
+ * SUMMED PER SAMPLE, then summarised -- not `tailPoll.median + apply.median`,
+ * which is a different and smaller quantity whenever the two stages' slow
+ * cycles do not coincide. This is the series `postAppend.incremental.dod` is
+ * compared against, so how it is built is part of the budget.
+ *
+ * Derived here rather than in `measure.ts` because this package owns the
+ * budget table and the assertions; `measure.ts` records the raw stages and is
+ * not this wave's to change.
+ */
+function incrementalStats(): Stats {
+  return stats(postAppend.samples.map((s) => s.tailPoll + s.apply));
+}
+
 function statFor(budget: TimingBudget): number {
   const stage = (
     {
@@ -187,6 +221,7 @@ function statFor(budget: TimingBudget): number {
       tailPoll: postAppend.tailPoll,
       graft: postAppend.graft,
       apply: postAppend.apply,
+      incremental: incrementalStats(),
     } as Record<string, Stats | undefined>
   )[budget.what];
   if (stage === undefined) throw new Error(`budget ${budget.id} names unknown stage ${budget.what}`);
@@ -214,6 +249,10 @@ async function record(target: string): Promise<void> {
       tailPoll: postAppend.tailPoll,
       graft: postAppend.graft,
       apply: postAppend.apply,
+      // The derived series `postAppend.incremental.dod` is compared against.
+      // Written out so the budget's value is re-derivable from the record
+      // rather than taken on trust.
+      incremental: incrementalStats(),
       patched: postAppend.patched,
       samples: postAppend.samples.length,
       refusals: postAppend.refusals,
@@ -356,14 +395,16 @@ describe('post-append tree update — what the measured path actually did', () =
     }
   });
 
-  it('the re-graft read the WHOLE session (this is why the DoD budget is missed)', () => {
+  it('the re-graft read the WHOLE session (this is why the DoD total is missed)', () => {
     // Pinned deliberately. `src/extension.ts` re-grafts the whole session on
     // every append because a tree built from tail lines would be content
     // accepted before the layout was asserted -- the partial tree G3 forbids.
     // That decision is ~95% of the total in every run on record (315.9 of
-    // 332.3 ms at full counts), so it is asserted here
-    // rather than left as a claim in a comment: if someone makes the graft
-    // incremental, this test fails and the budget numbers get revisited.
+    // 332.3 ms in the committed FULL run), and it is the whole reason the DoD
+    // sentence was re-scoped off the total -- see `RESCOPED_DOD_TOTAL`. So it
+    // is asserted here rather than left as a claim in a comment: if someone
+    // makes the graft incremental, this test fails, and the re-scope and its
+    // record are what get revisited.
     for (const sample of postAppend.samples) {
       expect(sample.parsedLines).toBeGreaterThanOrEqual(corpus.mainLines);
     }
@@ -402,18 +443,79 @@ describe('timing budgets', () => {
       const value = statFor(budget);
       expect(Number.isFinite(value)).toBe(true);
       if (!enforced) {
-        // The DoD's 100 ms lands here today. Not skipped and not silently
-        // passing: the verdict is printed by `report()` above and written into
-        // `EVIDENCE.md`. What IS asserted is that the table still describes
-        // reality -- an unenforced budget must be one that is genuinely not
-        // met, or it should have been enforced.
-        expect(budget.source).toBe('dod');
+        // Nothing lands here today -- all four budgets are enforced. The
+        // branch stays because the table permits `enforced: false`, and if
+        // anyone uses it the rule is the one that held for the old
+        // `postAppend.total.dod`: an unenforced budget must be one that is
+        // genuinely not met, or it should have been enforced.
         expect(budget.measured.valueMs).toBeGreaterThan(budget.limitMs);
         return;
       }
       expect(value).toBeLessThanOrEqual(budget.limitMs);
     });
   }
+
+  it('every budget carries the measurement and margin it was set from', () => {
+    // The table's own integrity, asserted on constants only -- no wall clock,
+    // so this cannot flake. The failure it catches is a budget whose stated
+    // margin has drifted from its stated measurement, which is how a threshold
+    // silently becomes "a round number someone typed".
+    expect(TIMING_BUDGETS.length).toBeGreaterThan(0);
+    for (const budget of TIMING_BUDGETS) {
+      expect(budget.measured.on).not.toBe('');
+      expect(budget.measured.note.length).toBeGreaterThan(40);
+      expect(budget.measured.valueMs).toBeGreaterThan(0);
+      const stated = budget.limitMs / budget.measured.valueMs;
+      // Two significant figures is how the margins are written down.
+      expect(budget.measured.marginX).toBeCloseTo(stated, 1);
+      if (budget.enforced) {
+        // An enforced budget must be one its own recorded measurement passes.
+        expect(budget.measured.valueMs).toBeLessThanOrEqual(budget.limitMs);
+      }
+    }
+  });
+
+  it('the DoD number that was re-scoped is still on the record, and still red', () => {
+    // Wave 0 of Phase 4.5 replaced `postAppend.total.dod` with
+    // `postAppend.incremental.dod`. The whole justification for doing that
+    // rather than deleting a red budget is that the original number stays
+    // legible, so this asserts it does. Constants only -- the wall-clock claim
+    // is pinned behaviourally by the `parsedLines` test above instead.
+    expect(RESCOPED_DOD_TOTAL.originalLimitMs).toBe(100);
+    expect(RESCOPED_DOD_TOTAL.originalWhat).toBe('total');
+    expect(RESCOPED_DOD_TOTAL.observedMedianMs.length).toBeGreaterThanOrEqual(4);
+    for (const median of RESCOPED_DOD_TOTAL.observedMedianMs) {
+      // Every run on record missed it. If one ever does not, this record is
+      // the thing that needs rewriting -- loudly.
+      expect(median).toBeGreaterThan(RESCOPED_DOD_TOTAL.originalLimitMs);
+    }
+    // The number that replaced it is the SAME number, applied to the stages
+    // the DoD sentence was reaching for. A re-scope that also moved the
+    // literal would be a different decision than the one that was taken.
+    const rescoped = TIMING_BUDGETS.find((b) => b.source === 'dod');
+    expect(rescoped?.id).toBe('postAppend.incremental.dod');
+    expect(rescoped?.limitMs).toBe(RESCOPED_DOD_TOTAL.originalLimitMs);
+    expect(rescoped?.enforced).toBe(true);
+    expect(rescoped?.what).toBe('incremental');
+  });
+
+  it('the incremental series is the per-sample sum, not a sum of medians', () => {
+    // How the series is built is part of the budget: summing the two stage
+    // medians would understate the quantity whenever their slow cycles do not
+    // coincide, and would make the budget easier to pass than it claims.
+    // Asserted against the samples themselves rather than against `stats`.
+    const derived = incrementalStats();
+    expect(derived.n).toBe(postAppend.samples.length);
+    for (const sample of postAppend.samples) {
+      expect(sample.tailPoll + sample.apply).toBeLessThanOrEqual(derived.max + 1e-9);
+      expect(sample.tailPoll + sample.apply).toBeGreaterThanOrEqual(derived.min - 1e-9);
+    }
+    // And it is genuinely the total minus the re-graft, to floating-point
+    // slack -- i.e. it excludes exactly the stage the re-scope excluded.
+    for (const sample of postAppend.samples) {
+      expect(sample.total - sample.graft).toBeCloseTo(sample.tailPoll + sample.apply, 6);
+    }
+  });
 });
 
 describe('memory is bounded', () => {

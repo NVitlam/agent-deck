@@ -247,3 +247,23 @@ describe('motion is a reserved channel, in the SHIPPED stylesheet', () => {
     }
   });
 });
+
+describe('the packaged stylesheet carries no build-machine paths', () => {
+  // WHY THIS EXISTS. `esbuild-svelte` emits one
+  // `/* fakecss:<absolute path> */` comment per component into the dev CSS.
+  // The default `npm run build` therefore produced a stylesheet with sixteen
+  // `C:/Users/<name>/...` comments in it, and `npm run package` shipped that
+  // file — measured on a real artifact, not theorised.
+  //
+  // `vscode:prepublish` now forces a production build, whose minifier strips
+  // comments. This is the guard on that, because the leak is invisible unless
+  // someone unzips the artifact: a source path is not a crash, it is just
+  // quietly there.
+  it('emits no absolute source path in the production stylesheet', () => {
+    expect(css.length).toBeGreaterThan(0);
+    expect(css).not.toContain('fakecss:');
+    // Any drive-letter or POSIX home path, whoever built it.
+    expect(css).not.toMatch(/[A-Za-z]:[\\/]/);
+    expect(css).not.toMatch(/\/(?:home|Users)\//);
+  });
+});

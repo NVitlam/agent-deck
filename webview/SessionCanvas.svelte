@@ -55,7 +55,7 @@
   import { roundCoord, sessionLayout } from './layout.js';
   import AgentCell from './AgentCell.svelte';
   import Filament from './Filament.svelte';
-  import ToolDot from './ToolDot.svelte';
+
 
   let {
     session,
@@ -151,7 +151,7 @@
   } {
     const nodes: CanvasNode[] = [];
     const agents = new Map<string, AgentNode>();
-    const drawnTools = new Set<string>();
+
 
     const visit = (agent: AgentNode, depth: number): void => {
       // First occurrence of an id wins, exactly as the layout's own walk does.
@@ -393,6 +393,11 @@
       </g>
       <g class="nodes">
         {#each nodes as node (node.kind === 'agent' ? node.agent.id : node.tool.id)}
+          <!-- Agents only. The walk above pushes no tool nodes since the dots
+               were removed, so the branch that rendered them was unreachable
+               and is gone rather than left as a comment about what used to be
+               here. `ToolDot.svelte` still exists, unimported: the geometry
+               and the component are both intact if dots ever come back. -->
           {#if node.kind === 'agent'}
             <AgentCell
               agent={node.agent}
@@ -401,14 +406,6 @@
               elided={node.elided}
               selected={node.agent.id === selectedNodeId}
               {degraded}
-              {onselect}
-            />
-          {:else}
-            <ToolDot
-              tool={node.tool}
-              placement={node.placement}
-              root={node.root}
-              selected={node.tool.id === selectedNodeId}
               {onselect}
             />
           {/if}

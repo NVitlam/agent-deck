@@ -434,22 +434,43 @@ describe('the action list: what an agent DID, by description', () => {
     expect(summaries(container)).toEqual(['Rebuild the extension bundle']);
   });
 
-  it('does not let a description INSIDE another value win when the payload parses', () => {
-    // A command that happens to echo the word. The whole-payload parse is what
-    // makes this safe; the regex alone would take the first textual match.
+  it('does not let a NESTED description win over the payload\u2019s own', () => {
+    // THIS FIXTURE IS THE POINT, and the previous one was not.
+    //
+    // The old decoy was `{command: 'echo "description": "WRONG"', ...}`, whose
+    // inner quotes are BACKSLASH-ESCAPED once serialized — so the regex never
+    // matched it and the test passed with the JSON.parse path deleted. It was a
+    // rubber stamp for the ordering it claimed to prove. Measured, not guessed.
+    //
+    // A nested OBJECT key is a real decoy: `"description":"WRONG"` appears
+    // verbatim and FIRST in the serialized bytes, so the regex alone takes it.
+    // Only the whole-payload parse, which sees top-level keys, gets this right.
+    const payload = JSON.stringify({
+      config: { description: 'WRONG' },
+      description: 'RIGHT',
+    });
+    expect(payload.indexOf('WRONG')).toBeLessThan(payload.indexOf('RIGHT'));
+
     const container = render({
-      node: agentWithActions([
-        tool({
-          id: 't3',
-          toolName: 'Bash',
-          inputPreview: JSON.stringify({
-            command: 'echo "description": "WRONG"',
-            description: 'RIGHT',
-          }),
-        }),
-      ]),
+      node: agentWithActions([tool({ id: 't3', toolName: 'Bash', inputPreview: payload })]),
     });
     expect(summaries(container)).toEqual(['RIGHT']);
+  });
+
+  it('falls back to the nested value only when the payload cannot be parsed', () => {
+    // The complement, so the pair pins the ORDER rather than just the answer:
+    // truncate the same payload and the regex path is all that is left, which
+    // legitimately yields the nested value. That is the trade the two-path
+    // design accepts — a truncated payload gets a best effort, not a guess
+    // dressed as the real thing.
+    const whole = JSON.stringify({ config: { description: 'WRONG' }, description: 'RIGHT' });
+    const cut = whole.slice(0, whole.indexOf('RIGHT'));
+    expect(() => JSON.parse(cut) as unknown).toThrow();
+
+    const container = render({
+      node: agentWithActions([tool({ id: 't4b', toolName: 'Bash', inputPreview: cut })]),
+    });
+    expect(summaries(container)).toEqual(['WRONG']);
   });
 
   it('never renders an empty row: an unusable payload falls back to the tool name', () => {

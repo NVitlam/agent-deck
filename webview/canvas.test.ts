@@ -286,6 +286,17 @@ function parkedSession(overrides: Partial<SessionState> = {}): SessionState {
  * The interior, and where its coordinates come from
  * ------------------------------------------------------------------------ */
 
+/**
+ * The animated classes the SESSION INTERIOR can apply.
+ *
+ * `is-pulsing` is absent deliberately: it belonged to the running tool dot,
+ * and the dots are no longer drawn. It is still carried by the deck pulse ring
+ * and guarded in `deck.test.ts`, so the contract member is live - just not on
+ * this surface. Derived from the contract rather than hand-listed, so adding a
+ * class there fails here until someone decides which surface owns it.
+ */
+const INTERIOR_ANIMATED = ANIMATED_CLASSES.filter((c) => c !== 'is-pulsing');
+
 describe('the session interior (C7.1)', () => {
   it('draws the main agent as the nucleus, exactly once', () => {
     const state = liveSession();
@@ -868,7 +879,11 @@ describe('the motion invariant (C7.6)', () => {
     // names a second time. Checking the bundled CSS against the constants is
     // what stops a rename from silently switching an animation off while the
     // negative control still passes.
-    for (const cls of ANIMATED_CLASSES) expect(bundle).toContain(`.${cls}`);
+    // INTERIOR_ANIMATED, not ANIMATED_CLASSES: `is-pulsing` was the running
+    // tool dot, and the dots are gone. It is still live on the DECK pulse ring,
+    // which `deck.test.ts` guards. Asserting it here would fail for a reason
+    // that has nothing to do with this component.
+    for (const cls of INTERIOR_ANIMATED) expect(bundle).toContain(`.${cls}`);
     expect(bundle).toContain('animation:');
   });
 });
@@ -984,7 +999,7 @@ describe('every contract class the interior applies also carries style', () => {
     PARKED_CLASS,
     HOLLOW_LIVE_CLASS,
     REDUCED_MOTION_CLASS,
-    ...ANIMATED_CLASSES,
+    ...INTERIOR_ANIMATED,
   ]) {
     it(`styles .${cls}`, () => {
       expect(bundle).toContain(`.${cls}`);

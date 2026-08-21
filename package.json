@@ -61,7 +61,8 @@
     "package": "vsce package --no-dependencies --out dist/agent-deck.vsix",
     "test": "vitest run",
     "theater": "node esbuild.config.mjs --theater",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json",
+    "vscode:prepublish": "node esbuild.config.mjs --production"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

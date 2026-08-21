@@ -8,7 +8,7 @@
   import Deck from './Deck.svelte';
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
-  import { displayLiveness } from './format.js';
+  import { displayLiveness, formatTokens } from './format.js';
   import { TESTID } from './canvas-contract.js';
 
   let { store }: { store: Store } = $props();
@@ -171,6 +171,45 @@
          node belongs to. -->
     <div class="body">
       <main class="main" data-testid="main">
+        <!-- The HUD carries what the list view puts in its session header:
+             totals, and the degraded chip. It is part of the canvas chrome
+             rather than of the interior, so it survives a refusal - the one
+             thing a refused session may still say is that it refused. -->
+        <div class="hud" data-testid={TESTID.hud}>
+          <span class="hud-id">{view.selected.sessionId}</span>
+          {#if view.degraded}
+            <!-- C7.3: liveness is being INFERRED from the JSONL tap because the
+                 hook tap is silent. The chip says so rather than showing the
+                 same confident green a hook event would have earned (G2). -->
+            <span class="hud-chip" data-testid={TESTID.hudDegradedChip}>
+              liveness inferred — hooks silent
+            </span>
+          {/if}
+          {#if !view.refused}
+            <span class="hud-totals" data-testid="hud-totals">
+              {formatTokens(view.selected.totals.inputTokens)} in ·
+              {formatTokens(view.selected.totals.outputTokens)} out ·
+              <!-- Cost is an em-dash, never 0. The host sends 0 meaning NOT
+                   COMPUTED, and 0 rendered as a number reads as "free", which
+                   is a fabricated figure - the same class of defect as a
+                   truncation marker that under-reports. -->
+              <span title="not computed">—</span>
+            </span>
+          {/if}
+        </div>
+        <!-- G3 on a new surface. C7.4: entering a refused session shows the
+             refusal card AND zero interior elements.
+             `SessionCanvas` stays mounted either way, and that is deliberate
+             rather than incidental: it decides emptiness from its OWN layout,
+             independently of this branch, so the zero is asserted twice - here
+             by the absence of cells and dots, and there by `sessionLayout`
+             returning four empty maps. Swapping the component out instead
+             would have removed the second guard and, with it, the element that
+             carries `data-refused` for anyone checking the interior's own
+             account of itself. -->
+        {#if view.refused}
+          <RefusalScreen sessionId={view.selected.sessionId} />
+        {/if}
         <SessionCanvas
           session={view.selected}
           refused={view.refused}
@@ -226,6 +265,33 @@
     max-width: 45%;
     overflow: auto;
     border-left: 1px solid var(--vscode-panel-border, transparent);
+  }
+
+  .hud {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    padding: 4px 10px;
+    font-size: 0.88em;
+    border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  }
+
+  .hud-id {
+    font-family: var(--vscode-editor-font-family, monospace);
+    opacity: 0.75;
+  }
+
+  .hud-chip {
+    padding: 0 6px;
+    border-radius: 8px;
+    color: var(--vscode-badge-foreground, inherit);
+    background: var(--vscode-badge-background, transparent);
+  }
+
+  .hud-totals {
+    margin-left: auto;
+    opacity: 0.85;
   }
 
   .chrome {

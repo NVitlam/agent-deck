@@ -528,12 +528,32 @@ describe('the built theater page', () => {
       expect(query('.theater-transport')).toBe(1);
       expect(query('.theater-scrubber')).toBe(1);
       expect(query('.theater-speed')).toBe(1);
+      // Against the COMMITTED directory, not against `corpora`.
+      //
+      // `corpora` comes from a fresh recorder run into a temp dir, which holds
+      // only what the recorder writes. The theater embeds every `*.json` under
+      // the committed corpus directory — which now also holds the synthetic
+      // stress corpus, deliberately: the recorder is documented to leave a
+      // synthetic corpus alone. Comparing the page against the recorder's output
+      // asserted that those two sets are the same, and they are not supposed to
+      // be.
+      const committedIds = (await readdir(COMMITTED))
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => f.replace(/\.json$/, ''))
+        .sort();
+      expect(committedIds.length).toBeGreaterThan(0);
       expect(
         [...doc.querySelectorAll('.theater-corpus option')].map((o) => (o as HTMLOptionElement).value),
-      ).toStrictEqual(corpora.map((c) => c.id).sort());
+      ).toStrictEqual(committedIds);
 
       // G7 at position zero: a fresh store holds nothing until the host speaks.
-      expect(query('[data-testid="tree-node"]')).toBe(0);
+      //
+      // Asserted on the DECK, because the theater imports `start` from
+      // `webview/main.ts` and therefore renders whatever ships by default —
+      // which since Phase 4.5 is the canvas, not the rail-and-tree. Asserting
+      // `tree-node` here would pass for the wrong reason: 0 because the list
+      // view is not showing, rather than 0 because the store is empty.
+      expect(query('[data-testid="deck-blob"]')).toBe(0);
 
       const scrubber = doc.querySelector<HTMLInputElement>('.theater-scrubber');
       expect(scrubber).not.toBeNull();
@@ -544,10 +564,10 @@ describe('the built theater page', () => {
       scrubber.dispatchEvent(new window.Event('input'));
       await settle();
 
-      // The whole arc has played: the rail holds every session the host sent
-      // and the tree is drawn from the corpus, not from anything hand-made.
-      expect(query('[data-testid="rail-item"]')).toBe(corpus.final.sessions.length);
-      expect(query('[data-testid="tree-node"]')).toBeGreaterThan(1);
+      // The whole arc has played: the deck holds every session the host sent,
+      // drawn from the corpus rather than from anything hand-made.
+      expect(query('[data-testid="deck-blob"]')).toBe(corpus.final.sessions.length);
+      expect(query('[data-testid="deck-constellation"]')).toBeGreaterThan(1);
       const app = doc.querySelector('[data-testid="app"]');
       expect(app?.getAttribute('data-liveness')).toBe(
         corpus.final.sessions[0]?.liveness ?? 'missing',

@@ -1080,39 +1080,52 @@ describe('the accessibility floor', () => {
  * Rows of C7.3 that NO surface renders
  * ------------------------------------------------------------------------ */
 
-describe('C7.3 rows with no implementation in any surface', () => {
-  // These are not gaps in this suite. `canvas-contract.ts` reserves
-  // `TESTID.hud` and `TESTID.hudDegradedChip`, and `agent-deck-spec.md` C7.3
-  // and C7.4 require a HUD chip, HUD totals and a refusal card on entry — and
-  // no component in `webview/` emits any of the three. The matrix suite does
-  // not own a `.svelte` file, so these are reported rather than built.
+describe('C7.3 rows that were unimplemented and now are not', () => {
+  // This block did its job and was then rewritten by the job it did.
   //
-  // They are written as assertions on the CONTRACT rather than skipped, so
-  // that the day a component starts emitting them this block turns red and
-  // whoever lands it is told to convert these into real matrix rows.
+  // It shipped asserting that `TESTID.hud`, `TESTID.hudDegradedChip` and the
+  // canvas refusal card were reserved in the contract and emitted by NOTHING —
+  // three C7.3/C7.4 rows with no implementation. Written as live assertions
+  // rather than skips precisely so the day someone implemented them it would
+  // turn red and demand conversion. `App.svelte` implemented them, it turned
+  // red, and these are the real rows.
 
-  it('the HUD is reserved in the contract and rendered by nothing', () => {
+  it('shows the HUD, and its degraded chip when the hook tap is silent', () => {
     const panel = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
     send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
     click(blobFor(panel, 'session-live'));
 
-    // The names exist; the elements do not.
-    expect(TESTID.hud).toBe('hud');
-    expect(TESTID.hudDegradedChip).toBe('hud-degraded-chip');
-    expect(all(panel.container, TESTID.hud)).toHaveLength(0);
-    expect(all(panel.container, TESTID.hudDegradedChip)).toHaveLength(0);
+    // C7.3: degraded ⇒ a HUD chip saying liveness is being INFERRED, because
+    // the hook tap is silent (G2). The chip is what stops an inferred `live`
+    // from reading like one a hook event actually witnessed.
+    expect(all(panel.container, TESTID.hud)).toHaveLength(1);
+    expect(one(panel.container, TESTID.hudDegradedChip).textContent).toContain('inferred');
+
+    // ...and the totals, with cost as an em-dash. The host sends 0 meaning NOT
+    // COMPUTED, and a 0 rendered as a number reads as "free" — a fabricated
+    // figure, which is the class of defect this project refuses on principle.
+    const totals = one(panel.container, 'hud-totals');
+    expect(totals.textContent).toContain('—');
+    expect(totals.textContent).not.toMatch(/\$\s*0/);
   });
 
-  it('the canvas shows no refusal card on entry', () => {
-    // C7.4: "entering it shows the refusal card with zero interior elements".
-    // The zero is asserted above and holds. The card is not drawn: the canvas
-    // branch of `App.svelte` renders `SessionCanvas` alone, and a refused
-    // `SessionCanvas` renders an empty `<section>`.
+  it('shows the refusal card on entry, beside a genuinely empty interior', () => {
+    // C7.4 in full: "entering it shows the refusal card with ZERO interior
+    // elements". Both halves, together, because either alone is satisfiable
+    // in a way that misses the point - an empty interior with no card is a
+    // blank panel that explains nothing, and a card over a drawn tree is the
+    // partial render G3 exists to forbid.
     const panel = render();
     send({ type: 'snapshot', sessions: [unsupportedSession()] });
     click(blobFor(panel, 'session-unsupported'));
+
     expect(interiorCount(panel.container)).toBe(0);
-    expect(all(panel.container, 'refusal-screen')).toHaveLength(0);
+    expect(all(panel.container, 'refusal-screen')).toHaveLength(1);
+
+    // The interior stays MOUNTED and reports its own refusal. That is the
+    // second, independent guard: SessionCanvas decides emptiness from its own
+    // layout, so the zero above is not merely a component being swapped out.
+    expect(one(panel.container, TESTID.canvas).dataset['refused']).toBe('true');
   });
 });

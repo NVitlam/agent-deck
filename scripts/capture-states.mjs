@@ -506,6 +506,25 @@ function capture(window, harness, drive) {
   const intents = [];
   const started = harness.start(container, { postMessage: (m) => intents.push(m) });
 
+  // Drive the LIST surface explicitly.
+  //
+  // Phase 4.5 made the canvas the default view, and these recipes reach for
+  // rail items and tree nodes — so without this the `unsupported` recipe threw
+  // "the refused session never reached the rail" and the whole capture died
+  // before writing a file. The evidence is unchanged by this line: it captured
+  // the list renderer when it was the default and it captures the same one now.
+  //
+  // WHAT THIS EVIDENCE THEREFORE DOES NOT COVER, stated because a silent gap in
+  // an evidence directory is worse than a missing one: the canvas surface has
+  // NO captures here. Its five states are asserted in `webview/states.test.ts`
+  // against the built bundle in both views, which is a stronger check than a
+  // DOM-text capture — but it is a different artifact, and the human's
+  // real-window pass (Phase 4 DoD 4) still has only the list column to compare
+  // against.
+  harness.flushSync(() => {
+    started.store.setViewMode('list');
+  });
+
   const dispatch = (message) => {
     harness.flushSync(() => {
       window.dispatchEvent(new window.MessageEvent('message', { data: message }));

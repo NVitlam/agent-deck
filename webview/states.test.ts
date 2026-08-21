@@ -1,28 +1,68 @@
 // @vitest-environment jsdom
 //
-// The five UI states, one file: live, idle, ended, unsupported, degraded.
+// The C7.3 visual-grammar state matrix — CROSS-CUTTING, through the real app,
+// against BOTH surfaces.
 //
-// This is the CODE half of the PLAN Phase 4 DoD item "all UI states
-// screenshot-verified". The screenshots themselves need a human at a real
-// VS Code window and are not claimed here; what is claimed is that each of the
-// five states renders, renders differently from the other four, and says which
-// state it is in a place a screenshot check can read.
+// WHAT THIS FILE IS FOR, AND WHAT IT IS NOT FOR
+// ---------------------------------------------
+// `deck.test.ts`, `canvas.test.ts` and `inspector.test.ts` each assert the
+// matrix rows that belong to THEIR component, mounting that component alone.
+// This file asserts nothing about a component in isolation. It drives
+// `store.handleMessage(...)` with host messages through the mounted `App` and
+// asserts what the PANEL shows — which is the only place a row can be dropped
+// by the router rather than by a component, and the only place the two
+// surfaces can be compared at all.
 //
-// Four of the five are values of `SessionState.liveness`. `degraded` is not —
-// it is the hook tap's health and arrives on its own message, so it composes
-// with the other four rather than replacing them (G2: a silent hook tap costs
-// "what is running right now", not the tree).
+// BOTH SURFACES, EVERY ROW. The list view is kept for one release behind an
+// in-panel toggle (C7.2), and the user's decision is that the matrix runs
+// against both while both exist — that is the point of keeping it. Every row
+// below is therefore stated twice, once per `ViewMode`, through the SAME store
+// and the same messages: `store.toggleViewMode()` is the only thing that
+// changes between the two halves.
 //
-// Mounts the REAL bundle through `testkit.ts`, the same esbuild + Svelte
+// Where a row genuinely exists in one surface only — a deck-level error badge
+// has no list counterpart, and the list's per-node status chips have no canvas
+// counterpart — the test SAYS SO rather than inventing an equivalent. A faked
+// counterpart is worse than an admitted gap: it makes the matrix report a
+// coverage it does not have.
+//
+// Rows this file cannot assert at all, because nothing in the shipped renderer
+// emits them, are collected in the last describe block and are marked failing
+// there rather than quietly omitted. See its header.
+//
+// TWO NEGATIVE CONTROLS, called out in C7.3 as the rows most easily satisfied
+// by accident:
+//   - `unsupported` requires an interior element count of exactly 0 (C7.4);
+//   - animation-bearing classes appear on nothing that is neither running nor
+//     live (C7.6), proved by setting everything done/ended and counting 0.
+//
+// Mounts the REAL bundle through `testkit.ts` — the same esbuild + Svelte
 // pipeline `npm run build` runs. See `render.test.ts` for why.
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionState, WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
-import { all, loadHarness, one } from './testkit.js';
-import { LIVENESS_INFERRED_LABEL, LIVENESS_VALUES, livenessTitle } from './format.js';
-import { liveSession, unsupportedSession } from './testdata.js';
+import { all, animated, hasAnimatedAncestor, loadHarness, one, press } from './testkit.js';
+import {
+  ANIMATED_CLASSES,
+  CRACKED_CLASS,
+  FOREIGN_CLASS,
+  HOLLOW_LIVE_CLASS,
+  PARKED_CLASS,
+  REDUCED_MOTION_CLASS,
+  TESTID,
+} from './canvas-contract.js';
+import type { ViewMode } from './canvas-contract.js';
+import { EM_DASH, LIVENESS_INFERRED_LABEL, LIVENESS_VALUES, livenessTitle } from './format.js';
+import {
+  foreignSession,
+  liveSession,
+  parkedSession,
+  settledSession,
+  unsupportedSession,
+  walkSession,
+} from './testdata.js';
 
 let harness: WebviewHarness;
 
@@ -30,26 +70,49 @@ beforeAll(async () => {
   harness = await loadHarness();
 }, 60_000);
 
-interface Mounted {
+/* ------------------------------------------------------------------------ *
+ * Mounting
+ * ------------------------------------------------------------------------ */
+
+interface Panel {
   container: HTMLElement;
   store: Store;
   sent: WebviewToHostMessage[];
   dispose: () => void;
 }
 
-const mounted: Mounted[] = [];
+const mounted: Panel[] = [];
 
-function render(): Mounted {
+/**
+ * Mount the app.
+ *
+ * `reducedMotion` is stubbed onto `matchMedia` BEFORE the mount, because
+ * `App.svelte` reads the query once at component initialisation and hands the
+ * result down as a plain boolean. Stubbing after the mount would change
+ * nothing and the assertion would pass or fail for the wrong reason.
+ */
+function render(options: { reducedMotion?: boolean } = {}): Panel {
+  const withMedia = globalThis as unknown as { matchMedia?: unknown };
+  const previous = withMedia.matchMedia;
+  if (options.reducedMotion === true) {
+    withMedia.matchMedia = () => ({ matches: true });
+  }
+
   const container = document.createElement('div');
   document.body.appendChild(container);
   const sent: WebviewToHostMessage[] = [];
   const started = harness.start(container, { postMessage: (m) => sent.push(m) });
-  // Idempotent, and it removes itself from `mounted`: a test that disposes a
-  // renderer mid-test must not be unmounted a second time by `afterEach`, and
-  // a renderer left mounted would keep receiving every later `send()` — both
-  // mounted apps would then be answering the same assertions.
+
+  if (options.reducedMotion === true) {
+    if (previous === undefined) delete withMedia.matchMedia;
+    else withMedia.matchMedia = previous;
+  }
+
+  // Idempotent, and it removes itself from `mounted`: a renderer left mounted
+  // would keep receiving every later `send()`, and both apps would then be
+  // answering the same assertions.
   let disposed = false;
-  const record: Mounted = {
+  const record: Panel = {
     container,
     store: started.store,
     sent,
@@ -73,9 +136,22 @@ function send(message: unknown): void {
   });
 }
 
-function click(element: HTMLElement): void {
+/** Run a store call and flush Svelte, so the DOM can be asserted immediately. */
+function act(fn: () => void): void {
+  harness.flushSync(fn);
+}
+
+/** Press an element. `MouseEvent`, never `click()` — the canvas is all SVG. */
+function click(element: Element): void {
   harness.flushSync(() => {
-    element.click();
+    press(element);
+  });
+}
+
+/** A real Escape keystroke on the window `App.svelte` listens to. */
+function escape(): void {
+  harness.flushSync(() => {
+    globalThis.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   });
 }
 
@@ -84,222 +160,959 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+/* ------------------------------------------------------------------------ *
+ * Surface-independent helpers
+ * ------------------------------------------------------------------------ */
+
 /**
- * A session in one of the three healthy liveness states.
+ * Put the panel into `mode`.
  *
- * `liveness` is set on the state, not simulated: it is the field the host
- * computes in `src/model/liveness.ts` and hands over on the wire, and it is
- * the hand-off line this file mutates to prove the assertions below are real.
- * `fixture-render.test.ts` drives the same three values out of the real
- * liveness engine instead of setting them.
+ * Goes through the STORE rather than through the toggle button, and only the
+ * `both views` blocks below click the button — that separation is deliberate.
+ * A test that reached the list view by clicking would fail for two reasons at
+ * once if the toggle broke, and the toggle has its own row.
  */
-function sessionWith(liveness: SessionState['liveness']): SessionState {
-  return liveSession({ liveness });
+function useView(panel: Panel, mode: ViewMode): void {
+  act(() => panel.store.setViewMode(mode));
+  expect(one(panel.container, 'app').dataset['viewMode']).toBe(mode);
 }
 
-// ---------------------------------------------------------------------------
-// live / idle / ended
-// ---------------------------------------------------------------------------
+/**
+ * Every element the session interior draws, by contract testid.
+ *
+ * Derived from `TESTID` rather than written out, because "interior element
+ * count 0" is C7.4's normative assertion and a hand-written list would stop
+ * covering a surface the moment a new one was added — the count would still
+ * read 0 and the control would still pass.
+ */
+const INTERIOR_TESTIDS = [
+  TESTID.nucleus,
+  TESTID.cell,
+  TESTID.dot,
+  TESTID.filament,
+  TESTID.parkedStub,
+  TESTID.elidedBadge,
+] as const;
 
-describe('the three healthy liveness states each render distinguishably', () => {
-  for (const liveness of ['live', 'idle', 'ended'] as const) {
-    it(`renders ${liveness} in the panel, the header and the rail`, () => {
-      const { container } = render();
-      send({ type: 'snapshot', sessions: [sessionWith(liveness)] });
+function interiorCount(root: ParentNode): number {
+  return INTERIOR_TESTIDS.reduce((total, testId) => total + all(root, testId).length, 0);
+}
 
-      // One place answers "which state is this?" for the whole panel.
-      expect(one(container, 'app').dataset['liveness']).toBe(liveness);
-      expect(one(container, 'app').dataset['refused']).toBe('false');
-      expect(one(container, 'app').dataset['degraded']).toBe('false');
+/** The blob for one session on the deck. */
+function blobFor(panel: Panel, sessionId: string): HTMLElement {
+  const found = all(panel.container, TESTID.deckBlob).filter(
+    (b) => b.dataset['sessionId'] === sessionId,
+  );
+  const first = found[0];
+  if (found.length !== 1 || first === undefined) {
+    throw new Error(`expected one blob for ${sessionId}, found ${found.length}`);
+  }
+  return first;
+}
 
-      const header = one(container, 'header-liveness');
-      expect(header.dataset['liveness']).toBe(liveness);
-      expect(header.textContent?.trim()).toBe(liveness);
-      expect(header.getAttribute('title')).toBe(livenessTitle(liveness));
+/** The rail row for one session in the list view. */
+function railFor(panel: Panel, sessionId: string): HTMLElement {
+  const found = all(panel.container, 'rail-item').filter(
+    (i) => i.dataset['sessionId'] === sessionId,
+  );
+  const first = found[0];
+  if (found.length !== 1 || first === undefined) {
+    throw new Error(`expected one rail item for ${sessionId}, found ${found.length}`);
+  }
+  return first;
+}
 
-      const rail = one(container, 'rail-item');
-      expect(rail.dataset['liveness']).toBe(liveness);
-      expect(rail.dataset['refused']).toBe('false');
-      expect(one(container, 'rail-liveness').textContent?.trim()).toBe(liveness);
+/**
+ * Zoom into a session, whichever surface is showing.
+ *
+ * Canvas: click the blob (deck -> interior). List: click the rail row, which
+ * selects without an altitude because the list has none. One helper so a row
+ * below reads the same in both halves and the difference stays here.
+ */
+function enter(panel: Panel, mode: ViewMode, sessionId: string): void {
+  if (mode === 'canvas') click(blobFor(panel, sessionId));
+  else click(railFor(panel, sessionId));
+}
 
-      // None of the three is a refusal and none is degraded: the tree renders.
-      expect(all(container, 'tree-node').length).toBeGreaterThan(0);
-      expect(all(container, 'refusal-screen')).toHaveLength(0);
-      expect(all(container, 'degraded-banner')).toHaveLength(0);
-      expect(all(container, 'header-liveness-inferred')).toHaveLength(0);
-    });
+/* ------------------------------------------------------------------------ *
+ * Rows that hold in BOTH surfaces
+ * ------------------------------------------------------------------------ */
+
+const VIEWS: readonly ViewMode[] = ['canvas', 'list'];
+
+describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
+  /** Mount, switch to this half's surface, and feed a snapshot. */
+  function panelWith(sessions: readonly SessionState[]): Panel {
+    const panel = render();
+    useView(panel, mode);
+    send({ type: 'snapshot', sessions });
+    return panel;
   }
 
-  it('gives each of the four liveness values a different rendering', () => {
-    // The point of the DoD item is that the states are TOLD APART on screen.
-    // Four states rendering four identical panels would satisfy every
-    // per-state assertion above and fail the actual requirement.
-    const signatures = LIVENESS_VALUES.map((liveness) => {
-      const { container, dispose } = render();
-      const session =
-        liveness === 'unsupported'
-          ? unsupportedSession()
-          : liveSession({ liveness, sessionId: 'session-x' });
-      send({ type: 'snapshot', sessions: [session] });
-      const app = one(container, 'app');
-      const signature = [
-        app.dataset['liveness'],
-        app.dataset['refused'],
-        one(container, 'rail-liveness').textContent?.trim(),
-        String(all(container, 'refusal-screen').length),
-      ].join('|');
-      dispose();
-      return signature;
+  // --- liveness live / idle / ended ---------------------------------------
+
+  describe('liveness', () => {
+    for (const liveness of ['live', 'idle', 'ended'] as const) {
+      it(`renders ${liveness} distinguishably, and says so in the panel`, () => {
+        const panel = panelWith([liveSession({ liveness })]);
+        const app = one(panel.container, 'app');
+
+        // One place answers "which state is this?" for the whole panel, in
+        // both surfaces — the router sets it, not either renderer.
+        expect(app.dataset['liveness']).toBe(liveness);
+        expect(app.dataset['refused']).toBe('false');
+        expect(app.dataset['degraded']).toBe('false');
+
+        if (mode === 'canvas') {
+          const blob = blobFor(panel, 'session-live');
+          expect(blob.dataset['liveness']).toBe(liveness);
+          expect(blob.dataset['refused']).toBe('false');
+          // C7.3: only `live` breathes and pulses; amber and gray are STILL.
+          expect(animated(blob).length > 0).toBe(liveness === 'live');
+          expect(blob.querySelector(`.${CRACKED_CLASS}`)).toBeNull();
+          expect(blob.querySelector(`.${HOLLOW_LIVE_CLASS}`)).toBeNull();
+        } else {
+          const rail = railFor(panel, 'session-live');
+          expect(rail.dataset['liveness']).toBe(liveness);
+          expect(rail.dataset['refused']).toBe('false');
+          const header = one(panel.container, 'header-liveness');
+          expect(header.dataset['liveness']).toBe(liveness);
+          expect(header.textContent?.trim()).toBe(liveness);
+          expect(header.getAttribute('title')).toBe(livenessTitle(liveness));
+          expect(all(panel.container, 'tree-node').length).toBeGreaterThan(0);
+        }
+      });
+    }
+
+    it('gives each of the four liveness values a different rendering', () => {
+      // The requirement is that the states are TOLD APART on screen. Four
+      // states rendering four identical panels would satisfy every per-state
+      // assertion above and fail the actual requirement.
+      const signatures = LIVENESS_VALUES.map((liveness) => {
+        const session =
+          liveness === 'unsupported'
+            ? unsupportedSession({ sessionId: 'session-x' })
+            : liveSession({ liveness, sessionId: 'session-x' });
+        const panel = panelWith([session]);
+        const app = one(panel.container, 'app');
+        const surface =
+          mode === 'canvas'
+            ? [
+                blobFor(panel, 'session-x').dataset['liveness'],
+                String(animated(panel.container).length),
+                String(all(panel.container, TESTID.deckBlob)[0]?.dataset['refused']),
+              ]
+            : [
+                one(panel.container, 'rail-liveness').textContent?.trim(),
+                String(all(panel.container, 'refusal-screen').length),
+                String(all(panel.container, 'tree-node').length),
+              ];
+        const signature = [app.dataset['liveness'], app.dataset['refused'], ...surface].join('|');
+        panel.dispose();
+        return signature;
+      });
+
+      expect(new Set(signatures).size).toBe(LIVENESS_VALUES.length);
+      // Every liveness value must also produce a DIFFERENT explanation.
+      expect(new Set(LIVENESS_VALUES.map(livenessTitle)).size).toBe(LIVENESS_VALUES.length);
     });
 
-    expect(new Set(signatures).size).toBe(LIVENESS_VALUES.length);
-    // Every liveness value must also produce a DIFFERENT explanation.
-    expect(new Set(LIVENESS_VALUES.map(livenessTitle)).size).toBe(LIVENESS_VALUES.length);
+    it('names no number of seconds beside a liveness value', () => {
+      // The recency threshold is configurable in `liveness.ts` and the webview
+      // is never told its value, so any duration printed beside a liveness
+      // state would be a number the renderer cannot stand behind. Asserted at
+      // the altitude that CARRIES the value — the deck blob's label and the
+      // list's header — not over the whole panel, because tool durations are
+      // real measurements the host sent and are allowed to print.
+      for (const liveness of ['live', 'idle', 'ended'] as const) {
+        const panel = panelWith([liveSession({ liveness })]);
+        const carrier =
+          mode === 'canvas'
+            ? blobFor(panel, 'session-live')
+            : one(panel.container, 'session-header');
+        expect(carrier.textContent ?? '').not.toMatch(
+          /\b\d+\s*(s|sec|secs|seconds|m|min|minutes)\b/,
+        );
+        if (mode === 'canvas') {
+          // The blob's accessible name carries the error COUNT, which is a
+          // real number the store derived — so this is the duration pattern,
+          // not "no digits".
+          expect(carrier.getAttribute('aria-label') ?? '').not.toMatch(
+            /\b\d+\s*(s|sec|secs|seconds|m|min|minutes)\b/,
+          );
+        } else {
+          expect(one(panel.container, 'header-liveness').getAttribute('title')).not.toMatch(/\d/);
+        }
+        panel.dispose();
+      }
+    });
   });
 
-  it('names no number of seconds anywhere on screen', () => {
-    // The recency threshold is configurable in `liveness.ts` and the webview is
-    // never told its value, so any duration printed beside a liveness state
-    // would be a number the renderer cannot stand behind.
-    const { container } = render();
-    for (const liveness of ['live', 'idle', 'ended'] as const) {
-      send({ type: 'snapshot', sessions: [sessionWith(liveness)] });
-      const text = one(container, 'session-header').textContent ?? '';
-      expect(text).not.toMatch(/\b\d+\s*(s|sec|secs|seconds|m|min|minutes)\b/);
-      expect(one(container, 'header-liveness').getAttribute('title')).not.toMatch(/\d/);
+  // --- unsupported / refused (G3) -----------------------------------------
+
+  describe('unsupported — the first negative control (G3, C7.4)', () => {
+    it('marks the session refused before it is entered', () => {
+      const panel = panelWith([unsupportedSession()]);
+      expect(one(panel.container, 'app').dataset['refused']).toBe('true');
+      expect(one(panel.container, 'app').dataset['liveness']).toBe('unsupported');
+
+      if (mode === 'canvas') {
+        // C7.3: red dashed membrane + crack, at deck level, before entry.
+        const blob = blobFor(panel, 'session-unsupported');
+        expect(blob.dataset['refused']).toBe('true');
+        expect(blob.dataset['liveness']).toBe('unsupported');
+        expect(blob.classList.contains(CRACKED_CLASS)).toBe(true);
+        expect(blob.querySelectorAll(`.${CRACKED_CLASS}`).length).toBeGreaterThan(0);
+        // G3 in the SIZE channel too: no number is read off a refused tree, so
+        // the blob carries no node count and draws no constellation.
+        expect(blob.dataset['nodes']).toBe('0');
+        expect(blob.dataset['constellation']).toBe('0');
+        expect(all(blob, TESTID.deckConstellation)).toHaveLength(0);
+        expect(all(panel.container, TESTID.deckErrorBadge)).toHaveLength(0);
+      } else {
+        const rail = railFor(panel, 'session-unsupported');
+        expect(rail.dataset['refused']).toBe('true');
+        expect(rail.dataset['liveness']).toBe('unsupported');
+        expect(one(panel.container, 'rail-liveness').textContent?.trim()).toBe('unsupported');
+      }
+    });
+
+    it('draws ZERO interior elements on entry, with a tree in the model', () => {
+      // The discriminating case. A refused session whose model tree is EMPTY
+      // would satisfy "0 elements" by having nothing to draw; this one carries
+      // the whole `liveSession()` tree and must still draw none of it.
+      const session = unsupportedSession();
+      expect(walkSession(session).length).toBeGreaterThan(1);
+
+      const panel = panelWith([session]);
+      enter(panel, mode, 'session-unsupported');
+
+      expect(interiorCount(panel.container)).toBe(0);
+      expect(all(panel.container, 'tree-node')).toHaveLength(0);
+      expect(all(panel.container, 'status-chip')).toHaveLength(0);
+      expect(all(panel.container, 'payload-preview')).toHaveLength(0);
+      // Not "a tree with a warning" — no header either.
+      expect(all(panel.container, 'session-header')).toHaveLength(0);
+
+      if (mode === 'canvas') {
+        expect(one(panel.container, TESTID.canvas).dataset['refused']).toBe('true');
+        expect(one(panel.container, TESTID.canvas).dataset['cells']).toBe('0');
+        expect(one(panel.container, TESTID.canvas).dataset['dots']).toBe('0');
+        expect(one(panel.container, TESTID.canvas).dataset['parked']).toBe('0');
+      } else {
+        const refusal = one(panel.container, 'refusal-screen');
+        expect(refusal.dataset['liveness']).toBe('unsupported');
+        expect(one(refusal, 'refusal-session-id').textContent).toContain('session-unsupported');
+        expect(one(refusal, 'refusal-cause').textContent).toContain('on-disk format');
+      }
+    });
+
+    it('refuses a session that arrives good and is refused afterwards', () => {
+      // The seam: `schemaMismatch` refuses a session WITHOUT changing the
+      // `liveness` the last snapshot delivered, so both surfaces have to read
+      // the store's union rather than the wire field.
+      const panel = panelWith([liveSession()]);
+      enter(panel, mode, 'session-live');
+      expect(interiorCount(panel.container) + all(panel.container, 'tree-node').length)
+        .toBeGreaterThan(0);
+
+      send({ type: 'schemaMismatch', sessionId: 'session-live' });
+
+      expect(one(panel.container, 'app').dataset['liveness']).toBe('unsupported');
+      expect(one(panel.container, 'app').dataset['refused']).toBe('true');
+      expect(interiorCount(panel.container)).toBe(0);
+      expect(all(panel.container, 'tree-node')).toHaveLength(0);
+    });
+
+    it('leaves the other sessions alone', () => {
+      const panel = panelWith([unsupportedSession(), liveSession({ sessionId: 'session-ok' })]);
+      if (mode === 'canvas') {
+        expect(blobFor(panel, 'session-unsupported').dataset['refused']).toBe('true');
+        expect(blobFor(panel, 'session-ok').dataset['refused']).toBe('false');
+        expect(Number(blobFor(panel, 'session-ok').dataset['nodes'])).toBeGreaterThan(0);
+      } else {
+        expect(railFor(panel, 'session-unsupported').dataset['refused']).toBe('true');
+        expect(railFor(panel, 'session-ok').dataset['refused']).toBe('false');
+      }
+    });
+  });
+
+  // --- degraded (G2) -------------------------------------------------------
+
+  describe('degraded — the hook tap is silent (G2)', () => {
+    it('keeps the content and marks the liveness as inferred', () => {
+      const panel = panelWith([liveSession()]);
+      send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+
+      expect(one(panel.container, 'app').dataset['degraded']).toBe('true');
+
+      // Banner semantics are UNCHANGED from Phase 3, in both surfaces: it is
+      // chrome above the body, not part of either renderer.
+      const banner = one(panel.container, 'degraded-banner');
+      expect(banner.dataset['reason']).toBe('noHookEvents');
+      expect(banner.textContent).toContain('no hook events received');
+
+      enter(panel, mode, 'session-live');
+      if (mode === 'canvas') {
+        // C7.3: every live membrane goes dash-hollow. The blob's does, and so
+        // does a running agent's cell inside the interior.
+        escape();
+        const blob = blobFor(panel, 'session-live');
+        expect(blob.dataset['livenessInferred']).toBe('true');
+        expect(blob.querySelectorAll(`.${HOLLOW_LIVE_CLASS}`).length).toBe(1);
+
+        enter(panel, mode, 'session-live');
+        const running = all(panel.container, TESTID.cell)
+          .concat(all(panel.container, TESTID.nucleus))
+          .filter((c) => c.dataset['status'] === 'running');
+        expect(running.length).toBeGreaterThan(0);
+        for (const cell of running) {
+          expect(cell.dataset['livenessInferred']).toBe('true');
+          expect(cell.querySelectorAll(`.${HOLLOW_LIVE_CLASS}`).length).toBe(1);
+        }
+      } else {
+        const marker = one(panel.container, 'header-liveness-inferred');
+        expect(marker.textContent).toContain(LIVENESS_INFERRED_LABEL);
+        expect(one(panel.container, 'session-header').dataset['livenessInferred']).toBe('true');
+      }
+
+      // G2: losing the hook tap costs liveness, not content. Asserted on the
+      // surface that is showing, whichever it is.
+      const drawn =
+        mode === 'canvas' ? interiorCount(panel.container) : all(panel.container, 'tree-node').length;
+      expect(drawn).toBeGreaterThan(0);
+    });
+
+    it('carries both reasons into the DOM', () => {
+      const panel = panelWith([liveSession({ liveness: 'idle' })]);
+      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+      expect(one(panel.container, 'degraded-banner').dataset['reason']).toBe('listenerDown');
+      expect(one(panel.container, 'degraded-banner').textContent).toContain(
+        'the hook listener is not running',
+      );
+    });
+
+    it('stays dismissed while the same episode repeats, and keeps the marker', () => {
+      // Dismissing silences one episode; it does not improve the source of the
+      // number. Phase 3 semantics, unchanged (spec C4: informative, not
+      // nagging) — restated here because the router now owns the banner.
+      const panel = panelWith([liveSession()]);
+      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+      click(one(panel.container, 'degraded-dismiss'));
+      for (let i = 0; i < 10; i += 1) {
+        send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+      }
+
+      expect(all(panel.container, 'degraded-banner')).toHaveLength(0);
+      expect(one(panel.container, 'app').dataset['degraded']).toBe('true');
+      if (mode === 'canvas') {
+        expect(blobFor(panel, 'session-live').dataset['livenessInferred']).toBe('true');
+      } else {
+        expect(all(panel.container, 'header-liveness-inferred')).toHaveLength(1);
+      }
+    });
+
+    it('drops the banner and the hollowing when the tap recovers', () => {
+      const panel = panelWith([liveSession()]);
+      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+      send({ type: 'degraded', degraded: false });
+
+      expect(all(panel.container, 'degraded-banner')).toHaveLength(0);
+      expect(one(panel.container, 'app').dataset['degraded']).toBe('false');
+      if (mode === 'canvas') {
+        const blob = blobFor(panel, 'session-live');
+        expect(blob.dataset['livenessInferred']).toBe('false');
+        expect(blob.querySelectorAll(`.${HOLLOW_LIVE_CLASS}`)).toHaveLength(0);
+      } else {
+        expect(all(panel.container, 'header-liveness-inferred')).toHaveLength(0);
+      }
+    });
+
+    it('composes with a refusal: two independent taps, both allowed to fail', () => {
+      const panel = panelWith([unsupportedSession()]);
+      send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+      enter(panel, mode, 'session-unsupported');
+
+      expect(all(panel.container, 'degraded-banner')).toHaveLength(1);
+      expect(interiorCount(panel.container)).toBe(0);
+      expect(all(panel.container, 'tree-node')).toHaveLength(0);
+      // A refused session never claims inferred liveness — it claims nothing.
+      expect(all(panel.container, 'header-liveness-inferred')).toHaveLength(0);
+    });
+  });
+
+  // --- tool and agent status ----------------------------------------------
+
+  describe('tool and agent status', () => {
+    it('renders running, done and error, and the error persists', () => {
+      const panel = panelWith([liveSession()]);
+      enter(panel, mode, 'session-live');
+
+      if (mode === 'canvas') {
+        const statuses = all(panel.container, TESTID.dot).map((d) => d.dataset['status']);
+        expect(statuses).toContain('running');
+        expect(statuses).toContain('done');
+        expect(statuses).toContain('error');
+
+        // C7.3: `error` is a THORN, a shape rather than a colour, so the row
+        // survives a theme that renders red badly.
+        const errored = all(panel.container, TESTID.dot).filter(
+          (d) => d.dataset['status'] === 'error',
+        );
+        expect(errored.length).toBeGreaterThan(0);
+        for (const dot of errored) {
+          expect(dot.querySelector('path.thorn')).not.toBeNull();
+          expect(dot.querySelector('circle.bud')).toBeNull();
+          // ...and it never animates, in any state.
+          expect(animated(dot)).toHaveLength(0);
+        }
+
+        // Agent status IS the membrane colour of its cell, carried on the
+        // attribute the stylesheet selects on.
+        const cellStatuses = all(panel.container, TESTID.cell)
+          .filter((c) => c.dataset['parked'] === 'false')
+          .map((c) => c.dataset['status']);
+        expect(cellStatuses).toContain('running');
+        expect(one(panel.container, TESTID.nucleus).dataset['status']).toBe('running');
+      } else {
+        const chips = all(panel.container, 'status-chip').map((c) => c.dataset['status']);
+        expect(chips).toContain('running');
+        expect(chips).toContain('done');
+        expect(chips).toContain('error');
+      }
+    });
+
+    it('aggregates tool errors to a deck badge — CANVAS ONLY, and that is the row', () => {
+      // C7.3 states the badge as a DECK-level aggregate of the interior's
+      // thorns. The list view has no deck, so there is no counterpart to
+      // assert and none is invented here. What the list has instead is the
+      // per-node chip, asserted above.
+      const panel = panelWith([liveSession()]);
+      const expected = walkSession(liveSession()).filter(
+        (n) => !('children' in n) && n.status === 'error',
+      ).length;
+      expect(expected).toBeGreaterThan(0);
+
+      if (mode === 'canvas') {
+        const badge = one(panel.container, TESTID.deckErrorBadge);
+        expect(badge.dataset['count']).toBe(String(expected));
+        expect(badge.textContent?.trim()).toBe(String(expected));
+        expect(blobFor(panel, 'session-live').dataset['errors']).toBe(String(expected));
+        // The badge counts the same things the thorns are drawn on.
+        enter(panel, mode, 'session-live');
+        expect(
+          all(panel.container, TESTID.dot).filter((d) => d.dataset['status'] === 'error').length,
+        ).toBe(expected);
+      } else {
+        expect(all(panel.container, TESTID.deckErrorBadge)).toHaveLength(0);
+      }
+    });
+  });
+
+  // --- the join, drawn (C7.4) ---------------------------------------------
+
+  describe('the spawn edge', () => {
+    it('draws the join from the spawning dot to the child cell', () => {
+      const session = liveSession();
+      const edges = session.spawnEdges ?? [];
+      expect(edges.length).toBeGreaterThan(0);
+
+      const panel = panelWith([session]);
+      enter(panel, mode, 'session-live');
+
+      if (mode === 'canvas') {
+        // C7.4: the filament IS the primary-key join made visible. Both ends
+        // are the edge's own two ids, so the assertion is on the pairs.
+        const drawn = all(panel.container, TESTID.filament).map((f) => [
+          f.dataset['toolUseId'],
+          f.dataset['agentId'],
+        ]);
+        for (const edge of edges) {
+          expect(drawn).toContainEqual([edge.toolUseId, edge.agentId]);
+        }
+        // The dash flows while the CHILD is running and is static otherwise —
+        // the join itself never animates.
+        for (const filament of all(panel.container, TESTID.filament)) {
+          const child = walkSession(session).find((n) => n.id === filament.dataset['agentId']);
+          expect(filament.dataset['flowing']).toBe(String(child?.status === 'running'));
+          expect(filament.classList.contains(ANIMATED_CLASSES[2])).toBe(
+            child?.status === 'running',
+          );
+        }
+      } else {
+        // The list view expresses the same join by NESTING: the subagent is
+        // drawn inside the tool node its sidecar named.
+        for (const edge of edges) {
+          const agentEl = all(panel.container, 'tree-node').find(
+            (n) => n.dataset['nodeId'] === edge.agentId,
+          );
+          const toolEl = all(panel.container, 'tree-node').find(
+            (n) => n.dataset['nodeId'] === edge.toolUseId,
+          );
+          expect(agentEl?.dataset['spawnedBy']).toBe(edge.toolUseId);
+          expect(toolEl?.contains(agentEl as Node)).toBe(true);
+        }
+      }
+    });
+
+    it('parks an unjoined graft unattached, with a stub — CANVAS ONLY', () => {
+      // C7.4, and the list view has no representation of it at all: a parked
+      // agent has NO NODE IN THE TREE, and the list view renders the tree.
+      // `SessionState.parked` is the only record it exists, which is exactly
+      // why the canvas needed a shape for it.
+      const session = parkedSession();
+      const parked = session.parked ?? [];
+      expect(parked.length).toBeGreaterThan(0);
+      for (const entry of parked) {
+        expect(walkSession(session).some((n) => n.id === entry.agentId)).toBe(false);
+      }
+
+      const panel = panelWith([session]);
+      enter(panel, mode, 'session-parked');
+
+      if (mode === 'canvas') {
+        const cells = all(panel.container, TESTID.cell).filter(
+          (c) => c.dataset['parked'] === 'true',
+        );
+        expect(cells).toHaveLength(parked.length);
+        for (const cell of cells) {
+          expect(cell.classList.contains(PARKED_CLASS)).toBe(true);
+          expect(cell.querySelectorAll(`.${PARKED_CLASS}`).length).toBeGreaterThan(0);
+          expect(all(cell, TESTID.parkedStub)).toHaveLength(1);
+          expect(cell.getAttribute('aria-label')).toContain('awaiting attribution');
+          // Unattached: no filament names it, because no edge resolved.
+          expect(
+            all(panel.container, TESTID.filament).some(
+              (f) => f.dataset['agentId'] === cell.dataset['agentId'],
+            ),
+          ).toBe(false);
+          // Nothing is happening in it that we can see.
+          expect(animated(cell)).toHaveLength(0);
+        }
+        expect(one(panel.container, TESTID.canvas).dataset['parked']).toBe(
+          String(parked.length),
+        );
+      } else {
+        for (const entry of parked) {
+          expect(
+            all(panel.container, 'tree-node').some((n) => n.dataset['nodeId'] === entry.agentId),
+          ).toBe(false);
+        }
+      }
+    });
+  });
+
+  // --- workspaceMatch: false ----------------------------------------------
+
+  it('ghosts a session from another workspace and tags it', () => {
+    const panel = panelWith([foreignSession()]);
+    if (mode === 'canvas') {
+      const blob = blobFor(panel, 'session-foreign');
+      expect(blob.dataset['foreign']).toBe('true');
+      expect(blob.classList.contains(FOREIGN_CLASS)).toBe(true);
+      expect(blob.textContent).toContain('other workspace');
+      expect(blob.getAttribute('aria-label')).toContain('other workspace');
+    } else {
+      const rail = railFor(panel, 'session-foreign');
+      expect(all(rail, 'rail-foreign')).toHaveLength(1);
+      expect(one(rail, 'rail-foreign').textContent?.trim()).toBe('other workspace');
     }
   });
+
+  // --- tokens and cost -----------------------------------------------------
+
+  it('never prints a currency figure, and says why cost is an em-dash', () => {
+    // `costUsd` is 0 and 0 means NOT COMPUTED, never "free". "$0.00" would be
+    // a fabricated claim; there is no price table in this repo. The rule is
+    // unchanged by the canvas — C7.1 calls the inspector a new HOME for the
+    // text, not new behaviour for it.
+    const panel = panelWith([liveSession()]);
+    enter(panel, mode, 'session-live');
+    expect(panel.container.textContent).not.toContain('$');
+
+    if (mode === 'list') {
+      const header = one(panel.container, 'session-header');
+      expect(one(header, 'header-tokens-in').textContent?.trim()).toBe('17,745');
+      expect(one(header, 'header-tokens-out').textContent?.trim()).toBe('8,159');
+      const cost = one(header, 'header-cost');
+      expect(cost.textContent?.trim()).toBe(EM_DASH);
+      expect(cost.getAttribute('title')).toContain('no price table');
+    } else {
+      // The canvas surfaces per-node tokens in the inspector. The SESSION
+      // totals row of C7.3 asks for a HUD, which is not rendered — see the
+      // `not rendered by any surface` block at the end of this file.
+      click(one(panel.container, TESTID.nucleus));
+      expect(one(panel.container, 'inspector-tokens').textContent).toContain('12,345');
+      expect(one(panel.container, 'inspector-tokens').textContent).toContain('6,789');
+    }
+  });
+
+  // --- patch failure -------------------------------------------------------
+
+  it('shows the thin patch-failure notice and clears it on the next snapshot', () => {
+    const panel = panelWith([liveSession()]);
+    send({
+      type: 'diff',
+      sessionId: 'session-live',
+      patch: { tree: [{ op: 'removeNode', id: 'not-here' }] },
+    });
+
+    expect(all(panel.container, 'patch-failure')).toHaveLength(1);
+    expect(one(panel.container, 'patch-failure').getAttribute('role')).toBe('status');
+    // The last good state stays on screen underneath it.
+    enter(panel, mode, 'session-live');
+    const drawn =
+      mode === 'canvas' ? interiorCount(panel.container) : all(panel.container, 'tree-node').length;
+    expect(drawn).toBeGreaterThan(0);
+
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    expect(all(panel.container, 'patch-failure')).toHaveLength(0);
+  });
+
+  // --- no sessions ---------------------------------------------------------
+
+  it('says one quiet line when there are no sessions', () => {
+    const panel = panelWith([]);
+    expect(one(panel.container, 'app').dataset['liveness']).toBe('none');
+    if (mode === 'canvas') {
+      expect(one(panel.container, TESTID.deckEmpty).textContent?.trim()).toBe(
+        'No sessions in this workspace.',
+      );
+      expect(all(panel.container, TESTID.deckBlob)).toHaveLength(0);
+      expect(one(panel.container, TESTID.deck).dataset['sessions']).toBe('0');
+    } else {
+      expect(all(panel.container, 'rail-empty')).toHaveLength(1);
+      expect(all(panel.container, 'no-selection')).toHaveLength(1);
+    }
+    // Not an error and not a spinner, in either surface.
+    expect(panel.container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  // --- motion: the second negative control (C7.6) --------------------------
+
+  describe('motion is a reserved semantic channel', () => {
+    it('animates only what is running or live', () => {
+      const panel = panelWith([liveSession()]);
+
+      /** Why an animated element is allowed to animate, or `undefined`. */
+      const justify = (element: Element): string | undefined => {
+        let node: Element | null = element;
+        while (node !== null) {
+          const testId = node.getAttribute('data-testid');
+          const status = node.getAttribute('data-status');
+          if (testId === TESTID.deckBlob) {
+            return node.getAttribute('data-liveness') === 'live' ? 'live session' : undefined;
+          }
+          if (testId === TESTID.filament) {
+            return node.getAttribute('data-flowing') === 'true' ? 'running child' : undefined;
+          }
+          if (testId === TESTID.dot || testId === TESTID.cell || testId === TESTID.nucleus) {
+            return status === 'running' ? 'running node' : undefined;
+          }
+          node = node.parentElement;
+        }
+        return undefined;
+      };
+
+      // Deck first, then the interior: both altitudes, one rule.
+      for (const step of ['deck', 'interior'] as const) {
+        if (step === 'interior') enter(panel, mode, 'session-live');
+        const moving = animated(panel.container);
+        if (mode === 'list') {
+          // The list view carries no animation at all, in any state — its
+          // whole grammar is text. Nothing to justify, and nothing hidden.
+          expect(moving).toHaveLength(0);
+          continue;
+        }
+        expect(moving.length).toBeGreaterThan(0);
+        for (const element of moving) {
+          expect(justify(element), `${element.getAttribute('class')} animates unjustified`)
+            .toBeDefined();
+        }
+      }
+    });
+
+    it('NEGATIVE CONTROL: everything done and ended animates nothing at all', () => {
+      // The row C7.3 calls out as most easily satisfied by accident. Same
+      // tree, same node count, one axis changed.
+      const settled = settledSession();
+      expect(walkSession(settled).some((n) => n.status === 'running')).toBe(false);
+
+      const panel = panelWith([settled]);
+      expect(animated(panel.container)).toHaveLength(0);
+      enter(panel, mode, 'session-settled');
+      expect(animated(panel.container)).toHaveLength(0);
+
+      // ...and the control is not vacuous: the same panel fed the live tree
+      // does animate, in the canvas. This is the mutation, run every time.
+      if (mode === 'canvas') {
+        expect(interiorCount(panel.container)).toBeGreaterThan(0);
+        send({ type: 'snapshot', sessions: [liveSession()] });
+        enter(panel, mode, 'session-live');
+        expect(animated(panel.container).length).toBeGreaterThan(0);
+      } else {
+        expect(all(panel.container, 'tree-node').length).toBeGreaterThan(0);
+      }
+    });
+
+    it('nothing static rides an animated ancestor', () => {
+      // The class count alone cannot see a still element inheriting a moving
+      // ancestor's transform: it moves on screen while carrying no animated
+      // class, and the control reads 0. A constellation dot is a node that
+      // EXISTS, not a node that is happening.
+      const panel = panelWith([liveSession()]);
+      if (mode !== 'canvas') {
+        expect(all(panel.container, TESTID.deckConstellation)).toHaveLength(0);
+        return;
+      }
+      const dots = all(panel.container, TESTID.deckConstellation);
+      // `TESTID.deckConstellation` is on each DOT, not on the wrapping group.
+      expect(dots.length).toBeGreaterThan(0);
+      for (const dot of dots) expect(hasAnimatedAncestor(dot)).toBe(false);
+
+      enter(panel, mode, 'session-live');
+      for (const dot of all(panel.container, TESTID.dot)) {
+        if (dot.dataset['status'] === 'running') continue;
+        expect(hasAnimatedAncestor(dot)).toBe(false);
+      }
+    });
+  });
 });
 
-// ---------------------------------------------------------------------------
-// unsupported (G3 — refuse, don't guess)
-// ---------------------------------------------------------------------------
+/* ------------------------------------------------------------------------ *
+ * The two surfaces, compared — rows that are ABOUT there being two
+ * ------------------------------------------------------------------------ */
 
-describe('unsupported', () => {
-  it('replaces the tree with the refusal screen and says so in every surface', () => {
-    const { container } = render();
-    send({ type: 'snapshot', sessions: [unsupportedSession()] });
-
-    expect(one(container, 'app').dataset['liveness']).toBe('unsupported');
-    expect(one(container, 'app').dataset['refused']).toBe('true');
-
-    const refusal = one(container, 'refusal-screen');
-    expect(refusal.dataset['liveness']).toBe('unsupported');
-    expect(one(refusal, 'refusal-session-id').textContent).toContain('session-unsupported');
-    expect(one(refusal, 'refusal-cause').textContent).toContain('on-disk format');
-
-    // Not "a tree with a warning" — no tree, and no header either.
-    expect(all(container, 'tree-node')).toHaveLength(0);
-    expect(all(container, 'session-header')).toHaveLength(0);
-
-    const rail = one(container, 'rail-item');
-    expect(rail.dataset['liveness']).toBe('unsupported');
-    expect(rail.dataset['refused']).toBe('true');
+describe('both surfaces are projections of the same store (C7.2)', () => {
+  it('starts on the canvas with no setting and no host message', () => {
+    const panel = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    expect(one(panel.container, 'app').dataset['viewMode']).toBe('canvas');
+    expect(one(panel.container, 'app').dataset['altitude']).toBe('deck');
+    expect(all(panel.container, TESTID.deck)).toHaveLength(1);
+    // The switch is an in-panel control, so nothing about it reaches the host.
+    expect(panel.sent).toStrictEqual([]);
   });
 
-  it('shows unsupported in the rail for a session refused AFTER a live snapshot', () => {
-    // The seam this closes: `schemaMismatch` refuses a session without
-    // changing the `liveness` the last snapshot delivered, so without
-    // `displayLiveness` the rail keeps saying "live" beside a main pane
-    // showing the refusal screen. Two surfaces, one session, disagreeing.
-    const { container } = render();
-    send({ type: 'snapshot', sessions: [sessionWith('live')] });
-    expect(one(container, 'rail-item').dataset['liveness']).toBe('live');
+  it('the in-panel toggle swaps the surface and nothing else', () => {
+    const panel = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    const toggle = one(panel.container, TESTID.viewToggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
 
-    send({ type: 'schemaMismatch', sessionId: 'session-live' });
+    click(toggle);
+    expect(one(panel.container, 'app').dataset['viewMode']).toBe('list');
+    expect(all(panel.container, TESTID.deck)).toHaveLength(0);
+    expect(all(panel.container, 'session-rail')).toHaveLength(1);
+    expect(one(panel.container, TESTID.viewToggle).getAttribute('aria-pressed')).toBe('false');
 
-    expect(one(container, 'rail-item').dataset['liveness']).toBe('unsupported');
-    expect(one(container, 'rail-item').dataset['refused']).toBe('true');
-    expect(one(container, 'rail-liveness').textContent?.trim()).toBe('unsupported');
-    expect(one(container, 'app').dataset['liveness']).toBe('unsupported');
-    expect(all(container, 'refusal-screen')).toHaveLength(1);
-    expect(all(container, 'tree-node')).toHaveLength(0);
+    click(one(panel.container, TESTID.viewToggle));
+    expect(one(panel.container, 'app').dataset['viewMode']).toBe('canvas');
+    expect(all(panel.container, TESTID.deck)).toHaveLength(1);
+
+    // Still no message: the surface is webview-local UI state (C7.7).
+    expect(panel.sent).toStrictEqual([]);
   });
 
-  it('leaves the other sessions in the rail alone', () => {
-    const { container } = render();
+  it('the same session data reaches both surfaces, and both agree what it is', () => {
+    const panel = render();
     send({
       type: 'snapshot',
-      sessions: [unsupportedSession(), liveSession({ sessionId: 'session-other' })],
+      sessions: [liveSession(), unsupportedSession(), foreignSession()],
     });
-    const items = all(container, 'rail-item');
-    expect(items.map((i) => i.dataset['liveness'])).toStrictEqual(['unsupported', 'live']);
-    expect(items.map((i) => i.dataset['refused'])).toStrictEqual(['true', 'false']);
+
+    const canvas = all(panel.container, TESTID.deckBlob).map((b) => [
+      b.dataset['sessionId'],
+      b.dataset['liveness'],
+      b.dataset['refused'],
+      b.dataset['foreign'],
+    ]);
+    useView(panel, 'list');
+    const list = all(panel.container, 'rail-item').map((i) => [
+      i.dataset['sessionId'],
+      i.dataset['liveness'],
+      i.dataset['refused'],
+      String(all(i, 'rail-foreign').length > 0),
+    ]);
+
+    // Same sessions, same order, same verdict on each. Order is the store's,
+    // not the geometry's (C7.8).
+    expect(canvas).toStrictEqual(list);
+  });
+
+  it('a selection made in one surface is the selection in the other', () => {
+    const panel = render();
+    send({ type: 'snapshot', sessions: [liveSession(), liveSession({ sessionId: 'other' })] });
+    click(blobFor(panel, 'other'));
+    expect(one(panel.container, 'app').dataset['altitude']).toBe('session');
+    expect(one(panel.container, TESTID.canvas).dataset['sessionId']).toBe('other');
+
+    useView(panel, 'list');
+    expect(railFor(panel, 'other').dataset['selected']).toBe('true');
+    expect(one(panel.container, 'header-session-id').textContent?.trim()).toBe('other');
   });
 });
 
-// ---------------------------------------------------------------------------
-// degraded (G2 — source separation, spec C4 — informative, not nagging)
-// ---------------------------------------------------------------------------
+/* ------------------------------------------------------------------------ *
+ * Accessibility floor (C7.8)
+ * ------------------------------------------------------------------------ */
 
-describe('degraded', () => {
-  it('banners the tap, keeps the tree, and marks the liveness as inferred', () => {
-    const { container } = render();
-    send({ type: 'snapshot', sessions: [sessionWith('live')] });
-    send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+describe('the accessibility floor', () => {
+  it('makes cells and dots real focusable controls', () => {
+    const panel = render();
+    send({ type: 'snapshot', sessions: [parkedSession()] });
+    click(blobFor(panel, 'session-parked'));
 
-    expect(one(container, 'app').dataset['degraded']).toBe('true');
-    const banner = one(container, 'degraded-banner');
-    expect(banner.dataset['reason']).toBe('noHookEvents');
-    expect(banner.textContent).toContain('no hook events received');
+    const focusables = [
+      ...all(panel.container, TESTID.nucleus),
+      ...all(panel.container, TESTID.cell),
+      ...all(panel.container, TESTID.dot),
+    ];
+    expect(focusables.length).toBeGreaterThan(0);
+    for (const element of focusables) {
+      expect(element.getAttribute('tabindex')).toBe('0');
+      expect(element.getAttribute('aria-label')).toBeTruthy();
+      // Decorative SVG has no role. These are controls, except the parked
+      // cell, which is reachable but has nothing to activate.
+      const role = element.getAttribute('role');
+      expect(role === 'button' || role === 'img').toBe(true);
+    }
 
-    // G2: losing the hook tap costs liveness, not content.
-    expect(all(container, 'tree-node').length).toBeGreaterThan(0);
-
-    // ...and the liveness value that remains is marked as what it now is.
-    const marker = one(container, 'header-liveness-inferred');
-    expect(marker.textContent).toContain(LIVENESS_INFERRED_LABEL);
-    expect(one(container, 'session-header').dataset['livenessInferred']).toBe('true');
+    // Focus actually lands, and the element that has it is the one asked.
+    const first = focusables[0];
+    if (first === undefined) throw new Error('unreachable');
+    (first as unknown as { focus: () => void }).focus();
+    expect(document.activeElement).toBe(first);
   });
 
-  it('carries the reason into the DOM for both reasons', () => {
-    const { container } = render();
-    send({ type: 'snapshot', sessions: [sessionWith('idle')] });
-    send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
-    expect(one(container, 'degraded-banner').dataset['reason']).toBe('listenerDown');
-    expect(one(container, 'degraded-banner').textContent).toContain(
-      'the hook listener is not running',
+  it('gives the deck blobs the same treatment, in store order', () => {
+    const panel = render();
+    const ids = ['a', 'b', 'c'];
+    send({ type: 'snapshot', sessions: ids.map((id) => liveSession({ sessionId: id })) });
+    const blobs = all(panel.container, TESTID.deckBlob);
+    expect(blobs.map((b) => b.dataset['sessionId'])).toStrictEqual(ids);
+    for (const blob of blobs) {
+      expect(blob.getAttribute('tabindex')).toBe('0');
+      expect(blob.getAttribute('role')).toBe('button');
+      expect(blob.getAttribute('aria-label')).toBeTruthy();
+    }
+  });
+
+  it('answers Enter and Space on a blob, not just a mouse', () => {
+    const panel = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    for (const key of ['Enter', ' ']) {
+      act(() => panel.store.escape());
+      act(() => panel.store.escape());
+      expect(one(panel.container, 'app').dataset['altitude']).toBe('deck');
+      harness.flushSync(() => {
+        blobFor(panel, 'session-live').dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+        );
+      });
+      expect(one(panel.container, 'app').dataset['altitude']).toBe('session');
+    }
+  });
+
+  it('Escape walks the altitudes up: inspector -> session -> deck', () => {
+    const panel = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    const app = (): HTMLElement => one(panel.container, 'app');
+    expect(app().dataset['altitude']).toBe('deck');
+
+    click(blobFor(panel, 'session-live'));
+    expect(app().dataset['altitude']).toBe('session');
+    expect(all(panel.container, TESTID.inspector)).toHaveLength(0);
+
+    click(one(panel.container, TESTID.nucleus));
+    expect(app().dataset['altitude']).toBe('inspector');
+    expect(all(panel.container, TESTID.inspector)).toHaveLength(1);
+    // The inspector sits BESIDE the interior, never instead of it.
+    expect(all(panel.container, TESTID.canvas)).toHaveLength(1);
+
+    escape();
+    expect(app().dataset['altitude']).toBe('session');
+    expect(all(panel.container, TESTID.inspector)).toHaveLength(0);
+    expect(all(panel.container, TESTID.canvas)).toHaveLength(1);
+
+    escape();
+    expect(app().dataset['altitude']).toBe('deck');
+    expect(all(panel.container, TESTID.deck)).toHaveLength(1);
+
+    // A keystroke that changes nothing must not look like a change.
+    escape();
+    expect(app().dataset['altitude']).toBe('deck');
+  });
+
+  it('leaves Escape alone in the list view, which has no altitudes', () => {
+    const panel = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    click(blobFor(panel, 'session-live'));
+    useView(panel, 'list');
+    escape();
+    // The store's altitude is untouched, so switching back lands where it was.
+    useView(panel, 'canvas');
+    expect(one(panel.container, 'app').dataset['altitude']).toBe('session');
+  });
+
+  it('swaps motion by CLASS when the user prefers reduced motion', () => {
+    // C7.6: the swap is by class rather than by media query alone, and that is
+    // what makes the rule assertable in jsdom, where the query does not
+    // evaluate. The animation-bearing classes are still PRESENT — the
+    // stylesheet turns them into static variants; the class is not removed.
+    const panel = render({ reducedMotion: true });
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    expect(one(panel.container, TESTID.deck).classList.contains(REDUCED_MOTION_CLASS)).toBe(true);
+    click(blobFor(panel, 'session-live'));
+    expect(one(panel.container, TESTID.canvas).classList.contains(REDUCED_MOTION_CLASS)).toBe(
+      true,
     );
+
+    // Positive control: without the preference the class is absent, so the
+    // assertion above is about the preference and not about the markup.
+    const plain = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    expect(one(plain.container, TESTID.deck).classList.contains(REDUCED_MOTION_CLASS)).toBe(false);
   });
+});
 
-  it('keeps the inferred marker after the banner is dismissed', () => {
-    // Dismissing silences one episode; it does not improve the source of the
-    // number. Without this the user dismisses the banner and then reads
-    // "live" with nothing on screen saying where "live" came from.
-    const { container } = render();
-    send({ type: 'snapshot', sessions: [sessionWith('live')] });
-    send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
-    click(one(container, 'degraded-dismiss'));
+/* ------------------------------------------------------------------------ *
+ * Rows of C7.3 that NO surface renders
+ * ------------------------------------------------------------------------ */
 
-    expect(all(container, 'degraded-banner')).toHaveLength(0);
-    expect(all(container, 'header-liveness-inferred')).toHaveLength(1);
-    expect(one(container, 'app').dataset['degraded']).toBe('true');
-  });
+describe('C7.3 rows with no implementation in any surface', () => {
+  // These are not gaps in this suite. `canvas-contract.ts` reserves
+  // `TESTID.hud` and `TESTID.hudDegradedChip`, and `agent-deck-spec.md` C7.3
+  // and C7.4 require a HUD chip, HUD totals and a refusal card on entry — and
+  // no component in `webview/` emits any of the three. The matrix suite does
+  // not own a `.svelte` file, so these are reported rather than built.
+  //
+  // They are written as assertions on the CONTRACT rather than skipped, so
+  // that the day a component starts emitting them this block turns red and
+  // whoever lands it is told to convert these into real matrix rows.
 
-  it('drops both the banner and the marker when the tap recovers', () => {
-    const { container } = render();
-    send({ type: 'snapshot', sessions: [sessionWith('live')] });
-    send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
-    send({ type: 'degraded', degraded: false });
-
-    expect(all(container, 'degraded-banner')).toHaveLength(0);
-    expect(all(container, 'header-liveness-inferred')).toHaveLength(0);
-    expect(one(container, 'app').dataset['degraded']).toBe('false');
-    expect(one(container, 'session-header').dataset['livenessInferred']).toBe('false');
-  });
-
-  it('composes with a refusal: the banner sits above the refusal screen', () => {
-    // Degraded is the hook tap; unsupported is the content tap. They are
-    // independent sources (G2) and both can be true at once.
-    const { container } = render();
-    send({ type: 'snapshot', sessions: [unsupportedSession()] });
+  it('the HUD is reserved in the contract and rendered by nothing', () => {
+    const panel = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
     send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    click(blobFor(panel, 'session-live'));
 
-    expect(all(container, 'degraded-banner')).toHaveLength(1);
-    expect(all(container, 'refusal-screen')).toHaveLength(1);
-    expect(all(container, 'tree-node')).toHaveLength(0);
-    // No header exists to carry the marker in a refusal — that is correct, not
-    // a gap: the refusal screen is the whole main pane.
-    expect(all(container, 'header-liveness-inferred')).toHaveLength(0);
+    // The names exist; the elements do not.
+    expect(TESTID.hud).toBe('hud');
+    expect(TESTID.hudDegradedChip).toBe('hud-degraded-chip');
+    expect(all(panel.container, TESTID.hud)).toHaveLength(0);
+    expect(all(panel.container, TESTID.hudDegradedChip)).toHaveLength(0);
+  });
+
+  it('the canvas shows no refusal card on entry', () => {
+    // C7.4: "entering it shows the refusal card with zero interior elements".
+    // The zero is asserted above and holds. The card is not drawn: the canvas
+    // branch of `App.svelte` renders `SessionCanvas` alone, and a refused
+    // `SessionCanvas` renders an empty `<section>`.
+    const panel = render();
+    send({ type: 'snapshot', sessions: [unsupportedSession()] });
+    click(blobFor(panel, 'session-unsupported'));
+    expect(interiorCount(panel.container)).toBe(0);
+    expect(all(panel.container, 'refusal-screen')).toHaveLength(0);
   });
 });

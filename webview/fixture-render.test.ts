@@ -50,7 +50,9 @@ import { SessionModel } from '../src/model/session.js';
 import { SessionBridge } from '../src/bridge/messages.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
-import { all, loadHarness, one } from './testkit.js';
+import { all, loadHarness, one, press } from './testkit.js';
+import { TESTID } from './canvas-contract.js';
+import type { ViewMode } from './canvas-contract.js';
 import { COLLAPSED_PREVIEW_CHARS, EM_DASH } from './format.js';
 
 // Resolved against the process working directory, which vitest sets to the
@@ -272,11 +274,24 @@ interface Mounted {
 
 const mounted: Mounted[] = [];
 
-function render(): Mounted {
+/**
+ * Mount the panel.
+ *
+ * `mode` defaults to the LIST surface, because everything this file established
+ * in Phase 3 is stated in terms of tree nodes and rail rows, and those
+ * assertions are unchanged by the canvas — "kept, not deleted" (C7.2) means
+ * they must still hold. The canvas section at the end of the file passes
+ * `'canvas'` and drives the same fixture-derived states through the other
+ * surface, so the composition is closed for both.
+ */
+function render(mode: ViewMode = 'list'): Mounted {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const sent: WebviewToHostMessage[] = [];
   const started = harness.start(container, { postMessage: (m) => sent.push(m) });
+  harness.flushSync(() => {
+    started.store.setViewMode(mode);
+  });
   let disposed = false;
   const record: Mounted = {
     container,
@@ -639,5 +654,203 @@ describe('the five UI states, computed by the host rather than set by hand', () 
     expect(all(panel.container, 'degraded-banner')).toHaveLength(0);
     expect(one(panel.container, 'app').dataset['degraded']).toBe('false');
     expect(all(panel.container, 'header-liveness-inferred')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The same host-produced states, through the CANVAS surface
+// ---------------------------------------------------------------------------
+//
+// Everything above drives the list view, because that is what these fixtures
+// established in Phase 3. This section closes the same composition through the
+// other surface: no hand-made `SessionState` anywhere, the real graft, the
+// real liveness engine, the real bridge — rendered as blobs, cells and dots.
+//
+// The numbers are DERIVED from the host's own output every time, never written
+// down. A re-harvest that changes the fixture set must not read as a
+// regression here.
+
+describe('the canvas surface, fed the same host-produced states', () => {
+  /** The blob for one session on the deck. */
+  function blob(container: HTMLElement, sessionId: string): HTMLElement {
+    const found = all(container, TESTID.deckBlob).filter(
+      (b) => b.dataset['sessionId'] === sessionId,
+    );
+    const first = found[0];
+    if (found.length !== 1 || first === undefined) {
+      throw new Error(`expected one blob for ${sessionId}, found ${found.length}`);
+    }
+    return first;
+  }
+
+  /** MouseEvent, never `click()`: every element on this surface is SVG. */
+  function activate(element: Element): void {
+    harness.flushSync(() => {
+      press(element);
+    });
+  }
+
+  it('puts one blob on the deck per session the host emitted, in the host order', async () => {
+    const panel = render('canvas');
+    const run = await hostRun(panel);
+
+    const drawn = all(panel.container, TESTID.deckBlob).map((b) => b.dataset['sessionId']);
+    expect(drawn).toStrictEqual([...run.states.keys()]);
+    // C7.8: screen-reader order follows the store, not the geometry — and the
+    // store's order is the order the host's snapshot arrived in.
+    expect(drawn.length).toBeGreaterThan(0);
+
+    // Blob size is derived from the node count the store counted, which is the
+    // node count the host produced. Compared against the model, not a literal.
+    for (const [sessionId, state] of run.states) {
+      const expected = walkState(state).length;
+      expect(Number(blob(panel.container, sessionId).dataset['nodes'])).toBe(expected);
+    }
+  });
+
+  it('draws every agent as a cell and every placed tool as a dot', async () => {
+    const panel = render('canvas');
+    const run = await hostRun(panel);
+
+    const sessionId = [...run.states.keys()][0];
+    if (sessionId === undefined) throw new Error('no captured sessions');
+    const state = run.states.get(sessionId);
+    if (state === undefined) throw new Error('unreachable');
+
+    activate(blob(panel.container, sessionId));
+    expect(one(panel.container, TESTID.canvas).dataset['sessionId']).toBe(sessionId);
+
+    // Every agent the host produced has a cell — the nucleus is the main one.
+    const agentIds = walkState(state).filter(isAgentNode).map((n) => n.id).sort();
+    const cellIds = [
+      ...all(panel.container, TESTID.nucleus),
+      ...all(panel.container, TESTID.cell),
+    ]
+      .map((c) => c.dataset['agentId'] ?? '')
+      .sort();
+    expect(cellIds).toStrictEqual(agentIds);
+    expect(agentIds.length).toBeGreaterThan(1);
+
+    // Tool dots are a SUBSET, never a superset: a `tool_use` id is not unique
+    // across a session tree and placement is first-writer-wins, so the layout
+    // may hold fewer entries than there are tool nodes. What must never happen
+    // is a dot for a tool the host did not send.
+    const toolIds = new Set(walkState(state).filter((n) => !isAgentNode(n)).map((n) => n.id));
+    const dotIds = all(panel.container, TESTID.dot).map((d) => d.dataset['toolId'] ?? '');
+    expect(dotIds.length).toBeGreaterThan(0);
+    expect(dotIds.length).toBeLessThanOrEqual(toolIds.size);
+    for (const id of dotIds) expect(toolIds.has(id)).toBe(true);
+    expect(new Set(dotIds).size).toBe(dotIds.length);
+  });
+
+  it('draws the filament for every spawn edge whose two ends are both placed', async () => {
+    // C7.4: the join, drawn. The edges come from the host's copy of the
+    // sidecar's `meta.toolUseId` primary-key join — the whole product bet.
+    const panel = render('canvas');
+    const run = await hostRun(panel);
+
+    let checked = 0;
+    for (const [sessionId, state] of run.states) {
+      const edges = state.spawnEdges ?? [];
+      if (edges.length === 0) continue;
+      activate(blob(panel.container, sessionId));
+
+      const cells = new Set(
+        [...all(panel.container, TESTID.nucleus), ...all(panel.container, TESTID.cell)].map(
+          (c) => c.dataset['agentId'],
+        ),
+      );
+      const dots = new Set(all(panel.container, TESTID.dot).map((d) => d.dataset['toolId']));
+      const placed = edges.filter((e) => cells.has(e.agentId) && dots.has(e.toolUseId));
+
+      const drawn = all(panel.container, TESTID.filament).map((f) => [
+        f.dataset['toolUseId'],
+        f.dataset['agentId'],
+      ]);
+      expect(drawn).toHaveLength(placed.length);
+      for (const edge of placed) expect(drawn).toContainEqual([edge.toolUseId, edge.agentId]);
+      checked += placed.length;
+
+      harness.flushSync(() => {
+        panel.store.escape();
+      });
+    }
+    // The capture must carry at least one resolved join, or this test asserts
+    // nothing. Loud failure beats a silent pass.
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('unsupported: a layout the real fingerprint refuses draws ZERO interior elements', async () => {
+    // The same refusal the list half asserts, on the canvas: G3's "no tree at
+    // all" restated as an element count of 0 (C7.4).
+    const layout = await refusedLayout();
+    const panel = render('canvas');
+    const run = await hostRun(panel, async ({ model, slug }) => {
+      model.ingestGraftResult(layout.sessionId, slug, await graftSession(layout.path));
+    });
+
+    const refused = run.states.get(layout.sessionId);
+    expect(refused?.schemaOk).toBe(false);
+    expect(run.wire.some((m) => m.type === 'schemaMismatch')).toBe(true);
+
+    const cracked = blob(panel.container, layout.sessionId);
+    expect(cracked.dataset['refused']).toBe('true');
+    expect(cracked.dataset['liveness']).toBe('unsupported');
+    expect(cracked.dataset['nodes']).toBe('0');
+
+    activate(cracked);
+    expect(one(panel.container, TESTID.canvas).dataset['refused']).toBe('true');
+    for (const testId of [
+      TESTID.nucleus,
+      TESTID.cell,
+      TESTID.dot,
+      TESTID.filament,
+      TESTID.parkedStub,
+      TESTID.elidedBadge,
+    ]) {
+      expect(all(panel.container, testId), testId).toHaveLength(0);
+    }
+  });
+
+  it('G4: no thinking signature bytes reach the canvas, inspector included', async () => {
+    const panel = render('canvas');
+    const run = await hostRun(panel);
+
+    // Open every dot and cell of every session in turn, so the assertion is
+    // about what CAN be shown rather than about what happens to be collapsed.
+    for (const sessionId of run.states.keys()) {
+      activate(blob(panel.container, sessionId));
+      const pickable = [
+        ...all(panel.container, TESTID.nucleus),
+        ...all(panel.container, TESTID.cell),
+        ...all(panel.container, TESTID.dot),
+      ];
+      for (const element of pickable) {
+        activate(element);
+        const expand = all(panel.container, 'inspector-expand')[0];
+        if (expand !== undefined) activate(expand);
+      }
+      harness.flushSync(() => {
+        panel.store.escape();
+        panel.store.escape();
+      });
+    }
+    const shown = panel.container.textContent ?? '';
+    expect(shown.length).toBeGreaterThan(0);
+
+    const signatures: string[] = [];
+    for (const sessionId of run.sessionIds) {
+      const text = await readFile(join(run.slugDir, `${sessionId}.jsonl`), 'utf8');
+      for (const match of text.matchAll(/"signature":"([^"\\]{40,})"/g)) {
+        const value = match[1];
+        if (value !== undefined) signatures.push(value);
+      }
+    }
+    expect(signatures.length).toBeGreaterThan(0);
+    for (const signature of signatures) {
+      expect(shown).not.toContain(signature.slice(0, 64));
+    }
+    expect(shown).not.toContain('signature');
+    expect(shown).not.toContain('"thinking"');
   });
 });

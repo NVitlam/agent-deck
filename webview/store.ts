@@ -36,6 +36,7 @@ import { isAgentNode } from '../src/model/events.js';
 import { applySessionPatch } from '../src/bridge/apply.js';
 import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
 import type { Altitude, ViewMode } from './canvas-contract.js';
+import { countNodes } from './layout.js';
 
 /** One row of the left rail. */
 export interface SessionSummary {
@@ -46,6 +47,39 @@ export interface SessionSummary {
   /** True when the session must render the refusal screen instead of a tree. */
   refused: boolean;
   label: string;
+  /**
+   * Every node in the session tree, agents and tools alike, root included.
+   *
+   * Here rather than in the deck because C7.1 derives blob radius from
+   * `log(nodeCount)`, and `layout.ts:DeckSession` is exactly
+   * `{ sessionId, nodeCount }` — a summary that carries the number satisfies
+   * the layout engine directly, so no surface ever needs a whole
+   * `SessionState` just to size a blob. Counted by `layout.ts:countNodes`,
+   * which is golden-tested there; this module does not own a second walk.
+   *
+   * **0 for a refused session**, always. See {@link SessionSummary.errorCount}.
+   */
+  nodeCount: number;
+  /**
+   * Tool calls that ended in `error`, anywhere in the tree. Agent nodes with
+   * `status: 'error'` are NOT counted.
+   *
+   * That is the definition C7.3 states — *"tool `error` → red thorn,
+   * persists; count aggregates to a deck-level badge on the blob"* — and it
+   * is the one the badge needs to be honest: the badge is the deck-level
+   * aggregate of the interior's thorns, so it must count the same things the
+   * thorns are drawn on. An agent is `error` BECAUSE a tool under it failed,
+   * so counting both would report most failures twice.
+   *
+   * **0 for a refused session**, along with `nodeCount`, and that is G3 rather
+   * than tidiness: a refused session's tree was not recognised, so no number
+   * is read off it at all. A big cracked blob would be asserting "this session
+   * has a lot in it" from a layout we declined to trust — the partial render
+   * the refusal exists to prevent, in the size channel instead of the tree.
+   * A refused blob therefore draws at `layout.ts:DECK_RADIUS_MIN` and carries
+   * no badge, which is the deck saying nothing about content it refused.
+   */
+  errorCount: number;
 }
 
 /** A patch the host sent that could not be applied. */
@@ -198,6 +232,20 @@ function findNode(root: TreeNode, id: string): TreeNode | undefined {
   return undefined;
 }
 
+/**
+ * Tool nodes whose status is `error`, anywhere below `node`.
+ *
+ * Agents are walked through, never counted: see the definition on
+ * {@link SessionSummary.errorCount} for why counting both halves would
+ * double-report a single failure.
+ */
+function countToolErrors(node: TreeNode): number {
+  if (!isAgentNode(node)) return node.status === 'error' ? 1 : 0;
+  let total = 0;
+  for (const child of node.children) total += countToolErrors(child);
+  return total;
+}
+
 function summarize(state: SessionState, refused: boolean): SessionSummary {
   return {
     sessionId: state.sessionId,
@@ -206,6 +254,11 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
     liveness: state.liveness,
     refused,
     label: state.root.label !== '' ? state.root.label : state.sessionId,
+    // Recomputed per call, like every other field on the view. Both numbers
+    // are primitives, so feeding the same snapshot twice still yields a
+    // deep-equal view — there is no object identity here to flap.
+    nodeCount: refused ? 0 : countNodes(state),
+    errorCount: refused ? 0 : countToolErrors(state.root),
   };
 }
 

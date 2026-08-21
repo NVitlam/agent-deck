@@ -6,6 +6,7 @@ import type {
 } from '../src/model/events.js';
 import { createStore } from './store.js';
 import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
+import { countNodes } from './layout.js';
 import { liveSession, unsupportedSession } from './testdata.js';
 
 /**
@@ -641,5 +642,191 @@ describe('canvas state accumulates nothing either', () => {
       store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
     }
     expect(store.getView()).toEqual(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deck-facing derived numbers (spec C7.1 radius, C7.3 error badge)
+// ---------------------------------------------------------------------------
+//
+// Both live on `SessionSummary` rather than in a component, for the same
+// reason `refused` and `label` do: per-session derivation is the store's job,
+// and `layout.ts:DeckSession` is exactly `{ sessionId, nodeCount }`, so a
+// summary carrying the count feeds the layout engine with no session state in
+// between.
+
+describe('SessionSummary.nodeCount', () => {
+  it('counts every node in the tree, agents and tools alike, root included', () => {
+    // `liveSession()` is root + tool-read + tool-agent-1 + agent-1 +
+    // tool-agent-2 + agent-2 + tool-bash.
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    expect(store.getView().sessions[0]?.nodeCount).toBe(7);
+  });
+
+  it('agrees with layout.ts:countNodes rather than with a second walk', () => {
+    // The store imports `countNodes`; this pins that the summary carries the
+    // SAME number the layout goldens are cut against, so a blob's radius can
+    // never disagree with the count the deck was handed.
+    const store = createStore();
+    const session = liveSession();
+    store.handleMessage({ type: 'snapshot', sessions: [session] });
+    expect(store.getView().sessions[0]?.nodeCount).toBe(countNodes(session));
+  });
+
+  it('counts a bare root as 1', () => {
+    const store = createStore();
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [liveSession({ root: { ...liveSession().root, children: [] } })],
+    });
+    expect(store.getView().sessions[0]?.nodeCount).toBe(1);
+  });
+
+  it('tracks a diff that adds a node', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.handleMessage({
+      type: 'diff',
+      sessionId: 'session-live',
+      patch: {
+        tree: [
+          {
+            op: 'insertNode',
+            parentId: 'root',
+            index: 3,
+            node: { id: 'tool-new', toolName: 'Glob', status: 'running', inputPreview: '{}' },
+          },
+        ],
+      },
+    });
+    expect(store.getView().patchFailure).toBeUndefined();
+    expect(store.getView().sessions[0]?.nodeCount).toBe(8);
+  });
+});
+
+describe('SessionSummary.errorCount', () => {
+  it('counts tool calls that ended in error', () => {
+    // `tool-bash` is the one `status: 'error'` tool in `liveSession()`.
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    expect(store.getView().sessions[0]?.errorCount).toBe(1);
+  });
+
+  it('does NOT count an agent whose own status is error', () => {
+    // An agent is `error` because a tool under it failed, so counting both
+    // halves would report one failure twice on the deck badge. Here the agent
+    // is `error` with no failing tool anywhere: the badge must read 0.
+    const store = createStore();
+    const base = liveSession();
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [
+        liveSession({
+          root: {
+            ...base.root,
+            status: 'error',
+            children: [
+              {
+                id: 'agent-x',
+                kind: 'subagent',
+                label: 'failed subagent',
+                status: 'error',
+                spawnDepth: 1,
+                children: [
+                  { id: 'tool-ok', toolName: 'Read', status: 'done', inputPreview: '{}' },
+                ],
+                tokens: { in: 1, out: 1 },
+                startedAt: 1_000,
+              },
+            ],
+          },
+        }),
+      ],
+    });
+    expect(store.getView().sessions[0]?.errorCount).toBe(0);
+    // The agent is still counted as a NODE; only the error tally excludes it.
+    expect(store.getView().sessions[0]?.nodeCount).toBe(3);
+  });
+
+  it('counts errors at every depth, and more than one of them', () => {
+    const base = liveSession();
+    const store = createStore();
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [
+        liveSession({
+          root: {
+            ...base.root,
+            children: [
+              { id: 'tool-a', toolName: 'Bash', status: 'error', inputPreview: '{}' },
+              ...base.root.children,
+            ],
+          },
+        }),
+      ],
+    });
+    // `tool-a` at depth 1 plus `tool-bash`, which sits three levels down.
+    expect(store.getView().sessions[0]?.errorCount).toBe(2);
+  });
+
+  it('reports 0 for a tree with no failures', () => {
+    const store = createStore();
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [liveSession({ root: { ...liveSession().root, children: [] } })],
+    });
+    expect(store.getView().sessions[0]?.errorCount).toBe(0);
+  });
+});
+
+describe('a refused session reports nothing about its tree (G3)', () => {
+  it('emits 0 for both numbers when the session refused itself', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [unsupportedSession()] });
+    const summary = store.getView().sessions[0];
+    expect(summary?.refused).toBe(true);
+    // `unsupportedSession()` carries the SAME 7-node tree as `liveSession()`.
+    // Reporting 7 would size its blob from a layout we declined to trust, and
+    // reporting 1 error would draw a badge off it. Both are 0.
+    expect(summary?.nodeCount).toBe(0);
+    expect(summary?.errorCount).toBe(0);
+  });
+
+  it('drops both to 0 when a schemaMismatch arrives for a healthy session', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    expect(store.getView().sessions[0]?.nodeCount).toBe(7);
+    expect(store.getView().sessions[0]?.errorCount).toBe(1);
+    store.handleMessage({ type: 'schemaMismatch', sessionId: 'session-live' });
+    expect(store.getView().sessions[0]?.nodeCount).toBe(0);
+    expect(store.getView().sessions[0]?.errorCount).toBe(0);
+  });
+
+  it('restores both when the session stops being refused', () => {
+    // The mismatch set is dropped for a session that leaves the snapshot, so
+    // the numbers come back rather than latching at 0 for the window's life.
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession(), unsupportedSession()] });
+    store.handleMessage({ type: 'schemaMismatch', sessionId: 'session-live' });
+    expect(store.getView().sessions[0]?.nodeCount).toBe(0);
+    store.handleMessage({ type: 'snapshot', sessions: [unsupportedSession()] });
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession(), unsupportedSession()] });
+    expect(store.getView().sessions[0]?.nodeCount).toBe(7);
+    expect(store.getView().sessions[0]?.errorCount).toBe(1);
+  });
+});
+
+describe('the derived numbers accumulate nothing', () => {
+  it('is deep-equal across 50 identical snapshots, summaries included', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    const first = store.getView().sessions;
+    for (let i = 0; i < 50; i += 1) {
+      store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    }
+    expect(store.getView().sessions).toEqual(first);
+    expect(store.getView().sessions[0]?.nodeCount).toBe(7);
+    expect(store.getView().sessions[0]?.errorCount).toBe(1);
   });
 });

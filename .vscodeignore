@@ -61,6 +61,16 @@ agent-deck-spec.md
 docs/PLAN-v1.md
 docs/agent-deck-spec-v1.md
 
+# The replay theater is DEV-ONLY and must never reach a user. It is unreachable
+# from `webview/main.ts` (asserted on esbuild's import graph), and `webview/**`
+# below already keeps its source out -- but `node esbuild.config.mjs --theater`
+# emits into `dist/`, which this file ships wholesale. `--theater` is opt-in and
+# is not part of `npm run build`, so the default path was already safe; this
+# line closes the case where someone builds it before packaging. That is the
+# "manifest and build disagree" class CLAUDE.md records, and it has bitten this
+# repo before.
+dist/theater/**
+
 # The VSIX itself. `--out dist/agent-deck.vsix` writes into a directory this
 # file otherwise ships wholesale, so without this line the second `npm run
 # package` embeds the first one's artifact.

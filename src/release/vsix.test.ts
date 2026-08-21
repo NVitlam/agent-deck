@@ -40,14 +40,42 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, copyFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, copyFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
+
+/**
+ * `vsce ls` reports files that EXIST. On a fresh checkout `dist/` does not, so
+ * the exact-set assertion below would report the artifacts as missing rather
+ * than as unpackaged — a false red that says nothing about the ignore rules.
+ *
+ * Measured, not anticipated: CI run 32521971501 failed here with
+ * `dist/webview/main.{css,js}` absent while `dist/extension.cjs` was present.
+ * The asymmetry is the tell — `src/extension.test.ts` and
+ * `src/hooks/egress.test.ts` shell out to `esbuild.config.mjs --host` during
+ * the run, so the host bundle materialises as a side effect of another suite
+ * and the webview bundle does not. That made this file's result depend on test
+ * ORDER, which is a latent flake on any clean checkout, not just in CI.
+ *
+ * So build what is missing, once, and only when it is missing. On a warm tree
+ * this is a no-op; on a cold one it runs before any assertion. It does not
+ * widen the dist/-rewrite race the header describes: a cold tree is exactly the
+ * case where `webview/bundle.test.ts` would build the same bundle itself.
+ */
+const REQUIRED_ARTIFACTS = ['dist/extension.cjs', 'dist/webview/main.js', 'dist/webview/main.css'];
+
+beforeAll(() => {
+  const missing = REQUIRED_ARTIFACTS.filter((rel) => !existsSync(join(REPO_ROOT, rel)));
+  if (missing.length === 0) return;
+  execFileSync(process.execPath, ['esbuild.config.mjs'], { cwd: REPO_ROOT, encoding: 'utf8' });
+  const stillMissing = REQUIRED_ARTIFACTS.filter((rel) => !existsSync(join(REPO_ROOT, rel)));
+  expect(stillMissing, 'the build did not emit the artifacts the package needs').toEqual([]);
+}, 120_000);
 
 /** vsce's own bin entry, run through this process's node so no shell or
  *  `.cmd` shim is involved (`npx` resolution differs on Windows). */

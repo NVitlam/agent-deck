@@ -58,6 +58,18 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # FULL history, not the default shallow fetch-depth: 1.
+          #
+          # scripts/privacy-sweep.mjs sweeps every blob reachable from every
+          # ref, and the DoD calls it a "full-history sweep". On a depth-1
+          # clone it would scan the checkout under another name and still
+          # print VERDICT PASS - a clean-looking result from a corpus that
+          # isn't there. src/release/privacy.test.ts asserts history covers
+          # more bytes than the working tree precisely so that cannot pass
+          # silently, and on run 32521971501 it is what failed:
+          # "expected 4563484 to be greater than 4669570".
+          fetch-depth: 0
 
       # Set here rather than in a job-level `env:` block: the `runner` context
       # is NOT available to `jobs.<id>.env` (only github/needs/strategy/matrix/

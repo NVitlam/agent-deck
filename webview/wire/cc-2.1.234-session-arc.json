@@ -279,7 +279,8 @@
                 "depth": 1,
                 "recordedDepth": 1
               }
-            ]
+            ],
+            "parked": []
           },
           {
             "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
@@ -425,7 +426,8 @@
                 "depth": 1,
                 "recordedDepth": 1
               }
-            ]
+            ],
+            "parked": []
           },
           {
             "sessionId": "deadbeef-0000-4000-8000-000000000001",
@@ -451,7 +453,8 @@
               "outputTokens": 0,
               "costUsd": 0
             },
-            "spawnEdges": []
+            "spawnEdges": [],
+            "parked": []
           }
         ]
       }
@@ -713,7 +716,8 @@
                 "depth": 1,
                 "recordedDepth": 1
               }
-            ]
+            ],
+            "parked": []
           },
           {
             "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
@@ -859,7 +863,8 @@
                 "depth": 1,
                 "recordedDepth": 1
               }
-            ]
+            ],
+            "parked": []
           },
           {
             "sessionId": "deadbeef-0000-4000-8000-000000000001",
@@ -885,7 +890,8 @@
               "outputTokens": 0,
               "costUsd": 0
             },
-            "spawnEdges": []
+            "spawnEdges": [],
+            "parked": []
           }
         ]
       }
@@ -1179,7 +1185,8 @@
             "depth": 1,
             "recordedDepth": 1
           }
-        ]
+        ],
+        "parked": []
       },
       {
         "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
@@ -1325,7 +1332,8 @@
             "depth": 1,
             "recordedDepth": 1
           }
-        ]
+        ],
+        "parked": []
       },
       {
         "sessionId": "deadbeef-0000-4000-8000-000000000001",
@@ -1351,7 +1359,8 @@
           "outputTokens": 0,
           "costUsd": 0
         },
-        "spawnEdges": []
+        "spawnEdges": [],
+        "parked": []
       }
     ],
     "degraded": {

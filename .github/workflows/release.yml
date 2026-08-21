@@ -1,0 +1,95 @@
+# Agent Deck release: PACKAGE ONLY.
+#
+# THERE IS DELIBERATELY NO PUBLISH STEP. Phase 5's gate answer, recorded in
+# PLAN.md by the user: there is no Azure DevOps account, no 'nvitlam' publisher
+# and no PAT, so 'vsce publish' cannot run and the phase is package-only. The
+# absence is a decision, not an oversight - src/release/workflow.test.ts fails if
+# 'vsce publish' or a marketplace/PAT secret ever appears in any workflow, so a
+# publish step cannot be added by accident before a publisher exists.
+#
+# WHEN A PUBLISHER DOES EXIST, add it HERE, in this job, immediately after the
+# 'Package VSIX' step below - do not write a second workflow:
+#
+#   - name: Publish to the Marketplace
+#     run: npx vsce publish --packagePath dist/agent-deck.vsix
+#     env:
+#       VSCE_PAT: ${{ secrets.VSCE_PAT }}
+#
+# and, at the same time: create the publisher, add VSCE_PAT as a repository
+# secret, and delete the corresponding assertion in src/release/workflow.test.ts
+# (which is what makes this comment safe to leave here - the words above are in a
+# comment, and the test only inspects steps, so it stays green until someone
+# means it).
+#
+# WHAT THIS FILE CANNOT TELL YOU: nothing here has been observed running. The
+# repository is private, no v* tag is being pushed this phase, and GitHub Actions
+# cannot be executed from here. This closes the authored half of the DoD item;
+# a green run is remote-pending.
+#
+# Windows-only for the same reason as ci.yml - see the header comment there.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  # Needed by 'gh release create' to attach the VSIX to the tag's release.
+  # Nothing here needs write access to anything else.
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+
+    steps:
+      # See ci.yml: repo-local setting, must be set before the working tree
+      # exists, otherwise checkout fails with 'Filename too long'.
+      - name: Enable long paths
+        run: git config --global core.longpaths true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 'npm run package' is 'vsce package --no-dependencies --out
+      # dist/agent-deck.vsix'. vsce runs the 'vscode:prepublish' script first,
+      # and that script is 'node esbuild.config.mjs --production'.
+      #
+      # THE --production FLAG IS LOAD-BEARING, not tidiness: a default build
+      # emits 16 'fakecss:C:/Users/...' comments into the stylesheet, which is
+      # how a developer's home directory leaked into a VSIX once already. Do not
+      # replace this with 'npm run build' plus a bare vsce invocation.
+      #
+      # The gates (typecheck, lint, tests, build) are not repeated here: ci.yml
+      # runs them on the push that produced the commit this tag points at.
+      - name: Package VSIX
+        run: npm run package
+
+      - name: Upload VSIX as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-deck-vsix
+          path: dist/agent-deck.vsix
+          if-no-files-found: error
+
+      # gh is preinstalled on GitHub-hosted runners and authenticates with the
+      # job's own GITHUB_TOKEN. Used in preference to a third-party release
+      # action so this workflow pulls in no code from outside github.com's own
+      # namespaces.
+      - name: Attach VSIX to the GitHub Release for this tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/agent-deck.vsix --title "$GITHUB_REF_NAME" --generate-notes

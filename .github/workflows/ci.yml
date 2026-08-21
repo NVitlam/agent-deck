@@ -1,0 +1,121 @@
+# Agent Deck CI.
+#
+# WINDOWS ONLY, AND THAT IS A DECISION, NOT AN OMISSION.
+# This repo is Windows-native: every fixture was captured on Windows, the
+# project-slug encoding is a Windows path, and the WSL leg of the path matrix
+# (AGENT_DECK_REQUIRE_WSL=1) needs a real WSL distro that a hosted runner does
+# not have. A Linux matrix leg added on spec would be an unproven leg, and an
+# unproven leg that goes red teaches everyone to ignore CI. Add one only after
+# the suite has been made to pass on Linux locally.
+#
+# WHAT THIS FILE CANNOT TELL YOU: nothing here has been observed running. The
+# repository is private and no run has been executed against it. The workflow is
+# authored and internally consistent with package.json - src/release/workflow.test.ts
+# asserts that much and nothing more. A green run is remote-pending.
+
+name: CI
+
+on:
+  push:
+    # '**' matches branches only, so pushing a v* tag runs release.yml rather
+    # than running this workflow a second time.
+    branches:
+      - '**'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      # BEFORE checkout, deliberately. Fixture paths in this repo run ~150
+      # characters; added to the runner's workspace root they cross MAX_PATH and
+      # checkout fails outright with 'Filename too long'. core.longpaths is a
+      # repo-local setting, so it cannot be committed - it has to be set on the
+      # machine before the working tree exists.
+      - name: Enable long paths
+        run: git config --global core.longpaths true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          # package.json engines.node is '>=20'.
+          node-version: '20'
+          cache: npm
+
+      # core.autocrlf defaults true on Windows runners. .gitattributes marks
+      # fixtures/** and webview/wire/** as -text, and that rule is what keeps
+      # byte offsets and byte-exact goldens stable. Trusting it is the mistake;
+      # this asserts on the bytes that actually landed. Written in Node rather
+      # than shell because a CR literal in a shell script is the control-
+      # character trap this repo has already paid for once.
+      - name: Assert checkout is CR-free under fixtures/ and webview/wire/
+        shell: bash
+        run: |
+          node -e 'const fs=require("node:fs"),path=require("node:path");const bad=[];let n=0;const walk=(d)=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(e.isFile()){n++;if(fs.readFileSync(p).includes(13))bad.push(p);}}};for(const r of ["fixtures","webview/wire"])walk(r);console.log("files scanned: "+n+", files containing CR: "+bad.length);for(const b of bad)console.log("  "+b);if(bad.length){console.error("gitattributes -text did not survive checkout: byte offsets and byte-exact goldens are no longer trustworthy");process.exit(1);}'
+
+      # The spike audit is this repo's layout regression guard, independent of
+      # the TypeScript suite: it re-derives the subagent attribution join from
+      # the committed fixture tree.
+      #
+      # MEASURED LIMIT, so nobody mistakes it for something it is not: this step
+      # is NOT a CRLF detector. Converting the whole fixture tree to CRLF and
+      # re-running it produced identical output and exit 0 - the reader splits on
+      # LF and JSON.parse treats the stray CR as whitespace. The step above is
+      # the CRLF check; this one is the layout check.
+      #
+      # --project takes a workspace path, which the tailer slugifies and matches
+      # case-insensitively against a directory under CLAUDE_PROJECTS_ROOT. That
+      # slug encodes the CAPTURE machine's absolute path, so the runner's
+      # workspace can never match it: deriving the argument from GITHUB_WORKSPACE
+      # exits 2 with 'no project slug dir for ...'. It is derived from the
+      # fixture directory instead - neither hard-coded nor machine-bound.
+      #
+      # Counts are asserted as zeros plus 'at least one resolved' rather than
+      # pinned to today's 5: fixture-set sizes change on the next harvest and a
+      # pinned count reads as a regression when they do.
+      - name: Spike layout audit (subagent attribution join)
+        shell: bash
+        run: |
+          root=fixtures/cc-2.1.234/projects
+          dirs=$(find "$root" -mindepth 1 -maxdepth 1 -type d)
+          count=$(printf '%s\n' "$dirs" | grep -c .)
+          if [ "$count" -ne 1 ]; then
+            echo "expected exactly 1 slug dir under $root, found $count" >&2
+            exit 1
+          fi
+          slug=$(basename "$dirs")
+          echo "project slug under audit: $slug"
+          out=$(CLAUDE_PROJECTS_ROOT="$root" node spike/run.mjs --audit --project "$slug" --all)
+          echo "$out"
+          echo "$out" | grep -Eq '^  RESOLVED +: [1-9][0-9]*$'
+          echo "$out" | grep -Eq '^  AMBIGUOUS +: 0$'
+          echo "$out" | grep -Eq '^  UNRESOLVED +: 0$'
+          echo "$out" | grep -Eq '^  malformed lines skipped: 0$'
+          echo "$out" | grep -Fq 'VERDICT: DETERMINISTIC'
+          echo "spike layout audit OK"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Two tsc projects: host (no DOM lib) and webview.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # npx vitest run, NOT npm test. The npm shim intermittently exits 127 on
+      # this project, and CI is exactly where that reads as a phantom failure
+      # sitting under a green test summary.
+      - name: Test
+        run: npx vitest run
+
+      # Emits BOTH dist/extension.cjs and dist/webview/main.{js,css}. Default
+      # (non-production) build on purpose: this is the gate, not the artifact.
+      # The artifact is built by release.yml, where vsce forces --production.
+      - name: Build
+        run: npm run build

@@ -21,6 +21,8 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { ANIMATED_CLASSES } from './canvas-contract.js';
+
 /**
  * Node builtins reached through variable specifiers.
  *
@@ -190,5 +192,58 @@ describe('the built artifact still carries the cost decision', () => {
     expect(js).not.toContain('$0.00');
     expect(js).not.toContain('toLocaleString');
     expect(js).not.toContain('Intl.NumberFormat');
+  });
+});
+
+describe('motion is a reserved channel, in the SHIPPED stylesheet', () => {
+  // WHY THIS EXISTS, and why it is not a duplicate of the negative control.
+  //
+  // The negative control in `states.test.ts` counts ELEMENTS carrying a class
+  // in `ANIMATED_CLASSES`. It has teeth, but it can only see what it is told to
+  // look for: a component that animates through a plain selector -- `.thorn {
+  // animation: ... }` -- would move on screen while that control counts zero
+  // and passes. The verifier flagged exactly that hole.
+  //
+  // So this asserts the complement, against the BUILT stylesheet rather than
+  // against any component's source: every animation the bundle ships is
+  // attached to one of the three shared classes. That is what makes "motion
+  // means happening now" a property of the artifact instead of a convention
+  // the components happen to follow.
+  it('declares no animation outside the shared animated classes', () => {
+    // Every rule containing an `animation:` declaration that is not a reset.
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .map((m) => ({ selector: (m[1] ?? '').trim(), body: m[2] ?? '' }))
+      .filter((r) => /(^|[;\s])animation(-name)?\s*:/.test(r.body))
+      .filter((r) => !/animation(-name)?\s*:\s*none/.test(r.body));
+
+    // Not vacuous: the bundle really does ship animations, so a regex that
+    // matched nothing would fail here rather than pass silently.
+    expect(rules.length).toBeGreaterThan(0);
+
+    const offenders = rules
+      .map((r) => r.selector)
+      .filter((selector) => !ANIMATED_CLASSES.some((cls) => selector.includes(`.${cls}`)));
+
+    expect(
+      offenders,
+      `these rules animate without one of ${ANIMATED_CLASSES.join(', ')}, so the ` +
+        'motion negative control cannot see them:\n' +
+        offenders.join('\n'),
+    ).toEqual([]);
+  });
+
+  it('ships a keyframes definition for every shared animated class it uses', () => {
+    // The other half: a class in the list that animates nothing would weaken
+    // the control in the direction running it cannot detect -- it would look
+    // covered while carrying no motion.
+    const named = [...css.matchAll(/animation(?:-name)?\s*:\s*([a-zA-Z_][\w-]*)/g)]
+      .map((m) => m[1])
+      .filter((name) => name !== undefined && name !== 'none');
+    expect(named.length).toBeGreaterThan(0);
+    for (const name of new Set(named)) {
+      expect(css, `no @keyframes for ${String(name)}`).toMatch(
+        new RegExp(`@keyframes\\s+${String(name)}\\b`),
+      );
+    }
   });
 });

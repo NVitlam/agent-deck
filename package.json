@@ -60,6 +60,7 @@
     "lint": "eslint .",
     "package": "vsce package --no-dependencies --out dist/agent-deck.vsix",
     "test": "vitest run",
+    "theater": "node esbuild.config.mjs --theater",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.webview.json"
   },
   "devDependencies": {

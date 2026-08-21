@@ -5,7 +5,11 @@
   import SessionHeader from './SessionHeader.svelte';
   import SessionRail from './SessionRail.svelte';
   import TreeView from './TreeView.svelte';
+  import Deck from './Deck.svelte';
+  import SessionCanvas from './SessionCanvas.svelte';
+  import Inspector from './Inspector.svelte';
   import { displayLiveness } from './format.js';
+  import { TESTID } from './canvas-contract.js';
 
   let { store }: { store: Store } = $props();
 
@@ -42,7 +46,47 @@
       ? 'none'
       : displayLiveness(view.selected.liveness, view.refused),
   );
+
+  // C7.6: `prefers-reduced-motion` is swapped BY CLASS, not by media query
+  // alone, and this is where the query is read once and handed down as a plain
+  // boolean. Reading it here rather than in each component is what makes the
+  // rule assertable in jsdom, where the query does not evaluate: a test sets
+  // this prop and every animated element responds.
+  //
+  // Guarded because `matchMedia` is absent in jsdom and in a bare Node test
+  // host. Absent means "no preference expressed", which is the same answer as
+  // a query that returns false — never a throw, and never a reason for the
+  // panel not to render.
+  const prefersReducedMotion = (): boolean => {
+    const mm = (globalThis as { matchMedia?: (q: string) => { matches: boolean } }).matchMedia;
+    if (typeof mm !== 'function') return false;
+    try {
+      return mm('(prefers-reduced-motion: reduce)').matches;
+    } catch {
+      return false;
+    }
+  };
+  let reducedMotion = $state.raw(prefersReducedMotion());
+
+  // Escape walks the altitudes up (C7.8): inspector -> session interior -> deck.
+  // The walk itself lives in `store.escape()`, not here — this only routes the
+  // key to it, and only in canvas mode, so the list view's own keyboard
+  // behaviour is untouched.
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape') return;
+    if (view.viewMode !== 'canvas') return;
+    if (view.altitude === 'deck') return;
+    event.preventDefault();
+    store.escape();
+  };
+
+  let inspected = $derived(view.selectedNode);
+  let inspectedExpanded = $derived(
+    inspected !== undefined && view.toggledNodeIds.includes(inspected.id),
+  );
 </script>
+
+<svelte:window on:keydown={onKeyDown} />
 
 <div
   class="app"
@@ -50,6 +94,8 @@
   data-liveness={panelLiveness}
   data-refused={String(view.refused)}
   data-degraded={String(view.degraded)}
+  data-view-mode={view.viewMode}
+  data-altitude={view.altitude}
 >
   {#if view.degraded && !view.degradedDismissed}
     <DegradedBanner reason={view.degradedReason} ondismiss={() => store.dismissDegraded()} />
@@ -63,26 +109,91 @@
       next full snapshot.
     </div>
   {/if}
-  <div class="body">
-    <SessionRail
-      sessions={view.sessions}
-      selectedSessionId={view.selectedSessionId}
-      onselect={(id) => store.selectSession(id)}
-    />
-    <main class="main" data-testid="main">
-      {#if view.selected === undefined}
-        <p class="empty" data-testid="no-selection">No session selected.</p>
-      {:else if view.refused}
-        <!-- G3: the refusal screen replaces the tree entirely. No header, no
-             totals, no nodes — a partial render of an unrecognised layout is
-             the failure mode this screen exists to prevent. -->
-        <RefusalScreen sessionId={view.selected.sessionId} />
-      {:else}
-        <SessionHeader session={view.selected} degraded={view.degraded} />
-        <TreeView session={view.selected} {store} toggled={view.toggledNodeIds} />
-      {/if}
-    </main>
+
+  <!-- The list/canvas switch is an IN-PANEL control, not a VS Code command and
+       not a configuration key. That is deliberate and is what keeps this phase
+       free of a host-manifest diff: a setting would be a `package.json`
+       contribution (spec C7.2). The canvas is the default immediately. -->
+  <div class="chrome">
+    <button
+      type="button"
+      class="toggle"
+      data-testid={TESTID.viewToggle}
+      data-view-mode={view.viewMode}
+      aria-pressed={view.viewMode === 'canvas'}
+      onclick={() => store.toggleViewMode()}
+    >
+      {view.viewMode === 'canvas' ? 'Canvas' : 'List'}
+    </button>
   </div>
+
+  {#if view.viewMode === 'list'}
+    <!-- Phase 3's renderer, kept for one release behind the toggle (C7.2).
+         Both surfaces are projections of the same store, so the state grammar
+         holds for both while both exist. -->
+    <div class="body">
+      <SessionRail
+        sessions={view.sessions}
+        selectedSessionId={view.selectedSessionId}
+        onselect={(id) => store.selectSession(id)}
+      />
+      <main class="main" data-testid="main">
+        {#if view.selected === undefined}
+          <p class="empty" data-testid="no-selection">No session selected.</p>
+        {:else if view.refused}
+          <!-- G3: the refusal screen replaces the tree entirely. No header, no
+               totals, no nodes — a partial render of an unrecognised layout is
+               the failure mode this screen exists to prevent. -->
+          <RefusalScreen sessionId={view.selected.sessionId} />
+        {:else}
+          <SessionHeader session={view.selected} degraded={view.degraded} />
+          <TreeView session={view.selected} {store} toggled={view.toggledNodeIds} />
+        {/if}
+      </main>
+    </div>
+  {:else if view.altitude === 'deck' || view.selected === undefined}
+    <!-- Altitude 0. Also the fallback when nothing is selected: an altitude
+         above the deck with no session to show is not a state the store should
+         be able to reach, and rendering the deck is the honest answer if it
+         ever does. -->
+    <main class="main" data-testid="main">
+      <Deck
+        sessions={view.sessions}
+        degraded={view.degraded}
+        selectedSessionId={view.selectedSessionId}
+        {reducedMotion}
+        onenter={(id) => store.enterSession(id)}
+      />
+    </main>
+  {:else}
+    <!-- Altitudes 1 and 2. The inspector is a panel BESIDE the interior, not a
+         replacement for it: selecting a node should not hide the thing the
+         node belongs to. -->
+    <div class="body">
+      <main class="main" data-testid="main">
+        <SessionCanvas
+          session={view.selected}
+          refused={view.refused}
+          degraded={view.degraded}
+          selectedNodeId={view.selectedNodeId}
+          {reducedMotion}
+          onselect={(id) => store.selectNode(id)}
+        />
+      </main>
+      {#if view.altitude === 'inspector'}
+        <aside class="aside">
+          <Inspector
+            node={inspected}
+            expanded={inspectedExpanded}
+            ontoggle={() => {
+              if (inspected !== undefined) store.toggleNode(inspected.id);
+            }}
+            onclose={() => store.escape()}
+          />
+        </aside>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -108,6 +219,35 @@
     flex: 1;
     min-width: 0;
     overflow: hidden;
+  }
+
+  .aside {
+    width: 22em;
+    max-width: 45%;
+    overflow: auto;
+    border-left: 1px solid var(--vscode-panel-border, transparent);
+  }
+
+  .chrome {
+    display: flex;
+    justify-content: flex-end;
+    padding: 2px 6px;
+    border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  }
+
+  .toggle {
+    font: inherit;
+    color: var(--vscode-foreground);
+    background: var(--vscode-badge-background, transparent);
+    border: 1px solid var(--vscode-panel-border, transparent);
+    border-radius: 3px;
+    padding: 1px 8px;
+    cursor: pointer;
+  }
+
+  .toggle:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, currentColor);
+    outline-offset: 1px;
   }
 
   .notice {

@@ -55,21 +55,25 @@ CLAUDE.md
 HANDOVER.md
 agent-deck-spec.md
 
-# Historical v1 documents. `docs/README.md` is the only doc a user wants, and
-# it is deliberately NOT excluded — there is no root README yet (Phase 5 owns
-# it), so this is what the VSIX ships.
-docs/PLAN-v1.md
-docs/agent-deck-spec-v1.md
+# Everything under `docs/`. Phase 5 wrote a ROOT `README.md`, and that is the
+# one document the VSIX ships. `docs/README.md` is an index of superseded v1
+# documents; it was shipping only because there was no root README to ship,
+# and it now reaches a user as "here are the historical drafts", which is the
+# wrong first page. Excluding the directory rather than naming its files also
+# closes the class the root-level mockup copy already cost this repo: a
+# `docs/ui/**`-shaped rule matches nothing the next file lands outside of.
+#
+# What this replaces, and why each was already out: `docs/PLAN-v1.md` and
+# `docs/agent-deck-spec-v1.md` (historical v1 documents), `docs/ui/**` (the
+# frozen canvas design docs, a 38 KB mockup) and `docs/evidence/**` (UI-state
+# evidence). All were checked for leaked absolute paths first - there are
+# none, so this is bloat rather than a privacy defect.
+docs/**
 
-# Dev tooling and design artifacts. None of it is part of the product, and
-# `vsce ls` was shipping all three before this: the two recorder/capture
-# scripts, the frozen canvas design docs (a 38 KB mockup), and the UI-state
-# evidence. Checked for leaked absolute paths first - there are none, so this
-# is bloat rather than a privacy defect - but a VSIX should carry the product,
+# Dev tooling. `vsce ls` was shipping the two recorder/capture scripts before
+# this. None of it is part of the product: a VSIX should carry the product,
 # not the workshop.
 scripts/**
-docs/ui/**
-docs/evidence/**
 
 # The replay theater is DEV-ONLY and must never reach a user. It is unreachable
 # from `webview/main.ts` (asserted on esbuild's import graph), and `webview/**`

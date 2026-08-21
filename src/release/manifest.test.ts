@@ -1,0 +1,212 @@
+/**
+ * The release manifest: marketplace identity, licence, and what the package
+ * file is allowed to throw away.
+ *
+ * Every assertion here is a defect this repo can ship SILENTLY. None of it
+ * changes behaviour at runtime, so nothing else in the suite goes red when it
+ * drifts — the failure surfaces on the marketplace listing or in a legal
+ * question, both of which are after the fact.
+ *
+ *   identity          `publisher` and `name` compose the marketplace ID
+ *                     `nvitlam.agent-deck`. Asserting the halves separately
+ *                     passes while the composed string is wrong, so the
+ *                     composed string is what is asserted. NOTE: this is a
+ *                     check on the MANIFEST only. There is no publisher
+ *                     account and no PAT, so a publisher-side name collision
+ *                     remains possible and is not measured by anything here.
+ *
+ *   naming            PLAN: "never lead naming with Claude". This is a
+ *                     trademark posture, not a preference — an extension whose
+ *                     first word is the vendor's product name reads as
+ *                     first-party. A regex on the FIRST WORD, because
+ *                     "Agent Deck for Claude Code" must keep passing.
+ *
+ *   keywords          Ordered, exact. Marketplace search ranks on them and
+ *                     PLAN pins the list, so "someone appended a sixth" and
+ *                     "someone dropped one" are both regressions.
+ *
+ *   licence           `"license": "MIT"` with no LICENSE file is the defect
+ *                     this pins: the manifest asserts a grant the artifact
+ *                     does not carry. Both halves, plus the actual MIT
+ *                     sentences, because a file named LICENSE containing
+ *                     anything at all would otherwise satisfy the check.
+ *
+ *   version           `0.0.0` is npm's placeholder. A VSIX published at
+ *                     `0.0.0` cannot be superseded by a patch release.
+ *
+ *   repository        `vsce package` warns without one, and the warning is
+ *                     easy to scroll past. The repo is PRIVATE today; that is
+ *                     expected and is not what this asserts.
+ *
+ *   .vscodeignore     The two files a user is entitled to — the licence and
+ *                     the README — are the two most likely to be swept up by
+ *                     a broad exclusion glob. Checked by expanding every
+ *                     pattern in the file, not by substring, so a future
+ *                     `**` rule that happens to cover them fails here.
+ *
+ * Deliberately NOT here: `main` resolving to a real file that exports
+ * `activate`. `src/extension.test.ts` already loads whatever path `main`
+ * names and asserts it — that is the "manifest and build disagree" guard and
+ * it belongs next to the build, not next to the licence.
+ *
+ * Also not here: unzipping or listing the VSIX. `src/release/vsix.test.ts`
+ * owns that; an ignore file cannot answer "what does the package contain".
+ */
+
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
+import { describe, expect, it } from 'vitest';
+
+const REPO_ROOT = new URL('../../', import.meta.url);
+
+const readRepoFile = (relative: string): Promise<string> =>
+  readFile(fileURLToPath(new URL(relative, REPO_ROOT)), 'utf8');
+
+interface Manifest {
+  name?: unknown;
+  displayName?: unknown;
+  publisher?: unknown;
+  version?: unknown;
+  license?: unknown;
+  keywords?: unknown;
+  repository?: unknown;
+}
+
+const readManifest = async (): Promise<Manifest> =>
+  JSON.parse(await readRepoFile('package.json')) as Manifest;
+
+/** PLAN, Phase 5: exactly these five, in this order. */
+const EXPECTED_KEYWORDS = [
+  'claude code',
+  'observability',
+  'agents',
+  'monitor',
+  'subagents',
+];
+
+/** The first word, case-insensitively — "Claude Code" is fine anywhere else. */
+const LEADS_WITH_CLAUDE = /^claude\b/i;
+
+describe('marketplace identity', () => {
+  it('composes to nvitlam.agent-deck', async () => {
+    const manifest = await readManifest();
+    expect(manifest.name).toBe('agent-deck');
+    expect(manifest.publisher).toBe('nvitlam');
+    // The composed string is the identity. Asserting the halves alone passes
+    // while the thing a user installs is named something else.
+    expect(`${String(manifest.publisher)}.${String(manifest.name)}`).toBe(
+      'nvitlam.agent-deck',
+    );
+  });
+
+  it('displays as "Agent Deck for Claude Code"', async () => {
+    const manifest = await readManifest();
+    expect(manifest.displayName).toBe('Agent Deck for Claude Code');
+  });
+
+  it('leads neither displayName nor name with "Claude"', async () => {
+    const manifest = await readManifest();
+    for (const field of ['displayName', 'name'] as const) {
+      const value = manifest[field];
+      expect(typeof value, `package.json must declare a string ${field}`).toBe('string');
+      expect(
+        LEADS_WITH_CLAUDE.test(String(value)),
+        `${field} leads with "Claude": ${String(value)}`,
+      ).toBe(false);
+    }
+  });
+
+  it('carries exactly the five PLAN keywords, in order', async () => {
+    const manifest = await readManifest();
+    expect(manifest.keywords).toEqual(EXPECTED_KEYWORDS);
+  });
+
+  it('names the repository vsce asks for', async () => {
+    const manifest = await readManifest();
+    const repository = manifest.repository as { url?: unknown } | undefined;
+    expect(typeof repository?.url, 'package.json must declare repository.url').toBe(
+      'string',
+    );
+    expect(String(repository?.url)).toContain('github.com/dev/agent-deck');
+  });
+
+  it('declares a version that is not the 0.0.0 placeholder', async () => {
+    const manifest = await readManifest();
+    const version = String(manifest.version);
+    expect(version, `not semver: ${version}`).toMatch(
+      /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/,
+    );
+    expect(version).not.toBe('0.0.0');
+  });
+});
+
+describe('licence', () => {
+  it('declares MIT in the manifest', async () => {
+    const manifest = await readManifest();
+    expect(manifest.license).toBe('MIT');
+  });
+
+  it('ships a real LICENSE file carrying the MIT grant and disclaimer', async () => {
+    // A `license` field with no licence file is the defect. Reading the file
+    // is the whole point: ENOENT here fails the test.
+    const licence = await readRepoFile('LICENSE');
+    expect(licence).toContain('Permission is hereby granted, free of charge');
+    expect(licence).toContain('THE SOFTWARE IS PROVIDED "AS IS"');
+    expect(licence, 'LICENSE carries no "Copyright (c) <year>" line').toMatch(
+      /Copyright \(c\) \d{4}\b/,
+    );
+  });
+});
+
+/**
+ * Expand one `.vscodeignore` line into a matcher. `**` crosses directory
+ * separators, `*` and `?` do not — the same distinction vsce's globber makes.
+ * `**\/` is optional so a root-level file still matches `**\/*.md`, which is
+ * exactly the shape that would silently swallow the README.
+ */
+const globToRegExp = (glob: string): RegExp => {
+  let source = '';
+  let i = 0;
+  while (i < glob.length) {
+    if (glob.startsWith('**/', i)) {
+      source += '(?:.*/)?';
+      i += 3;
+      continue;
+    }
+    if (glob.startsWith('**', i)) {
+      source += '.*';
+      i += 2;
+      continue;
+    }
+    const char = glob.charAt(i);
+    if (char === '*') source += '[^/]*';
+    else if (char === '?') source += '[^/]';
+    else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    i += 1;
+  }
+  return new RegExp(`^${source}$`);
+};
+
+describe('.vscodeignore', () => {
+  it('excludes neither LICENSE nor README.md', async () => {
+    const patterns = (await readRepoFile('.vscodeignore'))
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('#'));
+    // A file whose patterns all failed to parse would pass vacuously.
+    expect(patterns.length, '.vscodeignore declares no patterns').toBeGreaterThan(0);
+
+    for (const pattern of patterns) {
+      // `!` re-includes; it can only ever help these two files.
+      if (pattern.startsWith('!')) continue;
+      const matcher = globToRegExp(pattern);
+      for (const shipped of ['LICENSE', 'README.md']) {
+        expect(
+          matcher.test(shipped),
+          `.vscodeignore pattern "${pattern}" excludes ${shipped}`,
+        ).toBe(false);
+      }
+    }
+  });
+});

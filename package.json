@@ -1,11 +1,22 @@
 {
   "name": "agent-deck",
-  "displayName": "Agent Deck",
-  "version": "0.0.0",
+  "displayName": "Agent Deck for Claude Code",
+  "version": "0.1.0",
   "private": true,
   "publisher": "nvitlam",
   "description": "Read-only VS Code extension that renders live Claude Code session topology.",
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "keywords": [
+    "claude code",
+    "observability",
+    "agents",
+    "monitor",
+    "subagents"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dev/agent-deck.git"
+  },
   "categories": [
     "Visualization",
     "Other"

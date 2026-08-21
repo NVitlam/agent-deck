@@ -1255,3 +1255,95 @@ describe('golden hygiene', () => {
     ).toBe(false);
   });
 });
+
+describe('nothing overlaps: separation is why the picture is readable', () => {
+  /** Every pair, so one missed collision cannot hide behind an average. */
+  function overlaps(
+    circles: readonly { x: number; y: number; R: number }[],
+  ): Array<[number, number, number]> {
+    const bad: Array<[number, number, number]> = [];
+    for (let i = 0; i < circles.length; i += 1) {
+      for (let j = i + 1; j < circles.length; j += 1) {
+        const p = circles[i];
+        const q = circles[j];
+        if (p === undefined || q === undefined) continue;
+        const gap = Math.hypot(p.x - q.x, p.y - q.y) - p.R - q.R;
+        if (gap < 0) bad.push([i, j, gap]);
+      }
+    }
+    return bad;
+  }
+
+  /** Sizes deliberately varied: even centres, uneven radii, is the bug. */
+  function deckOf(n: number): DeckSession[] {
+    return Array.from({ length: n }, (_, i) => ({
+      sessionId: `s-${String(i)}`,
+      nodeCount: 1 + ((i * 37) % 400),
+    }));
+  }
+
+  it('places no two deck blobs on top of each other, at any count', () => {
+    // The spiral spaces CENTRES evenly and knows nothing about radii, so a
+    // busy session beside a quiet one is exactly the case that overlapped.
+    for (const n of [2, 6, 12, 30]) {
+      const bad = overlaps(deckLayout(deckOf(n)));
+      expect(bad, `${String(bad.length)} overlapping pairs at n=${String(n)}`).toEqual([]);
+    }
+  });
+
+  it('places no two cells on top of each other, on every committed fixture', () => {
+    const subjects = [...captured, ...synthetic];
+    expect(subjects.length).toBeGreaterThan(0);
+    let checked = 0;
+    for (const subject of subjects) {
+      const layout = sessionLayout(modelState(subject.snapshot));
+      const circles = [...layout.cells.values(), ...layout.parked.values()];
+      if (circles.length < 2) continue;
+      checked += 1;
+      const bad = overlaps(circles);
+      expect(bad, `${String(bad.length)} overlapping cells in ${subject.path}`).toEqual([]);
+    }
+    // Loud rather than vacuous: a corpus of one-cell sessions would pass
+    // this test while proving nothing about separation.
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('STILL INCREMENTAL: separating a newcomer never moves anyone already placed', () => {
+    // The property separation could plausibly have broken, and the reason it
+    // does not: only the candidate moves, and placement order is fixed.
+    for (let n = 1; n < 14; n += 1) {
+      const before = deckLayout(deckOf(n));
+      const after = deckLayout(deckOf(n + 1));
+      for (let i = 0; i < before.length; i += 1) {
+        expect(Object.is(after[i]?.x, before[i]?.x), `blob ${String(i)} moved in x at n=${String(n)}`).toBe(
+          true,
+        );
+        expect(Object.is(after[i]?.y, before[i]?.y), `blob ${String(i)} moved in y at n=${String(n)}`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it('STILL DETERMINISTIC: the same input separates to the same coordinates', () => {
+    expect(deckLayout(deckOf(12))).toStrictEqual(deckLayout(deckOf(12)));
+    const state = modelState(deepestCapture().snapshot);
+    expect(sessionLayout(state).cells).toStrictEqual(sessionLayout(state).cells);
+  });
+
+  it('terminates on a pathological pile rather than looping forever', () => {
+    // SEPARATION_ATTEMPTS is a bound, not a target. A layout that cannot be
+    // fully separated must still RETURN: overlapping is a visual defect,
+    // hanging is a broken panel.
+    const many = Array.from({ length: 200 }, (_, i) => ({
+      sessionId: `s-${String(i)}`,
+      nodeCount: 5000,
+    }));
+    const placed = deckLayout(many);
+    expect(placed).toHaveLength(200);
+    for (const p of placed) {
+      expect(Number.isFinite(p.x)).toBe(true);
+      expect(Number.isFinite(p.y)).toBe(true);
+    }
+  });
+});

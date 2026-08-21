@@ -179,6 +179,75 @@ function deckRadius(nodeCount: number): number {
  * `N = 0` returns an empty array. That is a real case, not a degenerate one:
  * the empty deck is a rendered state with its own quiet line (C7.3).
  */
+/**
+ * Clear space between placed shapes, in stage units.
+ *
+ * Not zero: two circles that merely fail to overlap still read as one blob
+ * with a pinch in it. This is the gap at which they read as two things.
+ */
+export const SEPARATION = 14;
+
+/** How far a colliding candidate is pushed per attempt. */
+export const SEPARATION_STEP = 9;
+
+/**
+ * Give up after this many pushes and accept an overlap.
+ *
+ * A bounded loop rather than "repeat until clear", because a pathological tree
+ * must not be able to hang the renderer. Overlapping is a visual defect; not
+ * returning is a broken panel.
+ */
+export const SEPARATION_ATTEMPTS = 240;
+
+interface Circle {
+  x: number;
+  y: number;
+  R: number;
+}
+
+/** True when two circles are closer than {@link SEPARATION} apart. */
+function collides(a: Circle, b: Circle): boolean {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.hypot(dx, dy) < a.R + b.R + SEPARATION;
+}
+
+/**
+ * Move a candidate until it clears everything already placed.
+ *
+ * THIS IS WHY THE INCREMENTAL PROMISE SURVIVES. Only the candidate moves;
+ * every circle already in `placed` keeps the coordinates it was given. Since
+ * placement order is fixed by the walk, and each placement depends only on
+ * placements before it, adding a node still adds — it cannot reflow the ones
+ * already on screen. That is the same reason `deckLayout(list)` stays a prefix
+ * of `deckLayout(list.concat(more))`.
+ *
+ * The push direction is away from the FIRST collider in insertion order, so it
+ * is deterministic; when two centres coincide exactly, a hash of nothing would
+ * do, so it falls back to a fixed angle stepped per attempt, which is
+ * deterministic too.
+ */
+function separate(candidate: Circle, placed: readonly Circle[]): Circle {
+  let current = candidate;
+  for (let attempt = 0; attempt < SEPARATION_ATTEMPTS; attempt += 1) {
+    const hit = placed.find((other) => collides(current, other));
+    if (hit === undefined) return current;
+    const dx = current.x - hit.x;
+    const dy = current.y - hit.y;
+    const distance = Math.hypot(dx, dy);
+    const angle = distance < 1e-9 ? attempt * GOLDEN_ANGLE_RAD : Math.atan2(dy, dx);
+    // Push to exactly clear this collider, plus a step, so a long chain of
+    // near-misses resolves in a few passes rather than a few hundred.
+    const needed = hit.R + current.R + SEPARATION - distance + SEPARATION_STEP;
+    current = {
+      x: roundCoord(current.x + needed * Math.cos(angle)),
+      y: roundCoord(current.y + needed * Math.sin(angle)),
+      R: current.R,
+    };
+  }
+  return current;
+}
+
 export function deckLayout(sessions: readonly DeckSession[]): DeckPlacement[] {
   const out: DeckPlacement[] = [];
   for (let i = 0; i < sessions.length; i += 1) {
@@ -186,11 +255,24 @@ export function deckLayout(sessions: readonly DeckSession[]): DeckPlacement[] {
     if (session === undefined) continue;
     const angle = i * GOLDEN_ANGLE_RAD;
     const radius = DECK_PITCH * Math.sqrt(i);
+    // The golden-angle spiral spaces CENTRES evenly; it knows nothing about
+    // radii, and a blob's radius comes from its node count. A busy session
+    // next to a quiet one therefore used to overlap it. Separation is applied
+    // against the blobs already placed, so a later session moves and an
+    // earlier one never does.
+    const separated = separate(
+      {
+        x: roundCoord(radius * Math.cos(angle)),
+        y: roundCoord(radius * Math.sin(angle)),
+        R: deckRadius(session.nodeCount),
+      },
+      out,
+    );
     out.push({
       sessionId: session.sessionId,
-      x: roundCoord(radius * Math.cos(angle)),
-      y: roundCoord(radius * Math.sin(angle)),
-      R: deckRadius(session.nodeCount),
+      x: separated.x,
+      y: separated.y,
+      R: separated.R,
     });
   }
   return out;
@@ -612,11 +694,23 @@ export function sessionLayout(session: SessionState): SessionLayout {
     if (cells.has(agent.id)) return;
 
     const directChildren = agent.children.length;
-    cells.set(agent.id, {
-      x: cx,
-      y: cy,
-      R: cellRadius(directChildren, depth),
-    });
+    // Cells were placed from the parent plus a fixed offset, with nothing
+    // checking whether the spot was already taken — so two subagents spawned
+    // from tool calls at similar angles landed on top of each other, and at
+    // depth the lifts shrink until they all pile onto the parent. Separating
+    // against what is already placed is what makes the picture readable
+    // without asking the user to drag anything apart by hand.
+    const separated = separate(
+      { x: cx, y: cy, R: cellRadius(directChildren, depth) },
+      [...cells.values()],
+    );
+    cells.set(agent.id, separated);
+
+    // Everything below hangs off where this cell ACTUALLY landed, not where it
+    // was first proposed — otherwise a separated parent would keep spawning
+    // its children around its old position.
+    const ax = separated.x;
+    const ay = separated.y;
 
     const { byTool, claimed } = joinSpawns(agent, edges);
 
@@ -645,8 +739,8 @@ export function sessionLayout(session: SessionState): SessionLayout {
       // `layout.test.ts` pins against that fixture rather than hiding.
       if (!dots.has(toolNode.id)) {
         dots.set(toolNode.id, {
-          x: roundCoord(cx + offset.dx),
-          y: roundCoord(cy + offset.dy),
+          x: roundCoord(ax + offset.dx),
+          y: roundCoord(ay + offset.dy),
         });
       }
     }
@@ -660,8 +754,8 @@ export function sessionLayout(session: SessionState): SessionLayout {
       const spawned = byTool.get(toolNode.id) ?? [];
       if (spawned.length === 0) continue;
       const offset = dotOffset(i, depth);
-      const dx = roundCoord(cx + offset.dx);
-      const dy = roundCoord(cy + offset.dy);
+      const dx = roundCoord(ax + offset.dx);
+      const dy = roundCoord(ay + offset.dy);
       for (let k = 0; k < spawned.length; k += 1) {
         const child = spawned[k];
         if (child === undefined) continue;
@@ -688,8 +782,8 @@ export function sessionLayout(session: SessionState): SessionLayout {
       place(
         child,
         depth + 1,
-        roundCoord(cx + radius * Math.cos(angle)),
-        roundCoord(cy + radius * Math.sin(angle)),
+        roundCoord(ax + radius * Math.cos(angle)),
+        roundCoord(ay + radius * Math.sin(angle)),
       );
     }
   };

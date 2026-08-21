@@ -1,3 +1,7 @@
+import { join } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import type {
@@ -6,8 +10,12 @@ import type {
   SessionPatch,
   SessionState,
 } from '../model/events.js';
-import { diffSessionState } from '../model/session.js';
+import { SessionModel, diffSessionState } from '../model/session.js';
 import type { SessionEmission } from '../model/session.js';
+import { graftSession } from '../model/graft.js';
+import { LivenessEngine } from '../model/liveness.js';
+import { slugifyWorkspace } from '../parser/tailer.js';
+import { applySessionPatch } from './apply.js';
 import {
   SessionBridge,
   isWebviewToHostMessage,
@@ -581,5 +589,177 @@ describe('SessionBridge — counters', () => {
     const counters = bridge.counters;
     counters.snapshotsSent = 999;
     expect(bridge.counters.snapshotsSent).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (c) Parked grafts, end to end, from a fixture that really parks
+// ---------------------------------------------------------------------------
+
+/**
+ * `SessionState.parked` is host -> webview only. What matters here is not that
+ * the field exists but that it survives the transport: the bridge sends a
+ * snapshot, then patches, and it maintains its own copy of the webview's belief
+ * by running the SAME reducer the webview runs. A reducer that dropped `parked`
+ * would leave the bridge and the webview agreeing on a wrong state, which no
+ * counter would notice.
+ *
+ * So the whole path is driven for real — `graftSession` -> `SessionModel` ->
+ * `SessionBridge` -> `RecordingPort` — and the recorded wire messages are then
+ * replayed exactly as `webview/store.ts` replays them.
+ *
+ * The fixture is chosen by property (graft it, ask whether it parked), never by
+ * name and never by count.
+ */
+const SYNTHETIC_GRAFT_ROOT = fileURLToPath(
+  new URL('../../fixtures/synthetic-graft', import.meta.url),
+);
+
+/**
+ * Any absolute path at all: the model only compares its slug against the one a
+ * session is registered under, and both sides are derived from this constant by
+ * `slugifyWorkspace`. Nothing here touches the filesystem at this path, so it is
+ * deliberately not a real directory on anyone's machine.
+ */
+const WORKSPACE = 'C:\\synthetic\\not-a-real-workspace';
+
+interface GraftFixture {
+  caseName: string;
+  mainPath: string;
+  sessionId: string;
+  parkedCount: number;
+}
+
+async function subdirs(dir: string): Promise<string[]> {
+  return (await readdir(dir, { withFileTypes: true }))
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+}
+
+/** Every committed synthetic-graft transcript that fingerprints. */
+async function graftFixtures(): Promise<GraftFixture[]> {
+  const out: GraftFixture[] = [];
+  for (const caseName of await subdirs(SYNTHETIC_GRAFT_ROOT)) {
+    const caseDir = join(SYNTHETIC_GRAFT_ROOT, caseName);
+    for (const slugName of await subdirs(caseDir)) {
+      const slugDir = join(caseDir, slugName);
+      const mains = (await readdir(slugDir, { withFileTypes: true }))
+        .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+        .map((e) => e.name)
+        .sort();
+      for (const main of mains) {
+        const mainPath = join(slugDir, main);
+        const result = await graftSession(mainPath);
+        if (!result.ok) continue;
+        out.push({
+          caseName,
+          mainPath,
+          sessionId: main.replace(/\.jsonl$/, ''),
+          parkedCount: result.snapshot.parked.length,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+describe('SessionBridge — a parked graft survives the transport', () => {
+  it('snapshot then diff: the wire carries parked, and the webview still has it', async () => {
+    const all = await graftFixtures();
+    const parking = all.find((f) => f.parkedCount > 0);
+    const clean = all.find((f) => f.parkedCount === 0);
+    expect(parking, 'no committed graft fixture parks an agent').toBeDefined();
+    expect(clean, 'no committed graft fixture parks nothing').toBeDefined();
+    if (parking === undefined || clean === undefined) return;
+
+    const slug = slugifyWorkspace(WORKSPACE);
+    const model = new SessionModel({
+      workspacePath: WORKSPACE,
+      liveness: new LivenessEngine({ now: () => 1_700_000_060_000 }),
+    });
+    const port = new RecordingPort();
+    const bridge = new SessionBridge(port);
+    const sessionId = clean.sessionId;
+
+    // Round 1 — the snapshot a fresh webview starts from. Nothing parked yet.
+    model.ingestGraftResult(sessionId, slug, await graftSession(clean.mainPath));
+    bridge.publish(model.emit());
+
+    // Round 2 — the parking graft arrives. The bridge has already snapshotted,
+    // so this must go out as a diff, and the diff must carry `parked`.
+    model.ingestGraftResult(sessionId, slug, await graftSession(parking.mainPath));
+    bridge.publish(model.emit());
+
+    expect(port.types()).toEqual(['snapshot', 'diff']);
+    expect(bridge.counters.snapshotsForced).toBe(0);
+    expect(bridge.counters.patchFailures).toBe(0);
+
+    // Replay the recorded messages the way `webview/store.ts` does: adopt the
+    // snapshot, then apply each patch with the shared reducer.
+    const webview = new Map<string, SessionState>();
+    for (const message of port.sent) {
+      if (message.type === 'snapshot') {
+        webview.clear();
+        for (const s of message.sessions) webview.set(s.sessionId, s);
+      } else if (message.type === 'diff') {
+        const prev = webview.get(message.sessionId);
+        expect(prev, `diff for a session the webview never got: ${message.sessionId}`).toBeDefined();
+        if (prev === undefined) continue;
+        webview.set(message.sessionId, applySessionPatch(prev, message.patch));
+      }
+    }
+
+    const snapshotMessage = port.sent[0];
+    expect(snapshotMessage?.type).toBe('snapshot');
+    if (snapshotMessage?.type === 'snapshot') {
+      expect(snapshotMessage.sessions[0]?.parked).toStrictEqual([]);
+    }
+    const diffMessage = port.sent[1];
+    expect(diffMessage?.type).toBe('diff');
+    if (diffMessage?.type === 'diff') {
+      expect(diffMessage.patch.parked).toHaveLength(parking.parkedCount);
+    }
+
+    // What the webview now holds must be what the host holds, parked included.
+    const rendered = webview.get(sessionId);
+    expect(rendered?.parked).toHaveLength(parking.parkedCount);
+    expect(rendered).toStrictEqual(model.sessionState(sessionId));
+  });
+});
+
+describe('isWebviewToHostMessage — parked is outbound only', () => {
+  it('rejects a parked payload arriving from the webview side', () => {
+    expect(
+      isWebviewToHostMessage({
+        type: 'parked',
+        sessionId: 's1',
+        parked: [{ agentId: 'a1', code: 'noMatchingToolUse', reason: 'injected' }],
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects a snapshot message replayed inbound, parked and all', () => {
+    expect(
+      isWebviewToHostMessage({
+        type: 'snapshot',
+        sessions: [{ sessionId: 's1', parked: [{ agentId: 'a1' }] }],
+      }),
+    ).toBe(false);
+  });
+
+  it('accepts a valid message carrying a stray parked key, and reads nothing from it', () => {
+    // Extra keys were already accepted and ignored — that is the existing case
+    // named "a message carrying extra keys the host does not read", and this
+    // adds nothing to the guard. It is asserted here so that "the guard covers
+    // parked" cannot be misread as "the guard now parses parked". It does not,
+    // because no inbound message carries it.
+    const message = {
+      type: 'selectSession',
+      sessionId: 's1',
+      parked: [{ agentId: 'a1', code: 'nonsense' }],
+    };
+    expect(isWebviewToHostMessage(message)).toBe(true);
+    expect('parked' in message).toBe(true);
   });
 });

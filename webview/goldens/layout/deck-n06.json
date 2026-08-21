@@ -1,0 +1,67 @@
+{
+  "source": "fixtures/cc-2.1.234/projects",
+  "input": [
+    {
+      "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+      "nodeCount": 19
+    },
+    {
+      "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+      "nodeCount": 14
+    },
+    {
+      "sessionId": "synthetic-deck-02",
+      "nodeCount": 3
+    },
+    {
+      "sessionId": "synthetic-deck-03",
+      "nodeCount": 12
+    },
+    {
+      "sessionId": "synthetic-deck-04",
+      "nodeCount": 47
+    },
+    {
+      "sessionId": "synthetic-deck-05",
+      "nodeCount": 300
+    }
+  ],
+  "output": [
+    {
+      "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+      "x": 0,
+      "y": 0,
+      "R": 56.945
+    },
+    {
+      "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+      "x": -97.333,
+      "y": 89.165,
+      "R": 53.205
+    },
+    {
+      "sessionId": "synthetic-deck-02",
+      "x": 16.32,
+      "y": -185.961,
+      "R": 36.022
+    },
+    {
+      "sessionId": "synthetic-deck-03",
+      "x": 139.108,
+      "y": 181.442,
+      "R": 51.344
+    },
+    {
+      "sessionId": "synthetic-deck-04",
+      "x": -259.964,
+      "y": -45.984,
+      "R": 68
+    },
+    {
+      "sessionId": "synthetic-deck-05",
+      "x": 249.044,
+      "y": -158.421,
+      "R": 68
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+{
+  "source": "fixtures/cc-2.1.234/projects/c--Users-dev-projects-agent-deck/05c5482d-5568-44ce-97fe-bc9a6c15afc4.jsonl",
+  "maxSpawnDepth": 2,
+  "cells": [
+    [
+      "root",
+      {
+        "x": 0,
+        "y": 0,
+        "R": 39.513
+      }
+    ],
+    [
+      "a69e0f453d5ca5f43",
+      {
+        "x": 0,
+        "y": -170,
+        "R": 15.531
+      }
+    ],
+    [
+      "a32b33ebf1b92e214",
+      {
+        "x": 65.057,
+        "y": -157.059,
+        "R": 15.531
+      }
+    ],
+    [
+      "a1a53f42c5eca8824",
+      {
+        "x": 120.208,
+        "y": -120.208,
+        "R": 17.538
+      }
+    ],
+    [
+      "a3ecf86bbfb853726",
+      {
+        "x": 120.208,
+        "y": -213.708,
+        "R": 12.637
+      }
+    ]
+  ],
+  "dots": [
+    [
+      "toolu_017Pp1K6YSjX4SBuJDcmMsKs",
+      {
+        "x": 0,
+        "y": -96
+      }
+    ],
+    [
+      "toolu_01MiUaF4vR8zVMp5nL8njJH6",
+      {
+        "x": 36.738,
+        "y": -88.692
+      }
+    ],
+    [
+      "toolu_015U2QmdfzyqUd6DrCmCxfFB",
+      {
+        "x": 67.882,
+        "y": -67.882
+      }
+    ],
+    [
+      "toolu_015bjMuhrKGMsdJxXMUq6Dri",
+      {
+        "x": 0,
+        "y": -222.8
+      }
+    ],
+    [
+      "toolu_01VJxVjoCCqzBQXRzMC97fq3",
+      {
+        "x": 65.057,
+        "y": -209.859
+      }
+    ],
+    [
+      "toolu_012xCBtQH1ejFcfwn9E1pkAw",
+      {
+        "x": 120.208,
+        "y": -173.008
+      }
+    ],
+    [
+      "toolu_01PyKgjjG3y7L4JWHoHtN57c",
+      {
+        "x": 120.208,
+        "y": -242.748
+      }
+    ],
+    [
+      "toolu_017yERDG4MvrLqUnpfaVuqtp",
+      {
+        "x": 131.321,
+        "y": -240.537
+      }
+    ],
+    [
+      "toolu_01MobmP15USPJ3NEQRXjrgd6",
+      {
+        "x": 140.742,
+        "y": -234.242
+      }
+    ],
+    [
+      "toolu_01TWS9krJUd1aYjVtqq5tFNL",
+      {
+        "x": 147.037,
+        "y": -224.821
+      }
+    ],
+    [
+      "toolu_01S5FxkdBKV71TppGrq84cHx",
+      {
+        "x": 149.248,
+        "y": -213.708
+      }
+    ],
+    [
+      "toolu_01RzHR6nU4Hc1xV6a3z4icau",
+      {
+        "x": 147.037,
+        "y": -202.595
+      }
+    ],
+    [
+      "toolu_011qmTeX9Yk8fXgJZVeQx7MV",
+      {
+        "x": 140.742,
+        "y": -193.174
+      }
+    ],
+    [
+      "toolu_01LKeTtfabe2frZNrWfXMSKK",
+      {
+        "x": 131.321,
+        "y": -186.879
+      }
+    ]
+  ],
+  "elided": []
+}

@@ -1,0 +1,27 @@
+{
+  "source": "fixtures/cc-2.1.234/projects",
+  "input": [
+    {
+      "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+      "nodeCount": 19
+    },
+    {
+      "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+      "nodeCount": 14
+    }
+  ],
+  "output": [
+    {
+      "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+      "x": 0,
+      "y": 0,
+      "R": 56.945
+    },
+    {
+      "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+      "x": -97.333,
+      "y": 89.165,
+      "R": 53.205
+    }
+  ]
+}

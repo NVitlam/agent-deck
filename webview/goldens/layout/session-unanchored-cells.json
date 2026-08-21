@@ -1,0 +1,146 @@
+{
+  "source": "fixtures/cc-2.1.234/projects/c--Users-dev-projects-agent-deck/05c5482d-5568-44ce-97fe-bc9a6c15afc4.jsonl",
+  "cells": [
+    [
+      "root",
+      {
+        "x": 0,
+        "y": 0,
+        "R": 39.513
+      }
+    ],
+    [
+      "a69e0f453d5ca5f43",
+      {
+        "x": 0,
+        "y": 214,
+        "R": 15.531
+      }
+    ],
+    [
+      "a32b33ebf1b92e214",
+      {
+        "x": -87.261,
+        "y": 195.401,
+        "R": 15.531
+      }
+    ],
+    [
+      "a1a53f42c5eca8824",
+      {
+        "x": -159.354,
+        "y": 142.837,
+        "R": 17.538
+      }
+    ],
+    [
+      "a3ecf86bbfb853726",
+      {
+        "x": -159.354,
+        "y": 260.537,
+        "R": 12.637
+      }
+    ]
+  ],
+  "dots": [
+    [
+      "toolu_017Pp1K6YSjX4SBuJDcmMsKs",
+      {
+        "x": 0,
+        "y": -96
+      }
+    ],
+    [
+      "toolu_01MiUaF4vR8zVMp5nL8njJH6",
+      {
+        "x": 36.738,
+        "y": -88.692
+      }
+    ],
+    [
+      "toolu_015U2QmdfzyqUd6DrCmCxfFB",
+      {
+        "x": 67.882,
+        "y": -67.882
+      }
+    ],
+    [
+      "toolu_015bjMuhrKGMsdJxXMUq6Dri",
+      {
+        "x": 0,
+        "y": 161.2
+      }
+    ],
+    [
+      "toolu_01VJxVjoCCqzBQXRzMC97fq3",
+      {
+        "x": -87.261,
+        "y": 142.601
+      }
+    ],
+    [
+      "toolu_012xCBtQH1ejFcfwn9E1pkAw",
+      {
+        "x": -159.354,
+        "y": 90.037
+      }
+    ],
+    [
+      "toolu_01PyKgjjG3y7L4JWHoHtN57c",
+      {
+        "x": -159.354,
+        "y": 231.497
+      }
+    ],
+    [
+      "toolu_017yERDG4MvrLqUnpfaVuqtp",
+      {
+        "x": -148.241,
+        "y": 233.708
+      }
+    ],
+    [
+      "toolu_01MobmP15USPJ3NEQRXjrgd6",
+      {
+        "x": -138.82,
+        "y": 240.003
+      }
+    ],
+    [
+      "toolu_01TWS9krJUd1aYjVtqq5tFNL",
+      {
+        "x": -132.525,
+        "y": 249.424
+      }
+    ],
+    [
+      "toolu_01S5FxkdBKV71TppGrq84cHx",
+      {
+        "x": -130.314,
+        "y": 260.537
+      }
+    ],
+    [
+      "toolu_01RzHR6nU4Hc1xV6a3z4icau",
+      {
+        "x": -132.525,
+        "y": 271.65
+      }
+    ],
+    [
+      "toolu_011qmTeX9Yk8fXgJZVeQx7MV",
+      {
+        "x": -138.82,
+        "y": 281.071
+      }
+    ],
+    [
+      "toolu_01LKeTtfabe2frZNrWfXMSKK",
+      {
+        "x": -148.241,
+        "y": 287.366
+      }
+    ]
+  ],
+  "elided": []
+}

@@ -58,7 +58,6 @@ import {
   toDeckSession,
   CELL_FOOTPRINT,
   roundCoord,
-  CELL_RADIUS_MAX,
   LABEL_PAD,
 } from './layout.js';
 import type { DeckSession } from './layout.js';

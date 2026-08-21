@@ -37,6 +37,8 @@ import { applySessionPatch } from '../src/bridge/apply.js';
 import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
 import type { Altitude, ViewMode } from './canvas-contract.js';
 import { countNodes } from './layout.js';
+import { DECK_FILTERS, ZOOM_MAX, ZOOM_MIN } from './canvas-contract.js';
+import type { DeckFilter } from './canvas-contract.js';
 
 /** One row of the left rail. */
 export interface SessionSummary {
@@ -129,6 +131,25 @@ export interface WebviewView {
    */
   viewMode: ViewMode;
   /**
+   * Which sessions the deck shows. `sessions` below is ALWAYS the full list —
+   * filtering is applied by the deck, not by the store, so nothing downstream
+   * can mistake a filtered view for the host's account of what exists.
+   */
+  deckFilter: DeckFilter;
+  /**
+   * The sessions the current filter admits. A derived convenience, recomputed
+   * on every read like everything else here, never stored.
+   */
+  filteredSessions: readonly SessionSummary[];
+  /**
+   * Whether the inspector panel is open. Distinct from `altitude === 'inspector'`
+   * on purpose: a node can stay SELECTED while its panel is shut, which is what
+   * makes reopening possible without re-picking the node.
+   */
+  inspectorOpen: boolean;
+  /** Deck pan/zoom. A TRANSFORM, never a coordinate — see `canvas-contract.ts`. */
+  deckView: { x: number; y: number; k: number };
+  /**
    * Which of the three canvas altitudes the panel is at (C7.1).
    *
    * Never independent of the two ids below, and the store — not a component —
@@ -194,6 +215,16 @@ export interface Store {
   setViewMode(mode: ViewMode): void;
   /** The in-panel toggle: canvas ⇄ list. */
   toggleViewMode(): void;
+  /** Show only sessions of this liveness, or all of them. */
+  setDeckFilter(filter: DeckFilter): void;
+  /** Open or shut the inspector panel without changing the selected node. */
+  setInspectorOpen(open: boolean): void;
+  /** Pan the deck by a delta in stage units. */
+  panDeck(dx: number, dy: number): void;
+  /** Zoom the deck about a point, clamped to [ZOOM_MIN, ZOOM_MAX]. */
+  zoomDeck(factor: number, originX: number, originY: number): void;
+  /** Back to the identity transform. */
+  resetDeckView(): void;
   /** UI intent: toggle a node's expansion. */
   toggleNode(nodeId: string): void;
   /** True when the user toggled this node away from its default. */
@@ -272,6 +303,10 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
   let selectedNodeId: string | undefined;
   let altitude: Altitude = 'deck';
   let viewMode: ViewMode = DEFAULT_VIEW_MODE;
+  let deckFilter: DeckFilter = 'all';
+  let inspectorOpen = false;
+  const IDENTITY_VIEW = { x: 0, y: 0, k: 1 };
+  let deckView = { ...IDENTITY_VIEW };
   let degraded = false;
   let degradedReason: 'noHookEvents' | 'listenerDown' | undefined;
   let degradedDismissed = false;
@@ -352,6 +387,7 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         // and let them choose again. The node selection goes with it: it
         // belonged to the session that left.
         selectedNodeId = undefined;
+        inspectorOpen = false;
         altitude = 'deck';
       }
     }
@@ -380,6 +416,17 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         toggledNodeIds,
         viewMode,
         altitude,
+        deckFilter,
+        // Derived on every read, never stored: `sessions` above stays the
+        // host's full account, and this is one view of it. A component that
+        // wanted to know "how many are there really" must not have to undo a
+        // filter to find out.
+        filteredSessions:
+          deckFilter === 'all'
+            ? summaries
+            : summaries.filter((row) => row.liveness === deckFilter),
+        inspectorOpen,
+        deckView: { ...deckView },
       };
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
       if (selected !== undefined) view.selected = selected;
@@ -483,6 +530,7 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       if (findNode(selected.root, nodeId) === undefined) return;
       selectedNodeId = nodeId;
       altitude = 'inspector';
+      inspectorOpen = true;
       // No message. The host is not told which node is being inspected, and
       // does not need to be — the payload arrived with the snapshot.
       notify();
@@ -491,6 +539,7 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     escape(): void {
       if (altitude === 'inspector') {
         altitude = 'session';
+        inspectorOpen = false;
         selectedNodeId = undefined;
       } else if (altitude === 'session') {
         altitude = 'deck';
@@ -503,6 +552,53 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     setViewMode(mode: ViewMode): void {
       if (mode === viewMode) return;
       viewMode = mode;
+      notify();
+    },
+
+    setDeckFilter(filter: DeckFilter): void {
+      if (!DECK_FILTERS.includes(filter) || filter === deckFilter) return;
+      deckFilter = filter;
+      notify();
+    },
+
+    setInspectorOpen(open: boolean): void {
+      if (open === inspectorOpen) return;
+      inspectorOpen = open;
+      // Opening the panel is what raises the altitude, and only when there is
+      // something to inspect. Reopening on a selection that no longer resolves
+      // would put the panel at an altitude with nothing in it.
+      if (open && selectedNodeId !== undefined) altitude = 'inspector';
+      if (!open && altitude === 'inspector') altitude = 'session';
+      notify();
+    },
+
+    panDeck(dx: number, dy: number): void {
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+      if (dx === 0 && dy === 0) return;
+      deckView = { ...deckView, x: deckView.x + dx, y: deckView.y + dy };
+      notify();
+    },
+
+    zoomDeck(factor: number, originX: number, originY: number): void {
+      if (!Number.isFinite(factor) || factor <= 0) return;
+      if (!Number.isFinite(originX) || !Number.isFinite(originY)) return;
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, deckView.k * factor));
+      if (next === deckView.k) return;
+      // Zoom ABOUT THE POINTER: the stage point under the cursor stays under
+      // the cursor. Without this the deck slides away from whatever you were
+      // aiming at, which reads as the zoom being broken rather than centred.
+      const ratio = next / deckView.k;
+      deckView = {
+        k: next,
+        x: originX - (originX - deckView.x) * ratio,
+        y: originY - (originY - deckView.y) * ratio,
+      };
+      notify();
+    },
+
+    resetDeckView(): void {
+      if (deckView.x === 0 && deckView.y === 0 && deckView.k === 1) return;
+      deckView = { ...IDENTITY_VIEW };
       notify();
     },
 

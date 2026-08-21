@@ -5,8 +5,8 @@ import type {
   WebviewToHostMessage,
 } from '../src/model/events.js';
 import { createStore } from './store.js';
-import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
-import { countNodes } from './layout.js';
+import { DEFAULT_VIEW_MODE, ZOOM_MAX, ZOOM_MIN } from './canvas-contract.js';
+import { countNodes, deckLayout } from './layout.js';
 import { liveSession, unsupportedSession } from './testdata.js';
 
 /**
@@ -828,5 +828,120 @@ describe('the derived numbers accumulate nothing', () => {
     expect(store.getView().sessions).toEqual(first);
     expect(store.getView().sessions[0]?.nodeCount).toBe(7);
     expect(store.getView().sessions[0]?.errorCount).toBe(1);
+  });
+});
+
+describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
+  it('filters by liveness without touching the host\u2019s account of what exists', () => {
+    const store = createStore();
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [
+        liveSession(),
+        liveSession({ sessionId: 'session-idle', liveness: 'idle' }),
+        liveSession({ sessionId: 'session-ended', liveness: 'ended' }),
+      ],
+    });
+
+    const all = store.getView();
+    expect(all.deckFilter).toBe('all');
+    expect(all.filteredSessions).toHaveLength(3);
+
+    store.setDeckFilter('live');
+    const live = store.getView();
+    expect(live.filteredSessions.map((r) => r.liveness)).toEqual(['live']);
+
+    // The point of the assertion: `sessions` is UNFILTERED. A component that
+    // wanted to say "1 of 3" must be able to, and nothing downstream may
+    // mistake a filtered list for everything the host reported.
+    expect(live.sessions).toHaveLength(3);
+  });
+
+  it('reopens the inspector on the current selection, without re-picking a node', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    store.selectNode('tool-read');
+    expect(store.getView().inspectorOpen).toBe(true);
+    expect(store.getView().altitude).toBe('inspector');
+
+    store.setInspectorOpen(false);
+    const shut = store.getView();
+    expect(shut.inspectorOpen).toBe(false);
+    expect(shut.altitude).toBe('session');
+    // The selection SURVIVES the close. That is the whole reason this is a
+    // separate flag rather than a synonym for the altitude: without it there
+    // is nothing to reopen onto.
+    expect(shut.selectedNodeId).toBe('tool-read');
+
+    store.setInspectorOpen(true);
+    expect(store.getView().altitude).toBe('inspector');
+    expect(store.getView().selectedNodeId).toBe('tool-read');
+  });
+
+  it('pans and zooms as a TRANSFORM, changing no layout coordinate', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession(), liveSession({ sessionId: 'session-idle', liveness: 'idle' })] });
+
+    // The geometry, before anyone touches the view.
+    const before = deckLayout(store.getView().sessions.map((r) => ({
+      sessionId: r.sessionId,
+      nodeCount: r.nodeCount,
+    })));
+
+    store.panDeck(37, -18);
+    store.zoomDeck(1.1, 200, 120);
+
+    const view = store.getView();
+    expect(view.deckView.x).not.toBe(0);
+    expect(view.deckView.k).toBeGreaterThan(1);
+
+    // THE ASSERTION THIS SUITE EXISTS FOR. Pan and zoom are a transform on a
+    // stage wrapper; if either ever edits placements instead, layout stops
+    // being a pure function of state, every golden goes stale, and "a spawn
+    // adds, it never reflows" quietly stops being true. Byte-identical, not
+    // approximately equal — a tolerance here would let a slow drift through.
+    const after = deckLayout(store.getView().sessions.map((r) => ({
+      sessionId: r.sessionId,
+      nodeCount: r.nodeCount,
+    })));
+    expect(after).toStrictEqual(before);
+  });
+
+  it('clamps zoom and returns to the identity transform on reset', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+
+    for (let i = 0; i < 40; i += 1) store.zoomDeck(1.5, 0, 0);
+    expect(store.getView().deckView.k).toBeLessThanOrEqual(ZOOM_MAX);
+    for (let i = 0; i < 80; i += 1) store.zoomDeck(1 / 1.5, 0, 0);
+    expect(store.getView().deckView.k).toBeGreaterThanOrEqual(ZOOM_MIN);
+
+    store.resetDeckView();
+    expect(store.getView().deckView).toEqual({ x: 0, y: 0, k: 1 });
+  });
+
+  it('keeps the point under the cursor under the cursor while zooming', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+
+    // Stage coordinate of a screen point, before and after. If these diverge
+    // the deck slides away from whatever you aimed at, which reads as the
+    // zoom being broken rather than centred.
+    const screenX = 250;
+    const stageBefore = (screenX - store.getView().deckView.x) / store.getView().deckView.k;
+    store.zoomDeck(1.4, screenX, 0);
+    const stageAfter = (screenX - store.getView().deckView.x) / store.getView().deckView.k;
+    expect(stageAfter).toBeCloseTo(stageBefore, 10);
+  });
+
+  it('ignores non-finite and no-op transforms rather than corrupting the view', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.panDeck(Number.NaN, 5);
+    store.zoomDeck(Number.POSITIVE_INFINITY, 0, 0);
+    store.zoomDeck(0, 0, 0);
+    store.zoomDeck(-1, 0, 0);
+    expect(store.getView().deckView).toEqual({ x: 0, y: 0, k: 1 });
   });
 });

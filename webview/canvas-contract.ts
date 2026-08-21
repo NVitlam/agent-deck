@@ -117,6 +117,24 @@ export interface SessionLayout {
 export type Altitude = 'deck' | 'session' | 'inspector';
 
 /** Which renderer is showing. The list view is kept for one release (C7.2). */
+/**
+ * Which sessions the deck shows. View state only: filtering never touches the
+ * store's session list and never reaches the host.
+ *
+ * NOTE the deliberate exception it creates. `deckLayout` places by array index,
+ * so changing the filter changes the array and blobs move. Everywhere else this
+ * phase promises "a spawn adds, it never reflows" — here the user asked for a
+ * different view of the same data, and moving is the honest response to that.
+ */
+export type DeckFilter = 'all' | 'live' | 'idle' | 'ended';
+
+/** The chips, in the order they render. */
+export const DECK_FILTERS: readonly DeckFilter[] = ['all', 'live', 'idle', 'ended'];
+
+/** Zoom bounds for the deck stage. Bounded so a wheel cannot lose the deck. */
+export const ZOOM_MIN = 0.4;
+export const ZOOM_MAX = 3;
+
 export type ViewMode = 'canvas' | 'list';
 
 /** The default at startup and after a reload. Canvas, immediately, no setting. */
@@ -157,6 +175,26 @@ export const TESTID = {
   /* Inspector */
   inspector: 'inspector',
   inspectorEmpty: 'inspector-empty',
+
+  /* Navigation and controls (Phase 4.6) */
+  /** The breadcrumb nav. Spec C7.8 calls it the session dock. */
+  dock: 'dock',
+  /** The crumb that returns to altitude 0. A real button, not decoration. */
+  crumbDeck: 'crumb-deck',
+  /** The crumb naming where you are now. */
+  crumbHere: 'crumb-here',
+  /** One liveness filter chip. Carries data-filter and data-active. */
+  filterChip: 'filter-chip',
+  /** Reopens the inspector on the current selection after it was closed. */
+  inspectorToggle: 'inspector-toggle',
+  /** The pan/zoom wrapper. Carries the transform; NEVER a coordinate. */
+  deckStage: 'deck-stage',
+  /** Resets pan and zoom to the identity transform. */
+  deckReset: 'deck-reset',
+  /** How many sessions are showing, and of how many. */
+  countChip: 'count-chip',
+  /** The membrane-colour key. */
+  legend: 'legend',
 
   /* Chrome */
   viewToggle: 'view-toggle',

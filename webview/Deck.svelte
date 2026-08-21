@@ -46,6 +46,11 @@
     selectedSessionId,
     reducedMotion = false,
     onenter,
+    deckView = { x: 0, y: 0, k: 1 },
+    onpan,
+    onzoom,
+    onreset,
+    total,
   }: {
     /**
      * Every session the host reported, summarised by the store, in the order
@@ -60,6 +65,21 @@
     reducedMotion?: boolean;
     /** Wired to `Store.enterSession` — the deck to session-interior move. */
     onenter?: ((sessionId: string) => void) | undefined;
+    /**
+     * Pan/zoom, applied as an SVG TRANSFORM on the stage group.
+     *
+     * The whole point of taking it as a transform rather than as an offset to
+     * apply to placements: `deckLayout` stays a pure function of state, its
+     * goldens stay valid as numbers, and "a spawn adds, it never reflows" is
+     * untouched by a user dragging the view around. A pan implementation that
+     * edited coordinates would break all three silently.
+     */
+    deckView?: { x: number; y: number; k: number };
+    onpan?: ((dx: number, dy: number) => void) | undefined;
+    onzoom?: ((factor: number, originX: number, originY: number) => void) | undefined;
+    onreset?: (() => void) | undefined;
+    /** How many sessions exist before filtering. Defaults to what is shown. */
+    total?: number | undefined;
   } = $props();
 
   /** Slack around the placed blobs, leaving room for labels and tags. */
@@ -96,6 +116,59 @@
 
   let viewBox = $derived(viewBoxOf(placements));
 
+  // Drag to pan. Pointer events rather than mouse events so a trackpad and a
+  // pen behave the same, and `setPointerCapture` so a fast drag that leaves
+  // the element does not stick the deck mid-pan.
+  let dragging = $state.raw(false);
+  let lastX = 0;
+  let lastY = 0;
+
+  const onPointerDown = (event: PointerEvent): void => {
+    // Only a plain primary-button drag on the background. A drag that starts
+    // on a blob is that blob's business — otherwise panning would swallow the
+    // click that enters a session.
+    if (event.button !== 0) return;
+    const target = event.target as Element | null;
+    if (target?.closest('[data-testid="deck-blob"]') !== null) return;
+    dragging = true;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+  };
+
+  const onPointerMove = (event: PointerEvent): void => {
+    if (!dragging) return;
+    const dx = event.clientX - lastX;
+    const dy = event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    onpan?.(dx, dy);
+  };
+
+  const endDrag = (event: PointerEvent): void => {
+    if (!dragging) return;
+    dragging = false;
+    (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
+  };
+
+  const onWheel = (event: WheelEvent): void => {
+    if (onzoom === undefined) return;
+    event.preventDefault();
+    // A fixed step per notch rather than one proportional to deltaY: browsers
+    // report wildly different magnitudes for the same physical gesture, and a
+    // proportional factor makes a trackpad and a mouse wheel feel like two
+    // different controls.
+    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const rect = (event.currentTarget as Element).getBoundingClientRect();
+    onzoom(factor, event.clientX - rect.left, event.clientY - rect.top);
+  };
+
+  let shown = $derived(sessions.length);
+  let totalCount = $derived(total ?? sessions.length);
+  let transform = $derived(
+    `translate(${deckView.x} ${deckView.y}) scale(${deckView.k})`,
+  );
+
   /** The placement and the summary it belongs to, paired by index. */
   let blobs = $derived(
     placements.map((placement, index) => ({ placement, summary: sessions[index] })),
@@ -109,28 +182,142 @@
   data-sessions={String(sessions.length)}
   aria-label="Deck"
 >
+  <div class="deck-chrome">
+    <!-- Says what is showing AND out of how many, so a filter can never look
+         like "these are all the sessions there are". -->
+    <span class="count" data-testid={TESTID.countChip} data-shown={String(shown)}
+      data-total={String(totalCount)}
+      >{shown === totalCount ? `${shown} sessions` : `${shown} of ${totalCount}`}</span
+    >
+    <!-- The membrane-colour key. The grammar is only legible if it is stated
+         somewhere; C7.3 defines it and until now nothing showed it. -->
+    <span class="legend" data-testid={TESTID.legend}>
+      <span class="key" data-liveness="live">live</span>
+      <span class="key" data-liveness="idle">idle</span>
+      <span class="key" data-liveness="ended">ended</span>
+      <span class="key" data-liveness="unsupported">refused</span>
+    </span>
+    {#if onreset !== undefined}
+      <button
+        class="reset"
+        type="button"
+        data-testid={TESTID.deckReset}
+        data-identity={String(deckView.x === 0 && deckView.y === 0 && deckView.k === 1)}
+        onclick={() => onreset?.()}>Reset view</button
+      >
+    {/if}
+  </div>
+
   {#if sessions.length === 0}
     <!-- C7.3, the last row: an empty deck and one quiet line. Not an error,
          not a spinner, and not a call to action. -->
     <p class="empty" data-testid={TESTID.deckEmpty}>No sessions in this workspace.</p>
   {:else}
-    <svg class="field" {viewBox} role="group" aria-label="Sessions">
-      {#each blobs as blob (blob.placement.sessionId)}
-        {#if blob.summary !== undefined}
-          <SessionBlob
-            summary={blob.summary}
-            placement={blob.placement}
-            {degraded}
-            selected={blob.summary.sessionId === selectedSessionId}
-            {onenter}
-          />
-        {/if}
-      {/each}
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <svg
+      class="field"
+      class:dragging
+      {viewBox}
+      role="group"
+      aria-label="Sessions"
+      onpointerdown={onPointerDown}
+      onpointermove={onPointerMove}
+      onpointerup={endDrag}
+      onpointercancel={endDrag}
+      onwheel={onWheel}
+    >
+      <!-- THE STAGE. Everything pan/zoom does happens on this one attribute.
+           Nothing below it knows the view has moved, which is exactly why the
+           layout goldens cannot be disturbed by a drag. -->
+      <g data-testid={TESTID.deckStage} {transform}>
+        {#each blobs as blob (blob.placement.sessionId)}
+          {#if blob.summary !== undefined}
+            <SessionBlob
+              summary={blob.summary}
+              placement={blob.placement}
+              {degraded}
+              selected={blob.summary.sessionId === selectedSessionId}
+              {onenter}
+            />
+          {/if}
+        {/each}
+      </g>
     </svg>
   {/if}
 </section>
 
 <style>
+  .deck-chrome {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 3px 10px;
+    font-size: 0.85em;
+    border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  }
+
+  .count {
+    opacity: 0.8;
+  }
+
+  .legend {
+    display: flex;
+    gap: 10px;
+    margin-left: auto;
+    opacity: 0.85;
+  }
+
+  .key::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 4px;
+    border-radius: 50%;
+    vertical-align: baseline;
+    background: currentColor;
+  }
+
+  .key[data-liveness='live'] {
+    color: var(--vscode-charts-green, currentColor);
+  }
+
+  .key[data-liveness='idle'] {
+    color: var(--vscode-charts-yellow, currentColor);
+  }
+
+  .key[data-liveness='ended'] {
+    color: var(--vscode-descriptionForeground, currentColor);
+  }
+
+  .key[data-liveness='unsupported'] {
+    color: var(--vscode-errorForeground, currentColor);
+  }
+
+  .reset {
+    font: inherit;
+    font-size: 0.95em;
+    color: var(--vscode-foreground);
+    background: transparent;
+    border: 1px solid var(--vscode-panel-border, transparent);
+    border-radius: 3px;
+    padding: 0 6px;
+    cursor: pointer;
+  }
+
+  .reset:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, currentColor);
+    outline-offset: 1px;
+  }
+
+  .field {
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .field.dragging {
+    cursor: grabbing;
+  }
   /* Every colour is a VS Code theme variable. The frozen mockup hardcodes a
      dark palette only because it lives outside VS Code (C7.7). */
   .deck {

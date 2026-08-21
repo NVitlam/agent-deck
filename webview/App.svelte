@@ -9,7 +9,7 @@
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
   import { displayLiveness, formatTokens } from './format.js';
-  import { TESTID } from './canvas-contract.js';
+  import { DECK_FILTERS, TESTID } from './canvas-contract.js';
 
   let { store }: { store: Store } = $props();
 
@@ -115,6 +115,67 @@
        free of a host-manifest diff: a setting would be a `package.json`
        contribution (spec C7.2). The canvas is the default immediately. -->
   <div class="chrome">
+    {#if view.viewMode === 'canvas'}
+      <!-- The dock, spec C7.8: "The session dock is a <nav>". Phase 4.5 built
+           the altitudes and shipped no visible way between them — Escape
+           walked up and nothing said so. A keystroke nobody is told about is
+           not navigation. -->
+      <nav class="dock" data-testid={TESTID.dock} aria-label="Altitude">
+        <button
+          type="button"
+          class="crumb"
+          data-testid={TESTID.crumbDeck}
+          aria-current={view.altitude === 'deck' ? 'page' : undefined}
+          disabled={view.altitude === 'deck'}
+          onclick={() => {
+            // Walk all the way out, whatever altitude we are at, so one click
+            // always means "back to the deck" rather than "up one".
+            while (store.getView().altitude !== 'deck') store.escape();
+          }}>Deck</button
+        >
+        {#if view.altitude !== 'deck' && view.selected !== undefined}
+          <span class="sep" aria-hidden="true">▸</span>
+          <span class="crumb here" data-testid={TESTID.crumbHere}
+            >{view.selected.root.label !== ''
+              ? view.selected.root.label
+              : view.selected.sessionId}</span
+          >
+        {/if}
+      </nav>
+
+      {#if view.altitude === 'deck'}
+        <!-- Liveness filter. View state only: `view.sessions` remains the
+             host's full account and the count chip on the deck says "n of m",
+             so a filter can never be mistaken for "this is all there is". -->
+        <div class="filters" role="group" aria-label="Filter sessions">
+          {#each DECK_FILTERS as filter (filter)}
+            <button
+              type="button"
+              class="chip"
+              data-testid={TESTID.filterChip}
+              data-filter={filter}
+              data-active={String(view.deckFilter === filter)}
+              aria-pressed={view.deckFilter === filter}
+              onclick={() => store.setDeckFilter(filter)}>{filter}</button
+            >
+          {/each}
+        </div>
+      {/if}
+
+      {#if view.altitude !== 'deck' && view.selectedNodeId !== undefined}
+        <!-- Reopening. The close button existed; nothing reopened it, so a
+             closed inspector could only come back by re-picking the node. -->
+        <button
+          type="button"
+          class="chip"
+          data-testid={TESTID.inspectorToggle}
+          aria-pressed={view.inspectorOpen}
+          onclick={() => store.setInspectorOpen(!view.inspectorOpen)}
+          >{view.inspectorOpen ? 'Hide details' : 'Show details'}</button
+        >
+      {/if}
+    {/if}
+
     <button
       type="button"
       class="toggle"
@@ -158,11 +219,16 @@
          ever does. -->
     <main class="main" data-testid="main">
       <Deck
-        sessions={view.sessions}
+        sessions={view.filteredSessions}
+        total={view.sessions.length}
         degraded={view.degraded}
         selectedSessionId={view.selectedSessionId}
+        deckView={view.deckView}
         {reducedMotion}
         onenter={(id) => store.enterSession(id)}
+        onpan={(dx, dy) => store.panDeck(dx, dy)}
+        onzoom={(factor, x, y) => store.zoomDeck(factor, x, y)}
+        onreset={() => store.resetDeckView()}
       />
     </main>
   {:else}
@@ -219,7 +285,7 @@
           onselect={(id) => store.selectNode(id)}
         />
       </main>
-      {#if view.altitude === 'inspector'}
+      {#if view.inspectorOpen && view.selectedNode !== undefined}
         <aside class="aside">
           <Inspector
             node={inspected}
@@ -294,8 +360,71 @@
     opacity: 0.85;
   }
 
+  .dock {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .crumb {
+    font: inherit;
+    font-size: 0.9em;
+    color: var(--vscode-textLink-foreground, inherit);
+    background: transparent;
+    border: none;
+    padding: 0 2px;
+    cursor: pointer;
+  }
+
+  .crumb:disabled {
+    color: var(--vscode-descriptionForeground, inherit);
+    cursor: default;
+  }
+
+  .crumb.here {
+    color: var(--vscode-foreground);
+    max-width: 18em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sep {
+    opacity: 0.6;
+  }
+
+  .filters {
+    display: flex;
+    gap: 4px;
+  }
+
+  .chip {
+    font: inherit;
+    font-size: 0.85em;
+    color: var(--vscode-foreground);
+    background: transparent;
+    border: 1px solid var(--vscode-panel-border, transparent);
+    border-radius: 9px;
+    padding: 0 8px;
+    cursor: pointer;
+  }
+
+  .chip[data-active='true'],
+  .chip[aria-pressed='true'] {
+    background: var(--vscode-badge-background, transparent);
+    color: var(--vscode-badge-foreground, inherit);
+  }
+
+  .crumb:focus-visible,
+  .chip:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, currentColor);
+    outline-offset: 1px;
+  }
+
   .chrome {
     display: flex;
+    align-items: center;
+    gap: 10px;
     justify-content: flex-end;
     padding: 2px 6px;
     border-bottom: 1px solid var(--vscode-panel-border, transparent);

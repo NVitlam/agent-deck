@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Deck — canvas mockup (not the product)</title>
+<style>
+  /* ── tokens ─────────────────────────────────────────────────────────
+     In production every one of these maps to a --vscode-* theme variable
+     (charts-green, charts-yellow, errorForeground, editor-background…).
+     Hardcoded here only because this mockup lives outside VS Code. */
+  :root{
+    --ink:#0d1117;
+    --panel:#141b23;
+    --line:#26303b;
+    --text:#cdd7e1;
+    --dim:#7f8b98;
+    --live:#4fd6ad;
+    --idle:#d8b56a;
+    --ended:#5a6572;
+    --err:#f2574f;
+    --fil:#6fb3e6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--ink);
+    color:var(--text);
+    font-family:"Cascadia Code","SF Mono",ui-monospace,Consolas,monospace;
+    font-size:13px;
+    overflow:hidden;
+    display:flex;flex-direction:column;
+  }
+
+  /* ── HUD ── */
+  .hud{
+    height:44px;flex:0 0 44px;
+    display:flex;align-items:center;gap:18px;
+    padding:0 16px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(to bottom,#10161d,#0d1117);
+    user-select:none;
+  }
+  .brand{letter-spacing:.22em;font-size:11px;color:var(--dim)}
+  .crumb{display:flex;gap:6px;align-items:baseline}
+  .crumb button{
+    background:none;border:none;color:var(--text);font:inherit;cursor:pointer;padding:0
+  }
+  .crumb button:hover{text-decoration:underline}
+  .crumb .sep{color:var(--dim)}
+  .crumb .here{color:var(--live)}
+  .hud .spacer{flex:1}
+  .totals{display:flex;gap:14px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .totals b{color:var(--text);font-weight:500}
+  .chip{
+    font-size:11px;padding:2px 8px;border-radius:9px;
+    border:1px solid var(--line);color:var(--dim);white-space:nowrap;
+  }
+  .chip.degraded{display:none;color:var(--idle);border-color:var(--idle)}
+  body.degraded .chip.degraded{display:inline-block}
+
+  /* ── stage ── */
+  main{flex:1;position:relative;min-height:0}
+  svg#stage{width:100%;height:100%;display:block;cursor:default}
+  #deckLayer,#sessionLayer{
+    transition:transform .45s cubic-bezier(.4,0,.2,1),opacity .45s ease;
+  }
+  #sessionLayer{opacity:0;pointer-events:none}
+  body.zoomed #sessionLayer{opacity:1;pointer-events:auto}
+  body.zoomed #deckLayer{pointer-events:none}
+
+  text{fill:var(--text);font-family:inherit}
+  .lbl{font-size:13px}
+  .sub{font-size:11px;fill:var(--dim);font-variant-numeric:tabular-nums}
+  .tag{font-size:10px;fill:var(--dim);letter-spacing:.08em}
+
+  /* membranes */
+  .membrane{fill:#161f28;stroke-width:1.6;cursor:pointer}
+  .m-live  {stroke:var(--live)}
+  .m-idle  {stroke:var(--idle)}
+  .m-ended {stroke:var(--ended)}
+  .m-unsupported{stroke:var(--err);stroke-dasharray:7 5;fill:#171216}
+  .m-error {stroke:var(--err)}
+  body.degraded .m-live{stroke-dasharray:6 4}     /* liveness is inferred: the ring goes hollow */
+  .ghost{opacity:.38}
+  .blob:hover .membrane{stroke-width:2.4}
+
+  .breathe{transform-box:fill-box;transform-origin:center;animation:breathe 4.6s ease-in-out infinite}
+  @keyframes breathe{50%{transform:scale(1.022)}}
+
+  .pulse{fill:none;stroke:var(--live);opacity:0;animation:pulse 2.6s ease-out infinite}
+  @keyframes pulse{0%{opacity:.55;stroke-width:1.4;transform:scale(1)}
+                   100%{opacity:0;stroke-width:.4;transform:scale(1.22)}}
+  .pulse{transform-box:fill-box;transform-origin:center}
+
+  /* tool dots */
+  .dot{cursor:pointer}
+  .dot circle{stroke:none}
+  .d-done circle{fill:var(--dim);opacity:.75}
+  .d-running circle{fill:var(--live);animation:dotpulse 1.15s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+  @keyframes dotpulse{50%{transform:scale(1.55);opacity:.65}}
+  .d-error path{fill:var(--err)}
+  .dot:hover circle{stroke:var(--text);stroke-width:1}
+
+  /* filaments — the toolUseId join, drawn */
+  .filament{fill:none;stroke:var(--fil);stroke-width:1.2;opacity:.55}
+  .filament.flow{stroke-dasharray:3 9;animation:flow 1.1s linear infinite}
+  @keyframes flow{to{stroke-dashoffset:-12}}
+  .filament.draw{animation:draw .7s ease-out}
+  @keyframes draw{from{stroke-dashoffset:var(--len)}to{stroke-dashoffset:0}}
+  .stub{fill:none;stroke:var(--err);stroke-width:1.2;stroke-dasharray:4 6;opacity:.7}
+
+  .crack{fill:none;stroke:var(--err);stroke-width:1.2;opacity:.8}
+  .constellation circle{fill:var(--dim);opacity:.35}
+
+  /* ── inspector ── */
+  #inspector{
+    position:absolute;top:0;right:0;bottom:0;width:360px;
+    background:var(--panel);border-left:1px solid var(--line);
+    transform:translateX(100%);transition:transform .3s ease;
+    display:flex;flex-direction:column;
+  }
+  #inspector.open{transform:translateX(0)}
+  #inspector header{
+    display:flex;align-items:center;gap:8px;padding:10px 14px;
+    border-bottom:1px solid var(--line);
+  }
+  #inspector header .kind{font-size:10px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase}
+  #inspector header .close{margin-left:auto;background:none;border:none;color:var(--dim);cursor:pointer;font:inherit;font-size:15px}
+  #inspector .body{padding:12px 14px;overflow:auto;flex:1}
+  .irow{display:flex;gap:10px;margin:3px 0;font-variant-numeric:tabular-nums}
+  .irow .k{width:82px;color:var(--dim);flex:0 0 82px}
+  .schip{font-size:11px;padding:0 6px;border-radius:3px;border:1px solid}
+  .s-running{color:var(--live);border-color:var(--live)}
+  .s-done{color:var(--dim);border-color:var(--line)}
+  .s-error{color:var(--err);border-color:var(--err)}
+  .pv{margin-top:12px}
+  .pv .pl{font-size:10px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase}
+  .pv pre{
+    margin-top:4px;padding:6px 8px;white-space:pre-wrap;word-break:break-word;
+    background:#0f151c;border:1px solid var(--line);border-radius:3px;
+    font-size:12px;max-height:22em;overflow:auto;
+  }
+  .pv .marker{font-size:11px;color:var(--dim);font-style:italic}
+  .pv button{
+    margin-top:4px;background:none;border:1px solid var(--line);border-radius:3px;
+    color:var(--text);font:inherit;font-size:11px;padding:2px 8px;cursor:pointer;
+  }
+  .pv button:hover{border-color:var(--dim)}
+
+  /* refusal card (G3) */
+  .refusal rect{fill:#171216;stroke:var(--err);stroke-dasharray:7 5}
+  .refusal text{font-size:12px}
+
+  /* ── dock (visible while zoomed) ── */
+  #dock{
+    position:absolute;left:12px;bottom:12px;display:none;gap:6px;flex-direction:column;
+  }
+  body.zoomed #dock{display:flex}
+  #dock button{
+    display:flex;align-items:center;gap:8px;
+    background:rgba(20,27,35,.9);border:1px solid var(--line);border-radius:4px;
+    color:var(--text);font:inherit;font-size:11px;padding:4px 10px;cursor:pointer;text-align:left;
+  }
+  #dock button:hover{border-color:var(--dim)}
+  #dock button.here{border-color:var(--live)}
+  #dock .ld{width:7px;height:7px;border-radius:50%;border:1px solid currentColor;flex:0 0 7px}
+  #dock .ld.live{background:var(--live);border-color:var(--live)}
+  #dock .ld.idle{background:var(--idle);border-color:var(--idle)}
+  #dock .ld.ended{background:var(--ended);border-color:var(--ended)}
+  #dock .ld.unsupported{border-color:var(--err);border-style:dashed}
+
+  /* ── legend ── */
+  #legend{
+    position:absolute;right:12px;bottom:12px;display:flex;gap:14px;
+    color:var(--dim);font-size:10px;letter-spacing:.04em;user-select:none;
+  }
+  body.inspecting #legend{right:374px}
+  #legend .li{display:flex;align-items:center;gap:5px}
+  #legend .sw{width:9px;height:9px;border-radius:50%}
+
+  /* ── mockup controls — not part of the product ── */
+  .controls{
+    height:40px;flex:0 0 40px;display:flex;align-items:center;gap:10px;
+    padding:0 16px;border-top:1px solid var(--line);background:#0b0f14;
+  }
+  .controls .note{color:var(--dim);font-size:10px;letter-spacing:.08em;margin-right:6px}
+  .controls button{
+    background:none;border:1px solid var(--line);border-radius:3px;color:var(--text);
+    font:inherit;font-size:11px;padding:3px 10px;cursor:pointer;
+  }
+  .controls button:hover{border-color:var(--dim)}
+  .controls label{color:var(--dim);font-size:11px;display:flex;gap:6px;align-items:center}
+
+  @media (prefers-reduced-motion:reduce){
+    .breathe,.pulse,.d-running circle,.filament.flow,.filament.draw{animation:none}
+    .pulse{opacity:.3;transform:scale(1.1)}
+  }
+</style>
+</head>
+<body>
+
+<header class="hud">
+  <span class="brand">AGENT&nbsp;DECK</span>
+  <nav class="crumb">
+    <button id="crumbDeck">deck</button>
+    <span class="sep" id="crumbSep" hidden>/</span>
+    <span class="here" id="crumbHere" hidden></span>
+  </nav>
+  <span class="spacer"></span>
+  <span class="chip degraded">◌ liveness inferred — hooks silent</span>
+  <span class="chip" id="countChip"></span>
+  <span class="totals">
+    <span>in <b id="tIn">0</b></span>
+    <span>out <b id="tOut">0</b></span>
+    <span title="cost not computed — no price table in this build">cost <b>—</b></span>
+  </span>
+</header>
+
+<main>
+  <svg id="stage" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
+    <defs>
+      <radialGradient id="vig" cx="50%" cy="46%" r="72%">
+        <stop offset="0%" stop-color="#121a22"/>
+        <stop offset="100%" stop-color="#0b0f14"/>
+      </radialGradient>
+    </defs>
+    <rect x="0" y="0" width="1200" height="800" fill="url(#vig)"/>
+    <g id="deckLayer"></g>
+    <g id="sessionLayer"></g>
+  </svg>
+
+  <aside id="inspector">
+    <header>
+      <span class="kind" id="insKind"></span>
+      <span id="insTitle"></span>
+      <button class="close" id="insClose" title="close">×</button>
+    </header>
+    <div class="body" id="insBody"></div>
+  </aside>
+
+  <div id="dock"></div>
+
+  <div id="legend">
+    <span class="li"><span class="sw" style="background:var(--live)"></span>running / live</span>
+    <span class="li"><span class="sw" style="background:var(--dim);opacity:.75"></span>done</span>
+    <span class="li"><span class="sw" style="background:var(--err);border-radius:1px"></span>error</span>
+    <span class="li"><span class="sw" style="border:1px dashed var(--err)"></span>unsupported / unattributed</span>
+  </div>
+</main>
+
+<footer class="controls">
+  <span class="note">MOCKUP CONTROLS — NOT PART OF THE PRODUCT</span>
+  <button id="btnPause">Pause activity</button>
+  <button id="btnDegraded">Toggle degraded</button>
+  <button id="btnReset">Reset</button>
+  <label>tick <input type="range" id="speed" min="300" max="2200" value="900" step="100"></label>
+</footer>
+
+<script>
+'use strict';
+
+/* ═══════════════ utilities ═══════════════ */
+const $ = s => document.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent){
+  const n = document.createElementNS(NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function txt(node, s){ node.textContent = s; return node; }
+function hash(s){
+  let h = 2166136261;
+  for (const c of s){ h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rnd = mulberry32(0xA9E27);          /* seeded: every reload plays the same film */
+function fmtTokens(n){
+  return Math.trunc(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+function fmtDur(ms){
+  if (ms === undefined) return '—';
+  if (ms < 1000) return Math.round(ms) + 'ms';
+  const s = ms / 1000;
+  if (s < 60) return s.toFixed(1) + 's';
+  const m = Math.floor(s / 60);
+  return m + 'm ' + String(Math.floor(s - m * 60)).padStart(2, '0') + 's';
+}
+
+/* ═══════════════ fake state (mirrors SessionState) ═══════════════ */
+let toolSeq = 100;
+function T(name, status, dur, spawns){
+  return { id: 't' + (toolSeq++), name, status, dur, spawns };
+}
+const S1 = {
+  sessionId: 's-9f2a', label: 'agent-deck · R2 cross-crews',
+  liveness: 'live', refused: false, workspaceMatch: true,
+  totals: { in: 812441, out: 96102 },
+  agents: [
+    { id: 'main', kind: 'main', label: 'main session', spawnDepth: 0, status: 'running',
+      tokens: { in: 402113, out: 41200 },
+      tools: [ T('Read','done',1500), T('Grep','done',220), T('Agent','done',182000,'a1'),
+               T('Bash','done',75),  T('Agent','done',96000,'a2'), T('Agent','done',141000,'a3'),
+               T('Edit','done',310), T('Bash','running') ] },
+    { id: 'a1', kind: 'phase-implementer', parentAgent: 'main', parentToolSpawn: 'a1',
+      spawnDepth: 1, status: 'running', tokens: { in: 188021, out: 22408 },
+      tools: [ T('Read','done',900), T('Edit','done',480), T('Agent','done',64000,'a4'),
+               T('Bash','running') ] },
+    { id: 'a4', kind: 'general-purpose', parentAgent: 'a1', parentToolSpawn: 'a4',
+      spawnDepth: 2, status: 'done', tokens: { in: 40233, out: 5117 },
+      tools: [ T('Read','done',700), T('Grep','done',410) ] },
+    { id: 'a2', kind: 'test-runner', parentAgent: 'main', parentToolSpawn: 'a2',
+      spawnDepth: 1, status: 'done', tokens: { in: 121400, out: 16044 },
+      tools: [ T('Bash','done',312000), T('Read','done',1100) ] },
+    { id: 'a3', kind: 'phase-verifier', parentAgent: 'main', parentToolSpawn: 'a3',
+      spawnDepth: 1, status: 'error', tokens: { in: 60674, out: 11333 },
+      tools: [ T('Read','done',850), T('Bash','error',4200) ] },
+    { id: 'ax', kind: 'unknown', parked: true, spawnDepth: 1, status: 'running',
+      tokens: { in: 0, out: 0 }, tools: [] },
+  ],
+};
+const S2 = {
+  sessionId: 's-41cc', label: 'fixture harvest', liveness: 'idle', refused: false,
+  workspaceMatch: true, totals: { in: 96410, out: 8112 },
+  agents: [ { id: 'main', kind: 'main', label: 'main session', spawnDepth: 0, status: 'done',
+    tokens: { in: 96410, out: 8112 },
+    tools: [ T('Read','done',600), T('Bash','done',88000), T('Write','done',150) ] } ],
+};
+const S3 = {
+  sessionId: 's-77b0', label: 'docs sweep', liveness: 'ended', refused: false,
+  workspaceMatch: true, totals: { in: 31022, out: 4903 },
+  agents: [ { id: 'main', kind: 'main', label: 'main session', spawnDepth: 0, status: 'done',
+    tokens: { in: 31022, out: 4903 },
+    tools: [ T('Grep','done',300), T('Edit','done',210) ] } ],
+};
+const S4 = {
+  sessionId: 's-e0d4', label: 'cc 2.2.0-nightly', liveness: 'unsupported', refused: true,
+  workspaceMatch: true, totals: { in: 0, out: 0 }, agents: [],
+};
+const S5 = {
+  sessionId: 's-b3aa', label: 'blogsite', liveness: 'ended', refused: false,
+  workspaceMatch: false, totals: { in: 12800, out: 2004 },
+  agents: [ { id: 'main', kind: 'main', label: 'main session', spawnDepth: 0, status: 'done',
+    tokens: { in: 12800, out: 2004 }, tools: [ T('Read','done',400) ] } ],
+};
+const sessions = [S1, S2, S3, S4, S5];
+
+/* ═══════════════ deterministic layout (pure functions of state) ═══════════════ */
+function countNodes(s){
+  return s.agents.reduce((n, a) => n + 1 + a.tools.length, 0);
+}
+function blobRadius(s){
+  if (s.refused) return 58;
+  return Math.min(118, 46 + 20 * Math.log2(1 + countNodes(s)));
+}
+/* Deck: the busiest session sits at the visual center of gravity; the rest
+   fan out on golden-angle rays. Pure, ordered, no physics. */
+function deckLayout(list){
+  const GA = 2.399963229728653, cx = 560, cy = 396;
+  return list.map((s, i) => {
+    if (i === 0) return { s, x: cx, y: cy, R: blobRadius(s) };
+    const r = 300 + 26 * Math.sqrt(i);
+    const th = i * GA + 0.62;
+    return { s, x: cx + r * Math.cos(th), y: cy + r * Math.sin(th) * 0.82, R: blobRadius(s) };
+  });
+}
+/* An individual silhouette per session: radius modulated by its id's hash,
+   so a session is recognizable by shape alone across reloads. */
+function blobPath(cx, cy, R, seed, amp){
+  amp = amp === undefined ? 0.065 : amp;
+  const K = 10, pts = [];
+  for (let i = 0; i < K; i++){
+    const th = i / K * 2 * Math.PI;
+    const j = (Math.sin(seed * 0.7 + i * 2.7) + Math.sin(seed * 1.3 + i * 1.9)) / 2;
+    const r = R * (1 + amp * j);
+    pts.push([cx + r * Math.cos(th), cy + r * Math.sin(th)]);
+  }
+  let d = 'M' + pts[0][0].toFixed(1) + ',' + pts[0][1].toFixed(1);
+  for (let i = 0; i < K; i++){
+    const p0 = pts[(i - 1 + K) % K], p1 = pts[i], p2 = pts[(i + 1) % K], p3 = pts[(i + 2) % K];
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += 'C' + [c1, c2, p2].map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  }
+  return d + 'Z';
+}
+/* Session interior. Incremental by construction: cells already placed never
+   move when a new one is added — a spawn adds, it does not reflow. */
+const SL = { CX: 560, CY: 408 };
+function toolAngle(agentPos, i, n){
+  const start = -Math.PI * 0.78;
+  const step = Math.min(0.42, (Math.PI * 1.5) / Math.max(n - 1, 1));
+  return start + i * step;
+}
+function toolPos(agentPos, i, n){
+  const a = toolAngle(agentPos, i, n);
+  const r = agentPos.R + (agentPos.R > 60 ? 26 : 17);
+  return { x: agentPos.x + r * Math.cos(a), y: agentPos.y + r * Math.sin(a), a };
+}
+function placeCell(cells, parentPos, angle, R){
+  const dist = parentPos.R + R + (parentPos.R > 60 ? 128 : 62);
+  let a = angle, tries = 0;
+  for (;;){
+    const x = parentPos.x + dist * Math.cos(a), y = parentPos.y + dist * Math.sin(a);
+    const clash = Object.values(cells).some(c => Math.hypot(c.x - x, c.y - y) < c.R + R + 26);
+    if (!clash || tries > 20) return { x, y, R };
+    a += (tries % 2 === 0 ? 1 : -1) * 0.27 * (Math.floor(tries / 2) + 1);
+    tries++;
+  }
+}
+function sessionLayout(sess){
+  const cells = {};      /* agentId -> {x,y,R} */
+  const dots = {};       /* toolId  -> {x,y}   */
+  const ordered = [...sess.agents].sort((p, q) => p.spawnDepth - q.spawnDepth);
+  for (const ag of ordered){
+    if (ag.parked){
+      cells[ag.id] = { x: SL.CX - 250, y: SL.CY + 235, R: 30, parked: true };
+      continue;
+    }
+    if (ag.spawnDepth === 0){
+      cells[ag.id] = { x: SL.CX, y: SL.CY, R: 92 };
+    } else {
+      const parent = sess.agents.find(p => p.id === ag.parentAgent);
+      const pPos = cells[parent.id];
+      const spawnIdx = parent.tools.findIndex(t => t.spawns === ag.id);
+      const a = toolAngle(pPos, spawnIdx, parent.tools.length);
+      const R = ag.spawnDepth === 1 ? 48 : 30;
+      cells[ag.id] = placeCell(cells, pPos, a, R);
+    }
+    const pos = cells[ag.id];
+    ag.tools.forEach((t, i) => { dots[t.id] = toolPos(pos, i, ag.tools.length); });
+  }
+  return { cells, dots };
+}
+
+/* ═══════════════ deck rendering ═══════════════ */
+const deckLayer = $('#deckLayer');
+const deckRefs = {};
+function renderDeck(){
+  const placed = deckLayout(sessions);
+  for (const { s, x, y, R } of placed){
+    const g = el('g', { class: 'blob' + (s.workspaceMatch ? '' : ' ghost') }, deckLayer);
+    g.style.cursor = 'pointer';
+    const seed = hash(s.sessionId) % 97;
+    if (s.liveness === 'live'){
+      el('path', { class: 'pulse', d: blobPath(x, y, R + 6, seed) }, g);
+    }
+    const wrap = el('g', { class: s.liveness === 'live' ? 'breathe' : '' }, g);
+    el('path', { class: 'membrane m-' + s.liveness, d: blobPath(x, y, R, seed) }, wrap);
+    if (s.refused){
+      /* the cracked membrane: fingerprint mismatch, interior never rendered */
+      el('path', { class: 'crack',
+        d: `M${x - R * 0.62},${y - R * 0.28} l${R * 0.34},${R * 0.2} l${R * 0.22},${-R * 0.26} l${R * 0.3},${R * 0.42} l${R * 0.2},${-R * 0.1}` }, wrap);
+    } else {
+      /* interior constellation: one faint dot per node — density readable at a glance */
+      const con = el('g', { class: 'constellation' }, wrap);
+      const cr = mulberry32(seed + 7);
+      const n = Math.min(countNodes(s), 40);
+      for (let i = 0; i < n; i++){
+        const a = cr() * Math.PI * 2, rr = Math.sqrt(cr()) * (R - 14);
+        el('circle', { cx: x + rr * Math.cos(a), cy: y + rr * Math.sin(a), r: 1.6 }, con);
+      }
+    }
+    const label = txt(el('text', { class: 'lbl', x, y: y + R + 20, 'text-anchor': 'middle' }, g), s.label);
+    const sub = txt(el('text', { class: 'sub', x, y: y + R + 36, 'text-anchor': 'middle' }, g), '');
+    if (!s.workspaceMatch){
+      txt(el('text', { class: 'tag', x, y: y + R + 50, 'text-anchor': 'middle' }, g), 'other workspace');
+    }
+    const errBadge = txt(el('text', { class: 'sub', x, y: y - R - 10, 'text-anchor': 'middle' }, g), '');
+    errBadge.style.fill = 'var(--err)';
+    g.addEventListener('click', () => enterSession(s.sessionId));
+    deckRefs[s.sessionId] = { g, sub, errBadge, x, y, R };
+  }
+  updateDeck();
+}
+function updateDeck(){
+  let live = 0, idle = 0, ended = 0, uns = 0, tin = 0, tout = 0;
+  for (const s of sessions){
+    tin += s.totals.in; tout += s.totals.out;
+    if (s.refused || s.liveness === 'unsupported') uns++;
+    else if (s.liveness === 'live') live++;
+    else if (s.liveness === 'idle') idle++;
+    else ended++;
+    const r = deckRefs[s.sessionId];
+    if (!r) continue;
+    if (s.refused){ txt(r.sub, 'unsupported CC layout'); }
+    else {
+      const running = s.agents.reduce((n, a) => n + a.tools.filter(t => t.status === 'running').length, 0);
+      txt(r.sub, fmtTokens(s.totals.in) + ' in · ' + fmtTokens(s.totals.out) + ' out'
+        + (running ? ' · ' + running + ' running' : ''));
+      const errs = s.agents.reduce((n, a) => n + a.tools.filter(t => t.status === 'error').length, 0);
+      txt(r.errBadge, errs ? '⚠ ' + errs : '');
+    }
+  }
+  txt($('#tIn'), fmtTokens(tin));
+  txt($('#tOut'), fmtTokens(tout));
+  txt($('#countChip'), live + ' live · ' + idle + ' idle · ' + ended + ' ended · ' + uns + ' unsupported');
+}
+
+/* ═══════════════ session rendering ═══════════════ */
+const sessionLayer = $('#sessionLayer');
+let current = null;                 /* sessionId while zoomed */
+const sRefs = { cells: {}, dots: {}, filaments: {} };
+
+function clearSession(){
+  sessionLayer.innerHTML = '';
+  sRefs.cells = {}; sRefs.dots = {}; sRefs.filaments = {};
+}
+function drawFilament(sess, layout, childAgent, animate){
+  const parent = sess.agents.find(p => p.id === childAgent.parentAgent);
+  const spawnTool = parent.tools.find(t => t.spawns === childAgent.id);
+  const from = layout.dots[spawnTool.id];
+  const c = layout.cells[childAgent.id];
+  const dx = c.x - from.x, dy = c.y - from.y;
+  const L = Math.hypot(dx, dy);
+  const to = { x: c.x - dx / L * c.R, y: c.y - dy / L * c.R };
+  const mx = (from.x + to.x) / 2 - dy * 0.12, my = (from.y + to.y) / 2 + dx * 0.12;
+  const d = `M${from.x.toFixed(1)},${from.y.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${to.x.toFixed(1)},${to.y.toFixed(1)}`;
+  const p = el('path', { class: 'filament', d }, sessionLayer.firstChild || sessionLayer);
+  sessionLayer.insertBefore(p, sessionLayer.firstChild);
+  const len = p.getTotalLength();
+  p.style.setProperty('--len', len);
+  p.setAttribute('stroke-dasharray', animate ? String(len) : 'none');
+  if (animate){
+    p.classList.add('draw');
+    p.addEventListener('animationend', () => {
+      p.setAttribute('stroke-dasharray', 'none');
+      p.classList.remove('draw');
+      syncFilament(childAgent.id);
+    }, { once: true });
+  }
+  sRefs.filaments[childAgent.id] = p;
+  syncFilament(childAgent.id, animate);
+}
+function syncFilament(agentId, drawing){
+  const p = sRefs.filaments[agentId];
+  if (!p) return;
+  const sess = sessions.find(s => s.sessionId === current);
+  const ag = sess && sess.agents.find(a => a.id === agentId);
+  const flowing = ag && ag.status === 'running' && !drawing;
+  p.classList.toggle('flow', !!flowing);
+  if (flowing) p.setAttribute('stroke-dasharray', '3 9');
+  else if (!drawing) p.setAttribute('stroke-dasharray', 'none');
+}
+function thornPath(x, y){
+  const s = 6;
+  return `M${x},${y - s} L${x + s * 0.45},${y - s * 0.3} L${x + s},${y} L${x + s * 0.45},${y + s * 0.3} `
+       + `L${x},${y + s} L${x - s * 0.45},${y + s * 0.3} L${x - s},${y} L${x - s * 0.45},${y - s * 0.3} Z`;
+}
+function drawDot(sess, agent, tool, pos){
+  const g = el('g', { class: 'dot d-' + tool.status }, sessionLayer);
+  if (tool.status === 'error') el('path', { d: thornPath(pos.x, pos.y) }, g);
+  else el('circle', { cx: pos.x, cy: pos.y, r: agent.spawnDepth === 0 ? 6 : 4.6 }, g);
+  txt(el('title', {}, g), tool.name + ' · ' + fmtDur(tool.dur));
+  g.addEventListener('click', e => { e.stopPropagation(); inspect({ kind: 'tool', sess, agent, tool }); });
+  sRefs.dots[tool.id] = { g, pos, agent };
+}
+function syncDot(tool){
+  const r = sRefs.dots[tool.id];
+  if (!r) return;
+  r.g.setAttribute('class', 'dot d-' + tool.status);
+  r.g.innerHTML = '';
+  if (tool.status === 'error') el('path', { d: thornPath(r.pos.x, r.pos.y) }, r.g);
+  else el('circle', { cx: r.pos.x, cy: r.pos.y, r: r.agent.spawnDepth === 0 ? 6 : 4.6 }, r.g);
+  txt(el('title', {}, r.g), tool.name + ' · ' + fmtDur(tool.dur));
+}
+function drawCell(sess, agent, layout, animate){
+  const c = layout.cells[agent.id];
+  const seed = hash(sess.sessionId + agent.id) % 97;
+  const g = el('g', {}, sessionLayer);
+  if (animate){
+    g.style.opacity = '0'; g.style.transition = 'opacity .5s ease .25s';
+    requestAnimationFrame(() => { g.style.opacity = '1'; });
+  }
+  if (agent.parked){
+    /* refuse, don't guess — a subagent file with no resolved join key hangs
+       unattached, dashed, until its meta.json names a parent */
+    el('path', { class: 'membrane m-unsupported',
+      d: blobPath(c.x, c.y, c.R, seed, 0.05) }, g);
+    const dirx = SL.CX - c.x, diry = SL.CY - c.y, L = Math.hypot(dirx, diry);
+    el('path', { class: 'stub',
+      d: `M${(c.x + dirx / L * c.R).toFixed(1)},${(c.y + diry / L * c.R).toFixed(1)} `
+       + `l${(dirx / L * 58).toFixed(1)},${(diry / L * 58).toFixed(1)}` }, g);
+    txt(el('text', { class: 'sub', x: c.x, y: c.y + c.R + 16, 'text-anchor': 'middle' }, g),
+        'awaiting attribution');
+    sRefs.cells[agent.id] = { g, c };
+    return;
+  }
+  const mClass = agent.status === 'error' ? 'm-error'
+    : agent.status === 'running' ? 'm-live' : 'm-ended';
+  const wrap = el('g', { class: agent.status === 'running' ? 'breathe' : '' }, g);
+  const path = el('path', { class: 'membrane ' + mClass, d: blobPath(c.x, c.y, c.R, seed, 0.05) }, wrap);
+  path.addEventListener('click', e => { e.stopPropagation(); inspect({ kind: 'agent', sess, agent }); });
+  const name = agent.spawnDepth === 0 ? 'main' : agent.kind;
+  txt(el('text', { class: 'lbl', x: c.x, y: c.y + 4, 'text-anchor': 'middle' }, g), name);
+  const sub = txt(el('text', { class: 'sub', x: c.x, y: c.y + (agent.spawnDepth === 0 ? 22 : 0), 'text-anchor': 'middle' }, g), '');
+  if (agent.spawnDepth > 0) sub.setAttribute('y', c.y + c.R + 16);
+  sRefs.cells[agent.id] = { g, wrap, path, sub, c };
+  syncCell(agent);
+}
+function syncCell(agent){
+  const r = sRefs.cells[agent.id];
+  if (!r || agent.parked) return;
+  const mClass = agent.status === 'error' ? 'm-error'
+    : agent.status === 'running' ? 'm-live' : 'm-ended';
+  r.path.setAttribute('class', 'membrane ' + mClass);
+  r.wrap.setAttribute('class', agent.status === 'running' ? 'breathe' : '');
+  txt(r.sub, fmtTokens(agent.tokens.in) + ' / ' + fmtTokens(agent.tokens.out));
+  syncFilament(agent.id);
+}
+function renderSession(sess){
+  clearSession();
+  if (sess.refused){
+    const g = el('g', { class: 'refusal' }, sessionLayer);
+    el('rect', { x: SL.CX - 240, y: SL.CY - 90, width: 480, height: 172, rx: 6 }, g);
+    txt(el('text', { x: SL.CX, y: SL.CY - 52, 'text-anchor': 'middle', class: 'lbl' }, g),
+        'unsupported CC version');
+    txt(el('text', { x: SL.CX, y: SL.CY - 24, 'text-anchor': 'middle', class: 'sub' }, g),
+        sess.sessionId + ' — the on-disk format did not match the pinned layout.');
+    txt(el('text', { x: SL.CX, y: SL.CY - 6, 'text-anchor': 'middle', class: 'sub' }, g),
+        'Nothing partial is shown; a guessed tree would be worse than none.');
+    txt(el('text', { x: SL.CX, y: SL.CY + 26, 'text-anchor': 'middle', class: 'sub' }, g),
+        'Liveness (from hooks) stays available in the deck.');
+    return;
+  }
+  const layout = sessionLayout(sess);
+  sess.layoutCache = layout;
+  const ghost = sess.workspaceMatch ? '' : 'ghost';
+  sessionLayer.setAttribute('class', ghost);
+  for (const ag of [...sess.agents].sort((p, q) => p.spawnDepth - q.spawnDepth)){
+    if (ag.spawnDepth > 0 && !ag.parked) drawFilament(sess, layout, ag, false);
+    drawCell(sess, ag, layout, false);
+    for (const t of ag.tools) drawDot(sess, ag, t, layout.dots[t.id]);
+  }
+}
+
+/* ═══════════════ zoom (semantic, not literal) ═══════════════ */
+function enterSession(sessionId){
+  const sess = sessions.find(s => s.sessionId === sessionId);
+  current = sessionId;
+  const r = deckRefs[sessionId];
+  const k = 340 / r.R;
+  deckLayer.style.transform =
+    `translate(${(600 - k * r.x).toFixed(1)}px, ${(400 - k * r.y).toFixed(1)}px) scale(${k.toFixed(3)})`;
+  deckLayer.style.opacity = '0';
+  renderSession(sess);
+  sessionLayer.style.transform = 'scale(.94)';
+  sessionLayer.style.transformOrigin = '600px 400px';
+  requestAnimationFrame(() => { sessionLayer.style.transform = 'scale(1)'; });
+  document.body.classList.add('zoomed');
+  $('#crumbSep').hidden = false;
+  const here = $('#crumbHere'); here.hidden = false; txt(here, sess.label);
+  renderDock();
+}
+function exitSession(){
+  current = null;
+  closeInspector();
+  deckLayer.style.transform = 'none';
+  deckLayer.style.opacity = '1';
+  document.body.classList.remove('zoomed');
+  $('#crumbSep').hidden = true;
+  $('#crumbHere').hidden = true;
+  setTimeout(clearSession, 300);
+}
+$('#crumbDeck').addEventListener('click', exitSession);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape'){ if ($('#inspector').classList.contains('open')) closeInspector(); else if (current) exitSession(); }
+});
+function renderDock(){
+  const dock = $('#dock');
+  dock.innerHTML = '';
+  for (const s of sessions){
+    const b = document.createElement('button');
+    if (s.sessionId === current) b.classList.add('here');
+    const shown = s.refused ? 'unsupported' : s.liveness;
+    b.innerHTML = `<span class="ld ${shown}"></span><span>${s.label}</span>`;
+    b.addEventListener('click', () => { if (s.sessionId !== current){ current = s.sessionId; renderSession(s); renderDock(); txt($('#crumbHere'), s.label); } });
+    dock.appendChild(b);
+  }
+}
+
+/* ═══════════════ inspector — text stays the ground truth ═══════════════ */
+const PAYLOADS = {
+  Bash: { input: '{"command":"npx vitest run --reporter=dot","description":"full suite"}',
+    result: ('· '.repeat(180) + '\n\n Test Files  23 passed (23)\n      Tests  717 passed (717)\n   Start at  14:02:11\n   Duration  41.2s\n\n' + 'stdout | webview/render.test.ts > expand and collapse\n').repeat(3) },
+  Read: { input: '{"file_path":"src/model/graft.ts"}',
+    result: ('/**\n * The tree grafter: keyed join, explicit parking, late re-join.\n */\n' + 'export function graftSession(root: string): GraftResult {\n  // …\n}\n').repeat(14) },
+  Grep: { input: '{"pattern":"toolUseId","glob":"**/*.ts"}',
+    result: 'src/parser/fingerprint.ts:41\nsrc/parser/attribution.ts:12\nsrc/model/graft.ts:88\n'.repeat(12) },
+  Edit: { input: '{"file_path":"webview/App.svelte","old_string":"…","new_string":"…"}', result: 'OK' },
+  Write: { input: '{"file_path":"fixtures/NOTE.md"}', result: 'OK' },
+  Agent: { input: '{"description":"verify DoD items against the repo","subagent_type":"phase-verifier"}',
+    result: '[agent completed — see child transcript]' },
+};
+const COLLAPSED = 512;
+function inspect(ref){
+  document.body.classList.add('inspecting');
+  const ins = $('#inspector'); ins.classList.add('open');
+  const body = $('#insBody'); body.innerHTML = '';
+  if (ref.kind === 'agent'){
+    txt($('#insKind'), 'agent');
+    txt($('#insTitle'), ref.agent.spawnDepth === 0 ? 'main session' : ref.agent.kind);
+    row(body, 'status', chip(ref.agent.status));
+    row(body, 'spawnDepth', String(ref.agent.spawnDepth));
+    row(body, 'tokens', fmtTokens(ref.agent.tokens.in) + ' in / ' + fmtTokens(ref.agent.tokens.out) + ' out');
+    row(body, 'tools', String(ref.agent.tools.length));
+    if (ref.agent.parentAgent) row(body, 'parent', ref.agent.parentAgent + ' (via toolUseId)');
+  } else {
+    const t = ref.tool;
+    txt($('#insKind'), 'tool call');
+    txt($('#insTitle'), t.name);
+    row(body, 'status', chip(t.status));
+    row(body, 'duration', fmtDur(t.dur));
+    row(body, 'id', t.id);
+    row(body, 'agent', ref.agent.id);
+    const p = PAYLOADS[t.name] || { input: '{}', result: '' };
+    preview(body, 'input', p.input);
+    if (t.status !== 'running') preview(body, 'result', t.status === 'error'
+      ? 'Error: command exited with code 1\n\nFAIL  src/model/liveness.test.ts > degraded\nAssertionError: expected "noHookEvents"…'
+      : p.result);
+  }
+}
+function row(parent, k, v){
+  const d = document.createElement('div'); d.className = 'irow';
+  const ks = document.createElement('span'); ks.className = 'k'; ks.textContent = k;
+  d.appendChild(ks);
+  if (typeof v === 'string'){ const vs = document.createElement('span'); vs.textContent = v; d.appendChild(vs); }
+  else d.appendChild(v);
+  parent.appendChild(d);
+}
+function chip(status){
+  const s = document.createElement('span');
+  s.className = 'schip s-' + status; s.textContent = status;
+  return s;
+}
+function preview(parent, label, text){
+  const wrap = document.createElement('div'); wrap.className = 'pv';
+  const pl = document.createElement('div'); pl.className = 'pl'; pl.textContent = label;
+  const pre = document.createElement('pre');
+  const marker = document.createElement('div'); marker.className = 'marker';
+  const btn = document.createElement('button');
+  let expanded = false;
+  function draw(){
+    if (expanded || text.length <= COLLAPSED){
+      pre.textContent = text; marker.textContent = '';
+      btn.hidden = text.length <= COLLAPSED; btn.textContent = 'Collapse';
+    } else {
+      pre.textContent = text.slice(0, COLLAPSED);
+      marker.textContent = '[+' + (text.length - COLLAPSED) + ' more characters - expand to see all]';
+      btn.hidden = false; btn.textContent = 'Expand';
+    }
+  }
+  btn.addEventListener('click', () => { expanded = !expanded; draw(); });
+  draw();
+  wrap.append(pl, pre, marker, btn);
+  parent.appendChild(wrap);
+}
+function closeInspector(){
+  $('#inspector').classList.remove('open');
+  document.body.classList.remove('inspecting');
+}
+$('#insClose').addEventListener('click', closeInspector);
+
+/* ═══════════════ simulated live activity (mockup only) ═══════════════ */
+const TOOL_POOL = ['Read', 'Bash', 'Grep', 'Edit'];
+const AGENT_POOL = ['phase-implementer', 'test-runner', 'general-purpose'];
+let paused = false, tickMs = 900, tickCount = 0, timer = null;
+function tick(){
+  if (paused) return schedule();
+  tickCount++;
+  const sess = S1;
+  sess.totals.in += Math.floor(400 + rnd() * 2600);
+  sess.totals.out += Math.floor(60 + rnd() * 500);
+  for (const ag of sess.agents){
+    if (ag.parked) continue;
+    ag.tokens.in += Math.floor(rnd() * 900);
+    ag.tokens.out += Math.floor(rnd() * 140);
+    for (const t of ag.tools){
+      if (t.status !== 'running') continue;
+      if (rnd() < 0.34){
+        t.dur = Math.floor(200 + rnd() * 7000);
+        t.status = rnd() < 0.06 ? 'error' : 'done';
+        if (current === sess.sessionId) syncDot(t);
+      }
+    }
+    const runningTools = ag.tools.filter(t => t.status === 'running').length;
+    if (ag.status === 'running' && runningTools < 2 && ag.tools.length < 15 && rnd() < 0.45){
+      const t = T(TOOL_POOL[Math.floor(rnd() * TOOL_POOL.length)], 'running');
+      ag.tools.push(t);
+      if (current === sess.sessionId && sess.layoutCache){
+        const pos = sessionLayout(sess).dots[t.id];   /* incremental: existing cells keep their spots */
+        sess.layoutCache.dots[t.id] = pos;
+        drawDot(sess, ag, t, pos);
+        /* neighbours in the same arc shifted — cheap resync of this agent's dots */
+        ag.tools.forEach(x => {
+          const np = sessionLayout(sess).dots[x.id];
+          const ref = sRefs.dots[x.id];
+          if (ref){ ref.pos = np; syncDot(x); }
+        });
+      }
+    }
+    if (current === sess.sessionId) syncCell(ag);
+  }
+  /* every ~7 ticks: mitosis — a new Agent tool call resolves its join key
+     and the filament draws to a new cell */
+  const depth1 = sess.agents.filter(a => a.spawnDepth === 1 && !a.parked).length;
+  if (tickCount % 7 === 0 && depth1 < 6){
+    const main = sess.agents[0];
+    const childId = 'a' + (10 + depth1);
+    const spawnTool = T('Agent', 'done', Math.floor(20000 + rnd() * 90000), childId);
+    main.tools.push(spawnTool);
+    const child = { id: childId, kind: AGENT_POOL[Math.floor(rnd() * AGENT_POOL.length)],
+      parentAgent: 'main', spawnDepth: 1, status: 'running',
+      tokens: { in: 0, out: 0 },
+      tools: [T('Read', 'running')] };
+    sess.agents.push(child);
+    if (current === sess.sessionId){
+      const layout = sessionLayout(sess);
+      sess.layoutCache = layout;
+      main.tools.forEach(x => { const ref = sRefs.dots[x.id]; if (ref){ ref.pos = layout.dots[x.id]; syncDot(x); } else drawDot(sess, main, x, layout.dots[x.id]); });
+      drawFilament(sess, layout, child, true);
+      drawCell(sess, child, layout, true);
+      for (const t of child.tools) drawDot(sess, child, t, layout.dots[t.id]);
+    }
+  }
+  updateDeck();
+  schedule();
+}
+function schedule(){ timer = setTimeout(tick, tickMs); }
+
+/* ═══════════════ mockup controls ═══════════════ */
+$('#btnPause').addEventListener('click', e => {
+  paused = !paused;
+  e.target.textContent = paused ? 'Resume activity' : 'Pause activity';
+});
+$('#btnDegraded').addEventListener('click', () => document.body.classList.toggle('degraded'));
+$('#btnReset').addEventListener('click', () => location.reload());
+$('#speed').addEventListener('input', e => { tickMs = Number(e.target.value); });
+
+/* ═══════════════ boot ═══════════════ */
+renderDeck();
+schedule();
+</script>
+</body>
+</html>

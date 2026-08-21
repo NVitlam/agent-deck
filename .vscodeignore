@@ -75,17 +75,33 @@ docs/**
 # not the workshop.
 scripts/**
 
-# The replay theater is DEV-ONLY and must never reach a user. It is unreachable
-# from `webview/main.ts` (asserted on esbuild's import graph), and `webview/**`
-# below already keeps its source out -- but `node esbuild.config.mjs --theater`
-# emits into `dist/`, which this file ships wholesale. `--theater` is opt-in and
-# is not part of `npm run build`, so the default path was already safe; this
-# line closes the case where someone builds it before packaging. That is the
-# "manifest and build disagree" class CLAUDE.md records, and it has bitten this
-# repo before.
-dist/theater/**
-
-# The VSIX itself. `--out dist/agent-deck.vsix` writes into a directory this
-# file otherwise ships wholesale, so without this line the second `npm run
-# package` embeds the first one's artifact.
-dist/*.vsix
+# `dist/` IS AN ALLOW-LIST, and everything below this line is the reason.
+#
+# This file is a deny-list, and `dist/` is the one directory it used to ship
+# wholesale -- so every stray thing that lands there ships, and each one had to
+# be discovered and denied by name. Three were, in order: the replay theater
+# (DEV-ONLY, `--theater` emits into `dist/`); a previous `dist/agent-deck.vsix`
+# embedding itself in the next one; and then, MEASURED IN PHASE 5 by the
+# packaged-artifact audit rather than by reading this file, a fourth --
+# `webview/wire.test.ts` and `webview/capture.test.ts` both `mkdtemp` INSIDE
+# `dist/` (deliberately: they write nothing outside the repo). `vsce ls`, run
+# concurrently by `src/release/vsix.test.ts`, enumerated
+# `dist/wire-test-<random>/**` as packaged content.
+#
+# Denying `dist/wire-test-*` by name would fix that instance and lose to the
+# next scratch directory anyone adds. That is precisely the shape CLAUDE.md
+# already records as failing -- "a stray file at the repo root escapes a
+# `docs/**`-shaped rule and ships" -- so the rule is inverted instead: deny
+# everything under `dist/`, then re-admit exactly the three artifacts the
+# product is made of. A new emit into `dist/` now has to be named here on
+# purpose to ship, which is the correct default for the directory whose
+# contents ARE the shipped extension.
+#
+# The three `!` lines are load-bearing and order matters: vsce applies these
+# patterns in sequence, so a re-admission must follow the denial. If a build
+# ever emits a fourth artifact, `src/release/vsix.test.ts` goes red on an exact
+# set comparison rather than silently dropping it from the package.
+dist/**
+!dist/extension.cjs
+!dist/webview/main.js
+!dist/webview/main.css

@@ -3,8 +3,17 @@
 
   Every session of the open workspace as a blob on a dark field: silhouette from
   a hash of the `sessionId`, size from `log(nodeCount)`, membrane colour from
-  liveness. It answers one question at a glance — "is anything running right
-  now" — and nothing else.
+  liveness, and a faint interior constellation of one dot per node so density
+  reads without a number. It answers one question at a glance — "is anything
+  running right now" — and nothing else.
+
+  IT TAKES `SessionSummary`, THE STORE'S OWN VIEW ROW. A summary carries
+  `sessionId` and `nodeCount`, which is exactly `layout.ts:DeckSession`, so it
+  satisfies `deckLayout` directly and no surface needs a whole `SessionState`
+  to size a blob. `refused` comes from the summary too, so this component holds
+  no second opinion about what refusal means — the disjunction it used to
+  restate is gone, and with it the `refusedIds` prop that existed only to patch
+  the half of that union a `SessionState` could not express.
 
   ORDERING IS LOAD-BEARING AND THIS COMPONENT DOES NOT TOUCH IT. `deckLayout`
   places by ARRAY INDEX, so whoever re-sorts the list moves the blobs. This
@@ -15,8 +24,8 @@
   because nothing in between reorders anything.
 
   GEOMETRY IS `layout.ts`'s. Every coordinate on this surface comes from
-  `deckLayout` / `blobPath` / `toDeckSession`. The one thing computed here is
-  the SVG `viewBox`, and that is viewport fitting rather than layout —
+  `deckLayout`, `blobPath` and `constellationPoints`. The one thing computed
+  here is the SVG `viewBox`, and that is viewport fitting rather than layout —
   `layout.ts`'s header assigns it to the renderer explicitly, and it is a
   transform of already-placed coordinates, never a re-placement of them.
 
@@ -25,41 +34,24 @@
   the host.
 -->
 <script lang="ts">
-  import type { SessionState } from '../src/model/events.js';
   import type { DeckPlacement } from './canvas-contract.js';
   import { REDUCED_MOTION_CLASS, TESTID } from './canvas-contract.js';
-  import { deckLayout, roundCoord, toDeckSession } from './layout.js';
+  import { deckLayout, roundCoord } from './layout.js';
+  import type { SessionSummary } from './store.js';
   import SessionBlob from './SessionBlob.svelte';
 
   let {
     sessions = [],
-    refusedIds = [],
     degraded = false,
     selectedSessionId,
     reducedMotion = false,
     onenter,
   }: {
     /**
-     * Every session the host reported, in the order it reported them.
-     *
-     * Full `SessionState`s rather than the store's `SessionSummary`s, because
-     * blob radius is a function of `nodeCount` (C7.1) and the deck-level error
-     * badge is a function of the tree — neither is on a summary.
+     * Every session the host reported, summarised by the store, in the order
+     * it reported them.
      */
-    sessions?: readonly SessionState[];
-    /**
-     * Sessions refused by a `schemaMismatch` message rather than by their own
-     * `schemaOk` flag — the half of the store's refusal set that is not
-     * recoverable from a `SessionState`. Unioned below, so passing the store's
-     * whole refused set instead is equally correct.
-     *
-     * The other half of that union is re-stated here rather than imported
-     * because `store.ts` does not export it. It is the SAME disjunction
-     * `layout.ts:sessionLayout` documents — `schemaOk === false` OR
-     * `liveness === 'unsupported'`, refusing on either because that is the
-     * safe direction — not a third opinion about what refusal means.
-     */
-    refusedIds?: readonly string[];
+    sessions?: readonly SessionSummary[];
     /** The hook tap is silent: every live membrane goes dash-hollow (G2). */
     degraded?: boolean;
     /** The store's selected session, if any. */
@@ -73,15 +65,13 @@
   /** Slack around the placed blobs, leaving room for labels and tags. */
   const VIEWBOX_MARGIN = 96;
 
-  let refused = $derived(new Set(refusedIds));
-
   /*
-   * `toDeckSession` is the ONE supported conversion, and using it is not
-   * stylistic: `SessionState` deliberately does not structurally satisfy
-   * `DeckSession`, so passing a state straight in is a compile error rather
-   * than a silently wrong radius.
+   * The summaries go straight in. `DeckSession` is `{ sessionId, nodeCount }`
+   * and a `SessionSummary` carries both, so there is no conversion step and no
+   * opportunity for one to be skipped — which is what `toDeckSession` existed
+   * to prevent back when the deck was fed whole `SessionState`s.
    */
-  let placements = $derived(deckLayout(sessions.map(toDeckSession)));
+  let placements = $derived(deckLayout(sessions));
 
   function viewBoxOf(placed: readonly DeckPlacement[]): string {
     // A degenerate box for the empty deck; nothing is drawn into it.
@@ -106,9 +96,9 @@
 
   let viewBox = $derived(viewBoxOf(placements));
 
-  /** The placement and the session it belongs to, paired by index. */
+  /** The placement and the summary it belongs to, paired by index. */
   let blobs = $derived(
-    placements.map((placement, index) => ({ placement, session: sessions[index] })),
+    placements.map((placement, index) => ({ placement, summary: sessions[index] })),
   );
 </script>
 
@@ -126,15 +116,12 @@
   {:else}
     <svg class="field" {viewBox} role="group" aria-label="Sessions">
       {#each blobs as blob (blob.placement.sessionId)}
-        {#if blob.session !== undefined}
+        {#if blob.summary !== undefined}
           <SessionBlob
-            session={blob.session}
+            summary={blob.summary}
             placement={blob.placement}
-            refused={!blob.session.schemaOk ||
-              blob.session.liveness === 'unsupported' ||
-              refused.has(blob.session.sessionId)}
             {degraded}
-            selected={blob.session.sessionId === selectedSessionId}
+            selected={blob.summary.sessionId === selectedSessionId}
             {onenter}
           />
         {/if}

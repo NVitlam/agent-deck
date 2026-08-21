@@ -11,6 +11,7 @@
 
 import type { WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
+import { ANIMATED_CLASSES } from './canvas-contract.js';
 
 export interface WebviewHarness {
   start(
@@ -80,4 +81,57 @@ export function one(root: ParentNode, testId: string): HTMLElement {
   const first = found[0];
   if (first === undefined) throw new Error('unreachable');
   return first;
+}
+
+/**
+ * Click an element the way a user does, WITHOUT `HTMLElement.prototype.click`.
+ *
+ * Measured hazard, not defensive style: `click()` is defined on `HTMLElement`
+ * and NOT on `SVGElement`, so `element.click()` throws in jsdom on every cell,
+ * dot and blob — the canvas is SVG end to end. A dispatched `MouseEvent` is
+ * what both element families answer, so the matrix suite has one activation
+ * path rather than one per namespace.
+ *
+ * `bubbles: true` because Svelte 5 delegates `onclick` to a listener on the
+ * mount root: a non-bubbling event never reaches it, and the assertion that
+ * follows then fails for a reason that has nothing to do with the component.
+ *
+ * Typed on `Element`, not `HTMLElement`, deliberately — an SVG element is not
+ * an `HTMLElement`, and a signature that said otherwise would push every call
+ * site into a cast and hide exactly the distinction this function exists for.
+ */
+export function press(element: Element): void {
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+}
+
+/**
+ * Every element carrying an animation-bearing class (C7.6).
+ *
+ * The class list comes from `canvas-contract.ts` and is never spelled out
+ * here. The negative control's whole job is to notice an animation on
+ * something that is neither running nor live, and a control selecting on stale
+ * literals would return an empty array and pass for the wrong reason.
+ */
+export function animated(root: ParentNode): Element[] {
+  const selector = ANIMATED_CLASSES.map((c) => `.${c}`).join(',');
+  return [...root.querySelectorAll(selector)];
+}
+
+/**
+ * True when `element` sits inside an animated element.
+ *
+ * Counting classes alone cannot see a static child inheriting an animated
+ * ancestor's transform — that element moves on screen while carrying no
+ * animated class of its own, so the count-based control reads 0 while
+ * something is visibly moving. This is the form of the check that can see it.
+ */
+export function hasAnimatedAncestor(element: Element): boolean {
+  let node: Element | null = element.parentElement;
+  while (node !== null) {
+    for (const cls of ANIMATED_CLASSES) {
+      if (node.classList.contains(cls)) return true;
+    }
+    node = node.parentElement;
+  }
+  return false;
 }

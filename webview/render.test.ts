@@ -1,5 +1,21 @@
 // @vitest-environment jsdom
 //
+// THE LIST SURFACE — Phase 3's session rail and indented tree, kept for one
+// release behind the in-panel toggle (C7.2) and asserted for as long as it
+// ships.
+//
+// WHY EVERY MOUNT HERE SWITCHES THE VIEW MODE. The canvas is the default
+// immediately and there is no setting, so a freshly mounted panel shows the
+// deck. This file is about the OTHER surface, so `render()` calls
+// `store.setViewMode('list')` once, at mount, before any message is fed. That
+// call is the only difference from Phase 3's version of this file: the
+// assertions below are unchanged, which is the point — "kept, not deleted"
+// means the list view's behaviour did not move.
+//
+// The cross-cutting matrix that runs the same rows against BOTH surfaces is
+// `states.test.ts`. This file is the list surface's own depth: expand and
+// collapse, per-node tokens and durations, payload previews, diff handling.
+//
 // The host suites are node suites and stay that way; only the component tests
 // opt into a DOM, per file.
 //
@@ -13,6 +29,7 @@ import type { WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
 import { all, loadHarness, one } from './testkit.js';
+import { TESTID } from './canvas-contract.js';
 import { COLLAPSED_PREVIEW_CHARS, EM_DASH } from './format.js';
 import { liveSession, longPreview, unsupportedSession } from './testdata.js';
 
@@ -36,6 +53,13 @@ function render(): Mounted {
   document.body.appendChild(container);
   const sent: WebviewToHostMessage[] = [];
   const started = harness.start(container, { postMessage: (m) => sent.push(m) });
+  // The list surface, chosen before any message arrives. Through the store
+  // rather than the toggle button: the button has its own row in
+  // `states.test.ts`, and a mount that depended on it would fail twice over if
+  // it broke.
+  harness.flushSync(() => {
+    started.store.setViewMode('list');
+  });
   const record: Mounted = {
     container,
     store: started.store,
@@ -437,7 +461,11 @@ describe('auto-start', () => {
     try {
       await loadHarness();
       expect(all(document.body, 'app')).toHaveLength(1);
-      expect(all(document.body, 'session-rail')).toHaveLength(1);
+      // The DECK, not the rail: an auto-started panel has had no `setViewMode`
+      // call, so what it comes up in is the shipped default (C7.2). This is
+      // the assertion that would notice the default silently changing.
+      expect(all(document.body, TESTID.deck)).toHaveLength(1);
+      expect(all(document.body, 'session-rail')).toHaveLength(0);
     } finally {
       delete withApi.acquireVsCodeApi;
       document.body.innerHTML = '';

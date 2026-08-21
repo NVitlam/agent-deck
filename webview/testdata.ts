@@ -11,7 +11,15 @@
  * `format.ts:formatCost` for what 0 means.
  */
 
-import type { AgentNode, SessionState, SpawnEdge, ToolNode } from '../src/model/events.js';
+import type {
+  AgentNode,
+  ParkedGraft,
+  SessionState,
+  SpawnEdge,
+  ToolNode,
+  TreeNode,
+} from '../src/model/events.js';
+import { isAgentNode } from '../src/model/events.js';
 
 /** A payload long enough to exercise collapsed/expanded previews. */
 export function longPreview(chars = 2000, seed = 'tool-results payload '): string {
@@ -162,6 +170,95 @@ export function unsupportedSession(overrides: Partial<SessionState> = {}): Sessi
     sessionId: 'session-unsupported',
     liveness: 'unsupported',
     schemaOk: false,
+    ...overrides,
+  };
+}
+
+/** Every node of a tree, agents and tools alike, root included. */
+export function walkSession(state: SessionState): TreeNode[] {
+  const out: TreeNode[] = [];
+  const visit = (node: TreeNode): void => {
+    out.push(node);
+    if (isAgentNode(node)) for (const child of node.children) visit(child);
+  };
+  visit(state.root);
+  return out;
+}
+
+/**
+ * One parked graft: an agent the grafter KNOWS exists and deliberately did not
+ * attach (C7.4, G3).
+ *
+ * `agentId` must match no node under `root`. That is not a convention this
+ * helper is free to break — `SessionCanvas.svelte` zips `session.parked`
+ * against `sessionLayout().parked`, and `sessionLayout` drops any claim whose
+ * id is also in `cells`, so a parked entry naming an in-tree agent renders
+ * nothing at all and every assertion about the stub passes vacuously.
+ */
+export function parkedGraft(overrides: Partial<ParkedGraft> = {}): ParkedGraft {
+  return {
+    agentId: 'agent-unjoined',
+    code: 'noMatchingToolUse',
+    reason: 'the sidecar named a tool_use id that is in no transcript',
+    ...overrides,
+  };
+}
+
+/**
+ * The live session plus a parked graft that never joined.
+ *
+ * The parked agent is NOT in `root` and never becomes one: it is reachable
+ * only through `SessionState.parked`, which is the whole point of the state.
+ */
+export function parkedSession(overrides: Partial<SessionState> = {}): SessionState {
+  return liveSession({
+    sessionId: 'session-parked',
+    parked: [parkedGraft()],
+    ...overrides,
+  });
+}
+
+/** A session belonging to another workspace: ghosted, tagged (C7.3). */
+export function foreignSession(overrides: Partial<SessionState> = {}): SessionState {
+  return liveSession({
+    sessionId: 'session-foreign',
+    workspaceMatch: false,
+    ...overrides,
+  });
+}
+
+/**
+ * The motion negative control's input: nothing is running and nothing is live.
+ *
+ * Built by REWRITING `liveSession()` rather than by hand, so the control's
+ * session is structurally the same tree as the positive case and differs in
+ * exactly the one axis the control is about. A separately hand-written "quiet"
+ * tree could drift into having fewer nodes, and then "zero animated elements"
+ * would be true because there was nothing there.
+ */
+export function settledSession(overrides: Partial<SessionState> = {}): SessionState {
+  const quiet = (node: TreeNode): TreeNode => {
+    if (!isAgentNode(node)) {
+      // `error` is deliberately preserved: an error thorn PERSISTS (C7.3), so
+      // the control has to prove the thorn is not animated rather than
+      // removing it from the tree first.
+      return node.status === 'running' ? { ...node, status: 'done' } : { ...node };
+    }
+    return {
+      ...node,
+      status: node.status === 'running' ? 'done' : node.status,
+      children: node.children.map(quiet) as AgentNode['children'],
+    };
+  };
+
+  const live = liveSession();
+  const root = quiet(live.root);
+  if (!isAgentNode(root)) throw new Error('unreachable: the root is an agent');
+  return {
+    ...live,
+    sessionId: 'session-settled',
+    liveness: 'ended',
+    root,
     ...overrides,
   };
 }

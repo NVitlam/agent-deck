@@ -182,31 +182,19 @@
   data-sessions={String(sessions.length)}
   aria-label="Deck"
 >
-  <div class="deck-chrome">
-    <!-- Says what is showing AND out of how many, so a filter can never look
-         like "these are all the sessions there are". -->
-    <span class="count" data-testid={TESTID.countChip} data-shown={String(shown)}
-      data-total={String(totalCount)}
-      >{shown === totalCount ? `${shown} sessions` : `${shown} of ${totalCount}`}</span
+  {#if onreset !== undefined}
+    <!-- Floated over the field rather than given a row of its own: the picture
+         is what the panel is for, and chrome that pushes it down costs more
+         than it is worth. The count and the legend moved up into the app's
+         single chrome row for the same reason. -->
+    <button
+      class="reset"
+      type="button"
+      data-testid={TESTID.deckReset}
+      data-identity={String(deckView.x === 0 && deckView.y === 0 && deckView.k === 1)}
+      onclick={() => onreset?.()}>Reset view</button
     >
-    <!-- The membrane-colour key. The grammar is only legible if it is stated
-         somewhere; C7.3 defines it and until now nothing showed it. -->
-    <span class="legend" data-testid={TESTID.legend}>
-      <span class="key" data-liveness="live">live</span>
-      <span class="key" data-liveness="idle">idle</span>
-      <span class="key" data-liveness="ended">ended</span>
-      <span class="key" data-liveness="unsupported">refused</span>
-    </span>
-    {#if onreset !== undefined}
-      <button
-        class="reset"
-        type="button"
-        data-testid={TESTID.deckReset}
-        data-identity={String(deckView.x === 0 && deckView.y === 0 && deckView.k === 1)}
-        onclick={() => onreset?.()}>Reset view</button
-      >
-    {/if}
-  </div>
+  {/if}
 
   {#if sessions.length === 0}
     <!-- C7.3, the last row: an empty deck and one quiet line. Not an error,
@@ -247,54 +235,12 @@
 </section>
 
 <style>
-  .deck-chrome {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 3px 10px;
-    font-size: 0.85em;
-    border-bottom: 1px solid var(--vscode-panel-border, transparent);
-  }
-
-  .count {
-    opacity: 0.8;
-  }
-
-  .legend {
-    display: flex;
-    gap: 10px;
-    margin-left: auto;
-    opacity: 0.85;
-  }
-
-  .key::before {
-    content: '';
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    margin-right: 4px;
-    border-radius: 50%;
-    vertical-align: baseline;
-    background: currentColor;
-  }
-
-  .key[data-liveness='live'] {
-    color: var(--vscode-charts-green, currentColor);
-  }
-
-  .key[data-liveness='idle'] {
-    color: var(--vscode-charts-yellow, currentColor);
-  }
-
-  .key[data-liveness='ended'] {
-    color: var(--vscode-descriptionForeground, currentColor);
-  }
-
-  .key[data-liveness='unsupported'] {
-    color: var(--vscode-errorForeground, currentColor);
-  }
-
   .reset {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    z-index: 1;
+    background: var(--vscode-editor-background);
     font: inherit;
     font-size: 0.95em;
     color: var(--vscode-foreground);
@@ -321,6 +267,7 @@
   /* Every colour is a VS Code theme variable. The frozen mockup hardcodes a
      dark palette only because it lives outside VS Code (C7.7). */
   .deck {
+    position: relative;
     display: flex;
     flex: 1;
     min-height: 0;

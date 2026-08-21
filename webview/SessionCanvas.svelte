@@ -64,6 +64,10 @@
     selectedNodeId,
     reducedMotion = false,
     onselect,
+    canvasView = { x: 0, y: 0, k: 1 },
+    onpan,
+    onzoom,
+    onreset,
   }: {
     /** The session being looked at. Read, never mutated (G1). */
     session: SessionState;
@@ -83,6 +87,17 @@
     reducedMotion?: boolean;
     /** Wired to `Store.selectNode` — opens the inspector (C7.8). */
     onselect?: ((nodeId: string) => void) | undefined;
+    /**
+     * Interior pan/zoom, applied as an SVG TRANSFORM on the stage group.
+     *
+     * Same rule as the deck and for the same reason: `sessionLayout` stays a
+     * pure function of state and its goldens stay valid as numbers. Dragging
+     * the view must not be able to move a cell.
+     */
+    canvasView?: { x: number; y: number; k: number };
+    onpan?: ((dx: number, dy: number) => void) | undefined;
+    onzoom?: ((factor: number, originX: number, originY: number) => void) | undefined;
+    onreset?: (() => void) | undefined;
   } = $props();
 
   /** Slack around the placed interior, leaving room for labels and stubs. */
@@ -269,6 +284,53 @@
   let filaments = $derived(isRefused ? [] : filamentsOf(session, layout, walked.agents));
   let parkedCells = $derived(isRefused ? [] : parkedOf(session, layout));
   let viewBox = $derived(viewBoxOf(nodes, parkedCells));
+
+  // Drag to pan, wheel to zoom. Identical shape to `Deck.svelte` — a drag that
+  // starts on a cell or a dot belongs to that element, or panning would
+  // swallow the click that opens the inspector.
+  let dragging = $state.raw(false);
+  let lastX = 0;
+  let lastY = 0;
+
+  const INTERACTIVE = '[data-testid="canvas-cell"],[data-testid="canvas-dot"],[data-testid="canvas-nucleus"]';
+
+  const onPointerDown = (event: PointerEvent): void => {
+    if (event.button !== 0) return;
+    const target = event.target as Element | null;
+    if (target?.closest(INTERACTIVE) !== null) return;
+    dragging = true;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+  };
+
+  const onPointerMove = (event: PointerEvent): void => {
+    if (!dragging) return;
+    const dx = event.clientX - lastX;
+    const dy = event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    onpan?.(dx, dy);
+  };
+
+  const endDrag = (event: PointerEvent): void => {
+    if (!dragging) return;
+    dragging = false;
+    (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
+  };
+
+  const onWheel = (event: WheelEvent): void => {
+    if (onzoom === undefined) return;
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const rect = (event.currentTarget as Element).getBoundingClientRect();
+    onzoom(factor, event.clientX - rect.left, event.clientY - rect.top);
+  };
+
+  let transform = $derived(
+    `translate(${canvasView.x} ${canvasView.y}) scale(${canvasView.k})`,
+  );
+  let atIdentity = $derived(canvasView.x === 0 && canvasView.y === 0 && canvasView.k === 1);
 </script>
 
 <section
@@ -283,7 +345,29 @@
   aria-label="Session interior"
 >
   {#if !isRefused}
-    <svg class="field" {viewBox} role="group" aria-label="Session interior">
+    {#if onreset !== undefined}
+      <button
+        class="reset"
+        type="button"
+        data-testid={TESTID.canvasReset}
+        data-identity={String(atIdentity)}
+        onclick={() => onreset?.()}>Reset view</button
+      >
+    {/if}
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <svg
+      class="field"
+      class:dragging
+      {viewBox}
+      role="group"
+      aria-label="Session interior"
+      onpointerdown={onPointerDown}
+      onpointermove={onPointerMove}
+      onpointerup={endDrag}
+      onpointercancel={endDrag}
+      onwheel={onWheel}
+    >
+      <g data-testid={TESTID.canvasStage} {transform}>
       <!-- Filaments first so they paint UNDER the cells and dots they join.
            They carry no testid-bearing focus and no accessible name, so
            painting order does not become reading order (C7.8). -->
@@ -330,14 +414,44 @@
           <AgentCell parked={cell.entry} placement={cell.placement} />
         {/each}
       </g>
+      </g>
     </svg>
   {/if}
 </section>
 
 <style>
+  .field {
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .field.dragging {
+    cursor: grabbing;
+  }
+
+  .reset {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    z-index: 1;
+    font: inherit;
+    font-size: 0.85em;
+    color: var(--vscode-foreground);
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border, transparent);
+    border-radius: 3px;
+    padding: 0 6px;
+    cursor: pointer;
+  }
+
+  .reset:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, currentColor);
+    outline-offset: 1px;
+  }
   /* Every colour is a VS Code theme variable. The frozen mockup hardcodes a
      dark palette only because it lives outside VS Code (C7.7). */
   .canvas {
+    position: relative;
     display: flex;
     flex: 1;
     min-height: 0;

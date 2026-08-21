@@ -150,6 +150,12 @@ export interface WebviewView {
   /** Deck pan/zoom. A TRANSFORM, never a coordinate — see `canvas-contract.ts`. */
   deckView: { x: number; y: number; k: number };
   /**
+   * Session-interior pan/zoom. Separate from `deckView` deliberately: they are
+   * different spaces, and inheriting the deck+#39;s transform on entry would drop
+   * you into an interior already panned somewhere you never chose.
+   */
+  canvasView: { x: number; y: number; k: number };
+  /**
    * Which of the three canvas altitudes the panel is at (C7.1).
    *
    * Never independent of the two ids below, and the store — not a component —
@@ -225,6 +231,10 @@ export interface Store {
   zoomDeck(factor: number, originX: number, originY: number): void;
   /** Back to the identity transform. */
   resetDeckView(): void;
+  /** The same three, for the session interior. */
+  panCanvas(dx: number, dy: number): void;
+  zoomCanvas(factor: number, originX: number, originY: number): void;
+  resetCanvasView(): void;
   /** UI intent: toggle a node's expansion. */
   toggleNode(nodeId: string): void;
   /** True when the user toggled this node away from its default. */
@@ -307,6 +317,7 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
   let inspectorOpen = false;
   const IDENTITY_VIEW = { x: 0, y: 0, k: 1 };
   let deckView = { ...IDENTITY_VIEW };
+  let canvasView = { ...IDENTITY_VIEW };
   let degraded = false;
   let degradedReason: 'noHookEvents' | 'listenerDown' | undefined;
   let degradedDismissed = false;
@@ -427,6 +438,7 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
             : summaries.filter((row) => row.liveness === deckFilter),
         inspectorOpen,
         deckView: { ...deckView },
+        canvasView: { ...canvasView },
       };
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
       if (selected !== undefined) view.selected = selected;
@@ -511,6 +523,10 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     },
 
     enterSession(sessionId: string): void {
+      // A fresh interior starts centred. Carrying the previous session's pan
+      // into a different tree would drop the user somewhere they never chose,
+      // and the two interiors share no coordinate space.
+      canvasView = { ...IDENTITY_VIEW };
       if (!sessions.has(sessionId)) return;
       if (sessionId !== selectedSessionId) selectedNodeId = undefined;
       selectedSessionId = sessionId;
@@ -593,6 +609,33 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         x: originX - (originX - deckView.x) * ratio,
         y: originY - (originY - deckView.y) * ratio,
       };
+      notify();
+    },
+
+    panCanvas(dx: number, dy: number): void {
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+      if (dx === 0 && dy === 0) return;
+      canvasView = { ...canvasView, x: canvasView.x + dx, y: canvasView.y + dy };
+      notify();
+    },
+
+    zoomCanvas(factor: number, originX: number, originY: number): void {
+      if (!Number.isFinite(factor) || factor <= 0) return;
+      if (!Number.isFinite(originX) || !Number.isFinite(originY)) return;
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, canvasView.k * factor));
+      if (next === canvasView.k) return;
+      const ratio = next / canvasView.k;
+      canvasView = {
+        k: next,
+        x: originX - (originX - canvasView.x) * ratio,
+        y: originY - (originY - canvasView.y) * ratio,
+      };
+      notify();
+    },
+
+    resetCanvasView(): void {
+      if (canvasView.x === 0 && canvasView.y === 0 && canvasView.k === 1) return;
+      canvasView = { ...IDENTITY_VIEW };
       notify();
     },
 

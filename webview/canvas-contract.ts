@@ -176,6 +176,15 @@ export const TESTID = {
   inspector: 'inspector',
   inspectorEmpty: 'inspector-empty',
 
+  /** One action row in the inspector: what an agent DID, by description. */
+  actionRow: 'action-row',
+  /** The human-readable summary on an action row. Never the tool_use id. */
+  actionSummary: 'action-summary',
+  /** The session interior pan/zoom wrapper. A transform, never a coordinate. */
+  canvasStage: 'canvas-stage',
+  /** Resets the interior pan/zoom. */
+  canvasReset: 'canvas-reset',
+
   /* Navigation and controls (Phase 4.6) */
   /** The breadcrumb nav. Spec C7.8 calls it the session dock. */
   dock: 'dock',

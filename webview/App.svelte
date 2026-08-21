@@ -120,7 +120,7 @@
            the altitudes and shipped no visible way between them — Escape
            walked up and nothing said so. A keystroke nobody is told about is
            not navigation. -->
-      <nav class="dock" data-testid={TESTID.dock} aria-label="Altitude">
+      <nav class="dock" data-testid={TESTID.dock} aria-label="Altitude" style="margin-right:auto">
         <button
           type="button"
           class="crumb"
@@ -160,6 +160,28 @@
             >
           {/each}
         </div>
+
+        <!-- Beside the filter, not on a row of its own. Says what is showing
+             AND out of how many, so a filter can never read as "these are all
+             the sessions there are". -->
+        <span
+          class="count"
+          data-testid={TESTID.countChip}
+          data-shown={String(view.filteredSessions.length)}
+          data-total={String(view.sessions.length)}
+          >{view.filteredSessions.length === view.sessions.length
+            ? `${view.sessions.length} sessions`
+            : `${view.filteredSessions.length} of ${view.sessions.length}`}</span
+        >
+
+        <!-- The membrane-colour key. The grammar is only legible if something
+             states it; C7.3 defines it and nothing showed it. -->
+        <span class="legend" data-testid={TESTID.legend}>
+          <span class="key" data-liveness="live">live</span>
+          <span class="key" data-liveness="idle">idle</span>
+          <span class="key" data-liveness="ended">ended</span>
+          <span class="key" data-liveness="unsupported">refused</span>
+        </span>
       {/if}
 
       {#if view.altitude !== 'deck' && view.selectedNodeId !== undefined}
@@ -281,14 +303,20 @@
           refused={view.refused}
           degraded={view.degraded}
           selectedNodeId={view.selectedNodeId}
+          canvasView={view.canvasView}
           {reducedMotion}
           onselect={(id) => store.selectNode(id)}
+          onpan={(dx, dy) => store.panCanvas(dx, dy)}
+          onzoom={(factor, x, y) => store.zoomCanvas(factor, x, y)}
+          onreset={() => store.resetCanvasView()}
         />
       </main>
       {#if view.inspectorOpen && view.selectedNode !== undefined}
         <aside class="aside">
           <Inspector
             node={inspected}
+            toggled={view.toggledNodeIds}
+            ontogglenode={(id) => store.toggleNode(id)}
             expanded={inspectedExpanded}
             ontoggle={() => {
               if (inspected !== undefined) store.toggleNode(inspected.id);
@@ -303,6 +331,12 @@
 
 <style>
   .app {
+    /* A drag across the canvas was selecting labels instead of panning, which
+       is the classic way a pan control feels broken. Selection is off by
+       default and turned back ON below for the two places a person actually
+       needs to copy text: the inspector and the refusal/notice strip. */
+    user-select: none;
+    -webkit-user-select: none;
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -327,6 +361,10 @@
   }
 
   .aside {
+    /* Payload text is meant to be copied — that is most of what the inspector
+       is for. */
+    user-select: text;
+    -webkit-user-select: text;
     width: 22em;
     max-width: 45%;
     overflow: auto;
@@ -398,6 +436,45 @@
     gap: 4px;
   }
 
+  .count {
+    font-size: 0.85em;
+    opacity: 0.8;
+    white-space: nowrap;
+  }
+
+  .legend {
+    display: flex;
+    gap: 10px;
+    font-size: 0.85em;
+    opacity: 0.85;
+  }
+
+  .key::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 4px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .key[data-liveness='live'] {
+    color: var(--vscode-charts-green, currentColor);
+  }
+
+  .key[data-liveness='idle'] {
+    color: var(--vscode-charts-yellow, currentColor);
+  }
+
+  .key[data-liveness='ended'] {
+    color: var(--vscode-descriptionForeground, currentColor);
+  }
+
+  .key[data-liveness='unsupported'] {
+    color: var(--vscode-errorForeground, currentColor);
+  }
+
   .chip {
     font: inherit;
     font-size: 0.85em;
@@ -425,6 +502,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-wrap: wrap;
     justify-content: flex-end;
     padding: 2px 6px;
     border-bottom: 1px solid var(--vscode-panel-border, transparent);
@@ -446,6 +524,8 @@
   }
 
   .notice {
+    user-select: text;
+    -webkit-user-select: text;
     padding: 3px 10px;
     font-size: 0.88em;
     opacity: 0.85;

@@ -1,14 +1,24 @@
 <!--
   One session blob on the deck — altitude 0 (spec C7.1).
 
+  IT READS A `SessionSummary`, NOT A `SessionState`. Everything this altitude
+  draws is on the summary: liveness, workspaceMatch, refused, label, and the
+  two numbers the store now derives once — `nodeCount` (blob radius, C7.1's
+  `log(nodeCount)`, and the constellation's point count) and `errorCount` (the
+  deck-level badge). That is not a convenience: it deletes the second walk of
+  the tree this component used to do and the second statement of what "refused"
+  means that it used to carry. `summary.refused` is the single source, by
+  construction rather than by two implementations agreeing.
+
   WHAT THIS COMPONENT DOES NOT DO: geometry. `webview/layout.ts` owns every
-  coordinate on this surface and is golden-tested; this file calls
-  `deckLayout`'s output and `blobPath`, and computes nothing that layout.ts
-  already computes. The only numbers written here are the label offsets, the
-  pulse-ring stand-off and the crack decoration — none of which layout.ts
-  defines and none of which any golden pins. They are presentation, transcribed
-  from the frozen mockup `docs/ui/agent-deck-canvas-mockup.html` (cited, never
-  edited), and none of them duplicates a named export of layout.ts.
+  coordinate on this surface and is golden-tested; this file consumes
+  `deckLayout`'s output and calls `blobPath` and `constellationPoints`, and
+  computes nothing layout.ts already computes. The only numbers written here
+  are the label offsets, the pulse-ring stand-off, the constellation dot radius
+  and the crack decoration — none of which layout.ts defines and none of which
+  any golden pins. They are presentation, transcribed from the frozen mockup
+  `docs/ui/agent-deck-canvas-mockup.html` (cited, never edited), and none of
+  them duplicates a named export of layout.ts.
 
   MOTION IS A RESERVED CHANNEL (C7.6). Every animation this component carries
   rides a class from `ANIMATED_CLASSES` in `canvas-contract.ts`, imported and
@@ -17,21 +27,26 @@
   capable of detecting the one failure it exists to detect. An animation hung
   on a class outside that list would pass the control while animating.
 
-  The class names are dynamic (built from the imported constants), so every CSS
-  rule that targets one pairs a scoped `.blob` with a `:global(...)` half: the
-  `.blob` still takes Svelte's scope hash, so nothing leaks into another
-  component, and `:global` stops Svelte PRUNING a rule it cannot statically
-  prove is used. Pruning is the failure that matters — it deletes the styling
-  while every DOM assertion still passes — so `deck.test.ts` checks the bundled
-  stylesheet for each class name built from the contract, and that check was
-  mutation-tested against a renamed selector.
+  THE CONSTELLATION DOES NOT MOVE, and it is placed OUTSIDE the breathing wrap
+  rather than merely left un-classed. A dot is a node that exists, not a node
+  that is happening: inheriting the membrane's transform would animate it in
+  fact while the class-counting control still read zero. `deck.test.ts` asserts
+  no constellation dot has an animated ancestor, which is the form of the check
+  that can see that failure.
+
+  The contract class names are dynamic (built from the imported constants), so
+  every CSS rule that targets one pairs a scoped `.blob` with a `:global(...)`
+  half: the `.blob` still takes Svelte's scope hash, so nothing leaks into
+  another component, and `:global` stops Svelte PRUNING a rule it cannot
+  statically prove is used. Pruning is the failure that matters — it deletes
+  the styling while every DOM assertion still passes — so `deck.test.ts` checks
+  the bundled stylesheet for each class name built from the contract, and that
+  check was mutation-tested against a renamed selector.
 
   Colour comes from `--vscode-*` variables only (C7.7). The mockup's dark hexes
   live outside VS Code and are not shipped.
 -->
 <script lang="ts">
-  import type { SessionState, TreeNode } from '../src/model/events.js';
-  import { isAgentNode } from '../src/model/events.js';
   import type { DeckPlacement } from './canvas-contract.js';
   import {
     ANIMATED_CLASSES,
@@ -40,28 +55,28 @@
     HOLLOW_LIVE_CLASS,
     TESTID,
   } from './canvas-contract.js';
-  import { blobPath, hashSessionId, roundCoord } from './layout.js';
+  import { blobPath, constellationPoints, hashSessionId, roundCoord } from './layout.js';
   import { displayLiveness } from './format.js';
+  import type { SessionSummary } from './store.js';
 
   let {
-    session,
+    summary,
     placement,
-    refused = false,
     degraded = false,
     selected = false,
     onenter,
   }: {
-    /** The session this blob stands for. Read, never mutated (G1). */
-    session: SessionState;
-    /** Where `deckLayout` put it. Never recomputed here. */
-    placement: DeckPlacement;
     /**
-     * Refused by the fingerprint (G3). Passed in rather than derived, because
-     * a `schemaMismatch` message refuses a session WITHOUT changing the
-     * `liveness` the last snapshot delivered — the store owns that union and
+     * The store's summary of this session. Read, never mutated (G1).
+     *
+     * `refused` comes from here rather than being re-derived, because a
+     * `schemaMismatch` message refuses a session WITHOUT changing the
+     * `liveness` the last snapshot delivered. The store owns that union;
      * `format.ts:displayLiveness` is the one place the two are reconciled.
      */
-    refused?: boolean;
+    summary: SessionSummary;
+    /** Where `deckLayout` put it. Never recomputed here. */
+    placement: DeckPlacement;
     /** The hook tap is silent, so `live` here was inferred from JSONL (G2). */
     degraded?: boolean;
     /** This blob is the store's selected session. */
@@ -84,6 +99,8 @@
   const TAG_DY = 36;
   /** Baseline of the error badge, above the membrane. Mockup: `y - R - 10`. */
   const BADGE_DY = 10;
+  /** Radius of one constellation dot. Mockup: `el('circle', { ..., r: 1.6 })`. */
+  const CONSTELLATION_DOT_R = 1.6;
 
   /**
    * The crack, as `dx,dy` pairs in units of R, walked from the start point.
@@ -109,44 +126,41 @@
     return d;
   }
 
-  /**
-   * Tool calls that ended in `error`, anywhere in the session tree.
-   *
-   * C7.3: the per-tool thorn is a session-interior element, and its COUNT
-   * aggregates to a deck-level badge here. Walked on demand, never cached —
-   * the same rule the store follows, for the same reason.
-   */
-  function countToolErrors(node: TreeNode): number {
-    if (!isAgentNode(node)) return node.status === 'error' ? 1 : 0;
-    let total = 0;
-    for (const child of node.children) total += countToolErrors(child);
-    return total;
-  }
-
-  let seed = $derived(hashSessionId(session.sessionId));
-  let shownLiveness = $derived(displayLiveness(session.liveness, refused));
+  let seed = $derived(hashSessionId(summary.sessionId));
+  let shownLiveness = $derived(displayLiveness(summary.liveness, summary.refused));
   /* Only a session the fingerprint accepted animates as live. A refused one
      shows `unsupported` here, so it is still by construction. */
   let isLive = $derived(shownLiveness === 'live');
-  let foreign = $derived(!session.workspaceMatch);
-  /* G3: a refused session's tree is not interpreted at all, so no count is
-     taken from it and no badge is drawn. Refuse, do not guess. */
-  let errorCount = $derived(refused ? 0 : countToolErrors(session.root));
-  let label = $derived(session.root.label !== '' ? session.root.label : session.sessionId);
+  let foreign = $derived(!summary.workspaceMatch);
+
+  /*
+   * One dot per node, seeded exactly as the silhouette is, so a blob's
+   * constellation belongs to its own shape. `constellationPoints` saturates at
+   * `CONSTELLATION_CAP` and is incremental by index — this component relies on
+   * both rather than re-checking them, and neither is restated here.
+   *
+   * A refused session carries `nodeCount: 0` (G3: no number is read off a tree
+   * we declined to trust), and a count of 0 yields no points — so the refusal
+   * needs no branch of its own. The blob draws at `DECK_RADIUS_MIN` and says
+   * nothing about content.
+   */
+  let constellation = $derived(
+    constellationPoints(placement.x, placement.y, placement.R, summary.nodeCount, seed),
+  );
 
   let membraneClass = $derived(
-    ['membrane', refused ? CRACKED_CLASS : '', isLive && degraded ? HOLLOW_LIVE_CLASS : '']
+    ['membrane', summary.refused ? CRACKED_CLASS : '', isLive && degraded ? HOLLOW_LIVE_CLASS : '']
       .filter((c) => c !== '')
       .join(' '),
   );
   let groupClass = $derived(
-    ['blob', refused ? CRACKED_CLASS : '', foreign ? FOREIGN_CLASS : '']
+    ['blob', summary.refused ? CRACKED_CLASS : '', foreign ? FOREIGN_CLASS : '']
       .filter((c) => c !== '')
       .join(' '),
   );
 
   function enter(): void {
-    onenter?.(session.sessionId);
+    onenter?.(summary.sessionId);
   }
 
   function onKeyDown(event: KeyboardEvent): void {
@@ -161,19 +175,23 @@
 <g
   class={groupClass}
   data-testid={TESTID.deckBlob}
-  data-session-id={session.sessionId}
+  data-session-id={summary.sessionId}
   data-liveness={shownLiveness}
   data-liveness-inferred={String(degraded)}
   data-foreign={String(foreign)}
-  data-refused={String(refused)}
-  data-errors={String(errorCount)}
-  role="button"
-  tabindex="0"
-  aria-label={`${label} — ${shownLiveness}${foreign ? ', other workspace' : ''}${
-    errorCount > 0 ? `, ${errorCount} tool ${errorCount === 1 ? 'error' : 'errors'}` : ''
-  }`}
+  data-refused={String(summary.refused)}
+  data-errors={String(summary.errorCount)}
+  data-nodes={String(summary.nodeCount)}
+  data-constellation={String(constellation.length)}
   data-selected={String(selected)}
   aria-current={selected}
+  role="button"
+  tabindex="0"
+  aria-label={`${summary.label} — ${shownLiveness}${foreign ? ', other workspace' : ''}${
+    summary.errorCount > 0
+      ? `, ${summary.errorCount} tool ${summary.errorCount === 1 ? 'error' : 'errors'}`
+      : ''
+  }`}
   onclick={enter}
   onkeydown={onKeyDown}
 >
@@ -187,25 +205,38 @@
   {/if}
   <g class={isLive ? `wrap ${BREATHING}` : 'wrap'}>
     <path class={membraneClass} d={blobPath(placement.x, placement.y, placement.R, seed)} />
-    {#if refused}
+    {#if summary.refused}
       <path class="crack" d={crackPath(placement.x, placement.y, placement.R)} />
     {/if}
   </g>
+  <!-- Deliberately a SIBLING of the breathing wrap, not a child of it. See the
+       header: a constellation dot is a node that exists, not a node that is
+       happening, so it must not inherit the membrane's transform. -->
+  <g class="constellation" aria-hidden="true">
+    {#each constellation as point, index (index)}
+      <circle
+        data-testid={TESTID.deckConstellation}
+        cx={point.x}
+        cy={point.y}
+        r={CONSTELLATION_DOT_R}
+      />
+    {/each}
+  </g>
   <text class="label" x={placement.x} y={roundCoord(placement.y + placement.R + LABEL_DY)}
-    >{label}</text
+    >{summary.label}</text
   >
   {#if foreign}
     <text class="tag" x={placement.x} y={roundCoord(placement.y + placement.R + TAG_DY)}
       >other workspace</text
     >
   {/if}
-  {#if errorCount > 0}
+  {#if summary.errorCount > 0}
     <text
       class="badge"
       data-testid={TESTID.deckErrorBadge}
-      data-count={String(errorCount)}
+      data-count={String(summary.errorCount)}
       x={placement.x}
-      y={roundCoord(placement.y - placement.R - BADGE_DY)}>{errorCount}</text
+      y={roundCoord(placement.y - placement.R - BADGE_DY)}>{summary.errorCount}</text
     >
   {/if}
 </g>
@@ -283,6 +314,13 @@
     opacity: 0;
   }
 
+  /* C7.1: faint, and faint is the point — density readable without a number,
+     never competing with the membrane that carries liveness. */
+  .constellation circle {
+    fill: var(--vscode-descriptionForeground, currentColor);
+    opacity: 0.35;
+  }
+
   .label {
     fill: var(--vscode-foreground);
     font-size: 13px;
@@ -307,7 +345,8 @@
      Transform and opacity only, on `fill-box` origins, so no animation can
      touch a coordinate a golden pins. Both selectors reach classes built from
      `ANIMATED_CLASSES`; `deck.test.ts` checks these literals against the
-     constants. */
+     constants. Nothing else in this file animates — in particular the
+     constellation has no rule here and no animated ancestor. */
   .blob :global(.is-breathing) {
     transform-box: fill-box;
     transform-origin: center;

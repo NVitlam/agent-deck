@@ -18,6 +18,16 @@
  * forbids pinning fixture-set sizes - the next harvest breaks the number and it
  * reads as a regression.)
  *
+ * A COLLECTION FAILURE HERE LOOKS LIKE A PASS, SO SUITE 0 EXISTS
+ * --------------------------------------------------------------
+ * If the dynamic import of the sweep script throws, vitest's summary line
+ * reads "24 skipped", which at a glance is not distinguishable from green.
+ * That happened for real: a shebang on line 1 of `scripts/privacy-sweep.mjs`
+ * is stripped by vite only when the file has LF endings, so an LF working
+ * copy ran 24/24 while the identical commit checked out CRLF collected zero
+ * tests. The import is therefore caught, not thrown, and suite 0 below
+ * depends on nothing so that it still runs and still fails when that breaks.
+ *
  * WHAT "PASS" MEANS HERE
  * ----------------------
  * The DoD's `-> 0` is on FOREIGN content and SECRETS. It is NOT on this
@@ -137,6 +147,16 @@ const EVIDENCE = path.join(REPO_ROOT, 'docs', 'evidence', 'privacy', 'report.jso
    silently stops suppressing anything the day a declaration appears. */
 let sweep: SweepModule['sweep'];
 
+/**
+ * Why the import below is caught rather than left to throw: a throw in the
+ * file-level `beforeAll` is a COLLECTION failure, and vitest's summary line
+ * then reads "24 skipped" - which at a glance is indistinguishable from a
+ * pass. That is exactly how a shebang in the sweep script reached a merged
+ * commit with a green report attached to it. Recording the error instead lets
+ * the guard suite below actually RUN and FAIL, naming the cause.
+ */
+let sweepLoadError: unknown = null;
+
 /** Assembled at runtime so this file is not itself a hit on the next sweep. */
 const NEEDLE = ['Na', 'dav'].join('');
 const SECOND_NEEDLE = ['One', 'Drive'].join('');
@@ -154,8 +174,12 @@ function writeScratch(rel: string, body: string | Buffer): void {
 }
 
 beforeAll(async () => {
-  const mod = (await import(/* @vite-ignore */ pathToFileURL(SCRIPT).href)) as SweepModule;
-  sweep = mod.sweep;
+  try {
+    const mod = (await import(/* @vite-ignore */ pathToFileURL(SCRIPT).href)) as SweepModule;
+    sweep = mod.sweep;
+  } catch (error: unknown) {
+    sweepLoadError = error;
+  }
 
   scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-deck-privacy-'));
 
@@ -192,6 +216,31 @@ beforeAll(async () => {
 
 afterAll(() => {
   if (scratch !== '') fs.rmSync(scratch, { recursive: true, force: true });
+});
+
+/* ------------------------------------------------------------------ *
+ * 0. The sweep script has to be loadable at all
+ *
+ * This suite calls nothing and depends on no fixture, so it still runs
+ * when the import above failed - and then it fails, loudly, instead of
+ * letting the whole file report as skipped.
+ * ------------------------------------------------------------------ */
+
+describe('the sweep script loads under the vitest module runner', () => {
+  it('carries no shebang, which vite strips with a newline-sensitive regex', () => {
+    // vite: `hashbangRE = /^#!.*\n/`. `.` does not match \r, so with
+    // `* text=auto` plus core.autocrlf=true a CRLF checkout keeps the shebang,
+    // it survives into the function-wrapped module, and this file dies at
+    // import. Reading the bytes rather than importing is the point: this
+    // assertion has to survive the failure it is about.
+    const firstTwo = fs.readFileSync(SCRIPT).subarray(0, 2).toString('latin1');
+    expect(firstTwo).not.toBe(`${'#'}${'!'}`);
+  });
+
+  it('imported, and exported a callable sweep', () => {
+    expect(sweepLoadError).toBeNull();
+    expect(typeof sweep).toBe('function');
+  });
 });
 
 /* ------------------------------------------------------------------ *

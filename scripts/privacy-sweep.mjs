@@ -1,4 +1,21 @@
-#!/usr/bin/env node
+// NO SHEBANG HERE, and it must not come back. Removing it is not tidying.
+//
+// This script is only ever run as `node scripts/privacy-sweep.mjs`. There is
+// no `bin` entry in package.json, no other script in this directory carries
+// one, and an exec bit means nothing on this project's only platform - so a
+// shebang buys exactly nothing and costs the suite.
+//
+// Vite strips a shebang with `hashbangRE = /^#!.*\n/`
+// (node_modules/vite/dist/node/chunks/config.js, used by `ssrTransform` as
+// `hashbangRE.exec(code)?.[0].length ?? 0`). In JavaScript `.` does not match
+// \r. With `* text=auto` in .gitattributes and core.autocrlf=true on the dev
+// machine this file checks out CRLF, the regex misses, the shebang survives
+// into a function-wrapped module and `src/release/privacy.test.ts` dies at
+// import with "SyntaxError: Invalid or unexpected token" - which vitest
+// summarises as "24 skipped", i.e. as something that looks like a pass.
+//
+// Measured, one identical commit, two working trees: LF copy 24/24 green,
+// CRLF checkout 0 tests collected. src/release/privacy.test.ts guards this.
 /**
  * Privacy sweep - Phase 5 DoD1 gate evidence.
  *

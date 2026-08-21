@@ -24,7 +24,7 @@
   "type": "module",
   "main": "./dist/extension.cjs",
   "engines": {
-    "node": ">=20",
+    "node": ">=22.22.2",
     "vscode": "^1.90.0"
   },
   "activationEvents": [

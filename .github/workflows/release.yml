@@ -53,24 +53,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node 20
+      - name: Use Node 24
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      # 'npm run package' is 'vsce package --no-dependencies --out
-      # dist/agent-deck.vsix'. vsce runs the 'vscode:prepublish' script first,
-      # and that script is 'node esbuild.config.mjs --production'.
-      #
-      # THE --production FLAG IS LOAD-BEARING, not tidiness: a default build
-      # emits 16 'fakecss:C:/Users/...' comments into the stylesheet, which is
-      # how a developer's home directory leaked into a VSIX once already. Do not
-      # replace this with 'npm run build' plus a bare vsce invocation.
-      #
       # THE GATES ARE REPEATED HERE ON PURPOSE (orchestrator decision at
       # integration, overriding the package author's reasoning, which was that
       # ci.yml already ran them on the push that produced this commit).

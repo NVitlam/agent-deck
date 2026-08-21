@@ -57,7 +57,7 @@
  * one in.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -241,8 +241,8 @@ describe('ci.yml', () => {
     expect(ci.codeText).not.toMatch(/RESOLVED\s*\+?\s*:\s*5/);
   });
 
-  it('uses Node 20, matching engines.node', () => {
-    expect(ci.codeText).toMatch(/node-version:\s*'?20'?/);
+  it('runs a Node version that satisfies engines.node', () => {
+    expectWorkflowNodeSatisfiesEngines(ci);
   });
 });
 
@@ -271,10 +271,96 @@ describe('release.yml', () => {
     expect(release.codeText).not.toContain('write-all');
   });
 
-  it('uses Node 20, matching engines.node', () => {
-    expect(release.codeText).toMatch(/node-version:\s*'?20'?/);
+  it('runs a Node version that satisfies engines.node', () => {
+    expectWorkflowNodeSatisfiesEngines(release);
   });
 });
+
+/**
+ * The manifest must not promise a Node version the dependency tree cannot run.
+ *
+ * MEASURED, not hypothesised. `package.json` declared `engines.node: ">=20"`,
+ * the CI workflow honoured it and installed Node 20, and the first real run
+ * died: `jsdom@30` pulls `undici@8`, which declares `>=22.19.0` and throws
+ * `webidl.util.markAsUncloneable is not a function` on Node 20. It could not
+ * surface locally — this machine runs 24.15.0, which happens to sit exactly on
+ * `jsdom`'s own `^24.15.0` floor.
+ *
+ * The assertion this replaces was named "uses Node 20, matching engines.node"
+ * and asserted only that the workflow said `20`. It never read `engines.node`.
+ * Two agreeing literals with a claim in the name — the same class as the
+ * manifest/build disagreement `CLAUDE.md` says will recur, which is exactly
+ * what it failed to catch.
+ *
+ * It is a TRIPWIRE, not a semver implementation: for a disjunction it takes the
+ * lowest floor across alternatives, so it would not notice a floor landing in a
+ * gap between ranges (23.x, say). It catches the failure that actually
+ * happened — a declared floor BELOW what a dependency demands — and it costs no
+ * dependency to do it.
+ */
+const NODE_CRITICAL_DEPS = ['jsdom', 'undici', 'vite', 'vitest'] as const;
+
+function lowestFloor(range: string): [number, number, number] | undefined {
+  const floors = [...range.matchAll(/(\d+)\.(\d+)\.(\d+)/g)].map(
+    (m) => [Number(m[1]), Number(m[2]), Number(m[3])] as [number, number, number],
+  );
+  if (floors.length === 0) return undefined;
+  return floors.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2])[0];
+}
+
+function atLeast(a: [number, number, number], b: [number, number, number]): boolean {
+  return a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] >= b[2];
+}
+
+function enginesFloor(): [number, number, number] {
+  const manifest = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as {
+    engines?: { node?: string };
+  };
+  const declared = manifest.engines?.node;
+  expect(typeof declared, 'package.json must declare engines.node').toBe('string');
+  const floor = lowestFloor(String(declared));
+  expect(floor, `engines.node "${declared}" carries no x.y.z floor to compare`).toBeDefined();
+  return floor as [number, number, number];
+}
+
+describe('engines.node tells the truth about what this project can run on', () => {
+  it('declares a floor no lower than every critical dependency demands', () => {
+    const ours = enginesFloor();
+    const violations: string[] = [];
+    for (const dep of NODE_CRITICAL_DEPS) {
+      const pkgPath = join(REPO_ROOT, 'node_modules', dep, 'package.json');
+      if (!existsSync(pkgPath)) continue;
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
+        version?: string;
+        engines?: { node?: string };
+      };
+      const range = pkg.engines?.node;
+      if (!range) continue;
+      const theirs = lowestFloor(range);
+      if (!theirs) continue;
+      if (!atLeast(ours, theirs)) {
+        violations.push(
+          `${dep}@${pkg.version} needs node ${range} (floor ${theirs.join('.')}), ` +
+            `but engines.node floors at ${ours.join('.')}`,
+        );
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+});
+
+function expectWorkflowNodeSatisfiesEngines(wf: { codeText: string }): void {
+  const declared = /node-version:\s*'?(\d+)(?:\.(\d+))?(?:\.(\d+))?'?/.exec(wf.codeText);
+  expect(declared, 'workflow must pin a node-version').not.toBeNull();
+  const major = Number(declared?.[1]);
+  const floor = enginesFloor();
+  // A bare major such as '24' resolves to the latest 24.x, so comparing majors
+  // is the honest comparison: only the major is actually pinned.
+  expect(
+    major >= floor[0],
+    `workflow runs Node ${major}, engines.node floors at ${floor.join('.')}`,
+  ).toBe(true);
+}
 
 describe('the gate decision is pinned: package-only, no publisher exists', () => {
   // Phase 5 gate answer: no Azure DevOps account, no nvitlam publisher, no PAT.

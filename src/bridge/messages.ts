@@ -52,7 +52,19 @@ import { applySessionPatch } from './apply.js';
  */
 const FORBIDDEN_KEYS = ['__proto__', 'constructor', 'prototype'] as const;
 
-/** The two message types the webview may send. Anything else is rejected. */
+/**
+ * The two message types the webview may send. Anything else is rejected.
+ *
+ * This list is an allow-list, so it covers new OUTBOUND state without being
+ * touched. `SessionState.parked` is a case worth naming: it travels host ->
+ * webview inside `snapshot` and `diff` only, and the webview has no message
+ * that carries it back. Teaching this guard to parse a parked graft would add
+ * an inbound grammar for a message that does not exist — surface, not safety —
+ * so what is asserted in `messages.test.ts` instead is that a parked payload
+ * arriving from the webview side is still rejected on the type, and that an
+ * otherwise valid message carrying a stray `parked` key is accepted exactly as
+ * any other unread extra key already is.
+ */
 export const WEBVIEW_TO_HOST_TYPES = ['expandNode', 'selectSession'] as const;
 
 /**

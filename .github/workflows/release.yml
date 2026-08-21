@@ -71,10 +71,50 @@ jobs:
       # how a developer's home directory leaked into a VSIX once already. Do not
       # replace this with 'npm run build' plus a bare vsce invocation.
       #
-      # The gates (typecheck, lint, tests, build) are not repeated here: ci.yml
-      # runs them on the push that produced the commit this tag points at.
+      # THE GATES ARE REPEATED HERE ON PURPOSE (orchestrator decision at
+      # integration, overriding the package author's reasoning, which was that
+      # ci.yml already ran them on the push that produced this commit).
+      #
+      # That reasoning holds only when the tag points at a commit ci.yml
+      # actually ran and passed. A tag is a human action and can name any
+      # commit in the history — including one pushed before ci.yml existed, one
+      # from a branch whose run was cancelled, or one whose run went red. The
+      # artifact produced here is the thing a user installs, so it is gated on
+      # its own evidence rather than on a run somebody hopes happened.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        # Not `npm test`: the npm shim intermittently exits 127 on this project.
+        run: npx vitest run
+
+      # 'npm run package' is 'vsce package --no-dependencies --out
+      # dist/agent-deck.vsix'. vsce runs the 'vscode:prepublish' script first,
+      # and that script is 'node esbuild.config.mjs --production'.
+      #
+      # THE --production FLAG IS LOAD-BEARING, not tidiness: a default build
+      # emits 16 'fakecss:C:/Users/...' comments into the stylesheet, which is
+      # how a developer's home directory leaked into a VSIX once already. Do not
+      # replace this with 'npm run build' plus a bare vsce invocation.
       - name: Package VSIX
         run: npm run package
+
+      # The gated leg of src/release/vsix.test.ts: build a real .vsix, unzip it,
+      # and scan every shipped byte for a developer identifier. It is gated out
+      # of the normal suite because 'vsce package' rewrites the shared dist/ via
+      # vscode:prepublish and would race the tests that read it. Here nothing
+      # else is running, and here is where the artifact is actually produced.
+      #
+      # If this step is deleted, src/release/vsix.test.ts goes red — it asserts
+      # this workflow still names AGENT_DECK_PACKAGE_AUDIT, so the gate cannot
+      # quietly become a test nobody runs.
+      - name: Audit the packaged artifact's bytes
+        env:
+          AGENT_DECK_PACKAGE_AUDIT: '1'
+        run: npx vitest run src/release/vsix.test.ts
 
       - name: Upload VSIX as a workflow artifact
         uses: actions/upload-artifact@v4

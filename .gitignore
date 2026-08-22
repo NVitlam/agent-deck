@@ -18,3 +18,8 @@ media/*
 !media/screenshot-deck.png
 !media/screenshot-topology.png
 !media/screenshot-inspector.png
+
+# Agent working notes. Untracked before the public flip: they are internal
+# scratch, not product, and they quote absolute paths and prior verdicts.
+# Untracking is reversible; publishing is not.
+.claude/agent-memory/

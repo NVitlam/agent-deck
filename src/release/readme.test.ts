@@ -185,7 +185,16 @@ describe('README exists and ships clean', () => {
     // is the case that would otherwise ship a broken marketplace page.
     const links = [...README.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1] ?? '');
     expect(links.length).toBeGreaterThan(0);
+    // The ONE remote image allowed, and the exemption is narrow on purpose: the
+    // marketplace version badge. It renders on the marketplace listing and on
+    // GitHub, both of which are pages a browser loads anyway - it is never
+    // fetched by extension code, so it does not touch the zero-egress claim,
+    // which is about what the extension does at runtime. Every other image
+    // stays local, which is still what keeps a screenshot from silently
+    // becoming a third-party request.
+    const BADGE_HOST = /^https:\/\/img\.shields\.io\/visual-studio-marketplace\//;
     for (const link of links) {
+      if (BADGE_HOST.test(link)) continue;
       expect(link, `remote asset in README: ${link}`).not.toMatch(/^[a-z]+:\/\//i);
       expect(
         existsSync(join(ROOT, link)),

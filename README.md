@@ -1,5 +1,7 @@
 # Agent Deck
 
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/nvitlam.agent-deck?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck)
+
 A **read-only** VS Code extension that renders live Claude Code session topology — subagent trees,
 in-flight tool calls, token and cost totals — by observing Claude Code's exhaust. It never wraps,
 proxies, launches, or configures Claude Code.
@@ -72,24 +74,16 @@ window closes. There is no database, no cache file, and nothing is ever written 
 
 ## Install
 
-There is **no marketplace listing**. Agent Deck is installed by side-loading a VSIX.
-
-Build the VSIX from a checkout:
-
-```console
-npm ci
-npm run build
-npm run package
-```
-
-That writes `dist/agent-deck.vsix`. Install it either way:
+Install from the VS Code Marketplace - open the **Extensions** view and search for
+**Agent Deck**, or run:
 
 ```console
-code --install-extension dist/agent-deck.vsix
+code --install-extension nvitlam.agent-deck
 ```
 
-or in VS Code: **Extensions** view, `...` menu, **Install from VSIX...**, then pick
-`dist/agent-deck.vsix`.
+**Then install the hook block below.** It is not optional: without it Agent Deck can still read
+session transcripts, but nothing tells it what is running right now, so liveness is inferred from
+file mtime alone.
 
 Open the panel from the Command Palette: **Agent Deck: Open Session Deck**.
 
@@ -271,6 +265,17 @@ drift inside the window can surface as a wrong tree rather than an honest refusa
 - **No historical replay and no persistence.** Close the window and the state is gone.
 - **No telemetry, no analytics, no network egress.**
 - **No cost dashboards.** Totals are rendered where they belong on the tree, and that is all.
+
+## Development
+
+Build and side-load from a checkout:
+
+```console
+npm ci
+npm run build
+npm run package
+code --install-extension dist/agent-deck.vsix
+```
 
 ## Licence
 

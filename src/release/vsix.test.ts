@@ -192,6 +192,14 @@ const IDENTITY_ALLOWED_IN_ARTIFACT: readonly RegExp[] = [
   // vsce generates this one; the publisher id it embeds is the whole reason a
   // marketplace listing can be attributed to anybody.
   /^extension\.vsixmanifest$/,
+  // README.md on disk carries ZERO occurrences of the identity - measured. vsce
+  // REWRITES relative links at package time, so `[LICENSE](LICENSE)` ships as
+  // `https://github.com/dev/agent-deck/blob/HEAD/LICENSE`, and the org
+  // segment carries the surname. Case-insensitive because vsce also lowercases
+  // the name: `README.md` on disk becomes `extension/readme.md` in the zip, the
+  // same rename it does to LICENSE -> LICENSE.txt. Only the unzipped artifact
+  // knows this; the on-disk file and `vsce ls` both look clean.
+  /^extension\/readme\.md$/i,
 ];
 
 /**

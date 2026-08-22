@@ -67,7 +67,7 @@ window closes. There is no database, no cache file, and nothing is ever written 
 
 ## Requirements
 
-- **VS Code** `^1.90.0`
+- **VS Code** `^1.75.0`
 - **Node** `>=20` on your `PATH` — the hook block below is a `node -e` one-liner, so your Node is
   what runs it
 - **Claude Code** at a version inside the accepted window (see below)
@@ -203,6 +203,25 @@ Notes on that block, each of them measured rather than assumed:
   `SubagentStop`, `Stop`. Registering fewer still works — liveness degrades rather than fails, and
   falls back to transcript modification times with a banner — but the panel gets blunter.
 
+## Usage
+
+Three levels, and Escape walks back up out of any of them.
+
+**Deck** - every Claude Code session on the machine, one blob each. The chip row filters by
+liveness: **all**, **live**, **idle**, **ended**, **refused**. Colour is the same channel
+everywhere - green live, yellow idle, grey ended, red refused - and the legend at the bottom of the
+panel restates it. Drag to pan, wheel to zoom, click a session to go inside it.
+
+**Topology** - the session interior. The main agent is the nucleus, each tool call is a dot placed
+in chronological order around it, and a subagent hangs off a filament drawn from the exact tool-call
+dot that spawned it. Click any node to open it in the inspector. The **Deck** breadcrumb returns to
+the deck, and **Reset view** re-centres pan and zoom without changing anything else.
+
+**Inspector** - the detail pane for whatever is selected. Per agent it lists status
+(**running**, **done**, **error**), tokens as *in / out*, duration and spawn depth, with the tool
+payload beneath it. **Show details** / **Hide details** collapses the payload, **Close** dismisses
+the pane.
+
 ## Settings
 
 | Setting | What it does |
@@ -283,6 +302,6 @@ See [`LICENSE`](LICENSE).
 
 ## Status
 
-Pre-release, and installed by side-loading rather than from a marketplace. The parser, the grafter,
-the liveness engine and the renderer are covered by an automated suite that runs against transcripts
-captured from real sessions. Screenshots are not included here yet.
+Released on the VS Code Marketplace as `nvitlam.agent-deck`. The parser, the grafter, the liveness
+engine and the renderer are covered by an automated suite that runs against transcripts captured
+from real Claude Code sessions.

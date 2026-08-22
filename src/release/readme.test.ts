@@ -21,7 +21,13 @@
 //   4. THE PORT AND THE MANIFEST DISAGREE. `package.json` owns the default; the
 //      pasted block hard-codes a literal and cannot be told otherwise, and the
 //      listener refuses to pick a different port for the user. Two agreeing
-//      literals is not a contract, so the literal is read from the manifest.
+//      literals is not a contract, so the literal is read from the manifest -
+//      and, since Phase 6, from `DEFAULT_HOOK_PORT` in `src/hooks/listener.ts`
+//      as well. README->manifest alone is one edge of a triangle: it stays
+//      green while the manifest and the code that binds the socket disagree.
+//      `src/release/manifest.test.ts` binds manifest->code; the third
+//      assertion here collapses all three sources to one number, so the
+//      closure is asserted rather than inferred from two edges.
 //   5. THE VERSION BADGE GOES STALE. This is the trap in the DoD's own wording:
 //      "pinned-CC-version badge" describes the pre-Phase-4 world of one pinned
 //      version, and the shipped rule is an acceptance WINDOW. The constants are
@@ -29,10 +35,26 @@
 //      - a test that hard-coded 2.1.234 would rot in exactly the same way the
 //      README would, and would rot silently.
 //   6. THE SPEC CONTRADICTS THE PRODUCT. Carry-forward G: `agent-deck-spec.md`
-//      section 3 still said "pin to the installed CC version" after the code
-//      stopped doing that. The section is pinned to the same constants, and the
-//      superseded phrase is asserted absent - pin the spec to the code, not to
-//      a phrase someone remembered to update once.
+//      section 3 stated a single-pin version posture after the code stopped
+//      implementing it. Two guards, deliberately different in scope:
+//        - POSITIVE, section 3 only. The numbers a reader takes away are
+//          asserted against IMPORTED constants. Scoped, because a whole-spec
+//          scan for "anchor `x.y.z`" would fire on any section that mentions a
+//          version for an unrelated reason.
+//        - NEGATIVE, the WHOLE document, by pattern. Until Phase 6 this was
+//          two exact lowercased phrases over the section-3 slice, which let a
+//          REWORDED single-pin claim through, and let any wording at all
+//          through if it was written in another section. The pattern list is
+//          derived from what the superseded posture actually said (the spec
+//          text replaced at `3024425`, plus the version-posture bullet in
+//          CLAUDE.md) rather than from what a contradiction might look like.
+//      WHAT THIS DOES NOT DO: it does not prove the prose cannot contradict the
+//      code. Prose has unbounded ways to say a wrong thing and a regex list has
+//      a finite number of ways to notice. What it does is make the cheap
+//      failure - restating the old posture in slightly different words, or
+//      restating it somewhere the guard was not looking - cost a red test. Read
+//      it as a raised floor, not as a proof, the same way the byte-identity
+//      check below is a proxy for the clean-profile test and not that test.
 //   7. A DEVELOPER PATH SHIPS. `fixtures/**` is excluded from the VSIX because
 //      it carries absolute paths; a README that names one leaks the same thing
 //      through the front door.
@@ -50,6 +72,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
 import { PINNED_CC_VERSION, VERSION_WINDOW, versionWindow } from '../parser/fingerprint.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -211,6 +234,27 @@ describe('the hook paste block', () => {
     expect(prose).toContain(`\`${String(DEFAULT_PORT)}\``);
   });
 
+  it('closes README -> manifest -> code on a single port literal', () => {
+    // The two edges asserted separately (here and in manifest.test.ts) leave
+    // the closure to transitivity, which holds only while both edges are
+    // green in the same run. Collapsing all three sources to one set says the
+    // thing directly, and a failure prints which source dissents.
+    const fence = JSON_FENCES[0] ?? '';
+    const ports = [...fence.matchAll(/\bport\b\s*[:=]\s*(\d+)/gi)].map((m) => Number(m[1]));
+    expect(ports.length, 'the pasted block names no port at all').toBeGreaterThan(0);
+
+    const sources = new Set<number>([
+      ...ports,
+      Number(DEFAULT_PORT),
+      DEFAULT_HOOK_PORT,
+    ]);
+    expect(
+      [...sources],
+      `README ${JSON.stringify(ports)} / manifest ${String(DEFAULT_PORT)} / ` +
+        `DEFAULT_HOOK_PORT ${String(DEFAULT_HOOK_PORT)} disagree`,
+    ).toStrictEqual([DEFAULT_HOOK_PORT]);
+  });
+
   it('binds only loopback', () => {
     const fence = JSON_FENCES[0] ?? '';
     expect(fence).toContain("host:'127.0.0.1'");
@@ -278,6 +322,153 @@ describe('the version badge is accurate against the shipped constants', () => {
   });
 });
 
+/**
+ * The two sentences the superseded posture was actually written in, lowercased.
+ * Absolute: forbidden ANYWHERE in the document, with no exemption, including
+ * inside a note that marks them as superseded. That bluntness is measured, not
+ * stylistic - the first draft of the Phase 5 amendment quoted the old phrase in
+ * its own supersession note and the guard failed it, correctly. A reader who
+ * greps the spec for the old sentence must find nothing. Paraphrase it instead.
+ */
+const SUPERSEDED_PHRASES = ['pin to the installed cc version', 'no multi-version support'];
+
+/**
+ * Rewordings of the same posture. Each is derived from wording that was really
+ * in play - the spec text replaced at `3024425` said "No multi-version support,
+ * no drift fixtures, no version matrix. Pin to the installed CC version at
+ * capture time", and CLAUDE.md's version-posture bullet records the old rule as
+ * one pinned version and "do not build drift tolerance".
+ *
+ * Bounded distances (`[^.]{0,30}`) rather than `.*`, so a match stays inside one
+ * sentence: an unbounded gap makes any two words anywhere in a paragraph a hit,
+ * and a guard that fires on correct prose gets deleted rather than fixed.
+ *
+ * Non-global on purpose. A `/g` RegExp carries `lastIndex` across `.test()`
+ * calls and would skip every other sentence it is asked about.
+ */
+const SUPERSEDED_PATTERNS: { readonly name: string; readonly re: RegExp }[] = [
+  // "pinned to the installed CC version", "pins to whatever CC is installed".
+  { name: 'pinned-to-installed', re: /\bpin(?:ned|ning|s)?\b[^.]{0,40}\binstalled\b/i },
+  // "no multi-version support", "no multi-CC-version schema support".
+  // Requires the negation: the hard-exclusions list and section 3's own note
+  // that the window OVERRIDES that exclusion both name the phrase without it.
+  {
+    name: 'no-multi-version-support',
+    re: /\bno\b[^.]{0,30}\bmulti[-\s]?(?:cc[-\s]?)?version\b[^.]{0,20}\bsupport/i,
+  },
+  // "a single pinned CC version", "one single supported version".
+  {
+    name: 'single-blessed-version',
+    re: /\b(?:a\s+)?single\s+(?:pinned|supported|accepted|blessed)\s+(?:cc\s+)?version\b/i,
+  },
+  // "exactly one CC version", "only one version of Claude Code".
+  { name: 'exactly-one-version', re: /\b(?:exactly|only)\s+one\s+(?:cc\s+|claude\s+code\s+)?version\b/i },
+  // "no drift tolerance", "no drift fixtures".
+  { name: 'no-drift-tolerance', re: /\bno\s+drift\s+(?:tolerance|fixtures)\b/i },
+  // CLAUDE.md's record of the old instruction, verbatim in spirit.
+  { name: 'do-not-build-drift', re: /\bdo\s+not\s+build\s+drift\b/i },
+  // "no version matrix".
+  { name: 'no-version-matrix', re: /\bno\s+version\s+matrix\b/i },
+];
+
+/**
+ * A sentence that says it is superseding something is not asserting it. Without
+ * this, three patterns above fire on the amendment's own note - measured on the
+ * shipped file - and the only way to keep them would be to loosen them until a
+ * real reworded contradiction slipped through. The exemption is deliberately
+ * narrow: one sentence, and it does not extend to {@link SUPERSEDED_PHRASES}.
+ */
+const MARKED_SUPERSEDED = /\bsupersed(?:e|es|ed|ing)\b/i;
+
+/**
+ * Sentences, not lines. A markdown paragraph here is one very long line, so
+ * line granularity would let a single "supersedes" anywhere in a paragraph
+ * exempt everything else in it.
+ */
+function sentencesOf(text: string): string[] {
+  return text
+    .split('\n')
+    .flatMap((line) => line.split(/(?<=[.!?])\s+/))
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
+}
+
+/** Every unexempted pattern hit, as `name: sentence`. */
+function contradictionsIn(text: string): string[] {
+  const found: string[] = [];
+  for (const sentence of sentencesOf(text)) {
+    if (MARKED_SUPERSEDED.test(sentence)) continue;
+    for (const { name, re } of SUPERSEDED_PATTERNS) {
+      if (re.test(sentence)) found.push(`${name}: ${sentence}`);
+    }
+  }
+  return found;
+}
+
+/**
+ * Controls for the guard itself, so "no contradictions found" cannot mean "the
+ * patterns match nothing". The first two are the superseded spec text; the rest
+ * are rewordings that carry the same claim in different words - exactly what
+ * the old two-exact-phrases guard let through.
+ */
+const SUPERSEDED_CONTROLS = [
+  'No multi-version support, no drift fixtures, no version matrix.',
+  'Pin to the installed CC version at capture time, record it once in fixtures.',
+  'The fingerprint is pinned to whichever CC version is installed.',
+  'Agent Deck accepts exactly one CC version.',
+  'Only one version of Claude Code is ever accepted.',
+  'The parser targets a single supported version and builds no drift tolerance.',
+  'Do not build drift tolerance into the fingerprint.',
+];
+
+describe('agent-deck-spec.md restates the superseded version posture nowhere', () => {
+  it('carries neither superseded sentence, anywhere in the document', () => {
+    const lower = SPEC.toLowerCase();
+    for (const phrase of SUPERSEDED_PHRASES) {
+      expect(lower, `agent-deck-spec.md still says "${phrase}"`).not.toContain(phrase);
+    }
+  });
+
+  it('carries no reworded restatement of it, in any section', () => {
+    // Whole document. The predecessor of this test read section 3 alone, so a
+    // contradiction in any other section was untested rather than absent.
+    expect(contradictionsIn(SPEC)).toStrictEqual([]);
+  });
+
+  it('keeps the supersession exemption to a note, not a licence', () => {
+    // An exempted sentence is one that both restates the old posture and says
+    // it is superseded. That is a footnote-shaped thing; a document with many
+    // of them is a document routing around this guard.
+    const exempted = sentencesOf(SPEC).filter(
+      (sentence) =>
+        MARKED_SUPERSEDED.test(sentence) &&
+        SUPERSEDED_PATTERNS.some(({ re }) => re.test(sentence)),
+    );
+    expect(exempted.length, `sentences exempted: ${exempted.length}`).toBeLessThanOrEqual(3);
+  });
+
+  it('flags the superseded posture and rewordings of it', () => {
+    // Vacuity control. Runs on strings held here, never on the spec.
+    for (const control of SUPERSEDED_CONTROLS) {
+      const flagged =
+        contradictionsIn(control).length > 0 ||
+        SUPERSEDED_PHRASES.some((phrase) => control.toLowerCase().includes(phrase));
+      expect(flagged, `no guard flags: ${control}`).toBe(true);
+    }
+  });
+
+  it('has no pattern that flags nothing at all', () => {
+    // A pattern that matches none of the controls is either dead or was
+    // loosened until it stopped meaning anything.
+    for (const { name, re } of SUPERSEDED_PATTERNS) {
+      expect(
+        SUPERSEDED_CONTROLS.some((control) => re.test(control)),
+        `pattern ${name} flags none of the controls`,
+      ).toBe(true);
+    }
+  });
+});
+
 describe('agent-deck-spec.md section 3 no longer contradicts the product', () => {
   /** Section 3 only: heading through the start of section 4. */
   const section3 = ((): string => {
@@ -288,15 +479,6 @@ describe('agent-deck-spec.md section 3 no longer contradicts the product', () =>
     }
     return SPEC.slice(start, end);
   })();
-
-  // Literal, and deliberately blunt: the section may not reproduce the
-  // superseded sentence even to quote it as superseded. Measured - the first
-  // draft of the amendment quoted the old phrase in its own supersession note
-  // and this failed. Paraphrase the old posture; do not quote it.
-  it('drops the superseded single-pin posture', () => {
-    expect(section3.toLowerCase()).not.toContain('pin to the installed cc version');
-    expect(section3.toLowerCase()).not.toContain('no multi-version support');
-  });
 
   it('states the same anchor and tolerances as the shipped constants', () => {
     const anchors = [...section3.matchAll(/\banchor(?:ed on)?:?\s+`(\d+\.\d+\.\d+)`/gi)].map(

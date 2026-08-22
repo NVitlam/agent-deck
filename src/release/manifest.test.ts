@@ -38,6 +38,17 @@
  *                     easy to scroll past. The repo is PRIVATE today; that is
  *                     expected and is not what this asserts.
  *
+ *   hook port         `agentDeck.port`'s default and `DEFAULT_HOOK_PORT` in
+ *                     `src/hooks/listener.ts` were two agreeing literals with
+ *                     nothing between them. The constant is IMPORTED here and
+ *                     compared to the manifest, because this repo has already
+ *                     shipped one silently inert extension from a manifest and
+ *                     a build disagreeing, and "both sides are internally
+ *                     consistent" is what that failure looks like from inside
+ *                     either side. `src/release/readme.test.ts` binds the
+ *                     README's pasted literal to the same two, closing the
+ *                     triangle rather than leaving a chain of two edges.
+ *
  *   .vscodeignore     The two files a user is entitled to — the licence and
  *                     the README — are the two most likely to be swept up by
  *                     a broad exclusion glob. Checked by expanding every
@@ -58,6 +69,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
+
 const REPO_ROOT = new URL('../../', import.meta.url);
 
 const readRepoFile = (relative: string): Promise<string> =>
@@ -71,6 +84,11 @@ interface Manifest {
   license?: unknown;
   keywords?: unknown;
   repository?: unknown;
+  contributes?: {
+    configuration?: {
+      properties?: Record<string, { default?: unknown; minimum?: unknown; maximum?: unknown } | undefined>;
+    };
+  };
 }
 
 const readManifest = async (): Promise<Manifest> =>
@@ -156,6 +174,40 @@ describe('licence', () => {
     expect(licence, 'LICENSE carries no "Copyright (c) <year>" line').toMatch(
       /Copyright \(c\) \d{4}\b/,
     );
+  });
+});
+
+describe('the hook port', () => {
+  /**
+   * The manifest advertises the default to the user's settings UI; the
+   * listener is what actually binds. They were two literals that happened to
+   * agree. A user reading `47821` in the settings UI and pasting a hook block
+   * that POSTs there gets silence — not an error — if the listener defaults
+   * elsewhere, because the hook takes ECONNREFUSED and exits 0 by design.
+   */
+  it('has one default, imported from the listener rather than restated', async () => {
+    const manifest = await readManifest();
+    const property = manifest.contributes?.configuration?.properties?.['agentDeck.port'];
+    expect(property, 'package.json contributes no agentDeck.port setting').toBeDefined();
+    expect(
+      typeof property?.default,
+      'agentDeck.port declares no numeric default',
+    ).toBe('number');
+    expect(
+      property?.default,
+      'package.json agentDeck.port default and DEFAULT_HOOK_PORT disagree',
+    ).toBe(DEFAULT_HOOK_PORT);
+  });
+
+  it('declares bounds that admit the default it advertises', async () => {
+    // A default outside the declared range is a settings UI that rejects its
+    // own initial value; cheap to state here, invisible until a user opens it.
+    const manifest = await readManifest();
+    const property = manifest.contributes?.configuration?.properties?.['agentDeck.port'];
+    expect(typeof property?.minimum).toBe('number');
+    expect(typeof property?.maximum).toBe('number');
+    expect(Number(property?.minimum)).toBeLessThanOrEqual(DEFAULT_HOOK_PORT);
+    expect(Number(property?.maximum)).toBeGreaterThanOrEqual(DEFAULT_HOOK_PORT);
   });
 });
 

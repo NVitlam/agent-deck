@@ -10,3 +10,11 @@ spike/hook-events-real.jsonl
 coverage/
 *.tsbuildinfo
 spike/hook-events-r3.jsonl
+
+# Working screenshots. Only the four assets package.json and README reference
+# are tracked; the rest stay local. Same allow-list shape as .vscodeignore.
+media/*
+!media/icon.png
+!media/screenshot-deck.png
+!media/screenshot-topology.png
+!media/screenshot-inspector.png

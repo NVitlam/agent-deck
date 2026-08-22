@@ -322,6 +322,10 @@ const CAPTURE_CORPORA = [
   '.github/',
   'docs/',
   'fixtures/',
+  // Marketplace assets. Added when the icon and screenshots became tracked for
+  // the 0.1.0 listing; the completeness guard in src/release/privacy.test.ts
+  // caught the omission on the next run, which is what it is for.
+  'media/',
   'scripts/',
   'spike/',
   'src/',

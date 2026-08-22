@@ -219,7 +219,13 @@ const IDENTITY_REQUIRED_IN_ARTIFACT: ReadonlyArray<{ readonly re: RegExp; readon
   ];
 
 /** The same allow-set, as `vsce ls` and the working tree name the files. */
-const IDENTITY_ALLOWED_ON_DISK: readonly string[] = ['LICENSE', 'package.json'];
+// README.md joined this list at 0.1.1. It carries the identity twice, both
+// deliberate and both required: the marketplace badge and the listing link
+// embed the publisher id `nvitlam`, which contains the surname. Before the
+// listing existed the file was clean, which is why it was not enumerated here
+// and why the always-on leg went red the moment the badge landed - working as
+// intended.
+const IDENTITY_ALLOWED_ON_DISK: readonly string[] = ['LICENSE', 'package.json', 'README.md'];
 
 /**
  * `vsce ls` is a subprocess spawn, measured at 1.4-3.2 s per call. Six tests

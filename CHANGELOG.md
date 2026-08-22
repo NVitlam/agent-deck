@@ -2,6 +2,11 @@
 
 All notable changes to Agent Deck for Claude Code are documented here.
 
+## 0.1.1
+
+Documentation: usage walkthrough and panel-opening instructions; corrected
+minimum VS Code version.
+
 ## 0.1.0
 
 Initial release.

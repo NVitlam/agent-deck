@@ -71,10 +71,18 @@ const REQUIRED_ARTIFACTS = ['dist/extension.cjs', 'dist/webview/main.js', 'dist/
 
 beforeAll(() => {
   const missing = REQUIRED_ARTIFACTS.filter((rel) => !existsSync(join(REPO_ROOT, rel)));
-  if (missing.length === 0) return;
-  execFileSync(process.execPath, ['esbuild.config.mjs'], { cwd: REPO_ROOT, encoding: 'utf8' });
-  const stillMissing = REQUIRED_ARTIFACTS.filter((rel) => !existsSync(join(REPO_ROOT, rel)));
-  expect(stillMissing, 'the build did not emit the artifacts the package needs').toEqual([]);
+  if (missing.length > 0) {
+    execFileSync(process.execPath, ['esbuild.config.mjs'], { cwd: REPO_ROOT, encoding: 'utf8' });
+    const stillMissing = REQUIRED_ARTIFACTS.filter((rel) => !existsSync(join(REPO_ROOT, rel)));
+    expect(stillMissing, 'the build did not emit the artifacts the package needs').toEqual([]);
+  }
+  // Warm the `vsce ls` cache HERE, inside the hook that already owns a 120 s
+  // budget, rather than leaving the one surviving spawn to whichever test runs
+  // first under vitest's 5 s default. Same reasoning as the build above: the
+  // expensive, environment-sensitive step belongs in a hook with an explicit
+  // budget, so no test's verdict depends on the machine's load at the moment it
+  // happened to be scheduled.
+  vsceLs();
 }, 120_000);
 
 /** vsce's own bin entry, run through this process's node so no shell or
@@ -200,18 +208,41 @@ const IDENTITY_REQUIRED_IN_ARTIFACT: ReadonlyArray<{ readonly re: RegExp; readon
 /** The same allow-set, as `vsce ls` and the working tree name the files. */
 const IDENTITY_ALLOWED_ON_DISK: readonly string[] = ['LICENSE', 'package.json'];
 
-function vsceLs(): string[] {
+/**
+ * `vsce ls` is a subprocess spawn, measured at 1.4-3.2 s per call. Six tests
+ * below need the same listing, and that listing cannot change mid-run: the
+ * `beforeAll` above has already built every artifact vsce reports on, and
+ * nothing in this file writes to the tree.
+ *
+ * Spawning per test cost ~12-18 s of pure subprocess time and made the FIRST
+ * test fail vitest's 5 s default timeout - but only sometimes. Measured both
+ * ways at Phase 6: the file is green run alone, and red in the full suite,
+ * because `src/perf/perf.test.ts` runs concurrently and saturates the CPU. A
+ * test whose verdict depends on what else happens to be running is not a test,
+ * and "re-run it and see" is not a diagnosis.
+ *
+ * Same family as the CLAUDE.md note that `vsce ls` reports files that EXIST,
+ * so an assertion on it silently depended on test ORDER. That one was about
+ * build state; this one is about wall-clock. Both come from treating an
+ * expensive, environment-sensitive subprocess as though it were a pure
+ * function. Cached once, at module scope, deliberately.
+ */
+let vsceLsCache: readonly string[] | null = null;
+
+function vsceLs(): readonly string[] {
+  if (vsceLsCache !== null) return vsceLsCache;
   const stdout = execFileSync(process.execPath, [VSCE_BIN, 'ls', '--no-dependencies'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
   });
-  return stdout
+  vsceLsCache = stdout
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     // vsce prints paths with the platform separator; the manifest and every
     // assertion here speak posix.
     .map((line) => line.split('\\').join('/'));
+  return vsceLsCache;
 }
 
 describe('the packaged artifact', () => {

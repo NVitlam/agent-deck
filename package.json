@@ -2,9 +2,8 @@
   "name": "agent-deck",
   "displayName": "Agent Deck for Claude Code",
   "version": "0.1.0",
-  "private": true,
   "publisher": "nvitlam",
-  "description": "Read-only VS Code extension that renders live Claude Code session topology.",
+  "description": "Live observability for Claude Code multi-agent sessions: subagent trees, tool calls, token burn and cost, in real time.",
   "license": "MIT",
   "keywords": [
     "claude code",
@@ -25,7 +24,7 @@
   "main": "./dist/extension.cjs",
   "engines": {
     "node": ">=22.22.2",
-    "vscode": "^1.90.0"
+    "vscode": "^1.75.0"
   },
   "activationEvents": [
     "onStartupFinished"
@@ -78,7 +77,7 @@
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@types/node": "^24.0.0",
-    "@types/vscode": "^1.90.0",
+    "@types/vscode": "^1.75.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.25.0",
     "esbuild-svelte": "^0.9.5",
@@ -91,5 +90,10 @@
   },
   "dependencies": {
     "chokidar": "^5.0.0"
+  },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#13131f",
+    "theme": "dark"
   }
 }

@@ -66,7 +66,7 @@
 // with a block that IS firing is the strongest mechanical proxy available, and
 // it is a proxy.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -162,11 +162,22 @@ describe('README exists and ships clean', () => {
     }
   });
 
-  it('links no image, so nothing points at an asset that does not exist', () => {
-    // Covers the missing-screenshot case and the remote-badge case at once: an
-    // extension whose headline claim is zero egress should not fetch its own
-    // badge from a third party to render its README.
-    expect(README).not.toMatch(/!\[[^\]]*\]\(/);
+  it('links only LOCAL images, and every one of them exists on disk', () => {
+    // Was: link no image at all. The marketplace page needs screenshots, so the
+    // assertion moved rather than being deleted - it still covers both original
+    // cases. A remote badge would fail the protocol check (an extension whose
+    // headline claim is zero egress must not fetch its own README assets from a
+    // third party), and a missing screenshot fails the existsSync check, which
+    // is the case that would otherwise ship a broken marketplace page.
+    const links = [...README.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1] ?? '');
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link, `remote asset in README: ${link}`).not.toMatch(/^[a-z]+:\/\//i);
+      expect(
+        existsSync(join(ROOT, link)),
+        `README links ${link}, which does not exist`,
+      ).toBe(true);
+    }
   });
 });
 

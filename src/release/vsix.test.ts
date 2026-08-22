@@ -101,9 +101,14 @@ const VSCE_BIN = join(REPO_ROOT, 'node_modules', '@vscode', 'vsce', 'vsce');
  * should require a deliberate edit here.
  */
 const EXPECTED_PACKAGED_FILES: readonly string[] = [
+  'CHANGELOG.md',
   'LICENSE',
   'README.md',
   'SECURITY.md',
+  'media/icon.png',
+  'media/screenshot-deck.png',
+  'media/screenshot-inspector.png',
+  'media/screenshot-topology.png',
   'dist/extension.cjs',
   'dist/webview/main.css',
   'dist/webview/main.js',
@@ -299,7 +304,13 @@ describe('the packaged artifact', () => {
     // design mockup was committed at the root and shipped, because the ignore
     // rule was shaped like `docs/**` and the file was not in docs/.
     const rootLevel = vsceLs().filter((file) => !file.includes('/'));
-    expect([...rootLevel].sort()).toEqual(['LICENSE', 'README.md', 'SECURITY.md', 'package.json']);
+    expect([...rootLevel].sort()).toEqual([
+      'CHANGELOG.md',
+      'LICENSE',
+      'README.md',
+      'SECURITY.md',
+      'package.json',
+    ]);
   });
 
   it('carries the deliberate identity only in the files enumerated for it', () => {

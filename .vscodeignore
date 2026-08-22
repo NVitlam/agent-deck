@@ -105,3 +105,23 @@ dist/**
 !dist/extension.cjs
 !dist/webview/main.js
 !dist/webview/main.css
+
+# media/ IS AN ALLOW-LIST, for the same reason dist/ is.
+#
+# The first version of this rule denied the working files by name. A stray
+# `media/Action Running.png` - a screenshot that simply appeared in the folder
+# - shipped anyway, exactly the way `dist/wire-test-<random>/**` did before
+# that directory was inverted, and exactly the way a root-level file escaped a
+# `docs/**`-shaped rule. A deny-by-name rule loses to the next file nobody
+# thought of, and an image folder is a place files accumulate.
+#
+# So: deny everything under media/, then re-admit the four assets the product
+# actually references - the icon named by package.json and the three
+# screenshots README.md links. Order matters; the `!` lines must follow the
+# denial. A fifth asset has to be named here on purpose to ship, and
+# src/release/vsix.test.ts goes red on an exact set comparison if one appears.
+media/**
+!media/icon.png
+!media/screenshot-deck.png
+!media/screenshot-topology.png
+!media/screenshot-inspector.png

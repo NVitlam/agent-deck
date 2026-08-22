@@ -12,6 +12,41 @@ proxies, launches, or configures Claude Code.
 
 ---
 
+![Agent Deck](media/screenshot-deck.png)
+
+## Read-only by design
+
+Agent Deck observes. It never acts.
+
+- It reads Claude Code's session JSONL and listens for hook events. That is all.
+- It never wraps, proxies, launches or configures Claude Code.
+- It never writes to `~/.claude`, to Claude Code settings, or to your session
+  files. Installing the hooks is a manual paste block you control, below.
+- Zero network egress. The only socket it opens is an HTTP listener bound to
+  `127.0.0.1`, which is how the hooks reach it. Non-loopback requests are
+  dropped.
+- No telemetry, no analytics, no CDN. Every asset the panel renders is local,
+  enforced by a strict Content-Security-Policy.
+
+All state lives in memory and is discarded when the window closes.
+
+## Features
+
+**The deck** - every live session at a glance, breathing while it works.
+
+![The deck](media/screenshot-deck.png)
+
+**Agent topology** - the main agent as a nucleus, tool calls as chronological
+dots, and subagents joined by filaments to the exact `tool_use` block that
+spawned them. That join is a primary key, not a guess.
+
+![Agent topology](media/screenshot-topology.png)
+
+**Tool call inspector** - open any node for its payload, truncated with an
+explicit marker and with thinking blocks dropped at the parse boundary.
+
+![Tool call inspector](media/screenshot-inspector.png)
+
 ## What it is
 
 Claude Code leaves two kinds of exhaust behind, and Agent Deck reads both without touching either:

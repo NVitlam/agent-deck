@@ -42,6 +42,7 @@
  * credential-shaped string never touches a tracked path.
  */
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -114,6 +115,13 @@ interface SweepReport {
     ownProject: string;
     allowRules: { id: string; prefixes: string[]; reason: string }[];
     captureCorpora: string[];
+    captureRootFiles: boolean;
+    foreignValueExemptions: {
+      id: string;
+      paths: string[] | null;
+      absolutePathValuesOnly: boolean;
+      reason: string;
+    }[];
     identityScanExcluded: string[];
   };
   workingTree: SweepLeg;
@@ -165,6 +173,33 @@ const PLANTED_SECRET = ['sk', '-ant-', 'api03', '-', 'ZmFrZVBsYW50ZWROb3RSZWFs']
 /** A marker that only a scanner which read PAST a NUL run can find. */
 const NUL_MARKER = `${NEEDLE}-past-the-nul-bytes`;
 
+/**
+ * ONE foreign-content plant, written BYTE-IDENTICALLY to three paths.
+ *
+ * The point of the identity is that the only variable between the three
+ * controls is the DIRECTORY. Through Phase 5 that variable decided the verdict:
+ * `CAPTURE_CORPORA` was an eight-entry list of the real-capture directories and
+ * `inCaptureCorpus()` gated the whole FOREIGN scan on it, so this exact payload
+ * scored 3 hits under `fixtures/hook-events/` and ZERO under `src/` and
+ * `docs/`. That is not a hypothetical: it is what the Phase 5 verifier
+ * measured, and this repository's own Phase 1 privacy leak lived largely in
+ * documents.
+ *
+ * `src/model/leak.test.ts` is chosen deliberately: the `tests-and-testdata`
+ * allow rule covers it for IDENTIFIERS, which makes it the strongest possible
+ * demonstration that the FOREIGN gate is a separate axis - an allow rule
+ * forgives a developer path, it must never forgive another project's content.
+ */
+const FOREIGN_PLANT =
+  '{"hook_event_name":"Stop","cwd":"C:\\\\Users\\\\someone\\\\src\\\\totally-different-project"}\n';
+
+/** Where that one payload is planted. Same bytes, three directories. */
+const FOREIGN_PLANT_PATHS = [
+  'fixtures/hook-events/planted-foreign.jsonl',
+  'src/model/leak.test.ts',
+  'docs/notes.md',
+] as const;
+
 let scratch = '';
 
 function writeScratch(rel: string, body: string | Buffer): void {
@@ -207,10 +242,19 @@ beforeAll(async () => {
     ]),
   );
 
-  // (d) foreign content: a capture-corpus path whose cwd names another project.
+  // (d) foreign content: the SAME bytes at three paths, one inside the old
+  //     eight-entry corpus list and two outside it.
+  for (const rel of FOREIGN_PLANT_PATHS) writeScratch(rel, FOREIGN_PLANT);
+
+  // (e) a value that is JSON-shaped like a cwd but is not a location: the
+  //     regex literal that seven real source files carry in order to PARSE a
+  //     hook payload. Widening the corpora to src/ and scripts/ made the
+  //     scanner capture the regex body itself - 29 of the 32 raw hits. The
+  //     exemption is by value, so this file must produce no FOREIGN hit while
+  //     the plants above still do.
   writeScratch(
-    'fixtures/hook-events/planted-foreign.jsonl',
-    '{"hook_event_name":"Stop","cwd":"C:\\\\Users\\\\someone\\\\src\\\\totally-different-project"}\n',
+    'src/parser/regex-literal.ts',
+    'const match = /"cwd":"((?:[^"\\\\]|\\\\.)*)"/.exec(text);\n',
   );
 });
 
@@ -322,6 +366,140 @@ describe('privacy sweep against this repository', () => {
       expect(rule.prefixes.length).toBeGreaterThan(0);
     }
   });
+
+  it('every FOREIGN exemption carries a written reason', () => {
+    // An exemption without a reason is a hole with a name on it. Same bar as
+    // the allow rules, because an exemption removes a GATING hit, not an
+    // inventory line.
+    expect(report.config.foreignValueExemptions.length).toBeGreaterThan(0);
+    for (const rule of report.config.foreignValueExemptions) {
+      expect(
+        rule.reason.length,
+        `foreign exemption ${rule.id} has no reason`,
+      ).toBeGreaterThan(20);
+    }
+  });
+
+  /* ---------------------------------------------------------------- *
+   * DoD2 - the completeness guard.
+   *
+   * The FOREIGN corpora list is an INCLUSION list and stays one; that was
+   * decided at the Phase 5 gate. An inclusion list's failure mode is silence:
+   * a new tracked top-level directory is simply never scanned and nothing
+   * says so. This is the thing that says so.
+   *
+   * The expected set is DERIVED from `git ls-files` at test time and no count
+   * is written down anywhere - this repo's standing rule against pinning
+   * fixture-set sizes applies exactly here, and a hard-coded 9 would read as a
+   * regression the first time a directory is legitimately added.
+   * ---------------------------------------------------------------- */
+  describe('the FOREIGN corpora enumeration is complete', () => {
+    let trackedPaths: string[] = [];
+    let topLevelDirs: string[] = [];
+    let rootFileCount = 0;
+
+    beforeAll(() => {
+      trackedPaths = execFileSync('git', ['-C', REPO_ROOT, 'ls-files', '-z'], {
+        encoding: 'utf8',
+        maxBuffer: 1 << 28,
+      })
+        .split('\0')
+        .filter((p) => p.length > 0);
+      const dirs = new Set<string>();
+      for (const p of trackedPaths) {
+        const slash = p.indexOf('/');
+        if (slash === -1) rootFileCount += 1;
+        else dirs.add(`${p.slice(0, slash)}/`);
+      }
+      topLevelDirs = [...dirs].sort();
+    });
+
+    it('read a non-empty tracked file list, so the assertions below mean something', () => {
+      // A guard on the guard: `git ls-files` returning nothing would make every
+      // "uncovered set is empty" assertion below vacuously green. Same class as
+      // `actions/checkout` defaulting to fetch-depth 1 and handing the sweep a
+      // history that was not there.
+      expect(trackedPaths.length).toBeGreaterThan(0);
+      expect(topLevelDirs.length).toBeGreaterThan(0);
+      expect(rootFileCount).toBeGreaterThan(0);
+    });
+
+    it('covers every tracked top-level directory', () => {
+      const corpora = report.config.captureCorpora;
+      // Covered means: some enumerated prefix is a prefix of the directory, so
+      // EVERY file under it is scanned. A longer entry such as `docs/evidence/`
+      // would cover part of `docs/` and is deliberately not accepted here -
+      // partial coverage is the hole, not the fix.
+      const uncovered = topLevelDirs.filter((d) => !corpora.some((c) => d.startsWith(c)));
+      expect(
+        uncovered,
+        'these tracked top-level directories are outside the FOREIGN gate - add them to CAPTURE_CORPORA',
+      ).toEqual([]);
+    });
+
+    it('covers the repository root, which no prefix can reach', () => {
+      // `''` as a prefix would match everything, so root files are admitted by
+      // a flag instead. The stray-file-at-the-root class has already shipped a
+      // 38 KB mockup out of this repo once.
+      expect(report.config.captureRootFiles).toBe(true);
+    });
+
+    it('carries no enumerated prefix that matches nothing', () => {
+      // The other direction: a typo'd or stale entry silently covers nothing
+      // and looks like coverage in the report.
+      const dead = report.config.captureCorpora.filter(
+        (c) => !trackedPaths.some((p) => p.startsWith(c)),
+      );
+      expect(dead, 'these enumerated corpora match no tracked file').toEqual([]);
+    });
+  });
+
+  /* ---------------------------------------------------------------- *
+   * DoD5 - the surname is inventoried rather than invisible.
+   * ---------------------------------------------------------------- */
+  describe('the surname needle', () => {
+    it('reaches the release-identity files that no other needle touches', () => {
+      // Measured: `package.json` and `.github/workflows/release.yml` contain
+      // NONE of the four pre-Phase-6 needles (0 case-insensitive matches for
+      // each). Every hit attributed to these two rules therefore exists only
+      // because the surname is swept - which makes this assertion a live test
+      // of the needle, not of the allow rule.
+      const rules = new Map(report.workingTree.identifier.allowed.byRule.map((r) => [r.rule, r]));
+      const manifest = rules.get('release-identity-manifest');
+      expect(manifest, 'package.json is not being inventoried at all').toBeDefined();
+      expect(manifest?.files.map((f) => f.path)).toContain('package.json');
+      expect(manifest?.hits ?? 0).toBeGreaterThan(0);
+
+      const workflows = rules.get('release-workflows');
+      expect(workflows, '.github/ is not being inventoried at all').toBeDefined();
+      expect(workflows?.files.map((f) => f.path)).toContain('.github/workflows/release.yml');
+    });
+
+    it('finds it in the licence, where it is the copyright line working', () => {
+      const licence = report.workingTree.identifier.allowed.byRule.find((r) => r.rule === 'licence');
+      expect(licence?.files.map((f) => f.path)).toContain('LICENSE');
+      // Two needles on one line - the given name and the surname - so a hit
+      // count of 1 would mean the surname is not being swept after all.
+      expect(licence?.hits ?? 0).toBeGreaterThan(1);
+    });
+
+    it('does not make the sweep script a hit on its own detector', () => {
+      // The fragment convention, asserted rather than trusted. Adding the
+      // surname turned the old two-way split of the email local part into a
+      // hit here; the fix is a three-way split, and this is what keeps it.
+      const inSweep = [
+        ...report.workingTree.identifier.allowed.byRule.flatMap((r) =>
+          r.files.filter((f) => f.path === 'scripts/privacy-sweep.mjs'),
+        ),
+        ...report.workingTree.identifier.unexpected.filter(
+          (h) => h.path === 'scripts/privacy-sweep.mjs',
+        ),
+      ];
+      expect(inSweep, 'the sweep script trips its own needles - re-split the fragments').toEqual(
+        [],
+      );
+    });
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -392,6 +570,34 @@ describe('negative controls', () => {
     expect(hits[0]?.value).toContain('totally-different-project');
   });
 
+  it('flags the SAME bytes under src/ and under docs/, which Phase 5 did not', () => {
+    // The carry-out this closes, stated as the measurement that found it: with
+    // the eight-entry corpus list these two paths produced ZERO hits while the
+    // fixtures path above produced 3, from byte-identical content. Asserting
+    // each path by name rather than a total, because a total would go green if
+    // one of them regressed and the other doubled.
+    for (const rel of FOREIGN_PLANT_PATHS) {
+      const hits = planted.workingTree.foreign.filter((h) => h.path === rel);
+      expect(hits.length, `no FOREIGN hit for the plant at ${rel}`).toBeGreaterThan(0);
+      expect(hits[0]?.kind).toBe('key:cwd');
+      expect(hits[0]?.value).toContain('totally-different-project');
+    }
+    // The plant under src/ is covered by the `tests-and-testdata` ALLOW rule,
+    // which is about identifiers. It must not have forgiven the content.
+    expect(
+      planted.workingTree.foreign.some((h) => h.path === 'src/model/leak.test.ts'),
+    ).toBe(true);
+  });
+
+  it('does not flag a regex literal that merely spells the key name', () => {
+    // The `not-an-absolute-location` exemption, controlled. Widening the
+    // corpora made the scanner capture this regex's own body as if it were a
+    // cwd value; 29 of the 32 raw hits were this one literal in seven files.
+    expect(planted.workingTree.foreign.filter((h) => h.path === 'src/parser/regex-literal.ts')).toEqual(
+      [],
+    );
+  });
+
   it('fails the gate when anything is planted', () => {
     expect(planted.verdict.pass).toBe(false);
     expect(planted.verdict.unexpected).toBeGreaterThan(0);
@@ -460,6 +666,10 @@ describe('committed evidence', () => {
       evidence.config.allowRules.map((r) => r.id),
     );
     expect(fresh.config.captureCorpora).toEqual(evidence.config.captureCorpora);
+    expect(fresh.config.captureRootFiles).toBe(evidence.config.captureRootFiles);
+    expect(fresh.config.foreignValueExemptions.map((r) => r.id)).toEqual(
+      evidence.config.foreignValueExemptions.map((r) => r.id),
+    );
     expect(fresh.config.identityScanExcluded).toEqual(evidence.config.identityScanExcluded);
   });
 

@@ -146,7 +146,21 @@ interface Manifest {
 const MANIFEST = JSON.parse(readText('package.json')) as Manifest;
 const DEFAULT_PORT = MANIFEST.contributes.configuration.properties['agentDeck.port']?.default;
 
-const LIVE_SETTINGS = JSON.parse(readText('.claude/settings.local.json')) as HookSettings;
+/**
+ * The FROZEN copy of the proven hook block, tracked so this file is hermetic.
+ *
+ * `.claude/` was untracked before the public flip, so the live settings file
+ * exists on the author's disk and on no fresh clone. Asserting against it alone
+ * made this suite pass locally and fail in CI - green for whoever wrote it, red
+ * for everyone else, which is the same shape as the CRLF shebang trap.
+ */
+const FROZEN_SETTINGS = JSON.parse(readText('fixtures/hooks/hook-block.json')) as HookSettings;
+
+/** The live block, when it is present. `null` on any clone that lacks it. */
+const LIVE_PATH = join(ROOT, '.claude/settings.local.json');
+const LIVE_SETTINGS: HookSettings | null = existsSync(LIVE_PATH)
+  ? (JSON.parse(readText('.claude/settings.local.json')) as HookSettings)
+  : null;
 
 describe('README exists and ships clean', () => {
   it('is present at the repository root and is not empty', () => {
@@ -189,22 +203,35 @@ describe('the hook paste block', () => {
     expect(hookBlocks).toHaveLength(1);
   });
 
-  it('is byte-identical to the live block in .claude/settings.local.json', () => {
+  it('is byte-identical to the frozen copy in fixtures/hooks/hook-block.json', () => {
     const block = JSON.parse(JSON_FENCES[0] ?? '') as unknown;
     expect(isHookSettings(block)).toBe(true);
     if (!isHookSettings(block)) return;
 
     // Whole-object equality catches matchers and timeouts too; the per-command
     // loop below exists so a failure names the event that drifted.
-    expect(block.hooks).toStrictEqual(LIVE_SETTINGS.hooks);
+    expect(block.hooks).toStrictEqual(FROZEN_SETTINGS.hooks);
 
     const readmeCommands = commandsOf(block);
-    const liveCommands = commandsOf(LIVE_SETTINGS);
-    expect([...readmeCommands.keys()].sort()).toStrictEqual([...liveCommands.keys()].sort());
-    for (const [event, commands] of liveCommands) {
+    const frozenCommands = commandsOf(FROZEN_SETTINGS);
+    expect([...readmeCommands.keys()].sort()).toStrictEqual([...frozenCommands.keys()].sort());
+    for (const [event, commands] of frozenCommands) {
       expect(readmeCommands.get(event), `command drift on ${event}`).toStrictEqual(commands);
     }
   });
+
+  // Secondary, and deliberately skipped where the file is absent: the frozen
+  // copy proves the README matches a block that once fired, this proves it
+  // still matches the one firing right now. Only the author's machine can say
+  // that, so it must never be the assertion CI depends on.
+  it.skipIf(LIVE_SETTINGS === null)(
+    'still matches the live block in .claude/settings.local.json, where present',
+    () => {
+      const block = JSON.parse(JSON_FENCES[0] ?? '') as HookSettings;
+      expect(block.hooks).toStrictEqual(LIVE_SETTINGS?.hooks);
+      expect(FROZEN_SETTINGS.hooks).toStrictEqual(LIVE_SETTINGS?.hooks);
+    },
+  );
 
   it('registers the six events the liveness engine is fed by', () => {
     const block = JSON.parse(JSON_FENCES[0] ?? '') as HookSettings;

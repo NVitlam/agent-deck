@@ -19,7 +19,7 @@ media/*
 !media/screenshot-topology.png
 !media/screenshot-inspector.png
 
-# Agent working notes. Untracked before the public flip: they are internal
-# scratch, not product, and they quote absolute paths and prior verdicts.
-# Untracking is reversible; publishing is not.
-.claude/agent-memory/
+# The whole .claude/ directory: agent definitions, skills, working notes and
+# settings.local.json. Local tooling, not product. Untracked before the public
+# flip - untracking is reversible, publishing is not.
+.claude/

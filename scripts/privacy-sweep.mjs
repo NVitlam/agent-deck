@@ -318,7 +318,11 @@ const ALLOW_RULES = [
  * one would.
  */
 const CAPTURE_CORPORA = [
-  '.claude/',
+  // No '.claude/' entry: the directory was untracked before the public flip, so
+  // it is out of the swept corpus by construction. The completeness guard in
+  // src/release/privacy.test.ts asserts both directions - every tracked
+  // top-level directory is covered, AND no enumerated prefix matches nothing -
+  // and the second half is what caught this the moment the directory left.
   '.github/',
   'docs/',
   'fixtures/',

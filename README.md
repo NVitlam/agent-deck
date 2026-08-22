@@ -85,11 +85,6 @@ code --install-extension nvitlam.agent-deck
 session transcripts, but nothing tells it what is running right now, so liveness is inferred from
 file mtime alone.
 
-Open the panel from the Command Palette: **Agent Deck: Open Session Deck**.
-
-The extension matches the folder you have open against your Claude Code project directories. If this
-workspace has no Claude Code sessions, it says so and does nothing else.
-
 ## Install the hook (one manual paste)
 
 Content and the tree render from the session files alone. The hook tap is what makes liveness
@@ -202,6 +197,18 @@ Notes on that block, each of them measured rather than assumed:
 - **Six events are registered:** `SessionStart`, `PreToolUse`, `PostToolUse`, `SubagentStart`,
   `SubagentStop`, `Stop`. Registering fewer still works — liveness degrades rather than fails, and
   falls back to transcript modification times with a banner — but the panel gets blunter.
+
+## Open the panel
+
+Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> on
+macOS), type `Agent Deck`, and run **Agent Deck: Open Session Deck**.
+
+That is the **only** entry point. Agent Deck contributes no sidebar icon, no status-bar item and no
+activity-bar view - one command, one panel.
+
+Open the folder your Claude Code session runs in first. The extension matches the open workspace
+against your `~/.claude/projects` directories; if that folder has no Claude Code sessions it says so
+and does nothing else.
 
 ## Usage
 

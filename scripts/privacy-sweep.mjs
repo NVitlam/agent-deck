@@ -104,7 +104,21 @@ const DEVELOPER_IDENTIFIERS = [
   'Na' + 'dav',
   'One' + 'Drive',
   'Claude' + 'Home',
-  'nada' + 'vvitlam',
+  // The email local part, in THREE fragments rather than the two it had
+  // through Phase 5. The old two-way split left a fragment that contained the
+  // surname needle added below, so this script became a hit on its own
+  // detector the moment the surname was swept - measured, 1 working-tree hit
+  // here. No fragment on this line may contain either the given name above or
+  // the surname below; re-splitting is the fix, exempting the sweep from its
+  // own scan is not.
+  'nada' + 'vv' + 'itlam',
+  // The surname, added in Phase 6 (DoD5). Before it, "no developer identifier
+  // in any shipped byte" meant four needles and the audit could not have seen
+  // a fifth. It is DELIBERATE IDENTITY, not a leak: it is in the MIT copyright
+  // line, in the manifest's `publisher` and `repository.url` fields, and as a
+  // substring of both the publisher id and the email local part above - so it
+  // is inventoried under written allow rules rather than driven to zero.
+  'Vi' + 'tlam',
 ];
 
 /** The project this repository is allowed to have captured data from. */
@@ -231,6 +245,40 @@ const ALLOW_RULES = [
       'traps are only communicable by quoting the exact path that produced them.',
   },
   {
+    id: 'release-identity-manifest',
+    prefixes: ['package.json'],
+    reason:
+      'Release identity. Measured after the surname needle was added (Phase 6 ' +
+      'DoD5): 2 hits, the marketplace `publisher` field and `repository.url`, ' +
+      'both of which contain the surname as a substring of the publisher id. A ' +
+      'publisher id and the repository a user is told to file issues against ' +
+      'are the extension saying who ships it; anonymising either would be a lie ' +
+      'in the manifest. package-lock.json is NOT covered by this rule - ' +
+      'measured 0 hits there.',
+  },
+  {
+    id: 'release-workflows',
+    prefixes: ['.github/'],
+    reason:
+      'CI and release workflows. Measured: 1 hit, a comment in release.yml ' +
+      'recording the Phase 5 re-scope - there is no Azure DevOps account and ' +
+      'no publisher account, and the comment names the publisher id the ' +
+      'workflow would otherwise push to. A workflow that names the publisher ' +
+      'it does not have is the record of why publication is human-pending.',
+  },
+  {
+    id: 'sweep-needles',
+    prefixes: ['scripts/privacy-sweep.mjs'],
+    reason:
+      'This script itself. Every needle is assembled from fragments so the ' +
+      'live file scores zero - measured, and if it ever stops being zero the ' +
+      'fragments have been split wrongly. The rule exists for HISTORY: blobs ' +
+      'committed before Phase 6 carry the two-way split of the email local ' +
+      'part, whose second fragment contains the surname, and a committed blob ' +
+      'cannot be edited. Measured at the time of writing: 2 history hits, both ' +
+      'that fragment. Scoped to this one file.',
+  },
+  {
     id: 'repo-local-cc-config',
     prefixes: ['.claude/'],
     reason:
@@ -242,24 +290,55 @@ const ALLOW_RULES = [
 ];
 
 /**
- * Real-capture corpora - the only places FOREIGN is meaningful.
+ * FOREIGN-scan corpora - where a `cwd` / `transcript_path` / project-slug value
+ * is checked against `OWN_PROJECT`.
  *
- * Deliberately excludes the synthetic corpora: `webview/wire/synthetic-stress.json`
- * and `fixtures/synthetic-perf/` carry invented roots such as `C:\SYNTHETIC`,
- * and `src/**\/*.test.ts` invents slugs like `c--Users-Test-Documents-ws`. Those
- * are not captured content and flagging them would make the FOREIGN counter
- * noise rather than a gate.
+ * WHAT THIS IS AND WHAT IT IS NOT (Phase 6, carry-out 1)
+ * ------------------------------------------------------
+ * Through Phase 5 this was an eight-entry list of the REAL-CAPTURE directories,
+ * and `inCaptureCorpus()` gated the whole FOREIGN scan on it - so a tracked file
+ * anywhere else was never scanned for foreign content at all. Measured by the
+ * Phase 5 verifier: byte-identical foreign content planted at
+ * `src/model/leak.test.ts` and `docs/notes.md` produced ZERO gate hits while the
+ * same bytes under `fixtures/hook-events/` produced 3. This repository's own
+ * Phase 1 privacy leak lived largely in DOCUMENTS - exactly the class that was
+ * outside the gate.
+ *
+ * It is now every tracked top-level directory, plus the root files. It is still
+ * an INCLUSION LIST: a top-level directory that nobody adds here is still a
+ * hole. That is a recorded, accepted carry-out (the user chose extension over
+ * inversion at the Phase 5 gate), and the mitigation is a completeness guard in
+ * `src/release/privacy.test.ts` which derives the tracked top-level set from
+ * `git ls-files` and goes RED when this list stops covering it.
+ *
+ * Widening it means the scan now also reads the SYNTHETIC corpora, whose
+ * invented roots are not captures. Those are exempted by value, with written
+ * reasons, in `FOREIGN_VALUE_EXEMPTIONS` below - by value rather than by path,
+ * so an exemption cannot silently blind a whole directory the way a path-shaped
+ * one would.
  */
 const CAPTURE_CORPORA = [
-  'fixtures/cc-2.1.234/',
-  'fixtures/cc-2.1.237/',
-  'fixtures/hook-events/',
-  'fixtures/phase0-evidence/',
-  'fixtures/golden/',
-  'webview/goldens/',
-  'webview/wire/cc-',
-  'src/perf/evidence/',
+  '.claude/',
+  '.github/',
+  'docs/',
+  'fixtures/',
+  'scripts/',
+  'spike/',
+  'src/',
+  'test/',
+  'webview/',
 ];
+
+/**
+ * Root-level tracked files (`README.md`, `package.json`, `CLAUDE.md`, ...)
+ * belong to no directory, and a prefix list cannot reach them - `''` as a
+ * prefix matches everything, which would be an accident waiting to happen. They
+ * are admitted by this flag instead, and the completeness guard asserts it is
+ * on. The stray-file-at-the-repo-root class has already cost this repo one
+ * shipped 38 KB mockup through a `docs/**`-shaped rule; the root is not a place
+ * to leave unswept.
+ */
+const CAPTURE_ROOT_FILES = true;
 
 /**
  * The sweep does not inventory its OWN OUTPUT FILE. The report necessarily
@@ -355,6 +434,91 @@ function isSyntheticValue(value) {
   return SYNTHETIC_MARKERS.some((m) => norm.includes(m));
 }
 
+/**
+ * A captured `cwd` / `transcript_path` is ALWAYS absolute: a drive letter, a
+ * separator, or `~`. Requiring that shape is the same measured lesson as
+ * `SLUG_SHAPE_RE` above, one layer out.
+ */
+const ABSOLUTE_PATH_RE = /^(?:[A-Za-z]:[\\/]|[\\/]|~[\\/])/;
+
+/** The invented project name the negative controls plant. Not a real project. */
+const PLANTED_CONTROL_PROJECT = 'totally-' + 'different-project';
+
+/**
+ * FOREIGN exemptions, by VALUE - each with a written reason that says what was
+ * measured.
+ *
+ * By value and not by path, deliberately: a path-shaped exemption blinds a
+ * whole directory, which is the defect this phase is closing, not one to
+ * reintroduce one level down. The single entry that IS path-scoped names one
+ * exact file and one exact invented value.
+ *
+ * Baseline for every count below: widening `CAPTURE_CORPORA` to every tracked
+ * top-level directory plus the root files, and adding NO exemption, produced
+ * `foreign=32` (8 working tree + 24 history) on this repository at
+ * b4f6c76. Every one of the 32 fell into the two shapes below; NONE was
+ * content captured from another project.
+ */
+const FOREIGN_VALUE_EXEMPTIONS = [
+  {
+    id: 'not-an-absolute-location',
+    reason:
+      'The captured group is not a filesystem location at all. 29 of the 32 ' +
+      'raw hits (7 working tree, 22 history) were the identical SOURCE LITERAL ' +
+      'in seven files that parse a hook payload - scripts/capture-states.mjs, ' +
+      'scripts/record-wire.mjs, src/perf/corpus.ts, webview/fixture-render.test.ts ' +
+      'and three src/**/*.test.ts - each carrying a regex whose own text ' +
+      'contains the key name, so the scanner captured the regex body and not a ' +
+      'path. Requiring a drive letter, a leading separator or a leading ~ ' +
+      'discards those and keeps every absolute path, including posix roots such ' +
+      'as /opt that the ADVISORY anchor list does not name.',
+    // Only the `"cwd": "..."` leg. A project SLUG is not an absolute path, and
+    // that leg has its own shape gate (SLUG_SHAPE_RE).
+    absolutePathValuesOnly: true,
+    exempt: (value) => !ABSOLUTE_PATH_RE.test(value),
+  },
+  {
+    id: 'declared-synthetic',
+    reason:
+      'Values that declare themselves synthetic are generated, not captured. ' +
+      'C:\\SYNTHETIC and C--SYNTHETIC-PERF-not-a-harvest come from ' +
+      'fixtures/synthetic-perf/build-corpus.mjs, which named them that way so ' +
+      'nobody would mistake them for a harvest; webview/wire/synthetic-stress.json ' +
+      'is the same generator\'s output. This rule predates the widening and is ' +
+      'unchanged by it - 0 of the 32 raw hits needed it, because the identifier ' +
+      'inventory reaches those files by another route.',
+    exempt: (value) => isSyntheticValue(value),
+  },
+  {
+    id: 'planted-negative-control',
+    paths: ['src/release/privacy.test.ts'],
+    reason:
+      'The remaining 3 raw hits (1 working tree, 2 history) are the SOURCE of ' +
+      'the negative controls: src/release/privacy.test.ts plants a cwd naming ' +
+      'an invented project so that a sweep which cannot fail is not mistaken ' +
+      'for a sweep that passed. The value exists nowhere else in the ' +
+      'repository and no such project exists. Scoped to that one file and that ' +
+      'one invented name - the planted COPIES, written into a scratch root ' +
+      'under fixtures/, src/ and docs/, are not covered here and must still be ' +
+      'flagged, which is what those controls assert.',
+    exempt: (value) => normalisePathToken(value).includes(PLANTED_CONTROL_PROJECT),
+  },
+];
+
+function foreignExemption(relPath, value, opts = {}) {
+  for (const rule of FOREIGN_VALUE_EXEMPTIONS) {
+    if (rule.absolutePathValuesOnly === true && opts.slug === true) continue;
+    if (
+      rule.paths !== undefined &&
+      !rule.paths.some((p) => relPath === p || relPath.startsWith(p))
+    ) {
+      continue;
+    }
+    if (rule.exempt(value)) return rule;
+  }
+  return null;
+}
+
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
@@ -374,7 +538,8 @@ function findAllowRule(relPath) {
 }
 
 function inCaptureCorpus(relPath) {
-  return CAPTURE_CORPORA.some((p) => relPath.startsWith(p));
+  if (CAPTURE_CORPORA.some((p) => relPath.startsWith(p))) return true;
+  return CAPTURE_ROOT_FILES && !relPath.includes('/');
 }
 
 function excludedFromIdentityScan(relPath) {
@@ -532,7 +697,8 @@ function scanForeign(text, starts, relPath, sink) {
   let m;
   while ((m = PROJECT_VALUE_RE.exec(text)) !== null) {
     const [, key, value] = m;
-    if (namesOwnProject(value) || isSyntheticValue(value)) continue;
+    if (namesOwnProject(value)) continue;
+    if (foreignExemption(relPath, value) !== null) continue;
     sink({
       path: relPath,
       line: lineOf(starts, m.index),
@@ -545,7 +711,10 @@ function scanForeign(text, starts, relPath, sink) {
   while ((s = SLUG_PATH_RE.exec(text)) !== null) {
     const slug = s[1];
     if (!SLUG_SHAPE_RE.test(slug)) continue;
-    if (namesOwnProject(slug) || isSyntheticValue(slug)) continue;
+    if (namesOwnProject(slug)) continue;
+    // A slug is not an absolute path, so `not-an-absolute-location` must not be
+    // consulted here; `SLUG_SHAPE_RE` above is this leg's equivalent shape gate.
+    if (foreignExemption(relPath, slug, { slug: true }) !== null) continue;
     sink({
       path: relPath,
       line: lineOf(starts, s.index),
@@ -809,6 +978,13 @@ export function sweep(options = {}) {
         reason: r.reason,
       })),
       captureCorpora: CAPTURE_CORPORA,
+      captureRootFiles: CAPTURE_ROOT_FILES,
+      foreignValueExemptions: FOREIGN_VALUE_EXEMPTIONS.map((r) => ({
+        id: r.id,
+        paths: r.paths ?? null,
+        absolutePathValuesOnly: r.absolutePathValuesOnly === true,
+        reason: r.reason,
+      })),
       identityScanExcluded: IDENTITY_SCAN_EXCLUDE,
       secretRules: [...SECRET_RULES.map((r) => r.id), 'generic-high-entropy'],
     },

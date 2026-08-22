@@ -148,6 +148,58 @@ const LICENSOR_NAME = DEVELOPER_IDENTIFIERS[0] as string;
  */
 const LICENCE_IN_ARTIFACT = /^extension\/LICENSE(\.txt)?$/i;
 
+/**
+ * DELIBERATE IDENTITY - a separate list, on purpose.
+ *
+ * The surname was in neither needle list until Phase 6, so "no developer
+ * identifier in any shipped byte" meant four needles and this audit could not
+ * have seen a fifth. It ships, and it is meant to: the MIT copyright line names
+ * it, and it is a substring of the marketplace publisher id, which appears in
+ * the manifest's `publisher` and `repository.url` fields and again in the
+ * vsixmanifest vsce generates.
+ *
+ * It is NOT folded into `DEVELOPER_IDENTIFIERS` above. That list carries exactly
+ * one exemption and its narrowness is what proves the exemption is load-bearing
+ * rather than a hole; adding a needle that legitimately appears in several
+ * shipped files would turn a zero-tolerance list into a list with an allow-set,
+ * and the next reader would not be able to tell which kind it was. Two lists,
+ * two rules: that one stays at zero, this one is an inventory of an enumerated
+ * set of paths.
+ *
+ * Escaped fragments for the same reason as above - so this file is not itself a
+ * hit in the privacy sweep, which since Phase 6 does sweep the surname.
+ */
+const IDENTITY_IDENTIFIERS = ['Vit' + 'lam'];
+
+/**
+ * The shipped paths allowed to carry it, as the ARTIFACT names them - which is
+ * not what `vsce ls` calls the licence. Measured and already paid for by this
+ * repo: `LICENSE` on disk is `extension/LICENSE.txt` in the zip, so a rule
+ * written against the on-disk name matches nothing and reports a clean pass by
+ * looking in the wrong place.
+ */
+const IDENTITY_ALLOWED_IN_ARTIFACT: readonly RegExp[] = [
+  LICENCE_IN_ARTIFACT,
+  /^extension\/package\.json$/,
+  // vsce generates this one; the publisher id it embeds is the whole reason a
+  // marketplace listing can be attributed to anybody.
+  /^extension\.vsixmanifest$/,
+];
+
+/**
+ * ...and the paths where its ABSENCE would be its own defect, so the allow-set
+ * above cannot go silently vacuous. Only the two whose bytes are known from
+ * disk are required; the generated vsixmanifest is permitted, not demanded.
+ */
+const IDENTITY_REQUIRED_IN_ARTIFACT: ReadonlyArray<{ readonly re: RegExp; readonly what: string }> =
+  [
+    { re: LICENCE_IN_ARTIFACT, what: 'the shipped licence does not name its licensor' },
+    { re: /^extension\/package\.json$/, what: 'the shipped manifest names no publisher' },
+  ];
+
+/** The same allow-set, as `vsce ls` and the working tree name the files. */
+const IDENTITY_ALLOWED_ON_DISK: readonly string[] = ['LICENSE', 'package.json'];
+
 function vsceLs(): string[] {
   const stdout = execFileSync(process.execPath, [VSCE_BIN, 'ls', '--no-dependencies'], {
     cwd: REPO_ROOT,
@@ -211,6 +263,35 @@ describe('the packaged artifact', () => {
     expect([...rootLevel].sort()).toEqual(['LICENSE', 'README.md', 'SECURITY.md', 'package.json']);
   });
 
+  it('carries the deliberate identity only in the files enumerated for it', () => {
+    // The always-on half of DoD5. It reads the WORKING-TREE bytes of everything
+    // `vsce ls` says would ship, so it runs in every suite rather than only
+    // behind AGENT_DECK_PACKAGE_AUDIT=1. It cannot see the vsixmanifest or the
+    // licence rename - the gated leg below is what covers those - but it does
+    // cover every file that goes in verbatim, including the built bundles.
+    const files = vsceLs();
+    expect(files.length).toBeGreaterThan(0);
+    const violations: string[] = [];
+    const seen = new Set<string>();
+    for (const rel of files) {
+      const text = readFileSync(join(REPO_ROOT, rel)).toString('latin1').toLowerCase();
+      for (const identifier of IDENTITY_IDENTIFIERS) {
+        if (!text.includes(identifier.toLowerCase())) continue;
+        if (IDENTITY_ALLOWED_ON_DISK.includes(rel)) {
+          seen.add(rel);
+          continue;
+        }
+        violations.push(`${rel} carries the deliberate identity and is not enumerated for it`);
+      }
+    }
+    expect(violations).toEqual([]);
+    // Non-vacuity, stated as the two files whose bytes say so: the copyright
+    // line and the publisher field. If either stops matching, the allow-set
+    // above has become a list of places nothing is, which is how an exemption
+    // turns into a hole nobody notices.
+    expect([...seen].sort()).toEqual([...IDENTITY_ALLOWED_ON_DISK].sort());
+  });
+
   it('keeps the packaged-artifact byte audit wired into the release workflow', () => {
     // Without this, the gated leg below is a test nobody ever runs. Reading a
     // sibling package's file, not editing it.
@@ -268,6 +349,8 @@ describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
 
           const hits: string[] = [];
           let licenceNamesTheLicensor = false;
+          /** Where the DELIBERATE identity was actually found, artifact-named. */
+          const identitySeen: string[] = [];
           for (const file of shipped) {
             const relative = file.slice(extracted.length + 1).split('\\').join('/');
             const bytes = readFileSync(file);
@@ -289,8 +372,26 @@ describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
               }
               hits.push(`${relative} contains ${identifier}`);
             }
+            // The deliberate-identity list, kept separate so the zero-tolerance
+            // list above stays at zero tolerance. Same byte scan, different
+            // rule: an enumerated allow-set of shipped paths rather than one
+            // exemption.
+            for (const identifier of IDENTITY_IDENTIFIERS) {
+              if (!text.toLowerCase().includes(identifier.toLowerCase())) continue;
+              if (IDENTITY_ALLOWED_IN_ARTIFACT.some((re) => re.test(relative))) {
+                identitySeen.push(relative);
+                continue;
+              }
+              hits.push(`${relative} carries the deliberate identity and is not enumerated for it`);
+            }
           }
           expect(hits).toEqual([]);
+          for (const required of IDENTITY_REQUIRED_IN_ARTIFACT) {
+            expect(
+              identitySeen.some((rel) => required.re.test(rel)),
+              required.what,
+            ).toBe(true);
+          }
           // A licence with no licensor is its own defect, and it would make the
           // exemption above silently vacuous.
           expect(

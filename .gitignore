@@ -23,3 +23,9 @@ media/*
 # settings.local.json. Local tooling, not product. Untracked before the public
 # flip - untracking is reversible, publishing is not.
 .claude/
+
+# OpenCode's per-project state directory: opencode.json, its own node_modules,
+# package files. Local tooling of the engine this repo now observes - same
+# treatment as .claude/. The AGENTS.md context file at the repo root is NOT
+# covered by this rule: whether it is tracked is a deliberate open decision.
+.opencode/

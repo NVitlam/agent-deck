@@ -35,11 +35,6 @@
         "command": "agentDeck.open",
         "title": "Open Session Deck",
         "category": "Agent Deck"
-      },
-      {
-        "command": "agentDeck.probeSqlite",
-        "title": "Run Phase 2 SQLite Probe (THROWAWAY, removed before merge)",
-        "category": "Agent Deck"
       }
     ],
     "configuration": {

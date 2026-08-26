@@ -108,7 +108,7 @@ import { systemScheduler } from './parser/tailer.js';
 import type { DiscoveryFailure, Scheduler, TailBatch, TimerHandle } from './parser/tailer.js';
 // PHASE 2 / DoD 2.1 — THROWAWAY import, removed with the command registration
 // below in its own commit before this branch merges.
-import { PROBE_COMMAND, probeSqliteCommand } from './dev/probe-sqlite.js';
+import { PROBE_COMMAND, isDevelopmentHost, probeSqliteCommand } from './dev/probe-sqlite.js';
 
 // ---------------------------------------------------------------------------
 // (a) Settings
@@ -1115,6 +1115,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.commands.registerCommand(PROBE_COMMAND, () => probeSqliteCommand()),
   );
+
+  // ...and RUN IT, without waiting to be asked, whenever this is an Extension
+  // Development Host. The command alone put a Command Palette lookup between
+  // the gate and its answer, and that lookup failed for the user with no
+  // diagnostic to read: a palette entry that does not appear cannot say whether
+  // the manifest was wrong, the extension never activated, or the window was
+  // simply the wrong one. Auto-running on activation collapses all three into a
+  // single observable — either probe-host.json appears, or the extension did
+  // not activate at all, which is itself the finding.
+  //
+  // `ExtensionMode.Development` is true ONLY under --extensionDevelopmentPath.
+  // An installed build (ExtensionMode.Production) never reaches this line, so
+  // no released artifact can auto-run it — and this whole block is removed
+  // before the branch merges regardless.
+  if (isDevelopmentHost(context)) {
+    void probeSqliteCommand();
+  }
 
   const workspacePath = firstWorkspacePath();
   if (workspacePath === undefined) {

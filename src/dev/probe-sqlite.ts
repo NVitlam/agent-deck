@@ -45,6 +45,37 @@ import * as path from 'node:path';
 /** The dev-only command id. Palette-visible so the user can run it by hand. */
 export const PROBE_COMMAND = 'agentDeck.__probeSqlite';
 
+/**
+ * True only inside an Extension Development Host (`--extensionDevelopmentPath`).
+ *
+ * Written defensively rather than as `context.extensionMode ===
+ * vscode.ExtensionMode.Development`, and the reason is a measured one:
+ * `test/vscode-mock.ts` defines no `ExtensionMode`, so that expression reads
+ * `.Development` off `undefined` and throws during activation in EVERY
+ * extension test. A throwaway probe must not reach into shared test
+ * infrastructure to make itself work — when this file is deleted, nothing
+ * outside it needs unwinding.
+ *
+ * An installed build is `ExtensionMode.Production`, so this returns false there
+ * and no released artifact could auto-run the probe even if this branch shipped.
+ */
+export function isDevelopmentHost(context: vscode.ExtensionContext): boolean {
+  const modes = (vscode as unknown as { ExtensionMode?: Record<string, unknown> }).ExtensionMode;
+  const development = modes?.['Development'];
+  if (typeof development !== 'number') return false;
+  return context.extensionMode === development;
+}
+
+/** Read a value that a real host always has but the test mock may not. */
+function hostFact<T>(read: () => T, fallback: T): T {
+  try {
+    const value = read();
+    return value === undefined || value === null ? fallback : value;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Relative location of the evidence file, from the workspace root. */
 const EVIDENCE_RELATIVE = path.join('docs', 'evidence', 'phase-2', 'probe-host.json');
 
@@ -184,10 +215,16 @@ export async function runSqliteProbe(): Promise<ProbeResult> {
       electronVersion: process.versions['electron'] ?? null,
       v8Version: process.versions.v8 ?? null,
       modulesAbi: process.versions.modules ?? null,
-      vscodeVersion: vscode.version,
-      vscodeAppHost: vscode.env.appHost,
-      remoteName: vscode.env.remoteName ?? null,
-      uiKind: vscode.UIKind[vscode.env.uiKind] ?? String(vscode.env.uiKind),
+      // Each read is guarded: a probe that dies while collecting the version
+      // banner reports nothing at all, which is the one outcome that teaches
+      // us nothing about the gate.
+      vscodeVersion: hostFact(() => vscode.version, '(unavailable)'),
+      vscodeAppHost: hostFact(() => vscode.env.appHost, '(unavailable)'),
+      remoteName: hostFact<string | null>(() => vscode.env.remoteName ?? null, null),
+      uiKind: hostFact(
+        () => vscode.UIKind[vscode.env.uiKind] ?? String(vscode.env.uiKind),
+        '(unavailable)',
+      ),
       platform: process.platform,
       arch: process.arch,
     },

@@ -123,6 +123,9 @@ interface SweepReport {
       reason: string;
     }[];
     identityScanExcluded: string[];
+    untracked: boolean;
+    untrackedScanDirs: string[];
+    untrackedFilesScanned: number;
   };
   workingTree: SweepLeg;
   history: SweepLeg | null;
@@ -140,6 +143,7 @@ interface SweepOptions {
   root?: string;
   history?: boolean;
   stamp?: string;
+  untracked?: boolean;
 }
 
 type SweepModule = { sweep: (options?: SweepOptions) => SweepReport };
@@ -200,6 +204,81 @@ const FOREIGN_PLANT_PATHS = [
   'docs/notes.md',
 ] as const;
 
+/**
+ * WAVE 0 - the five-shape parity control.
+ *
+ * `regex-source-not-a-location` (formerly `not-an-absolute-location`) exempts a
+ * captured value that is not a filesystem location. Its justification is real:
+ * 29 of 32 raw hits were one regex literal whose own source spells the key
+ * name. But the RULE used to be "not absolute", which is far wider than the
+ * justification, and a RELATIVE path names another project every bit as plainly
+ * as an absolute one does. So an entire shape of genuine foreign content was
+ * being discarded by a rule written for something else, silently, with a
+ * written reason attached that did not cover it.
+ *
+ * Parity means: every shape that IS a location must be flagged, whichever
+ * syntax it is written in, and only the non-location may be exempt. Four of the
+ * five below are locations. One is not. `expectFlagged` is the whole assertion.
+ *
+ * Each plant lives in its own file so a single miss cannot hide behind a
+ * neighbour's hit, and every path is inside a capture corpus so the FOREIGN
+ * scan reaches it.
+ */
+const PARITY_PROJECT = ['totally-', 'different-project'].join('');
+const PARITY_SHAPES = [
+  {
+    id: 'windows-absolute',
+    file: 'fixtures/hook-events/parity-windows.jsonl',
+    value: `C:\\\\Users\\\\someone\\\\src\\\\${PARITY_PROJECT}`,
+    expectFlagged: true,
+    why: 'a drive-letter path naming another project',
+  },
+  {
+    id: 'posix-absolute',
+    file: 'fixtures/hook-events/parity-posix.jsonl',
+    value: `/home/someone/src/${PARITY_PROJECT}`,
+    expectFlagged: true,
+    why: 'the same location in posix syntax; the old rule caught this one too',
+  },
+  {
+    id: 'tilde-rooted',
+    file: 'fixtures/hook-events/parity-tilde.jsonl',
+    value: `~/src/${PARITY_PROJECT}`,
+    expectFlagged: true,
+    why: 'a home-rooted path; also caught by the old rule',
+  },
+  {
+    id: 'relative',
+    file: 'fixtures/hook-events/parity-relative.jsonl',
+    value: `../${PARITY_PROJECT}/sessions`,
+    expectFlagged: true,
+    why: 'THE HOLE. Not absolute, so the old rule exempted it - a real foreign location, waved through',
+  },
+  {
+    id: 'regex-source',
+    file: 'fixtures/hook-events/parity-regex.jsonl',
+    value: '((?:[^"]|.)*)',
+    expectFlagged: false,
+    why: 'the only non-location of the five: regex source, which is what the exemption is FOR',
+  },
+] as const;
+
+/**
+ * A hook-event line carrying `value` as its captured location.
+ *
+ * The key is ASSEMBLED rather than written out, for the same reason the needles
+ * at the top of this file are: the sweep reads this file's own bytes, and a
+ * source line holding the scanned key next to a value IS a hit. Writing the
+ * template literal out plainly cost two self-inflicted FOREIGN hits before this
+ * comment existed. `scripts/privacy-sweep.mjs` carries the same warning about
+ * its own comments; the rule generalises to every file the sweep reads.
+ */
+const CWD_KEY = ['"cwd"', ':', '"'].join('');
+
+function parityLine(value: string): string {
+  return `{"hook_event_name":"Stop",${CWD_KEY}${value}"}\n`;
+}
+
 let scratch = '';
 
 function writeScratch(rel: string, body: string | Buffer): void {
@@ -256,6 +335,9 @@ beforeAll(async () => {
     'src/parser/regex-literal.ts',
     'const match = /"cwd":"((?:[^"\\\\]|\\\\.)*)"/.exec(text);\n',
   );
+
+  // (f) Wave 0: the five shapes, one file each.
+  for (const shape of PARITY_SHAPES) writeScratch(shape.file, parityLine(shape.value));
 });
 
 afterAll(() => {
@@ -598,11 +680,168 @@ describe('negative controls', () => {
     );
   });
 
+  describe('Wave 0: five shapes, one rule, no shape forgiven for its syntax', () => {
+    it.each(PARITY_SHAPES)('$id -> flagged=$expectFlagged ($why)', (shape) => {
+      const hits = planted.workingTree.foreign.filter((h) => h.path === shape.file);
+      expect(hits.length > 0, `${shape.id}: ${shape.why}`).toBe(shape.expectFlagged);
+    });
+
+    it('flags every location shape and exempts only the non-location', () => {
+      // Stated once more as a set, so a future edit that flips two shapes in
+      // opposite directions cannot pass the per-shape assertions above by
+      // accident. Parity is the property; the rows are the evidence.
+      const flagged = PARITY_SHAPES.filter(
+        (s) => planted.workingTree.foreign.some((h) => h.path === s.file),
+      ).map((s) => s.id);
+      expect([...flagged].sort()).toEqual(
+        [...PARITY_SHAPES.filter((s) => s.expectFlagged).map((s) => s.id)].sort(),
+      );
+      expect(flagged).toHaveLength(4);
+    });
+
+    it('is a control, not a tautology: four of the five really are locations', () => {
+      // If someone "fixes" a failure by setting expectFlagged to false, this
+      // fails instead. The count is the contract.
+      expect(PARITY_SHAPES.filter((s) => s.expectFlagged)).toHaveLength(4);
+      expect(PARITY_SHAPES.filter((s) => !s.expectFlagged)).toHaveLength(1);
+      expect(new Set(PARITY_SHAPES.map((s) => s.file)).size).toBe(PARITY_SHAPES.length);
+    });
+
+    it('names the narrowed exemption, so a rename cannot orphan this control', () => {
+      const ids = planted.config.foreignValueExemptions.map((r) => r.id);
+      expect(ids).toContain('regex-source-not-a-location');
+      expect(ids).not.toContain('not-an-absolute-location');
+    });
+  });
+
   it('fails the gate when anything is planted', () => {
     expect(planted.verdict.pass).toBe(false);
     expect(planted.verdict.unexpected).toBeGreaterThan(0);
     expect(planted.verdict.secrets).toBeGreaterThan(0);
     expect(planted.verdict.foreign).toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 2b. DoD 0.6 - the untracked blind spot, documented rather than hidden
+ *
+ * The working-tree leg enumerates `git ls-files`. A capture copied into
+ * `fixtures/` and never staged is therefore never opened, and the sweep
+ * prints a clean PASS over a corpus that is not there. That is not a
+ * hypothetical: it happened during the 2026-08-26 OpenCode recon, and the
+ * only visible symptom was the run getting FASTER.
+ *
+ * This control asserts BOTH halves - `--untracked` finds the planted file,
+ * and the default mode does not. The second assertion is the point: the
+ * blind spot is recorded as a measured property of the default mode, not
+ * quietly patched over.
+ *
+ * It builds a throwaway git repository under the OS temp directory rather
+ * than planting inside this one. Same reason every other control here uses
+ * a scratch root: a test that writes into `fixtures/` to prove a point
+ * about `fixtures/` can fail dirty, and this suite must never leave the
+ * repository modified.
+ * ------------------------------------------------------------------ */
+
+describe('untracked mode', () => {
+  let repo = '';
+  let tracked: SweepReport;
+  let withUntracked: SweepReport;
+
+  const PLANTED_UNTRACKED = 'fixtures/synthetic-untracked/planted-capture.jsonl';
+
+  beforeAll(() => {
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-deck-untracked-'));
+    const run = (...args: string[]): void => {
+      execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' });
+    };
+    run('init', '-q');
+    run('config', 'user.email', 'control@example.invalid');
+    run('config', 'user.name', 'control');
+
+    // A tracked, innocuous file, so the repo has a commit and `git ls-files`
+    // returns something. A control over an empty enumeration proves nothing.
+    fs.mkdirSync(path.join(repo, 'fixtures'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'fixtures', 'tracked.txt'), 'nothing to see\n');
+    run('add', 'fixtures/tracked.txt');
+    run('commit', '-qm', 'control baseline');
+
+    // ...and the planted capture: gitignored, so it is untracked by
+    // construction and cannot be staged by accident.
+    fs.writeFileSync(path.join(repo, '.gitignore'), 'fixtures/synthetic-untracked/\n');
+    const planted = path.join(repo, 'fixtures', 'synthetic-untracked');
+    fs.mkdirSync(planted, { recursive: true });
+    fs.writeFileSync(
+      path.join(planted, 'planted-capture.jsonl'),
+      parityLine(`C:\\\\Users\\\\${NEEDLE}\\\\src\\\\${PARITY_PROJECT}`) +
+        `ANTHROPIC_API_KEY=${PLANTED_SECRET}\n`,
+    );
+
+    tracked = sweep({ root: repo, history: false, stamp: '1970-01-01T00:00:00.000Z' });
+    withUntracked = sweep({
+      root: repo,
+      history: false,
+      untracked: true,
+      stamp: '1970-01-01T00:00:00.000Z',
+    });
+  });
+
+  afterAll(() => {
+    if (repo !== '') fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('the scratch repo is a real git repo whose planted file is untracked', () => {
+    // Guard on the guard. If `git init` silently failed, the sweep would fall
+    // back to a directory walk, BOTH modes would find the plant, and the
+    // "absent in default mode" assertion below would fail for the wrong reason.
+    const listed = execFileSync('git', ['-C', repo, 'ls-files'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((l) => l.length > 0);
+    expect(listed).toEqual(['fixtures/tracked.txt']);
+    expect(fs.existsSync(path.join(repo, PLANTED_UNTRACKED))).toBe(true);
+  });
+
+  it('DEFAULT mode never opens the untracked capture - the blind spot, measured', () => {
+    expect(tracked.config.untracked).toBe(false);
+    expect(tracked.config.untrackedFilesScanned).toBe(0);
+    expect(tracked.workingTree.foreign).toEqual([]);
+    expect(tracked.workingTree.secrets).toEqual([]);
+    expect(tracked.verdict.pass).toBe(true);
+    // The shape of the failure: a PASS whose file count says why.
+    expect(tracked.workingTree.filesScanned).toBe(1);
+  });
+
+  it('--untracked reads it, and fails the gate on what is inside', () => {
+    expect(withUntracked.config.untracked).toBe(true);
+    expect(withUntracked.config.untrackedScanDirs).toContain('fixtures');
+    expect(withUntracked.config.untrackedFilesScanned).toBeGreaterThan(0);
+    expect(withUntracked.workingTree.filesScanned).toBeGreaterThan(
+      tracked.workingTree.filesScanned,
+    );
+
+    expect(withUntracked.workingTree.foreign.map((h) => h.path)).toContain(PLANTED_UNTRACKED);
+    expect(withUntracked.workingTree.secrets.map((h) => h.path)).toContain(PLANTED_UNTRACKED);
+    expect(withUntracked.verdict.pass).toBe(false);
+  });
+
+  it('gitignore does not hide a capture from --untracked', () => {
+    // The planted file is ignored. An implementation that consulted
+    // `.gitignore` would reproduce the exact blind spot this mode exists to
+    // close, and would still pass every assertion above except this one.
+    const ignored = execFileSync(
+      'git',
+      ['-C', repo, 'check-ignore', '-q', PLANTED_UNTRACKED],
+      { stdio: 'pipe' },
+    );
+    expect(ignored).toBeDefined();
+    expect(withUntracked.workingTree.foreign.some((h) => h.path === PLANTED_UNTRACKED)).toBe(true);
+  });
+
+  it('scans nothing extra when there is nothing extra, and never double-counts', () => {
+    // A file already tracked must not be read twice just because the walk
+    // reaches it. Both legs see fixtures/tracked.txt; it appears once.
+    const dup = withUntracked.workingTree.filesScanned - tracked.workingTree.filesScanned;
+    expect(dup).toBe(withUntracked.config.untrackedFilesScanned);
   });
 });
 

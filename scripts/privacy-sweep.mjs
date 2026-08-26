@@ -27,7 +27,9 @@
  * --------------
  * Two corpora:
  *   1. the working tree - every TRACKED file (`git ls-files -z`), so ignored
- *      build artifacts and `node_modules` are out of scope by construction;
+ *      build artifacts and `node_modules` are out of scope by construction.
+ *      `--untracked` adds the unstaged files under `fixtures/`, which is where
+ *      the "clean PASS over an absent corpus" failure actually happens;
  *   2. full history - every blob reachable from every ref
  *      (`git rev-list --all --objects` + `git cat-file --batch`).
  *
@@ -73,12 +75,17 @@
  * EXIT CODE: 0 when UNEXPECTED, SECRET and FOREIGN are all empty; 1 otherwise.
  *
  * USAGE
- *   node scripts/privacy-sweep.mjs [--json <path>] [--root <dir>]
+ *   node scripts/privacy-sweep.mjs [--json <path>] [--root <dir>] [--untracked]
  *                                  [--no-history] [--quiet] [--stamp <iso>]
  *
  *   --root <dir>   sweep a different tree (the test's negative controls point
  *                  it at a scratch directory). A non-git root is enumerated by
  *                  directory walk and its history leg is skipped.
+ *   --untracked    ALSO read files under fixtures/ that `git ls-files` does not
+ *                  list, .gitignore included. Without it a capture copied in
+ *                  but never staged is invisible and the run prints a clean
+ *                  PASS over a corpus it never opened - measured, see
+ *                  UNTRACKED_SCAN_DIRS.
  *   --no-history   working-tree leg only. Also settable with
  *                  AGENT_DECK_SWEEP_HISTORY=0.
  *   --stamp <iso>  fix `generatedAt` instead of stamping `Date.now()`.
@@ -258,6 +265,7 @@ const ALLOW_RULES = [
   {
     id: 'project-docs',
     prefixes: [
+      'AGENTS.md',
       'CLAUDE.md',
       'HANDOVER.md',
       'PLAN.md',
@@ -268,7 +276,12 @@ const ALLOW_RULES = [
     ],
     reason:
       'Project documentation quoting concrete measured paths. Several of these ' +
-      'traps are only communicable by quoting the exact path that produced them.',
+      'traps are only communicable by quoting the exact path that produced them. ' +
+      'AGENTS.md joined the list in Phase 0 when it became tracked: it names ' +
+      'the marketplace extension id, whose publisher half contains the surname ' +
+      'needle. Deliberate identity, exactly as in the manifest and the licence. ' +
+      '(The id is not spelled out here - a needle written into this file makes ' +
+      'the script a hit on its own detector, which is the recorded hazard.)',
   },
   {
     id: 'release-identity-manifest',
@@ -475,8 +488,78 @@ function isSyntheticValue(value) {
  */
 const ABSOLUTE_PATH_RE = /^(?:[A-Za-z]:[\\/]|[\\/]|~[\\/])/;
 
+/**
+ * A value that is nothing but dots, an ellipsis and whitespace is an ELISION in
+ * prose, not a location: documentation and code comments elide a path rather
+ * than name one. Two real hits, both surfaced by narrowing the exemption below
+ * - a JSON illustration in docs/opencode-contract.md, and a comment in THIS
+ * FILE. The second is the recorded "a sweep script that trips its own detector"
+ * hazard arriving by a new route, and the lesson generalises: do NOT write an
+ * example of a scanned key next to its value anywhere in this file. Describe
+ * the shape in words instead. Every comment here obeys that.
+ *
+ * THE ELLIPSIS IS MATCHED AS BYTES. This scanner decodes `latin1` on purpose
+ * (see the header), so U+2026 arrives as its three UTF-8 bytes rather than as
+ * one character, and a class written with the code point matches nothing. That
+ * is measured: the first version of this rule left the doc hit standing.
+ */
+const UTF8_ELLIPSIS_LATIN1 = 'â¦';
+const ELISION_RE = /^[.…\s]*$/;
+
+function isElision(value) {
+  return ELISION_RE.test(value.split(UTF8_ELLIPSIS_LATIN1).join(''));
+}
+
 /** The invented project name the negative controls plant. Not a real project. */
 const PLANTED_CONTROL_PROJECT = 'totally-' + 'different-project';
+
+/**
+ * Does this captured value look like REGEX SOURCE rather than data?
+ *
+ * WHY THIS EXISTS (Phase 0, Wave 0 - the Phase 6 DoD-1 residue).
+ * `not-an-absolute-location` below used to exempt any captured value that was
+ * not an absolute path. Its written justification was sound - 29 of 32 raw hits
+ * were one source literal, `/"cwd":"((?:[^"\\]|\\.)*)"/`, appearing in seven
+ * files that PARSE a hook payload, so the scanner captured the regex body and
+ * not a path - but the RULE was far wider than the justification. "Not absolute"
+ * also covers a genuine relative location, and `../some-other-project/x.jsonl`
+ * names another project just as plainly as `C:\...\some-other-project` does.
+ * The exemption written to discard regex bodies was silently discarding a whole
+ * shape of real foreign content.
+ *
+ * So the exemption now needs BOTH: not an absolute path, AND positively
+ * regex-shaped. The needles below are regex syntax that cannot appear in a
+ * filesystem path on either platform - a non-capturing or lookaround group, a
+ * character class, a shorthand class, a quantifier applied to a group, or an
+ * escaped metacharacter. A path may contain `(`, `)`, `[`, `]`, `.` and `*`
+ * individually; it cannot contain `(?:`, `[^`, `\\d`, `)*` or `\\.`.
+ *
+ * The five-shape parity control in `src/release/privacy.test.ts` is what keeps
+ * this honest: four location shapes (Windows-absolute, POSIX-absolute,
+ * `~`-rooted, and RELATIVE) must all be flagged, and only the regex source must
+ * be exempt. Before this change the relative shape passed silently.
+ */
+const REGEX_SOURCE_NEEDLES = [
+  '(?:', // non-capturing group
+  '(?=', // lookahead
+  '(?!', // negative lookahead
+  '(?<', // lookbehind or named group
+  '[^', // negated character class
+  ')*', // quantifier on a group
+  ')+',
+  ')?',
+  '\\d',
+  '\\w',
+  '\\s',
+  '\\S',
+  '\\.',
+  '.*',
+  '.+',
+];
+
+function looksLikeRegexSource(value) {
+  return REGEX_SOURCE_NEEDLES.some((needle) => value.includes(needle));
+}
 
 /**
  * FOREIGN exemptions, by VALUE - each with a written reason that says what was
@@ -495,21 +578,36 @@ const PLANTED_CONTROL_PROJECT = 'totally-' + 'different-project';
  */
 const FOREIGN_VALUE_EXEMPTIONS = [
   {
-    id: 'not-an-absolute-location',
+    id: 'elided-not-a-location',
     reason:
-      'The captured group is not a filesystem location at all. 29 of the 32 ' +
-      'raw hits (7 working tree, 22 history) were the identical SOURCE LITERAL ' +
-      'in seven files that parse a hook payload - scripts/capture-states.mjs, ' +
+      'The captured value is an elision, not a path: only dots, an ellipsis and ' +
+      'whitespace. Documentation and code comments elide a path rather than ' +
+      'naming one. Two hits, both surfaced by narrowing ' +
+      'regex-source-not-a-location in Phase 0 Wave 0 - a JSON illustration in ' +
+      'docs/opencode-contract.md and a comment in this script. An elision ' +
+      'cannot name a project, because it names nothing.',
+    exempt: (value) => isElision(value),
+  },
+  {
+    id: 'regex-source-not-a-location',
+    reason:
+      'The captured group is regex SOURCE, not a filesystem location. 29 of the ' +
+      '32 raw hits (7 working tree, 22 history) were the identical source ' +
+      'literal in seven files that parse a hook payload - scripts/capture-states.mjs, ' +
       'scripts/record-wire.mjs, src/perf/corpus.ts, webview/fixture-render.test.ts ' +
       'and three src/**/*.test.ts - each carrying a regex whose own text ' +
-      'contains the key name, so the scanner captured the regex body and not a ' +
-      'path. Requiring a drive letter, a leading separator or a leading ~ ' +
-      'discards those and keeps every absolute path, including posix roots such ' +
-      'as /opt that the ADVISORY anchor list does not name.',
+      'contains the key name, so the scanner captured the regex body. Renamed and ' +
+      'NARROWED in Phase 0 Wave 0: it used to exempt anything that was merely not ' +
+      'absolute, which also forgave a genuine RELATIVE location such as ' +
+      '../another-project/x.jsonl - a whole shape of real foreign content, ' +
+      'discarded by a rule written for something else. It now requires both: not ' +
+      'an absolute path AND positively regex-shaped (see REGEX_SOURCE_NEEDLES). ' +
+      'The five-shape parity control asserts the four location shapes are all ' +
+      'flagged and only the regex source is exempt.',
     // Only the `"cwd": "..."` leg. A project SLUG is not an absolute path, and
     // that leg has its own shape gate (SLUG_SHAPE_RE).
     absolutePathValuesOnly: true,
-    exempt: (value) => !ABSOLUTE_PATH_RE.test(value),
+    exempt: (value) => !ABSOLUTE_PATH_RE.test(value) && looksLikeRegexSource(value),
   },
   {
     id: 'declared-synthetic',
@@ -732,6 +830,15 @@ function scanForeign(text, starts, relPath, sink) {
   while ((m = PROJECT_VALUE_RE.exec(text)) !== null) {
     const [, key, value] = m;
     if (namesOwnProject(value)) continue;
+    // A `slug` KEY whose value is not slug-shaped is not a project slug. CC
+    // writes a generated three-word session nickname under that key, and 15 of
+    // those in one fixture were reaching this sink. Same shape argument
+    // SLUG_SHAPE_RE already makes one layer down, and it belongs here rather
+    // than in a value exemption: a nickname is not an exempted project, it is
+    // not a project at all. A slug-shaped value naming someone else's project
+    // still matches the shape and is still flagged - the parity control in
+    // src/release/privacy.test.ts plants exactly that and asserts it.
+    if (key === 'slug' && !SLUG_SHAPE_RE.test(value)) continue;
     if (foreignExemption(relPath, value) !== null) continue;
     sink({
       path: relPath,
@@ -798,6 +905,43 @@ function trackedFiles(root) {
     .split('\0')
     .filter((p) => p.length > 0)
     .sort();
+}
+
+/**
+ * Directories that `--untracked` also walks, on top of `git ls-files`.
+ *
+ * WHY THIS EXISTS (Phase 0, DoD 0.6). The working-tree leg enumerates TRACKED
+ * files only. A capture copied into `fixtures/` but never `git add`ed is
+ * therefore never opened, and the sweep prints `VERDICT PASS unexpected=0
+ * secrets=0 foreign=0`, exit 0, over a corpus that is not there. Measured, not
+ * theorised: it happened during the 2026-08-26 OpenCode recon
+ * (`docs/evidence/opencode/RECON.md` B5) and the giveaway was a timing drop
+ * from 1,775 ms to 387 ms, not the verdict.
+ *
+ * Scoped to the capture directory because that is where the failure lives - a
+ * whole-tree untracked walk would read `dist/`, `.claude/`, every scratch file
+ * and the developer's own junk, and a mode nobody can leave on is a mode nobody
+ * runs. `.gitignore` is deliberately NOT consulted: an ignored capture is
+ * exactly the thing this mode exists to find.
+ */
+const UNTRACKED_SCAN_DIRS = ['fixtures'];
+
+/**
+ * Files under {@link UNTRACKED_SCAN_DIRS} that `git ls-files` does not list.
+ * Returns relative POSIX paths, sorted, with no duplicates against `tracked`.
+ */
+function untrackedScanFiles(root, tracked) {
+  const known = new Set(tracked);
+  const out = [];
+  for (const dir of UNTRACKED_SCAN_DIRS) {
+    const abs = path.join(root, dir);
+    if (!fs.existsSync(abs)) continue;
+    for (const rel of walkDir(abs)) {
+      const full = `${dir}/${rel}`;
+      if (!known.has(full)) out.push(full);
+    }
+  }
+  return out.sort();
 }
 
 /**
@@ -953,7 +1097,12 @@ export function sweep(options = {}) {
   const timings = {};
 
   const gitRepo = isGitRepo(root);
-  const files = gitRepo ? trackedFiles(root) : walkDir(root);
+  const wantUntracked = options.untracked === true;
+  const tracked = gitRepo ? trackedFiles(root) : walkDir(root);
+  // A non-git root is already a directory walk, so `--untracked` adds nothing
+  // there and must not double-count.
+  const untracked = gitRepo && wantUntracked ? untrackedScanFiles(root, tracked) : [];
+  const files = untracked.length > 0 ? [...tracked, ...untracked].sort() : tracked;
 
   let t0 = Date.now();
   const wt = newLeg();
@@ -1021,6 +1170,11 @@ export function sweep(options = {}) {
       })),
       identityScanExcluded: IDENTITY_SCAN_EXCLUDE,
       secretRules: [...SECRET_RULES.map((r) => r.id), 'generic-high-entropy'],
+      // Untracked mode, and WHAT it read - a boolean alone would not say
+      // whether the walk found anything, which is the interesting half.
+      untracked: wantUntracked,
+      untrackedScanDirs: UNTRACKED_SCAN_DIRS,
+      untrackedFilesScanned: untracked.length,
     },
     workingTree: wt,
     history,
@@ -1085,6 +1239,7 @@ function parseArgs(argv) {
     if (a === '--json') opts.json = argv[++i];
     else if (a === '--root') opts.root = argv[++i];
     else if (a === '--no-history') opts.history = false;
+    else if (a === '--untracked') opts.untracked = true;
     else if (a === '--quiet') opts.quiet = true;
     else if (a === '--stamp') opts.stamp = argv[++i];
     else throw new Error(`unknown argument: ${a}`);

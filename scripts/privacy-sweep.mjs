@@ -180,6 +180,33 @@ const ALLOW_RULES = [
       'the mutation is a single key: the point is that only structure differs.',
   },
   {
+    id: 'capture-opencode-1.18.22',
+    prefixes: ['fixtures/opencode-1.18.22/'],
+    reason:
+      'The OpenCode provenance ANCHOR: a real SQLite store captured read-only ' +
+      'from this machine, holding this repository\'s own sessions. The absolute ' +
+      'paths in it are not incidental - project.worktree and session.directory ' +
+      'ARE the workspace join key (opencode contract section 9: an absolute ' +
+      'path, no slug decoding, matched case-insensitively against the workspace ' +
+      'folders). A normalised corpus would pin no discovery rule at all, the ' +
+      'same argument as capture-cc-2.1.246 reaching the same place by a ' +
+      'different mechanism - CC encodes the path into a slug, OpenCode stores it ' +
+      'verbatim in a column. The file is a binary database, so hits are counted ' +
+      'in thousands and the byte offsets that produce the line numbers are ' +
+      'page offsets, not text lines.',
+  },
+  {
+    id: 'capture-opencode-1.18.21',
+    prefixes: ['fixtures/opencode-1.18.21/'],
+    reason:
+      'The OpenCode drift WITNESS, captured in the same read-only pass as the ' +
+      '1.18.22 anchor and carrying the same deliberate absolute paths for the ' +
+      'same reason: project.worktree and session.directory are the workspace ' +
+      'join key. It exists because it disagrees with the anchor about the ' +
+      'compaction part shape, which is what proves tail_start_id optional; a ' +
+      'normalised or hand-written copy would witness nothing.',
+  },
+  {
     id: 'capture-hook-events',
     prefixes: ['fixtures/hook-events/'],
     reason:
@@ -316,6 +343,21 @@ const ALLOW_RULES = [
       'part, whose second fragment contains the surname, and a committed blob ' +
       'cannot be edited. Measured at the time of writing: 2 history hits, both ' +
       'that fragment. Scoped to this one file.',
+  },
+  {
+    id: 'capture-script-needles',
+    prefixes: ['scripts/capture-opencode.mjs'],
+    reason:
+      'The OpenCode capture script, for the same reason sweep-needles exists ' +
+      'one file over: it is a script that names a needle because its job is to ' +
+      'look for one. Measured at the time of writing: 12 working-tree hits, all ' +
+      'the SAME needle (the cloud-sync folder that holds this developer\'s ' +
+      'projects) and none of them a path - the script extracts <that ' +
+      'folder>/<project> tokens out of the captured rows and reports which ' +
+      'projects the bytes mention, so the identifier is a search term, a regex ' +
+      'and a variable name. Unlike sweep-needles it cannot assemble the term ' +
+      'from fragments: a GLOB pattern handed to SQLite has to be the literal ' +
+      'string. Scoped to that one file.',
   },
   {
     id: 'repo-local-cc-config',

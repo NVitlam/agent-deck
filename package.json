@@ -37,8 +37,8 @@
         "category": "Agent Deck"
       },
       {
-        "command": "agentDeck.__probeSqlite",
-        "title": "__probeSqlite (Phase 2 kill gate — THROWAWAY, removed before merge)",
+        "command": "agentDeck.probeSqlite",
+        "title": "Run Phase 2 SQLite Probe (THROWAWAY, removed before merge)",
         "category": "Agent Deck"
       }
     ],

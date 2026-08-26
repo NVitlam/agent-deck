@@ -43,7 +43,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /** The dev-only command id. Palette-visible so the user can run it by hand. */
-export const PROBE_COMMAND = 'agentDeck.__probeSqlite';
+export const PROBE_COMMAND = 'agentDeck.probeSqlite';
 
 /**
  * True only inside an Extension Development Host (`--extensionDevelopmentPath`).

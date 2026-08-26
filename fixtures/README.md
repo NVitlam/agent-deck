@@ -15,6 +15,17 @@ cc-2.1.234/projects/c--Users-dev-projects-agent-deck/
   4299490e-….jsonl                     main transcript
   4299490e-…/subagents/agent-*.jsonl   1 subagent transcript
   4299490e-…/subagents/agent-*.meta.json
+cc-2.1.246/                            THE PROVENANCE ANCHOR (2026-08-26). See its own README.
+  head-5.jsonl                         first 5 lines of the main transcript, for the version path
+  projects/c--…-agent-deck/
+    07e6c820-….jsonl                   main transcript, R1 mirror pair, 16 lines
+    07e6c820-…/subagents/agent-a676c705dca135e9d.jsonl   agent B, 6 scripted tool calls, 17 lines
+    07e6c820-…/subagents/agent-a676c705dca135e9d.meta.json
+cc-2.1.241/                            a session on a LOCAL local-model model. See its own README.
+  projects/c--…-agent-deck/
+    6082be25-….jsonl                   121 lines, no subagents, `atis` / `atis-latch` present
+    6082be25-…/auto-mode-classifier-error.txt   an unrecognised file inside the session directory
+cc-2.1.237/                            one content-destroyed transcript + its redaction script
 phase0-evidence/
   latency-*.log                        measured append→render latency samples
   synthetic-hook-events.jsonl          7 synthetic hook payloads (P0-2 evidence)
@@ -140,9 +151,30 @@ Keep that ordering; "improving" it to a directory scan is the regression.
 A mid-file CC version change is no longer refused outright. Phase 4 replaced the single pin with an
 acceptance window by user decision, so a file spanning versions is accepted when all of them are
 in-window and refused when the drift leaves it. Both directions are pinned in
-`src/parser/fingerprint.test.ts`; `synthetic-layout/07` and `08` were re-versioned to `2.1.400`
-because their old `2.1.235` is now accepted and both would otherwise have silently stopped testing
-refusal. Earlier text here said this stayed absent by design — that was true until Phase 4.
+`src/parser/fingerprint.test.ts`. Earlier text here said this stayed absent by design — that was
+true until Phase 4.
+
+**`synthetic-layout/07` and `08` have now been re-versioned twice, for the same reason both times,
+and that is the thing to notice.** Phase 4 moved them off `2.1.235` because the new patch window
+accepted it. The 2026-08-26 amendment stops comparing the patch component at all, which accepted
+their replacement `2.1.400` too, so both moved again — to `4.4.0`, which is out of range on the
+major **and** the minor component and therefore cannot be re-admitted by any future move of the
+anchor inside `2.x`. A refusal fixture whose version quietly becomes acceptable does not fail; it
+passes while testing nothing. Check these two whenever the acceptance rule moves.
+
+**Corpus and what each one is for** (the per-corpus READMEs carry the measurements):
+
+| Corpus | CC version | Pins |
+|---|---|---|
+| `cc-2.1.234/` | 2.1.234 | the layout and the join: 5 subagents over 2 sessions, one at `spawnDepth 2` with `parentAgentId`, one `tool-results/` offload |
+| `cc-2.1.237/` | 2.1.237 | a content-destroyed drift witness |
+| `cc-2.1.241/` | 2.1.241 | a local `local-model` model, flat (no subagents), `atis` / `atis-latch` present, `requestId` / `message.diagnostics` absent, an unrecognised file inside the session directory |
+| `cc-2.1.246/` | **2.1.246** | **the provenance anchor** — an R1 mirror pair with one subagent and its sidecar, plus `head-5.jsonl` for the version-string path |
+| `synthetic-structure-2.1.246/` | 2.1.246 | the tripwire itself: an in-range version with one required key renamed, which must still refuse |
+
+`PINNED_CC_VERSION` names `cc-2.1.246/` and nothing else. It is a **provenance** anchor — the version
+whose fixture proved the structure the fingerprint asserts — not a support claim; see the dated
+"Amendment 2026-08-26 — Version posture" section of `agent-deck-spec.md`.
 
 ## Privacy — status after the Phase 1 scrub
 

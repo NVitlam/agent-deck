@@ -363,6 +363,13 @@ const CAPTURE_CORPORA = [
   // top-level directory is covered, AND no enumerated prefix matches nothing -
   // and the second half is what caught this the moment the directory left.
   '.github/',
+  // Editor launch configuration. Became tracked in Phase 2, because answering
+  // the OpenCode kill gate needed an Extension Development Host and this repo
+  // had no way to start one -- there was no .vscode/ at all. The completeness
+  // guard in src/release/privacy.test.ts failed on the very next full run,
+  // which is the third time it has caught a newly tracked top-level directory
+  // (see 'media/' below) and the reason it exists.
+  '.vscode/',
   'docs/',
   'fixtures/',
   // Marketplace assets. Added when the icon and screenshots became tracked for

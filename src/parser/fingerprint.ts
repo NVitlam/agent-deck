@@ -1,11 +1,14 @@
 /**
  * Agent Deck — schema fingerprint.
  *
- * The fingerprint is the compatibility story. Claude Code's on-disk exhaust is
- * undocumented, so instead of coping with drift we detect it and refuse: a
- * narrow *window* of CC versions around a pinned anchor is accepted, and the
- * *layout* — not merely a list of field names — is the tripwire, because
- * subagent attribution rests on an undocumented directory convention:
+ * The fingerprint is the compatibility story, and since 2026-08-26 the
+ * *structure* is the whole of it. Claude Code's on-disk exhaust is
+ * undocumented, so instead of coping with drift we detect it and refuse — but
+ * the thing detected is the shape of the data, not the release number printed
+ * on it. The version string only rules out a different major line, or a minor
+ * more than one step away. The *layout* — not merely a list of field names —
+ * is the tripwire, because subagent attribution rests on an undocumented
+ * directory convention:
  *
  *   <slugDir>/<sessionId>.jsonl                                main transcript
  *   <slugDir>/<sessionId>/subagents/agent-<agentId>.jsonl      subagent transcript
@@ -27,16 +30,22 @@
  *       whole session unsupported; it never yields a partial tree.
  *   G5  Zero egress. Node built-ins only; no sockets.
  *   G6  Fixtures are law. Every rule below is derived from the committed
- *       capture under `fixtures/cc-2.1.234/`, never from memory. The measured
- *       counts are quoted at the rule they justify.
- *   G9  SUPERSEDED by an explicit user decision (Phase 4). G9 required one
- *       pinned version and nothing else; the shipped extension went dark the
- *       moment CC updated itself past the pin. Measured on the live projects
- *       directory on 2026-08-20 with the pin at 2.1.234: 6 of 12 of this
- *       repo's own sessions were refused, including every session written by
- *       2.1.237. The pin is now the ANCHOR of an acceptance window
- *       ({@link VERSION_WINDOW}); out-of-window versions still refuse exactly
- *       as before. See {@link isVersionAccepted}.
+ *       capture under `fixtures/cc-2.1.234/`, never from memory, and the
+ *       measured counts quoted at each rule are that capture's. The same rules
+ *       are re-proved against `fixtures/cc-2.1.246/` (the current anchor) and
+ *       `fixtures/cc-2.1.241/` (a local-model session) rather than assumed to
+ *       have survived.
+ *   G9  REWRITTEN 2026-08-26, for the second time and for the same reason.
+ *       Phase 4 turned one exact pin into a box of patch +/-5 after CC
+ *       self-updated to 2.1.237 and 6 of 12 of this repo's own sessions went
+ *       dark. The box then topped out at 2.1.239, CC shipped 2.1.240, and from
+ *       2026-08-24 EVERY session on EVERY user's machine rendered
+ *       `unsupported` — the identical failure, one window out. The fix is not
+ *       a wider box. The patch component is no longer compared at all
+ *       ({@link VERSION_WINDOW}); {@link PINNED_CC_VERSION} is re-read as a
+ *       provenance anchor; and the structural assertions below become the sole
+ *       in-range refusal. See the dated "Amendment 2026-08-26 — Version
+ *       posture" section of `agent-deck-spec.md`.
  */
 
 import { Buffer } from 'node:buffer';
@@ -56,34 +65,44 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * The anchor of the acceptance window: the CC version the committed fixtures
- * under `fixtures/cc-2.1.234/` were captured from, and the only version whose
- * behaviour is pinned byte-for-byte.
+ * The **provenance anchor**: the CC version whose committed fixture proved the
+ * structure this module asserts. It is `fixtures/cc-2.1.246/`, an R1 mirror
+ * pair harvested from this repo's own session on 2026-08-26.
  *
- * It is no longer the *only* accepted version — see {@link VERSION_WINDOW} —
- * but it is still the reference point, and moving it moves the whole window.
+ * It is deliberately NOT a support claim. Nothing about it says "only this
+ * version works" — {@link VERSION_WINDOW} is a loose range around it and the
+ * patch component is not compared at all. What it says is "this is the release
+ * we last looked at with our own eyes". It moves when, and only when, a new
+ * fixture is harvested and the structure is re-proved against it (G6). Moving
+ * it to chase a release is not how a compatibility problem gets fixed — that
+ * is what the 2026-08-26 amendment in `agent-deck-spec.md` exists to stop.
  */
-export const PINNED_CC_VERSION = '2.1.234';
+export const PINNED_CC_VERSION = '2.1.246';
 
 /**
  * How far a `version` may sit from {@link PINNED_CC_VERSION} and still be read.
  *
- * The third component is the one that actually moves in CC releases (234 ->
- * 235 -> 237 inside a single week of this repo's own sessions), so it gets the
- * wider allowance; the second component gets one step in either direction so a
- * rollover such as `2.1.239 -> 2.2.0` does not black the product out.
+ * **The patch component is not compared.** It used to be, at +/-5, and that was
+ * a countdown rather than a policy: the anchor `2.1.234` topped the box out at
+ * `2.1.239`, CC shipped `2.1.240` and kept going, and from 2026-08-24 every
+ * session on every user's machine rendered `unsupported`. The same defect had
+ * already fired once at `2.1.237` in Phase 4 and been answered by widening the
+ * box. Widening a box that a release train walks out of buys weeks.
  *
- * The major component is NOT windowed. A major bump is the one release that
- * may reasonably rearrange the layout this module exists to assert.
+ * So the string checks two things and nothing else: the major component must
+ * equal the anchor's, and the minor component may be one step either side (so
+ * a rollover such as `2.1.999 -> 2.2.0` does not black the product out). A
+ * major bump is the one release that may reasonably rearrange the layout this
+ * module exists to assert, which is why it is not windowed.
  *
- * This is a **box, not a lexicographic range**: `2.2.100` sits between the
- * corners `2.0.229` and `2.2.239` and is refused, because its third component
- * is 134 away from the anchor's. {@link VersionWindow.label} names the corners
- * for humans; {@link isVersionAccepted} is the rule.
+ * What refuses in range is the STRUCTURE — {@link REQUIRED_ENTRY_FIELDS},
+ * {@link REQUIRED_META_FIELDS} and the subagent directory layout. That is the
+ * whole compatibility story now; see {@link isVersionAccepted} for the string
+ * half and `fixtures/synthetic-structure-2.1.246/` for the proof that the other
+ * half still bites at the anchor itself.
  */
-export const VERSION_WINDOW: { readonly minor: number; readonly patch: number } = {
+export const VERSION_WINDOW: { readonly minor: number } = {
   minor: 1,
-  patch: 5,
 };
 
 /** A CC version string decomposed. Exactly three components, no prerelease. */
@@ -112,9 +131,11 @@ export interface VersionWindow {
   major: number;
   minMinor: number;
   maxMinor: number;
-  minPatch: number;
-  maxPatch: number;
-  /** `<min> - <max>`, the corners of the box. Reporting only; see {@link VERSION_WINDOW}. */
+  /**
+   * `<min> - <max>`, the ends of the range, written with an `x` in the patch
+   * position because the patch component is not compared. Reporting only; see
+   * {@link VERSION_WINDOW}.
+   */
   label: string;
 }
 
@@ -128,16 +149,12 @@ export function versionWindow(anchor: string = PINNED_CC_VERSION): VersionWindow
   if (parsed === undefined) return undefined;
   const minMinor = Math.max(0, parsed.minor - VERSION_WINDOW.minor);
   const maxMinor = parsed.minor + VERSION_WINDOW.minor;
-  const minPatch = Math.max(0, parsed.patch - VERSION_WINDOW.patch);
-  const maxPatch = parsed.patch + VERSION_WINDOW.patch;
   return {
     anchor,
     major: parsed.major,
     minMinor,
     maxMinor,
-    minPatch,
-    maxPatch,
-    label: `${parsed.major}.${minMinor}.${minPatch} - ${parsed.major}.${maxMinor}.${maxPatch}`,
+    label: `${parsed.major}.${minMinor}.x - ${parsed.major}.${maxMinor}.x`,
   };
 }
 
@@ -153,20 +170,24 @@ function acceptsVersion(
   if (window === undefined) return false;
   const parsed = parseCcVersion(version);
   if (parsed === undefined) return false;
+  // The patch component is deliberately absent from this comparison. See
+  // VERSION_WINDOW: it is not an oversight and re-adding it re-arms the
+  // blackout.
   return (
     parsed.major === window.major &&
     parsed.minor >= window.minMinor &&
-    parsed.minor <= window.maxMinor &&
-    parsed.patch >= window.minPatch &&
-    parsed.patch <= window.maxPatch
+    parsed.minor <= window.maxMinor
   );
 }
 
 /**
  * Is `version` inside the acceptance window around `anchor`?
  *
- * The whole compatibility policy, in one predicate, exported so it can be
- * asserted directly rather than only through a transcript.
+ * The string half of the compatibility policy, in one predicate, exported so it
+ * can be asserted directly rather than only through a transcript. The other
+ * half — the half that does the real work — is structural and lives in
+ * {@link REQUIRED_ENTRY_FIELDS}, {@link REQUIRED_META_FIELDS} and the layout
+ * assertions in {@link fingerprintSession}.
  */
 export function isVersionAccepted(version: string, anchor: string = PINNED_CC_VERSION): boolean {
   return acceptsVersion(version, anchor, versionWindow(anchor));

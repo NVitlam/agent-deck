@@ -147,6 +147,32 @@ const ALLOW_RULES = [
       'the accepted version window.',
   },
   {
+    id: 'capture-cc-2.1.241',
+    prefixes: ['fixtures/cc-2.1.241/'],
+    reason:
+      'A real CC 2.1.241 session run against a local local-model model. Raw and ' +
+      'unredacted like the other captures: it exists to prove the refusal is ' +
+      'the version string and nothing else, and a normalised model path or cwd ' +
+      'would pin none of that.',
+  },
+  {
+    id: 'capture-cc-2.1.246',
+    prefixes: ['fixtures/cc-2.1.246/'],
+    reason:
+      'The provenance anchor: a real CC 2.1.246 R1 mirror pair captured from ' +
+      "this repo's own session, with one subagent and its join sidecar. G6: " +
+      'fixtures are law and byte-exact; the cwd, transcript_path and session ' +
+      'ids ARE the data under test.',
+  },
+  {
+    id: 'synthetic-structure-2.1.246',
+    prefixes: ['fixtures/synthetic-structure-2.1.246/'],
+    reason:
+      'Hand-mutated copy of the 2.1.246 head slice with one required key ' +
+      'renamed. It inherits the paths of the capture it was cut from because ' +
+      'the mutation is a single key: the point is that only structure differs.',
+  },
+  {
     id: 'capture-hook-events',
     prefixes: ['fixtures/hook-events/'],
     reason:

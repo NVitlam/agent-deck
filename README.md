@@ -6,8 +6,8 @@ A **read-only** VS Code extension that renders live Claude Code session topology
 in-flight tool calls, token and cost totals — by observing Claude Code's exhaust. It never wraps,
 proxies, launches, or configures Claude Code.
 
-> **Claude Code compatibility** — anchor `2.1.234`, accepted window `2.0.229` to `2.2.239`
-> (major exact, minor +/-1, patch +/-5). See [Claude Code version window](#claude-code-version-window).
+> **Claude Code compatibility** — anchor `2.1.246`, accepts `2.0.x` to `2.2.x`, refuses on
+> structural change, not on patch number. See [Claude Code version window](#claude-code-version-window).
 >
 > This badge is text, not a remote image: a project whose selling point is zero egress should not
 > make its own README phone home to a badge service to render.
@@ -70,7 +70,8 @@ window closes. There is no database, no cache file, and nothing is ever written 
 - **VS Code** `^1.75.0`
 - **Node** `>=20` on your `PATH` — the hook block below is a `node -e` one-liner, so your Node is
   what runs it
-- **Claude Code** at a version inside the accepted window (see below)
+- **Claude Code** on the `2.x` line, within one minor of the anchor (see below). Patch releases are
+  read as they come.
 
 ## Install
 
@@ -266,22 +267,32 @@ measurements. The short version:
 `src/parser/fingerprint.ts` is the authority for this, and the numbers have exactly one home there:
 `PINNED_CC_VERSION` is the anchor and `VERSION_WINDOW` is the allowance.
 
-- **Anchor `2.1.234`** — the version the committed fixtures were captured from, and the only version
-  whose behaviour is pinned byte-for-byte.
-- **Accepted window `2.0.229` to `2.2.239`** — major exact, minor +/-1, patch +/-5. It is a box, not
-  a lexicographic range: a version has to be inside the tolerance on *each* component separately.
-- Out-of-window, malformed and unreadable versions are refused: the session renders `unsupported`,
-  never a partial tree.
+- **Anchor `2.1.246`** — the version the committed fixtures were captured from. It is a
+  **provenance** anchor rather than a support claim: it names the release whose structure was proved
+  against real bytes, and it moves only when a new fixture is harvested.
+- **Accepted `2.0.x` to `2.2.x`** — major exact, minor +/-1. **The patch component is not compared
+  at all.** Whatever Claude Code ships next on this line is read.
+- **What refuses instead is the structure** — a required field missing or wrong-typed, a subagent
+  sidecar without its join key, the subagent directory convention moving. Those are the changes that
+  would make the rendered tree wrong, and they are the ones worth refusing on.
+- Out-of-range, malformed and unreadable versions are still refused: the session renders
+  `unsupported`, never a partial tree.
 - A transcript whose version changes partway through — Claude Code updating itself under a live
-  session — is accepted while every version in it stays in-window, and refused as
+  session — is accepted while every version in it stays in range, and refused as
   `versionChangedMidFile` once the drift leaves it.
 
-**Why a window instead of a single pinned version, and what it costs.** A single pin meant the
-product went dark the moment Claude Code updated itself: every session written that day rendered
-`unsupported`. That was the refusal rule behaving exactly as designed, and a product that only works
-between Claude Code releases. The window buys tolerance for the patch bumps that actually happen, and
-it costs certainty: **an in-window version nobody captured is a version nobody verified, so schema
-drift inside the window can surface as a wrong tree rather than an honest refusal.**
+**How the anchor moves, and why it is not a lever.** One way only: capture a session from the new
+release, check the structural assertions against those bytes, commit the fixture, then move the
+constant. It is never moved to make a version work, because moving it cannot make anything work —
+the patch number is not consulted. If a new release breaks the deck, the structural rules are what
+changed, and those are what need looking at.
+
+**What this costs, stated plainly.** Reading releases nobody captured means reading releases nobody
+verified, so a structural change we have not seen can surface as a **wrong tree** rather than an
+honest refusal. The alternative was measured, twice: a tolerance counted in patch releases expires,
+and when it expired on 2026-08-24 every session for every user rendered `unsupported`. Tightening
+the string does not buy correctness; it buys a blackout. The structural assertions are where the
+honesty is kept, and they were not loosened alongside it.
 
 ## What it does not do
 

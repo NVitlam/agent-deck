@@ -67,6 +67,15 @@ const SYNTHETIC_SESSION = 'deadbeef-0000-4000-8000-000000000001';
 const CAPTURED_SESSION_WITH_SUBAGENTS = '05c5482d-5568-44ce-97fe-bc9a6c15afc4';
 const CAPTURED_SESSION_SINGLE = '4299490e-4a09-46a0-a544-7ffb0429e7e7';
 
+/**
+ * The version the 2.1.234 corpus and the whole `synthetic-layout/` tree carry.
+ * It stopped being `PINNED_CC_VERSION` on 2026-08-26 and these assertions are
+ * about the BYTES, so they name the bytes. Writing `PINNED_CC_VERSION` here
+ * would silently re-couple a fixture's content to a constant that now moves
+ * independently of it.
+ */
+const CAPTURED_234_VERSION = '2.1.234';
+
 /** `fixtures/synthetic-layout/<case>/<slug>` — a whole miniature slug dir. */
 function syntheticSlug(caseName: string): string {
   return join(SYNTHETIC_ROOT, caseName, SYNTHETIC_SLUG);
@@ -230,9 +239,11 @@ describe('captured CC 2.1.234 fixtures', () => {
       join(CAPTURED_SLUG, `${CAPTURED_SESSION_WITH_SUBAGENTS}.jsonl`),
     );
     const value = expectAccepted(result);
-    expect(value.version).toBe(PINNED_CC_VERSION);
+    // The corpus's own version, NOT the pin: since 2026-08-26 the anchor is
+    // 2.1.246 and this capture is still read, which is the posture working.
+    expect(value.version).toBe(CAPTURED_234_VERSION);
     // One version across main transcript and all four subagent files.
-    expect(value.versions).toEqual([PINNED_CC_VERSION]);
+    expect(value.versions).toEqual([CAPTURED_234_VERSION]);
     expect(value.subagents).toHaveLength(4);
     expect(value.toolResultsDir).toBe(
       join(CAPTURED_SLUG, CAPTURED_SESSION_WITH_SUBAGENTS, 'tool-results'),
@@ -281,13 +292,17 @@ describe('captured CC 2.1.234 fixtures', () => {
   });
 
   it('refuses the captured tree when the anchor moves far enough off 2.1.234', async () => {
-    // Proves the version assertion is load-bearing rather than vacuous. 2.1.999
-    // is 765 above the capture's third component, far outside a +/-5 window.
-    const slug = await fingerprintSlugDirectory(CAPTURED_SLUG, { pinnedVersion: '2.1.999' });
+    // Proves the version assertion is load-bearing rather than vacuous. The
+    // override has to move the MINOR component now: `2.1.999` used to be far
+    // enough and no longer is, because the third component is not compared.
+    // That change is the whole point of the 2026-08-26 amendment, so this
+    // assertion is worth reading as a statement of it.
+    expect(isVersionAccepted(CAPTURED_234_VERSION, '2.1.999')).toBe(true);
+    const slug = await fingerprintSlugDirectory(CAPTURED_SLUG, { pinnedVersion: '2.4.0' });
     if (!slug.ok) throw new Error('slug directory itself should still be readable');
     for (const session of slug.value.sessions) {
       const mismatch = expectRefusal(session.result, 'unsupportedVersion');
-      expect(mismatch.observedVersion).toBe(PINNED_CC_VERSION);
+      expect(mismatch.observedVersion).toBe(CAPTURED_234_VERSION);
     }
   });
 });
@@ -331,53 +346,70 @@ describe('CC version acceptance window', () => {
     expect(window.major).toBe(anchor.major);
     expect(window.minMinor).toBe(anchor.minor - VERSION_WINDOW.minor);
     expect(window.maxMinor).toBe(anchor.minor + VERSION_WINDOW.minor);
-    expect(window.minPatch).toBe(anchor.patch - VERSION_WINDOW.patch);
-    expect(window.maxPatch).toBe(anchor.patch + VERSION_WINDOW.patch);
 
     // And, spelled out for the shipped anchor, so a silent change to either
     // constant fails here rather than only widening what the product accepts.
-    expect(window.label).toBe('2.0.229 - 2.2.239');
+    // The `x` is not decoration: the patch component is not compared, and a
+    // label that named a number would be claiming a bound that does not exist.
+    expect(window.label).toBe('2.0.x - 2.2.x');
+  });
+
+  it('has no patch allowance to derive a bound from', () => {
+    // The whole point of the 2026-08-26 amendment, asserted as a property of
+    // the shipped constant rather than only through its consequences. A `patch`
+    // key reappearing here is the blackout being re-armed.
+    expect(Object.keys(VERSION_WINDOW)).toEqual(['minor']);
+    expect(versionWindow()).not.toHaveProperty('minPatch');
+    expect(versionWindow()).not.toHaveProperty('maxPatch');
   });
 
   it('moves with the anchor, and clamps at zero rather than going negative', () => {
-    expect(versionWindow('9.4.100')?.label).toBe('9.3.95 - 9.5.105');
-    // minor 0, patch 2: both lower bounds would be negative.
-    expect(versionWindow('3.0.2')?.label).toBe('3.0.0 - 3.1.7');
+    expect(versionWindow('9.4.100')?.label).toBe('9.3.x - 9.5.x');
+    // minor 0: the lower bound would be negative.
+    expect(versionWindow('3.0.2')?.label).toBe('3.0.x - 3.1.x');
     expect(isVersionAccepted('3.0.0', '3.0.2')).toBe(true);
     expect(isVersionAccepted('3.1.7', '3.0.2')).toBe(true);
+    expect(isVersionAccepted('3.1.99999', '3.0.2')).toBe(true);
     expect(isVersionAccepted('3.2.0', '3.0.2')).toBe(false);
   });
 
-  it('accepts and refuses exactly this table, anchored on 2.1.234', () => {
-    // Every row is a decision, not an illustration: the boundary rows are the
-    // ones that fail if either allowance is edited.
+  it('accepts and refuses exactly this table, anchored on 2.1.246', () => {
+    // Every row is a decision, not an illustration. The rows that matter most
+    // are the ones the old patch box got wrong: 2.1.241 and 2.1.246 were the
+    // sessions on this machine that rendered `unsupported` for two days, and
+    // 2.1.999 is the row that says no future patch release can do it again.
     const table: [string, boolean][] = [
-      // --- the anchor and the versions this repo has actually seen on disk
-      ['2.1.234', true], // the anchor; the committed capture
-      ['2.1.235', true], // seen live, +1
-      ['2.1.237', true], // seen live, +3 — the update that blacked the panel out
-      ['2.1.178', false], // seen live, -56 — still refused
-      // --- third component, the one that moves: +/-5
-      ['2.1.229', true],
-      ['2.1.239', true],
-      ['2.1.228', false],
-      ['2.1.240', false],
-      // --- second component: +/-1, and the third still applies inside it
-      ['2.0.234', true],
-      ['2.2.234', true],
-      ['2.0.229', true], // the low corner
-      ['2.2.239', true], // the high corner
-      ['2.2.100', false], // between the corners, but 134 off the anchor's third
+      // --- required by DoD 1.3
+      ['2.1.234', true], // the previous anchor; still read
+      ['2.1.241', true], // the local-model corpus, refused before this change
+      ['2.1.246', true], // the anchor
+      ['2.1.999', true], // the patch component is not compared AT ALL
+      ['2.0.0', true], // minor -1, patch irrelevant
+      ['2.2.0', true], // minor +1, patch irrelevant
+      ['2.3.0', false], // minor +2
+      ['1.9.999', false], // wrong major
+      ['3.0.0', false], // wrong major
+      ['2.1', false], // not three components
+      ['2.1.246-beta', false], // prerelease
+      ['02.1.246', false], // leading zero
+      // --- versions this repo has actually seen on disk
+      ['2.1.178', true], // the stale npm global; in range now, and readable
+      ['2.1.235', true],
+      ['2.1.237', true],
+      ['2.1.240', true], // the release that started the blackout
+      // --- second component: +/-1 only
+      ['2.0.229', true],
+      ['2.2.239', true],
+      ['2.2.100', true], // was refused as "134 off the anchor's third"; no longer
       ['2.3.234', false],
+      ['2.4.0', false],
       // --- the first component is not windowed at all
       ['1.1.234', false],
       ['3.1.234', false],
+      ['4.4.0', false], // out on BOTH components; the refusal fixtures use this
       // --- not a three-component version: refused, never guessed at (G3)
-      ['2.1.234-beta', false],
-      ['2.1.234.1', false],
-      ['2.1', false],
-      ['02.1.234', false],
-      ['v2.1.234', false],
+      ['2.1.246.1', false],
+      ['v2.1.246', false],
       ['', false],
       ['nonsense', false],
     ];
@@ -388,13 +420,13 @@ describe('CC version acceptance window', () => {
   it('reads a transcript at every accepted version and refuses every rejected one', async () => {
     // The predicate above is only interesting if the transcript path agrees
     // with it, so the same rows are driven through real files.
-    for (const version of ['2.1.229', '2.1.234', '2.1.235', '2.1.237', '2.1.239', '2.2.239']) {
+    for (const version of ['2.1.234', '2.1.241', '2.1.246', '2.1.999', '2.0.0', '2.2.0']) {
       const main = await sessionAtVersion(join(temp, `ok-${version}`), version);
       const value = expectAccepted(await fingerprintSession(main));
       expect(value.version, version).toBe(version);
       expect(value.versions, version).toEqual([version]);
     }
-    for (const version of ['2.1.178', '2.1.228', '2.1.240', '2.2.100', '3.1.234', '2.1.234-beta']) {
+    for (const version of ['2.3.0', '1.9.999', '3.0.0', '2.1', '2.1.246-beta', '02.1.246']) {
       const main = await sessionAtVersion(join(temp, `no-${version}`), version);
       const mismatch = expectRefusal(await fingerprintSession(main), 'unsupportedVersion');
       expect(mismatch.observedVersion, version).toBe(version);
@@ -412,20 +444,20 @@ describe('CC version acceptance window', () => {
   });
 
   it('refuses a mid-file change that leaves the window, naming the line', async () => {
-    const main = await sessionAtVersion(join(temp, 'drift-out'), '2.1.234', '2.1.235', '2.1.400');
+    const main = await sessionAtVersion(join(temp, 'drift-out'), '2.1.234', '2.1.235', '4.4.0');
     const mismatch = expectRefusal(await fingerprintSession(main), 'versionChangedMidFile');
     expect(mismatch.expected).toBe('2.1.234');
-    expect(mismatch.actual).toBe('2.1.400');
-    expect(mismatch.observedVersion).toBe('2.1.400');
+    expect(mismatch.actual).toBe('4.4.0');
+    expect(mismatch.observedVersion).toBe('4.4.0');
     expect(mismatch.path).toMatch(/:3$/);
   });
 
   it('refuses from the first line when a file STARTS outside the window', async () => {
     // Not a mid-file story: there is nothing to drift from yet, so the generic
     // code is correct and the mid-file code would be a lie.
-    const main = await sessionAtVersion(join(temp, 'starts-out'), '2.1.178', '2.1.234');
+    const main = await sessionAtVersion(join(temp, 'starts-out'), '4.4.0', '2.1.234');
     const mismatch = expectRefusal(await fingerprintSession(main), 'unsupportedVersion');
-    expect(mismatch.observedVersion).toBe('2.1.178');
+    expect(mismatch.observedVersion).toBe('4.4.0');
     expect(mismatch.path).toMatch(/:1$/);
   });
 
@@ -465,7 +497,7 @@ describe('captured CC 2.1.237 fixture (redacted)', () => {
 
   it('refuses the same tree with the anchor two windows away', async () => {
     // The acceptance above is a decision, not an accident of a permissive rule.
-    const slug = await fingerprintSlugDirectory(CAPTURED_237_SLUG, { pinnedVersion: '2.1.100' });
+    const slug = await fingerprintSlugDirectory(CAPTURED_237_SLUG, { pinnedVersion: '2.4.0' });
     if (!slug.ok) throw new Error('slug directory itself should still be readable');
     for (const session of slug.value.sessions) {
       const mismatch = expectRefusal(session.result, 'unsupportedVersion');
@@ -546,7 +578,10 @@ describe('synthetic control case', () => {
       'asynthetic0000001',
       'asynthetic0000002',
     ]);
-    expect(value.version).toBe(PINNED_CC_VERSION);
+    // The synthetic corpus was written at 2.1.234 and is deliberately left
+    // there: it is in range, and re-stamping 80 lines to chase the anchor
+    // would prove only that a sed ran.
+    expect(value.version).toBe(CAPTURED_234_VERSION);
     // Strays inside the session directory are ignored, never a mismatch.
     const ignored = value.ignored.map((p) => relative(value.sessionDir, p).split(sep).join('/'));
     expect(ignored).toContain('auto-mode-classifier-error.txt');
@@ -688,17 +723,22 @@ describe('mutated-layout fixtures are refused, each for its own reason', () => {
     expect(mismatch.actual).toBe('asynthetic0000001.jsonl');
   });
 
-  // 07 and 08 were re-versioned in Phase 4: they used to carry 2.1.235, which
-  // the acceptance window now accepts, so each was moved to 2.1.400 to keep
-  // demonstrating the code its name claims. See the corpus README.
+  // 07 and 08 have been re-versioned TWICE, for the same reason both times.
+  // They carried 2.1.235 until Phase 4's patch window accepted it; they then
+  // carried 2.1.400 until the 2026-08-26 amendment stopped comparing the patch
+  // component and accepted that too. They now carry 4.4.0, which is out of
+  // range on the major AND the minor component and so cannot be re-admitted by
+  // any future move of the anchor inside 2.x. A refusal fixture whose version
+  // quietly becomes acceptable does not fail - it passes while testing nothing.
+  // See the corpus README.
 
   it('07 whole file on a version outside the window -> unsupportedVersion', async () => {
     const mismatch = expectRefusal(await fingerprintCase('07-version-not-pinned'), 'unsupportedVersion');
     expect(mismatch.expected).toBe(PINNED_CC_VERSION);
-    expect(mismatch.observedVersion).toBe('2.1.400');
+    expect(mismatch.observedVersion).toBe('4.4.0');
     // The refusal sentence is unchanged from the single-pin era.
     expect(mismatch.reason).toBe('transcript was written by an unpinned CC version');
-    expect(isVersionAccepted('2.1.400')).toBe(false);
+    expect(isVersionAccepted('4.4.0')).toBe(false);
   });
 
   it('08 version changing partway through a file, OUT of the window -> versionChangedMidFile', async () => {
@@ -706,10 +746,12 @@ describe('mutated-layout fixtures are refused, each for its own reason', () => {
       await fingerprintCase('08-version-changes-midfile'),
       'versionChangedMidFile',
     );
-    // Starts at the anchor, so the refusal is about the change, not the origin.
-    expect(mismatch.expected).toBe(PINNED_CC_VERSION);
-    expect(mismatch.actual).toBe('2.1.400');
-    expect(mismatch.observedVersion).toBe('2.1.400');
+    // Starts at 2.1.234 - in range, but deliberately NOT the anchor, so this
+    // also proves `expected` reports the FILE's origin rather than the pin.
+    expect(mismatch.expected).toBe('2.1.234');
+    expect(isVersionAccepted('2.1.234')).toBe(true);
+    expect(mismatch.actual).toBe('4.4.0');
+    expect(mismatch.observedVersion).toBe('4.4.0');
     // The line number is the interesting part of a mid-file refusal.
     expect(mismatch.path).toMatch(/:3$/);
   });
@@ -719,7 +761,9 @@ describe('mutated-layout fixtures are refused, each for its own reason', () => {
     // and it is the reason 08 had to be re-versioned rather than left alone.
     const drifted = await sessionAtVersion(join(temp, 'like-08'), PINNED_CC_VERSION, '2.1.235');
     const value = expectAccepted(await fingerprintSession(drifted));
-    expect(value.versions).toEqual([PINNED_CC_VERSION, '2.1.235']);
+    // Sorted, not in file order - `versions` is a sorted set, and 2.1.235
+    // now sorts BEFORE the anchor because the anchor moved to 2.1.246.
+    expect(value.versions).toEqual(['2.1.235', PINNED_CC_VERSION]);
   });
 
   it('09 main transcript path is a directory -> mainTranscriptNotAFile', async () => {
@@ -858,7 +902,7 @@ describe('tolerance', () => {
   it('counts malformed lines and non-object JSON instead of refusing (G3)', async () => {
     const result = await fingerprintCase('14-malformed-lines-tolerated');
     const value = expectAccepted(result);
-    expect(value.version).toBe(PINNED_CC_VERSION);
+    expect(value.version).toBe(CAPTURED_234_VERSION);
     expect(result.ok && result.diagnostics.malformedLines).toBe(2);
     expect(result.ok && result.diagnostics.parsedLines).toBe(5);
   });
@@ -1034,17 +1078,17 @@ describe('hostile input never throws', () => {
     const spanning = expectAccepted(
       await fingerprintSession(join(slugDir, `${SYNTHETIC_SESSION}.jsonl`)),
     );
-    expect(spanning.versions).toEqual([PINNED_CC_VERSION, '2.1.235']);
+    expect(spanning.versions).toEqual(['2.1.235', PINNED_CC_VERSION]);
     expect(spanning.version).toBeUndefined();
 
     // Out of the window, and the refusal comes from the file that carries it —
     // the subagent transcript, by line, not from a whole-session comparison.
-    await writeFile(join(sub, 'agent-a1.jsonl'), entry('2.1.178', 'a1'), 'utf8');
+    await writeFile(join(sub, 'agent-a1.jsonl'), entry('4.4.0', 'a1'), 'utf8');
     const mismatch = expectRefusal(
       await fingerprintSession(join(slugDir, `${SYNTHETIC_SESSION}.jsonl`)),
       'unsupportedVersion',
     );
-    expect(mismatch.observedVersion).toBe('2.1.178');
+    expect(mismatch.observedVersion).toBe('4.4.0');
     expect(mismatch.path).toMatch(/agent-a1\.jsonl:1$/);
   });
 });
@@ -1054,9 +1098,14 @@ describe('hostile input never throws', () => {
 // ---------------------------------------------------------------------------
 
 describe('contract', () => {
-  it('anchors the window on the version the fixtures were captured from', () => {
-    expect(PINNED_CC_VERSION).toBe('2.1.234');
-    expect(VERSION_WINDOW).toEqual({ minor: 1, patch: 5 });
+  it('anchors on the version the fixtures were captured from, with no patch allowance', () => {
+    // Both literals are deliberate. The anchor names the corpus that proved the
+    // structure (`fixtures/cc-2.1.246/`), and the allowance object is asserted
+    // by EQUALITY rather than field by field, so a `patch` key silently
+    // reappearing fails here - which is the shape the 2026-08-26 blackout came
+    // in, twice.
+    expect(PINNED_CC_VERSION).toBe('2.1.246');
+    expect(VERSION_WINDOW).toEqual({ minor: 1 });
   });
 
   it('requires the four join keys on every sidecar and nothing else', () => {

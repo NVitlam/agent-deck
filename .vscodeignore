@@ -25,6 +25,10 @@
 .vscode/**
 .vscode-test/**
 .claude/**
+# OpenCode's per-project state directory (the second engine's own local
+# tooling, including its own node_modules) -- same class as .claude/**, and
+# measured shipping 1,200+ of its files into the VSIX until it was denied.
+.opencode/**
 .github/**
 .git/**
 .gitattributes
@@ -50,10 +54,21 @@ eslint.config.js
 vitest.config.ts
 package-lock.json
 
-PLAN.md
+# `PLAN*.md`, not `PLAN.md`. A plan under revision lives beside the current one
+# at the repo root for a while under a versioned name, and the exact-set guard
+# in src/release/vsix.test.ts caught `PLAN_v0.5.0.md` being packaged - the same
+# class as the 38 KB mockup that shipped past a `docs/**`-shaped rule, and the
+# same lesson: name the class, not the instance.
+PLAN*.md
 CLAUDE.md
 HANDOVER.md
 agent-deck-spec.md
+# OpenCode's project context file (the engine this extension now observes
+# keeps its own CLAUDE.md-analogue at the repo root). Local guidance, like
+# CLAUDE.md itself -- it is denied here and was measured shipping until it was
+# named. Whether it is tracked in git is a separate, open decision (see
+# HANDOVER.md).
+AGENTS.md
 
 # Everything under `docs/`. Phase 5 wrote a ROOT `README.md`, and that is the
 # one document the VSIX ships. `docs/README.md` is an index of superseded v1

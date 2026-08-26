@@ -1,0 +1,34 @@
+{
+  // Extension Development Host launcher.
+  //
+  // This repo had NO .vscode/ at all, so "press F5" was not actually available
+  // — which matters now, because PLAN Phase 2's kill gate (DoD 2.1) can only be
+  // answered from inside a real extension host. `.vscode/**` is already denied
+  // in .vscodeignore, so nothing here reaches the VSIX.
+  //
+  // `preLaunchTask` builds BOTH bundles. `main` is `dist/extension.cjs` and the
+  // webview is `dist/webview/main.{js,css}`; launching against a stale or absent
+  // dist/ is the "manifest and build disagree" class this repo already paid for.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/dist/**/*.cjs"],
+      "preLaunchTask": "npm: build"
+    },
+    {
+      // Same, but opens the dev host on this repo itself, which is what the
+      // Phase 2 probe needs: the evidence file is written relative to the
+      // dev-host workspace root.
+      "name": "Run Extension (this workspace)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/dist/**/*.cjs"],
+      "preLaunchTask": "npm: build"
+    }
+  ]
+}

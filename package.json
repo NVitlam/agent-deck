@@ -35,6 +35,11 @@
         "command": "agentDeck.open",
         "title": "Open Session Deck",
         "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.__probeSqlite",
+        "title": "__probeSqlite (Phase 2 kill gate — THROWAWAY, removed before merge)",
+        "category": "Agent Deck"
       }
     ],
     "configuration": {

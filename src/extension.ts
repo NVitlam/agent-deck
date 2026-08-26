@@ -106,6 +106,9 @@ import type { WatchFactory } from './watch/watcher.js';
 import { createJsonlInferenceSource } from './watch/inference.js';
 import { systemScheduler } from './parser/tailer.js';
 import type { DiscoveryFailure, Scheduler, TailBatch, TimerHandle } from './parser/tailer.js';
+// PHASE 2 / DoD 2.1 — THROWAWAY import, removed with the command registration
+// below in its own commit before this branch merges.
+import { PROBE_COMMAND, probeSqliteCommand } from './dev/probe-sqlite.js';
 
 // ---------------------------------------------------------------------------
 // (a) Settings
@@ -1102,6 +1105,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       host.open();
     }),
+  );
+
+  // ---- PHASE 2 / DoD 2.1 — THROWAWAY. Removed in its own commit before
+  // `phase-2-oc-killgate` merges; `git log --oneline` shows the add and the
+  // remove. Registered UNCONDITIONALLY and before every early return above's
+  // successors, because the probe must run whether or not this workspace has a
+  // matching CC project — it is measuring the HOST, not a session.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(PROBE_COMMAND, () => probeSqliteCommand()),
   );
 
   const workspacePath = firstWorkspacePath();

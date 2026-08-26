@@ -32,7 +32,14 @@ export default tseslint.config(
   {
     files: ['**/*.mjs', '**/*.js'],
     languageOptions: {
-      globals: { process: 'readonly' },
+      // `console` is here because the config was incomplete, not because a new
+      // file needed an exemption. `scripts/privacy-sweep.mjs` is the only
+      // pre-existing .mjs that prints, and it happens to use
+      // `process.stdout.write`, so `no-undef` on `console` had never fired --
+      // the first .mjs to use the obvious API (`docs/ui/goldens.mjs`) turned
+      // `npm run lint` red on a documentation-only branch. A Node global that
+      // every Node script may legitimately use belongs in the globals list.
+      globals: { process: 'readonly', console: 'readonly' },
     },
   },
 );

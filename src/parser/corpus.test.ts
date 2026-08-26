@@ -37,6 +37,7 @@ import {
   isVersionAccepted,
 } from './fingerprint.js';
 import { KNOWN_ENTRY_TYPES, parseLines } from './parse.js';
+import type { ParseOptions, ParsedBatch } from './parse.js';
 
 const SLUG = 'c--Users-dev-projects-agent-deck';
 
@@ -61,6 +62,17 @@ const MUTANT = fixture(
   'SYNTHETIC-hand-mutated-not-captured',
   `${SESSION_246}.jsonl`,
 );
+
+/**
+ * `parseLines` never reports `ok: false` - refusing a whole session is the
+ * fingerprint's job - but the return type is the shared `ParseResult` union, so
+ * the narrowing has to be written down once rather than at every call site.
+ */
+function batchOf(lines: readonly string[], options?: ParseOptions): ParsedBatch {
+  const result = parseLines(lines, options);
+  if (!result.ok) throw new Error('parseLines reported ok:false, which it never does');
+  return result.value;
+}
 
 /** Every non-blank line of a JSONL file, parsed. Throws on malformed input. */
 async function entriesOf(path: string): Promise<Record<string, unknown>[]> {
@@ -283,6 +295,7 @@ describe('a session on a local local-model model is read like any other', () => 
     expect(unknown).toHaveLength(11);
     expect(batch.diagnostics.malformedLines).toBe(11);
     expect(batch.diagnostics.parsedLines).toBe(110);
+    expect(batch.diagnostics.malformedLines + batch.diagnostics.parsedLines).toBe(lines.length);
 
     const byType = new Map<string, number>();
     for (const r of unknown) {
@@ -313,9 +326,9 @@ describe('a session on a local local-model model is read like any other', () => 
 
     // Admit the record type and the field survives the parse boundary intact,
     // so the skip above is about the TYPE and nothing is being stripped.
-    const batch = parseLines([JSON.stringify(withAtis[0])], { allowUnknownTypes: true });
-    expect(batch.value.rejections).toEqual([]);
-    expect(batch.value.entries[0]).toHaveProperty('atis');
+    const batch = batchOf([JSON.stringify(withAtis[0])], { allowUnknownTypes: true });
+    expect(batch.rejections).toEqual([]);
+    expect(batch.entries[0]).toHaveProperty('atis');
   });
 
   it('keeps fields the requirement table has never heard of, on known types too', async () => {
@@ -331,9 +344,9 @@ describe('a session on a local local-model model is read like any other', () => 
     const extras = Object.keys(assistant ?? {}).filter((key) => !required.has(key));
     expect(extras.length).toBeGreaterThan(0);
 
-    const batch = parseLines([JSON.stringify(assistant)]);
-    expect(batch.value.rejections).toEqual([]);
-    for (const key of extras) expect(batch.value.entries[0]).toHaveProperty(key);
+    const batch = batchOf([JSON.stringify(assistant)]);
+    expect(batch.rejections).toEqual([]);
+    for (const key of extras) expect(batch.entries[0]).toHaveProperty(key);
   });
 
   it('tolerates the absence of requestId and message.diagnostics', async () => {

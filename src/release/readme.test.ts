@@ -73,7 +73,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
-import { PINNED_CC_VERSION, VERSION_WINDOW, versionWindow } from '../parser/fingerprint.js';
+import {
+  PINNED_CC_VERSION,
+  VERSION_WINDOW,
+  isVersionAccepted,
+  versionWindow,
+} from '../parser/fingerprint.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -311,19 +316,30 @@ describe('the hook paste block', () => {
 
 describe('the version badge is accurate against the shipped constants', () => {
   const window = versionWindow();
+  /**
+   * The ends of the accepted range. The patch position is a literal `x`
+   * because since 2026-08-26 there IS no patch bound - writing a number there
+   * would be claiming one. See the dated amendment in agent-deck-spec.md.
+   */
   const corners = (): { min: string; max: string } => {
     if (window === undefined) throw new Error('PINNED_CC_VERSION does not parse');
     return {
-      min: `${String(window.major)}.${String(window.minMinor)}.${String(window.minPatch)}`,
-      max: `${String(window.major)}.${String(window.maxMinor)}.${String(window.maxPatch)}`,
+      min: `${String(window.major)}.${String(window.minMinor)}.x`,
+      max: `${String(window.major)}.${String(window.maxMinor)}.x`,
     };
   };
 
   /** `anchor \`x.y.z\``, `Anchor: \`x.y.z\`` - every way this document says it. */
   const ANCHOR_RE = /\banchor(?:ed on)?:?\s+`(\d+\.\d+\.\d+)`/gi;
   const MINOR_RE = /\bminor \+\/-(\d+)/g;
-  const PATCH_RE = /\bpatch \+\/-(\d+)/g;
-  const CORNERS_RE = /`(\d+\.\d+\.\d+)` to `(\d+\.\d+\.\d+)`/g;
+  /**
+   * The patch allowance that no longer exists. This is a NEGATIVE guard: a
+   * `patch +/-N` claim reappearing in the README means either the constant came
+   * back or the document is describing a rule the parser does not implement,
+   * and both of those are the blackout's shape.
+   */
+  const PATCH_CLAIM_RE = /\bpatch \+\/-(\d+)/g;
+  const CORNERS_RE = /`(\d+\.\d+\.x)` to `(\d+\.\d+\.x)`/g;
 
   it('states the anchor version the fingerprint actually uses', () => {
     const stated = [...README.matchAll(ANCHOR_RE)].map((m) => m[1]);
@@ -333,11 +349,18 @@ describe('the version badge is accurate against the shipped constants', () => {
 
   it('states the window tolerances the fingerprint actually uses', () => {
     const minors = [...README.matchAll(MINOR_RE)].map((m) => Number(m[1]));
-    const patches = [...README.matchAll(PATCH_RE)].map((m) => Number(m[1]));
     expect(minors.length).toBeGreaterThan(0);
-    expect(patches.length).toBeGreaterThan(0);
     for (const minor of minors) expect(minor).toBe(VERSION_WINDOW.minor);
-    for (const patch of patches) expect(patch).toBe(VERSION_WINDOW.patch);
+  });
+
+  it('claims no patch tolerance, because there is none', () => {
+    expect(VERSION_WINDOW).not.toHaveProperty('patch');
+    expect([...README.matchAll(PATCH_CLAIM_RE)].map((m) => m[0])).toEqual([]);
+    // Vacuity control: the pattern still matches the sentence it hunts for.
+    // `lastIndex` is reset because the RegExp is /g and shared.
+    PATCH_CLAIM_RE.lastIndex = 0;
+    expect(PATCH_CLAIM_RE.test('major exact, minor +/-1, patch +/-5')).toBe(true);
+    PATCH_CLAIM_RE.lastIndex = 0;
   });
 
   it('states window corners derived from those tolerances', () => {
@@ -350,17 +373,26 @@ describe('the version badge is accurate against the shipped constants', () => {
     }
   });
 
-  it('claims no version literal outside the anchor and the corners', () => {
+  it('names no Claude Code version the shipped parser would refuse', () => {
     // A badge is only accurate if nothing NEXT to it contradicts it. Backticked
-    // `x.y.z` literals are how this document names CC versions; `^1.90.0` and
-    // `>=20` do not match because the backtick is not followed by a digit.
-    const { min, max } = corners();
-    const allowed = new Set([PINNED_CC_VERSION, min, max]);
+    // `x.y.z` literals are how this document names CC versions; `^1.75.0` and
+    // `>=22.22.2` do not match because the backtick is not followed by a digit.
+    //
+    // The rule used to be "the anchor or a corner, and nothing else". It cannot
+    // be that any more: the corners carry an `x` in the patch position, and the
+    // document legitimately cites older releases things were MEASURED on (the
+    // hook-reload note names 2.1.234). What survives the change is the thing
+    // that was always the point - the README must never name a version as
+    // though it worked when the shipped predicate refuses it.
     const literals = [...README.matchAll(/`(\d+\.\d+\.\d+)`/g)].map((m) => m[1] ?? '');
     expect(literals.length).toBeGreaterThan(0);
     for (const literal of literals) {
-      expect(allowed.has(literal), `unexplained version literal ${literal}`).toBe(true);
+      expect(isVersionAccepted(literal), `README names refused version ${literal}`).toBe(true);
     }
+    // ...and the anchor is one of them, so the badge is not merely silent.
+    expect(literals).toContain(PINNED_CC_VERSION);
+    // Vacuity control: the predicate does refuse something.
+    expect(isVersionAccepted('4.4.0')).toBe(false);
   });
 
   it('says the window is a window, not a single supported version', () => {
@@ -516,35 +548,70 @@ describe('agent-deck-spec.md restates the superseded version posture nowhere', (
   });
 });
 
-describe('agent-deck-spec.md section 3 no longer contradicts the product', () => {
-  /** Section 3 only: heading through the start of section 4. */
-  const section3 = ((): string => {
-    const start = SPEC.indexOf('## 3. Observation model');
-    const end = SPEC.indexOf('\n## 4.', start);
-    if (start < 0 || end <= start) {
-      throw new Error('agent-deck-spec.md section 3 could not be located');
-    }
-    return SPEC.slice(start, end);
+/**
+ * The spec is amended FORWARD-ONLY: earlier sections are left as written so the
+ * record of what was believed when stays readable, and a dated section at the
+ * end says what the product does now. That makes the LAST dated amendment the
+ * one these guards must read - pointing them at section 3 would pin the
+ * document to a posture it explicitly supersedes.
+ *
+ * Section 3 is not left unguarded: the test below asserts the amendment names
+ * it as superseded and quotes the numbers it retired, so a reader who lands on
+ * the older text has a route to the newer one.
+ */
+describe('the spec version-posture amendment matches the shipped constants', () => {
+  const AMENDMENT_HEADING = '## Amendment 2026-08-26 — Version posture';
+
+  /** The last dated amendment: its heading through the end of the document. */
+  const amendment = ((): string => {
+    const start = SPEC.indexOf(AMENDMENT_HEADING);
+    if (start < 0) throw new Error('the dated version-posture amendment could not be located');
+    return SPEC.slice(start);
   })();
 
-  it('states the same anchor and tolerances as the shipped constants', () => {
-    const anchors = [...section3.matchAll(/\banchor(?:ed on)?:?\s+`(\d+\.\d+\.\d+)`/gi)].map(
+  it('is the last section, so nothing later can quietly contradict it', () => {
+    expect(SPEC.indexOf(AMENDMENT_HEADING)).toBe(SPEC.lastIndexOf(AMENDMENT_HEADING));
+    expect(amendment.includes('\n## ')).toBe(false);
+  });
+
+  it('states the same anchor and tolerance as the shipped constants', () => {
+    const anchors = [...amendment.matchAll(/\banchor(?:ed on)?:?\s+`(\d+\.\d+\.\d+)`/gi)].map(
       (m) => m[1],
     );
     expect(anchors.length).toBeGreaterThan(0);
     for (const anchor of anchors) expect(anchor).toBe(PINNED_CC_VERSION);
 
-    const minors = [...section3.matchAll(/\bminor \+\/-(\d+)/g)].map((m) => Number(m[1]));
-    const patches = [...section3.matchAll(/\bpatch \+\/-(\d+)/g)].map((m) => Number(m[1]));
+    const minors = [...amendment.matchAll(/\bminor \+\/-(\d+)/g)].map((m) => Number(m[1]));
     expect(minors.length).toBeGreaterThan(0);
-    expect(patches.length).toBeGreaterThan(0);
     for (const minor of minors) expect(minor).toBe(VERSION_WINDOW.minor);
-    for (const patch of patches) expect(patch).toBe(VERSION_WINDOW.patch);
+  });
+
+  it('claims no patch tolerance and says so in words', () => {
+    expect(VERSION_WINDOW).not.toHaveProperty('patch');
+    // No live `patch +/-N` claim. The retired one is quoted only as history,
+    // in the sentence that names it as what went wrong.
+    const claims = [...amendment.matchAll(/\bpatch \+\/-(\d+)/g)].map((m) => Number(m[1]));
+    for (const claim of claims) {
+      expect(
+        amendment.includes(`box of patch +/-${String(claim)}`),
+        'a patch tolerance is stated as current rather than as history',
+      ).toBe(true);
+    }
+    expect(amendment).toContain('patch component is not compared');
   });
 
   it('names the module that owns the numbers, and the mid-file refusal code', () => {
-    expect(section3).toContain('src/parser/fingerprint.ts');
-    expect(section3).toContain('versionChangedMidFile');
-    expect(section3).toContain('2026-08-21');
+    expect(amendment).toContain('src/parser/fingerprint.ts');
+    expect(amendment).toContain('versionChangedMidFile');
+    expect(amendment).toContain('2026-08-26');
+  });
+
+  it('supersedes section 3 by name, and names the corpus behind the anchor', () => {
+    // Without this, a reader landing on section 3 would find the retired
+    // numbers with nothing pointing forward. The route has to be in the
+    // document, not only in this test.
+    expect(amendment).toContain('§3');
+    expect(amendment.toLowerCase()).toContain('supersedes');
+    expect(amendment).toContain(`fixtures/cc-${PINNED_CC_VERSION}/`);
   });
 });

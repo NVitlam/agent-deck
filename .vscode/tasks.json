@@ -1,0 +1,27 @@
+{
+  // Explicit build task for the launch configurations.
+  //
+  // launch.json used to say "npm: build", which relies on VS Code's npm task
+  // AUTO-DETECTION. When that does not resolve — auto-detect off, a prompt on
+  // first use, a differently-named script — VS Code refuses to launch and
+  // reports a task error, which looks like the extension failing rather than a
+  // missing task definition. Defining it here makes the reference deterministic.
+  //
+  // `npm run build` emits BOTH bundles: dist/extension.cjs (the host, named
+  // .cjs on purpose — the manifest/format trap this repo already paid for) and
+  // dist/webview/main.{js,css}.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "npm run build",
+      "group": "build",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      }
+    }
+  ]
+}

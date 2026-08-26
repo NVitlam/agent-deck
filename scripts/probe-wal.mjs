@@ -78,7 +78,7 @@ function sizeOf(file) {
 }
 
 function parseArgs(argv) {
-  const opts = { json: null, samples: 20, intervalMs: 3000 };
+  const opts = { json: null, samples: 20, intervalMs: 1500 };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') opts.json = argv[++i] ?? null;
@@ -101,6 +101,7 @@ function sample(dbPath, walPath, shmPath, index) {
   const record = {
     i: index,
     at: new Date(started).toISOString(),
+    dbBytes: sizeOf(dbPath),
     walBytes: sizeOf(walPath),
     shmBytes: sizeOf(shmPath),
     ok: false,
@@ -188,7 +189,7 @@ async function main() {
     console.log(
       `  [${String(i).padStart(2, '0')}] ${r.ok ? 'ok  ' : 'FAIL'} ` +
         `open ${String(r.openMs ?? '-').padStart(4)}ms  total ${String(r.totalMs).padStart(4)}ms  ` +
-        `wal ${String(r.walBytes ?? '-').padStart(9)}  ` +
+        `db ${String(r.dbBytes ?? '-').padStart(9)}  ` +
         `sessions ${String(r.sessionCount ?? '-').padStart(3)}  ` +
         `events ${String(r.eventCount ?? '-').padStart(6)}/max ${r.eventMaxSeq ?? '-'}` +
         (r.ok ? '' : `  ${r.busy ? 'SQLITE_BUSY' : (r.error?.code ?? r.error?.name)}: ${r.error?.message}`),
@@ -199,6 +200,25 @@ async function main() {
   const busy = samples.filter((s) => s.busy);
   const walSizes = samples.map((s) => s.walBytes).filter((n) => typeof n === 'number');
   const walMoved = walSizes.length > 1 && new Set(walSizes).size > 1;
+
+  /**
+   * THE VACUITY CONTROL, and the first version of it was WRONG in the direction
+   * that matters: it keyed on the WAL file's SIZE changing.
+   *
+   * Measured on this machine across 2h08m and three separate probes:
+   * `opencode.db` grew 24,289,280 -> 24,338,432 bytes and the event table gained
+   * 73 rows, while `opencode.db-wal` sat at EXACTLY 4,181,832 bytes throughout.
+   * SQLite reuses WAL frames in place and the file stays at its high-water mark,
+   * so WAL size is not a write indicator at all. A control built on it does not
+   * merely fail to detect writes -- it REJECTS RUNS THAT DID CAPTURE THEM, which
+   * is the expensive direction: the user re-runs a good measurement forever
+   * while being told it proved nothing.
+   *
+   * Writes are detected by what a write actually moves: the event counter, the
+   * per-aggregate max seq, or the main database file's size.
+   */
+  const distinct = (key) => new Set(samples.map((s) => s[key]).filter((n) => typeof n === 'number')).size;
+  const writesObserved = distinct('eventCount') > 1 || distinct('eventMaxSeq') > 1 || distinct('dbBytes') > 1;
 
   const report = {
     probe: 'PLAN v0.5.0 Phase 2 / DoD 2.3 — hot-WAL read-only open, repeated',
@@ -222,6 +242,15 @@ async function main() {
        * §7 is about. If this is false, the run does not close §7.
        */
       walObservedChanging: walMoved,
+      /**
+       * The real control. True only if the database changed under us during the
+       * window, which is the condition contract §7 is actually about.
+       */
+      writesObserved,
+      eventCountFirst: samples[0]?.eventCount ?? null,
+      eventCountLast: samples[samples.length - 1]?.eventCount ?? null,
+      dbBytesFirst: samples[0]?.dbBytes ?? null,
+      dbBytesLast: samples[samples.length - 1]?.dbBytes ?? null,
       openMsMax: Math.max(...samples.map((s) => s.openMs ?? 0)),
     },
   };
@@ -235,15 +264,16 @@ async function main() {
       `${report.summary.failed} failed, ${report.summary.sqliteBusy} SQLITE_BUSY`,
   );
   console.log(
-    `         WAL ${report.summary.walBytesMin}..${report.summary.walBytesMax} bytes, ` +
-      `changing during the run: ${walMoved ? 'YES' : 'NO — this run does not close §7'}`,
+    `         writes landed during the window: ${writesObserved ? 'YES' : 'NO — this run does not close §7'}` +
+      `  (events ${report.summary.eventCountFirst} -> ${report.summary.eventCountLast}, ` +
+      `db ${report.summary.dbBytesFirst} -> ${report.summary.dbBytesLast} bytes)`,
   );
   console.log(`report written to ${outPath}`);
 
   // A failed open is a legitimate measurement, not a script error, so the exit
-  // code reports the vacuity control instead: a run where the WAL never moved
+  // code reports the vacuity control instead: a run in which nothing was written
   // did not test what it claims to test.
-  process.exitCode = walMoved ? 0 : 3;
+  process.exitCode = writesObserved ? 0 : 3;
 }
 
 await main();

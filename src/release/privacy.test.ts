@@ -925,6 +925,72 @@ describe('committed evidence', () => {
     expect(allFiles).not.toContain('docs/evidence/privacy/report.json');
   });
 
+  /* ---------------------------------------------------------------- *
+   * DoD 0.8 item 9 - head freshness, enforced at last.
+   *
+   * The report records the commit it was taken at. Nothing checked that the
+   * commit meant anything, so the artifact could name a hash from a deleted
+   * branch, or predate the very rules it claims to describe. Both happened:
+   * during the v0.1.2 hotfix the report was regenerated INSIDE the commit that
+   * changed `scripts/privacy-sweep.mjs`, so it recorded that commit's parent
+   * and described an inventory one revision out of date.
+   *
+   * "Regenerate it at HEAD" is not implementable and asking for it is the
+   * mistake: a report that quotes its own tree cannot describe the commit that
+   * contains it. Every generation is one commit stale by construction.
+   *
+   * What IS checkable is the thing that actually goes wrong. The verdict is
+   * already live-checked against a fresh sweep above, so content drift is
+   * covered. What was not covered is the CONFIGURATION drifting underneath the
+   * artifact - the allow rules, the corpora, the exemptions - and that changes
+   * in exactly one file. So: the recorded head must be a real commit on this
+   * history, and no commit since it may have touched the sweep script.
+   *
+   * The workflow that satisfies this is the one Phase 0 used: change the sweep,
+   * commit; then regenerate the report, commit. Two commits, and the second
+   * must not touch the script.
+   * ---------------------------------------------------------------- */
+  describe('head freshness', () => {
+    const gitOut = (...args: string[]): string =>
+      execFileSync('git', ['-C', REPO_ROOT, ...args], { encoding: 'utf8' }).trim();
+
+    it('names a commit that exists on this history', () => {
+      expect(evidence.head).toBeTruthy();
+      const head = String(evidence.head);
+      expect(head).toMatch(/^[0-9a-f]{40}$/);
+      // `--is-ancestor` fails loudly on an unknown object, which is the other
+      // half of what this asserts: not merely reachable, but real.
+      expect(() =>
+        execFileSync('git', ['-C', REPO_ROOT, 'merge-base', '--is-ancestor', head, 'HEAD'], {
+          stdio: 'pipe',
+        }),
+      ).not.toThrow();
+    });
+
+    it('describes the CURRENT sweep configuration, not a superseded one', () => {
+      const head = String(evidence.head);
+      const since = gitOut(
+        'log',
+        '--format=%h %s',
+        `${head}..HEAD`,
+        '--',
+        'scripts/privacy-sweep.mjs',
+      );
+      expect(
+        since,
+        'scripts/privacy-sweep.mjs changed after the committed report was generated - ' +
+          'regenerate it: node scripts/privacy-sweep.mjs --json docs/evidence/privacy/report.json',
+      ).toBe('');
+    });
+
+    it('is a real check: the script does have a history to be stale against', () => {
+      // Vacuity control. If the path were mistyped, `git log` would return
+      // nothing forever and the assertion above would pass on every tree.
+      const all = gitOut('log', '--format=%h', '--', 'scripts/privacy-sweep.mjs');
+      expect(all.split('\n').filter((l) => l.length > 0).length).toBeGreaterThan(1);
+    });
+  });
+
   it('the history leg is cheap enough not to need an env gate', () => {
     // Stated as a number rather than an adjective. If this ever fails, gate the
     // history leg and update the docblock at the top of this file - do not

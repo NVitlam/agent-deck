@@ -54,7 +54,12 @@ eslint.config.js
 vitest.config.ts
 package-lock.json
 
-PLAN.md
+# `PLAN*.md`, not `PLAN.md`. A plan under revision lives beside the current one
+# at the repo root for a while under a versioned name, and the exact-set guard
+# in src/release/vsix.test.ts caught `PLAN_v0.5.0.md` being packaged - the same
+# class as the 38 KB mockup that shipped past a `docs/**`-shaped rule, and the
+# same lesson: name the class, not the instance.
+PLAN*.md
 CLAUDE.md
 HANDOVER.md
 agent-deck-spec.md

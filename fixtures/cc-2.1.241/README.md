@@ -65,12 +65,17 @@ in every corpus here.
 
 | Key | Here (`2.1.241`) | `cc-2.1.246/` |
 |---|---|---|
-| `atis` (top-level string) | **present**, 9 lines | present, 1 line |
+| `atis` | **present**, 9 lines | present, 1 line |
 | `requestId` (top-level string) | **absent**, 0 lines | present, 3 lines |
 | `message.diagnostics` | **absent**, 0 lines | present, 3 lines |
 
 None of the three is required by anything, so the pair of corpora disagree about a field in both
 directions and both still parse. That is the whole point of keeping this one.
+
+**`atis` is not a new envelope key, and a shape diff over the first twenty lines will tell you it
+is.** Measured over whole files, in both corpora, every line carrying `atis` is an `atis-latch`
+line — 9 of 9 here, 1 of 1 in `cc-2.1.246/`. It is a field of that record type. `atis` and
+`atis-latch` are one finding, not two.
 
 **Both Windows drive-letter casings occur inside this single file** — the `cwd` values are the same
 path written 61 times with an upper-case `C:` and 25 times with a lower-case `c:`. The recorded

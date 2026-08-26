@@ -90,11 +90,15 @@ All four `REQUIRED_META_FIELDS` present. `toolUseId` names the `tool_use` block 
 transcript, so attribution here is the primary-key join, not an inference. `parentAgentId` is
 absent, which is the rule for `spawnDepth: 1`.
 
-**`atis-latch` is a real 2.1.246 entry type**, and `atis` is a real 2.1.246 top-level field — both
-first seen on 2.1.241 and both still here. The line parser does not know `atis-latch`, so it counts
-it as `unknownType` and skips that one line; the fingerprint tolerates it, because an unrecognised
-record kind is not a layout change. This is the tolerance the version posture rests on and it is
-measured on the anchor itself, not only on the older corpus.
+**`atis-latch` is a real 2.1.246 entry type** — one line here, nine in `cc-2.1.241/`. The line
+parser does not know it, so it counts that line as `unknownType` and skips it; the fingerprint
+tolerates it, because an unrecognised record kind is not a layout change. This is the tolerance the
+version posture rests on, measured on the anchor itself and not only on the older corpus.
+
+**`atis` is a field OF that record, not a new envelope key.** Measured on both corpora: every line
+carrying `atis` is an `atis-latch` line (1 of 1 here, 9 of 9 in `cc-2.1.241/`). A shape diff over
+the first twenty lines reads the other way and is wrong about it — `atis` and `atis-latch` are one
+finding.
 
 **`requestId` (3 lines) and `message.diagnostics` (3 lines) are present here and absent from
 `cc-2.1.241/`.** Neither is required by anything; the pair exists so the two corpora disagree about

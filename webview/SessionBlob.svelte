@@ -27,6 +27,12 @@
   capable of detecting the one failure it exists to detect. An animation hung
   on a class outside that list would pass the control while animating.
 
+  THE ENGINE TAG IS TEXT AND NOTHING ELSE (DoD 5.4). `summary.engine` is
+  already normalised by the store — an absent `SessionState.engine` reads as
+  `'cc'` there, once — so this component holds no default of its own and no
+  second opinion about what an untagged state means. Same construction as
+  `summary.refused`, and for the same reason.
+
   THE CONSTELLATION DOES NOT MOVE, and it is placed OUTSIDE the breathing wrap
   rather than merely left un-classed. A dot is a node that exists, not a node
   that is happening: inheriting the membrane's transform would animate it in
@@ -164,8 +170,20 @@
   const PULSE_RING_GAIN = 6;
   /** Baseline of the session label, below the membrane. Mockup: `y + R + 20`. */
   const LABEL_DY = 20;
-  /** Baseline of the "other workspace" tag, below the label. Mockup: `y + R + 36`. */
-  const TAG_DY = 36;
+  /** Baseline of the engine tag, below the label. The mockup's tag row: `y + R + 36`. */
+  const ENGINE_TAG_DY = 36;
+  /** Distance between one text row and the next, taken from the two above. */
+  const TAG_ROW_DY = ENGINE_TAG_DY - LABEL_DY;
+  /**
+   * Baseline of the "other workspace" tag, one row below the engine tag.
+   *
+   * It used to occupy the mockup's tag row itself. The engine tag (DoD 5.4) is
+   * on EVERY blob and the foreign tag is on a few, so the always-present row
+   * takes the slot directly under the label and the conditional one moves
+   * below it — otherwise every non-foreign blob would write its engine over a
+   * gap. Derived rather than written as 52, so the two rows cannot drift.
+   */
+  const FOREIGN_TAG_DY = ENGINE_TAG_DY + TAG_ROW_DY;
   /** Baseline of the error badge, above the membrane. Mockup: `y - R - 10`. */
   const BADGE_DY = 10;
   /** Radius of one constellation dot. Mockup: `el('circle', { ..., r: 1.6 })`. */
@@ -245,6 +263,7 @@
   class={groupClass}
   data-testid={TESTID.deckBlob}
   data-session-id={summary.sessionId}
+  data-engine={summary.engine}
   data-liveness={shownLiveness}
   data-liveness-inferred={String(degraded)}
   data-foreign={String(foreign)}
@@ -256,7 +275,9 @@
   aria-current={selected}
   role="button"
   tabindex="0"
-  aria-label={`${summary.label} — ${shownLiveness}${foreign ? ', other workspace' : ''}${
+  aria-label={`${summary.label} — ${shownLiveness}, ${summary.engine}${
+    foreign ? ', other workspace' : ''
+  }${
     summary.errorCount > 0
       ? `, ${summary.errorCount} tool ${summary.errorCount === 1 ? 'error' : 'errors'}`
       : ''
@@ -300,8 +321,24 @@
   <text class="label" x={placement.x} y={roundCoord(placement.y + placement.R + LABEL_DY)}
     >{summary.label}</text
   >
+  <!-- DoD 5.4, and TEXT ONLY on purpose. How an engine should read on the deck
+       is a Phase 7 question that `docs/ui/design.md` answers; a half-designed
+       chip here is work that phase would have to undo first. The value is the
+       tag verbatim — `cc` or `opencode` — rather than a prettier label,
+       because a display-name mapping is already the first design decision and
+       this phase is not the one entitled to take it.
+
+       It is NOT conditional on anything, refusal included: G3 withholds the
+       tree, not the identity of who was reading. A cracked blob with no engine
+       named would be the one blob a reader most needs it on. -->
+  <text
+    class="tag"
+    data-engine={summary.engine}
+    x={placement.x}
+    y={roundCoord(placement.y + placement.R + ENGINE_TAG_DY)}>{summary.engine}</text
+  >
   {#if foreign}
-    <text class="tag" x={placement.x} y={roundCoord(placement.y + placement.R + TAG_DY)}
+    <text class="tag" x={placement.x} y={roundCoord(placement.y + placement.R + FOREIGN_TAG_DY)}
       >other workspace</text
     >
   {/if}

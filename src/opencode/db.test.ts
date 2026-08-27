@@ -93,6 +93,34 @@ function copyOfSmallest(): { dir: string; dbPath: string } {
   return { dir, dbPath: copyCorpus(SMALLEST, dir) };
 }
 
+/**
+ * A database TORN mid-file: the fixture's first 40,000 bytes and nothing else.
+ *
+ * Written directly rather than copied-then-truncated. Copying 5,763,072 bytes
+ * to keep 40,000 of them is 99.3% waste, and it is not free: these suites run
+ * concurrently with `src/perf/perf.test.ts`, whose `tailPoll` budget is
+ * filesystem-bound. Measured during this phase — that budget read 7.1 ms with
+ * the perf file run alone and 782.5 ms inside the full suite, against a 150 ms
+ * limit, with the new OpenCode suites copying ~150 MB beside it. The budget was
+ * not widened; the waste was removed.
+ *
+ * A prefix of a real database is exactly what a torn file is, so this is also a
+ * more direct statement of what the test is about.
+ */
+function tornCopy(): { dir: string; dbPath: string } {
+  const dir = scratch();
+  const dbPath = join(dir, OPENCODE_DB_FILENAME);
+  const fd = openSync(corpusDbPath(SMALLEST), 'r');
+  try {
+    const head = Buffer.alloc(40_000);
+    const read = readSync(fd, head, 0, head.length, 0);
+    writeFileSync(dbPath, head.subarray(0, read));
+  } finally {
+    closeSync(fd);
+  }
+  return { dir, dbPath };
+}
+
 function sha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
@@ -266,8 +294,7 @@ describe('the accessor writes nothing', () => {
   });
 
   it('a failed read leaves the file it could not read alone', () => {
-    const { dbPath } = copyOfSmallest();
-    writeFileSync(dbPath, readFileSync(dbPath).subarray(0, 40_000));
+    const { dbPath } = tornCopy();
     const before = sha256(dbPath);
     const read = readParts(dbPath);
     expect(read.ok).toBe(false);
@@ -323,8 +350,7 @@ describe('a store the engine cannot read degrades, and never throws', () => {
   });
 
   it('a database torn mid-file is databaseCorrupt', () => {
-    const { dbPath } = copyOfSmallest();
-    writeFileSync(dbPath, readFileSync(dbPath).subarray(0, 40_000));
+    const { dbPath } = tornCopy();
     const read = readDatabase(dbPath);
     expect(read.ok).toBe(false);
     if (!read.ok) {

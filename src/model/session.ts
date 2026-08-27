@@ -314,7 +314,9 @@ function diffNode(prev: TreeNode, next: TreeNode, ops: TreeOp[]): void {
     if (child === undefined) continue;
     const before = prevById.get(child.id);
     if (before === undefined) {
-      ops.push({ op: 'insertNode', parentId: prev.id, index: i, node: child });
+      // DoD 5.5.1: a SIBLING ANCHOR, never an index. See `events.ts`.
+      const previousSibling = i === 0 ? null : (next.children[i - 1]?.id ?? null);
+      ops.push({ op: 'insertNode', parentId: prev.id, afterId: previousSibling, node: child });
       continue;
     }
     diffNode(before, child, ops);

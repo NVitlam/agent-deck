@@ -56,6 +56,7 @@ import type {
   PanelSurface,
   Unsubscribe,
 } from './extension.js';
+import type { WebviewToHostMessage } from './model/events.js';
 import { webviewHtml } from './bridge/html.js';
 import { DEFAULT_PREVIEW_BYTES as GRAFTER_DEFAULT_PREVIEW_BYTES } from './model/graft.js';
 import type { GraftSessionResult } from './model/graft.js';
@@ -1000,6 +1001,121 @@ describe('PanelController', () => {
       controller.publish(emission([state('s1')]));
     }).not.toThrow();
     expect(controller.bridge.counters.postFailures).toBeGreaterThan(0);
+    controller.dispose();
+  });
+
+  // -------------------------------------------------------------------------
+  // DoD 5.5.2 — the host half of the resync contract
+  // -------------------------------------------------------------------------
+
+  /**
+   * The repair the renderer could not ask for before Phase 5.5.
+   *
+   * `onDidBecomeVisible` already did exactly this for a panel RELOAD, and the
+   * two are the same repair for opposite reasons: a reload is the editor
+   * tearing the document down, which is normal, and a resync is the renderer
+   * reporting that a patch did not apply, which is not. Counted separately so
+   * one cannot hide inside the other.
+   */
+  it('a resyncRequest resets the bridge, re-snapshots, and is counted', () => {
+    const panel = fakePanel();
+    let snapshotsAsked = 0;
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {
+        snapshotsAsked += 1;
+      },
+    });
+
+    // The webview has been sent its one snapshot; the bridge now believes it
+    // knows what the renderer holds, and a second publish of the same state
+    // therefore sends nothing.
+    controller.publish(emission([state('s1')]));
+    controller.publish(emission([state('s1')]));
+    expect(controller.bridge.counters.snapshotsSent).toBe(1);
+    expect(controller.counters.resyncs).toBe(0);
+
+    panel.fireMessage({
+      type: 'resyncRequest',
+      reason: 'updateTool: no node with id ghost',
+      failedOp: 'updateTool',
+      sessionId: 's1',
+    });
+
+    expect(controller.counters.resyncs).toBe(1);
+    expect(snapshotsAsked).toBe(1);
+    // The bridge forgot what it thought the renderer had, so the NEXT emission
+    // is a full snapshot rather than a diff against a state that no longer
+    // exists on the other side. Without the reset this publish would send
+    // nothing at all, exactly as the second one above did.
+    controller.publish(emission([state('s1')]));
+    expect(controller.bridge.counters.snapshotsSent).toBe(2);
+    const last = panel.posted[panel.posted.length - 1];
+    expect(last?.type).toBe('degraded');
+    expect(panel.posted.filter((m) => m.type === 'snapshot')).toHaveLength(2);
+
+    controller.dispose();
+  });
+
+  it('an invalid resyncRequest is dropped and repairs nothing', () => {
+    const panel = fakePanel();
+    let snapshotsAsked = 0;
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {
+        snapshotsAsked += 1;
+      },
+    });
+    controller.publish(emission([state('s1')]));
+
+    // `failedOp` outside the closed set; `reason` missing; both refused by the
+    // guard before `#receive` ever branches on the type.
+    panel.fireMessage({ type: 'resyncRequest', reason: 'x', failedOp: 'dropTables' });
+    panel.fireMessage({ type: 'resyncRequest' });
+
+    expect(controller.counters.resyncs).toBe(0);
+    expect(snapshotsAsked).toBe(0);
+    expect(controller.counters.messagesDropped).toBe(2);
+    controller.dispose();
+  });
+
+  it('a resyncRequest still reaches onMessage, so the host can log it', () => {
+    const panel = fakePanel();
+    const seen: WebviewToHostMessage[] = [];
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onMessage: (m) => seen.push(m),
+    });
+    panel.fireMessage({ type: 'resyncRequest', reason: 'insertNode failed', sessionId: 's1' });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.type).toBe('resyncRequest');
+    controller.dispose();
+  });
+
+  it('an onMessage that throws does not stop the repair, which already happened', () => {
+    const panel = fakePanel();
+    let snapshotsAsked = 0;
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {
+        snapshotsAsked += 1;
+      },
+      onMessage: () => {
+        throw new Error('a logger blew up');
+      },
+    });
+    controller.publish(emission([state('s1')]));
+    expect(() => {
+      panel.fireMessage({ type: 'resyncRequest', reason: 'x', sessionId: 's1' });
+    }).not.toThrow();
+    // Order is the assertion: the reset and the snapshot request run BEFORE
+    // the host's handler, so a broken logger cannot cost the user a repair.
+    expect(controller.counters.resyncs).toBe(1);
+    expect(snapshotsAsked).toBe(1);
     controller.dispose();
   });
 });

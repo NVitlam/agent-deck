@@ -295,7 +295,9 @@ function tickPatch(state: SessionState, tick: number): SessionPatch | undefined 
     tree.push({
       op: 'insertNode',
       parentId: 'root',
-      index: state.root.children.length,
+      // Anchor on the current last child rather than naming a position in the
+      // receiver's array.
+      afterId: state.root.children[state.root.children.length - 1]?.id ?? null,
       node: {
         id: `${state.sessionId}-tool-late`,
         toolName: 'Bash',

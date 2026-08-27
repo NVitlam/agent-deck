@@ -27,9 +27,11 @@
  */
 
 import type {
+  ApplyError,
   HostToWebviewMessage,
   SessionState,
   TreeNode,
+  TreeOp,
   WebviewToHostMessage,
 } from '../src/model/events.js';
 import { isAgentNode } from '../src/model/events.js';
@@ -88,6 +90,14 @@ export interface SessionSummary {
 export interface PatchFailure {
   sessionId: string;
   message: string;
+  /**
+   * The op that could not be applied, when exactly one could not.
+   *
+   * Carried so the host's diagnostics channel can name it (DoD 5.5.3) without
+   * the webview shipping the op's payload across the boundary — the payload is
+   * renderer-side data and the host has no business trusting it.
+   */
+  op?: TreeOp['op'];
 }
 
 /**
@@ -111,6 +121,16 @@ export interface WebviewView {
    * since. Surfaced quietly; the host is required to send a fresh snapshot.
    */
   patchFailure?: PatchFailure;
+  /**
+   * How many times a resync this store ASKED FOR has been answered with a
+   * snapshot (DoD 5.5.2).
+   *
+   * Counted here as well as on the host because the two numbers answer
+   * different questions: the host's counts requests it received, this one
+   * counts repairs that actually landed. They disagree exactly when a request
+   * is lost, which is the failure this whole phase exists to make visible.
+   */
+  resyncs: number;
   /**
    * Node ids of the selected session whose expansion the user has TOGGLED
    * AWAY FROM ITS DEFAULT — not the set of expanded nodes.
@@ -317,6 +337,29 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
 
 export function createStore(postIntent: IntentSink = () => {}): Store {
   const sessions = new Map<string, SessionState>();
+  /** Set between asking for a resync and the snapshot that answers it. */
+  let resyncPending = false;
+  let resyncs = 0;
+
+  /**
+   * Record a patch failure and ask the host for a snapshot.
+   *
+   * One request per divergence episode: `resyncPending` gates it, so a burst
+   * of failing diffs produces one request rather than one per diff. A renderer
+   * that machine-guns the host is a renderer the host will start ignoring.
+   */
+  const failPatch = (failure: PatchFailure, reason: string): void => {
+    patchFailure = failure;
+    if (resyncPending) return;
+    resyncPending = true;
+    const request: WebviewToHostMessage = {
+      type: 'resyncRequest',
+      reason,
+      sessionId: failure.sessionId,
+    };
+    if (failure.op !== undefined) request.failedOp = failure.op;
+    postIntent(request);
+  };
   /** Session order as the host sent it; a Map preserves it, but be explicit. */
   let order: string[] = [];
   const mismatched = new Set<string>();
@@ -399,6 +442,15 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     }
     // A snapshot is the host's authoritative re-statement, so any earlier
     // failed patch is now moot.
+    //
+    // DoD 5.5.2: if we ASKED for this, count the repair. `resyncPending` is
+    // cleared here and nowhere else, so the counter measures snapshots that
+    // answered a request rather than snapshots in general — the host sends
+    // those for its own reasons too (a session appearing, a panel reload).
+    if (resyncPending) {
+      resyncs += 1;
+      resyncPending = false;
+    }
     patchFailure = undefined;
 
     if (selectedSessionId === undefined || !seen.has(selectedSessionId)) {
@@ -453,6 +505,7 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         deckView: { ...deckView },
         blobNudges,
         canvasView: { ...canvasView },
+        resyncs,
       };
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
       if (selected !== undefined) view.selected = selected;
@@ -488,24 +541,54 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
           if (prev === undefined) {
             // A diff for a session we have never seen. Not fatal: the host
             // re-snapshots, and guessing a base state would fabricate a tree.
-            patchFailure = {
-              sessionId: message.sessionId,
-              message: 'diff for an unknown session; waiting for a snapshot',
-            };
+            failPatch(
+              { sessionId: message.sessionId, message: 'diff for an unknown session' },
+              'diff for an unknown session',
+            );
             break;
           }
+          // DoD 5.5.1. Divergence no longer throws: every op that CAN be
+          // applied is, and the ones that cannot are reported here. Keeping
+          // the partial result is the point — the alternative, which `0.1.2`
+          // shipped, is to discard the whole patch, keep a stale tree, and
+          // apply the next patch to that same stale base. That is how a
+          // one-node gap becomes a session-long divergence.
+          const errors: ApplyError[] = [];
           try {
-            sessions.set(message.sessionId, applySessionPatch(prev, message.patch));
-            patchFailure = undefined;
+            const next = applySessionPatch(prev, message.patch, {
+              onError: (e) => errors.push(e),
+            });
+            sessions.set(message.sessionId, next);
           } catch (error: unknown) {
-            // G2/G3: a patch that cannot be applied must not take the webview
-            // down, and must not leave a half-applied tree on screen. Keep the
-            // last good state and say so; the host owes us a snapshot.
-            patchFailure = {
-              sessionId: message.sessionId,
-              message: error instanceof Error ? error.message : String(error),
-            };
+            // Still reachable: a patch that would break the "root is an agent
+            // node" invariant is a producer bug, not divergence, and `apply.ts`
+            // deliberately still throws for it. Keep the last good tree.
+            failPatch(
+              {
+                sessionId: message.sessionId,
+                message: error instanceof Error ? error.message : String(error),
+              },
+              'patch threw',
+            );
+            break;
           }
+          if (errors.length === 0) {
+            patchFailure = undefined;
+            break;
+          }
+          // DoD 5.5.2: tell the host. Before this, the store recorded the
+          // failure, its own comment said "the host owes us a snapshot", and
+          // nothing told the host anything.
+          const first = errors[0];
+          const failure: PatchFailure = {
+            sessionId: message.sessionId,
+            message:
+              errors.length === 1
+                ? `${first?.op ?? 'op'}: ${first?.reason ?? 'unapplicable'}`
+                : `${String(errors.length)} ops could not be applied; first: ${first?.reason ?? 'unapplicable'}`,
+          };
+          if (errors.length === 1 && first !== undefined) failure.op = first.op;
+          failPatch(failure, failure.message);
           break;
         }
         case 'schemaMismatch':

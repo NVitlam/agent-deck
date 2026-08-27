@@ -1,0 +1,65 @@
+{
+  // Extension Development Host launcher.
+  //
+  // This repo had NO .vscode/ at all, so "press F5" was not actually available
+  // — which matters now, because PLAN Phase 2's kill gate (DoD 2.1) can only be
+  // answered from inside a real extension host. `.vscode/**` is already denied
+  // in .vscodeignore, so nothing here reaches the VSIX.
+  //
+  // NOTHING IS INSTALLED. F5 opens a second window that loads the extension
+  // from `dist/` via --extensionDevelopmentPath. The Marketplace build stays
+  // exactly where it is; the probe command exists only in that second window.
+  //
+  // `preLaunchTask` builds BOTH bundles. `main` is `dist/extension.cjs` and the
+  // webview is `dist/webview/main.{js,css}`; launching against a stale or absent
+  // dist/ is the "manifest and build disagree" class this repo already paid for.
+  //
+  // ORDER IS LOAD-BEARING: bare F5 runs the FIRST configuration. The first one
+  // must be the one that opens THIS FOLDER, because the probe writes its
+  // evidence relative to the dev host's workspace root — a dev host launched
+  // with no folder has no `workspaceFolders`, and probe-sqlite.ts then falls
+  // back to os.tmpdir() rather than docs/evidence/phase-2/.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // THE ONE TO USE FOR THE PHASE 2 PROBE.
+      //
+      // `--disable-extensions` turns off the OTHER installed extensions, not
+      // this one. That matters specifically here: the Marketplace build of
+      // agent-deck is installed on this machine, it shares this extension's id,
+      // and it binds the hook listener on port 47821. Running both at once
+      // invites an EADDRINUSE error dialog that has nothing to do with the
+      // gate and reads like a probe failure. The probe needs no other
+      // extension, so the quiet window is the correct one to measure in.
+      "name": "Probe: Run Extension (this workspace, other extensions off)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extensions",
+        "${workspaceFolder}"
+      ],
+      "outFiles": ["${workspaceFolder}/dist/**/*.cjs"],
+      "preLaunchTask": "build"
+    },
+    {
+      // Normal development: this folder, other extensions left alone.
+      "name": "Run Extension (this workspace)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/dist/**/*.cjs"],
+      "preLaunchTask": "build"
+    },
+    {
+      // Empty dev host. Deliberately last: useful for testing the
+      // "no folder open" activation path, useless for the probe.
+      "name": "Run Extension (no folder)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/dist/**/*.cjs"],
+      "preLaunchTask": "build"
+    }
+  ]
+}

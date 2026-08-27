@@ -694,7 +694,8 @@ describe('SessionSummary.nodeCount', () => {
           {
             op: 'insertNode',
             parentId: 'root',
-            index: 3,
+            // A sibling anchor, not an index. `null` is "first child".
+            afterId: 'tool-agent-1',
             node: { id: 'tool-new', toolName: 'Glob', status: 'running', inputPreview: '{}' },
           },
         ],

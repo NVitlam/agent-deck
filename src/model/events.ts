@@ -241,8 +241,27 @@ export type TreeOp =
   | { op: 'replaceRoot'; node: AgentNode }
   /** Replace the node with this id, and its whole subtree, in place. */
   | { op: 'replaceNode'; id: string; node: TreeNode }
-  /** Insert under `parentId` at `index` in the resulting child list. */
-  | { op: 'insertNode'; parentId: string; index: number; node: TreeNode }
+  /**
+   * Insert `node` under `parentId`, immediately after the sibling named by
+   * `afterId`; `afterId: null` means "first child".
+   *
+   * **A SIBLING ANCHOR, NEVER AN INDEX. This field used to be `index: number`,
+   * and that is the defect `AUDIT-2026-08-27` section 7.3 identified as the
+   * strongest candidate for the loss the shipped `0.1.2` was reported to
+   * produce.** An index is a statement about the receiver's array, so the
+   * moment the receiver's child list is one node short — because one earlier
+   * op could not be applied — every later insert lands in the wrong place and
+   * every later `updateTool` addresses a node that is not there. The error
+   * does not stay one node wide; it compounds for the life of the session,
+   * which is exactly the "the loss grew as the session went on" the user
+   * reported.
+   *
+   * An anchor degrades instead: an unknown `afterId` appends, which is wrong
+   * in ORDER and right in MEMBERSHIP, and order is recoverable from the very
+   * next `reorderChildren` or from a resync. Membership is not recoverable at
+   * all once a node has been dropped.
+   */
+  | { op: 'insertNode'; parentId: string; afterId: string | null; node: TreeNode }
   /** Detach the node with this id, and its subtree, from wherever it is. */
   | { op: 'removeNode'; id: string }
   /** Set `parentId`'s child order; `order` must be the resulting id set. */
@@ -308,7 +327,58 @@ export interface SelectSessionMessage {
   sessionId: string;
 }
 
-export type WebviewToHostMessage = ExpandNodeMessage | SelectSessionMessage;
+/**
+ * The webview telling the host that it could not apply a patch and needs a
+ * fresh snapshot.
+ *
+ * **The ONE new host<->webview message type permitted in v0.5.0**, and it
+ * amends DoD 5.1's "no new host<->webview message types" — recorded at
+ * `PLAN.md` Phase 5.5 DoD 5.5.2 rather than assumed here.
+ *
+ * Why it has to exist. Before it, `webview/store.ts` recorded a `patchFailure`
+ * and its own comment said "the host owes us a snapshot" — while nothing told
+ * the host anything. The host applies every patch to its own copy first and
+ * re-snapshots when *its* apply fails, so a divergence that exists only on the
+ * webview side was invisible to the only party that could repair it. The
+ * webview then applied every later diff to a base the host did not have.
+ *
+ * `failedOp` is the op NAME, never the payload: this message travels from an
+ * untrusted renderer to the host, and a name from a closed set is a thing the
+ * host can validate. Absent when the failure was not attributable to one op.
+ */
+export interface ResyncRequestMessage {
+  type: 'resyncRequest';
+  /** Free text for the diagnostics channel. Never parsed, never branched on. */
+  reason: string;
+  /** The `TreeOp['op']` that could not be applied, when there was exactly one. */
+  failedOp?: TreeOp['op'];
+  /** The session whose patch failed, when the failure named one. */
+  sessionId?: string;
+}
+
+export type WebviewToHostMessage =
+  | ExpandNodeMessage
+  | SelectSessionMessage
+  | ResyncRequestMessage;
+
+/**
+ * One tree op that could not be applied, reported instead of thrown.
+ *
+ * DoD 5.5.1: "a patch whose target id is absent is an explicit `applyError`
+ * with the op and id, not a throw". The distinction is deliberate and narrow —
+ * a MISSING TARGET is a divergence, which is recoverable by resync, while a
+ * structurally impossible patch (a tool node offered as the root) is a bug in
+ * the producer and still throws. Turning the second into a soft error would
+ * hide a defect in code that runs on both sides of the wire.
+ */
+export interface ApplyError {
+  /** The op that could not be applied. */
+  op: TreeOp['op'];
+  /** The id the op addressed, when it addressed one. */
+  id?: string;
+  /** Human-readable, for the diagnostics channel. Never parsed. */
+  reason: string;
+}
 
 // ---------------------------------------------------------------------------
 // (c) Parser-facing types

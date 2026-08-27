@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import type { SessionState } from '../model/events.js';
+import type { ApplyError, SessionState } from '../model/events.js';
 import { SessionPatchError, applySessionPatch, deepFreeze, parkedOf } from './apply.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -222,11 +222,35 @@ describe('applySessionPatch — the properties the bridge relies on', () => {
     spawnEdges: [],
   });
 
-  it('throws SessionPatchError on a patch that cannot be applied', () => {
+  /**
+   * `0.1.3` changed what "cannot be applied" COSTS. An op addressing an id this
+   * tree does not have is DIVERGENCE — reported, skipped, survivable — and only
+   * a patch that would leave the session without an agent root is still fatal.
+   * Both halves are asserted, because the whole value of the change is in the
+   * difference between them.
+   */
+  it('reports a divergent op and throws only on a broken root invariant', () => {
+    const errors: ApplyError[] = [];
+    const next = applySessionPatch(
+      base,
+      { tree: [{ op: 'updateAgent', id: 'ghost', fields: { status: 'done' } }] },
+      { onError: (e) => errors.push(e) },
+    );
+    expect(errors).toEqual([
+      { op: 'updateAgent', id: 'ghost', reason: 'no node with id ghost' },
+    ]);
+    // Skipped, not half-applied: the tree is what it was.
+    expect(next.root.status).toBe('running');
+    // And with no reporter it is silent rather than fatal — the property that
+    // lets a renderer call this without somewhere to put an exception.
     expect(() =>
       applySessionPatch(base, {
         tree: [{ op: 'updateAgent', id: 'ghost', fields: { status: 'done' } }],
       }),
+    ).not.toThrow();
+
+    expect(() =>
+      applySessionPatch(base, { tree: [{ op: 'removeNode', id: base.root.id }] }),
     ).toThrow(SessionPatchError);
   });
 

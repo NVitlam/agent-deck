@@ -90,6 +90,12 @@ describe('timed replay of a real session (DoD 5.5.5)', () => {
     // order of magnitude, on one large tree, which is the regime the reported
     // defect lived in.
     expect(diffs.length).toBeGreaterThan(100);
+    // Exact, because REPRO.md quotes it. The corpus is a committed,
+    // content-addressed artifact, not a fixture directory that grows on the
+    // next harvest - so the repo's "do not assert fixture-set sizes" rule does
+    // not apply, and an inequality here is what let five of REPRO.md's six
+    // headline figures go unpinned for a whole phase.
+    expect(diffs.length).toBe(107);
     expect(corpus.steps.length).toBe(corpus.events.length);
   });
 
@@ -154,18 +160,25 @@ describe('timed replay of a real session (DoD 5.5.5)', () => {
 function replayWithDrop(dropIndex: number, policy: 'legacy' | 'phase55'): {
   tools: number;
   frozenAfter: number | null;
+  /** Diffs whose patch was thrown away whole. `0.1.2`'s policy; 0 under 5.5. */
+  discarded: number;
+  /** Diffs actually delivered - every diff except the dropped one. */
+  delivered: number;
 } {
   const store = createStore();
   // Legacy policy runs its own reducer loop so the store's new behaviour
   // cannot leak into it.
   let legacyState: SessionState | undefined;
   let frozenAfter: number | null = null;
+  let discarded = 0;
+  let delivered = 0;
   let index = 0;
 
   for (const event of corpus.events) {
     const message = event.message;
     const dropped = index === dropIndex && message.type === 'diff';
     index += 1;
+    if (message.type === 'diff' && !dropped) delivered += 1;
 
     if (policy === 'phase55') {
       if (dropped) continue;
@@ -187,6 +200,7 @@ function replayWithDrop(dropIndex: number, policy: 'legacy' | 'phase55'): {
     if (errors.length > 0) {
       // 0.1.2: discard the whole patch, keep the last good tree, say nothing.
       if (frozenAfter === null) frozenAfter = index - 1;
+      discarded += 1;
       continue;
     }
     legacyState = next;
@@ -194,7 +208,7 @@ function replayWithDrop(dropIndex: number, policy: 'legacy' | 'phase55'): {
 
   const tools =
     policy === 'phase55' ? toolsInView(store.getView().selected) : toolsInView(legacyState);
-  return { tools, frozenAfter };
+  return { tools, frozenAfter, discarded, delivered };
 }
 
 describe('the 0.1.2 defect, reproduced (DoD 5.5.5)', () => {
@@ -226,6 +240,38 @@ describe('the 0.1.2 defect, reproduced (DoD 5.5.5)', () => {
     expect(fixed.tools).toBeGreaterThan(legacy.tools + 10);
     // The legacy replay froze, and it froze early.
     expect(legacy.frozenAfter).not.toBeNull();
+
+    /*
+     * EVERY FIGURE REPRO.md's MEASUREMENT TABLE QUOTES, PINNED EXACTLY.
+     *
+     * Added 2026-08-27 after a `phase-verifier` audit of that document.
+     * REPRO.md's closing line claimed "every number above is printed by the
+     * test file named in Reproducing this". It was not: the file printed
+     * nothing and pinned two of the six, the rest resting on the
+     * inequalities above. All six were TRUE - the auditor re-derived them
+     * independently - and `expect(fixed.tools).toBeGreaterThan(legacy.tools
+     * + 10)` passes at 244 and equally at 20, so the document's evidence
+     * was a claim about a test rather than a test.
+     *
+     * That is this repo's most-recorded defect class (a vacuous assertion
+     * that reads as proof) reached through documentation rather than code.
+     * The inequalities stay: they say what the PROPERTY is, and survive a
+     * re-record of the corpus. The equalities say what this corpus MEASURED,
+     * and they are what REPRO.md is allowed to quote.
+     */
+    expect(drop).toBe(2);
+    expect(legacy.delivered).toBe(106);
+    expect(legacy.discarded).toBe(102);
+    expect(legacy.frozenAfter).toBe(3);
+    expect(legacy.tools).toBe(0);
+    expect(fixed.tools).toBe(244);
+    // Same delivered set under both policies - the one variable is what
+    // happens to a diff that does not apply, not how many arrive.
+    expect(fixed.delivered).toBe(106);
+    // Zero BY CONSTRUCTION under 5.5, not by measurement: the new reducer
+    // has no discard path at all. Asserted so a future reducer that quietly
+    // grows one fails here rather than in a user's session.
+    expect(fixed.discarded).toBe(0);
   });
 
   it('the fixed store asks the host for a snapshot instead of going quiet', () => {

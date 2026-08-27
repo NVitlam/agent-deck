@@ -495,6 +495,12 @@ describe('4 - G8: every captured row belongs to this repository', () => {
         ).toBe(true);
       }
     },
+    // Rule 14. `repoIdentityRoots` resolves real paths, and the FIRST call in
+    // a worker pays for every one after it: this case measures 67 ms for the
+    // second corpus and timed out at the 5 s default for the first, under
+    // whole-suite load. Same class as the six hooks Phase 5.5's suite-integrity
+    // commit budgeted, arriving on an `it` instead of a `beforeAll`.
+    120_000,
   );
 
   it('the drive-letter case trap is actually handled, not merely claimed', () => {

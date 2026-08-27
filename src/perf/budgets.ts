@@ -236,6 +236,56 @@ export const TIMING_BUDGETS: readonly TimingBudget[] = [
  * 1.10 leaves ~80x headroom over that drift while still catching a leak of
  * roughly 120 KB or more per update cycle on a 42 MB floor.
  */
+/**
+ * The whole-session graft of a REAL captured session — PLAN.md Phase 5.5,
+ * DoD 5.5.7.
+ *
+ * WHY A SECOND CORPUS AT ALL. Every timing above is measured on
+ * `fixtures/synthetic-perf`, which is generated: 10,400 lines built to a shape
+ * this repo chose. That is the right instrument for a regression tripwire and
+ * the wrong one for "does this hold on data Claude Code actually wrote". DoD
+ * 5.5.7 asks for both, and `fixtures/synthetic-dropped-actions/` is the real
+ * half — 977 lines, 3.1 MB, 246 tool calls across a main transcript and two
+ * subagents, captured from an eight-hour session.
+ *
+ * WHAT IT MEASURES: one `graftSession` over that corpus, which is exactly what
+ * `AgentDeckDataPath.#graft` does on every append. Not the whole post-append
+ * rig — that is the synthetic corpus's job and doubling it would double the
+ * suite's critical path for a second copy of the same three stages.
+ *
+ * MEASURED 2026-08-27, 10 samples after 2 warmups, nothing else running:
+ * min 50.2, median 55.7, max 64.7 ms. The limit is 400, a 7.2x margin, chosen
+ * once and not to be widened — the rule that survived three phases of
+ * temptation on the two budgets above.
+ *
+ * THE DoD'S CONDITIONAL DID NOT TRIGGER, and that is worth recording rather
+ * than leaving as an absence. 5.5.7 says "if `#graft`'s full re-read per append
+ * is what's over budget, make the re-read incremental per transcript". Nothing
+ * is over budget: the re-read of the real corpus is 55.7 ms and the synthetic
+ * corpus's `.graft` stage is 322.8 ms against a 2500 ms limit. So the
+ * incremental re-read was NOT built, deliberately — it would trade the G3
+ * property `perf.test.ts` pins behaviourally (`parsedLines >= mainLines`: the
+ * graft reads the WHOLE session, so no content is accepted before the layout is
+ * asserted) for latency nothing is asking for.
+ */
+export const REAL_CORPUS_GRAFT_BUDGET: TimingBudget = {
+  id: 'realCorpus.graft.dod',
+  what: 'graft',
+  statistic: 'median',
+  limitMs: 400,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 55.7,
+    on: 'fixtures/synthetic-dropped-actions, 977 lines / 3.1 MB / 246 tool nodes, 2026-08-27',
+    marginX: 7.2,
+    note:
+      'One whole-session graftSession, which is what #graft does per append. ' +
+      '10 samples after 2 warmups: min 50.2, median 55.7, max 64.7. The margin ' +
+      'is deliberate headroom for a slower machine, not room to grow into.',
+  },
+};
+
 export const HEAP_FLOOR_RATIO_LIMIT = 1.1;
 
 /**

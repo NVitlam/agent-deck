@@ -172,6 +172,23 @@ const ALLOW_RULES = [
       'ids ARE the data under test.',
   },
   {
+    id: 'capture-dropped-actions',
+    prefixes: ['fixtures/synthetic-dropped-actions/'],
+    reason:
+      'The session AUDIT-2026-08-27 section 7 was written about: a real CC ' +
+      '2.1.246 orchestration, 8h11m, 121 main tool calls and two subagent ' +
+      'transcripts, kept so the liveness-integrity work has the corpus the ' +
+      'defect was actually reported against. ' +
+      'scripts/redact-paths.mjs has already run over it - 5,727 absolute ' +
+      'paths replaced with <HOME>, the username and machine name with ' +
+      'placeholders, verified idempotent on a second run. What SURVIVES and ' +
+      'needs this rule is the Claude Code PROJECT SLUG, which carries the ' +
+      'developer name and is a join key: projectSlug is derived from it and ' +
+      'src/opencode/slug.ts pins the two engines\' agreement on it, so ' +
+      'rewriting it would destroy the thing the corpus is for. Same treatment ' +
+      'and same reasoning as the cc-* corpora above.',
+  },
+  {
     id: 'synthetic-structure-2.1.246',
     prefixes: ['fixtures/synthetic-structure-2.1.246/'],
     reason:

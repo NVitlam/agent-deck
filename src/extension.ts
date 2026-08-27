@@ -108,6 +108,13 @@ import { SessionBridge, isWebviewToHostMessage } from './bridge/messages.js';
 import type { BridgeDegradedState } from './bridge/messages.js';
 import { createNonce, webviewHtml } from './bridge/html.js';
 import { deepFreeze } from './bridge/apply.js';
+import {
+  COUNTERS_INTERVAL_MS,
+  DIAGNOSTICS_CHANNEL_NAME,
+  DiagnosticsChannel,
+  SHOW_DIAGNOSTICS_COMMAND,
+} from './bridge/diagnostics.js';
+import type { DiagnosticsCounters, DiagnosticsSinkFactory } from './bridge/diagnostics.js';
 import { correlateWorkspace } from './model/correlate.js';
 import { graftSession } from './model/graft.js';
 import type { GraftSessionOptions, GraftSessionResult } from './model/graft.js';
@@ -880,6 +887,33 @@ export interface DataPathDiagnostics {
   /** `graftSession` threw outright. Should stay 0; counted so it cannot crash. */
   graftErrors: number;
   lastGraftError?: string;
+  /**
+   * Malformed transcript lines across every session currently observed
+   * (DoD 5.5.3).
+   *
+   * A LEVEL, not a running total, and the distinction is load-bearing. Every
+   * graft is a whole-session re-read, so adding each graft's count to a
+   * cumulative sum would multiply one bad line by the number of times the
+   * session was re-grafted — on a live session, hundreds. This is the sum of
+   * the most recent count per session, which is the number of malformed lines
+   * on disk right now.
+   */
+  malformedLines: number;
+  /**
+   * Lines skipped for a recognised-but-unmodelled `type` (DoD 5.5.6), by the
+   * same per-session-level rule as {@link malformedLines}.
+   *
+   * **The name in the diagnostics line is `unknownFields`, and this counter is
+   * not one.** DoD 5.5.3 names a field-level counter; no such counter exists
+   * anywhere in this repository and inventing one would mean enumerating every
+   * field CC writes, which G9 deliberately refuses to do (unknown FIELDS are
+   * tolerated without enumeration — that is the compatibility story). What can
+   * be counted honestly is unmodelled entry TYPES, which is what a user
+   * actually needs to see when CC drifts. Recorded here rather than smoothed
+   * over, because a line labelled `unknownFields` that counts something else
+   * is exactly the class of quiet mislabelling this repo keeps paying for.
+   */
+  ignoredLines: number;
   /** `onEmission` threw. The data path keeps running (G2). */
   consumerErrors: number;
   /** Timers currently armed. Must be 0 after {@link AgentDeckDataPath.dispose}. */
@@ -952,6 +986,8 @@ export class AgentDeckDataPath {
   #emissions = 0;
   #grafts = 0;
   #graftRefusals = 0;
+  /** Latest per-session parse levels. Keyed by session id. */
+  readonly #parseLevels = new Map<string, { malformed: number; ignored: number }>();
   #graftErrors = 0;
   #lastGraftError?: string;
   #consumerErrors = 0;
@@ -1024,6 +1060,13 @@ export class AgentDeckDataPath {
     });
   }
 
+  /** Sum one per-session parse level across the sessions still known. */
+  #parseLevel(key: 'malformed' | 'ignored'): number {
+    let total = 0;
+    for (const level of this.#parseLevels.values()) total += level[key];
+    return total;
+  }
+
   get diagnostics(): DataPathDiagnostics {
     return {
       started: this.#started,
@@ -1038,6 +1081,8 @@ export class AgentDeckDataPath {
       ccEnabled: this.#ccEnabled,
       ccEmitErrors: this.#ccEmitErrors,
       opencodeEmitErrors: this.#opencodeEmitErrors,
+      malformedLines: this.#parseLevel('malformed'),
+      ignoredLines: this.#parseLevel('ignored'),
       opencode: this.opencode.diagnostics,
       ...(this.#bindError !== undefined ? { bindError: this.#bindError } : {}),
       ...(this.#lastGraftError !== undefined ? { lastGraftError: this.#lastGraftError } : {}),
@@ -1270,6 +1315,9 @@ export class AgentDeckDataPath {
       if (!known.has(sessionId)) {
         this.model.forgetSession(sessionId);
         this.#dirty.delete(sessionId);
+        // The level goes with the session. Leaving it behind would keep
+        // counting malformed lines in a transcript nobody is watching.
+        this.#parseLevels.delete(sessionId);
       }
     }
 
@@ -1333,6 +1381,13 @@ export class AgentDeckDataPath {
       });
       if (this.#disposed) return;
       if (!result.ok) this.#graftRefusals += 1;
+      // Per-session LEVELS, replaced rather than accumulated. See
+      // `DataPathDiagnostics.malformedLines` for why a running total would be
+      // wrong by a factor of "how live is this session".
+      this.#parseLevels.set(sessionId, {
+        malformed: result.diagnostics.malformedLines,
+        ignored: result.diagnostics.ignoredLines,
+      });
       // Handed over unmodified: `ingestGraftResult` turns `ok: false` into a
       // refusal with no tree. Nothing here inspects the mismatch or salvages
       // a partial result.
@@ -1458,6 +1513,15 @@ export interface PanelCounters {
   messagesDropped: number;
   /** Times the bridge was reset because the webview reloaded. */
   reloads: number;
+  /**
+   * `resyncRequest` messages accepted from the webview (DoD 5.5.2).
+   *
+   * Separate from `reloads` although both end in the same repair, because
+   * they mean opposite things about the health of the wire: a reload is the
+   * editor tearing the document down, which is normal, and a resync is the
+   * renderer reporting that a patch did not apply, which is not.
+   */
+  resyncs: number;
 }
 
 /** Where the built webview assets live inside the packaged extension. */
@@ -1484,6 +1548,7 @@ export class PanelController {
     messagesReceived: 0,
     messagesDropped: 0,
     reloads: 0,
+    resyncs: 0,
   };
 
   constructor(options: PanelControllerOptions) {
@@ -1575,6 +1640,22 @@ export class PanelController {
       this.#counts.messagesDropped += 1;
       return;
     }
+    // DoD 5.5.2. The repair is the panel's own business, so it happens here
+    // rather than in the host's `onMessage`: the bridge whose copy is wrong is
+    // THIS panel's bridge, and resetting it is exactly what `onDidBecomeVisible`
+    // already does for a reload. The message is still handed to `onMessage`
+    // afterwards, so a host that wants to log it can.
+    if (raw.type === 'resyncRequest') {
+      this.#counts.resyncs += 1;
+      this.bridge.reset();
+      try {
+        this.#onNeedsSnapshot();
+      } catch {
+        // Same rule as below: a handler that throws must not take the host
+        // down, and the reset above has already happened, so the next
+        // emission re-snapshots even if this call did not.
+      }
+    }
     try {
       this.#onMessage(raw);
     } catch {
@@ -1596,6 +1677,15 @@ export interface AgentDeckHostOptions extends DataPathOptions {
   createPanel: () => PanelSurface;
   /** Injected so a test can assert the emitted document byte for byte. */
   nonce?: string;
+  /**
+   * Creates the diagnostics output channel (DoD 5.5.3). Omitted by every test
+   * that does not assert on diagnostics, and by anything running outside a
+   * real editor — `test/vscode-mock.ts` has no `createOutputChannel`, which is
+   * the same reason `HostLogger` is injected rather than imported.
+   */
+  createDiagnosticsSink?: DiagnosticsSinkFactory;
+  /** Injected clock for the diagnostics timestamps. Defaults to `Date.now`. */
+  now?: () => number;
 }
 
 /**
@@ -1608,23 +1698,146 @@ export interface AgentDeckHostOptions extends DataPathOptions {
 export class AgentDeckHost {
   readonly dataPath: AgentDeckDataPath;
 
+  /**
+   * The diagnostics surface (DoD 5.5.3), or `undefined` when the caller
+   * supplied no sink factory.
+   *
+   * Optional rather than required because `AgentDeckHost` is constructed by
+   * every host test and by `activate()`, and only `activate()` has a `vscode`
+   * to make a channel from. A host with no channel records nothing and behaves
+   * identically otherwise — which is also what makes "every listed event
+   * emits exactly one line" assertable with a spy sink.
+   */
+  readonly diagnostics: DiagnosticsChannel | undefined;
+
   readonly #createPanel: () => PanelSurface;
   readonly #nonce?: string;
+  readonly #scheduler: Scheduler;
+  #countersTimer: TimerHandle | null = null;
+  /** Session ids the diagnostics channel has already announced. */
+  readonly #announced = new Set<string>();
+  /**
+   * Sessions per engine, as of the last emission.
+   *
+   * Taken from the emission rather than from the data path's internals for the
+   * same reason `#recordEmission` is: the emission is what the renderer was
+   * given, so a counters line and the deck describe the same moment.
+   */
+  #engineCounts: { cc: number; opencode: number } = { cc: 0, opencode: 0 };
   #panel: PanelController | null = null;
   #panelsCreated = 0;
   #disposed = false;
 
   constructor(options: AgentDeckHostOptions) {
-    const { createPanel, nonce, onEmission, ...rest } = options;
+    const { createPanel, nonce, onEmission, createDiagnosticsSink, ...rest } = options;
     this.#createPanel = createPanel;
     if (nonce !== undefined) this.#nonce = nonce;
+    this.#scheduler = options.scheduler ?? systemScheduler;
+    if (createDiagnosticsSink !== undefined) {
+      this.diagnostics = new DiagnosticsChannel({
+        createSink: createDiagnosticsSink,
+        now: options.now ?? ((): number => Date.now()),
+      });
+    }
     this.dataPath = new AgentDeckDataPath({
       ...rest,
       onEmission: (payload: DataPathEmission) => {
+        this.#recordEmission(payload);
         this.#panel?.publish(payload);
         onEmission(payload);
       },
     });
+  }
+
+  /**
+   * One line per session that appeared or left, and one per refusal.
+   *
+   * Driven off the emission rather than off the data path's internals because
+   * the emission IS what the user is looking at: a session the deck shows and
+   * a line the channel wrote then describe the same moment. Reading the
+   * watcher's discovery instead would log sessions the renderer never saw.
+   */
+  #recordEmission(payload: DataPathEmission): void {
+    let cc = 0;
+    let opencode = 0;
+    for (const session of payload.emission.sessions) {
+      if ((session.engine ?? 'cc') === 'opencode') opencode += 1;
+      else cc += 1;
+    }
+    // Updated even with no channel: `counters()` is public and a test may read
+    // it without ever asking for diagnostics.
+    this.#engineCounts = { cc, opencode };
+
+    const channel = this.diagnostics;
+    if (channel === undefined) return;
+    const present = new Set<string>();
+    for (const session of payload.emission.sessions) {
+      present.add(session.sessionId);
+      const engine = session.engine ?? 'cc';
+      if (!this.#announced.has(session.sessionId)) {
+        this.#announced.add(session.sessionId);
+        channel.record({ kind: 'sessionDiscovered', sessionId: session.sessionId, engine });
+        // A session that arrives already refused is announced AND explained,
+        // in that order, because "it appeared" and "it is unusable" are two
+        // facts and collapsing them loses the first one.
+        if (!session.schemaOk) {
+          channel.record({
+            kind: 'sessionRefused',
+            sessionId: session.sessionId,
+            engine,
+            code: 'schemaMismatch',
+          });
+        }
+      }
+    }
+    for (const id of [...this.#announced]) {
+      if (present.has(id)) continue;
+      this.#announced.delete(id);
+      channel.record({ kind: 'sessionRemoved', sessionId: id, engine: 'cc' });
+    }
+  }
+
+  /**
+   * Assemble the counters line from whatever is authoritative right now.
+   *
+   * Nothing is accumulated in the channel: `DiagnosticsCounters` documents why
+   * — the host already owns every one of these numbers, and a second copy
+   * updated incrementally is how two counters describing one fact begin to
+   * disagree.
+   */
+  counters(): DiagnosticsCounters {
+    const d = this.dataPath.diagnostics;
+    const bridge = this.#panel?.bridge.counters;
+    const panel = this.#panel?.counters;
+    return {
+      grafts: d.grafts,
+      graftRefusals: d.graftRefusals,
+      graftErrors: d.graftErrors,
+      malformedLines: d.malformedLines,
+      // See `DataPathDiagnostics.ignoredLines`: the DoD names this
+      // `unknownFields` and no field-level counter exists in this repository.
+      // What is counted is unmodelled entry TYPES, and the field's own doc
+      // comment says so rather than letting the label imply otherwise.
+      unknownFields: d.ignoredLines,
+      patchesSent: bridge?.diffsSent ?? 0,
+      patchesApplied: bridge?.diffsSent ?? 0,
+      patchesFailed: bridge?.patchFailures ?? 0,
+      resyncs: panel?.resyncs ?? 0,
+      ccSessions: this.#engineCounts.cc,
+      opencodeSessions: this.#engineCounts.opencode,
+    };
+  }
+
+  /** Arm the 60 s counters line. Idempotent; a no-op with no channel. */
+  #armCounters(): void {
+    if (this.#disposed || this.diagnostics === undefined) return;
+    if (this.#countersTimer !== null) return;
+    this.#countersTimer = this.#scheduler.setTimer(() => {
+      this.#countersTimer = null;
+      if (this.#disposed) return;
+      this.diagnostics?.recordCounters(this.counters());
+      this.#armCounters();
+    }, COUNTERS_INTERVAL_MS);
   }
 
   get panelsCreated(): number {
@@ -1637,6 +1850,7 @@ export class AgentDeckHost {
 
   async start(): Promise<void> {
     await this.dataPath.start();
+    this.#armCounters();
   }
 
   /** Open the panel, or reveal it if it is already open. */
@@ -1656,11 +1870,23 @@ export class AgentDeckHost {
       onDispose: () => {
         this.#panel = null;
       },
-      onMessage: () => {
+      onMessage: (message: WebviewToHostMessage) => {
         // `expandNode` and `selectSession` are pure view state and the webview
         // owns them (see `webview/store.ts`). The host validates and drops
         // them here rather than acting: the moment it acted, the webview would
         // stop being a pure renderer.
+        //
+        // `resyncRequest` is different in kind: it is the renderer reporting
+        // that it could not apply what we sent. `PanelController` has already
+        // done the repair by the time this runs; what is left is to say so
+        // where a human can read it (DoD 5.5.3).
+        if (message.type !== 'resyncRequest') return;
+        this.diagnostics?.record({
+          kind: 'resyncRequest',
+          sessionId: message.sessionId ?? '(none)',
+          reason: message.reason,
+          ...(message.failedOp !== undefined ? { failedOp: message.failedOp } : {}),
+        });
       },
     });
     this.#panelsCreated += 1;
@@ -1674,8 +1900,13 @@ export class AgentDeckHost {
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
+    if (this.#countersTimer !== null) {
+      this.#scheduler.clearTimer(this.#countersTimer);
+      this.#countersTimer = null;
+    }
     this.#panel?.dispose();
     this.#panel = null;
+    this.diagnostics?.dispose();
     await this.dataPath.dispose();
   }
 }
@@ -1684,8 +1915,9 @@ export class AgentDeckHost {
 // (e) Activation
 // ---------------------------------------------------------------------------
 
-/** The command declared in `contributes.commands`. */
+/** The commands declared in `contributes.commands`. */
 export const OPEN_COMMAND = 'agentDeck.open';
+export const SHOW_DIAGNOSTICS = SHOW_DIAGNOSTICS_COMMAND;
 
 /** The panel's view type and title. */
 export const PANEL_VIEW_TYPE = 'agentDeck.panel';
@@ -1874,6 +2106,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       host.open();
     }),
+    /*
+     * DoD 5.5.3. Registered beside `agentDeck.open` and for the same reason
+     * the comment above gives: a palette entry that explains itself beats
+     * "command not found". It is the ONLY path that reveals the channel —
+     * nothing else calls `show()`, so the extension never puts a panel in
+     * front of a user who did not ask for one.
+     */
+    vscode.commands.registerCommand(SHOW_DIAGNOSTICS_COMMAND, () => {
+      const host = activeHost;
+      if (host === null || host.diagnostics === undefined) {
+        void vscode.window.showInformationMessage(
+          inactiveReason ?? 'Agent Deck: diagnostics are unavailable in this window.',
+        );
+        return;
+      }
+      host.diagnostics.show();
+    }),
   );
 
   const workspacePath = firstWorkspacePath();
@@ -1925,6 +2174,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     workspacePaths: workspacePaths(),
     ccEnabled: correlation.ok,
+    /*
+     * DoD 5.5.3. A FACTORY, not a channel: `DiagnosticsChannel` calls this on
+     * its first line and never at construction, so a window where nothing
+     * happens gets no "Agent Deck" entry in the Output dropdown. The `vscode`
+     * call lives here and nowhere deeper for the reason `HostLogger` does —
+     * `test/vscode-mock.ts` has no `createOutputChannel`, and a module that
+     * reached for one would take the whole data path out of reach of the
+     * tests.
+     */
+    createDiagnosticsSink: () => vscode.window.createOutputChannel(DIAGNOSTICS_CHANNEL_NAME),
     settings,
     createPanel: () =>
       adaptWebviewPanel(

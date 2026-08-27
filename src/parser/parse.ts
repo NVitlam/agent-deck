@@ -66,6 +66,41 @@ export const KNOWN_ENTRY_TYPES: ReadonlySet<string> = new Set([
   'last-prompt',
 ]);
 
+/**
+ * Entry types CC writes that this model does not read — **recognised, ignored,
+ * and NOT counted as malformed** (DoD 5.5.6).
+ *
+ * MEASURED, not guessed. `AUDIT-2026-08-27` §7.2 parsed all ten transcripts of
+ * one real CC `2.1.246` session — 1,751 lines — and found **84 lines, 4.8% of
+ * the corpus**, rejected for nothing but an unmodelled `type`:
+ *
+ *   atis-latch          42   keys: type, atis, sessionId
+ *   mode                20   keys: type, mode, sessionId
+ *   file-history-delta  13   keys: type, messageId, snapshotMessageId, trackingPath, backup, timestamp
+ *   system               9   keys: parentUuid, isSidechain, type, subtype, hookCount, hookInfos, ...
+ *
+ * **None of the four carries a `tool_use` block**, which is why the tree the
+ * production path builds is complete anyway — the same audit measured 537 tool
+ * nodes against 537 `tool_use` blocks. So this is not a content fix.
+ *
+ * It is a HONESTY fix, and the distinction it draws is the point. "Malformed"
+ * means *this line is broken*; a `mode` entry is not broken, it is a shape CC
+ * added after our fixture anchor and that we have chosen not to model. Filing
+ * the second under the first makes the malformed counter say 84 when the true
+ * answer for this corpus is 0 — and a counter that reads 4.8% on a healthy
+ * session is a counter nobody will believe when it reads 4.8% on a sick one.
+ *
+ * **The structural fingerprint is untouched.** These types are not asserted
+ * on, do not appear in `REQUIRED_ENTRY_FIELDS`, and refuse nothing. G3 is
+ * unchanged: an entry with a type in neither set is still counted and skipped.
+ */
+export const IGNORED_ENTRY_TYPES: ReadonlySet<string> = new Set([
+  'atis-latch',
+  'mode',
+  'file-history-delta',
+  'system',
+]);
+
 // ---------------------------------------------------------------------------
 // Single-line parse
 // ---------------------------------------------------------------------------
@@ -77,6 +112,11 @@ export type LineRejection =
   | 'notAnObject'
   | 'missingType'
   | 'unknownType'
+  /**
+   * A type in {@link IGNORED_ENTRY_TYPES}: recognised, deliberately not
+   * modelled, and **counted separately from malformed** (DoD 5.5.6).
+   */
+  | 'ignoredType'
   | 'loneSurrogate';
 
 export interface LineParseSuccess {
@@ -140,6 +180,12 @@ export function parseLine(text: string, options: ParseOptions = {}): LineParseOu
     };
   }
   if (!KNOWN_ENTRY_TYPES.has(typeValue) && options.allowUnknownTypes !== true) {
+    // DoD 5.5.6. Recognised-and-ignored is checked BEFORE unknown, so a type
+    // this repo has measured lands in its own bucket rather than in the one
+    // that means "broken".
+    if (IGNORED_ENTRY_TYPES.has(typeValue)) {
+      return { ok: false, rejection: 'ignoredType', reason: `ignored type: ${typeValue}` };
+    }
     return { ok: false, rejection: 'unknownType', reason: `unknown type: ${typeValue}` };
   }
 
@@ -177,9 +223,12 @@ export interface ParsedBatch {
 /**
  * Parse many lines, accumulating counters instead of throwing.
  *
- * The counter is exact: feed N bad lines and `diagnostics.malformedLines` is
- * N. `parsedLines` counts successes. The two always sum to the number of lines
- * supplied.
+ * The counters are exact: feed N broken lines and `diagnostics.malformedLines`
+ * is N; feed M lines whose type is in {@link IGNORED_ENTRY_TYPES} and
+ * `diagnostics.ignoredLines` is M. `parsedLines` counts successes. **All
+ * three** sum to the number of lines supplied — a property `parse.test.ts`
+ * asserts, because it is what stops a future third bucket quietly losing
+ * lines.
  *
  * Always `ok: true` — refusing a whole session on a schema mismatch is
  * `fingerprint.ts`'s job, not this module's. A bad line degrades one line.
@@ -209,6 +258,12 @@ export function parseLines(
       report.thinkingFieldsDropped += outcome.report.thinkingFieldsDropped;
       report.truncatedStrings += outcome.report.truncatedStrings;
       report.depthLimited += outcome.report.depthLimited;
+    } else if (outcome.rejection === 'ignoredType') {
+      // Recognised, not modelled, not broken. Counted where it belongs, and
+      // still listed in `rejections` so a caller that wants every skipped line
+      // has one place to look.
+      diagnostics.ignoredLines++;
+      rejections.push({ index, rejection: outcome.rejection, reason: outcome.reason });
     } else {
       diagnostics.malformedLines++;
       rejections.push({ index, rejection: outcome.rejection, reason: outcome.reason });

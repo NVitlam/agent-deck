@@ -513,7 +513,7 @@ describe('DoD 5.3 (2) — a Claude Code parse failure leaves OpenCode sessions u
         code: 'subagentsDirectoryMisnamed',
         reason: 'injected refusal',
       },
-      diagnostics: { malformedLines: 0, parsedLines: 0, skippedFiles: [] },
+      diagnostics: { malformedLines: 0, parsedLines: 0, ignoredLines: 0, skippedFiles: [] },
     };
     const refused = await runOnce({
       cc,

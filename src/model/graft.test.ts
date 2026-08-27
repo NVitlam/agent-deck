@@ -791,7 +791,7 @@ describe('captured topology', () => {
       burnPrompt: 8054 + 18703 + 2 + (4008 + 26757 + 2),
       contextPrompt: 4008 + 26757 + 2,
       contextOut: 1099,
-      /** What `0.1.2`/`0.1.3` displayed for the same agent: `input_tokens` alone. */
+      /** What `0.1.2` displayed for the same agent: `input_tokens` alone. */
       shippedWrongIn: 2 + 2,
     };
     const session = await sessionWhere(

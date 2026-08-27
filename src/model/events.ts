@@ -30,9 +30,14 @@
  * `fixtures/cc-*` corpus it holds for **79 of 116** assistant messages.
  * `fixtures/cc-2.1.241/` — a real captured session against a local GGUF model
  * — carries `input_tokens` of 322, 1262, 3057, 3583, 5646, 12499, 13302 and
- * **65,627**, with BOTH cache fields at 0. So `input_tokens` is not always
- * negligible, prompt caching is not always in play, and any sentence saying
- * "always ~2" is measuring the anchor corpora and calling it Claude Code.
+ * **65,627**. Its `cache_creation_input_tokens` is 0 on all 37 messages, and
+ * its `cache_read_input_tokens` is **non-zero on 31 of the 37, up to
+ * 111,533**; both are zero only on the six `65,627` messages. So
+ * `input_tokens` is not always negligible, prompt caching is not always in
+ * play, and any sentence saying "always ~2" is measuring the anchor corpora
+ * and calling it Claude Code. (A second audit round caught this paragraph's
+ * first draft saying "with BOTH cache fields at 0", which is true of six
+ * messages and not of thirty-one — a correction that over-corrected.)
  * **The sum rule is right either way** — that is the point of summing rather
  * than switching on which field looks populated.
  *
@@ -49,9 +54,14 @@
  *
  * **There is no `window` field, and that is a measurement, not an omission.**
  * The same census looked for any key containing `context`, `window`, `limit`
- * or `max` anywhere under an entry: the only hits are tool INPUTS (`limit: 80`
- * on a Read call). No fixture states a context limit, so Agent Deck states no
- * percentage. A model-name-to-window lookup table would be memory rather than
+ * or `max` anywhere under an entry. Over every `cc-*` corpus the hits are
+ * `input.limit` ×7 and `input.head_limit` ×2 — tool INPUTS, a `Read` call's
+ * own arguments — plus `hookAdditionalContext` ×1, a top-level entry key whose
+ * value is `[]`. **None of them states a context limit**, so Agent Deck states
+ * no percentage. (The `hookAdditionalContext` hit was missing from this list
+ * until a second audit round counted it. It changes nothing about the
+ * decision and everything about whether this paragraph is a measurement or a
+ * recollection.) A model-name-to-window lookup table would be memory rather than
  * fixture, which G6 forbids outright.
  */
 export interface TokenPair {

@@ -183,7 +183,7 @@
              the context LEVEL - the last assistant message's prompt and
              output, which is what fills a window - and `burn` is the running
              total across every distinct message. The shipped single row summed
-             `input_tokens`, which is ~2 per message in every captured fixture,
+             `input_tokens`, which is ~2 per message in the anchor corpora,
              so it under-reported a 42,199-token prompt as 2. -->
         <div class="row" data-testid="inspector-row" data-field="tokens">
           <dt>tokens</dt>

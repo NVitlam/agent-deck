@@ -52,10 +52,12 @@ unchanged.
 
 The deck showed "848 in" for a session Claude Code's own context display put at
 roughly 76% of a one-million-token window. The cause is small and total: Agent
-Deck read `input_tokens` from each message's usage record, and in every Claude
-Code transcript that field is **about 2**. The prompt itself is recorded in two
-other fields, `cache_creation_input_tokens` and `cache_read_input_tokens`, and
-they were not being read. On one committed capture a single message reads
+Deck read `input_tokens` from each message's usage record, and on a Claude
+model with prompt caching that field is **about 2**. The prompt itself is
+recorded in two other fields, `cache_creation_input_tokens` and
+`cache_read_input_tokens`, and they were not being read. (It is not always 2 —
+a session against a local model with no caching puts the whole prompt in
+`input_tokens`. All three are added together, so both cases come out right.) On one committed capture a single message reads
 `2 + 13,390 + 28,807` - and the deck displayed the 2.
 
 The prompt is now all three added together, and it is reported as **two

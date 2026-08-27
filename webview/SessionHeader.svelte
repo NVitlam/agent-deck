@@ -48,7 +48,7 @@
          sum over the tree: a subagent has its own window, so adding them
          answers no question. `burn` is the sum, and it is labelled as one.
          Both replace a single "tokens in" that read `input_tokens` alone -
-         ~2 per message in every captured fixture. -->
+         ~2 per message in the anchor corpora. -->
     <div class="total">
       <dt>context</dt>
       <dd data-testid="header-context">{formatTokens(session.contextNow.prompt)}</dd>

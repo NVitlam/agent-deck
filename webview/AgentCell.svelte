@@ -152,7 +152,8 @@
       : // CONTEXT, not spend. `contextNow.prompt` is the last assistant
         // message's whole prompt - input + both cache components - which is
         // the number that answers "how full is this agent's window". The old
-        // line read `tokens.in`, i.e. `input_tokens` alone, which is ~2 on
+        // line read `tokens.in`, i.e. `input_tokens` alone, which is ~2 in
+        // the anchor corpora on
         // every real message; see `events.ts`'s TokenPair.
         `${formatTokens(agent.contextNow.prompt)} in ctx · ${formatTokens(agent.contextNow.output)} out`,
   );

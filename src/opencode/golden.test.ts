@@ -520,6 +520,110 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
     }
   });
 
+  it('gives a refused session its REAL workspaceMatch, so the deck can show it', () => {
+    /*
+     * THE SEAM, and why a hard-coded `false` was wrong in composition.
+     *
+     * The host filters the deck by `workspaceMatch`, matching what
+     * `SessionModel` does for Claude Code. While `unsupportedSession` hard-coded
+     * `false`, every refused OpenCode session was filtered off the deck: a user
+     * whose OpenCode drifted out of the version window saw NOTHING rather than
+     * an `unsupported` card, which defeats G3 and contradicts this engine's own
+     * rule that a refusal invisible to the renderer is not a refusal.
+     *
+     * Safe because the session refused on `session.version`, a column of the
+     * `session` row, while the match reads `project.worktree` from the
+     * `project` table. Different row, so this is not trusting the shape the
+     * fingerprint rejected.
+     *
+     * The workspace path is READ OFF THE CORPUS, never written as a literal: a
+     * hard-coded absolute path would pin one machine and would put a developer
+     * identifier in a source file.
+     */
+    const { dir, dbPath, refusedIds } = mixedCopy();
+    try {
+      expect(refusedIds.length).toBeGreaterThan(0);
+      const projects = readProjects(dbPath);
+      if (!projects.ok) throw new Error('could not read the project row');
+      const [project] = projects.value;
+      if (project === undefined) throw new Error('the corpus has no project row');
+
+      const matched = readOpenCodeEngine({ dbPath, workspacePaths: [project.worktree] });
+      expect(matched.kind).toBe('ok');
+      if (matched.kind !== 'ok') return;
+
+      const byId = new Map(matched.result.sessions.map((s) => [s.sessionId, s]));
+      for (const id of refusedIds) {
+        const state = byId.get(id);
+        expect(state, `${id} vanished instead of rendering unsupported`).toBeDefined();
+        // The point of the change: visible to a deck that filters on this.
+        expect(state?.workspaceMatch, `${id} workspaceMatch`).toBe(true);
+        // And STILL a refusal. Nothing else moved: no tree, no totals, no slug.
+        expect(state?.liveness).toBe('unsupported');
+        expect(state?.schemaOk).toBe(false);
+        expect(state?.root.children).toStrictEqual([]);
+        expect(state?.totals).toStrictEqual({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+        expect(state?.projectSlug).toBe('');
+        expect(state?.spawnEdges).toStrictEqual([]);
+        expect(state?.parked).toStrictEqual([]);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still reports false for a refused session in a NON-matching workspace', () => {
+    /*
+     * THE CONTROL THAT MAKES THE TEST ABOVE MEAN ANYTHING. Without it, the
+     * change would be indistinguishable from hard-coding `true` — which would
+     * be the same defect inverted, showing a user sessions from a workspace
+     * they do not have open.
+     */
+    const { dir, dbPath, refusedIds } = mixedCopy();
+    try {
+      const foreign = readOpenCodeEngine({ dbPath, workspacePaths: ['D:/somewhere/else'] });
+      expect(foreign.kind).toBe('ok');
+      if (foreign.kind !== 'ok') return;
+
+      const byId = new Map(foreign.result.sessions.map((s) => [s.sessionId, s]));
+      for (const id of refusedIds) {
+        const state = byId.get(id);
+        // Present but unmatched: the refusal is still a session the engine
+        // knows about, it just does not belong to an open folder.
+        expect(state, `${id} vanished`).toBeDefined();
+        expect(state?.workspaceMatch, `${id} workspaceMatch`).toBe(false);
+        expect(state?.liveness).toBe('unsupported');
+      }
+      // The accepted sessions in the same read agree — one predicate, not two.
+      expect(foreign.result.sessions.every((s) => !s.workspaceMatch)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses ONE predicate for accepted and refused sessions alike', () => {
+    // With no `workspacePaths` the host has supplied nothing, and the rule is
+    // `graft.ts`'s `defaultWorkspaceMatch` — project row exists. A refused
+    // session must answer that question the same way an accepted one does;
+    // before this change it answered `false` while its neighbours answered
+    // `true`, which is the drift that produced the seam.
+    const { dir, dbPath, refusedIds } = mixedCopy();
+    try {
+      const outcome = readOpenCodeEngine({ dbPath });
+      expect(outcome.kind).toBe('ok');
+      if (outcome.kind !== 'ok') return;
+      const refusedSet = new Set(refusedIds);
+      const refusedStates = outcome.result.sessions.filter((s) => refusedSet.has(s.sessionId));
+      const acceptedStates = outcome.result.sessions.filter((s) => !refusedSet.has(s.sessionId));
+      expect(refusedStates.length).toBe(refusedIds.length);
+      expect(acceptedStates.length).toBeGreaterThan(0);
+      expect(new Set(outcome.result.sessions.map((s) => s.workspaceMatch)).size).toBe(1);
+      expect(refusedStates.every((s) => s.workspaceMatch)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('degrades with graftFailed when the graft cannot place an accepted row', () => {
     /*
      * The case `graft.ts`'s `@throws` names, driven END TO END through

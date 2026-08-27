@@ -53,7 +53,7 @@ import {
   partitionSessionsByVersion,
 } from './fingerprint.js';
 import type { OcSchemaReport, OcSessionMismatch } from './fingerprint.js';
-import { graftCorpus } from './graft.js';
+import { defaultWorkspaceMatch, graftCorpus } from './graft.js';
 import { parseParts } from './parse.js';
 import { slugFromWorktree } from './slug.js';
 import type { OcEngineResult, OcMismatch, OcProjectRow, OcSessionRow } from './types.js';
@@ -184,6 +184,21 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
   const refusedSessionIds = new Set(partition.refused.map((mismatch) => mismatch.sessionId));
 
   /*
+   * ONE workspace predicate, built once, used by the graft AND by the refusal.
+   *
+   * Passing `defaultWorkspaceMatch` explicitly where the host supplied no
+   * folders is behaviourally identical to omitting it — `graft.ts` falls back
+   * to that exact function — and it is written out here so the accepted and the
+   * refused sessions cannot drift onto two expressions of one rule. Two
+   * agreeing literals is not a contract; that is what produced the seam this
+   * change closes.
+   */
+  const matchWorkspace =
+    options.workspacePaths === undefined
+      ? defaultWorkspaceMatch
+      : workspaceMatcher(options.workspacePaths);
+
+  /*
    * THE ONE TRY/CATCH IN THIS ENGINE, AND THE TRADE IT MAKES.
    *
    * `graftCorpus` throws when a `session` row is reachable as neither a root,
@@ -227,9 +242,7 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
       options: {
         projectSlug: projectSlugOf,
         refusedSessionIds,
-        ...(options.workspacePaths === undefined
-          ? {}
-          : { workspaceMatch: workspaceMatcher(options.workspacePaths) }),
+        workspaceMatch: matchWorkspace,
       },
     });
   } catch (error) {
@@ -277,7 +290,9 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
   );
   const unsupported: SessionState[] = partition.refused
     .filter((mismatch) => refusedRootIds.has(mismatch.sessionId))
-    .map((mismatch) => unsupportedSession(mismatch, read.value.sessions));
+    .map((mismatch) =>
+      unsupportedSession(mismatch, read.value.sessions, read.value.projects, matchWorkspace),
+    );
 
   return {
     kind: 'ok',
@@ -312,17 +327,58 @@ function messageOf(error: unknown): string {
  * Nothing derived from the session's own content appears — no tool nodes, no
  * totals, no label beyond what the row itself says — because the whole reason
  * it refused is that the engine does not trust its shape.
+ *
+ * ---------------------------------------------------------------------------
+ * `workspaceMatch` IS REAL HERE, AND IT IS THE ONE EXCEPTION
+ * ---------------------------------------------------------------------------
+ *
+ * It used to be hard-coded `false`, which was defensible in isolation and wrong
+ * in composition. **The host filters the deck by `workspaceMatch`**, to match
+ * what `SessionModel` does for Claude Code, so a hard `false` filtered every
+ * refused OpenCode session off the deck entirely: a user whose OpenCode version
+ * drifted out of the window saw NOTHING, not an `unsupported` card. That
+ * defeats G3 and contradicts the sentence this file already carries — *a
+ * refusal that is invisible to the renderer is not a refusal*. Neither package
+ * was wrong alone, which is exactly the recorded "a module-boundary partition
+ * produces silent seams, not crashes" class. The CC engine never had the hole,
+ * because `SessionModel` computes the match from the real workspace.
+ *
+ * **Why this does not trust the row that failed.** The session refused on
+ * `session.version` — a column on the `session` row. `project.worktree`, which
+ * is the only thing the match reads, lives in the **`project` table** and is
+ * not what refused. Taking the match from the project row is therefore not
+ * believing the shape the fingerprint rejected; it is answering a question
+ * about a different row entirely. That distinction is the whole licence for
+ * this exception, so it is written here rather than left for the next reader to
+ * reconstruct.
+ *
+ * **The line, and it is not moving.** `projectSlug` stays `''`, the tree stays
+ * empty, the totals stay zero and the label stays whatever the row itself says.
+ * Only the match changes, and only because it comes from another table. This is
+ * not "refused sessions get their content back".
+ *
+ * **Belt and braces, deliberately.** The host is ALSO changed so it never
+ * filters a refusal. That redundancy is the point: neither this file nor the
+ * host should be able to silently reintroduce the hole alone. Do not
+ * "simplify" either half away because the other one covers it.
+ *
+ * A project row that is absent yields `false`, the old behaviour — there is
+ * nothing to derive a match from and inventing one would be a guess.
  */
 function unsupportedSession(
   mismatch: OcSessionMismatch,
   sessions: readonly OcSessionRow[],
+  projects: readonly OcProjectRow[],
+  matchWorkspace: (project: OcProjectRow | undefined) => boolean,
 ): SessionState {
   const row = sessions.find((s) => s.id === mismatch.sessionId);
+  const project =
+    row === undefined ? undefined : projects.find((p) => p.id === row.projectId);
   return {
     sessionId: mismatch.sessionId,
     projectSlug: '',
     engine: 'opencode',
-    workspaceMatch: false,
+    workspaceMatch: matchWorkspace(project),
     liveness: 'unsupported',
     schemaOk: false,
     totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },

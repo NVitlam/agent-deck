@@ -44,6 +44,7 @@ import type {
   RawHookPayload,
   SessionState,
   SubagentMeta,
+  ToolNode,
   TranscriptEntry,
   TreeNode,
 } from './events.js';
@@ -1062,6 +1063,110 @@ describe('snapshot/diff contract', () => {
     roundTrip(prev, next);
   });
 
+  // -------------------------------------------------------------------------
+  // ToolNode.truncated — gate amendment B7
+  // -------------------------------------------------------------------------
+  // The CC engine never sets this flag; the OpenCode engine does. What is at
+  // stake here is not the flag's content but the EXACTNESS of the patch
+  // contract: `events.ts` states that apply(prev, diff(prev, next)) deep-equals
+  // `next` for any two states the model produces, and an optional field the
+  // patch cannot express breaks that property rather than under-reporting it.
+  // So all three transitions are pinned — set, changed, and cleared — and the
+  // clear has to remove the key rather than write `false`.
+
+  it('a tool node gaining truncated round-trips', () => {
+    const prev = baseState();
+    const next = baseState();
+    (next.root.children[0] as ToolNode).truncated = true;
+    const patch = diffSessionState(prev, next);
+    expect(patch?.tree).toContainEqual({
+      op: 'updateTool',
+      id: 't1',
+      fields: { truncated: true },
+    });
+    roundTrip(prev, next);
+  });
+
+  it('a tool node changing truncated from true to false round-trips as false, not as a clear', () => {
+    // `false` is the engine claiming the payload IS whole. That is a different
+    // statement from making no claim at all, and collapsing the two would tell
+    // a renderer a truncated payload is retrievable.
+    const prev = baseState();
+    (prev.root.children[0] as ToolNode).truncated = true;
+    const next = baseState();
+    (next.root.children[0] as ToolNode).truncated = false;
+    const patch = diffSessionState(prev, next);
+    expect(patch?.tree).toContainEqual({
+      op: 'updateTool',
+      id: 't1',
+      fields: { truncated: false },
+    });
+    const applied = applySessionPatch(prev, patch as NonNullable<typeof patch>);
+    expect((applied.root.children[0] as ToolNode).truncated).toBe(false);
+    roundTrip(prev, next);
+  });
+
+  it('a tool node losing truncated emits null and the key really goes away', () => {
+    const prev = baseState();
+    (prev.root.children[0] as ToolNode).truncated = true;
+    const next = baseState();
+    const patch = diffSessionState(prev, next);
+    expect(patch?.tree).toContainEqual({
+      op: 'updateTool',
+      id: 't1',
+      fields: { truncated: null },
+    });
+    const applied = applySessionPatch(prev, patch as NonNullable<typeof patch>);
+    const appliedTool = applied.root.children[0];
+    expect(appliedTool && 'truncated' in appliedTool).toBe(false);
+    roundTrip(prev, next);
+  });
+
+  // -------------------------------------------------------------------------
+  // SessionState.engine — gate amendment B2
+  // -------------------------------------------------------------------------
+  // These states are hand-built on purpose. `diffSessionState` can never see an
+  // engine change from the model — `stateOf` stamps `'cc'` on every state it
+  // produces and nothing can change a session's engine — so the branch is
+  // reachable only from literals. Nothing below claims otherwise.
+
+  it('two states carrying the same engine produce no patch at all', () => {
+    const prev = baseState();
+    prev.engine = 'cc';
+    const next = baseState();
+    next.engine = 'cc';
+    expect(diffSessionState(prev, next)).toBeUndefined();
+  });
+
+  it('an engine change is expressible and round-trips, though no engine produces one', () => {
+    const prev = baseState();
+    prev.engine = 'cc';
+    const next = baseState();
+    next.engine = 'opencode';
+    const patch = diffSessionState(prev, next);
+    expect(patch?.fields).toStrictEqual({ engine: 'opencode' });
+    expect(patch?.tree).toBeUndefined();
+    roundTrip(prev, next);
+  });
+
+  it('a stamped state going back to an UNSTAMPED one is inexpressible, and says nothing', () => {
+    // Recorded rather than papered over. `SessionFieldPatch.engine` has no
+    // `null` — unlike `ToolNodeFieldPatch.truncated` — so "the engine tag went
+    // away" cannot be put on the wire. This is therefore the one state pair for
+    // which apply(prev, diff(prev, next)) does NOT deep-equal `next`.
+    //
+    // It is safe because no state the model produces makes that transition:
+    // every one is stamped. What IS asserted is that the diff stays silent
+    // instead of emitting `engine: undefined`, which would be a patch claiming
+    // a change it cannot make and would be read back as "unchanged" anyway.
+    const prev = baseState();
+    prev.engine = 'cc';
+    const next = baseState();
+    expect(diffSessionState(prev, next)).toBeUndefined();
+    expect(applySessionPatch(prev, {}).engine).toBe('cc');
+    expect(applySessionPatch(next, {}).engine).toBeUndefined();
+  });
+
   it('applying a patch does not mutate the state it was applied to', () => {
     const prev = baseState();
     const next = baseState();
@@ -1538,5 +1643,103 @@ describe('SessionState.parked — the parked graft reaches the wire', () => {
     expect(refused?.parked).toStrictEqual([]);
     expect(refused?.root.children).toStrictEqual([]);
     expect(refused?.spawnEdges).toStrictEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The engine stamp — gate amendment B3
+// ---------------------------------------------------------------------------
+
+/**
+ * Until Phase 5 the CC engine identified itself by NOT setting a field, and
+ * absence was documented as reading `'cc'`. That is unassertable from outside:
+ * a state with no tag is indistinguishable from a state whose tag was dropped
+ * on the way through the bridge. From here the CC engine names itself, so a
+ * cross-engine isolation test can say which sessions must be unaffected.
+ *
+ * Everything below goes through `SessionModel` — `stateOf` is the production
+ * construction site and `toSessionState` in `graft.ts` has no production
+ * callers at all — so a stamp added only to a convenience helper would fail
+ * here rather than pass.
+ */
+describe('SessionState.engine — the CC engine stamps its own name', () => {
+  it('every state the model hands out is stamped cc, on both output paths', async () => {
+    const { sessionIds } = await fixtures();
+    const { model } = await replayInterleaved();
+    const snapshot = model.snapshot();
+    // Guard against a vacuous loop: an empty snapshot would satisfy every
+    // assertion below while measuring nothing.
+    expect(snapshot.length).toBeGreaterThan(0);
+    for (const state of snapshot) expect(state.engine, state.sessionId).toBe('cc');
+    for (const sessionId of sessionIds) {
+      expect(model.sessionState(sessionId)?.engine, sessionId).toBe('cc');
+    }
+    for (const state of model.allSessions()) expect(state.engine, state.sessionId).toBe('cc');
+  });
+
+  it('the stamp survives a diff and an apply, so the wire never loses it', async () => {
+    const { sessionIds } = await fixtures();
+    const { model, reconstructed } = await replayInterleaved();
+    for (const sessionId of sessionIds) {
+      // `reconstructed` is built by applying every emitted patch in order — the
+      // webview's own path — so this is the field surviving the reducer, not
+      // just the snapshot.
+      expect(reconstructed.get(sessionId)?.engine, sessionId).toBe('cc');
+    }
+  });
+
+  it('a REFUSED session is stamped too: G3 withholds the tree, not the identity', async () => {
+    const { workspacePath, sessionIds, replays } = await fixtures();
+    const slug = slugifyWorkspace(workspacePath);
+    const model = makeModel(workspacePath);
+    const sessionId = sessionIds[0] as string;
+    const replay = replays[0] as ReplaySession;
+    model.ingestTranscript(sessionId, slug, {
+      kind: 'main',
+      path: replay.main.path,
+      entries: replay.main.entries,
+    });
+    model.refuseSession(sessionId, slug, {
+      kind: 'schemaMismatch',
+      reason: 'injected refusal',
+    });
+    const refused = model.sessionState(sessionId);
+    expect(refused?.schemaOk).toBe(false);
+    expect(refused?.root.children).toStrictEqual([]);
+    expect(refused?.engine).toBe('cc');
+  });
+
+  it('no CC-produced tool node carries truncated - the flag belongs to the other engine', async () => {
+    // `ToolNode.truncated` is OpenCode's `state.metadata.truncated`. CC's
+    // `<persisted-output>` stub is the opposite mechanism: it offloads bytes to
+    // `tool-results/` and they are still there to read. This is why the golden
+    // serializer does not record the flag — it would be a constant `null` in
+    // every file here — and this test is what pins that reasoning instead.
+    const { model } = await replayInterleaved();
+    let toolNodes = 0;
+    for (const state of model.snapshot()) {
+      walk(state.root, (node: TreeNode) => {
+        if (isAgentNode(node)) return;
+        toolNodes += 1;
+        expect('truncated' in node, `${state.sessionId}/${node.id}`).toBe(false);
+      });
+    }
+    expect(toolNodes, 'no tool nodes were examined').toBeGreaterThan(0);
+  });
+
+  it('the golden serializer records the tag verbatim, never normalised', async () => {
+    // `state.engine ?? null`, not `?? 'cc'`. If the stamp were deleted the
+    // goldens must go to `null` and fail; normalising would make the committed
+    // files identical with and without B3, which is a golden that cannot
+    // observe the thing it exists to observe.
+    const { sessionIds } = await fixtures();
+    const { model } = await replayInterleaved();
+    for (const sessionId of sessionIds) {
+      const state = model.sessionState(sessionId) as SessionState;
+      expect(serializeSessionState(state).engine, sessionId).toBe('cc');
+    }
+    // A state that was never stamped serialises as `null`, not as `'cc'`.
+    const untagged = baseState();
+    expect(serializeSessionState(untagged).engine).toBeNull();
   });
 });

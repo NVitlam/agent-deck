@@ -80,3 +80,30 @@ editor believed rather than whatever the code does.
 Deleting a session from `fixtures/cc-2.1.234/` requires deleting its golden by hand:
 `session.test.ts` asserts this directory holds exactly one golden per captured session, so a
 stale file fails the suite rather than lingering.
+
+## Regeneration log
+
+Every entry here is a regeneration that was NOT caused by a re-harvest, i.e. one where the
+captured fixtures did not move and the model's output did. Read it before concluding a diff
+in these files means Claude Code changed.
+
+- **golden regenerated 2026-08-27: `engine` stamped per Phase 5 gate amendment B3.**
+  `SessionState.engine` was optional and unset by the CC engine, and absence was documented
+  as reading `'cc'`. From Phase 5 `src/model/session.ts` sets it explicitly, so every state
+  on the wire names the engine that produced it. `serializeSessionState` therefore emits an
+  `engine` key, placed after `schemaOk`.
+
+  It is written **verbatim, `null` when absent** — deliberately not normalised to `'cc'`.
+  Normalising would make these files byte-identical whether or not the stamp was applied,
+  so deleting the stamp would leave every golden green, and a golden that cannot observe
+  the thing it exists to observe is worse than no golden.
+
+  Nothing else in these files moved: the trees, totals, spawn edges, `liveness` and
+  `epochAnchor` are produced by unchanged code from unchanged fixtures.
+  `fixtures/golden/graft/` is untouched — the grafter produces a `GraftSnapshot`, which has
+  no engine tag and never had one.
+
+  `ToolNode.truncated` landed in the same phase and is **not** serialised here. The CC
+  engine never sets it, so it would be a constant `null` in every file; what pins that
+  instead is a test in `src/model/session.test.ts` asserting no CC-produced tool node
+  carries the key.

@@ -563,8 +563,18 @@ describe('DoD 5.3 (3) — the hook listener being down leaves OpenCode liveness 
     const release = await holdPort(port);
     const poll = manualPollTrigger();
     try {
+      // The emissions this path publishes. Captured so the assertion below
+      // can read the real payload rather than the engine accessor a second
+      // time — see the note at that assertion.
+      const captured: DataPathEmission[] = [];
       const path = buildDataPath(
-        { cc, ocDbPath: oc.dbPath, ocWorktree: oc.worktree, ocPollTrigger: poll.trigger },
+        {
+          cc,
+          ocDbPath: oc.dbPath,
+          ocWorktree: oc.worktree,
+          ocPollTrigger: poll.trigger,
+          captured,
+        },
         port,
       );
       try {
@@ -600,13 +610,46 @@ describe('DoD 5.3 (3) — the hook listener being down leaves OpenCode liveness 
           'OpenCode liveness must move on its own cursor while the CC socket is down',
         ).toBe('live');
 
-        // And it reaches the emitted stream, not just the engine's internals.
+        // AND IT REACHES THE EMITTED STREAM — which the accessor above cannot
+        // speak for, and which the code that stood here did not check.
+        //
+        // What stood here called pump() and then re-read
+        // path.opencode.sessions() into a variable named "emitted": the SAME
+        // accessor the assertion three lines up had already used. No
+        // DataPathEmission was ever inspected, because this call site passed
+        // no `captured` array, so deleting the pump() would not have turned
+        // it red. The comment claimed coverage the code did not add — this
+        // repo's most-recorded defect class, arriving inside the test written
+        // to prevent its cousin.
+        //
+        // What the emission adds over the accessor: everything between
+        // OpenCodeEnginePath.sessions() and the panel. #emitOpenCode() can
+        // return null when it reads `enabled` wrong; pump() can abandon the
+        // round when the Claude Code half throws (and this test is running
+        // with the CC socket refused, which is exactly when that matters);
+        // mergeEmissions() can drop a half; and emit() deep-freezes and diffs
+        // against #previous, so it can publish the PREVIOUS state while the
+        // accessor happily reports the new one. None of that is reachable by
+        // calling sessions() twice.
+        const seen = captured.length;
         path.pump();
-        const emitted = path.opencode
-          .sessions()
-          .filter((s) => s.liveness === 'live')
+        expect(captured.length, 'pump() must publish exactly one emission').toBe(
+          seen + 1,
+        );
+        const published = captured[captured.length - 1] as DataPathEmission;
+        const liveOnTheWire = published.emission.sessions
+          .filter((s) => engineOf(s) === 'opencode' && s.liveness === 'live')
           .map((s) => s.sessionId);
-        expect(emitted).toContain(oc.freshestRootId);
+        expect(
+          liveOnTheWire,
+          'the live OpenCode session must reach the payload the panel is sent',
+        ).toContain(oc.freshestRootId);
+        // ...in the SAME payload that still reports the hook tap as down, so
+        // one emission carries both engines' truths rather than one of them.
+        expect(published.degraded).toStrictEqual({
+          degraded: true,
+          reason: 'listenerDown',
+        });
 
         // The CC socket is still down; the OpenCode engine is still healthy.
         expect(path.diagnostics.listening).toBe(false);

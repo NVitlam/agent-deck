@@ -63,7 +63,14 @@ These are build-time law in this repository, not guidelines. A change that break
   WAL-mode file is refused in code, so it cannot later be pointed at your data.
 
   Four secret-bearing tables — `account`, `control_account`, `credential`, `session_share` — are
-  never read, and are dropped **by schema** from any committed fixture.
+  never read. **Five** are dropped **by schema** from any committed fixture: those four plus
+  `account_state`, which holds no secret itself and exists only to point at `account`. A superset
+  is the safe direction for a drop list, and the fifth is named here because this document
+  previously implied the two counts were the same one. Dropped *by schema* means the table is never
+  created in the fixture, so no column named `access_token`, `refresh_token`, `value` or `secret`
+  exists in the artifact at all — there is nothing to leak even if the drop of a *row* were ever
+  missed. All five measured zero rows at capture time, which is exactly why the rule keys on the
+  schema rather than on the rows.
 - **G2 — source separation.** A JSONL parse failure must never take liveness down, and vice versa.
   The two taps do not share a failure path.
 - **G3 — refuse, don't guess.** Malformed input increments a counter and is skipped. A schema
@@ -80,6 +87,51 @@ These are build-time law in this repository, not guidelines. A change that break
 - **G5 — zero egress.** No network except the loopback hook listener. Non-loopback requests are
   dropped. This is the subject of §4.
 - **G6 — fixtures are law.** Parser behaviour is pinned to bytes captured from real sessions.
+
+### The second read-only source, stated in full
+
+G1 above says what is never touched. This says what *is*, because "read-only" is a claim about
+scope as much as about direction, and a reader cannot check a scope that is only ever described by
+its complement.
+
+**Where.** `%USERPROFILE%\.local\share\opencode\opencode.db` — one SQLite file, opened through
+`node:sqlite`'s `DatabaseSync` with `{ readOnly: true }`. `AGENT_DECK_OPENCODE_ROOT` overrides the
+directory, which is how every test reaches a fixture instead of your data. Nothing else in that
+directory is opened: not `auth.json`, not `log/`, `snapshot/`, `repos/` or `tool-output/`.
+
+**What.** Six tables, and only these columns. The engine asserts every one of them before it reads
+anything; a missing table or column refuses the store outright rather than rendering a partial tree
+(G3). Unknown tables and columns are ignored and counted, never read.
+
+| Table | Columns read |
+|---|---|
+| `project` | `id`, `worktree`, `vcs` |
+| `session` | `id`, `project_id`, `parent_id`, `version`, `agent`, `title`, `directory`, `slug`, `model`, `cost`, `tokens_input`, `tokens_output`, `tokens_reasoning`, `tokens_cache_read`, `tokens_cache_write`, `time_created`, `time_updated`, `time_archived` |
+| `message` | `id`, `session_id`, `time_created`, `time_updated`, `data` |
+| `part` | `id`, `message_id`, `session_id`, `time_created`, `time_updated`, `data` |
+| `event` | `id`, `aggregate_id`, `seq`, `type`, `data` |
+| `event_sequence` | `aggregate_id`, `seq`, `owner_id` |
+
+Three of those `session` columns — `tokens_reasoning`, `tokens_cache_read`, `tokens_cache_write` —
+are **asserted but never selected**. The schema contract names them, so if a future OpenCode drops
+one the engine refuses instead of quietly rendering a tree built on a shape it has never seen. A
+required column that nothing reads looks like an oversight and is not.
+
+**Reasoning content is dropped at the parse boundary**, before any record is built — the G4 rule,
+applied to the second engine. For OpenCode the reasoning bytes exist verbatim in the store, so
+unlike the Claude Code case that test cannot be vacuous: it searches the produced `SessionState`
+for the literal captured bytes.
+
+**No SQL from a caller, ever.** Every statement is a fixed SELECT written in `src/opencode/db.ts`;
+no query is assembled from input, and no database handle escapes that module.
+
+**How it degrades, without ever crashing (G3).** A missing file, an unreadable one, or a corrupt
+one each surface as a named degrade — `databaseMissing`, `databaseUnreadable`, `databaseCorrupt` —
+and leave Claude Code sessions rendering unchanged (G2). A schema that is not OpenCode's renders
+every session `unsupported`. A graft that cannot place a row surfaces as `graftFailed`, which is a
+*containment* rather than a fix: it keeps a throw from escaping into the extension host, at the
+cost of darkening every OpenCode session over one unplaceable row. That trade is recorded rather
+than presented as a solution.
 
 ---
 
@@ -141,7 +193,18 @@ running code as you has far better options than lying to a read-only panel.
 
 ## 4. The zero-egress audit
 
-Two halves, both in `src/hooks/egress.test.ts`, both run in the ordinary suite. Neither can skip.
+**Three parts**, all in `src/hooks/egress.test.ts`, all run in the ordinary suite. None can skip.
+§4a and §4b below describe the first two, which cover the shipped host bundle.
+
+The third covers the **OpenCode engine**, and it exists because the first two cannot: it bundles
+`src/opencode/index.ts` as its own entry point and denies **`node:http` as well** as `dns` and
+`net`. The host bundle cannot make that claim, because there the loopback hook listener is the one
+sanctioned socket — so a host-bundle scan would pass while an engine that opened an HTTP client hid
+behind the listener's allowance. **The OpenCode engine opens zero sockets of any kind.** Its
+liveness is a cursor over the `event_sequence` table, not a subscription; the SSE accelerator
+OpenCode offers is deliberately not used. The same describe asserts the shipped bundle never
+reaches the test-only fixture builder, which is the one module in that tree that opens a database
+for writing.
 
 ### 4a. Dependency review — what could open a socket
 

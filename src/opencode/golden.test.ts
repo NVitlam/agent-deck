@@ -113,6 +113,17 @@ function serializeTool(node: ToolNode): unknown {
     inputPreview: previewFingerprint(node.inputPreview),
     resultPreview: previewFingerprint(node.resultPreview),
     durationMs: node.durationMs ?? null,
+    /*
+     * OpenCode's OWN truncation claim (`state.metadata.truncated`), as of
+     * `PLAN.md`'s Phase 5 gate B7 — `docs/evidence/phase-4/COVERAGE.md` item 22
+     * and `GOLDEN.md` DEVIATION 5. Three states reach the golden: `true` and
+     * `false` are claims OpenCode made, `null` is "no claim".
+     *
+     * `?? null` and not a presence check, because `false ?? null` is `false`:
+     * an explicit "I did not truncate this" must survive the projection. This
+     * computes nothing — the value came out of `readOpenCodeEngine()`.
+     */
+    truncated: node.truncated ?? null,
   };
 }
 
@@ -373,6 +384,20 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
       const rendered = outcome.result.sessions.filter((s) => s.schemaOk);
       expect(rendered.length).toBeGreaterThan(0);
       expect(rendered.some((s) => s.root.children.length > 0)).toBe(true);
+
+      /*
+       * `engine` is stamped UNCONDITIONALLY, and this read is the only place
+       * both arms exist at once: the grafted sessions come from `graft.ts` and
+       * the refused ones from `index.ts`'s `unsupportedSession`, two separate
+       * literals that must agree. Asserted over every session rather than over
+       * each arm separately, because "unconditionally" is a claim about the
+       * whole list.
+       */
+      expect(refusedIds.length).toBeGreaterThan(0);
+      expect(rendered.length + refusedIds.length).toBe(outcome.result.sessions.length);
+      for (const state of outcome.result.sessions) {
+        expect(state.engine, `${state.sessionId} engine`).toBe('opencode');
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -391,6 +416,303 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
       expect(outcome.result.refused.length).toBeGreaterThan(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('parks a refused CHILD on its accepted parent, with childSessionUnsupported', () => {
+    /*
+     * `docs/evidence/phase-4/COVERAGE.md` item 29, closed by `PLAN.md`'s Phase
+     * 5 gate B7, THROUGH THE PRODUCTION PATH and against a real parent/child
+     * pair out of a committed corpus — the rows, the `task` part and the join
+     * are OpenCode's, and only the child's version string is mutated on the
+     * temp copy. Through Phase 4 this reported `joinKeyContradiction`, which
+     * was visible and safe and told the wrong story.
+     */
+    const dir = makeTempDir('oc-refusedchild-');
+    try {
+      const dbPath = copyCorpus(smallest as string, dir);
+      const pair = withWritableDb(dbPath, (db) => {
+        const row = db
+          .prepare(
+            'SELECT id, parent_id FROM session WHERE parent_id IS NOT NULL' +
+              ' ORDER BY time_created LIMIT 1',
+          )
+          .get() as { id: string; parent_id: string } | undefined;
+        if (row === undefined) return undefined;
+        // `4.4.0` differs on the major AND the minor, so no movement of the
+        // anchor inside `1.x` can quietly re-admit it.
+        db.prepare('UPDATE session SET version = ? WHERE id = ?').run('4.4.0', row.id);
+        return { childId: row.id, parentId: row.parent_id };
+      });
+      // Derived from the corpus rather than assumed: if the fixtures ever hold
+      // no child session this fails loudly instead of testing nothing.
+      expect(pair, 'no corpus child session to refuse').toBeDefined();
+      if (pair === undefined) return;
+
+      const outcome = readOpenCodeEngine({ dbPath });
+      expect(outcome.kind).toBe('ok');
+      if (outcome.kind !== 'ok') return;
+
+      expect(outcome.result.refused.map((r) => r.sessionId)).toStrictEqual([pair.childId]);
+      expect(outcome.result.refused[0]?.code).toBe('unsupportedVersion');
+
+      // The refused child does NOT become a deck entry of its own: a child is
+      // a subagent inside its parent's session (contract §9).
+      const byId = new Map(outcome.result.sessions.map((s) => [s.sessionId, s]));
+      expect(byId.has(pair.childId)).toBe(false);
+
+      // It parks on the ROOT state that would have rendered it. The parent may
+      // itself be a subagent, so the owning state is found by search.
+      const owner = outcome.result.sessions.find((s) =>
+        (s.parked ?? []).some((p) => p.agentId === pair.childId),
+      );
+      expect(owner, `${pair.childId} parked nowhere`).toBeDefined();
+      const entry = (owner?.parked ?? []).find((p) => p.agentId === pair.childId);
+      expect(entry?.code).toBe('childSessionUnsupported');
+      expect(entry?.toolUseId).toBeTypeOf('string');
+      expect(entry?.reason).toContain('version window');
+
+      // The parent still renders its remaining tree, spawning `task` call
+      // included, and no spawn edge claims the refused child.
+      expect(owner?.schemaOk).toBe(true);
+      expect(owner?.root.children.length).toBeGreaterThan(0);
+      expect((owner?.spawnEdges ?? []).some((e) => e.agentId === pair.childId)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accumulates a NON-ZERO session.cost into totals.costUsd (DoD 4.3)', () => {
+    /*
+     * `docs/evidence/phase-4/COVERAGE.md` item 33. Every session in both
+     * corpora carries `cost = 0`, so `graft.ts`'s `totals.costUsd +=
+     * session.cost` had never seen a non-zero value through any path. Here the
+     * REAL column is written on a temp copy and read back through `db.ts`'s
+     * `realOf`, the fingerprint, the parse and the grafter.
+     *
+     * 0.25 and 0.5 are exact in binary floating point, so 0.75 is exact: this
+     * asserts the accumulation, not float tidiness.
+     */
+    const dir = makeTempDir('oc-cost-');
+    try {
+      const dbPath = copyCorpus(smallest as string, dir);
+      const pair = withWritableDb(dbPath, (db) => {
+        const row = db
+          .prepare(
+            'SELECT id, parent_id FROM session WHERE parent_id IS NOT NULL' +
+              ' ORDER BY time_created LIMIT 1',
+          )
+          .get() as { id: string; parent_id: string } | undefined;
+        if (row === undefined) return undefined;
+        db.prepare('UPDATE session SET cost = ? WHERE id = ?').run(0.25, row.parent_id);
+        db.prepare('UPDATE session SET cost = ? WHERE id = ?').run(0.5, row.id);
+        return { childId: row.id, parentId: row.parent_id };
+      });
+      expect(pair, 'no corpus parent/child pair to price').toBeDefined();
+      if (pair === undefined) return;
+
+      const outcome = readOpenCodeEngine({ dbPath });
+      expect(outcome.kind).toBe('ok');
+      if (outcome.kind !== 'ok') return;
+
+      const owner = outcome.result.sessions.find((s) =>
+        (s.spawnEdges ?? []).some((e) => e.agentId === pair.childId),
+      );
+      expect(owner, `${pair.childId} did not graft`).toBeDefined();
+      // Parent 0.25 + child 0.5, summed over the tree, not over the database.
+      expect(owner?.totals.costUsd).toBe(0.75);
+
+      // And a session nobody priced still reports exactly 0 — the goldens'
+      // case, and DoD 4.3's other half.
+      const untouched = outcome.result.sessions.filter(
+        (s) => s.sessionId !== owner?.sessionId,
+      );
+      expect(untouched.length).toBeGreaterThan(0);
+      for (const state of untouched) expect(state.totals.costUsd).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('gives a refused session its REAL workspaceMatch, so the deck can show it', () => {
+    /*
+     * THE SEAM, and why a hard-coded `false` was wrong in composition.
+     *
+     * The host filters the deck by `workspaceMatch`, matching what
+     * `SessionModel` does for Claude Code. While `unsupportedSession` hard-coded
+     * `false`, every refused OpenCode session was filtered off the deck: a user
+     * whose OpenCode drifted out of the version window saw NOTHING rather than
+     * an `unsupported` card, which defeats G3 and contradicts this engine's own
+     * rule that a refusal invisible to the renderer is not a refusal.
+     *
+     * Safe because the session refused on `session.version`, a column of the
+     * `session` row, while the match reads `project.worktree` from the
+     * `project` table. Different row, so this is not trusting the shape the
+     * fingerprint rejected.
+     *
+     * The workspace path is READ OFF THE CORPUS, never written as a literal: a
+     * hard-coded absolute path would pin one machine and would put a developer
+     * identifier in a source file.
+     */
+    const { dir, dbPath, refusedIds } = mixedCopy();
+    try {
+      expect(refusedIds.length).toBeGreaterThan(0);
+      const projects = readProjects(dbPath);
+      if (!projects.ok) throw new Error('could not read the project row');
+      const [project] = projects.value;
+      if (project === undefined) throw new Error('the corpus has no project row');
+
+      const matched = readOpenCodeEngine({ dbPath, workspacePaths: [project.worktree] });
+      expect(matched.kind).toBe('ok');
+      if (matched.kind !== 'ok') return;
+
+      const byId = new Map(matched.result.sessions.map((s) => [s.sessionId, s]));
+      for (const id of refusedIds) {
+        const state = byId.get(id);
+        expect(state, `${id} vanished instead of rendering unsupported`).toBeDefined();
+        // The point of the change: visible to a deck that filters on this.
+        expect(state?.workspaceMatch, `${id} workspaceMatch`).toBe(true);
+        /*
+         * STAMPED, and this is the arm where a stamp is easiest to drop:
+         * `unsupportedSession`'s entire job is to emit almost nothing, so a
+         * field omitted there would look like part of the refusal rather than
+         * a bug. The phase's round-trip contract rests on BOTH engines writing
+         * `engine` unconditionally - refused states included - and until this
+         * line the OpenCode half of that premise rested on reading the code.
+         * OC7: absence reads as `'cc'`, so an unstamped OpenCode refusal would
+         * not be untagged, it would be tagged as the wrong engine.
+         */
+        expect(state?.engine, `${id} engine`).toBe('opencode');
+        // And STILL a refusal. Nothing else moved: no tree, no totals, no slug.
+        expect(state?.liveness).toBe('unsupported');
+        expect(state?.schemaOk).toBe(false);
+        expect(state?.root.children).toStrictEqual([]);
+        expect(state?.totals).toStrictEqual({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+        expect(state?.projectSlug).toBe('');
+        expect(state?.spawnEdges).toStrictEqual([]);
+        expect(state?.parked).toStrictEqual([]);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still reports false for a refused session in a NON-matching workspace', () => {
+    /*
+     * THE CONTROL THAT MAKES THE TEST ABOVE MEAN ANYTHING. Without it, the
+     * change would be indistinguishable from hard-coding `true` — which would
+     * be the same defect inverted, showing a user sessions from a workspace
+     * they do not have open.
+     */
+    const { dir, dbPath, refusedIds } = mixedCopy();
+    try {
+      const foreign = readOpenCodeEngine({ dbPath, workspacePaths: ['D:/somewhere/else'] });
+      expect(foreign.kind).toBe('ok');
+      if (foreign.kind !== 'ok') return;
+
+      const byId = new Map(foreign.result.sessions.map((s) => [s.sessionId, s]));
+      for (const id of refusedIds) {
+        const state = byId.get(id);
+        // Present but unmatched: the refusal is still a session the engine
+        // knows about, it just does not belong to an open folder.
+        expect(state, `${id} vanished`).toBeDefined();
+        expect(state?.workspaceMatch, `${id} workspaceMatch`).toBe(false);
+        expect(state?.liveness).toBe('unsupported');
+      }
+      // The accepted sessions in the same read agree — one predicate, not two.
+      expect(foreign.result.sessions.every((s) => !s.workspaceMatch)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses ONE predicate for accepted and refused sessions alike', () => {
+    // With no `workspacePaths` the host has supplied nothing, and the rule is
+    // `graft.ts`'s `defaultWorkspaceMatch` — project row exists. A refused
+    // session must answer that question the same way an accepted one does;
+    // before this change it answered `false` while its neighbours answered
+    // `true`, which is the drift that produced the seam.
+    const { dir, dbPath, refusedIds } = mixedCopy();
+    try {
+      const outcome = readOpenCodeEngine({ dbPath });
+      expect(outcome.kind).toBe('ok');
+      if (outcome.kind !== 'ok') return;
+      const refusedSet = new Set(refusedIds);
+      const refusedStates = outcome.result.sessions.filter((s) => refusedSet.has(s.sessionId));
+      const acceptedStates = outcome.result.sessions.filter((s) => !refusedSet.has(s.sessionId));
+      expect(refusedStates.length).toBe(refusedIds.length);
+      expect(acceptedStates.length).toBeGreaterThan(0);
+      expect(new Set(outcome.result.sessions.map((s) => s.workspaceMatch)).size).toBe(1);
+      expect(refusedStates.every((s) => s.workspaceMatch)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('degrades with graftFailed when the graft cannot place an accepted row', () => {
+    /*
+     * The case `graft.ts`'s `@throws` names, driven END TO END through
+     * `readOpenCodeEngine()` off a REAL parent/child pair in a committed
+     * corpus: the PARENT's version is pushed out of window on a temp copy, so
+     * the child stays accepted, names a parent that is not in the accepted
+     * rows, and is reachable from no root. `graftCorpus` throws exactly as it
+     * is supposed to, and the boundary catch turns it into a degrade.
+     *
+     * Not an injected fake: the rows, the parent/child edge and the throw are
+     * all real. Only the version string is mutated, which is the same technique
+     * the mixed-version tests above use.
+     *
+     * This asserts CONTAINMENT, not a fix. A degrade darkens every OpenCode
+     * session over one unplaceable row; `index.ts`'s catch site says so.
+     */
+    const dir = makeTempDir('oc-graftfail-');
+    try {
+      const dbPath = copyCorpus(smallest as string, dir);
+      const pair = withWritableDb(dbPath, (db) => {
+        const row = db
+          .prepare(
+            'SELECT id, parent_id FROM session WHERE parent_id IS NOT NULL' +
+              ' ORDER BY time_created LIMIT 1',
+          )
+          .get() as { id: string; parent_id: string } | undefined;
+        if (row === undefined) return undefined;
+        // The PARENT, not the child - refusing the child is the item 29 case
+        // above and parks cleanly. This is the one nothing can place.
+        db.prepare('UPDATE session SET version = ? WHERE id = ?').run('4.4.0', row.parent_id);
+        return { childId: row.id, parentId: row.parent_id };
+      });
+      expect(pair, 'no corpus parent/child pair to orphan').toBeDefined();
+      if (pair === undefined) return;
+
+      // Returned, never thrown: that is `OcEngineOutcome`'s whole contract, and
+      // the extension host calls this from `activate`.
+      const outcome = readOpenCodeEngine({ dbPath });
+      expect(outcome.kind).toBe('degraded');
+      if (outcome.kind !== 'degraded') return;
+
+      expect(outcome.health.code).toBe('graftFailed');
+      // Distinguishable from a storage failure, because the operator response
+      // has nothing in common with one.
+      expect(['databaseMissing', 'databaseUnreadable', 'databaseCorrupt']).not.toContain(
+        outcome.health.code,
+      );
+      // The cause is not swallowed: the message names the row that could not be
+      // placed, so this is findable in the field.
+      expect(outcome.health.message).toContain('reachable from no root');
+      expect(outcome.health.message).toContain(pair.childId);
+      // The path is the file that was opened, never one read out of the store.
+      expect(outcome.health.path).toBe(dbPath);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never reports graftFailed for a corpus that grafts', () => {
+    // The control: without it the test above would pass just as well if the
+    // engine had started degrading on everything.
+    for (const name of CORPORA) {
+      const outcome = readOpenCodeEngine({ dbPath: corpusDbPath(name), immutable: true });
+      expect(outcome.kind, name).toBe('ok');
     }
   });
 

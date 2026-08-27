@@ -65,14 +65,25 @@ export interface SessionState {
    * unchanged — and a test can only name the sessions that must be unaffected
    * if the state says which engine produced them.
    *
-   * **`SessionPatch` does NOT carry this field, and that is a scope line rather
-   * than an oversight.** The engine that observed a session cannot change while
-   * the session exists, so there is nothing for a diff to express; wiring the
-   * tag through `SessionFieldPatch`, `diffSessionState`, `applySessionPatch`
-   * and the canvas contract is `PLAN.md` DoD 5.1, which bumps the wire version
-   * with it. Nothing in `src/model/session.ts` produces a state carrying this
-   * field — the OpenCode engine builds `SessionState` directly — so no value
-   * can fall through the gap in the meantime.
+   * **Both of the scope lines Phase 4 wrote here have been crossed, by user
+   * decision at the Phase 5 gate.** The paragraph that stood here said
+   * `SessionPatch` does not carry the field and that nothing in
+   * `src/model/session.ts` produces a state carrying it. Neither is true from
+   * Phase 5 on, and the old text is superseded rather than quietly corrected,
+   * because a reader who trusts it will draw the wrong conclusion twice:
+   *
+   * - **`SessionFieldPatch` carries it** (gate amendment B2), for the
+   *   uniformity DoD 5.1 asks for. The reasoning that argued against it still
+   *   holds — the engine cannot change mid-session — so the key is one the
+   *   model never emits. `SessionFieldPatch.engine` says so at its own site.
+   * - **The CC engine STAMPS `'cc'`** (gate amendment B3). `session.ts` sets
+   *   the field explicitly, so every state on the wire names its engine rather
+   *   than leaving the CC case to be inferred from absence.
+   *
+   * The field stays OPTIONAL, and absence still reads as `'cc'`. Making it
+   * required would invalidate every earlier construction of this interface,
+   * which is the entire reason it — like `spawnEdges` and `parked` — was added
+   * optional in the first place.
    */
   engine?: 'cc' | 'opencode';
 }
@@ -155,7 +166,30 @@ export type ParkCode =
    * parent session joins to it. The child exists and nothing legitimately
    * attaches it, so it parks rather than being hung off the root.
    */
-  | 'noSpawningTaskPart';
+  | 'noSpawningTaskPart'
+  /**
+   * A child session was REFUSED by the per-session version window while its
+   * parent was accepted. The join was never attempted.
+   *
+   * **A new code because the existing one told a false story.** Through Phase 4
+   * this case surfaced as {@link ParkCode} `joinKeyContradiction`: the grafter
+   * looked the child up among the accepted rows, did not find it, and reported
+   * the only failure it had a word for. It was visible and it was safe — G3 was
+   * never violated, nothing was guessed — but the keys did not disagree. The
+   * child was out of window, which is a compatibility fact about one session,
+   * not a data-integrity fact about a join.
+   *
+   * The distinction is the same one `taskWithoutChild` and
+   * `joinKeyContradiction` already draw between a missing key and a
+   * contradicted one, and it matters for the same reason: a user reading
+   * "contradiction" goes looking for corrupt data, and there is none to find.
+   *
+   * Recorded as `docs/evidence/phase-4/COVERAGE.md` item 29 and closed by
+   * `PLAN.md`'s Phase 5 gate amendment B7. Only refused ROOT sessions render
+   * `unsupported`; a refused child parks here instead, so its parent still
+   * renders its remaining tree.
+   */
+  | 'childSessionUnsupported';
 
 /** One agent that is known to exist and is deliberately not in the tree. */
 export interface ParkedGraft {
@@ -206,6 +240,31 @@ export interface ToolNode {
   inputPreview: string; // post-redaction, truncated
   resultPreview?: string; // post-redaction; sourced from JSONL or tool-results/
   durationMs?: number;
+  /**
+   * The observed engine reports that IT already truncated this payload, before
+   * Agent Deck saw it.
+   *
+   * **Not the same claim as `redact.ts`'s marker**, and that distinction is the
+   * whole reason the field exists. Our own truncation is ours: we chose the
+   * ceiling, the marker says so, and raising `agentDeck.previewBytes` changes
+   * it. This one is the engine's, it happened upstream, and no setting here can
+   * recover the bytes. A renderer that shows one marker for both tells the user
+   * a payload is retrievable when it is not.
+   *
+   * OpenCode sets it in `state.metadata.truncated`; **14 tool parts in the
+   * anchor corpus carry it**. `docs/opencode-contract.md` �8.4 calls it "the
+   * flag to trust". It was dropped silently through Phase 4 —
+   * `fixtures/opencode-1.18.22/GOLDEN.md` DEVIATION 5 and
+   * `docs/evidence/phase-4/COVERAGE.md` item 22 — recorded there as a known
+   * information loss rather than an untested branch, because the field had
+   * nowhere to land. Phase 5's gate amendment B7 gives it one.
+   *
+   * The CC engine never sets it. CC's `<persisted-output>` stub is a different
+   * mechanism: it offloads to `tool-results/*.txt` and the bytes are still
+   * there to read, which is the opposite of this flag's claim. Absent means
+   * "not claimed", never "known to be whole".
+   */
+  truncated?: boolean;
 }
 
 /** Anything that can appear in `AgentNode.children`. */
@@ -276,6 +335,20 @@ export interface SessionFieldPatch {
   schemaOk?: boolean;
   /** Replaced whole; the three numbers are never patched independently. */
   totals?: SessionState['totals'];
+  /**
+   * See {@link SessionState.engine}.
+   *
+   * **This key can never be present in a patch the model produces**, and that is
+   * stated here rather than left to be rediscovered: the engine that observed a
+   * session cannot change while the session exists, so `diffSessionState` has
+   * nothing to compare that could differ. It is carried because `PLAN.md` DoD
+   * 5.1 specifies the field as "the same move as `spawnEdges` and `parked`",
+   * and both of those are patch fields — uniformity, bought with a branch that
+   * provably never fires. The user took that trade at the Phase 5 gate with the
+   * cost stated (gate amendment B2). **Do not delete it as dead code**; it is
+   * deliberate, and `applySessionPatch` honours it if it ever does arrive.
+   */
+  engine?: SessionState['engine'];
 }
 
 /**
@@ -304,6 +377,8 @@ export interface ToolNodeFieldPatch {
   inputPreview?: string;
   resultPreview?: string | null;
   durationMs?: number | null;
+  /** `null` = cleared. See {@link ToolNode.truncated}. */
+  truncated?: boolean | null;
 }
 
 /**

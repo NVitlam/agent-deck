@@ -190,6 +190,7 @@ function summary(sessionId: string, overrides: Partial<SessionSummary> = {}): Se
     label: `main ${sessionId}`,
     nodeCount: 3,
     errorCount: 0,
+    engine: 'cc',
     ...overrides,
   };
 }
@@ -228,6 +229,28 @@ function blobFor(root: ParentNode, sessionId: string): HTMLElement {
   const found = blobs(root).find((b) => b.dataset['sessionId'] === sessionId);
   if (found === undefined) throw new Error(`no blob for ${sessionId}`);
   return found;
+}
+
+/**
+ * The exact text of every `<text>` element inside one blob, one string each.
+ *
+ * Deliberately not a testid lookup, and deliberately not `blob.textContent`.
+ *
+ * No testid, because `canvas-contract.ts` belongs to another package for the
+ * whole of this phase and a name spelled by hand in a component and again in a
+ * test is precisely the defect that file exists to prevent. What DoD 5.4 asks
+ * for is that a session SHOWS its engine, so the assertion is made against the
+ * thing being promised — rendered text — which needs no shared name at all.
+ *
+ * Not `textContent`, because that concatenates every string on the blob into
+ * one, and `toContain` on a concatenation is a substring check: `'cc'` is a
+ * substring of a label, of `'opencode'` in some orderings, and of any future
+ * word containing it. An array of exact strings makes `toContain` an equality
+ * check per element, which is what lets the negative controls below mean
+ * something.
+ */
+function textsOf(blob: ParentNode): string[] {
+  return [...blob.querySelectorAll('text')].map((t) => t.textContent ?? '');
 }
 
 /**
@@ -570,6 +593,80 @@ describe('workspaceMatch: false (C7.3)', () => {
 });
 
 /* ------------------------------------------------------------------------ *
+ * DoD 5.4 — the engine tag. TEXT ONLY in this phase; Phase 7 designs it.
+ *
+ * WHAT THESE ASSERTIONS ARE GUARDING. Nothing type-checks a `.svelte` file and
+ * eslint does not lint one; `esbuild-svelte` does not propagate the Svelte
+ * compiler's warnings either, measured both ways in this repo. So a clean
+ * build says close to nothing about this component and these tests are the
+ * only real check on it. They are written to fail on each way the tag can be
+ * wrong rather than only on its absence: a constant string (the negative
+ * controls), a tag rendered as an attribute but never drawn (the text-array
+ * helper), a default applied in the wrong place (the store-driven pair at the
+ * bottom of this file), and a tag suppressed by refusal.
+ * ------------------------------------------------------------------------ */
+
+describe('the engine tag (DoD 5.4)', () => {
+  it('draws the tag on every blob, whichever engine produced the session', () => {
+    const container = render({
+      sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
+    });
+    expect(textsOf(blobFor(container, 's-cc'))).toContain('cc');
+    expect(textsOf(blobFor(container, 's-oc'))).toContain('opencode');
+  });
+
+  it('NEGATIVE CONTROL: a blob never shows the OTHER engine\u2019s tag', () => {
+    // Without this, a component that rendered one constant string would still
+    // satisfy the test above for whichever row happened to match it.
+    const container = render({
+      sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
+    });
+    expect(textsOf(blobFor(container, 's-cc'))).not.toContain('opencode');
+    expect(textsOf(blobFor(container, 's-oc'))).not.toContain('cc');
+  });
+
+  it('tags a refused session too: G3 withholds the tree, not who was reading', () => {
+    const container = render({ sessions: [refusedSummary('s-refused')] });
+    const blob = blobFor(container, 's-refused');
+    expect(blob.classList.contains(CRACKED_CLASS)).toBe(true);
+    expect(textsOf(blob)).toContain('cc');
+  });
+
+  it('carries the tag as a data attribute as well as text', () => {
+    const container = render({
+      sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
+    });
+    expect(blobFor(container, 's-cc').dataset['engine']).toBe('cc');
+    expect(blobFor(container, 's-oc').dataset['engine']).toBe('opencode');
+  });
+
+  it('names the engine in the accessible name as well as on the canvas', () => {
+    // The blob is a `role="button"` with an `aria-label`, so its child text is
+    // not announced. A tag only a sighted user can read is half a tag.
+    const container = render({ sessions: [summary('s-oc', { engine: 'opencode' })] });
+    expect(blobFor(container, 's-oc').getAttribute('aria-label')).toContain('opencode');
+  });
+
+  it('keeps the tag clear of the "other workspace" tag, on the blob that has both', () => {
+    // Both are text rows under the same membrane. Drawn at one baseline they
+    // would overlap, which reads to a user as one corrupted word rather than
+    // as two tags — and no assertion above would notice.
+    const container = render({
+      sessions: [summary('s-both', { engine: 'opencode', workspaceMatch: false })],
+    });
+    const rows = [...blobFor(container, 's-both').querySelectorAll('text')].map((t) => ({
+      text: t.textContent ?? '',
+      y: t.getAttribute('y') ?? '',
+    }));
+    const engineRow = rows.find((r) => r.text === 'opencode');
+    const foreignRow = rows.find((r) => r.text === 'other workspace');
+    expect(engineRow).toBeDefined();
+    expect(foreignRow).toBeDefined();
+    expect(engineRow?.y).not.toBe(foreignRow?.y);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
  * C7.6 — motion is a reserved semantic channel, with its negative control
  * ------------------------------------------------------------------------ */
 
@@ -796,6 +893,33 @@ describe('driven by a real store', () => {
     expect(blob.dataset['nodes']).toBe(String(row.nodeCount));
     expect(blob.dataset['errors']).toBe(String(row.errorCount));
     expect(blob.textContent).toContain(row.label);
+  });
+
+  it('takes the tag from the store, which reads an ABSENT engine as cc', () => {
+    // `testdata.ts:liveSession` sets no `engine`. That is the pre-Phase-5
+    // shape and still a legal `SessionState` — the field is optional and
+    // `src/model/events.ts` says absence reads as `'cc'`. The default lives in
+    // `summarize`, so this is the test that it is applied at all, and that the
+    // component does not carry a second copy of the same rule.
+    const state = liveSession({ sessionId: 's-untagged' });
+    expect(state.engine).toBeUndefined();
+    const view = viewOf([state]);
+    expect(view.sessions[0]?.engine).toBe('cc');
+    const container = render({ sessions: view.sessions });
+    expect(textsOf(blobFor(container, 's-untagged'))).toContain('cc');
+  });
+
+  it('renders an opencode-stamped state as opencode, store to canvas', () => {
+    // THE HONEST SCOPE OF THIS TEST: no OpenCode session reaches the webview
+    // until the host wiring of DoD 5.2 lands, so the stamp here is SET on a
+    // state rather than observed from a database. What it proves is the
+    // store-to-component path for a non-`cc` value, not anything about the
+    // OpenCode engine.
+    const view = viewOf([liveSession({ sessionId: 's-oc-real', engine: 'opencode' })]);
+    expect(view.sessions[0]?.engine).toBe('opencode');
+    const container = render({ sessions: view.sessions });
+    expect(textsOf(blobFor(container, 's-oc-real'))).toContain('opencode');
+    expect(textsOf(blobFor(container, 's-oc-real'))).not.toContain('cc');
   });
 
   it('shows the badge count the store derived, and that count is not zero', () => {

@@ -4,6 +4,7 @@
   "workspaceMatch": true,
   "liveness": "live",
   "schemaOk": true,
+  "engine": "cc",
   "epochAnchor": "2026-08-19T07:05:10.556Z",
   "totals": {
     "inputTokens": 32,

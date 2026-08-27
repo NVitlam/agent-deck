@@ -53,7 +53,7 @@ import {
   partitionSessionsByVersion,
 } from './fingerprint.js';
 import type { OcSchemaReport, OcSessionMismatch } from './fingerprint.js';
-import { graftCorpus } from './graft.js';
+import { defaultWorkspaceMatch, graftCorpus } from './graft.js';
 import { parseParts } from './parse.js';
 import { slugFromWorktree } from './slug.js';
 import type { OcEngineResult, OcMismatch, OcProjectRow, OcSessionRow } from './types.js';
@@ -174,17 +174,88 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
    */
   const parse = parseParts(read.value.parts);
 
-  const grafted = graftCorpus({
-    sessions: partition.accepted,
-    projects: read.value.projects,
-    parse,
-    options: {
-      projectSlug: projectSlugOf,
-      ...(options.workspacePaths === undefined
-        ? {}
-        : { workspaceMatch: workspaceMatcher(options.workspacePaths) }),
-    },
-  });
+  /*
+   * The refused ids are handed to the grafter so a `task` part naming one can
+   * say WHY its child is missing (`childSessionUnsupported`) instead of
+   * reporting a key contradiction for a check that was never run. Refusal
+   * itself stays the fingerprint's: `sessions` is still the accepted rows
+   * alone, and the grafter still has no refusal of its own.
+   */
+  const refusedSessionIds = new Set(partition.refused.map((mismatch) => mismatch.sessionId));
+
+  /*
+   * ONE workspace predicate, built once, used by the graft AND by the refusal.
+   *
+   * Passing `defaultWorkspaceMatch` explicitly where the host supplied no
+   * folders is behaviourally identical to omitting it — `graft.ts` falls back
+   * to that exact function — and it is written out here so the accepted and the
+   * refused sessions cannot drift onto two expressions of one rule. Two
+   * agreeing literals is not a contract; that is what produced the seam this
+   * change closes.
+   */
+  const matchWorkspace =
+    options.workspacePaths === undefined
+      ? defaultWorkspaceMatch
+      : workspaceMatcher(options.workspacePaths);
+
+  /*
+   * THE ONE TRY/CATCH IN THIS ENGINE, AND THE TRADE IT MAKES.
+   *
+   * `graftCorpus` throws when a `session` row is reachable as neither a root,
+   * nor an `AgentNode` under one, nor a parked entry. That throw is deliberate
+   * and it is NOT being softened: a silently dropped session is the failure
+   * this whole exercise exists to make visible, and `graft.test.ts` asserts it.
+   * What changes here is only that it stops ESCAPING. `OcEngineOutcome`'s own
+   * doc says "Never thrown, always returned", `readOpenCodeEngine` is called
+   * from the extension host's `activate`, and an uncaught throw there is an
+   * inert extension with no error a user can see - the same end state the
+   * `"type": "module"` / `.cjs` defect produced, reached by a different route.
+   *
+   * **THE COST, STATED PLAINLY, BECAUSE IT IS REAL AND IT IS NOT SOLVED.**
+   * This converts a known, explainable, SINGLE-ROW condition into an opaque
+   * engine-wide degrade that darkens EVERY OpenCode session. That is worse
+   * behaviour than parking the one row would be. The user took this option at
+   * the Phase 5 gate with that cost on the table, because it is correct and
+   * cheap now and an uncaught throw at `activate` is neither.
+   *
+   * The reachable case today is an ACCEPTED session whose parent was REFUSED by
+   * the version window: the refused parent is not in the accepted rows and the
+   * accepted child is not a root, so nothing can place it. It is EXPLAINABLE -
+   * we know exactly why that row is unreachable - and the better fix a later
+   * phase should take is to park it, distinguishing "unreachable because an
+   * ancestor was refused" from "unreachable for no reason we can name" and
+   * degrading only for the second. That needs a decision about which
+   * `SessionState` an orphaned grandchild belongs to, and that decision has
+   * still not been taken. Do not read this catch as having taken it.
+   *
+   * The cause is never swallowed (rule 3): the thrown message travels into
+   * `health.message` verbatim, so the row the graft could not place is named in
+   * the field. Only the message - no stack, and `health.path` stays the file
+   * that was opened, never a path read out of the database.
+   */
+  let grafted: OcEngineResult;
+  try {
+    grafted = graftCorpus({
+      sessions: partition.accepted,
+      projects: read.value.projects,
+      parse,
+      options: {
+        projectSlug: projectSlugOf,
+        refusedSessionIds,
+        workspaceMatch: matchWorkspace,
+      },
+    });
+  } catch (error) {
+    return {
+      kind: 'degraded',
+      health: {
+        ok: false,
+        code: 'graftFailed',
+        message: `graft failed for ${dbPath}: ${messageOf(error)}`,
+        path: dbPath,
+      },
+    };
+  }
 
   /*
    * A REFUSED SESSION IS NOT AN ABSENT ONE.
@@ -204,21 +275,24 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
    * Both committed corpora refuse nothing, so this adds no session to either
    * golden and DoD 4.6's byte compare is unaffected.
    *
-   * A refused CHILD session is NOT handled here and is listed in
-   * `docs/evidence/phase-4/COVERAGE.md`: it currently surfaces as a
-   * `joinKeyContradiction` park on its in-window parent, because the grafter
-   * looks the child up among the accepted rows and does not find it. That is
-   * visible and it is safe, but the code is the wrong story — it says the keys
-   * disagreed when what happened is that the child was out of window. Fixing it
-   * needs a park code that does not exist yet, and it is recorded rather than
-   * guessed at.
+   * A refused CHILD session is deliberately NOT given one of these. A child is
+   * a subagent inside its parent's session, not a deck entry of its own
+   * (contract §9), so an `unsupported` `SessionState` for it would invent a
+   * session the user never started. It parks on its in-window parent instead,
+   * with `childSessionUnsupported` — the code `PLAN.md`'s Phase 5 gate (B7)
+   * added to close `docs/evidence/phase-4/COVERAGE.md` item 29. Through Phase 4
+   * that case reported `joinKeyContradiction`, which was visible and safe and
+   * told the wrong story: the keys did not disagree, the child was out of
+   * window. `graft.ts`'s `joinTasks` holds the branch and the ordering reason.
    */
   const refusedRootIds = new Set(
     read.value.sessions.filter((s) => s.parentId === null).map((s) => s.id),
   );
   const unsupported: SessionState[] = partition.refused
     .filter((mismatch) => refusedRootIds.has(mismatch.sessionId))
-    .map((mismatch) => unsupportedSession(mismatch, read.value.sessions));
+    .map((mismatch) =>
+      unsupportedSession(mismatch, read.value.sessions, read.value.projects, matchWorkspace),
+    );
 
   return {
     kind: 'ok',
@@ -236,22 +310,75 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
 }
 
 /**
+ * The message off anything `catch` can hand us, without a stack.
+ *
+ * `db.ts` has a private twin of this. It is restated rather than exported and
+ * shared, because that one is about a filesystem/SQLite error and this one is
+ * about our own code throwing - the two would drift toward each other's needs
+ * and a shared helper would make it look like the two failures are one kind.
+ */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
  * The `SessionState` a refused session renders as: a refusal, not a tree.
  *
  * Nothing derived from the session's own content appears — no tool nodes, no
  * totals, no label beyond what the row itself says — because the whole reason
  * it refused is that the engine does not trust its shape.
+ *
+ * ---------------------------------------------------------------------------
+ * `workspaceMatch` IS REAL HERE, AND IT IS THE ONE EXCEPTION
+ * ---------------------------------------------------------------------------
+ *
+ * It used to be hard-coded `false`, which was defensible in isolation and wrong
+ * in composition. **The host filters the deck by `workspaceMatch`**, to match
+ * what `SessionModel` does for Claude Code, so a hard `false` filtered every
+ * refused OpenCode session off the deck entirely: a user whose OpenCode version
+ * drifted out of the window saw NOTHING, not an `unsupported` card. That
+ * defeats G3 and contradicts the sentence this file already carries — *a
+ * refusal that is invisible to the renderer is not a refusal*. Neither package
+ * was wrong alone, which is exactly the recorded "a module-boundary partition
+ * produces silent seams, not crashes" class. The CC engine never had the hole,
+ * because `SessionModel` computes the match from the real workspace.
+ *
+ * **Why this does not trust the row that failed.** The session refused on
+ * `session.version` — a column on the `session` row. `project.worktree`, which
+ * is the only thing the match reads, lives in the **`project` table** and is
+ * not what refused. Taking the match from the project row is therefore not
+ * believing the shape the fingerprint rejected; it is answering a question
+ * about a different row entirely. That distinction is the whole licence for
+ * this exception, so it is written here rather than left for the next reader to
+ * reconstruct.
+ *
+ * **The line, and it is not moving.** `projectSlug` stays `''`, the tree stays
+ * empty, the totals stay zero and the label stays whatever the row itself says.
+ * Only the match changes, and only because it comes from another table. This is
+ * not "refused sessions get their content back".
+ *
+ * **Belt and braces, deliberately.** The host is ALSO changed so it never
+ * filters a refusal. That redundancy is the point: neither this file nor the
+ * host should be able to silently reintroduce the hole alone. Do not
+ * "simplify" either half away because the other one covers it.
+ *
+ * A project row that is absent yields `false`, the old behaviour — there is
+ * nothing to derive a match from and inventing one would be a guess.
  */
 function unsupportedSession(
   mismatch: OcSessionMismatch,
   sessions: readonly OcSessionRow[],
+  projects: readonly OcProjectRow[],
+  matchWorkspace: (project: OcProjectRow | undefined) => boolean,
 ): SessionState {
   const row = sessions.find((s) => s.id === mismatch.sessionId);
+  const project =
+    row === undefined ? undefined : projects.find((p) => p.id === row.projectId);
   return {
     sessionId: mismatch.sessionId,
     projectSlug: '',
     engine: 'opencode',
-    workspaceMatch: false,
+    workspaceMatch: matchWorkspace(project),
     liveness: 'unsupported',
     schemaOk: false,
     totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },

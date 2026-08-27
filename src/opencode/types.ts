@@ -137,7 +137,23 @@ export type OcDegradeCode =
    * read-only opener: 20 opens 1.5 s apart with OpenCode writing, 20/20
    * succeeded, 0 `SQLITE_BUSY`, slowest open 2 ms.
    */
-  | 'databaseCorrupt';
+  | 'databaseCorrupt'
+  /**
+   * The store read fine and the GRAFT threw. **Nothing about storage
+   * failed**, which is the whole reason this is not one of the three above.
+   *
+   * A caller must be able to tell the two apart because the operator
+   * response has nothing in common. A `database*` code says the file is
+   * missing, locked, torn or not a database, and the answer is about the
+   * disk. This one says Agent Deck could not build a tree out of rows it
+   * read successfully, and the answer is a bug report against
+   * `src/opencode/graft.ts` carrying the message this degrade preserves.
+   *
+   * `src/opencode/index.ts` is the only place that produces it, at the one
+   * try/catch in the engine; the trade it represents is written out at that
+   * catch site rather than here.
+   */
+  | 'graftFailed';
 
 /** Engine health. `ok: false` means render nothing and flag the engine (G3). */
 export type OcEngineHealth =
@@ -228,6 +244,27 @@ export interface OcToolRecord {
   /** `state.output`, else `state.error`, else absent. Cut ONCE. */
   readonly resultPreview?: string;
   readonly durationMs?: number;
+  /**
+   * `state.metadata.truncated` — OPENCODE'S OWN claim, carried verbatim.
+   *
+   * Three states, and they are three different facts (`ToolNode.truncated` in
+   * `../model/events.js` carries the same three):
+   *
+   *   - `true`  — OpenCode says it truncated this payload upstream. Nothing
+   *     here can recover the bytes, unlike our own `redact.ts` marker.
+   *   - `false` — OpenCode says it did not. A claim, not an absence.
+   *   - absent  — no claim was made, which is NOT "known to be whole".
+   *
+   * The engine's boolean is never merged with `inputTruncated` /
+   * `resultTruncated` below: those two record whether OUR ceiling fired, and
+   * conflating them tells a user a payload is retrievable when it is not.
+   *
+   * Measured over the committed corpora: anchor 14 `true` / 205 `false` / 27
+   * absent of 246 tool parts, witness 5 / 93 / 1 of 99. Zero non-boolean
+   * values in either, so the "not a boolean is no claim" arm in `parse.ts` is
+   * unexercised by a fixture.
+   */
+  readonly truncated?: boolean;
 
   // -- join / ordering, dropped at node construction ------------------------
   /** The `prt_*` row id. The only identity a parked *part* has (OC3). */

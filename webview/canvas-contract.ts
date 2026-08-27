@@ -35,6 +35,37 @@
  */
 
 /* ------------------------------------------------------------------------ *
+ * Contract version
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The version of the host/webview shape defined by this file and by
+ * `src/model/events.ts`'s message contract.
+ *
+ * **This constant did not exist before Phase 5, and `PLAN.md` DoD 5.1 asked for
+ * it to be "bumped".** The gate re-measured the file and found zero
+ * case-insensitive matches for `version` — the clause named an artifact that
+ * had never been written, so gate amendment B1 introduces it rather than
+ * reinterpreting the clause into something already true.
+ *
+ * It starts at **2**, not 1. Version 1 is the implicit shape everything before
+ * Phase 5 spoke, and this phase changes it: `SessionState.engine` is now
+ * stamped by both engines rather than inferred from absence,
+ * `SessionFieldPatch` carries `engine`, `ToolNode` carries `truncated`, and
+ * `ParkCode` gains `childSessionUnsupported`. Numbering the pre-existing shape
+ * 1 and this one 2 is what makes the bump a real statement instead of a
+ * constant introduced already-satisfied.
+ *
+ * **What it is NOT.** It is not a compatibility negotiation and nothing branches
+ * on it: the host and the webview ship in one VSIX and are always the same
+ * build. It exists so a change to the shared shape has a place to be declared,
+ * and so a test can fail when the shape moves without anyone saying so — the
+ * job `src/bridge/contract.ts` does for the element id, on the surface where
+ * this repo has already paid once for two packages agreeing by hand.
+ */
+export const CANVAS_CONTRACT_VERSION = 2;
+
+/* ------------------------------------------------------------------------ *
  * Layout
  * ------------------------------------------------------------------------ */
 

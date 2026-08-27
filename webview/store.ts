@@ -82,6 +82,26 @@ export interface SessionSummary {
    * no badge, which is the deck saying nothing about content it refused.
    */
   errorCount: number;
+  /**
+   * Which observation engine produced this session (DoD 5.4).
+   *
+   * NORMALISED HERE, ONCE. `SessionState.engine` is optional and its absence
+   * reads as `'cc'` — `src/model/events.ts` is the authority for that rule,
+   * and gate amendment B3 makes `src/model/session.ts` stamp `'cc'`
+   * explicitly, so every state the shipping CC model hands out carries it.
+   * Absence stays expressible (an older construction of the interface, or a
+   * test literal), so the default is applied in `summarize` and this field is
+   * REQUIRED on the summary.
+   *
+   * That asymmetry is deliberate. A renderer that had to re-apply the default
+   * would be the second place one rule is stated, and two places stating one
+   * rule is how they come to disagree — the defect `canvas-contract.ts`'s
+   * header describes, in the data instead of in a name.
+   *
+   * The type is derived from `SessionState` rather than written out, so the
+   * day a third engine is added this row cannot be the place that forgot.
+   */
+  engine: NonNullable<SessionState['engine']>;
 }
 
 /** A patch the host sent that could not be applied. */
@@ -312,6 +332,14 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
     // deep-equal view — there is no object identity here to flap.
     nodeCount: refused ? 0 : countNodes(state),
     errorCount: refused ? 0 : countToolErrors(state.root),
+    // Absence reads as `'cc'`. This is the one place that rule is applied;
+    // see the field's own doc above.
+    //
+    // NOT zeroed for a refused session, unlike the two counts above. Those are
+    // numbers read off a tree the fingerprint declined to trust, which is what
+    // G3 forbids; which engine did the refusing is known independently of the
+    // tree and is exactly what a reader needs to know about a cracked blob.
+    engine: state.engine ?? 'cc',
   };
 }
 

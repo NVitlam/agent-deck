@@ -624,6 +624,25 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
     await writeFile(join(stub, 'index.js'), VSCODE_STUB);
     await writeFile(join(stage, 'census.cjs'), CENSUS_PROGRAM);
 
+    // G6: "Tests never read live `~/.claude` or the live OpenCode DB."
+    //
+    // The census spawns the REAL bundled `activate()` and inherits
+    // `process.env`. The CC half has always been pinned by
+    // `CLAUDE_PROJECTS_ROOT` below; until DoD 5.2 there was no OpenCode half to
+    // pin, because the engine was not reachable from the host. Now it is, so an
+    // unpinned run would resolve `%USERPROFILE%/.local/share/opencode` and open
+    // the developer's own database — which on this machine is ~24 MB and in WAL
+    // mode, so a read-only open would also touch its `-shm` sidecar.
+    //
+    // An EMPTY directory rather than a fixture corpus, deliberately: this
+    // describe measures SOCKETS, and the engine finding no data directory is
+    // both the quietest path through it and the one that adds no I/O to a
+    // census that is already timing-sensitive. DoD 5.2's "absent directory →
+    // engine silently off" is what makes that a supported state rather than a
+    // degraded one.
+    const emptyOpencodeRoot = join(stage, 'no-opencode');
+    await mkdir(emptyOpencodeRoot, { recursive: true });
+
     // A known port, probed free immediately before the spawn. The extension
     // refuses to bind port 0 by design, and the live hook tap in this repo may
     // well hold 47821 right now, so the census cannot use either.
@@ -653,6 +672,8 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
         env: {
           ...process.env,
           CLAUDE_PROJECTS_ROOT: CAPTURED_ROOT,
+          // The OpenCode half of the same rule. See the staging comment above.
+          AGENT_DECK_OPENCODE_ROOT: emptyOpencodeRoot,
           CENSUS_WORKSPACE: await capturedWorkspacePath(),
           CENSUS_PORT: String(port),
         },
@@ -858,12 +879,18 @@ function ocCorpusDbPath(): string {
  * spies); the accessor exposes no write surface (every exported function
  * audited by a mutation test)."
  *
- * The engine is NOT yet reachable from `src/extension.ts` — wiring it into the
- * host is `PLAN.md` DoD 5.2 — so the host bundle audited in part (A) does not
- * contain it and would report a clean pass while saying nothing at all about
- * it. This describe bundles `src/opencode/index.ts` as its own entry point and
- * applies the same scan, so the claim is about the engine rather than about
- * its absence.
+ * **DoD 5.2 landed and the paragraph that stood here is now false.** It said
+ * the engine was "NOT yet reachable from `src/extension.ts`", which was true
+ * when written and was the reason this describe exists. The host bundle audited
+ * in part (A) now DOES contain the engine.
+ *
+ * This describe is kept, and it is not redundant: bundling
+ * `src/opencode/index.ts` as its own entry point denies **`node:http`** too,
+ * which the host bundle cannot do — there the hook listener is the one
+ * sanctioned socket, so a host-bundle scan would pass while an engine that
+ * opened an HTTP client hid behind the listener's allowance. Scanning the
+ * engine alone is what makes the claim about the engine rather than about the
+ * bundle it now travels in.
  *
  * `node:http` is DENIED here, unlike in the host bundle. There the listener is
  * the one sanctioned socket; the OpenCode engine has no listener and no client

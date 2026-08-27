@@ -429,7 +429,8 @@ The tail of the cut string, verbatim, is:
   "status": "done",
   "inputPreview": "sha256:d531899777f2a4f3:131",
   "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-  "durationMs": 163
+  "durationMs": 163,
+  "truncated": false
 }
 ```
 
@@ -552,10 +553,24 @@ repo records most often):
    (OC3). It therefore equals `depth` by construction in every edge in both goldens, and it can
    never disagree. It is not wrong, it is vacuous.
 
-5. **`ToolNode` cannot carry `state.metadata.truncated`.** Contract §8.4 calls it "the flag to
-   trust" for OpenCode's own truncation, and 14 anchor tool parts set it. `ToolNode` has no field
-   for it, so the golden does not represent it — a payload OpenCode already truncated and one it did
-   not are indistinguishable in these files.
+5. **`ToolNode` could not carry `state.metadata.truncated`. CLOSED 2026-08-27.** Contract
+   §8.4 calls it "the flag to trust" for OpenCode's own truncation, and 14 anchor tool parts set
+   it. `ToolNode` had no field for it, so the golden did not represent it — a payload OpenCode
+   already truncated and one it did not were indistinguishable in these files.
+
+   `PLAN.md`'s Phase 5 gate amendment B7 gave it one. `ToolNode.truncated` exists in
+   `src/model/events.ts`, `src/opencode/parse.ts` maps it and `scripts/opencode-golden.mjs`
+   maps it independently; both goldens were regenerated and each tool node gained exactly one
+   key. **All three states are represented**, because they are three different facts: `true`
+   and `false` are claims OpenCode made and `null` is no claim, which is not the same as "known
+   to be whole". Measured after regenerating — anchor 14 / 205 / 27 over 246 tool nodes,
+   witness 5 / 93 / 1 over 99.
+
+   **It is not merged with our own truncation and must not be.** The `redact.ts` marker inside a
+   preview says Agent Deck cut the payload and raising `agentDeck.previewBytes` recovers it;
+   this flag says OpenCode cut it upstream and nothing here can. The corpora make the two
+   independent: the 88,478-byte `read` output in the hand-verified case above carries
+   `truncated: false` from OpenCode and is cut by us.
 
 6. **No non-`task` error tool part exists in the anchor.** All 27 error parts are `task` parts. The
    `resultPreview`-from-`state.error` rule is therefore only exercised on task calls in the anchor;

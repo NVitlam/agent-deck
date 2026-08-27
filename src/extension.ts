@@ -19,6 +19,22 @@
  *                    `deactivate()`.
  *
  * ---------------------------------------------------------------------------
+ * Phase 5 — the SECOND engine (PLAN.md DoD 5.2 / 5.3)
+ * ---------------------------------------------------------------------------
+ * There are now two observation engines behind one `SessionState` stream.
+ * {@link OpenCodeEnginePath} is the OpenCode half: it discovers projects by
+ * matching `project.worktree` against the open workspace folders, reads content
+ * through `readOpenCodeEngine`, and chains `OcLivenessEngine` with a clock and
+ * a poll trigger supplied FROM HERE (Phase 4 Amendment A2 keeps both out of
+ * that module; gate amendment B5 puts the chaining in 5.2).
+ *
+ * The two halves share no clock, no scheduler, no watcher, no socket and no
+ * `try` block. {@link AgentDeckDataPath.pump} assembles each independently and
+ * abandons a round only when BOTH failed, which is DoD 5.3's isolation stated
+ * as code rather than as a comment; `src/model/isolation.test.ts` drives both
+ * directions plus the hook-listener-down case.
+ *
+ * ---------------------------------------------------------------------------
  * Carry-forward A — the JSONL half of the liveness merge
  * ---------------------------------------------------------------------------
  * Phase 2 shipped `LivenessEngine`'s hook/JSONL merge with its JSONL input
@@ -84,18 +100,38 @@
  *       file. Everything dies with the window.
  */
 
+import { existsSync } from 'node:fs';
+
 import * as vscode from 'vscode';
 
 import { SessionBridge, isWebviewToHostMessage } from './bridge/messages.js';
 import type { BridgeDegradedState } from './bridge/messages.js';
 import { createNonce, webviewHtml } from './bridge/html.js';
+import { deepFreeze } from './bridge/apply.js';
 import { correlateWorkspace } from './model/correlate.js';
 import { graftSession } from './model/graft.js';
 import type { GraftSessionOptions, GraftSessionResult } from './model/graft.js';
 import { LivenessEngine } from './model/liveness.js';
-import { SessionModel } from './model/session.js';
-import type { SessionEmission } from './model/session.js';
-import type { HostToWebviewMessage, WebviewToHostMessage } from './model/events.js';
+import { SessionModel, diffSessionState } from './model/session.js';
+import type { SessionDiff, SessionEmission } from './model/session.js';
+import type {
+  HostToWebviewMessage,
+  SessionState,
+  WebviewToHostMessage,
+} from './model/events.js';
+import { opencodeDataDir, opencodeDbPath, readOpenCodeEngine } from './opencode/index.js';
+import type { OcEngineOptions, OcEngineOutcome } from './opencode/index.js';
+import {
+  DEFAULT_OC_POLL_INTERVAL_MS,
+  OcLivenessEngine,
+  createWalWatchFactory,
+} from './opencode/liveness.js';
+import type {
+  OcSessionLiveness,
+  PollTrigger,
+  PollTriggerHandle,
+  WalWatchFactory,
+} from './opencode/liveness.js';
 import {
   DEFAULT_HOOK_PORT,
   HookListener,
@@ -228,6 +264,513 @@ export function readSettings(reader: SettingsReader | undefined): AgentDeckSetti
 }
 
 // ---------------------------------------------------------------------------
+// (a2) Logging
+// ---------------------------------------------------------------------------
+
+/**
+ * Levels this host logs at. Two, because two is what the DoD names.
+ *
+ * `console` rather than an output channel, and that is a decision rather than
+ * laziness: an output channel is a `vscode` object, so taking one would make
+ * the OpenCode discovery decision untestable outside the editor — the double
+ * in `test/vscode-mock.ts` has no `createOutputChannel` and this package does
+ * not own that file. `console.info` from the extension host lands in the
+ * "Extension Host" log, which is where a user is told to look anyway.
+ */
+export type HostLogLevel = 'info' | 'error';
+
+export type HostLogger = (level: HostLogLevel, message: string) => void;
+
+/** The production logger. Injected everywhere, so a test never writes to it. */
+export const consoleLogger: HostLogger = (level, message) => {
+  if (level === 'error') console.error(message);
+  else console.info(message);
+};
+
+// ---------------------------------------------------------------------------
+// (b0) The OpenCode engine path (PLAN.md DoD 5.2, gate amendments B5 and B6)
+// ---------------------------------------------------------------------------
+
+/**
+ * The message logged, ONCE, when there is no OpenCode store to observe.
+ *
+ * A constant rather than a template, because "logged once at info level" is an
+ * assertable property only if the string is the same string every time.
+ */
+export const OPENCODE_ABSENT_LOG =
+  'Agent Deck: no OpenCode data directory found; the OpenCode engine is off.';
+
+/**
+ * The production poll trigger: `setInterval`, wrapped.
+ *
+ * It lives HERE and not in `src/opencode/liveness.ts` because `PLAN.md`
+ * Phase 4 Amendment A2 forbids a timer in that module — `now` and the trigger
+ * are injected with no default, and a default would be `Date.now`/`setInterval`
+ * arriving by the back door. The host owns wall-clock time; the engine owns the
+ * cursor. Gate amendment B5 is explicit that this is the split.
+ */
+export function systemPollTrigger(run: () => void, intervalMs: number): PollTriggerHandle {
+  const handle = setInterval(run, intervalMs);
+  // `unref` keeps a poll loop from holding a node process open in a test that
+  // forgot to dispose. It does not exist on the DOM `setInterval` type, hence
+  // the guard rather than a cast.
+  if (typeof handle === 'object' && typeof handle.unref === 'function') handle.unref();
+  return {
+    stop: () => {
+      clearInterval(handle);
+    },
+  };
+}
+
+export interface OpenCodePathOptions {
+  /**
+   * EVERY open workspace folder (gate amendment B6), not just the first.
+   *
+   * `OcEngineOptions.workspacePaths` is a `readonly string[]` and the CC half
+   * of this host is singular throughout — `firstWorkspacePath()` and
+   * {@link AgentDeckDataPath.workspacePath}. The asymmetry is deliberate and is
+   * argued at the call site in `activate()`; it is not created here.
+   */
+  workspacePaths: readonly string[];
+  /** `agentDeck.livenessThresholdMs`. The same setting both engines read. */
+  thresholdMs: number;
+  /** Something changed; schedule an emission. Coalesced by the caller. */
+  onChange: () => void;
+  /** Absolute path of `opencode.db`. Overrides {@link OpenCodePathOptions.dataDir}. */
+  dbPath?: string;
+  /**
+   * The OpenCode data directory. Tests and fixture replay only.
+   *
+   * The `projectsRoot` precedent one section down, for the same reason: the
+   * engine's own environment override (`AGENT_DECK_OPENCODE_ROOT`) is a
+   * process-wide switch, and a test that needs two roots in one process cannot
+   * use it.
+   */
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  /** Injected clock. Defaults to `Date.now`. A2 keeps it out of the engine. */
+  now?: () => number;
+  pollIntervalMs?: number;
+  /** Defaults to {@link systemPollTrigger}. */
+  pollTrigger?: PollTrigger;
+  /** Defaults to {@link createWalWatchFactory}. */
+  walWatchFactory?: WalWatchFactory;
+  log?: HostLogger;
+  /**
+   * The content read. Defaults to {@link readOpenCodeEngine}.
+   *
+   * Injected for the reason {@link DataPathOptions.graft} is, pointed the other
+   * way: DoD 5.3 requires that an OpenCode-side failure leave CC sessions
+   * untouched, and `readOpenCodeEngine` is documented never to throw — so
+   * without this seam the `catch` below is unreachable from any test and the
+   * isolation claim rests on a comment. Production never passes this.
+   */
+  read?: (options: OcEngineOptions) => OcEngineOutcome;
+}
+
+export interface OpenCodeDiagnostics {
+  /** False when the store was absent at {@link OpenCodeEnginePath.start}. */
+  enabled: boolean;
+  started: boolean;
+  disposed: boolean;
+  /** The path that was probed, whether or not it existed. */
+  dbPath: string;
+  /** Times {@link OPENCODE_ABSENT_LOG} was emitted. DoD 5.2's "once" is 1. */
+  absentLogs: number;
+  /** Content reads attempted. */
+  contentReads: number;
+  /** Content reads that THREW. Should stay 0; counted so it cannot crash. */
+  contentFailures: number;
+  /** Reads returning `schemaMismatch` — every session renders `unsupported`. */
+  schemaMismatches: number;
+  /** Reads returning `degraded` — the last good content is kept. */
+  degradedReads: number;
+  /** Liveness polls the engine reports having attempted. */
+  livenessPolls: number;
+  livenessDegraded: boolean;
+  /** Emissions produced by {@link OpenCodeEnginePath.emit}. */
+  emissions: number;
+  /** Workspace-matching sessions currently held. */
+  sessions: number;
+  lastError?: string;
+}
+
+/** An emission with nothing in it. Frozen; never handed out mutable. */
+const EMPTY_EMISSION: SessionEmission = Object.freeze({
+  sessions: Object.freeze([]) as readonly SessionState[],
+  diffs: Object.freeze([]) as readonly SessionDiff[],
+  addedSessionIds: Object.freeze([]) as readonly string[],
+  removedSessionIds: Object.freeze([]) as readonly string[],
+  schemaMismatchSessionIds: Object.freeze([]) as readonly string[],
+});
+
+/**
+ * The OpenCode half of the host: discovery, content, and the live cursor.
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT DoD 5.2 ASKED FOR AND WHAT IS HERE
+ * ---------------------------------------------------------------------------
+ *   - **Discovery.** `project.worktree` against the open workspace folders,
+ *     case-insensitively. The comparison is NOT written here: it is
+ *     `OcEngineOptions.workspacePaths`, which `src/opencode/index.ts` turns
+ *     into a matcher over `slugFromWorktree`, which is `slugifyWorkspace` plus
+ *     a lower-cased drive letter. Restating it here would be the two-agreeing-
+ *     literals defect `src/bridge/contract.ts` exists to document.
+ *   - **On by default when the data directory exists. No setting.** There is no
+ *     `agentDeck.opencode.*` key and this class reads none: the probe below is
+ *     the whole switch. That is the v2 Phase 7 gate decision, restated by
+ *     DoD 5.2 as unchanged.
+ *   - **Absent → silently off, logged ONCE at info level.** `#absentLogs` is
+ *     the counter a test reads. The probe happens exactly once, at
+ *     {@link start}, so there is no tick that could log a second time.
+ *   - **Liveness is chained** (gate amendment B5), because DoD 5.3's third
+ *     isolation test has nothing to assert against a static read.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THE CONTENT READ IS DRIVEN BY THE CURSOR
+ * ---------------------------------------------------------------------------
+ * `readOpenCodeEngine` reads every `part` row in the store — tens of megabytes
+ * on a real one. Doing that on every poll would be a busy loop with a database
+ * attached. `event_sequence.seq` is precisely the number that says whether
+ * anything happened, so a content re-read is taken only when the session set or
+ * some session's cursor moved. A clock-only transition (`live` -> `idle`) still
+ * schedules an EMISSION, because the overlay changed — it just does not
+ * re-read the store, which has not.
+ *
+ * ---------------------------------------------------------------------------
+ * G1 / G2
+ * ---------------------------------------------------------------------------
+ * G1 as amended 2026-08-27: every open below is read-only, `opencode.db` is
+ * never modified, and the four secret-bearing tables are never read. What
+ * SQLite touches on a WAL database is its own `-shm` index, which every reader
+ * of one touches. `agent-deck-spec.md` OC1 carries the measurements.
+ *
+ * G2 across engines: nothing in here can throw into the Claude Code path.
+ * Every entry point catches, counts and continues, and {@link emit} is called
+ * from a `try` of its own in {@link AgentDeckDataPath.pump}.
+ */
+export class OpenCodeEnginePath {
+  readonly dbPath: string;
+
+  readonly workspacePaths: readonly string[];
+
+  readonly #onChange: () => void;
+  readonly #log: HostLogger;
+  readonly #read: (options: OcEngineOptions) => OcEngineOutcome;
+  readonly #env?: Record<string, string | undefined>;
+  readonly #now: () => number;
+  readonly #thresholdMs: number;
+  readonly #pollIntervalMs: number;
+  readonly #pollTrigger: PollTrigger;
+  readonly #walWatchFactory: WalWatchFactory;
+
+  #liveness: OcLivenessEngine | null = null;
+  #content: readonly SessionState[] = [];
+  #previous = new Map<string, SessionState>();
+  /** `sessionId:seq` for every session the last content read covered. */
+  #cursorStamp = '';
+  /**
+   * Has a poll established the cursor baseline for the read {@link start} took?
+   *
+   * `start()` reads content BEFORE the first poll, so that first poll's stamp
+   * describes a store the content already reflects. Without this flag the stamp
+   * would read as "changed" (it moves off `''`) and the store would be read
+   * TWICE at activation — two full passes over tens of megabytes, for no new
+   * information. Measured as `contentReads === 2` before this existed.
+   */
+  #stampSeeded = false;
+
+  #enabled = false;
+  #started = false;
+  #disposed = false;
+
+  #absentLogs = 0;
+  #contentReads = 0;
+  #contentFailures = 0;
+  #schemaMismatches = 0;
+  #degradedReads = 0;
+  #emissions = 0;
+  #lastError?: string;
+
+  constructor(options: OpenCodePathOptions) {
+    this.workspacePaths = [...options.workspacePaths];
+    this.dbPath =
+      options.dbPath ??
+      opencodeDbPath(
+        options.dataDir ?? opencodeDataDir(options.env ?? process.env),
+      );
+    this.#onChange = options.onChange;
+    this.#log = options.log ?? consoleLogger;
+    this.#read = options.read ?? readOpenCodeEngine;
+    if (options.env !== undefined) this.#env = options.env;
+    this.#now = options.now ?? Date.now;
+    this.#thresholdMs = options.thresholdMs;
+    this.#pollIntervalMs = options.pollIntervalMs ?? DEFAULT_OC_POLL_INTERVAL_MS;
+    this.#pollTrigger = options.pollTrigger ?? systemPollTrigger;
+    this.#walWatchFactory = options.walWatchFactory ?? createWalWatchFactory();
+  }
+
+  get diagnostics(): OpenCodeDiagnostics {
+    return {
+      enabled: this.#enabled,
+      started: this.#started,
+      disposed: this.#disposed,
+      dbPath: this.dbPath,
+      absentLogs: this.#absentLogs,
+      contentReads: this.#contentReads,
+      contentFailures: this.#contentFailures,
+      schemaMismatches: this.#schemaMismatches,
+      degradedReads: this.#degradedReads,
+      livenessPolls: this.#liveness?.counters().polls ?? 0,
+      livenessDegraded: this.#liveness?.isDegraded() ?? false,
+      emissions: this.#emissions,
+      sessions: this.#content.length,
+      ...(this.#lastError !== undefined ? { lastError: this.#lastError } : {}),
+    };
+  }
+
+  /** The live engine, or null when the store was absent. Diagnostics only. */
+  get livenessEngine(): OcLivenessEngine | null {
+    return this.#liveness;
+  }
+
+  /**
+   * Probe the store. Present -> read it and start polling. Absent -> off.
+   *
+   * Never throws, and never surfaces a dialog: a machine without OpenCode
+   * installed is the normal case, not a fault, and nagging about it would be
+   * the "no nagging" defect in another costume.
+   */
+  start(): void {
+    if (this.#disposed || this.#started) return;
+    this.#started = true;
+
+    if (!existsSync(this.dbPath)) {
+      // ONCE. The probe is not on a tick, so there is no second call site; the
+      // counter exists so a test can prove that rather than assume it.
+      this.#absentLogs += 1;
+      this.#log('info', OPENCODE_ABSENT_LOG);
+      return;
+    }
+    this.#enabled = true;
+
+    this.#liveness = new OcLivenessEngine({
+      dbPath: this.dbPath,
+      now: this.#now,
+      thresholdMs: this.#thresholdMs,
+      pollIntervalMs: this.#pollIntervalMs,
+      pollTrigger: this.#pollTrigger,
+      walWatchFactory: this.#walWatchFactory,
+      onUpdate: (snapshots: readonly OcSessionLiveness[]) => {
+        this.#onPoll(snapshots);
+      },
+    });
+    // The first content read happens before the first poll so that a snapshot
+    // taken between the two is a tree with stale liveness rather than liveness
+    // with no tree.
+    this.#refreshContent();
+    this.#liveness.start();
+    this.#onChange();
+  }
+
+  /** Idempotent. After this nothing here polls, watches or holds a handle. */
+  dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#liveness?.dispose();
+    this.#liveness = null;
+    this.#content = [];
+    this.#previous.clear();
+  }
+
+  /** The workspace-matching OpenCode sessions, with liveness overlaid. */
+  sessions(): readonly SessionState[] {
+    if (this.#disposed) return [];
+    const engine = this.#liveness;
+    return this.#content.map((session) => {
+      // A refused session has no liveness to overlay: `'unsupported'` is the
+      // fingerprint's answer and `OcLiveness` excludes it at the type level, so
+      // overwriting it here would be inventing a value the engine cannot
+      // produce.
+      if (!session.schemaOk) return session;
+      const live = engine?.livenessOf(session.sessionId);
+      if (live === undefined || live === session.liveness) return session;
+      return { ...session, liveness: live };
+    });
+  }
+
+  /**
+   * A `SessionEmission` for the OpenCode half, diffed against the last one.
+   *
+   * The same shape `SessionModel.emit()` produces, built with the same pure
+   * `diffSessionState` — not a second diff implementation. `AgentDeckDataPath`
+   * concatenates the two.
+   */
+  emit(): SessionEmission {
+    if (this.#disposed) return EMPTY_EMISSION;
+    const next = new Map<string, SessionState>();
+    for (const session of this.sessions()) {
+      next.set(session.sessionId, deepFreeze({ ...session }));
+    }
+
+    const diffs: SessionDiff[] = [];
+    const addedSessionIds: string[] = [];
+    const removedSessionIds: string[] = [];
+    const schemaMismatchSessionIds: string[] = [];
+
+    for (const [sessionId, state] of next) {
+      const prev = this.#previous.get(sessionId);
+      if (prev === undefined) {
+        addedSessionIds.push(sessionId);
+        if (!state.schemaOk) schemaMismatchSessionIds.push(sessionId);
+        continue;
+      }
+      const patch = diffSessionState(prev, state);
+      if (patch !== undefined) diffs.push({ sessionId, patch });
+      if (!state.schemaOk && prev.schemaOk) schemaMismatchSessionIds.push(sessionId);
+    }
+    for (const sessionId of this.#previous.keys()) {
+      if (!next.has(sessionId)) removedSessionIds.push(sessionId);
+    }
+
+    this.#previous = next;
+    this.#emissions += 1;
+    return {
+      sessions: [...next.values()],
+      diffs,
+      addedSessionIds,
+      removedSessionIds,
+      schemaMismatchSessionIds,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // internals
+  // -------------------------------------------------------------------------
+
+  /**
+   * One liveness poll landed.
+   *
+   * The cursor decides whether the STORE is re-read; the emission is scheduled
+   * either way, because a `live` -> `idle` transition changes what the user
+   * sees without changing a single row.
+   */
+  #onPoll(snapshots: readonly OcSessionLiveness[]): void {
+    if (this.#disposed) return;
+    const stamp = snapshots
+      .map((s) => `${s.sessionId}:${String(s.seq ?? -1)}`)
+      .sort()
+      .join('|');
+    const changed = stamp !== this.#cursorStamp;
+    this.#cursorStamp = stamp;
+    if (!this.#stampSeeded) {
+      // The FIRST poll only records where the cursor was when `start()` read
+      // the store. Re-reading here would be reading the same rows twice.
+      //
+      // The cost of this, stated rather than hidden: if the store changed
+      // between that read and this poll, the change is invisible until the
+      // next poll — one `pollIntervalMs`, or sooner if the WAL wakes us.
+      this.#stampSeeded = true;
+    } else if (changed) {
+      this.#refreshContent();
+    }
+    this.#onChange();
+  }
+
+  #refreshContent(): void {
+    if (this.#disposed) return;
+    this.#contentReads += 1;
+    let outcome: OcEngineOutcome;
+    try {
+      outcome = this.#read({
+        dbPath: this.dbPath,
+        workspacePaths: this.workspacePaths,
+        ...(this.#env !== undefined ? { env: this.#env } : {}),
+      });
+    } catch (error) {
+      // Documented never to happen — the engine returns outcomes rather than
+      // throwing — and caught anyway, because the whole point of DoD 5.3 is
+      // that the Claude Code path survives whatever this one does.
+      this.#contentFailures += 1;
+      this.#lastError = error instanceof Error ? error.message : String(error);
+      return;
+    }
+
+    switch (outcome.kind) {
+      case 'ok':
+        this.#content = outcome.result.sessions.filter(belongsOnDeck);
+        return;
+      case 'schemaMismatch':
+        // G3: the store's shape is not OpenCode's, so every session this host
+        // is already showing becomes a refusal rather than vanishing. A
+        // refusal that is invisible to the renderer is not a refusal.
+        this.#schemaMismatches += 1;
+        this.#lastError = `opencode schema mismatch: ${outcome.mismatch.code}`;
+        this.#content = this.#content.map(unsupportedCopy);
+        return;
+      default:
+        // Degraded: the store is unusable right now. The last good content is
+        // KEPT, which is what `OcLivenessEngine.poll` does with its own facts
+        // and is the honest reading — the engine has stopped seeing, it has
+        // not learned that anything ended.
+        this.#degradedReads += 1;
+        this.#lastError = `opencode store degraded: ${outcome.health.code}`;
+        return;
+    }
+  }
+}
+
+/**
+ * Does this OpenCode session belong on THIS window’s deck?
+ *
+ * ---------------------------------------------------------------------------
+ * THE FILTER HIDES OTHER WORKSPACES. IT DOES NOT HIDE REFUSALS.
+ * ---------------------------------------------------------------------------
+ * A session whose fingerprint refused (`schemaOk: false`) is ALWAYS kept,
+ * whatever `workspaceMatch` says. `src/opencode/index.ts` carries the sentence
+ * this implements — "a refusal that is invisible to the renderer is not a
+ * refusal" — and dropping one here would mean a user whose OpenCode version
+ * drifted out of the window sees NOTHING on the deck rather than an
+ * `unsupported` card. That is the G3 hole, and it is a hole neither this file
+ * nor the engine opened on its own: two locally-correct decisions composed
+ * into it.
+ *
+ * **THE ENGINE SIDE IS BEING FIXED TOO, AND THE REDUNDANCY IS DELIBERATE.**
+ * `src/opencode/index.ts` gives a refused session a real `workspaceMatch`
+ * instead of a hard-coded `false`, which would make this carve-out
+ * unnecessary for the case that motivated it. Both halves exist by user
+ * decision so that neither file can silently reintroduce the hole alone. Do
+ * not delete one as redundant: redundant is the point.
+ *
+ * **A healthy session in another workspace is still hidden**, and that is what
+ * keeps this from being "remove the filter". `src/extension.test.ts` asserts
+ * both arms in one test, because the carve-out and the control are only
+ * meaningful against each other.
+ */
+function belongsOnDeck(session: SessionState): boolean {
+  return session.workspaceMatch || !session.schemaOk;
+}
+
+/**
+ * The same session, refused: no tree, no totals, no liveness claim.
+ *
+ * The shape `src/opencode/index.ts` produces for a session its fingerprint
+ * refused, applied here to sessions that were fine until the SCHEMA moved
+ * underneath them.
+ */
+function unsupportedCopy(session: SessionState): SessionState {
+  return {
+    ...session,
+    schemaOk: false,
+    liveness: 'unsupported',
+    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    spawnEdges: [],
+    parked: [],
+    root: { ...session.root, children: [], tokens: { in: 0, out: 0 } },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // (b) The data path
 // ---------------------------------------------------------------------------
 
@@ -278,6 +821,48 @@ export interface DataPathOptions {
     mainTranscript: string,
     options: GraftSessionOptions,
   ) => Promise<GraftSessionResult>;
+
+  /**
+   * Whether the Claude Code half runs at all. Defaults to `true`.
+   *
+   * `false` means: no watcher, no hook socket, no CC timer — the CC engine is
+   * not merely empty, it is off. `activate()` sets it from the correlation
+   * result, so a workspace with OpenCode sessions and no Claude Code project
+   * directory still gets a deck.
+   *
+   * This is G2 in the activation dimension. Gating the OpenCode engine behind
+   * a Claude Code correlation would be a shared failure path between two
+   * sources whose entire architectural point is not having one, and DoD 5.2's
+   * "on by default when the data directory exists" says nothing about Claude
+   * Code.
+   */
+  ccEnabled?: boolean;
+
+  /**
+   * The OpenCode half's options, minus the ones this data path supplies.
+   *
+   * Absent is NOT "off": the path is still constructed and still probes for a
+   * store, because DoD 5.2's switch is the store's existence and nothing else.
+   * What is absent here is only the injection.
+   */
+  opencode?: Omit<
+    OpenCodePathOptions,
+    'workspacePaths' | 'thresholdMs' | 'onChange' | 'env'
+  >;
+
+  /**
+   * EVERY open workspace folder (gate amendment B6). Defaults to
+   * `[workspacePath]`.
+   *
+   * The CC half reads {@link DataPathOptions.workspacePath} and only that, so
+   * in a multi-root workspace the two engines observe different sets. That
+   * asymmetry is pre-existing, deliberate, and recorded at the `activate()`
+   * call site rather than hidden by narrowing OpenCode to match.
+   */
+  workspacePaths?: readonly string[];
+
+  /** Defaults to {@link consoleLogger}. Forwarded to the OpenCode path. */
+  log?: HostLogger;
 }
 
 export interface DataPathDiagnostics {
@@ -299,6 +884,20 @@ export interface DataPathDiagnostics {
   consumerErrors: number;
   /** Timers currently armed. Must be 0 after {@link AgentDeckDataPath.dispose}. */
   timersArmed: number;
+  /** False when the Claude Code half was switched off at construction. */
+  ccEnabled: boolean;
+  /**
+   * `SessionModel.emit()` threw and the emission was assembled without its
+   * half. DoD 5.3's CC -> OpenCode direction, counted.
+   */
+  ccEmitErrors: number;
+  /**
+   * {@link OpenCodeEnginePath.emit} threw and the emission was assembled
+   * without its half. DoD 5.3's OpenCode -> CC direction, counted.
+   */
+  opencodeEmitErrors: number;
+  /** The OpenCode half's own counters. */
+  opencode: OpenCodeDiagnostics;
 }
 
 /**
@@ -310,12 +909,17 @@ export interface DataPathDiagnostics {
  */
 export class AgentDeckDataPath {
   readonly workspacePath: string;
+  /** Every open workspace folder. See {@link DataPathOptions.workspacePaths}. */
+  readonly workspacePaths: readonly string[];
   readonly settings: AgentDeckSettings;
   readonly liveness: LivenessEngine;
   readonly model: SessionModel;
   readonly listener: HookListener;
   readonly watcher: ProjectWatcher;
+  /** The second engine. Always constructed; enabled by its store's existence. */
+  readonly opencode: OpenCodeEnginePath;
 
+  readonly #ccEnabled: boolean;
   readonly #onEmission: (emission: DataPathEmission) => void;
   readonly #onError: (error: unknown) => void;
   readonly #scheduler: Scheduler;
@@ -351,10 +955,14 @@ export class AgentDeckDataPath {
   #graftErrors = 0;
   #lastGraftError?: string;
   #consumerErrors = 0;
+  #ccEmitErrors = 0;
+  #opencodeEmitErrors = 0;
   #bindError?: { code: string; port: number; message: string };
 
   constructor(options: DataPathOptions) {
     this.workspacePath = options.workspacePath;
+    this.workspacePaths = options.workspacePaths ?? [options.workspacePath];
+    this.#ccEnabled = options.ccEnabled ?? true;
     this.settings = options.settings;
     this.#onEmission = options.onEmission;
     this.#onError = options.onError ?? ((): void => {});
@@ -397,6 +1005,23 @@ export class AgentDeckDataPath {
       ...(options.maxWaitMs !== undefined ? { maxWaitMs: options.maxWaitMs } : {}),
       ...(options.watchFactory !== undefined ? { watchFactory: options.watchFactory } : {}),
     });
+
+    // ---- the second engine (DoD 5.2) -------------------------------------
+    //
+    // Constructed unconditionally and started in `start()`. It shares NOTHING
+    // with the four objects above: no clock, no scheduler, no watcher, no
+    // socket, and no failure path. That is what DoD 5.3 asserts, and it is a
+    // property of this wiring rather than of a comment.
+    this.opencode = new OpenCodeEnginePath({
+      workspacePaths: this.workspacePaths,
+      thresholdMs: options.settings.livenessThresholdMs,
+      onChange: () => {
+        this.#scheduleEmit();
+      },
+      ...(options.log !== undefined ? { log: options.log } : {}),
+      ...(options.now !== undefined ? { now: options.now } : {}),
+      ...options.opencode,
+    });
   }
 
   get diagnostics(): DataPathDiagnostics {
@@ -410,6 +1035,10 @@ export class AgentDeckDataPath {
       graftErrors: this.#graftErrors,
       consumerErrors: this.#consumerErrors,
       timersArmed: (this.#emitTimer === null ? 0 : 1) + (this.#tickTimer === null ? 0 : 1),
+      ccEnabled: this.#ccEnabled,
+      ccEmitErrors: this.#ccEmitErrors,
+      opencodeEmitErrors: this.#opencodeEmitErrors,
+      opencode: this.opencode.diagnostics,
       ...(this.#bindError !== undefined ? { bindError: this.#bindError } : {}),
       ...(this.#lastGraftError !== undefined ? { lastGraftError: this.#lastGraftError } : {}),
     };
@@ -425,6 +1054,19 @@ export class AgentDeckDataPath {
   async start(): Promise<void> {
     if (this.#disposed || this.#started) return;
     this.#started = true;
+
+    // FIRST, and outside every `try` below. The OpenCode engine must not be
+    // reachable from any Claude Code failure — including the two early returns
+    // in this method, which is exactly how a "both engines start" claim would
+    // become false without a single test going red.
+    this.opencode.start();
+
+    if (!this.#ccEnabled) {
+      // No watcher, no socket, no CC tick. The OpenCode half is already
+      // running and `pump()` still emits, so the deck renders.
+      this.pump();
+      return;
+    }
 
     this.listener.subscribe(this.model.onHookEvent);
     this.listener.subscribe(() => {
@@ -476,18 +1118,34 @@ export class AgentDeckDataPath {
   pump(): void {
     if (this.#disposed) return;
     this.#cancelEmitTimer();
-    let payload: DataPathEmission;
-    try {
-      payload = {
-        emission: this.model.emit(),
-        degraded: this.liveness.degradedState(),
-      };
-    } catch (error) {
-      // `emit()` is documented not to throw; counted rather than trusted.
-      this.#consumerErrors += 1;
-      this.#onError(error);
-      return;
-    }
+
+    /*
+     * TWO HALVES, TWO `try`s, AND THAT IS THE WHOLE OF DoD 5.3 IN CODE.
+     *
+     * A single `try` around both would be a shared failure path: a throw out of
+     * either engine's `emit()` would drop the OTHER engine's sessions from the
+     * round, which is precisely the cross-contamination the phase exists to
+     * forbid. Each half is assembled independently, each failure is counted,
+     * and a round is abandoned only when BOTH halves failed — which is also
+     * what preserves the pre-Phase-5 behaviour exactly when there is no
+     * OpenCode store (`#emitOpenCode` returns null and a CC throw aborts the
+     * round, as it always did).
+     */
+    const cc = this.#emitCc();
+    const oc = this.#emitOpenCode();
+    if (cc === null && oc === null) return;
+
+    const payload: DataPathEmission = {
+      emission: mergeEmissions(cc ?? EMPTY_EMISSION, oc ?? EMPTY_EMISSION),
+      // The hook tap's health, and only that. The OpenCode engine's health is
+      // NOT folded in here: `DegradedMessage.reason` is a two-value union
+      // naming hook-tap states (`noHookEvents`, `listenerDown`), so reporting
+      // an OpenCode degrade through it would tell the webview the hook
+      // listener was down when it is not. A second engine's health needs its
+      // own channel; that is a later phase's contract change, and its absence
+      // is recorded in `diagnostics.opencode` meanwhile.
+      degraded: this.#degradedState(),
+    };
     this.#emissions += 1;
     try {
       this.#onEmission(payload);
@@ -515,6 +1173,9 @@ export class AgentDeckDataPath {
     this.#cancelEmitTimer();
     this.#cancelTick();
     this.#dirty.clear();
+    // First, and unconditionally: the OpenCode poll trigger and WAL watch must
+    // not outlive the host even if a Claude Code teardown below rejects.
+    this.opencode.dispose();
     await this.watcher.dispose();
     await this.listener.stop();
   }
@@ -522,6 +1183,47 @@ export class AgentDeckDataPath {
   // -------------------------------------------------------------------------
   // internals
   // -------------------------------------------------------------------------
+
+  /** The Claude Code half, or null when it threw. Never rethrows. */
+  #emitCc(): SessionEmission | null {
+    try {
+      return this.model.emit();
+    } catch (error) {
+      // `emit()` is documented not to throw; counted rather than trusted.
+      this.#ccEmitErrors += 1;
+      this.#consumerErrors += 1;
+      this.#onError(error);
+      return null;
+    }
+  }
+
+  /**
+   * The OpenCode half, or null when it threw OR when there is no store.
+   *
+   * `null` for "no store" is load-bearing: it is what makes a Claude-Code-only
+   * host behave byte-identically to the pre-Phase-5 one, `pump()`'s
+   * `cc === null && oc === null` guard included.
+   */
+  #emitOpenCode(): SessionEmission | null {
+    if (!this.opencode.diagnostics.enabled) return null;
+    try {
+      return this.opencode.emit();
+    } catch (error) {
+      this.#opencodeEmitErrors += 1;
+      this.#onError(error);
+      return null;
+    }
+  }
+
+  /** The hook tap's health, defended against a liveness engine that throws. */
+  #degradedState(): BridgeDegradedState {
+    try {
+      return this.liveness.degradedState();
+    } catch {
+      this.#ccEmitErrors += 1;
+      return { degraded: true, reason: 'listenerDown' };
+    }
+  }
 
   /**
    * A watcher batch: register what discovery found, mark what changed dirty,
@@ -676,6 +1378,32 @@ export class AgentDeckDataPath {
     this.#scheduler.clearTimer(this.#tickTimer);
     this.#tickTimer = null;
   }
+}
+
+/**
+ * Two engines' emissions, concatenated into the one the bridge publishes.
+ *
+ * Concatenation and nothing else: no dedup, no re-sort, no merge of two
+ * sessions that happen to share an id. Session ids come from different
+ * namespaces (a CC UUID and an OpenCode `ses_*`), so a collision would be a
+ * defect to surface rather than a case to smooth over — and smoothing it over
+ * is how one engine would start silently overwriting the other's tree.
+ *
+ * Claude Code first, so the deck's order is stable as the OpenCode set changes.
+ */
+function mergeEmissions(cc: SessionEmission, oc: SessionEmission): SessionEmission {
+  if (oc === EMPTY_EMISSION) return cc;
+  if (cc === EMPTY_EMISSION) return oc;
+  return {
+    sessions: [...cc.sessions, ...oc.sessions],
+    diffs: [...cc.diffs, ...oc.diffs],
+    addedSessionIds: [...cc.addedSessionIds, ...oc.addedSessionIds],
+    removedSessionIds: [...cc.removedSessionIds, ...oc.removedSessionIds],
+    schemaMismatchSessionIds: [
+      ...cc.schemaMismatchSessionIds,
+      ...oc.schemaMismatchSessionIds,
+    ],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,10 +1730,54 @@ export function inactiveReasonFor(failure: DiscoveryFailure): string {
     : `Agent Deck: no Claude Code sessions for this workspace (${failure.kind}).`;
 }
 
+/**
+ * The folder shapes {@link workspacePathsOf} accepts.
+ *
+ * Structural rather than `vscode.WorkspaceFolder`, so the function can be
+ * called from a test without the editor API. It reads one field.
+ */
+export interface WorkspaceFolderLike {
+  readonly uri: { readonly fsPath: string };
+}
+
+/**
+ * EVERY open workspace folder's path, in the order VS Code reports them.
+ *
+ * Gate amendment B6. Separated from `firstWorkspacePath()` and exported so the
+ * multi-root behaviour is assertable: `test/vscode-mock.ts` exposes a
+ * single-folder setter, and this package does not own that file.
+ *
+ * Empty (rather than `undefined`) when nothing is open, because an empty match
+ * set is a meaningful instruction to the OpenCode engine — match nothing —
+ * whereas `undefined` means "do not filter" there.
+ */
+export function workspacePathsOf(
+  folders: readonly WorkspaceFolderLike[] | undefined,
+): string[] {
+  if (folders === undefined) return [];
+  return folders.map((folder) => folder.uri.fsPath).filter((path) => path !== '');
+}
+
+function workspacePaths(): string[] {
+  return workspacePathsOf(vscode.workspace.workspaceFolders);
+}
+
 function firstWorkspacePath(): string | undefined {
   const folders = vscode.workspace.workspaceFolders;
   if (folders === undefined || folders.length === 0) return undefined;
   return folders[0]?.uri.fsPath;
+}
+
+/**
+ * Is there an OpenCode store to observe? DoD 5.2's whole switch.
+ *
+ * `existsSync` and nothing more — the file is not opened here. Opening it would
+ * duplicate the probe {@link OpenCodeEnginePath.start} already does and, on a
+ * WAL-mode database, would touch the `-shm` sidecar a second time for no
+ * information.
+ */
+export function opencodeStoreExists(env: NodeJS.ProcessEnv = process.env): boolean {
+  return existsSync(opencodeDbPath(opencodeDataDir(env)));
 }
 
 /**
@@ -1110,8 +1882,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return;
   }
 
+  /*
+   * TWO ENGINES, TWO INDEPENDENT ANSWERS TO "IS THERE ANYTHING HERE?"
+   *
+   * Claude Code answers with a project-slug correlation; OpenCode answers with
+   * the existence of its store (DoD 5.2 — "on by default when the data
+   * directory exists", no setting). Either is enough to start; only both
+   * failing means there is nothing to show.
+   *
+   * The correlation gate's original point — a non-matching workspace allocates
+   * no watcher, no socket and no timer — is preserved by `ccEnabled` rather
+   * than by returning: a workspace with no CC project directory still starts
+   * nothing on the CC side.
+   */
   const correlation = await correlateWorkspace(workspacePath);
-  if (!correlation.ok) {
+  const opencodeAvailable = opencodeStoreExists();
+  if (!correlation.ok && !opencodeAvailable) {
     inactiveReason = inactiveReasonFor(correlation.failure);
     return;
   }
@@ -1122,6 +1908,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const host = new AgentDeckHost({
     workspacePath,
+    /*
+     * B6: EVERY open folder goes to the OpenCode engine, while the Claude Code
+     * half above takes the first one only.
+     *
+     * THE TWO ENGINES ARE THEREFORE ASYMMETRIC IN A MULTI-ROOT WORKSPACE, ON
+     * PURPOSE: OpenCode observes every root, Claude Code observes the first.
+     * That is a pre-existing limitation of the CC path — `firstWorkspacePath()`
+     * and `AgentDeckDataPath.workspacePath` are singular throughout, and have
+     * been since Phase 3 — and it is not created here. Narrowing OpenCode to
+     * `[workspacePath]` would make the asymmetry invisible without making it
+     * untrue.
+     *
+     * OPEN ITEM for a later phase: make the Claude Code half multi-root, which
+     * means a correlation and a watcher per folder rather than one of each.
+     */
+    workspacePaths: workspacePaths(),
+    ccEnabled: correlation.ok,
     settings,
     createPanel: () =>
       adaptWebviewPanel(

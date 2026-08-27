@@ -252,7 +252,8 @@
             "status": "done",
             "inputPreview": "sha256:c6257e5fab56be0d:16",
             "resultPreview": "sha256:444cc56246ea9175:6314",
-            "durationMs": 133
+            "durationMs": 133,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -261,7 +262,8 @@
             "status": "done",
             "inputPreview": "sha256:2984ecedf326ba75:85",
             "resultPreview": "sha256:7ddc42203b15192f:8248",
-            "durationMs": 128
+            "durationMs": 128,
+            "truncated": true
           },
           {
             "node": "tool",
@@ -270,7 +272,8 @@
             "status": "done",
             "inputPreview": "sha256:1df567d65a4dc4aa:98",
             "resultPreview": "sha256:5c6c15e1e6c9dc0e:8248",
-            "durationMs": 145
+            "durationMs": 145,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -279,7 +282,8 @@
             "status": "done",
             "inputPreview": "sha256:5ccd140b3f62bcfc:104",
             "resultPreview": "sha256:6b36796c7b98f327:8248",
-            "durationMs": 61
+            "durationMs": 61,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -288,7 +292,8 @@
             "status": "done",
             "inputPreview": "sha256:699cf0ce44b75642:87",
             "resultPreview": "sha256:5592cfc49e045d1f:8248",
-            "durationMs": 112
+            "durationMs": 112,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -297,7 +302,8 @@
             "status": "done",
             "inputPreview": "sha256:cf16caeb732b6309:108",
             "resultPreview": "sha256:5e3216235e96d1e4:316",
-            "durationMs": 765
+            "durationMs": 765,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -306,7 +312,8 @@
             "status": "done",
             "inputPreview": "sha256:a4eb5a9b3748af89:106",
             "resultPreview": "sha256:47c75c6d4bf53424:48",
-            "durationMs": 795
+            "durationMs": 795,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -315,7 +322,8 @@
             "status": "done",
             "inputPreview": "sha256:3d6e6a95121c4639:135",
             "resultPreview": "sha256:3e61f7e6ebbb40b1:3445",
-            "durationMs": 830
+            "durationMs": 830,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -324,7 +332,8 @@
             "status": "done",
             "inputPreview": "sha256:8096d8586d1a2a04:185",
             "resultPreview": "sha256:a32dfd7a9a1422f8:331",
-            "durationMs": 828
+            "durationMs": 828,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -333,7 +342,8 @@
             "status": "done",
             "inputPreview": "sha256:fada7ba38df49119:114",
             "resultPreview": "sha256:1da2217782e001e8:860",
-            "durationMs": 764
+            "durationMs": 764,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -342,7 +352,8 @@
             "status": "done",
             "inputPreview": "sha256:d6cb0d09d4af876f:189",
             "resultPreview": "sha256:385c19e94dd73790:297",
-            "durationMs": 792
+            "durationMs": 792,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -351,7 +362,8 @@
             "status": "done",
             "inputPreview": "sha256:f71b3beafa479481:375",
             "resultPreview": "sha256:9a88cf5c6c837ccb:376",
-            "durationMs": 1231
+            "durationMs": 1231,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -360,7 +372,8 @@
             "status": "done",
             "inputPreview": "sha256:c5aed1c342312949:105",
             "resultPreview": "sha256:318ff3420fe289b1:414",
-            "durationMs": 1237
+            "durationMs": 1237,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -369,7 +382,8 @@
             "status": "done",
             "inputPreview": "sha256:1620513ae124d859:414",
             "resultPreview": "sha256:684019395a30f765:548",
-            "durationMs": 735
+            "durationMs": 735,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -378,7 +392,8 @@
             "status": "done",
             "inputPreview": "sha256:b1268b517baf29ab:147",
             "resultPreview": "sha256:e3d6de2e4d156128:360",
-            "durationMs": 103
+            "durationMs": 103,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -387,7 +402,8 @@
             "status": "done",
             "inputPreview": "sha256:c16d23bffb6bc852:135",
             "resultPreview": "sha256:8b8ad85f0162390a:386",
-            "durationMs": 84
+            "durationMs": 84,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -396,7 +412,8 @@
             "status": "done",
             "inputPreview": "sha256:74e5f81d9422f377:4777",
             "resultPreview": "sha256:f050fe3ad54e7047:2153",
-            "durationMs": 105266
+            "durationMs": 105266,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -405,7 +422,8 @@
             "status": "done",
             "inputPreview": "sha256:339d2442b48159d8:64",
             "resultPreview": "sha256:2dce8d8fc0e489ee:8248",
-            "durationMs": 360
+            "durationMs": 360,
+            "truncated": true
           },
           {
             "node": "tool",
@@ -414,7 +432,8 @@
             "status": "done",
             "inputPreview": "sha256:5ea1d9c6c90c166d:274",
             "resultPreview": "sha256:9efb8ca4e9cd4b63:60",
-            "durationMs": 743
+            "durationMs": 743,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -423,7 +442,8 @@
             "status": "done",
             "inputPreview": "sha256:19d43338c78934ef:243",
             "resultPreview": "sha256:5c23747ac5bcc76c:1044",
-            "durationMs": 749
+            "durationMs": 749,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -432,7 +452,8 @@
             "status": "done",
             "inputPreview": "sha256:bed19783bb90647c:170",
             "resultPreview": "sha256:56b90973cb887532:824",
-            "durationMs": 743
+            "durationMs": 743,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -441,7 +462,8 @@
             "status": "done",
             "inputPreview": "sha256:dc6820a2128db708:67",
             "resultPreview": "sha256:3e582485e7d6db6b:8248",
-            "durationMs": 638
+            "durationMs": 638,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -450,7 +472,8 @@
             "status": "done",
             "inputPreview": "sha256:e8379b16ab9eaa9d:316",
             "resultPreview": "sha256:6a74a0f3f1ab8043:814",
-            "durationMs": 722
+            "durationMs": 722,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -459,7 +482,8 @@
             "status": "done",
             "inputPreview": "sha256:868fbaaee60b1814:107",
             "resultPreview": "sha256:460bff9a78c8292f:5529",
-            "durationMs": 97
+            "durationMs": 97,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -468,7 +492,8 @@
             "status": "done",
             "inputPreview": "sha256:dbe5d890e128eaea:205",
             "resultPreview": "sha256:d72ac8fee4e6f134:599",
-            "durationMs": 734
+            "durationMs": 734,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -477,7 +502,8 @@
             "status": "done",
             "inputPreview": "sha256:06c85413124e9d50:403",
             "resultPreview": "sha256:50638c66cfbd0ffb:491",
-            "durationMs": 734
+            "durationMs": 734,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -486,7 +512,8 @@
             "status": "done",
             "inputPreview": "sha256:f2dd9f10a720fae2:399",
             "resultPreview": "sha256:f159225a032f2f49:182",
-            "durationMs": 724
+            "durationMs": 724,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -495,7 +522,8 @@
             "status": "done",
             "inputPreview": "sha256:41ac8ebf5ac7a510:303",
             "resultPreview": "sha256:561d16ef331e9166:285",
-            "durationMs": 701
+            "durationMs": 701,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -504,7 +532,8 @@
             "status": "done",
             "inputPreview": "sha256:0461096f48eb47e8:79",
             "resultPreview": "sha256:4efce5d2b53ddbac:8248",
-            "durationMs": 356
+            "durationMs": 356,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -513,7 +542,8 @@
             "status": "done",
             "inputPreview": "sha256:37e31c3c8efa4bf4:243",
             "resultPreview": "sha256:325f07fea50c5bbf:291",
-            "durationMs": 730
+            "durationMs": 730,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -522,7 +552,8 @@
             "status": "done",
             "inputPreview": "sha256:f954355b3cfba0e3:437",
             "resultPreview": "sha256:8f667685e64a512d:251",
-            "durationMs": 948
+            "durationMs": 948,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -531,7 +562,8 @@
             "status": "done",
             "inputPreview": "sha256:f07b075547848451:62",
             "resultPreview": "sha256:c6744de579a57a14:8248",
-            "durationMs": 680
+            "durationMs": 680,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -540,7 +572,8 @@
             "status": "done",
             "inputPreview": "sha256:9065858411e2db7d:96",
             "resultPreview": "sha256:75a5c62ed7757fcc:8248",
-            "durationMs": 682
+            "durationMs": 682,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -549,7 +582,8 @@
             "status": "done",
             "inputPreview": "sha256:a14350dee7ea99af:75",
             "resultPreview": "sha256:4749935cdc773bac:8248",
-            "durationMs": 957
+            "durationMs": 957,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -558,7 +592,8 @@
             "status": "done",
             "inputPreview": "sha256:8b4ab195f48ead90:388",
             "resultPreview": "sha256:41a47aa12235cd5b:112",
-            "durationMs": 734
+            "durationMs": 734,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -567,7 +602,8 @@
             "status": "done",
             "inputPreview": "sha256:64781f8fcd240a8a:110",
             "resultPreview": "sha256:58ba81e41a86651e:699",
-            "durationMs": 728
+            "durationMs": 728,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -576,7 +612,8 @@
             "status": "done",
             "inputPreview": "sha256:aa41f973ce9fcc93:456",
             "resultPreview": "sha256:8463c144cbb63e2e:150",
-            "durationMs": 747
+            "durationMs": 747,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -585,7 +622,8 @@
             "status": "done",
             "inputPreview": "sha256:811c0a9af417a7cd:5872",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 8
+            "durationMs": 8,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -594,7 +632,8 @@
             "status": "done",
             "inputPreview": "sha256:5163c43210687e22:279",
             "resultPreview": "sha256:eec14c3c89716ab5:240",
-            "durationMs": 750
+            "durationMs": 750,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -603,7 +642,8 @@
             "status": "done",
             "inputPreview": "sha256:15bbd0ff80e098e7:90",
             "resultPreview": "sha256:23a2fea733e570da:4240",
-            "durationMs": 33
+            "durationMs": 33,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -612,7 +652,8 @@
             "status": "done",
             "inputPreview": "sha256:220ca49ebd95fba8:425",
             "resultPreview": "sha256:873f11b4be1b9ed5:7060",
-            "durationMs": 780
+            "durationMs": 780,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -621,7 +662,8 @@
             "status": "error",
             "inputPreview": "sha256:eb23d008c4350c9d:5762",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 21009624
+            "durationMs": 21009624,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -644,7 +686,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b0af28561c7c50b9:135",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
-                "durationMs": 1118
+                "durationMs": 1118,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -653,7 +696,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d531899777f2a4f3:131",
                 "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-                "durationMs": 163
+                "durationMs": 163,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -662,7 +706,8 @@
                 "status": "done",
                 "inputPreview": "sha256:c9261beaff334874:134",
                 "resultPreview": "sha256:2dc454e9e9f7c480:8248",
-                "durationMs": 111
+                "durationMs": 111,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -671,7 +716,8 @@
                 "status": "done",
                 "inputPreview": "sha256:a4bddec66a0ea56c:139",
                 "resultPreview": "sha256:2d27b7986f06ec97:8248",
-                "durationMs": 107
+                "durationMs": 107,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -680,7 +726,8 @@
                 "status": "done",
                 "inputPreview": "sha256:60347b7744aaac68:141",
                 "resultPreview": "sha256:8b490a435a91ac3c:809",
-                "durationMs": 1585
+                "durationMs": 1585,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -689,7 +736,8 @@
                 "status": "done",
                 "inputPreview": "sha256:c04d28b6eaddf3d3:128",
                 "resultPreview": "sha256:eedf12c5ff335e88:1028",
-                "durationMs": 127
+                "durationMs": 127,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -698,7 +746,8 @@
                 "status": "done",
                 "inputPreview": "sha256:5dd6d699010aede7:137",
                 "resultPreview": "sha256:79b90dd9a475f13a:8248",
-                "durationMs": 71
+                "durationMs": 71,
+                "truncated": true
               }
             ]
           },
@@ -709,7 +758,8 @@
             "status": "error",
             "inputPreview": "sha256:a196064d7521bc84:5855",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 19996333
+            "durationMs": 19996333,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -732,7 +782,8 @@
                 "status": "done",
                 "inputPreview": "sha256:222dc091b3eae224:138",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
-                "durationMs": 1085
+                "durationMs": 1085,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -741,7 +792,8 @@
                 "status": "done",
                 "inputPreview": "sha256:59cf9e207007995f:126",
                 "resultPreview": "sha256:6efa7242136fd8f1:8248",
-                "durationMs": 144
+                "durationMs": 144,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -750,7 +802,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2f50673e51774ab6:134",
                 "resultPreview": "sha256:e973d612deed9435:8248",
-                "durationMs": 106
+                "durationMs": 106,
+                "truncated": false
               }
             ]
           },
@@ -761,7 +814,8 @@
             "status": "error",
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 0
+            "durationMs": 0,
+            "truncated": null
           },
           {
             "node": "tool",
@@ -770,7 +824,8 @@
             "status": "error",
             "inputPreview": "sha256:b76aed1b756cad67:5732",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 16930863
+            "durationMs": 16930863,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -793,7 +848,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d25343c712dfb962:157",
                 "resultPreview": "sha256:9fd446160c35555f:351",
-                "durationMs": 1421
+                "durationMs": 1421,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -802,7 +858,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d531899777f2a4f3:131",
                 "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-                "durationMs": 129
+                "durationMs": 129,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -811,7 +868,8 @@
                 "status": "done",
                 "inputPreview": "sha256:c9261beaff334874:134",
                 "resultPreview": "sha256:2dc454e9e9f7c480:8248",
-                "durationMs": 93
+                "durationMs": 93,
+                "truncated": false
               }
             ]
           },
@@ -822,7 +880,8 @@
             "status": "error",
             "inputPreview": "sha256:60e4f40f076f1a96:7489",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 16043859
+            "durationMs": 16043859,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -845,7 +904,8 @@
                 "status": "done",
                 "inputPreview": "sha256:222dc091b3eae224:138",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
-                "durationMs": 1090
+                "durationMs": 1090,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -854,7 +914,8 @@
                 "status": "done",
                 "inputPreview": "sha256:775b06bb9b48bb5c:165",
                 "resultPreview": "sha256:390bc0fb7afc9adc:9",
-                "durationMs": 1127
+                "durationMs": 1127,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -863,7 +924,8 @@
                 "status": "done",
                 "inputPreview": "sha256:59cf9e207007995f:126",
                 "resultPreview": "sha256:6efa7242136fd8f1:8248",
-                "durationMs": 137
+                "durationMs": 137,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -872,7 +934,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2f50673e51774ab6:134",
                 "resultPreview": "sha256:e973d612deed9435:8248",
-                "durationMs": 112
+                "durationMs": 112,
+                "truncated": false
               }
             ]
           },
@@ -883,7 +946,8 @@
             "status": "error",
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 0
+            "durationMs": 0,
+            "truncated": null
           },
           {
             "node": "tool",
@@ -892,7 +956,8 @@
             "status": "error",
             "inputPreview": "sha256:47688617658badb4:5178",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 12695747
+            "durationMs": 12695747,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -915,7 +980,8 @@
                 "status": "done",
                 "inputPreview": "sha256:55638f66931076f1:136",
                 "resultPreview": "sha256:5a9c7ad602148de7:760",
-                "durationMs": 1119
+                "durationMs": 1119,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -924,7 +990,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d531899777f2a4f3:131",
                 "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-                "durationMs": 108
+                "durationMs": 108,
+                "truncated": false
               }
             ]
           },
@@ -935,7 +1002,8 @@
             "status": "error",
             "inputPreview": "sha256:7b23389dc1a1ef4e:6191",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 12020247
+            "durationMs": 12020247,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -958,7 +1026,8 @@
                 "status": "done",
                 "inputPreview": "sha256:f491ed7876264cee:189",
                 "resultPreview": "sha256:6ab9fa49509b1988:360",
-                "durationMs": 1192
+                "durationMs": 1192,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -967,7 +1036,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b56ecbe1b46f5234:133",
                 "resultPreview": "sha256:0c1ab07214d8d5ca:101",
-                "durationMs": 667
+                "durationMs": 667,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -976,7 +1046,8 @@
                 "status": "done",
                 "inputPreview": "sha256:59cf9e207007995f:126",
                 "resultPreview": "sha256:6efa7242136fd8f1:8248",
-                "durationMs": 64
+                "durationMs": 64,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -985,7 +1056,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2f50673e51774ab6:134",
                 "resultPreview": "sha256:e973d612deed9435:8248",
-                "durationMs": 64
+                "durationMs": 64,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -994,7 +1066,8 @@
                 "status": "done",
                 "inputPreview": "sha256:99f288556c0bd965:136",
                 "resultPreview": "sha256:ac8bb4f80e1ba0e9:8248",
-                "durationMs": 132
+                "durationMs": 132,
+                "truncated": false
               }
             ]
           },
@@ -1005,7 +1078,8 @@
             "status": "error",
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 0
+            "durationMs": 0,
+            "truncated": null
           },
           {
             "node": "tool",
@@ -1014,7 +1088,8 @@
             "status": "error",
             "inputPreview": "sha256:12b2f381e49b44c1:5391",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 8585225
+            "durationMs": 8585225,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1037,7 +1112,8 @@
                 "status": "done",
                 "inputPreview": "sha256:5f8d772b49d86b2f:157",
                 "resultPreview": "sha256:34e35940e6bf5779:418",
-                "durationMs": 1417
+                "durationMs": 1417,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1046,7 +1122,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d531899777f2a4f3:131",
                 "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-                "durationMs": 197
+                "durationMs": 197,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1055,7 +1132,8 @@
                 "status": "done",
                 "inputPreview": "sha256:4ba28ee6512968ba:186",
                 "resultPreview": "sha256:9369bedffe2701a7:88",
-                "durationMs": 1197
+                "durationMs": 1197,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1064,7 +1142,8 @@
                 "status": "done",
                 "inputPreview": "sha256:c9261beaff334874:134",
                 "resultPreview": "sha256:2dc454e9e9f7c480:8248",
-                "durationMs": 340
+                "durationMs": 340,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1073,7 +1152,8 @@
                 "status": "done",
                 "inputPreview": "sha256:a4bddec66a0ea56c:139",
                 "resultPreview": "sha256:2d27b7986f06ec97:8248",
-                "durationMs": 148
+                "durationMs": 148,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1082,7 +1162,8 @@
                 "status": "done",
                 "inputPreview": "sha256:6b1af32471438ce5:483",
                 "resultPreview": "sha256:10067d1c40e8f21b:597",
-                "durationMs": 1282
+                "durationMs": 1282,
+                "truncated": false
               }
             ]
           },
@@ -1093,7 +1174,8 @@
             "status": "error",
             "inputPreview": "sha256:7b21b88bbbe3f2ad:6006",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 7701944
+            "durationMs": 7701944,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1116,7 +1198,8 @@
                 "status": "done",
                 "inputPreview": "sha256:4954c2f1fa751f2e:189",
                 "resultPreview": "sha256:cc867f2c6a805e4c:247",
-                "durationMs": 1214
+                "durationMs": 1214,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1125,7 +1208,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b56ecbe1b46f5234:133",
                 "resultPreview": "sha256:0c1ab07214d8d5ca:101",
-                "durationMs": 616
+                "durationMs": 616,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1134,7 +1218,8 @@
                 "status": "done",
                 "inputPreview": "sha256:59cf9e207007995f:126",
                 "resultPreview": "sha256:6efa7242136fd8f1:8248",
-                "durationMs": 156
+                "durationMs": 156,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1143,7 +1228,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2f50673e51774ab6:134",
                 "resultPreview": "sha256:e973d612deed9435:8248",
-                "durationMs": 138
+                "durationMs": 138,
+                "truncated": false
               }
             ]
           },
@@ -1154,7 +1240,8 @@
             "status": "error",
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 0
+            "durationMs": 0,
+            "truncated": null
           },
           {
             "node": "tool",
@@ -1163,7 +1250,8 @@
             "status": "error",
             "inputPreview": "sha256:9b404311514b32c9:5238",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 4839647
+            "durationMs": 4839647,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1186,7 +1274,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b0af28561c7c50b9:135",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
-                "durationMs": 1337
+                "durationMs": 1337,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1195,7 +1284,8 @@
                 "status": "done",
                 "inputPreview": "sha256:bb296252b7dba146:160",
                 "resultPreview": "sha256:83d47ff2ad3c1a31:6",
-                "durationMs": 1231
+                "durationMs": 1231,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1204,7 +1294,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d531899777f2a4f3:131",
                 "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-                "durationMs": 104
+                "durationMs": 104,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1213,7 +1304,8 @@
                 "status": "done",
                 "inputPreview": "sha256:c9261beaff334874:134",
                 "resultPreview": "sha256:2dc454e9e9f7c480:8248",
-                "durationMs": 136
+                "durationMs": 136,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1222,7 +1314,8 @@
                 "status": "done",
                 "inputPreview": "sha256:a4bddec66a0ea56c:139",
                 "resultPreview": "sha256:2d27b7986f06ec97:8248",
-                "durationMs": 95
+                "durationMs": 95,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1231,7 +1324,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b5e0e9eb505cdc79:181",
                 "resultPreview": "sha256:556afb0ea45d5a2e:430",
-                "durationMs": 382
+                "durationMs": 382,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1240,7 +1334,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d346d1dd914ddcc9:237",
                 "resultPreview": "sha256:f62aad500b0a5319:215",
-                "durationMs": 1351
+                "durationMs": 1351,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1249,7 +1344,8 @@
                 "status": "done",
                 "inputPreview": "sha256:8328a1cda228d03b:137",
                 "resultPreview": "sha256:25b61d61d9468018:8248",
-                "durationMs": 90
+                "durationMs": 90,
+                "truncated": true
               },
               {
                 "node": "tool",
@@ -1258,7 +1354,8 @@
                 "status": "done",
                 "inputPreview": "sha256:57e8c5a7cd24b108:137",
                 "resultPreview": "sha256:3697bee5e31580b5:8248",
-                "durationMs": 106
+                "durationMs": 106,
+                "truncated": true
               }
             ]
           },
@@ -1269,7 +1366,8 @@
             "status": "error",
             "inputPreview": "sha256:84bfab3d5f5daf06:5877",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 3830708
+            "durationMs": 3830708,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1292,7 +1390,8 @@
                 "status": "done",
                 "inputPreview": "sha256:f5cc9df07280242e:185",
                 "resultPreview": "sha256:5ccbc85a86f1426a:172",
-                "durationMs": 1189
+                "durationMs": 1189,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1301,7 +1400,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2acb73253b3ab285:139",
                 "resultPreview": "sha256:5a9c7ad602148de7:760",
-                "durationMs": 1195
+                "durationMs": 1195,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1310,7 +1410,8 @@
                 "status": "done",
                 "inputPreview": "sha256:59cf9e207007995f:126",
                 "resultPreview": "sha256:6efa7242136fd8f1:8248",
-                "durationMs": 34
+                "durationMs": 34,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1319,7 +1420,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2f50673e51774ab6:134",
                 "resultPreview": "sha256:e973d612deed9435:8248",
-                "durationMs": 116
+                "durationMs": 116,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1328,7 +1430,8 @@
                 "status": "done",
                 "inputPreview": "sha256:99f288556c0bd965:136",
                 "resultPreview": "sha256:ac8bb4f80e1ba0e9:8248",
-                "durationMs": 84
+                "durationMs": 84,
+                "truncated": false
               }
             ]
           },
@@ -1339,7 +1442,8 @@
             "status": "error",
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 0
+            "durationMs": 0,
+            "truncated": null
           },
           {
             "node": "tool",
@@ -1348,7 +1452,8 @@
             "status": "error",
             "inputPreview": "sha256:c5248018a0031436:5831",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 1206193
+            "durationMs": 1206193,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1371,7 +1476,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b0af28561c7c50b9:135",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
-                "durationMs": 1293
+                "durationMs": 1293,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1380,7 +1486,8 @@
                 "status": "done",
                 "inputPreview": "sha256:8bd9621e77891318:133",
                 "resultPreview": "sha256:efefc15c24ee8645:11",
-                "durationMs": 2532
+                "durationMs": 2532,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1389,7 +1496,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d531899777f2a4f3:131",
                 "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-                "durationMs": 95
+                "durationMs": 95,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1398,7 +1506,8 @@
                 "status": "done",
                 "inputPreview": "sha256:c9261beaff334874:134",
                 "resultPreview": "sha256:2dc454e9e9f7c480:8248",
-                "durationMs": 121
+                "durationMs": 121,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1407,7 +1516,8 @@
                 "status": "done",
                 "inputPreview": "sha256:a4bddec66a0ea56c:139",
                 "resultPreview": "sha256:2d27b7986f06ec97:8248",
-                "durationMs": 90
+                "durationMs": 90,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1416,7 +1526,8 @@
                 "status": "done",
                 "inputPreview": "sha256:bea35cd66edb4121:518",
                 "resultPreview": "sha256:28ca72d0e4791e55:576",
-                "durationMs": 1388
+                "durationMs": 1388,
+                "truncated": false
               }
             ]
           },
@@ -1427,7 +1538,8 @@
             "status": "error",
             "inputPreview": "sha256:1350404e8a9f3e64:6188",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 366762
+            "durationMs": 366762,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1450,7 +1562,8 @@
                 "status": "done",
                 "inputPreview": "sha256:222dc091b3eae224:138",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
-                "durationMs": 1208
+                "durationMs": 1208,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1459,7 +1572,8 @@
                 "status": "done",
                 "inputPreview": "sha256:fee14f14c09d25ad:136",
                 "resultPreview": "sha256:efefc15c24ee8645:11",
-                "durationMs": 2007
+                "durationMs": 2007,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1468,7 +1582,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2f50673e51774ab6:134",
                 "resultPreview": "sha256:5a02c9fc64092349:8248",
-                "durationMs": 118
+                "durationMs": 118,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1477,7 +1592,8 @@
                 "status": "done",
                 "inputPreview": "sha256:59cf9e207007995f:126",
                 "resultPreview": "sha256:109852df76c1676c:8248",
-                "durationMs": 65
+                "durationMs": 65,
+                "truncated": false
               }
             ]
           },
@@ -1488,7 +1604,8 @@
             "status": "error",
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 0
+            "durationMs": 0,
+            "truncated": null
           },
           {
             "node": "tool",
@@ -1497,7 +1614,8 @@
             "status": "error",
             "inputPreview": "sha256:7b4ecbd16b6004f3:5117",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 8672181
+            "durationMs": 8672181,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1520,7 +1638,8 @@
                 "status": "done",
                 "inputPreview": "sha256:3d254264554efa60:157",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
-                "durationMs": 1507
+                "durationMs": 1507,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1529,7 +1648,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d531899777f2a4f3:131",
                 "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-                "durationMs": 93
+                "durationMs": 93,
+                "truncated": false
               }
             ]
           },
@@ -1540,7 +1660,8 @@
             "status": "error",
             "inputPreview": "sha256:baa7ee8b4f836c19:5578",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 8059599
+            "durationMs": 8059599,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1563,7 +1684,8 @@
                 "status": "done",
                 "inputPreview": "sha256:3c87fe6dff01f447:189",
                 "resultPreview": "sha256:5ccbc85a86f1426a:172",
-                "durationMs": 1288
+                "durationMs": 1288,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1572,7 +1694,8 @@
                 "status": "done",
                 "inputPreview": "sha256:59cf9e207007995f:126",
                 "resultPreview": "sha256:6efa7242136fd8f1:8248",
-                "durationMs": 99
+                "durationMs": 99,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1581,7 +1704,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2f50673e51774ab6:134",
                 "resultPreview": "sha256:e973d612deed9435:8248",
-                "durationMs": 86
+                "durationMs": 86,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1590,7 +1714,8 @@
                 "status": "done",
                 "inputPreview": "sha256:99f288556c0bd965:136",
                 "resultPreview": "sha256:ac8bb4f80e1ba0e9:8248",
-                "durationMs": 63
+                "durationMs": 63,
+                "truncated": false
               }
             ]
           },
@@ -1601,7 +1726,8 @@
             "status": "error",
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 0
+            "durationMs": 0,
+            "truncated": null
           },
           {
             "node": "tool",
@@ -1610,7 +1736,8 @@
             "status": "error",
             "inputPreview": "sha256:94e8601aaff5bf37:6111",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 7101101
+            "durationMs": 7101101,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1633,7 +1760,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b0af28561c7c50b9:135",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
-                "durationMs": 1385
+                "durationMs": 1385,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1642,7 +1770,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d531899777f2a4f3:131",
                 "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-                "durationMs": 80
+                "durationMs": 80,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1651,7 +1780,8 @@
                 "status": "done",
                 "inputPreview": "sha256:c9261beaff334874:134",
                 "resultPreview": "sha256:2dc454e9e9f7c480:8248",
-                "durationMs": 71
+                "durationMs": 71,
+                "truncated": false
               }
             ]
           },
@@ -1662,7 +1792,8 @@
             "status": "error",
             "inputPreview": "sha256:cbda9805a434ec9c:6414",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 6407409
+            "durationMs": 6407409,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1685,7 +1816,8 @@
                 "status": "done",
                 "inputPreview": "sha256:222dc091b3eae224:138",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
-                "durationMs": 1279
+                "durationMs": 1279,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1694,7 +1826,8 @@
                 "status": "done",
                 "inputPreview": "sha256:59cf9e207007995f:126",
                 "resultPreview": "sha256:6efa7242136fd8f1:8248",
-                "durationMs": 167
+                "durationMs": 167,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1703,7 +1836,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2f50673e51774ab6:134",
                 "resultPreview": "sha256:e973d612deed9435:8248",
-                "durationMs": 134
+                "durationMs": 134,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1712,7 +1846,8 @@
                 "status": "done",
                 "inputPreview": "sha256:99f288556c0bd965:136",
                 "resultPreview": "sha256:ac8bb4f80e1ba0e9:8248",
-                "durationMs": 102
+                "durationMs": 102,
+                "truncated": false
               }
             ]
           },
@@ -1723,7 +1858,8 @@
             "status": "error",
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 0
+            "durationMs": 0,
+            "truncated": null
           },
           {
             "node": "tool",
@@ -1732,7 +1868,8 @@
             "status": "error",
             "inputPreview": "sha256:97697e5f80e9a3a5:4874",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 3688273
+            "durationMs": 3688273,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1755,7 +1892,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b5ae647d972b9617:186",
                 "resultPreview": "sha256:70adbe01bf84ff9e:357",
-                "durationMs": 1434
+                "durationMs": 1434,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1764,7 +1902,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b49c6faea7109056:138",
                 "resultPreview": "sha256:f4856d46ea29defb:989",
-                "durationMs": 1448
+                "durationMs": 1448,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1773,7 +1912,8 @@
                 "status": "done",
                 "inputPreview": "sha256:d531899777f2a4f3:131",
                 "resultPreview": "sha256:ebe8bc88e89aab44:8248",
-                "durationMs": 154
+                "durationMs": 154,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1782,7 +1922,8 @@
                 "status": "done",
                 "inputPreview": "sha256:c9261beaff334874:134",
                 "resultPreview": "sha256:2dc454e9e9f7c480:8248",
-                "durationMs": 70
+                "durationMs": 70,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1791,7 +1932,8 @@
                 "status": "done",
                 "inputPreview": "sha256:a4bddec66a0ea56c:139",
                 "resultPreview": "sha256:2d27b7986f06ec97:8248",
-                "durationMs": 183
+                "durationMs": 183,
+                "truncated": false
               }
             ]
           },
@@ -1802,7 +1944,8 @@
             "status": "error",
             "inputPreview": "sha256:64b2a0926db9df48:5840",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 2877329
+            "durationMs": 2877329,
+            "truncated": null
           },
           {
             "node": "agent",
@@ -1825,7 +1968,8 @@
                 "status": "done",
                 "inputPreview": "sha256:18c2d11aa85ea102:138",
                 "resultPreview": "sha256:9fd446160c35555f:351",
-                "durationMs": 1250
+                "durationMs": 1250,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1834,7 +1978,8 @@
                 "status": "done",
                 "inputPreview": "sha256:f4faf73fb1051cb1:143",
                 "resultPreview": "sha256:390bc0fb7afc9adc:9",
-                "durationMs": 1337
+                "durationMs": 1337,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1843,7 +1988,8 @@
                 "status": "done",
                 "inputPreview": "sha256:59cf9e207007995f:126",
                 "resultPreview": "sha256:6efa7242136fd8f1:8248",
-                "durationMs": 85
+                "durationMs": 85,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1852,7 +1998,8 @@
                 "status": "done",
                 "inputPreview": "sha256:2f50673e51774ab6:134",
                 "resultPreview": "sha256:e973d612deed9435:8248",
-                "durationMs": 74
+                "durationMs": 74,
+                "truncated": false
               }
             ]
           },
@@ -1863,7 +2010,8 @@
             "status": "error",
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
-            "durationMs": 0
+            "durationMs": 0,
+            "truncated": null
           },
           {
             "node": "tool",
@@ -1872,7 +2020,8 @@
             "status": "done",
             "inputPreview": "sha256:5c6fd0a3e159822f:18",
             "resultPreview": "sha256:238eb0a75081bad2:1617",
-            "durationMs": 355
+            "durationMs": 355,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -1881,7 +2030,8 @@
             "status": "done",
             "inputPreview": "sha256:ebb2d46f37bfed60:2494",
             "resultPreview": "sha256:5990310efb49ba40:1820",
-            "durationMs": 1428516
+            "durationMs": 1428516,
+            "truncated": false
           },
           {
             "node": "agent",
@@ -1904,7 +2054,8 @@
                 "status": "done",
                 "inputPreview": "sha256:7a9b0ce677526866:122",
                 "resultPreview": "sha256:a80728fd9a3112c2:319",
-                "durationMs": 888
+                "durationMs": 888,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1913,7 +2064,8 @@
                 "status": "done",
                 "inputPreview": "sha256:f43fe4437a0e525e:117",
                 "resultPreview": "sha256:a06d58ef20a41c71:61",
-                "durationMs": 24733
+                "durationMs": 24733,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1922,7 +2074,8 @@
                 "status": "done",
                 "inputPreview": "sha256:60d04865f18a1720:119",
                 "resultPreview": "sha256:b06803e90bdc87c0:8248",
-                "durationMs": 968
+                "durationMs": 968,
+                "truncated": true
               },
               {
                 "node": "tool",
@@ -1931,7 +2084,8 @@
                 "status": "done",
                 "inputPreview": "sha256:9656f0d2aa52e7fb:242",
                 "resultPreview": "sha256:cbe4c45e3aa249fb:249",
-                "durationMs": 845
+                "durationMs": 845,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1940,7 +2094,8 @@
                 "status": "done",
                 "inputPreview": "sha256:c4a2204afae1176a:142",
                 "resultPreview": "sha256:15925bc4e9e861a1:823",
-                "durationMs": 257
+                "durationMs": 257,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1949,7 +2104,8 @@
                 "status": "done",
                 "inputPreview": "sha256:1bb4862f40ef06d5:125",
                 "resultPreview": "sha256:8e119d26d43b298d:4473",
-                "durationMs": 55
+                "durationMs": 55,
+                "truncated": true
               },
               {
                 "node": "tool",
@@ -1958,7 +2114,8 @@
                 "status": "done",
                 "inputPreview": "sha256:895758a44cc34809:304",
                 "resultPreview": "sha256:fad7314cc1e45817:354",
-                "durationMs": 828
+                "durationMs": 828,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1967,7 +2124,8 @@
                 "status": "done",
                 "inputPreview": "sha256:ed93e119e8dc5efa:314",
                 "resultPreview": "sha256:10ee832124947fbe:1531",
-                "durationMs": 832
+                "durationMs": 832,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -1976,7 +2134,8 @@
                 "status": "done",
                 "inputPreview": "sha256:e847f598978e3138:176",
                 "resultPreview": "sha256:b0dc7ef840e837e1:3457",
-                "durationMs": 812
+                "durationMs": 812,
+                "truncated": false
               }
             ]
           },
@@ -1987,7 +2146,8 @@
             "status": "done",
             "inputPreview": "sha256:fcde71c1fb23c120:89",
             "resultPreview": "sha256:f3dd7497c95e13fc:8248",
-            "durationMs": 125
+            "durationMs": 125,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -1996,7 +2156,8 @@
             "status": "done",
             "inputPreview": "sha256:f786a8b5e4d96ac1:91",
             "resultPreview": "sha256:a741bb733548392b:6214",
-            "durationMs": 78
+            "durationMs": 78,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2005,7 +2166,8 @@
             "status": "done",
             "inputPreview": "sha256:adcad579a4a73017:481",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 5
+            "durationMs": 5,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2014,7 +2176,8 @@
             "status": "done",
             "inputPreview": "sha256:88e8bd1db24eeec5:555",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 10
+            "durationMs": 10,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2023,7 +2186,8 @@
             "status": "done",
             "inputPreview": "sha256:2dd6f6baa7ddeca4:885",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 9
+            "durationMs": 9,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2032,7 +2196,8 @@
             "status": "done",
             "inputPreview": "sha256:088f7c5284ec0c72:164",
             "resultPreview": "sha256:cd24e52373a16ec5:49",
-            "durationMs": 786
+            "durationMs": 786,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2041,7 +2206,8 @@
             "status": "done",
             "inputPreview": "sha256:f8f73d919d2eaea3:144",
             "resultPreview": "sha256:975abb35dc6168c5:647",
-            "durationMs": 1152
+            "durationMs": 1152,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2050,7 +2216,8 @@
             "status": "done",
             "inputPreview": "sha256:d20deb245f5a1a2a:746",
             "resultPreview": "sha256:f403d5f85429817d:129",
-            "durationMs": 812
+            "durationMs": 812,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2059,7 +2226,8 @@
             "status": "done",
             "inputPreview": "sha256:cde79743faeb2d4d:303",
             "resultPreview": "sha256:32c39b8e606a3380:3240",
-            "durationMs": 825
+            "durationMs": 825,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2068,7 +2236,8 @@
             "status": "done",
             "inputPreview": "sha256:df76f968534d206f:292",
             "resultPreview": "sha256:4c37ee451a5ac390:143",
-            "durationMs": 803
+            "durationMs": 803,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2077,7 +2246,8 @@
             "status": "done",
             "inputPreview": "sha256:7cea39f7c33d1924:167",
             "resultPreview": "sha256:a1238e08716b78fd:8248",
-            "durationMs": 784
+            "durationMs": 784,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2086,7 +2256,8 @@
             "status": "done",
             "inputPreview": "sha256:86d53eb15709adf9:687",
             "resultPreview": "sha256:ec954224646c6fa9:80",
-            "durationMs": 776
+            "durationMs": 776,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2095,7 +2266,8 @@
             "status": "done",
             "inputPreview": "sha256:be542859b6958c27:610",
             "resultPreview": "sha256:9439d73d3ce2bc32:55",
-            "durationMs": 800
+            "durationMs": 800,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2104,7 +2276,8 @@
             "status": "done",
             "inputPreview": "sha256:f67d384a3b9511ff:911",
             "resultPreview": "sha256:f1a54fd01fe1dc56:195",
-            "durationMs": 809
+            "durationMs": 809,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2113,7 +2286,8 @@
             "status": "done",
             "inputPreview": "sha256:87a9b6866daa8b06:611",
             "resultPreview": "sha256:14393f81f3eac72e:1132",
-            "durationMs": 1080
+            "durationMs": 1080,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2122,7 +2296,8 @@
             "status": "done",
             "inputPreview": "sha256:33b49a1af19d50fa:575",
             "resultPreview": "sha256:3eaee42223af1656:63",
-            "durationMs": 771
+            "durationMs": 771,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2131,7 +2306,8 @@
             "status": "done",
             "inputPreview": "sha256:2fb989fb55f4f282:406",
             "resultPreview": "sha256:990ff60512fce746:1241",
-            "durationMs": 801
+            "durationMs": 801,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2140,7 +2316,8 @@
             "status": "done",
             "inputPreview": "sha256:fa6087c94cd9f243:267",
             "resultPreview": "sha256:25da406406a503a8:138",
-            "durationMs": 790
+            "durationMs": 790,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2149,7 +2326,8 @@
             "status": "done",
             "inputPreview": "sha256:6ea193ca67dc262d:696",
             "resultPreview": "sha256:eabc9a27adf0d3f1:64",
-            "durationMs": 804
+            "durationMs": 804,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2158,7 +2336,8 @@
             "status": "done",
             "inputPreview": "sha256:c53e9979109eb344:127",
             "resultPreview": "sha256:2c47f555e8edf2bc:117",
-            "durationMs": 889
+            "durationMs": 889,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2167,7 +2346,8 @@
             "status": "done",
             "inputPreview": "sha256:c09feddcdd87f644:8248",
             "resultPreview": "sha256:e3e06ec0f8c95866:24",
-            "durationMs": 55
+            "durationMs": 55,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2176,7 +2356,8 @@
             "status": "done",
             "inputPreview": "sha256:fda6cfbaad25c422:6465",
             "resultPreview": "sha256:80bb3763f8de87c4:7029",
-            "durationMs": 2314810
+            "durationMs": 2314810,
+            "truncated": false
           },
           {
             "node": "agent",
@@ -2199,7 +2380,8 @@
                 "status": "done",
                 "inputPreview": "sha256:e080bbcae81ef2a4:82",
                 "resultPreview": "sha256:228de42a560ef191:8248",
-                "durationMs": 97
+                "durationMs": 97,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2208,7 +2390,8 @@
                 "status": "done",
                 "inputPreview": "sha256:4e66fa38f4725603:286",
                 "resultPreview": "sha256:f61c63ddf31dd54f:78",
-                "durationMs": 762
+                "durationMs": 762,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2217,7 +2400,8 @@
                 "status": "done",
                 "inputPreview": "sha256:52a6c372353ad687:383",
                 "resultPreview": "sha256:f98eca45c4a6d3f7:409",
-                "durationMs": 778
+                "durationMs": 778,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2226,7 +2410,8 @@
                 "status": "done",
                 "inputPreview": "sha256:1e7a75ae90656e4e:203",
                 "resultPreview": "sha256:71000100867a1c28:792",
-                "durationMs": 752
+                "durationMs": 752,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2235,7 +2420,8 @@
                 "status": "done",
                 "inputPreview": "sha256:66ead2a7163c05f3:668",
                 "resultPreview": "sha256:ec0187026b8487fe:1815",
-                "durationMs": 793
+                "durationMs": 793,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2244,7 +2430,8 @@
                 "status": "done",
                 "inputPreview": "sha256:53e392084a5d695f:174",
                 "resultPreview": "sha256:041a1b600d0e0407:154",
-                "durationMs": 1042
+                "durationMs": 1042,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2253,7 +2440,8 @@
                 "status": "done",
                 "inputPreview": "sha256:5c16ada3f0019d75:76",
                 "resultPreview": "sha256:6a27fdda12ff5680:8248",
-                "durationMs": 704
+                "durationMs": 704,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2262,7 +2450,8 @@
                 "status": "done",
                 "inputPreview": "sha256:16f4c03580abadd2:164",
                 "resultPreview": "sha256:1e449c66986f6c0b:99",
-                "durationMs": 846
+                "durationMs": 846,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2271,7 +2460,8 @@
                 "status": "done",
                 "inputPreview": "sha256:f45d1913806186a4:328",
                 "resultPreview": "sha256:596625b3acd2b89a:1534",
-                "durationMs": 1321
+                "durationMs": 1321,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2280,7 +2470,8 @@
                 "status": "done",
                 "inputPreview": "sha256:8dffe11b2a712da3:154",
                 "resultPreview": "sha256:2a644c231d1f9de2:3460",
-                "durationMs": 1817
+                "durationMs": 1817,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2289,7 +2480,8 @@
                 "status": "done",
                 "inputPreview": "sha256:da40571b5b48faa5:239",
                 "resultPreview": "sha256:dcbefe4b4c8797a3:30",
-                "durationMs": 763
+                "durationMs": 763,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2298,7 +2490,8 @@
                 "status": "done",
                 "inputPreview": "sha256:e02fd6b5c85f481f:186",
                 "resultPreview": "sha256:5003d052885e85ef:852",
-                "durationMs": 912
+                "durationMs": 912,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2307,7 +2500,8 @@
                 "status": "done",
                 "inputPreview": "sha256:f786a8b5e4d96ac1:91",
                 "resultPreview": "sha256:b9578ce1ba3fd445:6826",
-                "durationMs": 98
+                "durationMs": 98,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2316,7 +2510,8 @@
                 "status": "done",
                 "inputPreview": "sha256:a83f682dac2e3c52:88",
                 "resultPreview": "sha256:b0f6feac4a8d8b54:1258",
-                "durationMs": 31
+                "durationMs": 31,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2325,7 +2520,8 @@
                 "status": "done",
                 "inputPreview": "sha256:b8ab898fd97908a1:212",
                 "resultPreview": "sha256:5c12960d87a18345:929",
-                "durationMs": 843
+                "durationMs": 843,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2334,7 +2530,8 @@
                 "status": "done",
                 "inputPreview": "sha256:17bcdae4959e390e:634",
                 "resultPreview": "sha256:62975b972db3ffa0:561",
-                "durationMs": 769
+                "durationMs": 769,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2343,7 +2540,8 @@
                 "status": "done",
                 "inputPreview": "sha256:70ca7d5f53594df1:358",
                 "resultPreview": "sha256:b1929cfbd66335fb:272",
-                "durationMs": 1633
+                "durationMs": 1633,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2352,7 +2550,8 @@
                 "status": "done",
                 "inputPreview": "sha256:7b42376742d6de99:116",
                 "resultPreview": "sha256:5d28ef1d95ceb634:216",
-                "durationMs": 872
+                "durationMs": 872,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2361,7 +2560,8 @@
                 "status": "done",
                 "inputPreview": "sha256:6a4ffd0b69aefec7:98",
                 "resultPreview": "sha256:2663db57140e93b8:1006",
-                "durationMs": 200
+                "durationMs": 200,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2370,7 +2570,8 @@
                 "status": "done",
                 "inputPreview": "sha256:5d39a4e69ae0fb15:100",
                 "resultPreview": "sha256:1216ac94414bf6cd:158",
-                "durationMs": 71
+                "durationMs": 71,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2379,7 +2580,8 @@
                 "status": "done",
                 "inputPreview": "sha256:1bb2e1815ee062ac:129",
                 "resultPreview": "sha256:795c2493c3d48c05:8247",
-                "durationMs": 113
+                "durationMs": 113,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2388,7 +2590,8 @@
                 "status": "done",
                 "inputPreview": "sha256:0cf98478fbd077a9:113",
                 "resultPreview": "sha256:f58ddf7750a73b99:4558",
-                "durationMs": 74
+                "durationMs": 74,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2397,7 +2600,8 @@
                 "status": "done",
                 "inputPreview": "sha256:4a458d06dc90411f:127",
                 "resultPreview": "sha256:90dce7de17b1198b:257",
-                "durationMs": 52
+                "durationMs": 52,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2406,7 +2610,8 @@
                 "status": "done",
                 "inputPreview": "sha256:15bbd0ff80e098e7:90",
                 "resultPreview": "sha256:23a2fea733e570da:4240",
-                "durationMs": 27
+                "durationMs": 27,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2415,7 +2620,8 @@
                 "status": "done",
                 "inputPreview": "sha256:43a607c6a90b5632:121",
                 "resultPreview": "sha256:b8d4ee17c5a95cba:788",
-                "durationMs": 353
+                "durationMs": 353,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2424,7 +2630,8 @@
                 "status": "done",
                 "inputPreview": "sha256:22fdbf0f5dc23f7a:126",
                 "resultPreview": "sha256:46d6ccf9c5f1cdb6:1051",
-                "durationMs": 14
+                "durationMs": 14,
+                "truncated": true
               },
               {
                 "node": "tool",
@@ -2433,7 +2640,8 @@
                 "status": "done",
                 "inputPreview": "sha256:32e5b5271aaeb41a:106",
                 "resultPreview": "sha256:555abc8a6a7182e0:1491",
-                "durationMs": 40
+                "durationMs": 40,
+                "truncated": true
               },
               {
                 "node": "tool",
@@ -2442,7 +2650,8 @@
                 "status": "done",
                 "inputPreview": "sha256:52cb1237e4397445:101",
                 "resultPreview": "sha256:d128613eb706723e:972",
-                "durationMs": 423
+                "durationMs": 423,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2451,7 +2660,8 @@
                 "status": "done",
                 "inputPreview": "sha256:00be075c6ae86671:110",
                 "resultPreview": "sha256:d10294e800110e11:8248",
-                "durationMs": 12
+                "durationMs": 12,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2460,7 +2670,8 @@
                 "status": "done",
                 "inputPreview": "sha256:630396c5b4c9f3a5:263",
                 "resultPreview": "sha256:57cf75683b9b408e:323",
-                "durationMs": 900
+                "durationMs": 900,
+                "truncated": false
               },
               {
                 "node": "tool",
@@ -2469,7 +2680,8 @@
                 "status": "done",
                 "inputPreview": "sha256:8db7e424365b56cd:118",
                 "resultPreview": "sha256:1035eb8bbb3bf70b:4275",
-                "durationMs": 138
+                "durationMs": 138,
+                "truncated": false
               }
             ]
           },
@@ -2480,7 +2692,8 @@
             "status": "done",
             "inputPreview": "sha256:9e7fad6e3e22c3d5:888",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 8
+            "durationMs": 8,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2489,7 +2702,8 @@
             "status": "done",
             "inputPreview": "sha256:80fc8924f5d5d958:1336",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 12
+            "durationMs": 12,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2498,7 +2712,8 @@
             "status": "done",
             "inputPreview": "sha256:8271022f823ef4cb:463",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 6
+            "durationMs": 6,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2507,7 +2722,8 @@
             "status": "done",
             "inputPreview": "sha256:c477013e8ce80a38:306",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 9
+            "durationMs": 9,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2516,7 +2732,8 @@
             "status": "done",
             "inputPreview": "sha256:b2ed847b501842d9:210",
             "resultPreview": "sha256:bec65c8e178576bf:4132",
-            "durationMs": 824
+            "durationMs": 824,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2525,7 +2742,8 @@
             "status": "done",
             "inputPreview": "sha256:f96d08ef6dd7820e:790",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 5
+            "durationMs": 5,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2534,7 +2752,8 @@
             "status": "done",
             "inputPreview": "sha256:eac914de01f9899d:174",
             "resultPreview": "sha256:fbe5a0fc9ec4b6be:156",
-            "durationMs": 168
+            "durationMs": 168,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2543,7 +2762,8 @@
             "status": "done",
             "inputPreview": "sha256:7bef0e80df4e3ba4:106",
             "resultPreview": "sha256:47ba3b0308961eb9:3806",
-            "durationMs": 40
+            "durationMs": 40,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2552,7 +2772,8 @@
             "status": "done",
             "inputPreview": "sha256:b72ab1581ee676d0:671",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 5
+            "durationMs": 5,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2561,7 +2782,8 @@
             "status": "done",
             "inputPreview": "sha256:051fd21780126491:132",
             "resultPreview": "sha256:961f512b5f6edcfc:262",
-            "durationMs": 59
+            "durationMs": 59,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2570,7 +2792,8 @@
             "status": "done",
             "inputPreview": "sha256:b3b1917a3c316a24:105",
             "resultPreview": "sha256:5612f4f199a85ba4:2936",
-            "durationMs": 27
+            "durationMs": 27,
+            "truncated": true
           },
           {
             "node": "tool",
@@ -2579,7 +2802,8 @@
             "status": "done",
             "inputPreview": "sha256:124ef5688fa0fb97:645",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 8
+            "durationMs": 8,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2588,7 +2812,8 @@
             "status": "done",
             "inputPreview": "sha256:03264c9534ef1dad:112",
             "resultPreview": "sha256:014ba31bad552eb2:1878",
-            "durationMs": 47
+            "durationMs": 47,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2597,7 +2822,8 @@
             "status": "done",
             "inputPreview": "sha256:2eda7b69baa5b651:374",
             "resultPreview": "sha256:d05b1bac36ec2a07:91",
-            "durationMs": 893
+            "durationMs": 893,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2606,7 +2832,8 @@
             "status": "done",
             "inputPreview": "sha256:699cf0ce44b75642:87",
             "resultPreview": "sha256:5592cfc49e045d1f:8248",
-            "durationMs": 35
+            "durationMs": 35,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2615,7 +2842,8 @@
             "status": "done",
             "inputPreview": "sha256:42f09d7b4ffb7aa9:1194",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 6
+            "durationMs": 6,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2624,7 +2852,8 @@
             "status": "done",
             "inputPreview": "sha256:32c0c709be6567c6:100",
             "resultPreview": "sha256:3630f557e8b65c65:1962",
-            "durationMs": 37
+            "durationMs": 37,
+            "truncated": true
           },
           {
             "node": "tool",
@@ -2633,7 +2862,8 @@
             "status": "done",
             "inputPreview": "sha256:36ee9b0ce51c4a09:427",
             "resultPreview": "sha256:49fd4a576e2d47c3:132",
-            "durationMs": 843
+            "durationMs": 843,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2642,7 +2872,8 @@
             "status": "done",
             "inputPreview": "sha256:258ab348cfd5244e:3562",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 7
+            "durationMs": 7,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2651,7 +2882,8 @@
             "status": "done",
             "inputPreview": "sha256:4ccca4a2a4d4536f:1220",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 6
+            "durationMs": 6,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2660,7 +2892,8 @@
             "status": "done",
             "inputPreview": "sha256:34a13745f7640435:1076",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 9
+            "durationMs": 9,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2669,7 +2902,8 @@
             "status": "done",
             "inputPreview": "sha256:c988dd7cd933f0a5:1916",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 8
+            "durationMs": 8,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2678,7 +2912,8 @@
             "status": "done",
             "inputPreview": "sha256:7ddda55abefddbce:3222",
             "resultPreview": "sha256:8caec1349d76de16:26",
-            "durationMs": 6
+            "durationMs": 6,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2687,7 +2922,8 @@
             "status": "done",
             "inputPreview": "sha256:00ff5f8b5f224bf5:98",
             "resultPreview": "sha256:52abb80bd44089f3:4834",
-            "durationMs": 27
+            "durationMs": 27,
+            "truncated": true
           },
           {
             "node": "tool",
@@ -2696,7 +2932,8 @@
             "status": "done",
             "inputPreview": "sha256:e85a6b062928a431:163",
             "resultPreview": "sha256:64446484b643347c:410",
-            "durationMs": 834
+            "durationMs": 834,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2705,7 +2942,8 @@
             "status": "done",
             "inputPreview": "sha256:a9dc694281c14851:288",
             "resultPreview": "sha256:59bfb8ea2c09a17f:676",
-            "durationMs": 1099
+            "durationMs": 1099,
+            "truncated": false
           }
         ]
       }
@@ -2777,7 +3015,8 @@
             "status": "done",
             "inputPreview": "sha256:2984ecedf326ba75:85",
             "resultPreview": "sha256:0d226cc913f735bf:8248",
-            "durationMs": 92
+            "durationMs": 92,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2786,7 +3025,8 @@
             "status": "done",
             "inputPreview": "sha256:fcde71c1fb23c120:89",
             "resultPreview": "sha256:a716f3c352f51655:8248",
-            "durationMs": 17
+            "durationMs": 17,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2795,7 +3035,8 @@
             "status": "done",
             "inputPreview": "sha256:e82d9803f36e7572:111",
             "resultPreview": "sha256:033f38289186adee:6495",
-            "durationMs": 680
+            "durationMs": 680,
+            "truncated": true
           },
           {
             "node": "tool",
@@ -2804,7 +3045,8 @@
             "status": "done",
             "inputPreview": "sha256:5613383c947f1ae6:62",
             "resultPreview": "sha256:603b89c0776d4c20:1028",
-            "durationMs": 311
+            "durationMs": 311,
+            "truncated": false
           }
         ]
       }
@@ -2845,7 +3087,8 @@
             "status": "done",
             "inputPreview": "sha256:1a60526d10f05ef3:18",
             "resultPreview": "sha256:e0eb7e9fb16a5cef:8247",
-            "durationMs": 497
+            "durationMs": 497,
+            "truncated": true
           },
           {
             "node": "tool",
@@ -2854,7 +3097,8 @@
             "status": "done",
             "inputPreview": "sha256:e88cbe99254844d7:87",
             "resultPreview": "sha256:2f85742239613725:8248",
-            "durationMs": 8
+            "durationMs": 8,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2863,7 +3107,8 @@
             "status": "done",
             "inputPreview": "sha256:699cf0ce44b75642:87",
             "resultPreview": "sha256:65675dbc889fc2de:8248",
-            "durationMs": 6
+            "durationMs": 6,
+            "truncated": false
           },
           {
             "node": "tool",
@@ -2872,7 +3117,8 @@
             "status": "done",
             "inputPreview": "sha256:2984ecedf326ba75:85",
             "resultPreview": "sha256:0d226cc913f735bf:8248",
-            "durationMs": 7
+            "durationMs": 7,
+            "truncated": false
           }
         ]
       }

@@ -270,6 +270,18 @@ function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | un
     fields.durationMs = next.durationMs === undefined ? null : next.durationMs;
     changed = true;
   }
+  // Gate amendment B7. The CC engine never sets `truncated` — only the
+  // OpenCode engine does — but the PATCH contract has to carry it anyway, and
+  // that is not bookkeeping. `events.ts` states the contract as exact: for any
+  // two states the model produces, apply(prev, diff(prev, next)) deep-equals
+  // `next`. An optional field a patch cannot express BREAKS that property
+  // rather than merely under-reporting it, so the flag is diffed here in the
+  // same three-way shape as `durationMs` — `null` means the engine stopped
+  // claiming the payload was truncated, an absent key means unchanged.
+  if (prev.truncated !== next.truncated) {
+    fields.truncated = next.truncated === undefined ? null : next.truncated;
+    changed = true;
+  }
   return changed ? fields : undefined;
 }
 
@@ -364,6 +376,27 @@ export function diffSessionState(
     fields.totals = { ...next.totals };
     fieldsChanged = true;
   }
+  // Gate amendment B2, and it is DELIBERATE DEAD CODE — do not "simplify" it
+  // away. The engine that observed a session cannot change while the session
+  // exists, so for any two states this model produces `prev.engine` and
+  // `next.engine` are both `'cc'` and this branch provably never fires. It is
+  // here because DoD 5.1 specifies `engine` as "the same move as `spawnEdges`
+  // and `parked`", and both of those are patch fields. The user took that
+  // trade at the Phase 5 gate with the cost stated: uniformity, bought with a
+  // branch production cannot reach. `applySessionPatch` honours the key if one
+  // ever does arrive.
+  //
+  // The `!== undefined` half is not defensive padding either. `SessionFieldPatch`
+  // has no `null` for this key — unlike `ToolNodeFieldPatch.truncated` — so a
+  // transition from a stamped engine to an ABSENT one is not expressible on the
+  // wire, and writing `engine: undefined` into the patch would both produce a
+  // "changed" patch that changes nothing and be read back as "unchanged". No
+  // state this model produces makes that transition (every one is stamped), so
+  // the inexpressible case is recorded here rather than faked.
+  if (prev.engine !== next.engine && next.engine !== undefined) {
+    fields.engine = next.engine;
+    fieldsChanged = true;
+  }
   if (fieldsChanged) {
     patch.fields = fields;
     changed = true;
@@ -421,6 +454,18 @@ export interface SerializedSessionState {
   workspaceMatch: boolean;
   liveness: SessionState['liveness'];
   schemaOk: boolean;
+  /**
+   * Which engine stamped this state, verbatim — `null` when the field is
+   * absent, NOT normalized to `'cc'`.
+   *
+   * Absence reads as `'cc'` everywhere else (`SessionState.engine` says so),
+   * and normalizing here would be the one place that reading is wrong: it
+   * would make a golden identical whether or not gate amendment B3's stamp was
+   * applied, so deleting the stamp would leave every golden green. `null` in a
+   * golden means "the model handed out a state with no engine tag", which is a
+   * regression these files should fail on.
+   */
+  engine: SessionState['engine'] | null;
   epochAnchor: string | null;
   totals: SessionState['totals'];
   spawnEdges: SpawnEdge[];
@@ -471,6 +516,7 @@ export function serializeSessionState(state: SessionState): SerializedSessionSta
     workspaceMatch: state.workspaceMatch,
     liveness: state.liveness,
     schemaOk: state.schemaOk,
+    engine: state.engine ?? null,
     epochAnchor: anchor === undefined ? null : new Date(anchor).toISOString(),
     totals: { ...state.totals },
     spawnEdges: edgesOf(state).map((e) => ({ ...e })),
@@ -886,6 +932,22 @@ export class SessionModel {
       totals: view.totals,
       spawnEdges: view.spawnEdges,
       parked: view.parked,
+      // Gate amendment B3. This module IS the CC engine's assembly point — it
+      // is the only place a `SessionState` is built from CC's two taps — so it
+      // names the engine rather than leaving the CC case to be inferred from
+      // absence. Every state that leaves here, refused ones included, says
+      // which engine produced it.
+      //
+      // A refused session is stamped too, on purpose: G3 withholds the TREE,
+      // not the state's identity, and a cross-engine isolation test ("a
+      // corrupt OpenCode database leaves CC sessions rendering unchanged") can
+      // only name the sessions that must be unaffected if the refused ones are
+      // tagged as well.
+      //
+      // The field stays optional on the interface. Absence still reads as
+      // `'cc'`; making it required would invalidate every earlier construction
+      // of `SessionState`, which is the whole reason it was added optional.
+      engine: 'cc',
     });
   }
 

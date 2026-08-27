@@ -63,17 +63,19 @@ import type {
 } from './types.js';
 
 // ---------------------------------------------------------------------------
-// The four park reasons — byte-exact, and pinned by the committed goldens
+// The park reasons — four of them byte-exact and pinned by the goldens
 // ---------------------------------------------------------------------------
 
 /**
  * The `ParkedGraft.reason` strings, character for character.
  *
- * These are in both committed `golden.json` files verbatim, so a one-byte
- * difference — a straight `-` for the ` - `, an ASCII `S` for the `§`, a lost
- * apostrophe — fails the DoD 4.6 byte comparison. They are constants rather
- * than inline literals so `graft.test.ts` can assert them against the
- * committed files directly instead of against a copy of themselves.
+ * The first four are in both committed `golden.json` files verbatim, so a
+ * one-byte difference — a straight `-` for the ` - `, an ASCII `S` for the
+ * `§`, a lost apostrophe — fails the DoD 4.6 byte comparison. They are
+ * constants rather than inline literals so `graft.test.ts` can assert them
+ * against the committed files directly instead of against a copy of
+ * themselves. The fifth, `childSessionUnsupported`, has no golden behind it
+ * and says so at its own entry.
  *
  * The `§` characters are real U+00A7. Never write a raw control character into
  * source; these are printable and are stored as UTF-8 like the rest of the
@@ -94,6 +96,17 @@ export const OC_PARK_REASONS = {
   noSpawningTaskPart:
     'child session names a parent_id but no task part in that parent joins to it ' +
     '(contract §5)',
+  /**
+   * The named child session was refused by the per-session version window
+   * (OC5) while this parent was accepted. Added at `PLAN.md`'s Phase 5 gate
+   * (B7) to close `docs/evidence/phase-4/COVERAGE.md` item 29.
+   *
+   * NOT in either committed golden — no session in either corpus refuses — so
+   * unlike its four siblings this string is not pinned by a byte comparison.
+   * `graft.test.ts` asserts it against a refused child instead.
+   */
+  childSessionUnsupported:
+    'child session was refused by the version window; the join was never attempted (OC5)',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -146,6 +159,23 @@ export interface OcGraftOptions {
    * worktree to derive a key from — and as the seam's neutral value.
    */
   projectSlug?: (project: OcProjectRow | undefined) => string;
+  /**
+   * The session ids the fingerprint REFUSED, so a `task` part naming one can
+   * say why the child is missing (`docs/evidence/phase-4/COVERAGE.md` item 29,
+   * closed by `PLAN.md`'s Phase 5 gate B7).
+   *
+   * The grafter is handed only ACCEPTED rows, which is unchanged and is why
+   * refusal stays `fingerprint.ts`'s job. What this adds is the one fact the
+   * grafter cannot derive from the rows it holds: whether a session id it
+   * cannot find was refused, or was never there. Without it the two are the
+   * same absence and both reported as `joinKeyContradiction`, which claims a
+   * key disagreed when the check was never run.
+   *
+   * Defaults to empty, which reproduces Phase 4's behaviour exactly and is
+   * what both goldens carry — neither corpus refuses anything, so no committed
+   * byte depends on this. `index.ts` injects the real set.
+   */
+  refusedSessionIds?: ReadonlySet<string>;
 }
 
 /** Everything `graftCorpus` needs. Plain data — no handles, no I/O. */
@@ -183,6 +213,15 @@ export function defaultWorkspaceMatch(project: OcProjectRow | undefined): boolea
 export function defaultProjectSlug(_project: OcProjectRow | undefined): string {
   return '';
 }
+
+/**
+ * The default {@link OcGraftOptions.refusedSessionIds}: nothing was refused.
+ *
+ * Module-scoped rather than built per call so a caller that passes no options
+ * allocates nothing, and so the "empty means Phase 4's behaviour" claim is one
+ * value rather than one per invocation.
+ */
+const EMPTY_REFUSED: ReadonlySet<string> = new Set<string>();
 
 // ---------------------------------------------------------------------------
 // Ordering, labels and node construction
@@ -223,8 +262,16 @@ export function agentLabel(session: OcSessionRow): string {
  *
  * `partId`, `sessionId`, `order`, `taskChildSessionId`, `taskParentSessionId`,
  * `inputTruncated` and `resultTruncated` are join/ordering carriers and are
- * dropped here. The two optional fields are omitted rather than set to
+ * dropped here. The optional fields are omitted rather than set to
  * `undefined`, so a `JSON.stringify` of the node has no key for them.
+ *
+ * `truncated` is NOT one of the carriers — it is OpenCode's own truncation
+ * claim and it is a `ToolNode` field as of `PLAN.md`'s Phase 5 gate (B7,
+ * closing `docs/evidence/phase-4/COVERAGE.md` item 22). It crosses verbatim,
+ * including `false`: an explicit "I did not truncate this" is a claim and is
+ * worth more than an absence, which means only that no claim was made. The
+ * engine's flag is never merged with `inputTruncated`/`resultTruncated`, which
+ * are OURS and are recoverable by raising `agentDeck.previewBytes`.
  *
  * The fields are listed explicitly rather than taken by rest-destructuring:
  * a field added to `OcToolRecord` must be decided about here, not silently
@@ -238,6 +285,7 @@ export function toToolNode(record: OcToolRecord): ToolNode {
     inputPreview: record.inputPreview,
     ...(record.resultPreview === undefined ? {} : { resultPreview: record.resultPreview }),
     ...(record.durationMs === undefined ? {} : { durationMs: record.durationMs }),
+    ...(record.truncated === undefined ? {} : { truncated: record.truncated }),
   };
 }
 
@@ -265,6 +313,7 @@ interface JoinResult {
 function joinTasks(
   taskRecords: readonly OcToolRecord[],
   sessionsById: ReadonlyMap<string, OcSessionRow>,
+  refusedSessionIds: ReadonlySet<string>,
 ): JoinResult {
   const spawningTask = new Map<string, OcToolRecord>();
   const parkedBySession = new Map<string, ParkedGraft[]>();
@@ -309,7 +358,35 @@ function joinTasks(
       continue;
     }
 
-    // (2) The three keys must agree: the part names a child that exists, the
+    /*
+     * (2) The child was REFUSED by the version window, so the join was never
+     * attempted. Item 29, and the reason it needed its own code.
+     *
+     * This is checked BEFORE the three-way cross-assertion below, and the
+     * order is the whole content of the fix. A refused child is not among the
+     * accepted rows, so `child.parent_id` — one of the three keys — cannot be
+     * read at all. Falling through would report a cross-assertion FAILURE for
+     * a check that was never RUN, sending a user looking for corrupt data
+     * where there is none: what happened is that one session is out of window.
+     *
+     * The `task` part still becomes a `ToolNode` and the parent still renders
+     * the rest of its tree. Only the child is missing, and now it says why.
+     *
+     * The refused child does NOT also get an `unsupported` SessionState of its
+     * own — that treatment is for refused ROOT sessions (`index.ts`), because
+     * a child is a subagent inside its parent's session and not a deck entry.
+     */
+    if (refusedSessionIds.has(childId)) {
+      park(task.sessionId, {
+        agentId: childId,
+        code: 'childSessionUnsupported',
+        toolUseId: task.id,
+        reason: OC_PARK_REASONS.childSessionUnsupported,
+      });
+      continue;
+    }
+
+    // (3) The three keys must agree: the part names a child that exists, the
     // child's `parent_id` is the part's own session, and the part's
     // `parentSessionId` is the part's own session too. A primary key in both
     // directions — a join, not an inference.
@@ -328,7 +405,7 @@ function joinTasks(
       continue;
     }
 
-    // (3) Two task parts naming one child. G3: a contradicted key parks, it
+    // (4) Two task parts naming one child. G3: a contradicted key parks, it
     // does not pick a winner — the first by `[time_created, part id]` keeps
     // the child and the later one parks.
     if (spawningTask.has(childId)) {
@@ -359,8 +436,12 @@ function joinTasks(
  *
  * The two readings cannot be told apart by either committed corpus: the anchor
  * has 20 agreements and 0 disagreements, the witness 1 and 0, so
- * `joinKeyContradiction` and `ambiguousJoinKey` fire zero times and both
- * readings emit `taskPartsParked: 9` and `0`. This module follows the
+ * `joinKeyContradiction`, `ambiguousJoinKey` and `childSessionUnsupported`
+ * fire zero times and both readings emit `taskPartsParked: 9` and `0`.
+ * `childSessionUnsupported` joined the list at `PLAN.md`'s Phase 5 gate and
+ * does not increment either, for the same reason: the generator has no
+ * version window and therefore no such branch to agree with. This module
+ * follows the
  * generator, because that is the artefact DoD 4.6 compares against; the
  * divergence is pinned by an explicit test in `graft.test.ts` so that changing
  * it is a deliberate act with a failing assertion, not a silent drift.
@@ -521,12 +602,39 @@ function buildAgent(session: OcSessionRow, depth: number, ctx: BuildContext): Ag
  * `AgentNode` under one, nor a parked entry. A row reachable through none of
  * those is a session SILENTLY DROPPED, which is the failure this whole
  * exercise exists to make visible — so it is loud rather than absent.
+ *
+ * **A KNOWN REACHABLE CASE OF THAT THROW. CONTAINED, NOT FIXED.** An ACCEPTED
+ * session whose parent was REFUSED is reachable from no root, because the
+ * refused parent is not in `sessions` and the accepted child is not a root
+ * either. It lands in the orphan check and throws. The condition predates the
+ * `refusedSessionIds` seam above and is unchanged by it — the seam only fixes
+ * the code on the PARK of a refused direct child, which is
+ * `docs/evidence/phase-4/COVERAGE.md` item 29 and all that Phase 5's gate
+ * scoped.
+ *
+ * **Where it is contained:** `src/opencode/index.ts` wraps this call in the
+ * engine's one try/catch and returns a `graftFailed` degrade, so the throw no
+ * longer escapes `readOpenCodeEngine`, whose contract is "never thrown, always
+ * returned" and which the extension host calls from `activate`. This function
+ * still throws and must keep throwing — a silently dropped session is the
+ * failure the check exists to expose.
+ *
+ * **What containment costs, and why this is not the word "fixed":** a degrade
+ * is engine-wide, so one unplaceable row darkens every OpenCode session, when
+ * the condition itself is a single explainable row. Parking it instead —
+ * distinguishing "unreachable because an ancestor was refused" from
+ * "unreachable for no reason we can name" — is the better fix and needs a
+ * decision about which `SessionState` an orphaned grandchild belongs to. That
+ * decision has still not been taken. Neither committed corpus contains such a
+ * row; `golden.test.ts` reproduces it by refusing a real parent's version on a
+ * temp copy.
  */
 export function graftCorpus(input: OcGraftInput): OcEngineResult {
   const { sessions, projects, parse } = input;
   const livenessFor = input.options?.livenessFor ?? defaultSessionLiveness;
   const workspaceMatch = input.options?.workspaceMatch ?? defaultWorkspaceMatch;
   const projectSlug = input.options?.projectSlug ?? defaultProjectSlug;
+  const refusedSessionIds = input.options?.refusedSessionIds ?? EMPTY_REFUSED;
 
   const sessionsById = new Map(sessions.map((s) => [s.id, s]));
   const childrenOf = new Map<string, OcSessionRow[]>();
@@ -550,7 +658,7 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
   }
   taskRecords.sort(compareToolRecords);
 
-  const join = joinTasks(taskRecords, sessionsById);
+  const join = joinTasks(taskRecords, sessionsById, refusedSessionIds);
 
   const roots = sessions.filter((s) => !s.parentId);
   const seenSessionRows = new Set<string>();

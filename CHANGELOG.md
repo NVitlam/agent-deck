@@ -2,6 +2,55 @@
 
 All notable changes to Agent Deck for Claude Code are documented here.
 
+## 0.1.3 - the deck could silently stop showing what was happening
+
+**One dropped message cost a whole session's tree, and nothing said so.**
+
+Agent Deck sends the panel a full snapshot once and then a stream of small
+patches. If the panel ever failed to apply one of those patches - because the
+message never arrived, or because it addressed a node the panel did not have -
+`0.1.2` threw away **the entire patch**, kept the tree it already had, and told
+nobody. Every patch after that was then applied to a tree that no longer matched
+the extension's, so it failed too, and was thrown away too. The deck stayed on
+screen looking fine and stopped growing.
+
+Measured on a real eight-hour session with two subagents, 107 patches: drop
+**one** of them, and `0.1.2` discards 102 of the remaining 106, freezing the tree
+four events in. **Zero of 246 tool calls survive to the end.** Not the two the
+dropped message carried - all of them. The loss grows the longer the session
+runs, which is exactly how it was reported.
+
+Three changes, and the first two are what make it impossible rather than merely
+recoverable:
+
+- **Inserts name a sibling, not a position.** A patch used to say "insert this
+  as child number 3", which is a statement about the panel's own array. One node
+  out of step and every later insert landed in the wrong place. It now says
+  "insert this after that node"; if the panel does not have that node it appends
+  instead - the wrong ORDER, which the next update corrects, rather than a lost
+  node, which nothing corrects.
+- **A patch that cannot be fully applied is applied as far as it can be.** The
+  parts that fit go in, the parts that do not are reported. A patch that would
+  leave a session without a root is still refused outright - that cannot happen
+  from a dropped message and means something else is wrong.
+- **The panel now tells the extension when it could not keep up**, and gets a
+  fresh snapshot back. That message did not exist. The panel had a note in its
+  own code saying "the extension owes us a snapshot" and no way to ask for one.
+
+**A diagnostics channel, because there was nothing to look at.** When this was
+first reported there was no way to check it: across an eight-hour session the
+extension had written two lines to the editor's log, both of them "extension
+activated". There is now an **Agent Deck** output channel - one line per session
+appearing or leaving, per refusal, per hook-listener error, per patch failure and
+per resync, and a counters line every minute. It is created the first time there
+is something to say, it never opens itself, and **Agent Deck: Show Diagnostics**
+in the Command Palette is the only thing that reveals it. Nothing is sent
+anywhere and nothing is written to disk; the read-only, zero-egress posture is
+unchanged.
+
+Nothing else moves in this release. No parser change, no new refusal, no change
+to what is read or where.
+
 ## 0.1.2 - compatibility fix
 
 **Every Claude Code session written from 2026-08-24 onward rendered

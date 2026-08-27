@@ -44,7 +44,7 @@
  *
  * **This constant did not exist before Phase 5, and `PLAN.md` DoD 5.1 asked for
  * it to be "bumped".** The gate re-measured the file and found zero
- * case-insensitive matches for `version`  the clause named an artifact that
+ * case-insensitive matches for `version` — the clause named an artifact that
  * had never been written, so gate amendment B1 introduces it rather than
  * reinterpreting the clause into something already true.
  *
@@ -59,7 +59,7 @@
  * **What it is NOT.** It is not a compatibility negotiation and nothing branches
  * on it: the host and the webview ship in one VSIX and are always the same
  * build. It exists so a change to the shared shape has a place to be declared,
- * and so a test can fail when the shape moves without anyone saying so  the
+ * and so a test can fail when the shape moves without anyone saying so — the
  * job `src/bridge/contract.ts` does for the element id, on the surface where
  * this repo has already paid once for two packages agreeing by hand.
  */

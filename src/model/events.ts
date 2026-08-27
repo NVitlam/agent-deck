@@ -174,8 +174,8 @@ export type ParkCode =
    * **A new code because the existing one told a false story.** Through Phase 4
    * this case surfaced as {@link ParkCode} `joinKeyContradiction`: the grafter
    * looked the child up among the accepted rows, did not find it, and reported
-   * the only failure it had a word for. It was visible and it was safe  G3 was
-   * never violated, nothing was guessed  but the keys did not disagree. The
+   * the only failure it had a word for. It was visible and it was safe — G3 was
+   * never violated, nothing was guessed — but the keys did not disagree. The
    * child was out of window, which is a compatibility fact about one session,
    * not a data-integrity fact about a join.
    *
@@ -253,9 +253,9 @@ export interface ToolNode {
    *
    * OpenCode sets it in `state.metadata.truncated`; **14 tool parts in the
    * anchor corpus carry it**. `docs/opencode-contract.md` �8.4 calls it "the
-   * flag to trust". It was dropped silently through Phase 4 
+   * flag to trust". It was dropped silently through Phase 4 —
    * `fixtures/opencode-1.18.22/GOLDEN.md` DEVIATION 5 and
-   * `docs/evidence/phase-4/COVERAGE.md` item 22  recorded there as a known
+   * `docs/evidence/phase-4/COVERAGE.md` item 22 — recorded there as a known
    * information loss rather than an untested branch, because the field had
    * nowhere to land. Phase 5's gate amendment B7 gives it one.
    *
@@ -343,7 +343,7 @@ export interface SessionFieldPatch {
    * session cannot change while the session exists, so `diffSessionState` has
    * nothing to compare that could differ. It is carried because `PLAN.md` DoD
    * 5.1 specifies the field as "the same move as `spawnEdges` and `parked`",
-   * and both of those are patch fields  uniformity, bought with a branch that
+   * and both of those are patch fields — uniformity, bought with a branch that
    * provably never fires. The user took that trade at the Phase 5 gate with the
    * cost stated (gate amendment B2). **Do not delete it as dead code**; it is
    * deliberate, and `applySessionPatch` honours it if it ever does arrive.

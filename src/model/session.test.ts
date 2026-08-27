@@ -1679,7 +1679,7 @@ describe('SessionState.engine — the CC engine stamps its own name', () => {
 
   it('the stamp survives a diff and an apply, so the wire never loses it', async () => {
     const { sessionIds } = await fixtures();
-    const { model, reconstructed } = await replayInterleaved();
+    const { reconstructed } = await replayInterleaved();
     for (const sessionId of sessionIds) {
       // `reconstructed` is built by applying every emitted patch in order — the
       // webview's own path — so this is the field surviving the reducer, not

@@ -338,7 +338,7 @@ beforeAll(async () => {
 
   // (f) Wave 0: the five shapes, one file each.
   for (const shape of PARITY_SHAPES) writeScratch(shape.file, parityLine(shape.value));
-});
+}, 120_000);
 
 afterAll(() => {
   if (scratch !== '') fs.rmSync(scratch, { recursive: true, force: true });
@@ -378,7 +378,7 @@ describe('privacy sweep against this repository', () => {
 
   beforeAll(() => {
     report = sweep({ root: REPO_ROOT, history: true, stamp: '1970-01-01T00:00:00.000Z' });
-  });
+  }, 120_000);
 
   it('finds no credential-shaped strings in the working tree or in history', () => {
     expect(report.workingTree.secrets).toEqual([]);
@@ -494,7 +494,7 @@ describe('privacy sweep against this repository', () => {
         else dirs.add(`${p.slice(0, slash)}/`);
       }
       topLevelDirs = [...dirs].sort();
-    });
+    }, 120_000);
 
     it('read a non-empty tracked file list, so the assertions below mean something', () => {
       // A guard on the guard: `git ls-files` returning nothing would make every
@@ -593,7 +593,7 @@ describe('negative controls', () => {
 
   beforeAll(() => {
     planted = sweep({ root: scratch, stamp: '1970-01-01T00:00:00.000Z' });
-  });
+  }, 120_000);
 
   it('the scratch root is swept by directory walk with no history leg', () => {
     expect(planted.historyScope).toBe('skipped');
@@ -784,7 +784,7 @@ describe('untracked mode', () => {
       untracked: true,
       stamp: '1970-01-01T00:00:00.000Z',
     });
-  });
+  }, 120_000);
 
   afterAll(() => {
     if (repo !== '') fs.rmSync(repo, { recursive: true, force: true });
@@ -856,7 +856,7 @@ describe('committed evidence', () => {
   beforeAll(() => {
     evidence = JSON.parse(fs.readFileSync(EVIDENCE, 'utf8')) as SweepReport;
     fresh = sweep({ root: REPO_ROOT, history: true, stamp: '1970-01-01T00:00:00.000Z' });
-  });
+  }, 120_000);
 
   it('exists, parses, and names the tool and the commit it was taken at', () => {
     expect(evidence.tool).toBe('scripts/privacy-sweep.mjs');

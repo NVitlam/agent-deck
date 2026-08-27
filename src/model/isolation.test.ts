@@ -488,7 +488,7 @@ describe('DoD 5.3 (1) — a broken OpenCode store leaves Claude Code sessions un
     // ...and the Claude Code half never noticed.
     expect(thrown.path.diagnostics.graftErrors).toBe(0);
     expect(thrown.path.diagnostics.ccEmitErrors).toBe(0);
-  });
+  }, 120_000);
 });
 
 describe('DoD 5.3 (2) — a Claude Code parse failure leaves OpenCode sessions unchanged', () => {

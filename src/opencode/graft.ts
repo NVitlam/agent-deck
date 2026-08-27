@@ -603,17 +603,31 @@ function buildAgent(session: OcSessionRow, depth: number, ctx: BuildContext): Ag
  * those is a session SILENTLY DROPPED, which is the failure this whole
  * exercise exists to make visible — so it is loud rather than absent.
  *
- * **A KNOWN, UNFIXED REACHABLE CASE OF THAT THROW, named rather than papered
- * over.** An ACCEPTED session whose parent was REFUSED is reachable from no
- * root, because the refused parent is not in `sessions` and the accepted child
- * is not a root either. It therefore lands in the orphan check and throws,
- * which is a crash on input and G3 says never to do that. The condition
- * predates the `refusedSessionIds` seam above and is unchanged by it — the
- * seam only fixes the code on the PARK of a refused direct child, which is
+ * **A KNOWN REACHABLE CASE OF THAT THROW. CONTAINED, NOT FIXED.** An ACCEPTED
+ * session whose parent was REFUSED is reachable from no root, because the
+ * refused parent is not in `sessions` and the accepted child is not a root
+ * either. It lands in the orphan check and throws. The condition predates the
+ * `refusedSessionIds` seam above and is unchanged by it — the seam only fixes
+ * the code on the PARK of a refused direct child, which is
  * `docs/evidence/phase-4/COVERAGE.md` item 29 and all that Phase 5's gate
- * scoped. Both committed corpora are depth-1 with no such row, so nothing here
- * reproduces it today. Fixing it means deciding which `SessionState` an
- * orphaned grandchild belongs to, and that decision was not taken.
+ * scoped.
+ *
+ * **Where it is contained:** `src/opencode/index.ts` wraps this call in the
+ * engine's one try/catch and returns a `graftFailed` degrade, so the throw no
+ * longer escapes `readOpenCodeEngine`, whose contract is "never thrown, always
+ * returned" and which the extension host calls from `activate`. This function
+ * still throws and must keep throwing — a silently dropped session is the
+ * failure the check exists to expose.
+ *
+ * **What containment costs, and why this is not the word "fixed":** a degrade
+ * is engine-wide, so one unplaceable row darkens every OpenCode session, when
+ * the condition itself is a single explainable row. Parking it instead —
+ * distinguishing "unreachable because an ancestor was refused" from
+ * "unreachable for no reason we can name" — is the better fix and needs a
+ * decision about which `SessionState` an orphaned grandchild belongs to. That
+ * decision has still not been taken. Neither committed corpus contains such a
+ * row; `golden.test.ts` reproduces it by refusing a real parent's version on a
+ * temp copy.
  */
 export function graftCorpus(input: OcGraftInput): OcEngineResult {
   const { sessions, projects, parse } = input;

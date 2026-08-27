@@ -183,18 +183,66 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
    */
   const refusedSessionIds = new Set(partition.refused.map((mismatch) => mismatch.sessionId));
 
-  const grafted = graftCorpus({
-    sessions: partition.accepted,
-    projects: read.value.projects,
-    parse,
-    options: {
-      projectSlug: projectSlugOf,
-      refusedSessionIds,
-      ...(options.workspacePaths === undefined
-        ? {}
-        : { workspaceMatch: workspaceMatcher(options.workspacePaths) }),
-    },
-  });
+  /*
+   * THE ONE TRY/CATCH IN THIS ENGINE, AND THE TRADE IT MAKES.
+   *
+   * `graftCorpus` throws when a `session` row is reachable as neither a root,
+   * nor an `AgentNode` under one, nor a parked entry. That throw is deliberate
+   * and it is NOT being softened: a silently dropped session is the failure
+   * this whole exercise exists to make visible, and `graft.test.ts` asserts it.
+   * What changes here is only that it stops ESCAPING. `OcEngineOutcome`'s own
+   * doc says "Never thrown, always returned", `readOpenCodeEngine` is called
+   * from the extension host's `activate`, and an uncaught throw there is an
+   * inert extension with no error a user can see - the same end state the
+   * `"type": "module"` / `.cjs` defect produced, reached by a different route.
+   *
+   * **THE COST, STATED PLAINLY, BECAUSE IT IS REAL AND IT IS NOT SOLVED.**
+   * This converts a known, explainable, SINGLE-ROW condition into an opaque
+   * engine-wide degrade that darkens EVERY OpenCode session. That is worse
+   * behaviour than parking the one row would be. The user took this option at
+   * the Phase 5 gate with that cost on the table, because it is correct and
+   * cheap now and an uncaught throw at `activate` is neither.
+   *
+   * The reachable case today is an ACCEPTED session whose parent was REFUSED by
+   * the version window: the refused parent is not in the accepted rows and the
+   * accepted child is not a root, so nothing can place it. It is EXPLAINABLE -
+   * we know exactly why that row is unreachable - and the better fix a later
+   * phase should take is to park it, distinguishing "unreachable because an
+   * ancestor was refused" from "unreachable for no reason we can name" and
+   * degrading only for the second. That needs a decision about which
+   * `SessionState` an orphaned grandchild belongs to, and that decision has
+   * still not been taken. Do not read this catch as having taken it.
+   *
+   * The cause is never swallowed (rule 3): the thrown message travels into
+   * `health.message` verbatim, so the row the graft could not place is named in
+   * the field. Only the message - no stack, and `health.path` stays the file
+   * that was opened, never a path read out of the database.
+   */
+  let grafted: OcEngineResult;
+  try {
+    grafted = graftCorpus({
+      sessions: partition.accepted,
+      projects: read.value.projects,
+      parse,
+      options: {
+        projectSlug: projectSlugOf,
+        refusedSessionIds,
+        ...(options.workspacePaths === undefined
+          ? {}
+          : { workspaceMatch: workspaceMatcher(options.workspacePaths) }),
+      },
+    });
+  } catch (error) {
+    return {
+      kind: 'degraded',
+      health: {
+        ok: false,
+        code: 'graftFailed',
+        message: `graft failed for ${dbPath}: ${messageOf(error)}`,
+        path: dbPath,
+      },
+    };
+  }
 
   /*
    * A REFUSED SESSION IS NOT AN ABSENT ONE.
@@ -244,6 +292,18 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
       refused: [...grafted.refused, ...partition.refused],
     },
   };
+}
+
+/**
+ * The message off anything `catch` can hand us, without a stack.
+ *
+ * `db.ts` has a private twin of this. It is restated rather than exported and
+ * shared, because that one is about a filesystem/SQLite error and this one is
+ * about our own code throwing - the two would drift toward each other's needs
+ * and a shared helper would make it look like the two failures are one kind.
+ */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**

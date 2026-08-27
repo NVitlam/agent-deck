@@ -92,6 +92,12 @@ function cloneTool(node: ToolNode): ToolNode {
   };
   if (node.resultPreview !== undefined) out.resultPreview = node.resultPreview;
   if (node.durationMs !== undefined) out.durationMs = node.durationMs;
+  // An absent key is left absent rather than written as `undefined`: the round
+  // trip compares with `toStrictEqual`, which distinguishes the two, and every
+  // CC-produced tool node has this key absent (the flag is the OpenCode
+  // engine's). A clone that wrote `truncated: undefined` would make
+  // apply(prev, diff) stop deep-equalling `next` for every CC session.
+  if (node.truncated !== undefined) out.truncated = node.truncated;
   return out;
 }
 
@@ -253,6 +259,14 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
         else if (f.resultPreview !== undefined) node.resultPreview = f.resultPreview;
         if (f.durationMs === null) delete node.durationMs;
         else if (f.durationMs !== undefined) node.durationMs = f.durationMs;
+        // Gate amendment B7. Both directions, or the round trip is not exact:
+        // `null` is the engine withdrawing its truncation claim and must DELETE
+        // the key, `false` is the engine actively claiming the payload is whole
+        // and must be kept as `false`. Collapsing the two — `if (f.truncated)`
+        // — would silently turn a cleared flag into a `false` one, which reads
+        // to a renderer as "known whole" instead of "not claimed".
+        if (f.truncated === null) delete node.truncated;
+        else if (f.truncated !== undefined) node.truncated = f.truncated;
         break;
       }
     }
@@ -270,6 +284,15 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
   // sets it, so this only affects states built before it existed, and writing
   // `parked: []` onto those would change what an unrelated round trip compares.
   const parked = patch.parked ?? prev.parked;
+  // Gate amendment B2. Honoured exactly like `parked`: a patch that does not
+  // mention the engine leaves it alone, and a state that never carried the
+  // field comes out without it rather than gaining a `'cc'` this reducer made
+  // up. `SessionFieldPatch.engine` records why the key can never arrive from
+  // `diffSessionState` — nothing can change a session's engine — and that it
+  // is carried anyway, by decision. **Do not delete this as dead code.** If it
+  // is ever deleted, a patch carrying the key becomes silently ignored rather
+  // than failing.
+  const engine = fields.engine ?? prev.engine;
 
   const next: SessionState = {
     sessionId: prev.sessionId,
@@ -286,5 +309,6 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
     spawnEdges: edges.map((e) => ({ ...e })),
   };
   if (parked !== undefined) next.parked = parked.map((p) => ({ ...p }));
+  if (engine !== undefined) next.engine = engine;
   return deepFreeze(next);
 }

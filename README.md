@@ -30,6 +30,19 @@ Agent Deck observes. It never acts.
 - No telemetry, no analytics, no CDN. Every asset the panel renders is local,
   enforced by a strict Content-Security-Policy.
 
+**Coming in 0.5.0, and stated here in advance because it makes "read-only"
+more precise — it does *not* describe the version you have installed.** Agent
+Deck is gaining a second observation source: OpenCode's session store at
+`%USERPROFILE%\.local\share\opencode\opencode.db`, opened read-only. That
+database is in SQLite's WAL mode, and opening a WAL database read-only writes
+to SQLite's own `-shm` index sidecar (creating `-shm`/`-wal` if absent). The
+database itself is never modified, and `auth.json`, `log/`, `snapshot/`,
+`repos/` and `tool-output/` are never opened at all — but "never writes
+anything" would be the wrong claim, so the rule is **no writes to any file the
+observed engine treats as content**. Every reader of a WAL database touches
+that sidecar, OpenCode's own process included. The four secret-bearing tables
+are never read. `SECURITY.md` §2 carries the measurements.
+
 All state lives in memory and is discarded when the window closes.
 
 ## Features

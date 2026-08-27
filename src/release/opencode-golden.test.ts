@@ -117,9 +117,13 @@ let loadError: unknown = null;
  * a value: the golden is JSON on disk and has to be validated as JSON.
  *
  * `engine` and the `taskWithoutChild` park code are spec'd (OC7, OC3)
- * and are NOT yet in `src/model/events.ts` — Phase 4 adds them. The
- * local widening is the honest way to say so; see the DEVIATIONS note
- * in `fixtures/opencode-1.18.22/GOLDEN.md`.
+ * and Phase 4 has since added both to `src/model/events.ts`. The shapes
+ * below stay LOCAL anyway, for the reason above rather than for the one
+ * that first put them here: this suite validates JSON read off disk, and
+ * validating it against the very interface the engine is written to
+ * would let a widening of that interface silently widen the golden's
+ * acceptance too. See the DEVIATIONS list in
+ * `fixtures/opencode-1.18.22/GOLDEN.md`.
  * ------------------------------------------------------------------ */
 interface GoldenToolNode {
   node: 'tool';
@@ -562,11 +566,32 @@ describe.each(CORPUS_NAMES)('%s', (name) => {
       const l = need(name);
       // `generatedFrom` is a repo-relative path and is the only `/` allowed to
       // look path-like; a drive letter or a home directory is not.
+      //
+      // THESE ARE NOW THE CC GOLDENS' FOUR CHECKS, EXACTLY — `[A-Za-z]:[\\/]`,
+      // `/Users/`, `.claude`, `\\`. They used to be six: this file also
+      // forbade the bare words `Users` and `projects`, which was affordable
+      // only while `projectSlug` was the empty placeholder.
+      //
+      // `PLAN.md` Phase 4 Amendment A1 fills it with the CC slug
+      // `c--Users-dev-projects-…`, and that slug contains both words. The
+      // narrower rule is the CORRECT one and always was: it is the one
+      // `fixtures/golden/session/README.md` rule 1 states and the one
+      // `src/model/session.test.ts` enforces on the CC goldens, which have
+      // carried this exact string since Phase 2. Rule 1 forbids a filesystem
+      // PATH; a slug is not a path — `:`, `\` and `/` have all been collapsed
+      // out of it, which is why the drive-letter and separator checks still
+      // bite while the bare words cannot.
+      //
+      // What this costs, stated rather than glossed: the golden now contains a
+      // username. That is not new exposure — the identical string is already in
+      // `fixtures/golden/session/*.json`, and `scripts/privacy-sweep.mjs`
+      // classifies this developer's own paths as deliberate fixture content
+      // rather than as a leak. What the sweep gates on is FOREIGN content and
+      // secrets, and neither counter moves.
       expect(l.fileText).not.toMatch(/[A-Za-z]:[\\/]/);
       expect(l.fileText).not.toContain('\\\\');
-      expect(l.fileText).not.toContain('Users');
-      expect(l.fileText).not.toContain('projects');
-      expect(l.fileText).not.toContain('.claude');
+      expect(l.fileText).not.toContain('/Users/');
+      expect(l.fileText.toLowerCase()).not.toContain('.claude');
       expect(l.fileText).not.toContain('/home/');
     });
 
@@ -657,12 +682,53 @@ describe.each(CORPUS_NAMES)('%s', (name) => {
       for (const s of l.golden.sessions) expect(s.engine).toBe('opencode');
     });
 
-    it('leaves projectSlug as the undecided placeholder (OC7 open item)', () => {
-      // OC7: what `projectSlug` carries for an OpenCode session is "not decided
-      // by this amendment, and is not guessed by it" — Phase 5 owns it. The
-      // empty string names none of the three candidates. When Phase 5 decides,
-      // this assertion and both goldens change together.
-      for (const s of need(name).golden.sessions) expect(s.projectSlug).toBe('');
+    it('carries the CC slug for project.worktree as projectSlug (Amendment A1)', () => {
+      // SUPERSEDES the assertion that stood here, which pinned `''` and cited
+      // OC7's "not decided by this amendment ... Open item, for Phase 5".
+      // `PLAN.md` Phase 4 `Amendment 2026-08-27 — projectSlug, liveness proof,
+      // coverage law` item A1 closed it in Phase 4 instead: `projectSlug` means
+      // "the project key" for both engines, and the OpenCode value is the slug
+      // derived from `project.worktree` by CC's own directory-naming rule.
+      //
+      // Both sides are read OFF DISK here and neither is a literal in this
+      // file, which is what makes this a pin rather than a restatement: the
+      // left is what the generator produced from the corpus's `worktree`
+      // column, the right is the name of the one slug directory CC itself
+      // wrote under `fixtures/cc-2.1.246/projects/`.
+      const projectRoot = path.join(FIXTURES, 'cc-2.1.246', 'projects');
+      const ccSlugs = fs
+        .readdirSync(projectRoot, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+      expect(ccSlugs).toHaveLength(1);
+      const [ccSlug] = ccSlugs;
+      const sessions = need(name).golden.sessions;
+      expect(sessions.length).toBeGreaterThan(0);
+      for (const s of sessions) expect(s.projectSlug).toBe(ccSlug);
+    });
+
+    it('carries the SAME projectSlug the CC goldens carry for this workspace', () => {
+      // The whole content of A1 is that one workspace observed by two engines
+      // gets ONE key. Asserting the OpenCode value against the CC directory
+      // name alone would leave that unstated; this compares it against what the
+      // CC engine's own committed goldens hold, which is the value a deck
+      // grouping sessions by project would actually compare.
+      const ccGoldenDir = path.join(FIXTURES, 'golden', 'session');
+      const ccSlugs = new Set(
+        fs
+          .readdirSync(ccGoldenDir)
+          .filter((n) => n.endsWith('.json'))
+          .map(
+            (n) =>
+              (JSON.parse(fs.readFileSync(path.join(ccGoldenDir, n), 'utf8')) as {
+                projectSlug: string;
+              }).projectSlug,
+          ),
+      );
+      expect(ccSlugs.size).toBe(1);
+      for (const s of need(name).golden.sessions) {
+        expect(ccSlugs.has(s.projectSlug)).toBe(true);
+      }
     });
 
     it('never nests a subagent inside the ToolNode that spawned it', () => {

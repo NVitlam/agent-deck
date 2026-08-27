@@ -50,6 +50,31 @@ export interface SessionState {
    * renders nothing, and a new field is not a hole to smuggle content through.
    */
   parked?: readonly ParkedGraft[];
+  /**
+   * Which observation engine produced this state.
+   *
+   * Phase 4 additive, and optional for the third time and the same reason
+   * `spawnEdges` and `parked` were: every earlier construction of this
+   * interface stays valid and no field above changes meaning. **Absence reads
+   * as `'cc'`**, which is what every state produced before the OpenCode engine
+   * existed was. `agent-deck-spec.md` OC7 is the authority for the shape.
+   *
+   * The tag exists so ISOLATION is assertable: G2 gained a cross-engine half —
+   * a corrupt or absent OpenCode database must leave CC sessions rendering
+   * unchanged, and a CC parse failure must leave OpenCode sessions rendering
+   * unchanged — and a test can only name the sessions that must be unaffected
+   * if the state says which engine produced them.
+   *
+   * **`SessionPatch` does NOT carry this field, and that is a scope line rather
+   * than an oversight.** The engine that observed a session cannot change while
+   * the session exists, so there is nothing for a diff to express; wiring the
+   * tag through `SessionFieldPatch`, `diffSessionState`, `applySessionPatch`
+   * and the canvas contract is `PLAN.md` DoD 5.1, which bumps the wire version
+   * with it. Nothing in `src/model/session.ts` produces a state carrying this
+   * field — the OpenCode engine builds `SessionState` directly — so no value
+   * can fall through the gap in the meantime.
+   */
+  engine?: 'cc' | 'opencode';
 }
 
 /**
@@ -95,11 +120,62 @@ export type ParkCode =
   | 'ambiguousJoinKey'
   | 'parentAgentMissing'
   | 'parentAgentContradiction'
-  | 'parentNotGrafted';
+  | 'parentNotGrafted'
+  // -- OpenCode engine only (Phase 4). `src/model/graft.ts`'s own `ParkCode`
+  // does NOT carry these: the CC grafter cannot produce them, and widening its
+  // union would say it could. This union is the wire's, so it is the superset,
+  // and the assignment at `session.ts`'s `toWireParked` still type-checks.
+  /**
+   * A `task` part carries no `state.metadata.sessionId`, so there is no child
+   * session to attach. Measured on 9 of 30 task parts (`agent-deck-spec.md`
+   * OC3, `docs/opencode-contract.md` amendment §G) and therefore a NORMAL
+   * state — most likely a call observed before the child row exists, the exact
+   * analogue of CC's sidecar-before-transcript window.
+   *
+   * Distinct from {@link ParkCode} `joinKeyContradiction` on purpose: a missing
+   * key and a contradicted key are different stories, for the same reason
+   * `unsupportedVersion` and `versionChangedMidFile` are distinct for CC. It is
+   * never resolved by guessing the nearest child in time (OC3, rule 2).
+   */
+  | 'taskWithoutChild'
+  /**
+   * The `task` part's `state.metadata.sessionId`, its
+   * `state.metadata.parentSessionId`, and the named child row's
+   * `session.parent_id` do not all agree.
+   *
+   * A NEW code rather than a reuse of `parentAgentContradiction`: that one
+   * describes a CC sidecar's `parentAgentId` disagreeing with where the
+   * `tool_use` key resolved — one claim against one resolution. This is a
+   * three-way primary-key cross-assertion with no sidecar in it, and collapsing
+   * the two would make the wire unable to say which check failed.
+   */
+  | 'joinKeyContradiction'
+  /**
+   * A child `session` row names a `parent_id`, but no `task` part in that
+   * parent session joins to it. The child exists and nothing legitimately
+   * attaches it, so it parks rather than being hung off the root.
+   */
+  | 'noSpawningTaskPart';
 
 /** One agent that is known to exist and is deliberately not in the tree. */
 export interface ParkedGraft {
-  /** The agent that did not graft. It matches no `AgentNode.id` under `root`. */
+  /**
+   * The identity of the thing that did not graft. It matches no `AgentNode.id`
+   * under `root`.
+   *
+   * For the CC engine this is always an agent id. **For the OpenCode engine's
+   * `taskWithoutChild` it is a `prt_*` part row id**, because the entire
+   * content of that case is that no child session id exists — OpenCode parks a
+   * *part*, not an agent, and the row id is the only stable identity the data
+   * offers for the thing that was parked. `fixtures/opencode-1.18.22/GOLDEN.md`
+   * DEVIATIONS item 3 raised this as a spec misfit and offered two fixes: an
+   * optional part id beside this field, or documenting the field as the wider
+   * claim. **Phase 4 took the second**, because a second identity field would
+   * have to be optional, every renderer would then have to know which of two
+   * fields to read, and the field's one real job — "name the thing that is
+   * missing from the tree, so a refusal is visible" — is served by either id.
+   * The `code` says which kind it is, and it does so exhaustively.
+   */
   agentId: string;
   /** Machine-readable refusal reason. */
   code: ParkCode;

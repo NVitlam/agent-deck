@@ -458,6 +458,31 @@ either corpus reaches**, so Phase 4 will reproduce these files without ever prov
 
 ## What was NOT decided here
 
+### `projectSlug` — SUPERSEDED 2026-08-27, closed in Phase 4
+
+> **Read this before the subsection below it, which is a Phase 3 record and is now out of date.**
+>
+> `PLAN.md` Phase 4 `Amendment 2026-08-27 — projectSlug, liveness proof, coverage law`, item A1,
+> closed this open item **in Phase 4**, not Phase 5. `projectSlug` means "the project key" for both
+> engines, and the OpenCode value is the slug derived from `project.worktree` by the rule Claude
+> Code uses to name its `~/.claude/projects/<slug>` directory.
+>
+> **Both `golden.json` files were regenerated once, on 2026-08-27, with `projectSlug` filled** —
+> one field per session, nothing else changed. Each corpus `README.md` carries the regeneration
+> line. `src/release/opencode-golden.test.ts` no longer asserts the placeholder; it asserts the
+> value equals the slug directory name under `fixtures/cc-2.1.246/projects/` **and** the
+> `projectSlug` the CC goldens in `fixtures/golden/session/` carry, both read off disk.
+>
+> One consequence worth naming, because it changed a test rather than only a value: this file's
+> reproducibility rule forbade the bare words `Users` and `projects` in a golden, and the slug
+> contains both. That check is now the CC goldens' four — drive letter, `/Users/`, `.claude`,
+> Windows separator — which is what `fixtures/golden/session/README.md` rule 1 actually states and
+> what `src/model/session.test.ts` has always enforced on the CC goldens carrying this same string.
+> Rule 1 forbids a filesystem *path*, and a slug has had `:`, `\` and `/` collapsed out of it.
+>
+> The subsection below is **left as written**, as the Phase 3 record of what was true when the
+> goldens were first generated. It is not the current state.
+
 ### `projectSlug` — an open question, left open
 
 OC7 states it plainly: "`SessionState.projectSlug` is named for CC's slug directory and OpenCode has

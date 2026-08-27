@@ -22,7 +22,7 @@
   "sessions": [
     {
       "sessionId": "ses_fccba7ef0ffeCbT5pI3BfrtfvM",
-      "projectSlug": "",
+      "projectSlug": "c--Users-dev-projects-agent-deck",
       "engine": "opencode",
       "workspaceMatch": true,
       "liveness": "idle",
@@ -72,7 +72,7 @@
     },
     {
       "sessionId": "ses_fcc9851f1ffewC0k6GRa7WMrfs",
-      "projectSlug": "",
+      "projectSlug": "c--Users-dev-projects-agent-deck",
       "engine": "opencode",
       "workspaceMatch": true,
       "liveness": "idle",
@@ -140,7 +140,7 @@
     },
     {
       "sessionId": "ses_fcc8ec1ebffe81y3a6Ddc6DsMw",
-      "projectSlug": "",
+      "projectSlug": "c--Users-dev-projects-agent-deck",
       "engine": "opencode",
       "workspaceMatch": true,
       "liveness": "idle",
@@ -649,7 +649,7 @@
     },
     {
       "sessionId": "ses_fcaa0162fffe42IwWMqYlRoprY",
-      "projectSlug": "",
+      "projectSlug": "c--Users-dev-projects-agent-deck",
       "engine": "opencode",
       "workspaceMatch": true,
       "liveness": "idle",

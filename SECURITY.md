@@ -40,6 +40,30 @@ These are build-time law in this repository, not guidelines. A change that break
   `.claude/settings.local.json` precisely so that `~/.claude` stays untouched.
   `src/hooks/listener.ts` imports no filesystem API at all, and a test asserts that against the
   source text — including that it never resolves a home directory.
+
+  **Amended 2026-08-27, when a second observation source arrived and measurement contradicted the
+  plain reading.** Agent Deck also reads OpenCode's SQLite store,
+  `%USERPROFILE%\.local\share\opencode\opencode.db`, and that database is in **WAL** mode. Opening a
+  WAL database read-only **writes to SQLite's own `-shm` shared-memory index**, and **creates
+  `-shm`/`-wal` if they are absent**. So G1's claim is stated precisely rather than absolutely:
+
+  > **No writes to any file the observed engine treats as content.**
+
+  `opencode.db` itself is never modified — measured byte- and mtime-identical across every probe —
+  and `auth.json`, `log/`, `snapshot/`, `repos/` and `tool-output/` are never opened at all. What is
+  touched is SQLite's lock and index sidecar, which **every** reader of a WAL database touches,
+  including OpenCode's own process, and which holds no session content. The read-only handle is
+  still the enforcement: a write through it throws `ERR_SQLITE_ERROR` errcode 8, `attempt to write a
+  readonly database`.
+
+  The one mode that writes nothing at all, `file:…?immutable=1`, was **rejected for the live
+  database and is used only for this repository's committed test fixtures**. It buys zero writes by
+  skipping the WAL, which against a live database means silently returning whatever was last
+  checkpointed — a confidently wrong tree, which is worse than a sidecar. Requesting it on a
+  WAL-mode file is refused in code, so it cannot later be pointed at your data.
+
+  Four secret-bearing tables — `account`, `control_account`, `credential`, `session_share` — are
+  never read, and are dropped **by schema** from any committed fixture.
 - **G2 — source separation.** A JSONL parse failure must never take liveness down, and vice versa.
   The two taps do not share a failure path.
 - **G3 — refuse, don't guess.** Malformed input increments a counter and is skipped. A schema

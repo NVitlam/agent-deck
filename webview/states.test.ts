@@ -1082,6 +1082,21 @@ describe('C7.3 rows that were unimplemented and now are not', () => {
     const totals = one(panel.container, 'hud-totals');
     expect(totals.textContent).toContain('—');
     expect(totals.textContent).not.toMatch(/\$\s*0/);
+
+    // THE VALUES, not the presence of a dash. `toContain('—')` was the whole
+    // assertion here, and it stayed green while this line rendered
+    // `— in · — out · —` on every session: the component read two fields the
+    // contract had deleted, `formatTokens(undefined)` returns an em-dash, and
+    // the only assertion was satisfied BY THE FAILURE. `.svelte` is outside
+    // `tsc` and outside eslint, so a value assertion is the only guard this
+    // surface has.
+    const text = totals.textContent ?? '';
+    expect(text).toContain('17,745 in ctx');
+    expect(text).toContain('35,490 burn');
+    // The negative control for the control: the em-dash above must be COST's,
+    // not a token figure that failed to resolve.
+    expect(text).not.toMatch(/—\s*in ctx/);
+    expect(text).not.toMatch(/—\s*burn/);
   });
 
   it('shows the refusal card on entry, beside a genuinely empty interior', () => {

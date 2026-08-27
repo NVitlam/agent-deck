@@ -232,6 +232,74 @@ describe('applySessionPatch — the properties the bridge relies on', () => {
    * Both halves are asserted, because the whole value of the change is in the
    * difference between them.
    */
+  /**
+   * AN UNKNOWN `afterId` APPENDS. It does not drop, and until now nothing in
+   * this file said so.
+   *
+   * Found by a `phase-verifier` mutation: replacing the append with a `break`
+   * — making a divergent insert silently discard its node, which is exactly
+   * the `0.1.2` behaviour this release exists to remove — left
+   * `apply.test.ts`, `resync.test.ts` and `webview/store.test.ts` **92/92
+   * green**. Only one assertion in `src/model/session.test.ts`, three modules
+   * away, went red. The reducer's own suite could not tell the fix from the
+   * defect.
+   *
+   * So it is asserted here, at the reducer, on both halves: the node is
+   * PRESENT (membership, which nothing recovers) and it is LAST (order, which
+   * the next `reorderChildren` or a resync corrects). The report is asserted
+   * too — appending silently would be a different defect, one where the
+   * webview never learns it has diverged and never asks for a snapshot.
+   */
+  it('appends a node whose afterId anchor is missing, and says that it did', () => {
+    const withChild = applySessionPatch(base, {
+      tree: [
+        {
+          op: 'insertNode',
+          parentId: 'root',
+          afterId: null,
+          node: {
+            id: 'tool-1',
+            toolName: 'Read',
+            status: 'done',
+            inputPreview: '{}',
+          },
+        },
+      ],
+    });
+    expect(withChild.root.children.map((c) => c.id)).toStrictEqual(['tool-1']);
+
+    const errors: { op: string; id?: string }[] = [];
+    const diverged = applySessionPatch(withChild, {
+      tree: [
+        {
+          op: 'insertNode',
+          parentId: 'root',
+          // A sibling this tree has never seen — precisely what a dropped
+          // message produces.
+          afterId: 'tool-never-arrived',
+          node: {
+            id: 'tool-2',
+            toolName: 'Bash',
+            status: 'running',
+            inputPreview: '{}',
+          },
+        },
+      ],
+    }, { onError: (e) => errors.push({ op: e.op, id: e.id }) });
+
+    // MEMBERSHIP: the node is in the tree. This is the half that matters, and
+    // the half the mutation destroyed.
+    expect(diverged.root.children.map((c) => c.id)).toContain('tool-2');
+    // ORDER: appended, i.e. last. Wrong-but-recoverable, stated explicitly so
+    // a future change to "insert at 0" is a decision rather than a drift.
+    expect(diverged.root.children.map((c) => c.id)).toStrictEqual(['tool-1', 'tool-2']);
+    // AND IT REPORTED. Appending in silence would leave the webview believing
+    // its tree is correct, which is how `0.1.2` lost 246 nodes without a word.
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.op).toBe('insertNode');
+    expect(errors[0]?.id).toBe('tool-never-arrived');
+  });
+
   it('reports a divergent op and throws only on a broken root invariant', () => {
     const errors: ApplyError[] = [];
     const next = applySessionPatch(

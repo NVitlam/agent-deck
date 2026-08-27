@@ -397,11 +397,16 @@ function epoch(value: unknown): number | undefined {
  * stops growing.
  *
  * WHAT `prompt` IS, AND WHY IT IS NOT `input_tokens`. `input_tokens` alone is
- * ~2 on every real assistant message in every captured fixture — the prompt
- * lives in `cache_creation_input_tokens` + `cache_read_input_tokens`. On
+ * ~2 on every real assistant message in the two ANCHOR corpora
+ * (`fixtures/cc-2.1.234`, `fixtures/cc-2.1.246`) — the prompt lives in
+ * `cache_creation_input_tokens` + `cache_read_input_tokens`. Across every
+ * `cc-*` corpus it is 79 of 116: `fixtures/cc-2.1.241` reaches 65,627 with
+ * both cache fields at 0, which is why the rule SUMS rather than picking
+ * whichever field looks populated. On
  * `fixtures/cc-2.1.234/.../05c5482d-*.jsonl`, message
- * `msg_011CeBgXDhoTEXnkTHVvjNSh` reads `2 + 13390 + 28807 = 42199`, and the
- * shipped `0.1.2`/`0.1.3` renderer displayed the `2`. All three components are
+ * `msg_011CeBgXDhoTEXnkTHVvjNSh` reads `2 + 13390 + 28807 = 42199`, and
+ * `0.1.2` displayed the `2`. (`0.1.3` is this fix; an earlier draft of this
+ * comment named it as one of the broken versions.) All three components are
  * summed, each defaulting to 0 when absent or non-finite, so a fixture without
  * cache fields still yields exactly `input_tokens` and nothing changes for it.
  * See `events.ts`'s {@link TokenPair} for the census this rests on.

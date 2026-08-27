@@ -449,8 +449,14 @@ function factsFor(container, meta) {
             livenessClasses: semanticClasses(headerLiveness),
             dataLivenessInferred: attr(header, 'data-liveness-inferred'),
             inferredMarkerText: textOf(first(container, 'header-liveness-inferred')),
-            tokensIn: textOf(first(container, 'header-tokens-in')),
-            tokensOut: textOf(first(container, 'header-tokens-out')),
+            // RENAMED WITH THE MEANING, 0.1.3: the header shows `context`
+            // (the last message's prompt) and `burn` (the running total), not
+            // in/out. This script kept querying the old ids for one commit and
+            // faithfully recorded `null` on all four states - a capture that
+            // succeeds while capturing nothing, which is why `facts.json` is
+            // committed and diffed rather than trusted.
+            contextNow: textOf(first(container, 'header-context')),
+            burn: textOf(first(container, 'header-burn')),
             cost: textOf(first(container, 'header-cost')),
             costTitle: attr(first(container, 'header-cost'), 'title'),
           },

@@ -771,7 +771,8 @@ describe('captured topology', () => {
     //   and 8 share msg_011CeBgfTGMFk39bxRHxoxen with 2 then 1099.
     //   Correct total 518 + 1099 = 1617. Naive line-sum would be 1620.
     //
-    // AND THE PROMPT SIDE, which is the whole reason `0.1.3` changed. Both
+    // AND THE PROMPT SIDE, which is the whole reason `0.1.3` changed (`0.1.2`
+    // is the build that displayed the wrong number; `0.1.3` is the fix). Both
     // messages read `input_tokens: 2`. The prompts are
     //   8054 + 18703 + 2 = 26759   and   4008 + 26757 + 2 = 30767.
     // The old `tokens.in` reported `2 + 2 = 4` for an agent that sent 57,526

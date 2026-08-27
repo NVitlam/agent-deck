@@ -276,9 +276,20 @@
             </span>
           {/if}
           {#if !view.refused}
+            <!-- CONTEXT AND BURN, and this line is why `.svelte` files being
+                 outside the type checker is a recorded hazard rather than a
+                 note. It read `totals.inputTokens` / `totals.outputTokens`
+                 until a `phase-verifier` caught it: those two fields were
+                 REMOVED from the contract by this very release, `tsc` does not
+                 see this file, eslint does not lint it, and
+                 `formatTokens(undefined)` returns an em-dash - so the DEFAULT
+                 view's token line rendered `— in · — out · —` on every
+                 session, in the shipped artifact, in the release whose
+                 changelog entry is about token counts being wrong. The test
+                 below now asserts the VALUES, not the presence of a dash. -->
             <span class="hud-totals" data-testid="hud-totals">
-              {formatTokens(view.selected.totals.inputTokens)} in ·
-              {formatTokens(view.selected.totals.outputTokens)} out ·
+              {formatTokens(view.selected.contextNow.prompt)} in ctx ·
+              {formatTokens(view.selected.burn.prompt)} burn ·
               <!-- Cost is an em-dash, never 0. The host sends 0 meaning NOT
                    COMPUTED, and 0 rendered as a number reads as "free", which
                    is a fabricated figure - the same class of defect as a

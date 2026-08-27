@@ -226,8 +226,11 @@ dot that spawned it. Click any node to open it in the inspector. The **Deck** br
 the deck, and **Reset view** re-centres pan and zoom without changing anything else.
 
 **Inspector** - the detail pane for whatever is selected. Per agent it lists status
-(**running**, **done**, **error**), tokens as *in / out*, duration and spawn depth, with the tool
-payload beneath it. **Show details** / **Hide details** collapses the payload, **Close** dismisses
+(**running**, **done**, **error**), **tokens** as *in ctx / out* and **burn** as *in / out*,
+duration and spawn depth, with the tool payload beneath it. The two token rows answer different
+questions: *tokens* is the last message's own prompt and output, which is what fills a context
+window, and *burn* is everything the agent has spent, which only grows. No percentage is shown,
+because no transcript states a window size and Agent Deck does not guess one from the model name. **Show details** / **Hide details** collapses the payload, **Close** dismisses
 the pane.
 
 ## Settings

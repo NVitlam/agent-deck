@@ -2,8 +2,10 @@
  * The token contract — `0.1.3`'s second fix.
  *
  * WHAT SHIPPED, AND WHY IT WAS WRONG. `AgentNode.tokens.in` read
- * `message.usage.input_tokens` and nothing else. In every captured Claude Code
- * fixture that field is **~2** on every assistant message: the prompt itself
+ * `message.usage.input_tokens` and nothing else. In the two ANCHOR corpora
+ * that field is **~2** on every assistant message — 79 of 116 across every
+ * `cc-*` corpus, with `fixtures/cc-2.1.241` (a local GGUF model, no prompt
+ * caching) reaching 65,627 and both cache fields at 0. The prompt itself
  * lives in `cache_creation_input_tokens` + `cache_read_input_tokens`. So the
  * deck reported "848 in" for a session Claude Code's own context display put at
  * roughly 76% of a 1M window — off by three orders of magnitude, on the number

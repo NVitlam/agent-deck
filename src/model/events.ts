@@ -22,15 +22,30 @@
  * `cache_creation_input_tokens` + `cache_read_input_tokens` (13,390 + 28,807
  * on the first of those two). A field named `in` that reads `input_tokens`
  * alone therefore reports **2** for a 42,199-token prompt, and that is what
- * shipped: the deck showed "848 in" for a session Claude Code itself reported
- * at roughly 76% of a 1M window.
+ * `0.1.2` shipped: the deck showed "848 in" for a session Claude Code itself
+ * reported at roughly 76% of a 1M window.
+ *
+ * **THE "~2" IS TRUE OF THOSE TWO CORPORA AND NOT OF ALL CAPTURED DATA**, and
+ * the difference matters enough that an audit corrected it here. Across every
+ * `fixtures/cc-*` corpus it holds for **79 of 116** assistant messages.
+ * `fixtures/cc-2.1.241/` — a real captured session against a local GGUF model
+ * — carries `input_tokens` of 322, 1262, 3057, 3583, 5646, 12499, 13302 and
+ * **65,627**, with BOTH cache fields at 0. So `input_tokens` is not always
+ * negligible, prompt caching is not always in play, and any sentence saying
+ * "always ~2" is measuring the anchor corpora and calling it Claude Code.
+ * **The sum rule is right either way** — that is the point of summing rather
+ * than switching on which field looks populated.
  *
  * `prompt` is the sum of all three, each defaulting to 0 when absent or
  * non-finite. There is no fourth component in any captured fixture: the census
  * over all `message.usage` objects finds exactly `input_tokens`,
  * `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens`,
- * `service_tier`, `cache_creation`, `inference_geo`, and (on the newer
- * anchor) `output_tokens_details`, `server_tool_use`, `iterations`, `speed`.
+ * `service_tier`, `cache_creation`, `inference_geo`, and — on some messages
+ * in BOTH corpora, not only the newer anchor — `output_tokens_details`,
+ * `server_tool_use`, `iterations`, `speed`. Counted: cc-2.1.234 is 26 seven-key
+ * and 31 eleven-key, cc-2.1.246 is 1 and 10. An earlier version of this
+ * sentence tied the wider shape to the newer anchor, which is not what the
+ * bytes say.
  *
  * **There is no `window` field, and that is a measurement, not an omission.**
  * The same census looked for any key containing `context`, `window`, `limit`

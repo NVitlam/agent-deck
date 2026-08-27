@@ -11,6 +11,44 @@
 // (a) Domain model — session tree held in the extension host
 // ---------------------------------------------------------------------------
 
+/**
+ * Tokens, split the way the model API actually bills and the way a context
+ * window actually fills.
+ *
+ * MEASURED, and the reason this type exists at all. Every assistant `usage`
+ * object in `fixtures/cc-2.1.234/**` and `fixtures/cc-2.1.246/**` carries
+ * `input_tokens` **~2** — literally 2 on both messages of
+ * `05c5482d-*.jsonl` — while the prompt itself sits in
+ * `cache_creation_input_tokens` + `cache_read_input_tokens` (13,390 + 28,807
+ * on the first of those two). A field named `in` that reads `input_tokens`
+ * alone therefore reports **2** for a 42,199-token prompt, and that is what
+ * shipped: the deck showed "848 in" for a session Claude Code itself reported
+ * at roughly 76% of a 1M window.
+ *
+ * `prompt` is the sum of all three, each defaulting to 0 when absent or
+ * non-finite. There is no fourth component in any captured fixture: the census
+ * over all `message.usage` objects finds exactly `input_tokens`,
+ * `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens`,
+ * `service_tier`, `cache_creation`, `inference_geo`, and (on the newer
+ * anchor) `output_tokens_details`, `server_tool_use`, `iterations`, `speed`.
+ *
+ * **There is no `window` field, and that is a measurement, not an omission.**
+ * The same census looked for any key containing `context`, `window`, `limit`
+ * or `max` anywhere under an entry: the only hits are tool INPUTS (`limit: 80`
+ * on a Read call). No fixture states a context limit, so Agent Deck states no
+ * percentage. A model-name-to-window lookup table would be memory rather than
+ * fixture, which G6 forbids outright.
+ */
+export interface TokenPair {
+  /**
+   * Everything sent to the model for this message:
+   * `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`.
+   */
+  prompt: number;
+  /** `output_tokens`. */
+  output: number;
+}
+
 export interface SessionState {
   sessionId: string; // <sessionId>.jsonl basename
   projectSlug: string;
@@ -18,7 +56,44 @@ export interface SessionState {
   liveness: 'live' | 'idle' | 'ended' | 'unsupported';
   schemaOk: boolean;
   root: AgentNode;
-  totals: { inputTokens: number; outputTokens: number; costUsd: number };
+  /**
+   * What is left after the token split: cost, and nothing else.
+   *
+   * **`inputTokens` and `outputTokens` were REMOVED from this field**, not
+   * renamed. They were the whole-session sums of the per-agent `in`/`out`
+   * pair, so they carried the same defect {@link TokenPair} describes,
+   * multiplied by the number of agents. A field that keeps its name and
+   * changes its meaning is worse than one that goes away: the removal breaks
+   * every reader at compile time, which is the point.
+   *
+   * `costUsd` is unchanged, and **0 still means NOT YET COMPUTED**, never
+   * "free" — there is no price table in this repository and inventing one
+   * would put a fabricated number in front of the user.
+   */
+  totals: { costUsd: number };
+  /**
+   * How full the session's context is **right now**: the last assistant
+   * message of the MAIN transcript, by ordinal.
+   *
+   * The main transcript, not the deepest subagent: each subagent has its own
+   * window, and "how much room is left in the conversation I am watching" is a
+   * question about the session's own thread. Per-agent figures live on
+   * {@link AgentNode.contextNow}.
+   *
+   * Not a sum. A context window is a level, not a total — summing successive
+   * prompts answers "how much was spent", which is {@link burn}.
+   */
+  contextNow: TokenPair;
+  /**
+   * Everything the session has spent: summed across distinct `message.id`
+   * over every agent in the tree, parked agents contributing nothing.
+   *
+   * This is the additive figure, and it is the one that grows without bound.
+   * It is deliberately NOT what a node or a cell shows — a user watching a
+   * long session wants to know how close to the ceiling they are, and burn
+   * cannot answer that.
+   */
+  burn: TokenPair;
   /**
    * Phase 2 additive, and optional so every Phase 1 construction of this
    * interface stays valid. The spec'd fields above are untouched.
@@ -118,7 +193,16 @@ export interface AgentNode {
   status: 'running' | 'done' | 'error';
   spawnDepth: number; // from meta.json; 0 for main
   children: (AgentNode | ToolNode)[];
-  tokens: { in: number; out: number };
+  /**
+   * This agent's context level: its own last assistant message by ordinal.
+   *
+   * REPLACES `tokens: { in, out }`, which read `input_tokens` alone and so
+   * reported single digits for real prompts — see {@link TokenPair}. The old
+   * field is gone rather than deprecated so no renderer can keep reading it.
+   */
+  contextNow: TokenPair;
+  /** This agent's spend: summed across its own distinct `message.id`s. */
+  burn: TokenPair;
   startedAt: number;
   endedAt?: number;
 }
@@ -198,8 +282,12 @@ export interface SessionFieldPatch {
   workspaceMatch?: boolean;
   liveness?: SessionState['liveness'];
   schemaOk?: boolean;
-  /** Replaced whole; the three numbers are never patched independently. */
+  /** Replaced whole. One number now, and it is cost. */
   totals?: SessionState['totals'];
+  /** Replaced whole; `prompt` and `output` are never patched apart. */
+  contextNow?: TokenPair;
+  /** Replaced whole, same rule as {@link contextNow}. */
+  burn?: TokenPair;
 }
 
 /**
@@ -216,7 +304,8 @@ export interface AgentNodeFieldPatch {
   label?: string;
   status?: AgentNode['status'];
   spawnDepth?: number;
-  tokens?: { in: number; out: number };
+  contextNow?: TokenPair;
+  burn?: TokenPair;
   startedAt?: number;
   endedAt?: number | null;
 }

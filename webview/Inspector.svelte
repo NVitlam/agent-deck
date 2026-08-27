@@ -179,10 +179,24 @@
           <dt>spawn depth</dt>
           <dd data-testid="inspector-spawn-depth">{agent.spawnDepth}</dd>
         </div>
+        <!-- TWO ROWS, BECAUSE THEY ANSWER DIFFERENT QUESTIONS. `tokens` is
+             the context LEVEL - the last assistant message's prompt and
+             output, which is what fills a window - and `burn` is the running
+             total across every distinct message. The shipped single row summed
+             `input_tokens`, which is ~2 per message in every captured fixture,
+             so it under-reported a 42,199-token prompt as 2. -->
         <div class="row" data-testid="inspector-row" data-field="tokens">
           <dt>tokens</dt>
           <dd data-testid="inspector-tokens"
-            >{formatTokens(agent.tokens.in)} in / {formatTokens(agent.tokens.out)} out</dd
+            >{formatTokens(agent.contextNow.prompt)} in ctx / {formatTokens(
+              agent.contextNow.output,
+            )} out</dd
+          >
+        </div>
+        <div class="row" data-testid="inspector-row" data-field="burn">
+          <dt>burn</dt>
+          <dd data-testid="inspector-burn"
+            >{formatTokens(agent.burn.prompt)} in / {formatTokens(agent.burn.output)} out</dd
           >
         </div>
         <div class="row" data-testid="inspector-row" data-field="duration">

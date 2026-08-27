@@ -46,6 +46,9 @@ synthetic-layout/                      22 hand-mutated trees the fingerprint mus
                                        incl. two carrying a <slug>/memory/ directory
 synthetic-lines/                       8 malformed / drift line cases for the parser
 synthetic-graft/                       7 join cases: unresolved, ambiguous, depth mismatch
+synthetic-tokens/                      1 case: an assistant message with NO cache_* usage
+                                       fields, which no captured session has - the only way
+                                       to prove prompt degrades to input_tokens (0.1.3)
 ```
 
 Everything under `synthetic-*` is **hand-made, not captured**. Each tree says so in its slug

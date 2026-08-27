@@ -626,18 +626,19 @@ describe('R4: two interleaved sessions', () => {
       const isolated = await graftSession(join(slugDir, `${sessionId}.jsonl`));
       if (!isolated.ok) throw new Error('captured session refused');
       const state = model.sessionState(sessionId);
-      expect(state?.totals.inputTokens, sessionId).toBe(isolated.snapshot.totals.inputTokens);
-      expect(state?.totals.outputTokens, sessionId).toBe(isolated.snapshot.totals.outputTokens);
+      expect(state?.burn.prompt, sessionId).toBe(isolated.snapshot.burn.prompt);
+      expect(state?.burn.output, sessionId).toBe(isolated.snapshot.burn.output);
+      expect(state?.contextNow.prompt, sessionId).toBe(isolated.snapshot.contextNow.prompt);
       // Not yet computed, and 0 does not mean "this session was free".
       expect(state?.totals.costUsd, sessionId).toBe(0);
-      summed += isolated.snapshot.totals.outputTokens;
+      summed += isolated.snapshot.burn.output;
     }
     // A pooled accumulator would give every session the sum; assert no session
     // carries it (guarded so a hypothetical single-session capture cannot pass
     // this vacuously).
     if (sessionIds.length > 1) {
       for (const sessionId of sessionIds) {
-        expect(model.sessionState(sessionId)?.totals.outputTokens).not.toBe(summed);
+        expect(model.sessionState(sessionId)?.burn.output).not.toBe(summed);
       }
     }
   });
@@ -761,7 +762,9 @@ describe('G2: a parser hard failure never reaches liveness', () => {
     expect(after?.liveness).toBe('unsupported');
     // G3: no partial tree. Not a smaller tree — no tree.
     expect(after?.root.children).toStrictEqual([]);
-    expect(after?.totals).toStrictEqual({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+    expect(after?.totals).toStrictEqual({ costUsd: 0 });
+    expect(after?.contextNow).toStrictEqual({ prompt: 0, output: 0 });
+    expect(after?.burn).toStrictEqual({ prompt: 0, output: 0 });
     expect(after?.spawnEdges).toStrictEqual([]);
     const serialized = JSON.stringify(serializeSessionState(after as SessionState));
     for (const id of beforeAgents) {
@@ -909,7 +912,8 @@ function baseState(): SessionState {
       label: 'root',
       status: 'running',
       spawnDepth: 0,
-      tokens: { in: 1, out: 2 },
+      contextNow: { prompt: 1, output: 2 },
+      burn: { prompt: 1, output: 2 },
       startedAt: 100,
       children: [
         {
@@ -926,7 +930,8 @@ function baseState(): SessionState {
           label: 'general-purpose: one',
           status: 'running',
           spawnDepth: 1,
-          tokens: { in: 3, out: 4 },
+          contextNow: { prompt: 3, output: 4 },
+          burn: { prompt: 3, output: 4 },
           startedAt: 110,
           children: [
             { id: 't2', toolName: 'Bash', status: 'running', inputPreview: 'ls' },
@@ -935,7 +940,9 @@ function baseState(): SessionState {
         },
       ],
     },
-    totals: { inputTokens: 4, outputTokens: 6, costUsd: 0 },
+    totals: { costUsd: 0 },
+    contextNow: { prompt: 4, output: 6 },
+    burn: { prompt: 4, output: 6 },
     spawnEdges: [
       { toolUseId: 't1', agentId: 'a1', parentNodeId: 'root', depth: 1, recordedDepth: 1 },
     ],
@@ -970,7 +977,8 @@ describe('snapshot/diff contract', () => {
     const agent = next.root.children[1] as AgentNode;
     agent.status = 'done';
     agent.endedAt = 500;
-    agent.tokens = { in: 9, out: 9 };
+    agent.contextNow = { prompt: 9, output: 9 };
+    agent.burn = { prompt: 9, output: 9 };
     const tool = agent.children[1];
     if (tool !== undefined && !isAgentNode(tool)) {
       tool.status = 'error';
@@ -1030,7 +1038,8 @@ describe('snapshot/diff contract', () => {
       label: 'was a tool',
       status: 'running',
       spawnDepth: 1,
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 },
+      burn: { prompt: 0, output: 0 },
       startedAt: 1,
       children: [],
     };
@@ -1053,13 +1062,17 @@ describe('snapshot/diff contract', () => {
     const next = baseState();
     next.liveness = 'ended';
     next.schemaOk = false;
-    next.totals = { inputTokens: 99, outputTokens: 1, costUsd: 0 };
+    next.totals = { costUsd: 0.5 };
+    next.contextNow = { prompt: 99, output: 1 };
+    next.burn = { prompt: 99, output: 1 };
     const patch = diffSessionState(prev, next);
     expect(patch?.tree).toBeUndefined();
     expect(patch?.fields).toStrictEqual({
       liveness: 'ended',
       schemaOk: false,
-      totals: { inputTokens: 99, outputTokens: 1, costUsd: 0 },
+      totals: { costUsd: 0.5 },
+      contextNow: { prompt: 99, output: 1 },
+      burn: { prompt: 99, output: 1 },
     });
     roundTrip(prev, next);
   });

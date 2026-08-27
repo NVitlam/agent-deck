@@ -35,7 +35,8 @@ function buildSession(): SessionState {
     status: 'done',
     spawnDepth: 1,
     children: [],
-    tokens: { in: 120, out: 45 },
+    contextNow: { prompt: 120, output: 45 },
+    burn: { prompt: 120, output: 45 },
     startedAt: 1_000,
     endedAt: 2_000,
   };
@@ -63,7 +64,8 @@ function buildSession(): SessionState {
     status: 'running',
     spawnDepth: 0,
     children: [readTool, agentTool, subagent],
-    tokens: { in: 900, out: 300 },
+    contextNow: { prompt: 900, output: 300 },
+    burn: { prompt: 900, output: 300 },
     startedAt: 500,
   };
 
@@ -74,7 +76,9 @@ function buildSession(): SessionState {
     liveness: 'live',
     schemaOk: true,
     root,
-    totals: { inputTokens: 1020, outputTokens: 345, costUsd: 0.0123 },
+    totals: { costUsd: 0.0123 },
+    contextNow: { prompt: 1020, output: 345 },
+    burn: { prompt: 1020, output: 345 },
   };
 }
 
@@ -84,7 +88,8 @@ describe('domain model', () => {
     expect(session.root.kind).toBe('main');
     expect(session.root.spawnDepth).toBe(0);
     expect(session.root.children).toHaveLength(3);
-    expect(session.totals.inputTokens).toBe(1020);
+    expect(session.burn.prompt).toBe(1020);
+    expect(session.contextNow.prompt).toBe(1020);
   });
 
   it('isAgentNode discriminates agents from tools', () => {
@@ -130,7 +135,8 @@ describe('domain model', () => {
       status: 'running',
       spawnDepth: 2,
       children: [],
-      tokens: { in: 1, out: 1 },
+      contextNow: { prompt: 1, output: 1 },
+      burn: { prompt: 1, output: 1 },
       startedAt: 10,
     };
     const parent: AgentNode = {
@@ -140,7 +146,8 @@ describe('domain model', () => {
       status: 'running',
       spawnDepth: 1,
       children: [deep],
-      tokens: { in: 2, out: 2 },
+      contextNow: { prompt: 2, output: 2 },
+      burn: { prompt: 2, output: 2 },
       startedAt: 5,
     };
 

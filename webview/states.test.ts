@@ -706,8 +706,8 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
     if (mode === 'list') {
       const header = one(panel.container, 'session-header');
-      expect(one(header, 'header-tokens-in').textContent?.trim()).toBe('17,745');
-      expect(one(header, 'header-tokens-out').textContent?.trim()).toBe('8,159');
+      expect(one(header, 'header-context').textContent?.trim()).toBe('17,745');
+      expect(one(header, 'header-burn').textContent?.trim()).toBe('35,490');
       const cost = one(header, 'header-cost');
       expect(cost.textContent?.trim()).toBe(EM_DASH);
       expect(cost.getAttribute('title')).toContain('no price table');

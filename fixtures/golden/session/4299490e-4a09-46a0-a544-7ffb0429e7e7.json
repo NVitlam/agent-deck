@@ -6,9 +6,15 @@
   "schemaOk": true,
   "epochAnchor": "2026-08-18T21:56:22.855Z",
   "totals": {
-    "inputTokens": 18,
-    "outputTokens": 6861,
     "costUsd": 0
+  },
+  "contextNow": {
+    "prompt": 43263,
+    "output": 1611
+  },
+  "burn": {
+    "prompt": 312436,
+    "output": 6861
   },
   "spawnEdges": [
     {
@@ -26,9 +32,13 @@
     "label": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
     "status": "running",
     "spawnDepth": 0,
-    "tokens": {
-      "in": 4,
-      "out": 1998
+    "contextNow": {
+      "prompt": 43263,
+      "output": 1611
+    },
+    "burn": {
+      "prompt": 83299,
+      "output": 1998
     },
     "startedAtOffsetMs": 0,
     "endedAtOffsetMs": null,
@@ -49,9 +59,13 @@
         "label": "Explore: List contents of spike/",
         "status": "done",
         "spawnDepth": 1,
-        "tokens": {
-          "in": 14,
-          "out": 4863
+        "contextNow": {
+          "prompt": 43174,
+          "output": 2731
+        },
+        "burn": {
+          "prompt": 229137,
+          "output": 4863
         },
         "startedAtOffsetMs": 8244,
         "endedAtOffsetMs": 75962,

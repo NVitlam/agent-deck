@@ -11,6 +11,11 @@
  * and say so here - a suite that silently skips history while the DoD says
  * "full-history sweep" is worse than no suite.
  *
+ * The NUMBER that enforces that lives in `src/perf/sweep-history.test.ts`,
+ * moved there in `0.1.3` because a wall-clock budget running beside forty
+ * other files measures the machine. Same limit, isolated project. This file
+ * keeps every assertion about what the sweep finds.
+ *
  * The history leg walks every blob reachable from EVERY REF, which in this
  * repository includes sibling worker branches that are not merged yet. Its
  * totals therefore move as a phase progresses. That is why nothing below pins
@@ -686,10 +691,11 @@ describe('committed evidence', () => {
     expect(allFiles).not.toContain('docs/evidence/privacy/report.json');
   });
 
-  it('the history leg is cheap enough not to need an env gate', () => {
-    // Stated as a number rather than an adjective. If this ever fails, gate the
-    // history leg and update the docblock at the top of this file - do not
-    // raise the bound quietly.
-    expect(fresh.timingsMs.historyMs ?? Number.POSITIVE_INFINITY).toBeLessThan(10_000);
-  });
+  // THE HISTORY-LEG TIMING ASSERTION MOVED, it was not deleted:
+  // `src/perf/sweep-history.test.ts`, same 10,000 ms limit, in the isolated
+  // `perf` project. It is a wall-clock budget, and run beside forty other
+  // files it measured the machine rather than the sweep - it went red at
+  // `expected 12344 to be less than 10000` during an audit of a tree that was
+  // green forty minutes earlier. Everything above stays here: it is about what
+  // the sweep FINDS, which no amount of load changes.
 });

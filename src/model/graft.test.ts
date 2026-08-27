@@ -281,12 +281,17 @@ interface RepeatedUsageSubject {
   repeatedMessageId: string;
   naiveOut: number;
   dedupedOut: number;
-  dedupedIn: number;
+  /** `burn.prompt`: summed over distinct ids, all three components each. */
+  dedupedPrompt: number;
+  /** `contextNow`: the LAST message by first-sighting order, not a sum. */
+  lastPrompt: number;
+  lastOut: number;
 }
 
 interface UsageLine {
   messageId: string;
-  in: number;
+  /** input + cache_creation + cache_read, as production reads it. */
+  prompt: number;
   out: number;
 }
 
@@ -297,11 +302,25 @@ function usageLinesIn(entries: readonly TranscriptEntry[]): UsageLine[] {
     if (typeof message !== 'object' || message === null) continue;
     const m = message as { id?: unknown; usage?: unknown };
     if (typeof m.id !== 'string' || typeof m.usage !== 'object' || m.usage === null) continue;
-    const u = m.usage as { input_tokens?: unknown; output_tokens?: unknown };
+    // Reads the same three components production reads. `input_tokens` alone
+    // is ~2 on every real assistant message in these fixtures - the prompt
+    // sits in the two cache fields - so a census that ignored them would
+    // "confirm" the defect this test exists to prevent.
+    const u = m.usage as {
+      input_tokens?: unknown;
+      cache_creation_input_tokens?: unknown;
+      cache_read_input_tokens?: unknown;
+      output_tokens?: unknown;
+    };
+    const count = (v: unknown): number =>
+      typeof v === 'number' && Number.isFinite(v) ? v : 0;
     lines.push({
       messageId: m.id,
-      in: typeof u.input_tokens === 'number' && Number.isFinite(u.input_tokens) ? u.input_tokens : 0,
-      out: typeof u.output_tokens === 'number' && Number.isFinite(u.output_tokens) ? u.output_tokens : 0,
+      prompt:
+        count(u.input_tokens) +
+        count(u.cache_creation_input_tokens) +
+        count(u.cache_read_input_tokens),
+      out: count(u.output_tokens),
     });
   }
   return lines;
@@ -339,22 +358,25 @@ async function agentWithRepeatedUsage(): Promise<RepeatedUsageSubject> {
       const repeatedMessageId = repeatedUsageMessageId(lines);
       if (repeatedMessageId === undefined) continue;
 
-      const maxima = new Map<string, { in: number; out: number }>();
+      const maxima = new Map<string, { prompt: number; out: number }>();
       let naiveOut = 0;
       for (const line of lines) {
         naiveOut += line.out;
         const prev = maxima.get(line.messageId);
         maxima.set(line.messageId, {
-          in: prev === undefined ? line.in : Math.max(prev.in, line.in),
+          prompt: prev === undefined ? line.prompt : Math.max(prev.prompt, line.prompt),
           out: prev === undefined ? line.out : Math.max(prev.out, line.out),
         });
       }
       let dedupedOut = 0;
-      let dedupedIn = 0;
+      let dedupedPrompt = 0;
       for (const value of maxima.values()) {
         dedupedOut += value.out;
-        dedupedIn += value.in;
+        dedupedPrompt += value.prompt;
       }
+      // Map iteration is insertion order, and insertion order is first
+      // sighting - the same rule `graft.ts` pins with an explicit ordinal.
+      const last = [...maxima.values()].at(-1) ?? { prompt: 0, out: 0 };
 
       return {
         mainTranscript: session.mainTranscript,
@@ -362,7 +384,9 @@ async function agentWithRepeatedUsage(): Promise<RepeatedUsageSubject> {
         repeatedMessageId,
         naiveOut,
         dedupedOut,
-        dedupedIn,
+        dedupedPrompt,
+        lastPrompt: last.prompt,
+        lastOut: last.out,
       };
     }
   }
@@ -726,9 +750,14 @@ describe('captured topology', () => {
     // The two candidate rules give different answers on this data, which is
     // the whole point: naive line-summing double-counts a streamed message.
     expect(subject.naiveOut).toBeGreaterThan(subject.dedupedOut);
-    expect(node.tokens.out).toBe(subject.dedupedOut);
-    expect(node.tokens.out).not.toBe(subject.naiveOut);
-    expect(node.tokens.in).toBe(subject.dedupedIn);
+    expect(node.burn.output).toBe(subject.dedupedOut);
+    expect(node.burn.output).not.toBe(subject.naiveOut);
+    expect(node.burn.prompt).toBe(subject.dedupedPrompt);
+    // `contextNow` is the LAST message, not the sum, and on any agent with
+    // more than one message the two differ - which is the property the whole
+    // split exists for.
+    expect(node.contextNow.prompt).toBe(subject.lastPrompt);
+    expect(node.contextNow.output).toBe(subject.lastOut);
   });
 
   it('the de-duplicated total matches the hand-measured capture', async () => {
@@ -737,15 +766,33 @@ describe('captured topology', () => {
     // which cannot catch a rule that is wrong the same way twice. These
     // numbers were read off the fixture by hand instead:
     //
-    //   agent-a1a53f42c5eca8824.jsonl lines 3 and 4 share
-    //   msg_011CeBgYk4Ci1ZkTxynEZh3j with output_tokens 1 then 518; lines 6
-    //   and 7 share msg_011CeBgfTGMFk39bxRHxoxen with 2 then 1099.
+    //   agent-a1a53f42c5eca8824.jsonl lines 4 and 5 share
+    //   msg_011CeBgYk4Ci1ZkTxynEZh3j with output_tokens 1 then 518; lines 7
+    //   and 8 share msg_011CeBgfTGMFk39bxRHxoxen with 2 then 1099.
     //   Correct total 518 + 1099 = 1617. Naive line-sum would be 1620.
+    //
+    // AND THE PROMPT SIDE, which is the whole reason `0.1.3` changed. Both
+    // messages read `input_tokens: 2`. The prompts are
+    //   8054 + 18703 + 2 = 26759   and   4008 + 26757 + 2 = 30767.
+    // The old `tokens.in` reported `2 + 2 = 4` for an agent that sent 57,526
+    // tokens, and that literal is left below crossed out rather than deleted:
+    // it is the defect, written down.
+    //
+    // `contextNow` is the SECOND message alone (30,767 / 1,099) because it is
+    // a level and not a sum; `burn` is both (57,526 / 1,617).
     //
     // If a re-harvest drops that agent this fails with the diagnostic from
     // `sessionWhere`, naming the property it needed - not with an ENOENT that
     // reads like a grafter bug.
-    const HAND_MEASURED = { agentId: 'a1a53f42c5eca8824', out: 518 + 1099, in: 2 + 2 };
+    const HAND_MEASURED = {
+      agentId: 'a1a53f42c5eca8824',
+      burnOut: 518 + 1099,
+      burnPrompt: 8054 + 18703 + 2 + (4008 + 26757 + 2),
+      contextPrompt: 4008 + 26757 + 2,
+      contextOut: 1099,
+      /** What `0.1.2`/`0.1.3` displayed for the same agent: `input_tokens` alone. */
+      shippedWrongIn: 2 + 2,
+    };
     const session = await sessionWhere(
       `the hand-measured agent ${HAND_MEASURED.agentId}, whose token literals were read off that ` +
         `exact capture and mean nothing without it (see the comment on this test)`,
@@ -755,8 +802,15 @@ describe('captured topology', () => {
     if (!result.ok) throw new Error(`captured session must graft: ${result.mismatch.code}`);
     const node = findNode(result.snapshot.root, HAND_MEASURED.agentId) as AgentNode | undefined;
     expect(node, `agent ${HAND_MEASURED.agentId} must be in the tree`).toBeDefined();
-    expect(node?.tokens.out).toBe(HAND_MEASURED.out);
-    expect(node?.tokens.in).toBe(HAND_MEASURED.in);
+    expect(node?.burn.output).toBe(HAND_MEASURED.burnOut);
+    expect(node?.burn.prompt).toBe(HAND_MEASURED.burnPrompt);
+    expect(node?.contextNow.prompt).toBe(HAND_MEASURED.contextPrompt);
+    expect(node?.contextNow.output).toBe(HAND_MEASURED.contextOut);
+    // The regression guard, stated as an inequality against the shipped
+    // number: 57,526 is not 4, and a change that quietly went back to reading
+    // `input_tokens` alone would land exactly on 4.
+    expect(node?.burn.prompt).not.toBe(HAND_MEASURED.shippedWrongIn);
+    expect(node?.burn.prompt).toBeGreaterThan(HAND_MEASURED.shippedWrongIn * 1000);
   });
 
   it('an offloaded tool-results payload reaches the node preview, redacted', async () => {
@@ -1642,7 +1696,9 @@ describe('degenerate input never throws', () => {
     expect(snapshot.root.children).toEqual([]);
     expect(snapshot.parked).toEqual([]);
     expect(snapshot.counts).toEqual({ grafted: 0, parked: 0, toolNodes: 0 });
-    expect(snapshot.totals).toEqual({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+    expect(snapshot.totals).toEqual({ costUsd: 0 });
+    expect(snapshot.contextNow).toEqual({ prompt: 0, output: 0 });
+    expect(snapshot.burn).toEqual({ prompt: 0, output: 0 });
   });
 
   it('a subagent batch with no agentId is ignored rather than guessed at', () => {

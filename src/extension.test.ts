@@ -838,10 +838,13 @@ describe('PanelController', () => {
         status: 'running',
         spawnDepth: 0,
         children: [],
-        tokens: { in: 0, out: 0 },
+        contextNow: { prompt: 0, output: 0 },
+        burn: { prompt: 0, output: 0 },
         startedAt: 0,
       },
-      totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+      totals: { costUsd: 0 },
+      contextNow: { prompt: 0, output: 0 },
+      burn: { prompt: 0, output: 0 },
       spawnEdges: [],
     };
   }
@@ -1170,9 +1173,7 @@ describe('AgentDeckDataPath', () => {
       expect(session.totals.costUsd).toBe(0);
     }
 
-    const tokenBearing = sessions.filter(
-      (s) => s.totals.inputTokens > 0 || s.totals.outputTokens > 0,
-    );
+    const tokenBearing = sessions.filter((s) => s.burn.prompt > 0 || s.burn.output > 0);
     expect(tokenBearing.length).toBeGreaterThan(0);
 
     const deepest = Math.max(
@@ -1405,11 +1406,11 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
     // No tree. Not a smaller tree — none.
     expect(state?.root.children).toStrictEqual([]);
     expect(state?.spawnEdges).toStrictEqual([]);
-    expect(state?.totals).toStrictEqual({
-      inputTokens: 0,
-      outputTokens: 0,
-      costUsd: 0,
-    });
+    expect(state?.totals).toStrictEqual({ costUsd: 0 });
+    // G3 covers NUMBERS as well as nodes: a context level read out of a
+    // session whose layout we refused is a wrong number, not a smaller one.
+    expect(state?.contextNow).toStrictEqual({ prompt: 0, output: 0 });
+    expect(state?.burn).toStrictEqual({ prompt: 0, output: 0 });
 
     const mismatches = panel.posted.filter((m) => m.type === 'schemaMismatch');
     expect(mismatches).toStrictEqual([{ type: 'schemaMismatch', sessionId }]);

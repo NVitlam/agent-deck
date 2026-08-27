@@ -9,9 +9,13 @@
     "label": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
     "status": "running",
     "spawnDepth": 0,
-    "tokens": {
-      "in": 4,
-      "out": 2129
+    "contextNow": {
+      "prompt": 45373,
+      "output": 617
+    },
+    "burn": {
+      "prompt": 87572,
+      "output": 2129
     },
     "startedAtOffsetMs": 0,
     "endedAtOffsetMs": null,
@@ -32,9 +36,13 @@
         "label": "general-purpose: inventory",
         "status": "done",
         "spawnDepth": 1,
-        "tokens": {
-          "in": 4,
-          "out": 272
+        "contextNow": {
+          "prompt": 28444,
+          "output": 69
+        },
+        "burn": {
+          "prompt": 55049,
+          "output": 272
         },
         "startedAtOffsetMs": 12128,
         "endedAtOffsetMs": 23466,
@@ -66,9 +74,13 @@
         "label": "general-purpose: bulk-output",
         "status": "done",
         "spawnDepth": 1,
-        "tokens": {
-          "in": 4,
-          "out": 230
+        "contextNow": {
+          "prompt": 28372,
+          "output": 84
+        },
+        "burn": {
+          "prompt": 54997,
+          "output": 230
         },
         "startedAtOffsetMs": 15127,
         "endedAtOffsetMs": 23842,
@@ -100,9 +112,13 @@
         "label": "general-purpose: nested-parent",
         "status": "done",
         "spawnDepth": 1,
-        "tokens": {
-          "in": 4,
-          "out": 1617
+        "contextNow": {
+          "prompt": 30767,
+          "output": 1099
+        },
+        "burn": {
+          "prompt": 57526,
+          "output": 1617
         },
         "startedAtOffsetMs": 20618,
         "endedAtOffsetMs": 128072,
@@ -123,9 +139,13 @@
             "label": "general-purpose: nested-child",
             "status": "done",
             "spawnDepth": 2,
-            "tokens": {
-              "in": 16,
-              "out": 6052
+            "contextNow": {
+              "prompt": 61110,
+              "output": 3477
+            },
+            "burn": {
+              "prompt": 324189,
+              "output": 6052
             },
             "startedAtOffsetMs": 30242,
             "endedAtOffsetMs": 111857,
@@ -240,9 +260,15 @@
     }
   ],
   "totals": {
-    "inputTokens": 32,
-    "outputTokens": 10300,
     "costUsd": 0
+  },
+  "contextNow": {
+    "prompt": 45373,
+    "output": 617
+  },
+  "burn": {
+    "prompt": 579333,
+    "output": 10300
   },
   "counts": {
     "grafted": 4,

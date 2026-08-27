@@ -34,7 +34,8 @@ function agent(id: string, children: AgentNode['children'] = []): AgentNode {
     status: 'running',
     spawnDepth: id === 'root' ? 0 : 1,
     children,
-    tokens: { in: 1, out: 2 },
+    contextNow: { prompt: 1, output: 2 },
+    burn: { prompt: 1, output: 2 },
     startedAt: 1_000,
   };
 }
@@ -47,7 +48,9 @@ function session(sessionId: string, root: AgentNode = agent('root')): SessionSta
     liveness: 'live',
     schemaOk: true,
     root,
-    totals: { inputTokens: 1, outputTokens: 2, costUsd: 0 },
+    totals: { costUsd: 0 },
+    contextNow: { prompt: 1, output: 2 },
+    burn: { prompt: 1, output: 2 },
     spawnEdges: [],
   };
 }

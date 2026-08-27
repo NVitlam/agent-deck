@@ -104,7 +104,8 @@ function cloneAgent(node: AgentNode): AgentNode {
     status: node.status,
     spawnDepth: node.spawnDepth,
     children: node.children.map(cloneNode),
-    tokens: { in: node.tokens.in, out: node.tokens.out },
+    contextNow: { ...node.contextNow },
+    burn: { ...node.burn },
     startedAt: node.startedAt,
   };
   if (node.endedAt !== undefined) out.endedAt = node.endedAt;
@@ -335,7 +336,8 @@ export function applySessionPatch(
         if (f.label !== undefined) node.label = f.label;
         if (f.status !== undefined) node.status = f.status;
         if (f.spawnDepth !== undefined) node.spawnDepth = f.spawnDepth;
-        if (f.tokens !== undefined) node.tokens = { in: f.tokens.in, out: f.tokens.out };
+        if (f.contextNow !== undefined) node.contextNow = { ...f.contextNow };
+        if (f.burn !== undefined) node.burn = { ...f.burn };
         if (f.startedAt !== undefined) node.startedAt = f.startedAt;
         if (f.endedAt === null) delete node.endedAt;
         else if (f.endedAt !== undefined) node.endedAt = f.endedAt;
@@ -385,11 +387,9 @@ export function applySessionPatch(
     liveness: fields.liveness ?? prev.liveness,
     schemaOk: fields.schemaOk ?? prev.schemaOk,
     root,
-    totals: {
-      inputTokens: totals.inputTokens,
-      outputTokens: totals.outputTokens,
-      costUsd: totals.costUsd,
-    },
+    totals: { costUsd: totals.costUsd },
+    contextNow: { ...(fields.contextNow ?? prev.contextNow) },
+    burn: { ...(fields.burn ?? prev.burn) },
     spawnEdges: edges.map((e) => ({ ...e })),
   };
   if (parked !== undefined) next.parked = parked.map((p) => ({ ...p }));

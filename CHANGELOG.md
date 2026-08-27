@@ -2,7 +2,7 @@
 
 All notable changes to Agent Deck for Claude Code are documented here.
 
-## 0.1.3 - the deck could silently stop showing what was happening
+## 0.1.3 - two things the deck was quietly getting wrong
 
 **One dropped message cost a whole session's tree, and nothing said so.**
 
@@ -48,8 +48,35 @@ in the Command Palette is the only thing that reveals it. Nothing is sent
 anywhere and nothing is written to disk; the read-only, zero-egress posture is
 unchanged.
 
+**And the token counts were wrong by three orders of magnitude.**
+
+The deck showed "848 in" for a session Claude Code's own context display put at
+roughly 76% of a one-million-token window. The cause is small and total: Agent
+Deck read `input_tokens` from each message's usage record, and in every Claude
+Code transcript that field is **about 2**. The prompt itself is recorded in two
+other fields, `cache_creation_input_tokens` and `cache_read_input_tokens`, and
+they were not being read. On one committed capture a single message reads
+`2 + 13,390 + 28,807` - and the deck displayed the 2.
+
+The prompt is now all three added together, and it is reported as **two
+different numbers**, because two different questions were being confused:
+
+- **context** - the last message's prompt and output. A level, not a running
+  total. This is what fills a context window, and it is what the nodes, the
+  cells and the session header now show.
+- **burn** - everything spent, summed across every distinct message in the
+  session. It only grows. It is in the inspector, labelled, next to the context
+  figure for the same node.
+
+**No percentage, and that is deliberate.** A percentage needs a window size, and
+no Claude Code transcript states one anywhere - checked across every captured
+fixture for any field naming a context limit. Agent Deck could guess one from
+the model name; it will not. It shows the number it can read and no number it
+cannot.
+
 Nothing else moves in this release. No parser change, no new refusal, no change
-to what is read or where.
+to what is read or where - the token fields were always being read, and two of
+the three were being ignored.
 
 ## 0.1.2 - compatibility fix
 

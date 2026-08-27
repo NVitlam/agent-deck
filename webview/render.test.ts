@@ -152,8 +152,12 @@ describe('live session render', () => {
     send({ type: 'snapshot', sessions: [liveSession()] });
 
     const header = one(container, 'session-header');
-    expect(one(header, 'header-tokens-in').textContent?.trim()).toBe('17,745');
-    expect(one(header, 'header-tokens-out').textContent?.trim()).toBe('8,159');
+    // Two figures, and they are NOT in/out any more: `context` is the last
+    // message's prompt, `burn` is the whole tree's spend. The ids changed with
+    // the meaning on purpose - a test id that keeps its name while its subject
+    // changes is how a renaming survives review and a defect survives with it.
+    expect(one(header, 'header-context').textContent?.trim()).toBe('17,745');
+    expect(one(header, 'header-burn').textContent?.trim()).toBe('35,490');
 
     // `costUsd` is 0 and 0 means NOT COMPUTED, never "free". "$0.00" would be
     // a fabricated claim; there is no price table in this repo.
@@ -383,12 +387,12 @@ describe('diff handling in the mounted renderer', () => {
       type: 'diff',
       sessionId: 'session-live',
       patch: {
-        fields: { totals: { inputTokens: 30_000, outputTokens: 11_000, costUsd: 0 } },
+        fields: { totals: { costUsd: 0 }, contextNow: { prompt: 30_000, output: 11_000 } },
         tree: [{ op: 'updateTool', id: 'tool-agent-2', fields: { status: 'done' } }],
       },
     });
 
-    expect(one(container, 'header-tokens-in').textContent?.trim()).toBe('30,000');
+    expect(one(container, 'header-context').textContent?.trim()).toBe('30,000');
     const tool2 = all(container, 'tree-node').find(
       (n) => n.dataset['nodeId'] === 'tool-agent-2',
     );

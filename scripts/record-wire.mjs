@@ -83,8 +83,18 @@ import { build } from 'esbuild';
 
 import { loadCanvasContract, REPO_ROOT, wireCorpusDir } from '../webview/theater/contract.mjs';
 
-/** Bumped when the corpus shape changes in a way a reader must notice. */
-export const WIRE_FORMAT_VERSION = 1;
+/**
+ * Bumped when the corpus shape changes in a way a reader must notice.
+ *
+ * **2 (0.1.3):** the token contract. `AgentNode.tokens: { in, out }` is gone
+ * and `contextNow` / `burn` (`{ prompt, output }`) replace it;
+ * `SessionState.totals` lost `inputTokens` / `outputTokens` and kept only
+ * `costUsd`, with session-level `contextNow` / `burn` beside it. A version-1
+ * corpus replayed through the version-2 store yields nodes with no context
+ * figures at all, which renders as zeros rather than as an error - so the
+ * version is the thing that has to fail loudly, and it does.
+ */
+export const WIRE_FORMAT_VERSION = 2;
 
 /**
  * The simulated instant the arc starts at. Fixed, and the same value

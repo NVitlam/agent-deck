@@ -57,6 +57,7 @@ import type {
   ParseDiagnostics,
   SessionState,
   SubagentMeta,
+  TokenPair,
   ToolNode,
   TranscriptEntry,
   TreeNode,
@@ -170,8 +171,12 @@ export interface GraftSnapshot {
   parked: readonly ParkedGraft[];
   /** Resolved edges, in a stable order (by `agentId`). */
   edges: readonly GraftEdge[];
+  /** Cost only. 0 means NOT YET COMPUTED — see the file header. */
+  totals: { costUsd: number };
+  /** The MAIN transcript's last assistant message. Not a sum. */
+  contextNow: TokenPair;
   /** Summed over every agent in the tree; parked agents contribute nothing. */
-  totals: { inputTokens: number; outputTokens: number; costUsd: number };
+  burn: TokenPair;
   counts: GraftCounts;
   /**
    * `spawnDepth` values that disagree with the depth walked from the parent
@@ -342,11 +347,33 @@ interface AgentAccumulator {
   /** In first-appearance order. */
   calls: ToolCall[];
   byId: Map<string, ToolCall>;
-  /** Deduped token usage; see {@link usageTotals}. */
-  usageByMessage: Map<string, { in: number; out: number }>;
+  /** Deduped token usage per assistant `message.id`; see {@link scanEntries}. */
+  usageByMessage: Map<string, MessageUsage>;
+  /** Next ordinal to hand out. First sighting of an id wins it. */
+  usageOrdinal: number;
   firstTimestamp?: number;
   lastTimestamp?: number;
   entryCount: number;
+}
+
+/**
+ * One assistant message's usage, deduplicated across the lines that repeat it.
+ *
+ * `ordinal` is assigned at FIRST sighting and never moves, so "the last
+ * message" is a statement about transcript order rather than about which line
+ * happened to update a counter last. It is an ordinal and not the timestamp
+ * because two lines of one streamed message share a timestamp to the second,
+ * and a tie there would make `contextNow` depend on Map iteration order.
+ * `at` is carried alongside for callers that want the wall time; nothing in
+ * this module orders on it.
+ */
+interface MessageUsage {
+  /** `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`. */
+  prompt: number;
+  /** `output_tokens`. */
+  output: number;
+  ordinal: number;
+  at?: number;
 }
 
 function epoch(value: unknown): number | undefined {
@@ -368,6 +395,16 @@ function epoch(value: unknown): number | undefined {
  * `message.id` and sum across distinct ids, which is exact for a monotonically
  * growing counter and degrades to "the largest number CC stated" if it ever
  * stops growing.
+ *
+ * WHAT `prompt` IS, AND WHY IT IS NOT `input_tokens`. `input_tokens` alone is
+ * ~2 on every real assistant message in every captured fixture — the prompt
+ * lives in `cache_creation_input_tokens` + `cache_read_input_tokens`. On
+ * `fixtures/cc-2.1.234/.../05c5482d-*.jsonl`, message
+ * `msg_011CeBgXDhoTEXnkTHVvjNSh` reads `2 + 13390 + 28807 = 42199`, and the
+ * shipped `0.1.2`/`0.1.3` renderer displayed the `2`. All three components are
+ * summed, each defaulting to 0 when absent or non-finite, so a fixture without
+ * cache fields still yields exactly `input_tokens` and nothing changes for it.
+ * See `events.ts`'s {@link TokenPair} for the census this rests on.
  */
 function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[], previewBytes: number): void {
   for (const entry of entries) {
@@ -383,15 +420,28 @@ function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[],
       const m = message as { id?: unknown; usage?: unknown };
       const usage = m.usage;
       if (typeof m.id === 'string' && typeof usage === 'object' && usage !== null) {
-        const u = usage as { input_tokens?: unknown; output_tokens?: unknown };
-        const inTok = typeof u.input_tokens === 'number' && Number.isFinite(u.input_tokens) ? u.input_tokens : 0;
-        const outTok =
-          typeof u.output_tokens === 'number' && Number.isFinite(u.output_tokens) ? u.output_tokens : 0;
+        const u = usage as {
+          input_tokens?: unknown;
+          cache_creation_input_tokens?: unknown;
+          cache_read_input_tokens?: unknown;
+          output_tokens?: unknown;
+        };
+        const promptTok =
+          countOf(u.input_tokens) +
+          countOf(u.cache_creation_input_tokens) +
+          countOf(u.cache_read_input_tokens);
+        const outTok = countOf(u.output_tokens);
         const prev = acc.usageByMessage.get(m.id);
-        acc.usageByMessage.set(m.id, {
-          in: prev === undefined ? inTok : Math.max(prev.in, inTok),
-          out: prev === undefined ? outTok : Math.max(prev.out, outTok),
-        });
+        const next: MessageUsage = {
+          prompt: prev === undefined ? promptTok : Math.max(prev.prompt, promptTok),
+          output: prev === undefined ? outTok : Math.max(prev.output, outTok),
+          // First sighting owns the ordinal. A later line of the same streamed
+          // message updates the counters and must NOT move the message.
+          ordinal: prev === undefined ? acc.usageOrdinal++ : prev.ordinal,
+        };
+        const stamp = at ?? prev?.at;
+        if (stamp !== undefined) next.at = stamp;
+        acc.usageByMessage.set(m.id, next);
       }
     }
 
@@ -443,14 +493,45 @@ function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[],
   }
 }
 
-function usageTotals(acc: AgentAccumulator): { in: number; out: number } {
-  let inTok = 0;
-  let outTok = 0;
+/**
+ * A `usage` component as a number: absent, non-finite or the wrong type is 0.
+ *
+ * Named rather than inlined three times, because "defaulting to 0 when absent
+ * or non-finite" is the rule for every component and a copy that forgets
+ * `Number.isFinite` turns one `NaN` into a `NaN` total.
+ */
+function countOf(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/** Everything this agent spent: summed across distinct `message.id`. */
+function usageBurn(acc: AgentAccumulator): TokenPair {
+  let prompt = 0;
+  let output = 0;
   for (const u of acc.usageByMessage.values()) {
-    inTok += u.in;
-    outTok += u.out;
+    prompt += u.prompt;
+    output += u.output;
   }
-  return { in: inTok, out: outTok };
+  return { prompt, output };
+}
+
+/**
+ * How full this agent's context is right now: its LAST assistant message by
+ * ordinal, not a sum.
+ *
+ * An agent with no assistant message yet has no context level to report, and
+ * `{ prompt: 0, output: 0 }` is the honest answer for it rather than a
+ * placeholder — the tree shows a node with no message as having sent nothing,
+ * which it has not.
+ */
+function usageContextNow(acc: AgentAccumulator): TokenPair {
+  let best: MessageUsage | undefined;
+  for (const u of acc.usageByMessage.values()) {
+    if (best === undefined || u.ordinal > best.ordinal) best = u;
+  }
+  return best === undefined
+    ? { prompt: 0, output: 0 }
+    : { prompt: best.prompt, output: best.output };
 }
 
 // ---------------------------------------------------------------------------
@@ -670,7 +751,8 @@ export class TreeGrafter {
         status: agentStatus(spawn),
         spawnDepth: depth,
         children,
-        tokens: usageTotals(acc),
+        contextNow: usageContextNow(acc),
+        burn: usageBurn(acc),
         startedAt: acc.firstTimestamp ?? 0,
       };
       if (spawn?.endedAt !== undefined) node.endedAt = spawn.endedAt;
@@ -697,13 +779,17 @@ export class TreeGrafter {
     parked.sort((a, b) => a.agentId.localeCompare(b.agentId));
     edges.sort((a, b) => a.agentId.localeCompare(b.agentId));
 
-    let inputTokens = 0;
-    let outputTokens = 0;
+    // `burn` sums over every agent in the tree; `contextNow` does NOT, and
+    // that asymmetry is the whole point of the split. A context window is a
+    // level and the session's level is the MAIN transcript's — each subagent
+    // has its own window, so adding them answers no question anyone asked.
+    let burnPrompt = 0;
+    let burnOutput = 0;
     let toolNodes = 0;
     walk(root, (node) => {
       if (isAgentNode(node)) {
-        inputTokens += node.tokens.in;
-        outputTokens += node.tokens.out;
+        burnPrompt += node.burn.prompt;
+        burnOutput += node.burn.output;
       } else {
         toolNodes++;
       }
@@ -718,7 +804,9 @@ export class TreeGrafter {
       // costUsd 0 means NOT YET COMPUTED, never "free". There is no price
       // table in this repo and inventing one would put a fabricated number in
       // front of the user. See the file header.
-      totals: { inputTokens, outputTokens, costUsd: 0 },
+      totals: { costUsd: 0 },
+      contextNow: { ...root.contextNow },
+      burn: { prompt: burnPrompt, output: burnOutput },
       counts: { grafted: grafted.size, parked: parked.length, toolNodes },
       depthMismatches: report.depthMismatches.map((d) => ({
         agentId: d.agentId,
@@ -776,6 +864,7 @@ function newAccumulator(agentId: string): AgentAccumulator {
     calls: [],
     byId: new Map(),
     usageByMessage: new Map(),
+    usageOrdinal: 0,
     entryCount: 0,
   };
 }
@@ -876,6 +965,8 @@ export interface SerializedSnapshot {
   parked: ParkedGraft[];
   edges: GraftEdge[];
   totals: GraftSnapshot['totals'];
+  contextNow: TokenPair;
+  burn: TokenPair;
   counts: GraftCounts;
   depthMismatches: GraftSnapshot['depthMismatches'];
 }
@@ -914,7 +1005,8 @@ function serializeNode(node: TreeNode, anchor: number | undefined): SerializedNo
     label: node.label,
     status: node.status,
     spawnDepth: node.spawnDepth,
-    tokens: { in: node.tokens.in, out: node.tokens.out },
+    contextNow: { ...node.contextNow },
+    burn: { ...node.burn },
     startedAtOffsetMs: anchor === undefined || node.startedAt === 0 ? null : node.startedAt - anchor,
     endedAtOffsetMs: anchor === undefined || node.endedAt === undefined ? null : node.endedAt - anchor,
     children: node.children.map((child) => serializeNode(child, anchor)),
@@ -937,6 +1029,8 @@ export function serializeSnapshot(snapshot: GraftSnapshot): SerializedSnapshot {
     parked: snapshot.parked.map((p) => ({ ...p })),
     edges: snapshot.edges.map((e) => ({ ...e })),
     totals: { ...snapshot.totals },
+    contextNow: { ...snapshot.contextNow },
+    burn: { ...snapshot.burn },
     counts: { ...snapshot.counts },
     depthMismatches: snapshot.depthMismatches.map((d) => ({ ...d })),
   };
@@ -972,6 +1066,8 @@ export function toSessionState(snapshot: GraftSnapshot, facts: SessionFacts): Se
     schemaOk: true,
     root: snapshot.root,
     totals: { ...snapshot.totals },
+    contextNow: { ...snapshot.contextNow },
+    burn: { ...snapshot.burn },
   };
 }
 

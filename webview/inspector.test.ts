@@ -216,7 +216,8 @@ describe('agent detail', () => {
     kind: 'subagent',
     spawnDepth: 2,
     status: 'running',
-    tokens: { in: 12_345, out: 6_789 },
+    contextNow: { prompt: 12_345, output: 6_789 },
+    burn: { prompt: 12_345, output: 6_789 },
     startedAt: 1_000,
     endedAt: 62_000,
   });
@@ -229,7 +230,7 @@ describe('agent detail', () => {
     );
     expect(one(container, 'inspector-kind').textContent).toBe('subagent');
     expect(one(container, 'inspector-spawn-depth').textContent).toBe('2');
-    expect(one(container, 'inspector-tokens').textContent).toBe('12,345 in / 6,789 out');
+    expect(one(container, 'inspector-tokens').textContent).toBe('12,345 in ctx / 6,789 out');
     expect(one(container, 'inspector-duration').textContent).toBe('1m 01s');
   });
 

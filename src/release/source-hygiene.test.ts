@@ -35,16 +35,55 @@ import { describe, expect, it } from 'vitest';
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 /**
- * Directories whose files are hand-written source.
+ * Directories whose files are hand-written source or hand-written prose.
  *
- * `fixtures/` is absent on purpose — see the header. `docs/` is absent because
- * it carries captured evidence (`docs/evidence/ui-states/*.dom.txt` holds
- * rendered DOM), which is data by the same argument.
+ * `fixtures/` is absent on purpose — see the header: it holds bytes captured
+ * from real sessions, and normalising a recording is how you stop it being a
+ * recording.
+ *
+ * **`docs/` and the root markdown ARE in scope, and the first version of this
+ * file had them out.** That omission mattered: the latin1 defect this guard
+ * exists for landed in `PLAN.md` BEFORE it landed in any `.ts`, by the same
+ * scripted-splice route, and a source-only guard could never have seen it. The
+ * prose in this repository is load-bearing — it is where every decision's
+ * reasoning lives — so a control byte silently eating a word there costs more
+ * than one in a comment.
+ *
+ * `docs/evidence/ui-states/*.dom.txt` is captured DOM rather than prose, and it
+ * stays out by the `fixtures/` argument — `.txt` is simply not in the
+ * extension list below.
  */
-const SOURCE_PREFIXES = ['src/', 'webview/', 'scripts/', 'spike/', '.github/'];
+const SOURCE_PREFIXES = ['src/', 'webview/', 'scripts/', 'spike/', '.github/', 'docs/'];
 
-/** Extensions that are text by construction. */
-const TEXT_EXTENSIONS = ['.ts', '.tsx', '.js', '.mjs', '.cjs', '.svelte', '.json', '.yml', '.yaml'];
+/**
+ * Extensions that are text by construction.
+ *
+ * Root-level markdown is picked up by {@link ROOT_TEXT_FILES} rather than by a
+ * prefix, since the root is not a directory prefix anyone can name.
+ */
+const TEXT_EXTENSIONS = [
+  '.ts',
+  '.tsx',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.svelte',
+  '.json',
+  '.yml',
+  '.yaml',
+  '.md',
+];
+
+/** Tracked root-level documents, which no prefix in SOURCE_PREFIXES matches. */
+const ROOT_TEXT_FILES = [
+  'CLAUDE.md',
+  'HANDOVER.md',
+  'PLAN.md',
+  'README.md',
+  'SECURITY.md',
+  'AGENTS.md',
+  'agent-deck-spec.md',
+];
 
 /**
  * The ONE tracked source file that legitimately contains a control byte.
@@ -58,7 +97,21 @@ const TEXT_EXTENSIONS = ['.ts', '.tsx', '.js', '.mjs', '.cjs', '.svelte', '.json
  * as much a defect as a first NUL anywhere else, and an allow-entry with no
  * number would hide that.
  */
-const ALLOWED: ReadonlyMap<string, number> = new Map([['src/parser/parse.test.ts', 1]]);
+const ALLOWED: ReadonlyMap<string, number> = new Map([
+  ['src/parser/parse.test.ts', 1],
+  /**
+   * A raw `0x08` (backspace), pre-existing, introduced by the Phase 0 archive
+   * commit — found only when this guard's scope widened to markdown.
+   *
+   * **Allowed rather than repaired, and the reason is not laziness.**
+   * `docs/PLAN-v2.md` is the BYTE-IDENTICAL archive of the superseded v2 plan.
+   * `PLAN.md` and `CLAUDE.md` both state that its closed-phase records are
+   * never altered, and "byte-identical" stops being true the moment this file
+   * tidies one. So it is pinned by count: the byte cannot multiply, and the
+   * archive stays what it claims to be.
+   */
+  ['docs/PLAN-v2.md', 1],
+]);
 
 /**
  * A control byte, for this test's purposes.
@@ -81,7 +134,10 @@ function trackedSourceFiles(): readonly string[] {
   return out
     .split('\0')
     .filter((p) => p.length > 0)
-    .filter((p) => SOURCE_PREFIXES.some((prefix) => p.startsWith(prefix)))
+    .filter(
+      (p) =>
+        SOURCE_PREFIXES.some((prefix) => p.startsWith(prefix)) || ROOT_TEXT_FILES.includes(p),
+    )
     .filter((p) => TEXT_EXTENSIONS.some((ext) => p.endsWith(ext)));
 }
 
@@ -124,6 +180,12 @@ describe('source hygiene: no raw control characters', () => {
     expect(files).toContain('src/model/events.ts');
     expect(files).toContain('webview/canvas-contract.ts');
     expect(files).toContain('src/parser/parse.test.ts');
+    // The prose half, which the first version of this file did not scan. PLAN.md
+    // is named explicitly because it is the file the defect hit first and the
+    // one most often edited by script.
+    expect(files).toContain('PLAN.md');
+    expect(files).toContain('CLAUDE.md');
+    expect(files).toContain('docs/PLAN-v2.md');
   });
 
   it('no tracked source file carries a control byte outside the allow-list', () => {
@@ -148,9 +210,12 @@ describe('source hygiene: no raw control characters', () => {
     // removed, this fails and the allow-entry gets deleted with it — an
     // allowance that outlives its reason is how allow-lists rot.
     for (const [file, expected] of ALLOWED) {
-      const nuls = scan(file).filter((o) => o.byte === '0x00');
-      expect(nuls, `${file} no longer carries its documented control byte`).toHaveLength(1);
-      expect(nuls[0]?.count).toBe(expected);
+      // Not hard-coded to NUL any more: the second entry's byte is 0x08. What
+      // is asserted is that the file still carries exactly ONE control byte of
+      // exactly one kind, which is what the allowance claims.
+      const found = scan(file);
+      expect(found, `${file} no longer carries its documented control byte`).toHaveLength(1);
+      expect(found[0]?.count).toBe(expected);
     }
   });
 

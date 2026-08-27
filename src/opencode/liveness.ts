@@ -82,8 +82,14 @@
  * against a `synthetic-` copy built in a temp directory from a committed
  * fixture.
  *
- * The production wiring is `src/opencode/index.ts`'s, not this file's. What it
- * has to supply is exactly:
+ * **NOTHING WIRES THIS YET.** `src/opencode/index.ts` deliberately does not —
+ * its own header says so, because a one-shot read has no cursor to advance —
+ * and the extension host does not either until `PLAN.md` DoD 5.2. An earlier
+ * draft of this paragraph named `index.ts` as the production wiring and was
+ * simply wrong; it is corrected here and at {@link PollTrigger}, because a
+ * pointer to a caller that does not exist is a claim, not documentation.
+ *
+ * What the host will have to supply is exactly:
  *
  * ```ts
  * const engine = new OcLivenessEngine({

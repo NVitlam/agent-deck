@@ -30,9 +30,12 @@ const VSCODE_ALIAS = [
 // 51 files before the split, the same 51 after, set-identical.
 const ALL_TESTS = ['src/**/*.test.ts', 'webview/**/*.test.ts'];
 
-// `src/perf/perf.test.ts` is the only file under this glob today; a glob
-// rather than the literal path so a second perf file joins the isolated
-// project automatically instead of silently rejoining the parallel one.
+// A glob rather than a literal path, so a second wall-clock file joins the
+// isolated project automatically instead of silently rejoining the parallel
+// one. That is not hypothetical any more: `sweep-history.test.ts` arrived
+// here on 2026-08-27, carrying `privacy.test.ts`'s `historyMs < 10_000`
+// unchanged, after that assertion went red at 12,344 ms in a full run on a
+// loaded box while the tree it measured was green forty minutes earlier.
 const PERF_TESTS = ['src/perf/**/*.test.ts'];
 
 // Webview tests that need a DOM opt in per file with a
@@ -123,9 +126,9 @@ export default defineConfig({
           // pool semantics - see the block above for the measurement that
           // forced it. The recorded hazard that put the rest of the suite on
           // threads is a socket-test interaction, and this project contains no
-          // socket tests: `src/perf/perf.test.ts` opens no listener and binds
-          // no port. `singleFork` because the project holds one file and a
-          // second worker would buy nothing.
+          // socket tests: neither file here opens a listener or binds a port.
+          // `singleFork` because two workers over two files would reintroduce
+          // inside this project exactly the contention it exists to remove.
           pool: 'forks',
           poolOptions: { forks: { singleFork: true } },
           sequence: { groupOrder: 1 },

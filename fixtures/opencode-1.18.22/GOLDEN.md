@@ -492,8 +492,16 @@ regenerated. That is a real difference and should be read as one.
 
 ## DEVIATIONS — where the contract, the spec and `src/model/events.ts` do not line up
 
-Each of these is a place the golden had to represent something the current type cannot express.
-None was resolved by this package; all three are Phase 4's.
+None of these was resolved by this package, and they are not all the same kind of problem — the
+split matters more than the count, so it is written by item rather than by number (an earlier
+version of this line said "all three" over a list that had grown to six, which is the defect this
+repo records most often):
+
+- **Items 1-4 are type and spec disagreements that Phase 4 owns.** The golden had to represent
+  something `src/model/events.ts` cannot currently express, and the fix is to widen the type.
+- **Items 5 and 6 are limits of what the captured corpora can exercise.** No amount of Phase 4 work
+  removes them; they need a different capture, and until then the behaviour they describe is
+  unpinned by any fixture.
 
 1. **`SessionState.engine` does not exist in `src/model/events.ts`.** OC7 specifies
    `engine?: 'cc' | 'opencode'`, additive and optional, absence reading as `'cc'`. The field is in

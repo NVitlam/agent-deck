@@ -24,7 +24,7 @@
   "main": "./dist/extension.cjs",
   "engines": {
     "node": ">=22.22.2",
-    "vscode": "^1.75.0"
+    "vscode": "^1.134.0"
   },
   "activationEvents": [
     "onStartupFinished"

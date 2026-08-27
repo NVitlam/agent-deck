@@ -129,6 +129,7 @@ interface GoldenToolNode {
   inputPreview: string | null;
   resultPreview: string | null;
   durationMs: number | null;
+  truncated: boolean | null;
 }
 
 interface GoldenNode {
@@ -330,6 +331,9 @@ describe.each(CORPUS_NAMES)('corpus %s', (corpusName) => {
       expect(record.toolName, node.id).toBe(node.toolName);
       expect(record.status, node.id).toBe(node.status);
       expect(record.durationMs ?? null, node.id).toBe(node.durationMs);
+      // OpenCode's own truncation claim, all three states. `?? null` rather
+      // than a presence check: a claim of `false` must survive to the golden.
+      expect(record.truncated ?? null, `${node.id} truncated`).toBe(node.truncated);
       expect(previewFingerprint(record.inputPreview), `${node.id} inputPreview`).toBe(
         node.inputPreview,
       );
@@ -337,6 +341,48 @@ describe.each(CORPUS_NAMES)('corpus %s', (corpusName) => {
         node.resultPreview,
       );
     }
+  });
+
+  it("reproduces OpenCode's own truncated claim on every corpus tool part (item 22)", () => {
+    /*
+     * Re-derived from the stored row here rather than trusted from the golden,
+     * so this is a second read of the same bytes. Counts are DERIVED from the
+     * corpus and never hard-coded: a fixture-set size asserted as a literal
+     * breaks on the next harvest and reads as a regression.
+     */
+    const byPartId = new Map<string, OcToolRecord>();
+    for (const record of [...result.toolsBySession.values()].flat()) {
+      byPartId.set(record.partId, record);
+    }
+
+    let claimedTrue = 0;
+    let claimedFalse = 0;
+    let noClaim = 0;
+    for (const raw of rows) {
+      const record = byPartId.get(raw.id);
+      if (record === undefined) continue; // not a `tool` part, or skipped
+      const data = JSON.parse(raw.data) as {
+        state?: { metadata?: { truncated?: unknown } };
+      };
+      const claim = data.state?.metadata?.truncated;
+      if (claim === true) {
+        claimedTrue++;
+        expect(record.truncated, raw.id).toBe(true);
+      } else if (claim === false) {
+        claimedFalse++;
+        expect(record.truncated, raw.id).toBe(false);
+      } else {
+        noClaim++;
+        expect('truncated' in record, raw.id).toBe(false);
+      }
+    }
+
+    expect(claimedTrue + claimedFalse + noClaim).toBe(result.counts.toolParts);
+    // Both corpora carry all three states; asserting they OCCUR is a behaviour
+    // claim, asserting how many would be a count claim about this capture.
+    expect(claimedTrue).toBeGreaterThan(0);
+    expect(claimedFalse).toBeGreaterThan(0);
+    expect(noClaim).toBeGreaterThan(0);
   });
 
   it('cuts ONCE: every marker states the TRUE original byte count', () => {
@@ -706,6 +752,74 @@ describe('synthetic rows', () => {
 
     const both = onlyRecord(parseParts([row(toolData('bash', { time: { start: 10, end: 42 } }))]));
     expect(both.durationMs).toBe(32);
+  });
+
+  /*
+   * `docs/evidence/phase-4/COVERAGE.md` item 22 / `GOLDEN.md` DEVIATION 5,
+   * closed by `PLAN.md`'s Phase 5 gate B7. Three states, three facts, and the
+   * middle one is the reason the field is not a `?: true`.
+   */
+  it("carries OpenCode's own truncated:true claim onto the record (item 22)", () => {
+    const record = onlyRecord(
+      parseParts([row(toolData('read', { metadata: { truncated: true } }))]),
+    );
+    expect(record.truncated).toBe(true);
+    // NOT the same claim as our own ceiling, which did not fire on `'ok'`.
+    expect(record.inputTruncated).toBe(false);
+    expect(record.resultTruncated).toBe(false);
+  });
+
+  it('carries an explicit truncated:false, which is a claim and not an absence', () => {
+    const record = onlyRecord(
+      parseParts([row(toolData('read', { metadata: { truncated: false } }))]),
+    );
+    expect('truncated' in record).toBe(true);
+    expect(record.truncated).toBe(false);
+  });
+
+  it('omits truncated when OpenCode made no claim, and never defaults it to false', () => {
+    // The whole of item 22 inverted: defaulting an absent key to `false` would
+    // turn "OpenCode said nothing" into "OpenCode said the payload is whole".
+    const noKey = onlyRecord(parseParts([row(toolData('read', { metadata: {} }))]));
+    expect('truncated' in noKey).toBe(false);
+
+    const noMetadata = onlyRecord(parseParts([row(toolData('read'))]));
+    expect('truncated' in noMetadata).toBe(false);
+  });
+
+  it('treats a non-boolean truncated as no claim, without counting or throwing (G3)', () => {
+    // 0 such values in either corpus, so this arm is pinned synthetically. It
+    // is deliberately NOT counted: a new key in `counts` fails DoD 4.6's byte
+    // comparison of the goldens' counts block even at 0.
+    for (const value of ['true', 1, null, {}, []]) {
+      const result = parseParts([row(toolData('read', { metadata: { truncated: value } }))]);
+      const record = onlyRecord(result);
+      expect('truncated' in record, JSON.stringify(value)).toBe(false);
+      expect(result.counts.partsMalformed).toBe(0);
+      expect(result.toolPartsUnusable).toBe(0);
+      expect(result.toolPartsUnknownStatus).toBe(0);
+    }
+  });
+
+  it('reads truncated out of a metadata that also carries the task join keys', () => {
+    // `state.metadata` is shared: the task join reads `sessionId` from it and
+    // this flag sits beside them. Neither read may disturb the other.
+    const record = onlyRecord(
+      parseParts([
+        row(
+          toolData('task', {
+            metadata: {
+              truncated: true,
+              sessionId: 'ses_child',
+              parentSessionId: 'ses_synthetic',
+            },
+          }),
+        ),
+      ]),
+    );
+    expect(record.truncated).toBe(true);
+    expect(record.taskChildSessionId).toBe('ses_child');
+    expect(record.taskParentSessionId).toBe('ses_synthetic');
   });
 
   it('strips signature/thinking/redacted_thinking out of a tool input (qwen-local writes none)', () => {

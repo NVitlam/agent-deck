@@ -307,6 +307,26 @@ export function toToolNode(part, data) {
   const inputCut = truncateOnce(inputText);
   const outputCut = outputText === undefined ? undefined : truncateOnce(outputText);
 
+  /*
+   * `state.metadata.truncated` - OPENCODE'S OWN truncation claim (contract
+   * §8.4, "the flag to trust"). It has a `ToolNode` field as of Phase 5's gate
+   * amendment B7; before that there was nowhere to put it and the golden did
+   * not represent it (GOLDEN.md DEVIATION 5).
+   *
+   * All three states are carried and they are three different facts: `true`
+   * and `false` are both CLAIMS OpenCode made, and an absent key is no claim -
+   * which is not the same as "the payload is whole". An absent key serializes
+   * as `null` below, exactly as an absent `durationMs` does.
+   *
+   * A non-boolean is treated as no claim rather than coerced. Unlike the
+   * unmapped `state.status` above this does NOT abort the generator: a status
+   * decides which of three node states to render and there is no honest
+   * default, whereas "OpenCode said nothing usable about truncation" is
+   * representable, and it is exactly what an absent key already means.
+   */
+  const truncated =
+    typeof state.metadata?.truncated === 'boolean' ? state.metadata.truncated : undefined;
+
   return {
     id: data.callID,
     toolName: data.tool,
@@ -314,6 +334,7 @@ export function toToolNode(part, data) {
     inputPreview: inputCut.text,
     resultPreview: outputCut === undefined ? undefined : outputCut.text,
     durationMs,
+    truncated,
     _inputTruncated: inputCut.truncated,
     _resultTruncated: outputCut !== undefined && outputCut.truncated,
     // Not part of ToolNode; used to place the node and to build the join.
@@ -833,6 +854,10 @@ function serializeTool(node, counts) {
     inputPreview,
     resultPreview,
     durationMs: node.durationMs ?? null,
+    // OpenCode's own truncation claim, or `null` for "no claim was made".
+    // `?? null` and not `=== undefined`: a claim of `false` must survive, and
+    // `??` fires only on null/undefined, so it does.
+    truncated: node.truncated ?? null,
   };
 }
 

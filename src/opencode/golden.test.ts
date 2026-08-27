@@ -113,6 +113,17 @@ function serializeTool(node: ToolNode): unknown {
     inputPreview: previewFingerprint(node.inputPreview),
     resultPreview: previewFingerprint(node.resultPreview),
     durationMs: node.durationMs ?? null,
+    /*
+     * OpenCode's OWN truncation claim (`state.metadata.truncated`), as of
+     * `PLAN.md`'s Phase 5 gate B7 — `docs/evidence/phase-4/COVERAGE.md` item 22
+     * and `GOLDEN.md` DEVIATION 5. Three states reach the golden: `true` and
+     * `false` are claims OpenCode made, `null` is "no claim".
+     *
+     * `?? null` and not a presence check, because `false ?? null` is `false`:
+     * an explicit "I did not truncate this" must survive the projection. This
+     * computes nothing — the value came out of `readOpenCodeEngine()`.
+     */
+    truncated: node.truncated ?? null,
   };
 }
 
@@ -389,6 +400,121 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
       expect(outcome.result.sessions.every((s) => !s.schemaOk)).toBe(true);
       expect(outcome.result.sessions.every((s) => s.liveness === 'unsupported')).toBe(true);
       expect(outcome.result.refused.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('parks a refused CHILD on its accepted parent, with childSessionUnsupported', () => {
+    /*
+     * `docs/evidence/phase-4/COVERAGE.md` item 29, closed by `PLAN.md`'s Phase
+     * 5 gate B7, THROUGH THE PRODUCTION PATH and against a real parent/child
+     * pair out of a committed corpus — the rows, the `task` part and the join
+     * are OpenCode's, and only the child's version string is mutated on the
+     * temp copy. Through Phase 4 this reported `joinKeyContradiction`, which
+     * was visible and safe and told the wrong story.
+     */
+    const dir = makeTempDir('oc-refusedchild-');
+    try {
+      const dbPath = copyCorpus(smallest as string, dir);
+      const pair = withWritableDb(dbPath, (db) => {
+        const row = db
+          .prepare(
+            'SELECT id, parent_id FROM session WHERE parent_id IS NOT NULL' +
+              ' ORDER BY time_created LIMIT 1',
+          )
+          .get() as { id: string; parent_id: string } | undefined;
+        if (row === undefined) return undefined;
+        // `4.4.0` differs on the major AND the minor, so no movement of the
+        // anchor inside `1.x` can quietly re-admit it.
+        db.prepare('UPDATE session SET version = ? WHERE id = ?').run('4.4.0', row.id);
+        return { childId: row.id, parentId: row.parent_id };
+      });
+      // Derived from the corpus rather than assumed: if the fixtures ever hold
+      // no child session this fails loudly instead of testing nothing.
+      expect(pair, 'no corpus child session to refuse').toBeDefined();
+      if (pair === undefined) return;
+
+      const outcome = readOpenCodeEngine({ dbPath });
+      expect(outcome.kind).toBe('ok');
+      if (outcome.kind !== 'ok') return;
+
+      expect(outcome.result.refused.map((r) => r.sessionId)).toStrictEqual([pair.childId]);
+      expect(outcome.result.refused[0]?.code).toBe('unsupportedVersion');
+
+      // The refused child does NOT become a deck entry of its own: a child is
+      // a subagent inside its parent's session (contract §9).
+      const byId = new Map(outcome.result.sessions.map((s) => [s.sessionId, s]));
+      expect(byId.has(pair.childId)).toBe(false);
+
+      // It parks on the ROOT state that would have rendered it. The parent may
+      // itself be a subagent, so the owning state is found by search.
+      const owner = outcome.result.sessions.find((s) =>
+        (s.parked ?? []).some((p) => p.agentId === pair.childId),
+      );
+      expect(owner, `${pair.childId} parked nowhere`).toBeDefined();
+      const entry = (owner?.parked ?? []).find((p) => p.agentId === pair.childId);
+      expect(entry?.code).toBe('childSessionUnsupported');
+      expect(entry?.toolUseId).toBeTypeOf('string');
+      expect(entry?.reason).toContain('version window');
+
+      // The parent still renders its remaining tree, spawning `task` call
+      // included, and no spawn edge claims the refused child.
+      expect(owner?.schemaOk).toBe(true);
+      expect(owner?.root.children.length).toBeGreaterThan(0);
+      expect((owner?.spawnEdges ?? []).some((e) => e.agentId === pair.childId)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accumulates a NON-ZERO session.cost into totals.costUsd (DoD 4.3)', () => {
+    /*
+     * `docs/evidence/phase-4/COVERAGE.md` item 33. Every session in both
+     * corpora carries `cost = 0`, so `graft.ts`'s `totals.costUsd +=
+     * session.cost` had never seen a non-zero value through any path. Here the
+     * REAL column is written on a temp copy and read back through `db.ts`'s
+     * `realOf`, the fingerprint, the parse and the grafter.
+     *
+     * 0.25 and 0.5 are exact in binary floating point, so 0.75 is exact: this
+     * asserts the accumulation, not float tidiness.
+     */
+    const dir = makeTempDir('oc-cost-');
+    try {
+      const dbPath = copyCorpus(smallest as string, dir);
+      const pair = withWritableDb(dbPath, (db) => {
+        const row = db
+          .prepare(
+            'SELECT id, parent_id FROM session WHERE parent_id IS NOT NULL' +
+              ' ORDER BY time_created LIMIT 1',
+          )
+          .get() as { id: string; parent_id: string } | undefined;
+        if (row === undefined) return undefined;
+        db.prepare('UPDATE session SET cost = ? WHERE id = ?').run(0.25, row.parent_id);
+        db.prepare('UPDATE session SET cost = ? WHERE id = ?').run(0.5, row.id);
+        return { childId: row.id, parentId: row.parent_id };
+      });
+      expect(pair, 'no corpus parent/child pair to price').toBeDefined();
+      if (pair === undefined) return;
+
+      const outcome = readOpenCodeEngine({ dbPath });
+      expect(outcome.kind).toBe('ok');
+      if (outcome.kind !== 'ok') return;
+
+      const owner = outcome.result.sessions.find((s) =>
+        (s.spawnEdges ?? []).some((e) => e.agentId === pair.childId),
+      );
+      expect(owner, `${pair.childId} did not graft`).toBeDefined();
+      // Parent 0.25 + child 0.5, summed over the tree, not over the database.
+      expect(owner?.totals.costUsd).toBe(0.75);
+
+      // And a session nobody priced still reports exactly 0 — the goldens'
+      // case, and DoD 4.3's other half.
+      const untouched = outcome.result.sessions.filter(
+        (s) => s.sessionId !== owner?.sessionId,
+      );
+      expect(untouched.length).toBeGreaterThan(0);
+      for (const state of untouched) expect(state.totals.costUsd).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

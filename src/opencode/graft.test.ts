@@ -215,6 +215,9 @@ function serializeTool(node: ToolNode): unknown {
     inputPreview: previewFingerprint(node.inputPreview),
     resultPreview: previewFingerprint(node.resultPreview),
     durationMs: node.durationMs ?? null,
+    // OpenCode's own truncation claim, `null` for "no claim was made". `?? null`
+    // rather than a presence check, so an explicit `false` survives.
+    truncated: node.truncated ?? null,
   };
 }
 
@@ -283,7 +286,7 @@ interface OcPartData {
     output?: unknown;
     error?: unknown;
     time?: { start?: number; end?: number };
-    metadata?: { sessionId?: unknown; parentSessionId?: unknown };
+    metadata?: { sessionId?: unknown; parentSessionId?: unknown; truncated?: unknown };
   };
 }
 
@@ -394,6 +397,9 @@ function parseParts(parts: readonly RawPart[]): OcParseResult {
     if (outputCut?.truncated === true) counts.previewsTruncated++;
     const childId = state.metadata?.sessionId;
     const parentClaim = state.metadata?.parentSessionId;
+    // OpenCode's own truncation claim: carried when it IS a boolean (both
+    // values are claims), omitted otherwise (no claim was made).
+    const engineTruncated = state.metadata?.truncated;
 
     const record: OcToolRecord = {
       id: data.callID as string,
@@ -404,6 +410,7 @@ function parseParts(parts: readonly RawPart[]): OcParseResult {
       ...(typeof start === 'number' && typeof end === 'number'
         ? { durationMs: end - start }
         : {}),
+      ...(typeof engineTruncated === 'boolean' ? { truncated: engineTruncated } : {}),
       partId: part.id,
       sessionId: part.sessionId,
       order: [part.timeCreated, part.id],
@@ -653,7 +660,7 @@ describe('park reason strings are byte-exact', () => {
     expect(OC_PARK_REASONS.taskWithoutChild).toContain('(contract amendment \u00a7G) - not');
   });
 
-  it('the three unexercised reasons carry the contract citation', () => {
+  it('the four unexercised reasons carry their citation', () => {
     expect(OC_PARK_REASONS.joinKeyContradiction).toBe(
       "task state.metadata.sessionId, state.metadata.parentSessionId and the child session's parent_id do not agree (contract \u00a75)",
     );
@@ -663,6 +670,16 @@ describe('park reason strings are byte-exact', () => {
     expect(OC_PARK_REASONS.noSpawningTaskPart).toBe(
       'child session names a parent_id but no task part in that parent joins to it (contract \u00a75)',
     );
+    // The fifth reason, and the only one with no golden behind it at all: no
+    // session in either corpus refuses, so this string is pinned here alone.
+    expect(OC_PARK_REASONS.childSessionUnsupported).toBe(
+      'child session was refused by the version window; the join was never attempted (OC5)',
+    );
+  });
+
+  it('every reason string is distinct \u2014 a shared string is a merged story', () => {
+    const reasons = Object.values(OC_PARK_REASONS);
+    expect(new Set(reasons).size).toBe(reasons.length);
   });
 });
 
@@ -791,6 +808,135 @@ describe('joinKeyContradiction (no corpus reaches this)', () => {
 
   it('is a DIFFERENT code from a missing key', () => {
     expect(OC_PARK_REASONS.joinKeyContradiction).not.toBe(OC_PARK_REASONS.taskWithoutChild);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4b — childSessionUnsupported (COVERAGE.md item 29, PLAN.md Phase 5 gate B7)
+//
+// The case Phase 4 reported as `joinKeyContradiction`: an in-window parent
+// whose child was refused by the version window. Hand-built rows here; the
+// production-path proof, against a REAL parent/child pair out of a committed
+// corpus, is in `golden.test.ts`.
+// ---------------------------------------------------------------------------
+
+describe('childSessionUnsupported — a refused CHILD of an accepted parent', () => {
+  /** The grafter is handed accepted rows only, exactly as `index.ts` hands them. */
+  function refusedChildCase(refusedIds: readonly string[]) {
+    const root = session({ id: 'ses_root' });
+    const child = session({ id: 'ses_child', parentId: root.id });
+    const before = tool({ partId: 'prt_before', sessionId: root.id, toolName: 'bash' });
+    const task = tool({
+      partId: 'prt_task',
+      sessionId: root.id,
+      toolName: 'task',
+      taskChildSessionId: child.id,
+      taskParentSessionId: root.id,
+    });
+    const result = graft([root], [before, task], {
+      refusedSessionIds: new Set(refusedIds),
+    });
+    return { root, child, before, task, result };
+  }
+
+  it('parks with the new code instead of claiming the keys contradicted', () => {
+    const { child, task, result } = refusedChildCase(['ses_child']);
+    const state = result.sessions[0] as SessionState;
+    expect(state.parked).toStrictEqual([
+      {
+        agentId: child.id,
+        code: 'childSessionUnsupported',
+        toolUseId: task.id,
+        reason: OC_PARK_REASONS.childSessionUnsupported,
+      },
+    ]);
+    expect(state.spawnEdges).toStrictEqual([]);
+  });
+
+  it('still renders the parent tree, task call included', () => {
+    const { before, task, result } = refusedChildCase(['ses_child']);
+    const state = result.sessions[0] as SessionState;
+    // The call happened and the user saw it: both tool nodes are there, in
+    // order, and no `AgentNode` was invented for the refused child.
+    expect(state.root.children.map((c) => c.id)).toStrictEqual([before.id, task.id]);
+    expect(state.root.children.filter(isAgentNode)).toStrictEqual([]);
+    expect(state.schemaOk).toBe(true);
+    expect(state.liveness).toBe('idle');
+  });
+
+  it('reports joinKeyContradiction when the same absence is NOT a refusal', () => {
+    // The control that gives the new code its meaning: identical rows, empty
+    // refused set. Without this the test above would pass just as well if the
+    // grafter had started calling every missing child unsupported.
+    const { child, task, result } = refusedChildCase([]);
+    const state = result.sessions[0] as SessionState;
+    expect(state.parked).toStrictEqual([
+      {
+        agentId: child.id,
+        code: 'joinKeyContradiction',
+        toolUseId: task.id,
+        reason: OC_PARK_REASONS.joinKeyContradiction,
+      },
+    ]);
+  });
+
+  it('takes precedence over the three-way cross-assertion, deliberately', () => {
+    /*
+     * The task part ALSO claims the wrong `parentSessionId`, so both stories
+     * are available. The refusal wins because the child's `parent_id` — one of
+     * the three keys — cannot be read at all when the child is refused, so the
+     * cross-assertion was never RUN. Reporting a failure for a check that did
+     * not happen is the whole defect item 29 names.
+     */
+    const root = session({ id: 'ses_root' });
+    const task = tool({
+      partId: 'prt_task',
+      sessionId: root.id,
+      toolName: 'task',
+      taskChildSessionId: 'ses_child',
+      taskParentSessionId: 'ses_somewhere_else',
+    });
+    const result = graft([root], [task], {
+      refusedSessionIds: new Set(['ses_child']),
+    });
+    const state = result.sessions[0] as SessionState;
+    expect(state.parked?.map((p) => p.code)).toStrictEqual(['childSessionUnsupported']);
+  });
+
+  it('does not touch a task part whose child is present and in window', () => {
+    const root = session({ id: 'ses_root' });
+    const child = session({ id: 'ses_child', parentId: root.id });
+    const task = taskFor('prt_task', root, child);
+    // A refused set naming some OTHER session must change nothing.
+    const result = graft([root, child], [task], {
+      refusedSessionIds: new Set(['ses_unrelated']),
+    });
+    const state = result.sessions[0] as SessionState;
+    expect(state.parked).toStrictEqual([]);
+    expect(state.spawnEdges).toHaveLength(1);
+    expect(result.counts.taskPartsJoined).toBe(1);
+  });
+
+  it('does not increment taskPartsParked, matching the other contradiction codes', () => {
+    // `taskPartsParked` follows `scripts/opencode-golden.mjs`, which has no
+    // version window and therefore no such branch. Pinned so a change is a
+    // deliberate act with a failing assertion.
+    const { result } = refusedChildCase(['ses_child']);
+    expect(result.counts.taskPartsParked).toBe(0);
+    expect(result.counts.taskParts).toBe(1);
+  });
+
+  it('defaults to Phase 4 behaviour when no refused set is injected at all', () => {
+    const root = session({ id: 'ses_root' });
+    const task = tool({
+      partId: 'prt_task',
+      sessionId: root.id,
+      toolName: 'task',
+      taskChildSessionId: 'ses_child',
+      taskParentSessionId: root.id,
+    });
+    const state = graft([root], [task]).sessions[0] as SessionState;
+    expect(state.parked?.map((p) => p.code)).toStrictEqual(['joinKeyContradiction']);
   });
 });
 
@@ -1107,10 +1253,36 @@ describe('toToolNode', () => {
     });
   });
 
-  it('omits resultPreview and durationMs rather than setting them undefined', () => {
+  it('omits resultPreview, durationMs and truncated rather than setting them undefined', () => {
     const node = toToolNode(tool({ partId: 'prt_y', sessionId: 'ses_y' }));
     expect('resultPreview' in node).toBe(false);
     expect('durationMs' in node).toBe(false);
+    expect('truncated' in node).toBe(false);
+  });
+
+  it("carries OpenCode's own truncated claim through, both values (item 22)", () => {
+    const yes = toToolNode(tool({ partId: 'prt_t', sessionId: 'ses_t', truncated: true }));
+    expect(yes.truncated).toBe(true);
+
+    // `false` is a claim OpenCode made and it must not be dropped as falsy.
+    const no = toToolNode(tool({ partId: 'prt_f', sessionId: 'ses_f', truncated: false }));
+    expect('truncated' in no).toBe(true);
+    expect(no.truncated).toBe(false);
+  });
+
+  it('never derives truncated from OUR ceiling firing', () => {
+    // `inputTruncated`/`resultTruncated` are ours and recoverable by raising
+    // `agentDeck.previewBytes`; the engine's flag is not. Conflating them tells
+    // a user a payload is retrievable when it is not.
+    const ours = toToolNode(
+      tool({
+        partId: 'prt_o',
+        sessionId: 'ses_o',
+        inputTruncated: true,
+        resultTruncated: true,
+      }),
+    );
+    expect('truncated' in ours).toBe(false);
   });
 });
 
@@ -1125,6 +1297,66 @@ describe('every session row must be reachable', () => {
     const root = session({ id: 'ses_root' });
     const child = session({ id: 'ses_child', parentId: root.id });
     expect(() => graft([root, child], [])).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10b — a NON-ZERO cost (COVERAGE.md item 33, DoD 4.3's second clause)
+//
+// Every session in both corpora carries `costUsd: 0` and every hand-built row
+// above sets `cost: 0`, so `totals.costUsd += session.cost` had never seen a
+// non-zero value. The renderer half (`webview/format.ts`) is pre-existing and
+// has its own tests; what was missing is anything connecting the two, so what
+// is asserted here is the ACCUMULATOR, on this side of the wire.
+// ---------------------------------------------------------------------------
+
+describe('totals.costUsd accumulates a non-zero session cost', () => {
+  it('carries a single root cost through to the state', () => {
+    const root = session({ id: 'ses_root', cost: 0.25 });
+    const state = graft([root], []).sessions[0] as SessionState;
+    expect(state.totals.costUsd).toBe(0.25);
+    expect(state.totals.costUsd).not.toBe(0);
+  });
+
+  it('sums parent and subagents, and keeps each root separate', () => {
+    // 0.25 / 0.5 / 0.125 are exact in binary floating point, so the expected
+    // sum is exact too: this test asserts the accumulation, not float tidiness.
+    const root = session({ id: 'ses_root', cost: 0.25 });
+    const child = session({ id: 'ses_child', parentId: root.id, cost: 0.5 });
+    const other = session({ id: 'ses_other', cost: 0.125 });
+    const task = taskFor('prt_task', root, child);
+
+    const result = graft([root, child, other], [task]);
+    const byId = new Map(result.sessions.map((s) => [s.sessionId, s]));
+    expect(byId.get('ses_root')?.totals.costUsd).toBe(0.75);
+    // Per ROOT, never a database-wide total: a second root's cost stays its own.
+    expect(byId.get('ses_other')?.totals.costUsd).toBe(0.125);
+  });
+
+  it('a refused child contributes nothing, because it is not in the tree', () => {
+    // The two Phase 5 items meeting: an out-of-window child's cost must not be
+    // summed into a parent that does not render it.
+    const root = session({ id: 'ses_root', cost: 0.25 });
+    const task = tool({
+      partId: 'prt_task',
+      sessionId: root.id,
+      toolName: 'task',
+      taskChildSessionId: 'ses_child',
+      taskParentSessionId: root.id,
+    });
+    const state = graft([root], [task], {
+      refusedSessionIds: new Set(['ses_child']),
+    }).sessions[0] as SessionState;
+    expect(state.totals.costUsd).toBe(0.25);
+  });
+
+  it('still reports exactly 0 when every session cost is 0 — the goldens case', () => {
+    const root = session({ id: 'ses_root' });
+    const state = graft([root], []).sessions[0] as SessionState;
+    expect(state.totals.costUsd).toBe(0);
+    // `0`, not `-0` and not `null`: DoD 4.3's other half is that zero renders
+    // the em dash, and a renderer keys on the number it is given.
+    expect(Object.is(state.totals.costUsd, 0)).toBe(true);
   });
 });
 

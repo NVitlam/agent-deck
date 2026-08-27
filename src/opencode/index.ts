@@ -174,12 +174,22 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
    */
   const parse = parseParts(read.value.parts);
 
+  /*
+   * The refused ids are handed to the grafter so a `task` part naming one can
+   * say WHY its child is missing (`childSessionUnsupported`) instead of
+   * reporting a key contradiction for a check that was never run. Refusal
+   * itself stays the fingerprint's: `sessions` is still the accepted rows
+   * alone, and the grafter still has no refusal of its own.
+   */
+  const refusedSessionIds = new Set(partition.refused.map((mismatch) => mismatch.sessionId));
+
   const grafted = graftCorpus({
     sessions: partition.accepted,
     projects: read.value.projects,
     parse,
     options: {
       projectSlug: projectSlugOf,
+      refusedSessionIds,
       ...(options.workspacePaths === undefined
         ? {}
         : { workspaceMatch: workspaceMatcher(options.workspacePaths) }),
@@ -204,14 +214,15 @@ export function readOpenCodeEngine(options: OcEngineOptions = {}): OcEngineOutco
    * Both committed corpora refuse nothing, so this adds no session to either
    * golden and DoD 4.6's byte compare is unaffected.
    *
-   * A refused CHILD session is NOT handled here and is listed in
-   * `docs/evidence/phase-4/COVERAGE.md`: it currently surfaces as a
-   * `joinKeyContradiction` park on its in-window parent, because the grafter
-   * looks the child up among the accepted rows and does not find it. That is
-   * visible and it is safe, but the code is the wrong story — it says the keys
-   * disagreed when what happened is that the child was out of window. Fixing it
-   * needs a park code that does not exist yet, and it is recorded rather than
-   * guessed at.
+   * A refused CHILD session is deliberately NOT given one of these. A child is
+   * a subagent inside its parent's session, not a deck entry of its own
+   * (contract §9), so an `unsupported` `SessionState` for it would invent a
+   * session the user never started. It parks on its in-window parent instead,
+   * with `childSessionUnsupported` — the code `PLAN.md`'s Phase 5 gate (B7)
+   * added to close `docs/evidence/phase-4/COVERAGE.md` item 29. Through Phase 4
+   * that case reported `joinKeyContradiction`, which was visible and safe and
+   * told the wrong story: the keys did not disagree, the child was out of
+   * window. `graft.ts`'s `joinTasks` holds the branch and the ordering reason.
    */
   const refusedRootIds = new Set(
     read.value.sessions.filter((s) => s.parentId === null).map((s) => s.id),

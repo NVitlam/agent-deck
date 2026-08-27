@@ -318,3 +318,38 @@ name its `~/.claude/projects/<slug>` directory. It is byte-identical to the one 
 
 What used to stand here, and is superseded: the goldens carried `""` as an explicit placeholder,
 because spec OC7 and `GOLDEN.md` § *What was NOT decided here* both parked the question for Phase 5.
+
+## Golden regenerated 2026-08-27 (second regeneration)
+
+**golden regenerated 2026-08-27: OpenCode's own `state.metadata.truncated` now reaches
+`ToolNode`.**
+
+`PLAN.md` `Amendment 2026-08-27 - the eight decisions taken at the Phase 5 gate`, item B7, put
+`docs/evidence/phase-4/COVERAGE.md` item 22 in scope. Contract 8.4 calls
+`state.metadata.truncated` "the flag to trust" for OpenCode's own truncation and `ToolNode` had no
+field for it, so a payload OpenCode had already truncated was indistinguishable from one it had
+not. `ToolNode.truncated` now exists in `src/model/events.ts`, `src/opencode/parse.ts` maps it, and
+`scripts/opencode-golden.mjs` maps it independently - the two implementations still share no code,
+which is the whole reason reproducing this file counts as evidence.
+
+Regenerated once, with `node scripts/opencode-golden.mjs`. The diff is **one added key per tool
+node and nothing else**: no digest, no count, no time offset, no ordering and no park entry moved.
+
+```diff
+-            "durationMs": 53
++            "durationMs": 53,
++            "truncated": false
+```
+
+All three states are carried, because they are three different facts. `true` and `false` are both
+claims OpenCode made; `null` means it made none, which is **not** the same as "the payload is
+whole". Measured on this corpus after regenerating, 99 tool parts and 99 tool nodes: **5 `true`,
+93 `false`, 1 absent** in the database, and `"truncated": true` / `false` / `null` appear 5 / 93 / 1
+times in `golden.json`.
+
+The flag is never merged with Agent Deck's own truncation. Ours is recorded by the
+`redact.ts` marker inside the preview text and is recoverable by raising `agentDeck.previewBytes`;
+this one happened upstream and no setting here can get the bytes back.
+
+The same work package added the `childSessionUnsupported` park code (COVERAGE.md item 29). It
+changes **no byte of this file**: nothing in this corpus refuses.

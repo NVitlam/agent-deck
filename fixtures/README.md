@@ -239,8 +239,12 @@ contaminated data files are gone from every ref, the documents that reproduced t
 sanitized, and no foreign project slug survives anywhere in `git log -p --all`. Every `cwd` in every
 committed fixture is this repo (G8).
 
-`origin` = `https://github.com/dev/agent-deck`, **private**. Two things remain true and gate any
-public flip:
+`origin` = `https://github.com/dev/agent-deck`, and it is **PUBLIC**. The rest of this section is
+a Phase 1 artefact kept as the record of what was required *before* the flip — the flip happened
+after Phase 5, and `docs/evidence/privacy/README.md` is the current authority. The sentence that
+stood here called the repo private, which stopped being true and was corrected in Phase 3.
+
+Two things were true at the time and gated the flip:
 
 - GitHub keeps unreferenced objects reachable for a while after a force-push, so the remote is not
   provably clean the instant the rewrite lands. Re-audit against the remote before flipping, rather

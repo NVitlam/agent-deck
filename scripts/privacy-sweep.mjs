@@ -351,13 +351,17 @@ const ALLOW_RULES = [
       'The OpenCode capture script, for the same reason sweep-needles exists ' +
       'one file over: it is a script that names a needle because its job is to ' +
       'look for one. Measured at the time of writing: 12 working-tree hits, all ' +
-      'the SAME needle (the cloud-sync folder that holds this developer\'s ' +
-      'projects) and none of them a path - the script extracts <that ' +
-      'folder>/<project> tokens out of the captured rows and reports which ' +
-      'projects the bytes mention, so the identifier is a search term, a regex ' +
-      'and a variable name. Unlike sweep-needles it cannot assemble the term ' +
-      'from fragments: a GLOB pattern handed to SQLite has to be the literal ' +
-      'string. Scoped to that one file.',
+      'the SAME needle - the directory that holds this developer\'s projects, ' +
+      'not the cloud-sync folder an earlier version of this reason named - and ' +
+      'none of them a path: the script extracts <that dir>/<project> tokens out ' +
+      'of the captured rows and reports which projects the bytes mention, so ' +
+      'the identifier appears as a comment, a regex literal, three SQL GLOB ' +
+      'patterns and one line of generated README. It COULD be assembled from ' +
+      'fragments the way sweep-needles does - a GLOB pattern handed to SQLite ' +
+      'is a runtime value, not a source literal - and the earlier claim here ' +
+      'that it could not was simply wrong. It is left whole because fragmenting ' +
+      'it in five places would obscure what the script does, which is the same ' +
+      'trade sweep-needles already makes one file over. Scoped to that one file.',
   },
   {
     id: 'repo-local-cc-config',

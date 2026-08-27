@@ -291,3 +291,30 @@ Windows, so a control that fakes only `HOME` runs happily against the real OpenC
 and reports a confident green pass on the one check whose entire purpose is proving we never touch
 it. `src/release/opencode-capture.test.ts` runs the capture with `USERPROFILE` pointed at an empty
 directory and asserts it exits non-zero naming the missing root, rather than falling back.
+
+
+## Golden regenerated 2026-08-27
+
+**golden regenerated 2026-08-27: projectSlug per Amendment 1.**
+
+`PLAN.md` Phase 4 `Amendment 2026-08-27 — projectSlug, liveness proof, coverage law`, item A1,
+closed the `projectSlug` open item in Phase 4 rather than in Phase 5. This corpus's `golden.json`
+was regenerated once, with `node scripts/opencode-golden.mjs`, and **that regeneration is the only
+permitted golden edit in Phase 4.**
+
+The diff is one field per session and nothing else:
+
+```diff
+-      "projectSlug": "",
++      "projectSlug": "c--Users-dev-projects-agent-deck",
+```
+
+That value is the CC project slug for this corpus's `project.worktree`
+(`C:/Users/dev/projects/agent-deck`), derived by the rule Claude Code uses to
+name its `~/.claude/projects/<slug>` directory. It is byte-identical to the one directory name under
+`fixtures/cc-2.1.246/projects/` and to the `projectSlug` the CC goldens in
+`fixtures/golden/session/` already carry — one workspace observed by two engines, one project key.
+`src/release/opencode-golden.test.ts` asserts both of those equalities with both sides read off disk.
+
+What used to stand here, and is superseded: the goldens carried `""` as an explicit placeholder,
+because spec OC7 and `GOLDEN.md` § *What was NOT decided here* both parked the question for Phase 5.

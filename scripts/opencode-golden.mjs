@@ -345,6 +345,47 @@ export function agentLabel(session) {
 }
 
 /**
+ * `SessionState.projectSlug` for an OpenCode session.
+ *
+ * `PLAN.md` Phase 4 `Amendment 2026-08-27 - projectSlug, liveness proof,
+ * coverage law`, item A1. It **supersedes** OC7's "Open item, for Phase 5 to
+ * decide" and this file's own earlier note that the goldens carry `''` as a
+ * placeholder; the decision was taken before Phase 4 implementation started.
+ *
+ * The decision: `projectSlug` means "the project key" for both engines, and
+ * the OpenCode value is the slug derived from `project.worktree` by the same
+ * rule Claude Code uses to name its `~/.claude/projects/<slug>` directory. One
+ * workspace observed by two engines therefore carries one key, and the value
+ * these goldens hold is byte-identical to the one `fixtures/golden/session/`'s
+ * CC goldens already hold for the same workspace.
+ *
+ * The rule, and the one place it differs from `slugifyWorkspace()` in
+ * `src/parser/tailer.ts`: strip trailing separators, map `:`, `\` and `/` to
+ * `-`, then LOWER-CASE THE DRIVE LETTER AND NOTHING ELSE. The two sides of the
+ * pin are `C:/Users/.../agent-deck` (the `worktree` column, upper-case drive)
+ * and `c--Users-...-agent-deck` (the captured CC slug directory, lower-case
+ * drive). Exactly one character differs and every other component keeps its
+ * case, which is why nothing else is lower-cased.
+ *
+ * **This is a duplicate of `src/opencode/slug.ts` on purpose**, in the same way
+ * and for the same reason the truncation ceiling above is a duplicate of
+ * `src/parser/redact.ts`: this file imports nothing from `src/`, so that the
+ * golden and the engine cannot agree merely by sharing code.
+ * `src/release/opencode-golden.test.ts` asserts the value against the CC slug
+ * directory name read off disk, so the duplication is checked rather than
+ * trusted.
+ */
+export function slugFromWorktree(worktreePath) {
+  const trimmed = worktreePath.replace(/[\\/]+$/, '');
+  const slug = trimmed.replace(/[:\\/]/g, '-');
+  // Keyed on the ORIGINAL path carrying a drive letter, not on the slug's first
+  // two characters: after the substitution a relative path such as `A/b` is
+  // indistinguishable from a drive, and lower-casing its first component would
+  // be a silent rewrite of a name rather than a drive-letter normalisation.
+  return /^[A-Za-z]:/.test(worktreePath) ? slug[0].toLowerCase() + slug.slice(1) : slug;
+}
+
+/**
  * `SessionState.liveness` for a STATIC corpus.
  *
  * OC4: the tap is the `event` table polled by cursor - "a new seq inside the
@@ -695,22 +736,26 @@ function buildSessionState(ctx) {
   const state = {
     sessionId: root.id,
     /*
-     * OPEN QUESTION, deliberately not answered here.
+     * CLOSED 2026-08-27 by `PLAN.md` Phase 4 `Amendment 2026-08-27 -
+     * projectSlug, liveness proof, coverage law`, item A1.
      *
-     * OC7: "`SessionState.projectSlug` is named for CC's slug directory and
-     * OpenCode has no slug (OC8). What that field carries for an OpenCode
-     * session - `project.id`, the `worktree` path, or a new optional field
-     * beside it - is not decided by this amendment, and is not guessed by it.
-     * Open item, for Phase 5 to decide and record here."
+     * This line used to carry `''` and a note that OC7 left the question open
+     * for Phase 5. That note is superseded: the value is the CC slug derived
+     * from `project.worktree`, so one workspace observed by two engines carries
+     * one project key. See {@link slugFromWorktree} for the rule and for why
+     * this file implements it rather than importing `src/opencode/slug.ts`.
      *
-     * The empty string is the least-committal value available: it names none of
-     * the three candidates, it carries no filesystem path (which
-     * `fixtures/golden/session/README.md` rule 1 forbids in a golden), and it
-     * is machine-independent. It is a PLACEHOLDER. When Phase 5 decides, this
-     * line and both `golden.json` files change together, and the diff is one
-     * field per session.
+     * `fixtures/golden/session/README.md` rule 1 is unchanged and still
+     * satisfied: it forbids a filesystem PATH in a golden - a drive letter,
+     * `/Users/`, `.claude`, a Windows separator - and a slug is none of those.
+     * It is fixture content, byte-identical to the `projectSlug` the CC goldens
+     * beside it already carry, and reproducible from the committed corpus on
+     * any machine.
+     *
+     * A root session whose `project` row is absent yields `''`, which is the
+     * honest answer: there is no worktree to derive a key from.
      */
-    projectSlug: '',
+    projectSlug: project === undefined ? '' : slugFromWorktree(project.worktree),
     /** OC7: additive and optional; absence reads as `'cc'`, so it is written. */
     engine: 'opencode',
     /*

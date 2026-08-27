@@ -337,9 +337,16 @@ export interface PollTriggerHandle {
  * Registers `run` to be invoked roughly every `intervalMs`.
  *
  * Injected because A2 forbids a timer in this module: a liveness test that
- * waits on a real interval measures the machine it ran on. Production supplies
- * a `setInterval` wrapper from `src/opencode/index.ts`; tests supply a handle
- * they fire by hand.
+ * waits on a real interval measures the machine it ran on. Tests supply a
+ * handle they fire by hand.
+ *
+ * **Nothing supplies a production one yet, and this comment used to claim
+ * otherwise.** It said `src/opencode/index.ts` provides a `setInterval`
+ * wrapper; it does not, and that file's own header says why — a one-shot read
+ * has no cursor to advance, so the polling engine is wired by the extension
+ * host in `PLAN.md` DoD 5.2, not by the engine entry point. A pointer to a
+ * caller that does not exist is the kind of claim this repo re-measures rather
+ * than trusts, so it is corrected here rather than left to decay.
  */
 export type PollTrigger = (run: () => void, intervalMs: number) => PollTriggerHandle;
 

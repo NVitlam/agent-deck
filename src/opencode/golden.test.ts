@@ -384,6 +384,20 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
       const rendered = outcome.result.sessions.filter((s) => s.schemaOk);
       expect(rendered.length).toBeGreaterThan(0);
       expect(rendered.some((s) => s.root.children.length > 0)).toBe(true);
+
+      /*
+       * `engine` is stamped UNCONDITIONALLY, and this read is the only place
+       * both arms exist at once: the grafted sessions come from `graft.ts` and
+       * the refused ones from `index.ts`'s `unsupportedSession`, two separate
+       * literals that must agree. Asserted over every session rather than over
+       * each arm separately, because "unconditionally" is a claim about the
+       * whole list.
+       */
+      expect(refusedIds.length).toBeGreaterThan(0);
+      expect(rendered.length + refusedIds.length).toBe(outcome.result.sessions.length);
+      for (const state of outcome.result.sessions) {
+        expect(state.engine, `${state.sessionId} engine`).toBe('opencode');
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -558,6 +572,17 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
         expect(state, `${id} vanished instead of rendering unsupported`).toBeDefined();
         // The point of the change: visible to a deck that filters on this.
         expect(state?.workspaceMatch, `${id} workspaceMatch`).toBe(true);
+        /*
+         * STAMPED, and this is the arm where a stamp is easiest to drop:
+         * `unsupportedSession`'s entire job is to emit almost nothing, so a
+         * field omitted there would look like part of the refusal rather than
+         * a bug. The phase's round-trip contract rests on BOTH engines writing
+         * `engine` unconditionally - refused states included - and until this
+         * line the OpenCode half of that premise rested on reading the code.
+         * OC7: absence reads as `'cc'`, so an unstamped OpenCode refusal would
+         * not be untagged, it would be tagged as the wrong engine.
+         */
+        expect(state?.engine, `${id} engine`).toBe('opencode');
         // And STILL a refusal. Nothing else moved: no tree, no totals, no slug.
         expect(state?.liveness).toBe('unsupported');
         expect(state?.schemaOk).toBe(false);

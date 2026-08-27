@@ -249,6 +249,9 @@ describe('parser-facing types', () => {
     expect(diagnostics).toEqual({
       malformedLines: 0,
       parsedLines: 0,
+      // DoD 5.5.6: a THIRD bucket, for lines whose `type` is recognised and
+      // deliberately not modelled. Zeroed here like the other two.
+      ignoredLines: 0,
       skippedFiles: [],
     });
 

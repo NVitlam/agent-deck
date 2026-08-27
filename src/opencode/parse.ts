@@ -313,6 +313,34 @@ function toToolRecord(
    * key in both corpora, so no committed byte moves either way.
    */
   const metadata = isRecord(state['metadata']) ? state['metadata'] : {};
+
+  /*
+   * `state.metadata.truncated` — OPENCODE'S OWN truncation claim (contract
+   * §8.4, "the flag to trust"). Dropped silently through Phase 4 and recorded
+   * as `docs/evidence/phase-4/COVERAGE.md` item 22 / `GOLDEN.md` DEVIATION 5;
+   * `ToolNode` gained a field for it at `PLAN.md`'s Phase 5 gate (B7).
+   *
+   * CARRIED VERBATIM, ALL THREE STATES. `true` and `false` are both claims and
+   * both are kept; an absent key is no claim and the field is OMITTED, never
+   * defaulted to `false`. Defaulting would turn "OpenCode said nothing" into
+   * "OpenCode said the payload is whole", which is the exact information loss
+   * this item exists to close, inverted.
+   *
+   * A value that is not a boolean is treated as NO CLAIM: it is not coerced,
+   * for the same reason an unmeasured `state.status` is not coerced into one of
+   * the three. It is not counted either — a new key in `counts` would fail DoD
+   * 4.6's byte comparison of the goldens' `counts` block even at 0. Measured:
+   * zero non-boolean values across both corpora, so no committed byte depends
+   * on this arm.
+   *
+   * NOT the same claim as `inputTruncated`/`resultTruncated` below, which
+   * record whether OUR ceiling fired. Ours is recoverable by raising
+   * `agentDeck.previewBytes`; this one is not, and a renderer that shows one
+   * marker for both lies to the user.
+   */
+  const engineTruncated =
+    typeof metadata['truncated'] === 'boolean' ? metadata['truncated'] : undefined;
+
   const isTask = toolName === 'task';
   const taskChildSessionId = isTask ? nonEmptyString(metadata['sessionId']) : undefined;
   const parentValue = metadata['parentSessionId'];
@@ -336,6 +364,7 @@ function toToolRecord(
     inputPreview: inputCut.text,
     ...(outputCut === undefined ? {} : { resultPreview: outputCut.text }),
     ...(durationMs === undefined ? {} : { durationMs }),
+    ...(engineTruncated === undefined ? {} : { truncated: engineTruncated }),
     partId: row.id,
     sessionId: row.sessionId,
     order: [row.timeCreated, row.id],

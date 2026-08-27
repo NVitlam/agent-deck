@@ -239,9 +239,19 @@ function deniedModulesIn(text: string): string[] {
 describe('G5 dependency review: what the shipped bundle can reach', () => {
   let bundle = '';
 
+  // 120 s for the same reason the census hook below carries one: this body is a
+  // synchronous esbuild subprocess, retried up to three times, and vitest's
+  // DEFAULT hookTimeout is 10 s. It fit inside the default until the suite grew
+  // heavier and this file started running alongside `vsix.test.ts` (spawns
+  // `vsce`) and `webview/capture.test.ts` -- then the hook timed out, the whole
+  // describe reported as SIX SKIPS, and the summary line still read green
+  // because a suite-level failure contributes no failed-test count. Six G5
+  // zero-egress assertions ran zero times. A wall-clock-sensitive subprocess
+  // under the default timeout is a test that passes or fails by CPU load, which
+  // is a recorded defect class in this repo, not noise to re-run.
   beforeAll(() => {
     bundle = buildHostBundle();
-  });
+  }, 120_000);
 
   it('the shipped artifact is the bundle, not a node_modules tree', async () => {
     // If this stops being true the review above is measuring the wrong thing:

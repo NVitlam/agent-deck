@@ -31,6 +31,11 @@ cc-2.1.241/                            a session on a LOCAL local-model model. S
     6082be25-….jsonl                   121 lines, no subagents, `atis` / `atis-latch` present
     6082be25-…/auto-mode-classifier-error.txt   an unrecognised file inside the session directory
 cc-2.1.237/                            one content-destroyed transcript + its redaction script
+synthetic-dropped-actions/             THE LIVENESS-DEFECT CORPUS (2026-08-27). See its own README.
+  projects/c--…-agent-deck/
+    41194183-….jsonl                   main transcript, 658 lines, 121 tool_use, CC 2.1.246
+    41194183-…/subagents/               the TWO subagents the report concerns, both with sidecars
+    41194183-…/tool-results/            two offloaded payloads, 54 KB and 327 KB
 opencode-1.18.22/                      THE OPENCODE ANCHOR (2026-08-26). See its own README.
   opencode.db                          a real OpenCode SQLite store, built read-only from the
                                        live one's own DDL; the version is the DATA's
@@ -200,6 +205,7 @@ passes while testing nothing. Check these two whenever the acceptance rule moves
 | `cc-2.1.241/` | 2.1.241 | a local `local-model` model, flat (no subagents), `atis` / `atis-latch` present, `requestId` / `message.diagnostics` absent, an unrecognised file inside the session directory |
 | `cc-2.1.246/` | **2.1.246** | **the provenance anchor** — an R1 mirror pair with one subagent and its sidecar, plus `head-5.jsonl` for the version-string path |
 | `synthetic-structure-2.1.246/` | 2.1.246 | the tripwire itself: an in-range version with one required key renamed, which must still refuse |
+| `synthetic-dropped-actions/` | 2.1.246 | the session `AUDIT-2026-08-27` §7 was written about — a real 8 h orchestration with two subagents, redacted by `scripts/redact-paths.mjs`, kept so the liveness-integrity work has the corpus the defect was reported against |
 
 The OpenCode corpora are a second engine's data and have their own table, so that nothing here reads
 as a CC version:

@@ -321,12 +321,26 @@ function diffNode(prev: TreeNode, next: TreeNode, ops: TreeOp[]): void {
     if (!nextIdSet.has(child.id)) ops.push({ op: 'removeNode', id: child.id });
   }
 
+  // The anchor is the PRECEDING SIBLING in `next`, not the index in `next`
+  // (DoD 5.5.1). `null` for the first child. Two properties this buys, and
+  // both matter on a receiver whose tree is behind:
+  //
+  //   * a run of consecutive inserts chains — each new node anchors on the one
+  //     before it, so the run lands in order even if the surrounding children
+  //     differ from what the sender assumed;
+  //   * an anchor the receiver does not have is a NAMED failure it can report,
+  //     where a wrong index is silent and permanent.
+  //
+  // `afterId` names a node in `next`, which may itself be inserted by an
+  // earlier op in this same patch. That is why insert order is preserved and
+  // why the ops are emitted in ascending child order.
   for (let i = 0; i < next.children.length; i += 1) {
     const child = next.children[i];
     if (child === undefined) continue;
     const before = prevById.get(child.id);
     if (before === undefined) {
-      ops.push({ op: 'insertNode', parentId: prev.id, index: i, node: child });
+      const previousSibling = i === 0 ? null : (next.children[i - 1]?.id ?? null);
+      ops.push({ op: 'insertNode', parentId: prev.id, afterId: previousSibling, node: child });
       continue;
     }
     diffNode(before, child, ops);

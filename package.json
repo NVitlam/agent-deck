@@ -35,6 +35,11 @@
         "command": "agentDeck.open",
         "title": "Open Session Deck",
         "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.showDiagnostics",
+        "title": "Show Diagnostics",
+        "category": "Agent Deck"
       }
     ],
     "configuration": {

@@ -53,7 +53,7 @@ import { applySessionPatch } from './apply.js';
 const FORBIDDEN_KEYS = ['__proto__', 'constructor', 'prototype'] as const;
 
 /**
- * The two message types the webview may send. Anything else is rejected.
+ * The three message types the webview may send. Anything else is rejected.
  *
  * This list is an allow-list, so it covers new OUTBOUND state without being
  * touched. `SessionState.parked` is a case worth naming: it travels host ->
@@ -65,7 +65,46 @@ const FORBIDDEN_KEYS = ['__proto__', 'constructor', 'prototype'] as const;
  * otherwise valid message carrying a stray `parked` key is accepted exactly as
  * any other unread extra key already is.
  */
-export const WEBVIEW_TO_HOST_TYPES = ['expandNode', 'selectSession'] as const;
+export const WEBVIEW_TO_HOST_TYPES = [
+  'expandNode',
+  'selectSession',
+  // DoD 5.5.2, and the ONE addition v0.5.0 permits. `reason` is free text
+  // bounded by RESYNC_REASON_MAX_CHARS below; `failedOp` must be one of the
+  // op names `TreeOp` defines, so an unbounded string cannot reach a log line
+  // through it; `sessionId` is optional because a diff for an unknown session
+  // has no session state to name.
+  'resyncRequest',
+] as const;
+
+/**
+ * The `TreeOp['op']` values a `resyncRequest` may name.
+ *
+ * A literal list rather than a derived one, because `TreeOp` is a type and
+ * types are erased: a runtime guard over untrusted input cannot ask a type
+ * what its members are. `messages.test.ts` asserts this list equals the ops
+ * `diffSessionState` can actually emit, so the duplication is checked rather
+ * than trusted — the same treatment `canvas-contract.test.ts` gives the
+ * host<->webview names.
+ */
+export const RESYNC_FAILED_OPS = [
+  'replaceRoot',
+  'replaceNode',
+  'insertNode',
+  'removeNode',
+  'reorderChildren',
+  'updateAgent',
+  'updateTool',
+] as const;
+
+/**
+ * Ceiling on a `resyncRequest`'s `reason`.
+ *
+ * The renderer composes this string and the host writes it to a diagnostics
+ * channel. An unbounded string from the untrusted side reaching a log is how a
+ * log becomes a denial-of-service surface, so it is bounded at the guard
+ * rather than at the writer — one place, before anything reads it.
+ */
+export const RESYNC_REASON_MAX_CHARS = 200;
 
 /**
  * Read an own data property without ever invoking a getter.
@@ -123,6 +162,20 @@ export function isWebviewToHostMessage(
         );
       case 'selectSession':
         return ownNonEmptyString(value, 'sessionId') !== undefined;
+      case 'resyncRequest': {
+        const reason = ownNonEmptyString(value, 'reason');
+        if (reason === undefined || reason.length > RESYNC_REASON_MAX_CHARS) return false;
+        const failedOp = ownDataProperty(value, 'failedOp');
+        if (failedOp !== undefined) {
+          if (typeof failedOp !== 'string') return false;
+          if (!(RESYNC_FAILED_OPS as readonly string[]).includes(failedOp)) return false;
+        }
+        const sessionId = ownDataProperty(value, 'sessionId');
+        if (sessionId !== undefined) {
+          if (typeof sessionId !== 'string' || sessionId.length === 0) return false;
+        }
+        return true;
+      }
       default:
         return false;
     }
@@ -301,7 +354,20 @@ export class SessionBridge {
       }
       let next: SessionState;
       try {
-        next = applySessionPatch(previous, diff.patch);
+        // DoD 5.5.1 made divergence a REPORT rather than a throw, for the
+        // webview's sake. The host's contract is the opposite and is unchanged:
+        // this copy must never diverge from the model, so a single reported
+        // error is treated exactly as the throw was — abandon the diff round
+        // and re-snapshot. Passing no `onError` would silently accept a
+        // partial apply here and leave this bridge's copy wrong, which is the
+        // one thing it exists to prevent.
+        let diverged = false;
+        next = applySessionPatch(previous, diff.patch, {
+          onError: () => {
+            diverged = true;
+          },
+        });
+        if (diverged) throw new Error('host-side apply diverged');
       } catch {
         this.counts.patchFailures += 1;
         this.sendSnapshot(emission, true);

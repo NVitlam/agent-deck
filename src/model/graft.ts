@@ -1081,6 +1081,7 @@ export async function graftSession(
   const diagnostics: ParseDiagnostics = {
     malformedLines: loaded.malformedLines,
     parsedLines: loaded.parsedLines,
+    ignoredLines: loaded.ignoredLines,
     skippedFiles: loaded.unreadable.map((u) => ({ path: u.path, reason: u.reason })),
   };
 

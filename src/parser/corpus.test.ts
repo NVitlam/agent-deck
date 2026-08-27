@@ -36,7 +36,7 @@ import {
   fingerprintSlugDirectory,
   isVersionAccepted,
 } from './fingerprint.js';
-import { KNOWN_ENTRY_TYPES, parseLines } from './parse.js';
+import { IGNORED_ENTRY_TYPES, KNOWN_ENTRY_TYPES, parseLines } from './parse.js';
 import type { ParseOptions, ParsedBatch } from './parse.js';
 
 const SLUG = 'c--Users-dev-projects-agent-deck';
@@ -280,33 +280,78 @@ describe('a session on a local local-model model is read like any other', () => 
     expect(snapshot.counts.toolNodes).toBe(21);
   });
 
-  it('counts the two record types it does not know, and refuses neither', async () => {
-    // `atis-latch` and `system` are entry TYPES outside KNOWN_ENTRY_TYPES, so
-    // the line parser rejects them as `unknownType` - one line each, counted,
-    // skipped. Unknown FIELDS are a different thing and are kept silently;
-    // that is the `atis` half, asserted below.
+  /**
+   * DoD 5.5.6 MOVED THESE ELEVEN LINES OUT OF `malformedLines`, and this test
+   * is where the move is measured.
+   *
+   * They were never broken. `atis-latch` and `system` are entry types CC
+   * writes and this model does not read, so filing them under "malformed" made
+   * a healthy `2.1.241` session report 9.1% of its lines as damaged. The
+   * counter now has two buckets and this corpus lands **0 malformed, 11
+   * ignored** — which is the true answer, and the reason a future non-zero
+   * `malformedLines` will be worth reading.
+   *
+   * Unknown FIELDS remain a third thing entirely, kept silently; that is the
+   * `atis` half, asserted in the next test.
+   */
+  it('files its two unmodelled record types as ignored, not malformed, and refuses neither', async () => {
     const text = await readFile(MAIN_241, 'utf8');
     const lines = text.split('\n').filter((line) => line.trim() !== '');
     expect(lines).toHaveLength(121);
 
     const batch = parseLines(lines);
     if (!batch.ok) throw new Error('parseLines never reports ok:false');
-    const unknown = batch.value.rejections.filter((r) => r.rejection === 'unknownType');
-    expect(unknown).toHaveLength(11);
-    expect(batch.diagnostics.malformedLines).toBe(11);
+
+    // The bucket that means "this line is broken" is EMPTY for this corpus.
+    expect(batch.diagnostics.malformedLines).toBe(0);
+    expect(batch.value.rejections.filter((r) => r.rejection === 'unknownType')).toHaveLength(0);
+
+    const ignored = batch.value.rejections.filter((r) => r.rejection === 'ignoredType');
+    expect(ignored).toHaveLength(11);
+    expect(batch.diagnostics.ignoredLines).toBe(11);
     expect(batch.diagnostics.parsedLines).toBe(110);
-    expect(batch.diagnostics.malformedLines + batch.diagnostics.parsedLines).toBe(lines.length);
+    // All THREE buckets sum to the input. A fourth bucket that forgot to be
+    // counted would fail here rather than quietly losing lines.
+    expect(
+      batch.diagnostics.malformedLines +
+        batch.diagnostics.ignoredLines +
+        batch.diagnostics.parsedLines,
+    ).toBe(lines.length);
 
     const byType = new Map<string, number>();
-    for (const r of unknown) {
-      const type = r.reason.replace('unknown type: ', '');
+    for (const r of ignored) {
+      const type = r.reason.replace('ignored type: ', '');
       byType.set(type, (byType.get(type) ?? 0) + 1);
     }
     expect(Object.fromEntries(byType)).toEqual({ 'atis-latch': 9, system: 2 });
     for (const type of byType.keys()) expect(KNOWN_ENTRY_TYPES.has(type)).toBe(false);
+    for (const type of byType.keys()) expect(IGNORED_ENTRY_TYPES.has(type)).toBe(true);
     // The fingerprint tolerates the same two: an unrecognised record kind is
-    // not a layout change, so only `type` itself is required of it.
+    // not a layout change, so only `type` itself is required of it. UNCHANGED
+    // by 5.5.6 — the structural fingerprint is not what moved.
     for (const type of byType.keys()) expect(REQUIRED_ENTRY_FIELDS.has(type)).toBe(false);
+  });
+
+  /**
+   * The other direction, and the one that keeps 5.5.6 from being a licence to
+   * ignore everything: a type in NEITHER set is still counted as malformed and
+   * still skipped. G3 is unchanged.
+   */
+  it('still counts a genuinely unknown type as malformed', () => {
+    const batch = parseLines([
+      JSON.stringify({ type: 'some-type-cc-has-never-written', uuid: 'x' }),
+      JSON.stringify({ type: 'mode', mode: 'x', sessionId: 'y' }),
+      '{ not json',
+    ]);
+    if (!batch.ok) throw new Error('parseLines never reports ok:false');
+    expect(batch.diagnostics.malformedLines).toBe(2);
+    expect(batch.diagnostics.ignoredLines).toBe(1);
+    expect(batch.diagnostics.parsedLines).toBe(0);
+    expect(batch.value.rejections.map((r) => r.rejection)).toEqual([
+      'unknownType',
+      'ignoredType',
+      'invalidJson',
+    ]);
   });
 
   it('treats `atis` as part of the atis-latch record, not as a new envelope key', async () => {

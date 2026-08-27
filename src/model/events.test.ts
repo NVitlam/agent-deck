@@ -295,7 +295,7 @@ describe('parser-facing types', () => {
     const ok: ParseResult<SessionState> = {
       ok: true,
       value: buildSession(),
-      diagnostics: { malformedLines: 2, parsedLines: 49, skippedFiles: [] },
+      diagnostics: { malformedLines: 2, parsedLines: 49, ignoredLines: 0, skippedFiles: [] },
     };
 
     expect(ok.ok).toBe(true);

@@ -40,6 +40,7 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   AgentNode,
+  ApplyError,
   NormalizedHookEvent,
   RawHookPayload,
   SessionState,
@@ -1179,20 +1180,124 @@ describe('snapshot/diff contract', () => {
     expect(JSON.stringify(prev)).toBe(snapshotBefore);
   });
 
-  it('an unapplicable patch throws rather than producing a wrong tree', () => {
+  /**
+   * DoD 5.5.1 SPLIT THIS TEST IN TWO, and the split is the whole point of the
+   * item. Before Phase 5.5 all four cases below threw, and the webview's catch
+   * discarded the entire patch — which is how one missing node became a
+   * session-long divergence (`AUDIT-2026-08-27` section 7.3, H5).
+   *
+   * Now: a DIVERGENCE (an id this tree does not have) is reported and skipped,
+   * and a PRODUCER BUG (a patch that would leave the session without an agent
+   * root) still throws.
+   */
+  it('a divergent op is reported and skipped, not thrown', () => {
     const prev = baseState();
-    expect(() => applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'nope' }] })).toThrow(
-      SessionPatchError,
+    const errors: ApplyError[] = [];
+    const collect = { onError: (e: ApplyError) => errors.push(e) };
+
+    const afterRemove = applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'nope' }] }, collect);
+    expect(errors.map((e) => e.op)).toEqual(['removeNode']);
+    expect(errors[0]?.id).toBe('nope');
+    // The tree is untouched: the op asked for a node to be absent and it is.
+    // `toStrictEqual` rather than a JSON compare — the reducer rebuilds every
+    // node, so key ORDER legitimately differs while the value does not.
+    expect(afterRemove.root).toStrictEqual(prev.root);
+
+    errors.length = 0;
+    applySessionPatch(
+      prev,
+      { tree: [{ op: 'insertNode', parentId: 't1', afterId: null, node: prev.root }] },
+      collect,
     );
+    expect(errors.map((e) => e.op)).toEqual(['insertNode']);
+    expect(errors[0]?.id).toBe('t1');
+
+    errors.length = 0;
+    applySessionPatch(
+      prev,
+      { tree: [{ op: 'reorderChildren', parentId: 'root', order: ['t1'] }] },
+      collect,
+    );
+    expect(errors.map((e) => e.op)).toEqual(['reorderChildren']);
+
+    // And with NO reporter the same patches are silent rather than fatal —
+    // which is what makes the reducer safe to call from a renderer that has
+    // nowhere to put an exception.
+    expect(() => applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'nope' }] })).not.toThrow();
+  });
+
+  it('a patch that would break the root invariant still throws', () => {
+    const prev = baseState();
+    // Removing the root cannot be a divergence: every session has one, and a
+    // producer that asks for this is broken rather than behind.
     expect(() => applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'root' }] })).toThrow(
       SessionPatchError,
     );
+    // Same class: the root must be an agent node.
     expect(() =>
-      applySessionPatch(prev, { tree: [{ op: 'insertNode', parentId: 't1', index: 0, node: prev.root }] }),
+      applySessionPatch(prev, {
+        tree: [{ op: 'replaceNode', id: 'root', node: prev.root.children[0] as TreeNode }],
+      }),
     ).toThrow(SessionPatchError);
+    // A reporter does not soften either one.
     expect(() =>
-      applySessionPatch(prev, { tree: [{ op: 'reorderChildren', parentId: 'root', order: ['t1'] }] }),
+      applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'root' }] }, { onError: () => {} }),
     ).toThrow(SessionPatchError);
+  });
+
+  /**
+   * THE REGRESSION TEST FOR THE SHIPPED DEFECT (DoD 5.5.1).
+   *
+   * Stage the exact `0.1.2` failure shape — a receiver whose child list is one
+   * node short of the sender's — then drive fifty further ops through it. With
+   * index-keyed inserts every one of those fifty landed in the wrong place or
+   * addressed a node that was not there. With sibling anchors the tree
+   * converges: every node the sender ever inserted is present at the end.
+   */
+  it('converges after a missing node instead of compounding (the 0.1.2 shape)', () => {
+    const prev = baseState();
+    // The receiver is missing one child the sender believes it has.
+    const short = structuredClone(prev) as SessionState;
+    const shortRoot = short.root as AgentNode;
+    const dropped = shortRoot.children[0] as TreeNode;
+    shortRoot.children = shortRoot.children.slice(1);
+
+    const errors: ApplyError[] = [];
+    let receiver: SessionState = short;
+    const ids: string[] = [];
+    for (let i = 0; i < 50; i += 1) {
+      const id = `late-${String(i)}`;
+      ids.push(id);
+      const node: ToolNode = {
+        id,
+        toolName: 'Bash',
+        status: 'done',
+        inputPreview: '',
+      };
+      // Anchored on the node inserted immediately before it, exactly as
+      // `diffNode` emits a run of consecutive inserts. The FIRST one anchors
+      // on the child the receiver is missing, which is the divergence.
+      const afterId = i === 0 ? dropped.id : `late-${String(i - 1)}`;
+      receiver = applySessionPatch(
+        receiver,
+        { tree: [{ op: 'insertNode', parentId: 'root', afterId, node }] },
+        { onError: (e) => errors.push(e) },
+      );
+    }
+
+    // Exactly ONE op could not be honoured as written — the first, whose
+    // anchor is the missing node. The other forty-nine anchored on nodes this
+    // tree does have, so they are not merely present, they are IN ORDER.
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.op).toBe('insertNode');
+    expect(errors[0]?.id).toBe(dropped.id);
+
+    const present = (receiver.root as AgentNode).children.map((c) => c.id);
+    for (const id of ids) expect(present).toContain(id);
+    // The run kept its relative order despite starting from a divergence.
+    const positions = ids.map((id) => present.indexOf(id));
+    const sorted = [...positions].sort((a, b) => a - b);
+    expect(positions).toEqual(sorted);
   });
 });
 

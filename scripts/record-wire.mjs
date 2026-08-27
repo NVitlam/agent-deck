@@ -504,6 +504,329 @@ async function buildCapturedCorpus(host) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Timed replay of a REAL captured session (PLAN.md Phase 5.5, DoD 5.5.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * WHAT THIS MODE IS FOR, and what the arc above could not do.
+ *
+ * `buildCapturedCorpus` records a HAND-AUTHORED arc: seven labelled moments
+ * over eight simulated minutes, chosen to exercise liveness transitions. It is
+ * the right shape for what it was built for and the wrong shape for the
+ * question `AUDIT-2026-08-27` left open — *does the store survive hundreds of
+ * back-to-back diffs on a large tree?* Ten events over three sessions cannot
+ * answer that, and the audit said so: "timed replay of an arbitrary session is
+ * NOT supported", with a list of what was missing.
+ *
+ * This mode is that list, implemented. It takes a real captured session, reads
+ * the append schedule OUT OF THE TRANSCRIPTS' OWN `timestamp` fields, and
+ * replays prefixes of the files through the real `graftSession`,
+ * `SessionModel` and `SessionBridge` — so the recorded traffic is the traffic,
+ * with the timing the session actually had.
+ *
+ * DETERMINISM, same rules as the arc recorder and for the same reasons:
+ *
+ *   * **No wall clock.** `atMs` is derived from the transcript's own first
+ *     timestamp. `Date.now()` appears nowhere.
+ *   * **No host paths.** `recordedFrom` is repo-relative with forward slashes.
+ *   * **Sorted everything.** Subagent discovery sorts; steps are emitted in
+ *     timestamp order with a stable tiebreak on the file path.
+ *   * **Content-addressed.** Each source transcript's sha256 is recorded, so a
+ *     test can tell a stale corpus from a fresh one without re-recording it —
+ *     which matters here because re-recording is minutes of work, not
+ *     milliseconds.
+ *
+ * COST IS WHY `--max-steps` EXISTS. Every step re-grafts the whole session,
+ * because that is what the production path does on every append (see
+ * `AgentDeckDataPath.#graft`). Stepping once per line on this corpus would be
+ * ~700 whole-session re-reads of 3 MB. The default of 120 steps keeps a
+ * recording under a minute while still driving the store through more than an
+ * order of magnitude more diffs than the arc corpus does.
+ */
+const TIMED_MAX_STEPS = 120;
+
+/** sha256 of a file's bytes, as hex. Content addressing for staleness. */
+async function digestOf(path) {
+  const { createHash } = await import('node:crypto');
+  return createHash('sha256').update(await readFile(path)).digest('hex');
+}
+
+/**
+ * Every transcript of one captured session, main first, subagents sorted.
+ *
+ * Read off the directory rather than named, exactly as `fixtures()` does: a
+ * corpus that gains a subagent must not need an edit here.
+ */
+async function timedSources(projectsRoot) {
+  const slugs = (await readdir(projectsRoot, { withFileTypes: true }))
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+  const slug = slugs[0];
+  if (slug === undefined) throw new Error(`no project slug under ${projectsRoot}`);
+  const slugDir = join(projectsRoot, slug);
+
+  const mains = (await readdir(slugDir, { withFileTypes: true }))
+    .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+    .map((e) => e.name)
+    .sort();
+  const mainName = mains[0];
+  if (mainName === undefined) throw new Error(`no main transcript under ${slugDir}`);
+  const sessionId = mainName.slice(0, -'.jsonl'.length);
+  const mainPath = join(slugDir, mainName);
+
+  const subagentsDir = join(slugDir, sessionId, 'subagents');
+  let subagents = [];
+  try {
+    subagents = (await readdir(subagentsDir, { withFileTypes: true }))
+      .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+      .map((e) => join(subagentsDir, e.name))
+      .sort();
+  } catch {
+    // No subagents is a normal session, not an error.
+  }
+
+  return { slug, slugDir, sessionId, mainPath, subagents };
+}
+
+/** Split a transcript into lines, keeping each line's own timestamp. */
+function timedLines(text) {
+  const out = [];
+  for (const raw of text.split('\n')) {
+    if (raw.trim() === '') continue;
+    let stamp = null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.timestamp === 'string') {
+        const ms = Date.parse(parsed.timestamp);
+        if (Number.isFinite(ms)) stamp = ms;
+      }
+    } catch {
+      // A malformed line still occupies a position in the file; the parser's
+      // own counter is what reports it. Here it simply inherits the previous
+      // line's time, below.
+    }
+    out.push({ raw, stamp });
+  }
+  // Forward-fill: a line with no timestamp of its own belongs to the moment
+  // the line before it was written. Never backwards, so the schedule stays
+  // non-decreasing, which `writeCorpus` requires of `atMs`.
+  let last = null;
+  for (const line of out) {
+    if (line.stamp === null) line.stamp = last;
+    else last = line.stamp;
+  }
+  const first = out.find((l) => l.stamp !== null)?.stamp ?? 0;
+  for (const line of out) if (line.stamp === null) line.stamp = first;
+  return out;
+}
+
+/**
+ * Record one real session's arc, at its own timing.
+ *
+ * Returns the recorder plus the model's final emission, exactly as
+ * `recordCapturedArc` does, so `writeCorpus` and `wire.test.ts` see one shape.
+ */
+async function recordTimedSession(host, sourceDir, options = {}) {
+  const { mkdtemp, cp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+
+  const projectsRoot = join(sourceDir, 'projects');
+  const src = await timedSources(projectsRoot);
+  const maxSteps = options.maxSteps ?? TIMED_MAX_STEPS;
+
+  const files = [src.mainPath, ...src.subagents];
+  const contents = new Map();
+  for (const file of files) contents.set(file, timedLines(await readFile(file, 'utf8')));
+
+  // The schedule: every line of every file, in timestamp order, with the file
+  // path as a stable tiebreak so two lines written in the same millisecond
+  // always order the same way.
+  const schedule = [];
+  for (const file of files) {
+    const lines = contents.get(file) ?? [];
+    for (let i = 0; i < lines.length; i += 1) {
+      schedule.push({ file, index: i, stamp: lines[i]?.stamp ?? 0 });
+    }
+  }
+  schedule.sort((a, b) => a.stamp - b.stamp || (a.file < b.file ? -1 : a.file > b.file ? 1 : a.index - b.index));
+  if (schedule.length === 0) throw new Error('the session has no lines');
+
+  const epochMs = schedule[0].stamp;
+  // Coarsen to at most `maxSteps` cut points, always including the last line.
+  const stride = Math.max(1, Math.ceil(schedule.length / maxSteps));
+  const cuts = [];
+  for (let i = stride - 1; i < schedule.length; i += stride) cuts.push(i);
+  if (cuts[cuts.length - 1] !== schedule.length - 1) cuts.push(schedule.length - 1);
+
+  const stage = await mkdtemp(join(tmpdir(), 'agent-deck-timed-'));
+  const stagedProjects = join(stage, 'projects');
+  const stagedSlug = join(stagedProjects, src.slug);
+  const stagedSessionDir = join(stagedSlug, src.sessionId);
+  await mkdir(join(stagedSessionDir, 'subagents'), { recursive: true });
+  // `tool-results/` is whole-file content, not appended line by line, so it is
+  // staged once up front. Withholding it would make every preview in the
+  // recording a stub and the corpus would measure the wrong thing.
+  try {
+    await cp(join(src.slugDir, src.sessionId, 'tool-results'), join(stagedSessionDir, 'tool-results'), {
+      recursive: true,
+    });
+  } catch {
+    // A session with no offloaded payloads is normal.
+  }
+  /**
+   * Stage a subagent's SIDECAR at the moment its transcript first has a line.
+   *
+   * NOT up front, and the difference is the whole recording. `fingerprintSession`
+   * refuses a session whose `subagents/` holds an `agent-<id>.meta.json` with no
+   * matching `agent-<id>.jsonl` — the F1 window this repo has measured at
+   * +0.080 to +0.120 s on real spawns. Staging every sidecar before any
+   * transcript exists stretches that 100 ms window across the entire replay:
+   * the first version of this recorder did exactly that and produced **two
+   * events over 109 steps**, because the session was refused at all but the
+   * last one.
+   */
+  const stageSidecarFor = async (sub) => {
+    const meta = `${sub.slice(0, -'.jsonl'.length)}.meta.json`;
+    try {
+      await cp(meta, join(stagedSessionDir, 'subagents', meta.split(/[\\/]/).pop()));
+    } catch {
+      // A transcript with no sidecar refuses the whole session by design
+      // (`subagentMetaMissing`); that is the fingerprint's call, not ours.
+    }
+  };
+
+  const stagedPathFor = (file) =>
+    file === src.mainPath
+      ? join(stagedSlug, `${src.sessionId}.jsonl`)
+      : join(stagedSessionDir, 'subagents', file.split(/[\\/]/).pop());
+
+  const recorder = createRecorder(host);
+  // The clock is the TRANSCRIPT's, advanced per step below. No `Date.now()`:
+  // a liveness state that depends on when the recording ran would make the
+  // corpus a measurement of this machine's afternoon.
+  let offsetMs = 0;
+  const engine = new host.LivenessEngine({ now: () => SIMULATED_EPOCH_MS + offsetMs });
+  // The staged copy is the workspace, so `workspaceMatch` is true for the one
+  // session under test rather than an accident of where the repo lives.
+  /*
+   * THE WORKSPACE IS THE SLUG ITSELF, and that is exact rather than a trick.
+   *
+   * `SessionModel` slug-encodes `workspacePath` and compares the result with
+   * the session's `projectSlug`. `slugifyWorkspace` strips trailing separators
+   * and replaces `[:\\/]`; a string containing none of those three characters
+   * is therefore its own slug. The corpus's slug directory name is such a
+   * string, so passing it yields `workspaceMatch: true` by construction.
+   *
+   * The obvious alternative — read `cwd` out of the transcripts, as the arc
+   * recorder does — is WRONG HERE and would fail silently: `redact-paths.mjs`
+   * has rewritten every `cwd` to `<HOME>`-relative form, so the derived slug
+   * would not match the directory, `snapshot()` would drop the session as
+   * foreign, and the recording would come out empty. Measured, not reasoned:
+   * that is exactly what the first run produced.
+   */
+  const model = new host.SessionModel({ workspacePath: src.slug, liveness: engine });
+
+  let taken = 0;
+  let final = { sessions: [] };
+  const written = new Map(files.map((f) => [f, 0]));
+
+  for (const cut of cuts) {
+    // Materialise every file's prefix as of this cut.
+    const upto = new Map(files.map((f) => [f, 0]));
+    for (let i = 0; i <= cut; i += 1) {
+      const item = schedule[i];
+      if (item === undefined) continue;
+      upto.set(item.file, (upto.get(item.file) ?? 0) + 1);
+    }
+    for (const file of files) {
+      const want = upto.get(file) ?? 0;
+      if (want === written.get(file)) continue;
+      // A transcript with no lines yet does not exist on disk at all. Creating
+      // it empty would be a file CC never wrote.
+      if (want === 0) continue;
+      const lines = (contents.get(file) ?? []).slice(0, want).map((l) => l.raw);
+      // First appearance: its sidecar lands with it. See `stageSidecarFor`.
+      if ((written.get(file) ?? 0) === 0 && file !== src.mainPath) await stageSidecarFor(file);
+      await writeFile(stagedPathFor(file), `${lines.join('\n')}\n`, 'utf8');
+      written.set(file, want);
+    }
+
+    const atMs = (schedule[cut]?.stamp ?? epochMs) - epochMs;
+    taken += 1;
+    offsetMs = atMs;
+    recorder.step(atMs, `t${String(taken)}`, `${String(cut + 1)} of ${String(schedule.length)} lines on disk`);
+
+    const result = await host.graftSession(join(stagedSlug, `${src.sessionId}.jsonl`), {
+      previewBytes: 8192,
+    });
+    model.ingestGraftResult(src.sessionId, src.slug, result);
+    const emission = model.emit();
+    final = emission;
+    recorder.bridge.publish(emission);
+    recorder.bridge.publishDegraded(engine.degradedState());
+  }
+
+  const digests = {};
+  for (const file of files) digests[repoRelative(file)] = await digestOf(file);
+
+  return { recorder, engine, final, src, digests, lines: schedule.length, steps: taken, stage };
+}
+
+const TIMED_DESCRIPTION = [
+  'Every message a real SessionBridge put on the wire while the real SessionModel was driven',
+  'over a REAL captured session, at the timing the session itself recorded: `atMs` is the',
+  "line's own transcript timestamp, relative to the first line. Recorded to answer the",
+  'question AUDIT-2026-08-27 section 7.4 left open - whether the store survives hundreds of',
+  'back-to-back diffs on a large tree - which the hand-authored ten-event arc cannot.',
+].join(' ');
+
+async function buildTimedCorpus(host, sourceDir, options = {}) {
+  const recorded = await recordTimedSession(host, sourceDir, options);
+  const { recorder, engine, final, digests } = recorded;
+  const lastEvent = recorder.events[recorder.events.length - 1];
+  // The corpus id, and a naming collision worth recording rather than working
+  // around silently. The fixture directory is `fixtures/synthetic-dropped-actions/`
+  // - the name DoD 5.5.5 gives it - but the corpus is REAL captured evidence,
+  // and `corpusFileName` refuses a `recorded` corpus whose id carries the
+  // `synthetic-` prefix. That guard is right and it fired here on the first
+  // run: the prefix exists precisely so invented states cannot be mistaken for
+  // observations. The DIRECTORY keeps its name because the DoD names it; the
+  // CORPUS drops the prefix because the corpus is not synthetic.
+  const corpusName = repoRelative(sourceDir).split('/')[1].replace(/^synthetic-/, '');
+
+  const schemaMismatchSessionIds = [
+    ...new Set(
+      recorder.events.filter((e) => e.message.type === 'schemaMismatch').map((e) => e.message.sessionId),
+    ),
+  ].sort();
+
+  return {
+    corpus: {
+      formatVersion: WIRE_FORMAT_VERSION,
+      id: `${corpusName}-timed`,
+      kind: 'recorded',
+      title: `${corpusName} — a real session replayed at its own timing`,
+      description: TIMED_DESCRIPTION,
+      producedBy: 'scripts/record-wire.mjs --timed',
+      recordedFrom: repoRelative(sourceDir),
+      sourceDigests: digests,
+      sourceLines: recorded.lines,
+      simulatedEpochMs: SIMULATED_EPOCH_MS,
+      durationMs: lastEvent === undefined ? 0 : lastEvent.atMs,
+      steps: recorder.steps,
+      events: recorder.events,
+      final: {
+        sessions: JSON.parse(JSON.stringify(final.sessions)),
+        degraded: engine.degradedState(),
+        schemaMismatchSessionIds,
+      },
+    },
+    stage: recorded.stage,
+  };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const outAt = argv.indexOf('--out');
@@ -516,6 +839,33 @@ async function main() {
   const outDir = requested === undefined ? await wireCorpusDir() : resolve(requested);
 
   const host = await loadHostModules();
+
+  // DoD 5.5.5: `--timed <dir>` records a REAL session at its own timing instead
+  // of the hand-authored arc. Separate rather than additive because the two
+  // answer different questions and a recording of the timed corpus takes
+  // minutes, which is not something an ordinary re-record should pay for.
+  const timedAt = argv.indexOf('--timed');
+  if (timedAt !== -1) {
+    const dir = argv[timedAt + 1];
+    if (dir === undefined || dir === '') throw new Error('--timed needs a fixture directory');
+    const stepsAt = argv.indexOf('--max-steps');
+    const options = {};
+    if (stepsAt !== -1) {
+      const n = Number(argv[stepsAt + 1]);
+      if (!Number.isInteger(n) || n < 1) throw new Error('--max-steps needs a positive integer');
+      options.maxSteps = n;
+    }
+    const { corpus, stage } = await buildTimedCorpus(host, resolve(dir), options);
+    await mkdir(outDir, { recursive: true });
+    await writeCorpus(outDir, corpus);
+    await rm(stage, { recursive: true, force: true });
+    process.stdout.write(
+      `recorded ${await corpusFileName(corpus)}: ${corpus.events.length} events over ` +
+        `${corpus.steps.length} steps and ${corpus.durationMs} ms of transcript time\n`,
+    );
+    return;
+  }
+
   const corpora = [await buildCapturedCorpus(host)];
 
   await mkdir(outDir, { recursive: true });

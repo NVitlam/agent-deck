@@ -23,6 +23,7 @@
 
 import type {
   AgentNode,
+  ApplyError,
   ParkedGraft,
   SessionPatch,
   SessionState,
@@ -142,11 +143,56 @@ function locate(root: AgentNode, id: string): Located | undefined {
   return undefined;
 }
 
-function requireAgent(root: AgentNode, id: string, op: string): AgentNode {
+/**
+ * How a patch is applied when the receiver's tree does not match the sender's.
+ *
+ * DoD 5.5.1. Before Phase 5.5 every mismatch threw, and the webview's catch
+ * kept its last good tree and set a `patchFailure` nothing ever read. This
+ * seam is what lets the same reducer be strict on the host (which must never
+ * diverge, so an error there forces a snapshot) and forgiving in the webview
+ * (which must not lose a node while it waits for one).
+ */
+export interface ApplyOptions {
+  /**
+   * Called once per op that could not be applied. The op is SKIPPED and the
+   * rest of the patch is still applied — losing one op is a divergence, and
+   * abandoning the other forty-nine is a bigger one.
+   */
+  onError?: (error: ApplyError) => void;
+}
+
+/**
+ * Apply-time context: the reporter plus the "did anything fail" flag.
+ *
+ * A local type rather than a closure variable because two of the op handlers
+ * need to report and continue, and passing a mutable record makes that
+ * explicit at every call site.
+ */
+interface ApplyCtx {
+  report: (op: ApplyError['op'], id: string | undefined, reason: string) => void;
+}
+
+/**
+ * The agent under `id`, or `undefined` after reporting why not.
+ *
+ * Both failure arms are DIVERGENCE, not producer bugs: an id the receiver has
+ * never seen, and an id whose node is the wrong kind. Either is repaired by a
+ * snapshot and neither is repaired by crashing.
+ */
+function findAgent(
+  root: AgentNode,
+  id: string,
+  op: ApplyError['op'],
+  ctx: ApplyCtx,
+): AgentNode | undefined {
   const found = locate(root, id);
-  if (found === undefined) throw new SessionPatchError(op, `no node with id ${id}`);
+  if (found === undefined) {
+    ctx.report(op, id, `no node with id ${id}`);
+    return undefined;
+  }
   if (!isAgentNode(found.node)) {
-    throw new SessionPatchError(op, `node ${id} is a tool node and has no children`);
+    ctx.report(op, id, `node ${id} is a tool node and has no children`);
+    return undefined;
   }
   return found.node;
 }
@@ -162,20 +208,51 @@ function requireAgent(root: AgentNode, id: string, op: string): AgentNode {
  * parent to another is detached before it is re-inserted. Everything else is
  * applied in order.
  *
- * A patch that cannot be applied throws {@link SessionPatchError} rather than
- * producing a tree that silently disagrees with its source. This function is
- * pure and side-effect free; a caller that cannot afford a throw (the
- * extension host) can catch it and re-send a full snapshot.
+ * **TWO FAILURE CLASSES, AND THEY ARE NOT THE SAME (DoD 5.5.1).**
+ *
+ *   - **Divergence** — an op addressing an id this tree does not have, or has
+ *     with the wrong kind, or a `reorderChildren` whose order is not this
+ *     tree's child set. The receiver's tree is behind or ahead of the
+ *     sender's. Reported through {@link ApplyOptions.onError}, the op is
+ *     skipped, and every other op in the patch is still applied. **Not a
+ *     throw**, because the repair is a snapshot and because the alternative —
+ *     what `0.1.2` shipped — is to abandon the whole patch, keep a stale tree,
+ *     and apply the next patch to that same stale base, compounding forever.
+ *   - **A producer bug** — a patch that would break the invariant that a
+ *     session's root is an agent node. Removing the root, or replacing it with
+ *     a tool node. Still throws {@link SessionPatchError}: divergence cannot
+ *     produce these, so softening them would hide a defect in code that runs
+ *     on both sides of the wire.
+ *
+ * A caller that wants the old all-or-nothing behaviour passes an `onError`
+ * that records, and discards the result when anything was recorded — which is
+ * exactly what `SessionBridge` does, because the host must never diverge.
  */
-export function applySessionPatch(prev: SessionState, patch: SessionPatch): SessionState {
+export function applySessionPatch(
+  prev: SessionState,
+  patch: SessionPatch,
+  options: ApplyOptions = {},
+): SessionState {
   let root = cloneAgent(prev.root);
   const ops = patch.tree ?? [];
+  const onError = options.onError;
+  const ctx: ApplyCtx = {
+    report: (op, id, reason) => {
+      if (onError === undefined) return;
+      const error: ApplyError = { op, reason };
+      if (id !== undefined) error.id = id;
+      onError(error);
+    },
+  };
 
   for (const op of ops) {
     if (op.op !== 'removeNode') continue;
     const found = locate(root, op.id);
     if (found === undefined) {
-      throw new SessionPatchError(op.op, `no node with id ${op.id}`);
+      // Divergence: the node is already gone here. Nothing to detach, and the
+      // desired end state — "not in the tree" — already holds.
+      ctx.report(op.op, op.id, `no node with id ${op.id}`);
+      continue;
     }
     if (found.parent === undefined) {
       throw new SessionPatchError(op.op, 'the root cannot be removed');
@@ -193,7 +270,8 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
       case 'replaceNode': {
         const found = locate(root, op.id);
         if (found === undefined) {
-          throw new SessionPatchError(op.op, `no node with id ${op.id}`);
+          ctx.report(op.op, op.id, `no node with id ${op.id}`);
+          break;
         }
         const replacement = cloneNode(op.node);
         if (found.parent === undefined) {
@@ -207,30 +285,57 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
         break;
       }
       case 'insertNode': {
-        const parent = requireAgent(root, op.parentId, op.op);
-        const index = Math.max(0, Math.min(op.index, parent.children.length));
+        const parent = findAgent(root, op.parentId, op.op, ctx);
+        if (parent === undefined) break;
+        // The sibling anchor, not an index. `null` means "first child".
+        // An anchor this tree does not have is reported and then APPENDED:
+        // wrong order is recoverable from the next `reorderChildren` or from a
+        // resync, and a dropped node is recoverable from neither. See the
+        // `insertNode` doc comment in `events.ts` for why the field changed.
+        let index: number;
+        if (op.afterId === null) {
+          index = 0;
+        } else {
+          const at = parent.children.findIndex((c) => c.id === op.afterId);
+          if (at === -1) {
+            ctx.report(op.op, op.afterId, `anchor ${op.afterId} is not a child of ${op.parentId}`);
+            index = parent.children.length;
+          } else {
+            index = at + 1;
+          }
+        }
         parent.children.splice(index, 0, cloneNode(op.node));
         break;
       }
       case 'reorderChildren': {
-        const parent = requireAgent(root, op.parentId, op.op);
+        const parent = findAgent(root, op.parentId, op.op, ctx);
+        if (parent === undefined) break;
         const byId = new Map<string, TreeNode>(parent.children.map((c) => [c.id, c]));
         if (byId.size !== parent.children.length || byId.size !== op.order.length) {
-          throw new SessionPatchError(op.op, `order for ${op.parentId} is not its child set`);
+          ctx.report(op.op, op.parentId, `order for ${op.parentId} is not its child set`);
+          break;
         }
+        // Divergence-tolerant: reorder the children this tree HAS into the
+        // order the sender asked for, and leave anything it does not have to
+        // the resync. A partial reorder is a cosmetic disagreement; dropping
+        // the children is not.
         const reordered: TreeNode[] = [];
+        let missing = false;
         for (const id of op.order) {
           const child = byId.get(id);
           if (child === undefined) {
-            throw new SessionPatchError(op.op, `${id} is not a child of ${op.parentId}`);
+            ctx.report(op.op, id, `${id} is not a child of ${op.parentId}`);
+            missing = true;
+            continue;
           }
           reordered.push(child);
         }
-        parent.children = reordered;
+        if (!missing) parent.children = reordered;
         break;
       }
       case 'updateAgent': {
-        const node = requireAgent(root, op.id, op.op);
+        const node = findAgent(root, op.id, op.op, ctx);
+        if (node === undefined) break;
         const f = op.fields;
         if (f.kind !== undefined) node.kind = f.kind;
         if (f.label !== undefined) node.label = f.label;
@@ -245,10 +350,12 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
       case 'updateTool': {
         const found = locate(root, op.id);
         if (found === undefined) {
-          throw new SessionPatchError(op.op, `no node with id ${op.id}`);
+          ctx.report(op.op, op.id, `no node with id ${op.id}`);
+          break;
         }
         if (isAgentNode(found.node)) {
-          throw new SessionPatchError(op.op, `node ${op.id} is an agent node`);
+          ctx.report(op.op, op.id, `node ${op.id} is an agent node`);
+          break;
         }
         const node = found.node;
         const f = op.fields;

@@ -54,6 +54,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -68,9 +69,13 @@ import type { PerfCorpus } from './corpus.js';
 import {
   CORPUS_GROWTH_FRACTION_LIMIT,
   HEAP_FLOOR_RATIO_LIMIT,
+  REAL_CORPUS_GRAFT_BUDGET,
   RESCOPED_DOD_TOTAL,
   TIMING_BUDGETS,
 } from './budgets.js';
+import { graftSession } from '../model/graft.js';
+import { isAgentNode } from '../model/events.js';
+import type { TreeNode } from '../model/events.js';
 import type { TimingBudget } from './budgets.js';
 import { idsTouched, measureHeap, measurePostAppend, resolveGc, stats } from './measure.js';
 import type { HeapResult, PostAppendResult, Stats } from './measure.js';
@@ -574,3 +579,121 @@ async function digestTree(root: string): Promise<string> {
   await walk(root);
   return hash.digest('hex');
 }
+
+// ---------------------------------------------------------------------------
+// DoD 5.5.7 — the same path, on a REAL captured session
+// ---------------------------------------------------------------------------
+
+/**
+ * The synthetic corpus is a tripwire; this is a check against reality.
+ *
+ * Every timing above is measured on `fixtures/synthetic-perf`, which is
+ * GENERATED: 10,400 lines built to a shape this repo chose. That is the right
+ * instrument for a regression tripwire and the wrong one for "does this hold on
+ * data Claude Code actually wrote". DoD 5.5.7 asks for both, and
+ * `fixtures/synthetic-dropped-actions/` is the real half — 977 lines, 3.1 MB,
+ * 246 tool calls across a main transcript and two subagents, captured from the
+ * eight-hour session `AUDIT-2026-08-27` section 7 was written about.
+ *
+ * Deliberately CHEAP — one stage, seven samples, well under a second — because
+ * `perf.test.ts` is the suite's critical path and a second full post-append rig
+ * would double it to re-measure three stages this file already covers.
+ */
+describe('DoD 5.5.7 — the real captured corpus', () => {
+  // Resolved from this file rather than from a repo-root constant: `perf.test.ts`
+  // has none, and adding one here would be a second definition of a path the
+  // rest of the file gets from `import.meta.url`.
+  const REAL_MAIN = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '..',
+    '..',
+    'fixtures',
+    'synthetic-dropped-actions',
+    'projects',
+    'c--Users-dev-projects-agent-deck',
+    '41194183-a387-4072-bb84-bc472bf7b5e9.jsonl',
+  );
+
+  let samples: number[] = [];
+  let result: Awaited<ReturnType<typeof graftSession>> | undefined;
+
+  beforeAll(async () => {
+    const taken: number[] = [];
+    for (let i = 0; i < 9; i += 1) {
+      const t0 = performance.now();
+      const r = await graftSession(REAL_MAIN, { previewBytes: 8192 });
+      const dt = performance.now() - t0;
+      if (i >= 2) taken.push(dt);
+      result = r;
+    }
+    taken.sort((a, b) => a - b);
+    samples = taken;
+  }, 120_000);
+
+  function medianOf(values: readonly number[]): number {
+    const mid = Math.floor(values.length / 2);
+    return values.length % 2 === 1
+      ? (values[mid] ?? 0)
+      : ((values[mid - 1] ?? 0) + (values[mid] ?? 0)) / 2;
+  }
+
+  it('grafts the real session inside its budget', () => {
+    const value = medianOf(samples);
+    process.stdout.write(
+      `[perf] budget ${REAL_CORPUS_GRAFT_BUDGET.id} (${REAL_CORPUS_GRAFT_BUDGET.source}, enforced): ` +
+        `${value.toFixed(1)} vs ${String(REAL_CORPUS_GRAFT_BUDGET.limitMs)} ms -> ` +
+        `${value <= REAL_CORPUS_GRAFT_BUDGET.limitMs ? 'MET' : 'MISSED'}\n`,
+    );
+    expect(value).toBeLessThanOrEqual(REAL_CORPUS_GRAFT_BUDGET.limitMs);
+  });
+
+  it('produced the whole tree, so the timing is of real work', () => {
+    // A budget met by REFUSING the session would be worthless. This is the
+    // vacuity control, and it is the audit's own measurement: 246 tool calls in
+    // the corpus, 246 in the tree.
+    expect(result?.ok).toBe(true);
+    if (result === undefined || !result.ok) throw new Error('the real corpus refused');
+    let tools = 0;
+    const visit = (node: TreeNode): void => {
+      if (!isAgentNode(node)) {
+        tools += 1;
+        return;
+      }
+      for (const child of node.children) visit(child);
+    };
+    visit(result.snapshot.root);
+    expect(tools).toBe(246);
+  });
+
+  it('DoD 5.5.6: the real corpus is 0 malformed and 84 ignored', () => {
+    // Before 5.5.6 these eighty-four lines were counted as malformed, which
+    // made a healthy CC 2.1.246 session read as 4.8% damaged. They are
+    // `atis-latch`, `mode`, `file-history-delta` and `system` entries: shapes
+    // this model does not read, none of them carrying a `tool_use` block.
+    if (result === undefined) throw new Error('no result');
+    expect(result.diagnostics.malformedLines).toBe(0);
+    expect(result.diagnostics.ignoredLines).toBe(84);
+    expect(result.diagnostics.parsedLines).toBe(893);
+    // All three buckets account for every line of the corpus.
+    expect(
+      result.diagnostics.malformedLines +
+        result.diagnostics.ignoredLines +
+        result.diagnostics.parsedLines,
+    ).toBe(977);
+  });
+
+  it("the budget records the measurement it was set from, and the DoD's conditional did not fire", () => {
+    // Same rule the four budgets above follow: a limit with no recorded
+    // measurement is a number someone liked.
+    expect(REAL_CORPUS_GRAFT_BUDGET.measured.valueMs).toBeGreaterThan(0);
+    expect(REAL_CORPUS_GRAFT_BUDGET.limitMs / REAL_CORPUS_GRAFT_BUDGET.measured.valueMs).toBeCloseTo(
+      REAL_CORPUS_GRAFT_BUDGET.measured.marginX,
+      0,
+    );
+    // 5.5.7's conditional — "if #graft's full re-read per append is what's over
+    // budget, make the re-read incremental" — is gated on a MISS. Nothing
+    // misses, so the incremental re-read was not built, and the whole-session
+    // re-read that G3 depends on is still pinned by the test below.
+    expect(medianOf(samples)).toBeLessThan(REAL_CORPUS_GRAFT_BUDGET.limitMs);
+  });
+});

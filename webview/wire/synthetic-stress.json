@@ -4797,7 +4797,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-00-tool--4",
               "node": {
                 "id": "syn-00-tool-late",
                 "toolName": "Bash",
@@ -4836,7 +4836,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-01-tool--4",
               "node": {
                 "id": "syn-01-tool-late",
                 "toolName": "Bash",
@@ -4875,7 +4875,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-02-tool--4",
               "node": {
                 "id": "syn-02-tool-late",
                 "toolName": "Bash",
@@ -4914,7 +4914,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-03-tool--4",
               "node": {
                 "id": "syn-03-tool-late",
                 "toolName": "Bash",
@@ -4953,7 +4953,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-04-tool--4",
               "node": {
                 "id": "syn-04-tool-late",
                 "toolName": "Bash",
@@ -4992,7 +4992,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-05-tool--4",
               "node": {
                 "id": "syn-05-tool-late",
                 "toolName": "Bash",
@@ -5031,7 +5031,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-06-tool--4",
               "node": {
                 "id": "syn-06-tool-late",
                 "toolName": "Bash",
@@ -5070,7 +5070,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-07-tool--4",
               "node": {
                 "id": "syn-07-tool-late",
                 "toolName": "Bash",
@@ -5109,7 +5109,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-08-tool--4",
               "node": {
                 "id": "syn-08-tool-late",
                 "toolName": "Bash",
@@ -5148,7 +5148,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-09-tool--4",
               "node": {
                 "id": "syn-09-tool-late",
                 "toolName": "Bash",
@@ -5187,7 +5187,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-10-tool--4",
               "node": {
                 "id": "syn-10-tool-late",
                 "toolName": "Bash",
@@ -5226,7 +5226,7 @@
             {
               "op": "insertNode",
               "parentId": "root",
-              "index": 7,
+              "afterId": "syn-11-tool--4",
               "node": {
                 "id": "syn-11-tool-late",
                 "toolName": "Bash",

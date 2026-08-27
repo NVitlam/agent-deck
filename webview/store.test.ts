@@ -694,7 +694,9 @@ describe('SessionSummary.nodeCount', () => {
           {
             op: 'insertNode',
             parentId: 'root',
-            index: 3,
+            // DoD 5.5.1: a sibling anchor, not an index. `null` is "first
+            // child"; this appends after the last one the fixture builds.
+            afterId: 'tool-agent-1',
             node: { id: 'tool-new', toolName: 'Glob', status: 'running', inputPreview: '{}' },
           },
         ],

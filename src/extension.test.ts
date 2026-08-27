@@ -64,7 +64,12 @@ import type {
   Unsubscribe,
 } from './extension.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
-import { copyCorpus, corpusDbPath, listCorpora } from './opencode/synthetic.js';
+import {
+  copyCorpus,
+  corpusDbPath,
+  listCorpora,
+  withWritableDb,
+} from './opencode/synthetic.js';
 import { DEFAULT_OC_POLL_INTERVAL_MS } from './opencode/liveness.js';
 import type { PollTrigger, PollTriggerHandle } from './opencode/liveness.js';
 import { webviewHtml } from './bridge/html.js';
@@ -2622,6 +2627,83 @@ function worktreeOf(dbPath: string): string {
   }
 }
 
+/**
+ * Every ROOT session id in a corpus, read off the database and sorted.
+ *
+ * Root, because `readOpenCodeEngine` emits one `SessionState` per root and a
+ * refused CHILD is a different, still-open item (`COVERAGE.md` item 29).
+ */
+function rootSessionIdsOf(dbPath: string): string[] {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    return (
+      db.prepare('SELECT id FROM session WHERE parent_id IS NULL ORDER BY id').all() as Record<
+        string,
+        unknown
+      >[]
+    ).map((row) => String(row['id']));
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Root sessions that have NO child session.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS IS NOT "ANY ROOT", AND THE DEFECT THAT MADE IT NECESSARY
+ * ---------------------------------------------------------------------------
+ * MEASURED while writing the test below. Pushing a root session out of the
+ * version window when that root HAS AN ACCEPTED CHILD makes
+ * `readOpenCodeEngine` THROW:
+ *
+ *   session rows reachable from no root: ses_...
+ *
+ * — which its own doc comment says cannot happen ("Never thrown, always
+ * returned"). The child stays in the accepted partition while its parent is
+ * parked, so the grafter finds a row it cannot reach from any root. The whole
+ * OpenCode deck then reads EMPTY for that user, which is the same G3 hole this
+ * block is about, arriving through a different door.
+ *
+ * That is `src/opencode/**` and is NOT this package’s to fix; it is reported
+ * rather than pinned, because asserting the current behaviour would freeze a
+ * defect. It is closely related to `COVERAGE.md` item 29 (a refused CHILD gets
+ * the wrong park code) — this is the same join seen from the parent side.
+ *
+ * The one thing this file DOES do about it is the `contentFailures: 0`
+ * assertion at each call site: the tests below would otherwise have passed
+ * their "healthy sessions stay hidden" control on an empty read.
+ */
+function childlessRootIdsOf(dbPath: string): string[] {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const rows = db
+      .prepare(
+        'SELECT id FROM session WHERE parent_id IS NULL AND id NOT IN (SELECT parent_id FROM session WHERE parent_id IS NOT NULL) ORDER BY id',
+      )
+      .all() as Record<string, unknown>[];
+    return rows.map((row) => String(row['id']));
+  } finally {
+    db.close();
+  }
+}
+
+/** A started OpenCode path over one database, with no timer and no watcher. */
+function openOcPath(dbPath: string, paths: readonly string[]): OpenCodeEnginePath {
+  const path = new OpenCodeEnginePath({
+    workspacePaths: paths,
+    thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+    onChange: () => {},
+    dbPath,
+    now: () => 1_000,
+    pollTrigger: () => ({ stop: () => {} }),
+    walWatchFactory: () => ({ close: () => {} }),
+    log: () => {},
+  });
+  path.start();
+  return path;
+}
+
 /** The same path with its Windows drive letter case-flipped, or null. */
 function flipDriveLetter(path: string): string | null {
   const match = /^([A-Za-z]):/.exec(path);
@@ -2844,6 +2926,139 @@ describe('DoD 5.2 — the OpenCode engine is on when its store exists, and off w
 
     await deactivate();
     await rm(stocked, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.2 / G3 — the deck filter hides other workspaces, and never refusals
+// ---------------------------------------------------------------------------
+
+/*
+ * WHY THIS BLOCK EXISTS, SO IT IS NOT READ AS A DUPLICATE OF THE ONE ABOVE.
+ *
+ * The deck filter and the engine were each locally correct and composed into a
+ * G3 hole: `src/opencode/index.ts` hard-coded `workspaceMatch: false` on a
+ * session its fingerprint refused, and this host filtered on `workspaceMatch`,
+ * so a user whose OpenCode version drifted out of the window saw NOTHING on
+ * the deck instead of an `unsupported` card. `index.ts` carries the sentence
+ * it violated: "a refusal that is invisible to the renderer is not a refusal."
+ *
+ * BOTH SIDES ARE FIXED, by user decision, so neither file can reintroduce the
+ * hole alone. These tests are written to hold WHETHER OR NOT the engine half
+ * has landed: nothing here asserts what `workspaceMatch` reads on a refused
+ * session, only that the refusal reaches the deck.
+ */
+describe('DoD 5.2 / G3 — a refused OpenCode session is never filtered off the deck', () => {
+  it('keeps the refusal while a healthy session in another workspace stays hidden', async () => {
+    const dir = await makeTempDir();
+    const dbPath = copyCorpus(smallestCorpus(), dir);
+
+    const roots = rootSessionIdsOf(dbPath);
+    const childless = childlessRootIdsOf(dbPath);
+    expect(roots.length, 'the corpus must carry more than one root').toBeGreaterThan(1);
+    expect(childless.length, 'the corpus must carry a childless root').toBeGreaterThan(0);
+    // See `childlessRootIdsOf`: refusing a root that HAS a child makes the
+    // engine throw, which is a separate, reported defect and not this test.
+    const victim = childless[0] as string;
+    const survivors = roots.filter((id) => id !== victim);
+
+    // Push ONE root out of the version window. Major 9 is out on the MAJOR
+    // component, so no move of the anchor inside 1.x can re-admit it — the rule
+    // the CC refusal fixtures were twice re-versioned under, applied here so
+    // this test cannot quietly stop refusing anything.
+    withWritableDb(dbPath, (db) => {
+      db.prepare('UPDATE session SET version = ? WHERE id = ?').run('9.9.9', victim);
+    });
+
+    // A workspace the corpus was NOT captured in, so nothing matches.
+    const foreign = join(dir, 'a-workspace-this-corpus-was-not-captured-in');
+    const path = openOcPath(dbPath, [foreign]);
+    try {
+      // THE READ ACTUALLY SUCCEEDED. Without this, "the refusal is on the
+      // deck" could pass for the wrong reason on a read that returned nothing
+      // at all — and it very nearly did: see the note on `childlessRootIdsOf`.
+      expect(path.diagnostics, JSON.stringify(path.diagnostics)).toMatchObject({
+        contentReads: 1,
+        contentFailures: 0,
+        schemaMismatches: 0,
+        degradedReads: 0,
+      });
+      const onDeck = path.sessions();
+      const ids = onDeck.map((s) => s.sessionId);
+
+      // The carve-out: the refusal is on the deck even though it matches no
+      // open workspace. Nothing is asserted about its `workspaceMatch` — the
+      // engine half may or may not have landed when this runs.
+      expect(
+        ids,
+        'a refused session must never be filtered off the deck',
+      ).toContain(victim);
+      const refused = onDeck.find((s) => s.sessionId === victim);
+      expect(refused?.schemaOk).toBe(false);
+      expect(refused?.liveness).toBe('unsupported');
+      // A refusal renders NOTHING. It is not a hole to smuggle content through.
+      expect(refused?.root.children).toStrictEqual([]);
+      expect(refused?.totals).toStrictEqual({
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+      });
+
+      // THE CONTROL. Without it this test cannot tell the carve-out apart from
+      // deleting the filter: healthy sessions in a non-matching workspace must
+      // still be hidden.
+      expect(survivors.length).toBeGreaterThan(0);
+      for (const id of survivors) {
+        expect(
+          ids,
+          `healthy session ${id} in another workspace must stay hidden`,
+        ).not.toContain(id);
+      }
+      expect(onDeck).toHaveLength(1);
+    } finally {
+      path.dispose();
+    }
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('and with a MATCHING workspace, the refusal renders beside the healthy ones', async () => {
+    const dir = await makeTempDir();
+    const dbPath = copyCorpus(smallestCorpus(), dir);
+    const roots = rootSessionIdsOf(dbPath);
+    const victim = childlessRootIdsOf(dbPath)[0] as string;
+
+    withWritableDb(dbPath, (db) => {
+      db.prepare('UPDATE session SET version = ? WHERE id = ?').run('9.9.9', victim);
+    });
+
+    const path = openOcPath(dbPath, [worktreeOf(dbPath)]);
+    try {
+      // THE READ ACTUALLY SUCCEEDED. Without this, "the refusal is on the
+      // deck" could pass for the wrong reason on a read that returned nothing
+      // at all — and it very nearly did: see the note on `childlessRootIdsOf`.
+      expect(path.diagnostics, JSON.stringify(path.diagnostics)).toMatchObject({
+        contentReads: 1,
+        contentFailures: 0,
+        schemaMismatches: 0,
+        degradedReads: 0,
+      });
+      const ids = path
+        .sessions()
+        .map((s) => s.sessionId)
+        .sort();
+      // Every root, refused and healthy alike, and each EXACTLY ONCE: the
+      // carve-out must not double-count a session that also matches.
+      expect(ids).toStrictEqual([...roots].sort());
+      for (const session of path.sessions()) {
+        expect(
+          session.schemaOk,
+          `${session.sessionId} schemaOk`,
+        ).toBe(session.sessionId !== victim);
+      }
+    } finally {
+      path.dispose();
+    }
+    await rm(dir, { recursive: true, force: true });
   });
 });
 

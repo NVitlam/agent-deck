@@ -80,7 +80,7 @@ window closes. There is no database, no cache file, and nothing is ever written 
 
 ## Requirements
 
-- **VS Code** `^1.75.0`
+- **VS Code** `^1.134.0`
 - **Node** `>=20` on your `PATH` — the hook block below is a `node -e` one-liner, so your Node is
   what runs it
 - **Claude Code** on the `2.x` line, within one minor of the anchor (see below). Patch releases are

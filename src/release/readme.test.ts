@@ -146,6 +146,8 @@ interface Manifest {
       properties: Record<string, { default?: unknown }>;
     };
   };
+  /** Read by the VS Code floor assertion below. */
+  engines?: { vscode?: string };
 }
 
 const MANIFEST = JSON.parse(readText('package.json')) as Manifest;
@@ -373,9 +375,32 @@ describe('the version badge is accurate against the shipped constants', () => {
     }
   });
 
+  it('states the VS Code floor the manifest actually declares', () => {
+    // THIS ASSERTION EXISTS BECAUSE ITS ABSENCE WAS THE DEFECT. The README
+    // carried `^1.75.0` while the manifest moved to `^1.134.0` (PLAN.md's
+    // Phase 5 gate amendment B4), and no test went red, because nothing bound
+    // the two. A worker reading the file found it; the suite could not.
+    //
+    // It matters more than a documentation nit: the README ships INSIDE the
+    // VSIX, and after B4 the host imports `node:sqlite` at load. A user who
+    // trusts a too-low floor installs onto a host where `activate` never runs
+    // — an inert extension with no error they can see, which is the same
+    // "manifest and build disagree" class this repo has already shipped once.
+    //
+    // The manifest is READ, never repeated.
+    const declared = MANIFEST.engines?.vscode;
+    expect(declared, 'manifest declares no engines.vscode').toBeTruthy();
+    expect(
+      README.includes(`\`${String(declared)}\``),
+      `README does not state the manifest's VS Code floor ${String(declared)}`,
+    ).toBe(true);
+    // Vacuity control: the check is capable of failing.
+    expect(README.includes('`^0.0.1`')).toBe(false);
+  });
+
   it('names no Claude Code version the shipped parser would refuse', () => {
     // A badge is only accurate if nothing NEXT to it contradicts it. Backticked
-    // `x.y.z` literals are how this document names CC versions; `^1.75.0` and
+    // `x.y.z` literals are how this document names CC versions; `^1.134.0` and
     // `>=22.22.2` do not match because the backtick is not followed by a digit.
     //
     // The rule used to be "the anchor or a corner, and nothing else". It cannot

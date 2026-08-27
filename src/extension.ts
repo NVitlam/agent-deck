@@ -698,7 +698,7 @@ export class OpenCodeEnginePath {
 
     switch (outcome.kind) {
       case 'ok':
-        this.#content = outcome.result.sessions.filter((s) => s.workspaceMatch);
+        this.#content = outcome.result.sessions.filter(belongsOnDeck);
         return;
       case 'schemaMismatch':
         // G3: the store's shape is not OpenCode's, so every session this host
@@ -718,6 +718,37 @@ export class OpenCodeEnginePath {
         return;
     }
   }
+}
+
+/**
+ * Does this OpenCode session belong on THIS window’s deck?
+ *
+ * ---------------------------------------------------------------------------
+ * THE FILTER HIDES OTHER WORKSPACES. IT DOES NOT HIDE REFUSALS.
+ * ---------------------------------------------------------------------------
+ * A session whose fingerprint refused (`schemaOk: false`) is ALWAYS kept,
+ * whatever `workspaceMatch` says. `src/opencode/index.ts` carries the sentence
+ * this implements — "a refusal that is invisible to the renderer is not a
+ * refusal" — and dropping one here would mean a user whose OpenCode version
+ * drifted out of the window sees NOTHING on the deck rather than an
+ * `unsupported` card. That is the G3 hole, and it is a hole neither this file
+ * nor the engine opened on its own: two locally-correct decisions composed
+ * into it.
+ *
+ * **THE ENGINE SIDE IS BEING FIXED TOO, AND THE REDUNDANCY IS DELIBERATE.**
+ * `src/opencode/index.ts` gives a refused session a real `workspaceMatch`
+ * instead of a hard-coded `false`, which would make this carve-out
+ * unnecessary for the case that motivated it. Both halves exist by user
+ * decision so that neither file can silently reintroduce the hole alone. Do
+ * not delete one as redundant: redundant is the point.
+ *
+ * **A healthy session in another workspace is still hidden**, and that is what
+ * keeps this from being "remove the filter". `src/extension.test.ts` asserts
+ * both arms in one test, because the carve-out and the control are only
+ * meaningful against each other.
+ */
+function belongsOnDeck(session: SessionState): boolean {
+  return session.workspaceMatch || !session.schemaOk;
 }
 
 /**

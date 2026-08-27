@@ -137,7 +137,23 @@ export type OcDegradeCode =
    * read-only opener: 20 opens 1.5 s apart with OpenCode writing, 20/20
    * succeeded, 0 `SQLITE_BUSY`, slowest open 2 ms.
    */
-  | 'databaseCorrupt';
+  | 'databaseCorrupt'
+  /**
+   * The store read fine and the GRAFT threw. **Nothing about storage
+   * failed**, which is the whole reason this is not one of the three above.
+   *
+   * A caller must be able to tell the two apart because the operator
+   * response has nothing in common. A `database*` code says the file is
+   * missing, locked, torn or not a database, and the answer is about the
+   * disk. This one says Agent Deck could not build a tree out of rows it
+   * read successfully, and the answer is a bug report against
+   * `src/opencode/graft.ts` carrying the message this degrade preserves.
+   *
+   * `src/opencode/index.ts` is the only place that produces it, at the one
+   * try/catch in the engine; the trade it represents is written out at that
+   * catch site rather than here.
+   */
+  | 'graftFailed';
 
 /** Engine health. `ok: false` means render nothing and flag the engine (G3). */
 export type OcEngineHealth =

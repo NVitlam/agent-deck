@@ -520,6 +520,73 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
     }
   });
 
+  it('degrades with graftFailed when the graft cannot place an accepted row', () => {
+    /*
+     * The case `graft.ts`'s `@throws` names, driven END TO END through
+     * `readOpenCodeEngine()` off a REAL parent/child pair in a committed
+     * corpus: the PARENT's version is pushed out of window on a temp copy, so
+     * the child stays accepted, names a parent that is not in the accepted
+     * rows, and is reachable from no root. `graftCorpus` throws exactly as it
+     * is supposed to, and the boundary catch turns it into a degrade.
+     *
+     * Not an injected fake: the rows, the parent/child edge and the throw are
+     * all real. Only the version string is mutated, which is the same technique
+     * the mixed-version tests above use.
+     *
+     * This asserts CONTAINMENT, not a fix. A degrade darkens every OpenCode
+     * session over one unplaceable row; `index.ts`'s catch site says so.
+     */
+    const dir = makeTempDir('oc-graftfail-');
+    try {
+      const dbPath = copyCorpus(smallest as string, dir);
+      const pair = withWritableDb(dbPath, (db) => {
+        const row = db
+          .prepare(
+            'SELECT id, parent_id FROM session WHERE parent_id IS NOT NULL' +
+              ' ORDER BY time_created LIMIT 1',
+          )
+          .get() as { id: string; parent_id: string } | undefined;
+        if (row === undefined) return undefined;
+        // The PARENT, not the child - refusing the child is the item 29 case
+        // above and parks cleanly. This is the one nothing can place.
+        db.prepare('UPDATE session SET version = ? WHERE id = ?').run('4.4.0', row.parent_id);
+        return { childId: row.id, parentId: row.parent_id };
+      });
+      expect(pair, 'no corpus parent/child pair to orphan').toBeDefined();
+      if (pair === undefined) return;
+
+      // Returned, never thrown: that is `OcEngineOutcome`'s whole contract, and
+      // the extension host calls this from `activate`.
+      const outcome = readOpenCodeEngine({ dbPath });
+      expect(outcome.kind).toBe('degraded');
+      if (outcome.kind !== 'degraded') return;
+
+      expect(outcome.health.code).toBe('graftFailed');
+      // Distinguishable from a storage failure, because the operator response
+      // has nothing in common with one.
+      expect(['databaseMissing', 'databaseUnreadable', 'databaseCorrupt']).not.toContain(
+        outcome.health.code,
+      );
+      // The cause is not swallowed: the message names the row that could not be
+      // placed, so this is findable in the field.
+      expect(outcome.health.message).toContain('reachable from no root');
+      expect(outcome.health.message).toContain(pair.childId);
+      // The path is the file that was opened, never one read out of the store.
+      expect(outcome.health.path).toBe(dbPath);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never reports graftFailed for a corpus that grafts', () => {
+    // The control: without it the test above would pass just as well if the
+    // engine had started degrading on everything.
+    for (const name of CORPORA) {
+      const outcome = readOpenCodeEngine({ dbPath: corpusDbPath(name), immutable: true });
+      expect(outcome.kind, name).toBe('ok');
+    }
+  });
+
   it('degrades rather than throwing when the database is not there', () => {
     const dir = makeTempDir('oc-missing-');
     try {

@@ -1,34 +1,38 @@
 // @vitest-environment jsdom
 //
-// Altitude 0 — the deck (spec C7.1), and the DECK-LEVEL half of C7.3's
-// normative state matrix, asserted against the REAL esbuild + Svelte bundle.
+// Altitude 0 — the deck, asserted against the REAL esbuild + Svelte bundle.
+//
+// WHAT THIS FILE REPLACED. Thirty of its predecessor's tests asserted geometry
+// that no longer exists: `blobPath` silhouettes, `constellationPoints` dots,
+// `DECK_RADIUS_MIN`, `hashSessionId` seeds and the four-field
+// `DeckPlacement { sessionId, x, y, R }`. `layout.ts` deleted all of it rather
+// than deprecating it, so those tests were pinning deleted code. They are gone
+// and the behaviours the deck still owes a user are re-covered below — cards,
+// order, values, states, motion, filtering, pan/zoom/fit and the empty state.
+// The deletions and the replacements are itemised in this package's report.
 //
 // WHY A BUNDLE. There is no vitest svelte plugin in this repo, so a `.svelte`
-// import cannot be transformed in-process. `testkit.ts:loadHarness` bundles
-// `harness.ts`, whose entry is fixed and whose `start()` mounts `App.svelte`;
-// `App.svelte` does not mount the deck yet and is not this package's file to
-// edit. So this file bundles `Deck.svelte` directly through the same pipeline,
-// from an in-memory entry point, exactly the way `inspector.test.ts` does.
-// Nothing is written to disk (G1) — the entry goes to esbuild as `stdin` and
-// the bundle comes back on the child's stdout. That duplication is known and
-// reported; it collapses when the app mounts the deck.
+// import cannot be transformed in-process. This file bundles `Deck.svelte`
+// directly through the same pipeline `npm run build` runs, from an in-memory
+// entry point, exactly the way `inspector.test.ts` does. Nothing is written to
+// disk (G1) — the entry goes to esbuild as `stdin` and the bundle comes back
+// on the child's stdout.
 //
-// WHAT FEEDS THE COMPONENT. `SessionSummary`, the store's own view row. Most
-// tests build one as a literal so a single field can be varied in isolation;
-// the last section drives the components from a REAL store instead, because
-// the fields the deck now depends on — `refused`, `nodeCount`, `errorCount` —
-// are the store's derivations, and a literal cannot prove the store actually
-// produces what the deck reads. That section is the seam check; the literals
-// are the state matrix.
+// AND WHY A SECOND ONE. The last section drives the WHOLE PANEL through
+// `testkit.ts:loadHarness`, because two of this package's claims are about
+// wiring rather than about a component: that a snapshot or a diff does not
+// reset the viewport, and that a wheel notch reaching the store lands exactly
+// where `viewport.zoomAbout` puts it. Neither can be shown by a component
+// mounted with static props.
 //
-// WHY THE NAMES ARE IMPORTED. Every testid and every contract class comes from
-// `canvas-contract.ts`, never spelled as a literal. Selecting on a literal is
-// how a renamed name becomes a silently skipped assertion instead of a
-// failure: `all()` returns an empty array and a `.length === 0` check passes
-// for the wrong reason. The same rule is why the CSS block's own literals are
-// checked back against the constants below — CSS cannot import a TypeScript
-// name, so the stylesheet is the one place a class is spelled twice, and that
-// seam is closed by assertion rather than by care.
+// ASSERT BY VALUE, NEVER BY PRESENCE. Nothing type-checks a `.svelte` file,
+// eslint does not lint one, and `esbuild-svelte` does not propagate the Svelte
+// compiler's warnings — measured both ways in this repo — so a clean build
+// says close to nothing about these components and these tests are the only
+// real check on them. `toContain('—')` on a concatenated row passes when EVERY
+// figure is a dash, which is exactly how a fully-dashed token line shipped in
+// a release whose changelog was about wrong token numbers. Every figure below
+// is selected on its own testid and compared to a computed expectation.
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionState } from '../src/model/events.js';
@@ -41,17 +45,30 @@ import {
   TESTID,
 } from './canvas-contract.js';
 import {
-  CONSTELLATION_CAP,
-  DECK_RADIUS_MIN,
-  blobPath,
-  constellationPoints,
+  DECK_CARD_H,
+  DECK_CARD_W,
+  DEFAULT_DECK_FILTER,
+  DEFAULT_DECK_LAYOUT,
+  DEFAULT_DECK_SORT,
+  deckEngine,
   deckLayout,
-  hashSessionId,
+  formatCompactTokens,
 } from './layout.js';
-import type { SessionSummary } from './store.js';
+import type { DeckLayoutMode, DeckSession, DeckSortMode } from './layout.js';
+import {
+  DECK_FIT_PADDING,
+  DECK_ZOOM_LIMITS,
+  boundsOf,
+  fitTo,
+  transformAttr,
+  zoomAbout,
+} from './viewport.js';
+import { EM_DASH, displayLiveness, formatCost, livenessTitle } from './format.js';
+import type { SessionSummary, Store } from './store.js';
 import { createStore } from './store.js';
-import { all, one } from './testkit.js';
-import { agent, liveSession, tool, unsupportedSession } from './testdata.js';
+import { all, loadHarness, one } from './testkit.js';
+import type { WebviewHarness } from './testkit.js';
+import { agent, liveSession, settledSession, tool, unsupportedSession } from './testdata.js';
 
 /**
  * Held in a variable rather than imported statically, for the same reason
@@ -127,9 +144,11 @@ interface DeckHarness {
 }
 
 let harness: DeckHarness;
+/** The whole-panel harness, for the two wiring claims. */
+let panelHarness: WebviewHarness;
 /** The bundled JavaScript, kept so the injected stylesheet can be asserted on. */
 let bundle = '';
-/** The two component sources, read once, for the no-hardcoded-colour check. */
+/** The two component sources, read once, for the source-level checks. */
 let componentSources: { path: string; text: string }[] = [];
 
 beforeAll(async () => {
@@ -141,12 +160,14 @@ beforeAll(async () => {
   const factory = new Function(`${bundle}\nreturn ${GLOBAL_NAME};`) as () => DeckHarness;
   harness = factory();
 
+  panelHarness = await loadHarness();
+
   const fs = (await import(/* @vite-ignore */ FS)) as unknown as FsModule;
-  componentSources = ['webview/Deck.svelte', 'webview/SessionBlob.svelte'].map((path) => ({
+  componentSources = ['webview/Deck.svelte', 'webview/SessionCell.svelte'].map((path) => ({
     path,
     text: fs.readFileSync(path, 'utf8'),
   }));
-}, 60_000);
+}, 120_000);
 
 interface Mounted {
   container: HTMLElement;
@@ -155,10 +176,23 @@ interface Mounted {
 
 const mounted: Mounted[] = [];
 
+/**
+ * Mount the deck with a field size supplied.
+ *
+ * jsdom reports every box as zero, so without this the grid would fall to its
+ * one-column floor and every placement assertion would be about a layout the
+ * component only produces in a test.
+ */
+const FIELD_W = 960;
+const FIELD_H = 600;
+
 function render(props: Record<string, unknown>): HTMLElement {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const app = harness.mount(harness.Deck, { target: container, props });
+  const app = harness.mount(harness.Deck, {
+    target: container,
+    props: { viewportWidth: FIELD_W, viewportHeight: FIELD_H, ...props },
+  });
   harness.flushSync();
   mounted.push({
     container,
@@ -176,9 +210,12 @@ afterEach(() => {
 });
 
 /* ------------------------------------------------------------------------ *
- * Summary builders. Literals, so one field can be varied at a time; the
- * store-driven section below is what proves the store emits these shapes.
+ * Builders. Literals, so one field can be varied at a time; the store-driven
+ * section below is what proves the store emits these shapes.
  * ------------------------------------------------------------------------ */
+
+/** A fixed instant, so every age string in this file is exact. */
+const NOW = 1_700_000_000_000;
 
 function summary(sessionId: string, overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -191,19 +228,35 @@ function summary(sessionId: string, overrides: Partial<SessionSummary> = {}): Se
     nodeCount: 3,
     errorCount: 0,
     engine: 'cc',
+    agents: 2,
+    inflight: 0,
+    costUsd: 0,
+    lastEventAt: NOW - 4_000,
+    burn: { prompt: 12_000, output: 400 },
+    contextNow: { prompt: 8_000, output: 200 },
     ...overrides,
   };
 }
 
-/** A summary shaped the way the store shapes a refused one: both counts 0. */
-function refusedSummary(sessionId: string, overrides: Partial<SessionSummary> = {}): SessionSummary {
-  return summary(sessionId, {
+/** A summary shaped the way the store shapes a refused one: every count 0. */
+function refusedSummary(
+  sessionId: string,
+  overrides: Partial<SessionSummary> = {},
+): SessionSummary {
+  const row = summary(sessionId, {
     refused: true,
     liveness: 'unsupported',
     nodeCount: 0,
     errorCount: 0,
+    agents: 0,
+    inflight: 0,
+    costUsd: 0,
+    lastEventAt: 0,
     ...overrides,
   });
+  delete row.burn;
+  delete row.contextNow;
+  return row;
 }
 
 /** Feed a store one snapshot and hand back the view it produces. */
@@ -214,6 +267,25 @@ function viewOf(states: readonly SessionState[], mismatchIds: readonly string[] 
   return store.getView();
 }
 
+/** `SessionSummary` to the `DeckSession` the layout engine takes. */
+function toDeck(row: SessionSummary): DeckSession {
+  return {
+    id: row.sessionId,
+    engine: deckEngine(row.engine),
+    status: displayLiveness(row.liveness, row.refused),
+    last: row.lastEventAt,
+  };
+}
+
+/** What `deckLayout` returns for these rows, at this layout and sort. */
+function expectPlacements(
+  rows: readonly SessionSummary[],
+  layout: DeckLayoutMode = DEFAULT_DECK_LAYOUT,
+  sort: DeckSortMode = DEFAULT_DECK_SORT,
+) {
+  return deckLayout(rows.map(toDeck), layout, sort, FIELD_W);
+}
+
 /** Every element carrying any class listed in `ANIMATED_CLASSES`. */
 function animated(root: ParentNode): Element[] {
   return [...root.querySelectorAll('*')].filter((el) =>
@@ -221,43 +293,26 @@ function animated(root: ParentNode): Element[] {
   );
 }
 
-function blobs(root: ParentNode): HTMLElement[] {
+function cells(root: ParentNode): HTMLElement[] {
   return all(root, TESTID.deckBlob);
 }
 
-function blobFor(root: ParentNode, sessionId: string): HTMLElement {
-  const found = blobs(root).find((b) => b.dataset['sessionId'] === sessionId);
-  if (found === undefined) throw new Error(`no blob for ${sessionId}`);
+function cellFor(root: ParentNode, sessionId: string): HTMLElement {
+  const found = cells(root).find((c) => c.dataset['sessionId'] === sessionId);
+  if (found === undefined) throw new Error(`no cell for ${sessionId}`);
   return found;
 }
 
-/**
- * The exact text of every `<text>` element inside one blob, one string each.
- *
- * Deliberately not a testid lookup, and deliberately not `blob.textContent`.
- *
- * No testid, because `canvas-contract.ts` belongs to another package for the
- * whole of this phase and a name spelled by hand in a component and again in a
- * test is precisely the defect that file exists to prevent. What DoD 5.4 asks
- * for is that a session SHOWS its engine, so the assertion is made against the
- * thing being promised — rendered text — which needs no shared name at all.
- *
- * Not `textContent`, because that concatenates every string on the blob into
- * one, and `toContain` on a concatenation is a substring check: `'cc'` is a
- * substring of a label, of `'opencode'` in some orderings, and of any future
- * word containing it. An array of exact strings makes `toContain` an equality
- * check per element, which is what lets the negative controls below mean
- * something.
- */
-function textsOf(blob: ParentNode): string[] {
-  return [...blob.querySelectorAll('text')].map((t) => t.textContent ?? '');
+/** The exact text of one figure on a card, selected by its own testid. */
+function figure(cell: ParentNode, testId: string): string {
+  return one(cell, testId).textContent ?? '';
 }
 
 /**
- * Click an element by dispatching the event, not by calling `.click()`.
+ * Click by dispatching the event, not by calling `.click()`.
  *
- * `HTMLElement.prototype.click` does not exist on an `SVGElement` in jsdom, and
- * every blob here is an SVG `<g>`. Dispatching is also the more faithful of the
+ * `HTMLElement.prototype.click` does not exist on an `SVGElement` in jsdom and
+ * every card is an SVG `<g>`. Dispatching is also the more faithful of the
  * two: it is what a pointer produces in the real panel.
  */
 function click(element: Element): void {
@@ -266,465 +321,549 @@ function click(element: Element): void {
   });
 }
 
-function membraneOf(blob: HTMLElement): Element {
-  const found = blob.querySelector('path.membrane');
-  if (found === null) throw new Error('no membrane path in the blob');
-  return found;
+/** A pointer event jsdom will actually construct. */
+function pointer(type: string, x: number, y: number): Event {
+  const Ctor = (globalThis as { PointerEvent?: typeof MouseEvent }).PointerEvent ?? MouseEvent;
+  const event = new Ctor(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+  Object.defineProperty(event, 'pointerId', { value: 1, configurable: true });
+  Object.defineProperty(event, 'button', { value: 0, configurable: true });
+  return event;
 }
 
-function constellationOf(root: ParentNode): HTMLElement[] {
-  return all(root, TESTID.deckConstellation);
+function wheel(target: Element, deltaY: number, x: number, y: number): WheelEvent {
+  const event = new WheelEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    deltaY,
+    clientX: x,
+    clientY: y,
+  });
+  harness.flushSync(() => {
+    target.dispatchEvent(event);
+  });
+  return event;
+}
+
+function key(name: string): void {
+  harness.flushSync(() => {
+    globalThis.dispatchEvent(
+      new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }),
+    );
+  });
 }
 
 /* ------------------------------------------------------------------------ *
- * The empty deck — C7.3's last row
+ * The empty deck (2.6)
  * ------------------------------------------------------------------------ */
 
 describe('the empty deck', () => {
-  it('renders one quiet line and not a single blob', () => {
+  it('says it is waiting for the ONE engine this install observes, by default', () => {
     const container = render({ sessions: [] });
     const deck = one(container, TESTID.deck);
     expect(deck.dataset['sessions']).toBe('0');
-    expect(one(container, TESTID.deckEmpty).textContent).toBe('No sessions in this workspace.');
-    expect(blobs(container)).toHaveLength(0);
+    const lines = all(container, 'deck-waiting').map((p) => p.textContent);
+    expect(lines).toStrictEqual(['Waiting for a Claude Code session…']);
+    expect(cells(container)).toHaveLength(0);
     expect(container.querySelector('svg')).toBeNull();
   });
 
-  it('renders no empty line as soon as there is a session', () => {
+  it('says one line per enabled engine when both are enabled', () => {
+    const container = render({ sessions: [], enabledEngines: ['cc', 'oc'] });
+    expect(all(container, 'deck-waiting').map((p) => p.textContent)).toStrictEqual([
+      'Waiting for a Claude Code session…',
+      'Waiting for an OpenCode session…',
+    ]);
+  });
+
+  it('NEGATIVE CONTROL: says NOTHING about an engine that is not enabled', () => {
+    // The row that matters. A line reading "Waiting for an OpenCode session"
+    // on a machine with no OpenCode is the panel waiting for something that
+    // cannot arrive, which reads to a user as a fault in Agent Deck.
+    const container = render({ sessions: [], enabledEngines: ['oc'] });
+    const lines = all(container, 'deck-waiting').map((p) => p.textContent);
+    expect(lines).toStrictEqual(['Waiting for an OpenCode session…']);
+    expect(one(container, TESTID.deckEmpty).textContent).not.toContain('Claude Code');
+  });
+
+  it('distinguishes "nothing yet" from "nothing matches the filter"', () => {
+    const container = render({ sessions: [summary('s-1')] });
+    key('o');
+    expect(all(container, 'deck-waiting')).toHaveLength(0);
+    expect(one(container, 'deck-empty-filtered').textContent).toBe(
+      'No sessions match this filter.',
+    );
+  });
+
+  it('renders no empty state at all as soon as there is a session', () => {
     const container = render({ sessions: [summary('s-1')] });
     expect(all(container, TESTID.deckEmpty)).toHaveLength(0);
-    expect(blobs(container)).toHaveLength(1);
+    expect(cells(container)).toHaveLength(1);
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * Ordering and geometry
+ * Placement — deckLayout in its FOUR-ARGUMENT form
  * ------------------------------------------------------------------------ */
 
-describe('ordering and geometry', () => {
-  const ids = ['s-a', 's-b', 's-c', 's-d'];
-  const sessions = ids.map((id) => summary(id));
+describe('placement comes from deckLayout(sessions, layout, sort, viewportW)', () => {
+  const rows = [
+    summary('s-a', { liveness: 'idle', lastEventAt: NOW - 10_000 }),
+    summary('s-b', { liveness: 'live', lastEventAt: NOW - 60_000 }),
+    summary('s-c', { liveness: 'ended', lastEventAt: NOW - 1_000 }),
+    summary('s-d', { liveness: 'live', engine: 'opencode', lastEventAt: NOW - 5_000 }),
+  ];
 
-  it('renders the sessions in exactly the order it was handed them', () => {
-    const container = render({ sessions });
-    expect(blobs(container).map((b) => b.dataset['sessionId'])).toStrictEqual(ids);
-  });
-
-  it('keeps DOM order when the same list is re-rendered — nothing re-sorts', () => {
-    // Store order is host-snapshot order and this component adds no sort of
-    // its own; a component that ordered by liveness would reshuffle here,
-    // because these four differ in liveness.
-    const mixed = [
-      summary('s-a', { liveness: 'ended' }),
-      summary('s-b', { liveness: 'live' }),
-      summary('s-c', { liveness: 'idle' }),
-      summary('s-d', { liveness: 'ended' }),
-    ];
-    const container = render({ sessions: mixed });
-    expect(blobs(container).map((b) => b.dataset['sessionId'])).toStrictEqual(ids);
-  });
-
-  it('feeds the summaries to deckLayout unconverted and draws what it returns', () => {
-    // A `SessionSummary` is a `DeckSession`: `{ sessionId, nodeCount }` and
-    // more. No conversion step means no conversion step to skip.
-    const container = render({ sessions });
-    const placed = deckLayout(sessions);
-    for (const placement of placed) {
-      const blob = blobFor(container, placement.sessionId);
-      expect(membraneOf(blob).getAttribute('d')).toBe(
-        blobPath(placement.x, placement.y, placement.R, hashSessionId(placement.sessionId)),
+  it('draws each card at the coordinates the layout engine returned', () => {
+    const container = render({ sessions: rows });
+    for (const placement of expectPlacements(rows)) {
+      expect(cellFor(container, placement.id).getAttribute('transform')).toBe(
+        `translate(${placement.x} ${placement.y})`,
       );
     }
   });
 
-  it('sizes a blob from nodeCount, and a bigger session draws bigger', () => {
-    const small = summary('s-small', { nodeCount: 2 });
-    const large = summary('s-large', { nodeCount: 400 });
-    const placed = deckLayout([small, large]);
-    expect(placed[1]?.R).toBeGreaterThan(placed[0]?.R ?? 0);
-    const container = render({ sessions: [small, large] });
-    expect(membraneOf(blobFor(container, 's-large')).getAttribute('d')).toBe(
-      blobPath(
-        placed[1]?.x ?? 0,
-        placed[1]?.y ?? 0,
-        placed[1]?.R ?? 0,
-        hashSessionId('s-large'),
-      ),
+  it('emits the cards in the layout engine’s order, which is the sort order', () => {
+    const container = render({ sessions: rows });
+    expect(cells(container).map((c) => c.dataset['sessionId'])).toStrictEqual(
+      expectPlacements(rows).map((p) => p.id),
     );
   });
 
-  it('gives a session the same silhouette across renders — shape is the id', () => {
-    const first = render({ sessions: [summary('s-shape')] });
-    const second = render({ sessions: [summary('s-shape')] });
-    expect(membraneOf(blobFor(first, 's-shape')).getAttribute('d')).toBe(
-      membraneOf(blobFor(second, 's-shape')).getAttribute('d'),
-    );
-  });
-
-  it('fits the viewport with a viewBox of four finite numbers', () => {
-    const container = render({ sessions });
-    const svg = container.querySelector('svg');
-    const parts = (svg?.getAttribute('viewBox') ?? '').split(' ').map(Number);
-    expect(parts).toHaveLength(4);
-    for (const n of parts) expect(Number.isFinite(n)).toBe(true);
-    expect(parts[2]).toBeGreaterThan(0);
-    expect(parts[3]).toBeGreaterThan(0);
-  });
-});
-
-/* ------------------------------------------------------------------------ *
- * C7.1 — the constellation
- * ------------------------------------------------------------------------ */
-
-describe('the interior constellation (C7.1)', () => {
-  it('draws one dot per node, at the coordinates layout.ts returns', () => {
-    const state = summary('s-con', { nodeCount: 7 });
-    const container = render({ sessions: [state] });
-    const placement = deckLayout([state])[0];
-    if (placement === undefined) throw new Error('unplaced');
-    const expected = constellationPoints(
-      placement.x,
-      placement.y,
-      placement.R,
-      7,
-      hashSessionId('s-con'),
-    );
-    expect(expected).toHaveLength(7);
-    const drawn = constellationOf(container).map((c) => ({
-      x: Number(c.getAttribute('cx')),
-      y: Number(c.getAttribute('cy')),
-    }));
-    expect(drawn).toStrictEqual(expected.map((p) => ({ x: p.x, y: p.y })));
-  });
-
-  it('seeds the constellation exactly as it seeds the silhouette', () => {
-    // Same size, different id: the dots must move, because the seed is the id.
-    const a = summary('s-one', { nodeCount: 9 });
-    const b = summary('s-two', { nodeCount: 9 });
-    const container = render({ sessions: [a, b] });
-    const first = constellationOf(blobFor(container, 's-one')).map((c) => c.getAttribute('cx'));
-    const second = constellationOf(blobFor(container, 's-two')).map((c) => c.getAttribute('cx'));
-    expect(first).toHaveLength(9);
-    expect(second).toHaveLength(9);
-    // Placements differ too, so compare the offsets from each blob's centre.
-    const placed = deckLayout([a, b]);
-    const offsets = (values: (string | null)[], cx: number): number[] =>
-      values.map((v) => Number(v) - cx);
-    expect(offsets(first, placed[0]?.x ?? 0)).not.toStrictEqual(
-      offsets(second, placed[1]?.x ?? 0),
-    );
-  });
-
-  it('saturates at the cap: 1,000 nodes draw exactly CONSTELLATION_CAP dots', () => {
-    const container = render({ sessions: [summary('s-big', { nodeCount: 1_000 })] });
-    expect(constellationOf(container)).toHaveLength(CONSTELLATION_CAP);
-    expect(blobFor(container, 's-big').dataset['constellation']).toBe(String(CONSTELLATION_CAP));
-  });
-
-  it('draws no dots at all for a refused session — no number is read off it', () => {
-    const container = render({ sessions: [refusedSummary('s-refused')] });
-    expect(constellationOf(container)).toHaveLength(0);
-  });
-
-  it('hides the dots from assistive technology; the blob carries the name', () => {
-    const container = render({ sessions: [summary('s-con', { nodeCount: 4 })] });
-    const group = blobFor(container, 's-con').querySelector('g.constellation');
-    expect(group?.getAttribute('aria-hidden')).toBe('true');
-  });
-});
-
-/* ------------------------------------------------------------------------ *
- * C7.3 — the state matrix, deck rows
- * ------------------------------------------------------------------------ */
-
-describe('membrane by liveness (C7.3 rows 1-3)', () => {
-  for (const liveness of ['live', 'idle', 'ended'] as const) {
-    it(`renders a ${liveness} session's membrane as ${liveness}`, () => {
-      const container = render({ sessions: [summary('s-1', { liveness })] });
-      const blob = blobFor(container, 's-1');
-      expect(blob.dataset['liveness']).toBe(liveness);
-      expect(blob.dataset['refused']).toBe('false');
-      expect(blob.classList.contains(CRACKED_CLASS)).toBe(false);
+  for (const layout of ['list', 'grid', 'lanes'] as const) {
+    it(`renders the ${layout} layout at the ${layout} coordinates`, () => {
+      const container = render({ sessions: rows });
+      const index = { list: '1', grid: '2', lanes: '3' }[layout];
+      key(index);
+      expect(one(container, TESTID.deck).dataset['layout']).toBe(layout);
+      const expected = expectPlacements(rows, layout);
+      for (const placement of expected) {
+        expect(cellFor(container, placement.id).getAttribute('transform')).toBe(
+          `translate(${placement.x} ${placement.y})`,
+        );
+      }
     });
   }
 
-  it('animates the live one and leaves idle and ended still', () => {
-    const container = render({
-      sessions: [
-        summary('s-live', { liveness: 'live' }),
-        summary('s-idle', { liveness: 'idle' }),
-        summary('s-ended', { liveness: 'ended' }),
-      ],
+  for (const sort of ['live', 'recent', 'engine'] as const) {
+    it(`renders the ${sort} sort in the ${sort} order`, () => {
+      const container = render({ sessions: rows });
+      key({ live: 'l', recent: 'r', engine: 'e' }[sort]);
+      expect(one(container, TESTID.deck).dataset['sort']).toBe(sort);
+      expect(cells(container).map((c) => c.dataset['sessionId'])).toStrictEqual(
+        expectPlacements(rows, DEFAULT_DECK_LAYOUT, sort).map((p) => p.id),
+      );
     });
-    expect(animated(blobFor(container, 's-live')).length).toBeGreaterThan(0);
-    expect(animated(blobFor(container, 's-idle'))).toHaveLength(0);
-    expect(animated(blobFor(container, 's-ended'))).toHaveLength(0);
-  });
-});
+  }
 
-describe('unsupported / refused (C7.3, G3)', () => {
-  it('cracks the membrane and draws the crack', () => {
-    const container = render({ sessions: [refusedSummary('s-refused')] });
-    const blob = blobFor(container, 's-refused');
-    expect(blob.dataset['liveness']).toBe('unsupported');
-    expect(blob.dataset['refused']).toBe('true');
-    expect(blob.classList.contains(CRACKED_CLASS)).toBe(true);
-    expect(membraneOf(blob).classList.contains(CRACKED_CLASS)).toBe(true);
-    expect(blob.querySelectorAll('path.crack')).toHaveLength(1);
+  it('NEGATIVE CONTROL: the three layouts do not all produce one arrangement', () => {
+    // Without this, a component that ignored `layoutMode` and always called
+    // `deckLayout` with the default would satisfy every test above.
+    const list = expectPlacements(rows, 'list').map((p) => `${p.x},${p.y}`);
+    const grid = expectPlacements(rows, 'grid').map((p) => `${p.x},${p.y}`);
+    const lanes = expectPlacements(rows, 'lanes').map((p) => `${p.x},${p.y}`);
+    expect(grid).not.toStrictEqual(list);
+    expect(lanes).not.toStrictEqual(list);
   });
 
-  it('cracks a session refused while its own liveness still says live', () => {
-    // `schemaMismatch` refuses without changing the liveness the last snapshot
-    // delivered. The summary carries both, and `displayLiveness` reconciles
-    // them in one place — this component holds no second opinion.
-    const state = summary('s-mismatch', { liveness: 'live', refused: true });
-    const container = render({ sessions: [state] });
-    const blob = blobFor(container, 's-mismatch');
-    expect(state.liveness).toBe('live');
-    expect(blob.dataset['liveness']).toBe('unsupported');
-    expect(blob.classList.contains(CRACKED_CLASS)).toBe(true);
+  it('NEGATIVE CONTROL: the three sorts do not all produce one order', () => {
+    const live = expectPlacements(rows, 'grid', 'live').map((p) => p.id);
+    const recent = expectPlacements(rows, 'grid', 'recent').map((p) => p.id);
+    const engine = expectPlacements(rows, 'grid', 'engine').map((p) => p.id);
+    expect(recent).not.toStrictEqual(live);
+    expect(engine).not.toStrictEqual(recent);
   });
 
-  it('never animates a refused session, whatever its wire liveness says', () => {
-    const container = render({
-      sessions: [summary('s-mismatch', { liveness: 'live', refused: true })],
-    });
-    expect(animated(container)).toHaveLength(0);
-  });
-
-  it('draws a refused blob at DECK_RADIUS_MIN, saying nothing about content', () => {
-    // The store reports `nodeCount: 0` for a refused session (G3: a tree we
-    // declined to trust yields no number), so the blob is the floor size. A
-    // large cracked blob would be asserting "there is a lot in here" from a
-    // layout the fingerprint refused.
-    const refusedRow = refusedSummary('s-refused');
-    const placed = deckLayout([refusedRow])[0];
-    expect(placed?.R).toBe(DECK_RADIUS_MIN);
-    const container = render({ sessions: [refusedRow] });
-    expect(membraneOf(blobFor(container, 's-refused')).getAttribute('d')).toBe(
-      blobPath(placed?.x ?? 0, placed?.y ?? 0, DECK_RADIUS_MIN, hashSessionId('s-refused')),
-    );
-  });
-
-  it('draws no crack on a session that was not refused', () => {
-    const container = render({ sessions: [summary('s-ok')] });
-    expect(container.querySelectorAll('path.crack')).toHaveLength(0);
-  });
-});
-
-describe('degraded — hooks silent (C7.3, G2)', () => {
-  const sessions = [
-    summary('s-live', { liveness: 'live' }),
-    summary('s-idle', { liveness: 'idle' }),
-    summary('s-ended', { liveness: 'ended' }),
-  ];
-
-  it('hollows every live membrane and only the live ones', () => {
-    const container = render({ sessions, degraded: true });
-    expect(one(container, TESTID.deck).dataset['degraded']).toBe('true');
-    expect(membraneOf(blobFor(container, 's-live')).classList.contains(HOLLOW_LIVE_CLASS)).toBe(
-      true,
-    );
-    for (const id of ['s-idle', 's-ended']) {
-      expect(membraneOf(blobFor(container, id)).classList.contains(HOLLOW_LIVE_CLASS)).toBe(false);
+  it('draws ONE shape in every layout: 220 x 88, whichever layout is showing', () => {
+    const container = render({ sessions: rows });
+    for (const layout of ['1', '2', '3']) {
+      key(layout);
+      for (const cell of cells(container)) {
+        const border = one(cell, 'deck-cell-border');
+        expect(border.getAttribute('width')).toBe(String(DECK_CARD_W));
+        expect(border.getAttribute('height')).toBe(String(DECK_CARD_H));
+        expect(border.getAttribute('rx')).toBe('10');
+      }
     }
-  });
-
-  it('hollows nothing while the hook tap is healthy', () => {
-    const container = render({ sessions, degraded: false });
-    expect(
-      [...container.querySelectorAll('*')].filter((el) =>
-        el.classList.contains(HOLLOW_LIVE_CLASS),
-      ),
-    ).toHaveLength(0);
-  });
-
-  it('marks the live blob as inferred rather than hook-confirmed', () => {
-    const container = render({ sessions, degraded: true });
-    expect(blobFor(container, 's-live').dataset['livenessInferred']).toBe('true');
-  });
-
-  it('still animates a live membrane while degraded — the value is inferred, not absent', () => {
-    const container = render({ sessions, degraded: true });
-    expect(animated(blobFor(container, 's-live')).length).toBeGreaterThan(0);
-  });
-});
-
-describe('tool errors aggregate to a deck-level badge (C7.3)', () => {
-  it('renders the count the store derived, and nothing it derived itself', () => {
-    const container = render({ sessions: [summary('s-err', { errorCount: 3 })] });
-    const badge = one(container, TESTID.deckErrorBadge);
-    expect(badge.textContent).toBe('3');
-    expect(badge.dataset['count']).toBe('3');
-    expect(blobFor(container, 's-err').dataset['errors']).toBe('3');
-  });
-
-  it('renders no badge at all when nothing errored', () => {
-    const container = render({ sessions: [summary('s-clean')] });
-    expect(all(container, TESTID.deckErrorBadge)).toHaveLength(0);
-    expect(blobFor(container, 's-clean').dataset['errors']).toBe('0');
-  });
-
-  it('carries one badge per session, on the session that owns the errors', () => {
-    const container = render({
-      sessions: [summary('s-clean'), summary('s-err', { errorCount: 2 })],
-    });
-    expect(all(container, TESTID.deckErrorBadge)).toHaveLength(1);
-    expect(
-      blobFor(container, 's-err').querySelectorAll(`[data-testid="${TESTID.deckErrorBadge}"]`),
-    ).toHaveLength(1);
-  });
-});
-
-describe('workspaceMatch: false (C7.3)', () => {
-  it('ghosts the blob and tags it "other workspace"', () => {
-    const container = render({
-      sessions: [summary('s-mine'), summary('s-theirs', { workspaceMatch: false })],
-    });
-    const foreign = blobFor(container, 's-theirs');
-    expect(foreign.classList.contains(FOREIGN_CLASS)).toBe(true);
-    expect(foreign.dataset['foreign']).toBe('true');
-    expect(foreign.textContent).toContain('other workspace');
-
-    const mine = blobFor(container, 's-mine');
-    expect(mine.classList.contains(FOREIGN_CLASS)).toBe(false);
-    expect(mine.textContent).not.toContain('other workspace');
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * DoD 5.4 — the engine tag. TEXT ONLY in this phase; Phase 7 designs it.
- *
- * WHAT THESE ASSERTIONS ARE GUARDING. Nothing type-checks a `.svelte` file and
- * eslint does not lint one; `esbuild-svelte` does not propagate the Svelte
- * compiler's warnings either, measured both ways in this repo. So a clean
- * build says close to nothing about this component and these tests are the
- * only real check on it. They are written to fail on each way the tag can be
- * wrong rather than only on its absence: a constant string (the negative
- * controls), a tag rendered as an attribute but never drawn (the text-array
- * helper), a default applied in the wrong place (the store-driven pair at the
- * bottom of this file), and a tag suppressed by refusal.
+ * The card's three rows (2.2) — every figure asserted BY VALUE
  * ------------------------------------------------------------------------ */
 
-describe('the engine tag (DoD 5.4)', () => {
-  it('draws the tag on every blob, whichever engine produced the session', () => {
+describe('row 1 — engine glyph and label', () => {
+  it('draws CC for Claude Code and OC for OpenCode', () => {
     const container = render({
       sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
     });
-    expect(textsOf(blobFor(container, 's-cc'))).toContain('cc');
-    expect(textsOf(blobFor(container, 's-oc'))).toContain('opencode');
+    expect(figure(cellFor(container, 's-cc'), 'deck-cell-engine')).toBe('CC');
+    expect(figure(cellFor(container, 's-oc'), 'deck-cell-engine')).toBe('OC');
   });
 
-  it('NEGATIVE CONTROL: a blob never shows the OTHER engine\u2019s tag', () => {
-    // Without this, a component that rendered one constant string would still
-    // satisfy the test above for whichever row happened to match it.
+  it('NEGATIVE CONTROL: a card never shows the OTHER engine’s glyph', () => {
     const container = render({
       sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
     });
-    expect(textsOf(blobFor(container, 's-cc'))).not.toContain('opencode');
-    expect(textsOf(blobFor(container, 's-oc'))).not.toContain('cc');
+    expect(figure(cellFor(container, 's-cc'), 'deck-cell-engine')).not.toBe('OC');
+    expect(figure(cellFor(container, 's-oc'), 'deck-cell-engine')).not.toBe('CC');
+    expect(cellFor(container, 's-cc').dataset['engine']).toBe('cc');
+    expect(cellFor(container, 's-oc').dataset['engine']).toBe('opencode');
   });
 
   it('tags a refused session too: G3 withholds the tree, not who was reading', () => {
     const container = render({ sessions: [refusedSummary('s-refused')] });
-    const blob = blobFor(container, 's-refused');
-    expect(blob.classList.contains(CRACKED_CLASS)).toBe(true);
-    expect(textsOf(blob)).toContain('cc');
+    const cell = cellFor(container, 's-refused');
+    expect(cell.classList.contains(CRACKED_CLASS)).toBe(true);
+    expect(figure(cell, 'deck-cell-engine')).toBe('CC');
   });
 
-  it('carries the tag as a data attribute as well as text', () => {
+  it('draws the label, and truncates one too long to fit the card', () => {
     const container = render({
-      sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
+      sessions: [
+        summary('s-short', { label: 'main' }),
+        summary('s-long', { label: 'a-very-long-session-label-that-does-not-fit' }),
+      ],
     });
-    expect(blobFor(container, 's-cc').dataset['engine']).toBe('cc');
-    expect(blobFor(container, 's-oc').dataset['engine']).toBe('opencode');
+    expect(figure(cellFor(container, 's-short'), 'deck-cell-label')).toBe('main');
+    const long = figure(cellFor(container, 's-long'), 'deck-cell-label');
+    expect(long).toBe('a-very-long-session-lab…');
+    expect(long.length).toBe(24);
+  });
+});
+
+describe('row 2 — the mono figures', () => {
+  it('prints the agent count the store derived, not a count of its own', () => {
+    const container = render({ sessions: [summary('s-1', { agents: 5 })] });
+    expect(figure(cellFor(container, 's-1'), 'deck-cell-agents')).toBe('5 ag');
   });
 
-  it('names the engine in the accessible name as well as on the canvas', () => {
-    // The blob is a `role="button"` with an `aria-label`, so its child text is
-    // not announced. A tag only a sighted user can read is half a tag.
-    const container = render({ sessions: [summary('s-oc', { engine: 'opencode' })] });
-    expect(blobFor(container, 's-oc').getAttribute('aria-label')).toContain('opencode');
-  });
-
-  it('keeps the tag clear of the "other workspace" tag, on the blob that has both', () => {
-    // Both are text rows under the same membrane. Drawn at one baseline they
-    // would overlap, which reads to a user as one corrupted word rather than
-    // as two tags — and no assertion above would notice.
+  it('prints the in-flight count, and marks it busy only when it is non-zero', () => {
     const container = render({
-      sessions: [summary('s-both', { engine: 'opencode', workspaceMatch: false })],
+      sessions: [summary('s-quiet', { inflight: 0 }), summary('s-busy', { inflight: 3 })],
     });
-    const rows = [...blobFor(container, 's-both').querySelectorAll('text')].map((t) => ({
-      text: t.textContent ?? '',
-      y: t.getAttribute('y') ?? '',
-    }));
-    const engineRow = rows.find((r) => r.text === 'opencode');
-    const foreignRow = rows.find((r) => r.text === 'other workspace');
-    expect(engineRow).toBeDefined();
-    expect(foreignRow).toBeDefined();
-    expect(engineRow?.y).not.toBe(foreignRow?.y);
+    const quiet = one(cellFor(container, 's-quiet'), 'deck-cell-inflight');
+    const busy = one(cellFor(container, 's-busy'), 'deck-cell-inflight');
+    expect(quiet.textContent).toBe('0 in flight');
+    expect(busy.textContent).toBe('3 in flight');
+    expect(quiet.dataset['busy']).toBe('false');
+    expect(busy.dataset['busy']).toBe('true');
+    expect(quiet.classList.contains('busy')).toBe(false);
+    expect(busy.classList.contains('busy')).toBe(true);
+  });
+
+  it('prints BURN — prompt PLUS output — compacted, and not contextNow', () => {
+    // The two are different questions. `burn` is the total the card is about;
+    // `contextNow` is a level, and summing levels means nothing. A component
+    // reading the wrong one would still print a plausible number, so the
+    // expectation is computed from both halves of `burn` explicitly.
+    const row = summary('s-1', {
+      burn: { prompt: 51_000, output: 808 },
+      contextNow: { prompt: 9_000, output: 100 },
+    });
+    const container = render({ sessions: [row] });
+    expect(figure(cellFor(container, 's-1'), 'deck-cell-tokens')).toBe('51.8k');
+    expect(formatCompactTokens(51_000 + 808)).toBe('51.8k');
+    expect(figure(cellFor(container, 's-1'), 'deck-cell-tokens')).not.toBe(
+      formatCompactTokens(9_100),
+    );
+  });
+
+  it('prints an em-dash for an ABSENT burn, and never a zero', () => {
+    // The OpenCode engine reports no burn at all. Printing 0 would claim the
+    // session spent nothing, which is a wrong number rather than a missing
+    // one — the defect `TokenPair` exists to remove.
+    const row = summary('s-oc', { engine: 'opencode' });
+    delete row.burn;
+    const container = render({ sessions: [row] });
+    const drawn = figure(cellFor(container, 's-oc'), 'deck-cell-tokens');
+    expect(drawn).toBe(EM_DASH);
+    expect(drawn).not.toBe('0');
+  });
+
+  it('prints a MILLION-scale burn as M, so the compaction is not one branch', () => {
+    const container = render({
+      sessions: [summary('s-big', { burn: { prompt: 1_100_000, output: 100_000 } })],
+    });
+    expect(figure(cellFor(container, 's-big'), 'deck-cell-tokens')).toBe('1.2M');
+  });
+
+  it('renders cost only when it is non-zero: 0 is NOT COMPUTED, never free', () => {
+    const container = render({
+      sessions: [summary('s-zero', { costUsd: 0 }), summary('s-paid', { costUsd: 1.25 })],
+    });
+    expect(figure(cellFor(container, 's-zero'), 'deck-cell-cost')).toBe(EM_DASH);
+    expect(figure(cellFor(container, 's-paid'), 'deck-cell-cost')).toBe(formatCost(1.25));
+    expect(figure(cellFor(container, 's-paid'), 'deck-cell-cost')).toBe('1.25 USD');
+    expect(cellFor(container, 's-zero').dataset['cost']).toBe('0');
+  });
+
+  it('NEGATIVE CONTROL: the four figures are not all em-dashes on a real row', () => {
+    // The shape this repo has already shipped once: a token line where every
+    // figure was a dash, under a test asserting only that a dash was present.
+    const container = render({ sessions: [summary('s-1', { agents: 4, inflight: 2 })] });
+    const cell = cellFor(container, 's-1');
+    const drawn = [
+      figure(cell, 'deck-cell-agents'),
+      figure(cell, 'deck-cell-inflight'),
+      figure(cell, 'deck-cell-tokens'),
+    ];
+    expect(drawn).toStrictEqual(['4 ag', '2 in flight', '12.4k']);
+    expect(drawn.filter((s) => s === EM_DASH)).toHaveLength(0);
+  });
+});
+
+describe('row 3 — status chip and relative age', () => {
+  for (const liveness of ['live', 'idle', 'ended', 'unsupported'] as const) {
+    it(`names ${liveness} in words beside a dot of its own`, () => {
+      const rows =
+        liveness === 'unsupported'
+          ? [refusedSummary('s-1')]
+          : [summary('s-1', { liveness })];
+      const container = render({ sessions: rows });
+      const chip = one(cellFor(container, 's-1'), 'deck-cell-status');
+      expect(chip.dataset['liveness']).toBe(liveness);
+      expect(chip.textContent?.trim()).toBe(liveness);
+      expect(chip.querySelectorAll('circle')).toHaveLength(1);
+    });
+  }
+
+  it('prints seconds, minutes and hours from lastEventAt against the clock', () => {
+    const container = render({
+      sessions: [
+        summary('s-s', { lastEventAt: NOW - 4_000 }),
+        summary('s-m', { lastEventAt: NOW - 2 * 60_000 }),
+        summary('s-h', { lastEventAt: NOW - 3 * 3_600_000 }),
+      ],
+      now: NOW,
+    });
+    expect(figure(cellFor(container, 's-s'), 'deck-cell-age')).toBe('4s');
+    expect(figure(cellFor(container, 's-m'), 'deck-cell-age')).toBe('2m');
+    expect(figure(cellFor(container, 's-h'), 'deck-cell-age')).toBe('3h');
+  });
+
+  it('prints an em-dash rather than an age for a session with no timestamp', () => {
+    const container = render({ sessions: [refusedSummary('s-refused')], now: NOW });
+    expect(figure(cellFor(container, 's-refused'), 'deck-cell-age')).toBe(EM_DASH);
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * C7.6 — motion is a reserved semantic channel, with its negative control
+ * The state table (2.3)
  * ------------------------------------------------------------------------ */
 
-describe('the motion invariant (C7.6)', () => {
-  it('NEGATIVE CONTROL: every session ended -> exactly zero animated elements', () => {
+describe('the six card states', () => {
+  it('gives live, idle, ended, degraded and unsupported five different data-states', () => {
+    const live = render({ sessions: [summary('s', { liveness: 'live' })] });
+    const idle = render({ sessions: [summary('s', { liveness: 'idle' })] });
+    const ended = render({ sessions: [summary('s', { liveness: 'ended' })] });
+    const degraded = render({ sessions: [summary('s', { liveness: 'live' })], degraded: true });
+    const refused = render({ sessions: [refusedSummary('s')] });
+    const states = [live, idle, ended, degraded, refused].map(
+      (c) => cellFor(c, 's').dataset['state'],
+    );
+    expect(states).toStrictEqual(['live', 'idle', 'ended', 'degraded', 'unsupported']);
+    expect(new Set(states).size).toBe(5);
+  });
+
+  it('keeps data-liveness on the WIRE value while data-state carries degraded', () => {
+    // The two axes are independent and must not be collapsed: a degraded
+    // session is still live, it is just less well observed.
     const container = render({
-      sessions: ['s-1', 's-2', 's-3', 's-4', 's-5'].map((id) =>
-        summary(id, { liveness: 'ended', nodeCount: 40 }),
-      ),
+      sessions: [summary('s', { liveness: 'live' })],
+      degraded: true,
     });
-    expect(blobs(container)).toHaveLength(5);
-    // Constellation dots are in the DOM in quantity here, which is the point:
-    // 200 of them and still zero animated elements.
-    expect(constellationOf(container).length).toBeGreaterThan(0);
+    const cell = cellFor(container, 's');
+    expect(cell.dataset['liveness']).toBe('live');
+    expect(cell.dataset['state']).toBe('degraded');
+    expect(cell.dataset['livenessInferred']).toBe('true');
+    expect(cell.querySelectorAll(`.${HOLLOW_LIVE_CLASS}`)).toHaveLength(1);
+  });
+
+  it('hollows nothing while the hook tap is healthy', () => {
+    const container = render({ sessions: [summary('s', { liveness: 'live' })] });
+    expect(container.querySelectorAll(`.${HOLLOW_LIVE_CLASS}`)).toHaveLength(0);
+    expect(cellFor(container, 's').dataset['livenessInferred']).toBe('false');
+  });
+
+  it('dashes a refused card and says so on the card and on its border', () => {
+    const container = render({ sessions: [refusedSummary('s')] });
+    const cell = cellFor(container, 's');
+    expect(cell.dataset['refused']).toBe('true');
+    expect(cell.classList.contains(CRACKED_CLASS)).toBe(true);
+    expect(one(cell, 'deck-cell-border').classList.contains(CRACKED_CLASS)).toBe(true);
+  });
+
+  it('carries the refusal in a tooltip, in words the format module owns', () => {
+    // The `schemaMismatch` message on the wire carries NO reason code, so a
+    // card printing one would be inventing it.
+    const container = render({ sessions: [refusedSummary('s')] });
+    expect(cellFor(container, 's').querySelector('title')?.textContent).toBe(
+      livenessTitle('unsupported'),
+    );
+  });
+
+  it('names the ENGINE and the reason in a degraded card’s tooltip', () => {
+    const container = render({
+      sessions: [summary('s', { engine: 'opencode' })],
+      degraded: true,
+      degradedReason: 'listenerDown',
+    });
+    const tooltip = cellFor(container, 's').querySelector('title')?.textContent ?? '';
+    expect(tooltip).toBe('OpenCode: the hook listener is not running');
+  });
+
+  it('ghosts a foreign session and tags it, in text and in the accessible name', () => {
+    const container = render({
+      sessions: [summary('s-mine'), summary('s-theirs', { workspaceMatch: false })],
+    });
+    const foreign = cellFor(container, 's-theirs');
+    expect(foreign.classList.contains(FOREIGN_CLASS)).toBe(true);
+    expect(foreign.dataset['foreign']).toBe('true');
+    expect(figure(foreign, 'deck-cell-foreign')).toBe('other workspace');
+    expect(foreign.getAttribute('aria-label')).toContain('other workspace');
+
+    const mine = cellFor(container, 's-mine');
+    expect(mine.classList.contains(FOREIGN_CLASS)).toBe(false);
+    expect(all(mine, 'deck-cell-foreign')).toHaveLength(0);
+  });
+
+  it('rings the selected card and rings nothing else', () => {
+    const container = render({
+      sessions: [summary('s-1'), summary('s-2')],
+      selectedSessionId: 's-2',
+    });
+    expect(all(cellFor(container, 's-1'), 'deck-cell-selection')).toHaveLength(0);
+    expect(all(cellFor(container, 's-2'), 'deck-cell-selection')).toHaveLength(1);
+    expect(cellFor(container, 's-1').dataset['selected']).toBe('false');
+    expect(cellFor(container, 's-2').dataset['selected']).toBe('true');
+    expect(cellFor(container, 's-2').getAttribute('aria-current')).toBe('true');
+  });
+
+  it('brightens the border on hover and does NOT scale or shadow', () => {
+    // The stylesheet is the only place this can be asserted; what matters is
+    // that the hover rule touches the stroke and nothing else, because a card
+    // that grew on hover would move its neighbours' apparent spacing.
+    const cell = componentSources.find((s) => s.path.endsWith('SessionCell.svelte'));
+    const style = (cell?.text ?? '').slice((cell?.text ?? '').indexOf('<style>'));
+    const hover = style.slice(style.indexOf(':hover'));
+    // COMMENTS STRIPPED FIRST. The block explains itself in prose that names
+    // the two things it must not do, so a raw substring check read the
+    // explanation and failed on the words rather than on the declarations.
+    const block = hover.slice(0, hover.indexOf('}')).replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(block).toContain('stroke:');
+    expect(block).not.toContain('transform');
+    expect(block).not.toContain('scale');
+    expect(block).not.toContain('shadow');
+  });
+
+  it('carries a stylesheet rule for each of the five states', () => {
+    for (const state of ['live', 'idle', 'ended', 'degraded', 'unsupported']) {
+      expect(bundle).toContain(`data-state='${state}'`);
+    }
+  });
+});
+
+describe('the tool-error badge', () => {
+  it('renders the count the store derived, and nothing it derived itself', () => {
+    const container = render({ sessions: [summary('s-err', { errorCount: 3 })] });
+    const badge = one(container, TESTID.deckErrorBadge);
+    expect(badge.dataset['count']).toBe('3');
+    expect(badge.textContent?.trim()).toBe('3');
+    expect(cellFor(container, 's-err').dataset['errors']).toBe('3');
+  });
+
+  it('renders no badge at all when nothing errored, and none on a refusal', () => {
+    const container = render({
+      sessions: [summary('s-clean'), refusedSummary('s-refused')],
+    });
+    expect(all(container, TESTID.deckErrorBadge)).toHaveLength(0);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 7.5 — the pulse rule, deck half
+ * ------------------------------------------------------------------------ */
+
+describe('the pulse rule (DoD 7.5)', () => {
+  it('pulses exactly the sessions with a live cursor or a tool in flight', () => {
+    const container = render({
+      sessions: [
+        summary('s-live', { liveness: 'live', inflight: 0 }),
+        summary('s-idle', { liveness: 'idle', inflight: 0 }),
+        summary('s-ended', { liveness: 'ended', inflight: 0 }),
+        refusedSummary('s-refused'),
+      ],
+    });
+    const pulsing = cells(container)
+      .filter((c) => all(c, 'deck-cell-pulse').length > 0)
+      .map((c) => c.dataset['sessionId']);
+    expect(pulsing).toStrictEqual(['s-live']);
+  });
+
+  it('NEGATIVE CONTROL: idle, ended, refused NEVER pulse, even with a running tool', () => {
+    // A stale `running` tool under an idle session is a real state, and the
+    // design says an idle card is still. Written as a guard in the component
+    // rather than left to follow from the liveness value.
+    const container = render({
+      sessions: [
+        summary('s-idle', { liveness: 'idle', inflight: 4 }),
+        summary('s-ended', { liveness: 'ended', inflight: 4 }),
+        refusedSummary('s-refused', { inflight: 4 }),
+      ],
+    });
+    expect(all(container, 'deck-cell-pulse')).toHaveLength(0);
     expect(animated(container)).toHaveLength(0);
   });
 
-  it('animates exactly the live blobs and nothing else', () => {
-    const sessions = [
-      summary('s-live-1', { liveness: 'live' }),
-      summary('s-idle', { liveness: 'idle' }),
-      summary('s-live-2', { liveness: 'live' }),
-      summary('s-ended', { liveness: 'ended' }),
-    ];
-    const container = render({ sessions });
-    // Two live sessions, each carrying a breathing wrap and a pulse ring.
-    expect(animated(container)).toHaveLength(4);
-    for (const el of animated(container)) {
-      const blob = el.closest(`[data-testid="${TESTID.deckBlob}"]`) as HTMLElement | null;
-      expect(blob?.dataset['liveness']).toBe('live');
-    }
-  });
-
-  it('gives a constellation dot no animated class AND no animated ancestor', () => {
-    // The ancestor half is the one that matters. A dot nested inside the
-    // breathing wrap would inherit its transform — animated in fact — while a
-    // class-counting control still read zero, which is the one failure
-    // direction counting classes cannot see.
+  it('suppresses the pulse while the card is selected, and keeps the ring', () => {
     const container = render({
-      sessions: [summary('s-live', { liveness: 'live', nodeCount: 30 })],
+      sessions: [summary('s-1', { liveness: 'live' }), summary('s-2', { liveness: 'live' })],
+      selectedSessionId: 's-1',
     });
-    const dots = constellationOf(container);
-    expect(dots).toHaveLength(30);
-    for (const dot of dots) {
-      for (const cls of ANIMATED_CLASSES) {
-        expect(dot.classList.contains(cls)).toBe(false);
-        expect(dot.closest(`.${cls}`)).toBeNull();
-      }
-    }
+    expect(all(cellFor(container, 's-1'), 'deck-cell-pulse')).toHaveLength(0);
+    expect(all(cellFor(container, 's-1'), 'deck-cell-selection')).toHaveLength(1);
+    expect(all(cellFor(container, 's-2'), 'deck-cell-pulse')).toHaveLength(1);
+    expect(cellFor(container, 's-1').dataset['pulsing']).toBe('false');
+    expect(cellFor(container, 's-2').dataset['pulsing']).toBe('true');
   });
 
-  it('uses only classes the contract lists, and both of them', () => {
+  it('SWAPS the pulse for a static ring under reduced motion, keeping the class', () => {
+    // Dropping the class instead would make the reduced-motion path
+    // indistinguishable from an ended session (C7.6).
+    const container = render({
+      sessions: [summary('s-live', { liveness: 'live' })],
+      reducedMotion: true,
+    });
+    const ring = one(container, 'deck-cell-pulse');
+    expect(ring.dataset['static']).toBe('true');
+    expect(ring.classList.contains(ANIMATED_CLASSES[1])).toBe(true);
+    expect(ring.classList.contains('is-static')).toBe(true);
+    expect(animated(container).length).toBeGreaterThan(0);
+    expect(one(container, TESTID.deck).classList.contains(REDUCED_MOTION_CLASS)).toBe(true);
+  });
+
+  it('leaves the static class off when the user asked for no such thing', () => {
+    const container = render({ sessions: [summary('s-live', { liveness: 'live' })] });
+    expect(one(container, 'deck-cell-pulse').dataset['static']).toBe('false');
+    expect(one(container, TESTID.deck).classList.contains(REDUCED_MOTION_CLASS)).toBe(false);
+  });
+
+  it('NEGATIVE CONTROL: every session ended -> exactly zero animated elements', () => {
+    const container = render({
+      sessions: ['s-1', 's-2', 's-3', 's-4', 's-5'].map((id) =>
+        summary(id, { liveness: 'ended', inflight: 0 }),
+      ),
+    });
+    expect(cells(container)).toHaveLength(5);
+    expect(animated(container)).toHaveLength(0);
+  });
+
+  it('uses only classes the contract lists, and the two this altitude owns', () => {
     const container = render({ sessions: [summary('s-live', { liveness: 'live' })] });
     const classes = new Set<string>();
     for (const el of animated(container)) for (const c of el.classList) classes.add(c);
     const carried = ANIMATED_CLASSES.filter((c) => classes.has(c));
-    // `is-flowing` is the filament's, in the session interior; this altitude
-    // carries the other two.
+    // `is-flowing` is the filament's, in the session interior.
     expect(carried).toStrictEqual([ANIMATED_CLASSES[0], ANIMATED_CLASSES[1]]);
   });
 
@@ -736,269 +875,744 @@ describe('the motion invariant (C7.6)', () => {
   });
 });
 
-describe('reduced motion (C7.6, C7.8)', () => {
-  it('puts the reduced-motion class on the deck root when asked', () => {
-    const container = render({ sessions: [summary('s-1')], reducedMotion: true });
-    expect(one(container, TESTID.deck).classList.contains(REDUCED_MOTION_CLASS)).toBe(true);
+/* ------------------------------------------------------------------------ *
+ * DoD 7.7 — the engine filter chip
+ * ------------------------------------------------------------------------ */
+
+describe('the engine filter (DoD 7.7)', () => {
+  const rows = [
+    summary('s-cc-1'),
+    summary('s-cc-2'),
+    summary('s-oc-1', { engine: 'opencode' }),
+  ];
+
+  function chips(root: ParentNode): HTMLElement[] {
+    return all(root, 'deck-engine-chip');
+  }
+
+  it('offers exactly three chips, in the design’s order, with All active', () => {
+    const container = render({ sessions: rows });
+    expect(chips(container).map((c) => c.dataset['engine'])).toStrictEqual(['all', 'cc', 'oc']);
+    expect(chips(container).map((c) => c.dataset['active'])).toStrictEqual([
+      'true',
+      'false',
+      'false',
+    ]);
+    expect(DEFAULT_DECK_FILTER).toBe('all');
   });
 
-  it('leaves the class off when the user did not ask for it', () => {
-    const container = render({ sessions: [summary('s-1')] });
-    expect(one(container, TESTID.deck).classList.contains(REDUCED_MOTION_CLASS)).toBe(false);
+  it('badges each chip with the number of sessions that engine has', () => {
+    const container = render({ sessions: rows });
+    expect(chips(container).map((c) => c.dataset['count'])).toStrictEqual(['3', '2', '1']);
+    expect(chips(container).map((c) => c.textContent)).toStrictEqual([
+      'All3',
+      'Claude Code2',
+      'OpenCode1',
+    ]);
   });
 
-  it('SWAPS the animation rather than removing the semantics', () => {
-    // The live blob still says it is live and still carries the semantic
-    // classes; only the motion is swapped for a static variant. Dropping the
-    // classes instead would make the reduced-motion path indistinguishable
-    // from an ended session.
+  it('is SINGLE-SELECT: choosing one deactivates the other two', () => {
+    const container = render({ sessions: rows });
+    const cc = chips(container).find((c) => c.dataset['engine'] === 'cc');
+    if (cc === undefined) throw new Error('no cc chip');
+    click(cc);
+    expect(chips(container).map((c) => c.dataset['active'])).toStrictEqual([
+      'false',
+      'true',
+      'false',
+    ]);
+    expect(chips(container).filter((c) => c.dataset['active'] === 'true')).toHaveLength(1);
+  });
+
+  it('shows only that engine’s cards, and still says how many there are', () => {
+    const container = render({ sessions: rows });
+    key('c');
+    expect(cells(container).map((c) => c.dataset['sessionId'])).toStrictEqual([
+      's-cc-1',
+      's-cc-2',
+    ]);
+    const count = one(container, 'deck-count');
+    expect(count.dataset['shown']).toBe('2');
+    expect(count.dataset['total']).toBe('3');
+    expect(count.textContent).toBe('2 of 3');
+
+    key('o');
+    expect(cells(container).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-oc-1']);
+    key('a');
+    expect(cells(container)).toHaveLength(3);
+    expect(one(container, 'deck-count').textContent).toBe('3');
+  });
+
+  it('sends the host NOTHING and asks for no fit: it is view state only', () => {
+    // Filtering does not call fit; only re-rooting does. And a filter is a
+    // webview-local decision — no message exists for it in either direction.
+    const fits: unknown[] = [];
+    const zooms: unknown[] = [];
+    const entered: string[] = [];
     const container = render({
-      sessions: [summary('s-live', { liveness: 'live' })],
-      reducedMotion: true,
+      sessions: rows,
+      onfit: (...args: unknown[]) => fits.push(args),
+      onzoom: (...args: unknown[]) => zooms.push(args),
+      onenter: (id: string) => entered.push(id),
     });
-    expect(animated(blobFor(container, 's-live')).length).toBeGreaterThan(0);
-  });
-
-  it('carries a stylesheet rule keyed to the contract class name', () => {
-    expect(bundle).toContain(`.${REDUCED_MOTION_CLASS}`);
+    key('c');
+    key('o');
+    key('a');
+    expect(fits).toStrictEqual([]);
+    expect(zooms).toStrictEqual([]);
+    expect(entered).toStrictEqual([]);
+    expect(one(container, TESTID.deck).dataset['engineFilter']).toBe('all');
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * C7.8 — accessibility floor, deck level
+ * The rest of the control bar (2.1)
  * ------------------------------------------------------------------------ */
 
-describe('accessibility floor (C7.8)', () => {
-  it('makes every blob a real focusable control with an accessible name', () => {
-    const container = render({
-      sessions: [summary('s-1'), summary('s-2', { liveness: 'idle' })],
+describe('the control bar', () => {
+  const rows = [summary('s-1'), summary('s-2', { engine: 'opencode' })];
+
+  it('is a fixed 40px row that is not inside the transformed stage', () => {
+    const container = render({ sessions: rows });
+    const bar = one(container, 'deck-bar');
+    expect(bar.getAttribute('style')?.replace(/\s+/g, '')).toContain('height:40px');
+    expect(bar.closest(`[data-testid="${TESTID.deckStage}"]`)).toBeNull();
+    expect(bar.closest('svg')).toBeNull();
+  });
+
+  it('defaults to Grid, Live first and All', () => {
+    const container = render({ sessions: rows });
+    const deck = one(container, TESTID.deck);
+    expect([deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']]).toStrictEqual(
+      [DEFAULT_DECK_LAYOUT, DEFAULT_DECK_SORT, DEFAULT_DECK_FILTER],
+    );
+    expect([deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']]).toStrictEqual(
+      ['grid', 'live', 'all'],
+    );
+  });
+
+  it('offers the three layouts and the three sorts, single-select each', () => {
+    const container = render({ sessions: rows });
+    expect(all(container, 'deck-layout-option').map((b) => b.dataset['layout'])).toStrictEqual([
+      'list',
+      'grid',
+      'lanes',
+    ]);
+    expect(all(container, 'deck-sort-option').map((b) => b.dataset['sort'])).toStrictEqual([
+      'live',
+      'recent',
+      'engine',
+    ]);
+    const lanes = all(container, 'deck-layout-option')[2];
+    if (lanes === undefined) throw new Error('no lanes option');
+    click(lanes);
+    expect(
+      all(container, 'deck-layout-option').filter((b) => b.dataset['active'] === 'true'),
+    ).toHaveLength(1);
+    expect(one(container, TESTID.deck).dataset['layout']).toBe('lanes');
+  });
+
+  for (const [name, keys, attribute, expected] of [
+    ['engine', ['a', 'c', 'o'], 'engineFilter', ['all', 'cc', 'oc']],
+    ['layout', ['1', '2', '3'], 'layout', ['list', 'grid', 'lanes']],
+    ['sort', ['l', 'r', 'e'], 'sort', ['live', 'recent', 'engine']],
+  ] as const) {
+    it(`answers the ${name} keys ${keys.join(' ').toUpperCase()}`, () => {
+      const container = render({ sessions: rows });
+      const deck = one(container, TESTID.deck);
+      const seen: string[] = [];
+      for (const k of keys) {
+        key(k);
+        seen.push(deck.dataset[attribute] ?? '');
+      }
+      expect(seen).toStrictEqual([...expected]);
     });
-    for (const blob of blobs(container)) {
-      expect(blob.getAttribute('role')).toBe('button');
-      expect(blob.getAttribute('tabindex')).toBe('0');
-      expect(blob.getAttribute('aria-label')).not.toBe(null);
-      expect(blob.getAttribute('aria-label')).not.toBe('');
-      blob.focus();
-      expect(document.activeElement).toBe(blob);
+  }
+
+  it('never steals a keystroke from a field the user is typing into', () => {
+    const container = render({ sessions: rows });
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    harness.flushSync(() => {
+      input.dispatchEvent(
+        new KeyboardEvent('keydown', { key: '1', bubbles: true, cancelable: true }),
+      );
+    });
+    expect(one(container, TESTID.deck).dataset['layout']).toBe('grid');
+    input.remove();
+  });
+
+  it('persists NOTHING: a fresh mount is back at the defaults (G7)', () => {
+    const first = render({ sessions: rows });
+    key('3');
+    key('r');
+    key('o');
+    expect(one(first, TESTID.deck).dataset['layout']).toBe('lanes');
+    const second = render({ sessions: rows });
+    const deck = one(second, TESTID.deck);
+    expect([deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']]).toStrictEqual(
+      ['grid', 'live', 'all'],
+    );
+  });
+
+  it('writes to no storage at all — the bundle contains no persistence API', () => {
+    for (const forbidden of ['localStorage', 'sessionStorage', 'workspaceState']) {
+      expect(bundle).not.toContain(forbidden);
     }
-  });
-
-  it('names the session, its liveness, its workspace and its errors', () => {
-    const container = render({
-      sessions: [
-        summary('s-err', { workspaceMatch: false, liveness: 'live', errorCount: 2 }),
-      ],
-    });
-    const name = blobFor(container, 's-err').getAttribute('aria-label') ?? '';
-    expect(name).toContain('main s-err');
-    expect(name).toContain('live');
-    expect(name).toContain('other workspace');
-    expect(name).toContain('2 tool errors');
-  });
-
-  it('says "error" singular when there is one', () => {
-    const container = render({ sessions: [summary('s-one', { errorCount: 1 })] });
-    expect(blobFor(container, 's-one').getAttribute('aria-label')).toContain('1 tool error');
-  });
-
-  it('marks the store’s selected session current, the same way the rail does', () => {
-    const container = render({
-      sessions: [summary('s-1'), summary('s-2')],
-      selectedSessionId: 's-2',
-    });
-    expect(blobFor(container, 's-1').dataset['selected']).toBe('false');
-    expect(blobFor(container, 's-1').getAttribute('aria-current')).toBe('false');
-    expect(blobFor(container, 's-2').dataset['selected']).toBe('true');
-    expect(blobFor(container, 's-2').getAttribute('aria-current')).toBe('true');
-  });
-
-  it('carries a focus-ring rule rather than relying on the browser default', () => {
-    expect(bundle).toContain(':focus-visible');
-    expect(bundle).toContain('--vscode-focusBorder');
-  });
-
-  it('follows store order in the DOM, which is what a screen reader walks', () => {
-    // C7.8: "screen-reader order follows the store, not the geometry". The
-    // spiral places blob 2 above and left of blob 1; DOM order is unmoved.
-    const ids = ['s-1', 's-2', 's-3'];
-    const sessions = ids.map((id) => summary(id));
-    const container = render({ sessions });
-    const placed = deckLayout(sessions);
-    expect(placed.map((p) => p.sessionId)).toStrictEqual(ids);
-    expect(blobs(container).map((b) => b.dataset['sessionId'])).toStrictEqual(ids);
   });
 });
 
-describe('entering a session (C7.7, C7.8)', () => {
+/* ------------------------------------------------------------------------ *
+ * DoD 7.4 — pan, zoom, fit
+ * ------------------------------------------------------------------------ */
+
+describe('pan, zoom and fit (DoD 7.4)', () => {
+  const rows = [summary('s-1'), summary('s-2'), summary('s-3')];
+
+  function fieldOf(root: ParentNode): SVGSVGElement {
+    const svg = root.querySelector('svg');
+    if (svg === null) throw new Error('no field');
+    return svg;
+  }
+
+  it('renders the view as ONE transform on ONE stage group', () => {
+    const view = { x: 31, y: -7, k: 1.25 };
+    const container = render({ sessions: rows, deckView: view });
+    expect(one(container, TESTID.deckStage).getAttribute('transform')).toBe(transformAttr(view));
+    expect(one(container, TESTID.deckStage).getAttribute('transform')).toBe(
+      'translate(31 -7) scale(1.25)',
+    );
+  });
+
+  it('leaves every PLACEMENT untouched while the transform moves', () => {
+    // The assertion this whole surface exists for. If pan or zoom ever edited
+    // coordinates instead, layout would stop being a pure function of state,
+    // every golden would go stale, and "a spawn adds, it never reflows" would
+    // quietly stop being true.
+    const still = render({ sessions: rows });
+    const moved = render({ sessions: rows, deckView: { x: 120, y: 60, k: 1 } });
+    const at = (root: ParentNode): (string | null)[] =>
+      cells(root).map((c) => c.getAttribute('transform'));
+    expect(at(moved)).toStrictEqual(at(still));
+  });
+
+  it('reports a drag on the EMPTY FIELD as client-pixel deltas', () => {
+    const pans: [number, number][] = [];
+    const container = render({
+      sessions: rows,
+      onpan: (dx: number, dy: number) => pans.push([dx, dy]),
+    });
+    const field = fieldOf(container);
+    field.dispatchEvent(pointer('pointerdown', 100, 100));
+    field.dispatchEvent(pointer('pointermove', 140, 130));
+    field.dispatchEvent(pointer('pointermove', 150, 130));
+    field.dispatchEvent(pointer('pointerup', 150, 130));
+    expect(pans).toStrictEqual([
+      [40, 30],
+      [10, 0],
+    ]);
+  });
+
+  it('does NOT pan when the drag starts on a card', () => {
+    const pans: unknown[] = [];
+    const container = render({
+      sessions: rows,
+      onpan: (...args: unknown[]) => pans.push(args),
+    });
+    const cell = cellFor(container, 's-1');
+    cell.dispatchEvent(pointer('pointerdown', 100, 100));
+    cell.dispatchEvent(pointer('pointermove', 180, 160));
+    cell.dispatchEvent(pointer('pointerup', 180, 160));
+    expect(pans).toStrictEqual([]);
+  });
+
+  it('reports a wheel as SIGNED NOTCHES about the cursor, and swallows the event', () => {
+    const zooms: [number, number, number][] = [];
+    const container = render({
+      sessions: rows,
+      onzoom: (n: number, x: number, y: number) => zooms.push([n, x, y]),
+    });
+    const field = fieldOf(container);
+    const inward = wheel(field, -120, 300, 200);
+    const outward = wheel(field, 120, 300, 200);
+    expect(zooms).toStrictEqual([
+      [1, 300, 200],
+      [-1, 300, 200],
+    ]);
+    expect(inward.defaultPrevented).toBe(true);
+    expect(outward.defaultPrevented).toBe(true);
+  });
+
+  it('asks for a FIT on a double-click on the empty field, with the content bounds', () => {
+    const fits: [unknown, unknown][] = [];
+    const container = render({
+      sessions: rows,
+      onfit: (content: unknown, size: unknown) => fits.push([content, size]),
+    });
+    harness.flushSync(() => {
+      fieldOf(container).dispatchEvent(
+        new MouseEvent('dblclick', { bubbles: true, cancelable: true }),
+      );
+    });
+    const expectedContent = boundsOf(
+      expectPlacements(rows).map((p) => ({ x: p.x, y: p.y, w: DECK_CARD_W, h: DECK_CARD_H })),
+    );
+    expect(fits).toHaveLength(1);
+    expect(fits[0]?.[0]).toStrictEqual(expectedContent);
+    expect(fits[0]?.[1]).toStrictEqual({ width: FIELD_W, height: FIELD_H });
+  });
+
+  it('does NOT fit on a double-click on a card', () => {
+    const fits: unknown[] = [];
+    const container = render({
+      sessions: rows,
+      onfit: (...args: unknown[]) => fits.push(args),
+    });
+    harness.flushSync(() => {
+      cellFor(container, 's-1').dispatchEvent(
+        new MouseEvent('dblclick', { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(fits).toStrictEqual([]);
+  });
+});
+
+describe('the store applies the deck viewport through viewport.ts and nowhere else', () => {
+  it('zooms exactly where zoomAbout puts it, at DECK_ZOOM_LIMITS', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    const before = store.getView().deckView;
+    store.zoomDeck(1, 300, 200);
+    expect(store.getView().deckView).toStrictEqual(
+      zoomAbout(before, 300, 200, 1, DECK_ZOOM_LIMITS),
+    );
+  });
+
+  it('clamps to the deck’s own range in both directions', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    for (let i = 0; i < 40; i += 1) store.zoomDeck(1, 0, 0);
+    expect(store.getView().deckView.k).toBe(DECK_ZOOM_LIMITS.max);
+    for (let i = 0; i < 80; i += 1) store.zoomDeck(-1, 0, 0);
+    expect(store.getView().deckView.k).toBe(DECK_ZOOM_LIMITS.min);
+    store.resetDeckView();
+    expect(store.getView().deckView).toStrictEqual({ x: 0, y: 0, k: 1 });
+  });
+
+  it('fits exactly where fitTo puts it, with 24px of padding', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    const content = { x: 0, y: 0, w: 900, h: 400 };
+    const size = { width: FIELD_W, height: FIELD_H };
+    store.fitDeck(content, size);
+    expect(DECK_FIT_PADDING).toBe(24);
+    expect(store.getView().deckView).toStrictEqual(
+      fitTo(content, size, DECK_FIT_PADDING, DECK_ZOOM_LIMITS),
+    );
+  });
+
+  it('ignores a non-finite gesture rather than corrupting the view', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.panDeck(Number.NaN, 5);
+    store.zoomDeck(Number.POSITIVE_INFINITY, 0, 0);
+    store.zoomDeck(0, 0, 0);
+    store.zoomDeck(1, Number.NaN, 0);
+    store.fitDeck({ x: 0, y: 0, w: Number.NaN, h: 10 }, { width: 100, height: 100 });
+    expect(store.getView().deckView).toStrictEqual({ x: 0, y: 0, k: 1 });
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * Entering a session, and the accessibility floor
+ * ------------------------------------------------------------------------ */
+
+describe('entering a session', () => {
   it('reports the session id on click, and posts no message of its own', () => {
     const entered: string[] = [];
     const container = render({
       sessions: [summary('s-1'), summary('s-2')],
       onenter: (id: string) => entered.push(id),
     });
-    click(blobFor(container, 's-2'));
+    click(cellFor(container, 's-2'));
     expect(entered).toStrictEqual(['s-2']);
   });
 
-  for (const key of ['Enter', ' ']) {
-    it(`enters the session on ${key === ' ' ? 'Space' : key}`, () => {
+  for (const name of ['Enter', ' ']) {
+    it(`enters the session on ${name === ' ' ? 'Space' : name}`, () => {
       const entered: string[] = [];
       const container = render({
         sessions: [summary('s-1')],
         onenter: (id: string) => entered.push(id),
       });
-      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
-      harness.flushSync(() => blobFor(container, 's-1').dispatchEvent(event));
+      const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
+      harness.flushSync(() => cellFor(container, 's-1').dispatchEvent(event));
       expect(entered).toStrictEqual(['s-1']);
       expect(event.defaultPrevented).toBe(true);
     });
   }
 
-  it('ignores keys that are not an activation', () => {
+  it('ignores a key that is not an activation', () => {
     const entered: string[] = [];
     const container = render({
       sessions: [summary('s-1')],
       onenter: (id: string) => entered.push(id),
     });
     harness.flushSync(() =>
-      blobFor(container, 's-1').dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true }),
+      cellFor(container, 's-1').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'q', bubbles: true, cancelable: true }),
       ),
     );
     expect(entered).toStrictEqual([]);
   });
 
+  it('enters a REFUSED session too — that is where the refusal card lives', () => {
+    const entered: string[] = [];
+    const container = render({
+      sessions: [refusedSummary('s-refused')],
+      onenter: (id: string) => entered.push(id),
+    });
+    click(cellFor(container, 's-refused'));
+    expect(entered).toStrictEqual(['s-refused']);
+  });
+
   it('does not throw when no handler is wired', () => {
     const container = render({ sessions: [summary('s-1')] });
-    expect(() => click(blobFor(container, 's-1'))).not.toThrow();
+    expect(() => click(cellFor(container, 's-1'))).not.toThrow();
+  });
+});
+
+describe('accessibility floor (C7.8)', () => {
+  it('makes every card a real focusable control with an accessible name', () => {
+    const container = render({
+      sessions: [summary('s-1'), summary('s-2', { liveness: 'idle' })],
+    });
+    for (const cell of cells(container)) {
+      expect(cell.getAttribute('role')).toBe('button');
+      expect(cell.getAttribute('tabindex')).toBe('0');
+      expect(cell.getAttribute('aria-label')).not.toBe(null);
+      expect(cell.getAttribute('aria-label')).not.toBe('');
+      cell.focus();
+      expect(document.activeElement).toBe(cell);
+    }
+  });
+
+  it('names the session, its liveness, its engine, its workspace and its errors', () => {
+    const container = render({
+      sessions: [
+        summary('s-err', { workspaceMatch: false, liveness: 'live', errorCount: 2 }),
+      ],
+    });
+    const name = cellFor(container, 's-err').getAttribute('aria-label') ?? '';
+    expect(name).toContain('main s-err');
+    expect(name).toContain('live');
+    expect(name).toContain('cc');
+    expect(name).toContain('other workspace');
+    expect(name).toContain('2 tool errors');
+  });
+
+  it('says "error" singular when there is one', () => {
+    const container = render({ sessions: [summary('s-one', { errorCount: 1 })] });
+    expect(cellFor(container, 's-one').getAttribute('aria-label')).toContain('1 tool error');
+  });
+
+  it('carries a focus-ring rule rather than relying on the browser default', () => {
+    expect(bundle).toContain(':focus-visible');
+    expect(bundle).toContain('--vscode-focusBorder');
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * The store seam — the deck driven by the real reducer, not by literals
+ * DoD 2 — the drag handlers are GONE
+ * ------------------------------------------------------------------------ */
+
+describe('nothing on a card is draggable (DoD 2)', () => {
+  it('the card source carries no drag handler and no drag state', () => {
+    const cell = componentSources.find((s) => s.path.endsWith('SessionCell.svelte'));
+    expect(cell).toBeDefined();
+    const matches = (cell?.text ?? '').match(/ondrag|dragging/g) ?? [];
+    expect(matches).toStrictEqual([]);
+  });
+
+  it('a pointer drag across a card enters the session rather than moving it', () => {
+    // The old threshold logic existed to tell a pull-aside from a click. With
+    // no pull-aside there is no threshold, and a click that happens to move
+    // must still enter — the failure the threshold used to cause was a card
+    // that could not be clicked at all.
+    const entered: string[] = [];
+    const container = render({
+      sessions: [summary('s-1')],
+      onenter: (id: string) => entered.push(id),
+    });
+    const cell = cellFor(container, 's-1');
+    cell.dispatchEvent(pointer('pointerdown', 100, 100));
+    cell.dispatchEvent(pointer('pointermove', 140, 130));
+    cell.dispatchEvent(pointer('pointerup', 140, 130));
+    click(cell);
+    expect(entered).toStrictEqual(['s-1']);
+    expect(cell.getAttribute('transform')).toBe('translate(0 0)');
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * The store seam — the deck driven by the real reducer
  * ------------------------------------------------------------------------ */
 
 describe('driven by a real store', () => {
   it('takes its whole input from view.sessions, with no SessionState anywhere', () => {
     const view = viewOf([liveSession({ sessionId: 's-real' })]);
+    const row = view.sessions[0];
+    if (row === undefined) throw new Error('no summary');
     const container = render({
       sessions: view.sessions,
       selectedSessionId: view.selectedSessionId,
       degraded: view.degraded,
+      now: NOW,
     });
-    const blob = blobFor(container, 's-real');
-    const row = view.sessions[0];
-    if (row === undefined) throw new Error('no summary');
-    expect(blob.dataset['liveness']).toBe(row.liveness);
-    expect(blob.dataset['nodes']).toBe(String(row.nodeCount));
-    expect(blob.dataset['errors']).toBe(String(row.errorCount));
-    expect(blob.textContent).toContain(row.label);
+    const cell = cellFor(container, 's-real');
+    expect(cell.dataset['liveness']).toBe(row.liveness);
+    expect(cell.dataset['nodes']).toBe(String(row.nodeCount));
+    expect(cell.dataset['errors']).toBe(String(row.errorCount));
+    expect(figure(cell, 'deck-cell-label')).toBe(row.label);
   });
 
-  it('takes the tag from the store, which reads an ABSENT engine as cc', () => {
-    // `testdata.ts:liveSession` sets no `engine`. That is the pre-Phase-5
-    // shape and still a legal `SessionState` — the field is optional and
-    // `src/model/events.ts` says absence reads as `'cc'`. The default lives in
-    // `summarize`, so this is the test that it is applied at all, and that the
-    // component does not carry a second copy of the same rule.
+  it('draws the agent and in-flight counts the STORE derived from a real tree', () => {
+    // `liveSession()` is root + agent-1 + agent-2 (three agents) with exactly
+    // one running tool call, `tool-agent-2`. Derived from the store rather
+    // than written out, so the numbers cannot drift from the builder.
+    const view = viewOf([liveSession({ sessionId: 's-real' })]);
+    const row = view.sessions[0];
+    if (row === undefined) throw new Error('no summary');
+    expect(row.agents).toBe(3);
+    expect(row.inflight).toBe(1);
+    const container = render({ sessions: view.sessions, now: NOW });
+    const cell = cellFor(container, 's-real');
+    expect(figure(cell, 'deck-cell-agents')).toBe(`${row.agents} ag`);
+    expect(figure(cell, 'deck-cell-inflight')).toBe(`${row.inflight} in flight`);
+  });
+
+  it('draws the burn the store carried, summed across the pair', () => {
+    const state = liveSession({ sessionId: 's-real' });
+    const view = viewOf([state]);
+    const row = view.sessions[0];
+    if (row === undefined || row.burn === undefined) throw new Error('no burn');
+    expect(row.burn).toStrictEqual(state.burn);
+    const container = render({ sessions: view.sessions, now: NOW });
+    expect(figure(cellFor(container, 's-real'), 'deck-cell-tokens')).toBe(
+      formatCompactTokens(row.burn.prompt + row.burn.output),
+    );
+    expect(figure(cellFor(container, 's-real'), 'deck-cell-tokens')).toBe('51.8k');
+  });
+
+  it('draws an em-dash when the STORE carried no burn at all', () => {
+    const state = liveSession({ sessionId: 's-oc' });
+    delete (state as { burn?: unknown }).burn;
+    const view = viewOf([state]);
+    expect(view.sessions[0]?.burn).toBeUndefined();
+    const container = render({ sessions: view.sessions, now: NOW });
+    expect(figure(cellFor(container, 's-oc'), 'deck-cell-tokens')).toBe(EM_DASH);
+  });
+
+  it('takes the glyph from the store, which reads an ABSENT engine as cc', () => {
     const state = liveSession({ sessionId: 's-untagged' });
     expect(state.engine).toBeUndefined();
     const view = viewOf([state]);
     expect(view.sessions[0]?.engine).toBe('cc');
-    const container = render({ sessions: view.sessions });
-    expect(textsOf(blobFor(container, 's-untagged'))).toContain('cc');
+    const container = render({ sessions: view.sessions, now: NOW });
+    expect(figure(cellFor(container, 's-untagged'), 'deck-cell-engine')).toBe('CC');
   });
 
-  it('renders an opencode-stamped state as opencode, store to canvas', () => {
-    // THE HONEST SCOPE OF THIS TEST: no OpenCode session reaches the webview
-    // until the host wiring of DoD 5.2 lands, so the stamp here is SET on a
-    // state rather than observed from a database. What it proves is the
-    // store-to-component path for a non-`cc` value, not anything about the
-    // OpenCode engine.
+  it('renders an opencode-stamped state as OC, store to canvas', () => {
     const view = viewOf([liveSession({ sessionId: 's-oc-real', engine: 'opencode' })]);
     expect(view.sessions[0]?.engine).toBe('opencode');
-    const container = render({ sessions: view.sessions });
-    expect(textsOf(blobFor(container, 's-oc-real'))).toContain('opencode');
-    expect(textsOf(blobFor(container, 's-oc-real'))).not.toContain('cc');
+    const container = render({ sessions: view.sessions, now: NOW });
+    expect(figure(cellFor(container, 's-oc-real'), 'deck-cell-engine')).toBe('OC');
   });
 
   it('shows the badge count the store derived, and that count is not zero', () => {
-    // Derived from the store rather than written out: a literal against a
-    // shared builder is a number that goes wrong the next time the builder
-    // changes, and reads as a renderer regression.
     const view = viewOf([liveSession({ sessionId: 's-real' })]);
     const row = view.sessions[0];
     if (row === undefined) throw new Error('no summary');
     expect(row.errorCount).toBeGreaterThan(0);
-    const container = render({ sessions: view.sessions });
-    expect(one(container, TESTID.deckErrorBadge).textContent).toBe(String(row.errorCount));
+    const container = render({ sessions: view.sessions, now: NOW });
+    expect(one(container, TESTID.deckErrorBadge).dataset['count']).toBe(String(row.errorCount));
   });
 
-  it('draws a constellation dot per node the store counted', () => {
-    const view = viewOf([liveSession({ sessionId: 's-real' })]);
-    const row = view.sessions[0];
-    if (row === undefined) throw new Error('no summary');
-    expect(row.nodeCount).toBeGreaterThan(0);
-    expect(row.nodeCount).toBeLessThan(CONSTELLATION_CAP);
-    const container = render({ sessions: view.sessions });
-    expect(constellationOf(container)).toHaveLength(row.nodeCount);
-  });
-
-  it('a session the store refused draws cracked, at the floor, with no numbers', () => {
+  it('a session the store refused draws dashed, with no numbers read off it', () => {
     const view = viewOf([unsupportedSession({ sessionId: 's-refused' })]);
     const row = view.sessions[0];
     if (row === undefined) throw new Error('no summary');
-    // The store zeroes both counts for a refused session; this component holds
-    // no branch of its own for that, so these three assertions are the proof
-    // that the deletion was safe.
     expect(row.refused).toBe(true);
     expect(row.nodeCount).toBe(0);
     expect(row.errorCount).toBe(0);
-    const container = render({ sessions: view.sessions });
-    const blob = blobFor(container, 's-refused');
-    expect(blob.classList.contains(CRACKED_CLASS)).toBe(true);
+    expect(row.agents).toBe(0);
+    expect(row.inflight).toBe(0);
+    expect(row.burn).toBeUndefined();
+    const container = render({ sessions: view.sessions, now: NOW });
+    const cell = cellFor(container, 's-refused');
+    expect(cell.classList.contains(CRACKED_CLASS)).toBe(true);
     expect(all(container, TESTID.deckErrorBadge)).toHaveLength(0);
-    expect(constellationOf(container)).toHaveLength(0);
-    expect(deckLayout(view.sessions)[0]?.R).toBe(DECK_RADIUS_MIN);
+    expect(figure(cell, 'deck-cell-tokens')).toBe(EM_DASH);
+    expect(figure(cell, 'deck-cell-age')).toBe(EM_DASH);
   });
 
-  it('cracks a session refused by a schemaMismatch message mid-flight', () => {
-    // The state on the wire still says `live`; only the store knows better.
+  it('dashes a session refused by a schemaMismatch message mid-flight', () => {
     const state = liveSession({ sessionId: 's-mismatch' });
     const view = viewOf([state], ['s-mismatch']);
     expect(state.liveness).toBe('live');
-    const container = render({ sessions: view.sessions });
-    const blob = blobFor(container, 's-mismatch');
-    expect(blob.dataset['liveness']).toBe('unsupported');
-    expect(blob.classList.contains(CRACKED_CLASS)).toBe(true);
+    const container = render({ sessions: view.sessions, now: NOW });
+    const cell = cellFor(container, 's-mismatch');
+    expect(cell.dataset['liveness']).toBe('unsupported');
+    expect(cell.classList.contains(CRACKED_CLASS)).toBe(true);
     expect(animated(container)).toHaveLength(0);
   });
 
-  it('renders one blob per session in the store’s own order', () => {
+  it('orders a real store’s rows by the sort, not by snapshot order', () => {
     const ids = ['s-x', 's-y', 's-z'];
     const view = viewOf(
-      ids.map((id) =>
+      ids.map((id, index) =>
         liveSession({
           sessionId: id,
+          liveness: index === 2 ? 'live' : 'ended',
           root: agent({
             id: 'root',
             kind: 'main',
             label: `main ${id}`,
             spawnDepth: 0,
+            startedAt: 1_000 + index,
             children: [tool({ id: 't1' })],
           }),
           spawnEdges: [],
         }),
       ),
     );
-    const container = render({ sessions: view.sessions });
+    const container = render({ sessions: view.sessions, now: NOW });
+    // Live first: `s-z` is the only live one, so it leads whatever order the
+    // host sent. That is the sort doing its job rather than the array's.
     expect(view.sessions.map((s) => s.sessionId)).toStrictEqual(ids);
-    expect(blobs(container).map((b) => b.dataset['sessionId'])).toStrictEqual(ids);
+    expect(cells(container).map((c) => c.dataset['sessionId'])[0]).toBe('s-z');
+  });
+
+  it('animates nothing for a settled session out of the real store', () => {
+    const view = viewOf([settledSession({ sessionId: 's-settled' })]);
+    const container = render({ sessions: view.sessions, now: NOW });
+    expect(cells(container)).toHaveLength(1);
+    expect(animated(container)).toHaveLength(0);
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * The stylesheet seam
+ * The whole panel — the two claims that are about WIRING, not a component
+ * ------------------------------------------------------------------------ */
+
+describe('through the mounted panel (DoD 7.4, the survival half)', () => {
+  interface Panel {
+    container: HTMLElement;
+    store: Store;
+    dispose: () => void;
+  }
+
+  const panels: Panel[] = [];
+
+  function panel(): Panel {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const started = panelHarness.start(container, { postMessage: () => {} });
+    panelHarness.flushSync();
+    const made: Panel = {
+      container,
+      store: started.store,
+      dispose: () => {
+        started.dispose();
+        container.remove();
+      },
+    };
+    panels.push(made);
+    return made;
+  }
+
+  afterEach(() => {
+    while (panels.length > 0) panels.pop()?.dispose();
+  });
+
+  function stageTransform(p: Panel): string {
+    return one(p.container, TESTID.deckStage).getAttribute('transform') ?? '';
+  }
+
+  it('keeps the transform across a snapshot AND a diff — a new event never resets it', () => {
+    const p = panel();
+    panelHarness.flushSync(() => {
+      p.store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    });
+    panelHarness.flushSync(() => {
+      p.store.panDeck(45, -20);
+      p.store.zoomDeck(1, 300, 200);
+    });
+    const moved = p.store.getView().deckView;
+    expect(moved).not.toStrictEqual({ x: 0, y: 0, k: 1 });
+    const drawn = stageTransform(p);
+    expect(drawn).toBe(transformAttr(moved));
+
+    // A fresh snapshot: the host's authoritative re-statement.
+    panelHarness.flushSync(() => {
+      p.store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    });
+    expect(p.store.getView().deckView).toStrictEqual(moved);
+    expect(stageTransform(p)).toBe(drawn);
+
+    // And a diff: one more tool call arriving mid-session.
+    panelHarness.flushSync(() => {
+      p.store.handleMessage({
+        type: 'diff',
+        sessionId: 'session-live',
+        patch: {
+          tree: [
+            {
+              op: 'insertNode',
+              parentId: 'root',
+              afterId: null,
+              node: tool({ id: 'tool-new', toolName: 'Grep', status: 'running' }),
+            },
+          ],
+        },
+      });
+    });
+    expect(p.store.getView().deckView).toStrictEqual(moved);
+    expect(stageTransform(p)).toBe(drawn);
+  });
+
+  it('routes a real wheel gesture through zoomAbout at the deck limits', () => {
+    // The wiring claim: the component reports NOTCHES and the store applies
+    // `viewport.zoomAbout`. A component still reporting a multiplicative
+    // factor would land somewhere else entirely, and nothing type-checks the
+    // `.svelte` file that passes it along.
+    const p = panel();
+    panelHarness.flushSync(() => {
+      p.store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    });
+    const before = p.store.getView().deckView;
+    const field = p.container.querySelector('svg');
+    if (field === null) throw new Error('no field');
+    panelHarness.flushSync(() => {
+      field.dispatchEvent(
+        new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          deltaY: -120,
+          clientX: 300,
+          clientY: 200,
+        }),
+      );
+    });
+    expect(p.store.getView().deckView).toStrictEqual(
+      zoomAbout(before, 300, 200, 1, DECK_ZOOM_LIMITS),
+    );
+    expect(p.store.getView().deckView.k).toBeGreaterThan(before.k);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * The stylesheet seam and theming
  * ------------------------------------------------------------------------ */
 
 describe('every contract class the deck applies also carries style', () => {
@@ -1006,8 +1620,7 @@ describe('every contract class the deck applies also carries style', () => {
   // DOM side cannot drift. CSS cannot import a constant, so the stylesheet
   // spells each name a second time — and Svelte PRUNES a scoped rule it cannot
   // prove is used, which would silently remove the styling while every DOM
-  // assertion above still passed. The `.` prefix is what makes this a check on
-  // the stylesheet rather than on the contract module bundled beside it.
+  // assertion above still passed.
   for (const cls of [
     CRACKED_CLASS,
     HOLLOW_LIVE_CLASS,
@@ -1022,9 +1635,39 @@ describe('every contract class the deck applies also carries style', () => {
   }
 });
 
-/* ------------------------------------------------------------------------ *
- * Theming (C7.7)
- * ------------------------------------------------------------------------ */
+describe('the testids this package spells twice', () => {
+  // `canvas-contract.ts` holds every name that crosses a package boundary and
+  // is not this package's file to edit. These names have ONE owner — the deck
+  // — so they live in the component, which means this file spells them a
+  // second time. That seam is closed by assertion rather than by care.
+  for (const testId of [
+    'deck-bar',
+    'deck-engine-chip',
+    'deck-layout-option',
+    'deck-sort-option',
+    'deck-count',
+    'deck-waiting',
+    'deck-cell-engine',
+    'deck-cell-label',
+    'deck-cell-agents',
+    'deck-cell-inflight',
+    'deck-cell-tokens',
+    'deck-cell-cost',
+    'deck-cell-status',
+    'deck-cell-age',
+    'deck-cell-border',
+    'deck-cell-pulse',
+    'deck-cell-selection',
+    'deck-cell-foreign',
+  ]) {
+    it(`emits "${testId}" from a component and not only from this file`, () => {
+      const written = componentSources.some((s) =>
+        s.text.includes(`data-testid="${testId}"`),
+      );
+      expect({ testId, written }).toStrictEqual({ testId, written: true });
+    });
+  }
+});
 
 describe('theming', () => {
   it('hardcodes no colour anywhere in either component', () => {
@@ -1049,61 +1692,5 @@ describe('theming', () => {
         expect({ path, decl }).toStrictEqual({ path, decl: expect.stringContaining('--vscode-') });
       }
     }
-  });
-});
-
-describe('dragging a blob aside', () => {
-  /** A pointer event jsdom will actually construct. */
-  function pointer(type: string, x: number, y: number): Event {
-    const Ctor = (globalThis as { PointerEvent?: typeof MouseEvent }).PointerEvent ?? MouseEvent;
-    const event = new Ctor(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
-    Object.defineProperty(event, 'pointerId', { value: 1, configurable: true });
-    Object.defineProperty(event, 'button', { value: 0, configurable: true });
-    return event;
-  }
-
-  it('reports a drag past the threshold, and does NOT enter the session', () => {
-    const nudges: Array<[string, number, number]> = [];
-    const entered: string[] = [];
-    const container = render({
-      sessions: [summary('s1')],
-      onnudge: (id: string, dx: number, dy: number) => nudges.push([id, dx, dy]),
-      onenter: (id: string) => entered.push(id),
-    });
-
-    const blob = one(container, TESTID.deckBlob);
-    blob.dispatchEvent(pointer('pointerdown', 100, 100));
-    blob.dispatchEvent(pointer('pointermove', 140, 130));
-    blob.dispatchEvent(pointer('pointerup', 140, 130));
-    blob.dispatchEvent(pointer('click', 140, 130));
-
-    expect(nudges.length).toBeGreaterThan(0);
-    expect(nudges[0]?.[0]).toBe('s1');
-    // A drag must never also enter: that was the whole reason for the
-    // threshold, and getting it wrong makes the blob unmovable in practice.
-    expect(entered).toEqual([]);
-  });
-
-  it('still enters on a click that does not move', () => {
-    const entered: string[] = [];
-    const container = render({
-      sessions: [summary('s1')],
-      onenter: (id: string) => entered.push(id),
-    });
-    const blob = one(container, TESTID.deckBlob);
-    blob.dispatchEvent(pointer('pointerdown', 100, 100));
-    blob.dispatchEvent(pointer('pointerup', 101, 100));
-    blob.dispatchEvent(pointer('click', 101, 100));
-    expect(entered).toEqual(['s1']);
-  });
-
-  it('renders the nudge as a transform on the blob group', () => {
-    const container = render({
-      sessions: [summary('s1')],
-      blobNudges: { s1: { dx: 40, dy: -25 } },
-    });
-    const blob = one(container, TESTID.deckBlob);
-    expect(blob.getAttribute('transform')).toBe('translate(40 -25)');
-    expect(blob.dataset['nudged']).toBe('true');
   });
 });

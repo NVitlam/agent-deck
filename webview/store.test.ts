@@ -6,7 +6,7 @@ import type {
 } from '../src/model/events.js';
 import { createStore } from './store.js';
 import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
-import { DECK_ZOOM_LIMITS } from './viewport.js';
+import { DECK_FIT_PADDING, DECK_ZOOM_LIMITS, fitTo, zoomAbout } from './viewport.js';
 import {
   DEFAULT_DECK_LAYOUT,
   DEFAULT_DECK_SORT,
@@ -840,6 +840,85 @@ describe('the derived numbers accumulate nothing', () => {
   });
 });
 
+describe('SessionSummary — the deck card\u2019s own figures', () => {
+  it('counts agents and in-flight TOOLS separately, and neither twice', () => {
+    // `liveSession()` is root + agent-1 + agent-2, with exactly one running
+    // tool call (`tool-agent-2`). Two of the three agents are `running` too,
+    // and they are deliberately NOT counted as in flight: an agent is running
+    // BECAUSE a tool under it is, so counting both would report one in-flight
+    // call three times on this tree.
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    const row = store.getView().sessions[0];
+    expect(row?.agents).toBe(3);
+    expect(row?.inflight).toBe(1);
+  });
+
+  it('carries burn and contextNow by reference, and absent stays absent', () => {
+    const state = liveSession();
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [state] });
+    expect(store.getView().sessions[0]?.burn).toStrictEqual(state.burn);
+    expect(store.getView().sessions[0]?.contextNow).toStrictEqual(state.contextNow);
+
+    const bare = liveSession({ sessionId: 'session-bare' });
+    delete (bare as { burn?: unknown }).burn;
+    delete (bare as { contextNow?: unknown }).contextNow;
+    const second = createStore();
+    second.handleMessage({ type: 'snapshot', sessions: [bare] });
+    const row = second.getView().sessions[0];
+    // ABSENT, never 0. An engine that reports no figure leaves the field
+    // unset, and a renderer shows an em-dash; writing 0 here would claim the
+    // session spent nothing.
+    expect(row?.burn).toBeUndefined();
+    expect(row?.contextNow).toBeUndefined();
+    expect('burn' in (row ?? {})).toBe(false);
+  });
+
+  it('takes lastEventAt from the greatest agent timestamp in the tree', () => {
+    // `liveSession()`: root at 1,000, agent-1 at 2,000, agent-2 at 3,000.
+    // Tools carry no timestamp at all, so they contribute nothing.
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    expect(store.getView().sessions[0]?.lastEventAt).toBe(3_000);
+  });
+
+  it('prefers endedAt to startedAt: a finished agent was last heard from then', () => {
+    const store = createStore();
+    const state = liveSession();
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [liveSession({ root: { ...state.root, endedAt: 9_999 } })],
+    });
+    expect(store.getView().sessions[0]?.lastEventAt).toBe(9_999);
+  });
+
+  it('carries costUsd unchanged, 0 included, because 0 means NOT COMPUTED', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    expect(store.getView().sessions[0]?.costUsd).toBe(0);
+    const paid = createStore();
+    paid.handleMessage({
+      type: 'snapshot',
+      sessions: [liveSession({ totals: { costUsd: 1.25 } })],
+    });
+    expect(paid.getView().sessions[0]?.costUsd).toBe(1.25);
+  });
+
+  it('reads NO number off a refused session — G3, on every one of the new fields', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [unsupportedSession()] });
+    const row = store.getView().sessions[0];
+    expect(row?.refused).toBe(true);
+    expect(row?.agents).toBe(0);
+    expect(row?.inflight).toBe(0);
+    expect(row?.costUsd).toBe(0);
+    expect(row?.lastEventAt).toBe(0);
+    expect(row?.burn).toBeUndefined();
+    expect(row?.contextNow).toBeUndefined();
+  });
+});
+
 describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
   it('filters by liveness without touching the host\u2019s account of what exists', () => {
     const store = createStore();
@@ -906,7 +985,7 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     );
 
     store.panDeck(37, -18);
-    store.zoomDeck(1.1, 200, 120);
+    store.zoomDeck(1, 200, 120);
 
     const view = store.getView();
     expect(view.deckView.x).not.toBe(0);
@@ -932,18 +1011,76 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
   });
 
   it('clamps zoom and returns to the identity transform on reset', () => {
+    // NOTCHES, signed: positive zooms in and negative zooms out. The argument
+    // used to be a multiplicative factor, so a zoom-out was `1 / 1.5` — a
+    // POSITIVE number, which under the new signature zooms IN. That is why
+    // this test moved with the signature rather than being left to pass by
+    // accident on the clamp it was meant to be probing from the other side.
     const store = createStore();
     store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
 
-    for (let i = 0; i < 40; i += 1) store.zoomDeck(1.5, 0, 0);
+    for (let i = 0; i < 40; i += 1) store.zoomDeck(1, 0, 0);
     expect(store.getView().deckView.k).toBeLessThanOrEqual(DECK_ZOOM_LIMITS.max);
     expect(store.getView().deckView.k).toBe(DECK_ZOOM_LIMITS.max);
-    for (let i = 0; i < 80; i += 1) store.zoomDeck(1 / 1.5, 0, 0);
+    for (let i = 0; i < 80; i += 1) store.zoomDeck(-1, 0, 0);
     expect(store.getView().deckView.k).toBeGreaterThanOrEqual(DECK_ZOOM_LIMITS.min);
     expect(store.getView().deckView.k).toBe(DECK_ZOOM_LIMITS.min);
 
     store.resetDeckView();
     expect(store.getView().deckView).toEqual({ x: 0, y: 0, k: 1 });
+  });
+
+  it('lands exactly where viewport.zoomAbout puts it, and nowhere else', () => {
+    // The whole reason the signature changed: `viewport.ts` is the single
+    // definition of pan/zoom for all three altitudes, and a store that
+    // re-implemented `ZOOM_FACTOR ** notches` beside it would be a second
+    // implementation of one rule — the class that already put two viewports
+    // with different clamps into this codebase.
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    const before = store.getView().deckView;
+    store.zoomDeck(1, 300, 200);
+    expect(store.getView().deckView).toStrictEqual(
+      zoomAbout(before, 300, 200, 1, DECK_ZOOM_LIMITS),
+    );
+    const after = store.getView().deckView;
+    store.zoomDeck(-1, 300, 200);
+    expect(store.getView().deckView).toStrictEqual(
+      zoomAbout(after, 300, 200, -1, DECK_ZOOM_LIMITS),
+    );
+  });
+
+  it('fits content into a viewport exactly where viewport.fitTo puts it', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    const content = { x: 0, y: 0, w: 900, h: 400 };
+    const size = { width: 960, height: 600 };
+    store.fitDeck(content, size);
+    expect(store.getView().deckView).toStrictEqual(
+      fitTo(content, size, DECK_FIT_PADDING, DECK_ZOOM_LIMITS),
+    );
+    // The design's padding, pinned here so a change to the constant shows up
+    // as a failing gate rather than as a slightly tighter fit nobody noticed.
+    expect(DECK_FIT_PADDING).toBe(24);
+  });
+
+  it('survives a snapshot and a diff: a new event never resets the viewport', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.panDeck(45, -20);
+    store.zoomDeck(1, 300, 200);
+    const moved = store.getView().deckView;
+    expect(moved).not.toEqual({ x: 0, y: 0, k: 1 });
+
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    expect(store.getView().deckView).toStrictEqual(moved);
+
+    store.handleMessage({
+      type: 'diff',
+      sessionId: 'session-live',
+      patch: { fields: { liveness: 'idle' } },
+    });
+    expect(store.getView().deckView).toStrictEqual(moved);
   });
 
   it('keeps the point under the cursor under the cursor while zooming', () => {
@@ -964,9 +1101,14 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     const store = createStore();
     store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
     store.panDeck(Number.NaN, 5);
+    store.panDeck(0, 0);
     store.zoomDeck(Number.POSITIVE_INFINITY, 0, 0);
+    // Zero notches is a no-op by arithmetic, not by a guard: `ZOOM_FACTOR ** 0`
+    // is 1. It is listed here so the no-op stays a no-op if the guard moves.
     store.zoomDeck(0, 0, 0);
-    store.zoomDeck(-1, 0, 0);
+    store.zoomDeck(1, Number.NaN, 0);
+    store.fitDeck({ x: 0, y: 0, w: Number.NaN, h: 10 }, { width: 100, height: 100 });
+    store.fitDeck({ x: 0, y: 0, w: 10, h: 10 }, { width: Number.NaN, height: 100 });
     expect(store.getView().deckView).toEqual({ x: 0, y: 0, k: 1 });
   });
 });

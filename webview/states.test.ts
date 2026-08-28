@@ -898,7 +898,33 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     it('animates only what is running or live', () => {
       const panel = panelWith([liveSession()]);
 
-      /** Why an animated element is allowed to animate, or `undefined`. */
+      /**
+       * Why an animated element is allowed to animate, or `undefined`.
+       *
+       * KNOWN DIVERGENCE, RECORDED RATHER THAN PAPERED OVER. The cell branch
+       * below justifies on `data-status === 'running'`. `AgentCell.svelte`
+       * decides what to animate with `data-active`, which is
+       * `status === 'running' || hasRunningTool` — a STRICTLY WIDER condition.
+       *
+       * The two agree on every fixture this file uses, so the walk is sound
+       * today. They diverge for one shape: an agent whose own status is `done`
+       * or `error` while a tool under it is still `running`. That shape is not
+       * hypothetical — `canvas.test.ts`'s "pulses an agent whose OWN status is
+       * done while a tool is still running" renders it and asserts the pulse.
+       *
+       * WHAT WILL TURN THIS RED. A fixture reaching this walk that contains a
+       * settled agent holding a running tool: the cell animates, `data-status`
+       * reads `done`, `justify` returns `undefined`, and the loop below fails
+       * with "animates unjustified" — pointing at a correct animation.
+       *
+       * The assertion is DELIBERATELY NOT WIDENED to `data-active`. Reading the
+       * component's own output attribute back as the justification for the
+       * component's own animation would make this control circular: it would
+       * accept anything the component chose to mark active, which is precisely
+       * the thing under test. A narrow rule that fails loudly on a case it does
+       * not cover is worth more here than a wide one that cannot fail. When it
+       * does fail, add the case to the rule — do not swap the attribute.
+       */
       const justify = (element: Element): string | undefined => {
         let node: Element | null = element;
         while (node !== null) {

@@ -932,10 +932,10 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     });
 
     const all = store.getView();
-    expect(all.deckFilter).toBe('all');
+    expect(all.livenessFilter).toBe('all');
     expect(all.filteredSessions).toHaveLength(3);
 
-    store.setDeckFilter('live');
+    store.setLivenessFilter('live');
     const live = store.getView();
     expect(live.filteredSessions.map((r) => r.liveness)).toEqual(['live']);
 
@@ -943,6 +943,76 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     // wanted to say "1 of 3" must be able to, and nothing downstream may
     // mistake a filtered list for everything the host reported.
     expect(live.sessions).toHaveLength(3);
+  });
+
+  it('holds the ENGINE filter too, and holds it across a session round trip', () => {
+    // THE DEFECT THIS PINS. `engineFilter` was `$state` inside `Deck.svelte`,
+    // and `App.svelte` mounts `<Deck>` only while the altitude is `deck` — so
+    // entering a session destroyed the component and returning rebuilt it at
+    // `all`. The user's chosen engine silently reset on every session visit,
+    // beside a liveness filter that persisted, with nothing saying why.
+    //
+    // Asserted at the STORE, because that is where the fix is; `deck.test.ts`
+    // drives the same round trip through the mounted panel's DOM.
+    const store = createStore();
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [
+        liveSession(),
+        liveSession({ sessionId: 'session-oc', engine: 'opencode' }),
+      ],
+    });
+    expect(store.getView().engineFilter).toBe('all');
+
+    store.setEngineFilter('oc');
+    expect(store.getView().engineFilter).toBe('oc');
+
+    store.enterSession('session-live');
+    expect(store.getView().altitude).toBe('session');
+    store.escape();
+    expect(store.getView().altitude).toBe('deck');
+
+    // The whole test. Before the fix this read 'all'.
+    expect(store.getView().engineFilter).toBe('oc');
+
+    // The two axes are independent: setting one never moves the other.
+    store.setLivenessFilter('live');
+    expect(store.getView().engineFilter).toBe('oc');
+    store.setEngineFilter('cc');
+    expect(store.getView().livenessFilter).toBe('live');
+  });
+
+  it('refuses an engine value that is not one of the three, and notifies nobody', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+    // Cast because the point is a caller that invented a value; `tsc` stops
+    // this at compile time for every caller in the repo, and the guard is for
+    // the ones it cannot see.
+    store.setEngineFilter('everything' as never);
+    expect(store.getView().engineFilter).toBe('all');
+    expect(notifications).toBe(0);
+
+    // Vacuity control: a real value DOES notify, so the 0 above is the guard
+    // working rather than the subscription never firing.
+    store.setEngineFilter('oc');
+    expect(notifications).toBe(1);
+    // And setting the value it already holds is not a change.
+    store.setEngineFilter('oc');
+    expect(notifications).toBe(1);
+  });
+
+  it('sends the host NOTHING for either filter — both are view state (G7)', () => {
+    const sent: unknown[] = [];
+    const store = createStore((message) => sent.push(message));
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.setEngineFilter('cc');
+    store.setLivenessFilter('idle');
+    store.setEngineFilter('all');
+    expect(sent).toStrictEqual([]);
   });
 
   it('reopens the inspector on the current selection, without re-picking a node', () => {

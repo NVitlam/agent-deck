@@ -135,6 +135,17 @@ interface GoldenToolNode {
   durationMs: number | null;
 }
 
+/**
+ * A token pair as the goldens serialise one: `null`, never absent.
+ *
+ * `null` and a pair are two different facts and both occur. The OpenCode
+ * generator omits `contextNow`/`burn` because `session.tokens_input` counts
+ * only UNCACHED input and would under-report a cached prompt by roughly 7x; an
+ * omitted key serialises to `null`, and `null` renders as an em-dash — "we do
+ * not have this number" — where `0` would be a claim that nothing was spent.
+ */
+type GoldenTokenPair = { prompt: number; output: number } | null;
+
 interface GoldenAgentNode {
   node: 'agent';
   id: string;
@@ -142,7 +153,19 @@ interface GoldenAgentNode {
   label: string;
   status: 'running' | 'done' | 'error';
   spawnDepth: number;
-  tokens: { in: number; out: number };
+  /**
+   * CORRECTED 2026-08-28. This read `tokens: { in: number; out: number }`, a
+   * field `src/model/events.ts` no longer has: `AgentNode.tokens` was REMOVED
+   * rather than renamed, so every reader would break at compile time, and
+   * `contextNow` (a level) and `burn` (a total) replaced it.
+   *
+   * This annotation did not break, because it is an unchecked assertion on
+   * `JSON.parse` and nothing in this file ever read `tokens`. A wrong type that
+   * describes the file it validates, on a value no assertion touches, is the
+   * quietest form of the "the document describes the old state" defect.
+   */
+  contextNow: GoldenTokenPair;
+  burn: GoldenTokenPair;
   startedAtOffsetMs: number;
   endedAtOffsetMs: number | null;
   children: (GoldenAgentNode | GoldenToolNode)[];
@@ -156,7 +179,16 @@ interface GoldenSession {
   liveness: 'live' | 'idle' | 'ended' | 'unsupported';
   schemaOk: boolean;
   epochAnchor: string;
-  totals: { inputTokens: number; outputTokens: number; costUsd: number };
+  /**
+   * CORRECTED 2026-08-28, for the same reason as `contextNow` above. This read
+   * `{ inputTokens, outputTokens, costUsd }`; every committed golden carries
+   * `{"costUsd": 0}` and nothing else, with the session's own token pair beside
+   * `totals` rather than inside it. `fixtures/opencode-1.18.22/GOLDEN.md`
+   * carries the dated amendment and the measured counts.
+   */
+  totals: { costUsd: number };
+  contextNow: GoldenTokenPair;
+  burn: GoldenTokenPair;
   spawnEdges: {
     toolUseId: string;
     agentId: string;
@@ -674,6 +706,57 @@ describe.each(CORPUS_NAMES)('%s', (name) => {
       }
       const missing = l.measured.sessionRows.map((r) => r.id).filter((id) => !reached.has(id));
       expect(missing).toEqual([]);
+    });
+
+    it('carries the token shape the local interfaces declare, and no other', () => {
+      // WHY THIS EXISTS. `GoldenSession.totals` and `GoldenAgentNode`'s token
+      // fields were WRONG — `{inputTokens, outputTokens, costUsd}` and
+      // `tokens: {in, out}`, both from a mapping Phase 7 deleted — and nothing
+      // failed, because the interfaces are an unchecked annotation on
+      // `JSON.parse` and no assertion in this file ever read either field. A
+      // type that is never exercised is a comment with a colon in it.
+      //
+      // This reads them, by KEY SET rather than by presence, so the annotation
+      // above and the bytes on disk cannot drift apart again in either
+      // direction: a key added to the golden fails, and a key the golden stops
+      // emitting fails too.
+      const l = need(name);
+      for (const s of l.golden.sessions) {
+        expect({ id: s.sessionId, keys: Object.keys(s.totals).sort() }).toStrictEqual({
+          id: s.sessionId,
+          keys: ['costUsd'],
+        });
+        expect(typeof s.totals.costUsd).toBe('number');
+        // `null`, not absent and not `0`. The generator OMITS the keys because
+        // `session.tokens_input` counts only uncached input; an omitted key
+        // serialises to `null`, which renders as an em-dash. A `0` here would
+        // be a fabricated claim that the session spent nothing.
+        expect({ id: s.sessionId, contextNow: s.contextNow, burn: s.burn }).toStrictEqual({
+          id: s.sessionId,
+          contextNow: null,
+          burn: null,
+        });
+      }
+
+      const agents = l.golden.sessions
+        .flatMap((s) => walk(s.root))
+        .filter((n): n is GoldenAgentNode => n.node === 'agent');
+      expect(agents.length).toBeGreaterThan(0);
+      for (const a of agents) {
+        expect({ id: a.id, contextNow: a.contextNow, burn: a.burn }).toStrictEqual({
+          id: a.id,
+          contextNow: null,
+          burn: null,
+        });
+        // The removed field is REMOVED, not renamed and not left beside its
+        // replacement. `AgentNode.tokens` was deleted from
+        // `src/model/events.ts` precisely so every reader breaks; a golden
+        // still emitting it would mean the generator had not followed.
+        expect({ id: a.id, hasTokens: 'tokens' in a }).toStrictEqual({
+          id: a.id,
+          hasTokens: false,
+        });
+      }
     });
 
     it('tags every session with the engine that observed it (OC7)', () => {

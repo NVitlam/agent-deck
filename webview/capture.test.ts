@@ -73,7 +73,24 @@ interface StateFacts {
     payloadPreviews: number;
     railItems: number;
   };
-  header: { present: boolean; livenessText?: string | null; livenessTitle?: string | null };
+  header: {
+    present: boolean;
+    livenessText?: string | null;
+    livenessTitle?: string | null;
+    /**
+     * The session header's two token figures, as RENDERED.
+     *
+     * Typed `string | null | undefined` because all three occur and mean
+     * different things, and collapsing them is how the defect below survived:
+     * `undefined` is "no header on this state" (the refusal screen replaces
+     * it), `null` is "the header was there and the selector found nothing",
+     * and a string is the figure. See the test that asserts they are never the
+     * middle one.
+     */
+    context?: string | null;
+    burn?: string | null;
+    cost?: string | null;
+  };
   banner: { present: boolean; dataReason?: string | null };
   refusalScreen: { present: boolean };
   rail: { selected: string | null; dataLiveness: string | null }[];
@@ -220,6 +237,52 @@ describe('the captured evidence covers the five states', () => {
       expect(f.counts.treeNodes, state).toBe(f.counts.modelNodesInSelectedSession);
       expect(f.counts.refusalScreens, state).toBe(0);
       expect(f.counts.sessionHeaders, state).toBe(1);
+    }
+  });
+
+  it('records a REAL token figure for context and burn, never null', () => {
+    // WHY THIS EXISTS. The generator reads these two off the header by testid.
+    // When the header's testids changed, the selectors did not, so `textOf`
+    // returned `null` and the capture recorded `"context": null, "burn": null`
+    // in eight places — under field names still claiming to hold the figures.
+    // Nothing failed: every determinism assertion passed, because null is
+    // perfectly reproducible, and every content assertion was about other
+    // fields. The evidence said "we captured the token figures" and had not.
+    //
+    // The selectors are fixed. This is the guard that the same silence cannot
+    // return: a null here is now a failing test naming the state.
+    //
+    // ASSERTED BY VALUE, not by presence. A `toBeDefined()` would pass on the
+    // em-dash, and an em-dash is exactly what these fields render when the
+    // number is MISSING — the shape that shipped a fully-dashed token row in a
+    // release whose changelog was about wrong token counts.
+    const withHeader = ['live', 'idle', 'ended', 'degraded'];
+    for (const state of withHeader) {
+      const f = facts[state];
+      if (f === undefined) throw new Error(`no facts captured for ${state}`);
+      expect(f.header.present, state).toBe(true);
+      for (const field of ['context', 'burn'] as const) {
+        const value = f.header[field];
+        // Not null, not undefined, not empty, not a dash: a thousands-separated
+        // integer, which is what `formatTokens` produces.
+        expect({ state, field, value }).toStrictEqual({
+          state,
+          field,
+          value: expect.stringMatching(/^\d{1,3}(?:,\d{3})*$/),
+        });
+      }
+    }
+
+    // The other side of the same rule, so "assert non-null" is not satisfied by
+    // making every state carry a header. A refused session shows the refusal
+    // screen INSTEAD of the header (G3), so the fields are absent — and absent
+    // is a different statement from null.
+    for (const state of ['unsupported', 'unsupported-with-tree']) {
+      const f = facts[state];
+      if (f === undefined) throw new Error(`no facts captured for ${state}`);
+      expect({ state, present: f.header.present }).toStrictEqual({ state, present: false });
+      expect({ state, context: f.header.context }).toStrictEqual({ state, context: undefined });
+      expect({ state, burn: f.header.burn }).toStrictEqual({ state, burn: undefined });
     }
   });
 

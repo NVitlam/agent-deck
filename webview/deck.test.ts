@@ -39,6 +39,7 @@ import type { SessionState } from '../src/model/events.js';
 import {
   ANIMATED_CLASSES,
   CRACKED_CLASS,
+  DEFAULT_ENGINE_FILTER,
   FOREIGN_CLASS,
   HOLLOW_LIVE_CLASS,
   REDUCED_MOTION_CLASS,
@@ -47,7 +48,6 @@ import {
 import {
   DECK_CARD_H,
   DECK_CARD_W,
-  DEFAULT_DECK_FILTER,
   DEFAULT_DECK_LAYOUT,
   DEFAULT_DECK_SORT,
   deckEngine,
@@ -386,12 +386,21 @@ describe('the empty deck', () => {
   });
 
   it('distinguishes "nothing yet" from "nothing matches the filter"', () => {
-    const container = render({ sessions: [summary('s-1')] });
-    key('o');
+    // The filter is a PROP now, not this component's state, so the case is set
+    // up by mounting at the filtered value rather than by pressing `o` and
+    // waiting for the component to move itself. Same DOM, same claim: a deck
+    // holding a session the filter excludes says so, and does not fall back to
+    // the "waiting for a session" copy, which would tell the user nothing has
+    // started when something has.
+    const container = render({ sessions: [summary('s-1')], engineFilter: 'oc' });
     expect(all(container, 'deck-waiting')).toHaveLength(0);
     expect(one(container, 'deck-empty-filtered').textContent).toBe(
       'No sessions match this filter.',
     );
+    // The discriminating half: with the filter at `all` the same session list
+    // is not empty at all, so the message above is about the filter and not
+    // about an empty deck.
+    expect(all(render({ sessions: [summary('s-1')] }), 'deck-empty-filtered')).toHaveLength(0);
   });
 
   it('renders no empty state at all as soon as there is a session', () => {
@@ -880,6 +889,14 @@ describe('the pulse rule (DoD 7.5)', () => {
  * ------------------------------------------------------------------------ */
 
 describe('the engine filter (DoD 7.7)', () => {
+  // THE FILTER IS CONTROLLED NOW, and these tests changed shape with it. The
+  // value is `store.ts`'s (see `WebviewView.engineFilter`); the component takes
+  // it as a prop and reports a chip or a key through `onenginefilter`. So a
+  // click here does NOT move the DOM on its own, and asserting that it did
+  // would be asserting that the component kept a second copy — the defect the
+  // move was made to remove. Each half is tested for what it now owns: the
+  // component reports intent and renders the value it was given, and the store
+  // round trip is driven through the mounted panel at the end of this file.
   const rows = [
     summary('s-cc-1'),
     summary('s-cc-2'),
@@ -898,7 +915,7 @@ describe('the engine filter (DoD 7.7)', () => {
       'false',
       'false',
     ]);
-    expect(DEFAULT_DECK_FILTER).toBe('all');
+    expect(DEFAULT_ENGINE_FILTER).toBe('all');
   });
 
   it('badges each chip with the number of sessions that engine has', () => {
@@ -911,41 +928,72 @@ describe('the engine filter (DoD 7.7)', () => {
     ]);
   });
 
-  it('is SINGLE-SELECT: choosing one deactivates the other two', () => {
-    const container = render({ sessions: rows });
+  it('reports a chip click, and NEVER changes the value on its own', () => {
+    const asked: string[] = [];
+    const container = render({
+      sessions: rows,
+      onenginefilter: (filter: string) => asked.push(filter),
+    });
     const cc = chips(container).find((c) => c.dataset['engine'] === 'cc');
     if (cc === undefined) throw new Error('no cc chip');
     click(cc);
+    expect(asked).toStrictEqual(['cc']);
+    // Nothing moved: the store has not answered, so the deck still shows what
+    // it was given. A component holding its own copy would read 'cc' here and
+    // would then be a second source of truth for the same value.
+    expect(one(container, TESTID.deck).dataset['engineFilter']).toBe('all');
+    expect(cells(container)).toHaveLength(3);
+  });
+
+  it('is SINGLE-SELECT: the value it is given activates exactly one chip', () => {
+    const container = render({ sessions: rows, engineFilter: 'cc' });
     expect(chips(container).map((c) => c.dataset['active'])).toStrictEqual([
       'false',
       'true',
       'false',
     ]);
     expect(chips(container).filter((c) => c.dataset['active'] === 'true')).toHaveLength(1);
+    expect(chips(container).map((c) => c.getAttribute('aria-pressed'))).toStrictEqual([
+      'false',
+      'true',
+      'false',
+    ]);
   });
 
   it('shows only that engine’s cards, and still says how many there are', () => {
-    const container = render({ sessions: rows });
-    key('c');
-    expect(cells(container).map((c) => c.dataset['sessionId'])).toStrictEqual([
-      's-cc-1',
-      's-cc-2',
-    ]);
-    const count = one(container, 'deck-count');
+    const cc = render({ sessions: rows, engineFilter: 'cc' });
+    expect(cells(cc).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-cc-1', 's-cc-2']);
+    const count = one(cc, 'deck-count');
     expect(count.dataset['shown']).toBe('2');
     expect(count.dataset['total']).toBe('3');
     expect(count.textContent).toBe('2 of 3');
 
+    const oc = render({ sessions: rows, engineFilter: 'oc' });
+    expect(cells(oc).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-oc-1']);
+    expect(one(oc, 'deck-count').textContent).toBe('1 of 3');
+
+    const all_ = render({ sessions: rows, engineFilter: 'all' });
+    expect(cells(all_)).toHaveLength(3);
+    expect(one(all_, 'deck-count').textContent).toBe('3');
+    // The badges are counted off the FULL list, so every chip still says what
+    // it would show even while another chip is the active one.
+    expect(chips(cc).map((c) => c.dataset['count'])).toStrictEqual(['3', '2', '1']);
+  });
+
+  it('answers A C O by reporting, and steals nothing else', () => {
+    const asked: string[] = [];
+    render({ sessions: rows, onenginefilter: (filter: string) => asked.push(filter) });
+    key('c');
     key('o');
-    expect(cells(container).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-oc-1']);
     key('a');
-    expect(cells(container)).toHaveLength(3);
-    expect(one(container, 'deck-count').textContent).toBe('3');
+    expect(asked).toStrictEqual(['cc', 'oc', 'all']);
   });
 
   it('sends the host NOTHING and asks for no fit: it is view state only', () => {
     // Filtering does not call fit; only re-rooting does. And a filter is a
     // webview-local decision — no message exists for it in either direction.
+    // `onenginefilter` reaches the STORE, never the host: `store.test.ts`'s
+    // "sends the host NOTHING for either filter" is the other half.
     const fits: unknown[] = [];
     const zooms: unknown[] = [];
     const entered: string[] = [];
@@ -984,7 +1032,7 @@ describe('the control bar', () => {
     const container = render({ sessions: rows });
     const deck = one(container, TESTID.deck);
     expect([deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']]).toStrictEqual(
-      [DEFAULT_DECK_LAYOUT, DEFAULT_DECK_SORT, DEFAULT_DECK_FILTER],
+      [DEFAULT_DECK_LAYOUT, DEFAULT_DECK_SORT, DEFAULT_ENGINE_FILTER],
     );
     expect([deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']]).toStrictEqual(
       ['grid', 'live', 'all'],
@@ -1012,8 +1060,12 @@ describe('the control bar', () => {
     expect(one(container, TESTID.deck).dataset['layout']).toBe('lanes');
   });
 
+  // The engine keys are NOT in this table any more: they report through
+  // `onenginefilter` rather than moving an attribute, and
+  // "answers A C O by reporting" above is their test. Putting them here with
+  // an attribute that no longer moves would have made this loop assert
+  // `'all', 'all', 'all'` — three passes, nothing measured.
   for (const [name, keys, attribute, expected] of [
-    ['engine', ['a', 'c', 'o'], 'engineFilter', ['all', 'cc', 'oc']],
     ['layout', ['1', '2', '3'], 'layout', ['list', 'grid', 'lanes']],
     ['sort', ['l', 'r', 'e'], 'sort', ['live', 'recent', 'engine']],
   ] as const) {
@@ -1043,16 +1095,25 @@ describe('the control bar', () => {
   });
 
   it('persists NOTHING: a fresh mount is back at the defaults (G7)', () => {
+    // LAYOUT AND SORT ONLY. They are this component's `$state` and a fresh
+    // mount is genuinely back at the design defaults — no storage, nothing
+    // carried between mounts.
+    //
+    // The engine filter is deliberately not asserted here any more, and the
+    // difference is the whole of DoD 7.7's fix. It is store state now, so it
+    // SURVIVES a remount, which is exactly what "persists nothing" must not be
+    // read to forbid: surviving an unmount inside one panel session is not
+    // persistence. Persistence would be a setting, `workspaceState` or
+    // `localStorage`, and the next test asserts the bundle contains none of
+    // the three.
     const first = render({ sessions: rows });
     key('3');
     key('r');
-    key('o');
     expect(one(first, TESTID.deck).dataset['layout']).toBe('lanes');
+    expect(one(first, TESTID.deck).dataset['sort']).toBe('recent');
     const second = render({ sessions: rows });
     const deck = one(second, TESTID.deck);
-    expect([deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']]).toStrictEqual(
-      ['grid', 'live', 'all'],
-    );
+    expect([deck.dataset['layout'], deck.dataset['sort']]).toStrictEqual(['grid', 'live']);
   });
 
   it('writes to no storage at all — the bundle contains no persistence API', () => {
@@ -1579,6 +1640,112 @@ describe('through the mounted panel (DoD 7.4, the survival half)', () => {
     });
     expect(p.store.getView().deckView).toStrictEqual(moved);
     expect(stageTransform(p)).toBe(drawn);
+  });
+
+  it('DoD 7.7: the engine filter SURVIVES entering and leaving a session', () => {
+    // THE BUG, END TO END. `App.svelte` mounts `<Deck>` only at
+    // `altitude === 'deck'`, so a session visit destroys the component. While
+    // `engineFilter` was `$state` inside it, that reset the user's chosen
+    // engine to `all` on every return — beside a liveness filter that
+    // persisted, with nothing on screen explaining the difference.
+    //
+    // Driven through the mounted panel rather than the component, because the
+    // defect is in the WIRING: a component test cannot unmount and remount the
+    // component the way an altitude change does, and the store test cannot see
+    // that the chip came back active.
+    const p = panel();
+    panelHarness.flushSync(() => {
+      p.store.handleMessage({
+        type: 'snapshot',
+        sessions: [
+          liveSession(),
+          liveSession({ sessionId: 'session-oc', engine: 'opencode' }),
+        ],
+      });
+    });
+
+    const chipFor = (engine: string): HTMLElement => {
+      const found = all(p.container, 'deck-engine-chip').find(
+        (c) => c.dataset['engine'] === engine,
+      );
+      if (found === undefined) throw new Error(`no ${engine} chip`);
+      return found;
+    };
+    const shown = (): string[] =>
+      all(p.container, TESTID.deckBlob).map((c) => c.dataset['sessionId'] ?? '');
+
+    expect(shown().sort()).toStrictEqual(['session-live', 'session-oc']);
+
+    // Pick OpenCode, through the real chip.
+    panelHarness.flushSync(() => {
+      chipFor('oc').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(p.store.getView().engineFilter).toBe('oc');
+    expect(one(p.container, TESTID.deck).dataset['engineFilter']).toBe('oc');
+    expect(shown()).toStrictEqual(['session-oc']);
+
+    // Into a session — the deck unmounts entirely — and back out.
+    panelHarness.flushSync(() => {
+      p.store.enterSession('session-live');
+    });
+    expect(all(p.container, TESTID.deck)).toHaveLength(0);
+    panelHarness.flushSync(() => {
+      p.store.escape();
+    });
+
+    // Back at the deck. Before the fix this read 'all' and showed both cards.
+    expect(one(p.container, TESTID.deck).dataset['engineFilter']).toBe('oc');
+    expect(chipFor('oc').dataset['active']).toBe('true');
+    expect(chipFor('all').dataset['active']).toBe('false');
+    expect(shown()).toStrictEqual(['session-oc']);
+    // The count chip still tells the truth about what exists.
+    expect(one(p.container, 'deck-count').textContent).toBe('1 of 2');
+  });
+
+  it('DoD 7.7: the two filters are independent, and both survive the trip', () => {
+    // The liveness filter is `App.svelte`'s own chip row, outside `<Deck>`;
+    // the engine filter is inside it. Both are store state now, so this asserts
+    // that moving one never moves the other and that neither is reset by the
+    // altitude change that used to reset one of them.
+    const p = panel();
+    panelHarness.flushSync(() => {
+      p.store.handleMessage({
+        type: 'snapshot',
+        sessions: [
+          liveSession(),
+          liveSession({ sessionId: 'session-oc', engine: 'opencode' }),
+          liveSession({ sessionId: 'session-oc-idle', engine: 'opencode', liveness: 'idle' }),
+        ],
+      });
+    });
+    panelHarness.flushSync(() => {
+      p.store.setEngineFilter('oc');
+      p.store.setLivenessFilter('idle');
+    });
+    expect(all(p.container, TESTID.deckBlob).map((c) => c.dataset['sessionId'])).toStrictEqual([
+      'session-oc-idle',
+    ]);
+
+    panelHarness.flushSync(() => {
+      p.store.enterSession('session-oc');
+    });
+    panelHarness.flushSync(() => {
+      p.store.escape();
+    });
+
+    const view = p.store.getView();
+    expect({ engine: view.engineFilter, liveness: view.livenessFilter }).toStrictEqual({
+      engine: 'oc',
+      liveness: 'idle',
+    });
+    expect(all(p.container, TESTID.deckBlob).map((c) => c.dataset['sessionId'])).toStrictEqual([
+      'session-oc-idle',
+    ]);
+    // And the liveness chip row, which App owns, agrees with the store.
+    const activeLiveness = all(p.container, TESTID.filterChip)
+      .filter((c) => c.dataset['active'] === 'true')
+      .map((c) => c.dataset['filter']);
+    expect(activeLiveness).toStrictEqual(['idle']);
   });
 
   it('routes a real wheel gesture through zoomAbout at the deck limits', () => {

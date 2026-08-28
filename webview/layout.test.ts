@@ -21,6 +21,7 @@
 // imported the reference the comparison would be the reference against itself
 // - passing forever, and exactly as green as a real pass.
 
+import { execFileSync } from 'node:child_process';
 import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
@@ -37,7 +38,6 @@ import {
   DECK_GRID_MARGIN,
   DECK_LANE_GAP,
   DECK_LANE_HEADER_Y,
-  DEFAULT_DECK_FILTER,
   DEFAULT_DECK_LAYOUT,
   DEFAULT_DECK_SORT,
   LABEL_ADVANCE,
@@ -72,10 +72,18 @@ import type {
   DeckSortMode,
   TreePlacement,
 } from './layout.js';
+import { DEFAULT_ENGINE_FILTER } from './canvas-contract.js';
 
 const REPO_ROOT = resolve('.');
 const WEBVIEW_DIR = join(REPO_ROOT, 'webview');
 const GOLDEN_FILE = join(WEBVIEW_DIR, 'goldens', 'layout', 'design-tables.json');
+/**
+ * The frozen reference, as a path this file can hand to `node`.
+ *
+ * Repo-relative on purpose: it is passed as an argv with `cwd: REPO_ROOT`, so
+ * a failure names `webview/layout.reference.mjs` rather than a machine path.
+ */
+const REFERENCE_FILE = 'webview/layout.reference.mjs';
 
 /* ------------------------------------------------------------------------ *
  * Mock data — the same subjects the reference uses, in production shapes
@@ -474,14 +482,17 @@ describe('DoD 7.1 — purity, and the deleted phyllotaxis canvas', () => {
 
 describe('DoD 7.2 — the frozen design tables, through production layout.ts', () => {
   let golden: string[] = [];
+  /** `layout.reference.mjs`'s own text, for the independence assertion. */
+  let referenceSource = '';
 
   beforeAll(async () => {
     const parsed = JSON.parse(await readFile(GOLDEN_FILE, 'utf8')) as {
       generatedBy: string;
       lines: string[];
     };
-    expect(parsed.generatedBy).toBe('webview/layout.reference.mjs');
+    expect(parsed.generatedBy).toBe(REFERENCE_FILE);
     golden = parsed.lines;
+    referenceSource = await readFile(join(REPO_ROOT, REFERENCE_FILE), 'utf8');
   }, 30_000);
 
   it('the golden is the reference output, and it is not empty', () => {
@@ -506,6 +517,45 @@ describe('DoD 7.2 — the frozen design tables, through production layout.ts', (
     mutated[6] = '| 0 | 6082be25 | 1 | 0 |';
     expect(mutated).not.toEqual(golden);
   });
+
+  it('the reference ACTUALLY RUNS, and its stdout is the committed golden', () => {
+    // WHY THIS TEST EXISTS. DoD 7.2's whole evidentiary basis is that two
+    // independent implementations agree. Until this test, nothing in the suite
+    // ever executed `layout.reference.mjs`: the file above checked only that
+    // the JSON's `generatedBy` string named it and that there were 157 lines.
+    // So the independence rested on a human having pasted the right bytes once,
+    // and a future edit of `design-tables.json` to match a broken `layout.ts`
+    // would have passed forever — the golden and production agreeing with each
+    // other, with the third party absent.
+    //
+    // Running the reference closes that: the golden is now checked against the
+    // process that is supposed to have produced it, on every run.
+    const out = execFileSync('node', [REFERENCE_FILE], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    // The reference writes `lines.join('\n') + '\n'`. Dropping exactly one
+    // trailing newline — not trimming — so a table that genuinely ended in a
+    // blank line still compares.
+    const produced = out.replace(/\n$/, '').split('\n');
+    expect(produced).toHaveLength(golden.length);
+    for (let i = 0; i < Math.max(produced.length, golden.length); i += 1) {
+      expect(`${i}: ${produced[i] ?? '<missing>'}`).toBe(`${i}: ${golden[i] ?? '<missing>'}`);
+    }
+    expect(produced).toEqual(golden);
+    // No CR anywhere: the reference is a CRLF source file in this checkout and
+    // writes LF regardless, which is what makes the byte comparison portable.
+    expect(out.includes('\r')).toBe(false);
+    // ...and it is genuinely the third party. If `layout.reference.mjs` ever
+    // imported production, this whole file would be comparing `layout.ts`
+    // against itself twice. Asserted on CODE, not on text: the reference's
+    // header discusses `webview/layout.ts` at length, so a substring search
+    // would fail on the prose that explains the arrangement — the same trap
+    // `stripComments` exists for above.
+    const referenceCode = stripComments(referenceSource);
+    expect(referenceCode.match(/\bimport\b|\brequire\s*\(/g) ?? []).toStrictEqual([]);
+  }, 120_000);
 });
 
 /* ------------------------------------------------------------------------ *
@@ -525,7 +575,51 @@ describe('the deck', () => {
   it('defaults to grid · live first · all', () => {
     expect(DEFAULT_DECK_LAYOUT).toBe('grid');
     expect(DEFAULT_DECK_SORT).toBe('live');
-    expect(DEFAULT_DECK_FILTER).toBe('all');
+    // The engine filter's default is `canvas-contract.ts`'s now, not this
+    // module's: it is store state, and this module never sees a filter.
+    expect(DEFAULT_ENGINE_FILTER).toBe('all');
+  });
+
+  it('an arriving session RE-PLACES the deck: placement is by array index', () => {
+    // The deck half of the same correction. `deckLayout` sorts and then hands
+    // out slots by index, so a session that sorts ahead of the others pushes
+    // every one of them down a row. Pinned by exact coordinates, because the
+    // module header now states this and a stated property with no test is what
+    // let the false claim survive a phase.
+    const three: DeckSession[] = [
+      { id: '6082be25', engine: 'cc', status: 'live', last: -4000 },
+      { id: 'ses_a91f', engine: 'oc', status: 'live', last: -11000 },
+      { id: '4299490e', engine: 'cc', status: 'idle', last: -140000 },
+    ];
+    expect(deckLayout(three, 'list', 'live', 800)).toStrictEqual([
+      { id: '6082be25', x: 0, y: 0 },
+      { id: 'ses_a91f', x: 0, y: 100 },
+      { id: '4299490e', x: 0, y: 200 },
+    ]);
+
+    // One more session, more recent than all three, so it sorts first.
+    const four: DeckSession[] = [
+      ...three,
+      { id: '0000newest', engine: 'cc', status: 'live', last: -1000 },
+    ];
+    expect(deckLayout(four, 'list', 'live', 800)).toStrictEqual([
+      { id: '0000newest', x: 0, y: 0 },
+      { id: '6082be25', x: 0, y: 100 },
+      { id: 'ses_a91f', x: 0, y: 200 },
+      { id: '4299490e', x: 0, y: 300 },
+    ]);
+    // Every pre-existing card moved by exactly one row pitch. Asserted as a
+    // count as well, so "nothing moved" and "everything moved" are both red.
+    const wasAt = new Map(deckLayout(three, 'list', 'live', 800).map((p) => [p.id, p.y]));
+    const nowAt = new Map(deckLayout(four, 'list', 'live', 800).map((p) => [p.id, p.y]));
+    const shifted = [...wasAt.keys()].filter((id) => nowAt.get(id) !== wasAt.get(id));
+    expect(shifted.sort()).toStrictEqual(['4299490e', '6082be25', 'ses_a91f']);
+    for (const id of shifted) {
+      expect({ id, delta: (nowAt.get(id) ?? 0) - (wasAt.get(id) ?? 0) }).toStrictEqual({
+        id,
+        delta: DECK_CARD_H + DECK_GAP_Y,
+      });
+    }
   });
 
   it('columns come from the stage-unit width', () => {
@@ -753,18 +847,16 @@ describe('the tidy tree', () => {
     );
   });
 
-  it('a spawn adds without changing any width already drawn', () => {
-    // The incremental promise, stated where it is actually checkable: adding a
-    // subagent changes no node's WIDTH, so nothing reflows for a reason other
-    // than the new node needing room.
-    const { state } = buildMockState();
-    const before = new Map(
-      treeLayout(state, 'main')
-        .filter((p) => !p.hidden)
-        .map((p) => [p.id, p.w]),
-    );
-    const a3 = findMockAgent(state, 'a3');
-    const newborn: AgentNode = {
+  /**
+   * The newborn every spawn test below adds, so they all measure one event.
+   *
+   * Its width is the FLOOR, `NODE_W_MIN` — "1 · 0 calls" and `new-arrival` are
+   * both short enough — which is what makes the deltas below round numbers:
+   * the subtree gains `168 + SIBLING_GAP` = 192 of extent, and a centred parent
+   * therefore moves by half of it, 96.
+   */
+  function newborn(): AgentNode {
+    return {
       id: 'a3c',
       kind: 'subagent',
       label: 'new-arrival',
@@ -774,7 +866,80 @@ describe('the tidy tree', () => {
       burn: { prompt: 1, output: 0 },
       startedAt: 0,
     };
-    a3.children.push(newborn);
+  }
+
+  it('a spawn MOVES every ancestor: the tidy tree is NOT coordinate-stable', () => {
+    // THIS FILE USED TO ASSERT THE OPPOSITE, and `layout.ts`'s header used to
+    // claim it: "A spawn ADDS; it never reflows anything already placed."
+    // False for this algorithm, and it went unnoticed for a phase because the
+    // two tests that would have caught it were deleted and replaced by one
+    // about WIDTHS — a different, weaker property that is also true.
+    //
+    // A property nobody tests is one that drifts silently, so the real
+    // behaviour is pinned here by EXACT COORDINATES rather than described. If
+    // these numbers move, the layout changed and the header is stale again.
+    /** Read a coordinate, or fail naming the id — never silently `undefined`. */
+    const at = (map: Map<string, number>, id: string): number => {
+      const x = map.get(id);
+      if (x === undefined) throw new Error(`no placement for ${id}`);
+      return x;
+    };
+
+    const { state } = buildMockState();
+    const xs = (): Map<string, number> =>
+      new Map(
+        treeLayout(state, 'main')
+          .filter((p) => !p.hidden)
+          .map((p) => [p.id, p.x]),
+      );
+
+    const before = xs();
+    findMockAgent(state, 'a3').children.push(newborn());
+    const after = xs();
+
+    expect(after.get('a3c')).toBe(842);
+
+    // The ancestry of the growing subtree: a3 is the parent, main is the root.
+    // Both re-centre, by exactly half the extent the newborn claims.
+    expect({ main: at(before, 'main'), a3: at(before, 'a3') }).toStrictEqual({
+      main: 307.5,
+      a3: 521,
+    });
+    expect({ main: at(after, 'main'), a3: at(after, 'a3') }).toStrictEqual({
+      main: 403.5,
+      a3: 617,
+    });
+    const half = (NODE_W_MIN + SIBLING_GAP) / 2;
+    expect(at(after, 'main') - at(before, 'main')).toBe(half);
+    expect(at(after, 'a3') - at(before, 'a3')).toBe(half);
+
+    // And everything OUTSIDE that ancestry is byte-identical. That is the half
+    // of the old claim which survived, and it is what keeps a spawn in one
+    // branch from redrawing the whole picture.
+    for (const id of ['a1', 'a1a', 'a2', 'a3a', 'a3aa', 'a3b']) {
+      expect({ id, x: after.get(id) }).toStrictEqual({ id, x: before.get(id) });
+    }
+
+    // Stated as a count too, so a change that froze EVERY coordinate — which
+    // would make the loop above pass while contradicting the two assertions
+    // before it — cannot read as green.
+    const moved = [...before.keys()].filter((id) => after.get(id) !== before.get(id)).sort();
+    expect(moved).toStrictEqual(['a3', 'main']);
+  });
+
+  it('a spawn adds without changing any width already drawn', () => {
+    // The property that IS stable, and the reason the instability above is
+    // acceptable: no node's WIDTH moves, so nothing reflows because of a DRAWN
+    // SIZE feeding back into position. That feedback is what the predecessor
+    // canvas did — it separated on a radius that grew with child count — and it
+    // is the thing `layout.ts` still forbids.
+    const { state } = buildMockState();
+    const before = new Map(
+      treeLayout(state, 'main')
+        .filter((p) => !p.hidden)
+        .map((p) => [p.id, p.w]),
+    );
+    findMockAgent(state, 'a3').children.push(newborn());
     const grown = treeLayout(state, 'main').filter((p) => !p.hidden);
     expect(grown.some((p) => p.id === 'a3c')).toBe(true);
     for (const p of grown) {

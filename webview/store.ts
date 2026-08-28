@@ -884,9 +884,17 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     },
 
     enterSession(sessionId: string): void {
-      // A fresh interior starts centred. Carrying the previous session's pan
-      // into a different tree would drop the user somewhere they never chose,
-      // and the two interiors share no coordinate space.
+      // Carrying the previous session's pan into a different tree would drop
+      // the user somewhere they never chose, and the two interiors share no
+      // coordinate space — so this is cleared rather than kept.
+      //
+      // IT DOES NOT CENTRE ANYTHING, and this comment said it did until
+      // 2026-08-28. Identity is the stage origin at the field's top-left, and
+      // the tidy tree puts the root at `(totalWidth − NW) / 2` — 1,658 units
+      // in on a real 16-subagent session, well off the right edge of any
+      // panel. What actually frames a fresh interior is
+      // `SessionCanvas.svelte`'s entry fit, which owns the rendered transform;
+      // this value is not read by it.
       canvasView = { ...IDENTITY_VIEW };
       if (!sessions.has(sessionId)) return;
       if (sessionId !== selectedSessionId) selectedNodeId = undefined;

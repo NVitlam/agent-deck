@@ -1008,11 +1008,28 @@ describe('focus / re-root (DoD 7.6)', () => {
     }
   });
 
-  it('RE-ROOTING FITS EXACTLY ONCE, and nothing else fits', () => {
+  it('ENTERING FITS, and re-rooting fits again, and nothing else fits', () => {
     const state = liveSession();
     const container = render({ session: state, size: { width: 960, height: 640 } });
-    // Nothing has fitted yet: the initial view is the identity transform.
-    expect(stageTransform(container)).toBe(transformAttr({ x: 0, y: 0, k: 1 }));
+
+    // THIS ASSERTION USED TO EXPECT THE IDENTITY TRANSFORM, with the comment
+    // "Nothing has fitted yet". It was pinning the defect: identity is the
+    // stage origin at the field's top-left, and the tidy tree centres the root
+    // over its children's span, so a wide tree opened with the root off-screen
+    // and only the child row in view. §3.4's "re-rooting calls fit once"
+    // covers entry too — entry is the first rooting of the tree.
+    const fitOf = (root: string): string => {
+      const placed = treeLayout(state, root).filter((p) => !p.hidden);
+      return transformAttr(
+        fitTo(
+          boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H }))),
+          { width: 960, height: 640 },
+          TREE_FIT_PADDING,
+          TREE_ZOOM_LIMITS,
+        ),
+      );
+    };
+    expect(stageTransform(container)).toBe(fitOf(state.root.id));
 
     dblclick(nodeFor(container, 'agent-1'));
     const placed = treeLayout(state, 'agent-1').filter((p) => !p.hidden);
@@ -1027,6 +1044,126 @@ describe('focus / re-root (DoD 7.6)', () => {
     // A plain selection does not fit, so the view a user framed stays framed.
     click(nodeFor(container, 'agent-2'));
     expect(stageTransform(container)).toBe(transformAttr(expected));
+  });
+
+  /**
+   * THE 16-SUBAGENT SESSION — which is how this was reported: "they all appear
+   * as a second row".
+   *
+   * The tidy tree was right and the viewport was not. Measured on the real
+   * session that prompted it — 16 depth-1 subagents, node widths 176–197 by
+   * A1.1 with `SIB` 24: the child row spans 3,484 stage units and the root is
+   * placed at x = 1658. At the identity transform in a 1,200 px panel that is
+   * 6 of 16 children and NO ROOT — a row of nodes with nothing above them,
+   * which is the whole of the report.
+   *
+   * The assertion is deliberately not "the transform equals this literal". A
+   * literal passes just as well against a fit of the wrong subtree. This
+   * checks the property a person actually cares about: after entering, every
+   * node the layout drew is inside the field.
+   */
+  it('frames the root and every child of a tree far wider than the field', () => {
+    const width = 1200;
+    const height = 640;
+    const kids = Array.from({ length: 16 }, (_, i) =>
+      agent({
+        id: `wide-${String(i)}`,
+        kind: 'subagent',
+        label: `phase-implementer ${String(i)}`,
+        spawnDepth: 1,
+        children: [tool({ id: `wide-t-${String(i)}`, toolName: 'Bash', inputPreview: 'x' })],
+      }),
+    );
+    const state = liveSession({
+      sessionId: 'session-wide',
+      root: agent({ id: 'root', kind: 'main', label: 'main', spawnDepth: 0, children: kids }),
+      spawnEdges: [],
+      parked: [],
+    });
+
+    // The premise, measured rather than assumed: this tree really is far wider
+    // than the field, and the root really does sit off the right edge at the
+    // identity transform. Without this the assertions below could pass on a
+    // tree that always fitted.
+    const placed = treeLayout(state, 'root').filter((p) => !p.hidden);
+    const span = boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H })));
+    expect(span.w).toBeGreaterThan(width * 2);
+    const rootPlacement = placed.find((p) => p.id === 'root');
+    expect(rootPlacement?.x ?? 0).toBeGreaterThan(width);
+
+    const container = render({ session: state, size: { width, height } });
+    const expected = fitTo(span, { width, height }, TREE_FIT_PADDING, TREE_ZOOM_LIMITS);
+    expect(stageTransform(container)).toBe(transformAttr(expected));
+
+    // THE ROOT IS ON SCREEN. This is the reported symptom, stated as the one
+    // property that was false before: a row of children with nothing above it.
+    const on = (p: { x: number; y: number; w: number }): { left: number; right: number; top: number } => ({
+      left: p.x * expected.k + expected.x,
+      right: (p.x + p.w) * expected.k + expected.x,
+      top: p.y * expected.k + expected.y,
+    });
+    const root = on(rootPlacement as { x: number; y: number; w: number });
+    expect(root.left, 'the root is off the left edge').toBeGreaterThanOrEqual(-1);
+    expect(root.right, 'the root is off the right edge').toBeLessThanOrEqual(width + 1);
+    expect(root.top, 'the root is above the field').toBeGreaterThanOrEqual(-1);
+
+    // AND THE OVERFLOW IS SYMMETRIC, which is the honest claim here rather
+    // than "everything is visible". Sixteen siblings CANNOT all be on screen
+    // at once: fitting this span into 1,200 px needs k = 0.323 and §3.4 fixes
+    // the tree's zoom floor at 0.4, so `fitTo` clamps and the row is drawn
+    // 1,405 px wide in a 1,200 px panel — 269 px of overflow. What the fit
+    // buys is that the overflow is centred and pannable instead of the view
+    // sitting at the stage origin with the root 1,658 units off the right.
+    const lefts = placed.map((p) => on(p).left);
+    const rights = placed.map((p) => on(p).right);
+    const overLeft = -Math.min(...lefts);
+    const overRight = Math.max(...rights) - width;
+    expect(overLeft).toBeGreaterThan(0);
+    expect(Math.abs(overLeft - overRight), 'the overflow is lopsided').toBeLessThan(1);
+  });
+
+  /**
+   * The boundary, so the assertion above is not read as "wide trees overflow,
+   * shrug". TWELVE depth-1 siblings DO fit a 1,200 px panel at the 0.4 floor
+   * (they need k = 0.432); thirteen do not. Measured, and it is the control
+   * that proves the geometry check in the previous test can be satisfied.
+   */
+  it('brings every node on screen when the fit does not hit the zoom floor', () => {
+    const width = 1200;
+    const height = 640;
+    const kids = Array.from({ length: 12 }, (_, i) =>
+      agent({
+        id: `fits-${String(i)}`,
+        kind: 'subagent',
+        label: `phase-implementer ${String(i)}`,
+        spawnDepth: 1,
+        children: [tool({ id: `fits-t-${String(i)}`, toolName: 'Bash', inputPreview: 'x' })],
+      }),
+    );
+    const state = liveSession({
+      sessionId: 'session-fits',
+      root: agent({ id: 'root', kind: 'main', label: 'main', spawnDepth: 0, children: kids }),
+      spawnEdges: [],
+      parked: [],
+    });
+
+    const placed = treeLayout(state, 'root').filter((p) => !p.hidden);
+    const span = boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H })));
+    const expected = fitTo(span, { width, height }, TREE_FIT_PADDING, TREE_ZOOM_LIMITS);
+    // The premise: this one does NOT hit the floor, or it proves nothing.
+    expect(expected.k).toBeGreaterThan(TREE_ZOOM_LIMITS.min);
+
+    render({ session: state, size: { width, height } });
+    for (const p of placed) {
+      const left = p.x * expected.k + expected.x;
+      const right = (p.x + p.w) * expected.k + expected.x;
+      const top = p.y * expected.k + expected.y;
+      const bottom = (p.y + NODE_H) * expected.k + expected.y;
+      expect(left, `${p.id} is off the left edge`).toBeGreaterThanOrEqual(-1);
+      expect(right, `${p.id} is off the right edge`).toBeLessThanOrEqual(width + 1);
+      expect(top, `${p.id} is above the field`).toBeGreaterThanOrEqual(-1);
+      expect(bottom, `${p.id} is below the field`).toBeLessThanOrEqual(height + 1);
+    }
   });
 });
 
@@ -1557,6 +1694,7 @@ describe('the transform survives a store update (DoD 7.4)', () => {
     const svg = container.querySelector('svg.field');
     expect(svg).not.toBeNull();
     const stage = one(container, TESTID.canvasStage);
+    const beforeGesture = stage.getAttribute('transform');
 
     app.flushSync(() => {
       (svg as Element).dispatchEvent(
@@ -1571,9 +1709,11 @@ describe('the transform survives a store update (DoD 7.4)', () => {
     });
 
     const framed = stage.getAttribute('transform');
-    // The gesture did something: an identity transform here would make the
-    // assertion below true for the wrong reason.
-    expect(framed).not.toBe(transformAttr({ x: 0, y: 0, k: 1 }));
+    // The gesture did something. Compared against the transform BEFORE it, not
+    // against the identity: entering a session now fits, so the view is
+    // already non-identity and an identity comparison would pass without the
+    // gesture having done anything at all.
+    expect(framed).not.toBe(beforeGesture);
 
     app.flushSync(() => {
       store.handleMessage({

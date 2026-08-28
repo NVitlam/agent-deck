@@ -406,18 +406,67 @@
   }
 
   /**
+   * ENTERING A SESSION FITS, exactly as re-rooting does — and until 2026-08-28
+   * it did not, which is the whole of this block.
+   *
+   * `view` starts at `IDENTITY_VIEWPORT`: stage origin at the field's top-left
+   * corner. `store.ts:enterSession` calls that "a fresh interior starts
+   * centred", and it is not centred — the tidy tree centres each parent over
+   * its children's span, so the ROOT sits at `x = (totalWidth − NW) / 2` and
+   * the identity transform frames the far left of the tree instead.
+   *
+   * Invisible on a narrow tree and total on a wide one. Measured on a real
+   * session with 16 depth-1 subagents (node widths 176–197 by A1.1, `SIB` 24):
+   * the child row spans **3,484 stage units** and the root is placed at
+   * **x = 1658**. In a 1200 px panel at `k = 1` that shows **6 of 16 children
+   * and no root at all** — a row of nodes with nothing above them, which is
+   * exactly how it was reported: "they all appear as a second row".
+   *
+   * §3.4 already requires this: "Re-rooting calls fit once." Entering a
+   * session is the first rooting of that tree, and `focusOn` below fits on
+   * every later one, so an unfitted entry was the inconsistency rather than
+   * the fit being new.
+   *
+   * ONCE, and the guard is what makes it once. §3.4's other half — "the
+   * transform survives every re-render; a new event never resets it" — is why
+   * this keys on the session and the root rather than on the placements: a
+   * diff that adds a node must not yank the view back, and a user who has
+   * panned must stay where they panned. `fittedFor` is only written after a
+   * fit actually happened, so a first pass with a zero-size field (before
+   * layout, and in jsdom) retries rather than marking the tree done.
+   */
+  let fittedFor = $state.raw<string | undefined>(undefined);
+
+  $effect(() => {
+    const key = `${session.sessionId}:${rootId}`;
+    if (fittedFor === key) return;
+    if (isRefused || drawn.length === 0) return;
+    // Named `field`, not `size`: `size` is a prop, and shadowing it here would
+    // read as the fallback being used when it is not.
+    const field = fieldSize();
+    if (field.width <= 0 || field.height <= 0) return;
+    fitPlacements(drawn);
+    fittedFor = key;
+  });
+
+  /**
    * Re-root, and fit ONCE.
    *
    * The fit is computed against the NEW layout rather than the one on screen,
    * because the thing being framed is what the user is about to see. Nothing
    * else in this component calls `fitTo` except the explicit double-click on
-   * empty field.
+   * empty field and the entry fit above.
    */
   function focusOn(nodeId: string): void {
     if (findAgent(session.root, nodeId) === undefined) return;
     focusId = nodeId;
     const next = treeLayout(session, nodeId, { collapseDepth }).filter((p) => !p.hidden);
     fitPlacements(next);
+    // Claim the entry fit for the root we just moved to, so the effect above
+    // does not immediately fit the same tree a second time. This fit is the
+    // more precise of the two — it frames the layout the user is about to see
+    // rather than the one still on screen — so it is the one that stands.
+    fittedFor = `${session.sessionId}:${nodeId}`;
   }
 
   const INTERACTIVE = `[data-testid="${TESTID.cell}"],[data-testid="${TESTID.nucleus}"],[data-testid="${TESTID.dot}"],[data-testid="${TESTID.elidedBadge}"]`;

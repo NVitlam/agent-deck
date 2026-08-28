@@ -876,10 +876,13 @@ describe('PanelController', () => {
         status: 'running',
         spawnDepth: 0,
         children: [],
-        tokens: { in: 0, out: 0 },
+        contextNow: { prompt: 0, output: 0 },
+        burn: { prompt: 0, output: 0 },
         startedAt: 0,
       },
-      totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+      totals: { costUsd: 0 },
+      contextNow: { prompt: 0, output: 0 },
+      burn: { prompt: 0, output: 0 },
       spawnEdges: [],
     };
   }
@@ -1208,8 +1211,10 @@ describe('AgentDeckDataPath', () => {
       expect(session.totals.costUsd).toBe(0);
     }
 
+    // `burn` is the session's spend. Reading the LEVEL here would work too but
+    // says less: a session that has spent nothing is the thing being excluded.
     const tokenBearing = sessions.filter(
-      (s) => s.totals.inputTokens > 0 || s.totals.outputTokens > 0,
+      (s) => (s.burn?.prompt ?? 0) > 0 || (s.burn?.output ?? 0) > 0,
     );
     expect(tokenBearing.length).toBeGreaterThan(0);
 
@@ -1443,11 +1448,9 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
     // No tree. Not a smaller tree — none.
     expect(state?.root.children).toStrictEqual([]);
     expect(state?.spawnEdges).toStrictEqual([]);
-    expect(state?.totals).toStrictEqual({
-      inputTokens: 0,
-      outputTokens: 0,
-      costUsd: 0,
-    });
+    expect(state?.totals).toStrictEqual({ costUsd: 0 });
+    expect(state?.contextNow).toStrictEqual({ prompt: 0, output: 0 });
+    expect(state?.burn).toStrictEqual({ prompt: 0, output: 0 });
 
     const mismatches = panel.posted.filter((m) => m.type === 'schemaMismatch');
     expect(mismatches).toStrictEqual([{ type: 'schemaMismatch', sessionId }]);
@@ -3114,11 +3117,13 @@ describe('DoD 5.2 / G3 — a refused OpenCode session is never filtered off the 
       expect(refused?.liveness).toBe('unsupported');
       // A refusal renders NOTHING. It is not a hole to smuggle content through.
       expect(refused?.root.children).toStrictEqual([]);
-      expect(refused?.totals).toStrictEqual({
-        inputTokens: 0,
-        outputTokens: 0,
-        costUsd: 0,
-      });
+      expect(refused?.totals).toStrictEqual({ costUsd: 0 });
+      // ABSENT rather than zero, and the difference is the engine's: this is an
+      // OPENCODE refusal, and that engine reports no token figures at all yet.
+      // The CC refusal path (`unsupportedCopy` in `extension.ts`) zeroes them
+      // instead, because CC does report them and 0 is the honest reading there.
+      expect(refused?.contextNow).toBeUndefined();
+      expect(refused?.burn).toBeUndefined();
 
       // THE CONTROL. Without it this test cannot tell the carve-out apart from
       // deleting the filter: healthy sessions in a non-matching workspace must

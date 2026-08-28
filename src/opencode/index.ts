@@ -381,7 +381,10 @@ function unsupportedSession(
     workspaceMatch: matchWorkspace(project),
     liveness: 'unsupported',
     schemaOk: false,
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    totals: { costUsd: 0 },
+    // `contextNow`/`burn` OMITTED, matching `graft.ts`: this engine reports no
+    // token figures at all yet, and a refused session must not be the one
+    // place it appears to. Absent, never 0.
     spawnEdges: [],
     parked: [],
     root: {
@@ -391,7 +394,6 @@ function unsupportedSession(
       status: 'done',
       spawnDepth: 0,
       children: [],
-      tokens: { in: 0, out: 0 },
       startedAt: row?.timeCreated ?? 0,
     },
   };

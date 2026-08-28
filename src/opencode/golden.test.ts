@@ -135,7 +135,10 @@ function serializeAgent(node: AgentNode, anchor: number): unknown {
     label: node.label,
     status: node.status,
     spawnDepth: node.spawnDepth,
-    tokens: { in: node.tokens.in, out: node.tokens.out },
+    // ABSENT for this engine, serialized `null` so the golden can tell
+    // 'unset' from 'zero'. Mirrors `scripts/opencode-golden.mjs`.
+    contextNow: node.contextNow ?? null,
+    burn: node.burn ?? null,
     startedAtOffsetMs: node.startedAt - anchor,
     endedAtOffsetMs: node.endedAt === undefined ? null : node.endedAt - anchor,
     children: node.children.map((child: TreeNode) =>
@@ -156,11 +159,9 @@ function serializeState(state: SessionState): unknown {
     liveness: state.liveness,
     schemaOk: state.schemaOk,
     epochAnchor: new Date(anchor).toISOString(),
-    totals: {
-      inputTokens: state.totals.inputTokens,
-      outputTokens: state.totals.outputTokens,
-      costUsd: state.totals.costUsd,
-    },
+    totals: { costUsd: state.totals.costUsd },
+    contextNow: state.contextNow ?? null,
+    burn: state.burn ?? null,
     spawnEdges: state.spawnEdges,
     parked: state.parked,
     root: serializeAgent(state.root, anchor),
@@ -376,7 +377,11 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
         expect(state?.liveness).toBe('unsupported');
         expect(state?.schemaOk).toBe(false);
         expect(state?.root.children).toStrictEqual([]);
-        expect(state?.totals).toStrictEqual({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+        expect(state?.totals).toStrictEqual({ costUsd: 0 });
+        // ABSENT, not zero: this engine reports no token figures at all, and
+        // a refused session must not be the one place it appears to.
+        expect(state?.contextNow).toBeUndefined();
+        expect(state?.burn).toBeUndefined();
       }
 
       // And the in-window ones still render a real tree — otherwise this would
@@ -587,7 +592,11 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
         expect(state?.liveness).toBe('unsupported');
         expect(state?.schemaOk).toBe(false);
         expect(state?.root.children).toStrictEqual([]);
-        expect(state?.totals).toStrictEqual({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+        expect(state?.totals).toStrictEqual({ costUsd: 0 });
+        // ABSENT, not zero: this engine reports no token figures at all, and
+        // a refused session must not be the one place it appears to.
+        expect(state?.contextNow).toBeUndefined();
+        expect(state?.burn).toBeUndefined();
         expect(state?.projectSlug).toBe('');
         expect(state?.spawnEdges).toStrictEqual([]);
         expect(state?.parked).toStrictEqual([]);

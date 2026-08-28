@@ -770,10 +770,21 @@ function unsupportedCopy(session: SessionState): SessionState {
     ...session,
     schemaOk: false,
     liveness: 'unsupported',
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    totals: { costUsd: 0 },
+    // A refused session reports zero, not the numbers it had: G3's "never a
+    // partial tree" covers numbers. Zero rather than absent because this IS a
+    // CC session and the CC engine does report these - absent would say "this
+    // engine has no such figure", which is a different and false claim.
+    contextNow: { prompt: 0, output: 0 },
+    burn: { prompt: 0, output: 0 },
     spawnEdges: [],
     parked: [],
-    root: { ...session.root, children: [], tokens: { in: 0, out: 0 } },
+    root: {
+      ...session.root,
+      children: [],
+      contextNow: { prompt: 0, output: 0 },
+      burn: { prompt: 0, output: 0 },
+    },
   };
 }
 

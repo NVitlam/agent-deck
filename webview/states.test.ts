@@ -719,6 +719,23 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
       expect(one(panel.container, 'inspector-tokens').textContent).toContain('12,345');
       expect(one(panel.container, 'inspector-tokens').textContent).toContain('6,789');
       expect(one(panel.container, 'inspector-burn').textContent).toContain('24,690');
+
+      // AGENTCELL'S SUBLINE, ASSERTED BY VALUE. This is the fifth `.svelte`
+      // token call site and it was the only one no test read: `AgentCell` is
+      // canvas-only, so `render.test.ts`'s `node-tokens` covers `TreeNodeView`
+      // and not this. `.svelte` is outside `tsc` and outside eslint, so a
+      // wrong field or a dropped `?.` here would reach a user unchallenged -
+      // and a presence check would pass while every figure rendered as a dash.
+      // testdata's depth-1 agent carries contextNow 4,500/1,250 and burn
+      // 9,000/2,500, so reading `burn` by mistake fails this.
+      const sublines = all(panel.container, TESTID.cell)
+        .map((c) => c.querySelector('.sub')?.textContent ?? '')
+        .filter((t) => t.includes('in ctx'));
+      expect(sublines.length).toBeGreaterThan(0);
+      expect(sublines.some((t) => t.includes('4,500 in ctx') && t.includes('1,250 out'))).toBe(
+        true,
+      );
+      expect(sublines.some((t) => t.includes('9,000'))).toBe(false);
     }
   });
 

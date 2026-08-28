@@ -708,7 +708,7 @@ describe('the canvas surface, fed the same host-produced states', () => {
     }
   });
 
-  it('draws every agent as a cell, and no tool dots at all', async () => {
+  it('draws every agent as a cell, and every tool call as a dot', async () => {
     const panel = render('canvas');
     const run = await hostRun(panel);
 
@@ -731,12 +731,43 @@ describe('the canvas surface, fed the same host-produced states', () => {
     expect(cellIds).toStrictEqual(agentIds);
     expect(agentIds.length).toBeGreaterThan(1);
 
-    // NO tool dots, on real host-produced state as well as on fixtures. The
-    // tree still HAS the tool nodes - they reach the inspector, by
-    // description - they are simply not drawn on the canvas any more.
+    // TOOL DOTS, on real host-produced state as well as on fixtures. What
+    // stood here asserted `TESTID.dot` was EMPTY - the 2026-08-21 decision
+    // that moved C7.3's three tool rows up onto the agent - and the tidy tree
+    // reverses it: one dot per call, on the row beneath the node that made it.
     const toolIds = new Set(walkState(state).filter((n) => !isAgentNode(n)).map((n) => n.id));
     expect(toolIds.size).toBeGreaterThan(0);
-    expect(all(panel.container, TESTID.dot)).toHaveLength(0);
+
+    const dots = all(panel.container, TESTID.dot);
+    const drawnToolIds = dots.map((d) => d.dataset['toolId'] ?? '');
+    // No call drawn twice. Checked before the set comparison below, which
+    // cannot see a duplicate.
+    expect(new Set(drawnToolIds).size).toBe(drawnToolIds.length);
+
+    // The cap elides calls above `DOT_CAP` and draws a `+N` glyph in their
+    // place, so the equality below only holds while this corpus stays under
+    // it. Asserted rather than assumed: if a re-harvest crosses the cap this
+    // fails with its reason attached instead of silently weakening the row.
+    expect(
+      all(panel.container, 'tool-dot-overflow'),
+      'this corpus has crossed DOT_CAP - the comparison below needs the cap applied',
+    ).toHaveLength(0);
+    // Every agent is drawn (asserted above) and nothing was elided, so the
+    // drawn dots are exactly the host's tool nodes.
+    expect([...drawnToolIds].sort()).toStrictEqual([...toolIds].sort());
+
+    // The spawn axis is a SHAPE, not a fifth colour: a call that spawned a
+    // subagent draws hollow. It is exactly the `spawnEdges` rows whose
+    // `tool_use` end is in this tree - the primary-key join, on the dot.
+    const spawning = [...new Set((state.spawnEdges ?? []).map((e) => e.toolUseId))]
+      .filter((id) => toolIds.has(id))
+      .sort();
+    expect(spawning.length).toBeGreaterThan(0);
+    const hollow = dots
+      .filter((d) => d.dataset['spawns'] === 'true')
+      .map((d) => d.dataset['toolId'] ?? '')
+      .sort();
+    expect(hollow).toStrictEqual(spawning);
   });
 
   it('draws the filament for every spawn edge whose two ends are both placed', async () => {

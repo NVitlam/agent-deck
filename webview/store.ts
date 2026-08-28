@@ -30,6 +30,7 @@ import type {
   ApplyError,
   HostToWebviewMessage,
   SessionState,
+  TokenPair,
   TreeNode,
   TreeOp,
   WebviewToHostMessage,
@@ -40,7 +41,16 @@ import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
 import type { Altitude, ViewMode } from './canvas-contract.js';
 import { countNodes } from './layout.js';
 import { DECK_FILTERS } from './canvas-contract.js';
-import { DECK_ZOOM_LIMITS, TREE_ZOOM_LIMITS, clampScale } from './viewport.js';
+import {
+  DECK_FIT_PADDING,
+  DECK_ZOOM_LIMITS,
+  TREE_ZOOM_LIMITS,
+  clampScale,
+  fitTo,
+  panBy,
+  zoomAbout,
+} from './viewport.js';
+import type { Rect, ViewportSize } from './viewport.js';
 import type { DeckFilter } from './canvas-contract.js';
 
 /** One row of the left rail. */
@@ -105,6 +115,65 @@ export interface SessionSummary {
    * day a third engine is added this row cannot be the place that forgot.
    */
   engine: NonNullable<SessionState['engine']>;
+  /**
+   * Agent nodes in the tree, root included. The deck card's `{n} ag`.
+   *
+   * Derived here for the reason every other derived number on this row is:
+   * per-session derivation is the store's job, and a component holding its
+   * own tree walk is a second implementation of one rule.
+   *
+   * **0 for a refused session**, like {@link SessionSummary.nodeCount} and for
+   * the same reason (G3): no number is read off a tree the fingerprint
+   * declined to trust.
+   */
+  agents: number;
+  /**
+   * Tool calls whose status is `running`, anywhere in the tree. The card's
+   * `{n} in flight`, and half of the pulse rule (DoD 7.5).
+   *
+   * Tools only. An agent is `running` because a tool under it is, so counting
+   * both would report one in-flight call two or three times on a deep tree.
+   * **0 for a refused session.**
+   */
+  inflight: number;
+  /**
+   * Everything the session has spent, or ABSENT when the engine does not
+   * report it.
+   *
+   * Optional, and the absence is the point: `EM_DASH` is the honest render of
+   * an unreported figure and `0` is a wrong number rather than a missing one.
+   * The OpenCode engine leaves it unset — see `SessionState.burn`. Absent for
+   * a refused session too.
+   */
+  burn?: TokenPair;
+  /**
+   * How full the session's context is right now, or ABSENT. Same optionality
+   * and the same reason as {@link SessionSummary.burn}.
+   */
+  contextNow?: TokenPair;
+  /**
+   * `SessionState.totals.costUsd`, carried unchanged.
+   *
+   * **0 means NOT YET COMPUTED, never "free"** — there is no price table in
+   * this repository. `format.ts:formatCost` is the one place that rule turns
+   * into a rendered string, and it renders 0 as an em-dash.
+   */
+  costUsd: number;
+  /**
+   * The latest moment anything in this session was observed to happen: the
+   * greatest `endedAt ?? startedAt` over every agent in the tree.
+   *
+   * A COMPARABLE ORDINAL, not a wall clock the store owns. It feeds
+   * `layout.ts:DeckSession.last` (which only ever compares it) and the card's
+   * relative-age text (which differences it against a `now` the RENDERER
+   * supplies). This module has no clock and gains none here — that is what
+   * keeps `getView()` idempotent.
+   *
+   * `ToolNode` carries no timestamp at all, so tools contribute nothing; the
+   * agent that owns them does. **0 for a refused session**, which sorts it
+   * last under `recent` and renders its age as an em-dash.
+   */
+  lastEventAt: number;
 }
 
 /** A patch the host sent that could not be applied. */
@@ -276,10 +345,32 @@ export interface Store {
   setDeckFilter(filter: DeckFilter): void;
   /** Open or shut the inspector panel without changing the selected node. */
   setInspectorOpen(open: boolean): void;
-  /** Pan the deck by a delta in stage units. */
+  /** Pan the deck by a delta in CLIENT pixels. `viewport.ts:panBy`. */
   panDeck(dx: number, dy: number): void;
-  /** Zoom the deck about a point, clamped to {@link DECK_ZOOM_LIMITS}. */
-  zoomDeck(factor: number, originX: number, originY: number): void;
+  /**
+   * Zoom the deck about a client point, in WHEEL NOTCHES.
+   *
+   * Notches, not a factor, and the change is deliberate: `viewport.ts` is the
+   * single definition of pan/zoom for all three altitudes and its
+   * {@link zoomAbout} takes a signed notch count, so a factor here meant this
+   * module re-implementing `ZOOM_FACTOR ** notches` and the clamp beside it —
+   * two implementations of one rule, which is the defect class
+   * `canvas-contract.ts` exists to prevent, in arithmetic instead of in a
+   * name. Positive zooms in; fractional values are allowed so a trackpad's
+   * continuous delta needs no special case.
+   */
+  zoomDeck(notches: number, clientX: number, clientY: number): void;
+  /**
+   * Fit placed deck content into a viewport of this pixel size, with
+   * {@link DECK_FIT_PADDING} of clear space. The double-click-on-empty-field
+   * gesture (DoD 7.4).
+   *
+   * Takes the CONTENT RECTANGLE rather than the sessions, because the bounds
+   * of what is drawn are the renderer's own layout output and this module has
+   * no business re-deriving them: `layout.ts:deckLayout` places, and
+   * `viewport.ts:boundsOf` measures.
+   */
+  fitDeck(content: Rect, size: ViewportSize): void;
   /** Move one blob aside by a delta in stage units. Additive. */
   nudgeBlob(sessionId: string, dx: number, dy: number): void;
   /** Back to the identity transform, and every blob back where layout put it. */
@@ -340,6 +431,41 @@ function countToolErrors(node: TreeNode): number {
   return total;
 }
 
+/** Agent nodes below and including `node`. Tools are walked through. */
+function countAgents(node: TreeNode): number {
+  if (!isAgentNode(node)) return 0;
+  let total = 1;
+  for (const child of node.children) total += countAgents(child);
+  return total;
+}
+
+/**
+ * Tool nodes whose status is `running`, anywhere below `node`.
+ *
+ * Agents are walked through, never counted — see
+ * {@link SessionSummary.inflight} for why counting both would over-report.
+ */
+function countInflight(node: TreeNode): number {
+  if (!isAgentNode(node)) return node.status === 'running' ? 1 : 0;
+  let total = 0;
+  for (const child of node.children) total += countInflight(child);
+  return total;
+}
+
+/**
+ * The greatest agent timestamp in the tree. 0 when the tree has none.
+ *
+ * `endedAt` when the agent has one, `startedAt` otherwise: an agent that has
+ * finished was last heard from when it finished.
+ */
+function lastAgentEvent(node: TreeNode): number {
+  if (!isAgentNode(node)) return 0;
+  let latest = node.endedAt ?? node.startedAt;
+  if (!Number.isFinite(latest)) latest = 0;
+  for (const child of node.children) latest = Math.max(latest, lastAgentEvent(child));
+  return latest;
+}
+
 function summarize(state: SessionState, refused: boolean): SessionSummary {
   return {
     sessionId: state.sessionId,
@@ -361,6 +487,20 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
     // G3 forbids; which engine did the refusing is known independently of the
     // tree and is exactly what a reader needs to know about a cracked blob.
     engine: state.engine ?? 'cc',
+    // The same G3 treatment as `nodeCount`/`errorCount`: a refused session's
+    // tree was not recognised, so nothing is counted off it. `costUsd` is
+    // zeroed rather than dropped because 0 already means NOT COMPUTED, which
+    // is exactly the claim a refusal supports.
+    agents: refused ? 0 : countAgents(state.root),
+    inflight: refused ? 0 : countInflight(state.root),
+    costUsd: refused ? 0 : state.totals.costUsd,
+    lastEventAt: refused ? 0 : lastAgentEvent(state.root),
+    // Carried by reference, not copied: `applySessionPatch` deep-freezes the
+    // state, so the pair cannot be mutated behind a renderer's back, and
+    // sharing the reference is what keeps `getView()` deep-equal across two
+    // reads of one snapshot.
+    ...(refused || state.contextNow === undefined ? {} : { contextNow: state.contextNow }),
+    ...(refused || state.burn === undefined ? {} : { burn: state.burn }),
   };
 }
 
@@ -717,24 +857,29 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     panDeck(dx: number, dy: number): void {
       if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
       if (dx === 0 && dy === 0) return;
-      deckView = { ...deckView, x: deckView.x + dx, y: deckView.y + dy };
+      deckView = panBy(deckView, dx, dy);
       notify();
     },
 
-    zoomDeck(factor: number, originX: number, originY: number): void {
-      if (!Number.isFinite(factor) || factor <= 0) return;
-      if (!Number.isFinite(originX) || !Number.isFinite(originY)) return;
-      const next = clampScale(deckView.k * factor, DECK_ZOOM_LIMITS);
-      if (next === deckView.k) return;
-      // Zoom ABOUT THE POINTER: the stage point under the cursor stays under
-      // the cursor. Without this the deck slides away from whatever you were
-      // aiming at, which reads as the zoom being broken rather than centred.
-      const ratio = next / deckView.k;
-      deckView = {
-        k: next,
-        x: originX - (originX - deckView.x) * ratio,
-        y: originY - (originY - deckView.y) * ratio,
-      };
+    zoomDeck(notches: number, clientX: number, clientY: number): void {
+      if (!Number.isFinite(notches) || notches === 0) return;
+      if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+      // `zoomAbout` keeps the stage point under the cursor under the cursor,
+      // clamps to DECK_ZOOM_LIMITS, and returns the SAME OBJECT when the
+      // scale did not move — which is what makes the no-op check below exact
+      // rather than a float comparison.
+      const next = zoomAbout(deckView, clientX, clientY, notches, DECK_ZOOM_LIMITS);
+      if (next === deckView) return;
+      deckView = next;
+      notify();
+    },
+
+    fitDeck(content: Rect, size: ViewportSize): void {
+      const finite = [content.x, content.y, content.w, content.h, size.width, size.height];
+      if (finite.some((n) => !Number.isFinite(n))) return;
+      const next = fitTo(content, size, DECK_FIT_PADDING, DECK_ZOOM_LIMITS);
+      if (next.x === deckView.x && next.y === deckView.y && next.k === deckView.k) return;
+      deckView = next;
       notify();
     },
 

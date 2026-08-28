@@ -354,6 +354,19 @@ interface AgentAccumulator {
   firstTimestamp?: number;
   lastTimestamp?: number;
   entryCount: number;
+  /**
+   * The transcript's own summary line, if it wrote one — design §0's first
+   * choice for the session label, and design amendment A8.6.
+   *
+   * MEASURED, not assumed: the entry is `{"type":"ai-title","aiTitle":"..."}`.
+   * Present in `fixtures/cc-2.1.234` and `fixtures/cc-2.1.241`; ABSENT in
+   * `cc-2.1.237` and `cc-2.1.246`, which write `atis-latch` instead and carry
+   * no title at all. Both branches are pinned by a real fixture, which is why
+   * the fallback below is not speculative.
+   */
+  sessionTitle?: string;
+  /** §0's second choice: the first user message's own words. */
+  firstUserText?: string;
 }
 
 /**
@@ -410,9 +423,67 @@ function epoch(value: unknown): number | undefined {
  * cache fields still yields exactly `input_tokens` and nothing changes for it.
  * See `events.ts`'s {@link TokenPair}.
  */
+/** Design §0's session-label ceiling. A label is prose; an id is evidence. */
+export const SESSION_LABEL_MAX_CHARS = 26;
+
+/**
+ * A text block the IDE injected rather than something the user typed.
+ *
+ * MEASURED on `fixtures/cc-2.1.234`: the first user entry's content array
+ * begins `<ide_opened_file>The user opened the file ... in the IDE.` and the
+ * person's actual first sentence is the SECOND block. A label taken from block
+ * zero would name a file nobody mentioned, on every session opened from an
+ * editor — which is every session this product observes.
+ */
+const INJECTED_BLOCK = /^\s*<[a-z_]+>/i;
+
+/**
+ * §0's label sources, captured as the entries go past — A8.6.
+ *
+ * FIRST WINS for both, so a re-read of the same transcript cannot change a
+ * label that is already on screen. Neither source is required: a session with
+ * no title and no user text keeps the id, which is §0's own `label-fallback`
+ * and is the honest answer rather than an invented phrase.
+ */
+function captureSessionLabel(acc: AgentAccumulator, entry: TranscriptEntry): void {
+  if (acc.sessionTitle === undefined && entry['type'] === 'ai-title') {
+    const title = entry['aiTitle'];
+    if (typeof title === 'string' && title.trim() !== '') acc.sessionTitle = title.trim();
+    return;
+  }
+  if (acc.firstUserText !== undefined || entry['type'] !== 'user') return;
+  const message = entry['message'];
+  if (typeof message !== 'object' || message === null) return;
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === 'string') {
+    const text = content.trim();
+    if (text !== '' && !INJECTED_BLOCK.test(text)) acc.firstUserText = text;
+    return;
+  }
+  if (!Array.isArray(content)) return;
+  for (const block of content) {
+    if (typeof block !== 'object' || block === null) continue;
+    const b = block as { type?: unknown; text?: unknown };
+    if (b.type !== 'text' || typeof b.text !== 'string') continue;
+    const text = b.text.trim();
+    if (text === '' || INJECTED_BLOCK.test(text)) continue;
+    acc.firstUserText = text;
+    return;
+  }
+}
+
+/** One line, cut to §0's ceiling with an ellipsis. Never mid-surrogate. */
+function toSessionLabel(text: string): string {
+  const oneLine = text.replace(/\s+/gu, ' ').trim();
+  const chars = [...oneLine];
+  if (chars.length <= SESSION_LABEL_MAX_CHARS) return oneLine;
+  return `${chars.slice(0, SESSION_LABEL_MAX_CHARS - 1).join('')}…`;
+}
+
 function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[], previewBytes: number): void {
   for (const entry of entries) {
     acc.entryCount++;
+    captureSessionLabel(acc, entry);
     const at = epoch(entry['timestamp']);
     if (at !== undefined) {
       if (acc.firstTimestamp === undefined || at < acc.firstTimestamp) acc.firstTimestamp = at;
@@ -843,7 +914,19 @@ export class TreeGrafter {
   }
 
   private labelFor(nodeId: string, meta: SubagentMeta | undefined): string {
-    if (nodeId === ROOT_NODE_ID) return this.sessionId;
+    // THE ROOT'S LABEL COMES FROM THE TRANSCRIPT — design §0, implemented at
+    // amendment A8.6. This line returned `this.sessionId` unconditionally from
+    // the first release until 2026-08-29, so §0's `label-fallback` fired on
+    // every session that ever rendered and the deck card and the tree root both
+    // showed an id where a label belongs. `webview/store.ts` maps this straight
+    // onto `SessionSummary.label`, so one line fixes both surfaces.
+    if (nodeId === ROOT_NODE_ID) {
+      const title = this.main.sessionTitle;
+      if (title !== undefined) return toSessionLabel(title);
+      const first = this.main.firstUserText;
+      if (first !== undefined) return toSessionLabel(first);
+      return this.sessionId;
+    }
     if (meta === undefined) return nodeId;
     const type = typeof meta.agentType === 'string' ? meta.agentType : '';
     const description = typeof meta.description === 'string' ? meta.description : '';

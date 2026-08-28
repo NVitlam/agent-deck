@@ -78,22 +78,61 @@ function childrenOf(st, id) {
   const sq = t => p?.tools.find(x => x.id === t)?.seq ?? 1e9;
   return st.agents.filter(a => a.parent === id).sort((a, b) => sq(a.spawnedBy) - sq(b.spawnedBy) || cmp(a.id, b.id));
 }
+// A8.4: more than WRAP children lay out in rows of WRAP, columns shared across
+// rows, row gap LEVEL/2. At <= WRAP children every expression below reduces to
+// what it was, which is why the frozen tables above reproduce byte-for-byte.
+const WRAP = 8, ROW_GAP = LEVEL / 2;
 export function treeLayout(st, root, collapseDepth = Infinity) {
   const out = [], width = new Map(), nw = new Map(st.agents.map(a => [a.id, nodeWidth(a)]));
+  const cols = new Map(), rowsOf = new Map(), depthOf = new Map();
   function measure(id, d) {
+    depthOf.set(id, d);
     const k = d + 1 <= collapseDepth ? childrenOf(st, id) : [];
     if (!k.length) { width.set(id, nw.get(id)); return nw.get(id); }
-    const w = k.reduce((s, c) => s + measure(c.id, d + 1), 0) + SIB * (k.length - 1);
-    width.set(id, Math.max(nw.get(id), w)); return width.get(id);
+    const kw = k.map(c => measure(c.id, d + 1));
+    const n = Math.min(WRAP, k.length), cw = new Array(n).fill(0);
+    kw.forEach((w, i) => { cw[i % n] = Math.max(cw[i % n], w); });
+    const grid = cw.reduce((s, w) => s + w, 0) + SIB * (n - 1);
+    cols.set(id, cw); rowsOf.set(id, Math.ceil(k.length / n));
+    width.set(id, Math.max(nw.get(id), grid)); return width.get(id);
   }
-  function place(id, d, x0) {
-    const w = width.get(id), Wn = nw.get(id), x = x0 + (w - Wn) / 2, y = d * (NH + LEVEL);
+  const rowsAt = new Map([[0, 1]]);
+  const rankTops = new Map([[0, 0]]);
+  const rankTop = d => {
+    if (rankTops.has(d)) return rankTops.get(d);
+    const r = rowsAt.get(d - 1) ?? 1;
+    const v = rankTop(d - 1) + r * NH + (r - 1) * ROW_GAP + LEVEL;
+    rankTops.set(d, v); return v;
+  };
+  function place(id, d, x0, row) {
+    const w = width.get(id), Wn = nw.get(id), x = x0 + (w - Wn) / 2;
+    const y = rankTop(d) + row * (NH + ROW_GAP);
     const k = d + 1 <= collapseDepth ? childrenOf(st, id) : [];
     out.push({ id, x: r3(x), y: r3(y), w: Wn, depth: d });
-    let cx = x0; for (const c of k) { place(c.id, d + 1, cx); cx += width.get(c.id) + SIB; }
+    if (!k.length) return;
+    const cw = cols.get(id), n = cw.length;
+    const grid = cw.reduce((s, v) => s + v, 0) + SIB * (n - 1);
+    for (let start = 0, r = 0; start < k.length; start += n, r += 1) {
+      const inRow = k.slice(start, start + n);
+      const rw = inRow.reduce((s, _c, i) => s + cw[i], 0) + SIB * (inRow.length - 1);
+      let cx = x0 + (grid - rw) / 2;
+      inRow.forEach((c, i) => { place(c.id, d + 1, cx + (cw[i] - width.get(c.id)) / 2, r); cx += cw[i] + SIB; });
+    }
   }
-  measure(root, 0); place(root, 0, 0); return out;
+  measure(root, 0);
+  for (const [id, r] of rowsOf) {
+    const d = depthOf.get(id) + 1;
+    rowsAt.set(d, Math.max(rowsAt.get(d) ?? 1, r));
+  }
+  place(root, 0, 0, 0); return out;
 }
+// KEPT FOR THE FROZEN TABLES AND FOR NOTHING ELSE — design amendment A8.5.
+// Tool dots were removed from the product by A8.1 and `layout.ts` no longer
+// exports a position for one. The design.md section 7 tables above this file's
+// output were generated when dots existed and carry `spawn-dot x / y` columns;
+// they must keep reproducing byte-for-byte, because they are the regression
+// guard on the layout arithmetic. So this stays, and it is history rather than
+// a second implementation of a live feature. Nothing in `webview/` calls it.
 export function dotPos(n, tools, i) { const span = (tools.length - 1) * DOT_GAP; return { x: r3(n.x + n.w / 2 - span / 2 + i * DOT_GAP), y: r3(n.y + DOT_Y) }; }
 
 // ───────────────────────────── Emit, in design.md §7 order ─────────────────────────────

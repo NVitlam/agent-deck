@@ -60,7 +60,6 @@ import {
   nodeWidth,
   roundCoord,
   sortDeckSessions,
-  spawnDotPos,
   toDeckSession,
   toolChildren,
   treeLayout,
@@ -321,9 +320,16 @@ function emitTables(): string[] {
         const parentAgent = findMockAgent(state, parentPlacement.id);
         const tools = toolChildren(parentAgent);
         const index = tools.findIndex((t) => t.id === mock.spawnedBy);
-        const dot = spawnDotPos(parentPlacement, tools.length, index);
-        dx = dot.x;
-        dy = dot.y;
+        // THE DOT ARITHMETIC IS HISTORY, AND IT LIVES HERE NOW — A8.5.
+        // `layout.ts` exported `spawnDotPos` until 2026-08-29; A8.1 removed the
+        // dots and A8.5 keeps the frozen §7 tables byte-identical as a
+        // regression guard on the layout. Those tables carry `spawn-dot`
+        // columns, so something must still produce them. It is NOT production
+        // code and must never become production code again — the `no dot API`
+        // test below is what says so.
+        const span = (tools.length - 1) * 13;
+        dx = roundCoord(parentPlacement.x + parentPlacement.w / 2 - span / 2 + index * 13);
+        dy = roundCoord(parentPlacement.y + NODE_H + 11);
       }
       log(`| ${p.id} | ${p.depth} | ${p.x} | ${p.y} | ${p.w} | ${dx} | ${dy} |`);
     }
@@ -948,16 +954,25 @@ describe('the tidy tree', () => {
     }
   });
 
-  it('places the spawn dots centred on the node', () => {
-    const { state } = buildMockState();
-    const main = treeLayout(state, 'main')[0];
-    expect(main).toBeTruthy();
-    if (main === undefined) return;
-    const tools = toolChildren(findMockAgent(state, 'main'));
-    const first = spawnDotPos(main, tools.length, 0);
-    const last = spawnDotPos(main, tools.length, tools.length - 1);
-    expect(roundCoord((first.x + last.x) / 2)).toBe(roundCoord(main.x + main.w / 2));
-    expect(first.y).toBe(main.y + NODE_H + 11);
+  it('exports no dot API at all, so the row cannot come back by accident', async () => {
+    // A8.1 removed the tool dots. `places the spawn dots centred on the node`
+    // stood here until 2026-08-29 and is gone rather than skipped: a test for
+    // a deleted feature that still passes is how a deleted feature returns.
+    //
+    // What replaces it is a NEGATIVE guard on the module's surface. The row was
+    // not a cosmetic mistake — measured on the wide-rank corpus it put 17 of 18
+    // rows outside their own boxes, overlapped 14 sibling pairs, and cost 15 of
+    // 15 filaments — so reintroducing a position function for one is a decision
+    // that must be made deliberately, in the design, not by an import landing
+    // back in a file.
+    const mod = (await import('./layout.js')) as unknown as Record<string, unknown>;
+    for (const name of ['spawnDotPos', 'SPAWN_DOT_GAP', 'SPAWN_DOT_Y', 'DOT_LIMIT', 'maxDots']) {
+      expect(mod[name], `layout.ts exports ${name}: the dot row is back`).toBeUndefined();
+    }
+    // ...and the surface it DOES export is intact, so this is not passing
+    // because the import failed.
+    expect(typeof mod['treeLayout']).toBe('function');
+    expect(typeof mod['nodeWidth']).toBe('function');
   });
 });
 

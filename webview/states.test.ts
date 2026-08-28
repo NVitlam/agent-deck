@@ -188,7 +188,6 @@ function useView(panel: Panel, mode: ViewMode): void {
 const INTERIOR_TESTIDS = [
   TESTID.nucleus,
   TESTID.cell,
-  TESTID.dot,
   TESTID.filament,
   TESTID.parkedStub,
   TESTID.elidedBadge,
@@ -431,7 +430,8 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
       if (mode === 'canvas') {
         expect(one(panel.container, TESTID.canvas).dataset['refused']).toBe('true');
         expect(one(panel.container, TESTID.canvas).dataset['cells']).toBe('0');
-        expect(one(panel.container, TESTID.canvas).dataset['dots']).toBe('0');
+        // `data-dots` is gone with the dots (A8.1). Removed rather than left
+        // asserting '0' forever, which is a check that can no longer fail.
         expect(one(panel.container, TESTID.canvas).dataset['parked']).toBe('0');
       } else {
         const refusal = one(panel.container, 'refusal-screen');
@@ -583,62 +583,35 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
       enter(panel, mode, 'session-live');
 
       if (mode === 'canvas') {
-        // TOOL DOTS ARE BACK, and this row is written against them again.
-        // What stood here asserted `TESTID.dot` was EMPTY and read C7.3's
-        // three tool rows off a `.stats` line on the agent — the encoding the
-        // 2026-08-21 decision moved them to. The tidy tree restores the dot:
-        // one per call, on the row beneath the node that made it, carrying
-        // its status. `.stats` is emitted by nothing now, so the two
-        // `stats.join(' ')` lines would have run against `''` and the
-        // `\d+ actions?` line against an empty array — a row of the state
-        // matrix passing while proving nothing.
+        // THE DOTS ARE GONE — design amendment A8.1. What stood here read a
+        // per-call status map, a hollow-spawn shape and a transcript order off
+        // the dot row. The row was a flat cap of 24 whatever it sat under, so
+        // on the wide-rank corpus 17 of 18 rows fell outside their own boxes,
+        // 14 sibling pairs overlapped, and 15 of 15 filaments were dropped
+        // because their spawning dot had been elided.
         //
-        // BY VALUE, AS A MAP. All three statuses are pinned to the call that
-        // has them, so a renderer that painted every dot `done` fails here
-        // rather than satisfying a `toContain`.
-        const statusByTool = new Map(
-          all(panel.container, TESTID.dot).map((d) => [d.dataset['toolId'], d.dataset['status']]),
-        );
-        expect(statusByTool).toStrictEqual(
-          new Map([
-            ['tool-read', 'done'],
-            ['tool-agent-1', 'done'],
-            ['tool-agent-2', 'running'],
-            ['tool-bash', 'error'],
-          ]),
-        );
-
-        // The fourth axis is a SHAPE, not a colour: a call that spawned a
-        // subagent draws hollow. It is exactly the two `spawnEdges` rows.
-        const hollow = all(panel.container, TESTID.dot)
-          .filter((d) => d.dataset['spawns'] === 'true')
-          .map((d) => d.dataset['toolId']);
-        expect(hollow).toStrictEqual(['tool-agent-1', 'tool-agent-2']);
-
-        // Transcript order, within the node that owns the calls. ONE
-        // `querySelectorAll` filtered down, never two queries concatenated:
-        // concatenating imposes testid order over document order and makes an
-        // order assertion mean nothing.
-        const rootDots = all(panel.container, TESTID.dot)
-          .map((d) => d.dataset['toolId'])
-          .filter((id) => id === 'tool-read' || id === 'tool-agent-1');
-        expect(rootDots).toStrictEqual(['tool-read', 'tool-agent-1']);
+        // Per-call status now reads in §8.6's drawer, which `inspector.test.ts`
+        // covers by value. What this SURFACE still claims is asserted here, and
+        // the absence is asserted with it — so the row cannot go vacuous the
+        // way its predecessor did when `.stats` stopped being emitted.
+        expect(all(panel.container, 'canvas-dot')).toHaveLength(0);
 
         // Row 2 of a node is the frozen string, asserted whole.
         expect(subTextByAgent(panel).get('agent-2')).toBe('2.0k · 1 calls');
 
-        // AND THE ERROR PERSISTS — the half of this row's name that the
-        // previous version never tested. Settle the whole tree: the running
-        // dot goes quiet and the error thorn stays.
+        // AND THE ERROR PERSISTS — the half of this row's name that matters.
+        // On the canvas that claim now lives on the NODE: something is running
+        // before the tree settles and nothing is running after.
+        const activeNodes = (): HTMLElement[] =>
+          all(panel.container, TESTID.cell)
+            .concat(all(panel.container, TESTID.nucleus))
+            .filter((n) => n.dataset['active'] === 'true');
+        expect(activeNodes().length).toBeGreaterThan(0);
         send({
           type: 'snapshot',
           sessions: [settledSession({ sessionId: 'session-live' })],
         });
-        const settled = new Map(
-          all(panel.container, TESTID.dot).map((d) => [d.dataset['toolId'], d.dataset['status']]),
-        );
-        expect(settled.get('tool-bash')).toBe('error');
-        expect([...settled.values()]).not.toContain('running');
+        expect(activeNodes()).toHaveLength(0);
       } else {
         const chips = all(panel.container, 'status-chip').map((c) => c.textContent?.trim());
         expect(chips).toContain('running');
@@ -936,7 +909,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
           if (testId === TESTID.filament) {
             return node.getAttribute('data-flowing') === 'true' ? 'running child' : undefined;
           }
-          if (testId === TESTID.dot || testId === TESTID.cell || testId === TESTID.nucleus) {
+          if (testId === TESTID.cell || testId === TESTID.nucleus) {
             return status === 'running' ? 'running node' : undefined;
           }
           node = node.parentElement;
@@ -1040,19 +1013,21 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
       enter(panel, mode, 'session-live');
       noneRides('interior');
 
-      // The tool dot is the closest thing the tidy tree has to the deleted
-      // constellation: a dot is a call that EXISTS, and only a running one is
-      // a call that is happening. A settled dot carries no animated class of
-      // its own and is moved by nothing — and the running one's halo is its
-      // SIBLING, not its parent, which is what keeps `spawnDotPos`'s
-      // coordinate out of the animation.
-      const dots = all(panel.container, TESTID.dot);
-      expect(dots.length).toBeGreaterThan(0);
-      expect(dots.some((d) => d.dataset['status'] === 'running')).toBe(true);
-      for (const dot of dots) {
-        expect(hasAnimatedAncestor(dot)).toBe(false);
-        if (dot.dataset['status'] === 'running') continue;
-        expect(animated(dot)).toHaveLength(0);
+      // WAS WRITTEN ON THE TOOL DOTS, which A8.1 removed. The claim is the
+      // same and its subject is now the NODE: only a node that is running
+      // animates, a settled one carries no animated class of its own, and no
+      // node sits inside an animated ancestor — which is what keeps the pulse a
+      // property of the thing that is happening rather than of the group it
+      // happens to be drawn in.
+      const cells = all(panel.container, TESTID.cell).concat(
+        all(panel.container, TESTID.nucleus),
+      );
+      expect(cells.length).toBeGreaterThan(0);
+      expect(cells.some((c) => c.dataset['active'] === 'true')).toBe(true);
+      for (const cell of cells) {
+        expect(hasAnimatedAncestor(cell)).toBe(false);
+        if (cell.dataset['active'] === 'true') continue;
+        expect(animated(cell)).toHaveLength(0);
       }
     });
   });
@@ -1176,7 +1151,6 @@ describe('the accessibility floor', () => {
     const focusables = [
       ...all(panel.container, TESTID.nucleus),
       ...all(panel.container, TESTID.cell),
-      ...all(panel.container, TESTID.dot),
     ];
     expect(focusables.length).toBeGreaterThan(0);
     for (const element of focusables) {

@@ -219,11 +219,21 @@ export const TESTID = {
   canvas: 'session-canvas',
   nucleus: 'canvas-nucleus',
   cell: 'canvas-cell',
-  dot: 'canvas-dot',
   filament: 'canvas-filament',
   /** The dangling stub on a parked (UNRESOLVED) graft. */
   parkedStub: 'canvas-parked-stub',
+  /**
+   * §2.7's COLLAPSE badge — the `+N ▾` under a node whose children are not
+   * drawn. Nothing to do with the tool-dot row's overflow glyph, which had the
+   * same shape and is gone; this one is a live control that re-roots.
+   */
   elidedBadge: 'canvas-elided-badge',
+  /* `dot` (`canvas-dot`) was here until 2026-08-29. Design amendment A8.1
+     removed the tool-dot row outright, so there is no element for the name to
+     address. REMOVED rather than left pointing at nothing: a testid with no
+     element is a selector that silently matches zero, which is the shape of
+     the `capture-states.mjs` defect that recorded `null` eight times under
+     field names still claiming to hold figures. */
 
   /* Inspector — the BOTTOM DRAWER (design.md §8.6, amendment A3).
      It is a drawer, not a side panel: it occupies a grid row of its own along

@@ -744,13 +744,13 @@ describe('the canvas surface, fed the same host-produced states', () => {
     // cannot see a duplicate.
     expect(new Set(drawnToolIds).size).toBe(drawnToolIds.length);
 
-    // The cap elides calls above `DOT_CAP` and draws a `+N` glyph in their
+    // The cap elides calls above `DOT_LIMIT` and draws a `+N` glyph in their
     // place, so the equality below only holds while this corpus stays under
     // it. Asserted rather than assumed: if a re-harvest crosses the cap this
     // fails with its reason attached instead of silently weakening the row.
     expect(
       all(panel.container, 'tool-dot-overflow'),
-      'this corpus has crossed DOT_CAP - the comparison below needs the cap applied',
+      'this corpus has crossed DOT_LIMIT - the comparison below needs the cap applied',
     ).toHaveLength(0);
     // Every agent is drawn (asserted above) and nothing was elided, so the
     // drawn dots are exactly the host's tool nodes.

@@ -52,7 +52,7 @@
   import { isAgentNode } from '../src/model/events.js';
   import type { CellPlacement, DotPlacement, SessionLayout } from './canvas-contract.js';
   import { REDUCED_MOTION_CLASS, TESTID } from './canvas-contract.js';
-  import { roundCoord, sessionLayout } from './layout.js';
+  import { roundCoord } from './layout.js';
   import AgentCell from './AgentCell.svelte';
   import Filament from './Filament.svelte';
 
@@ -287,7 +287,17 @@
   let isRefused = $derived(
     refused || session.schemaOk === false || session.liveness === 'unsupported',
   );
-  let layout = $derived(isRefused ? EMPTY_LAYOUT : sessionLayout(session));
+  /*
+   * STUB, LEFT BY P7-LAYOUT. `sessionLayout` was deleted with the rest of the
+   * phyllotaxis canvas (dot rings, radius-driven separation), and the session
+   * interior is not that package's to rewrite - the renderer packages that
+   * follow replace it against `treeLayout`. Until then this component draws
+   * the SAME empty layout it already draws on a refusal, so it renders no
+   * cells, dots or filaments at all. That is a placeholder, not a design
+   * decision, and it is why every canvas-interior assertion in
+   * `webview/canvas.test.ts` is currently red rather than quietly skipped.
+   */
+  let layout = EMPTY_LAYOUT;
   let walked = $derived(walk(session, layout));
   let nodes = $derived(isRefused ? [] : walked.nodes);
   let filaments = $derived(isRefused ? [] : filamentsOf(session, layout, walked.agents));

@@ -61,7 +61,22 @@
     HOLLOW_LIVE_CLASS,
     TESTID,
   } from './canvas-contract.js';
-  import { blobPath, constellationPoints, hashSessionId, roundCoord } from './layout.js';
+  import { roundCoord } from './layout.js';
+
+  /*
+   * STUB, LEFT BY P7-LAYOUT. `blobPath`, `constellationPoints` and
+   * `hashSessionId` were deleted with the rest of the phyllotaxis canvas, and
+   * the deck renderer is not that package's to rewrite - the packages that
+   * follow replace this component against `deckLayout`'s card placements.
+   * Until then the membrane is a plain circle and the interior constellation
+   * is empty. Both are placeholders, not design decisions.
+   */
+  function circlePath(cx, cy, r) {
+    const x = roundCoord(cx);
+    const y = roundCoord(cy);
+    const rr = roundCoord(r);
+    return `M ${x - rr} ${y} a ${rr} ${rr} 0 1 0 ${rr * 2} 0 a ${rr} ${rr} 0 1 0 ${-rr * 2} 0 Z`;
+  }
   import { displayLiveness } from './format.js';
   import type { SessionSummary } from './store.js';
 
@@ -213,7 +228,8 @@
     return d;
   }
 
-  let seed = $derived(hashSessionId(summary.sessionId));
+  /* STUB: the seed went with `hashSessionId`. See the note by `circlePath`. */
+  let seed = 0;
   let shownLiveness = $derived(displayLiveness(summary.liveness, summary.refused));
   /* Only a session the fingerprint accepted animates as live. A refused one
      shows `unsupported` here, so it is still by construction. */
@@ -231,9 +247,8 @@
    * needs no branch of its own. The blob draws at `DECK_RADIUS_MIN` and says
    * nothing about content.
    */
-  let constellation = $derived(
-    constellationPoints(placement.x, placement.y, placement.R, summary.nodeCount, seed),
-  );
+  /* STUB: no interior constellation. See the note by `circlePath`. */
+  let constellation = [];
 
   let membraneClass = $derived(
     ['membrane', summary.refused ? CRACKED_CLASS : '', isLive && degraded ? HOLLOW_LIVE_CLASS : '']
@@ -296,11 +311,11 @@
          keeps the motion negative control meaningful. -->
     <path
       class={`pulse ${PULSING}`}
-      d={blobPath(placement.x, placement.y, placement.R + PULSE_RING_GAIN, seed)}
+      d={circlePath(placement.x, placement.y, placement.R + PULSE_RING_GAIN)}
     />
   {/if}
   <g class={isLive ? `wrap ${BREATHING}` : 'wrap'}>
-    <path class={membraneClass} d={blobPath(placement.x, placement.y, placement.R, seed)} />
+    <path class={membraneClass} d={circlePath(placement.x, placement.y, placement.R)} />
     {#if summary.refused}
       <path class="crack" d={crackPath(placement.x, placement.y, placement.R)} />
     {/if}

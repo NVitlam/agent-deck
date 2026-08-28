@@ -40,8 +40,23 @@
     PARKED_CLASS,
     TESTID,
   } from './canvas-contract.js';
-  import { blobPath, hashSessionId, LABEL_MAX_CHARS, roundCoord } from './layout.js';
+  import { LABEL_MAX_CHARS, roundCoord } from './layout.js';
   import { formatTokens } from './format.js';
+
+  /*
+   * STUB, LEFT BY P7-LAYOUT. `blobPath` and `hashSessionId` were deleted with
+   * the rest of the phyllotaxis canvas, and this component is not that
+   * package's to rewrite - the renderer packages that follow replace it
+   * against `treeLayout`. Until then the silhouette is a plain circle:
+   * deterministic, no seed, no golden angle. It is a placeholder shape, not a
+   * design decision.
+   */
+  function circlePath(cx, cy, r) {
+    const x = roundCoord(cx);
+    const y = roundCoord(cy);
+    const rr = roundCoord(r);
+    return `M ${x - rr} ${y} a ${rr} ${rr} 0 1 0 ${rr * 2} 0 a ${rr} ${rr} 0 1 0 ${-rr * 2} 0 Z`;
+  }
 
   let {
     agent,
@@ -183,7 +198,7 @@
     if (errors > 0) parts.push(`${errors} error${errors === 1 ? '' : 's'}`);
     return parts.join(' · ');
   });
-  let d = $derived(blobPath(placement.x, placement.y, placement.R, hashSessionId(nodeId)));
+  let d = $derived(circlePath(placement.x, placement.y, placement.R));
 
   let membraneClass = $derived(
     [

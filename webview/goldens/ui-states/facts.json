@@ -28,8 +28,8 @@
       ],
       "dataLivenessInferred": "false",
       "inferredMarkerText": null,
-      "tokensIn": null,
-      "tokensOut": null,
+      "context": "45,373",
+      "burn": "579,333",
       "cost": "—",
       "costTitle": "cost not computed — no price table"
     },
@@ -93,8 +93,8 @@
       ],
       "dataLivenessInferred": "false",
       "inferredMarkerText": null,
-      "tokensIn": null,
-      "tokensOut": null,
+      "context": "45,373",
+      "burn": "579,333",
       "cost": "—",
       "costTitle": "cost not computed — no price table"
     },
@@ -158,8 +158,8 @@
       ],
       "dataLivenessInferred": "false",
       "inferredMarkerText": null,
-      "tokensIn": null,
-      "tokensOut": null,
+      "context": "45,373",
+      "burn": "579,333",
       "cost": "—",
       "costTitle": "cost not computed — no price table"
     },
@@ -339,8 +339,8 @@
       ],
       "dataLivenessInferred": "true",
       "inferredMarkerText": "(inferred)",
-      "tokensIn": null,
-      "tokensOut": null,
+      "context": "45,373",
+      "burn": "579,333",
       "cost": "—",
       "costTitle": "cost not computed — no price table"
     },

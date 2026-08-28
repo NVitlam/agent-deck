@@ -29,10 +29,10 @@
       "schemaOk": true,
       "epochAnchor": "2026-08-25T04:21:55.519Z",
       "totals": {
-        "inputTokens": 1150096,
-        "outputTokens": 141224,
         "costUsd": 0
       },
+      "contextNow": null,
+      "burn": null,
       "spawnEdges": [
         {
           "toolUseId": "EGulB7lO1x8TBK1enJsdyADXiQaiXgbY",
@@ -238,10 +238,8 @@
         "label": "build: Phase",
         "status": "done",
         "spawnDepth": 0,
-        "tokens": {
-          "in": 576779,
-          "out": 115555
-        },
+        "contextNow": null,
+        "burn": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 64084877,
         "children": [
@@ -672,10 +670,8 @@
             "label": "general: P0: sweep depth closure (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 54647,
-              "out": 757
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 10967448,
             "endedAtOffsetMs": 11754185,
             "children": [
@@ -768,10 +764,8 @@
             "label": "general: PSPEC: spec-first amendment (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 11718,
-              "out": 297
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 11980743,
             "endedAtOffsetMs": 12185761,
             "children": [
@@ -834,10 +828,8 @@
             "label": "general: P0: sweep depth closure (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 11730,
-              "out": 266
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 15046214,
             "endedAtOffsetMs": 15259026,
             "children": [
@@ -890,10 +882,8 @@
             "label": "general: PSPEC: spec-first amendment (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 12089,
-              "out": 763
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 15933223,
             "endedAtOffsetMs": 16264960,
             "children": [
@@ -966,10 +956,8 @@
             "label": "general: P0: sweep depth closure (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 11436,
-              "out": 175
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 19281337,
             "endedAtOffsetMs": 19455190,
             "children": [
@@ -1012,10 +1000,8 @@
             "label": "general: PSPEC: spec-first amendment (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 11869,
-              "out": 421
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 19956839,
             "endedAtOffsetMs": 20186897,
             "children": [
@@ -1098,10 +1084,8 @@
             "label": "general: P0: sweep depth closure (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 49484,
-              "out": 801
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 23391859,
             "endedAtOffsetMs": 24052731,
             "children": [
@@ -1184,10 +1168,8 @@
             "label": "general: PSPEC: spec-first amendment (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 11791,
-              "out": 523
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 24275146,
             "endedAtOffsetMs": 24545655,
             "children": [
@@ -1260,10 +1242,8 @@
             "label": "general: P0: sweep depth closure (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 57393,
-              "out": 965
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 27137441,
             "endedAtOffsetMs": 27992115,
             "children": [
@@ -1376,10 +1356,8 @@
             "label": "general: PSPEC: spec amendment (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 11893,
-              "out": 627
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 28146385,
             "endedAtOffsetMs": 28413037,
             "children": [
@@ -1462,10 +1440,8 @@
             "label": "general: P7 P0: sweep depth closure (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 49407,
-              "out": 705
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 30770902,
             "endedAtOffsetMs": 31391272,
             "children": [
@@ -1548,10 +1524,8 @@
             "label": "general: P7 PSPEC: spec-first amendment (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 11714,
-              "out": 419
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 31610345,
             "endedAtOffsetMs": 31840001,
             "children": [
@@ -1624,10 +1598,8 @@
             "label": "general: P0: sweep depth closure (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 11491,
-              "out": 188
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 35294448,
             "endedAtOffsetMs": 35471787,
             "children": [
@@ -1670,10 +1642,8 @@
             "label": "general: PSPEC: spec-first amendment (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 29956,
-              "out": 570
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 35907033,
             "endedAtOffsetMs": 36293325,
             "children": [
@@ -1746,10 +1716,8 @@
             "label": "general: P0: sweep depth closure (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 1587,
-              "out": 300
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 36865534,
             "endedAtOffsetMs": 36989241,
             "children": [
@@ -1802,10 +1770,8 @@
             "label": "general: PSPEC: spec-first amendment (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 30177,
-              "out": 387
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 37559226,
             "endedAtOffsetMs": 37926044,
             "children": [
@@ -1878,10 +1844,8 @@
             "label": "general: P0: sweep depth closure (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 49597,
-              "out": 476
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 40278363,
             "endedAtOffsetMs": 40963543,
             "children": [
@@ -1954,10 +1918,8 @@
             "label": "general: PSPEC: spec amendment (@general subagent)",
             "status": "error",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 11718,
-              "out": 398
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 41089325,
             "endedAtOffsetMs": 41331195,
             "children": [
@@ -2040,10 +2002,8 @@
             "label": "general: test-runner: full baseline (@general subagent)",
             "status": "done",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 36987,
-              "out": 3612
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 45335575,
             "endedAtOffsetMs": 46764106,
             "children": [
@@ -2366,10 +2326,8 @@
             "label": "general: Verify handoff draft claims (@general subagent)",
             "status": "done",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 96633,
-              "out": 13019
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 58592135,
             "endedAtOffsetMs": 60906969,
             "children": [
@@ -2957,10 +2915,10 @@
       "schemaOk": true,
       "epochAnchor": "2026-08-26T10:02:41.875Z",
       "totals": {
-        "inputTokens": 12082,
-        "outputTokens": 45,
         "costUsd": 0
       },
+      "contextNow": null,
+      "burn": null,
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -2970,10 +2928,8 @@
         "label": "build: Howdy greeting",
         "status": "done",
         "spawnDepth": 0,
-        "tokens": {
-          "in": 12082,
-          "out": 45
-        },
+        "contextNow": null,
+        "burn": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 104559,
         "children": []
@@ -2988,10 +2944,10 @@
       "schemaOk": true,
       "epochAnchor": "2026-08-26T17:46:57.854Z",
       "totals": {
-        "inputTokens": 34419,
-        "outputTokens": 707,
         "costUsd": 0
       },
+      "contextNow": null,
+      "burn": null,
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -3001,10 +2957,8 @@
         "label": "build: Project plan summary",
         "status": "done",
         "spawnDepth": 0,
-        "tokens": {
-          "in": 34419,
-          "out": 707
-        },
+        "contextNow": null,
+        "burn": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 355977,
         "children": [
@@ -3060,10 +3014,10 @@
       "schemaOk": true,
       "epochAnchor": "2026-08-26T18:11:40.301Z",
       "totals": {
-        "inputTokens": 30450,
-        "outputTokens": 144,
         "costUsd": 0
       },
+      "contextNow": null,
+      "burn": null,
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -3073,10 +3027,8 @@
         "label": "build: Repository investigation with tools and subagents",
         "status": "done",
         "spawnDepth": 0,
-        "tokens": {
-          "in": 30450,
-          "out": 144
-        },
+        "contextNow": null,
+        "burn": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 88094,
         "children": [

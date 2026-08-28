@@ -29,10 +29,10 @@
       "schemaOk": true,
       "epochAnchor": "2026-08-24T10:16:28.175Z",
       "totals": {
-        "inputTokens": 20395,
-        "outputTokens": 151,
         "costUsd": 0
       },
+      "contextNow": null,
+      "burn": null,
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -42,10 +42,8 @@
         "label": "build: AGENTS.md for agent-deck repository",
         "status": "done",
         "spawnDepth": 0,
-        "tokens": {
-          "in": 20395,
-          "out": 151
-        },
+        "contextNow": null,
+        "burn": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 186537,
         "children": [
@@ -81,10 +79,10 @@
       "schemaOk": true,
       "epochAnchor": "2026-08-24T10:53:47.918Z",
       "totals": {
-        "inputTokens": 20395,
-        "outputTokens": 237,
         "costUsd": 0
       },
+      "contextNow": null,
+      "burn": null,
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -94,10 +92,8 @@
         "label": "build: AGENTS.md instruction file creation",
         "status": "done",
         "spawnDepth": 0,
-        "tokens": {
-          "in": 20395,
-          "out": 237
-        },
+        "contextNow": null,
+        "burn": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 301180,
         "children": [
@@ -153,10 +149,10 @@
       "schemaOk": true,
       "epochAnchor": "2026-08-24T11:04:14.612Z",
       "totals": {
-        "inputTokens": 122032,
-        "outputTokens": 22858,
         "costUsd": 0
       },
+      "contextNow": null,
+      "burn": null,
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -166,10 +162,8 @@
         "label": "build: AGENTS.md creation or update",
         "status": "done",
         "spawnDepth": 0,
-        "tokens": {
-          "in": 122032,
-          "out": 22858
-        },
+        "contextNow": null,
+        "burn": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 7201928,
         "children": [
@@ -715,10 +709,10 @@
       "schemaOk": true,
       "epochAnchor": "2026-08-24T20:04:33.360Z",
       "totals": {
-        "inputTokens": 226843,
-        "outputTokens": 62179,
         "costUsd": 0
       },
+      "contextNow": null,
+      "burn": null,
       "spawnEdges": [
         {
           "toolUseId": "BPdVjLtL6POCGlDFPuxjVLra5ovq1B84",
@@ -736,10 +730,8 @@
         "label": "build: Adding OpenCode sessions to the extension",
         "status": "done",
         "spawnDepth": 0,
-        "tokens": {
-          "in": 217590,
-          "out": 62153
-        },
+        "contextNow": null,
+        "burn": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 11523106,
         "children": [
@@ -910,10 +902,8 @@
             "label": "general: Probe subagent DB link (@general subagent)",
             "status": "done",
             "spawnDepth": 1,
-            "tokens": {
-              "in": 9253,
-              "out": 26
-            },
+            "contextNow": null,
+            "burn": null,
             "startedAtOffsetMs": 2491331,
             "endedAtOffsetMs": 2575482,
             "children": []

@@ -44,7 +44,8 @@ export function agent(overrides: Partial<AgentNode> & { id: string }): AgentNode
     status: 'done',
     spawnDepth: 1,
     children: [],
-    tokens: { in: 0, out: 0 },
+    contextNow: { prompt: 0, output: 0 },
+    burn: { prompt: 0, output: 0 },
     startedAt: 1_000,
     ...overrides,
   };
@@ -70,7 +71,8 @@ export function liveSession(overrides: Partial<SessionState> = {}): SessionState
     label: 'code-reviewer: check the diff',
     spawnDepth: 2,
     status: 'running',
-    tokens: { in: 900, out: 120 },
+    contextNow: { prompt: 900, output: 120 },
+    burn: { prompt: 1_800, output: 240 },
     startedAt: 3_000,
     children: [
       tool({
@@ -89,7 +91,8 @@ export function liveSession(overrides: Partial<SessionState> = {}): SessionState
     label: 'test-runner: run the module suite',
     spawnDepth: 1,
     status: 'running',
-    tokens: { in: 4_500, out: 1_250 },
+    contextNow: { prompt: 4_500, output: 1_250 },
+    burn: { prompt: 9_000, output: 2_500 },
     startedAt: 2_000,
     children: [
       tool({
@@ -108,7 +111,8 @@ export function liveSession(overrides: Partial<SessionState> = {}): SessionState
     label: 'main session',
     status: 'running',
     spawnDepth: 0,
-    tokens: { in: 12_345, out: 6_789 },
+    contextNow: { prompt: 12_345, output: 6_789 },
+    burn: { prompt: 24_690, output: 13_578 },
     startedAt: 1_000,
     children: [
       tool({
@@ -156,7 +160,11 @@ export function liveSession(overrides: Partial<SessionState> = {}): SessionState
     liveness: 'live',
     schemaOk: true,
     root,
-    totals: { inputTokens: 17_745, outputTokens: 8_159, costUsd: 0 },
+    totals: { costUsd: 0 },
+    // `contextNow` is the root's level; `burn` is the whole tree's spend, so
+    // it is the larger of the two by construction here as on real data.
+    contextNow: { prompt: 17_745, output: 8_159 },
+    burn: { prompt: 35_490, output: 16_318 },
     spawnEdges,
     ...overrides,
   };

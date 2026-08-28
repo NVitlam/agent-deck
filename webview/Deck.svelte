@@ -1,48 +1,87 @@
 <!--
-  Altitude 0 — the Deck (spec C7.1).
+  Altitude 0 — the Deck.
 
-  Every session of the open workspace as a blob on a dark field: silhouette from
-  a hash of the `sessionId`, size from `log(nodeCount)`, membrane colour from
-  liveness, and a faint interior constellation of one dot per node so density
-  reads without a number. It answers one question at a glance — "is anything
-  running right now" — and nothing else.
+  A fixed 40 px control bar over a pan/zoom field of session cards. The bar
+  does NOT pan and does NOT zoom: it is a sibling of the SVG, not a child of
+  the stage, which is the only arrangement in which a control stays where the
+  user left it while the field moves under it.
 
-  IT TAKES `SessionSummary`, THE STORE'S OWN VIEW ROW. A summary carries
-  `sessionId` and `nodeCount`, which is exactly `layout.ts:DeckSession`, so it
-  satisfies `deckLayout` directly and no surface needs a whole `SessionState`
-  to size a blob. `refused` comes from the summary too, so this component holds
-  no second opinion about what refusal means — the disjunction it used to
-  restate is gone, and with it the `refusedIds` prop that existed only to patch
-  the half of that union a `SessionState` could not express.
+  THE TRANSFORM IS A TRANSFORM, NEVER A COORDINATE. Pan and zoom are one
+  `transform` attribute on one wrapper `<g>` (`TESTID.deckStage`), produced by
+  `viewport.ts:transformAttr`. Nothing here edits a placement. Three things
+  depend on that and all three break silently if it is violated: `layout.ts`
+  stays a pure function of state, its goldens stay valid as NUMBERS rather
+  than as numbers-at-a-zoom, and "a spawn adds, it never reflows" survives a
+  user dragging the view around.
 
-  ORDERING IS LOAD-BEARING AND THIS COMPONENT DOES NOT TOUCH IT. `deckLayout`
-  places by ARRAY INDEX, so whoever re-sorts the list moves the blobs. This
-  component renders `sessions` in the order it was handed them, with no sort,
-  no filter and no partition — which is the store's `order`, which is the order
-  the host's snapshot arrived in. That also satisfies C7.8's "screen-reader
-  order follows the store, not the geometry": DOM order here IS store order,
-  because nothing in between reorders anything.
+  ONE VIEWPORT MODULE, NOT TWO. Every gesture below routes through
+  `viewport.ts` — `panBy` for the drag, `zoomAbout` for the wheel, `fitTo` for
+  the double-click, all at `DECK_ZOOM_LIMITS` — and it routes through it VIA
+  THE STORE, which owns `deckView`. This component does no pan/zoom arithmetic
+  of its own. That is not tidiness: a second viewport with different clamps
+  existed in this codebase once, agreed with itself, disagreed with the design,
+  and nothing failed.
 
-  GEOMETRY IS `layout.ts`'s. Every coordinate on this surface comes from
-  `deckLayout`, `blobPath` and `constellationPoints`. The one thing computed
-  here is the SVG `viewBox`, and that is viewport fitting rather than layout —
-  `layout.ts`'s header assigns it to the renderer explicitly, and it is a
-  transform of already-placed coordinates, never a re-placement of them.
+  WHEEL NOTCHES, NOT A FACTOR. `onzoom` reports a signed notch count and the
+  store applies `ZOOM_FACTOR ** notches`. A fixed step per notch rather than
+  one proportional to `deltaY`: browsers report wildly different magnitudes for
+  the same physical gesture, and a proportional factor makes a trackpad and a
+  mouse wheel feel like two different controls.
 
-  ZERO HOST CHANGE (C7.7). Selecting a blob calls back to `Store.enterSession`;
-  no new message exists in either direction and the altitude is never told to
-  the host.
+  THE CONTROL BAR'S STATE IS SPLIT, ON PURPOSE, AND THE SPLIT IS THE FIX.
+  Layout and sort are `$state` here. The ENGINE FILTER is not: it arrives as a
+  prop and its changes go out through `onenginefilter`, because `App.svelte`
+  mounts this component only while the altitude is `deck`. Component state
+  therefore dies on entering a session and comes back at its default — which
+  is what the engine filter used to do, silently, while the liveness filter
+  beside it persisted in the store. Two chips side by side behaving
+  differently, with nothing explaining why.
+
+  G7 is satisfied either way and by neither placement in particular: no VS Code
+  setting, no `workspaceState`, no `localStorage`, no host message. What decides
+  it is LIFETIME. A control whose value must outlive an unmount belongs to the
+  store; one that need not, does not. Layout and sort are re-chosen from the bar
+  in front of you; the engine filter answers "which half of my machine am I
+  looking at", and having to re-answer it after every session visit is the bug.
+
+  ORDER IS THE SORT'S, AND THE DOM FOLLOWS IT. `deckLayout` returns placements
+  in sorted order and the cards are emitted in that same order, so C7.8's
+  "screen-reader order follows the store, not the geometry" still holds — what
+  a screen reader walks is what the user chose to sort by, and nothing in
+  between reorders anything a second time.
 -->
 <script lang="ts">
-  import type { DeckPlacement } from './canvas-contract.js';
-  import { REDUCED_MOTION_CLASS, TESTID } from './canvas-contract.js';
-  import { deckLayout, roundCoord } from './layout.js';
+  import {
+    DEFAULT_ENGINE_FILTER,
+    ENGINE_FILTERS,
+    REDUCED_MOTION_CLASS,
+    TESTID,
+  } from './canvas-contract.js';
+  import type { EngineFilter } from './canvas-contract.js';
+  import {
+    DECK_CARD_H,
+    DECK_CARD_W,
+    DEFAULT_DECK_LAYOUT,
+    DEFAULT_DECK_SORT,
+    deckEngine,
+    deckLayout,
+  } from './layout.js';
+  import type {
+    DeckEngine,
+    DeckLayoutMode,
+    DeckSession,
+    DeckSortMode,
+  } from './layout.js';
+  import { displayLiveness } from './format.js';
+  import { boundsOf, transformAttr, viewportWidthInStageUnits } from './viewport.js';
+  import type { Rect, Viewport, ViewportSize } from './viewport.js';
   import type { SessionSummary } from './store.js';
-  import SessionBlob from './SessionBlob.svelte';
+  import SessionCell from './SessionCell.svelte';
 
   let {
     sessions = [],
     degraded = false,
+    degradedReason = undefined,
     selectedSessionId,
     reducedMotion = false,
     onenter,
@@ -50,17 +89,20 @@
     onpan,
     onzoom,
     onreset,
-    onnudge,
-    blobNudges = {},
+    onfit,
     total,
+    enabledEngines = ['cc'],
+    engineFilter = DEFAULT_ENGINE_FILTER,
+    onenginefilter,
+    now,
+    viewportWidth,
+    viewportHeight,
   }: {
-    /**
-     * Every session the host reported, summarised by the store, in the order
-     * it reported them.
-     */
+    /** Every session the host reported, summarised by the store. */
     sessions?: readonly SessionSummary[];
-    /** The hook tap is silent: every live membrane goes dash-hollow (G2). */
+    /** The hook tap is silent: liveness is inferred everywhere (G2). */
     degraded?: boolean;
+    degradedReason?: 'noHookEvents' | 'listenerDown' | undefined;
     /** The store's selected session, if any. */
     selectedSessionId?: string | undefined;
     /** The user prefers reduced motion. Swapped by class, never by query alone. */
@@ -70,80 +112,298 @@
     /**
      * Pan/zoom, applied as an SVG TRANSFORM on the stage group.
      *
-     * The whole point of taking it as a transform rather than as an offset to
-     * apply to placements: `deckLayout` stays a pure function of state, its
-     * goldens stay valid as numbers, and "a spawn adds, it never reflows" is
-     * untouched by a user dragging the view around. A pan implementation that
-     * edited coordinates would break all three silently.
+     * Taken as a transform rather than as an offset to apply to placements,
+     * and held by the STORE rather than here, so it survives every re-render:
+     * a new snapshot or diff replaces the session list and does not touch the
+     * view. That is asserted directly in `deck.test.ts`.
      */
-    deckView?: { x: number; y: number; k: number };
+    deckView?: Viewport;
+    /** Drag on empty field. Client-pixel deltas; `viewport.ts:panBy` applies them. */
     onpan?: ((dx: number, dy: number) => void) | undefined;
-    onzoom?: ((factor: number, originX: number, originY: number) => void) | undefined;
+    /**
+     * Wheel on the field. SIGNED NOTCHES, positive zooms in, and the point is
+     * the cursor position in this element's own coordinates.
+     */
+    onzoom?: ((notches: number, clientX: number, clientY: number) => void) | undefined;
+    /** The "Reset view" control: back to the identity transform. */
     onreset?: (() => void) | undefined;
-    /** Report that one blob was dragged aside. */
-    onnudge?: ((sessionId: string, dx: number, dy: number) => void) | undefined;
-    /** Where each blob has been dragged, keyed by sessionId. */
-    blobNudges?: Readonly<Record<string, { dx: number; dy: number }>>;
+    /**
+     * Double-click on empty field: fit the content with `DECK_FIT_PADDING`.
+     *
+     * Separate from `onreset` because they are two different answers — reset
+     * goes to 1:1 at the origin, fit goes to whatever scale shows everything —
+     * and a user who has zoomed out to find a card wants the second one.
+     */
+    onfit?: ((content: Rect, size: ViewportSize) => void) | undefined;
     /** How many sessions exist before filtering. Defaults to what is shown. */
     total?: number | undefined;
+    /**
+     * Which engines this installation is actually observing.
+     *
+     * Feeds the empty state and NOTHING else. An engine whose data directory
+     * is absent shows nothing about itself: a line reading "Waiting for an
+     * OpenCode session…" on a machine with no OpenCode is the panel waiting
+     * for something that cannot arrive, which reads as a fault in Agent Deck.
+     * Defaults to Claude Code alone, which is the only engine every install
+     * of this extension observes.
+     */
+    enabledEngines?: readonly DeckEngine[];
+    /**
+     * Which engine's sessions to show. STORE STATE, arriving as a prop.
+     *
+     * The default is here so this component can still be mounted on its own —
+     * it is the value the store also starts at, not a second opinion about
+     * what the default is. `canvas-contract.ts` owns that constant.
+     */
+    engineFilter?: EngineFilter;
+    /**
+     * A chip or a key asked for a different engine. Wired to
+     * `Store.setEngineFilter`.
+     *
+     * Reporting rather than setting: with the value in the store there is
+     * exactly one of it, and a component that also kept its own copy would be
+     * the two-agreeing-literals defect `canvas-contract.ts` exists to prevent,
+     * in state instead of in a name.
+     */
+    onenginefilter?: ((filter: EngineFilter) => void) | undefined;
+    /**
+     * The renderer's clock, in epoch milliseconds, for each card's age.
+     *
+     * Read once per render from `Date.now()` when not supplied, and passed
+     * down rather than read per card, so every card on one render measures
+     * against one instant. A test supplies it and pins the strings exactly.
+     */
+    now?: number | undefined;
+    /**
+     * Field size in CLIENT PIXELS, for the grid's column count and for the
+     * fit. Measured from the element when not supplied; supplied by tests,
+     * where jsdom reports every box as zero.
+     */
+    viewportWidth?: number | undefined;
+    viewportHeight?: number | undefined;
   } = $props();
 
-  /** Slack around the placed blobs, leaving room for labels and tags. */
-  const VIEWBOX_MARGIN = 96;
-
-  /*
-   * The summaries go straight in. `DeckSession` is `{ sessionId, nodeCount }`
-   * and a `SessionSummary` carries both, so there is no conversion step and no
-   * opportunity for one to be skipped — which is what `toDeckSession` existed
-   * to prevent back when the deck was fed whole `SessionState`s.
+  /**
+   * Fallback field size, used when nothing has measured one yet.
+   *
+   * jsdom reports 0 for every box, and a 0-wide viewport gives
+   * `deckColumns` its floor of 1 — a single column, which is a layout nobody
+   * chose. A named constant makes the fallback visible instead of letting a
+   * zero propagate silently into the geometry.
    */
-  let placements = $derived(deckLayout(sessions));
+  const FALLBACK_FIELD_W = 960;
+  const FALLBACK_FIELD_H = 600;
 
-  function viewBoxOf(placed: readonly DeckPlacement[]): string {
-    // A degenerate box for the empty deck; nothing is drawn into it.
-    if (placed.length === 0) return '0 0 1 1';
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const p of placed) {
-      minX = Math.min(minX, p.x - p.R);
-      minY = Math.min(minY, p.y - p.R);
-      maxX = Math.max(maxX, p.x + p.R);
-      maxY = Math.max(maxY, p.y + p.R);
-    }
-    return [
-      roundCoord(minX - VIEWBOX_MARGIN),
-      roundCoord(minY - VIEWBOX_MARGIN),
-      roundCoord(maxX - minX + 2 * VIEWBOX_MARGIN),
-      roundCoord(maxY - minY + 2 * VIEWBOX_MARGIN),
-    ].join(' ');
+  /** The control bar's fixed height. Not part of the field, never transformed. */
+  const CONTROL_BAR_H = 40;
+
+  /* --------------------------------------------------------------------- *
+   * Control-bar state (G7)
+   * --------------------------------------------------------------------- */
+
+  /**
+   * WHY THESE TWO LIVE HERE AND THE ENGINE FILTER DOES NOT.
+   *
+   * All three are webview-only view state — no setting, no persistence, no
+   * host message, discarded when the panel closes — so G7 is satisfied
+   * wherever they sit. What decides it is LIFETIME, and this component's
+   * lifetime is shorter than the panel's: `App.svelte` mounts it only while
+   * the altitude is `deck`, so anything held here is reset by a session visit.
+   *
+   * Layout and sort survive that correctly. They are re-chosen from the bar
+   * that is in front of you at the moment you want them, and coming back to
+   * the design's default grid is not a surprise. The engine filter does not:
+   * it is a statement about which sessions the user considers theirs, it has
+   * to hold across an entry and an exit, and it lived here through Phase 7 —
+   * quietly resetting to `all` on every return from a session while the
+   * liveness filter, already store state, held. It is `store.ts`'s now and
+   * arrives as a prop.
+   */
+  let layoutMode = $state.raw<DeckLayoutMode>(DEFAULT_DECK_LAYOUT);
+  let sortMode = $state.raw<DeckSortMode>(DEFAULT_DECK_SORT);
+
+  /**
+   * The chips and segments, in the order they render.
+   *
+   * The engine chips' VALUES come from `canvas-contract.ts:ENGINE_FILTERS`
+   * rather than being spelled again here; only the label and the access key,
+   * which are this component's, are added. A chip list that restated the
+   * values could drift from the store's own validity check.
+   */
+  const ENGINE_LABELS: Readonly<Record<EngineFilter, { label: string; key: string }>> = {
+    all: { label: 'All', key: 'a' },
+    cc: { label: 'Claude Code', key: 'c' },
+    oc: { label: 'OpenCode', key: 'o' },
+  };
+  const ENGINE_CHIPS: readonly { value: EngineFilter; label: string; key: string }[] =
+    ENGINE_FILTERS.map((value) => ({ value, ...ENGINE_LABELS[value] }));
+  const LAYOUTS: readonly { value: DeckLayoutMode; label: string; key: string }[] = [
+    { value: 'list', label: 'List', key: '1' },
+    { value: 'grid', label: 'Grid', key: '2' },
+    { value: 'lanes', label: 'Lanes', key: '3' },
+  ];
+  const SORTS: readonly { value: DeckSortMode; label: string; key: string }[] = [
+    { value: 'live', label: 'Live first', key: 'l' },
+    { value: 'recent', label: 'Recent', key: 'r' },
+    { value: 'engine', label: 'Engine', key: 'e' },
+  ];
+
+  /** The empty state's one line per enabled engine. */
+  const WAITING: Readonly<Record<DeckEngine, string>> = {
+    cc: 'Waiting for a Claude Code session…',
+    oc: 'Waiting for an OpenCode session…',
+  };
+
+  /* --------------------------------------------------------------------- *
+   * Derived geometry
+   * --------------------------------------------------------------------- */
+
+  let field = $state.raw<SVGSVGElement | undefined>(undefined);
+  let measuredW = $state.raw(FALLBACK_FIELD_W);
+  let measuredH = $state.raw(FALLBACK_FIELD_H);
+
+  /** The engine each summary belongs to, in the deck's own two-letter tag. */
+  const engineOf = (row: SessionSummary): DeckEngine => deckEngine(row.engine);
+
+  /**
+   * The visible set: the engine filter applied, and nothing else.
+   *
+   * `sessions` stays the full list the store handed over — the count chip
+   * says "n of m" off it — so nothing downstream can mistake a filtered view
+   * for the host's account of what exists.
+   */
+  let visible = $derived(
+    engineFilter === 'all'
+      ? [...sessions]
+      : sessions.filter((row) => engineOf(row) === engineFilter),
+  );
+
+  /** Per-chip counts. Of the FULL set, so a chip says what it would show. */
+  let counts = $derived({
+    all: sessions.length,
+    cc: sessions.filter((row) => engineOf(row) === 'cc').length,
+    oc: sessions.filter((row) => engineOf(row) === 'oc').length,
+  });
+
+  /**
+   * `SessionSummary` to `layout.ts:DeckSession`.
+   *
+   * `status` is the DISPLAYED liveness, which is not always the one on the
+   * wire: a session refused by a `schemaMismatch` still says `live` there, and
+   * sorting it among the live ones would put a card that shows `unsupported`
+   * at the top of a "live first" deck.
+   *
+   * `DeckStatus` also has a `degraded` member and this never produces it. That
+   * is deliberate: `degraded` here is the HOOK TAP's health, which is
+   * panel-wide, so mapping it onto a per-session sort key would re-order the
+   * whole deck the moment the tap went quiet — for every session at once, on a
+   * fact about none of them.
+   */
+  let deckSessions = $derived<DeckSession[]>(
+    visible.map((row) => ({
+      id: row.sessionId,
+      engine: engineOf(row),
+      status: displayLiveness(row.liveness, row.refused),
+      last: row.lastEventAt,
+    })),
+  );
+
+  let fieldW = $derived(viewportWidth ?? measuredW);
+  let fieldH = $derived(viewportHeight ?? measuredH);
+
+  /**
+   * The grid's width, in STAGE UNITS — pixels divided by the scale.
+   *
+   * `viewport.ts:viewportWidthInStageUnits` is the only supported conversion
+   * and `deckLayout` takes stage units; handing it raw pixels is the one
+   * argument allowed to be a measurement, and getting the units wrong there
+   * is a reflow of every card.
+   */
+  let stageW = $derived(viewportWidthInStageUnits(fieldW, deckView.k));
+
+  let placements = $derived(deckLayout(deckSessions, layoutMode, sortMode, stageW));
+
+  /** The summary behind each placement, paired by id rather than by index. */
+  let cards = $derived(
+    placements.map((placement) => ({
+      placement,
+      summary: visible.find((row) => row.sessionId === placement.id),
+    })),
+  );
+
+  /** The bounding rectangle of everything drawn, in stage units. */
+  let content = $derived(
+    boundsOf(
+      placements.map((p) => ({ x: p.x, y: p.y, w: DECK_CARD_W, h: DECK_CARD_H })),
+    ),
+  );
+
+  let transform = $derived(transformAttr(deckView));
+  let clock = $derived(now ?? Date.now());
+  let shown = $derived(visible.length);
+  let totalCount = $derived(total ?? sessions.length);
+
+  /* --------------------------------------------------------------------- *
+   * The field: measurement, drag, wheel, double-click
+   * --------------------------------------------------------------------- */
+
+  const measure = (): void => {
+    // `bind:this` writes NULL on unmount, not `undefined`, and this effect
+    // re-runs after the field has gone — filtering down to an empty set
+    // removes the `<svg>` entirely. A check against `undefined` alone threw
+    // on the very next flush.
+    if (field === undefined || field === null) return;
+    const rect = field.getBoundingClientRect();
+    // A zero box is jsdom, or an element not yet laid out. Keeping the
+    // fallback is the honest answer to "nothing has measured this yet";
+    // adopting the zero would collapse the grid to one column.
+    if (rect.width > 0) measuredW = rect.width;
+    if (rect.height > 0) measuredH = rect.height;
+  };
+
+  $effect(() => {
+    measure();
+    const onResize = (): void => measure();
+    globalThis.addEventListener('resize', onResize);
+    return () => globalThis.removeEventListener('resize', onResize);
+  });
+
+  /** Field-local coordinates of a pointer, which is what the transform uses. */
+  function local(event: { clientX: number; clientY: number }): { x: number; y: number } {
+    const rect = field?.getBoundingClientRect();
+    return {
+      x: event.clientX - (rect?.left ?? 0),
+      y: event.clientY - (rect?.top ?? 0),
+    };
   }
 
-  let viewBox = $derived(viewBoxOf(placements));
+  /** True when the event started on a card rather than on the empty field. */
+  function onCard(event: Event): boolean {
+    const target = event.target as Element | null;
+    return target?.closest(`[data-testid="${TESTID.deckBlob}"]`) !== null;
+  }
 
-  // Drag to pan. Pointer events rather than mouse events so a trackpad and a
-  // pen behave the same, and `setPointerCapture` so a fast drag that leaves
-  // the element does not stick the deck mid-pan.
-  let dragging = $state.raw(false);
+  // Pointer events rather than mouse events, so a trackpad and a pen behave
+  // the same, and `setPointerCapture` so a fast drag that leaves the element
+  // does not strand the field mid-pan.
+  let panning = $state.raw(false);
   let lastX = 0;
   let lastY = 0;
 
   const onPointerDown = (event: PointerEvent): void => {
-    // Only a plain primary-button drag on the background. A drag that starts
-    // on a blob is that blob's business — otherwise panning would swallow the
-    // click that enters a session.
+    // Primary button, on the empty field only. A press on a card is that
+    // card's business — the card has no drag of its own, and swallowing the
+    // press here would swallow the click that enters the session.
     if (event.button !== 0) return;
-    const target = event.target as Element | null;
-    if (target?.closest('[data-testid="deck-blob"]') !== null) return;
-    dragging = true;
+    if (onCard(event)) return;
+    panning = true;
     lastX = event.clientX;
     lastY = event.clientY;
     (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
   };
 
   const onPointerMove = (event: PointerEvent): void => {
-    if (!dragging) return;
+    if (!panning) return;
     const dx = event.clientX - lastX;
     const dy = event.clientY - lastY;
     lastX = event.clientX;
@@ -151,89 +411,181 @@
     onpan?.(dx, dy);
   };
 
-  const endDrag = (event: PointerEvent): void => {
-    if (!dragging) return;
-    dragging = false;
+  const endPan = (event: PointerEvent): void => {
+    if (!panning) return;
+    panning = false;
     (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
   };
 
   const onWheel = (event: WheelEvent): void => {
     if (onzoom === undefined) return;
     event.preventDefault();
-    // A fixed step per notch rather than one proportional to deltaY: browsers
-    // report wildly different magnitudes for the same physical gesture, and a
-    // proportional factor makes a trackpad and a mouse wheel feel like two
-    // different controls.
-    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
-    const rect = (event.currentTarget as Element).getBoundingClientRect();
-    onzoom(factor, event.clientX - rect.left, event.clientY - rect.top);
+    const point = local(event);
+    onzoom(event.deltaY < 0 ? 1 : -1, point.x, point.y);
   };
 
-  let shown = $derived(sessions.length);
-  let totalCount = $derived(total ?? sessions.length);
-  let transform = $derived(
-    `translate(${deckView.x} ${deckView.y}) scale(${deckView.k})`,
-  );
+  const onDoubleClick = (event: MouseEvent): void => {
+    // On the empty field only. A double-click on a card is two entries into
+    // the same session, which is what the user asked for.
+    if (onCard(event)) return;
+    onfit?.(content, { width: fieldW, height: fieldH });
+  };
 
-  /** The placement and the summary it belongs to, paired by index. */
-  let blobs = $derived(
-    placements.map((placement, index) => ({ placement, summary: sessions[index] })),
-  );
+  /* --------------------------------------------------------------------- *
+   * Keyboard: A C O, 1 2 3, L R E
+   * --------------------------------------------------------------------- */
+
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target as HTMLElement | null;
+    const tag = target?.tagName ?? '';
+    // Never steal a keystroke from a field the user is typing into.
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable === true) return;
+    const key = event.key.toLowerCase();
+    const engine = ENGINE_CHIPS.find((c) => c.key === key);
+    if (engine !== undefined) {
+      // Reported, not set. The store owns the value; see the note above.
+      onenginefilter?.(engine.value);
+      event.preventDefault();
+      return;
+    }
+    const layout = LAYOUTS.find((c) => c.key === key);
+    if (layout !== undefined) {
+      layoutMode = layout.value;
+      event.preventDefault();
+      return;
+    }
+    const sort = SORTS.find((c) => c.key === key);
+    if (sort !== undefined) {
+      sortMode = sort.value;
+      event.preventDefault();
+    }
+  };
 </script>
+
+<svelte:window on:keydown={onKeyDown} />
 
 <section
   class={reducedMotion ? `deck ${REDUCED_MOTION_CLASS}` : 'deck'}
   data-testid={TESTID.deck}
   data-degraded={String(degraded)}
   data-sessions={String(sessions.length)}
+  data-shown={String(shown)}
+  data-layout={layoutMode}
+  data-sort={sortMode}
+  data-engine-filter={engineFilter}
   aria-label="Deck"
 >
-  {#if onreset !== undefined}
-    <!-- Floated over the field rather than given a row of its own: the picture
-         is what the panel is for, and chrome that pushes it down costs more
-         than it is worth. The count and the legend moved up into the app's
-         single chrome row for the same reason. -->
-    <button
-      class="reset"
-      type="button"
-      data-testid={TESTID.deckReset}
-      data-identity={String(deckView.x === 0 && deckView.y === 0 && deckView.k === 1)}
-      onclick={() => onreset?.()}>Reset view</button
-    >
-  {/if}
+  <!-- THE CONTROL BAR. Fixed height, outside the SVG, so it neither pans nor
+       zooms. Three groups: engines left, layout centre, sort right. -->
+  <div class="bar" data-testid="deck-bar" style={`height:${CONTROL_BAR_H}px`}>
+    <div class="group left" role="group" aria-label="Filter by engine">
+      {#each ENGINE_CHIPS as chip (chip.value)}
+        <button
+          type="button"
+          class="chip"
+          data-testid="deck-engine-chip"
+          data-engine={chip.value}
+          data-active={String(engineFilter === chip.value)}
+          data-count={String(counts[chip.value])}
+          aria-pressed={engineFilter === chip.value}
+          title={`${chip.label} (${chip.key.toUpperCase()})`}
+          onclick={() => onenginefilter?.(chip.value)}
+          >{chip.label}<span class="badge">{counts[chip.value]}</span></button
+        >
+      {/each}
+    </div>
 
-  {#if sessions.length === 0}
-    <!-- C7.3, the last row: an empty deck and one quiet line. Not an error,
-         not a spinner, and not a call to action. -->
-    <p class="empty" data-testid={TESTID.deckEmpty}>No sessions in this workspace.</p>
+    <div class="group centre" role="group" aria-label="Layout">
+      {#each LAYOUTS as option (option.value)}
+        <button
+          type="button"
+          class="seg"
+          data-testid="deck-layout-option"
+          data-layout={option.value}
+          data-active={String(layoutMode === option.value)}
+          aria-pressed={layoutMode === option.value}
+          title={`${option.label} (${option.key})`}
+          onclick={() => (layoutMode = option.value)}>{option.label}</button
+        >
+      {/each}
+    </div>
+
+    <div class="group right" role="group" aria-label="Sort">
+      {#each SORTS as option (option.value)}
+        <button
+          type="button"
+          class="seg"
+          data-testid="deck-sort-option"
+          data-sort={option.value}
+          data-active={String(sortMode === option.value)}
+          aria-pressed={sortMode === option.value}
+          title={`${option.label} (${option.key.toUpperCase()})`}
+          onclick={() => (sortMode = option.value)}>{option.label}</button
+        >
+      {/each}
+      <span
+        class="count"
+        data-testid="deck-count"
+        data-shown={String(shown)}
+        data-total={String(totalCount)}
+        >{shown === totalCount ? `${totalCount}` : `${shown} of ${totalCount}`}</span
+      >
+      {#if onreset !== undefined}
+        <button
+          type="button"
+          class="seg"
+          data-testid={TESTID.deckReset}
+          data-identity={String(deckView.x === 0 && deckView.y === 0 && deckView.k === 1)}
+          onclick={() => onreset?.()}>Reset view</button
+        >
+      {/if}
+    </div>
+  </div>
+
+  {#if visible.length === 0}
+    <!-- One quiet line per ENABLED engine. Not an error, not a spinner, and
+         not a call to action; and nothing at all about an engine this
+         installation is not observing. -->
+    <div class="empty" data-testid={TESTID.deckEmpty}>
+      {#if sessions.length > 0}
+        <p data-testid="deck-empty-filtered">No sessions match this filter.</p>
+      {:else}
+        {#each enabledEngines as engine (engine)}
+          <p data-testid="deck-waiting" data-engine={engine}>{WAITING[engine]}</p>
+        {/each}
+      {/if}
+    </div>
   {:else}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <svg
+      bind:this={field}
       class="field"
-      class:dragging
-      {viewBox}
+      class:panning
       role="group"
       aria-label="Sessions"
       onpointerdown={onPointerDown}
       onpointermove={onPointerMove}
-      onpointerup={endDrag}
-      onpointercancel={endDrag}
+      onpointerup={endPan}
+      onpointercancel={endPan}
       onwheel={onWheel}
+      ondblclick={onDoubleClick}
     >
-      <!-- THE STAGE. Everything pan/zoom does happens on this one attribute.
+      <!-- THE STAGE. Everything pan and zoom do happens on this one attribute.
            Nothing below it knows the view has moved, which is exactly why the
            layout goldens cannot be disturbed by a drag. -->
       <g data-testid={TESTID.deckStage} {transform}>
-        {#each blobs as blob (blob.placement.sessionId)}
-          {#if blob.summary !== undefined}
-            <SessionBlob
-              summary={blob.summary}
-              placement={blob.placement}
+        {#each cards as card (card.placement.id)}
+          {#if card.summary !== undefined}
+            <SessionCell
+              summary={card.summary}
+              x={card.placement.x}
+              y={card.placement.y}
               {degraded}
-              selected={blob.summary.sessionId === selectedSessionId}
-              nudge={blobNudges[blob.summary.sessionId] ?? { dx: 0, dy: 0 }}
-              scale={deckView.k}
-              onnudge={(dx, dy) => onnudge?.(blob.placement.sessionId, dx, dy)}
+              {degradedReason}
+              {reducedMotion}
+              now={clock}
+              selected={card.summary.sessionId === selectedSessionId}
               {onenter}
             />
           {/if}
@@ -244,45 +596,85 @@
 </section>
 
 <style>
-  .reset {
-    position: absolute;
-    right: 8px;
-    top: 8px;
-    z-index: 1;
-    background: var(--vscode-editor-background);
-    font: inherit;
-    font-size: 0.95em;
-    color: var(--vscode-foreground);
-    background: transparent;
-    border: 1px solid var(--vscode-panel-border, transparent);
-    border-radius: 3px;
-    padding: 0 6px;
-    cursor: pointer;
-  }
-
-  .reset:focus-visible {
-    outline: 1px solid var(--vscode-focusBorder, currentColor);
-    outline-offset: 1px;
-  }
-
-  .field {
-    touch-action: none;
-    cursor: grab;
-  }
-
-  .field.dragging {
-    cursor: grabbing;
-  }
   /* Every colour is a VS Code theme variable. The frozen mockup hardcodes a
      dark palette only because it lives outside VS Code (C7.7). */
   .deck {
     position: relative;
     display: flex;
+    flex-direction: column;
     flex: 1;
     min-height: 0;
     min-width: 0;
     color: var(--vscode-foreground);
     background: var(--vscode-editor-background);
+  }
+
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 0 0 auto;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--vscode-panel-border, transparent);
+    /* The bar is a sibling of the field, so it cannot inherit the stage
+       transform. Stated here as well as in the header because it is the whole
+       reason the markup is shaped this way. */
+    transform: none;
+  }
+
+  .group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .group.centre {
+    margin: 0 auto;
+  }
+
+  .group.right {
+    margin-left: auto;
+  }
+
+  .chip,
+  .seg {
+    font: inherit;
+    font-size: 0.85em;
+    color: var(--vscode-foreground);
+    background: transparent;
+    border: 1px solid var(--vscode-panel-border, transparent);
+    border-radius: 9px;
+    padding: 0 8px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .seg {
+    border-radius: 3px;
+  }
+
+  .chip[data-active='true'],
+  .seg[data-active='true'] {
+    background: var(--vscode-badge-background, transparent);
+    color: var(--vscode-badge-foreground, inherit);
+  }
+
+  .chip:focus-visible,
+  .seg:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, currentColor);
+    outline-offset: 1px;
+  }
+
+  .badge {
+    margin-left: 5px;
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .count {
+    font-size: 0.85em;
+    opacity: 0.8;
+    white-space: nowrap;
   }
 
   .field {
@@ -290,10 +682,31 @@
     min-height: 0;
     min-width: 0;
     display: block;
+    width: 100%;
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .field.panning {
+    cursor: grabbing;
+  }
+
+  /* C7.6, the field's half. The card swaps its pulse for a static ring; the
+     field's own job is to run no transition at all. Stated as a rule rather
+     than left implicit because Svelte PRUNES a scoped selector it cannot
+     prove is used, and a class applied with no rule behind it is a
+     reduced-motion mode that exists only in the DOM. */
+  .deck.reduced-motion .field {
+    transition: none;
   }
 
   .empty {
     margin: auto;
     opacity: 0.75;
+    text-align: center;
+  }
+
+  .empty p {
+    margin: 4px 0;
   }
 </style>

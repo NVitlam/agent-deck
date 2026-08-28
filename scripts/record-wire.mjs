@@ -16,6 +16,21 @@
 // and why `webview/wire.test.ts` can assert that replaying it converges on the
 // model's own final snapshot.
 //
+// TWO ENGINES, AS OF PHASE 7 (DoD 7.10)
+// --------------------------------------
+// A default run writes ONE corpus PER OBSERVATION ENGINE:
+//
+//   cc-<version>-session-arc.json         the Claude Code arc (buildCapturedCorpus)
+//   opencode-<version>-session-arc.json   the OpenCode arc    (buildOpenCodeCorpus)
+//
+// The theater embeds every `*.json` under the corpus directory, so writing the
+// second one here is what puts an OpenCode session in front of the real
+// renderer. Both go through the same `createRecorder` and the same
+// `SessionBridge`; what differs is the host half that produces the emissions —
+// `SessionModel` for CC, the shipped `OpenCodeEnginePath` for OpenCode. Neither
+// arc's schedule is the other's, and neither is invented: see
+// `recordCapturedArc`'s seven moments and `opencodeSchedule`'s derivation.
+//
 // DETERMINISM IS THE PRODUCT
 // --------------------------
 // A committed corpus that changes when nothing changed is noise, and every
@@ -52,8 +67,8 @@
 // G1: writes only into the corpus directory (inside the repo). G5: no network.
 //
 // USAGE
-//   node scripts/record-wire.mjs             write the corpus into WIRE_CORPUS_DIR
-//   node scripts/record-wire.mjs --out <dir> write it somewhere else (tests)
+//   node scripts/record-wire.mjs             write both corpora into WIRE_CORPUS_DIR
+//   node scripts/record-wire.mjs --out <dir> write them somewhere else (tests)
 //
 // BUILDING A SYNTHETIC CORPUS ON TOP OF THIS
 // ------------------------------------------
@@ -83,8 +98,22 @@ import { build } from 'esbuild';
 
 import { loadCanvasContract, REPO_ROOT, wireCorpusDir } from '../webview/theater/contract.mjs';
 
-/** Bumped when the corpus shape changes in a way a reader must notice. */
-export const WIRE_FORMAT_VERSION = 1;
+/**
+ * Bumped when the corpus shape changes in a way a reader must notice.
+ *
+ * **2 (the 0.1.3 token contract):** `AgentNode.tokens: { in, out }` is gone and
+ * `contextNow` / `burn` (`{ prompt, output }`) replace it;
+ * `SessionState.totals` lost `inputTokens` / `outputTokens` and kept only
+ * `costUsd`, with session-level `contextNow` / `burn` beside it.
+ *
+ * The version is the thing that has to fail loudly, and this is why: a
+ * version-1 corpus replayed through the version-2 store yields nodes with no
+ * token fields at all, and `formatTokens(undefined)` renders an em-dash. That
+ * is a corpus quietly displaying "no data" on every node rather than raising
+ * anything - indistinguishable, to a reader, from a session that genuinely has
+ * no numbers. `assertCorpusShape` below refuses on the version instead.
+ */
+export const WIRE_FORMAT_VERSION = 2;
 
 /**
  * The simulated instant the arc starts at. Fixed, and the same value
@@ -118,6 +147,17 @@ export async function loadHostModules() {
     "export { LivenessEngine } from './src/model/liveness.js';",
     "export { SessionBridge } from './src/bridge/messages.js';",
     "export { isAgentNode } from './src/model/events.js';",
+    // The OpenCode half (DoD 7.10). `OpenCodeEnginePath` is the SHIPPED host
+    // class - the same one `activate()` constructs - so the second engine's
+    // corpus is recorded off production code rather than off a second
+    // implementation written for the recorder.
+    "export { OpenCodeEnginePath } from './src/extension.js';",
+    "export { readOpenCodeEngine } from './src/opencode/index.js';",
+    "export { PINNED_OPENCODE_VERSION } from './src/opencode/fingerprint.js';",
+    [
+      'export { OcLivenessEngine, DEFAULT_OC_LIVENESS_THRESHOLD_MS }',
+      "from './src/opencode/liveness.js';",
+    ].join(' '),
   ].join('\n');
 
   const result = await build({
@@ -133,6 +173,23 @@ export async function loadHostModules() {
     format: 'cjs',
     target: 'node20',
     packages: 'external',
+    /*
+     * `vscode` HAS NO PACKAGE ON DISK, and this is the same stand-in the whole
+     * suite already uses.
+     *
+     * `src/extension.ts` imports it at module scope; the extension host injects
+     * it at runtime and `esbuild.config.mjs` keeps it external for exactly that
+     * reason, so a plain node process cannot resolve it. `vitest.config.ts`
+     * aliases it to `test/vscode-mock.ts` for every test of that file and this
+     * is the same alias, spelled for esbuild.
+     *
+     * What it does NOT weaken: the OpenCode host path touches no `vscode` API
+     * at all - discovery, the content read, the cursor and the diff are pure
+     * node - so the mock is load-bearing for the IMPORT and for nothing that is
+     * recorded. If that stops being true, the recording would start depending
+     * on a test double and this comment is the place that says so.
+     */
+    alias: { vscode: join(REPO_ROOT, 'test', 'vscode-mock.ts') },
     logLevel: 'silent',
   });
 
@@ -505,6 +562,268 @@ async function buildCapturedCorpus(host) {
 }
 
 // ---------------------------------------------------------------------------
+// The SECOND ENGINE: OpenCode (Phase 7, DoD 7.10)
+// ---------------------------------------------------------------------------
+
+/**
+ * WHY THIS MODE EXISTS.
+ *
+ * Until Phase 7 every corpus in `webview/wire/` came from the Claude Code
+ * engine, so the theater - the one place this project can watch the panel work
+ * without a VS Code host - had never rendered an OpenCode session. A renderer
+ * surface that has only ever been fed one engine's states is a surface with an
+ * untested half, and the two engines disagree about exactly the fields a card
+ * and a node row read: OpenCode reports no `contextNow` and no `burn` at all,
+ * which is the difference between an em-dash and a number on every row.
+ *
+ * WHAT IS REAL HERE, WHICH IS EVERYTHING EXCEPT THE SCHEDULE.
+ *
+ *   - The content read is `readOpenCodeEngine`, reached through
+ *     `OpenCodeEnginePath` - the shipped host class, unmodified, with no
+ *     `read` override. Its own doc says production never passes one and this
+ *     does not.
+ *   - Liveness is the real `OcLivenessEngine`, cursored on
+ *     `event_sequence.seq`, driven by an INJECTED clock and an INJECTED poll
+ *     trigger. No wall clock and no timer.
+ *   - The diffs are `OpenCodeEnginePath.emit()`'s, which is `diffSessionState`
+ *     - the same single diff implementation the CC half uses.
+ *   - The messages are a real `SessionBridge`'s.
+ *
+ * The SCHEDULE is this file's, exactly as `recordCapturedArc`'s seven moments
+ * are, and it is DERIVED FROM THE STORE rather than written down: each step
+ * lands one millisecond after a root session's own recency threshold expires,
+ * so every transition below is produced by the engine rather than asserted by
+ * the recorder. A store whose rows move produces a different arc without an
+ * edit here.
+ *
+ * THE CLOCK IS ANCHORED ON THE STORE, not on `SIMULATED_EPOCH_MS`. The captured
+ * database's newest row is dated long after that fixed instant, so anchoring on
+ * it would place the whole recording BEFORE its own data - every age negative,
+ * every session `live` forever, and not one transition to record. The anchor is
+ * the OLDEST root session's `timeUpdated`, read off the engine's own snapshot,
+ * so the arc opens with the newest sessions still live and watches each one
+ * cross the threshold in turn.
+ */
+
+/** Deterministic per-arc constant: the reload lands 1 ms after the first quiet. */
+const OC_RELOAD_GAP_MS = 1;
+
+/**
+ * The committed OpenCode corpus the engine is ANCHORED on.
+ *
+ * Named from `PINNED_OPENCODE_VERSION` rather than written down, on the
+ * `src/parser/corpus.test.ts` precedent: the anchor names the release whose
+ * capture proved the structure, so the corpus that is replayed is the corpus
+ * the engine claims to have been verified against. Move the anchor without
+ * harvesting and this throws instead of quietly recording the witness.
+ */
+function opencodeFixtureDir(host) {
+  return join(REPO_ROOT, 'fixtures', `opencode-${host.PINNED_OPENCODE_VERSION}`);
+}
+
+/**
+ * Where the arc's simulated clock starts, and where each step lands.
+ *
+ * A throwaway `OcLivenessEngine` with `now: () => 0` and no poll trigger: the
+ * engine reads the store once and reports every session's `timeUpdated`. That
+ * is a READ of the same database the recording is about, taken to derive the
+ * recording's own INPUTS - which is why it is allowed to be a second open and
+ * why nothing it returns reaches the corpus.
+ */
+function opencodeSchedule(host, dbPath) {
+  let snapshots = [];
+  const probe = new host.OcLivenessEngine({
+    dbPath,
+    now: () => 0,
+    onUpdate: (taken) => {
+      snapshots = taken;
+    },
+  });
+  probe.start();
+  probe.poll();
+  probe.dispose();
+
+  const roots = snapshots.filter((s) => s.parentId === null);
+  if (roots.length === 0) throw new Error('the OpenCode corpus holds no root session');
+
+  const thresholdMs = host.DEFAULT_OC_LIVENESS_THRESHOLD_MS;
+  const epochMs = Math.min(...roots.map((s) => s.timeUpdated));
+  // One millisecond PAST the threshold, so the crossing has happened rather
+  // than being exactly on the boundary - `recent` is a comparison and a step
+  // that lands on the equality tests the tie rather than the transition.
+  const crossings = [
+    ...new Set(roots.map((s) => s.timeUpdated + thresholdMs + 1 - epochMs)),
+  ]
+    .filter((at) => at > 0)
+    .sort((a, b) => a - b);
+
+  const steps = [
+    { atMs: 0, label: 'discover', what: 'the store is read once and every root session lands' },
+  ];
+  crossings.forEach((atMs, i) => {
+    steps.push({
+      atMs,
+      label: `quiets-${String(i)}`,
+      what: `a root session passes the ${String(thresholdMs)} ms recency threshold`,
+    });
+    // The panel reload sits in the MIDDLE for the reason `recordCapturedArc`'s
+    // does: a corpus that ends on a full snapshot would satisfy "replay
+    // converges on the model's final state" whether or not a patch applied.
+    if (i === 0 && crossings.length > 1) {
+      steps.push({
+        atMs: atMs + OC_RELOAD_GAP_MS,
+        label: 'panel-reload',
+        what: 'the webview is reloaded and re-snapshotted',
+      });
+    }
+  });
+
+  return { epochMs, thresholdMs, steps };
+}
+
+async function recordOpenCodeArc(host) {
+  const fixtureDir = opencodeFixtureDir(host);
+  const dbPath = join(fixtureDir, 'opencode.db');
+
+  /*
+   * WHICH WORKSPACE IS OPEN, derived rather than named.
+   *
+   * `OpenCodeEnginePath` needs the folders VS Code has open so it can filter
+   * `project.worktree`, and a host path written into this file would be both a
+   * privacy leak and wrong on the next harvest. `workspaceMatcher` compares
+   * `slugFromWorktree(path)` with `slugFromWorktree(project.worktree)`, and
+   * `slugifyWorkspace` only replaces `[:\\/]` - so a string containing none of
+   * those three characters IS its own slug. The session's own `projectSlug` is
+   * such a string, which makes passing it exact rather than a trick. The same
+   * argument `recordTimedSession` makes for its staged slug.
+   */
+  const probe = host.readOpenCodeEngine({ dbPath });
+  if (probe.kind !== 'ok') {
+    throw new Error(`the OpenCode corpus did not read: ${probe.kind}`);
+  }
+  const workspacePaths = [...new Set(probe.result.sessions.map((s) => s.projectSlug))].sort();
+
+  const { epochMs, thresholdMs, steps } = opencodeSchedule(host, dbPath);
+
+  let offsetMs = 0;
+  const now = () => epochMs + offsetMs;
+  const recorder = createRecorder(host);
+  // The hook tap is the CLAUDE CODE listener and it is panel-wide, so a panel
+  // showing OpenCode sessions alone still reports whatever it reports. Driven
+  // by the real engine rather than asserted: whatever `degradedState()` says
+  // here is what the shipped host would say.
+  const hooks = new host.LivenessEngine({ now });
+
+  let firePoll = null;
+  const path = new host.OpenCodeEnginePath({
+    dbPath,
+    workspacePaths,
+    thresholdMs,
+    onChange: () => {},
+    now,
+    // The trigger is CAPTURED, not scheduled: this recorder advances the clock
+    // and then polls by hand, so there is no timer anywhere in the recording.
+    pollTrigger: (run) => {
+      firePoll = run;
+      return { stop() {} };
+    },
+    // No WAL watch. The committed corpus is journal-mode `delete` and has no
+    // WAL to wake on, and a real `fs.watch` would put this machine's
+    // filesystem into a corpus that must be byte-identical everywhere.
+    walWatchFactory: () => ({ close() {} }),
+    log: () => {},
+  });
+
+  let final = { sessions: [] };
+  const publish = () => {
+    const emission = path.emit();
+    final = emission;
+    recorder.bridge.publish(emission);
+    recorder.bridge.publishDegraded(hooks.degradedState());
+    return emission;
+  };
+
+  for (const step of steps) {
+    offsetMs = step.atMs;
+    recorder.step(step.atMs, step.label, step.what);
+    if (step.label === 'discover') {
+      path.start();
+    } else if (step.label === 'panel-reload') {
+      recorder.bridge.reset();
+    } else if (firePoll !== null) {
+      firePoll();
+    }
+    publish();
+  }
+
+  const diagnostics = path.diagnostics;
+  path.dispose();
+
+  return { recorder, hooks, final, fixtureDir, epochMs, diagnostics };
+}
+
+const OPENCODE_DESCRIPTION = [
+  'Every message a real SessionBridge put on the wire while the SHIPPED OpenCodeEnginePath -',
+  'the same class activate() constructs - read the committed OpenCode store and chained the',
+  'real OcLivenessEngine over a simulated clock. The clock is anchored on the OLDEST root',
+  "session's own time_updated, so each step lands one millisecond after that session's",
+  'recency threshold expires and every liveness transition below is the engine’s rather',
+  "than the recorder's. `final` is the host's own last emission, not the diffs replayed.",
+].join(' ');
+
+async function buildOpenCodeCorpus(host) {
+  const { recorder, hooks, final, fixtureDir, epochMs, diagnostics } =
+    await recordOpenCodeArc(host);
+
+  // The corpus id names the fixture directory it came from, derived rather
+  // than written down - the same rule the captured arc's id follows.
+  const captureName = repoRelative(fixtureDir).split('/')[1];
+
+  const schemaMismatchSessionIds = [
+    ...new Set(
+      recorder.events
+        .filter((e) => e.message.type === 'schemaMismatch')
+        .map((e) => e.message.sessionId),
+    ),
+  ].sort();
+
+  const lastEvent = recorder.events[recorder.events.length - 1];
+
+  return {
+    formatVersion: WIRE_FORMAT_VERSION,
+    id: `${captureName}-session-arc`,
+    kind: 'recorded',
+    title: `${captureName} — the second engine, live through idle, on its own clock`,
+    description: OPENCODE_DESCRIPTION,
+    producedBy: 'scripts/record-wire.mjs',
+    recordedFrom: repoRelative(fixtureDir),
+    engine: 'opencode',
+    simulatedEpochMs: epochMs,
+    // The host's own account of the read, so a reader can tell a corpus
+    // recorded off a healthy store from one recorded off a degraded one
+    // without replaying it. Counters only - never a path.
+    hostDiagnostics: {
+      contentReads: diagnostics.contentReads,
+      contentFailures: diagnostics.contentFailures,
+      schemaMismatches: diagnostics.schemaMismatches,
+      degradedReads: diagnostics.degradedReads,
+      livenessPolls: diagnostics.livenessPolls,
+      livenessDegraded: diagnostics.livenessDegraded,
+      emissions: diagnostics.emissions,
+      sessions: diagnostics.sessions,
+    },
+    durationMs: lastEvent === undefined ? 0 : lastEvent.atMs,
+    steps: recorder.steps,
+    events: recorder.events,
+    final: {
+      sessions: JSON.parse(JSON.stringify(final.sessions)),
+      degraded: hooks.degradedState(),
+      schemaMismatchSessionIds,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Timed replay of a REAL captured session (PLAN.md Phase 5.5, DoD 5.5.5)
 // ---------------------------------------------------------------------------
 
@@ -866,7 +1185,10 @@ async function main() {
     return;
   }
 
-  const corpora = [await buildCapturedCorpus(host)];
+  // BOTH ENGINES (DoD 7.10). The theater embeds every corpus in this
+  // directory, so adding the second one here is what puts an OpenCode session
+  // in front of the real renderer.
+  const corpora = [await buildCapturedCorpus(host), await buildOpenCodeCorpus(host)];
 
   await mkdir(outDir, { recursive: true });
   // Clear only what THIS script generates. A synthetic corpus written by

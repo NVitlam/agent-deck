@@ -121,8 +121,12 @@ describe('live session render', () => {
 
     // Per-node tokens and durations.
     const rootTokens = all(root as HTMLElement, 'node-tokens')[0];
-    expect(rootTokens?.textContent).toContain('12,345 in');
+    // `contextNow`, the LEVEL, is what a node shows - not `burn`. testdata's
+    // root is contextNow 12,345/6,789 and burn 24,690/13,578, so asserting the
+    // first proves the node reads the level rather than the total.
+    expect(rootTokens?.textContent).toContain('12,345 in ctx');
     expect(rootTokens?.textContent).toContain('6,789 out');
+    expect(rootTokens?.textContent).not.toContain('24,690');
 
     const readNode = nodes.find((n) => n.dataset['nodeId'] === 'tool-read');
     expect(all(readNode as HTMLElement, 'node-duration')[0]?.textContent?.trim()).toBe('1.5s');
@@ -147,13 +151,15 @@ describe('live session render', () => {
     expect(all(container, 'rail-item')[1]?.dataset['selected']).toBe('true');
   });
 
-  it('renders the header with cumulative tokens and no currency figure', () => {
+  it('renders the header with context and burn, and no currency figure', () => {
     const { container } = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
 
     const header = one(container, 'session-header');
-    expect(one(header, 'header-tokens-in').textContent?.trim()).toBe('17,745');
-    expect(one(header, 'header-tokens-out').textContent?.trim()).toBe('8,159');
+    // Two DIFFERENT numbers, which is the whole point of the split: context is
+    // the root's level, burn is the tree's total.
+    expect(one(header, 'header-context').textContent?.trim()).toBe('17,745');
+    expect(one(header, 'header-burn').textContent?.trim()).toBe('35,490');
 
     // `costUsd` is 0 and 0 means NOT COMPUTED, never "free". "$0.00" would be
     // a fabricated claim; there is no price table in this repo.
@@ -383,12 +389,16 @@ describe('diff handling in the mounted renderer', () => {
       type: 'diff',
       sessionId: 'session-live',
       patch: {
-        fields: { totals: { inputTokens: 30_000, outputTokens: 11_000, costUsd: 0 } },
+        fields: {
+          contextNow: { prompt: 30_000, output: 11_000 },
+          burn: { prompt: 61_000, output: 22_000 },
+        },
         tree: [{ op: 'updateTool', id: 'tool-agent-2', fields: { status: 'done' } }],
       },
     });
 
-    expect(one(container, 'header-tokens-in').textContent?.trim()).toBe('30,000');
+    expect(one(container, 'header-context').textContent?.trim()).toBe('30,000');
+    expect(one(container, 'header-burn').textContent?.trim()).toBe('61,000');
     const tool2 = all(container, 'tree-node').find(
       (n) => n.dataset['nodeId'] === 'tool-agent-2',
     );

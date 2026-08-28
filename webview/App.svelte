@@ -9,7 +9,7 @@
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
   import { displayLiveness, formatTokens } from './format.js';
-  import { DECK_FILTERS, TESTID } from './canvas-contract.js';
+  import { LIVENESS_FILTERS, TESTID } from './canvas-contract.js';
 
   let { store }: { store: Store } = $props();
 
@@ -148,15 +148,15 @@
              host's full account and the count chip on the deck says "n of m",
              so a filter can never be mistaken for "this is all there is". -->
         <div class="filters" role="group" aria-label="Filter sessions">
-          {#each DECK_FILTERS as filter (filter)}
+          {#each LIVENESS_FILTERS as filter (filter)}
             <button
               type="button"
               class="chip"
               data-testid={TESTID.filterChip}
               data-filter={filter}
-              data-active={String(view.deckFilter === filter)}
-              aria-pressed={view.deckFilter === filter}
-              onclick={() => store.setDeckFilter(filter)}>{filter}</button
+              data-active={String(view.livenessFilter === filter)}
+              aria-pressed={view.livenessFilter === filter}
+              onclick={() => store.setLivenessFilter(filter)}>{filter}</button
             >
           {/each}
         </div>
@@ -238,7 +238,14 @@
     <!-- Altitude 0. Also the fallback when nothing is selected: an altitude
          above the deck with no session to show is not a state the store should
          be able to reach, and rendering the deck is the honest answer if it
-         ever does. -->
+         ever does.
+
+         THIS BRANCH IS WHY THE ENGINE FILTER IS STORE STATE. `<Deck>` is
+         mounted only here, so it is DESTROYED on entering a session and
+         rebuilt on returning. Anything the component held is gone; anything
+         the store holds survives. The filter used to be the former and reset
+         to `all` on every session visit, beside a liveness filter that did
+         not. Both are now passed in and reported back. -->
     <main class="main" data-testid="main">
       <Deck
         sessions={view.filteredSessions}
@@ -247,12 +254,13 @@
         selectedSessionId={view.selectedSessionId}
         deckView={view.deckView}
         {reducedMotion}
+        engineFilter={view.engineFilter}
+        onenginefilter={(filter) => store.setEngineFilter(filter)}
         onenter={(id) => store.enterSession(id)}
         onpan={(dx, dy) => store.panDeck(dx, dy)}
-        onzoom={(factor, x, y) => store.zoomDeck(factor, x, y)}
+        onzoom={(notches, x, y) => store.zoomDeck(notches, x, y)}
         onreset={() => store.resetDeckView()}
-        blobNudges={view.blobNudges}
-        onnudge={(id, dx, dy) => store.nudgeBlob(id, dx, dy)}
+        onfit={(content, size) => store.fitDeck(content, size)}
       />
     </main>
   {:else}
@@ -276,9 +284,20 @@
             </span>
           {/if}
           {#if !view.refused}
+            <!-- CONTEXT AND BURN, and this line is why `.svelte` files being
+                 outside the type checker is a recorded hazard rather than a
+                 note. On the hotfix this read `totals.inputTokens` /
+                 `totals.outputTokens` until a `phase-verifier` caught it:
+                 those two fields were REMOVED from the contract, `tsc` does
+                 not see this file, eslint does not lint it, and
+                 `formatTokens(undefined)` returns an em-dash - so the DEFAULT
+                 view's token line rendered `— in · — out · —` on every
+                 session, in the shipped artifact, in the release whose
+                 changelog entry is about token counts being wrong. The tests
+                 assert the VALUES, not the presence of a dash. -->
             <span class="hud-totals" data-testid="hud-totals">
-              {formatTokens(view.selected.totals.inputTokens)} in ·
-              {formatTokens(view.selected.totals.outputTokens)} out ·
+              {formatTokens(view.selected.contextNow?.prompt)} in ctx ·
+              {formatTokens(view.selected.burn?.prompt)} burn ·
               <!-- Cost is an em-dash, never 0. The host sends 0 meaning NOT
                    COMPUTED, and 0 rendered as a number reads as "free", which
                    is a fabricated figure - the same class of defect as a

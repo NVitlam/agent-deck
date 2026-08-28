@@ -48,13 +48,30 @@
  * had never been written, so gate amendment B1 introduces it rather than
  * reinterpreting the clause into something already true.
  *
- * It starts at **2**, not 1. Version 1 is the implicit shape everything before
- * Phase 5 spoke, and this phase changes it: `SessionState.engine` is now
+ * It started at **2**, not 1. Version 1 is the implicit shape everything before
+ * Phase 5 spoke, and Phase 5 changed it: `SessionState.engine` is now
  * stamped by both engines rather than inferred from absence,
  * `SessionFieldPatch` carries `engine`, `ToolNode` carries `truncated`, and
  * `ParkCode` gains `childSessionUnsupported`. Numbering the pre-existing shape
- * 1 and this one 2 is what makes the bump a real statement instead of a
+ * 1 and that one 2 is what made the bump a real statement instead of a
  * constant introduced already-satisfied.
+ *
+ * **3 is Phase 7**, and it is the first bump this file's own tripwire asked
+ * for. Four things moved on the shared surface:
+ *
+ *  - `ZOOM_MIN` / `ZOOM_MAX` are GONE. One global pair could not express what
+ *    the frozen design specifies (deck 0.5-2, tree 0.4-2); `viewport.ts` is the
+ *    single definition now and the note further down records why.
+ *  - `DOT_CAP` (48) is GONE. Production reads `DOT_LIMIT = 24` in
+ *    `SessionCanvas.svelte`, per the frozen design, so the constant here was a
+ *    name nothing consumed telling the reader to prefer it over the design.
+ *  - `SessionLayout`, `CellPlacement`, `DotPlacement` and the four-field
+ *    `DeckPlacement { sessionId, x, y, R }` are GONE. They described
+ *    `sessionLayout()` and the phyllotaxis deck, both deleted in Phase 7;
+ *    `layout.ts` owns `DeckPlacement { id, x, y }` and `TreePlacement` now.
+ *  - The two filter axes were BOTH named `DeckFilter`, in two modules, meaning
+ *    two different things. They are {@link EngineFilter} and
+ *    {@link LivenessFilter} here, one definition each.
  *
  * **What it is NOT.** It is not a compatibility negotiation and nothing branches
  * on it: the host and the webview ship in one VSIX and are always the same
@@ -63,75 +80,31 @@
  * job `src/bridge/contract.ts` does for the element id, on the surface where
  * this repo has already paid once for two packages agreeing by hand.
  */
-export const CANVAS_CONTRACT_VERSION = 2;
+export const CANVAS_CONTRACT_VERSION = 3;
 
 /* ------------------------------------------------------------------------ *
  * Layout
- * ------------------------------------------------------------------------ */
-
-/**
- * Tool dots rendered per agent before the remainder collapses into a `+n`
- * badge. The last N, not the first — what is happening now is at the end.
+ * ------------------------------------------------------------------------ *
  *
- * 48, decided by the user on 2026-08-21. `docs/ui/ui-canvas-redesign.md` §5
- * proposes "e.g. render last 24"; that document is FROZEN and cited as written,
- * and `agent-deck-spec.md` C7.5 overrides it. Take the value from this constant
- * — not from the design doc, and not by re-reading either.
+ * NOTHING GEOMETRIC LIVES HERE ANY MORE, and that is a deletion rather than an
+ * omission. This section held `DOT_CAP` (48), `SessionLayout`, `CellPlacement`,
+ * `DotPlacement` and a four-field `DeckPlacement { sessionId, x, y, R }` — the
+ * shapes of `sessionLayout()` and the phyllotaxis deck. Phase 7 deleted both,
+ * and a `git grep` at the audit found every one of those names with NO
+ * consumer beyond its own declaration: a contract module describing code that
+ * no longer exists, which is worse than silence because a reader trusts it.
  *
- * It is a named constant rather than a literal so that arc geometry stays a
- * pure function of the capped count, which is what lets the goldens pin it.
+ * `DOT_CAP`'s doc comment is the sharpest case and worth recording. It said
+ * "Take the value from this constant — not from the design doc, and not by
+ * re-reading either", while production read `DOT_LIMIT = 24` in
+ * `SessionCanvas.svelte`, per the frozen design. The instruction pointed at the
+ * wrong number and nothing could fail.
+ *
+ * The geometry that replaced it is `layout.ts`'s, and it stays there: it is
+ * pinned by goldens re-derived from an independent reference implementation,
+ * which is a stronger arrangement than a shared literal. See
+ * {@link CANVAS_CONTRACT_VERSION} for the version this deletion moved.
  */
-export const DOT_CAP = 48;
-
-/** A placed session blob on the deck. */
-export interface DeckPlacement {
-  sessionId: string;
-  x: number;
-  y: number;
-  /** Radius. Derived from node count, never from render size. */
-  R: number;
-}
-
-/** A placed agent cell inside a session interior. */
-export interface CellPlacement {
-  x: number;
-  y: number;
-  R: number;
-}
-
-/** A placed tool dot inside a session interior. */
-export interface DotPlacement {
-  x: number;
-  y: number;
-}
-
-/**
- * The result of `sessionLayout(session)`.
- *
- * Keyed by id rather than positional, because the incremental property is
- * stated in terms of ids: when a node arrives, every id already present keeps
- * its coordinates byte-identical. An array would make that assertion depend on
- * ordering, which is not what is being promised.
- */
-export interface SessionLayout {
-  cells: Map<string, CellPlacement>;
-  dots: Map<string, DotPlacement>;
-  /**
-   * Dots elided by `DOT_CAP`, per agent id. Absent means nothing was elided;
-   * a value of 0 must never be written, so `+n` badges cannot render "+0".
-   */
-  elided: Map<string, number>;
-  /**
-   * Parked grafts (`UNRESOLVED`), placed on their own orbit, keyed by agentId.
-   *
-   * SEPARATE FROM `cells` because a parked agent has NO NODE IN THE TREE. The
-   * grafter deliberately leaves it off `root`, so `SessionState.parked` is the
-   * only record that it exists at all — these are placed from that list, never
-   * from a tree walk. That is also why they cannot be anchored: there is no
-   * spawning dot to draw a filament to, which is the whole point of the state.
-   */
-  parked: Map<string, CellPlacement>;
-}
 
 /* ------------------------------------------------------------------------ *
  * Altitudes and surfaces
@@ -147,25 +120,76 @@ export interface SessionLayout {
  */
 export type Altitude = 'deck' | 'session' | 'inspector';
 
-/** Which renderer is showing. The list view is kept for one release (C7.2). */
+/* ------------------------------------------------------------------------ *
+ * The deck's two filter axes
+ * ------------------------------------------------------------------------ *
+ *
+ * TWO AXES, TWO NAMES, and until Phase 7's audit they had ONE name between
+ * them. `canvas-contract.ts` declared `DeckFilter = 'all' | 'live' | 'idle' |
+ * 'ended'` and `layout.ts` declared `DeckFilter = 'all' | 'cc' | 'oc'` — two
+ * meanings, one identifier, in one package, inside the file whose stated
+ * purpose is preventing exactly that. Neither module imported the other, so
+ * nothing ever failed; a reader who followed the wrong import would have got a
+ * type that accepted `'live'` where an engine belonged.
+ *
+ * They are independent: a user can ask for OpenCode sessions that are idle.
+ * Collapsing them into one attribute is the mistake `Altitude`'s note above
+ * describes, in the filter bar instead of in the altitude.
+ */
+
 /**
- * Which sessions the deck shows. View state only: filtering never touches the
- * store's session list and never reaches the host.
+ * Which ENGINE's sessions the deck shows. View state only: filtering never
+ * touches the store's session list and never reaches the host.
+ *
+ * `oc`, not `opencode` — this is the deck's own two-letter vocabulary, and
+ * `layout.ts:deckEngine` is the one supported conversion from
+ * `SessionState['engine']`.
  *
  * NOTE the deliberate exception it creates. `deckLayout` places by array index,
- * so changing the filter changes the array and blobs move. Everywhere else this
- * phase promises "a spawn adds, it never reflows" — here the user asked for a
- * different view of the same data, and moving is the honest response to that.
+ * so changing a filter changes the array and cards move. That is not a breach
+ * of anything: the user asked for a different view of the same data, and moving
+ * is the honest response to that. See `layout.ts`'s header for what the layout
+ * does and does not promise about movement.
  */
-export type DeckFilter = 'all' | 'live' | 'idle' | 'ended';
+export type EngineFilter = 'all' | 'cc' | 'oc';
 
-/** The chips, in the order they render. */
-export const DECK_FILTERS: readonly DeckFilter[] = ['all', 'live', 'idle', 'ended'];
+/** The engine chips, in the order they render. */
+export const ENGINE_FILTERS: readonly EngineFilter[] = ['all', 'cc', 'oc'];
 
-/** Zoom bounds for the deck stage. Bounded so a wheel cannot lose the deck. */
-export const ZOOM_MIN = 0.4;
-export const ZOOM_MAX = 3;
+/** Design default: all engines. */
+export const DEFAULT_ENGINE_FILTER: EngineFilter = 'all';
 
+/**
+ * Which LIVENESS the deck shows. View state only, on the same terms as
+ * {@link EngineFilter}.
+ *
+ * `all` plus three of the four `SessionState.liveness` values. `unsupported` is
+ * deliberately absent: it is not a state a user filters FOR, and a refused
+ * session is already unmistakable on the card.
+ */
+export type LivenessFilter = 'all' | 'live' | 'idle' | 'ended';
+
+/** The liveness chips, in the order they render. */
+export const LIVENESS_FILTERS: readonly LivenessFilter[] = ['all', 'live', 'idle', 'ended'];
+
+/** Design default: every liveness. */
+export const DEFAULT_LIVENESS_FILTER: LivenessFilter = 'all';
+
+/**
+ * Zoom bounds do NOT live here, and the reason is the whole point of this file.
+ *
+ * A single global pair cannot express what the frozen design specifies: the
+ * deck clamps to 0.5-2 and the tree to 0.4-2. This file held one pair, the
+ * store clamped BOTH stages with it, and `webview/viewport.ts` independently
+ * carried the correct per-altitude limits - two implementations of one rule,
+ * disagreeing, with nothing failing. Exactly the class this file exists to
+ * prevent, committed inside the file that exists to prevent it.
+ *
+ * `viewport.ts` is the single definition: DECK_ZOOM_LIMITS, TREE_ZOOM_LIMITS,
+ * ZOOM_FACTOR, clampScale. Import from there.
+ */
+
+/** Which renderer is showing. The list view is kept for one release (C7.2). */
 export type ViewMode = 'canvas' | 'list';
 
 /** The default at startup and after a reload. Canvas, immediately, no setting. */
@@ -190,8 +214,6 @@ export const TESTID = {
   deckBlob: 'deck-blob',
   deckEmpty: 'deck-empty',
   deckErrorBadge: 'deck-error-badge',
-  /** The faint interior dots on a blob: one per node, density without a number (C7.1). */
-  deckConstellation: 'deck-constellation',
 
   /* Session interior */
   canvas: 'session-canvas',

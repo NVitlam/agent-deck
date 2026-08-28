@@ -210,6 +210,24 @@ function blobFor(panel: Panel, sessionId: string): HTMLElement {
   return first;
 }
 
+/**
+ * Row 2 of every drawn tree node, keyed by agent id.
+ *
+ * `layout.ts:nodeSubText` is the frozen string — `{burn} · {n} calls` plus
+ * ` · {n} running` when there is one — and the node WIDTHS were measured from
+ * its length, so it is asserted whole rather than by fragment.
+ *
+ * The two queries are unioned into a MAP, never concatenated into a list: a
+ * concatenation would impose testid order over document order, which is how an
+ * order assertion comes to mean nothing. Nothing here asserts an order.
+ */
+function subTextByAgent(panel: Panel): Map<string, string> {
+  const cells = [...all(panel.container, TESTID.nucleus), ...all(panel.container, TESTID.cell)];
+  return new Map(
+    cells.map((c) => [c.dataset['agentId'] ?? '', c.querySelector('.sub')?.textContent ?? '']),
+  );
+}
+
 /** The rail row for one session in the list view. */
 function railFor(panel: Panel, sessionId: string): HTMLElement {
   const found = all(panel.container, 'rail-item').filter(
@@ -363,11 +381,27 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
         expect(blob.dataset['liveness']).toBe('unsupported');
         expect(blob.classList.contains(CRACKED_CLASS)).toBe(true);
         expect(blob.querySelectorAll(`.${CRACKED_CLASS}`).length).toBeGreaterThan(0);
-        // G3 in the SIZE channel too: no number is read off a refused tree, so
-        // the blob carries no node count and draws no constellation.
+        // THE REFUSAL SIGNAL IS THE CARD'S, and the two lines that used to
+        // stand here are gone rather than adjusted. They read
+        // `blob.dataset['constellation']` and counted
+        // the `deck-constellation` testid — the faint one-dot-per-node
+        // interior of `SessionBlob.svelte`, deleted with the phyllotaxis
+        // canvas. Neither is emitted by anything now, so the first read
+        // `undefined` and the second an empty array: one failed, and the
+        // other would have PASSED while asserting nothing at all.
+        //
+        // What replaces them is the signal `SessionCell.svelte` actually
+        // draws: the cracked class on the border rect (dashed in the
+        // stylesheet), the state row on the group, and the tooltip that says
+        // why. Asserted by VALUE against `livenessTitle`, not by presence.
+        expect(one(blob, 'deck-cell-border').classList.contains(CRACKED_CLASS)).toBe(true);
+        expect(blob.dataset['state']).toBe('unsupported');
+        expect(blob.querySelector('title')?.textContent).toBe(livenessTitle('unsupported'));
+        // G3 in the NUMBERS channel too: no figure is read off a refused
+        // tree, so every count the card carries is 0 and no badge is drawn.
         expect(blob.dataset['nodes']).toBe('0');
-        expect(blob.dataset['constellation']).toBe('0');
-        expect(all(blob, TESTID.deckConstellation)).toHaveLength(0);
+        expect(blob.dataset['agents']).toBe('0');
+        expect(blob.dataset['inflight']).toBe('0');
         expect(all(panel.container, TESTID.deckErrorBadge)).toHaveLength(0);
       } else {
         const rail = railFor(panel, 'session-unsupported');
@@ -549,22 +583,75 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
       enter(panel, mode, 'session-live');
 
       if (mode === 'canvas') {
-        // TOOL DOTS ARE GONE (user decision, 2026-08-21). C7.3's three tool
-        // rows moved UP to the agent that owns the calls: the cell's stats
-        // line carries the counts, and the inspector carries each action by
-        // description. The row is still asserted — on its new encoding.
-        expect(all(panel.container, TESTID.dot)).toHaveLength(0);
-
-        const stats = [...panel.container.querySelectorAll('.stats')].map(
-          (el) => el.textContent ?? '',
+        // TOOL DOTS ARE BACK, and this row is written against them again.
+        // What stood here asserted `TESTID.dot` was EMPTY and read C7.3's
+        // three tool rows off a `.stats` line on the agent — the encoding the
+        // 2026-08-21 decision moved them to. The tidy tree restores the dot:
+        // one per call, on the row beneath the node that made it, carrying
+        // its status. `.stats` is emitted by nothing now, so the two
+        // `stats.join(' ')` lines would have run against `''` and the
+        // `\d+ actions?` line against an empty array — a row of the state
+        // matrix passing while proving nothing.
+        //
+        // BY VALUE, AS A MAP. All three statuses are pinned to the call that
+        // has them, so a renderer that painted every dot `done` fails here
+        // rather than satisfying a `toContain`.
+        const statusByTool = new Map(
+          all(panel.container, TESTID.dot).map((d) => [d.dataset['toolId'], d.dataset['status']]),
         );
-        expect(stats.join(' ')).toContain('running');
-        expect(stats.join(' ')).toContain('error');
-        expect(stats.some((t) => /\d+ actions?/.test(t))).toBe(true);
+        expect(statusByTool).toStrictEqual(
+          new Map([
+            ['tool-read', 'done'],
+            ['tool-agent-1', 'done'],
+            ['tool-agent-2', 'running'],
+            ['tool-bash', 'error'],
+          ]),
+        );
+
+        // The fourth axis is a SHAPE, not a colour: a call that spawned a
+        // subagent draws hollow. It is exactly the two `spawnEdges` rows.
+        const hollow = all(panel.container, TESTID.dot)
+          .filter((d) => d.dataset['spawns'] === 'true')
+          .map((d) => d.dataset['toolId']);
+        expect(hollow).toStrictEqual(['tool-agent-1', 'tool-agent-2']);
+
+        // Transcript order, within the node that owns the calls. ONE
+        // `querySelectorAll` filtered down, never two queries concatenated:
+        // concatenating imposes testid order over document order and makes an
+        // order assertion mean nothing.
+        const rootDots = all(panel.container, TESTID.dot)
+          .map((d) => d.dataset['toolId'])
+          .filter((id) => id === 'tool-read' || id === 'tool-agent-1');
+        expect(rootDots).toStrictEqual(['tool-read', 'tool-agent-1']);
+
+        // Row 2 of a node is the frozen string, asserted whole.
+        expect(subTextByAgent(panel).get('agent-2')).toBe('2.0k · 1 calls');
+
+        // AND THE ERROR PERSISTS — the half of this row's name that the
+        // previous version never tested. Settle the whole tree: the running
+        // dot goes quiet and the error thorn stays.
+        send({
+          type: 'snapshot',
+          sessions: [settledSession({ sessionId: 'session-live' })],
+        });
+        const settled = new Map(
+          all(panel.container, TESTID.dot).map((d) => [d.dataset['toolId'], d.dataset['status']]),
+        );
+        expect(settled.get('tool-bash')).toBe('error');
+        expect([...settled.values()]).not.toContain('running');
       } else {
         const chips = all(panel.container, 'status-chip').map((c) => c.textContent?.trim());
         expect(chips).toContain('running');
         expect(chips).toContain('error');
+
+        // The same persistence claim, on the surface that is showing.
+        send({
+          type: 'snapshot',
+          sessions: [settledSession({ sessionId: 'session-live' })],
+        });
+        const after = all(panel.container, 'status-chip').map((c) => c.textContent?.trim());
+        expect(after).toContain('error');
+        expect(after).not.toContain('running');
       }
     });
 
@@ -706,18 +793,47 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
     if (mode === 'list') {
       const header = one(panel.container, 'session-header');
-      expect(one(header, 'header-tokens-in').textContent?.trim()).toBe('17,745');
-      expect(one(header, 'header-tokens-out').textContent?.trim()).toBe('8,159');
+      expect(one(header, 'header-context').textContent?.trim()).toBe('17,745');
+      expect(one(header, 'header-burn').textContent?.trim()).toBe('35,490');
       const cost = one(header, 'header-cost');
       expect(cost.textContent?.trim()).toBe(EM_DASH);
       expect(cost.getAttribute('title')).toContain('no price table');
     } else {
-      // The canvas surfaces per-node tokens in the inspector. The SESSION
-      // totals row of C7.3 asks for a HUD, which is not rendered — see the
-      // `not rendered by any surface` block at the end of this file.
+      // The canvas surfaces per-node tokens in the inspector, and the two
+      // fields say two different things. CONTEXT IS A LEVEL and carries one
+      // number — the last assistant message's whole prompt — so the row
+      // prints `contextNow.prompt` alone. BURN IS A TOTAL and carries both
+      // halves. The line that used to demand `6,789` (the root's
+      // `contextNow.output`) inside `inspector-tokens` was reading the old
+      // `tokens.in / tokens.out` pair off a field that has stopped being one.
+      //
+      // Exact equality, not `toContain`: `formatTokens(undefined)` is an
+      // em-dash and a containment check on a concatenated row passes when
+      // every figure in it is a dash — the shape that shipped a fully-dashed
+      // token line once already.
       click(one(panel.container, TESTID.nucleus));
-      expect(one(panel.container, 'inspector-tokens').textContent).toContain('12,345');
-      expect(one(panel.container, 'inspector-tokens').textContent).toContain('6,789');
+      expect(one(panel.container, 'inspector-tokens').textContent?.trim()).toBe('12,345');
+      expect(one(panel.container, 'inspector-burn').textContent?.trim()).toBe(
+        '24,690 in / 13,578 out',
+      );
+
+      // AGENTCELL'S ROW 2, ASSERTED BY VALUE. It is the fifth `.svelte` token
+      // call site and the only one no other test reads: `AgentCell` is
+      // canvas-only, so `render.test.ts`'s `node-tokens` covers `TreeNodeView`
+      // and not this. `.svelte` is outside `tsc` and outside eslint, so a
+      // wrong field or a dropped `?.` here would reach a user unchallenged.
+      //
+      // Row 2 is now `layout.ts:nodeSubText` — BURN, compact, then the call
+      // count and the running count. The previous version asserted the
+      // superseded `4,500 in ctx / 1,250 out` subline and guarded against
+      // reading `burn` by mistake; the fields have swapped roles, so the
+      // MUTATION swaps with them. testdata's depth-1 agent carries burn
+      // 9,000/2,500 (`11.5k`) and contextNow 4,500/1,250 (`5.8k`), so a cell
+      // that read `contextNow` here fails on both lines below.
+      const subs = subTextByAgent(panel);
+      expect(subs.get('agent-1')).toBe('11.5k · 1 calls · 1 running');
+      expect(subs.get('root')).toBe('38.3k · 2 calls');
+      expect([...subs.values()].some((t) => t.includes('5.8k'))).toBe(false);
     }
   });
 
@@ -749,9 +865,23 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     const panel = panelWith([]);
     expect(one(panel.container, 'app').dataset['liveness']).toBe('none');
     if (mode === 'canvas') {
+      // ONE LINE PER ENABLED ENGINE, which replaced the single
+      // 'No sessions in this workspace.' this row used to pin. `App.svelte`
+      // passes no `enabledEngines`, so `Deck.svelte`'s default applies and
+      // Claude Code is the only engine named — an installation with no
+      // OpenCode must not be shown a panel waiting for one.
+      //
+      // Asserted as the whole list, by value: a second line, or a line for an
+      // engine this install is not observing, fails here.
+      const waiting = all(panel.container, 'deck-waiting');
+      expect(waiting.map((p) => p.dataset['engine'])).toStrictEqual(['cc']);
+      expect(waiting.map((p) => p.textContent?.trim())).toStrictEqual([
+        'Waiting for a Claude Code session…',
+      ]);
       expect(one(panel.container, TESTID.deckEmpty).textContent?.trim()).toBe(
-        'No sessions in this workspace.',
+        'Waiting for a Claude Code session…',
       );
+      expect(all(panel.container, 'deck-empty-filtered')).toHaveLength(0);
       expect(all(panel.container, TESTID.deckBlob)).toHaveLength(0);
       expect(one(panel.container, TESTID.deck).dataset['sessions']).toBe('0');
     } else {
@@ -768,7 +898,33 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     it('animates only what is running or live', () => {
       const panel = panelWith([liveSession()]);
 
-      /** Why an animated element is allowed to animate, or `undefined`. */
+      /**
+       * Why an animated element is allowed to animate, or `undefined`.
+       *
+       * KNOWN DIVERGENCE, RECORDED RATHER THAN PAPERED OVER. The cell branch
+       * below justifies on `data-status === 'running'`. `AgentCell.svelte`
+       * decides what to animate with `data-active`, which is
+       * `status === 'running' || hasRunningTool` — a STRICTLY WIDER condition.
+       *
+       * The two agree on every fixture this file uses, so the walk is sound
+       * today. They diverge for one shape: an agent whose own status is `done`
+       * or `error` while a tool under it is still `running`. That shape is not
+       * hypothetical — `canvas.test.ts`'s "pulses an agent whose OWN status is
+       * done while a tool is still running" renders it and asserts the pulse.
+       *
+       * WHAT WILL TURN THIS RED. A fixture reaching this walk that contains a
+       * settled agent holding a running tool: the cell animates, `data-status`
+       * reads `done`, `justify` returns `undefined`, and the loop below fails
+       * with "animates unjustified" — pointing at a correct animation.
+       *
+       * The assertion is DELIBERATELY NOT WIDENED to `data-active`. Reading the
+       * component's own output attribute back as the justification for the
+       * component's own animation would make this control circular: it would
+       * accept anything the component chose to mark active, which is precisely
+       * the thing under test. A narrow rule that fails loudly on a case it does
+       * not cover is worth more here than a wide one that cannot fail. When it
+       * does fail, add the case to the rule — do not swap the attribute.
+       */
       const justify = (element: Element): string | undefined => {
         let node: Element | null = element;
         while (node !== null) {
@@ -832,22 +988,71 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     it('nothing static rides an animated ancestor', () => {
       // The class count alone cannot see a still element inheriting a moving
       // ancestor's transform: it moves on screen while carrying no animated
-      // class, and the control reads 0. A constellation dot is a node that
-      // EXISTS, not a node that is happening.
+      // class, and the negative control above reads 0 while something is
+      // visibly moving.
+      //
+      // THE WITNESS THIS ROW NAMED IS DELETED. It counted deck constellation
+      // dots — one faint dot per node, inside a breathing membrane, which was
+      // the hazard in its purest form — and `SessionBlob.svelte` went with the
+      // phyllotaxis canvas. Nothing emitted `deck-constellation`, so the
+      // canvas half failed on `length > 0` and the list half PASSED by
+      // asserting an empty array was empty.
+      //
+      // The replacement is structural rather than a sweep of one component:
+      // every animation-bearing class now sits on a CHILDLESS LEAF that
+      // carries no coordinate anything else depends on — the card's border
+      // and its standoff ring, a node's ring, a dot's halo, the filament path.
+      // That is asserted over the whole panel at both altitudes, so it also
+      // fails for a future component that wraps content in an animated group,
+      // which the old one-component version could not have seen.
       const panel = panelWith([liveSession()]);
       if (mode !== 'canvas') {
-        expect(all(panel.container, TESTID.deckConstellation)).toHaveLength(0);
+        // The list view's grammar is text and it animates nothing at all, so
+        // the property holds by there being nothing to ride. Stated, rather
+        // than expressed as an empty loop that would read as coverage.
+        expect(animated(panel.container)).toHaveLength(0);
         return;
       }
-      const dots = all(panel.container, TESTID.deckConstellation);
-      // `TESTID.deckConstellation` is on each DOT, not on the wrapping group.
-      expect(dots.length).toBeGreaterThan(0);
-      for (const dot of dots) expect(hasAnimatedAncestor(dot)).toBe(false);
 
+      const noneRides = (where: string): void => {
+        const moving = animated(panel.container);
+        // Positive control: the property is about a NON-EMPTY set. Without
+        // this the two loops below are vacuous at every altitude.
+        expect(
+          moving.length,
+          `${where}: nothing animates here, so this proves nothing`,
+        ).toBeGreaterThan(0);
+        for (const element of moving) {
+          expect(
+            element.childElementCount,
+            `${where}: ${element.getAttribute('class') ?? ''} has children riding it`,
+          ).toBe(0);
+        }
+        for (const element of [...panel.container.querySelectorAll('*')]) {
+          expect(
+            hasAnimatedAncestor(element),
+            `${where}: ${element.getAttribute('class') ?? ''} rides an animated ancestor`,
+          ).toBe(false);
+        }
+      };
+
+      noneRides('deck');
       enter(panel, mode, 'session-live');
-      for (const dot of all(panel.container, TESTID.dot)) {
-        if (dot.dataset['status'] === 'running') continue;
+      noneRides('interior');
+
+      // The tool dot is the closest thing the tidy tree has to the deleted
+      // constellation: a dot is a call that EXISTS, and only a running one is
+      // a call that is happening. A settled dot carries no animated class of
+      // its own and is moved by nothing — and the running one's halo is its
+      // SIBLING, not its parent, which is what keeps `spawnDotPos`'s
+      // coordinate out of the animation.
+      const dots = all(panel.container, TESTID.dot);
+      expect(dots.length).toBeGreaterThan(0);
+      expect(dots.some((d) => d.dataset['status'] === 'running')).toBe(true);
+      for (const dot of dots) {
         expect(hasAnimatedAncestor(dot)).toBe(false);
+        if (dot.dataset['status'] === 'running') continue;
+        expect(animated(dot)).toHaveLength(0);
       }
     });
   });
@@ -890,28 +1095,59 @@ describe('both surfaces are projections of the same store (C7.2)', () => {
 
   it('the same session data reaches both surfaces, and both agree what it is', () => {
     const panel = render();
-    send({
-      type: 'snapshot',
-      sessions: [liveSession(), unsupportedSession(), foreignSession()],
-    });
+    const sessions = [liveSession(), unsupportedSession(), foreignSession()];
+    send({ type: 'snapshot', sessions });
 
-    const canvas = all(panel.container, TESTID.deckBlob).map((b) => [
-      b.dataset['sessionId'],
-      b.dataset['liveness'],
-      b.dataset['refused'],
-      b.dataset['foreign'],
-    ]);
+    /** What one surface says each session IS, keyed by id. */
+    const verdicts = (
+      rows: HTMLElement[],
+      foreign: (row: HTMLElement) => string,
+    ): Map<string, string> =>
+      new Map(
+        rows.map((row) => [
+          row.dataset['sessionId'] ?? '',
+          [row.dataset['liveness'], row.dataset['refused'], foreign(row)].join('|'),
+        ]),
+      );
+
+    const deckRows = all(panel.container, TESTID.deckBlob);
+    const canvas = verdicts(deckRows, (r) => String(r.dataset['foreign']));
+    const deckOrder = deckRows.map((r) => r.dataset['sessionId']);
+
     useView(panel, 'list');
-    const list = all(panel.container, 'rail-item').map((i) => [
-      i.dataset['sessionId'],
-      i.dataset['liveness'],
-      i.dataset['refused'],
-      String(all(i, 'rail-foreign').length > 0),
-    ]);
+    const railRows = all(panel.container, 'rail-item');
+    const list = verdicts(railRows, (r) => String(all(r, 'rail-foreign').length > 0));
+    const railOrder = railRows.map((r) => r.dataset['sessionId']);
 
-    // Same sessions, same order, same verdict on each. Order is the store's,
-    // not the geometry's (C7.8).
+    // C7.2 IS ABOUT AGREEMENT, AND THIS IS THE WHOLE OF IT: the same sessions
+    // reach both surfaces and both say the same thing about each one. The key
+    // set is asserted first, so a row silently dropped from either surface
+    // fails here — the defect this row exists for, and the reason the
+    // comparison is keyed rather than deep-equal on two arrays.
+    expect([...canvas.keys()].sort()).toStrictEqual(sessions.map((s) => s.sessionId).sort());
     expect(canvas).toStrictEqual(list);
+
+    // ORDER IS NO LONGER A THING THE TWO SURFACES SHARE, and the version of
+    // this row that compared ordered arrays was asserting that they did. The
+    // deck orders by its own declared sort — `Live first`, the design
+    // default, a control the user drives — while the rail renders the store's
+    // list order. Two deliberate answers to two different questions, and the
+    // agreement above is unaffected by either.
+    //
+    // What C7.8 actually forbids is the GEOMETRY, or the order of arrival,
+    // deciding the deck. That still holds and is asserted here: re-send the
+    // same three sessions in the opposite order. The rail follows the store.
+    // The deck must not move at all.
+    const reversed = [...sessions].reverse();
+    expect(railOrder).toStrictEqual(sessions.map((s) => s.sessionId));
+    send({ type: 'snapshot', sessions: reversed });
+    expect(all(panel.container, 'rail-item').map((r) => r.dataset['sessionId'])).toStrictEqual(
+      reversed.map((s) => s.sessionId),
+    );
+    useView(panel, 'canvas');
+    expect(all(panel.container, TESTID.deckBlob).map((r) => r.dataset['sessionId'])).toStrictEqual(
+      deckOrder,
+    );
   });
 
   it('a selection made in one surface is the selection in the other', () => {
@@ -1080,6 +1316,15 @@ describe('C7.3 rows that were unimplemented and now are not', () => {
     // COMPUTED, and a 0 rendered as a number reads as "free" — a fabricated
     // figure, which is the class of defect this project refuses on principle.
     const totals = one(panel.container, 'hud-totals');
+    // ASSERT THE VALUES, NOT THE PRESENCE OF A DASH. `toContain('—')` alone is
+    // vacuous here: cost is always an em-dash, so it passes even when every
+    // token figure is also a dash - which is exactly the defect a verifier
+    // caught on `hotfix/0.1.3`, where this line read `totals.inputTokens`
+    // after that field had been removed and the whole row rendered as dashes
+    // in the shipped artifact. `.svelte` is outside `tsc`, so this assertion
+    // is the only thing standing between that bug and a release.
+    expect(totals.textContent).toContain('17,745');
+    expect(totals.textContent).toContain('35,490');
     expect(totals.textContent).toContain('—');
     expect(totals.textContent).not.toMatch(/\$\s*0/);
   });

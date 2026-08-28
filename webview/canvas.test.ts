@@ -1,41 +1,82 @@
 // @vitest-environment jsdom
 //
-// Altitude 1 — the session interior (spec C7.1) and the INTERIOR half of
-// C7.3's normative state matrix, asserted against the REAL esbuild + Svelte
-// bundle. C7.4's filament — the `meta.toolUseId` join, drawn — is the element
-// this file exists to pin.
+// Altitude 1 — the session TREE — and altitude 1.5, the focus view, asserted
+// against the REAL esbuild + Svelte bundle. C7.4's filament (the
+// `meta.toolUseId` join, drawn) and G3's parked rail are the two elements this
+// file exists to pin.
+//
+// WHAT WAS DELETED FROM THIS FILE, AND WHY. Every assertion here used to be
+// written against `sessionLayout` — dot rings on a chronological arc, cell
+// radii from `blobPath`/`hashSessionId`, filament endpoints pulled back to a
+// membrane, and parked cells on their own orbit. That geometry is GONE: the
+// phyllotaxis canvas was deleted with the golden angle, and `treeLayout` is
+// what places nodes now. A test asserting the behaviour of deleted code is not
+// coverage, it is a compile error waiting to be read as a regression.
+//
+// The standard applied to each one was: does it assert something the tree
+// still owes the user? If yes it is REWRITTEN against the new geometry and it
+// must pass — every refusal row, every motion row, every accessibility row,
+// the filament's derivation-from-`spawnEdges` negative control, the parked
+// graft's never-attached rule, and the theming rules are all still here. If it
+// asserted only where a circle sat on a spiral, it is gone.
 //
 // WHY A BUNDLE. There is no vitest svelte plugin in this repo, so a `.svelte`
-// import cannot be transformed in-process. `testkit.ts:loadHarness` bundles
-// `harness.ts`, whose entry is fixed and whose `start()` mounts `App.svelte`;
-// `App.svelte` does not mount the canvas yet and is not this package's file to
-// edit. So this file bundles `SessionCanvas.svelte` directly through the same
-// pipeline, from an in-memory entry point, exactly the way `inspector.test.ts`
-// and `deck.test.ts` do. Nothing is written to disk (G1) — the entry goes to
-// esbuild as `stdin` and the bundle comes back on the child's stdout. That is
-// the THIRD copy of this block; it is known, reported, and collapses when the
-// app mounts these components.
+// import cannot be transformed in-process. This file bundles
+// `SessionCanvas.svelte` directly through the same esbuild + Svelte pipeline
+// `npm run build` runs, from an in-memory entry point. Nothing is written to
+// disk (G1) — the entry goes to esbuild as `stdin` and the bundle comes back
+// on the child's stdout.
 //
-// EVERY testid AND CONTRACT CLASS COMES FROM `canvas-contract.ts`. Selecting on
-// a literal is how a renamed name becomes a silently skipped assertion rather
-// than a failure: `all()` returns an empty array and a `.length === 0` check
-// passes for the wrong reason. The same rule is why the CSS literals are
-// checked back against the constants — CSS cannot import a TypeScript name, so
-// the stylesheet is the one place a class is spelled twice.
+// AND WHY A SECOND HARNESS. DoD 7.4 requires the pan/zoom transform to survive
+// a STORE UPDATE, and a component mounted with a plain props object has no
+// store to update. The last describe block therefore mounts the whole app
+// through `testkit.ts:loadHarness` and drives `store.handleMessage` with a
+// real `diff` message, which is the only way that claim can be tested rather
+// than asserted.
+//
+// EVERY SHARED testid AND CONTRACT CLASS COMES FROM `canvas-contract.ts`.
+// Selecting on a literal is how a renamed name becomes a silently skipped
+// assertion rather than a failure: `all()` returns an empty array and a
+// `.length === 0` check passes for the wrong reason. The names this package
+// alone owns (the breadcrumb, the status line, the rail, the overflow glyph)
+// are literals on purpose — `canvas-contract.ts` says in its own header that a
+// name with one owner is that owner's to keep.
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { AgentNode, SessionState, ToolNode } from '../src/model/events.js';
 import { isAgentNode } from '../src/model/events.js';
 import {
   ANIMATED_CLASSES,
-  DOT_CAP,
   HOLLOW_LIVE_CLASS,
   PARKED_CLASS,
   REDUCED_MOTION_CLASS,
   TESTID,
 } from './canvas-contract.js';
-import { blobPath, hashSessionId, sessionLayout } from './layout.js';
-import { all, one } from './testkit.js';
+import {
+  AUTO_COLLAPSE_NODES,
+  COLLAPSE_DEPTH,
+  LABEL_MAX_CHARS,
+  NODE_H,
+  NODE_W_MIN,
+  SPAWN_DOT_GAP,
+  autoCollapseDepth,
+  nodeSubText,
+  nodeWidth,
+  spawnDotPos,
+  treeLayout,
+  visibleNodeCount,
+} from './layout.js';
+import {
+  TREE_FIT_PADDING,
+  TREE_ZOOM_LIMITS,
+  boundsOf,
+  fitTo,
+  transformAttr,
+  zoomAbout,
+} from './viewport.js';
+import { EM_DASH } from './format.js';
+import { all, loadHarness, one } from './testkit.js';
+import type { WebviewHarness } from './testkit.js';
 import { agent, liveSession, tool, unsupportedSession } from './testdata.js';
 
 /**
@@ -114,10 +155,10 @@ interface CanvasHarness {
 let harness: CanvasHarness;
 /** The bundled JavaScript, kept so the injected stylesheet can be asserted on. */
 let bundle = '';
-/** The four component sources, read once, for the no-hardcoded-colour check. */
+/** The four component sources, read once, for the theming and drag checks. */
 let componentSources: { path: string; text: string }[] = [];
 
-/** The files this package owns. Named once; both theming checks walk it. */
+/** The files this package owns on this surface. Named once; three checks walk it. */
 const OWNED_COMPONENTS = [
   'webview/SessionCanvas.svelte',
   'webview/AgentCell.svelte',
@@ -139,7 +180,7 @@ beforeAll(async () => {
     path,
     text: fs.readFileSync(path, 'utf8'),
   }));
-}, 60_000);
+}, 120_000);
 
 interface Mounted {
   container: HTMLElement;
@@ -176,12 +217,18 @@ afterEach(() => {
  * Click by dispatching the event, not by calling `.click()`.
  *
  * `HTMLElement.prototype.click` does not exist on an `SVGElement` in jsdom,
- * and every cell and dot here is SVG. Dispatching is also the more faithful of
- * the two: it is what a pointer produces in the real panel.
+ * and every node, dot and filament here is SVG. Dispatching is also the more
+ * faithful of the two: it is what a pointer produces in the real panel.
  */
 function click(element: Element): void {
   harness.flushSync(() => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
+}
+
+function dblclick(element: Element): void {
+  harness.flushSync(() => {
+    element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
   });
 }
 
@@ -191,6 +238,29 @@ function press(element: Element, key: string): KeyboardEvent {
   return event;
 }
 
+/**
+ * A pointer gesture, dispatched as `MouseEvent`s with pointer type names.
+ *
+ * jsdom does not implement `PointerEvent`. A `MouseEvent` named `pointerdown`
+ * is what the listener actually receives, and it carries the only three fields
+ * the handler reads: `button`, `clientX`, `clientY`.
+ */
+function pointer(element: Element, type: string, x: number, y: number): void {
+  harness.flushSync(() => {
+    element.dispatchEvent(
+      new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }),
+    );
+  });
+}
+
+function wheel(element: Element, deltaY: number, x: number, y: number): void {
+  harness.flushSync(() => {
+    element.dispatchEvent(
+      new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY, clientX: x, clientY: y }),
+    );
+  });
+}
+
 /** Every element carrying any class listed in `ANIMATED_CLASSES`. */
 function animated(root: ParentNode): Element[] {
   return [...root.querySelectorAll('*')].filter((el) =>
@@ -198,12 +268,24 @@ function animated(root: ParentNode): Element[] {
   );
 }
 
-/** Cells that stand for an agent IN the tree. Parked cells share the testid. */
-function cells(root: ParentNode): HTMLElement[] {
-  return all(root, TESTID.cell).filter((c) => c.dataset['parked'] !== 'true');
+/**
+ * Nodes that stand for an agent IN the tree, IN DOM ORDER.
+ *
+ * One `querySelectorAll` over both testids rather than two calls concatenated:
+ * concatenating returns every `cell` before the `nucleus` whatever the
+ * document says, and the pre-order assertions below are about document order.
+ * A helper that imposed its own order would make those assertions pass or fail
+ * on where the root happened to sit in the tree.
+ */
+function treeNodes(root: ParentNode): HTMLElement[] {
+  return [
+    ...root.querySelectorAll<HTMLElement>(
+      `[data-testid="${TESTID.cell}"],[data-testid="${TESTID.nucleus}"]`,
+    ),
+  ].filter((c) => c.dataset['parked'] !== 'true');
 }
 
-function parkedCells(root: ParentNode): HTMLElement[] {
+function parkedNodes(root: ParentNode): HTMLElement[] {
   return all(root, TESTID.cell).filter((c) => c.dataset['parked'] === 'true');
 }
 
@@ -215,19 +297,38 @@ function filaments(root: ParentNode): HTMLElement[] {
   return all(root, TESTID.filament);
 }
 
-function cellFor(root: ParentNode, agentId: string): HTMLElement {
-  const found = [...all(root, TESTID.cell), ...all(root, TESTID.nucleus)].find(
-    (c) => c.dataset['agentId'] === agentId,
-  );
-  if (found === undefined) throw new Error(`no cell for ${agentId}`);
+function nodeFor(root: ParentNode, agentId: string): HTMLElement {
+  const found = treeNodes(root).find((c) => c.dataset['agentId'] === agentId);
+  if (found === undefined) throw new Error(`no node for ${agentId}`);
   return found;
 }
 
-
-function membraneOf(cell: HTMLElement): Element {
-  const found = cell.querySelector('path.membrane');
-  if (found === null) throw new Error('no membrane path in the cell');
+function boxOf(node: HTMLElement): Element {
+  const found = node.querySelector('rect.box');
+  if (found === null) throw new Error('no box rect in the node');
   return found;
+}
+
+function row1(node: HTMLElement): string {
+  return node.querySelector('text.lbl')?.textContent ?? '';
+}
+
+function row2(node: HTMLElement): string {
+  return node.querySelector('text.sub')?.textContent ?? '';
+}
+
+function depthMark(node: HTMLElement): string {
+  return node.querySelector('text.mark')?.textContent ?? '';
+}
+
+function field(root: ParentNode): SVGSVGElement {
+  const svg = root.querySelector('svg.field');
+  if (svg === null) throw new Error('no field');
+  return svg as SVGSVGElement;
+}
+
+function stageTransform(root: ParentNode): string {
+  return one(root, TESTID.canvasStage).getAttribute('transform') ?? '';
 }
 
 /** Every node of a tree, in tree order — the order the store accounts for them. */
@@ -240,21 +341,19 @@ function flatten(node: AgentNode | ToolNode, out: (AgentNode | ToolNode)[] = [])
   return out;
 }
 
-function toolsOf(state: SessionState): ToolNode[] {
-  return flatten(state.root).filter((n): n is ToolNode => !isAgentNode(n));
-}
-
 function agentsOf(state: SessionState): AgentNode[] {
   return flatten(state.root).filter(isAgentNode);
 }
 
-/** Set every agent and tool in a tree to `done`. */
+/** Set every agent and tool in a tree to `done`, keeping errors. */
 function settle(node: AgentNode): AgentNode {
   return {
     ...node,
-    status: 'done',
+    status: node.status === 'running' ? 'done' : node.status,
     children: node.children.map((child) =>
-      isAgentNode(child) ? settle(child) : { ...child, status: 'done' as const },
+      isAgentNode(child)
+        ? settle(child)
+        : { ...child, status: child.status === 'running' ? ('done' as const) : child.status },
     ),
   };
 }
@@ -280,128 +379,297 @@ function parkedSession(overrides: Partial<SessionState> = {}): SessionState {
   });
 }
 
-
-
-/* ------------------------------------------------------------------------ *
- * The interior, and where its coordinates come from
- * ------------------------------------------------------------------------ */
+/** One agent with `count` tool calls and nothing else. */
+function busySession(count: number, overrides: Partial<ToolNode> = {}): SessionState {
+  const many = Array.from({ length: count }, (_, i) =>
+    tool({ id: `t-${String(i)}`, toolName: 'Bash', inputPreview: 'x', ...overrides }),
+  );
+  return liveSession({
+    sessionId: 'session-busy',
+    root: agent({ id: 'root', kind: 'main', label: 'main', spawnDepth: 0, children: many }),
+    spawnEdges: [],
+    parked: [],
+  });
+}
 
 /**
- * The animated classes the SESSION INTERIOR can apply.
+ * A tree with more than {@link AUTO_COLLAPSE_NODES} agents in it.
  *
- * `is-pulsing` is absent deliberately: it belonged to the running tool dot,
- * and the dots are no longer drawn. It is still carried by the deck pulse ring
- * and guarded in `deck.test.ts`, so the contract member is live - just not on
- * this surface. Derived from the contract rather than hand-listed, so adding a
- * class there fails here until someone decides which surface owns it.
+ * Branching 7 to depth 3 is 1 + 7 + 49 + 343 = 400 agents, so the rule fires
+ * with room to spare, and collapsing to depth 2 draws 57 of them. The numbers
+ * are asserted below rather than described here.
  */
-const INTERIOR_ANIMATED = ANIMATED_CLASSES.filter((c) => c !== 'is-pulsing');
+function hugeSession(): SessionState {
+  let n = 0;
+  const build = (depth: number, id: string): AgentNode => {
+    n += 1;
+    const kids = depth < 3 ? Array.from({ length: 7 }, (_, i) => build(depth + 1, `${id}-${String(i)}`)) : [];
+    return agent({
+      id,
+      kind: depth === 0 ? 'main' : 'subagent',
+      label: `a${String(depth)}`,
+      spawnDepth: depth,
+      children: kids,
+    });
+  };
+  const root = build(0, 'root');
+  expect(n).toBe(400);
+  return liveSession({ sessionId: 'session-huge', root, spawnEdges: [], parked: [] });
+}
 
-describe('the session interior (C7.1)', () => {
-  it('draws the main agent as the nucleus, exactly once', () => {
+/* ------------------------------------------------------------------------ *
+ * The tidy tree: every coordinate is `treeLayout`'s
+ * ------------------------------------------------------------------------ */
+
+describe('the tree (altitude 1)', () => {
+  it('draws one node per agent, in pre-order, at treeLayout’s coordinates', () => {
     const state = liveSession();
-    const container = render({ session: state });
-    const nucleus = one(container, TESTID.nucleus);
-    expect(nucleus.dataset['agentId']).toBe(state.root.id);
-    // The nucleus is not also counted as a cell: one agent, one element.
-    expect(cells(container).map((c) => c.dataset['agentId'])).not.toContain(state.root.id);
-  });
+    const placed = treeLayout(state, state.root.id).filter((p) => !p.hidden);
+    expect(placed.length).toBe(agentsOf(state).length);
 
-  it('draws one cell per subagent in the tree', () => {
-    const state = liveSession();
-    const subagents = agentsOf(state).filter((a) => a.id !== state.root.id);
-    expect(subagents.length).toBeGreaterThan(0);
     const container = render({ session: state });
-    expect(cells(container).map((c) => c.dataset['agentId']).sort()).toStrictEqual(
-      subagents.map((a) => a.id).sort(),
-    );
-  });
+    const drawnIds = [...(container.querySelector('g.nodes')?.children ?? [])]
+      .filter((el) => (el as HTMLElement).dataset['agentId'] !== undefined)
+      .map((el) => (el as HTMLElement).dataset['agentId']);
+    expect(drawnIds).toStrictEqual(placed.map((p) => p.id));
 
-  it('draws NO tool dots, though the layout still places them', () => {
-    // `sessionLayout` is unchanged and still returns a dot per placed tool —
-    // the geometry is pure and its goldens are pinned, so removing dots from
-    // the picture was deliberately NOT done by changing the layout. The canvas
-    // simply stops drawing that map. If dots ever come back, the coordinates
-    // are already there and unchanged.
-    const state = liveSession();
-    const layout = sessionLayout(state);
-    const container = render({ session: state });
-    expect(layout.dots.size).toBeGreaterThan(0);
-    expect(dots(container)).toHaveLength(0);
-  });
-
-  it('takes every coordinate from layout.ts and computes none of its own', () => {
-    const state = liveSession();
-    const layout = sessionLayout(state);
-    const container = render({ session: state });
-
-    for (const [agentId, placement] of layout.cells) {
-      const cell = cellFor(container, agentId);
-      expect(membraneOf(cell).getAttribute('d')).toBe(
-        blobPath(placement.x, placement.y, placement.R, hashSessionId(agentId)),
-      );
+    for (const p of placed) {
+      const box = boxOf(nodeFor(container, p.id));
+      expect({
+        id: p.id,
+        x: Number(box.getAttribute('x')),
+        y: Number(box.getAttribute('y')),
+        w: Number(box.getAttribute('width')),
+        h: Number(box.getAttribute('height')),
+      }).toStrictEqual({ id: p.id, x: p.x, y: p.y, w: p.w, h: NODE_H });
     }
-    // The dot half of this check went with the dots. Cells and parked cells
-    // are now the whole of what the canvas places, and both are asserted
-    // against `layout.ts` above and below.
   });
 
-  it('fits the viewport with a viewBox of four finite numbers', () => {
+  it('pins the root’s box to literal numbers, so a layout change is visible here', () => {
+    // Written out rather than derived: this is the one assertion in the file
+    // that would still fail if `treeLayout` and this renderer moved together.
     const container = render({ session: liveSession() });
-    const parts = (container.querySelector('svg')?.getAttribute('viewBox') ?? '')
-      .split(' ')
-      .map(Number);
-    expect(parts).toHaveLength(4);
-    for (const n of parts) expect(Number.isFinite(n)).toBe(true);
-    expect(parts[2]).toBeGreaterThan(0);
-    expect(parts[3]).toBeGreaterThan(0);
+    const box = boxOf(nodeFor(container, 'root'));
+    expect(box.getAttribute('x')).toBe('14.5');
+    expect(box.getAttribute('y')).toBe('0');
+    expect(box.getAttribute('width')).toBe('168');
+    expect(box.getAttribute('height')).toBe('52');
+    expect(box.getAttribute('rx')).toBe('9');
   });
 
-  it('reads in tree order, not in geometric order (C7.8)', () => {
-    // The store's account of a session is its tree; DOM order here is that
-    // walk — each agent, then its own dots, then its subagents — and nothing
-    // in between sorts by coordinate.
+  it('is FIXED HEIGHT: token share is text, never size', () => {
+    // The predecessor sized a cell by its child count, so one new tool call
+    // moved shapes already on screen. Every box on the canvas is 52 high, and
+    // the widest node is wide because its TEXT is long.
+    const container = render({ session: liveSession() });
+    const heights = new Set(
+      treeNodes(container).map((n) => boxOf(n).getAttribute('height')),
+    );
+    expect([...heights]).toStrictEqual([String(NODE_H)]);
+  });
+
+  it('never draws a node below the collapse depth, though the layout returns it', () => {
+    // `treeLayout` returns hidden placements too, positioned on the collapsed
+    // ancestor that swallowed them, so a caller can count them. Drawing one
+    // would stack a node on top of its own parent.
+    const state = liveSession();
+    const placed = treeLayout(state, state.root.id, { collapseDepth: 1 });
+    const hidden = placed.filter((p) => p.hidden);
+    expect(hidden.length).toBeGreaterThan(0);
+
+    const container = render({ session: state });
+    press(nodeFor(container, 'root'), 'k');
+    // `K` collapses to depth 2, which hides nothing in a 3-level tree; the
+    // point of this assertion is the one below it, on a tree that is deeper.
+    expect(one(container, TESTID.canvas).dataset['collapseDepth']).toBe(String(COLLAPSE_DEPTH));
+  });
+
+  it('truncates row 1 at LABEL_MAX_CHARS and says the depth on the right', () => {
+    const container = render({ session: liveSession() });
+    expect(row1(nodeFor(container, 'root'))).toBe('main session');
+    expect(row1(nodeFor(container, 'agent-1'))).toBe('test-runner: run t…');
+    expect(row1(nodeFor(container, 'agent-1')).length).toBe(LABEL_MAX_CHARS);
+    expect(row1(nodeFor(container, 'agent-2'))).toBe('code-reviewer: che…');
+
+    expect(depthMark(nodeFor(container, 'root'))).toBe('root');
+    expect(depthMark(nodeFor(container, 'agent-1'))).toBe('d1');
+    expect(depthMark(nodeFor(container, 'agent-2'))).toBe('d2');
+  });
+
+  it('row 2 is burn + call count, BY VALUE, and it is the string the width came from', () => {
+    // ASSERTED BY VALUE, not by presence. A `toContain(EM_DASH)` here would
+    // pass while every figure on the canvas rendered as a dash, which is
+    // exactly the shape that shipped a fully-dashed token row once.
     //
-    // The expected order is DERIVED from the state by that rule rather than
-    // written out as a list of ids: a literal list against a shared builder is
-    // a literal that goes stale the next time the builder changes, and reads
-    // as a renderer regression when it does.
+    // testdata's root carries burn 24,690 + 13,578 = 38,268 and contextNow
+    // 12,345 / 6,789. Reading `contextNow` by mistake gives '12.3k', so these
+    // literals distinguish the two fields.
+    const container = render({ session: liveSession() });
+    expect(row2(nodeFor(container, 'root'))).toBe('38.3k · 2 calls');
+    expect(row2(nodeFor(container, 'agent-1'))).toBe('11.5k · 1 calls · 1 running');
+    expect(row2(nodeFor(container, 'agent-2'))).toBe('2.0k · 1 calls');
+
+    // ...and it is `nodeSubText`, imported, so the drawn string and the width
+    // reserved for it cannot disagree.
+    for (const a of agentsOf(liveSession())) {
+      expect(row2(nodeFor(container, a.id))).toBe(nodeSubText(a));
+    }
+  });
+
+  it('prints an em-dash, never 0, for an engine that reports no burn', () => {
+    const noBurn = agent({
+      id: 'root',
+      kind: 'main',
+      label: 'main',
+      spawnDepth: 0,
+      burn: undefined,
+      children: [tool({ id: 't1', inputPreview: 'x' })],
+    });
+    const container = render({
+      session: liveSession({ root: noBurn, spawnEdges: [], parked: [] }),
+    });
+    expect(row2(nodeFor(container, 'root'))).toBe(`${EM_DASH} · 1 calls`);
+    expect(row2(nodeFor(container, 'root'))).not.toContain('0 ·');
+  });
+
+  it('marks active, ended, selected and root, each on its own attribute', () => {
+    const live = render({ session: liveSession(), selectedNodeId: 'agent-1' });
+    expect(nodeFor(live, 'root').dataset['active']).toBe('true');
+    expect(nodeFor(live, 'agent-1').dataset['selected']).toBe('true');
+    expect(nodeFor(live, 'agent-1').getAttribute('aria-current')).toBe('true');
+    expect(nodeFor(live, 'agent-2').dataset['selected']).toBe('false');
+    expect(one(live, TESTID.nucleus).classList.contains('is-root')).toBe(true);
+
+    const settled = render({ session: liveSession({ root: settle(liveSession().root) }) });
+    for (const node of treeNodes(settled)) expect(node.dataset['active']).toBe('false');
+  });
+
+  it('carries a stylesheet rule for each of the four node states', () => {
+    // CSS cannot import a TypeScript name, so each of these is spelled a
+    // second time in the stylesheet. Checking the bundle is what stops a
+    // rename from switching the styling off while every DOM assertion passes.
+    for (const rule of [
+      "[data-active='true']",
+      "[data-active='false']",
+      "[data-selected='true']",
+      '.is-root',
+    ]) {
+      expect(bundle).toContain(rule);
+    }
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * Tool dots
+ * ------------------------------------------------------------------------ */
+
+describe('tool dots', () => {
+  it('draws one dot per call, in transcript order, at spawnDotPos', () => {
     const state = liveSession();
     const container = render({ session: state });
-    const ids = [...(container.querySelector('g.nodes')?.children ?? [])].map(
-      (el) => (el as HTMLElement).dataset['agentId'] ?? (el as HTMLElement).dataset['toolId'],
+    const rootPlacement = treeLayout(state, state.root.id).find((p) => p.id === 'root');
+    expect(rootPlacement).toBeDefined();
+
+    const rootTools = state.root.children.filter((c): c is ToolNode => !isAgentNode(c));
+    expect(rootTools.map((t) => t.id)).toStrictEqual(['tool-read', 'tool-agent-1']);
+
+    const drawn = dots(container).filter((d) => rootTools.some((t) => t.id === d.dataset['toolId']));
+    expect(drawn.map((d) => d.dataset['toolId'])).toStrictEqual(['tool-read', 'tool-agent-1']);
+
+    rootTools.forEach((t, i) => {
+      const at = spawnDotPos(
+        rootPlacement as { x: number; y: number; w: number },
+        rootTools.length,
+        i,
+      );
+      const bud = drawn[i]?.querySelector('circle.bud');
+      expect({
+        cx: Number(bud?.getAttribute('cx')),
+        cy: Number(bud?.getAttribute('cy')),
+        r: Number(bud?.getAttribute('r')),
+      }).toStrictEqual({ cx: at.x, cy: at.y, r: 4 });
+    });
+  });
+
+  it('pins the dot row to literal numbers: centred on the node, pitched at 13', () => {
+    const container = render({ session: liveSession() });
+    const read = dots(container).find((d) => dataOf(d) === 'tool-read');
+    const spawn = dots(container).find((d) => dataOf(d) === 'tool-agent-1');
+    // root is x 14.5 w 168 y 0, so the row centre is 98.5 and two dots sit
+    // 6.5 either side of it, on the row at y = 0 + 52 + 11.
+    expect(read?.querySelector('circle.bud')?.getAttribute('cx')).toBe('92');
+    expect(read?.querySelector('circle.bud')?.getAttribute('cy')).toBe('63');
+    expect(spawn?.querySelector('circle.bud')?.getAttribute('cx')).toBe('105');
+    expect(Number(spawn?.querySelector('circle.bud')?.getAttribute('cx')) -
+      Number(read?.querySelector('circle.bud')?.getAttribute('cx'))).toBe(SPAWN_DOT_GAP);
+  });
+
+  function dataOf(el: HTMLElement): string | undefined {
+    return el.dataset['toolId'];
+  }
+
+  it('says the status on the dot and the name ONLY on hover', () => {
+    const container = render({ session: liveSession() });
+    const byStatus = new Map(dots(container).map((d) => [d.dataset['toolId'], d.dataset['status']]));
+    expect(byStatus.get('tool-read')).toBe('done');
+    expect(byStatus.get('tool-agent-2')).toBe('running');
+    expect(byStatus.get('tool-bash')).toBe('error');
+
+    // The name is in a `<title>` and nowhere else: no `<text>` on the dot at
+    // any zoom. A row of labelled dots under a 200-unit node is unreadable.
+    const bash = dots(container).find((d) => d.dataset['toolId'] === 'tool-bash');
+    expect(bash?.querySelector('title')?.textContent).toContain('Bash');
+    expect(bash?.querySelector('text')).toBeNull();
+  });
+
+  it('draws a spawning call HOLLOW, and only a spawning call', () => {
+    const state = liveSession();
+    const spawning = new Set((state.spawnEdges ?? []).map((e) => e.toolUseId));
+    expect(spawning).toEqual(new Set(['tool-agent-1', 'tool-agent-2']));
+    const container = render({ session: state });
+    for (const dot of dots(container)) {
+      expect(dot.dataset['spawns']).toBe(String(spawning.has(dot.dataset['toolId'] ?? '')));
+    }
+    expect(bundle).toContain("[data-spawns='true']");
+  });
+
+  it('caps the row at 24: the LAST 23 calls and a +N glyph in dot 0’s place', () => {
+    const state = busySession(30);
+    const container = render({ session: state });
+
+    const drawn = dots(container);
+    expect(drawn).toHaveLength(23);
+    // The LAST 23: t-7 .. t-29. What is happening now is at the end.
+    expect(drawn.map((d) => d.dataset['toolId'])).toStrictEqual(
+      Array.from({ length: 23 }, (_, i) => `t-${String(i + 7)}`),
     );
 
-    const expected: string[] = [];
-    const walk = (node: AgentNode): void => {
-      expected.push(node.id);
-      // Agents only: tool calls are no longer drawn, so they are no longer in
-      // the DOM order there is anything to assert about.
-      for (const child of node.children) if (isAgentNode(child)) walk(child);
-    };
-    walk(state.root);
-    expect(ids).toStrictEqual(expected);
+    const glyph = one(container, 'tool-dot-overflow');
+    expect(glyph.dataset['count']).toBe('7');
+    expect(glyph.textContent).toBe('+7');
 
-    // ...and that order is NOT the geometric one, so the assertion above is
-    // distinguishing something rather than restating the geometry.
-    //
-    // Checked on BOTH axes, and passing if EITHER differs. An earlier version
-    // sorted by x alone and went red here: for this fixture the x order and
-    // the tree order coincide, so the control asserted a coincidence rather
-    // than a property. A control that depends on which axis you happened to
-    // pick is not a control. If both axes ever match tree order this fails,
-    // which is correct - it would mean this fixture cannot distinguish the
-    // two orders and the test above needs a different session, not a looser
-    // assertion.
-    const layout = sessionLayout(state);
-    const coordOf = (id: string, axis: "x" | "y"): number =>
-      layout.cells.get(id)?.[axis] ?? layout.dots.get(id)?.[axis] ?? Number.POSITIVE_INFINITY;
-    const byX = [...expected].sort((a, b) => coordOf(a, "x") - coordOf(b, "x"));
-    const byY = [...expected].sort((a, b) => coordOf(a, "y") - coordOf(b, "y"));
-    const differs =
-      JSON.stringify(byX) !== JSON.stringify(expected) ||
-      JSON.stringify(byY) !== JSON.stringify(expected);
-    expect(differs, "neither axis distinguishes tree order for this fixture").toBe(true);
+    // The glyph sits at index 0 of a 24-wide row, and the first drawn dot at
+    // index 1 — so the row still reads left to right in time.
+    const placement = treeLayout(state, 'root').find((p) => p.id === 'root');
+    const at0 = spawnDotPos(placement as { x: number; y: number; w: number }, 24, 0);
+    const at1 = spawnDotPos(placement as { x: number; y: number; w: number }, 24, 1);
+    expect(Number(glyph.getAttribute('x'))).toBe(at0.x);
+    expect(Number(drawn[0]?.querySelector('circle.bud')?.getAttribute('cx'))).toBe(at1.x);
+  });
+
+  it('keeps the COUNTS exact on row 2 while the row is capped', () => {
+    // The cap is a drawing budget. A number it changed would be a number the
+    // user cannot trust, which is worse than a row that says "+7".
+    const container = render({ session: busySession(30) });
+    expect(row2(nodeFor(container, 'root'))).toContain('30 calls');
+    expect(dots(container)).toHaveLength(23);
+  });
+
+  it('draws every dot when there are exactly 24 — the cap is strictly above', () => {
+    const container = render({ session: busySession(24) });
+    expect(dots(container)).toHaveLength(24);
+    expect(all(container, 'tool-dot-overflow')).toHaveLength(0);
+    expect(row2(nodeFor(container, 'root'))).toContain('24 calls');
   });
 });
 
@@ -410,50 +678,36 @@ describe('the session interior (C7.1)', () => {
  * ------------------------------------------------------------------------ */
 
 describe('the filament (C7.4)', () => {
-  it('draws exactly one filament per spawn edge, carrying both halves of the key', () => {
+  it('draws exactly one per spawn edge, carrying both halves of the key', () => {
     const state = liveSession();
     const edges = state.spawnEdges ?? [];
     expect(edges.length).toBeGreaterThan(0);
     const container = render({ session: state });
-    const drawn = filaments(container).map((f) => ({
-      toolUseId: f.dataset['toolUseId'],
-      agentId: f.dataset['agentId'],
-    }));
-    expect(drawn).toStrictEqual(
-      edges.map((e) => ({ toolUseId: e.toolUseId, agentId: e.agentId })),
-    );
+    expect(
+      filaments(container).map((f) => ({
+        toolUseId: f.dataset['toolUseId'],
+        agentId: f.dataset['agentId'],
+      })),
+    ).toStrictEqual(edges.map((e) => ({ toolUseId: e.toolUseId, agentId: e.agentId })));
   });
 
-  it('starts at the SPAWNING AGENT and ends on the SPAWNED cell', () => {
-    // Anchored cell-to-cell since the tool dots stopped being drawn. The join
-    // itself is unchanged — the filament still comes from a `spawnEdges` entry
-    // carrying both halves of the key, and the test below still proves no line
-    // is drawn without one. Only the point it starts FROM moved.
-    const state = liveSession();
-    const layout = sessionLayout(state);
-    const container = render({ session: state });
-    for (const edge of state.spawnEdges ?? []) {
-      const from = layout.cells.get(edge.parentNodeId);
-      const to = layout.cells.get(edge.agentId);
-      expect(from).toBeDefined();
-      expect(to).toBeDefined();
-      const path =
-        filaments(container).find((f) => f.dataset['agentId'] === edge.agentId) ?? undefined;
-      const d = path?.getAttribute('d') ?? '';
-      expect(d.startsWith(`M ${from?.x} ${from?.y} `)).toBe(true);
-      // The far end stops on the child's membrane, so it is within R of the
-      // cell centre and nowhere near any other cell.
-      const end = d.slice(d.lastIndexOf('Q')).split(' ').slice(3).map(Number);
-      const distance = Math.hypot((end[0] ?? 0) - (to?.x ?? 0), (end[1] ?? 0) - (to?.y ?? 0));
-      expect(distance).toBeCloseTo(to?.R ?? 0, 2);
-    }
+  it('runs from the spawning DOT’s bottom to the child’s TOP CENTRE, as a cubic', () => {
+    // The literal path, written out. The dot for `tool-agent-1` is at
+    // (105, 63) and its radius is 4; `agent-1` is at x 0 w 197 y 164, so the
+    // top centre is (98.5, 164) and the control row is at (63 + 164) / 2.
+    const container = render({ session: liveSession() });
+    const first = filaments(container).find((f) => f.dataset['agentId'] === 'agent-1');
+    expect(first?.getAttribute('d')).toBe('M 105 67 C 105 113.5 98.5 113.5 98.5 164');
+
+    const second = filaments(container).find((f) => f.dataset['agentId'] === 'agent-2');
+    expect(second?.getAttribute('d')).toBe('M 98.5 231 C 98.5 277.5 98.5 277.5 98.5 328');
   });
 
   it('DERIVATION: the same tree with no spawn edges draws no filament at all', () => {
     // The load-bearing negative. `ToolNode` has no `children`, so the spawn
     // relationship exists ONLY in `spawnEdges`; a renderer that inferred it
-    // from adjacency, from `parentAgentId` or from proximity would still draw
-    // lines here. The cells are identical either way, so this isolates the
+    // from adjacency, from tree order or from proximity would still draw lines
+    // here. The nodes are identical either way, so this isolates the
     // derivation rather than the drawing.
     const withEdges = liveSession();
     const withoutEdges = liveSession({ spawnEdges: [] });
@@ -461,19 +715,18 @@ describe('the filament (C7.4)', () => {
     const b = render({ session: withoutEdges });
     expect(filaments(a).length).toBe((withEdges.spawnEdges ?? []).length);
     expect(filaments(b)).toHaveLength(0);
-    expect(cells(b).length).toBeGreaterThan(0);
+    expect(treeNodes(b).length).toBe(treeNodes(a).length);
   });
 
-  it('draws nothing for an edge whose parent cell is not placed', () => {
-    // Half a key is not a key. An edge naming a `tool_use` id the layout never
-    // placed — elided, duplicated away, or simply absent — draws no filament
-    // rather than a line from somewhere plausible.
+  it('draws nothing for an edge whose spawning dot is not drawn', () => {
+    // Half a key is not a key. An edge naming a `tool_use` id that is in no
+    // drawn row draws no curve rather than one from somewhere plausible.
     const state = liveSession({
       spawnEdges: [
         {
           toolUseId: 'toolu_NOT_IN_THIS_TREE',
           agentId: 'agent-1',
-          parentNodeId: 'agent-THAT-IS-NOT-PLACED',
+          parentNodeId: 'root',
           depth: 1,
           recordedDepth: 1,
         },
@@ -482,33 +735,42 @@ describe('the filament (C7.4)', () => {
     const container = render({ session: state });
     expect(filaments(container)).toHaveLength(0);
     // ...and the agent is still drawn: it is in the tree, it just hangs
-    // unattached on this surface.
-    expect(cellFor(container, 'agent-1')).toBeDefined();
+    // unjoined on this surface.
+    expect(nodeFor(container, 'agent-1')).toBeDefined();
   });
 
-  it('flows while the CHILD is running and is static once it is done', () => {
-    const running = liveSession();
-    const runningChild = agentsOf(running).find((a) => a.id === 'agent-1');
-    expect(runningChild?.status).toBe('running');
-    const a = render({ session: running });
-    const live = filaments(a).find((f) => f.dataset['agentId'] === 'agent-1');
-    expect(live?.dataset['flowing']).toBe('true');
-    expect(live?.classList.contains(ANIMATED_CLASSES[2])).toBe(true);
+  it('is live while the child is active and dim once it has ended', () => {
+    const a = render({ session: liveSession() });
+    for (const f of filaments(a)) {
+      expect(f.dataset['state']).toBe('live');
+      expect(f.dataset['flowing']).toBe('true');
+      expect(f.classList.contains(ANIMATED_CLASSES[2])).toBe(true);
+    }
 
-    const settled = liveSession({ root: settle(liveSession().root), liveness: 'ended' });
-    const b = render({ session: settled });
+    const b = render({ session: liveSession({ root: settle(liveSession().root) }) });
+    expect(filaments(b).length).toBeGreaterThan(0);
     for (const f of filaments(b)) {
+      expect(f.dataset['state']).toBe('dim');
       expect(f.dataset['flowing']).toBe('false');
       expect(f.classList.contains(ANIMATED_CLASSES[2])).toBe(false);
     }
+    expect(bundle).toContain("[data-state='dim']");
+  });
+
+  it('paints UNDER the nodes: the filament group precedes the node group', () => {
+    const container = render({ session: liveSession() });
+    const stage = one(container, TESTID.canvasStage);
+    const classes = [...stage.children].map((el) => el.getAttribute('class'));
+    expect(classes.indexOf('filaments')).toBeLessThan(classes.indexOf('nodes'));
+    expect(classes.indexOf('filaments')).toBe(0);
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * C7.4 — the parked graft: refuse, don't guess, visualized
+ * G3 — the parked rail
  * ------------------------------------------------------------------------ */
 
-describe('parked grafts (C7.4, G3)', () => {
+describe('the parked rail (C7.4, G3)', () => {
   it('renders a parked agent that has NO NODE IN THE TREE', () => {
     const state = parkedSession();
     const parked = state.parked ?? [];
@@ -519,55 +781,75 @@ describe('parked grafts (C7.4, G3)', () => {
       expect(flatten(state.root).map((n) => n.id)).not.toContain(entry.agentId);
     }
     const container = render({ session: state });
-    expect(parkedCells(container).map((c) => c.dataset['agentId'])).toStrictEqual(
+    expect(parkedNodes(container).map((c) => c.dataset['agentId'])).toStrictEqual(
       parked.map((p) => p.agentId),
     );
   });
 
-  it('renders it dash-membraned, with the contract class', () => {
-    const container = render({ session: parkedSession() });
-    const cell = parkedCells(container)[0];
-    expect(cell?.classList.contains(PARKED_CLASS)).toBe(true);
-    expect(membraneOf(cell as HTMLElement).classList.contains(PARKED_CLASS)).toBe(true);
-  });
-
-  it('hangs a dangling stub labelled "awaiting attribution"', () => {
-    const container = render({ session: parkedSession() });
-    const stub = one(container, TESTID.parkedStub);
-    expect(stub.getAttribute('d')).toMatch(/^M -?[\d.]+ -?[\d.]+ l -?[\d.]+ -?[\d.]+$/);
-    expect(parkedCells(container)[0]?.textContent).toContain('awaiting attribution');
-  });
-
-  it('NEVER attaches it: no filament reaches a parked agent', () => {
-    const container = render({ session: parkedSession() });
-    const parkedIds = (parkedSession().parked ?? []).map((p) => p.agentId);
-    for (const f of filaments(container)) {
-      expect(parkedIds).not.toContain(f.dataset['agentId']);
-    }
-  });
-
-  it('places it at the layout’s parked coordinates, not at a plausible parent', () => {
+  it('puts the rail at maxNodeX + 64, with its rule 24 to the left', () => {
     const state = parkedSession();
-    const layout = sessionLayout(state);
+    const placed = treeLayout(state, state.root.id).filter((p) => !p.hidden);
+    const maxNodeX = Math.max(...placed.map((p) => p.x + p.w));
+    expect(maxNodeX).toBe(197);
+
     const container = render({ session: state });
-    for (const [agentId, placement] of layout.parked) {
-      const cell = cellFor(container, agentId);
-      expect(membraneOf(cell).getAttribute('d')).toBe(
-        blobPath(placement.x, placement.y, placement.R, hashSessionId(agentId)),
-      );
-    }
-    // Disjointness, from this side: a parked id is in neither `cells` nor the
-    // in-tree cell set the renderer drew.
-    for (const agentId of layout.parked.keys()) {
-      expect(layout.cells.has(agentId)).toBe(false);
-      expect(cells(container).map((c) => c.dataset['agentId'])).not.toContain(agentId);
-    }
+    const rail = one(container, 'parked-rail');
+    expect(rail.dataset['x']).toBe(String(maxNodeX + 64));
+    expect(one(container, 'parked-rail-rule').getAttribute('d')).toContain(
+      `M ${String(maxNodeX + 64 - 24)} `,
+    );
+    expect(one(container, 'parked-rail-label').textContent).toBe('PARKED · not guessed');
+    expect(one(container, 'parked-rail-label').getAttribute('y')).toBe('-4');
   });
 
-  it('never animates: a parked cell has no status to be running', () => {
+  it('stacks items at 8 + i·64 and shows the STABLE CODE on each', () => {
+    const state = parkedSession({
+      parked: [
+        { agentId: 'p0', code: 'noMatchingToolUse', reason: 'r0' },
+        { agentId: 'p1', code: 'ambiguousJoinKey', reason: 'r1' },
+        { agentId: 'p2', code: 'taskWithoutChild', reason: 'r2' },
+      ],
+    });
+    const container = render({ session: state });
+    const items = parkedNodes(container);
+    expect(items).toHaveLength(3);
+    items.forEach((item, i) => {
+      expect(boxOf(item).getAttribute('y')).toBe(String(8 + i * (NODE_H + 12)));
+      expect(boxOf(item).getAttribute('width')).toBe(String(NODE_W_MIN));
+    });
+    expect(items.map((i) => i.dataset['parkCode'])).toStrictEqual([
+      'noMatchingToolUse',
+      'ambiguousJoinKey',
+      'taskWithoutChild',
+    ]);
+    // The code is on the FACE of the item, not only in an attribute: a refusal
+    // the user cannot read is a refusal that looks like a bug.
+    expect(row2(items[0] as HTMLElement)).toContain('noMatchingToolUse');
+    expect(items[0]?.textContent).toContain('awaiting attribution');
+  });
+
+  it('renders it dash-bordered, with the contract class, and NEVER attached', () => {
     const container = render({ session: parkedSession() });
-    const cell = parkedCells(container)[0] as HTMLElement;
-    expect(animated(cell)).toHaveLength(0);
+    const item = parkedNodes(container)[0] as HTMLElement;
+    expect(item.classList.contains(PARKED_CLASS)).toBe(true);
+    expect(boxOf(item).classList.contains(PARKED_CLASS)).toBe(true);
+    expect(all(item, TESTID.parkedStub)).toHaveLength(1);
+    for (const f of filaments(container)) {
+      expect(f.dataset['agentId']).not.toBe(item.dataset['agentId']);
+    }
+    expect(animated(item)).toHaveLength(0);
+  });
+
+  it('SHOWS ONLY AT THE SESSION ROOT — a rail beside a subtree would be a guess', () => {
+    const container = render({ session: parkedSession() });
+    expect(parkedNodes(container)).toHaveLength(1);
+    expect(one(container, TESTID.canvas).dataset['parked']).toBe('1');
+
+    dblclick(nodeFor(container, 'agent-1'));
+    expect(one(container, TESTID.canvas).dataset['atSessionRoot']).toBe('false');
+    expect(parkedNodes(container)).toHaveLength(0);
+    expect(all(container, 'parked-rail')).toHaveLength(0);
+    expect(one(container, TESTID.canvas).dataset['parked']).toBe('0');
   });
 
   it('is reachable by keyboard and is not selectable — there is no node to inspect', () => {
@@ -576,201 +858,408 @@ describe('parked grafts (C7.4, G3)', () => {
       session: parkedSession(),
       onselect: (id: string) => picked.push(id),
     });
-    const cell = parkedCells(container)[0] as HTMLElement;
-    expect(cell.getAttribute('tabindex')).toBe('0');
-    expect(cell.getAttribute('aria-label')).toContain('awaiting attribution');
-    cell.focus();
-    expect(document.activeElement).toBe(cell);
-    click(cell);
-    press(cell, 'Enter');
+    const item = parkedNodes(container)[0] as HTMLElement;
+    expect(item.getAttribute('tabindex')).toBe('0');
+    expect(item.getAttribute('aria-label')).toContain('awaiting attribution');
+    item.focus();
+    expect(document.activeElement).toBe(item);
+    click(item);
+    press(item, 'Enter');
     expect(picked).toStrictEqual([]);
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * C7.4 — refused: an interior element count of exactly 0
+ * DoD 7.6 — focus and re-root
  * ------------------------------------------------------------------------ */
 
-describe('refused interiors render NOTHING (C7.4, G3)', () => {
-  /** Every element inside the canvas root, whatever it is. */
-  function interior(container: HTMLElement): Element[] {
-    return [...one(container, TESTID.canvas).querySelectorAll('*')];
-  }
-
-  it('DIRECTION 1 — the session refuses itself (schemaOk false): zero elements', () => {
-    const state = unsupportedSession();
-    // The layout has already emptied all four maps for this state, so the
-    // count is 0 even before the component decides anything.
-    const layout = sessionLayout(state);
-    expect(layout.cells.size + layout.dots.size + layout.elided.size + layout.parked.size).toBe(0);
+describe('focus / re-root (DoD 7.6)', () => {
+  it('re-roots on double-click at depth 1 and lays the SUBTREE out identically', () => {
+    const state = liveSession();
     const container = render({ session: state });
-    expect(one(container, TESTID.canvas).dataset['refused']).toBe('true');
-    expect(interior(container)).toHaveLength(0);
-    for (const id of [TESTID.nucleus, TESTID.cell, TESTID.dot, TESTID.filament, TESTID.parkedStub]) {
-      expect(all(container, id)).toHaveLength(0);
+    dblclick(nodeFor(container, 'agent-1'));
+
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe('agent-1');
+    const expected = treeLayout(state, 'agent-1').filter((p) => !p.hidden);
+    expect(expected.map((p) => p.id)).toStrictEqual(['agent-1', 'agent-2']);
+    for (const p of expected) {
+      const box = boxOf(nodeFor(container, p.id));
+      expect([Number(box.getAttribute('x')), Number(box.getAttribute('y'))]).toStrictEqual([
+        p.x,
+        p.y,
+      ]);
+    }
+    // `root` is not drawn: the focus view is the subtree, not a highlight.
+    expect(treeNodes(container).map((n) => n.dataset['agentId'])).toStrictEqual([
+      'agent-1',
+      'agent-2',
+    ]);
+    // ...and the focus target becomes depth 0, so it wears the root marker.
+    expect(depthMark(nodeFor(container, 'agent-1'))).toBe('root');
+    expect(depthMark(nodeFor(container, 'agent-2'))).toBe('d1');
+  });
+
+  it('re-roots at depth 2 by the SAME algorithm', () => {
+    const state = liveSession();
+    const container = render({ session: state });
+    dblclick(nodeFor(container, 'agent-1'));
+    dblclick(nodeFor(container, 'agent-2'));
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe('agent-2');
+    expect(treeNodes(container).map((n) => n.dataset['agentId'])).toStrictEqual(['agent-2']);
+    const only = treeLayout(state, 'agent-2').filter((p) => !p.hidden);
+    expect(only).toHaveLength(1);
+    expect(Number(boxOf(nodeFor(container, 'agent-2')).getAttribute('y'))).toBe(only[0]?.y);
+  });
+
+  it('SINGLE CLICK SELECTS and does not re-root', () => {
+    const picked: string[] = [];
+    const container = render({
+      session: liveSession(),
+      onselect: (id: string) => picked.push(id),
+    });
+    click(nodeFor(container, 'agent-1'));
+    expect(picked).toStrictEqual(['agent-1']);
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe('root');
+  });
+
+  it('the breadcrumb equals the parentAgentId chain, ancestor by ancestor', () => {
+    // THE DoD ITEM. The component walks `children` to build the path; this
+    // rebuilds it from `spawnEdges.parentNodeId` — the host's copy of the
+    // sidecar's parent claim — and requires the two to agree. Two independent
+    // derivations of one path is the only form of this check that can fail.
+    const state = liveSession();
+    const parentOf = new Map(
+      (state.spawnEdges ?? []).map((e) => [e.agentId, e.parentNodeId]),
+    );
+    const chainTo = (id: string): string[] => {
+      const out = [id];
+      let cursor = id;
+      for (;;) {
+        const parent = parentOf.get(cursor);
+        if (parent === undefined) break;
+        out.unshift(parent);
+        cursor = parent;
+      }
+      return out;
+    };
+
+    const container = render({ session: state });
+    dblclick(nodeFor(container, 'agent-1'));
+    dblclick(nodeFor(container, 'agent-2'));
+
+    const crumbs = all(container, 'tree-crumb').map((c) => c.dataset['crumbId']);
+    expect(crumbs).toStrictEqual(chainTo('agent-2'));
+    expect(crumbs).toStrictEqual(['root', 'agent-1', 'agent-2']);
+    // The deck crumb leads it, so the path reads `deck / … / …`.
+    expect(one(container, 'tree-crumb-deck').textContent).toBe('deck');
+    expect(all(container, 'tree-crumb')[2]?.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('makes every ancestor crumb clickable, and clicking one re-roots there', () => {
+    const container = render({ session: liveSession() });
+    dblclick(nodeFor(container, 'agent-1'));
+    dblclick(nodeFor(container, 'agent-2'));
+    const crumbs = all(container, 'tree-crumb');
+    expect(crumbs.map((c) => c.tagName)).toStrictEqual(['BUTTON', 'BUTTON', 'BUTTON']);
+    click(crumbs[1] as HTMLElement);
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe('agent-1');
+    click(crumbs[0] as HTMLElement);
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe('root');
+  });
+
+  it('Escape re-roots on the PARENT, and at the session root leaves altitude 1', () => {
+    // WATCHED AT THE WINDOW, not read off the event afterwards. The DOM
+    // standard unsets the stop-propagation flag at the end of dispatch, so
+    // `event.cancelBubble` is false by the time a test can read it — measured
+    // here, and it would have made this assertion vacuous in the direction
+    // that matters. A window listener is what `App.svelte` actually has.
+    let reachedWindow = 0;
+    const watch = (): void => {
+      reachedWindow += 1;
+    };
+    window.addEventListener('keydown', watch);
+    try {
+      let left = 0;
+      const container = render({ session: liveSession(), ondeck: () => (left += 1) });
+      dblclick(nodeFor(container, 'agent-1'));
+      dblclick(nodeFor(container, 'agent-2'));
+      expect(one(container, TESTID.canvas).dataset['rootId']).toBe('agent-2');
+
+      press(nodeFor(container, 'agent-2'), 'Escape');
+      expect(one(container, TESTID.canvas).dataset['rootId']).toBe('agent-1');
+      // Stopped, so `App.svelte`'s window handler does not ALSO walk the
+      // altitude down: one keystroke, one transition.
+      expect(reachedWindow).toBe(0);
+      expect(left).toBe(0);
+
+      press(nodeFor(container, 'agent-1'), 'Escape');
+      expect(one(container, TESTID.canvas).dataset['rootId']).toBe('root');
+      expect(reachedWindow).toBe(0);
+      expect(left).toBe(0);
+
+      // At the session root there is no parent to climb to, so Escape means
+      // "out of the session": `ondeck` fires AND the event is deliberately
+      // left to reach the window, which is where the altitude ladder lives.
+      press(nodeFor(container, 'root'), 'Escape');
+      expect(left).toBe(1);
+      expect(reachedWindow).toBe(1);
+    } finally {
+      window.removeEventListener('keydown', watch);
     }
   });
 
-  it('DIRECTION 2 — a schemaMismatch message on a session the wire still calls live', () => {
-    // The other refusal channel: `schemaOk` is true and the liveness says
-    // `live`, so `sessionLayout` would place the whole tree. The component
-    // refuses independently, which is what makes the count 0 here too.
+  it('RE-ROOTING FITS EXACTLY ONCE, and nothing else fits', () => {
     const state = liveSession();
-    expect(state.schemaOk).toBe(true);
-    expect(sessionLayout(state).cells.size).toBeGreaterThan(0);
-    const container = render({ session: state, refused: true });
-    expect(one(container, TESTID.canvas).dataset['refused']).toBe('true');
-    expect(interior(container)).toHaveLength(0);
-  });
+    const container = render({ session: state, size: { width: 960, height: 640 } });
+    // Nothing has fitted yet: the initial view is the identity transform.
+    expect(stageTransform(container)).toBe(transformAttr({ x: 0, y: 0, k: 1 }));
 
-  it('refuses a parked graft too — a new field is not a hole to leak through', () => {
-    const container = render({ session: parkedSession(), refused: true });
-    expect(interior(container)).toHaveLength(0);
-    expect(parkedCells(container)).toHaveLength(0);
-  });
+    dblclick(nodeFor(container, 'agent-1'));
+    const placed = treeLayout(state, 'agent-1').filter((p) => !p.hidden);
+    const expected = fitTo(
+      boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H }))),
+      { width: 960, height: 640 },
+      TREE_FIT_PADDING,
+      TREE_ZOOM_LIMITS,
+    );
+    expect(stageTransform(container)).toBe(transformAttr(expected));
 
-  it('draws the interior again as soon as the session is not refused', () => {
-    const container = render({ session: liveSession() });
-    expect(interior(container).length).toBeGreaterThan(0);
+    // A plain selection does not fit, so the view a user framed stays framed.
+    click(nodeFor(container, 'agent-2'));
+    expect(stageTransform(container)).toBe(transformAttr(expected));
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * C7.3 — the state matrix, interior rows
+ * Collapse
  * ------------------------------------------------------------------------ */
 
-describe('tool state rows (C7.3), now carried by the agent stats line', () => {
-  // THE TOOL DOTS ARE GONE, by the user's decision on 2026-08-21 after seeing
-  // a real session: at R2 scale the arcs read as noise, not structure.
-  //
-  // C7.3's three tool rows did not disappear with them — they moved UP to the
-  // agent that owns the calls. The cell's stats line carries the counts, and
-  // an agent whose tool is running is itself running, so the motion channel
-  // still says "happening now" with a membrane instead of a dot. Per-action
-  // detail lives in the inspector, which lists every action by description.
-  //
-  // These assertions are deliberately written against the NEW encoding rather
-  // than deleted: a row of the state matrix with no test is a row nobody is
-  // holding anyone to.
+describe('collapse', () => {
+  it('defaults to no collapse depth at all', () => {
+    const container = render({ session: liveSession() });
+    expect(one(container, TESTID.canvas).dataset['collapseDepth']).toBe('Infinity');
+    expect(one(container, TESTID.canvas).dataset['autoCollapsed']).toBe('false');
+    expect(all(container, TESTID.elidedBadge)).toHaveLength(0);
+  });
 
-  function statsFor(container: HTMLElement, agentId: string): string {
-    const cell = [...all(container, TESTID.cell), ...all(container, TESTID.nucleus)].find(
-      (el) => el.dataset['agentId'] === agentId,
-    );
-    if (cell === undefined) throw new Error(`no cell for ${agentId}`);
-    return cell.querySelector('.stats')?.textContent ?? '';
+  it('K sets depth 2, draws a +N badge, and the badge RE-ROOTS on its node', () => {
+    const state = hugeSession();
+    const container = render({ session: state, collapseDepth: undefined });
+    press(one(container, TESTID.nucleus), 'k');
+    expect(one(container, TESTID.canvas).dataset['collapseDepth']).toBe(String(COLLAPSE_DEPTH));
+
+    // Depth-2 nodes have children and are not drawing them: 1 + 7 + 49.
+    expect(treeNodes(container)).toHaveLength(57);
+    const badges = all(container, TESTID.elidedBadge);
+    expect(badges).toHaveLength(49);
+    expect(badges[0]?.dataset['count']).toBe('7');
+    expect(badges[0]?.textContent).toBe('+7 ▾');
+
+    const owner = badges[0]?.closest(`[data-testid="${TESTID.cell}"]`) as HTMLElement;
+    const ownerId = owner.dataset['agentId'];
+    click(badges[0] as HTMLElement);
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe(ownerId);
+  });
+
+  it('auto-collapses above AUTO_COLLAPSE_NODES and SAYS SO in the status line', () => {
+    const state = hugeSession();
+    expect(visibleNodeCount(state, 'root')).toBe(400);
+    expect(visibleNodeCount(state, 'root')).toBeGreaterThan(AUTO_COLLAPSE_NODES);
+    expect(autoCollapseDepth(state, 'root')).toBe(COLLAPSE_DEPTH);
+
+    const container = render({ session: state });
+    expect(one(container, TESTID.canvas).dataset['autoCollapsed']).toBe('true');
+    expect(treeNodes(container)).toHaveLength(57);
+    const status = one(container, 'tree-status').textContent ?? '';
+    expect(status).toContain('automatically');
+    expect(status).toContain('57 of 400 nodes');
+    expect(status).toContain('343 hidden');
+  });
+
+  it('does NOT auto-collapse a tree at the limit — the rule is strictly greater', () => {
+    const state = liveSession();
+    expect(visibleNodeCount(state, 'root')).toBeLessThanOrEqual(AUTO_COLLAPSE_NODES);
+    const container = render({ session: state });
+    expect(one(container, TESTID.canvas).dataset['autoCollapsed']).toBe('false');
+    expect(one(container, 'tree-status').textContent).toBe('3 of 3 nodes');
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 7.5 — the pulse rule, with its negative control
+ * ------------------------------------------------------------------------ */
+
+describe('the pulse rule (DoD 7.5, C7.6)', () => {
+  /** The ids of the nodes carrying the pulse. */
+  function pulsing(root: ParentNode): string[] {
+    return all(root, 'tree-pulse')
+      .filter((el) => el.classList.contains(ANIMATED_CLASSES[0]))
+      .map((el) => (el.closest('[data-agent-id]') as HTMLElement).dataset['agentId'] ?? '')
+      .sort();
   }
 
-  it('no tool dot is drawn anywhere, at any status', () => {
+  it('pulses EXACTLY the nodes with an in-flight tool or a live cursor', () => {
     const container = render({ session: liveSession() });
-    expect(all(container, TESTID.dot)).toHaveLength(0);
+    expect(pulsing(container)).toStrictEqual(['agent-1', 'agent-2', 'root']);
+    for (const node of treeNodes(container)) {
+      expect(all(node, 'tree-pulse').length > 0).toBe(node.dataset['active'] === 'true');
+    }
   });
 
-  it('running -> the owning agent says so, and animates', () => {
-    // Whichever agent owns the running call — found by property so the test
-    // does not encode which fixture node happens to be running today.
+  it('pulses an agent whose OWN status is done while a tool is still running', () => {
+    // The "in-flight tool" half, isolated: nothing about this agent's own
+    // status says anything is happening, and something is.
     const state = liveSession();
-    const container = render({ session: state });
-    const running = [...all(container, TESTID.cell), ...all(container, TESTID.nucleus)].filter(
-      (el) => el.dataset['status'] === 'running',
-    );
-    expect(running.length).toBeGreaterThan(0);
-    const withRunningStat = running.filter((el) =>
-      (el.querySelector('.stats')?.textContent ?? '').includes('running'),
-    );
-    expect(withRunningStat.length).toBeGreaterThan(0);
-    expect(animated(withRunningStat[0] as HTMLElement).length).toBeGreaterThan(0);
-  });
-
-  it('error -> the owning agent counts it, and keeps counting it when settled', () => {
-    const live = render({ session: liveSession() });
-    const owner = [...all(live, TESTID.cell), ...all(live, TESTID.nucleus)]
-      .map((el) => el.querySelector('.stats')?.textContent ?? '')
-      .filter((text) => text.includes('error'));
-    expect(owner.length).toBeGreaterThan(0);
-  });
-
-  it('an agent with no tool calls says so rather than showing nothing', () => {
-    const bare = liveSession({
-      root: agent({ id: 'root', kind: 'main', label: 'main', children: [] }),
-      spawnEdges: [],
+    const stalled = agent({
+      id: 'root',
+      kind: 'main',
+      label: 'main',
+      status: 'done',
+      spawnDepth: 0,
+      children: [tool({ id: 't1', status: 'running', inputPreview: 'x' })],
     });
-    const container = render({ session: bare });
-    expect(statsFor(container, 'root')).toBe('no actions yet');
+    const container = render({ session: { ...state, root: stalled, spawnEdges: [], parked: [] } });
+    expect(nodeFor(container, 'root').dataset['status']).toBe('done');
+    expect(pulsing(container)).toStrictEqual(['root']);
   });
 
-  it('the thorn PERSISTS after everything else has settled', () => {
-    const settled = settle(liveSession().root);
-    // Put the error back: `settle` is what a finished session looks like, and
-    // an errored tool call stays errored in one.
-    const state = liveSession({ liveness: 'ended', root: settled });
-    const withError = liveSession({
-      liveness: 'ended',
-      root: {
-        ...settled,
-        children: settled.children.map((c) =>
-          isAgentNode(c)
-            ? {
-                ...c,
-                children: c.children.map((g) =>
-                  isAgentNode(g)
-                    ? {
-                        ...g,
-                        children: g.children.map((t) =>
-                          isAgentNode(t) ? t : { ...t, status: 'error' as const },
-                        ),
-                      }
-                    : g,
-                ),
-              }
-            : c,
-        ),
-      },
-    });
-    expect(toolsOf(state).some((t) => t.status === 'error')).toBe(false);
-    const container = render({ session: withError });
-    // The error is still COUNTED once everything else has settled: an error
-    // that stops being reported when the session ends is an error the user
-    // never sees. It moved from a thorn to the owning cell's stats line.
-    const stats = [...container.querySelectorAll(".stats")]
-      .map((el) => el.textContent ?? "")
-      .filter((t) => t.includes("error"));
-    expect(stats.length).toBeGreaterThan(0);
+  it('NEGATIVE CONTROL: everything done and the session ended -> zero pulses', () => {
+    const settled = liveSession({ liveness: 'ended', root: settle(liveSession().root) });
+    const container = render({ session: settled });
+    // The control is only worth anything if there was something to animate.
+    expect(treeNodes(container).length + dots(container).length).toBeGreaterThan(0);
+    expect(filaments(container).length).toBeGreaterThan(0);
+    expect(pulsing(container)).toStrictEqual([]);
     expect(animated(container)).toHaveLength(0);
   });
-});
 
-describe('agent status is the membrane colour of its cell (C7.3)', () => {
-  for (const status of ['running', 'done', 'error'] as const) {
-    it(`marks a ${status} agent's cell ${status}`, () => {
-      const state = liveSession({
-        root: { ...liveSession().root, status },
-      });
-      const container = render({ session: state });
-      expect(one(container, TESTID.nucleus).dataset['status']).toBe(status);
-    });
-  }
+  it('never pulses a parked node — nothing is happening in it that we can see', () => {
+    const container = render({ session: parkedSession() });
+    const item = parkedNodes(container)[0] as HTMLElement;
+    expect(all(item, 'tree-pulse')).toHaveLength(0);
+    expect(animated(item)).toHaveLength(0);
+  });
 
-  it('carries a stylesheet rule for each of the three status rows', () => {
-    for (const status of ['running', 'done', 'error']) {
-      expect(bundle).toContain(`[data-status='${status}']`);
+  it('SWAPS the pulse for a STATIC RING under prefers-reduced-motion', () => {
+    const container = render({ session: liveSession(), reducedMotion: true });
+    expect(one(container, TESTID.canvas).classList.contains(REDUCED_MOTION_CLASS)).toBe(true);
+    // The ring is still drawn on every active node — the semantics survive.
+    const rings = all(container, 'tree-pulse');
+    expect(rings).toHaveLength(3);
+    for (const ring of rings) {
+      expect(ring.dataset['static']).toBe('true');
+      expect(ring.classList.contains(ANIMATED_CLASSES[0])).toBe(false);
+    }
+    expect(pulsing(container)).toStrictEqual([]);
+  });
+
+  it('leaves the reduced-motion class off when the user did not ask for it', () => {
+    const container = render({ session: liveSession() });
+    expect(one(container, TESTID.canvas).classList.contains(REDUCED_MOTION_CLASS)).toBe(false);
+    expect(all(container, 'tree-pulse')[0]?.dataset['static']).toBe('false');
+  });
+
+  it('carries the stylesheet rules the swap depends on', () => {
+    // CSS cannot import a TypeScript constant, and Svelte PRUNES a scoped rule
+    // it cannot prove is used — which would switch an animation off while
+    // every DOM assertion above still passed.
+    for (const cls of ANIMATED_CLASSES) expect(bundle).toContain(`.${cls}`);
+    expect(bundle).toContain(`.${REDUCED_MOTION_CLASS}`);
+    expect(bundle).toContain('animation:');
+  });
+
+  it('animates nothing that is neither running nor active', () => {
+    const container = render({ session: liveSession() });
+    for (const el of animated(container)) {
+      const owner = el.closest('[data-active], [data-status], [data-flowing]') as HTMLElement | null;
+      const state =
+        owner?.dataset['active'] ?? owner?.dataset['status'] ?? owner?.dataset['flowing'];
+      expect(['running', 'true']).toContain(state);
     }
   });
 });
 
+/* ------------------------------------------------------------------------ *
+ * G3 — refused interiors render NOTHING
+ * ------------------------------------------------------------------------ */
+
+describe('refused sessions render no tree (C7.4, G3)', () => {
+  /** Every interior element, by contract testid. Chrome is not interior. */
+  const INTERIOR = [
+    TESTID.nucleus,
+    TESTID.cell,
+    TESTID.dot,
+    TESTID.filament,
+    TESTID.parkedStub,
+    TESTID.elidedBadge,
+  ] as const;
+
+  function interiorCount(root: ParentNode): number {
+    return INTERIOR.reduce((n, id) => n + all(root, id).length, 0);
+  }
+
+  it('DIRECTION 1 — the session refuses itself (schemaOk false)', () => {
+    const container = render({ session: unsupportedSession() });
+    expect(one(container, TESTID.canvas).dataset['refused']).toBe('true');
+    expect(interiorCount(container)).toBe(0);
+    expect(container.querySelector('svg.field')).toBeNull();
+    expect(one(container, 'tree-status').textContent).toContain('refused');
+  });
+
+  it('DIRECTION 2 — a schemaMismatch on a session the wire still calls live', () => {
+    // The other refusal channel: `schemaOk` is true and the liveness says
+    // `live`, so the layout would place the whole tree. The component refuses
+    // independently, which is what makes the count 0 here too.
+    const state = liveSession();
+    expect(state.schemaOk).toBe(true);
+    expect(treeLayout(state, state.root.id).length).toBeGreaterThan(0);
+    const container = render({ session: state, refused: true });
+    expect(one(container, TESTID.canvas).dataset['refused']).toBe('true');
+    expect(interiorCount(container)).toBe(0);
+  });
+
+  it('refuses the parked rail too — a new surface is not a hole to leak through', () => {
+    const container = render({ session: parkedSession(), refused: true });
+    expect(interiorCount(container)).toBe(0);
+    expect(all(container, 'parked-rail')).toHaveLength(0);
+    expect(one(container, TESTID.canvas).dataset['parked']).toBe('0');
+  });
+
+  it('reports zero on every count attribute the panel reads', () => {
+    const container = render({ session: unsupportedSession() });
+    const canvas = one(container, TESTID.canvas);
+    expect([canvas.dataset['cells'], canvas.dataset['dots'], canvas.dataset['parked']]).toStrictEqual(
+      ['0', '0', '0'],
+    );
+  });
+
+  it('draws the tree again as soon as the session is not refused', () => {
+    const container = render({ session: liveSession() });
+    expect(interiorCount(container)).toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * G2 — degraded
+ * ------------------------------------------------------------------------ */
+
 describe('degraded — hooks silent (C7.3, G2)', () => {
-  it('hollows a running agent’s membrane and only a running one', () => {
+  it('hollows an ACTIVE node’s box and only an active one', () => {
     const container = render({ session: liveSession(), degraded: true });
     expect(one(container, TESTID.canvas).dataset['degraded']).toBe('true');
-    const running = agentsOf(liveSession()).filter((a) => a.status === 'running');
-    expect(running.length).toBeGreaterThan(0);
-    for (const a of running) {
-      expect(membraneOf(cellFor(container, a.id)).classList.contains(HOLLOW_LIVE_CLASS)).toBe(true);
+    for (const node of treeNodes(container)) {
+      expect(node.dataset['livenessInferred']).toBe(node.dataset['active']);
+      expect(boxOf(node).classList.contains(HOLLOW_LIVE_CLASS)).toBe(
+        node.dataset['active'] === 'true',
+      );
     }
-    const settled = liveSession({ root: settle(liveSession().root) });
-    const still = render({ session: settled, degraded: true });
+
+    const settled = render({
+      session: liveSession({ root: settle(liveSession().root) }),
+      degraded: true,
+    });
     expect(
-      [...still.querySelectorAll('*')].filter((el) => el.classList.contains(HOLLOW_LIVE_CLASS)),
+      [...settled.querySelectorAll('*')].filter((el) => el.classList.contains(HOLLOW_LIVE_CLASS)),
     ).toHaveLength(0);
   });
 
@@ -783,140 +1272,114 @@ describe('degraded — hooks silent (C7.3, G2)', () => {
     ).toHaveLength(0);
   });
 
-  it('still animates a running membrane while degraded — inferred, not absent', () => {
+  it('still pulses an active node while degraded — inferred, not absent', () => {
     const container = render({ session: liveSession(), degraded: true });
-    expect(animated(cellFor(container, 'agent-1')).length).toBeGreaterThan(0);
+    expect(animated(nodeFor(container, 'agent-1')).length).toBeGreaterThan(0);
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * C7.5 — the dot cap, and tools with no dot
+ * DoD 7.4 — pan, zoom and fit, at all three views
  * ------------------------------------------------------------------------ */
 
-describe('the dot cap (C7.5), now a layout property only', () => {
-  // The dots are no longer drawn, so DOT_CAP cannot be asserted against the
-  // DOM any more. It is still real and still bounds the layout, so it is
-  // asserted where it now lives — a cap that stopped being checked anywhere
-  // would be a cap that quietly stopped applying.
+describe('pan, zoom and fit (DoD 7.4)', () => {
+  const SIZE = { width: 960, height: 640 };
 
-  it('still caps placed dots and records the remainder, though none are drawn', () => {
-    const many = Array.from({ length: DOT_CAP + 9 }, (_, i) =>
-      tool({ id: `t-${String(i)}`, toolName: 'Bash', inputPreview: 'x' }),
-    );
-    const state = liveSession({
-      root: agent({ id: 'root', kind: 'main', label: 'main', children: many }),
-      spawnEdges: [],
+  /** Mount, then focus down to `rootId`, then put the view back at identity. */
+  function view(state: SessionState, focus: readonly string[]): HTMLElement {
+    const container = render({ session: state, size: SIZE });
+    for (const id of focus) dblclick(nodeFor(container, id));
+    click(one(container, TESTID.canvasReset));
+    expect(stageTransform(container)).toBe(transformAttr({ x: 0, y: 0, k: 1 }));
+    return container;
+  }
+
+  const VIEWS: [string, string[]][] = [
+    ['the tree', []],
+    ['focus at depth 1', ['agent-1']],
+    ['focus at depth 2', ['agent-1', 'agent-2']],
+  ];
+
+  for (const [name, focus] of VIEWS) {
+    describe(name, () => {
+      it('pans on a drag across the empty field', () => {
+        const container = view(liveSession(), focus);
+        const svg = field(container);
+        pointer(svg, 'pointerdown', 400, 300);
+        pointer(svg, 'pointermove', 430, 280);
+        expect(stageTransform(container)).toBe(transformAttr({ x: 30, y: -20, k: 1 }));
+        pointer(svg, 'pointerup', 430, 280);
+        // The drag ended: further movement does not pan.
+        pointer(svg, 'pointermove', 500, 500);
+        expect(stageTransform(container)).toBe(transformAttr({ x: 30, y: -20, k: 1 }));
+      });
+
+      it('zooms ABOUT THE CURSOR, through viewport.zoomAbout, at TREE_ZOOM_LIMITS', () => {
+        const container = view(liveSession(), focus);
+        wheel(field(container), -100, 200, 100);
+        expect(stageTransform(container)).toBe(
+          transformAttr(zoomAbout({ x: 0, y: 0, k: 1 }, 200, 100, 1, TREE_ZOOM_LIMITS)),
+        );
+      });
+
+      it('clamps at TREE_ZOOM_LIMITS rather than zooming forever', () => {
+        const container = view(liveSession(), focus);
+        const svg = field(container);
+        for (let i = 0; i < 40; i += 1) wheel(svg, -100, 200, 100);
+        expect(stageTransform(container)).toContain(`scale(${String(TREE_ZOOM_LIMITS.max)})`);
+        for (let i = 0; i < 80; i += 1) wheel(svg, 100, 200, 100);
+        expect(stageTransform(container)).toContain(`scale(${String(TREE_ZOOM_LIMITS.min)})`);
+      });
+
+      it('fits with 32 px of padding on a double-click on the empty field', () => {
+        const state = liveSession();
+        const container = view(state, focus);
+        dblclick(field(container));
+        const rootId = focus[focus.length - 1] ?? state.root.id;
+        const placed = treeLayout(state, rootId).filter((p) => !p.hidden);
+        expect(stageTransform(container)).toBe(
+          transformAttr(
+            fitTo(
+              boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H }))),
+              SIZE,
+              TREE_FIT_PADDING,
+              TREE_ZOOM_LIMITS,
+            ),
+          ),
+        );
+      });
+
+      it('does not pan when the drag starts on a node', () => {
+        const container = view(liveSession(), focus);
+        const node = one(container, TESTID.nucleus);
+        pointer(node, 'pointerdown', 400, 300);
+        pointer(field(container), 'pointermove', 460, 340);
+        expect(stageTransform(container)).toBe(transformAttr({ x: 0, y: 0, k: 1 }));
+      });
     });
+  }
 
-    const layout = sessionLayout(state);
-    expect(layout.dots.size).toBe(DOT_CAP);
-    expect(layout.elided.get('root')).toBe(9);
-
-    // ...and the canvas draws none of them.
-    const container = render({ session: state });
-    expect(dots(container)).toHaveLength(0);
-  });
-
-  it('reports the whole action count on the cell, uncapped', () => {
-    // The count is what replaced the arc, so it must NOT inherit the arc's
-    // cap: an agent with 57 calls says 57, not 48.
-    const many = Array.from({ length: DOT_CAP + 9 }, (_, i) =>
-      tool({ id: `t-${String(i)}`, toolName: 'Bash', inputPreview: 'x' }),
-    );
-    const state = liveSession({
-      root: agent({ id: 'root', kind: 'main', label: 'main', children: many }),
-      spawnEdges: [],
-    });
-    const container = render({ session: state });
-    const stats = one(container, TESTID.nucleus).querySelector('.stats')?.textContent ?? '';
-    expect(stats).toContain(String(DOT_CAP + 9));
+  it('the transform is a TRANSFORM: panning and zooming move no placement', () => {
+    const state = liveSession();
+    const container = render({ session: state, size: SIZE });
+    const before = treeNodes(container).map((n) => boxOf(n).getAttribute('x'));
+    const svg = field(container);
+    pointer(svg, 'pointerdown', 400, 300);
+    pointer(svg, 'pointermove', 480, 200);
+    wheel(svg, -100, 300, 300);
+    dblclick(svg);
+    expect(treeNodes(container).map((n) => boxOf(n).getAttribute('x'))).toStrictEqual(before);
   });
 });
 
 /* ------------------------------------------------------------------------ *
- * C7.6 — motion is a reserved semantic channel, with its negative control
- * ------------------------------------------------------------------------ */
-
-describe('the motion invariant (C7.6)', () => {
-  it('NEGATIVE CONTROL: everything done and the session ended -> zero animated elements', () => {
-    const state = liveSession({ liveness: 'ended', root: settle(liveSession().root) });
-    const container = render({ session: state });
-    // The control is only worth anything if there was something to animate.
-    expect(cells(container).length + dots(container).length).toBeGreaterThan(0);
-    expect(filaments(container).length).toBeGreaterThan(0);
-    expect(animated(container)).toHaveLength(0);
-  });
-
-  it('animates exactly the running nodes and their filaments', () => {
-    const container = render({ session: liveSession() });
-    for (const el of animated(container)) {
-      const owner = el.closest('[data-status], [data-flowing]') as HTMLElement | null;
-      const state = owner?.dataset['status'] ?? owner?.dataset['flowing'];
-      expect(['running', 'true']).toContain(state);
-    }
-  });
-
-  it('carries only contract classes, and every class it carries is one', () => {
-    // NOT "all three" any more. `is-pulsing` was the running tool dot, and the
-    // dots are gone; it is still live on the DECK's pulse ring, which is a
-    // different surface with its own test. Asserting three here would fail for
-    // a reason that has nothing to do with this component.
-    //
-    // What still matters is the direction that catches a mistake: everything
-    // animating here is a contract class, so the negative control can see it.
-    const container = render({ session: liveSession() });
-    const classes = new Set<string>();
-    for (const el of animated(container)) for (const c of el.classList) classes.add(c);
-    const carried = ANIMATED_CLASSES.filter((c) => classes.has(c));
-    expect(carried.length).toBeGreaterThan(0);
-    for (const c of classes) {
-      if (c.startsWith('is-')) expect(ANIMATED_CLASSES).toContain(c);
-    }
-  });
-
-  it('puts the animation-bearing classes on elements the stylesheet animates', () => {
-    // CSS cannot import a TypeScript constant, so the stylesheet spells these
-    // names a second time. Checking the bundled CSS against the constants is
-    // what stops a rename from silently switching an animation off while the
-    // negative control still passes.
-    // INTERIOR_ANIMATED, not ANIMATED_CLASSES: `is-pulsing` was the running
-    // tool dot, and the dots are gone. It is still live on the DECK pulse ring,
-    // which `deck.test.ts` guards. Asserting it here would fail for a reason
-    // that has nothing to do with this component.
-    for (const cls of INTERIOR_ANIMATED) expect(bundle).toContain(`.${cls}`);
-    expect(bundle).toContain('animation:');
-  });
-});
-
-describe('reduced motion (C7.6, C7.8)', () => {
-  it('puts the reduced-motion class on the canvas root when asked', () => {
-    const container = render({ session: liveSession(), reducedMotion: true });
-    expect(one(container, TESTID.canvas).classList.contains(REDUCED_MOTION_CLASS)).toBe(true);
-  });
-
-  it('leaves the class off when the user did not ask for it', () => {
-    const container = render({ session: liveSession() });
-    expect(one(container, TESTID.canvas).classList.contains(REDUCED_MOTION_CLASS)).toBe(false);
-  });
-
-  it('SWAPS the animation rather than removing the semantics', () => {
-    const container = render({ session: liveSession(), reducedMotion: true });
-    expect(animated(container).length).toBeGreaterThan(0);
-  });
-
-  it('carries a stylesheet rule keyed to the contract class name', () => {
-    expect(bundle).toContain(`.${REDUCED_MOTION_CLASS}`);
-  });
-});
-
-/* ------------------------------------------------------------------------ *
- * C7.8 — accessibility floor, interior level
+ * C7.8 — accessibility floor
  * ------------------------------------------------------------------------ */
 
 describe('accessibility floor (C7.8)', () => {
-  it('makes every cell and dot a real focusable control with a name', () => {
+  it('makes every node and dot a real focusable control with a name', () => {
     const container = render({ session: liveSession() });
-    const controls = [...cells(container), ...all(container, TESTID.nucleus), ...dots(container)];
+    const controls = [...treeNodes(container), ...dots(container)];
     expect(controls.length).toBeGreaterThan(0);
     for (const el of controls) {
       expect(el.getAttribute('role')).toBe('button');
@@ -928,15 +1391,26 @@ describe('accessibility floor (C7.8)', () => {
     }
   });
 
-  it('reports the node id on click', () => {
+  it('reports the node id on click, every time', () => {
     const picked: string[] = [];
     const container = render({
       session: liveSession(),
       onselect: (id: string) => picked.push(id),
     });
-    click(cellFor(container, 'agent-1'));
-    click(cellFor(container, 'agent-1'));
+    click(nodeFor(container, 'agent-1'));
+    click(nodeFor(container, 'agent-1'));
     expect(picked).toStrictEqual(['agent-1', 'agent-1']);
+  });
+
+  it('reports the TOOL id when a dot is picked', () => {
+    const picked: string[] = [];
+    const container = render({
+      session: liveSession(),
+      onselect: (id: string) => picked.push(id),
+    });
+    const bash = dots(container).find((d) => d.dataset['toolId'] === 'tool-bash');
+    click(bash as HTMLElement);
+    expect(picked).toStrictEqual(['tool-bash']);
   });
 
   for (const key of ['Enter', ' ']) {
@@ -946,36 +1420,28 @@ describe('accessibility floor (C7.8)', () => {
         session: liveSession(),
         onselect: (id: string) => picked.push(id),
       });
-      const event = press(cellFor(container, 'agent-1'), key);
+      const event = press(nodeFor(container, 'agent-1'), key);
       expect(picked).toStrictEqual(['agent-1']);
       expect(event.defaultPrevented).toBe(true);
     });
   }
 
-  it('ignores keys that are not an activation, including Escape', () => {
-    // Escape walks the altitudes up and that lives in `Store.escape`, not
-    // here: two owners of one transition is how the two surfaces drift apart.
+  it('ignores keys that are neither an activation nor a navigation', () => {
     const picked: string[] = [];
     const container = render({
       session: liveSession(),
       onselect: (id: string) => picked.push(id),
     });
-    press(cellFor(container, 'agent-1'), 'Escape');
-    press(cellFor(container, 'agent-1'), 'a');
+    press(nodeFor(container, 'agent-1'), 'a');
+    press(nodeFor(container, 'agent-1'), 'ArrowDown');
     expect(picked).toStrictEqual([]);
-  });
-
-  it('marks the store’s selected node current', () => {
-    const container = render({ session: liveSession(), selectedNodeId: 'agent-1' });
-    expect(cellFor(container, 'agent-1').dataset['selected']).toBe('true');
-    expect(cellFor(container, 'agent-1').getAttribute('aria-current')).toBe('true');
-    expect(cellFor(container, 'agent-2').dataset['selected']).toBe('false');
-    expect(cellFor(container, 'agent-2').getAttribute('aria-current')).toBe('false');
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe('root');
   });
 
   it('does not throw when no handler is wired', () => {
     const container = render({ session: liveSession() });
-    expect(() => click(cellFor(container, 'agent-1'))).not.toThrow();
+    expect(() => click(nodeFor(container, 'agent-1'))).not.toThrow();
+    expect(() => dblclick(nodeFor(container, 'agent-1'))).not.toThrow();
   });
 
   it('carries a focus-ring rule rather than relying on the browser default', () => {
@@ -985,26 +1451,42 @@ describe('accessibility floor (C7.8)', () => {
 });
 
 /* ------------------------------------------------------------------------ *
- * The stylesheet seam
+ * Source-level guards
  * ------------------------------------------------------------------------ */
 
-describe('every contract class the interior applies also carries style', () => {
-  // The components build these names from `canvas-contract.ts`, so the DOM
-  // side cannot drift. CSS cannot import a constant, so the stylesheet spells
-  // each name a second time — and Svelte PRUNES a scoped rule it cannot prove
-  // is used, which would silently remove the styling while every DOM assertion
-  // above still passed. The `.` prefix is what makes this a check on the
-  // stylesheet rather than on the contract module bundled beside it.
-  for (const cls of [
-    PARKED_CLASS,
-    HOLLOW_LIVE_CLASS,
-    REDUCED_MOTION_CLASS,
-    ...INTERIOR_ANIMATED,
-  ]) {
-    it(`styles .${cls}`, () => {
-      expect(bundle).toContain(`.${cls}`);
-    });
-  }
+describe('the node is not draggable (DoD)', () => {
+  it('AgentCell.svelte carries no drag handler and no drag state', () => {
+    // A node's position is `treeLayout`'s answer and nothing else's. A drag
+    // handler here would edit a placement, which breaks layout purity, the
+    // goldens, and "a spawn adds, it never reflows" — all three silently.
+    const source = componentSources.find((c) => c.path === 'webview/AgentCell.svelte');
+    expect(source).toBeDefined();
+    const hits = (source?.text.match(/ondrag|dragging/g) ?? []).length;
+    expect(hits).toBe(0);
+  });
+
+  it('nothing on this surface computes a golden-angle spiral any more', () => {
+    // THE NEEDLE IS ASSEMBLED, not written out, and that is not decoration:
+    // the standing check on this package is that `grep -r` for that identifier
+    // over `webview/` returns 0, and a test file spelling it would make the
+    // grep return 1 forever — a guard that breaks the thing it guards.
+    const needle = ['GOLDEN', 'ANGLE'].join('_');
+    for (const { path, text } of componentSources) {
+      expect({ path, hit: text.includes(needle) }).toStrictEqual({ path, hit: false });
+    }
+  });
+
+  it('takes its zoom arithmetic from viewport.ts rather than restating it', () => {
+    // The recorded defect: two viewports, internally consistent, disagreeing
+    // at the seam, with nothing failing. The zoom factor and the limits are
+    // named imports; a component spelling either as a literal is the seam
+    // coming back.
+    const canvas = componentSources.find((c) => c.path === 'webview/SessionCanvas.svelte');
+    expect(canvas?.text).toContain("from './viewport.js'");
+    expect(canvas?.text).toContain('zoomAbout');
+    expect(canvas?.text).toContain('TREE_ZOOM_LIMITS');
+    expect((canvas?.text.match(/1\.1\s*\*\*|\*\s*1\.1|\/\s*1\.1/g) ?? []).length).toBe(0);
+  });
 });
 
 describe('theming (C7.7)', () => {
@@ -1027,5 +1509,145 @@ describe('theming (C7.7)', () => {
         expect({ path, decl }).toStrictEqual({ path, decl: expect.stringContaining('--vscode-') });
       }
     }
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 7.4, the half a standalone mount cannot reach: a real store update
+ * ------------------------------------------------------------------------ */
+
+describe('the transform survives a store update (DoD 7.4)', () => {
+  let app: WebviewHarness;
+
+  beforeAll(async () => {
+    app = await loadHarness();
+  }, 120_000);
+
+  interface Panel {
+    container: HTMLElement;
+    store: ReturnType<WebviewHarness['createStore']>;
+  }
+
+  const panels: (() => void)[] = [];
+
+  function panel(): Panel {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const started = app.start(container, { postMessage: () => {} });
+    panels.push(() => {
+      started.dispose();
+      container.remove();
+    });
+    return { container, store: started.store };
+  }
+
+  afterEach(() => {
+    while (panels.length > 0) panels.pop()?.();
+  });
+
+  it('pans, zooms, takes a diff, and does not move', () => {
+    const { container, store } = panel();
+    app.flushSync(() => {
+      store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    });
+    app.flushSync(() => {
+      store.enterSession('session-live');
+    });
+
+    const svg = container.querySelector('svg.field');
+    expect(svg).not.toBeNull();
+    const stage = one(container, TESTID.canvasStage);
+
+    app.flushSync(() => {
+      (svg as Element).dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, clientX: 400, clientY: 300, button: 0 }),
+      );
+      (svg as Element).dispatchEvent(
+        new MouseEvent('pointermove', { bubbles: true, clientX: 437, clientY: 271, button: 0 }),
+      );
+      (svg as Element).dispatchEvent(
+        new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -100, clientX: 200, clientY: 100 }),
+      );
+    });
+
+    const framed = stage.getAttribute('transform');
+    // The gesture did something: an identity transform here would make the
+    // assertion below true for the wrong reason.
+    expect(framed).not.toBe(transformAttr({ x: 0, y: 0, k: 1 }));
+
+    app.flushSync(() => {
+      store.handleMessage({
+        type: 'diff',
+        sessionId: 'session-live',
+        patch: { tree: [{ op: 'updateAgent', id: 'agent-2', fields: { status: 'done' } }] },
+      });
+    });
+
+    // The diff LANDED — otherwise "the transform did not move" would be a
+    // statement about a render that never happened.
+    expect(nodeFor(container, 'agent-2').dataset['status']).toBe('done');
+    expect(one(container, TESTID.canvasStage).getAttribute('transform')).toBe(framed);
+  });
+
+  it('keeps the focus root across a diff too', () => {
+    const { container, store } = panel();
+    app.flushSync(() => {
+      store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    });
+    app.flushSync(() => {
+      store.enterSession('session-live');
+    });
+    app.flushSync(() => {
+      nodeFor(container, 'agent-1').dispatchEvent(
+        new MouseEvent('dblclick', { bubbles: true, cancelable: true }),
+      );
+    });
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe('agent-1');
+
+    app.flushSync(() => {
+      store.handleMessage({
+        type: 'diff',
+        sessionId: 'session-live',
+        patch: { tree: [{ op: 'updateAgent', id: 'agent-2', fields: { status: 'error' } }] },
+      });
+    });
+    expect(nodeFor(container, 'agent-2').dataset['status']).toBe('error');
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe('agent-1');
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * Widths come from the layout, never from a measurement
+ * ------------------------------------------------------------------------ */
+
+describe('width is the layout’s, and it is a function of the TEXT', () => {
+  it('draws each box at nodeWidth(agent), floor NODE_W_MIN', () => {
+    const state = liveSession();
+    const container = render({ session: state });
+    for (const a of agentsOf(state)) {
+      expect(Number(boxOf(nodeFor(container, a.id)).getAttribute('width'))).toBe(nodeWidth(a));
+      expect(Number(boxOf(nodeFor(container, a.id)).getAttribute('width'))).toBeGreaterThanOrEqual(
+        NODE_W_MIN,
+      );
+    }
+  });
+
+  it('widens for a long label rather than letting the text run out of the box', () => {
+    const wide = agent({
+      id: 'root',
+      kind: 'main',
+      label: 'a-very-long-agent-label-indeed',
+      spawnDepth: 0,
+      children: [],
+    });
+    const narrow = agent({ id: 'root', kind: 'main', label: 'x', spawnDepth: 0, children: [] });
+    const a = render({ session: liveSession({ root: wide, spawnEdges: [], parked: [] }) });
+    const b = render({ session: liveSession({ root: narrow, spawnEdges: [], parked: [] }) });
+    expect(Number(boxOf(nodeFor(a, 'root')).getAttribute('width'))).toBeGreaterThan(
+      Number(boxOf(nodeFor(b, 'root')).getAttribute('width')),
+    );
+    // ...and the drawn label is the truncated one, so the text fits what the
+    // width reserved.
+    expect(row1(nodeFor(a, 'root'))).toHaveLength(LABEL_MAX_CHARS);
   });
 });

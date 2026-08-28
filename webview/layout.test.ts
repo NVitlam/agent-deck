@@ -1,1369 +1,1088 @@
-// The layout engine's whole test story, in the order C7.5 states it:
-// deterministic, incremental, animation-free — plus the structural purity
-// assertion PLAN requires and the golden coordinate suites it names.
+// The layout engine's whole test story: the frozen design's golden tables,
+// reproduced through PRODUCTION code, plus the purity and incrementality
+// properties that constrain how that code is allowed to be written.
 //
 // NODE ENVIRONMENT, deliberately. `layout.ts` never touches a DOM, so running
 // it under jsdom would prove nothing and would hand the code under test a
 // global it is asserted never to reach.
 //
 // Node builtins are imported by their real specifiers. `tsconfig.webview.json`
-// sets `types: []`, which removes node's GLOBALS from this project — so
-// `process.env` is unavailable here and the env var is read through
-// `node:process` instead. The same reason `fixture-render.test.ts` gives.
-// Nothing in this file is reachable from `webview/main.ts`.
+// sets `types: []`, which removes node's GLOBALS from this project, so
+// anything from `process` is imported from `node:process` rather than read off
+// a global. Nothing in this file is reachable from `webview/main.ts`.
 //
-// WHERE THE FIXTURE SUBJECTS COME FROM. Session ids, agent ids and `tool_use`
-// ids are capture artefacts that change on every harvest, so every subject
-// below is selected BY PROPERTY — "the captured session with the deepest spawn
-// chain", "the first synthetic-graft case whose graft parks an agent" — and
-// the path it resolved to is written INTO the golden. A re-harvest that moves
-// the subject therefore shows up as a legible golden diff rather than as a
-// mysterious coordinate change.
+// WHERE THE EXPECTED NUMBERS COME FROM, and why this is evidence rather than a
+// tautology. `webview/goldens/layout/design-tables.json` is the VERBATIM stdout
+// of `node webview/layout.reference.mjs`, the frozen design's own independent
+// implementation of the same arithmetic. This file re-emits those tables from
+// `layout.ts` and compares line for line. The two implementations share no
+// code: `layout.ts` must never import the reference, and the first test below
+// reads `layout.ts`'s own source text to prove it does not. If production
+// imported the reference the comparison would be the reference against itself
+// - passing forever, and exactly as green as a real pass.
 
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { join, relative, resolve } from 'node:path';
-import { env } from 'node:process';
+import { execFileSync } from 'node:child_process';
+import { readFile, readdir } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type {
-  AgentNode,
-  ParkedGraft,
-  SessionState,
-  SpawnEdge,
-  ToolNode,
-} from '../src/model/events.js';
-import { isAgentNode } from '../src/model/events.js';
-import type { GraftSnapshot } from '../src/model/graft.js';
-import { graftSession, toSessionState } from '../src/model/graft.js';
-import { DOT_CAP } from './canvas-contract.js';
-import type { DeckPlacement, SessionLayout } from './canvas-contract.js';
+import type { AgentNode, SessionState, SpawnEdge, ToolNode } from '../src/model/events.js';
 import {
-  BLOB_AMPLITUDE,
-  CELL_RADIUS_MAX,
-  CONSTELLATION_CAP,
-  CONSTELLATION_INSET,
-  DOTS_PER_RING,
-  DOT_RINGS,
-  DOT_RING_BASE,
-  DOT_SLOT_PERIOD,
-  PARKED_ORBIT,
-  PARKED_ORBIT_SPREAD,
-  blobPath,
-  constellationPoints,
+  AUTO_COLLAPSE_NODES,
+  COLLAPSE_DEPTH,
+  DECK_CARD_H,
+  DECK_CARD_W,
+  DECK_GAP_X,
+  DECK_GAP_Y,
+  DECK_GRID_MARGIN,
+  DECK_LANE_GAP,
+  DECK_LANE_HEADER_Y,
+  DEFAULT_DECK_LAYOUT,
+  DEFAULT_DECK_SORT,
+  LABEL_ADVANCE,
+  LABEL_MAX_CHARS,
+  LEVEL_GAP,
+  NODE_H,
+  NODE_W_MIN,
+  SIBLING_GAP,
+  SUB_ADVANCE,
+  autoCollapseDepth,
   countNodes,
+  deckColumns,
+  deckEngine,
+  deckLaneX,
+  deckLanesDegrade,
   deckLayout,
-  hashSessionId,
-  sessionLayout,
-  toDeckSession,
-  CELL_FOOTPRINT,
+  formatCompactTokens,
+  nodeLabelText,
+  nodeSubText,
+  nodeWidth,
   roundCoord,
-  LABEL_PAD,
+  sortDeckSessions,
+  spawnDotPos,
+  toDeckSession,
+  toolChildren,
+  treeLayout,
+  visibleNodeCount,
 } from './layout.js';
-import type { DeckSession } from './layout.js';
+import type {
+  DeckLayoutMode,
+  DeckSession,
+  DeckSortMode,
+  TreePlacement,
+} from './layout.js';
+import { DEFAULT_ENGINE_FILTER } from './canvas-contract.js';
 
 const REPO_ROOT = resolve('.');
-const CAPTURED_ROOT = resolve('fixtures/cc-2.1.234/projects');
-const GRAFT_ROOT = resolve('fixtures/synthetic-graft');
-const GOLDEN_DIR = resolve('webview/goldens/layout');
-
+const WEBVIEW_DIR = join(REPO_ROOT, 'webview');
+const GOLDEN_FILE = join(WEBVIEW_DIR, 'goldens', 'layout', 'design-tables.json');
 /**
- * Regeneration is env-gated, the convention `fixtures/golden/*` already uses.
+ * The frozen reference, as a path this file can hand to `node`.
  *
- * It is gated HARDER here, because HANDOVER carry-forward G names the existing
- * convention as a live hazard: a golden that rewrites itself is a rubber stamp.
- * With the var set this file WRITES and then FAILS (see the last test in this
- * file), so a regeneration run is never green and the new numbers have to be
- * read and committed by a human. Without it, nothing is written at all.
+ * Repo-relative on purpose: it is passed as an argv with `cwd: REPO_ROOT`, so
+ * a failure names `webview/layout.reference.mjs` rather than a machine path.
  */
-const UPDATE_GOLDENS = env['AGENT_DECK_UPDATE_GOLDENS'] === '1';
+const REFERENCE_FILE = 'webview/layout.reference.mjs';
 
-/** Repo-relative, forward-slashed — so a golden reads the same on any machine. */
-function repoPath(absolute: string): string {
-  return relative(REPO_ROOT, absolute).split('\\').join('/');
-}
+/* ------------------------------------------------------------------------ *
+ * Mock data — the same subjects the reference uses, in production shapes
+ * ------------------------------------------------------------------------ */
 
-/**
- * Compare `actual` against the committed golden, or write it when the env var
- * is set.
- *
- * Comparison is on PARSED JSON, not on bytes. That is the answer to the
- * `.gitattributes` / `core.autocrlf` hazard: these files are not listed as
- * non-text anywhere, so a fresh clone on this machine may check them out with
- * CRLF endings. A byte comparison would then fail everywhere except where it
- * was written, and would look like a layout bug. Parsed numbers are immune to
- * the line ending they were stored behind, and numbers are what C7.5 says to
- * pin.
- */
-async function golden(name: string, actual: unknown): Promise<void> {
-  const path = join(GOLDEN_DIR, `${name}.json`);
-  const text = `${JSON.stringify(actual, null, 2)}\n`;
-  if (UPDATE_GOLDENS) {
-    await mkdir(GOLDEN_DIR, { recursive: true });
-    await writeFile(path, text, 'utf8');
-    return;
-  }
-  let stored: string;
-  try {
-    stored = await readFile(path, 'utf8');
-  } catch {
-    throw new Error(
-      `missing golden ${repoPath(path)} — regenerate with AGENT_DECK_UPDATE_GOLDENS=1 and commit it`,
-    );
-  }
-  expect(JSON.parse(stored)).toStrictEqual(JSON.parse(text));
-}
-
-/** `SessionLayout` as JSON: Maps become entry arrays, in insertion order. */
-function serializeLayout(layout: SessionLayout): unknown {
-  return {
-    cells: [...layout.cells.entries()],
-    dots: [...layout.dots.entries()],
-    elided: [...layout.elided.entries()],
-    parked: [...layout.parked.entries()],
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Fixture subjects, selected by property
-// ---------------------------------------------------------------------------
-
-interface Subject {
-  path: string;
-  snapshot: GraftSnapshot;
-  /** Deepest spawn edge in the graft. 0 when nothing was grafted. */
-  maxDepth: number;
-}
-
-async function transcriptsUnder(root: string): Promise<string[]> {
-  const out: string[] = [];
-  const walk = async (dir: string, depth: number): Promise<void> => {
-    if (depth > 3) return;
-    const entries = await readdir(dir, { withFileTypes: true });
-    for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
-      const full = join(dir, entry.name);
-      if (entry.isFile() && entry.name.endsWith('.jsonl')) out.push(full);
-      else if (entry.isDirectory()) await walk(full, depth + 1);
-    }
-  };
-  await walk(root, 0);
-  return out;
-}
-
-/** Grafts every main transcript directly under a slug directory of `root`. */
-async function subjectsUnder(root: string): Promise<Subject[]> {
-  const out: Subject[] = [];
-  for (const path of await transcriptsUnder(root)) {
-    // Subagent transcripts live in `<sessionId>/subagents/`; grafting one as a
-    // main transcript is not a case this file is about.
-    if (path.includes('subagents')) continue;
-    const result = await graftSession(path);
-    if (!result.ok) continue;
-    const depths = result.snapshot.edges.map((e) => e.depth);
-    out.push({
-      path,
-      snapshot: result.snapshot,
-      maxDepth: depths.length > 0 ? Math.max(...depths) : 0,
-    });
-  }
-  return out;
-}
-
-let captured: Subject[] = [];
-let synthetic: Subject[] = [];
-
-beforeAll(async () => {
-  captured = await subjectsUnder(CAPTURED_ROOT);
-  synthetic = await subjectsUnder(GRAFT_ROOT);
-}, 120_000);
-
-/** The captured session with the deepest spawn chain. */
-function deepestCapture(): Subject {
-  let best: Subject | undefined;
-  for (const s of captured) if (best === undefined || s.maxDepth > best.maxDepth) best = s;
-  if (best === undefined) throw new Error('no captured session grafted');
-  return best;
-}
-
-/**
- * A committed graft fixture whose graft PARKS an agent (an unresolved join).
- *
- * Preference, not a name: a case that parks one agent AND grafts another is
- * worth more than one that parks its only agent, because it puts both outcomes
- * in the same golden. Falls back to any parking case, so a re-harvest that
- * removes the richer fixture degrades instead of failing.
- */
-function parkedSubject(): Subject {
-  for (const s of synthetic) {
-    if (s.snapshot.parked.length > 0 && s.snapshot.edges.length > 0) return s;
-  }
-  for (const s of synthetic) if (s.snapshot.parked.length > 0) return s;
-  throw new Error('no committed graft fixture parks an agent');
-}
-
-/**
- * The state the model publishes: `toSessionState` plus the resolved spawn
- * edges AND the parked list, exactly as `SessionModel.viewFromSnapshot`
- * assembles them — see `toWireParked` in `src/model/session.ts`, which this
- * mirrors field for field, absent optionals left absent.
- */
-function modelState(snapshot: GraftSnapshot): SessionState {
-  const edges: SpawnEdge[] = snapshot.edges.map((e) => ({
-    toolUseId: e.toolUseId,
-    agentId: e.agentId,
-    parentNodeId: e.parentNodeId,
-    depth: e.depth,
-    recordedDepth: e.recordedDepth,
-  }));
-  const parked: ParkedGraft[] = snapshot.parked.map((p) => {
-    const out: ParkedGraft = { agentId: p.agentId, code: p.code, reason: p.reason };
-    if (p.toolUseId !== undefined) out.toolUseId = p.toolUseId;
-    if (p.parentAgentId !== undefined) out.parentAgentId = p.parentAgentId;
-    return out;
-  });
-  return {
-    ...toSessionState(snapshot, { liveness: 'live', workspaceMatch: true }),
-    spawnEdges: edges,
-    parked,
-  };
-}
-
-/** Every committed graft fixture whose graft parks at least one agent. */
-function parkedSubjects(): Subject[] {
-  const out = [...synthetic, ...captured].filter((s) => s.snapshot.parked.length > 0);
-  if (out.length === 0) throw new Error('no committed fixture parks an agent');
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// Small tree surgery, for the incremental tests
-// ---------------------------------------------------------------------------
-
-function agentIds(state: SessionState): string[] {
-  const out: string[] = [];
-  const visit = (node: AgentNode | ToolNode): void => {
-    if (!isAgentNode(node)) return;
-    out.push(node.id);
-    for (const child of node.children) visit(child);
-  };
-  visit(state.root);
-  return out;
-}
-
-/** Every tool id in the tree, WITH duplicates — see the duplicate-id test. */
-function toolIds(state: SessionState): string[] {
-  const out: string[] = [];
-  const visit = (node: AgentNode | ToolNode): void => {
-    if (!isAgentNode(node)) {
-      out.push(node.id);
-      return;
-    }
-    for (const child of node.children) visit(child);
-  };
-  visit(state.root);
-  return out;
-}
-
-function newTool(id: string): ToolNode {
-  return { id, toolName: 'Read', status: 'done', inputPreview: '{}' };
-}
-
-/**
- * Append a child to one agent, rebuilding only the path down to it.
- *
- * Grafter snapshots are deep-frozen, so this copies rather than mutates. It is
- * also the honest shape of the event being modelled: a spawn ADDS a child to
- * one agent and leaves the rest of the tree alone.
- */
-function withChild(state: SessionState, agentId: string, child: AgentNode | ToolNode): SessionState {
-  const rebuild = (node: AgentNode): AgentNode => {
-    if (node.id === agentId) return { ...node, children: [...node.children, child] };
-    return { ...node, children: node.children.map((c) => (isAgentNode(c) ? rebuild(c) : c)) };
-  };
-  return { ...state, root: rebuild(state.root) };
-}
-
-// ---------------------------------------------------------------------------
-// 1. Purity, enforced structurally
-// ---------------------------------------------------------------------------
-
-/**
- * The CLOSED allowed-import set for `layout.ts`, and why it is exactly these
- * two:
- *
- *  - `./canvas-contract.js` — the shared names two packages must agree on. Its
- *    own header states it has NO IMPORTS AT ALL, for this reason among others.
- *  - `../src/model/events.js` — the domain types plus `isAgentNode`. Types only
- *    and runtime guards; it imports nothing either.
- *
- * Because both have an empty import list, the set is CLOSED: there is no
- * transitive edge out of it, so nothing `layout.ts` can reach touches a DOM, a
- * timer, a socket or the filesystem. The closure is asserted below rather than
- * asserted about, so adding an import to either file fails this test.
- */
-const ALLOWED_IMPORTS = ['./canvas-contract.js', '../src/model/events.js'];
-
-/**
- * Identifiers that must not appear in `layout.ts` AT ALL — comments included.
- *
- * Scanning the source rather than observing calls is the point: a test that
- * calls three functions and sees no side effect proves nothing about the
- * fourth, or about a branch it did not take. Scanning comments too is a small
- * extra cost (prose has to say "span" instead of one of these words) in
- * exchange for a check with no parser and no exceptions to argue about.
- */
-const FORBIDDEN_IDENTIFIERS = [
-  'document',
-  'window',
-  'globalThis',
-  'localStorage',
-  'sessionStorage',
-  'navigator',
-  'performance',
-  'fetch',
-  'XMLHttpRequest',
-  'WebSocket',
-  'setTimeout',
-  'setInterval',
-  'clearTimeout',
-  'clearInterval',
-  'requestAnimationFrame',
-  'queueMicrotask',
-  'process',
-  'require',
-  'crypto',
-  'Date',
-  'random',
+// The deck rows are `layout.reference.mjs`'s SESSIONS, field for field.
+// `last` is an offset from an unnamed "now" in milliseconds and ONLY ITS
+// ORDERING MATTERS, which is what lets this be deterministic with no clock.
+const DECK_SESSIONS: readonly DeckSession[] = [
+  { id: '6082be25', engine: 'cc', status: 'live', last: -4000 },
+  { id: 'ses_a91f', engine: 'oc', status: 'live', last: -11000 },
+  { id: '4299490e', engine: 'cc', status: 'idle', last: -140000 },
+  { id: 'ses_77c0', engine: 'oc', status: 'idle', last: -260000 },
+  { id: 'b3d1c0a2', engine: 'cc', status: 'unsupported', last: -5400000 },
+  { id: 'ses_20de', engine: 'oc', status: 'degraded', last: -90000 },
+  { id: '9f0e11aa', engine: 'cc', status: 'ended', last: -9000000 },
 ];
 
-function importSpecifiers(source: string): string[] {
-  const out: string[] = [];
-  for (const m of source.matchAll(/^import\b[^;]*?from\s*'([^']+)'\s*;/gm)) {
-    const spec = m[1];
-    if (spec !== undefined) out.push(spec);
-  }
-  for (const m of source.matchAll(/^import\s*'([^']+)'\s*;/gm)) {
-    const spec = m[1];
-    if (spec !== undefined) out.push(spec);
-  }
-  return out;
+interface MockTool {
+  id: string;
+  status: ToolNode['status'];
 }
 
-describe('purity is a property of the source, not of the calls this file made', () => {
-  it('imports nothing outside the closed allowed set', async () => {
-    const source = await readFile(resolve('webview/layout.ts'), 'utf8');
-    const specs = [...new Set(importSpecifiers(source))].sort();
-    expect(specs).toStrictEqual([...ALLOWED_IMPORTS].sort());
-  });
-
-  it('the allowed set is closed: both permitted modules import nothing', async () => {
-    for (const spec of ALLOWED_IMPORTS) {
-      const path = resolve('webview', spec).replace(/\.js$/, '.ts');
-      const source = await readFile(path, 'utf8');
-      expect(importSpecifiers(source), `${repoPath(path)} must import nothing`).toStrictEqual([]);
-    }
-  });
-
-  it('reaches no DOM, no timer, no clock and no entropy', async () => {
-    const source = await readFile(resolve('webview/layout.ts'), 'utf8');
-    for (const identifier of FORBIDDEN_IDENTIFIERS) {
-      const found = new RegExp(`\\b${identifier}\\b`).test(source);
-      expect(found, `layout.ts must not mention \`${identifier}\``).toBe(false);
-    }
-    // Dynamic import and CommonJS require would both open the closed set.
-    expect(/\bimport\s*\(/.test(source)).toBe(false);
-  });
-
-  it('holds no mutable module state', async () => {
-    const source = await readFile(resolve('webview/layout.ts'), 'utf8');
-    // Top-level `let`/`var` only; the `let` inside a function body is indented.
-    expect(/^(export\s+)?(let|var)\s/m.test(source)).toBe(false);
-  });
-
-  it('the ring geometry cannot stack two simultaneously visible dots', () => {
-    // The period is what makes the sliding cap safe. Derived from DOT_CAP, so
-    // raising the cap in canvas-contract.ts without revisiting DOT_RINGS fails
-    // here rather than silently drawing two dots on top of each other.
-    expect(DOT_SLOT_PERIOD).toBe(DOTS_PER_RING * DOT_RINGS);
-    expect(DOT_SLOT_PERIOD).toBeGreaterThanOrEqual(DOT_CAP);
-    // A membrane can never swallow its own dot ring, however much arrives.
-    expect(CELL_RADIUS_MAX).toBeLessThan(DOT_RING_BASE);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 2. Deck goldens at N = 0 / 1 / 2 / 6 / 12
-// ---------------------------------------------------------------------------
-
-/**
- * The deck's input list: every captured session first (sorted, so the list is
- * stable), then deterministic filler.
- *
- * Filler is legitimate here in a way it would not be for a parser test: the
- * deck consumes `{ sessionId, nodeCount }`, which is Agent Deck's own shape and
- * carries no Claude Code schema at all — there is nothing about CC for a
- * fixture to pin. The captured entries are still first so the real ids are the
- * ones exercised at N = 1 and N = 2, and the whole input list is written into
- * the golden so a re-harvest reads as a diff rather than a riddle.
- */
-function deckInput(n: number): DeckSession[] {
-  const real = captured
-    .map((s) => modelState(s.snapshot))
-    .sort((a, b) => a.sessionId.localeCompare(b.sessionId))
-    .map(toDeckSession);
-  const out: DeckSession[] = real.slice(0, n);
-  for (let i = out.length; i < n; i += 1) {
-    // Node counts cycle deterministically so the golden exercises several
-    // points on the log radius curve, including the floor and the ceiling.
-    const counts = [0, 1, 3, 12, 47, 300, 5000];
-    out.push({ sessionId: `synthetic-deck-${String(i).padStart(2, '0')}`, nodeCount: counts[i % counts.length] ?? 0 });
-  }
-  return out;
+interface MockAgent {
+  id: string;
+  label: string;
+  tokens: number;
+  parent: string | null;
+  spawnedBy?: string;
+  tools: MockTool[];
 }
 
-describe('deck goldens', () => {
-  for (const n of [0, 1, 2, 6, 12]) {
-    it(`places ${n} session(s) at the pinned coordinates`, async () => {
-      const input = deckInput(n);
-      expect(input).toHaveLength(n);
-      const output = deckLayout(input);
-      expect(output).toHaveLength(n);
-      await golden(`deck-n${String(n).padStart(2, '0')}`, {
-        source: repoPath(CAPTURED_ROOT),
-        input,
-        output,
-      });
-    });
-  }
+const done = (id: string): MockTool => ({ id, status: 'done' });
+const running = (id: string): MockTool => ({ id, status: 'running' });
+const failed = (id: string): MockTool => ({ id, status: 'error' });
 
-  it('N = 0 is the empty deck, and that is a real state', () => {
-    expect(deckLayout([])).toStrictEqual([]);
-  });
+// `layout.reference.mjs`'s S.agents, in its declaration order — the order the
+// node-widths table is emitted in.
+const MOCK_AGENTS: readonly MockAgent[] = [
+  {
+    id: 'main',
+    label: 'main',
+    tokens: 184300,
+    parent: null,
+    tools: [
+      done('t1'),
+      done('t2'),
+      done('t3'),
+      running('t4'),
+      done('t5'),
+      running('t6'),
+      failed('t7'),
+    ],
+  },
+  {
+    id: 'a1',
+    label: 'harvest-r1-pair',
+    tokens: 41200,
+    parent: 'main',
+    spawnedBy: 't3',
+    tools: [done('a1t1'), done('a1t2'), done('a1t3')],
+  },
+  {
+    id: 'a2',
+    label: 'privacy-sweep-audit',
+    tokens: 22800,
+    parent: 'main',
+    spawnedBy: 't4',
+    tools: [done('a2t1'), running('a2t2')],
+  },
+  {
+    id: 'a3',
+    label: 'readme-guard-rederive',
+    tokens: 9100,
+    parent: 'main',
+    spawnedBy: 't6',
+    tools: [done('a3t1'), running('a3t2'), done('a3t3'), running('a3t4')],
+  },
+  {
+    id: 'a1a',
+    label: 'verify-meta-json',
+    tokens: 3200,
+    parent: 'a1',
+    spawnedBy: 'a1t3',
+    tools: [done('a1at1')],
+  },
+  {
+    id: 'a3a',
+    label: 'diff-readme-lines',
+    tokens: 1500,
+    parent: 'a3',
+    spawnedBy: 'a3t2',
+    tools: [running('a3at1'), running('a3at2')],
+  },
+  {
+    id: 'a3b',
+    label: 'run-vitest-subset',
+    tokens: 6100,
+    parent: 'a3',
+    spawnedBy: 'a3t3',
+    tools: [done('a3bt1'), failed('a3bt2')],
+  },
+  {
+    id: 'a3aa',
+    label: 'count-anchors',
+    tokens: 400,
+    parent: 'a3a',
+    spawnedBy: 'a3at2',
+    tools: [running('a3aat1')],
+  },
+];
 
-  it('is deterministic: two calls on the same input are identical', () => {
-    const input = deckInput(12);
-    expect(deckLayout(input)).toStrictEqual(deckLayout(input));
-  });
-
-  it('is incremental: appending a session moves none of the others', () => {
-    const twelve = deckLayout(deckInput(12));
-    for (const n of [0, 1, 2, 6]) {
-      const shorter = deckLayout(deckInput(n));
-      for (let i = 0; i < shorter.length; i += 1) {
-        const before = shorter[i];
-        const after = twelve[i];
-        expect(before).toBeDefined();
-        expect(after).toBeDefined();
-        if (before === undefined || after === undefined) continue;
-        expect(after.sessionId).toBe(before.sessionId);
-        // Byte-identical, not approximately equal: a tolerance here is exactly
-        // how a slow drift gets through.
-        expect(Object.is(after.x, before.x)).toBe(true);
-        expect(Object.is(after.y, before.y)).toBe(true);
-      }
-    }
-  });
-
-  it('radius grows with node count and is bounded at both ends', () => {
-    const placements = deckLayout([
-      { sessionId: 'a', nodeCount: 0 },
-      { sessionId: 'b', nodeCount: 10 },
-      { sessionId: 'c', nodeCount: 100_000 },
-    ]) as [DeckPlacement, DeckPlacement, DeckPlacement];
-    expect(placements[0].R).toBeLessThan(placements[1].R);
-    expect(placements[1].R).toBeLessThan(placements[2].R);
-    expect(placements[2].R).toBeLessThanOrEqual(68);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 3. Blob silhouettes
-// ---------------------------------------------------------------------------
-
-describe('blobPath', () => {
-  it('is a pure function of the id hash, pinned as path data', async () => {
-    const ids = [
-      ...captured.map((s) => s.snapshot.sessionId).sort(),
-      '',
-      'a',
-      'c--Users-dev-projects-agent-deck',
-    ];
-    const entries = ids.map((sessionId) => {
-      const seed = hashSessionId(sessionId);
-      return { sessionId, seed, d: blobPath(0, 0, 40, seed) };
-    });
-    await golden('blob-paths', { source: repoPath(CAPTURED_ROOT), entries });
-  });
-
-  it('gives different ids different silhouettes and the same id the same one', () => {
-    const one = blobPath(0, 0, 40, hashSessionId('session-a'));
-    const two = blobPath(0, 0, 40, hashSessionId('session-b'));
-    expect(one).not.toBe(two);
-    expect(blobPath(0, 0, 40, hashSessionId('session-a'))).toBe(one);
-  });
-
-  it('closes the path and emits only finite numbers', () => {
-    const d = blobPath(12.5, -8, 33, hashSessionId('x'));
-    expect(d.startsWith('M ')).toBe(true);
-    expect(d.endsWith(' Z')).toBe(true);
-    for (const token of d.split(' ')) {
-      if (token === 'M' || token === 'C' || token === 'Z' || token === '') continue;
-      expect(Number.isFinite(Number(token)), `not a number: ${token}`).toBe(true);
-    }
-    expect(d).not.toContain('NaN');
-    expect(d).not.toContain('-0 ');
-  });
-
-  it('hashSessionId is a pure 32-bit function of the string', () => {
-    expect(hashSessionId('abc')).toBe(hashSessionId('abc'));
-    expect(hashSessionId('abc')).not.toBe(hashSessionId('abd'));
-    for (const s of ['', 'a', 'abc', 'a'.repeat(500)]) {
-      const h = hashSessionId(s);
-      expect(Number.isInteger(h)).toBe(true);
-      expect(h).toBeGreaterThanOrEqual(0);
-      expect(h).toBeLessThanOrEqual(0xffff_ffff);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 3b. The deck constellation (C7.1)
-// ---------------------------------------------------------------------------
-
-/**
- * The minimum distance from `(cx, cy)` to the silhouette `blobPath` emitted.
- *
- * The containment claim is measured against the REAL curve, not against the
- * arithmetic that produced it: the path text is parsed back and every cubic
- * segment is sampled. Asserting `reach < R * (1 - BLOB_AMPLITUDE)` would only
- * restate `constellationPoints`'s own formula, and the silhouette dips inside
- * that bound between vertices — which is exactly the gap an eyeball misses.
- */
-function minSilhouetteRadius(d: string, cx: number, cy: number, samples: number): number {
-  const tokens = d.split(' ').filter((t) => t !== '');
-  const numbers: number[] = [];
-  const commands: string[] = [];
-  for (const token of tokens) {
-    if (token === 'M' || token === 'C' || token === 'Z') commands.push(token);
-    else numbers.push(Number(token));
-  }
-  expect(commands[0]).toBe('M');
-  expect(commands[commands.length - 1]).toBe('Z');
-
-  let at = 0;
-  const next = (): number => {
-    const value = numbers[at];
-    at += 1;
-    if (value === undefined || !Number.isFinite(value)) {
-      throw new Error(`bad path number at ${at - 1}`);
-    }
-    return value;
-  };
-
-  let x0 = next();
-  let y0 = next();
-  let min = Number.POSITIVE_INFINITY;
-  const consider = (px: number, py: number): void => {
-    min = Math.min(min, Math.hypot(px - cx, py - cy));
-  };
-  consider(x0, y0);
-
-  while (at < numbers.length) {
-    const c1x = next();
-    const c1y = next();
-    const c2x = next();
-    const c2y = next();
-    const x1 = next();
-    const y1 = next();
-    for (let s = 1; s <= samples; s += 1) {
-      const t = s / samples;
-      const u = 1 - t;
-      const bx = u * u * u * x0 + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * x1;
-      const by = u * u * u * y0 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y1;
-      consider(bx, by);
-    }
-    x0 = x1;
-    y0 = y1;
-  }
-  return min;
-}
-
-describe('the deck constellation: one dot per node, density without a number', () => {
-  it('is pinned as coordinate numbers at 0, a small count, and above the cap', async () => {
-    const seeds = captured.map((s) => ({
-      sessionId: s.snapshot.sessionId,
-      seed: hashSessionId(s.snapshot.sessionId),
-    }));
-    expect(seeds.length).toBeGreaterThan(0);
-
-    const counts = [0, 7, CONSTELLATION_CAP + 25];
-    const entries: unknown[] = [];
-    for (const { sessionId, seed } of seeds) {
-      for (const count of counts) {
-        entries.push({
-          sessionId,
-          seed,
-          count,
-          points: constellationPoints(0, 0, 60, count, seed),
-        });
-      }
-    }
-    await golden('deck-constellation', {
-      source: repoPath(CAPTURED_ROOT),
-      cap: CONSTELLATION_CAP,
-      inset: CONSTELLATION_INSET,
-      radius: 60,
-      entries,
-    });
-  });
-
-  it('count 0 is a real case and yields no points', () => {
-    expect(constellationPoints(10, -4, 50, 0, 1)).toStrictEqual([]);
-    // Nonsense counts refuse to draw rather than throwing: this is renderer
-    // input, and refusing is the safe direction.
-    expect(constellationPoints(10, -4, 50, -3, 1)).toStrictEqual([]);
-    expect(constellationPoints(10, -4, 50, Number.NaN, 1)).toStrictEqual([]);
-    expect(constellationPoints(10, -4, 50, Number.POSITIVE_INFINITY, 1)).toStrictEqual([]);
-  });
-
-  it('is deterministic: same arguments, identical numbers', () => {
-    const one = constellationPoints(3, 9, 44, 30, hashSessionId('a'));
-    const two = constellationPoints(3, 9, 44, 30, hashSessionId('a'));
-    expect(one).toStrictEqual(two);
-    // The seed rotates the pattern, so two sessions are distinguishable.
-    expect(constellationPoints(3, 9, 44, 30, hashSessionId('b'))).not.toStrictEqual(one);
-  });
-
-  it('is incremental by index: a node arriving never shuffles the constellation', () => {
-    const seed = hashSessionId('c--Users-dev-projects-agent-deck');
-    // Walk the whole range including the boundary, so the cap itself is
-    // covered rather than assumed to behave like the interior.
-    for (let count = 0; count < CONSTELLATION_CAP + 4; count += 1) {
-      const before = constellationPoints(12, -7, 55, count, seed);
-      const after = constellationPoints(12, -7, 55, count + 1, seed);
-      expect(after.length).toBeGreaterThanOrEqual(before.length);
-      for (let i = 0; i < before.length; i += 1) {
-        const a = before[i];
-        const b = after[i];
-        expect(a).toBeDefined();
-        expect(b).toBeDefined();
-        if (a === undefined || b === undefined) continue;
-        // Byte-identical, not approximately equal — a tolerance here is how a
-        // slow drift gets through.
-        expect(Object.is(b.x, a.x), `point ${i} x moved at count ${count}`).toBe(true);
-        expect(Object.is(b.y, a.y), `point ${i} y moved at count ${count}`).toBe(true);
-      }
-    }
-  });
-
-  it(`saturates at CONSTELLATION_CAP = ${CONSTELLATION_CAP} and never grows again`, () => {
-    const seed = hashSessionId('cap');
-    expect(constellationPoints(0, 0, 50, CONSTELLATION_CAP - 1, seed)).toHaveLength(
-      CONSTELLATION_CAP - 1,
-    );
-    const atCap = constellationPoints(0, 0, 50, CONSTELLATION_CAP, seed);
-    expect(atCap).toHaveLength(CONSTELLATION_CAP);
-    // An R2-scale session. The blob does not thin out, re-space or change at
-    // all: identical output, so the element count per blob is bounded by the cap.
-    for (const huge of [CONSTELLATION_CAP + 1, 1_000, 250_000]) {
-      expect(constellationPoints(0, 0, 50, huge, seed)).toStrictEqual(atCap);
-    }
-  });
-
-  it('every point lies inside the silhouette blobPath draws for the same seed', () => {
-    // A broad seed sample, because the wobble is per-seed: a containment claim
-    // checked on one silhouette says nothing about the next one.
-    const SEED_SAMPLE = 400;
-    const R = 60;
-    let worstMargin = Number.POSITIVE_INFINITY;
-    for (let n = 0; n < SEED_SAMPLE; n += 1) {
-      const seed = hashSessionId(`containment-${n}`);
-      const centre = { x: n % 7, y: -(n % 5) };
-      const d = blobPath(centre.x, centre.y, R, seed);
-      const inner = minSilhouetteRadius(d, centre.x, centre.y, 40);
-      let furthest = 0;
-      for (const p of constellationPoints(centre.x, centre.y, R, CONSTELLATION_CAP, seed)) {
-        furthest = Math.max(furthest, Math.hypot(p.x - centre.x, p.y - centre.y));
-      }
-      expect(furthest).toBeGreaterThan(0);
-      expect(
-        furthest,
-        `seed ${seed}: a dot at ${furthest} is outside a membrane that dips to ${inner}`,
-      ).toBeLessThan(inner);
-      worstMargin = Math.min(worstMargin, inner - furthest);
-    }
-    // The margin is BANDED rather than pinned. Measured over this sample:
-    // 17.43 on R = 60 — the tightest silhouette dip still clears the outermost
-    // dot by 29% of R. A band catches the two failures that matter (the margin
-    // shrinking toward zero, or the constellation collapsing to the centre and
-    // making the containment assertion above trivially true) without breaking
-    // on a last-ulp difference somewhere else.
-    expect(worstMargin).toBeGreaterThan(R * 0.2);
-    expect(worstMargin).toBeLessThan(R * 0.45);
-  });
-
-  it('the reach is derived from BLOB_AMPLITUDE, not chosen independently of it', () => {
-    // Raising the wobble in blobPath without revisiting the inset would push
-    // dots outside a membrane that moved; this ties the two together.
-    const R = 100;
-    const points = constellationPoints(0, 0, R, CONSTELLATION_CAP, hashSessionId('reach'));
-    let furthest = 0;
-    for (const p of points) furthest = Math.max(furthest, Math.hypot(p.x, p.y));
-    const reach = R * (1 - BLOB_AMPLITUDE) * CONSTELLATION_INSET;
-    expect(furthest).toBeLessThanOrEqual(reach);
-    // ...and it reaches most of the way out, so the containment test above is
-    // not trivially satisfied by a constellation clustered at the centre.
-    expect(furthest).toBeGreaterThan(reach * 0.98);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 4. Session-layout goldens, from committed fixture trees
-// ---------------------------------------------------------------------------
-
-describe('session layout goldens, derived from committed fixture trees', () => {
-  it('a captured session with a depth >= 2 spawn chain', async () => {
-    const subject = deepestCapture();
-    // Measured from the graft, not assumed: the DoD asks for depth >= 2 and
-    // this is where that claim is checked rather than asserted in prose.
-    expect(subject.maxDepth).toBeGreaterThanOrEqual(2);
-    const state = modelState(subject.snapshot);
-    const layout = sessionLayout(state);
-
-    // Every agent gets a cell and every tool gets a dot (nothing is capped at
-    // this size), so the golden below is not pinning an accidentally empty map.
-    expect(layout.cells.size).toBe(agentIds(state).length);
-    expect(layout.cells.size).toBeGreaterThan(1);
-    expect(layout.dots.size).toBe(new Set(toolIds(state)).size);
-    // In THIS capture the ids happen to be distinct, so the dot count is also
-    // the tool-node count. Stated as a measurement of the capture, not as a
-    // property of layout — the duplicate-id case is pinned separately below.
-    expect(new Set(toolIds(state)).size).toBe(subject.snapshot.counts.toolNodes);
-    expect(layout.elided.size).toBe(0);
-
-    await golden('session-deepest-capture', {
-      source: repoPath(subject.path),
-      maxSpawnDepth: subject.maxDepth,
-      ...(serializeLayout(layout) as object),
-    });
-  });
-
-  it('a committed fixture whose graft parks an agent (an unresolved join)', async () => {
-    const subject = parkedSubject();
-    // Measured: this fixture really does produce a parked graft, and the code
-    // that says why is pinned in the golden.
-    expect(subject.snapshot.parked.length).toBeGreaterThan(0);
-    const state = modelState(subject.snapshot);
-    const layout = sessionLayout(state);
-
-    // PARKED AND CELLS ARE DISJOINT, from both directions. The parked agent is
-    // not in `root` — the grafter deliberately leaves it off — so it gets no
-    // cell; and it IS placed, on its own orbit, from `session.parked`. Before
-    // that field existed this assertion held for the empty reason: there was no
-    // channel and nothing was ever placed. It now holds for the real one, which
-    // is why the second half is asserted rather than assumed.
-    for (const entry of subject.snapshot.parked) {
-      expect(layout.cells.has(entry.agentId)).toBe(false);
-      expect(layout.parked.has(entry.agentId)).toBe(true);
-    }
-    for (const agentId of layout.parked.keys()) expect(layout.cells.has(agentId)).toBe(false);
-    for (const agentId of layout.cells.keys()) expect(layout.parked.has(agentId)).toBe(false);
-    expect(layout.parked.size).toBe(subject.snapshot.parked.length);
-
-    await golden('session-parked-graft', {
-      source: repoPath(subject.path),
-      parked: subject.snapshot.parked.map((p) => ({ agentId: p.agentId, code: p.code })),
-      ...(serializeLayout(layout) as object),
-    });
-  });
-
-  it('a tool_use id is not unique across a tree, and the first writer keeps the dot', () => {
-    const subject = parkedSubject();
-    const state = modelState(subject.snapshot);
-    const ids = toolIds(state);
-    const distinct = new Set(ids);
-    // Measured on the committed fixture, not assumed: the same `tool_use` id
-    // appears in the main transcript AND in a subagent's, which is exactly the
-    // shape that makes the join ambiguous. `SessionLayout.dots` is keyed by
-    // tool id (C7.5 writes it that way), so two tool nodes collapse to one dot.
-    expect(ids.length).toBeGreaterThan(distinct.size);
-    const layout = sessionLayout(state);
-    expect(layout.dots.size).toBe(distinct.size);
-
-    // First writer wins, so a later subtree never moves a dot already placed.
-    // Proved by placing the same tree twice with the duplicate-bearing subtree
-    // removed: the surviving dot keeps the coordinates it had.
-    const rootOnly: SessionState = {
-      ...state,
-      root: { ...state.root, children: state.root.children.filter((c) => !isAgentNode(c)) },
-      spawnEdges: [],
-    };
-    const trimmed = sessionLayout(rootOnly);
-    for (const [id, dot] of trimmed.dots) {
-      const full = layout.dots.get(id);
-      expect(full, `dot ${id} missing from the full layout`).toBeDefined();
-      if (full === undefined) continue;
-      expect(Object.is(full.x, dot.x), `dot ${id} x moved`).toBe(true);
-      expect(Object.is(full.y, dot.y), `dot ${id} y moved`).toBe(true);
-    }
-  });
-
-  it('the same tree with no spawn edges: every cell unanchored', async () => {
-    // `toSessionState` in `src/model/graft.ts` sets no `spawnEdges` at all —
-    // production code, called here unmodified. Every subagent is then a cell
-    // with no dot to hang a filament from, which is the geometry the parked
-    // grammar needs (`PARKED_CLASS`: unattached, dashed, stubbed).
-    const subject = deepestCapture();
-    const state = toSessionState(subject.snapshot, { liveness: 'live', workspaceMatch: true });
-    expect(state.spawnEdges).toBeUndefined();
-    const layout = sessionLayout(state);
-
-    // Same node set as the anchored layout, different coordinates: proof the
-    // parked ring is a distinct placement rule and not a silent fallback to
-    // the same spot.
-    const anchored = sessionLayout(modelState(subject.snapshot));
-    expect([...layout.cells.keys()].sort()).toStrictEqual([...anchored.cells.keys()].sort());
-    let moved = 0;
-    for (const [id, cell] of layout.cells) {
-      const other = anchored.cells.get(id);
-      if (other === undefined) continue;
-      if (cell.x !== other.x || cell.y !== other.y) moved += 1;
-    }
-    expect(moved).toBeGreaterThan(0);
-
-    await golden('session-unanchored-cells', {
-      source: repoPath(subject.path),
-      ...(serializeLayout(layout) as object),
-    });
-  });
-
-  it('G3: a refused session lays out to nothing at all, parked included', () => {
-    const subject = parkedSubject();
-    // A subject that DOES park, and whose parked list is carried into the
-    // refused state on purpose. Refusing a session that parks nothing would
-    // pass this test while proving nothing about the field that was added
-    // after the refusal path was written — which is exactly where a refusal
-    // quietly stops applying.
-    const base = modelState(subject.snapshot);
-    expect(base.parked?.length ?? 0).toBeGreaterThan(0);
-    expect(sessionLayout(base).parked.size).toBeGreaterThan(0);
-
-    for (const refused of [
-      { ...base, schemaOk: false, liveness: 'unsupported' as const },
-      // Each half of the OR on its own, because the model sets them together
-      // and a test that only ever sends both cannot tell which one is doing
-      // the work.
-      { ...base, schemaOk: false },
-      { ...base, liveness: 'unsupported' as const },
-    ]) {
-      const layout = sessionLayout(refused);
-      expect(layout.cells.size).toBe(0);
-      expect(layout.dots.size).toBe(0);
-      expect(layout.elided.size).toBe(0);
-      expect(layout.parked.size).toBe(0);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 4b. Parked grafts: the agents that are not in the tree at all
-// ---------------------------------------------------------------------------
-
-describe('parked grafts, placed from session.parked and never from the tree', () => {
-  it('covers every park code the committed fixtures actually produce', async () => {
-    const subjects = parkedSubjects();
-    const entries = subjects.map((subject) => {
-      const state = modelState(subject.snapshot);
-      const layout = sessionLayout(state);
-      return {
-        source: repoPath(subject.path),
-        parked: (state.parked ?? []).map((entry) => ({
-          agentId: entry.agentId,
-          code: entry.code,
-          // Recorded because one fixture carries it and the others do not;
-          // `null` rather than an absent key so the golden shows the difference.
-          parentAgentId: entry.parentAgentId ?? null,
-          toolUseId: entry.toolUseId ?? null,
-        })),
-        placements: [...layout.parked.entries()],
-      };
-    });
-
-    // Derived from the fixtures, never listed here: a re-harvest that adds a
-    // park code widens this golden instead of silently leaving it uncovered.
-    const codes = [
-      ...new Set(subjects.flatMap((s) => s.snapshot.parked.map((p) => p.code))),
-    ].sort();
-    // More than one distinct refusal reason is on record, so this is a suite
-    // rather than one case wearing a plural name.
-    expect(codes.length).toBeGreaterThan(1);
-    // At least one fixture states a parent it could not find, which is the
-    // shape that carries `parentAgentId`.
-    expect(
-      subjects.some((s) => s.snapshot.parked.some((p) => p.parentAgentId !== undefined)),
-    ).toBe(true);
-
-    await golden('session-parked-codes', { codes, entries });
-  });
-
-  it('places every parked agent, and never one that is in the tree', () => {
-    for (const subject of parkedSubjects()) {
-      const state = modelState(subject.snapshot);
-      const layout = sessionLayout(state);
-      expect(layout.parked.size).toBe(subject.snapshot.parked.length);
-      for (const entry of subject.snapshot.parked) {
-        expect(layout.parked.has(entry.agentId), `${entry.agentId} not placed`).toBe(true);
-        expect(layout.cells.has(entry.agentId), `${entry.agentId} in both maps`).toBe(false);
-      }
-    }
-  });
-
-  it('drops a contradictory entry rather than drawing one agent twice', () => {
-    // A host that named a grafted agent as parked is contradicting itself. The
-    // tree is the half with a node, a parent and children behind it, so the
-    // parked claim is the one dropped. Hand-built, because no fixture produces
-    // a contradiction and no fixture should.
-    const subject = deepestCapture();
-    const state = modelState(subject.snapshot);
-    const inTree = agentIds(state).find((id) => id !== state.root.id);
-    expect(inTree).toBeDefined();
-    if (inTree === undefined) return;
-
-    const contradictory: SessionState = {
-      ...state,
-      parked: [{ agentId: inTree, code: 'noMatchingToolUse', reason: 'contradiction' }],
-    };
-    const layout = sessionLayout(contradictory);
-    expect(layout.cells.has(inTree)).toBe(true);
-    expect(layout.parked.has(inTree)).toBe(false);
-    expect(layout.parked.size).toBe(0);
-  });
-
-  it('is placed from the agentId, so the host\'s list order cannot move anything', () => {
-    const subject = parkedSubject();
-    const state = modelState(subject.snapshot);
-    const list = [...(state.parked ?? [])];
-    expect(list.length).toBeGreaterThan(0);
-
-    // The grafter sorts `parked` by agentId — verified here rather than taken
-    // on trust, because the placement rule below exists precisely BECAUSE that
-    // sort means a new entry lands in the middle of the list.
-    const sorted = [...list].sort((a, b) => a.agentId.localeCompare(b.agentId));
-    expect(list.map((p) => p.agentId)).toStrictEqual(sorted.map((p) => p.agentId));
-
-    // Reversed, and every placement is identical: order is not an input.
-    const reversed = sessionLayout({ ...state, parked: [...list].reverse() });
-    const forward = sessionLayout(state);
-    for (const [id, placement] of forward.parked) {
-      const other = reversed.parked.get(id);
-      expect(other).toBeDefined();
-      if (other === undefined) continue;
-      expect(Object.is(other.x, placement.x)).toBe(true);
-      expect(Object.is(other.y, placement.y)).toBe(true);
-      expect(Object.is(other.R, placement.R)).toBe(true);
-    }
-    expect(reversed.parked.size).toBe(forward.parked.size);
-  });
-
-  it('a parked graft arriving never moves one already placed', () => {
-    const subject = deepestCapture();
-    const base = modelState(subject.snapshot);
-    // Ids chosen to sort BEFORE and BETWEEN the ones already there, because an
-    // append-only test would pass under a positional rule and prove nothing.
-    const growing: ParkedGraft[] = [];
-    let previous = sessionLayout({ ...base, parked: [] });
-    for (const agentId of ['zzz-late', 'aaa-early', 'mmm-middle', 'aaa-earlier']) {
-      growing.push({ agentId, code: 'noMatchingToolUse', reason: 'synthetic' });
-      // Sorted the way the host sends it, so each arrival really does shift
-      // every later entry's position in the list.
-      const parked = [...growing].sort((a, b) => a.agentId.localeCompare(b.agentId));
-      const next = sessionLayout({ ...base, parked });
-      expect(next.parked.size).toBe(growing.length);
-      for (const [id, placement] of previous.parked) {
-        const after = next.parked.get(id);
-        expect(after, `${id} vanished`).toBeDefined();
-        if (after === undefined) continue;
-        expect(Object.is(after.x, placement.x), `${id} x moved`).toBe(true);
-        expect(Object.is(after.y, placement.y), `${id} y moved`).toBe(true);
-        expect(Object.is(after.R, placement.R), `${id} R changed`).toBe(true);
-      }
-      previous = next;
-    }
-  });
-
-  it('a parked graft that later resolves leaves parked and appears in cells', () => {
-    // The state transition the product cares about: attribution arrives, the
-    // agent stops being a refusal and becomes a node. Driven through the same
-    // helpers rather than by hand-editing a layout.
-    const subject = deepestCapture();
-    const state = modelState(subject.snapshot);
-    const resolved = agentIds(state).find((id) => id !== state.root.id);
-    expect(resolved).toBeDefined();
-    if (resolved === undefined) return;
-
-    // Before: the tree without that agent, and the agent named as parked.
-    const stripped: SessionState = {
-      ...state,
-      root: {
-        ...state.root,
-        children: state.root.children.filter((c) => !isAgentNode(c) || c.id !== resolved),
-      },
-      parked: [{ agentId: resolved, code: 'noMatchingToolUse', reason: 'awaiting attribution' }],
-    };
-    const before = sessionLayout(stripped);
-    expect(before.parked.has(resolved)).toBe(true);
-    expect(before.cells.has(resolved)).toBe(false);
-
-    // After: the real state, where the join resolved and `parked` no longer
-    // names it.
-    const after = sessionLayout(state);
-    expect(after.parked.has(resolved)).toBe(false);
-    expect(after.cells.has(resolved)).toBe(true);
-  });
-
-  it('sits outside every cell and dot on the real fixtures', () => {
-    // A measurement on the committed data, not a universal claim: nesting is
-    // depth-scaled but unbounded, so no fixed orbit can be outside every
-    // conceivable tree. What is load-bearing is the separate map and the
-    // absent filament; this is the visual separation, measured where it counts.
-    let checked = 0;
-    for (const subject of parkedSubjects()) {
-      const state = modelState(subject.snapshot);
-      const layout = sessionLayout(state);
-      let furthestContent = 0;
-      for (const c of layout.cells.values()) {
-        furthestContent = Math.max(furthestContent, Math.hypot(c.x, c.y) + c.R);
-      }
-      for (const d of layout.dots.values()) {
-        furthestContent = Math.max(furthestContent, Math.hypot(d.x, d.y));
-      }
-      for (const [id, placement] of layout.parked) {
-        const inner = Math.hypot(placement.x, placement.y) - placement.R;
-        expect(inner, `${id} overlaps the interior`).toBeGreaterThan(furthestContent);
-        expect(Math.hypot(placement.x, placement.y)).toBeGreaterThanOrEqual(PARKED_ORBIT);
-        expect(Math.hypot(placement.x, placement.y)).toBeLessThanOrEqual(
-          PARKED_ORBIT + PARKED_ORBIT_SPREAD,
-        );
-        checked += 1;
-      }
-    }
-    expect(checked).toBeGreaterThan(0);
-  });
-
-  it('an absent parked field is the same as an empty one', () => {
-    const subject = deepestCapture();
-    const state = modelState(subject.snapshot);
-    const { parked: _dropped, ...without } = state;
-    expect(sessionLayout(without as SessionState).parked.size).toBe(0);
-    expect(sessionLayout({ ...state, parked: [] }).parked.size).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 5. Incremental stability — the DoD's named test
-// ---------------------------------------------------------------------------
-
-describe('incremental: a spawn adds, it never reflows', () => {
-  it('adding a tool call leaves every pre-existing coordinate byte-identical', () => {
-    const subject = deepestCapture();
-    const before = modelState(subject.snapshot);
-    const targets = agentIds(before);
-    expect(targets.length).toBeGreaterThan(1);
-
-    for (const target of targets) {
-      const after = withChild(before, target, newTool(`added-tool-${target}`));
-      const one = sessionLayout(before);
-      const two = sessionLayout(after);
-
-      for (const [id, cell] of one.cells) {
-        const next = two.cells.get(id);
-        expect(next, `cell ${id} vanished`).toBeDefined();
-        if (next === undefined) continue;
-        expect(Object.is(next.x, cell.x), `cell ${id} x moved`).toBe(true);
-        expect(Object.is(next.y, cell.y), `cell ${id} y moved`).toBe(true);
-        // R is content-derived by design (C7.1), and the blast radius is one
-        // node: only the agent that gained a child may change size.
-        if (id === target) continue;
-        expect(Object.is(next.R, cell.R), `cell ${id} R changed`).toBe(true);
-      }
-      for (const [id, dot] of one.dots) {
-        const next = two.dots.get(id);
-        expect(next, `dot ${id} vanished`).toBeDefined();
-        if (next === undefined) continue;
-        expect(Object.is(next.x, dot.x), `dot ${id} x moved`).toBe(true);
-        expect(Object.is(next.y, dot.y), `dot ${id} y moved`).toBe(true);
-      }
-      // The new dot really did appear, or this test would pass vacuously.
-      expect(two.dots.has(`added-tool-${target}`)).toBe(true);
-    }
-  });
-
-  it('adding a subagent and its edge leaves every pre-existing coordinate byte-identical', () => {
-    const subject = deepestCapture();
-    const before = modelState(subject.snapshot);
-    // Hang the new agent off an existing tool call in the root, the way the
-    // grafter does: the agent is a SIBLING of its spawning tool and the edge
-    // is the only record of the relationship.
-    const rootTool = before.root.children.find((c) => !isAgentNode(c));
-    expect(rootTool).toBeDefined();
-    if (rootTool === undefined) return;
-
-    const spawned: AgentNode = {
-      id: 'added-agent',
-      kind: 'subagent',
-      label: 'added',
-      status: 'running',
-      spawnDepth: 1,
-      children: [],
-      tokens: { in: 0, out: 0 },
-      startedAt: 0,
-    };
-    const withAgent = withChild(before, before.root.id, spawned);
-    const after: SessionState = {
-      ...withAgent,
-      spawnEdges: [
-        ...(before.spawnEdges ?? []),
-        {
-          toolUseId: rootTool.id,
-          agentId: 'added-agent',
-          parentNodeId: before.root.id,
-          depth: 1,
-          recordedDepth: 1,
-        },
-      ],
-    };
-
-    const one = sessionLayout(before);
-    const two = sessionLayout(after);
-    expect(two.cells.has('added-agent')).toBe(true);
-    for (const [id, cell] of one.cells) {
-      const next = two.cells.get(id);
-      expect(next).toBeDefined();
-      if (next === undefined) continue;
-      expect(Object.is(next.x, cell.x), `cell ${id} x moved`).toBe(true);
-      expect(Object.is(next.y, cell.y), `cell ${id} y moved`).toBe(true);
-      if (id === before.root.id) continue;
-      expect(Object.is(next.R, cell.R), `cell ${id} R changed`).toBe(true);
-    }
-    for (const [id, dot] of one.dots) {
-      const next = two.dots.get(id);
-      expect(next).toBeDefined();
-      if (next === undefined) continue;
-      expect(Object.is(next.x, dot.x), `dot ${id} x moved`).toBe(true);
-      expect(Object.is(next.y, dot.y), `dot ${id} y moved`).toBe(true);
-    }
-  });
-
-  it('is deterministic: two calls on the same state are identical', () => {
-    const state = modelState(deepestCapture().snapshot);
-    expect(serializeLayout(sessionLayout(state))).toStrictEqual(
-      serializeLayout(sessionLayout(state)),
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 6. The dot cap
-// ---------------------------------------------------------------------------
-
-/** A single agent carrying `n` tool calls. Not a fixture, and not pretending to be. */
-function agentWithTools(n: number): SessionState {
-  const children: ToolNode[] = [];
-  for (let i = 0; i < n; i += 1) children.push(newTool(`t${String(i).padStart(4, '0')}`));
+function toolNode(tool: MockTool): ToolNode {
   return {
-    sessionId: 'cap',
-    projectSlug: 'cap',
+    id: tool.id,
+    toolName: tool.id.startsWith('t') ? 'Agent' : 'Read',
+    status: tool.status,
+    inputPreview: '',
+  };
+}
+
+/**
+ * Build the production `SessionState` for the mock tree.
+ *
+ * AGENT CHILDREN ARE APPENDED IN REVERSE SPAWN ORDER, on purpose. If the
+ * layout drew them in array order the golden would fail; passing it is
+ * therefore evidence that the spawn-order sort actually ran, rather than
+ * evidence that the fixture happened to be pre-sorted.
+ */
+function buildMockState(): { state: SessionState; edges: SpawnEdge[] } {
+  const nodes = new Map<string, AgentNode>();
+  for (const mock of MOCK_AGENTS) {
+    nodes.set(mock.id, {
+      id: mock.id,
+      kind: mock.parent === null ? 'main' : 'subagent',
+      label: mock.label,
+      status: 'running',
+      spawnDepth: 0,
+      children: mock.tools.map(toolNode),
+      // A6: the node row shows BURN. Split across the pair so the row can only
+      // be right if it sums them.
+      burn: { prompt: mock.tokens - 100, output: 100 },
+      startedAt: 0,
+    });
+  }
+  const edges: SpawnEdge[] = [];
+  for (const mock of [...MOCK_AGENTS].reverse()) {
+    if (mock.parent === null) continue;
+    const parent = nodes.get(mock.parent);
+    const self = nodes.get(mock.id);
+    if (parent === undefined || self === undefined) continue;
+    parent.children.push(self);
+    if (mock.spawnedBy !== undefined) {
+      edges.push({
+        toolUseId: mock.spawnedBy,
+        agentId: mock.id,
+        parentNodeId: mock.parent,
+        depth: 1,
+        recordedDepth: 1,
+      });
+    }
+  }
+  const root = nodes.get('main');
+  if (root === undefined) throw new Error('mock tree has no root');
+  const state: SessionState = {
+    sessionId: 'mock',
+    projectSlug: 'mock',
     workspaceMatch: true,
     liveness: 'live',
     schemaOk: true,
-    root: {
-      id: 'root',
-      kind: 'main',
-      label: 'main',
-      status: 'running',
-      spawnDepth: 0,
-      children,
-      tokens: { in: 0, out: 0 },
-      startedAt: 0,
-    },
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    root,
+    totals: { costUsd: 0 },
+    spawnEdges: edges,
   };
+  return { state, edges };
 }
 
-describe(`the per-agent dot cap (DOT_CAP = ${DOT_CAP}, taken from canvas-contract)`, () => {
-  it('keeps the LAST DOT_CAP dots, because what is happening now is at the end', () => {
-    const state = agentWithTools(DOT_CAP + 7);
-    const layout = sessionLayout(state);
-    expect(layout.dots.size).toBe(DOT_CAP);
-    expect(layout.dots.has('t0000')).toBe(false);
-    expect(layout.dots.has(`t${String(DOT_CAP + 6).padStart(4, '0')}`)).toBe(true);
-  });
+/* ------------------------------------------------------------------------ *
+ * Re-emitting the design tables from production code
+ * ------------------------------------------------------------------------ */
 
-  it('never records an elided count of 0, so a +n badge cannot read "+0"', () => {
-    for (const n of [0, 1, DOT_CAP - 1, DOT_CAP]) {
-      const layout = sessionLayout(agentWithTools(n));
-      expect(layout.elided.size).toBe(0);
-      expect(layout.dots.size).toBe(n);
+/**
+ * Emit the design tables, byte for byte in the reference's own format.
+ *
+ * The FORMAT is copied from the reference deliberately — it is the thing being
+ * compared against. Every NUMBER and every ORDER in it comes from `layout.ts`.
+ */
+function emitTables(): string[] {
+  const { state } = buildMockState();
+  const out: string[] = [];
+  const log = (line: string): void => {
+    out.push(line);
+  };
+
+  log('## Deck goldens (viewportW = 800)\n');
+  const layouts: DeckLayoutMode[] = ['list', 'grid', 'lanes'];
+  const sorts: DeckSortMode[] = ['live', 'recent', 'engine'];
+  for (const layout of layouts) {
+    for (const sort of sorts) {
+      log(`### ${layout} · ${sort}\n\n| # | id | x | y |\n|---|---|---|---|`);
+      deckLayout(DECK_SESSIONS, layout, sort, 800).forEach((p, i) => {
+        log(`| ${i} | ${p.id} | ${p.x} | ${p.y} |`);
+      });
+      log('');
     }
-    const over = sessionLayout(agentWithTools(DOT_CAP + 5));
-    expect(over.elided.get('root')).toBe(5);
-    for (const value of over.elided.values()) expect(value).toBeGreaterThan(0);
-  });
+  }
 
-  it('the sliding cap moves nothing: surviving dots keep their coordinates', () => {
-    const before = sessionLayout(agentWithTools(DOT_CAP + 3));
-    const after = sessionLayout(agentWithTools(DOT_CAP + 4));
-    let survivors = 0;
-    for (const [id, dot] of before.dots) {
-      const next = after.dots.get(id);
-      if (next === undefined) continue; // dropped out of the visible span
-      survivors += 1;
-      expect(Object.is(next.x, dot.x), `dot ${id} x moved`).toBe(true);
-      expect(Object.is(next.y, dot.y), `dot ${id} y moved`).toBe(true);
+  log('### Tree · node widths (A1.1)\n\n| id | sub text | label | w |\n|---|---|---|---|');
+  for (const mock of MOCK_AGENTS) {
+    const agent = findMockAgent(state, mock.id);
+    log(
+      `| ${mock.id} | \`${nodeSubText(agent)}\` | ${nodeLabelText(agent)} | ${nodeWidth(agent)} |`,
+    );
+  }
+  log('');
+
+  const runs: [string, number, string][] = [
+    ['main', Number.POSITIVE_INFINITY, 'root=main, no collapse'],
+    ['main', COLLAPSE_DEPTH, 'root=main, collapseDepth=2'],
+    ['a3', Number.POSITIVE_INFINITY, 'root=a3 (focus)'],
+  ];
+  for (const [rootId, collapseDepth, label] of runs) {
+    log(
+      `### Tree · ${label}\n\n| id | depth | x | y | w | spawn-dot x | spawn-dot y |\n|---|---|---|---|---|---|---|`,
+    );
+    const placed = treeLayout(state, rootId, { collapseDepth }).filter((p) => !p.hidden);
+    const by = new Map(placed.map((p) => [p.id, p]));
+    for (const p of placed) {
+      const mock = MOCK_AGENTS.find((m) => m.id === p.id);
+      let dx: string | number = '—';
+      let dy: string | number = '—';
+      const parentId = mock?.parent ?? null;
+      const parentPlacement = parentId === null ? undefined : by.get(parentId);
+      if (mock !== undefined && parentPlacement !== undefined) {
+        const parentAgent = findMockAgent(state, parentPlacement.id);
+        const tools = toolChildren(parentAgent);
+        const index = tools.findIndex((t) => t.id === mock.spawnedBy);
+        const dot = spawnDotPos(parentPlacement, tools.length, index);
+        dx = dot.x;
+        dy = dot.y;
+      }
+      log(`| ${p.id} | ${p.depth} | ${p.x} | ${p.y} | ${p.w} | ${dx} | ${dy} |`);
     }
-    expect(survivors).toBe(DOT_CAP - 1);
+    log('');
+  }
+
+  return out.join('\n').split('\n');
+}
+
+function findMockAgent(state: SessionState, id: string): AgentNode {
+  const walk = (node: AgentNode): AgentNode | undefined => {
+    if (node.id === id) return node;
+    for (const child of node.children) {
+      if (!('kind' in child)) continue;
+      const found = walk(child as AgentNode);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  const found = walk(state.root);
+  if (found === undefined) throw new Error(`no mock agent ${id}`);
+  return found;
+}
+
+/* ------------------------------------------------------------------------ *
+ * DoD 7.1 — the layout is pure, and the superseded canvas is gone
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The needle, assembled from two halves.
+ *
+ * DoD 7.1 is stated as a grep over the whole of `webview/` returning zero, and
+ * this file lives in `webview/`. Spelling the constant out here would make the
+ * grep report one hit forever — the test that proves the deletion becoming the
+ * only reason the deletion cannot be proved.
+ */
+const PHYLLOTAXIS_NEEDLE = `GOLDEN${'_ANGLE'}`;
+
+/**
+ * Source with comments removed.
+ *
+ * The purity scans below look for CODE that reads a clock or a DOM, and this
+ * module's own header discusses both at length. Scanning raw text would fail on
+ * the prose that explains why the code does not do it, which trains the next
+ * reader to delete the explanation rather than to keep the property.
+ */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+}
+
+describe('DoD 7.1 — purity, and the deleted phyllotaxis canvas', () => {
+  let layoutSource = '';
+  let layoutCode = '';
+  let webviewFiles: string[] = [];
+
+  beforeAll(async () => {
+    layoutSource = await readFile(join(WEBVIEW_DIR, 'layout.ts'), 'utf8');
+    layoutCode = stripComments(layoutSource);
+    const entries = await readdir(WEBVIEW_DIR, { withFileTypes: true });
+    webviewFiles = entries.filter((e) => e.isFile()).map((e) => e.name);
+  }, 30_000);
+
+  it('the comment stripper removes comments and keeps code', () => {
+    // Control for every scan that runs over `layoutCode`: a stripper that
+    // returned the empty string would make all of them pass vacuously.
+    expect(stripComments('/* Date.now */ const a = 1; // Math.random\n')).toBe(
+      '  const a = 1; \n',
+    );
+    expect(layoutCode.length).toBeGreaterThan(2000);
+    expect(layoutCode).toContain('export function deckLayout');
+    expect(layoutCode).toContain('export function treeLayout');
   });
 
-  it('no two simultaneously visible dots share a position', () => {
-    const layout = sessionLayout(agentWithTools(DOT_CAP * 3 + 1));
-    const seen = new Set<string>();
-    for (const dot of layout.dots.values()) seen.add(`${dot.x},${dot.y}`);
-    expect(seen.size).toBe(layout.dots.size);
-    expect(layout.dots.size).toBe(DOT_CAP);
+  it('scans a non-trivial set of webview files', () => {
+    // The converse of every "zero findings" claim in this repo: a scan that
+    // looked at nothing reports zero too.
+    expect(webviewFiles.length).toBeGreaterThan(20);
+    expect(webviewFiles).toContain('layout.ts');
+    expect(webviewFiles).toContain('layout.reference.mjs');
+  });
+
+  it('layout.ts does not import the frozen reference', () => {
+    // The load-bearing assertion of this whole file. Two independent
+    // implementations agreeing is the evidence; production importing the
+    // reference would compare the reference against itself. Checked against
+    // CODE, not against the header - the header names the reference on purpose,
+    // to say that it must not be imported.
+    expect(layoutCode).not.toContain('layout.reference');
+    expect(layoutCode).not.toContain('goldens.mjs');
+  });
+
+  it('no file under webview/ mentions the golden angle', async () => {
+    // Including `layout.reference.mjs`, which is frozen and is asserted to be
+    // clean rather than exempted - an allow-list is the fail-open shape this
+    // repository has been bitten by, and a skip that is not reported reads
+    // exactly like a pass.
+    const hits: string[] = [];
+    let scanned = 0;
+    let bytes = 0;
+    for (const name of webviewFiles) {
+      if (!/\.(ts|mjs|js|svelte)$/.test(name)) continue;
+      const text = await readFile(join(WEBVIEW_DIR, name), 'utf8');
+      scanned += 1;
+      bytes += text.length;
+      if (text.includes(PHYLLOTAXIS_NEEDLE)) hits.push(name);
+    }
+    // The converse control: a scan that read nothing also reports zero hits.
+    expect(scanned).toBeGreaterThan(20);
+    expect(bytes).toBeGreaterThan(100_000);
+    expect(hits).toEqual([]);
+    // And the predicate itself still fires on what it is looking for.
+    expect(`export const ${PHYLLOTAXIS_NEEDLE}_RAD = 1;`).toContain(PHYLLOTAXIS_NEEDLE);
+  }, 30_000);
+
+  it('layout.ts reads no clock, no DOM and no entropy', () => {
+    for (const forbidden of [
+      'Math.random',
+      'Date.now',
+      'new Date',
+      'performance.now',
+      'document.',
+      'window.',
+      'globalThis',
+      'measureText',
+    ]) {
+      expect(layoutCode).not.toContain(forbidden);
+    }
+  });
+
+  it('imports only pure sibling modules', () => {
+    const specifiers = [...layoutCode.matchAll(/from '([^']+)'/g)].map((m) => m[1]);
+    expect(new Set(specifiers)).toEqual(
+      new Set(['../src/model/events.js', './format.js', './tree.js']),
+    );
+  });
+
+  it('deckLayout and treeLayout return identical output for identical input', () => {
+    const { state } = buildMockState();
+    const deckA = deckLayout(DECK_SESSIONS, 'grid', 'live', 800);
+    const deckB = deckLayout(DECK_SESSIONS, 'grid', 'live', 800);
+    expect(deckA).toEqual(deckB);
+    expect(treeLayout(state, 'main')).toEqual(treeLayout(state, 'main'));
+  });
+
+  it('deckLayout does not mutate the list it was given', () => {
+    const input = [...DECK_SESSIONS];
+    const before = input.map((s) => s.id);
+    deckLayout(input, 'grid', 'recent', 800);
+    expect(input.map((s) => s.id)).toEqual(before);
   });
 });
 
-// ---------------------------------------------------------------------------
-// 7. The golden set must be compared, never rewritten, by a plain run
-// ---------------------------------------------------------------------------
+/* ------------------------------------------------------------------------ *
+ * DoD 7.2 — the golden tables
+ * ------------------------------------------------------------------------ */
 
-describe('golden hygiene', () => {
-  it('countNodes counts agents and tools alike, root included', () => {
-    const state = modelState(deepestCapture().snapshot);
-    expect(countNodes(state)).toBe(agentIds(state).length + deepestCapture().snapshot.counts.toolNodes);
-    expect(toDeckSession(state)).toStrictEqual({
-      sessionId: state.sessionId,
-      nodeCount: countNodes(state),
+describe('DoD 7.2 — the frozen design tables, through production layout.ts', () => {
+  let golden: string[] = [];
+  /** `layout.reference.mjs`'s own text, for the independence assertion. */
+  let referenceSource = '';
+
+  beforeAll(async () => {
+    const parsed = JSON.parse(await readFile(GOLDEN_FILE, 'utf8')) as {
+      generatedBy: string;
+      lines: string[];
+    };
+    expect(parsed.generatedBy).toBe(REFERENCE_FILE);
+    golden = parsed.lines;
+    referenceSource = await readFile(join(REPO_ROOT, REFERENCE_FILE), 'utf8');
+  }, 30_000);
+
+  it('the golden is the reference output, and it is not empty', () => {
+    expect(golden.length).toBe(157);
+    expect(golden[0]).toBe('## Deck goldens (viewportW = 800)');
+  });
+
+  it('production reproduces every line of every table', () => {
+    const produced = emitTables();
+    // Compared line by line first, so a failure names the row rather than
+    // printing 157 lines of diff.
+    for (let i = 0; i < Math.max(produced.length, golden.length); i += 1) {
+      expect(`${i}: ${produced[i] ?? '<missing>'}`).toBe(`${i}: ${golden[i] ?? '<missing>'}`);
+    }
+    expect(produced).toEqual(golden);
+  });
+
+  it('a single wrong coordinate fails the comparison', () => {
+    // Mutation control for the assertion above.
+    const produced = emitTables();
+    const mutated = [...produced];
+    mutated[6] = '| 0 | 6082be25 | 1 | 0 |';
+    expect(mutated).not.toEqual(golden);
+  });
+
+  it('the reference ACTUALLY RUNS, and its stdout is the committed golden', () => {
+    // WHY THIS TEST EXISTS. DoD 7.2's whole evidentiary basis is that two
+    // independent implementations agree. Until this test, nothing in the suite
+    // ever executed `layout.reference.mjs`: the file above checked only that
+    // the JSON's `generatedBy` string named it and that there were 157 lines.
+    // So the independence rested on a human having pasted the right bytes once,
+    // and a future edit of `design-tables.json` to match a broken `layout.ts`
+    // would have passed forever — the golden and production agreeing with each
+    // other, with the third party absent.
+    //
+    // Running the reference closes that: the golden is now checked against the
+    // process that is supposed to have produced it, on every run.
+    const out = execFileSync('node', [REFERENCE_FILE], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    // The reference writes `lines.join('\n') + '\n'`. Dropping exactly one
+    // trailing newline — not trimming — so a table that genuinely ended in a
+    // blank line still compares.
+    const produced = out.replace(/\n$/, '').split('\n');
+    expect(produced).toHaveLength(golden.length);
+    for (let i = 0; i < Math.max(produced.length, golden.length); i += 1) {
+      expect(`${i}: ${produced[i] ?? '<missing>'}`).toBe(`${i}: ${golden[i] ?? '<missing>'}`);
+    }
+    expect(produced).toEqual(golden);
+    // No CR anywhere: the reference is a CRLF source file in this checkout and
+    // writes LF regardless, which is what makes the byte comparison portable.
+    expect(out.includes('\r')).toBe(false);
+    // ...and it is genuinely the third party. If `layout.reference.mjs` ever
+    // imported production, this whole file would be comparing `layout.ts`
+    // against itself twice. Asserted on CODE, not on text: the reference's
+    // header discusses `webview/layout.ts` at length, so a substring search
+    // would fail on the prose that explains the arrangement — the same trap
+    // `stripComments` exists for above.
+    const referenceCode = stripComments(referenceSource);
+    expect(referenceCode.match(/\bimport\b|\brequire\s*\(/g) ?? []).toStrictEqual([]);
+  }, 120_000);
+});
+
+/* ------------------------------------------------------------------------ *
+ * The deck
+ * ------------------------------------------------------------------------ */
+
+describe('the deck', () => {
+  it('carries the design constants', () => {
+    expect([DECK_CARD_W, DECK_CARD_H, DECK_GAP_X, DECK_GAP_Y]).toEqual([220, 88, 16, 12]);
+    expect(DECK_GRID_MARGIN).toBe(24);
+    expect(DECK_LANE_GAP).toBe(40);
+    expect(DECK_LANE_HEADER_Y).toBe(-28);
+    expect(deckLaneX('cc')).toBe(0);
+    expect(deckLaneX('oc')).toBe(DECK_CARD_W + 40);
+  });
+
+  it('defaults to grid · live first · all', () => {
+    expect(DEFAULT_DECK_LAYOUT).toBe('grid');
+    expect(DEFAULT_DECK_SORT).toBe('live');
+    // The engine filter's default is `canvas-contract.ts`'s now, not this
+    // module's: it is store state, and this module never sees a filter.
+    expect(DEFAULT_ENGINE_FILTER).toBe('all');
+  });
+
+  it('an arriving session RE-PLACES the deck: placement is by array index', () => {
+    // The deck half of the same correction. `deckLayout` sorts and then hands
+    // out slots by index, so a session that sorts ahead of the others pushes
+    // every one of them down a row. Pinned by exact coordinates, because the
+    // module header now states this and a stated property with no test is what
+    // let the false claim survive a phase.
+    const three: DeckSession[] = [
+      { id: '6082be25', engine: 'cc', status: 'live', last: -4000 },
+      { id: 'ses_a91f', engine: 'oc', status: 'live', last: -11000 },
+      { id: '4299490e', engine: 'cc', status: 'idle', last: -140000 },
+    ];
+    expect(deckLayout(three, 'list', 'live', 800)).toStrictEqual([
+      { id: '6082be25', x: 0, y: 0 },
+      { id: 'ses_a91f', x: 0, y: 100 },
+      { id: '4299490e', x: 0, y: 200 },
+    ]);
+
+    // One more session, more recent than all three, so it sorts first.
+    const four: DeckSession[] = [
+      ...three,
+      { id: '0000newest', engine: 'cc', status: 'live', last: -1000 },
+    ];
+    expect(deckLayout(four, 'list', 'live', 800)).toStrictEqual([
+      { id: '0000newest', x: 0, y: 0 },
+      { id: '6082be25', x: 0, y: 100 },
+      { id: 'ses_a91f', x: 0, y: 200 },
+      { id: '4299490e', x: 0, y: 300 },
+    ]);
+    // Every pre-existing card moved by exactly one row pitch. Asserted as a
+    // count as well, so "nothing moved" and "everything moved" are both red.
+    const wasAt = new Map(deckLayout(three, 'list', 'live', 800).map((p) => [p.id, p.y]));
+    const nowAt = new Map(deckLayout(four, 'list', 'live', 800).map((p) => [p.id, p.y]));
+    const shifted = [...wasAt.keys()].filter((id) => nowAt.get(id) !== wasAt.get(id));
+    expect(shifted.sort()).toStrictEqual(['4299490e', '6082be25', 'ses_a91f']);
+    for (const id of shifted) {
+      expect({ id, delta: (nowAt.get(id) ?? 0) - (wasAt.get(id) ?? 0) }).toStrictEqual({
+        id,
+        delta: DECK_CARD_H + DECK_GAP_Y,
+      });
+    }
+  });
+
+  it('columns come from the stage-unit width', () => {
+    expect(deckColumns(800)).toBe(3);
+    expect(deckColumns(0)).toBe(1);
+    expect(deckColumns(-1000)).toBe(1);
+    expect(deckColumns(260)).toBe(1);
+    // One unit short of the first whole column still yields a column: a deck
+    // with zero columns would place every card at x = NaN.
+    expect(deckColumns(259)).toBe(1);
+    expect(deckColumns(496)).toBe(2);
+  });
+
+  it('every sort ends on the session id', () => {
+    // Two rows identical in every key the sort reads except the id. Fed in
+    // both orders; both must come out id-ascending.
+    const tie: DeckSession[] = [
+      { id: 'zzz', engine: 'cc', status: 'live', last: -1 },
+      { id: 'aaa', engine: 'cc', status: 'live', last: -1 },
+    ];
+    for (const sort of ['live', 'recent', 'engine'] as DeckSortMode[]) {
+      expect(sortDeckSessions(tie, sort).map((s) => s.id)).toEqual(['aaa', 'zzz']);
+      expect(sortDeckSessions([...tie].reverse(), sort).map((s) => s.id)).toEqual([
+        'aaa',
+        'zzz',
+      ]);
+    }
+  });
+
+  it('ranks status live < idle < degraded < unsupported < ended', () => {
+    const rows: DeckSession[] = (
+      ['ended', 'unsupported', 'degraded', 'idle', 'live'] as const
+    ).map((status, i) => ({ id: `s${i}`, engine: 'cc', status, last: 0 }));
+    expect(sortDeckSessions(rows, 'live').map((s) => s.status)).toEqual([
+      'live',
+      'idle',
+      'degraded',
+      'unsupported',
+      'ended',
+    ]);
+  });
+
+  it('lanes render as list when one engine is visible, and no empty lane appears', () => {
+    const ccOnly = DECK_SESSIONS.filter((s) => s.engine === 'cc');
+    expect(deckLanesDegrade(ccOnly)).toBe(true);
+    expect(deckLayout(ccOnly, 'lanes', 'live', 800)).toEqual(
+      deckLayout(ccOnly, 'list', 'live', 800),
+    );
+    expect(deckLanesDegrade(DECK_SESSIONS)).toBe(false);
+    expect(deckLayout([], 'lanes', 'live', 800)).toEqual([]);
+  });
+
+  it('maps SessionState.engine onto the deck vocabulary, absence reading as cc', () => {
+    expect(deckEngine('opencode')).toBe('oc');
+    expect(deckEngine('cc')).toBe('cc');
+    expect(deckEngine(undefined)).toBe('cc');
+  });
+
+  it('toDeckSession takes the last-event time from its caller', () => {
+    const { state } = buildMockState();
+    expect(toDeckSession({ ...state, engine: 'opencode' }, -42)).toEqual({
+      id: 'mock',
+      engine: 'oc',
+      status: 'live',
+      last: -42,
     });
   });
 
-  it('a regeneration run is never green', () => {
-    // HANDOVER carry-forward G: `AGENT_DECK_UPDATE_GOLDENS=1` turns golden
-    // suites into a rubber stamp. It cannot here — with the var set this file
-    // writes the new numbers and then FAILS, so the only way to a green run is
-    // to read the diff and commit it. A plain `npx vitest run` writes nothing.
-    expect(
-      UPDATE_GOLDENS,
-      'goldens were REGENERATED, not compared — review the diff and commit it, then re-run without AGENT_DECK_UPDATE_GOLDENS',
-    ).toBe(false);
+  it('counts every node in a tree, agents and tools alike', () => {
+    const { state } = buildMockState();
+    const tools = MOCK_AGENTS.reduce((n, m) => n + m.tools.length, 0);
+    expect(countNodes(state)).toBe(MOCK_AGENTS.length + tools);
+  });
+
+  it('rounds to three decimals and never emits negative zero', () => {
+    expect(roundCoord(1 / 3)).toBe(0.333);
+    expect(Object.is(roundCoord(-0.0001), 0)).toBe(true);
   });
 });
 
-describe('nothing overlaps: separation is why the picture is readable', () => {
-  /** Every pair, so one missed collision cannot hide behind an average. */
-  function overlaps(
-    circles: readonly { x: number; y: number; R: number }[],
-  ): Array<[number, number, number]> {
-    const bad: Array<[number, number, number]> = [];
-    for (let i = 0; i < circles.length; i += 1) {
-      for (let j = i + 1; j < circles.length; j += 1) {
-        const p = circles[i];
-        const q = circles[j];
-        if (p === undefined || q === undefined) continue;
-        const gap = Math.hypot(p.x - q.x, p.y - q.y) - p.R - q.R;
-        if (gap < 0) bad.push([i, j, gap]);
-      }
-    }
-    return bad;
-  }
+/* ------------------------------------------------------------------------ *
+ * The tree — widths, and the defect class the old canvas had
+ * ------------------------------------------------------------------------ */
 
-  /** Sizes deliberately varied: even centres, uneven radii, is the bug. */
-  function deckOf(n: number): DeckSession[] {
-    return Array.from({ length: n }, (_, i) => ({
-      sessionId: `s-${String(i)}`,
-      nodeCount: 1 + ((i * 37) % 400),
-    }));
-  }
-
-  it('places no two deck blobs on top of each other, at any count', () => {
-    // The spiral spaces CENTRES evenly and knows nothing about radii, so a
-    // busy session beside a quiet one is exactly the case that overlapped.
-    for (const n of [2, 6, 12, 30]) {
-      const bad = overlaps(deckLayout(deckOf(n)));
-      expect(bad, `${String(bad.length)} overlapping pairs at n=${String(n)}`).toEqual([]);
-    }
+describe('node width (A1.1)', () => {
+  it('carries the design constants', () => {
+    expect([NODE_W_MIN, NODE_H, LEVEL_GAP, SIBLING_GAP]).toEqual([168, 52, 112, 24]);
+    expect([SUB_ADVANCE, LABEL_ADVANCE]).toEqual([6.3, 7.0]);
+    expect(LABEL_MAX_CHARS).toBe(19);
   });
 
-  it('places no two cells on top of each other, on every committed fixture', () => {
-    const subjects = [...captured, ...synthetic];
-    expect(subjects.length).toBeGreaterThan(0);
-    let checked = 0;
-    for (const subject of subjects) {
-      const layout = sessionLayout(modelState(subject.snapshot));
-      const circles = [...layout.cells.values(), ...layout.parked.values()];
-      if (circles.length < 2) continue;
-      checked += 1;
-      const bad = overlaps(circles);
-      expect(bad, `${String(bad.length)} overlapping cells in ${subject.path}`).toEqual([]);
-    }
-    // Loud rather than vacuous: a corpus of one-cell sessions would pass
-    // this test while proving nothing about separation.
-    expect(checked).toBeGreaterThan(0);
+  it('truncates a label at 19 characters with an ellipsis', () => {
+    const agent = findMockAgent(buildMockState().state, 'a3');
+    expect(agent.label).toBe('readme-guard-rederive');
+    expect(nodeLabelText(agent)).toBe('readme-guard-reder…');
+    expect(nodeLabelText(agent).length).toBe(19);
+    const short = { ...agent, label: 'exactly-19-chars-ab' };
+    expect(short.label.length).toBe(19);
+    expect(nodeLabelText(short)).toBe('exactly-19-chars-ab');
   });
 
-  it('STILL INCREMENTAL: separating a newcomer never moves anyone already placed', () => {
-    // The property separation could plausibly have broken, and the reason it
-    // does not: only the candidate moves, and placement order is fixed.
-    for (let n = 1; n < 14; n += 1) {
-      const before = deckLayout(deckOf(n));
-      const after = deckLayout(deckOf(n + 1));
-      for (let i = 0; i < before.length; i += 1) {
-        expect(Object.is(after[i]?.x, before[i]?.x), `blob ${String(i)} moved in x at n=${String(n)}`).toBe(
-          true,
-        );
-        expect(Object.is(after[i]?.y, before[i]?.y), `blob ${String(i)} moved in y at n=${String(n)}`).toBe(
-          true,
-        );
-      }
-    }
+  it('formats the token figure compactly, and absence as an em-dash', () => {
+    expect(formatCompactTokens(400)).toBe('400');
+    expect(formatCompactTokens(184300)).toBe('184.3k');
+    expect(formatCompactTokens(1_200_000)).toBe('1.2M');
+    expect(formatCompactTokens(undefined)).toBe('—');
+    expect(formatCompactTokens(0)).toBe('0');
   });
 
-  it('STILL DETERMINISTIC: the same input separates to the same coordinates', () => {
-    expect(deckLayout(deckOf(12))).toStrictEqual(deckLayout(deckOf(12)));
-    const state = modelState(deepestCapture().snapshot);
-    expect(sessionLayout(state).cells).toStrictEqual(sessionLayout(state).cells);
+  it('shows an em-dash, never a zero, when burn is absent', () => {
+    // The OpenCode engine leaves `burn` unset. `0` would claim the session
+    // spent nothing, which is a wrong number rather than a missing one.
+    const agent = findMockAgent(buildMockState().state, 'a1');
+    const withoutBurn: AgentNode = { ...agent, burn: undefined };
+    expect(nodeSubText(withoutBurn)).toBe('— · 3 calls');
+    expect(nodeSubText(withoutBurn)).not.toContain('0 ·');
   });
 
-  it('terminates on a pathological pile rather than looping forever', () => {
-    // SEPARATION_ATTEMPTS is a bound, not a target. A layout that cannot be
-    // fully separated must still RETURN: overlapping is a visual defect,
-    // hanging is a broken panel.
-    const many = Array.from({ length: 200 }, (_, i) => ({
-      sessionId: `s-${String(i)}`,
-      nodeCount: 5000,
-    }));
-    const placed = deckLayout(many);
-    expect(placed).toHaveLength(200);
+  it('reads BURN, summing both halves of the pair (A6)', () => {
+    const agent = findMockAgent(buildMockState().state, 'main');
+    expect(agent.burn).toEqual({ prompt: 184200, output: 100 });
+    expect(nodeSubText(agent)).toBe('184.3k · 7 calls · 2 running');
+    // contextNow is a LEVEL and must not reach this row.
+    const withContext: AgentNode = { ...agent, contextNow: { prompt: 9, output: 9 } };
+    expect(nodeSubText(withContext)).toBe(nodeSubText(agent));
+  });
+
+  it('is a function of TEXT, not of the number of children', () => {
+    // The defect the predecessor canvas had: a drawn size that grew with child
+    // count, so one new subagent moved cells already on screen. A subagent is
+    // not a tool call, so it must not touch the row-2 string at all.
+    const { state } = buildMockState();
+    const a1 = findMockAgent(state, 'a1');
+    const a1a = findMockAgent(state, 'a1a');
+    const before = nodeWidth(a1);
+    const fatter: AgentNode = {
+      ...a1,
+      children: [...a1.children, { ...a1a, id: 'extra-1' }, { ...a1a, id: 'extra-2' }],
+    };
+    expect(nodeWidth(fatter)).toBe(before);
+    expect(nodeSubText(fatter)).toBe(nodeSubText(a1));
+  });
+
+  it('never falls below the minimum', () => {
+    const { state } = buildMockState();
+    const tiny: AgentNode = {
+      ...findMockAgent(state, 'a3aa'),
+      label: 'a',
+      children: [],
+      burn: { prompt: 1, output: 0 },
+    };
+    expect(nodeSubText(tiny)).toBe('1 · 0 calls');
+    expect(nodeWidth(tiny)).toBe(NODE_W_MIN);
+  });
+});
+
+describe('the tidy tree', () => {
+  it('centres each parent over the span of its children', () => {
+    const { state } = buildMockState();
+    const placed = treeLayout(state, 'main').filter((p) => !p.hidden);
+    const by = new Map(placed.map((p) => [p.id, p]));
+    const parent = by.get('a3');
+    const first = by.get('a3a');
+    const last = by.get('a3b');
+    expect(parent && first && last).toBeTruthy();
+    if (parent === undefined || first === undefined || last === undefined) return;
+    const span = last.x + last.w - first.x;
+    expect(roundCoord(parent.x + parent.w / 2)).toBe(roundCoord(first.x + span / 2));
+  });
+
+  it('separates sibling subtrees by exactly SIBLING_GAP and never overlaps', () => {
+    const { state } = buildMockState();
+    const placed = treeLayout(state, 'main').filter((p) => !p.hidden);
+    const byDepth = new Map<number, TreePlacement[]>();
     for (const p of placed) {
-      expect(Number.isFinite(p.x)).toBe(true);
-      expect(Number.isFinite(p.y)).toBe(true);
+      const row = byDepth.get(p.depth) ?? [];
+      row.push(p);
+      byDepth.set(p.depth, row);
     }
+    for (const row of byDepth.values()) {
+      const sorted = [...row].sort((a, b) => a.x - b.x);
+      for (let i = 1; i < sorted.length; i += 1) {
+        const left = sorted[i - 1];
+        const right = sorted[i];
+        if (left === undefined || right === undefined) continue;
+        expect(right.x).toBeGreaterThanOrEqual(left.x + left.w);
+      }
+    }
+  });
+
+  it('puts one level exactly NODE_H + LEVEL_GAP below the last', () => {
+    const { state } = buildMockState();
+    for (const p of treeLayout(state, 'main').filter((x) => !x.hidden)) {
+      expect(p.y).toBe(p.depth * (NODE_H + LEVEL_GAP));
+    }
+  });
+
+  it('roots at (x, 0) and re-roots on any agent', () => {
+    const { state } = buildMockState();
+    const focus = treeLayout(state, 'a3').filter((p) => !p.hidden);
+    expect(focus[0]?.id).toBe('a3');
+    expect(focus[0]?.y).toBe(0);
+    expect(focus.map((p) => p.id)).toEqual(['a3', 'a3a', 'a3aa', 'a3b']);
+  });
+
+  it('returns nothing for a root that is not in the tree', () => {
+    const { state } = buildMockState();
+    expect(treeLayout(state, 'no-such-agent')).toEqual([]);
+    expect(visibleNodeCount(state, 'no-such-agent')).toBe(0);
+  });
+
+  it('takes a width override so the store can hold width monotonic', () => {
+    // The layout stays memoryless: monotonicity is the STORE's job and it
+    // arrives here as data. Widening one node must move only what is downstream
+    // of that node's own subtree span.
+    const { state } = buildMockState();
+    const base = treeLayout(state, 'main').filter((p) => !p.hidden);
+    const widths = new Map<string, number>([['a3b', 400]]);
+    const wider = treeLayout(state, 'main', { widths }).filter((p) => !p.hidden);
+    expect(wider.find((p) => p.id === 'a3b')?.w).toBe(400);
+    expect(base.find((p) => p.id === 'a3b')?.w).toBe(183);
+    // a1's subtree sits to the LEFT of a3's, so it cannot have moved.
+    expect(wider.find((p) => p.id === 'a1a')?.x).toBe(
+      base.find((p) => p.id === 'a1a')?.x,
+    );
+  });
+
+  /**
+   * The newborn every spawn test below adds, so they all measure one event.
+   *
+   * Its width is the FLOOR, `NODE_W_MIN` — "1 · 0 calls" and `new-arrival` are
+   * both short enough — which is what makes the deltas below round numbers:
+   * the subtree gains `168 + SIBLING_GAP` = 192 of extent, and a centred parent
+   * therefore moves by half of it, 96.
+   */
+  function newborn(): AgentNode {
+    return {
+      id: 'a3c',
+      kind: 'subagent',
+      label: 'new-arrival',
+      status: 'running',
+      spawnDepth: 2,
+      children: [],
+      burn: { prompt: 1, output: 0 },
+      startedAt: 0,
+    };
+  }
+
+  it('a spawn MOVES every ancestor: the tidy tree is NOT coordinate-stable', () => {
+    // THIS FILE USED TO ASSERT THE OPPOSITE, and `layout.ts`'s header used to
+    // claim it: "A spawn ADDS; it never reflows anything already placed."
+    // False for this algorithm, and it went unnoticed for a phase because the
+    // two tests that would have caught it were deleted and replaced by one
+    // about WIDTHS — a different, weaker property that is also true.
+    //
+    // A property nobody tests is one that drifts silently, so the real
+    // behaviour is pinned here by EXACT COORDINATES rather than described. If
+    // these numbers move, the layout changed and the header is stale again.
+    /** Read a coordinate, or fail naming the id — never silently `undefined`. */
+    const at = (map: Map<string, number>, id: string): number => {
+      const x = map.get(id);
+      if (x === undefined) throw new Error(`no placement for ${id}`);
+      return x;
+    };
+
+    const { state } = buildMockState();
+    const xs = (): Map<string, number> =>
+      new Map(
+        treeLayout(state, 'main')
+          .filter((p) => !p.hidden)
+          .map((p) => [p.id, p.x]),
+      );
+
+    const before = xs();
+    findMockAgent(state, 'a3').children.push(newborn());
+    const after = xs();
+
+    expect(after.get('a3c')).toBe(842);
+
+    // The ancestry of the growing subtree: a3 is the parent, main is the root.
+    // Both re-centre, by exactly half the extent the newborn claims.
+    expect({ main: at(before, 'main'), a3: at(before, 'a3') }).toStrictEqual({
+      main: 307.5,
+      a3: 521,
+    });
+    expect({ main: at(after, 'main'), a3: at(after, 'a3') }).toStrictEqual({
+      main: 403.5,
+      a3: 617,
+    });
+    const half = (NODE_W_MIN + SIBLING_GAP) / 2;
+    expect(at(after, 'main') - at(before, 'main')).toBe(half);
+    expect(at(after, 'a3') - at(before, 'a3')).toBe(half);
+
+    // And everything OUTSIDE that ancestry is byte-identical. That is the half
+    // of the old claim which survived, and it is what keeps a spawn in one
+    // branch from redrawing the whole picture.
+    for (const id of ['a1', 'a1a', 'a2', 'a3a', 'a3aa', 'a3b']) {
+      expect({ id, x: after.get(id) }).toStrictEqual({ id, x: before.get(id) });
+    }
+
+    // Stated as a count too, so a change that froze EVERY coordinate — which
+    // would make the loop above pass while contradicting the two assertions
+    // before it — cannot read as green.
+    const moved = [...before.keys()].filter((id) => after.get(id) !== before.get(id)).sort();
+    expect(moved).toStrictEqual(['a3', 'main']);
+  });
+
+  it('a spawn adds without changing any width already drawn', () => {
+    // The property that IS stable, and the reason the instability above is
+    // acceptable: no node's WIDTH moves, so nothing reflows because of a DRAWN
+    // SIZE feeding back into position. That feedback is what the predecessor
+    // canvas did — it separated on a radius that grew with child count — and it
+    // is the thing `layout.ts` still forbids.
+    const { state } = buildMockState();
+    const before = new Map(
+      treeLayout(state, 'main')
+        .filter((p) => !p.hidden)
+        .map((p) => [p.id, p.w]),
+    );
+    findMockAgent(state, 'a3').children.push(newborn());
+    const grown = treeLayout(state, 'main').filter((p) => !p.hidden);
+    expect(grown.some((p) => p.id === 'a3c')).toBe(true);
+    for (const p of grown) {
+      if (p.id === 'a3c') continue;
+      expect(p.w).toBe(before.get(p.id));
+    }
+  });
+
+  it('places the spawn dots centred on the node', () => {
+    const { state } = buildMockState();
+    const main = treeLayout(state, 'main')[0];
+    expect(main).toBeTruthy();
+    if (main === undefined) return;
+    const tools = toolChildren(findMockAgent(state, 'main'));
+    const first = spawnDotPos(main, tools.length, 0);
+    const last = spawnDotPos(main, tools.length, tools.length - 1);
+    expect(roundCoord((first.x + last.x) / 2)).toBe(roundCoord(main.x + main.w / 2));
+    expect(first.y).toBe(main.y + NODE_H + 11);
   });
 });
 
-describe('CELL_FOOTPRINT agrees with the constants it was derived from', () => {
-  it('equals LABEL_PAD + CELL_RADIUS_MAX', () => {
-    // CELL_FOOTPRINT spells CELL_RADIUS_MAX as a literal, because that
-    // constant is declared further down layout.ts than the footprint is used.
-    // This is the guard that keeps the literal honest: change the max cell
-    // radius and this fails rather than the layout quietly under-separating.
-    expect(CELL_FOOTPRINT).toBe(roundCoord(LABEL_PAD + CELL_RADIUS_MAX));
+/* ------------------------------------------------------------------------ *
+ * DoD 7.8 (layout half) — collapse, and the 300-node boundary
+ * ------------------------------------------------------------------------ */
+
+/** A root with `n - 1` children, each of which has one child of its own. */
+function chainOfWidth(total: number): SessionState {
+  const root: AgentNode = {
+    id: 'root',
+    kind: 'main',
+    label: 'root',
+    status: 'running',
+    spawnDepth: 0,
+    children: [],
+    burn: { prompt: 1, output: 0 },
+    startedAt: 0,
+  };
+  const edges: SpawnEdge[] = [];
+  let made = 1;
+  let i = 0;
+  while (made < total) {
+    const branch: AgentNode = {
+      id: `b${String(i).padStart(4, '0')}`,
+      kind: 'subagent',
+      label: `b${i}`,
+      status: 'running',
+      spawnDepth: 1,
+      children: [],
+      burn: { prompt: 1, output: 0 },
+      startedAt: 0,
+    };
+    root.children.push(branch);
+    made += 1;
+    i += 1;
+    if (made < total) {
+      const leaf: AgentNode = {
+        id: `${branch.id}-leaf`,
+        kind: 'subagent',
+        label: 'leaf',
+        status: 'running',
+        spawnDepth: 2,
+        children: [],
+        burn: { prompt: 1, output: 0 },
+        startedAt: 0,
+      };
+      branch.children.push(leaf);
+      made += 1;
+    }
+  }
+  return {
+    sessionId: 'chain',
+    projectSlug: 'chain',
+    workspaceMatch: true,
+    liveness: 'live',
+    schemaOk: true,
+    root,
+    totals: { costUsd: 0 },
+    spawnEdges: edges,
+  };
+}
+
+describe('DoD 7.8 (layout half) — collapse', () => {
+  it('the threshold is 300 and the collapsed depth is 2', () => {
+    expect(AUTO_COLLAPSE_NODES).toBe(300);
+    expect(COLLAPSE_DEPTH).toBe(2);
   });
 
-  it('reserves more room for the label than for the membrane', () => {
-    // The point of the whole change: the text is the wide thing, not the
-    // circle. If this ever inverts, separating on the membrane would be
-    // enough again and the pad would be dead weight.
-    expect(LABEL_PAD).toBeGreaterThan(CELL_RADIUS_MAX / 2);
+  it('299, 300 and 301 nodes: strictly greater collapses', () => {
+    // Tested on both sides AND on the boundary itself, because an off-by-one
+    // here is invisible in production - the tree just quietly renders a
+    // different shape.
+    for (const [n, expected] of [
+      [299, Number.POSITIVE_INFINITY],
+      [300, Number.POSITIVE_INFINITY],
+      [301, COLLAPSE_DEPTH],
+    ] as const) {
+      const state = chainOfWidth(n);
+      expect(visibleNodeCount(state, 'root')).toBe(n);
+      expect(autoCollapseDepth(state, 'root')).toBe(expected);
+    }
+  });
+
+  it('a collapsed node keeps its descendants, marked hidden, and counts them', () => {
+    const { state } = buildMockState();
+    const placed = treeLayout(state, 'main', { collapseDepth: COLLAPSE_DEPTH });
+    const drawn = placed.filter((p) => !p.hidden).map((p) => p.id);
+    const hidden = placed.filter((p) => p.hidden).map((p) => p.id);
+    expect(drawn).toEqual(['main', 'a1', 'a1a', 'a2', 'a3', 'a3a', 'a3b']);
+    expect(hidden).toEqual(['a3aa']);
+
+    const collapsed = placed.filter((p) => p.collapsed).map((p) => p.id);
+    expect(collapsed).toEqual(['a3a']);
+    expect(placed.find((p) => p.id === 'a3a')?.hiddenDescendants).toBe(1);
+    // A leaf at the same depth is NOT collapsed - it has nothing to hide.
+    expect(placed.find((p) => p.id === 'a1a')?.collapsed).toBe(false);
+  });
+
+  it('a hidden node sits on the collapsed ancestor that swallowed it', () => {
+    const { state } = buildMockState();
+    const placed = treeLayout(state, 'main', { collapseDepth: COLLAPSE_DEPTH });
+    const parent = placed.find((p) => p.id === 'a3a');
+    const child = placed.find((p) => p.id === 'a3aa');
+    expect(child?.x).toBe(parent?.x);
+    expect(child?.y).toBe(parent?.y);
+  });
+
+  it('collapseDepth 0 draws only the root', () => {
+    const { state } = buildMockState();
+    const placed = treeLayout(state, 'main', { collapseDepth: 0 });
+    expect(placed.filter((p) => !p.hidden).map((p) => p.id)).toEqual(['main']);
+    expect(placed.find((p) => p.id === 'main')?.hiddenDescendants).toBe(
+      MOCK_AGENTS.length - 1,
+    );
+    expect(visibleNodeCount(state, 'main', 0)).toBe(1);
+  });
+
+  it('visibleNodeCount agrees with what treeLayout actually draws', () => {
+    const { state } = buildMockState();
+    for (const depth of [0, 1, 2, 3, Number.POSITIVE_INFINITY]) {
+      expect(visibleNodeCount(state, 'main', depth)).toBe(
+        treeLayout(state, 'main', { collapseDepth: depth }).filter((p) => !p.hidden)
+          .length,
+      );
+    }
   });
 });

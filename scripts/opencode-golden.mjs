@@ -656,13 +656,28 @@ function buildSessionState(ctx) {
 
   const spawnEdges = [];
   const parked = [];
-  const totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  /*
+   * COST ONLY. `inputTokens`/`outputTokens` are gone from the contract, and
+   * this generator does NOT replace them with `burn` derived from
+   * `session.tokens_input`.
+   *
+   * Derived from the storage format, independently of `src/opencode/`: the
+   * `session` row's `tokens_input` equals the sum of that session's own
+   * `step-finish` part rows' `tokens.input` - so it IS cumulative - but those
+   * same rows carry a SEPARATE `tokens.cache.read`, and it dwarfs `input`
+   * (1.18.22: 8,875,276 against 1,227,047; 1.18.21: 4,653,176 against
+   * 389,665). `TokenPair.prompt` is the WHOLE prompt, so `tokens_input` is a
+   * fraction of it, not it. Emitting it would reproduce through this engine
+   * the exact "2 instead of 42,199" defect the contract change removes.
+   *
+   * So `contextNow` and `burn` are ABSENT for OpenCode - serialized `null`
+   * here, never 0, because 0 is a claim and absence is the truth.
+   */
+  const totals = { costUsd: 0 };
 
   /** Recursively build the AgentNode for `session` at `depth`. */
   const buildAgent = (session, depth) => {
     seenSessionRows.add(session.id);
-    totals.inputTokens += session.tokensInput;
-    totals.outputTokens += session.tokensOutput;
     totals.costUsd += session.cost;
 
     const nodeId = depth === 0 ? 'root' : session.id;
@@ -735,7 +750,9 @@ function buildSessionState(ctx) {
       status,
       spawnDepth: depth,
       children,
-      tokens: { in: session.tokensInput, out: session.tokensOutput },
+      // No `contextNow`, no `burn`: see the note on `totals` above. The
+      // correct prompt is reachable from `step-finish` (`input` + `cache.read`
+      // + `cache.write`) and reading those rows is deferred, not guessed.
       startedAt: session.timeCreated,
       /*
        * `endedAt`: OC4 makes `time_archived` the session-end signal. It is NULL
@@ -805,11 +822,9 @@ function buildSessionState(ctx) {
      */
     schemaOk: true,
     epochAnchor: new Date(root.timeCreated).toISOString(),
-    totals: {
-      inputTokens: totals.inputTokens,
-      outputTokens: totals.outputTokens,
-      costUsd: totals.costUsd,
-    },
+    totals: { costUsd: totals.costUsd },
+    contextNow: null,
+    burn: null,
     spawnEdges,
     parked,
     root: serializeAgent(rootNode, root.timeCreated, counts),
@@ -829,7 +844,8 @@ function serializeAgent(node, anchor, counts) {
     label: node.label,
     status: node.status,
     spawnDepth: node.spawnDepth,
-    tokens: { in: node.tokens.in, out: node.tokens.out },
+    contextNow: node.contextNow ?? null,
+    burn: node.burn ?? null,
     startedAtOffsetMs: node.startedAt - anchor,
     endedAtOffsetMs: node.endedAt === undefined ? null : node.endedAt - anchor,
     children: node.children.map((child) =>

@@ -216,7 +216,11 @@ describe('agent detail', () => {
     kind: 'subagent',
     spawnDepth: 2,
     status: 'running',
-    tokens: { in: 12_345, out: 6_789 },
+    // DELIBERATELY DIFFERENT NUMBERS. If the two pairs were equal the test
+    // below could not tell a renderer that reads `contextNow` from one that
+    // reads `burn`, and both rows would pass while one was wrong.
+    contextNow: { prompt: 12_345, output: 6_789 },
+    burn: { prompt: 24_690, output: 13_578 },
     startedAt: 1_000,
     endedAt: 62_000,
   });
@@ -229,14 +233,119 @@ describe('agent detail', () => {
     );
     expect(one(container, 'inspector-kind').textContent).toBe('subagent');
     expect(one(container, 'inspector-spawn-depth').textContent).toBe('2');
-    expect(one(container, 'inspector-tokens').textContent).toBe('12,345 in / 6,789 out');
+    // CONTEXT IS A LEVEL AND CARRIES ONE NUMBER; BURN IS A TOTAL AND CARRIES
+    // TWO. The two pairs hold different numbers above precisely so these
+    // assertions can fail when a row reads the wrong field: `24,690` here
+    // would mean the context row is reading `burn`.
+    expect(one(container, 'inspector-tokens').textContent).toBe('12,345');
+    expect(one(container, 'inspector-burn').textContent).toBe('24,690 in / 13,578 out');
     expect(one(container, 'inspector-duration').textContent).toBe('1m 01s');
+  });
+
+  it('states NO PERCENTAGE anywhere, on any field', () => {
+    // No transcript in either corpus states a context-window size, so a
+    // percentage would have to come from a model-name lookup table — memory
+    // rather than fixture (G6). The absence is the decision, so it is pinned.
+    const container = render({
+      node,
+      sessionId: 'session-live',
+      engine: 'cc',
+      breadcrumb: [{ id: 'root', label: 'main session' }],
+    });
+    expect(one(container, TESTID.inspector).textContent).not.toContain('%');
   });
 
   it('renders no payload preview and no expander for an agent', () => {
     const container = render({ node });
     expect(all(container, 'payload-preview')).toHaveLength(0);
     expect(all(container, 'inspector-expand')).toHaveLength(0);
+  });
+});
+
+describe('the drawer header (DoD 7.6)', () => {
+  const node: AgentNode = agent({
+    id: 'agent-2',
+    label: 'code-reviewer: check the diff',
+    kind: 'subagent',
+    spawnDepth: 2,
+    status: 'running',
+    contextNow: { prompt: 900, output: 120 },
+    burn: { prompt: 1_800, output: 240 },
+    startedAt: 1_000,
+  });
+
+  const props = {
+    node,
+    sessionId: 'ses_5f2a1c9b8d7e4f30a1b2c3d4e5f60718',
+    engine: 'opencode' as const,
+    breadcrumb: [
+      { id: 'root', label: 'main session' },
+      { id: 'agent-1', label: 'test-runner: run the module suite' },
+      { id: 'agent-2', label: 'code-reviewer: check the diff' },
+    ],
+  };
+
+  it('carries the engine glyph, in the deck’s own two-letter vocabulary', () => {
+    const container = render(props);
+    expect(one(container, 'inspector-engine').textContent).toBe('oc');
+    expect(one(container, 'inspector-engine').dataset['engine']).toBe('opencode');
+    expect(one(render({ ...props, engine: 'cc' }), 'inspector-engine').textContent).toBe('cc');
+  });
+
+  it('carries the FULL session id and the FULL agent id, never a prefix', () => {
+    // These are the two halves of every join key in this system. A shortened
+    // one cannot be pasted into a grep, which is most of what they are for.
+    const container = render(props);
+    expect(one(container, 'inspector-session-id').textContent).toBe(props.sessionId);
+    expect(one(container, 'inspector-id').textContent).toBe('agent-2');
+  });
+
+  it('carries the status, the spawn depth and the duration', () => {
+    const container = render(props);
+    expect(one(container, 'status-chip').dataset['status']).toBe('running');
+    expect(one(container, 'inspector-spawn-depth').textContent).toBe('2');
+    // No `endedAt`, so there is no duration to state and none is invented.
+    expect(one(container, 'inspector-duration').textContent).toBe(EM_DASH);
+  });
+
+  it('carries the breadcrumb path as TEXT, root first', () => {
+    const container = render(props);
+    expect(one(container, 'inspector-path').textContent).toBe(
+      'main session / test-runner: run the module suite / code-reviewer: check the diff',
+    );
+  });
+
+  it('renders context as a LEVEL and burn as a TOTAL, by value', () => {
+    const container = render(props);
+    expect(one(container, 'inspector-tokens').textContent).toBe('900');
+    expect(one(container, 'inspector-burn').textContent).toBe('1,800 in / 240 out');
+  });
+
+  it('prints an em-dash, never 0, when the engine reports neither figure', () => {
+    // OpenCode supplies neither in this phase. `0` would claim the session
+    // spent nothing, which is a fabricated figure — the same class of defect
+    // as a fabricated cost.
+    const bare = agent({
+      id: 'agent-3',
+      label: 'oc agent',
+      spawnDepth: 1,
+      contextNow: undefined,
+      burn: undefined,
+      startedAt: 0,
+    });
+    const container = render({ ...props, node: bare });
+    expect(one(container, 'inspector-tokens').textContent).toBe(EM_DASH);
+    expect(one(container, 'inspector-burn').textContent).toBe(`${EM_DASH} in / ${EM_DASH} out`);
+  });
+
+  it('omits the engine, the session id and the path when it is told none', () => {
+    // The panel is mounted by `App.svelte`, which this package does not own.
+    // A header that invented a session id rather than omitting the row would
+    // be a fabricated value on the surface built to carry evidence.
+    const container = render({ node });
+    expect(all(container, 'inspector-engine')).toHaveLength(0);
+    expect(all(container, 'inspector-session-id')).toHaveLength(0);
+    expect(all(container, 'inspector-path')).toHaveLength(0);
   });
 });
 

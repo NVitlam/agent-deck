@@ -1,5 +1,5 @@
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "id": "cc-2.1.234-session-arc",
   "kind": "recorded",
   "title": "cc-2.1.234 — one session arc, live through ended, with a refused layout",
@@ -90,9 +90,13 @@
                       "durationMs": 4048
                     }
                   ],
-                  "tokens": {
-                    "in": 4,
-                    "out": 272
+                  "contextNow": {
+                    "prompt": 28444,
+                    "output": 69
+                  },
+                  "burn": {
+                    "prompt": 55049,
+                    "output": 272
                   },
                   "startedAt": 1787123122684,
                   "endedAt": 1787123134022
@@ -121,9 +125,13 @@
                       "durationMs": 876
                     }
                   ],
-                  "tokens": {
-                    "in": 4,
-                    "out": 230
+                  "contextNow": {
+                    "prompt": 28372,
+                    "output": 84
+                  },
+                  "burn": {
+                    "prompt": 54997,
+                    "output": 230
                   },
                   "startedAt": 1787123125683,
                   "endedAt": 1787123134398
@@ -223,32 +231,50 @@
                           "durationMs": 875
                         }
                       ],
-                      "tokens": {
-                        "in": 16,
-                        "out": 6052
+                      "contextNow": {
+                        "prompt": 61110,
+                        "output": 3477
+                      },
+                      "burn": {
+                        "prompt": 324189,
+                        "output": 6052
                       },
                       "startedAt": 1787123140798,
                       "endedAt": 1787123222413
                     }
                   ],
-                  "tokens": {
-                    "in": 4,
-                    "out": 1617
+                  "contextNow": {
+                    "prompt": 30767,
+                    "output": 1099
+                  },
+                  "burn": {
+                    "prompt": 57526,
+                    "output": 1617
                   },
                   "startedAt": 1787123131174,
                   "endedAt": 1787123238628
                 }
               ],
-              "tokens": {
-                "in": 4,
-                "out": 2129
+              "contextNow": {
+                "prompt": 45373,
+                "output": 617
+              },
+              "burn": {
+                "prompt": 87572,
+                "output": 2129
               },
               "startedAt": 1787123110556
             },
             "totals": {
-              "inputTokens": 32,
-              "outputTokens": 10300,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 45373,
+              "output": 617
+            },
+            "burn": {
+              "prompt": 579333,
+              "output": 10300
             },
             "spawnEdges": [
               {
@@ -400,24 +426,38 @@
                       "durationMs": 2579
                     }
                   ],
-                  "tokens": {
-                    "in": 14,
-                    "out": 4863
+                  "contextNow": {
+                    "prompt": 43174,
+                    "output": 2731
+                  },
+                  "burn": {
+                    "prompt": 229137,
+                    "output": 4863
                   },
                   "startedAt": 1787090191099,
                   "endedAt": 1787090258817
                 }
               ],
-              "tokens": {
-                "in": 4,
-                "out": 1998
+              "contextNow": {
+                "prompt": 43263,
+                "output": 1611
+              },
+              "burn": {
+                "prompt": 83299,
+                "output": 1998
               },
               "startedAt": 1787090182855
             },
             "totals": {
-              "inputTokens": 18,
-              "outputTokens": 6861,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 43263,
+              "output": 1611
+            },
+            "burn": {
+              "prompt": 312436,
+              "output": 6861
             },
             "spawnEdges": [
               {
@@ -444,16 +484,26 @@
               "status": "running",
               "spawnDepth": 0,
               "children": [],
-              "tokens": {
-                "in": 0,
-                "out": 0
+              "contextNow": {
+                "prompt": 0,
+                "output": 0
+              },
+              "burn": {
+                "prompt": 0,
+                "output": 0
               },
               "startedAt": 0
             },
             "totals": {
-              "inputTokens": 0,
-              "outputTokens": 0,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 0,
+              "output": 0
+            },
+            "burn": {
+              "prompt": 0,
+              "output": 0
             },
             "spawnEdges": [],
             "parked": [],
@@ -530,9 +580,13 @@
                       "durationMs": 4048
                     }
                   ],
-                  "tokens": {
-                    "in": 4,
-                    "out": 272
+                  "contextNow": {
+                    "prompt": 28444,
+                    "output": 69
+                  },
+                  "burn": {
+                    "prompt": 55049,
+                    "output": 272
                   },
                   "startedAt": 1787123122684,
                   "endedAt": 1787123134022
@@ -561,9 +615,13 @@
                       "durationMs": 876
                     }
                   ],
-                  "tokens": {
-                    "in": 4,
-                    "out": 230
+                  "contextNow": {
+                    "prompt": 28372,
+                    "output": 84
+                  },
+                  "burn": {
+                    "prompt": 54997,
+                    "output": 230
                   },
                   "startedAt": 1787123125683,
                   "endedAt": 1787123134398
@@ -663,32 +721,50 @@
                           "durationMs": 875
                         }
                       ],
-                      "tokens": {
-                        "in": 16,
-                        "out": 6052
+                      "contextNow": {
+                        "prompt": 61110,
+                        "output": 3477
+                      },
+                      "burn": {
+                        "prompt": 324189,
+                        "output": 6052
                       },
                       "startedAt": 1787123140798,
                       "endedAt": 1787123222413
                     }
                   ],
-                  "tokens": {
-                    "in": 4,
-                    "out": 1617
+                  "contextNow": {
+                    "prompt": 30767,
+                    "output": 1099
+                  },
+                  "burn": {
+                    "prompt": 57526,
+                    "output": 1617
                   },
                   "startedAt": 1787123131174,
                   "endedAt": 1787123238628
                 }
               ],
-              "tokens": {
-                "in": 4,
-                "out": 2129
+              "contextNow": {
+                "prompt": 45373,
+                "output": 617
+              },
+              "burn": {
+                "prompt": 87572,
+                "output": 2129
               },
               "startedAt": 1787123110556
             },
             "totals": {
-              "inputTokens": 32,
-              "outputTokens": 10300,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 45373,
+              "output": 617
+            },
+            "burn": {
+              "prompt": 579333,
+              "output": 10300
             },
             "spawnEdges": [
               {
@@ -840,24 +916,38 @@
                       "durationMs": 2579
                     }
                   ],
-                  "tokens": {
-                    "in": 14,
-                    "out": 4863
+                  "contextNow": {
+                    "prompt": 43174,
+                    "output": 2731
+                  },
+                  "burn": {
+                    "prompt": 229137,
+                    "output": 4863
                   },
                   "startedAt": 1787090191099,
                   "endedAt": 1787090258817
                 }
               ],
-              "tokens": {
-                "in": 4,
-                "out": 1998
+              "contextNow": {
+                "prompt": 43263,
+                "output": 1611
+              },
+              "burn": {
+                "prompt": 83299,
+                "output": 1998
               },
               "startedAt": 1787090182855
             },
             "totals": {
-              "inputTokens": 18,
-              "outputTokens": 6861,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 43263,
+              "output": 1611
+            },
+            "burn": {
+              "prompt": 312436,
+              "output": 6861
             },
             "spawnEdges": [
               {
@@ -884,16 +974,26 @@
               "status": "running",
               "spawnDepth": 0,
               "children": [],
-              "tokens": {
-                "in": 0,
-                "out": 0
+              "contextNow": {
+                "prompt": 0,
+                "output": 0
+              },
+              "burn": {
+                "prompt": 0,
+                "output": 0
               },
               "startedAt": 0
             },
             "totals": {
-              "inputTokens": 0,
-              "outputTokens": 0,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 0,
+              "output": 0
+            },
+            "burn": {
+              "prompt": 0,
+              "output": 0
             },
             "spawnEdges": [],
             "parked": [],
@@ -1002,9 +1102,13 @@
                   "durationMs": 4048
                 }
               ],
-              "tokens": {
-                "in": 4,
-                "out": 272
+              "contextNow": {
+                "prompt": 28444,
+                "output": 69
+              },
+              "burn": {
+                "prompt": 55049,
+                "output": 272
               },
               "startedAt": 1787123122684,
               "endedAt": 1787123134022
@@ -1033,9 +1137,13 @@
                   "durationMs": 876
                 }
               ],
-              "tokens": {
-                "in": 4,
-                "out": 230
+              "contextNow": {
+                "prompt": 28372,
+                "output": 84
+              },
+              "burn": {
+                "prompt": 54997,
+                "output": 230
               },
               "startedAt": 1787123125683,
               "endedAt": 1787123134398
@@ -1135,32 +1243,50 @@
                       "durationMs": 875
                     }
                   ],
-                  "tokens": {
-                    "in": 16,
-                    "out": 6052
+                  "contextNow": {
+                    "prompt": 61110,
+                    "output": 3477
+                  },
+                  "burn": {
+                    "prompt": 324189,
+                    "output": 6052
                   },
                   "startedAt": 1787123140798,
                   "endedAt": 1787123222413
                 }
               ],
-              "tokens": {
-                "in": 4,
-                "out": 1617
+              "contextNow": {
+                "prompt": 30767,
+                "output": 1099
+              },
+              "burn": {
+                "prompt": 57526,
+                "output": 1617
               },
               "startedAt": 1787123131174,
               "endedAt": 1787123238628
             }
           ],
-          "tokens": {
-            "in": 4,
-            "out": 2129
+          "contextNow": {
+            "prompt": 45373,
+            "output": 617
+          },
+          "burn": {
+            "prompt": 87572,
+            "output": 2129
           },
           "startedAt": 1787123110556
         },
         "totals": {
-          "inputTokens": 32,
-          "outputTokens": 10300,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 45373,
+          "output": 617
+        },
+        "burn": {
+          "prompt": 579333,
+          "output": 10300
         },
         "spawnEdges": [
           {
@@ -1312,24 +1438,38 @@
                   "durationMs": 2579
                 }
               ],
-              "tokens": {
-                "in": 14,
-                "out": 4863
+              "contextNow": {
+                "prompt": 43174,
+                "output": 2731
+              },
+              "burn": {
+                "prompt": 229137,
+                "output": 4863
               },
               "startedAt": 1787090191099,
               "endedAt": 1787090258817
             }
           ],
-          "tokens": {
-            "in": 4,
-            "out": 1998
+          "contextNow": {
+            "prompt": 43263,
+            "output": 1611
+          },
+          "burn": {
+            "prompt": 83299,
+            "output": 1998
           },
           "startedAt": 1787090182855
         },
         "totals": {
-          "inputTokens": 18,
-          "outputTokens": 6861,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 43263,
+          "output": 1611
+        },
+        "burn": {
+          "prompt": 312436,
+          "output": 6861
         },
         "spawnEdges": [
           {
@@ -1356,16 +1496,26 @@
           "status": "running",
           "spawnDepth": 0,
           "children": [],
-          "tokens": {
-            "in": 0,
-            "out": 0
+          "contextNow": {
+            "prompt": 0,
+            "output": 0
+          },
+          "burn": {
+            "prompt": 0,
+            "output": 0
           },
           "startedAt": 0
         },
         "totals": {
-          "inputTokens": 0,
-          "outputTokens": 0,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 0,
+          "output": 0
+        },
+        "burn": {
+          "prompt": 0,
+          "output": 0
         },
         "spawnEdges": [],
         "parked": [],

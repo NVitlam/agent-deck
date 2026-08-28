@@ -28,6 +28,7 @@ import type {
   SessionPatch,
   SessionState,
   SpawnEdge,
+  TokenPair,
   ToolNode,
   TreeNode,
 } from '../model/events.js';
@@ -110,7 +111,11 @@ function cloneAgent(node: AgentNode): AgentNode {
     status: node.status,
     spawnDepth: node.spawnDepth,
     children: node.children.map(cloneNode),
-    tokens: { in: node.tokens.in, out: node.tokens.out },
+    // Absence is preserved, never widened into `{}`: spreading `undefined`
+    // yields an object with no members, which is neither the pair nor the
+    // absence and would render as two em-dashes while claiming a value.
+    contextNow: node.contextNow === undefined ? undefined : { ...node.contextNow },
+    burn: node.burn === undefined ? undefined : { ...node.burn },
     startedAt: node.startedAt,
   };
   if (node.endedAt !== undefined) out.endedAt = node.endedAt;
@@ -341,7 +346,8 @@ export function applySessionPatch(
         if (f.label !== undefined) node.label = f.label;
         if (f.status !== undefined) node.status = f.status;
         if (f.spawnDepth !== undefined) node.spawnDepth = f.spawnDepth;
-        if (f.tokens !== undefined) node.tokens = { in: f.tokens.in, out: f.tokens.out };
+        if (f.contextNow !== undefined) node.contextNow = { ...f.contextNow };
+        if (f.burn !== undefined) node.burn = { ...f.burn };
         if (f.startedAt !== undefined) node.startedAt = f.startedAt;
         if (f.endedAt === null) delete node.endedAt;
         else if (f.endedAt !== undefined) node.endedAt = f.endedAt;
@@ -381,6 +387,11 @@ export function applySessionPatch(
 
   const fields = patch.fields ?? {};
   const totals = fields.totals ?? prev.totals;
+  // Replaced whole, never merged field-by-field: `prompt` and `output` are
+  // two halves of one measurement and a patch that moved one without the
+  // other would report a pair that never existed.
+  const contextNow: TokenPair | undefined = fields.contextNow ?? prev.contextNow;
+  const burn: TokenPair | undefined = fields.burn ?? prev.burn;
   const edges = patch.spawnEdges ?? edgesOf(prev);
   // Absent means unchanged, so a parked graft carried by an earlier snapshot
   // survives every diff that does not mention it. Getting this wrong is silent:
@@ -408,11 +419,9 @@ export function applySessionPatch(
     liveness: fields.liveness ?? prev.liveness,
     schemaOk: fields.schemaOk ?? prev.schemaOk,
     root,
-    totals: {
-      inputTokens: totals.inputTokens,
-      outputTokens: totals.outputTokens,
-      costUsd: totals.costUsd,
-    },
+    totals: { costUsd: totals.costUsd },
+    contextNow: contextNow === undefined ? undefined : { ...contextNow },
+    burn: burn === undefined ? undefined : { ...burn },
     spawnEdges: edges.map((e) => ({ ...e })),
   };
   if (parked !== undefined) next.parked = parked.map((p) => ({ ...p }));

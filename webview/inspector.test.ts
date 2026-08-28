@@ -216,7 +216,11 @@ describe('agent detail', () => {
     kind: 'subagent',
     spawnDepth: 2,
     status: 'running',
-    tokens: { in: 12_345, out: 6_789 },
+    // DELIBERATELY DIFFERENT NUMBERS. If the two pairs were equal the test
+    // below could not tell a renderer that reads `contextNow` from one that
+    // reads `burn`, and both rows would pass while one was wrong.
+    contextNow: { prompt: 12_345, output: 6_789 },
+    burn: { prompt: 24_690, output: 13_578 },
     startedAt: 1_000,
     endedAt: 62_000,
   });
@@ -229,7 +233,11 @@ describe('agent detail', () => {
     );
     expect(one(container, 'inspector-kind').textContent).toBe('subagent');
     expect(one(container, 'inspector-spawn-depth').textContent).toBe('2');
-    expect(one(container, 'inspector-tokens').textContent).toBe('12,345 in / 6,789 out');
+    // The LEVEL, from `contextNow`; the burn row is the TOTAL. The two carry
+    // different numbers above precisely so this pair of assertions is able to
+    // fail when a row reads the wrong field.
+    expect(one(container, 'inspector-tokens').textContent).toBe('12,345 in ctx / 6,789 out');
+    expect(one(container, 'inspector-burn').textContent).toBe('24,690 in / 13,578 out');
     expect(one(container, 'inspector-duration').textContent).toBe('1m 01s');
   });
 

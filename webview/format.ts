@@ -46,9 +46,17 @@ export function collapsePreview(
   };
 }
 
-/** Thousands-separated integer. Locale-independent so tests are stable. */
-export function formatTokens(n: number): string {
-  if (!Number.isFinite(n)) return EM_DASH;
+/**
+ * Thousands-separated integer. Locale-independent so tests are stable.
+ *
+ * `undefined` yields {@link EM_DASH}, the same treatment {@link formatDuration}
+ * gives an absent duration. It is load-bearing rather than convenient: an
+ * engine that does not report a token figure leaves the field UNSET, and the
+ * one thing the renderer must never do is print that as `0`. A caller holding
+ * an optional `TokenPair` can pass `pair?.prompt` straight in.
+ */
+export function formatTokens(n: number | undefined): string {
+  if (n === undefined || !Number.isFinite(n)) return EM_DASH;
   const sign = n < 0 ? '-' : '';
   const digits = Math.abs(Math.trunc(n)).toString();
   return sign + digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');

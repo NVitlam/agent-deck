@@ -1115,7 +1115,7 @@ describe('incremental: a spawn adds, it never reflows', () => {
       status: 'running',
       spawnDepth: 1,
       children: [],
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       startedAt: 0,
     };
     const withAgent = withChild(before, before.root.id, spawned);
@@ -1183,10 +1183,10 @@ function agentWithTools(n: number): SessionState {
       status: 'running',
       spawnDepth: 0,
       children,
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       startedAt: 0,
     },
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
   };
 }
 

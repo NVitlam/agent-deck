@@ -149,7 +149,16 @@
   let subline = $derived(
     agent === undefined
       ? AWAITING
-      : `${formatTokens(agent.tokens.in)} in · ${formatTokens(agent.tokens.out)} out`,
+      : // CONTEXT, not spend. `contextNow.prompt` is the last assistant
+        // message's whole prompt - input plus both cache components - which is
+        // the number that answers "how full is this agent's window". The old
+        // line read `tokens.in`, i.e. `input_tokens` alone, which is ~2 on
+        // every real message in the anchor corpora; see `events.ts`'s
+        // TokenPair. OPTIONAL-CHAINED: an engine that reports no context level
+        // leaves the field unset and `formatTokens(undefined)` is an em-dash,
+        // which is the honest render. `.svelte` is outside `tsc`, so a missing
+        // `?.` here would be a runtime throw that no checker catches.
+        `${formatTokens(agent.contextNow?.prompt)} in ctx · ${formatTokens(agent.contextNow?.output)} out`,
   );
 
   /**

@@ -55,8 +55,14 @@
       <span class="agent-kind" data-testid="agent-kind">{render.node.kind}</span>
       <span class="label" data-testid="node-label">{render.node.label}</span>
       <StatusChip status={render.node.status} />
+      <!-- Context level, not spend: see `events.ts`'s TokenPair for why the
+           old `tokens.in` reported single digits on real sessions. Burn lives
+           in the inspector, where there is room to label it. Optional-chained
+           because an engine may report no context level at all. -->
       <span class="meta" data-testid="node-tokens"
-        >{formatTokens(render.node.tokens.in)} in / {formatTokens(render.node.tokens.out)} out</span
+        >{formatTokens(render.node.contextNow?.prompt)} in ctx / {formatTokens(
+          render.node.contextNow?.output,
+        )} out</span
       >
       <span class="meta" data-testid="node-duration">{formatDuration(agentDuration)}</span>
     </div>

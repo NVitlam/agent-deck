@@ -193,7 +193,8 @@ function buildAgent(
     status: 'running',
     spawnDepth: depth,
     children,
-    tokens: { in: 100 * (depth + 1), out: 10 * (depth + 1) },
+    contextNow: { prompt: 100 * (depth + 1), output: 10 * (depth + 1) },
+    burn: { prompt: 200 * (depth + 1), output: 20 * (depth + 1) },
     startedAt: 1_000 * (depth + 1),
   };
 }
@@ -210,7 +211,9 @@ function syntheticSession(index: number): SessionState {
     liveness: (['live', 'idle', 'ended'] as const)[index % 3] ?? 'live',
     schemaOk: true,
     root,
-    totals: { inputTokens: 1_000 * (index + 1), outputTokens: 100 * (index + 1), costUsd: 0 },
+    totals: { costUsd: 0 },
+    contextNow: { prompt: 1_000 * (index + 1), output: 100 * (index + 1) },
+    burn: { prompt: 2_000 * (index + 1), output: 200 * (index + 1) },
     spawnEdges: edges,
   };
   // One session carries a parked graft — the state that has no node in the
@@ -245,10 +248,10 @@ function refusedSession(): SessionState {
       status: 'done',
       spawnDepth: 0,
       children: [],
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       startedAt: 1_000,
     },
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
     spawnEdges: [],
   };
 }
@@ -310,17 +313,16 @@ function tickPatch(state: SessionState, tick: number): SessionPatch | undefined 
     tree.push({
       op: 'updateAgent',
       id: 'root',
-      fields: { tokens: { in: 100 + tick * 10, out: 10 + tick } },
+      fields: { contextNow: { prompt: 100 + tick * 10, output: 10 + tick } },
     });
   }
 
   if (tree.length === 0) return undefined;
   return {
     fields: {
-      totals: {
-        inputTokens: state.totals.inputTokens + tick,
-        outputTokens: state.totals.outputTokens + tick,
-        costUsd: 0,
+      contextNow: {
+        prompt: (state.contextNow?.prompt ?? 0) + tick,
+        output: (state.contextNow?.output ?? 0) + tick,
       },
     },
     tree,

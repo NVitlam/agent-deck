@@ -11,6 +11,43 @@
 // (a) Domain model — session tree held in the extension host
 // ---------------------------------------------------------------------------
 
+/**
+ * Tokens, split the way the model API actually bills and the way a context
+ * window actually fills.
+ *
+ * MEASURED, and the reason this type exists at all. Assistant `usage` objects
+ * in the committed Claude Code corpora carry `input_tokens` of roughly **2**
+ * while the prompt itself sits in `cache_creation_input_tokens` +
+ * `cache_read_input_tokens`. A field named `in` that reads `input_tokens`
+ * alone therefore reports single digits for a five-figure prompt, and that is
+ * what `0.1.2` shipped. `src/model/tokens.test.ts` pins the arithmetic to a
+ * real captured message by `message.id`.
+ *
+ * **The "~2" is true of the caching corpora and NOT of all captured data.**
+ * A session against a local model with no prompt caching puts the whole prompt
+ * in `input_tokens` and leaves both cache fields at 0. **The sum rule is right
+ * either way** — that is the point of summing all three rather than switching
+ * on whichever field looks populated.
+ *
+ * `prompt` is the sum of all three, each defaulting to 0 when absent or
+ * non-finite.
+ *
+ * **There is no `window` field, and that is a measurement, not an omission.**
+ * No captured transcript states a context limit anywhere, so Agent Deck states
+ * no percentage. A model-name-to-window lookup table would be memory rather
+ * than fixture, which G6 forbids outright. `contextNow` is an absolute number
+ * or it is nothing.
+ */
+export interface TokenPair {
+  /**
+   * Everything sent to the model for this message:
+   * `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`.
+   */
+  prompt: number;
+  /** `output_tokens`. */
+  output: number;
+}
+
 export interface SessionState {
   sessionId: string; // <sessionId>.jsonl basename
   projectSlug: string;
@@ -18,7 +55,61 @@ export interface SessionState {
   liveness: 'live' | 'idle' | 'ended' | 'unsupported';
   schemaOk: boolean;
   root: AgentNode;
-  totals: { inputTokens: number; outputTokens: number; costUsd: number };
+  /**
+   * What is left after the token split: cost, and nothing else.
+   *
+   * **`inputTokens` and `outputTokens` were REMOVED from this field**, not
+   * renamed. They were the whole-session sums of the per-agent `in`/`out`
+   * pair, so they carried the same defect {@link TokenPair} describes,
+   * multiplied by the number of agents. A field that keeps its name and
+   * changes its meaning is worse than one that goes away: the removal breaks
+   * every reader at compile time, which is the point.
+   *
+   * `costUsd` is unchanged, and **0 still means NOT YET COMPUTED**, never
+   * "free" — there is no price table in this repository and inventing one
+   * would put a fabricated number in front of the user.
+   */
+  totals: { costUsd: number };
+  /**
+   * How full the session's context is **right now**: the last assistant
+   * message of the main transcript, by ordinal.
+   *
+   * The main transcript, not the deepest subagent: each subagent has its own
+   * window, and "how much room is left in the conversation I am watching" is a
+   * question about the session's own thread. Per-agent figures live on
+   * {@link AgentNode.contextNow}.
+   *
+   * Not a sum. A context window is a level, not a total — summing successive
+   * prompts answers "how much was spent", which is {@link SessionState.burn}.
+   *
+   * **OPTIONAL because an engine may not report it, and absent is not zero.**
+   * The OpenCode engine leaves this unset: its per-step token data lives in
+   * `step-finish` part rows that nothing reads yet. A renderer shows
+   * `EM_DASH` for absent and a real figure for present; writing 0 here would
+   * claim an empty context window, which is a wrong number rather than a
+   * missing one. See `src/opencode/graft.ts`.
+   */
+  contextNow?: TokenPair;
+  /**
+   * Everything the session has spent: summed across distinct `message.id`
+   * over every agent in the tree, parked agents contributing nothing.
+   *
+   * This is the additive figure, and it is the one that grows without bound.
+   * It is deliberately NOT what a node or a cell shows — a user watching a
+   * long session wants to know how close to the ceiling they are, and burn
+   * cannot answer that.
+   *
+   * **OPTIONAL for the same reason as {@link SessionState.contextNow}**, and
+   * unset by the OpenCode engine for a DIFFERENT one worth recording: that
+   * engine's `session.tokens_input` IS a genuine session-cumulative total —
+   * measured, 24 of 24 sessions equal to the sum of their `step-finish`
+   * rows — but it counts only UNCACHED input. Across the anchor corpus
+   * `cache.read` sums to 8,875,276 against `input`'s 1,227,047, so mapping it
+   * onto `prompt` would under-report by roughly 7x. That is precisely the
+   * defect {@link TokenPair} exists to remove, so it is left absent rather
+   * than filled with a plausible wrong total.
+   */
+  burn?: TokenPair;
   /**
    * Phase 2 additive, and optional so every Phase 1 construction of this
    * interface stays valid. The spec'd fields above are untouched.
@@ -228,7 +319,24 @@ export interface AgentNode {
   status: 'running' | 'done' | 'error';
   spawnDepth: number; // from meta.json; 0 for main
   children: (AgentNode | ToolNode)[];
-  tokens: { in: number; out: number };
+  /**
+   * This agent's context level: its own last assistant message by ordinal.
+   *
+   * REPLACES `tokens: { in, out }`, which read `input_tokens` alone and so
+   * reported single digits for real prompts — see {@link TokenPair}. The old
+   * field is gone rather than deprecated so no renderer can keep reading it.
+   *
+   * Optional for the reason {@link SessionState.contextNow} gives: an engine
+   * that does not report a context level leaves it unset, and absent renders
+   * as `EM_DASH` rather than as 0.
+   */
+  contextNow?: TokenPair;
+  /**
+   * This agent's spend: summed across its own distinct `message.id`s.
+   *
+   * Optional; see {@link SessionState.burn}.
+   */
+  burn?: TokenPair;
   startedAt: number;
   endedAt?: number;
 }
@@ -333,8 +441,12 @@ export interface SessionFieldPatch {
   workspaceMatch?: boolean;
   liveness?: SessionState['liveness'];
   schemaOk?: boolean;
-  /** Replaced whole; the three numbers are never patched independently. */
+  /** Replaced whole. One number now, and it is cost. */
   totals?: SessionState['totals'];
+  /** Replaced whole; `prompt` and `output` are never patched apart. */
+  contextNow?: TokenPair;
+  /** Replaced whole, same rule as {@link SessionFieldPatch.contextNow}. */
+  burn?: TokenPair;
   /**
    * See {@link SessionState.engine}.
    *
@@ -365,7 +477,10 @@ export interface AgentNodeFieldPatch {
   label?: string;
   status?: AgentNode['status'];
   spawnDepth?: number;
-  tokens?: { in: number; out: number };
+  /** Replaced whole; `prompt` and `output` are never patched apart. */
+  contextNow?: TokenPair;
+  /** Replaced whole, same rule as {@link AgentNodeFieldPatch.contextNow}. */
+  burn?: TokenPair;
   startedAt?: number;
   endedAt?: number | null;
 }

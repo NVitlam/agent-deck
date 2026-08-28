@@ -83,8 +83,22 @@ import { build } from 'esbuild';
 
 import { loadCanvasContract, REPO_ROOT, wireCorpusDir } from '../webview/theater/contract.mjs';
 
-/** Bumped when the corpus shape changes in a way a reader must notice. */
-export const WIRE_FORMAT_VERSION = 1;
+/**
+ * Bumped when the corpus shape changes in a way a reader must notice.
+ *
+ * **2 (the 0.1.3 token contract):** `AgentNode.tokens: { in, out }` is gone and
+ * `contextNow` / `burn` (`{ prompt, output }`) replace it;
+ * `SessionState.totals` lost `inputTokens` / `outputTokens` and kept only
+ * `costUsd`, with session-level `contextNow` / `burn` beside it.
+ *
+ * The version is the thing that has to fail loudly, and this is why: a
+ * version-1 corpus replayed through the version-2 store yields nodes with no
+ * token fields at all, and `formatTokens(undefined)` renders an em-dash. That
+ * is a corpus quietly displaying "no data" on every node rather than raising
+ * anything - indistinguishable, to a reader, from a session that genuinely has
+ * no numbers. `assertCorpusShape` below refuses on the version instead.
+ */
+export const WIRE_FORMAT_VERSION = 2;
 
 /**
  * The simulated instant the arc starts at. Fixed, and the same value

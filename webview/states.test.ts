@@ -384,7 +384,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
         // THE REFUSAL SIGNAL IS THE CARD'S, and the two lines that used to
         // stand here are gone rather than adjusted. They read
         // `blob.dataset['constellation']` and counted
-        // `TESTID.deckConstellation` elements — the faint one-dot-per-node
+        // the `deck-constellation` testid — the faint one-dot-per-node
         // interior of `SessionBlob.svelte`, deleted with the phyllotaxis
         // canvas. Neither is emitted by anything now, so the first read
         // `undefined` and the second an empty array: one failed, and the
@@ -968,7 +968,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
       // THE WITNESS THIS ROW NAMED IS DELETED. It counted deck constellation
       // dots — one faint dot per node, inside a breathing membrane, which was
       // the hazard in its purest form — and `SessionBlob.svelte` went with the
-      // phyllotaxis canvas. Nothing emits `TESTID.deckConstellation`, so the
+      // phyllotaxis canvas. Nothing emitted `deck-constellation`, so the
       // canvas half failed on `length > 0` and the list half PASSED by
       // asserting an empty array was empty.
       //

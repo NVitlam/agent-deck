@@ -12,6 +12,9 @@ export default tseslint.config(
       'spike/**',
       'fixtures/**',
       '.claude/**',
+      // The private lab checkout - a separate repository with its own lint and
+      // test setup. See `.gitignore`.
+      'lab/**',
     ],
   },
   js.configs.recommended,

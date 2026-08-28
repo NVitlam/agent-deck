@@ -47,7 +47,7 @@
  * credential-shaped string never touches a tracked path.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -60,17 +60,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
  * only what is asserted, so a field added to the sweep does not have to
  * be mirrored here.
  * ------------------------------------------------------------------ */
-
-interface IdentifierHit {
-  path: string;
-  line: number;
-  needle: string;
-  scope: string;
-  /* `pathToken`, not `token`: a JSON key named `token` holding a 24+ character
-     path made the committed report trip the sweep's own generic-secret rule,
-     24 times. The detector was right; the key name was wrong. */
-  pathToken: string;
-}
 
 interface SecretHit {
   path: string;
@@ -86,13 +75,20 @@ interface ForeignHit {
   value: string;
 }
 
-interface AllowedRuleTally {
-  rule: string;
-  reason: string;
-  hits: number;
-  fileCount: number;
-  files: { path: string; hits: number }[];
-  distinctPathTokens: { pathToken: string; hits: number }[];
+/**
+ * An identity finding: WHERE, and which token notes matched there.
+ *
+ * There is deliberately no field for the matched text. This report is
+ * committed, so a finding that quoted what it found would put the identity back
+ * into the repository through the file whose job is keeping it out - and that
+ * is not hypothetical: the inventory this replaced recorded a canonicalised
+ * path token per hit, and `docs/evidence/privacy/report.json` ended up holding
+ * 9,203 identity occurrences, more than either captured database.
+ */
+interface IdentityHit {
+  path: string;
+  line: number;
+  notes: string[];
 }
 
 interface SweepLeg {
@@ -100,12 +96,7 @@ interface SweepLeg {
   bytesScanned: number;
   blobsScanned?: number;
   nulFiles: string[];
-  identifier: {
-    totalHits: number;
-    allowed: { totalHits: number; byRule: AllowedRuleTally[] };
-    unexpected: IdentifierHit[];
-  };
-  advisories: { path: string; line: number; rule: string; pathToken: string }[];
+  identity: { hits: IdentityHit[]; exemptHits: number };
   secrets: SecretHit[];
   foreign: ForeignHit[];
 }
@@ -117,8 +108,13 @@ interface SweepReport {
   head: string | null;
   historyScope: 'all-refs' | 'skipped';
   config: {
+    identity: {
+      status: 'RUN' | 'SKIPPED';
+      reason: string | null;
+      tokenCount: number;
+      exemptPaths: string[];
+    };
     ownProject: string;
-    allowRules: { id: string; prefixes: string[]; reason: string }[];
     captureCorpora: string[];
     captureRootFiles: boolean;
     foreignValueExemptions: {
@@ -127,7 +123,6 @@ interface SweepReport {
       absolutePathValuesOnly: boolean;
       reason: string;
     }[];
-    identityScanExcluded: string[];
     untracked: boolean;
     untrackedScanDirs: string[];
     untrackedFilesScanned: number;
@@ -135,10 +130,10 @@ interface SweepReport {
   workingTree: SweepLeg;
   history: SweepLeg | null;
   verdict: {
-    unexpected: number;
+    identityStatus: 'RUN' | 'SKIPPED';
+    identity: number;
     secrets: number;
     foreign: number;
-    advisories: number;
     pass: boolean;
   };
   timingsMs: { workingTreeMs: number; historyMs?: number };
@@ -149,6 +144,8 @@ interface SweepOptions {
   history?: boolean;
   stamp?: string;
   untracked?: boolean;
+  /** Point the identity class at a throwaway token file. Negative controls only. */
+  identityFile?: string;
 }
 
 type SweepModule = { sweep: (options?: SweepOptions) => SweepReport };
@@ -156,7 +153,6 @@ type SweepModule = { sweep: (options?: SweepOptions) => SweepReport };
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
 const SCRIPT = path.join(REPO_ROOT, 'scripts', 'privacy-sweep.mjs');
-const EVIDENCE = path.join(REPO_ROOT, 'docs', 'evidence', 'privacy', 'report.json');
 
 /* The sweep is a `.mjs` script with no type declarations. A dynamic import with
    a computed specifier keeps `tsc` out of the resolution business and lets the
@@ -174,9 +170,52 @@ let sweep: SweepModule['sweep'];
  */
 let sweepLoadError: unknown = null;
 
-/** Assembled at runtime so this file is not itself a hit on the next sweep. */
-const NEEDLE = ['Na', 'dav'].join('');
-const SECOND_NEEDLE = ['One', 'Drive'].join('');
+/**
+ * INVENTED IDENTITY, and every character of it is fiction.
+ *
+ * These are not the developer's name split into fragments, which is what stood
+ * here through Phase 6. Fragmenting hides a string from `grep`; it does not
+ * remove it, and the scrub of 2026-08-28 is measured by a `grep` from a clean
+ * clone returning zero. The negative controls below write these tokens into a
+ * THROWAWAY identity file in a temp directory and point the sweep at it with
+ * `--identity`, so the class can be proved to fail without this repository ever
+ * containing a real token.
+ *
+ * `Zaphod` has two heads and no relationship to anybody; `X:` is not a drive
+ * letter Windows assigns by default.
+ */
+const NEEDLE = 'Zaphod';
+const SECOND_NEEDLE = 'BeebleBrox';
+
+/**
+ * The throwaway token file the negative controls hand to `--identity`.
+ *
+ * Written per-test into a temp directory and never into this repository. The
+ * shape is the real one, so the controls exercise the same loader the real file
+ * goes through - which is the difference between testing the class and testing
+ * a mock of it.
+ */
+function inventedIdentityFile(dir: string, exemptPaths: string[] = []): string {
+  const file = path.join(dir, 'invented-identity.json');
+  fs.writeFileSync(
+    file,
+    `${JSON.stringify(
+      {
+        version: 1,
+        exemptPaths,
+        dbColumns: [],
+        tokens: [
+          { match: NEEDLE, replace: 'nobody', note: 'an invented given name' },
+          { match: SECOND_NEEDLE, replace: 'nobody', note: 'an invented surname' },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  return file;
+}
 /** Credential-shaped, not a credential: no such key was ever issued. */
 const PLANTED_SECRET = ['sk', '-ant-', 'api03', '-', 'ZmFrZVBsYW50ZWROb3RSZWFs'].join('');
 /** A marker that only a scanner which read PAST a NUL run can find. */
@@ -206,7 +245,15 @@ const FOREIGN_PLANT =
 const FOREIGN_PLANT_PATHS = [
   'fixtures/hook-events/planted-foreign.jsonl',
   'src/model/leak.test.ts',
-  'docs/notes.md',
+  // A ROOT file, and it used to be `docs/notes.md`. `docs/` left this
+  // repository on 2026-08-28, so the old plant landed outside the swept corpus
+  // and this control quietly started asserting the opposite of what it means.
+  // The PROPERTY is unchanged and is the whole point of the trio: prose is
+  // swept, not only code. Prose now lives in the root files (README,
+  // CONTRIBUTING, SECURITY, CHANGELOG), admitted by `CAPTURE_ROOT_FILES` rather
+  // than by a directory prefix - which is the leg a prefix list cannot reach,
+  // and the one that shipped a 38 KB mockup the last time nobody tested it.
+  'NOTES.md',
 ] as const;
 
 /**
@@ -308,11 +355,11 @@ beforeAll(async () => {
   // (a) planted credential shape, also outside the allowed set.
   writeScratch('planted/config.env', `ANTHROPIC_API_KEY=${PLANTED_SECRET}\n`);
 
-  // (b) the SAME identifier at a path an allow rule DOES cover.
-  writeScratch(
-    'fixtures/hook-events/planted-allowed.jsonl',
-    `{"hook_event_name":"Stop","cwd":"C:\\\\Users\\\\${NEEDLE}\\\\${SECOND_NEEDLE}\\\\agent-deck"}\n`,
-  );
+  // (b) the SAME identity in a path the throwaway token file marks EXEMPT.
+  //     There is no allow rule any more - a hit fails the gate wherever it is -
+  //     so the only thing that can divert a finding is the exempt list the
+  //     token file itself carries, and this is the control for it.
+  writeScratch('LICENSE', `MIT License\n\nCopyright (c) 2026 ${NEEDLE} ${SECOND_NEEDLE}\n`);
 
   // (c) the NUL hazard: 1000 NUL BYTES, written as an escape and never as a
   //     raw control character in source, then the marker behind them. GNU grep
@@ -397,10 +444,51 @@ describe('privacy sweep against this repository', () => {
     expect(report.verdict.foreign).toBe(0);
   });
 
-  it('finds no developer-identifier hit outside the enumerated allowed set', () => {
-    expect(report.workingTree.identifier.unexpected).toEqual([]);
-    expect(report.history?.identifier.unexpected).toEqual([]);
-    expect(report.verdict.unexpected).toBe(0);
+  it('finds no identity outside the exempt paths, in the tree or in history', () => {
+    // SKIPPED here is a real state, not a failure: a contributor has no identity
+    // file and this run tells them so rather than pretending. What is NOT
+    // acceptable is a silent skip, which is why the status is asserted beside
+    // the count in both directions - `identity=0` from a class that never ran
+    // reads identical to `identity=0` from one that swept everything, and that
+    // is the fail-open reading rule 18 exists to stop.
+    if (report.config.identity.status === 'SKIPPED') {
+      expect(report.verdict.identityStatus).toBe('SKIPPED');
+      expect(report.config.identity.reason).toMatch(/identity\.local\.json/);
+      expect(report.config.identity.tokenCount).toBe(0);
+      return;
+    }
+    expect(report.workingTree.identity.hits).toEqual([]);
+    expect(report.history?.identity.hits).toEqual([]);
+    expect(report.verdict.identity).toBe(0);
+  });
+
+  it('still finds the deliberate identity in the licence and the manifest', () => {
+    // The exempt paths are the one place the name is SUPPOSED to be, and their
+    // ABSENCE would be its own defect: a licence that stopped naming its
+    // licensor, or a manifest that stopped naming its publisher, is a broken
+    // release that would look like a clean sweep. So exempt paths are scanned
+    // and only their findings are diverted - the count is the evidence the scan
+    // reached them.
+    if (report.config.identity.status === 'SKIPPED') return;
+    expect(report.config.identity.exemptPaths).toContain('LICENSE');
+    expect(report.config.identity.exemptPaths).toContain('package.json');
+    expect(report.workingTree.identity.exemptHits).toBeGreaterThan(0);
+  });
+
+  it('never records the matched text, only where it was and what note it is', () => {
+    // The report is COMMITTED. The inventory this replaced recorded a
+    // canonicalised path token per hit, and the result was 9,203 identity
+    // occurrences inside `docs/evidence/privacy/report.json` - the largest
+    // single concentration in the tree, larger than either captured database.
+    // The file whose job was proving the repository clean was the worst
+    // offender in it. So a finding carries `path`, `line` and `notes`, and this
+    // pins the SHAPE rather than trusting the intent.
+    const legs = [report.workingTree, report.history].filter((l) => l !== null);
+    for (const leg of legs) {
+      for (const hit of leg.identity.hits) {
+        expect(Object.keys(hit).sort()).toEqual(['line', 'notes', 'path']);
+      }
+    }
   });
 
   it('passes the gate', () => {
@@ -423,35 +511,6 @@ describe('privacy sweep against this repository', () => {
     expect(report.workingTree.nulFiles).toContain('src/parser/parse.test.ts');
     const nulFile = fs.readFileSync(path.join(REPO_ROOT, 'src', 'parser', 'parse.test.ts'));
     expect(nulFile.includes(0)).toBe(true);
-  });
-
-  it('inventories the three deliberately non-anonymous directories', () => {
-    const rules = new Map(report.workingTree.identifier.allowed.byRule.map((r) => [r.rule, r]));
-    for (const id of ['capture-hook-events', 'capture-cc-2.1.234', 'wire-corpus']) {
-      const tally = rules.get(id);
-      expect(tally, `expected allow rule ${id} to have inventoried hits`).toBeDefined();
-      expect(tally?.hits ?? 0).toBeGreaterThan(0);
-      expect(tally?.reason.length ?? 0).toBeGreaterThan(0);
-    }
-  });
-
-  it('finds the forward-slash paths inside the recorded wire corpus', () => {
-    // The trap this exists for: `webview/wire/cc-2.1.234-session-arc.json`
-    // stores backslash paths DOUBLE-ESCAPED, so `grep 'C:\Users'` returns 0
-    // while forward-slash `c:/Users/...` hits sit in recorded Bash payloads.
-    // Sweeping for the identifier rather than the path shape is what finds them.
-    const wire = report.workingTree.identifier.allowed.byRule.find((r) => r.rule === 'wire-corpus');
-    expect(wire).toBeDefined();
-    const tokens = (wire?.distinctPathTokens ?? []).map((t) => t.pathToken);
-    const folder = `/${SECOND_NEEDLE.toLowerCase()}/`;
-    expect(tokens.some((t) => t.includes(folder))).toBe(true);
-  });
-
-  it('every allow rule carries a written reason', () => {
-    for (const rule of report.config.allowRules) {
-      expect(rule.reason.length, `allow rule ${rule.id} has no reason`).toBeGreaterThan(20);
-      expect(rule.prefixes.length).toBeGreaterThan(0);
-    }
   });
 
   it('every FOREIGN exemption carries a written reason', () => {
@@ -542,49 +601,32 @@ describe('privacy sweep against this repository', () => {
   });
 
   /* ---------------------------------------------------------------- *
-   * DoD5 - the surname is inventoried rather than invisible.
+   * The sweep script holds no token of its own.
    * ---------------------------------------------------------------- */
-  describe('the surname needle', () => {
-    it('reaches the release-identity files that no other needle touches', () => {
-      // Measured: `package.json` and `.github/workflows/release.yml` contain
-      // NONE of the four pre-Phase-6 needles (0 case-insensitive matches for
-      // each). Every hit attributed to these two rules therefore exists only
-      // because the surname is swept - which makes this assertion a live test
-      // of the needle, not of the allow rule.
-      const rules = new Map(report.workingTree.identifier.allowed.byRule.map((r) => [r.rule, r]));
-      const manifest = rules.get('release-identity-manifest');
-      expect(manifest, 'package.json is not being inventoried at all').toBeDefined();
-      expect(manifest?.files.map((f) => f.path)).toContain('package.json');
-      expect(manifest?.hits ?? 0).toBeGreaterThan(0);
-
-      const workflows = rules.get('release-workflows');
-      expect(workflows, '.github/ is not being inventoried at all').toBeDefined();
-      expect(workflows?.files.map((f) => f.path)).toContain('.github/workflows/release.yml');
-    });
-
-    it('finds it in the licence, where it is the copyright line working', () => {
-      const licence = report.workingTree.identifier.allowed.byRule.find((r) => r.rule === 'licence');
-      expect(licence?.files.map((f) => f.path)).toContain('LICENSE');
-      // Two needles on one line - the given name and the surname - so a hit
-      // count of 1 would mean the surname is not being swept after all.
-      expect(licence?.hits ?? 0).toBeGreaterThan(1);
-    });
-
-    it('does not make the sweep script a hit on its own detector', () => {
-      // The fragment convention, asserted rather than trusted. Adding the
-      // surname turned the old two-way split of the email local part into a
-      // hit here; the fix is a three-way split, and this is what keeps it.
-      const inSweep = [
-        ...report.workingTree.identifier.allowed.byRule.flatMap((r) =>
-          r.files.filter((f) => f.path === 'scripts/privacy-sweep.mjs'),
-        ),
-        ...report.workingTree.identifier.unexpected.filter(
-          (h) => h.path === 'scripts/privacy-sweep.mjs',
-        ),
-      ];
-      expect(inSweep, 'the sweep script trips its own needles - re-split the fragments').toEqual(
-        [],
+  describe('the sweep script is not a copy of what it looks for', () => {
+    it('contains no identity token, by the token list itself', () => {
+      // The strongest available form of this assertion: run the real class over
+      // the real script. Through Phase 6 the needles lived inside it, assembled
+      // from fragments, and the test that stood here asserted only that the
+      // FRAGMENTS did not accidentally re-form. That is a weaker claim than
+      // "the file does not contain the thing", and it was the weaker claim
+      // precisely because the stronger one was false.
+      if (report.config.identity.status === 'SKIPPED') return;
+      const inSweep = report.workingTree.identity.hits.filter(
+        (h) => h.path === 'scripts/privacy-sweep.mjs',
       );
+      expect(inSweep, 'the sweep script contains an identity token').toEqual([]);
+    });
+
+    it('names the token file it looks for, and nothing from inside it', () => {
+      const source = fs.readFileSync(SCRIPT, 'utf8');
+      expect(source).toContain('lab/identity.local.json');
+      // The config it publishes carries counts and notes, never patterns: the
+      // report is committed, and a committed list of what to grep for is the
+      // same leak by a longer route.
+      const serialised = JSON.stringify(report.config.identity);
+      expect(serialised).not.toContain('"match"');
+      expect(serialised).not.toContain('"replace"');
     });
   });
 });
@@ -595,9 +637,20 @@ describe('privacy sweep against this repository', () => {
 
 describe('negative controls', () => {
   let planted: SweepReport;
+  /** The same scratch tree swept with NO token file at all. */
+  let unarmed: SweepReport;
 
   beforeAll(() => {
-    planted = sweep({ root: scratch, stamp: '1970-01-01T00:00:00.000Z' });
+    planted = sweep({
+      root: scratch,
+      stamp: '1970-01-01T00:00:00.000Z',
+      identityFile: inventedIdentityFile(scratch, ['LICENSE']),
+    });
+    unarmed = sweep({
+      root: scratch,
+      stamp: '1970-01-01T00:00:00.000Z',
+      identityFile: path.join(scratch, 'there-is-no-such-file.json'),
+    });
   }, 120_000);
 
   it('the scratch root is swept by directory walk with no history leg', () => {
@@ -606,12 +659,65 @@ describe('negative controls', () => {
     expect(planted.head).toBeNull();
   });
 
-  it('flags a planted developer identifier outside the allowed set', () => {
-    const hits = planted.workingTree.identifier.unexpected.filter(
-      (h) => h.path === 'planted/leak.txt',
-    );
+  it('flags a planted identity and fails the gate on it', () => {
+    expect(planted.config.identity.status).toBe('RUN');
+    expect(planted.config.identity.tokenCount).toBe(2);
+    const hits = planted.workingTree.identity.hits.filter((h) => h.path === 'planted/leak.txt');
     expect(hits.length).toBeGreaterThan(0);
+    expect(planted.verdict.identity).toBeGreaterThan(0);
+    expect(planted.verdict.pass).toBe(false);
   });
+
+  it('reports the token NOTE and never the token itself', () => {
+    const hits = planted.workingTree.identity.hits.filter((h) => h.path === 'planted/leak.txt');
+    expect(hits[0]?.notes.join(' ')).toContain('invented');
+    // The whole serialised leg, not just one finding: a leak through `config`,
+    // through a path, or through a note would be just as published.
+    const serialised = JSON.stringify({
+      workingTree: planted.workingTree.identity,
+      config: planted.config.identity,
+      verdict: planted.verdict,
+    });
+    expect(serialised).not.toContain(NEEDLE);
+    expect(serialised).not.toContain(SECOND_NEEDLE);
+  });
+
+  it('SKIPS the class with no token file, says so, and does not fail on the skip', () => {
+    // The contributor's run, over a tree that DOES contain the planted identity.
+    // Same bytes, same paths - only the token file is missing. The count goes to
+    // zero because nothing was looked for, and the status is the only thing that
+    // distinguishes this from a clean sweep.
+    expect(unarmed.config.identity.status).toBe('SKIPPED');
+    expect(unarmed.config.identity.reason).toContain('identity.local.json');
+    expect(unarmed.config.identity.tokenCount).toBe(0);
+    expect(unarmed.verdict.identityStatus).toBe('SKIPPED');
+    expect(unarmed.verdict.identity).toBe(0);
+    expect(unarmed.workingTree.identity.hits).toEqual([]);
+    // And the skip alone does not change the verdict: this tree still fails, on
+    // the planted secret and the planted foreign content, exactly as it does for
+    // the armed run.
+    expect(unarmed.verdict.secrets).toBeGreaterThan(0);
+    expect(unarmed.verdict.foreign).toBeGreaterThan(0);
+  });
+
+  it('the verdict LINE carries the status, not just the JSON', () => {
+    // The JSON is for tests; the line is what a human reads and what CI logs.
+    // `identity=0` printed by a class that never ran is the fail-open reading,
+    // so the printed form must be `SKIPPED(...)` and never a number.
+    const armed = spawnSync(
+      process.execPath,
+      [SCRIPT, '--root', scratch, '--identity', inventedIdentityFile(scratch, ['LICENSE'])],
+      { encoding: 'utf8' },
+    );
+    expect(armed.stdout).toMatch(/identity=[0-9]+ /);
+    const skipped = spawnSync(
+      process.execPath,
+      [SCRIPT, '--root', scratch, '--identity', path.join(scratch, 'nope.json')],
+      { encoding: 'utf8' },
+    );
+    expect(skipped.stdout).toContain('identity=SKIPPED(');
+    expect(skipped.stdout).not.toMatch(/identity=[0-9]/);
+  }, 60_000);
 
   it('flags a planted credential shape', () => {
     const hits = planted.workingTree.secrets.filter((h) => h.path === 'planted/config.env');
@@ -626,20 +732,20 @@ describe('negative controls', () => {
     expect(serialised).toContain('chars redacted');
   });
 
-  it('classifies the same identifier as ALLOWED under a known-allowed path', () => {
-    const allowedPath = 'fixtures/hook-events/planted-allowed.jsonl';
-    expect(
-      planted.workingTree.identifier.unexpected.some((h) => h.path === allowedPath),
-    ).toBe(false);
-    const rule = planted.workingTree.identifier.allowed.byRule.find(
-      (r) => r.rule === 'capture-hook-events',
-    );
-    expect(rule?.files.some((f) => f.path === allowedPath)).toBe(true);
+  it('diverts the SAME identity under an exempt path, and still reads it', () => {
+    // Identical bytes, two paths, one of them in the token file's own
+    // `exemptPaths`. The exempt one must not be a finding AND must not be
+    // invisible: a licence that has stopped naming its licensor is a broken
+    // release that would read as a clean sweep, so the count is what proves the
+    // scan reached it.
+    expect(planted.workingTree.identity.hits.some((h) => h.path === 'LICENSE')).toBe(false);
+    expect(planted.workingTree.identity.exemptHits).toBeGreaterThan(0);
+    expect(planted.config.identity.exemptPaths).toEqual(['LICENSE']);
   });
 
   it('reads past 1000 NUL bytes and still finds the marker behind them', () => {
     expect(planted.workingTree.nulFiles).toContain('planted/nul-hazard.bin');
-    const hits = planted.workingTree.identifier.unexpected.filter(
+    const hits = planted.workingTree.identity.hits.filter(
       (h) => h.path === 'planted/nul-hazard.bin',
     );
     expect(hits.length).toBeGreaterThan(0);
@@ -657,7 +763,7 @@ describe('negative controls', () => {
     expect(hits[0]?.value).toContain('totally-different-project');
   });
 
-  it('flags the SAME bytes under src/ and under docs/, which Phase 5 did not', () => {
+  it('flags the SAME bytes under fixtures/, src/ and a root file alike', () => {
     // The carry-out this closes, stated as the measurement that found it: with
     // the eight-entry corpus list these two paths produced ZERO hits while the
     // fixtures path above produced 3, from byte-identical content. Asserting
@@ -721,7 +827,7 @@ describe('negative controls', () => {
 
   it('fails the gate when anything is planted', () => {
     expect(planted.verdict.pass).toBe(false);
-    expect(planted.verdict.unexpected).toBeGreaterThan(0);
+    expect(planted.verdict.identity).toBeGreaterThan(0);
     expect(planted.verdict.secrets).toBeGreaterThan(0);
     expect(planted.verdict.foreign).toBeGreaterThan(0);
   });
@@ -850,159 +956,3 @@ describe('untracked mode', () => {
   });
 });
 
-/* ------------------------------------------------------------------ *
- * 3. The committed evidence
- * ------------------------------------------------------------------ */
-
-describe('committed evidence', () => {
-  let evidence: SweepReport;
-  let fresh: SweepReport;
-
-  beforeAll(() => {
-    evidence = JSON.parse(fs.readFileSync(EVIDENCE, 'utf8')) as SweepReport;
-    fresh = sweep({ root: REPO_ROOT, history: true, stamp: '1970-01-01T00:00:00.000Z' });
-  }, 120_000);
-
-  it('exists, parses, and names the tool and the commit it was taken at', () => {
-    expect(evidence.tool).toBe('scripts/privacy-sweep.mjs');
-    expect(evidence.head).toMatch(/^[0-9a-f]{40}$/);
-    expect(evidence.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-  });
-
-  it('recorded a passing gate', () => {
-    expect(evidence.verdict).toMatchObject({
-      unexpected: 0,
-      secrets: 0,
-      foreign: 0,
-      pass: true,
-    });
-  });
-
-  it('recorded both legs', () => {
-    expect(evidence.historyScope).toBe('all-refs');
-    expect(evidence.history).not.toBeNull();
-    expect(evidence.workingTree.filesScanned).toBeGreaterThan(0);
-    expect(evidence.history?.blobsScanned ?? 0).toBeGreaterThan(0);
-  });
-
-  it('carries the enumerated inventory, not just a verdict', () => {
-    expect(evidence.workingTree.identifier.allowed.byRule.length).toBeGreaterThan(0);
-    for (const rule of evidence.workingTree.identifier.allowed.byRule) {
-      expect(rule.files.length).toBeGreaterThan(0);
-      expect(rule.distinctPathTokens.length).toBeGreaterThan(0);
-      expect(rule.reason.length).toBeGreaterThan(20);
-    }
-  });
-
-  it('agrees with a fresh sweep on the properties that must be empty', () => {
-    // Emptiness and structure only. Hit COUNTS are deliberately not compared:
-    // the evidence file is itself tracked afterwards, history spans unmerged
-    // sibling branches, and the next fixture harvest moves every total. A
-    // pinned count here would read as a regression the first time either
-    // happens.
-    expect(fresh.reportVersion).toBe(evidence.reportVersion);
-    expect(fresh.verdict.pass).toBe(evidence.verdict.pass);
-    expect(fresh.verdict.unexpected).toBe(0);
-    expect(fresh.verdict.secrets).toBe(0);
-    expect(fresh.verdict.foreign).toBe(0);
-    expect(fresh.config.ownProject).toBe(evidence.config.ownProject);
-    expect(fresh.config.allowRules.map((r) => r.id)).toEqual(
-      evidence.config.allowRules.map((r) => r.id),
-    );
-    expect(fresh.config.captureCorpora).toEqual(evidence.config.captureCorpora);
-    expect(fresh.config.captureRootFiles).toBe(evidence.config.captureRootFiles);
-    expect(fresh.config.foreignValueExemptions.map((r) => r.id)).toEqual(
-      evidence.config.foreignValueExemptions.map((r) => r.id),
-    );
-    expect(fresh.config.identityScanExcluded).toEqual(evidence.config.identityScanExcluded);
-  });
-
-  it('the report file, and only it, is excluded from the identifier inventory', () => {
-    // The report quotes every path it found, so inventorying it would make each
-    // run a function of the previous one. Secrets and foreign content are still
-    // scanned there. The exemption stops at the generated file - the README
-    // beside it is human prose and is swept like anything else.
-    expect(fresh.config.identityScanExcluded).toEqual(['docs/evidence/privacy/report.json']);
-    const allFiles = [
-      ...fresh.workingTree.identifier.allowed.byRule.flatMap((r) => r.files.map((f) => f.path)),
-      ...fresh.workingTree.identifier.unexpected.map((h) => h.path),
-    ];
-    expect(allFiles).not.toContain('docs/evidence/privacy/report.json');
-  });
-
-  /* ---------------------------------------------------------------- *
-   * DoD 0.8 item 9 - head freshness, enforced at last.
-   *
-   * The report records the commit it was taken at. Nothing checked that the
-   * commit meant anything, so the artifact could name a hash from a deleted
-   * branch, or predate the very rules it claims to describe. Both happened:
-   * during the v0.1.2 hotfix the report was regenerated INSIDE the commit that
-   * changed `scripts/privacy-sweep.mjs`, so it recorded that commit's parent
-   * and described an inventory one revision out of date.
-   *
-   * "Regenerate it at HEAD" is not implementable and asking for it is the
-   * mistake: a report that quotes its own tree cannot describe the commit that
-   * contains it. Every generation is one commit stale by construction.
-   *
-   * What IS checkable is the thing that actually goes wrong. The verdict is
-   * already live-checked against a fresh sweep above, so content drift is
-   * covered. What was not covered is the CONFIGURATION drifting underneath the
-   * artifact - the allow rules, the corpora, the exemptions - and that changes
-   * in exactly one file. So: the recorded head must be a real commit on this
-   * history, and no commit since it may have touched the sweep script.
-   *
-   * The workflow that satisfies this is the one Phase 0 used: change the sweep,
-   * commit; then regenerate the report, commit. Two commits, and the second
-   * must not touch the script.
-   * ---------------------------------------------------------------- */
-  describe('head freshness', () => {
-    const gitOut = (...args: string[]): string =>
-      execFileSync('git', ['-C', REPO_ROOT, ...args], { encoding: 'utf8' }).trim();
-
-    it('names a commit that exists on this history', () => {
-      expect(evidence.head).toBeTruthy();
-      const head = String(evidence.head);
-      expect(head).toMatch(/^[0-9a-f]{40}$/);
-      // `--is-ancestor` fails loudly on an unknown object, which is the other
-      // half of what this asserts: not merely reachable, but real.
-      expect(() =>
-        execFileSync('git', ['-C', REPO_ROOT, 'merge-base', '--is-ancestor', head, 'HEAD'], {
-          stdio: 'pipe',
-        }),
-      ).not.toThrow();
-    });
-
-    it('describes the CURRENT sweep configuration, not a superseded one', () => {
-      const head = String(evidence.head);
-      const since = gitOut(
-        'log',
-        '--format=%h %s',
-        `${head}..HEAD`,
-        '--',
-        'scripts/privacy-sweep.mjs',
-      );
-      expect(
-        since,
-        'scripts/privacy-sweep.mjs changed after the committed report was generated - ' +
-          'regenerate it: node scripts/privacy-sweep.mjs --json docs/evidence/privacy/report.json',
-      ).toBe('');
-    });
-
-    it('is a real check: the script does have a history to be stale against', () => {
-      // Vacuity control. If the path were mistyped, `git log` would return
-      // nothing forever and the assertion above would pass on every tree.
-      const all = gitOut('log', '--format=%h', '--', 'scripts/privacy-sweep.mjs');
-      expect(all.split('\n').filter((l) => l.length > 0).length).toBeGreaterThan(1);
-    });
-  });
-
-  // THE HISTORY-LEG TIMING ASSERTION MOVED, it was not deleted:
-  // `src/perf/sweep-history.test.ts`, same 10,000 ms limit, in the isolated
-  // `perf` project (forks, single fork, after every other file). It is a
-  // wall-clock budget, and run beside fifty-odd other files it measured the
-  // machine rather than the sweep - it went red at
-  // `expected 12344 to be less than 10000` during a phase-verifier audit of a
-  // tree that was green forty minutes earlier, which is rule 14's property
-  // failing. Everything above stays here: it is about what the sweep FINDS,
-  // which no amount of load changes.
-});

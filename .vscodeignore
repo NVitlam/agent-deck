@@ -70,6 +70,62 @@ agent-deck-spec.md
 # HANDOVER.md).
 AGENTS.md
 
+# CONTRIBUTING.md is for people who clone the repository, not for people who
+# install the extension. It arrived on 2026-08-28 with the public/private split
+# - the constraints it states used to be readable in CLAUDE.md, which is no
+# longer here - and it is denied for the same reason CLAUDE.md always was.
+CONTRIBUTING.md
+
+# THE PRIVATE CHECKOUT. THIS IS THE MOST LOAD-BEARING LINE IN THIS FILE.
+#
+# `lab/` is a clone of the maintainer's private repository, sitting inside this
+# working tree so junctions can present CLAUDE.md, PLAN.md, docs/ and spike/
+# back at their usual paths. It carries `fixtures-raw/` - 29 MB of captured
+# sessions WITH THE DEVELOPER'S IDENTITY INTACT - and `identity.local.json`,
+# the one file that names them.
+#
+# `.gitignore` does not gate the packager. Measured the first time this audit
+# ran after the directory appeared: `vsce ls` enumerated
+# `lab/fixtures-raw/cc-2.1.234/projects/<real slug>/...` as packaged content,
+# by name. Without this line the very bytes the 2026-08-28 scrub removed from
+# the public repository would have shipped inside a published Marketplace
+# artifact - a worse outcome than the leak the scrub was fixing, reached
+# through the fix itself.
+#
+# Same class as `.opencode/` and `.claude/` before it, and the third time a
+# directory that local tooling puts at the repo root has turned out to be a
+# packaging hazard until somebody named it. The exact-set assertion in
+# `src/release/vsix.test.ts` is what caught all three.
+lab/**
+
+# CONTRIBUTING.md is for people who clone the repository, not for people who
+# install the extension. It arrived on 2026-08-28 with the public/private split
+# - the constraints it states used to be readable in CLAUDE.md, which is no
+# longer here - and it is denied for the same reason CLAUDE.md always was.
+CONTRIBUTING.md
+
+# THE PRIVATE CHECKOUT. THIS RULE IS THE MOST LOAD-BEARING LINE IN THIS FILE.
+#
+# `lab/` is a clone of the maintainer's private repository, sitting inside this
+# working tree so junctions can present `CLAUDE.md`, `PLAN.md`, `docs/` and
+# `spike/` back at their usual paths. It carries `fixtures-raw/` - 29 MB of
+# captured sessions WITH THE DEVELOPER'S IDENTITY INTACT - and
+# `identity.local.json`, the one file that names them.
+#
+# `.gitignore` does not gate the packager. Measured the first time this audit
+# ran after the directory appeared: `vsce ls` enumerated
+# `lab/fixtures-raw/cc-2.1.234/projects/<real slug>/...` as packaged content,
+# by name. Without this line the very bytes the 2026-08-28 scrub removed from
+# the public repository would have shipped inside a published Marketplace
+# artifact - a worse outcome than the leak the scrub was fixing, reached
+# through the fix.
+#
+# Same class as `.opencode/` and `.claude/` before it, and the third time a
+# directory that local tooling puts at the repo root has turned out to be a
+# packaging hazard until somebody named it. The exact-set assertion in
+# `src/release/vsix.test.ts` is what caught all three.
+lab/**
+
 # Everything under `docs/`. Phase 5 wrote a ROOT `README.md`, and that is the
 # one document the VSIX ships. `docs/README.md` is an index of superseded v1
 # documents; it was shipping only because there was no root README to ship,

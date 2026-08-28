@@ -135,18 +135,45 @@ const FORBIDDEN: ReadonlyArray<{ readonly re: RegExp; readonly why: string }> = 
   { re: /\.svelte$/, why: 'component source' },
   { re: /^(PLAN|CLAUDE|HANDOVER)\.md$/, why: 'internal process documents' },
   { re: /^agent-deck-spec\.md$/, why: 'internal specification' },
+  { re: /^CONTRIBUTING\.md$/, why: 'for contributors who clone the repo, not for people who install the extension' },
+  { re: /^lab\//, why: 'the private checkout, which carries the UNREDACTED captures' },
 ];
 
-/** Identifiers that must not appear in any shipped byte. This exact leak
- *  already happened: `esbuild-svelte` writes one `fakecss:<absolute path>`
- *  comment per component into the DEV stylesheet, so `dist/webview/main.css`
- *  carried 16 `C:/Users/...` paths into a real VSIX. Written as escaped
- *  fragments so this file is not itself a hit in the privacy sweep. */
-const DEVELOPER_IDENTIFIERS = ['Nad' + 'av', 'One' + 'Drive', 'C:' + '\\Users', 'c:' + '/Users'];
+/**
+ * Shapes that must not appear in any shipped byte. This exact leak already
+ * happened: `esbuild-svelte` writes one `fakecss:<absolute path>` comment per
+ * component into the DEV stylesheet, so `dist/webview/main.css` carried 16
+ * absolute build-machine paths into a real VSIX.
+ *
+ * SHAPES, NOT NAMES, since 2026-08-28. This list used to be the developer's own
+ * folder names in escaped fragments; fragmenting hides a string from `grep`
+ * without removing it, and no identity string exists in this repository to list
+ * any more. The shapes are also the stronger assertion - they catch an absolute
+ * path belonging to ANYBODY, including whoever builds the artifact next, which
+ * is exactly what the `fakecss:` leak was.
+ */
+const FORBIDDEN_PATH_SHAPES: ReadonlyArray<{ readonly re: RegExp; readonly what: string }> = [
+  { re: /[A-Za-z]:\\Users\\/, what: 'a Windows home path, backslash form' },
+  { re: /[A-Za-z]:\/Users\//, what: 'a Windows home path, forward-slash form' },
+  { re: /\/home\/[A-Za-z0-9_.-]+\//, what: 'a POSIX home path' },
+  { re: /\/mnt\/[a-z]\/Users\//, what: 'a WSL home path' },
+];
 
-/** The licensor's own name, which the MIT copyright line must carry. Same
- *  fragment-concatenation reason as above. */
-const LICENSOR_NAME = DEVELOPER_IDENTIFIERS[0] as string;
+/**
+ * The licensor's own name, READ FROM THE LICENCE rather than written down.
+ *
+ * The deliberate identity is by definition whatever the copyright line names,
+ * so the licence is the source of truth and reading it makes this audit
+ * stronger: a licensor change updates it automatically instead of silently
+ * narrowing it, and a licence whose copyright line stops parsing fails loudly
+ * here rather than passing over nothing.
+ */
+const LICENSOR_NAME = ((): string => {
+  const licence = readFileSync(join(REPO_ROOT, 'LICENSE'), 'utf8');
+  const line = /^Copyright \(c\) \d{4} (.+)$/m.exec(licence);
+  if (line === null) throw new Error('LICENSE has no parseable copyright line');
+  return (line[1] ?? '').trim();
+})();
 
 /**
  * The licence AS THE ARTIFACT NAMES IT — which is not what `vsce ls` calls it.
@@ -179,10 +206,18 @@ const LICENCE_IN_ARTIFACT = /^extension\/LICENSE(\.txt)?$/i;
  * two rules: that one stays at zero, this one is an inventory of an enumerated
  * set of paths.
  *
- * Escaped fragments for the same reason as above - so this file is not itself a
- * hit in the privacy sweep, which since Phase 6 does sweep the surname.
+ * DERIVED FROM THE LICENCE, like `LICENSOR_NAME` above and for the same reason.
+ * Until 2026-08-28 this was a fragment-assembled literal, which hides a string
+ * from `grep` without removing it.
+ *
+ * Words of two characters or fewer are dropped: an initial, or a "de"/"van"
+ * particle, is not a distinctive token and would match half the artifact.
  */
-const IDENTITY_IDENTIFIERS = ['Vit' + 'lam'];
+const IDENTITY_IDENTIFIERS: readonly string[] = ((): string[] => {
+  const words = LICENSOR_NAME.split(/\s+/).filter((w) => w.length > 2);
+  if (words.length === 0) throw new Error('the copyright line names nobody');
+  return words;
+})();
 
 /**
  * The shipped paths allowed to carry it, as the ARTIFACT names them - which is
@@ -225,7 +260,7 @@ const IDENTITY_REQUIRED_IN_ARTIFACT: ReadonlyArray<{ readonly re: RegExp; readon
 // listing existed the file was clean, which is why it was not enumerated here
 // and why the always-on leg went red the moment the badge landed - working as
 // intended.
-const IDENTITY_ALLOWED_ON_DISK: readonly string[] = ['LICENSE', 'package.json', 'README.md'];
+const IDENTITY_ALLOWED_ON_DISK: readonly string[] = ['LICENSE', 'package.json'];
 
 /**
  * `vsce ls` is a subprocess spawn, measured at 1.4-3.2 s per call. Six tests
@@ -330,9 +365,15 @@ describe('the packaged artifact', () => {
     const violations: string[] = [];
     const seen = new Set<string>();
     for (const rel of files) {
-      const text = readFileSync(join(REPO_ROOT, rel)).toString('latin1').toLowerCase();
+      // CASE-SENSITIVE, and the case is the point. The Marketplace publisher id
+      // is the surname's lowercase form with an `n` in front; it ships in every
+      // VSIX manifest and the documented install command needs it. It is
+      // deliberately NOT the same string as the copyright line's surname, and
+      // folding case here would collapse the two and drag the README back onto
+      // an allow-list it no longer needs to be on.
+      const text = readFileSync(join(REPO_ROOT, rel)).toString('latin1');
       for (const identifier of IDENTITY_IDENTIFIERS) {
-        if (!text.includes(identifier.toLowerCase())) continue;
+        if (!text.includes(identifier)) continue;
         if (IDENTITY_ALLOWED_ON_DISK.includes(rel)) {
           seen.add(rel);
           continue;
@@ -413,27 +454,29 @@ describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
             // Byte scan, not a text grep: the leak that happened was inside a
             // CSS comment, and a shipped bundle is not guaranteed to be text.
             const text = bytes.toString('latin1');
-            for (const identifier of DEVELOPER_IDENTIFIERS) {
-              if (!text.toLowerCase().includes(identifier.toLowerCase())) continue;
-              // THE ONE DELIBERATE EXEMPTION, found by running this audit for
-              // the first time. A licence names its licensor — that is what a
-              // copyright line IS — so the copyright holder's name in the
-              // licence file is the grant working, not a leak. The exemption is
-              // narrow: this file only, this identifier only. Every other
-              // shipped byte stays at zero, and the assertion below proves the
-              // exemption is load-bearing rather than a hole to hide in.
-              if (LICENCE_IN_ARTIFACT.test(relative) && identifier === LICENSOR_NAME) {
-                licenceNamesTheLicensor = true;
-                continue;
-              }
-              hits.push(`${relative} contains ${identifier}`);
+            // ZERO TOLERANCE, with no exemption at all any more. An absolute
+            // path has no business in a shipped byte whoever it belongs to,
+            // and since shapes replaced names there is nothing here a licence
+            // could legitimately contain - a copyright line names a person,
+            // not a directory. The exemption that used to live here (the
+            // licensor's name inside the licence) moved to the
+            // deliberate-identity pass below, where it belongs.
+            for (const shape of FORBIDDEN_PATH_SHAPES) {
+              if (!shape.re.test(text)) continue;
+              hits.push(`${relative} contains ${shape.what}`);
             }
             // The deliberate-identity list, kept separate so the zero-tolerance
             // list above stays at zero tolerance. Same byte scan, different
             // rule: an enumerated allow-set of shipped paths rather than one
             // exemption.
+            //
+            // CASE-SENSITIVE - the Marketplace publisher id is the surname's
+            // lowercase form and is a different string on purpose.
             for (const identifier of IDENTITY_IDENTIFIERS) {
-              if (!text.toLowerCase().includes(identifier.toLowerCase())) continue;
+              if (!text.includes(identifier)) continue;
+              if (LICENCE_IN_ARTIFACT.test(relative) && LICENSOR_NAME.includes(identifier)) {
+                licenceNamesTheLicensor = true;
+              }
               if (IDENTITY_ALLOWED_IN_ARTIFACT.some((re) => re.test(relative))) {
                 identitySeen.push(relative);
                 continue;

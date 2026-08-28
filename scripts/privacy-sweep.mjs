@@ -43,20 +43,29 @@
  *
  * WHAT "PASS" MEANS - read this before "fixing" a number
  * -----------------------------------------------------
- * The DoD's `-> 0` applies to FOREIGN content and to SECRETS. It does NOT apply
- * to this developer's own absolute paths: those are present in the capture
- * corpora deliberately, because a fixture without `cwd` cannot pin the
- * main-thread hook rule and a normalised recording is not a recording of the
- * real wire. Deleting fixture content to make a counter reach zero would
- * destroy G6 evidence and is explicitly not the fix. This sweep's job for those
- * paths is an ENUMERATED INVENTORY of a known set, plus zero outside it.
+ * THE SCOPE CHANGED ON 2026-08-28 AND THE OLD TEXT IS GONE, not softened. It
+ * used to say: the `-> 0` applies to FOREIGN content and to SECRETS and NOT to
+ * this developer's own absolute paths, which are in the capture corpora
+ * deliberately, inventoried under written allow rules rather than driven to
+ * zero. That was true for as long as the corpora carried real paths.
+ *
+ * They do not any more. The public-exposure scrub rewrote every captured path,
+ * slug, folder name and identifier to synthetic equivalents through the
+ * redaction tool, and the identity set is now a HARD-FAIL class with no allow
+ * rule and no advisory tier. What made the old policy defensible was that a
+ * fixture without `cwd` cannot pin the main-thread hook rule; what makes the
+ * new one possible is that a fixture with a CONSISTENT SYNTHETIC `cwd` pins it
+ * just as well. A join key has to be consistent, not real.
  *
  * BUCKETS
  * -------
- *   ALLOWED     developer-identifier hit in a file matched by an allow rule
- *               below. Each rule carries a written reason.
- *   UNEXPECTED  developer-identifier hit in a file matched by no allow rule.
- *               Gate: must be empty.
+ *   IDENTITY    a match against the private token list, anywhere, outside that
+ *               list's own `exemptPaths` (the licence and the manifest, where
+ *               the author's name is the correct content). Gate: must be empty.
+ *               Reported as path:line plus the token's NOTE - never the matched
+ *               text, because this report is committed.
+ *               SKIPPED, and said so in the verdict line, when the token file
+ *               is absent. That is the contributor's run and it stays green.
  *   SECRET      credential-shaped match anywhere. Gate: must be empty.
  *               Locations are printed; values never are.
  *   FOREIGN     inside the REAL-CAPTURE corpora, a `cwd` / `transcript_path` /
@@ -64,19 +73,17 @@
  *               other than agent-deck. Gate: must be empty. This is the
  *               assertion that protects other people's work.
  *
- * Plus one non-gating output, because an inventory that hides its own outliers
- * is not an inventory:
- *   ADVISORY    an ALLOWED hit whose enclosing path token points somewhere on
- *               the developer's machine OUTSIDE the agent-deck tree, `~/.claude`
- *               and `~/.vscode`. Still the developer's own path, so it is not a
- *               `-> 0` item under the recorded scope, but it is listed by file
- *               and line so a human can decide before a public flip.
- *
- * EXIT CODE: 0 when UNEXPECTED, SECRET and FOREIGN are all empty; 1 otherwise.
+ * EXIT CODE: 0 when IDENTITY, SECRET and FOREIGN are all empty; 1 otherwise.
  *
  * USAGE
  *   node scripts/privacy-sweep.mjs [--json <path>] [--root <dir>] [--untracked]
  *                                  [--no-history] [--quiet] [--stamp <iso>]
+ *                                  [--identity <path>]
+ *
+ *   --identity <p> read the token list from <p> instead of lab/identity.local.json.
+ *                  The negative control in src/release/privacy.test.ts points it
+ *                  at a throwaway file of INVENTED tokens, so the test can prove
+ *                  the class fails without naming anybody.
  *
  *   --root <dir>   sweep a different tree (the test's negative controls point
  *                  it at a scratch directory). A non-git root is enumerated by
@@ -100,296 +107,81 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /* ------------------------------------------------------------------ *
- * Needles
+ * The identity class
  *
- * Every needle is assembled from fragments at runtime so that THIS FILE
- * does not itself become a hit on the next run. A sweep script that trips
- * its own detector teaches everyone to ignore the detector.
+ * THIS FILE CONTAINS NO IDENTITY TOKEN, and that is the whole design.
+ *
+ * Through Phase 6 the needles lived here, assembled from fragments so the
+ * script would not trip its own detector. Fragmenting hides a string from
+ * `grep`; it does not remove it, and the scrub of 2026-08-28 is measured by a
+ * `grep` from a clean clone returning ZERO. A detector that has to know the
+ * secret cannot ship beside the thing it protects.
+ *
+ * Hashing the tokens was considered and REJECTED by the user, for a good
+ * reason: a given name and a folder name are dictionary-guessable, so a public
+ * list of salted hashes is an invitation rather than a control.
+ *
+ * So the tokens live in ONE file, in a separate PRIVATE repository, and this
+ * script reads it if it is there:
+ *
+ *   PRESENT  -> the identity class RUNS. Any match outside the file's own
+ *               `exemptPaths` is a hard failure. There is no allow rule, no
+ *               inventory, and no advisory tier: a hit fails the gate.
+ *   ABSENT   -> the identity class is SKIPPED, the verdict line SAYS SO, and
+ *               the exit code is unaffected by the skip itself. That is the
+ *               contributor's experience and it must stay green.
+ *
+ * Findings print `path:line` and the token's `note`. They NEVER print the
+ * matched text: a report that quotes what it found is a copy of the thing it
+ * is there to keep out of the repository, and this report is committed.
  * ------------------------------------------------------------------ */
 
-const DEVELOPER_IDENTIFIERS = [
-  'Na' + 'dav',
-  'One' + 'Drive',
-  'Claude' + 'Home',
-  // The email local part, in THREE fragments rather than the two it had
-  // through Phase 5. The old two-way split left a fragment that contained the
-  // surname needle added below, so this script became a hit on its own
-  // detector the moment the surname was swept - measured, 1 working-tree hit
-  // here. No fragment on this line may contain either the given name above or
-  // the surname below; re-splitting is the fix, exempting the sweep from its
-  // own scan is not.
-  'nada' + 'vv' + 'itlam',
-  // The surname, added in Phase 6 (DoD5). Before it, "no developer identifier
-  // in any shipped byte" meant four needles and the audit could not have seen
-  // a fifth. It is DELIBERATE IDENTITY, not a leak: it is in the MIT copyright
-  // line, in the manifest's `publisher` and `repository.url` fields, and as a
-  // substring of both the publisher id and the email local part above - so it
-  // is inventoried under written allow rules rather than driven to zero.
-  'Vi' + 'tlam',
-];
+/** Where the private checkout is expected, relative to the repository root. */
+const IDENTITY_FILE = 'lab/identity.local.json';
+
+/**
+ * Load the identity tokens, or return a SKIPPED marker.
+ *
+ * A malformed or unreadable file is NOT silently treated as absent: absent is
+ * a supported state with a reported verdict, malformed is a broken control and
+ * says so. Working-method rule 18 - the fail-open class this repository has
+ * already hit twice is a check that quietly does less than it claims.
+ */
+function loadIdentity(root, override = null) {
+  const file = override ?? path.join(root, IDENTITY_FILE);
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch {
+    return { status: 'SKIPPED', reason: `no ${IDENTITY_FILE}`, tokens: [], exemptPaths: [] };
+  }
+  const doc = JSON.parse(raw);
+  if (doc.version !== 1) {
+    throw new Error(`${IDENTITY_FILE}: version ${String(doc.version)} is not 1`);
+  }
+  if (!Array.isArray(doc.tokens) || doc.tokens.length === 0) {
+    throw new Error(`${IDENTITY_FILE}: no tokens`);
+  }
+  const tokens = doc.tokens.map((t, i) => {
+    if (typeof t.match !== 'string' || typeof t.note !== 'string' || t.note === '') {
+      throw new Error(`${IDENTITY_FILE}: token ${String(i)} is malformed`);
+    }
+    // `g` is forced on; the file's flags say only whether the token is
+    // case-sensitive. Exactly one is - see that token's note.
+    const insensitive = (t.flags ?? 'gi').includes('i');
+    return { re: new RegExp(t.match, insensitive ? 'gi' : 'g'), note: t.note };
+  });
+  return {
+    status: 'RUN',
+    reason: null,
+    file,
+    tokens,
+    exemptPaths: Array.isArray(doc.exemptPaths) ? doc.exemptPaths : [],
+  };
+}
 
 /** The project this repository is allowed to have captured data from. */
 const OWN_PROJECT = 'agent-deck';
-
-/**
- * Path prefixes whose developer-identifier hits are deliberate.
- *
- * These are measured, not assumed: the list was built by enumerating every
- * tracked file containing an identifier and writing down why each one does.
- * A file outside this list is UNEXPECTED and fails the gate.
- */
-const ALLOW_RULES = [
-  {
-    id: 'capture-cc-2.1.234',
-    prefixes: ['fixtures/cc-2.1.234/'],
-    reason:
-      'Real CC 2.1.234 transcripts and sidecars. G6: fixtures are law and are ' +
-      'byte-exact; the cwd and transcript_path values ARE the data under test.',
-  },
-  {
-    id: 'capture-cc-2.1.237',
-    prefixes: ['fixtures/cc-2.1.237/'],
-    reason:
-      'Real CC 2.1.237 transcript, content-destroyed, kept as the witness for ' +
-      'the accepted version window.',
-  },
-  {
-    id: 'capture-cc-2.1.241',
-    prefixes: ['fixtures/cc-2.1.241/'],
-    reason:
-      'A real CC 2.1.241 session run against a local local-model model. Raw and ' +
-      'unredacted like the other captures: it exists to prove the refusal is ' +
-      'the version string and nothing else, and a normalised model path or cwd ' +
-      'would pin none of that.',
-  },
-  {
-    id: 'capture-cc-2.1.246',
-    prefixes: ['fixtures/cc-2.1.246/'],
-    reason:
-      'The provenance anchor: a real CC 2.1.246 R1 mirror pair captured from ' +
-      "this repo's own session, with one subagent and its join sidecar. G6: " +
-      'fixtures are law and byte-exact; the cwd, transcript_path and session ' +
-      'ids ARE the data under test.',
-  },
-  {
-    id: 'capture-dropped-actions',
-    prefixes: ['fixtures/synthetic-dropped-actions/'],
-    reason:
-      'The session AUDIT-2026-08-27 section 7 was written about: a real CC ' +
-      '2.1.246 orchestration, 8h11m, 121 main tool calls and two subagent ' +
-      'transcripts, kept so the liveness-integrity work has the corpus the ' +
-      'defect was actually reported against. ' +
-      'scripts/redact-paths.mjs has already run over it - 5,727 absolute ' +
-      'paths replaced with <HOME>, the username and machine name with ' +
-      'placeholders, verified idempotent on a second run. What SURVIVES and ' +
-      'needs this rule is the Claude Code PROJECT SLUG, which carries the ' +
-      'developer name and is a join key: projectSlug is derived from it and ' +
-      'src/opencode/slug.ts pins the two engines\' agreement on it, so ' +
-      'rewriting it would destroy the thing the corpus is for. Same treatment ' +
-      'and same reasoning as the cc-* corpora above.',
-  },
-  {
-    id: 'synthetic-structure-2.1.246',
-    prefixes: ['fixtures/synthetic-structure-2.1.246/'],
-    reason:
-      'Hand-mutated copy of the 2.1.246 head slice with one required key ' +
-      'renamed. It inherits the paths of the capture it was cut from because ' +
-      'the mutation is a single key: the point is that only structure differs.',
-  },
-  {
-    id: 'capture-opencode-1.18.22',
-    prefixes: ['fixtures/opencode-1.18.22/'],
-    reason:
-      'The OpenCode provenance ANCHOR: a real SQLite store captured read-only ' +
-      'from this machine, holding this repository\'s own sessions. The absolute ' +
-      'paths in it are not incidental - project.worktree and session.directory ' +
-      'ARE the workspace join key (opencode contract section 9: an absolute ' +
-      'path, no slug decoding, matched case-insensitively against the workspace ' +
-      'folders). A normalised corpus would pin no discovery rule at all, the ' +
-      'same argument as capture-cc-2.1.246 reaching the same place by a ' +
-      'different mechanism - CC encodes the path into a slug, OpenCode stores it ' +
-      'verbatim in a column. The file is a binary database, so hits are counted ' +
-      'in thousands and the byte offsets that produce the line numbers are ' +
-      'page offsets, not text lines.',
-  },
-  {
-    id: 'capture-opencode-1.18.21',
-    prefixes: ['fixtures/opencode-1.18.21/'],
-    reason:
-      'The OpenCode drift WITNESS, captured in the same read-only pass as the ' +
-      '1.18.22 anchor and carrying the same deliberate absolute paths for the ' +
-      'same reason: project.worktree and session.directory are the workspace ' +
-      'join key. It exists because it disagrees with the anchor about the ' +
-      'compaction part shape, which is what proves tail_start_id optional; a ' +
-      'normalised or hand-written copy would witness nothing.',
-  },
-  {
-    id: 'capture-hook-events',
-    prefixes: ['fixtures/hook-events/'],
-    reason:
-      'Content-free but deliberately NOT anonymous: cwd, transcript_path, ' +
-      'session_id, agent_id and prompt_id are kept verbatim because a fixture ' +
-      'without them cannot pin the main-thread rule (absence of agent_id is ' +
-      'the signal).',
-  },
-  {
-    id: 'capture-phase0-evidence',
-    prefixes: ['fixtures/phase0-evidence/'],
-    reason: 'Phase 0 latency logs and hook captures; the gate evidence itself.',
-  },
-  {
-    id: 'derived-goldens',
-    prefixes: ['fixtures/golden/', 'webview/goldens/'],
-    reason:
-      'Goldens derived from the captures. They carry the project slug because ' +
-      'the slug is the join key the graft and the layout are pinned on.',
-  },
-  {
-    id: 'synthetic-path-matrix',
-    prefixes: ['fixtures/synthetic-path-matrix/'],
-    reason:
-      'Slug-encoding matrix. The real slug from this machine is one row of it ' +
-      '- the row that proves the encoding rule against reality.',
-  },
-  {
-    id: 'synthetic-perf',
-    prefixes: ['fixtures/synthetic-perf/'],
-    reason: 'Synthetic perf corpus generator; names the repo path it writes under.',
-  },
-  {
-    id: 'fixture-docs',
-    prefixes: [
-      'fixtures/README.md',
-      'fixtures/PHASE0-VERDICT.md',
-      'fixtures/SCRUB-EVIDENCE.md',
-    ],
-    reason:
-      'Fixture provenance and scrub-evidence docs, which must state where the ' +
-      'data came from and what was removed from it.',
-  },
-  {
-    id: 'licence',
-    prefixes: ['LICENSE', 'LICENCE'],
-    reason:
-      "The MIT copyright line names the licensor. Identifying who grants the " +
-      "licence is that line's whole function; removing the name voids it.",
-  },
-  {
-    id: 'wire-corpus',
-    prefixes: ['webview/wire/'],
-    reason:
-      'Phase 4.5 recorded wire corpus. Payloads are verbatim, including ' +
-      'absolute paths, deliberately: a normalised recording is not a recording ' +
-      'of the real wire. Already committed under fixtures/, so a second copy, ' +
-      'not new exposure. .vscodeignore keeps webview/** out of the VSIX.',
-  },
-  {
-    id: 'perf-evidence',
-    prefixes: ['src/perf/evidence/'],
-    reason: 'Perf evidence records the absolute path of the generator that produced it.',
-  },
-  {
-    id: 'tests-and-testdata',
-    prefixes: ['src/', 'webview/', 'test/'],
-    suffixes: ['.test.ts', 'testdata.ts', 'testkit.ts'],
-    reason:
-      'Tests pin the fixture project slug because the slug is a production ' +
-      'join key. A test that writes a placeholder slug pins nothing.',
-  },
-  {
-    id: 'source-doc-comments',
-    prefixes: ['src/watch/inference.ts'],
-    reason: 'One doc comment naming the fixture directory the module was measured against.',
-  },
-  {
-    id: 'spike',
-    prefixes: ['spike/'],
-    reason: 'Frozen Phase 0 reference implementation and its notes; not shipped.',
-  },
-  {
-    id: 'project-docs',
-    prefixes: [
-      'AGENTS.md',
-      'CLAUDE.md',
-      'HANDOVER.md',
-      'PLAN.md',
-      'README.md',
-      'SECURITY.md',
-      'agent-deck-spec.md',
-      'docs/',
-    ],
-    reason:
-      'Project documentation quoting concrete measured paths. Several of these ' +
-      'traps are only communicable by quoting the exact path that produced them. ' +
-      'AGENTS.md joined the list in Phase 0 when it became tracked: it names ' +
-      'the marketplace extension id, whose publisher half contains the surname ' +
-      'needle. Deliberate identity, exactly as in the manifest and the licence. ' +
-      '(The id is not spelled out here - a needle written into this file makes ' +
-      'the script a hit on its own detector, which is the recorded hazard.)',
-  },
-  {
-    id: 'release-identity-manifest',
-    prefixes: ['package.json'],
-    reason:
-      'Release identity. Measured after the surname needle was added (Phase 6 ' +
-      'DoD5): 2 hits, the marketplace `publisher` field and `repository.url`, ' +
-      'both of which contain the surname as a substring of the publisher id. A ' +
-      'publisher id and the repository a user is told to file issues against ' +
-      'are the extension saying who ships it; anonymising either would be a lie ' +
-      'in the manifest. package-lock.json is NOT covered by this rule - ' +
-      'measured 0 hits there.',
-  },
-  {
-    id: 'release-workflows',
-    prefixes: ['.github/'],
-    reason:
-      'CI and release workflows. Measured: 1 hit, a comment in release.yml ' +
-      'recording the Phase 5 re-scope - there is no Azure DevOps account and ' +
-      'no publisher account, and the comment names the publisher id the ' +
-      'workflow would otherwise push to. A workflow that names the publisher ' +
-      'it does not have is the record of why publication is human-pending.',
-  },
-  {
-    id: 'sweep-needles',
-    prefixes: ['scripts/privacy-sweep.mjs'],
-    reason:
-      'This script itself. Every needle is assembled from fragments so the ' +
-      'live file scores zero - measured, and if it ever stops being zero the ' +
-      'fragments have been split wrongly. The rule exists for HISTORY: blobs ' +
-      'committed before Phase 6 carry the two-way split of the email local ' +
-      'part, whose second fragment contains the surname, and a committed blob ' +
-      'cannot be edited. Measured at the time of writing: 2 history hits, both ' +
-      'that fragment. Scoped to this one file.',
-  },
-  {
-    id: 'capture-script-needles',
-    prefixes: ['scripts/capture-opencode.mjs'],
-    reason:
-      'The OpenCode capture script, for the same reason sweep-needles exists ' +
-      'one file over: it is a script that names a needle because its job is to ' +
-      'look for one. Measured at the time of writing: 12 working-tree hits, all ' +
-      'the SAME needle - the directory that holds this developer\'s projects, ' +
-      'not the cloud-sync folder an earlier version of this reason named - and ' +
-      'none of them a path: the script extracts <that dir>/<project> tokens out ' +
-      'of the captured rows and reports which projects the bytes mention, so ' +
-      'the identifier appears as a comment, a regex literal, three SQL GLOB ' +
-      'patterns and one line of generated README. It COULD be assembled from ' +
-      'fragments the way sweep-needles does - a GLOB pattern handed to SQLite ' +
-      'is a runtime value, not a source literal - and the earlier claim here ' +
-      'that it could not was simply wrong. It is left whole because fragmenting ' +
-      'it in five places would obscure what the script does, which is the same ' +
-      'trade sweep-needles already makes one file over. Scoped to that one file.',
-  },
-  {
-    id: 'repo-local-cc-config',
-    prefixes: ['.claude/'],
-    reason:
-      'Repo-local CC settings (deliberately committed so G1 stays absolute - ' +
-      'nothing under ~/.claude is ever written) and agent memory notes. ' +
-      'Anything here pointing outside the agent-deck tree is raised as an ' +
-      'ADVISORY rather than buried.',
-  },
-];
 
 /**
  * FOREIGN-scan corpora - where a `cwd` / `transcript_path` / project-slug value
@@ -433,14 +225,18 @@ const CAPTURE_CORPORA = [
   // which is the third time it has caught a newly tracked top-level directory
   // (see 'media/' below) and the reason it exists.
   '.vscode/',
-  'docs/',
+  // `docs/` and `spike/` LEFT this repository on 2026-08-28 - they are in the
+  // maintainer's private repository now, and `.gitignore` anchors them so a
+  // junction presenting them back at these paths cannot re-track them. They
+  // are not listed here because the completeness guard in
+  // `src/release/privacy.test.ts` asserts BOTH directions, and an enumerated
+  // prefix matching no tracked file is the half that catches a stale entry.
   'fixtures/',
   // Marketplace assets. Added when the icon and screenshots became tracked for
   // the 0.1.0 listing; the completeness guard in src/release/privacy.test.ts
   // caught the omission on the next run, which is what it is for.
   'media/',
   'scripts/',
-  'spike/',
   'src/',
   'test/',
   'webview/',
@@ -456,16 +252,6 @@ const CAPTURE_CORPORA = [
  * to leave unswept.
  */
 const CAPTURE_ROOT_FILES = true;
-
-/**
- * The sweep does not inventory its OWN OUTPUT FILE. The report necessarily
- * quotes every path it found, so including it would make the report's
- * identifier counts a function of the previous run. Scoped to the one generated
- * file, not the directory: the README beside it is prose written by a human and
- * gets no exemption. Secrets and foreign content ARE still scanned here - only
- * the identifier inventory skips it.
- */
-const IDENTITY_SCAN_EXCLUDE = ['docs/evidence/privacy/report.json'];
 
 /* ------------------------------------------------------------------ *
  * Secret shapes
@@ -725,27 +511,9 @@ function foreignExemption(relPath, value, opts = {}) {
  * Helpers
  * ------------------------------------------------------------------ */
 
-function matchesPrefixRule(relPath, rule) {
-  const hitPrefix = rule.prefixes.some((p) => relPath === p || relPath.startsWith(p));
-  if (!hitPrefix) return false;
-  if (!rule.suffixes) return true;
-  return rule.suffixes.some((s) => relPath.endsWith(s));
-}
-
-function findAllowRule(relPath) {
-  for (const rule of ALLOW_RULES) {
-    if (matchesPrefixRule(relPath, rule)) return rule;
-  }
-  return null;
-}
-
 function inCaptureCorpus(relPath) {
   if (CAPTURE_CORPORA.some((p) => relPath.startsWith(p))) return true;
   return CAPTURE_ROOT_FILES && !relPath.includes('/');
-}
-
-function excludedFromIdentityScan(relPath) {
-  return IDENTITY_SCAN_EXCLUDE.some((p) => relPath.startsWith(p));
 }
 
 /** Byte offsets of every line start, so a hit index becomes a 1-based line. */
@@ -768,21 +536,6 @@ function lineOf(starts, offset) {
   return lo + 1;
 }
 
-const PATH_CHAR = /[A-Za-z0-9_.:\-\\/~]/;
-
-/**
- * Expand a hit outwards over path-ish characters. Backslash runs are included
- * so JSON-escaped Windows paths (`C:\\\\Users\\\\...` in the bytes) come back
- * whole rather than as four separate fragments.
- */
-function pathTokenAround(text, index, len) {
-  let start = index;
-  while (start > 0 && PATH_CHAR.test(text[start - 1])) start -= 1;
-  let end = index + len;
-  while (end < text.length && PATH_CHAR.test(text[end])) end += 1;
-  return text.slice(start, end);
-}
-
 function normalisePathToken(token) {
   return token.replace(/\\+/g, '/').toLowerCase();
 }
@@ -794,33 +547,6 @@ function normalisePathToken(token) {
  * measured at 19 working-tree advisories before the check, most of them prose,
  * which is how an advisory list stops being read.
  */
-const PATH_ANCHORS = [/[a-z]:\//, /~\//, /\/mnt\/[a-z]\//, /\/home\//, /\/users\//];
-
-function anchoredPath(norm) {
-  let best = -1;
-  for (const a of PATH_ANCHORS) {
-    const m = norm.match(a);
-    if (m !== null && m.index !== undefined && (best === -1 || m.index < best)) best = m.index;
-  }
-  return best === -1 ? null : norm.slice(best);
-}
-
-/**
- * Where does this hit point? `prose` when it is not inside a path at all.
- * Anything that resolves to `other` becomes an ADVISORY.
- */
-function classifyPathToken(token) {
-  const p = anchoredPath(normalisePathToken(token));
-  if (p === null) return 'prose';
-  if (p.includes(OWN_PROJECT)) return 'project';
-  if (p.includes('/.claude')) return 'cc-home';
-  if (p.includes('/.vscode')) return 'editor';
-  // A bare home directory with nothing meaningful below it.
-  if (/^(?:[a-z]:\/users\/[a-z0-9_.-]+|\/home\/[a-z0-9_.-]+)\/?$/.test(p)) return 'home';
-  return 'other';
-}
-
-/** Collapse the parts of a path token that vary per session. */
 function canonicalisePathToken(token) {
   return normalisePathToken(token)
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<uuid>')
@@ -838,26 +564,27 @@ function redactSecret(value) {
  * Scanners
  * ------------------------------------------------------------------ */
 
-function scanIdentifiers(text, starts, relPath, sink) {
-  const lowered = text.toLowerCase();
-  for (const needle of DEVELOPER_IDENTIFIERS) {
-    const target = needle.toLowerCase();
-    let from = 0;
-    for (;;) {
-      const at = lowered.indexOf(target, from);
-      if (at === -1) break;
-      from = at + target.length;
-      const token = pathTokenAround(text, at, needle.length);
-      sink({
-        path: relPath,
-        line: lineOf(starts, at),
-        needle,
-        scope: classifyPathToken(token),
-        // NOT `token`: a JSON key literally named `token` holding a 24+ char
-        // path made the sweep's own report trip its own generic-secret rule, 24
-        // times, on the first run that scanned a committed report. Measured.
-        pathToken: canonicalisePathToken(token),
-      });
+/**
+ * The identity class. One finding per match, LOCATION AND NOTE ONLY.
+ *
+ * The finding deliberately carries no copy of the matched text and no
+ * surrounding path token. The inventory this replaced recorded a canonicalised
+ * path token per hit, and that report is COMMITTED - so every such record put
+ * the identity back into the repository through the very file that exists to
+ * keep it out. Measured at 9,203 occurrences inside
+ * `docs/evidence/privacy/report.json`: the single largest concentration in the
+ * tree, larger than either captured database.
+ */
+function scanIdentity(text, starts, relPath, identity, sink) {
+  for (const token of identity.tokens) {
+    token.re.lastIndex = 0;
+    let m;
+    while ((m = token.re.exec(text)) !== null) {
+      sink({ path: relPath, line: lineOf(starts, m.index), note: token.note });
+      // A token whose pattern can match the empty string would spin here. None
+      // can - every one requires a literal - but the guard costs nothing and a
+      // future token is not obliged to be careful.
+      if (m[0].length === 0) token.re.lastIndex += 1;
     }
   }
 }
@@ -1076,46 +803,29 @@ function newLeg() {
     filesScanned: 0,
     bytesScanned: 0,
     nulFiles: [],
-    identifier: { totalHits: 0, allowed: { totalHits: 0, byRule: [] }, unexpected: [] },
-    advisories: [],
+    identity: { hits: [], exemptHits: 0 },
     secrets: [],
     foreign: [],
   };
 }
 
-function scanUnit(leg, relPath, body, ruleTally) {
+function scanUnit(leg, relPath, body, identity) {
   const text = body.toString('latin1');
   const starts = lineIndex(text);
   leg.filesScanned += 1;
   leg.bytesScanned += body.length;
   if (body.includes(0)) leg.nulFiles.push(relPath);
 
-  if (!excludedFromIdentityScan(relPath)) {
-    const rule = findAllowRule(relPath);
-    scanIdentifiers(text, starts, relPath, (hit) => {
-      leg.identifier.totalHits += 1;
-      if (rule === null) {
-        leg.identifier.unexpected.push(hit);
-        return;
-      }
-      leg.identifier.allowed.totalHits += 1;
-      let tally = ruleTally.get(rule.id);
-      if (tally === undefined) {
-        tally = { rule: rule.id, reason: rule.reason, hits: 0, files: new Map(), tokens: new Map() };
-        ruleTally.set(rule.id, tally);
-      }
-      tally.hits += 1;
-      tally.files.set(relPath, (tally.files.get(relPath) ?? 0) + 1);
-      tally.tokens.set(hit.pathToken, (tally.tokens.get(hit.pathToken) ?? 0) + 1);
-      if (hit.scope === 'other') {
-        leg.advisories.push({
-          path: hit.path,
-          line: hit.line,
-          rule: rule.id,
-          pathToken: hit.pathToken,
-          why: 'developer path outside the agent-deck tree, ~/.claude and ~/.vscode',
-        });
-      }
+  if (identity.status === 'RUN') {
+    // EXEMPT PATHS ARE STILL SCANNED, and only their findings are diverted.
+    // Skipping the read would make `exemptHits` unknowable, and a zero there is
+    // how you would find out that the licence has stopped naming its licensor -
+    // the same "its ABSENCE would be its own defect" reasoning
+    // `src/release/vsix.test.ts` already applies to the packaged artifact.
+    const exempt = identity.exemptPaths.includes(relPath);
+    scanIdentity(text, starts, relPath, identity, (hit) => {
+      if (exempt) leg.identity.exemptHits += 1;
+      else leg.identity.hits.push(hit);
     });
   }
 
@@ -1126,36 +836,24 @@ function scanUnit(leg, relPath, body, ruleTally) {
   }
 }
 
-function finaliseLeg(leg, ruleTally) {
-  leg.identifier.allowed.byRule = [...ruleTally.values()]
-    .sort((a, b) => b.hits - a.hits || a.rule.localeCompare(b.rule))
-    .map((t) => ({
-      rule: t.rule,
-      reason: t.reason,
-      hits: t.hits,
-      fileCount: t.files.size,
-      files: [...t.files.entries()]
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .map(([p, n]) => ({ path: p, hits: n })),
-      distinctPathTokens: [...t.tokens.entries()]
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .map(([pathToken, n]) => ({ pathToken, hits: n })),
-    }));
+function finaliseLeg(leg) {
   leg.nulFiles.sort();
-  // One path token typically trips several identifier needles at once
-  // (a home path under a cloud-sync folder trips three of the four at once), so
-  // collapse an advisory to one entry per location and record the needle count.
-  const advisoryByKey = new Map();
-  for (const a of leg.advisories) {
-    const key = `${a.path}\u0000${a.line}\u0000${a.pathToken}`;
-    const seen = advisoryByKey.get(key);
-    if (seen === undefined) advisoryByKey.set(key, { ...a, needleHits: 1 });
-    else seen.needleHits += 1;
-  }
-  leg.advisories = [...advisoryByKey.values()];
   const byLoc = (a, b) => a.path.localeCompare(b.path) || a.line - b.line;
-  leg.identifier.unexpected.sort(byLoc);
-  leg.advisories.sort(byLoc);
+  // Several tokens match at one location - a full home path trips the path
+  // rule, both folder-name rules and the username rule at once - so collapse to
+  // one finding per location and keep the notes beside it. Without this a single
+  // leaked path reads as five separate failures and the count stops meaning
+  // "how many places must I fix".
+  const byKey = new Map();
+  for (const h of leg.identity.hits) {
+    const key = `${h.path} ${String(h.line)}`;
+    const seen = byKey.get(key);
+    if (seen === undefined) byKey.set(key, { path: h.path, line: h.line, notes: [h.note] });
+    else if (!seen.notes.includes(h.note)) seen.notes.push(h.note);
+  }
+  leg.identity.hits = [...byKey.values()];
+  for (const h of leg.identity.hits) h.notes.sort();
+  leg.identity.hits.sort(byLoc);
   leg.secrets.sort(byLoc);
   leg.foreign.sort(byLoc);
   return leg;
@@ -1165,6 +863,7 @@ export function sweep(options = {}) {
   const root = path.resolve(options.root ?? process.cwd());
   const wantHistory = options.history !== false;
   const timings = {};
+  const identity = loadIdentity(root, options.identityFile ?? null);
 
   const gitRepo = isGitRepo(root);
   const wantUntracked = options.untracked === true;
@@ -1184,30 +883,29 @@ export function sweep(options = {}) {
     } catch {
       continue; // deleted between enumeration and read; nothing to scan.
     }
-    scanUnit(wt, rel, body, wtTally);
+    scanUnit(wt, rel, body, identity);
   }
-  finaliseLeg(wt, wtTally);
+  finaliseLeg(wt);
   timings.workingTreeMs = Date.now() - t0;
 
   let history = null;
   if (gitRepo && wantHistory) {
     t0 = Date.now();
     const hist = newLeg();
-    const histTally = new Map();
     const blobs = historyBlobs(root);
     hist.blobsScanned = blobs.length;
     for (const blob of blobs) {
-      // A blob stored at several paths is scanned once per path so the allow
-      // rule is evaluated against each place it actually lived.
+      // A blob stored at several paths is scanned once per path, so a path that
+      // is exempt in one place and not in another is judged in each.
       const at = blob.paths.length > 0 ? blob.paths : [`<unnamed-blob>/${blob.sha}`];
-      for (const rel of at) scanUnit(hist, rel, blob.body, histTally);
+      for (const rel of at) scanUnit(hist, rel, blob.body, identity);
     }
-    finaliseLeg(hist, histTally);
+    finaliseLeg(hist);
     history = hist;
     timings.historyMs = Date.now() - t0;
   }
 
-  const unexpected = wt.identifier.unexpected.length + (history?.identifier.unexpected.length ?? 0);
+  const identityHits = wt.identity.hits.length + (history?.identity.hits.length ?? 0);
   const secrets = wt.secrets.length + (history?.secrets.length ?? 0);
   const foreign = wt.foreign.length + (history?.foreign.length ?? 0);
 
@@ -1222,14 +920,16 @@ export function sweep(options = {}) {
     head,
     historyScope: history === null ? 'skipped' : 'all-refs',
     config: {
-      identifierCount: DEVELOPER_IDENTIFIERS.length,
+      // WHAT the identity class did, never WHAT it looked for. `tokenCount` and
+      // the notes are safe to commit; the patterns are not, and neither is the
+      // path to the file that holds them.
+      identity: {
+        status: identity.status,
+        reason: identity.reason,
+        tokenCount: identity.tokens.length,
+        exemptPaths: identity.exemptPaths,
+      },
       ownProject: OWN_PROJECT,
-      allowRules: ALLOW_RULES.map((r) => ({
-        id: r.id,
-        prefixes: r.prefixes,
-        suffixes: r.suffixes ?? null,
-        reason: r.reason,
-      })),
       captureCorpora: CAPTURE_CORPORA,
       captureRootFiles: CAPTURE_ROOT_FILES,
       foreignValueExemptions: FOREIGN_VALUE_EXEMPTIONS.map((r) => ({
@@ -1238,7 +938,6 @@ export function sweep(options = {}) {
         absolutePathValuesOnly: r.absolutePathValuesOnly === true,
         reason: r.reason,
       })),
-      identityScanExcluded: IDENTITY_SCAN_EXCLUDE,
       secretRules: [...SECRET_RULES.map((r) => r.id), 'generic-high-entropy'],
       // Untracked mode, and WHAT it read - a boolean alone would not say
       // whether the walk found anything, which is the interesting half.
@@ -1249,11 +948,15 @@ export function sweep(options = {}) {
     workingTree: wt,
     history,
     verdict: {
-      unexpected,
+      identityStatus: identity.status,
+      identity: identityHits,
       secrets,
       foreign,
-      advisories: wt.advisories.length + (history?.advisories.length ?? 0),
-      pass: unexpected === 0 && secrets === 0 && foreign === 0,
+      // A SKIPPED identity class does not fail the run and does not pass
+      // judgement either: `identityHits` is 0 because nothing was looked for,
+      // which is why the status travels beside the count everywhere it is
+      // printed. Reading the 0 without the status is the fail-open reading.
+      pass: identityHits === 0 && secrets === 0 && foreign === 0,
     },
     timingsMs: timings,
   };
@@ -1270,23 +973,21 @@ function say(line) {
   process.stdout.write(`${line}\n`);
 }
 
-function printLeg(name, leg) {
+function printLeg(name, leg, status, reason) {
   if (leg === null) {
     say(`\n${name}: SKIPPED`);
     return;
   }
   const unit = name === 'history' ? `${leg.blobsScanned} blobs` : `${leg.filesScanned} files`;
   say(`\n${name}: ${unit}, ${leg.bytesScanned} bytes, ${leg.nulFiles.length} containing NUL`);
-  say(
-    `  ALLOWED    ${leg.identifier.allowed.totalHits} hits across ` +
-      `${leg.identifier.allowed.byRule.length} rules`,
-  );
-  for (const r of leg.identifier.allowed.byRule) {
-    say(`             ${String(r.hits).padStart(5)}  ${r.rule} (${r.fileCount} files)`);
-  }
-  say(`  UNEXPECTED ${leg.identifier.unexpected.length}`);
-  for (const h of leg.identifier.unexpected) {
-    say(`             ${h.path}:${h.line}  ${h.pathToken}`);
+  if (status === 'RUN') {
+    say(`  IDENTITY   ${leg.identity.hits.length}  (${leg.identity.exemptHits} in exempt paths)`);
+    for (const h of leg.identity.hits) {
+      // Location and NOTE. Never the matched text - see `scanIdentity`.
+      say(`             ${h.path}:${h.line}  ${h.notes.join('; ')}`);
+    }
+  } else {
+    say(`  IDENTITY   SKIPPED (${reason ?? 'no identity file'}) - nothing was looked for`);
   }
   say(`  SECRET     ${leg.secrets.length}`);
   for (const h of leg.secrets) {
@@ -1295,10 +996,6 @@ function printLeg(name, leg) {
   say(`  FOREIGN    ${leg.foreign.length}`);
   for (const h of leg.foreign) {
     say(`             ${h.path}:${h.line}  ${h.kind}  ${h.value}`);
-  }
-  say(`  ADVISORY   ${leg.advisories.length} (non-gating)`);
-  for (const h of leg.advisories) {
-    say(`             ${h.path}:${h.line}  ${h.pathToken}  (${h.needleHits} needles)`);
   }
 }
 
@@ -1312,6 +1009,7 @@ function parseArgs(argv) {
     else if (a === '--untracked') opts.untracked = true;
     else if (a === '--quiet') opts.quiet = true;
     else if (a === '--stamp') opts.stamp = argv[++i];
+    else if (a === '--identity') opts.identityFile = argv[++i];
     else throw new Error(`unknown argument: ${a}`);
   }
   if (process.env.AGENT_DECK_SWEEP_HISTORY === '0') opts.history = false;
@@ -1323,13 +1021,20 @@ function main(argv) {
   const report = sweep(opts);
 
   if (!opts.quiet) {
+    const st = report.config.identity.status;
+    const why = report.config.identity.reason;
     say(`privacy sweep - root HEAD ${report.head ?? '(not a git repo)'}`);
-    printLeg('working tree', report.workingTree);
-    printLeg('history', report.history);
+    printLeg('working tree', report.workingTree, st, why);
+    printLeg('history', report.history, st, why);
     say(
       `\nVERDICT ${report.verdict.pass ? 'PASS' : 'FAIL'}  ` +
-        `unexpected=${report.verdict.unexpected} secrets=${report.verdict.secrets} ` +
-        `foreign=${report.verdict.foreign} advisories=${report.verdict.advisories} (non-gating)`,
+        // The identity class reports its STATUS in the verdict line, always. A
+        // bare `identity=0` from a run that never opened the token file reads
+        // identical to a run that swept all of history and found nothing -
+        // rule 18, and the reason this line has two fields where the others
+        // have one.
+        `identity=${st === 'RUN' ? String(report.verdict.identity) : `SKIPPED(${String(why)})`} ` +
+        `secrets=${report.verdict.secrets} foreign=${report.verdict.foreign}`,
     );
     say(
       `timings working-tree=${report.timingsMs.workingTreeMs}ms ` +

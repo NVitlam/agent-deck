@@ -24,6 +24,32 @@ media/*
 # flip - untracking is reversible, publishing is not.
 .claude/
 
+# The maintainer's private working checkout, if they have one. It is not part
+# of this project and nothing here depends on it: the suite is green without
+# it, and `scripts/privacy-sweep.mjs` reports `identity=SKIPPED` rather than
+# failing when it is absent. Contributors will not have one and do not need one.
+lab/
+
+# The working method and its evidence. These live in the maintainer's private
+# repository and are presented back at these paths by directory junctions and
+# hardlinks, so `/phase` and `/handoff` still resolve them locally while
+# nothing here tracks a byte of them.
+#
+# ANCHORED WITH A LEADING SLASH, every one of them. `docs/` unanchored would
+# also ignore a future `src/docs/`, and `CLAUDE.md` unanchored would ignore one
+# at any depth. The recorded class is a rule shaped for one place matching
+# somewhere else - it has cost this repository a shipped 38 KB mockup already,
+# in the other direction.
+#
+# `CONTRIBUTING.md` is what a contributor reads instead, and it IS tracked.
+/CLAUDE.md
+/PLAN.md
+/HANDOVER.md
+/AGENTS.md
+/agent-deck-spec.md
+/docs/
+/spike/
+
 # OpenCode's per-project state directory: opencode.json, its own node_modules,
 # package files. Local tooling of the engine this repo now observes - same
 # treatment as .claude/. The AGENTS.md context file at the repo root is NOT

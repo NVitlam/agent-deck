@@ -135,7 +135,26 @@ function commandsOf(settings: HookSettings): Map<string, string[]> {
 }
 
 const README = readText('README.md');
-const SPEC = readText('agent-deck-spec.md');
+/**
+ * THE SPEC IS NO LONGER IN THIS REPOSITORY, and the guards below are gated on
+ * it rather than deleted.
+ *
+ * `agent-deck-spec.md` moved to the maintainer's private repository in the
+ * 2026-08-28 split, along with `CLAUDE.md`, `PLAN.md`, `HANDOVER.md` and
+ * `docs/`. The maintainer's checkout presents it at this path again through a
+ * junction, so for them these guards RUN and keep binding the spec's version
+ * posture to `PINNED_CC_VERSION`. For a contributor the file is absent and the
+ * describes below SKIP.
+ *
+ * This is a FOURTH environment-conditional gate and it must be accounted for BY
+ * NAME the way the other three are (`AGENT_DECK_PACKAGE_AUDIT`, the two WSL
+ * gates, `LIVE_SETTINGS`). A suite that fails to collect reports as "skipped"
+ * and reads green in the summary line; knowing which skips are supposed to be
+ * there is the only defence this repository has ever had against that.
+ */
+const SPEC: string | null = existsSync(join(ROOT, 'agent-deck-spec.md'))
+  ? readText('agent-deck-spec.md')
+  : null;
 
 /** Every ```json fence in the README, as raw text. */
 const JSON_FENCES: string[] = [...README.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => m[1] ?? '');
@@ -175,12 +194,63 @@ describe('README exists and ships clean', () => {
     expect(README.trimStart().startsWith('# Agent Deck')).toBe(true);
   });
 
-  it('names no absolute developer path', () => {
-    // Case-insensitive: the project slug capitalises the drive letter both ways
-    // on Windows, and this file ships to strangers.
-    for (const forbidden of ['dev', 'projects', 'C:\\Users']) {
-      expect(README.toLowerCase()).not.toContain(forbidden.toLowerCase());
+  it('names no absolute path at all, developer or otherwise', () => {
+    // WRITTEN AS SHAPES, NOT AS NAMES, and the reason is that the names left.
+    // This test used to list the developer's own folder names; after the
+    // 2026-08-28 split no identity string exists in this repository to list, and
+    // listing one would reintroduce exactly what the split removed. It would
+    // also be a literal the redactor rewrote - which happened: the list became
+    // `['dev', 'projects', 'C:\\Users']`, and `dev` is a substring of
+    // "developer", so the assertion was one README edit away from failing for a
+    // reason that had nothing to do with privacy.
+    //
+    // Shapes are the stronger assertion anyway: they catch an absolute path
+    // belonging to ANYBODY, including the next contributor's.
+    const ABSOLUTE_SHAPES = [
+      /[a-z]:[\\/]users[\\/]/i,
+      /\/home\/[a-z0-9_.-]+\//i,
+      /\/mnt\/[a-z]\/users\//i,
+    ];
+    for (const shape of ABSOLUTE_SHAPES) {
+      expect(shape.test(README), `README names an absolute path: ${String(shape)}`).toBe(false);
     }
+    // Vacuity control: the shapes must match the thing they describe, or this
+    // passes forever over a README full of home paths.
+    expect(ABSOLUTE_SHAPES.some((re) => re.test('see C:\\Users\\someone\\notes'))).toBe(true);
+    expect(ABSOLUTE_SHAPES.some((re) => re.test('see /home/someone/notes'))).toBe(true);
+  });
+
+  it('links to no document that left this repository in the 2026-08-28 split', () => {
+    // `CLAUDE.md`, `PLAN.md`, `HANDOVER.md`, `AGENTS.md`, `agent-deck-spec.md`,
+    // `docs/` and `spike/` are in the maintainer's private repository. A link to
+    // one of them from the SHIPPED README is a 404 for every reader, and the
+    // README is the first and often the only thing a user reads.
+    // `CONTRIBUTING.md` is what replaces them for a contributor.
+    const MOVED = [
+      /\]\(\s*(?:\.\/)?CLAUDE\.md/i,
+      /\]\(\s*(?:\.\/)?PLAN\.md/i,
+      /\]\(\s*(?:\.\/)?HANDOVER\.md/i,
+      /\]\(\s*(?:\.\/)?AGENTS\.md/i,
+      /\]\(\s*(?:\.\/)?agent-deck-spec\.md/i,
+      /\]\(\s*(?:\.\/)?docs\//i,
+      /\]\(\s*(?:\.\/)?spike\//i,
+    ];
+    for (const link of MOVED) {
+      expect(link.test(README), `README links a moved document: ${String(link)}`).toBe(false);
+    }
+    expect(MOVED.some((re) => re.test('see [the plan](PLAN.md) for detail'))).toBe(true);
+    expect(MOVED.some((re) => re.test('see [evidence](docs/evidence/x.md)'))).toBe(true);
+  });
+
+  it('ships a CONTRIBUTING.md that states the constraints a contributor needs', () => {
+    // The constraints used to be readable in `CLAUDE.md`, which is no longer
+    // here. Without this file the split would have removed a contributor's only
+    // statement of the things that fail review.
+    const contributing = readText('CONTRIBUTING.md');
+    for (const claim of ['Read-only', 'egress', 'Refuse', 'Fixtures']) {
+      expect(contributing, `CONTRIBUTING.md does not state: ${claim}`).toContain(claim);
+    }
+    expect(contributing).toContain('privacy-sweep.mjs');
   });
 
   it('links only LOCAL images, and every one of them exists on disk', () => {
@@ -525,9 +595,9 @@ const SUPERSEDED_CONTROLS = [
   'Do not build drift tolerance into the fingerprint.',
 ];
 
-describe('agent-deck-spec.md restates the superseded version posture nowhere', () => {
+describe.skipIf(SPEC === null)('agent-deck-spec.md restates the superseded version posture nowhere', () => {
   it('carries neither superseded sentence, anywhere in the document', () => {
-    const lower = SPEC.toLowerCase();
+    const lower = (SPEC ?? '').toLowerCase();
     for (const phrase of SUPERSEDED_PHRASES) {
       expect(lower, `agent-deck-spec.md still says "${phrase}"`).not.toContain(phrase);
     }
@@ -536,14 +606,14 @@ describe('agent-deck-spec.md restates the superseded version posture nowhere', (
   it('carries no reworded restatement of it, in any section', () => {
     // Whole document. The predecessor of this test read section 3 alone, so a
     // contradiction in any other section was untested rather than absent.
-    expect(contradictionsIn(SPEC)).toStrictEqual([]);
+    expect(contradictionsIn(SPEC ?? '')).toStrictEqual([]);
   });
 
   it('keeps the supersession exemption to a note, not a licence', () => {
     // An exempted sentence is one that both restates the old posture and says
     // it is superseded. That is a footnote-shaped thing; a document with many
     // of them is a document routing around this guard.
-    const exempted = sentencesOf(SPEC).filter(
+    const exempted = sentencesOf(SPEC ?? '').filter(
       (sentence) =>
         MARKED_SUPERSEDED.test(sentence) &&
         SUPERSEDED_PATTERNS.some(({ re }) => re.test(sentence)),
@@ -584,18 +654,23 @@ describe('agent-deck-spec.md restates the superseded version posture nowhere', (
  * it as superseded and quotes the numbers it retired, so a reader who lands on
  * the older text has a route to the newer one.
  */
-describe('the spec version-posture amendment matches the shipped constants', () => {
+describe.skipIf(SPEC === null)('the spec version-posture amendment matches the shipped constants', () => {
   const AMENDMENT_HEADING = '## Amendment 2026-08-26 — Version posture';
 
   /** The last dated amendment: its heading through the end of the document. */
   const amendment = ((): string => {
+    // `describe.skipIf` still RUNS this callback - it marks the tests skipped,
+    // it does not stop collection - so a throw here when the spec is absent
+    // would be a COLLECTION failure, which vitest summarises as a skip and a
+    // reader summarises as green. The recorded shape, one more time.
+    if (SPEC === null) return '';
     const start = SPEC.indexOf(AMENDMENT_HEADING);
     if (start < 0) throw new Error('the dated version-posture amendment could not be located');
     return SPEC.slice(start);
   })();
 
   it('is the last section, so nothing later can quietly contradict it', () => {
-    expect(SPEC.indexOf(AMENDMENT_HEADING)).toBe(SPEC.lastIndexOf(AMENDMENT_HEADING));
+    expect((SPEC ?? '').indexOf(AMENDMENT_HEADING)).toBe((SPEC ?? '').lastIndexOf(AMENDMENT_HEADING));
     expect(amendment.includes('\n## ')).toBe(false);
   });
 

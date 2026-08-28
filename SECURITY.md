@@ -81,9 +81,9 @@ These are build-time law in this repository, not guidelines. A change that break
   **empty** `thinking` string and the bytes in `signature`, so a redaction that dropped only the
   visible text would be doing nothing. Tool payloads are truncated with a marker, and large payloads
   offloaded to `tool-results/*.txt` go through the same path. Current truncation behaviour, its
-  measured limits and its open items are tracked in `PLAN.md`; this document does not restate them,
-  because a live description written from inside the phase that is changing them would be wrong by
-  the time it merged.
+  measured limits and its open items are tracked in the maintainer's working notes; this document
+  does not restate them, because a live description written from inside the phase that is changing
+  them would be wrong by the time it merged.
 - **G5 — zero egress.** No network except the loopback hook listener. Non-loopback requests are
   dropped. This is the subject of §4.
 - **G6 — fixtures are law.** Parser behaviour is pinned to bytes captured from real sessions.
@@ -288,7 +288,7 @@ about the command in that block matter for your own safety rather than ours:
 - **It must fail fast when nothing is listening**, because it runs inside your real Claude Code
   session. The block uses `node -e` rather than `curl`: `node` takes `ECONNREFUSED` and exits `0`.
   Measured once on this machine against a closed loopback port: `node -e` **81 ms, exit 0**;
-  `curl.exe` **2,098 ms, exit 7**. (An earlier measurement recorded in `CLAUDE.md` gives ~1.14 s and
+  `curl.exe` **2,098 ms, exit 7**. (An earlier measurement on the same machine gives ~1.14 s and
   exit 28 for `curl.exe` — the exit code differs because that port was filtered rather than refused.
   The conclusion is the same either way and the ratio is not close.)
 - **The POST is unconditional.** With nothing bound, it is refused and nothing happens. Do not read

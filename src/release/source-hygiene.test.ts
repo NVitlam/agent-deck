@@ -53,7 +53,7 @@ const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
  * stays out by the `fixtures/` argument — `.txt` is simply not in the
  * extension list below.
  */
-const SOURCE_PREFIXES = ['src/', 'webview/', 'scripts/', 'spike/', '.github/', 'docs/'];
+const SOURCE_PREFIXES = ['src/', 'webview/', 'scripts/', '.github/'];
 
 /**
  * Extensions that are text by construction.
@@ -76,13 +76,10 @@ const TEXT_EXTENSIONS = [
 
 /** Tracked root-level documents, which no prefix in SOURCE_PREFIXES matches. */
 const ROOT_TEXT_FILES = [
-  'CLAUDE.md',
-  'HANDOVER.md',
-  'PLAN.md',
   'README.md',
   'SECURITY.md',
-  'AGENTS.md',
-  'agent-deck-spec.md',
+  'CHANGELOG.md',
+  'CONTRIBUTING.md',
 ];
 
 /**
@@ -99,18 +96,11 @@ const ROOT_TEXT_FILES = [
  */
 const ALLOWED: ReadonlyMap<string, number> = new Map([
   ['src/parser/parse.test.ts', 1],
-  /**
-   * A raw `0x08` (backspace), pre-existing, introduced by the Phase 0 archive
-   * commit — found only when this guard's scope widened to markdown.
-   *
-   * **Allowed rather than repaired, and the reason is not laziness.**
-   * `docs/PLAN-v2.md` is the BYTE-IDENTICAL archive of the superseded v2 plan.
-   * `PLAN.md` and `CLAUDE.md` both state that its closed-phase records are
-   * never altered, and "byte-identical" stops being true the moment this file
-   * tidies one. So it is pinned by count: the byte cannot multiply, and the
-   * archive stays what it claims to be.
-   */
-  ['docs/PLAN-v2.md', 1],
+  // `docs/PLAN-v2.md` held the second entry - one raw 0x08 in the
+  // byte-identical archive of the superseded v2 plan, allowed rather than
+  // repaired because "byte-identical" stops being true the moment a guard tidies
+  // it. `docs/` left this repository on 2026-08-28 and the allowance went with
+  // it; the file and its byte are unchanged in the private one.
 ]);
 
 /**
@@ -180,12 +170,19 @@ describe('source hygiene: no raw control characters', () => {
     expect(files).toContain('src/model/events.ts');
     expect(files).toContain('webview/canvas-contract.ts');
     expect(files).toContain('src/parser/parse.test.ts');
-    // The prose half, which the first version of this file did not scan. PLAN.md
-    // is named explicitly because it is the file the defect hit first and the
-    // one most often edited by script.
-    expect(files).toContain('PLAN.md');
-    expect(files).toContain('CLAUDE.md');
-    expect(files).toContain('docs/PLAN-v2.md');
+    // The prose half, which the first version of this file did not scan.
+    //
+    // It used to name `PLAN.md`, `CLAUDE.md` and `docs/PLAN-v2.md` - the files
+    // the latin1 defect hit first and the ones most often edited by script. All
+    // three left this repository in the 2026-08-28 split, so naming them would
+    // be an assertion that can only fail. What must NOT be lost is the property:
+    // the scan covers prose, not only code, because the defect was seven mangled
+    // em-dashes in doc comments and prose that every other gate was green over.
+    // So the anchor is the class rather than a file list.
+    const markdown = files.filter((f) => f.endsWith('.md'));
+    expect(markdown.length, 'no markdown is being scanned for control bytes').toBeGreaterThan(2);
+    expect(files).toContain('README.md');
+    expect(files).toContain('SECURITY.md');
   });
 
   it('no tracked source file carries a control byte outside the allow-list', () => {

@@ -146,7 +146,26 @@ describe('marketplace identity', () => {
     expect(typeof repository?.url, 'package.json must declare repository.url').toBe(
       'string',
     );
-    expect(String(repository?.url)).toContain('github.com/dev/agent-deck');
+    // DERIVED, not hardcoded, and that is the point rather than a tidy-up.
+    // The owner segment is the developer's GitHub handle - one of the two
+    // identity strings the scrub of 2026-08-28 leaves standing, and it stands
+    // in `package.json` ALONE. Writing it here as a literal would put it back
+    // into a second file and make the scrub's success criterion - a `git grep`
+    // returning zero outside the licence and the manifest - false. It would
+    // also be a literal the redactor rewrote, which is how this line briefly
+    // came to read `github.com/dev/agent-deck` and assert a repository nobody
+    // owns.
+    //
+    // Asserting the SHAPE, with the repo segment bound to the manifest's own
+    // `name`, still catches every failure the literal caught: a missing url, a
+    // non-GitHub url, an http url, or a url naming a different extension.
+    const url = String(repository?.url);
+    const shape = new RegExp(
+      `^https://github\\.com/[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/${String(manifest.name)}\\.git$`,
+    );
+    expect(url, `repository.url is not an https GitHub url for ${String(manifest.name)}`).toMatch(
+      shape,
+    );
   });
 
   it('declares a version that is not the 0.0.0 placeholder', async () => {

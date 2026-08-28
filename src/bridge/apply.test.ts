@@ -215,10 +215,10 @@ describe('applySessionPatch — the properties the bridge relies on', () => {
       status: 'running',
       spawnDepth: 0,
       children: [],
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       startedAt: 1,
     },
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
     spawnEdges: [],
   });
 
@@ -289,10 +289,10 @@ describe('applySessionPatch — parked', () => {
       status: 'running',
       spawnDepth: 0,
       children: [],
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       startedAt: 1,
     },
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
     spawnEdges: [],
   });
 
@@ -390,10 +390,10 @@ describe('applySessionPatch — engine', () => {
       status: 'running',
       spawnDepth: 0,
       children: [],
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       startedAt: 1,
     },
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
     spawnEdges: [],
   });
 
@@ -457,10 +457,10 @@ describe('applySessionPatch — ToolNode.truncated', () => {
         status: 'running',
         spawnDepth: 0,
         children: [tool],
-        tokens: { in: 0, out: 0 },
+        contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
         startedAt: 1,
       },
-      totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+      totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       spawnEdges: [],
     });
   }

@@ -459,7 +459,7 @@ interface BuildContext {
   readonly seenSessionRows: Set<string>;
   readonly spawnEdges: SpawnEdge[];
   readonly parked: ParkedGraft[];
-  readonly totals: { inputTokens: number; outputTokens: number; costUsd: number };
+  readonly totals: { costUsd: number };
 }
 
 /**
@@ -480,8 +480,6 @@ function buildAgent(session: OcSessionRow, depth: number, ctx: BuildContext): Ag
   // order. The ORDER is load-bearing and not cosmetic: `costUsd` is a float
   // sum, and adding the same values in a different order can differ in the
   // last bits, which a byte-for-byte golden comparison sees.
-  ctx.totals.inputTokens += session.tokensInput;
-  ctx.totals.outputTokens += session.tokensOutput;
   ctx.totals.costUsd += session.cost;
 
   const nodeId = depth === 0 ? 'root' : session.id;
@@ -568,7 +566,26 @@ function buildAgent(session: OcSessionRow, depth: number, ctx: BuildContext): Ag
     status,
     spawnDepth: depth,
     children,
-    tokens: { in: session.tokensInput, out: session.tokensOutput },
+    /*
+     * `contextNow` and `burn` are OMITTED, deliberately, and this is the whole
+     * of the OpenCode token story for now.
+     *
+     * `session.tokens_input` IS a genuine session-cumulative total — measured
+     * on the anchor corpus, all 24 sessions equal the sum of their own
+     * `step-finish` part rows, and `src/opencode/graft.test.ts` pins that. It
+     * is still the WRONG number for `TokenPair.prompt`, because it counts only
+     * UNCACHED input: across the same corpus `tokens.cache.read` sums to
+     * 8,875,276 against `tokens.input`'s 1,227,047, so a session whose prompt
+     * is mostly cache would report roughly a seventh of what it sent. That is
+     * exactly the defect `TokenPair` was introduced to remove, arriving
+     * through a second engine, so it is NOT mapped.
+     *
+     * The correct figure is reachable — `input + cache.read + cache.write` per
+     * `step-finish` row — but nothing reads those rows yet, and building that
+     * reader is deferred by user decision at the Phase 7 gate rather than
+     * guessed at here. Until then the keys are ABSENT, never 0: absent renders
+     * as `EM_DASH` ("we do not have this number") and 0 would be a claim.
+     */
     startedAt: session.timeCreated,
     /*
      * `endedAt`: OC4 makes `time_archived` the session-end signal. It is NULL
@@ -667,7 +684,7 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
   for (const root of roots) {
     const spawnEdges: SpawnEdge[] = [];
     const parked: ParkedGraft[] = [];
-    const totals = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+    const totals = { costUsd: 0 };
     const rootNode = buildAgent(root, 0, {
       childrenOf,
       toolsBySession: parse.toolsBySession,

@@ -229,7 +229,10 @@ function serializeAgent(node: AgentNode, anchor: number): unknown {
     label: node.label,
     status: node.status,
     spawnDepth: node.spawnDepth,
-    tokens: { in: node.tokens.in, out: node.tokens.out },
+    // ABSENT, not zero. The OpenCode engine sets neither pair; serializing
+    // `null` keeps the golden able to tell 'unset' from 'zero'.
+    contextNow: node.contextNow ?? null,
+    burn: node.burn ?? null,
     startedAtOffsetMs: node.startedAt - anchor,
     endedAtOffsetMs: node.endedAt === undefined ? null : node.endedAt - anchor,
     children: node.children.map((child: TreeNode) =>
@@ -248,11 +251,9 @@ function serializeState(state: SessionState): unknown {
     liveness: state.liveness,
     schemaOk: state.schemaOk,
     epochAnchor: new Date(anchor).toISOString(),
-    totals: {
-      inputTokens: state.totals.inputTokens,
-      outputTokens: state.totals.outputTokens,
-      costUsd: state.totals.costUsd,
-    },
+    totals: { costUsd: state.totals.costUsd },
+    contextNow: state.contextNow ?? null,
+    burn: state.burn ?? null,
     spawnEdges: state.spawnEdges,
     parked: state.parked,
     root: serializeAgent(state.root, anchor),
@@ -274,6 +275,14 @@ interface Corpus {
   sessions: OcSessionRow[];
   projects: OcProjectRow[];
   parse: OcParseResult;
+  /**
+   * The raw `part` rows, kept alongside the parsed view.
+   *
+   * `parse.ts` drops `step-finish` rows on the floor - it only cares about
+   * tool parts - and the token deferral rests on what those rows contain, so
+   * the deferral test needs the unparsed bytes.
+   */
+  parts: RawPart[];
 }
 
 interface OcPartData {
@@ -352,7 +361,7 @@ function readCorpus(dbPath: string): Corpus {
       data: r['data'] as string,
     }));
 
-    return { sessions, projects, parse: parseParts(parts) };
+    return { sessions, projects, parse: parseParts(parts), parts };
   } finally {
     db.close();
   }
@@ -603,19 +612,97 @@ describe('graftCorpus reproduces the committed goldens', () => {
         }
       });
 
-      it('sums totals over the root and every descendant session', () => {
-        const { corpus, result } = load(corpusName);
-        const byId = new Map(corpus.sessions.map((s) => [s.id, s]));
+      /*
+       * DEFERRED, AND THE FIXTURE IS WHY - not an oversight.
+       *
+       * `session.tokens_input` IS a genuine session-cumulative total: the test
+       * below measures it against the sum of that session's own `step-finish`
+       * part rows and they agree on every session in both corpora. What it is
+       * NOT is `TokenPair.prompt`, because it counts only UNCACHED input.
+       * Mapping it onto `burn` would under-report by roughly 7x on the anchor
+       * corpus, which is precisely the defect `TokenPair` was introduced to
+       * remove. So `contextNow` and `burn` are left ABSENT for this engine and
+       * these tests pin the absence rather than a wrong number.
+       */
+      it('leaves contextNow and burn ABSENT on every state and node - never 0', () => {
+        const { result } = load(corpusName);
+        expect(result.sessions.length).toBeGreaterThan(0);
+        let nodes = 0;
         for (const state of result.sessions) {
-          const ids = agentsOf(state.root).map((n) => (n.id === 'root' ? state.sessionId : n.id));
-          const rows = ids.map((id) => byId.get(id) as OcSessionRow);
-          expect(state.totals.inputTokens).toBe(
-            rows.reduce((sum, r) => sum + r.tokensInput, 0),
-          );
-          expect(state.totals.outputTokens).toBe(
-            rows.reduce((sum, r) => sum + r.tokensOutput, 0),
+          // `in` rather than `=== undefined`: a key present holding `undefined`
+          // would serialize to a wire field that claims it was looked up.
+          expect('contextNow' in state).toBe(false);
+          expect('burn' in state).toBe(false);
+          for (const node of agentsOf(state.root)) {
+            nodes++;
+            expect('contextNow' in node).toBe(false);
+            expect('burn' in node).toBe(false);
+            // The assertion that makes the two above mean something: absent is
+            // distinguishable from a zero pair, and this engine reports absent.
+            expect(node.contextNow).toBeUndefined();
+            expect(node.burn).toBeUndefined();
+            expect(node.contextNow).not.toStrictEqual({ prompt: 0, output: 0 });
+          }
+        }
+        expect(nodes).toBeGreaterThan(0);
+      });
+
+      it('keeps costUsd as the only member of totals', () => {
+        const { result } = load(corpusName);
+        for (const state of result.sessions) {
+          expect(Object.keys(state.totals)).toStrictEqual(['costUsd']);
+        }
+      });
+
+      /*
+       * The measurement that DECIDED the deferral, pinned so the next reader
+       * does not have to re-derive it. It proves two things at once: that the
+       * session row is cumulative (so a future mapping has a sound source) and
+       * that `tokens_input` excludes cache (so the obvious mapping is wrong).
+       */
+      it('session.tokensInput is cumulative but EXCLUDES cached prompt tokens', () => {
+        const { corpus, result } = load(corpusName);
+        expect(result.sessions.length).toBeGreaterThan(0);
+
+        const stepInput = new Map<string, number>();
+        const stepOutput = new Map<string, number>();
+        const stepCache = new Map<string, number>();
+        for (const part of corpus.parts) {
+          let data: unknown;
+          try {
+            data = JSON.parse(part.data);
+          } catch {
+            continue;
+          }
+          const d = data as { type?: unknown; tokens?: Record<string, unknown> };
+          if (d.type !== 'step-finish' || typeof d.tokens !== 'object' || d.tokens === null) continue;
+          const t = d.tokens;
+          const cache = t['cache'] as Record<string, unknown> | undefined;
+          const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+          stepInput.set(part.sessionId, (stepInput.get(part.sessionId) ?? 0) + num(t['input']));
+          stepOutput.set(part.sessionId, (stepOutput.get(part.sessionId) ?? 0) + num(t['output']));
+          stepCache.set(
+            part.sessionId,
+            (stepCache.get(part.sessionId) ?? 0) + num(cache?.['read']) + num(cache?.['write']),
           );
         }
+
+        // (a) CUMULATIVE: the row equals the sum of its own step-finish rows.
+        let checked = 0;
+        for (const row of corpus.sessions) {
+          const seen = stepInput.get(row.id);
+          if (seen === undefined) continue;
+          checked++;
+          expect(row.tokensInput, row.id).toBe(seen);
+          expect(row.tokensOutput, row.id).toBe(stepOutput.get(row.id));
+        }
+        expect(checked).toBeGreaterThan(0);
+
+        // (b) EXCLUDES CACHE, which is why it is not `burn.prompt`. Summed
+        // across the corpus the cached half dwarfs the counted half.
+        const totalInput = [...stepInput.values()].reduce((a, b) => a + b, 0);
+        const totalCache = [...stepCache.values()].reduce((a, b) => a + b, 0);
+        expect(totalCache).toBeGreaterThan(totalInput);
       });
 
       it('tags every state with engine opencode and the injected seams', () => {

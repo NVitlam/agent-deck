@@ -127,9 +127,13 @@
                               "durationMs": 105
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -147,9 +151,13 @@
                           "durationMs": 107
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -174,9 +182,13 @@
                       "durationMs": 110
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -233,9 +245,13 @@
                               "inputPreview": "{\"n\":15}"
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -254,9 +270,13 @@
                           "durationMs": 117
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -281,9 +301,13 @@
                       "durationMs": 120
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -308,16 +332,26 @@
                   "durationMs": 123
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 1000,
-              "outputTokens": 100,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 1000,
+              "output": 100
+            },
+            "burn": {
+              "prompt": 2000,
+              "output": 200
             },
             "spawnEdges": [
               {
@@ -430,9 +464,13 @@
                               "inputPreview": "{\"n\":1005}"
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -451,9 +489,13 @@
                           "durationMs": 207
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -478,9 +520,13 @@
                       "durationMs": 210
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -537,9 +583,13 @@
                               "durationMs": 215
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -557,9 +607,13 @@
                           "inputPreview": "{\"n\":1017}"
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -584,9 +638,13 @@
                       "inputPreview": "{\"n\":1020}"
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -611,16 +669,26 @@
                   "inputPreview": "{\"n\":1023}"
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 2000,
-              "outputTokens": 200,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 2000,
+              "output": 200
+            },
+            "burn": {
+              "prompt": 4000,
+              "output": 400
             },
             "spawnEdges": [
               {
@@ -740,9 +808,13 @@
                               "durationMs": 305
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -760,9 +832,13 @@
                           "inputPreview": "{\"n\":2007}"
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -787,9 +863,13 @@
                       "inputPreview": "{\"n\":2010}"
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -847,9 +927,13 @@
                               "durationMs": 315
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -867,9 +951,13 @@
                           "durationMs": 317
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -895,9 +983,13 @@
                       "durationMs": 320
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -922,16 +1014,26 @@
                   "durationMs": 323
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 3000,
-              "outputTokens": 300,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 3000,
+              "output": 300
+            },
+            "burn": {
+              "prompt": 6000,
+              "output": 600
             },
             "spawnEdges": [
               {
@@ -1045,9 +1147,13 @@
                               "durationMs": 405
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -1066,9 +1172,13 @@
                           "durationMs": 407
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -1093,9 +1203,13 @@
                       "durationMs": 410
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -1152,9 +1266,13 @@
                               "inputPreview": "{\"n\":3015}"
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -1173,9 +1291,13 @@
                           "durationMs": 417
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -1200,9 +1322,13 @@
                       "durationMs": 420
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -1227,16 +1353,26 @@
                   "durationMs": 423
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 4000,
-              "outputTokens": 400,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 4000,
+              "output": 400
+            },
+            "burn": {
+              "prompt": 8000,
+              "output": 800
             },
             "spawnEdges": [
               {
@@ -1349,9 +1485,13 @@
                               "inputPreview": "{\"n\":4005}"
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -1370,9 +1510,13 @@
                           "durationMs": 507
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -1397,9 +1541,13 @@
                       "durationMs": 510
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -1457,9 +1605,13 @@
                               "durationMs": 515
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -1477,9 +1629,13 @@
                           "inputPreview": "{\"n\":4017}"
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -1504,9 +1660,13 @@
                       "inputPreview": "{\"n\":4020}"
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -1531,16 +1691,26 @@
                   "inputPreview": "{\"n\":4023}"
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 5000,
-              "outputTokens": 500,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 5000,
+              "output": 500
+            },
+            "burn": {
+              "prompt": 10000,
+              "output": 1000
             },
             "spawnEdges": [
               {
@@ -1653,9 +1823,13 @@
                               "durationMs": 605
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -1673,9 +1847,13 @@
                           "inputPreview": "{\"n\":5007}"
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -1700,9 +1878,13 @@
                       "inputPreview": "{\"n\":5010}"
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -1760,9 +1942,13 @@
                               "durationMs": 615
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -1780,9 +1966,13 @@
                           "durationMs": 617
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -1807,9 +1997,13 @@
                       "durationMs": 620
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -1835,16 +2029,26 @@
                   "durationMs": 623
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 6000,
-              "outputTokens": 600,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 6000,
+              "output": 600
+            },
+            "burn": {
+              "prompt": 12000,
+              "output": 1200
             },
             "spawnEdges": [
               {
@@ -1958,9 +2162,13 @@
                               "durationMs": 705
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -1978,9 +2186,13 @@
                           "durationMs": 707
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -2006,9 +2218,13 @@
                       "durationMs": 710
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -2065,9 +2281,13 @@
                               "inputPreview": "{\"n\":6015}"
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -2086,9 +2306,13 @@
                           "durationMs": 717
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -2113,9 +2337,13 @@
                       "durationMs": 720
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -2140,16 +2368,26 @@
                   "durationMs": 723
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 7000,
-              "outputTokens": 700,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 7000,
+              "output": 700
+            },
+            "burn": {
+              "prompt": 14000,
+              "output": 1400
             },
             "spawnEdges": [
               {
@@ -2262,9 +2500,13 @@
                               "inputPreview": "{\"n\":7005}"
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -2283,9 +2525,13 @@
                           "durationMs": 807
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -2310,9 +2556,13 @@
                       "durationMs": 810
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -2369,9 +2619,13 @@
                               "durationMs": 815
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -2390,9 +2644,13 @@
                           "durationMs": 817
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -2417,9 +2675,13 @@
                       "inputPreview": "{\"n\":7020}"
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -2444,16 +2706,26 @@
                   "inputPreview": "{\"n\":7023}"
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 8000,
-              "outputTokens": 800,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 8000,
+              "output": 800
+            },
+            "burn": {
+              "prompt": 16000,
+              "output": 1600
             },
             "spawnEdges": [
               {
@@ -2567,9 +2839,13 @@
                               "durationMs": 905
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -2587,9 +2863,13 @@
                           "inputPreview": "{\"n\":8007}"
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -2614,9 +2894,13 @@
                       "inputPreview": "{\"n\":8010}"
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -2674,9 +2958,13 @@
                               "durationMs": 915
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -2694,9 +2982,13 @@
                           "durationMs": 917
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -2721,9 +3013,13 @@
                       "durationMs": 920
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -2748,16 +3044,26 @@
                   "durationMs": 923
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 9000,
-              "outputTokens": 900,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 9000,
+              "output": 900
+            },
+            "burn": {
+              "prompt": 18000,
+              "output": 1800
             },
             "spawnEdges": [
               {
@@ -2871,9 +3177,13 @@
                               "durationMs": 105
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -2891,9 +3201,13 @@
                           "durationMs": 107
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -2918,9 +3232,13 @@
                       "durationMs": 110
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -2977,9 +3295,13 @@
                               "inputPreview": "{\"n\":9015}"
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -2998,9 +3320,13 @@
                           "durationMs": 117
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -3025,9 +3351,13 @@
                       "durationMs": 120
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -3052,16 +3382,26 @@
                   "durationMs": 123
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 10000,
-              "outputTokens": 1000,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 10000,
+              "output": 1000
+            },
+            "burn": {
+              "prompt": 20000,
+              "output": 2000
             },
             "spawnEdges": [
               {
@@ -3174,9 +3514,13 @@
                               "inputPreview": "{\"n\":10005}"
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -3195,9 +3539,13 @@
                           "durationMs": 207
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -3222,9 +3570,13 @@
                       "durationMs": 210
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -3281,9 +3633,13 @@
                               "durationMs": 215
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -3301,9 +3657,13 @@
                           "inputPreview": "{\"n\":10017}"
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -3329,9 +3689,13 @@
                       "durationMs": 220
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -3356,16 +3720,26 @@
                   "inputPreview": "{\"n\":10023}"
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 11000,
-              "outputTokens": 1100,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 11000,
+              "output": 1100
+            },
+            "burn": {
+              "prompt": 22000,
+              "output": 2200
             },
             "spawnEdges": [
               {
@@ -3478,9 +3852,13 @@
                               "durationMs": 305
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -3499,9 +3877,13 @@
                           "durationMs": 307
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -3526,9 +3908,13 @@
                       "inputPreview": "{\"n\":11010}"
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -3586,9 +3972,13 @@
                               "durationMs": 315
                             }
                           ],
-                          "tokens": {
-                            "in": 400,
-                            "out": 40
+                          "contextNow": {
+                            "prompt": 400,
+                            "output": 40
+                          },
+                          "burn": {
+                            "prompt": 800,
+                            "output": 80
                           },
                           "startedAt": 4000
                         },
@@ -3606,9 +3996,13 @@
                           "durationMs": 317
                         }
                       ],
-                      "tokens": {
-                        "in": 300,
-                        "out": 30
+                      "contextNow": {
+                        "prompt": 300,
+                        "output": 30
+                      },
+                      "burn": {
+                        "prompt": 600,
+                        "output": 60
                       },
                       "startedAt": 3000
                     },
@@ -3633,9 +4027,13 @@
                       "durationMs": 320
                     }
                   ],
-                  "tokens": {
-                    "in": 200,
-                    "out": 20
+                  "contextNow": {
+                    "prompt": 200,
+                    "output": 20
+                  },
+                  "burn": {
+                    "prompt": 400,
+                    "output": 40
                   },
                   "startedAt": 2000
                 },
@@ -3660,16 +4058,26 @@
                   "durationMs": 323
                 }
               ],
-              "tokens": {
-                "in": 100,
-                "out": 10
+              "contextNow": {
+                "prompt": 100,
+                "output": 10
+              },
+              "burn": {
+                "prompt": 200,
+                "output": 20
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 12000,
-              "outputTokens": 1200,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 12000,
+              "output": 1200
+            },
+            "burn": {
+              "prompt": 24000,
+              "output": 2400
             },
             "spawnEdges": [
               {
@@ -3729,16 +4137,26 @@
               "status": "done",
               "spawnDepth": 0,
               "children": [],
-              "tokens": {
-                "in": 0,
-                "out": 0
+              "contextNow": {
+                "prompt": 0,
+                "output": 0
+              },
+              "burn": {
+                "prompt": 0,
+                "output": 0
               },
               "startedAt": 1000
             },
             "totals": {
-              "inputTokens": 0,
-              "outputTokens": 0,
               "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 0,
+              "output": 0
+            },
+            "burn": {
+              "prompt": 0,
+              "output": 0
             },
             "spawnEdges": []
           }
@@ -3770,10 +4188,9 @@
         "sessionId": "syn-00",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 1000,
-              "outputTokens": 100,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 1000,
+              "output": 100
             }
           },
           "tree": [
@@ -3798,10 +4215,9 @@
         "sessionId": "syn-01",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 2000,
-              "outputTokens": 200,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 2000,
+              "output": 200
             }
           },
           "tree": [
@@ -3826,10 +4242,9 @@
         "sessionId": "syn-02",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 3000,
-              "outputTokens": 300,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 3000,
+              "output": 300
             }
           },
           "tree": [
@@ -3854,10 +4269,9 @@
         "sessionId": "syn-03",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 4000,
-              "outputTokens": 400,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 4000,
+              "output": 400
             }
           },
           "tree": [
@@ -3882,10 +4296,9 @@
         "sessionId": "syn-04",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 5000,
-              "outputTokens": 500,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 5000,
+              "output": 500
             }
           },
           "tree": [
@@ -3910,10 +4323,9 @@
         "sessionId": "syn-05",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 6000,
-              "outputTokens": 600,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 6000,
+              "output": 600
             }
           },
           "tree": [
@@ -3938,10 +4350,9 @@
         "sessionId": "syn-06",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 7000,
-              "outputTokens": 700,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 7000,
+              "output": 700
             }
           },
           "tree": [
@@ -3966,10 +4377,9 @@
         "sessionId": "syn-07",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 8000,
-              "outputTokens": 800,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 8000,
+              "output": 800
             }
           },
           "tree": [
@@ -3994,10 +4404,9 @@
         "sessionId": "syn-08",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 9000,
-              "outputTokens": 900,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 9000,
+              "output": 900
             }
           },
           "tree": [
@@ -4022,10 +4431,9 @@
         "sessionId": "syn-09",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 10000,
-              "outputTokens": 1000,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 10000,
+              "output": 1000
             }
           },
           "tree": [
@@ -4050,10 +4458,9 @@
         "sessionId": "syn-10",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 11000,
-              "outputTokens": 1100,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 11000,
+              "output": 1100
             }
           },
           "tree": [
@@ -4078,10 +4485,9 @@
         "sessionId": "syn-11",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 12000,
-              "outputTokens": 1200,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 12000,
+              "output": 1200
             }
           },
           "tree": [
@@ -4106,10 +4512,9 @@
         "sessionId": "syn-00",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 1001,
-              "outputTokens": 101,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 1001,
+              "output": 101
             }
           },
           "tree": [
@@ -4134,10 +4539,9 @@
         "sessionId": "syn-01",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 2001,
-              "outputTokens": 201,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 2001,
+              "output": 201
             }
           },
           "tree": [
@@ -4162,10 +4566,9 @@
         "sessionId": "syn-02",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 3001,
-              "outputTokens": 301,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 3001,
+              "output": 301
             }
           },
           "tree": [
@@ -4190,10 +4593,9 @@
         "sessionId": "syn-03",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 4001,
-              "outputTokens": 401,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 4001,
+              "output": 401
             }
           },
           "tree": [
@@ -4218,10 +4620,9 @@
         "sessionId": "syn-04",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 5001,
-              "outputTokens": 501,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 5001,
+              "output": 501
             }
           },
           "tree": [
@@ -4246,10 +4647,9 @@
         "sessionId": "syn-05",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 6001,
-              "outputTokens": 601,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 6001,
+              "output": 601
             }
           },
           "tree": [
@@ -4274,10 +4674,9 @@
         "sessionId": "syn-06",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 7001,
-              "outputTokens": 701,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 7001,
+              "output": 701
             }
           },
           "tree": [
@@ -4302,10 +4701,9 @@
         "sessionId": "syn-07",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 8001,
-              "outputTokens": 801,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 8001,
+              "output": 801
             }
           },
           "tree": [
@@ -4330,10 +4728,9 @@
         "sessionId": "syn-08",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 9001,
-              "outputTokens": 901,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 9001,
+              "output": 901
             }
           },
           "tree": [
@@ -4358,10 +4755,9 @@
         "sessionId": "syn-09",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 10001,
-              "outputTokens": 1001,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 10001,
+              "output": 1001
             }
           },
           "tree": [
@@ -4386,10 +4782,9 @@
         "sessionId": "syn-10",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 11001,
-              "outputTokens": 1101,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 11001,
+              "output": 1101
             }
           },
           "tree": [
@@ -4414,10 +4809,9 @@
         "sessionId": "syn-11",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 12001,
-              "outputTokens": 1201,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 12001,
+              "output": 1201
             }
           },
           "tree": [
@@ -4442,10 +4836,9 @@
         "sessionId": "syn-00",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 1003,
-              "outputTokens": 103,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 1003,
+              "output": 103
             }
           },
           "tree": [
@@ -4470,10 +4863,9 @@
         "sessionId": "syn-01",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 2003,
-              "outputTokens": 203,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 2003,
+              "output": 203
             }
           },
           "tree": [
@@ -4498,10 +4890,9 @@
         "sessionId": "syn-02",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 3003,
-              "outputTokens": 303,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 3003,
+              "output": 303
             }
           },
           "tree": [
@@ -4526,10 +4917,9 @@
         "sessionId": "syn-03",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 4003,
-              "outputTokens": 403,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 4003,
+              "output": 403
             }
           },
           "tree": [
@@ -4554,10 +4944,9 @@
         "sessionId": "syn-04",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 5003,
-              "outputTokens": 503,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 5003,
+              "output": 503
             }
           },
           "tree": [
@@ -4582,10 +4971,9 @@
         "sessionId": "syn-05",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 6003,
-              "outputTokens": 603,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 6003,
+              "output": 603
             }
           },
           "tree": [
@@ -4610,10 +4998,9 @@
         "sessionId": "syn-06",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 7003,
-              "outputTokens": 703,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 7003,
+              "output": 703
             }
           },
           "tree": [
@@ -4638,10 +5025,9 @@
         "sessionId": "syn-07",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 8003,
-              "outputTokens": 803,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 8003,
+              "output": 803
             }
           },
           "tree": [
@@ -4666,10 +5052,9 @@
         "sessionId": "syn-08",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 9003,
-              "outputTokens": 903,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 9003,
+              "output": 903
             }
           },
           "tree": [
@@ -4694,10 +5079,9 @@
         "sessionId": "syn-09",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 10003,
-              "outputTokens": 1003,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 10003,
+              "output": 1003
             }
           },
           "tree": [
@@ -4722,10 +5106,9 @@
         "sessionId": "syn-10",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 11003,
-              "outputTokens": 1103,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 11003,
+              "output": 1103
             }
           },
           "tree": [
@@ -4750,10 +5133,9 @@
         "sessionId": "syn-11",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 12003,
-              "outputTokens": 1203,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 12003,
+              "output": 1203
             }
           },
           "tree": [
@@ -4778,10 +5160,9 @@
         "sessionId": "syn-00",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 1006,
-              "outputTokens": 106,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 1006,
+              "output": 106
             }
           },
           "tree": [
@@ -4817,10 +5198,9 @@
         "sessionId": "syn-01",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 2006,
-              "outputTokens": 206,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 2006,
+              "output": 206
             }
           },
           "tree": [
@@ -4856,10 +5236,9 @@
         "sessionId": "syn-02",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 3006,
-              "outputTokens": 306,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 3006,
+              "output": 306
             }
           },
           "tree": [
@@ -4895,10 +5274,9 @@
         "sessionId": "syn-03",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 4006,
-              "outputTokens": 406,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 4006,
+              "output": 406
             }
           },
           "tree": [
@@ -4934,10 +5312,9 @@
         "sessionId": "syn-04",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 5006,
-              "outputTokens": 506,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 5006,
+              "output": 506
             }
           },
           "tree": [
@@ -4973,10 +5350,9 @@
         "sessionId": "syn-05",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 6006,
-              "outputTokens": 606,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 6006,
+              "output": 606
             }
           },
           "tree": [
@@ -5012,10 +5388,9 @@
         "sessionId": "syn-06",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 7006,
-              "outputTokens": 706,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 7006,
+              "output": 706
             }
           },
           "tree": [
@@ -5051,10 +5426,9 @@
         "sessionId": "syn-07",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 8006,
-              "outputTokens": 806,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 8006,
+              "output": 806
             }
           },
           "tree": [
@@ -5090,10 +5464,9 @@
         "sessionId": "syn-08",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 9006,
-              "outputTokens": 906,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 9006,
+              "output": 906
             }
           },
           "tree": [
@@ -5129,10 +5502,9 @@
         "sessionId": "syn-09",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 10006,
-              "outputTokens": 1006,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 10006,
+              "output": 1006
             }
           },
           "tree": [
@@ -5168,10 +5540,9 @@
         "sessionId": "syn-10",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 11006,
-              "outputTokens": 1106,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 11006,
+              "output": 1106
             }
           },
           "tree": [
@@ -5207,10 +5578,9 @@
         "sessionId": "syn-11",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 12006,
-              "outputTokens": 1206,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 12006,
+              "output": 1206
             }
           },
           "tree": [
@@ -5246,10 +5616,9 @@
         "sessionId": "syn-00",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 1010,
-              "outputTokens": 110,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 1010,
+              "output": 110
             }
           },
           "tree": [
@@ -5274,10 +5643,9 @@
         "sessionId": "syn-01",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 2010,
-              "outputTokens": 210,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 2010,
+              "output": 210
             }
           },
           "tree": [
@@ -5302,10 +5670,9 @@
         "sessionId": "syn-02",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 3010,
-              "outputTokens": 310,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 3010,
+              "output": 310
             }
           },
           "tree": [
@@ -5330,10 +5697,9 @@
         "sessionId": "syn-03",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 4010,
-              "outputTokens": 410,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 4010,
+              "output": 410
             }
           },
           "tree": [
@@ -5358,10 +5724,9 @@
         "sessionId": "syn-04",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 5010,
-              "outputTokens": 510,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 5010,
+              "output": 510
             }
           },
           "tree": [
@@ -5386,10 +5751,9 @@
         "sessionId": "syn-05",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 6010,
-              "outputTokens": 610,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 6010,
+              "output": 610
             }
           },
           "tree": [
@@ -5414,10 +5778,9 @@
         "sessionId": "syn-06",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 7010,
-              "outputTokens": 710,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 7010,
+              "output": 710
             }
           },
           "tree": [
@@ -5442,10 +5805,9 @@
         "sessionId": "syn-07",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 8010,
-              "outputTokens": 810,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 8010,
+              "output": 810
             }
           },
           "tree": [
@@ -5470,10 +5832,9 @@
         "sessionId": "syn-08",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 9010,
-              "outputTokens": 910,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 9010,
+              "output": 910
             }
           },
           "tree": [
@@ -5498,10 +5859,9 @@
         "sessionId": "syn-09",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 10010,
-              "outputTokens": 1010,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 10010,
+              "output": 1010
             }
           },
           "tree": [
@@ -5526,10 +5886,9 @@
         "sessionId": "syn-10",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 11010,
-              "outputTokens": 1110,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 11010,
+              "output": 1110
             }
           },
           "tree": [
@@ -5554,10 +5913,9 @@
         "sessionId": "syn-11",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 12010,
-              "outputTokens": 1210,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 12010,
+              "output": 1210
             }
           },
           "tree": [
@@ -5582,10 +5940,9 @@
         "sessionId": "syn-00",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 1015,
-              "outputTokens": 115,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 1015,
+              "output": 115
             }
           },
           "tree": [
@@ -5602,9 +5959,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5620,10 +5977,9 @@
         "sessionId": "syn-01",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 2015,
-              "outputTokens": 215,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 2015,
+              "output": 215
             }
           },
           "tree": [
@@ -5640,9 +5996,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5658,10 +6014,9 @@
         "sessionId": "syn-02",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 3015,
-              "outputTokens": 315,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 3015,
+              "output": 315
             }
           },
           "tree": [
@@ -5678,9 +6033,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5696,10 +6051,9 @@
         "sessionId": "syn-03",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 4015,
-              "outputTokens": 415,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 4015,
+              "output": 415
             }
           },
           "tree": [
@@ -5716,9 +6070,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5734,10 +6088,9 @@
         "sessionId": "syn-04",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 5015,
-              "outputTokens": 515,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 5015,
+              "output": 515
             }
           },
           "tree": [
@@ -5754,9 +6107,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5772,10 +6125,9 @@
         "sessionId": "syn-05",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 6015,
-              "outputTokens": 615,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 6015,
+              "output": 615
             }
           },
           "tree": [
@@ -5792,9 +6144,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5810,10 +6162,9 @@
         "sessionId": "syn-06",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 7015,
-              "outputTokens": 715,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 7015,
+              "output": 715
             }
           },
           "tree": [
@@ -5830,9 +6181,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5848,10 +6199,9 @@
         "sessionId": "syn-07",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 8015,
-              "outputTokens": 815,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 8015,
+              "output": 815
             }
           },
           "tree": [
@@ -5868,9 +6218,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5886,10 +6236,9 @@
         "sessionId": "syn-08",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 9015,
-              "outputTokens": 915,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 9015,
+              "output": 915
             }
           },
           "tree": [
@@ -5906,9 +6255,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5924,10 +6273,9 @@
         "sessionId": "syn-09",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 10015,
-              "outputTokens": 1015,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 10015,
+              "output": 1015
             }
           },
           "tree": [
@@ -5944,9 +6292,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -5962,10 +6310,9 @@
         "sessionId": "syn-10",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 11015,
-              "outputTokens": 1115,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 11015,
+              "output": 1115
             }
           },
           "tree": [
@@ -5982,9 +6329,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -6000,10 +6347,9 @@
         "sessionId": "syn-11",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 12015,
-              "outputTokens": 1215,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 12015,
+              "output": 1215
             }
           },
           "tree": [
@@ -6020,9 +6366,9 @@
               "op": "updateAgent",
               "id": "root",
               "fields": {
-                "tokens": {
-                  "in": 150,
-                  "out": 15
+                "contextNow": {
+                  "prompt": 150,
+                  "output": 15
                 }
               }
             }
@@ -6038,10 +6384,9 @@
         "sessionId": "syn-00",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 1021,
-              "outputTokens": 121,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 1021,
+              "output": 121
             }
           },
           "tree": [
@@ -6066,10 +6411,9 @@
         "sessionId": "syn-01",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 2021,
-              "outputTokens": 221,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 2021,
+              "output": 221
             }
           },
           "tree": [
@@ -6094,10 +6438,9 @@
         "sessionId": "syn-02",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 3021,
-              "outputTokens": 321,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 3021,
+              "output": 321
             }
           },
           "tree": [
@@ -6122,10 +6465,9 @@
         "sessionId": "syn-03",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 4021,
-              "outputTokens": 421,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 4021,
+              "output": 421
             }
           },
           "tree": [
@@ -6150,10 +6492,9 @@
         "sessionId": "syn-04",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 5021,
-              "outputTokens": 521,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 5021,
+              "output": 521
             }
           },
           "tree": [
@@ -6178,10 +6519,9 @@
         "sessionId": "syn-05",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 6021,
-              "outputTokens": 621,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 6021,
+              "output": 621
             }
           },
           "tree": [
@@ -6206,10 +6546,9 @@
         "sessionId": "syn-06",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 7021,
-              "outputTokens": 721,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 7021,
+              "output": 721
             }
           },
           "tree": [
@@ -6234,10 +6573,9 @@
         "sessionId": "syn-07",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 8021,
-              "outputTokens": 821,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 8021,
+              "output": 821
             }
           },
           "tree": [
@@ -6262,10 +6600,9 @@
         "sessionId": "syn-08",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 9021,
-              "outputTokens": 921,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 9021,
+              "output": 921
             }
           },
           "tree": [
@@ -6290,10 +6627,9 @@
         "sessionId": "syn-09",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 10021,
-              "outputTokens": 1021,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 10021,
+              "output": 1021
             }
           },
           "tree": [
@@ -6318,10 +6654,9 @@
         "sessionId": "syn-10",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 11021,
-              "outputTokens": 1121,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 11021,
+              "output": 1121
             }
           },
           "tree": [
@@ -6346,10 +6681,9 @@
         "sessionId": "syn-11",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 12021,
-              "outputTokens": 1221,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 12021,
+              "output": 1221
             }
           },
           "tree": [
@@ -6374,10 +6708,9 @@
         "sessionId": "syn-00",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 1028,
-              "outputTokens": 128,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 1028,
+              "output": 128
             }
           },
           "tree": [
@@ -6402,10 +6735,9 @@
         "sessionId": "syn-01",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 2028,
-              "outputTokens": 228,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 2028,
+              "output": 228
             }
           },
           "tree": [
@@ -6430,10 +6762,9 @@
         "sessionId": "syn-02",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 3028,
-              "outputTokens": 328,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 3028,
+              "output": 328
             }
           },
           "tree": [
@@ -6458,10 +6789,9 @@
         "sessionId": "syn-03",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 4028,
-              "outputTokens": 428,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 4028,
+              "output": 428
             }
           },
           "tree": [
@@ -6486,10 +6816,9 @@
         "sessionId": "syn-04",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 5028,
-              "outputTokens": 528,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 5028,
+              "output": 528
             }
           },
           "tree": [
@@ -6514,10 +6843,9 @@
         "sessionId": "syn-05",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 6028,
-              "outputTokens": 628,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 6028,
+              "output": 628
             }
           },
           "tree": [
@@ -6542,10 +6870,9 @@
         "sessionId": "syn-06",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 7028,
-              "outputTokens": 728,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 7028,
+              "output": 728
             }
           },
           "tree": [
@@ -6570,10 +6897,9 @@
         "sessionId": "syn-07",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 8028,
-              "outputTokens": 828,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 8028,
+              "output": 828
             }
           },
           "tree": [
@@ -6598,10 +6924,9 @@
         "sessionId": "syn-08",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 9028,
-              "outputTokens": 928,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 9028,
+              "output": 928
             }
           },
           "tree": [
@@ -6626,10 +6951,9 @@
         "sessionId": "syn-09",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 10028,
-              "outputTokens": 1028,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 10028,
+              "output": 1028
             }
           },
           "tree": [
@@ -6654,10 +6978,9 @@
         "sessionId": "syn-10",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 11028,
-              "outputTokens": 1128,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 11028,
+              "output": 1128
             }
           },
           "tree": [
@@ -6682,10 +7005,9 @@
         "sessionId": "syn-11",
         "patch": {
           "fields": {
-            "totals": {
-              "inputTokens": 12028,
-              "outputTokens": 1228,
-              "costUsd": 0
+            "contextNow": {
+              "prompt": 12028,
+              "output": 1228
             }
           },
           "tree": [
@@ -6786,9 +7108,13 @@
                           "durationMs": 105
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -6806,9 +7132,13 @@
                       "durationMs": 107
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -6835,9 +7165,13 @@
                   "durationMs": 110
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -6900,9 +7234,13 @@
                           "durationMs": 318
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -6921,9 +7259,13 @@
                       "durationMs": 117
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -6948,9 +7290,13 @@
                   "durationMs": 120
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -6983,16 +7329,26 @@
               "inputPreview": "{\"late\":true}"
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 1028,
-          "outputTokens": 128,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 1028,
+          "output": 128
+        },
+        "burn": {
+          "prompt": 2000,
+          "output": 200
         },
         "spawnEdges": [
           {
@@ -7111,9 +7467,13 @@
                           "durationMs": 369
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -7132,9 +7492,13 @@
                       "durationMs": 207
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -7161,9 +7525,13 @@
                   "durationMs": 210
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -7224,9 +7592,13 @@
                           "durationMs": 215
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -7244,9 +7616,13 @@
                       "inputPreview": "{\"n\":1017}"
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -7273,9 +7649,13 @@
                   "durationMs": 335
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -7308,16 +7688,26 @@
               "durationMs": 352
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 2028,
-          "outputTokens": 228,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 2028,
+          "output": 228
+        },
+        "burn": {
+          "prompt": 4000,
+          "output": 400
         },
         "spawnEdges": [
           {
@@ -7443,9 +7833,13 @@
                           "durationMs": 305
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -7465,9 +7859,13 @@
                       "durationMs": 284
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -7492,9 +7890,13 @@
                   "inputPreview": "{\"n\":2010}"
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -7558,9 +7960,13 @@
                           "durationMs": 315
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -7578,9 +7984,13 @@
                       "durationMs": 317
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -7606,9 +8016,13 @@
                   "durationMs": 320
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -7641,16 +8055,26 @@
               "inputPreview": "{\"late\":true}"
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 3028,
-          "outputTokens": 328,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 3028,
+          "output": 328
+        },
+        "burn": {
+          "prompt": 6000,
+          "output": 600
         },
         "spawnEdges": [
           {
@@ -7768,9 +8192,13 @@
                           "durationMs": 405
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -7789,9 +8217,13 @@
                       "durationMs": 407
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -7818,9 +8250,13 @@
                   "durationMs": 410
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -7881,9 +8317,13 @@
                           "inputPreview": "{\"n\":3015}"
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -7902,9 +8342,13 @@
                       "durationMs": 417
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -7931,9 +8375,13 @@
                   "durationMs": 420
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -7968,16 +8416,26 @@
               "durationMs": 335
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 4028,
-          "outputTokens": 428,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 4028,
+          "output": 428
+        },
+        "burn": {
+          "prompt": 8000,
+          "output": 800
         },
         "spawnEdges": [
           {
@@ -8096,9 +8554,13 @@
                           "inputPreview": "{\"n\":4005}"
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -8117,9 +8579,13 @@
                       "durationMs": 507
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -8146,9 +8612,13 @@
                   "durationMs": 510
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -8210,9 +8680,13 @@
                           "durationMs": 515
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -8232,9 +8706,13 @@
                       "durationMs": 318
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -8259,9 +8737,13 @@
                   "inputPreview": "{\"n\":4020}"
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -8294,16 +8776,26 @@
               "inputPreview": "{\"late\":true}"
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 5028,
-          "outputTokens": 528,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 5028,
+          "output": 528
+        },
+        "burn": {
+          "prompt": 10000,
+          "output": 1000
         },
         "spawnEdges": [
           {
@@ -8422,9 +8914,13 @@
                           "durationMs": 605
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -8444,9 +8940,13 @@
                       "durationMs": 284
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -8471,9 +8971,13 @@
                   "inputPreview": "{\"n\":5010}"
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -8537,9 +9041,13 @@
                           "durationMs": 615
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -8557,9 +9065,13 @@
                       "durationMs": 617
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -8586,9 +9098,13 @@
                   "durationMs": 620
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -8620,16 +9136,26 @@
               "inputPreview": "{\"late\":true}"
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 6028,
-          "outputTokens": 628,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 6028,
+          "output": 628
+        },
+        "burn": {
+          "prompt": 12000,
+          "output": 1200
         },
         "spawnEdges": [
           {
@@ -8747,9 +9273,13 @@
                           "durationMs": 705
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -8769,9 +9299,13 @@
                       "durationMs": 707
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -8797,9 +9331,13 @@
                   "durationMs": 710
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -8860,9 +9398,13 @@
                           "inputPreview": "{\"n\":6015}"
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -8881,9 +9423,13 @@
                       "durationMs": 717
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -8910,9 +9456,13 @@
                   "durationMs": 720
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -8947,16 +9497,26 @@
               "durationMs": 335
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 7028,
-          "outputTokens": 728,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 7028,
+          "output": 728
+        },
+        "burn": {
+          "prompt": 14000,
+          "output": 1400
         },
         "spawnEdges": [
           {
@@ -9075,9 +9635,13 @@
                           "inputPreview": "{\"n\":7005}"
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -9096,9 +9660,13 @@
                       "durationMs": 807
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -9125,9 +9693,13 @@
                   "durationMs": 810
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -9190,9 +9762,13 @@
                           "durationMs": 815
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -9211,9 +9787,13 @@
                       "durationMs": 817
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -9238,9 +9818,13 @@
                   "inputPreview": "{\"n\":7020}"
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -9273,16 +9857,26 @@
               "inputPreview": "{\"late\":true}"
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 8028,
-          "outputTokens": 828,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 8028,
+          "output": 828
+        },
+        "burn": {
+          "prompt": 16000,
+          "output": 1600
         },
         "spawnEdges": [
           {
@@ -9402,9 +9996,13 @@
                           "durationMs": 905
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -9422,9 +10020,13 @@
                       "inputPreview": "{\"n\":8007}"
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -9451,9 +10053,13 @@
                   "durationMs": 284
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -9515,9 +10121,13 @@
                           "durationMs": 915
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -9537,9 +10147,13 @@
                       "durationMs": 917
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -9564,9 +10178,13 @@
                   "durationMs": 920
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -9599,16 +10217,26 @@
               "inputPreview": "{\"late\":true}"
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 9028,
-          "outputTokens": 928,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 9028,
+          "output": 928
+        },
+        "burn": {
+          "prompt": 18000,
+          "output": 1800
         },
         "spawnEdges": [
           {
@@ -9728,9 +10356,13 @@
                           "durationMs": 105
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -9748,9 +10380,13 @@
                       "durationMs": 107
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -9777,9 +10413,13 @@
                   "durationMs": 110
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -9842,9 +10482,13 @@
                           "durationMs": 318
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -9863,9 +10507,13 @@
                       "durationMs": 117
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -9890,9 +10538,13 @@
                   "durationMs": 120
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -9925,16 +10577,26 @@
               "inputPreview": "{\"late\":true}"
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 10028,
-          "outputTokens": 1028,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 10028,
+          "output": 1028
+        },
+        "burn": {
+          "prompt": 20000,
+          "output": 2000
         },
         "spawnEdges": [
           {
@@ -10053,9 +10715,13 @@
                           "inputPreview": "{\"n\":10005}"
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -10074,9 +10740,13 @@
                       "durationMs": 207
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -10103,9 +10773,13 @@
                   "durationMs": 210
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -10168,9 +10842,13 @@
                           "durationMs": 215
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -10188,9 +10866,13 @@
                       "inputPreview": "{\"n\":10017}"
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -10216,9 +10898,13 @@
                   "durationMs": 220
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -10251,16 +10937,26 @@
               "inputPreview": "{\"late\":true}"
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 11028,
-          "outputTokens": 1128,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 11028,
+          "output": 1128
+        },
+        "burn": {
+          "prompt": 22000,
+          "output": 2200
         },
         "spawnEdges": [
           {
@@ -10379,9 +11075,13 @@
                           "durationMs": 305
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -10400,9 +11100,13 @@
                       "durationMs": 307
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -10429,9 +11133,13 @@
                   "durationMs": 284
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -10493,9 +11201,13 @@
                           "durationMs": 315
                         }
                       ],
-                      "tokens": {
-                        "in": 400,
-                        "out": 40
+                      "contextNow": {
+                        "prompt": 400,
+                        "output": 40
+                      },
+                      "burn": {
+                        "prompt": 800,
+                        "output": 80
                       },
                       "startedAt": 4000
                     },
@@ -10515,9 +11227,13 @@
                       "durationMs": 317
                     }
                   ],
-                  "tokens": {
-                    "in": 300,
-                    "out": 30
+                  "contextNow": {
+                    "prompt": 300,
+                    "output": 30
+                  },
+                  "burn": {
+                    "prompt": 600,
+                    "output": 60
                   },
                   "startedAt": 3000
                 },
@@ -10542,9 +11258,13 @@
                   "durationMs": 320
                 }
               ],
-              "tokens": {
-                "in": 200,
-                "out": 20
+              "contextNow": {
+                "prompt": 200,
+                "output": 20
+              },
+              "burn": {
+                "prompt": 400,
+                "output": 40
               },
               "startedAt": 2000
             },
@@ -10577,16 +11297,26 @@
               "inputPreview": "{\"late\":true}"
             }
           ],
-          "tokens": {
-            "in": 150,
-            "out": 15
+          "contextNow": {
+            "prompt": 150,
+            "output": 15
+          },
+          "burn": {
+            "prompt": 200,
+            "output": 20
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 12028,
-          "outputTokens": 1228,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 12028,
+          "output": 1228
+        },
+        "burn": {
+          "prompt": 24000,
+          "output": 2400
         },
         "spawnEdges": [
           {
@@ -10646,16 +11376,26 @@
           "status": "done",
           "spawnDepth": 0,
           "children": [],
-          "tokens": {
-            "in": 0,
-            "out": 0
+          "contextNow": {
+            "prompt": 0,
+            "output": 0
+          },
+          "burn": {
+            "prompt": 0,
+            "output": 0
           },
           "startedAt": 1000
         },
         "totals": {
-          "inputTokens": 0,
-          "outputTokens": 0,
           "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 0,
+          "output": 0
+        },
+        "burn": {
+          "prompt": 0,
+          "output": 0
         },
         "spawnEdges": []
       }

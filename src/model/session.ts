@@ -65,6 +65,7 @@ import type {
   SessionPatch,
   SessionState,
   SpawnEdge,
+  TokenPair,
   ToolNode,
   ToolNodeFieldPatch,
   TreeNode,
@@ -120,7 +121,8 @@ function refusedRoot(): AgentNode {
     status: 'running',
     spawnDepth: 0,
     children: [],
-    tokens: { in: 0, out: 0 },
+    contextNow: { prompt: 0, output: 0 },
+    burn: { prompt: 0, output: 0 },
     startedAt: 0,
   };
 }
@@ -149,11 +151,20 @@ function toWireParked(p: GraftParkedGraft): ParkedGraft {
 // Diffing
 // ---------------------------------------------------------------------------
 function sameTotals(a: SessionState['totals'], b: SessionState['totals']): boolean {
-  return (
-    a.inputTokens === b.inputTokens &&
-    a.outputTokens === b.outputTokens &&
-    a.costUsd === b.costUsd
-  );
+  return a.costUsd === b.costUsd;
+}
+
+/**
+ * Equality over an OPTIONAL pair, absence included.
+ *
+ * Absent and `{ prompt: 0, output: 0 }` are DIFFERENT and must diff as a
+ * change: one says "this engine does not report a figure" and the other says
+ * "the figure is zero". Collapsing them is how an em-dash silently becomes a 0
+ * in the renderer.
+ */
+function samePair(a: TokenPair | undefined, b: TokenPair | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.prompt === b.prompt && a.output === b.output;
 }
 
 function sameEdges(a: readonly SpawnEdge[], b: readonly SpawnEdge[]): boolean {
@@ -209,9 +220,6 @@ function hasDuplicateIds(nodes: readonly TreeNode[]): boolean {
   return false;
 }
 
-function sameTokens(a: AgentNode['tokens'], b: AgentNode['tokens']): boolean {
-  return a.in === b.in && a.out === b.out;
-}
 
 function agentFieldPatch(prev: AgentNode, next: AgentNode): AgentNodeFieldPatch | undefined {
   const fields: AgentNodeFieldPatch = {};
@@ -232,8 +240,12 @@ function agentFieldPatch(prev: AgentNode, next: AgentNode): AgentNodeFieldPatch 
     fields.spawnDepth = next.spawnDepth;
     changed = true;
   }
-  if (!sameTokens(prev.tokens, next.tokens)) {
-    fields.tokens = { in: next.tokens.in, out: next.tokens.out };
+  if (!samePair(prev.contextNow, next.contextNow) && next.contextNow !== undefined) {
+    fields.contextNow = { ...next.contextNow };
+    changed = true;
+  }
+  if (!samePair(prev.burn, next.burn) && next.burn !== undefined) {
+    fields.burn = { ...next.burn };
     changed = true;
   }
   if (prev.startedAt !== next.startedAt) {
@@ -390,6 +402,14 @@ export function diffSessionState(
     fields.totals = { ...next.totals };
     fieldsChanged = true;
   }
+  if (!samePair(prev.contextNow, next.contextNow) && next.contextNow !== undefined) {
+    fields.contextNow = { ...next.contextNow };
+    fieldsChanged = true;
+  }
+  if (!samePair(prev.burn, next.burn) && next.burn !== undefined) {
+    fields.burn = { ...next.burn };
+    fieldsChanged = true;
+  }
   // Gate amendment B2, and it is DELIBERATE DEAD CODE — do not "simplify" it
   // away. The engine that observed a session cannot change while the session
   // exists, so for any two states this model produces `prev.engine` and
@@ -482,6 +502,10 @@ export interface SerializedSessionState {
   engine: SessionState['engine'] | null;
   epochAnchor: string | null;
   totals: SessionState['totals'];
+  /** `null` when the engine reports no context level. NOT a zero pair. */
+  contextNow: TokenPair | null;
+  /** `null` when the engine reports no spend. NOT a zero pair. */
+  burn: TokenPair | null;
   spawnEdges: SpawnEdge[];
   root: SerializedSessionNode;
 }
@@ -508,7 +532,8 @@ function serializeSessionNode(
     label: node.label,
     status: node.status,
     spawnDepth: node.spawnDepth,
-    tokens: { in: node.tokens.in, out: node.tokens.out },
+    contextNow: node.contextNow === undefined ? null : { ...node.contextNow },
+    burn: node.burn === undefined ? null : { ...node.burn },
     startedAtOffsetMs:
       anchor === undefined || node.startedAt === 0 ? null : node.startedAt - anchor,
     endedAtOffsetMs:
@@ -533,6 +558,8 @@ export function serializeSessionState(state: SessionState): SerializedSessionSta
     engine: state.engine ?? null,
     epochAnchor: anchor === undefined ? null : new Date(anchor).toISOString(),
     totals: { ...state.totals },
+    contextNow: state.contextNow === undefined ? null : { ...state.contextNow },
+    burn: state.burn === undefined ? null : { ...state.burn },
     spawnEdges: edgesOf(state).map((e) => ({ ...e })),
     root: serializeSessionNode(state.root, anchor),
   };
@@ -616,6 +643,8 @@ interface ContentView {
   schemaOk: boolean;
   root: AgentNode;
   totals: SessionState['totals'];
+  contextNow?: TokenPair;
+  burn?: TokenPair;
   spawnEdges: readonly SpawnEdge[];
   parked: readonly ParkedGraft[];
 }
@@ -631,11 +660,16 @@ interface SessionRecord {
   view?: ContentView;
 }
 
-const REFUSED_TOTALS: SessionState['totals'] = Object.freeze({
-  inputTokens: 0,
-  outputTokens: 0,
-  costUsd: 0,
-});
+const REFUSED_TOTALS: SessionState['totals'] = Object.freeze({ costUsd: 0 });
+
+/**
+ * A refused session reports no tokens, and zero is the only honest value.
+ *
+ * G3's "never a partial tree" covers numbers: a context level computed from a
+ * session whose layout we have refused to understand is a wrong number, not a
+ * smaller one.
+ */
+const REFUSED_PAIR: TokenPair = Object.freeze({ prompt: 0, output: 0 });
 
 const NO_EDGES: readonly SpawnEdge[] = Object.freeze([]);
 
@@ -873,6 +907,8 @@ export class SessionModel {
       schemaOk: true,
       root: snapshot.root,
       totals: { ...snapshot.totals },
+      contextNow: { ...snapshot.contextNow },
+      burn: { ...snapshot.burn },
       spawnEdges: snapshot.edges.map((e: GraftEdge) => ({
         toolUseId: e.toolUseId,
         agentId: e.agentId,
@@ -907,6 +943,8 @@ export class SessionModel {
         schemaOk: false,
         root: refusedRoot(),
         totals: REFUSED_TOTALS,
+        contextNow: REFUSED_PAIR,
+        burn: REFUSED_PAIR,
         spawnEdges: NO_EDGES,
         // G3: a refused session renders nothing. Parked grafts are content read
         // out of a session whose schema we have just refused to understand, so
@@ -944,6 +982,8 @@ export class SessionModel {
       schemaOk: view.schemaOk,
       root: view.root,
       totals: view.totals,
+      contextNow: view.contextNow,
+      burn: view.burn,
       spawnEdges: view.spawnEdges,
       parked: view.parked,
       // Gate amendment B3. This module IS the CC engine's assembly point — it

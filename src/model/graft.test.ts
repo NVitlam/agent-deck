@@ -297,11 +297,23 @@ function usageLinesIn(entries: readonly TranscriptEntry[]): UsageLine[] {
     if (typeof message !== 'object' || message === null) continue;
     const m = message as { id?: unknown; usage?: unknown };
     if (typeof m.id !== 'string' || typeof m.usage !== 'object' || m.usage === null) continue;
-    const u = m.usage as { input_tokens?: unknown; output_tokens?: unknown };
+    const u = m.usage as {
+      input_tokens?: unknown;
+      cache_creation_input_tokens?: unknown;
+      cache_read_input_tokens?: unknown;
+      output_tokens?: unknown;
+    };
+    // All three components, like production: `input_tokens` alone is 2 on
+    // every real assistant message in this corpus. Reimplemented here rather
+    // than imported so the test can disagree with the module it checks.
+    const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
     lines.push({
       messageId: m.id,
-      in: typeof u.input_tokens === 'number' && Number.isFinite(u.input_tokens) ? u.input_tokens : 0,
-      out: typeof u.output_tokens === 'number' && Number.isFinite(u.output_tokens) ? u.output_tokens : 0,
+      in:
+        num(u.input_tokens) +
+        num(u.cache_creation_input_tokens) +
+        num(u.cache_read_input_tokens),
+      out: num(u.output_tokens),
     });
   }
   return lines;
@@ -726,9 +738,12 @@ describe('captured topology', () => {
     // The two candidate rules give different answers on this data, which is
     // the whole point: naive line-summing double-counts a streamed message.
     expect(subject.naiveOut).toBeGreaterThan(subject.dedupedOut);
-    expect(node.tokens.out).toBe(subject.dedupedOut);
-    expect(node.tokens.out).not.toBe(subject.naiveOut);
-    expect(node.tokens.in).toBe(subject.dedupedIn);
+    // `burn` is the de-duplicated SUM across distinct ids - the figure the old
+    // `tokens` field held. `contextNow` is a level and is deliberately not
+    // compared against a sum here.
+    expect(node.burn?.output).toBe(subject.dedupedOut);
+    expect(node.burn?.output).not.toBe(subject.naiveOut);
+    expect(node.burn?.prompt).toBe(subject.dedupedIn);
   });
 
   it('the de-duplicated total matches the hand-measured capture', async () => {
@@ -745,7 +760,18 @@ describe('captured topology', () => {
     // If a re-harvest drops that agent this fails with the diagnostic from
     // `sessionWhere`, naming the property it needed - not with an ENOENT that
     // reads like a grafter bug.
-    const HAND_MEASURED = { agentId: 'a1a53f42c5eca8824', out: 518 + 1099, in: 2 + 2 };
+    // RE-MEASURED for the token contract. `in: 2 + 2` was the literal defect
+    // this release removes: `input_tokens` alone, on two messages. The prompt
+    // is all three components per message, summed across distinct ids:
+    //   msg_011CeBgYk4Ci1ZkTxynEZh3j  2 +  8054 + 18703 = 26759, out  518
+    //   msg_011CeBgfTGMFk39bxRHxoxen  2 +  4008 + 26757 = 30767, out 1099
+    const HAND_MEASURED = {
+      agentId: 'a1a53f42c5eca8824',
+      out: 518 + 1099,
+      in: 2 + 8054 + 18703 + (2 + 4008 + 26757),
+      // The LAST message by ordinal, which is a level rather than a total.
+      contextNow: { prompt: 2 + 4008 + 26757, output: 1099 },
+    };
     const session = await sessionWhere(
       `the hand-measured agent ${HAND_MEASURED.agentId}, whose token literals were read off that ` +
         `exact capture and mean nothing without it (see the comment on this test)`,
@@ -755,8 +781,12 @@ describe('captured topology', () => {
     if (!result.ok) throw new Error(`captured session must graft: ${result.mismatch.code}`);
     const node = findNode(result.snapshot.root, HAND_MEASURED.agentId) as AgentNode | undefined;
     expect(node, `agent ${HAND_MEASURED.agentId} must be in the tree`).toBeDefined();
-    expect(node?.tokens.out).toBe(HAND_MEASURED.out);
-    expect(node?.tokens.in).toBe(HAND_MEASURED.in);
+    expect(node?.burn?.output).toBe(HAND_MEASURED.out);
+    expect(node?.burn?.prompt).toBe(HAND_MEASURED.in);
+    expect(node?.burn?.prompt).toBe(57_526);
+    expect(node?.contextNow).toStrictEqual(HAND_MEASURED.contextNow);
+    // The old field read 4 for this agent. Nothing may report that again.
+    expect(node?.burn?.prompt).not.toBe(4);
   });
 
   it('an offloaded tool-results payload reaches the node preview, redacted', async () => {
@@ -1642,7 +1672,9 @@ describe('degenerate input never throws', () => {
     expect(snapshot.root.children).toEqual([]);
     expect(snapshot.parked).toEqual([]);
     expect(snapshot.counts).toEqual({ grafted: 0, parked: 0, toolNodes: 0 });
-    expect(snapshot.totals).toEqual({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+    expect(snapshot.totals).toEqual({ costUsd: 0 });
+    expect(snapshot.contextNow).toStrictEqual({ prompt: 0, output: 0 });
+    expect(snapshot.burn).toStrictEqual({ prompt: 0, output: 0 });
   });
 
   it('a subagent batch with no agentId is ignored rather than guessed at', () => {

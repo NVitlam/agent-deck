@@ -706,8 +706,8 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
     if (mode === 'list') {
       const header = one(panel.container, 'session-header');
-      expect(one(header, 'header-tokens-in').textContent?.trim()).toBe('17,745');
-      expect(one(header, 'header-tokens-out').textContent?.trim()).toBe('8,159');
+      expect(one(header, 'header-context').textContent?.trim()).toBe('17,745');
+      expect(one(header, 'header-burn').textContent?.trim()).toBe('35,490');
       const cost = one(header, 'header-cost');
       expect(cost.textContent?.trim()).toBe(EM_DASH);
       expect(cost.getAttribute('title')).toContain('no price table');
@@ -718,6 +718,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
       click(one(panel.container, TESTID.nucleus));
       expect(one(panel.container, 'inspector-tokens').textContent).toContain('12,345');
       expect(one(panel.container, 'inspector-tokens').textContent).toContain('6,789');
+      expect(one(panel.container, 'inspector-burn').textContent).toContain('24,690');
     }
   });
 
@@ -1080,6 +1081,15 @@ describe('C7.3 rows that were unimplemented and now are not', () => {
     // COMPUTED, and a 0 rendered as a number reads as "free" — a fabricated
     // figure, which is the class of defect this project refuses on principle.
     const totals = one(panel.container, 'hud-totals');
+    // ASSERT THE VALUES, NOT THE PRESENCE OF A DASH. `toContain('—')` alone is
+    // vacuous here: cost is always an em-dash, so it passes even when every
+    // token figure is also a dash - which is exactly the defect a verifier
+    // caught on `hotfix/0.1.3`, where this line read `totals.inputTokens`
+    // after that field had been removed and the whole row rendered as dashes
+    // in the shipped artifact. `.svelte` is outside `tsc`, so this assertion
+    // is the only thing standing between that bug and a release.
+    expect(totals.textContent).toContain('17,745');
+    expect(totals.textContent).toContain('35,490');
     expect(totals.textContent).toContain('—');
     expect(totals.textContent).not.toMatch(/\$\s*0/);
   });

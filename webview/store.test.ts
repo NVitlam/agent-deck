@@ -89,12 +89,12 @@ describe('the snapshot/diff contract', () => {
     const next: SessionState = {
       ...prev,
       liveness: 'idle',
-      totals: { inputTokens: 20_000, outputTokens: 9_000, costUsd: 0 },
+      totals: { costUsd: 0 }, contextNow: { prompt: 20_000, output: 9_000 }, burn: { prompt: 20_000, output: 9_000 },
       root: {
         ...prev.root,
         status: 'done',
         endedAt: 99_000,
-        tokens: { in: 20_000, out: 9_000 },
+        contextNow: { prompt: 20_000, output: 9_000 }, burn: { prompt: 20_000, output: 9_000 },
         children: prev.root.children,
       },
     };
@@ -123,7 +123,7 @@ describe('the snapshot/diff contract', () => {
             status: 'running',
             spawnDepth: 1,
             children: [],
-            tokens: { in: 10, out: 2 },
+            contextNow: { prompt: 10, output: 2 }, burn: { prompt: 10, output: 2 },
             startedAt: 5_000,
           },
         ],
@@ -738,7 +738,7 @@ describe('SessionSummary.errorCount', () => {
                 children: [
                   { id: 'tool-ok', toolName: 'Read', status: 'done', inputPreview: '{}' },
                 ],
-                tokens: { in: 1, out: 1 },
+                contextNow: { prompt: 1, output: 1 }, burn: { prompt: 1, output: 1 },
                 startedAt: 1_000,
               },
             ],

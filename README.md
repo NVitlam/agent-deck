@@ -2,13 +2,22 @@
 
 [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/nvitlam.agent-deck?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck)
 
-A **read-only** VS Code extension that renders live Claude Code session topology — subagent trees,
-in-flight tool calls, token and cost totals — by observing Claude Code's exhaust. It never wraps,
-proxies, launches, or configures Claude Code.
+A **read-only** VS Code extension that renders live agent session topology — subagent trees,
+in-flight tool calls, token and cost totals — by observing what the agent leaves behind. It watches
+**Claude Code** and **OpenCode**, side by side in one deck, and it never wraps, proxies, launches, or
+configures either of them.
 
 > **Claude Code compatibility** — anchor `2.1.246`, accepts `2.0.x` to `2.2.x`, refuses on
 > structural change, not on patch number. See [Claude Code version window](#claude-code-version-window).
->
+
+<!-- engine:opencode -->
+
+> **OpenCode compatibility** — anchor `1.18.22`, accepts `1.17.x` to `1.19.x`, same rule: the patch
+> number is not compared, and what refuses is the schema. See
+> [Also observes OpenCode](#also-observes-opencode).
+
+<!-- /engine:opencode -->
+
 > This badge is text, not a remote image: a project whose selling point is zero egress should not
 > make its own README phone home to a badge service to render.
 
@@ -20,47 +29,57 @@ proxies, launches, or configures Claude Code.
 
 Agent Deck observes. It never acts.
 
-- It reads Claude Code's session JSONL and listens for hook events. That is all.
-- It never wraps, proxies, launches or configures Claude Code.
+- It reads Claude Code's session JSONL, listens for hook events, and reads
+  OpenCode's session database. That is all.
+- It never wraps, proxies, launches or configures either engine.
 - It never writes to `~/.claude`, to Claude Code settings, or to your session
   files. Installing the hooks is a manual paste block you control, below.
 - Zero network egress. The only socket it opens is an HTTP listener bound to
   `127.0.0.1`, which is how the hooks reach it. Non-loopback requests are
-  dropped.
+  dropped. **The OpenCode side opens no socket at all.**
 - No telemetry, no analytics, no CDN. Every asset the panel renders is local,
   enforced by a strict Content-Security-Policy.
 
-**Coming in 0.5.0, and stated here in advance because it makes "read-only"
-more precise — it does *not* describe the version you have installed.** Agent
-Deck is gaining a second observation source: OpenCode's session store at
-`%USERPROFILE%\.local\share\opencode\opencode.db`, opened read-only. That
-database is in SQLite's WAL mode, and opening a WAL database read-only writes
-to SQLite's own `-shm` index sidecar (creating `-shm`/`-wal` if absent). The
-database itself is never modified, and `auth.json`, `log/`, `snapshot/`,
-`repos/` and `tool-output/` are never opened at all — but "never writes
-anything" would be the wrong claim, so the rule is **no writes to any file the
-observed engine treats as content**. Every reader of a WAL database touches
-that sidecar, OpenCode's own process included. The four secret-bearing tables
-are never read. `SECURITY.md` §2 carries the measurements.
+**One precise qualification, because "never writes anything" would be the wrong
+claim.** OpenCode's session store —
+`%USERPROFILE%\.local\share\opencode\opencode.db` — is a SQLite database in WAL
+mode, and opening a WAL database *read-only* writes to SQLite's own `-shm` index
+sidecar (creating `-shm`/`-wal` if absent). The database itself is never
+modified, and `auth.json`, `log/`, `snapshot/`, `repos/` and `tool-output/` are
+never opened at all. So the rule is **no writes to any file the observed engine
+treats as content**. Every reader of a WAL database touches that sidecar,
+OpenCode's own process included. `SECURITY.md` §2 carries the measurements.
 
 All state lives in memory and is discarded when the window closes.
 
 ## Features
 
-**The deck** - every live session at a glance, breathing while it works.
+**The deck** - every live session at a glance, from either engine, breathing
+while it works. Three layouts (List, Grid, Lanes), three sort orders (Live
+first, Recent, Engine), and engine chips to show one engine or both. Keyboard:
+`A C O`, `1 2 3`, `L R E`.
 
 ![The deck](media/screenshot-deck.png)
 
-**Agent topology** - the main agent as a nucleus, tool calls as chronological
-dots, and subagents joined by filaments to the exact `tool_use` block that
-spawned them. That join is a primary key, not a guess.
+**Agent topology** - a tidy tree. Every agent is a node, children sit under
+their parent in spawn order, and each is joined to the exact call that spawned
+it by a filament. That join is a primary key, not a guess. Tool calls ride each
+node as chronological dots; anything the deck cannot attach to a parent goes to
+a parked rail carrying the code that says why, because unplaced data is shown as
+unplaced and never guessed into position. Click into any agent to re-root the
+tree on it.
 
 ![Agent topology](media/screenshot-topology.png)
 
 **Tool call inspector** - open any node for its payload, truncated with an
-explicit marker and with thinking blocks dropped at the parse boundary.
+explicit marker and with thinking and reasoning content dropped at the parse
+boundary, in both engines.
 
 ![Tool call inspector](media/screenshot-inspector.png)
+
+> **The three screenshots above still show the 0.1.x panel.** `v0.5.0` replaced
+> the renderer; the pictures are regenerated at the release gate, and this note
+> is here rather than a caption that quietly does not match.
 
 ## What it is
 
@@ -78,6 +97,52 @@ change degrades the panel instead of killing it.
 Everything the extension knows lives in memory in the extension host and is discarded when the
 window closes. There is no database, no cache file, and nothing is ever written back to Claude Code.
 
+<!-- engine:opencode -->
+
+## Also observes OpenCode
+
+Since `v0.5.0`, OpenCode sessions appear in the same deck as Claude Code ones, tagged `OC` against
+`CC`, and the engine chips filter to one or show both. Nothing is configured: if OpenCode is
+installed, its sessions are there; if it is not, the deck says nothing about it, because an absent
+data directory is not an error and not a warning.
+
+**What is read — one file.**
+
+```
+%USERPROFILE%\.local\share\opencode\
+  opencode.db     <- the only file Agent Deck opens, read-only
+  auth.json       never opened
+  log/            never opened
+  snapshot/       never opened
+  repos/          never opened
+  tool-output/    never opened
+```
+
+**Four tables are never read**, and this is by name rather than by filter: `account`,
+`control_account`, `credential` and `session_share`. Those are the tables whose schema carries
+access tokens, refresh tokens and share secrets. They are not queried, and they are stripped from
+every test fixture in the project.
+
+**No sockets.** The Claude Code side has exactly one — the loopback hook listener you install
+yourself. The OpenCode side has **none**. It does not talk to `opencode serve`, does not open a
+port, and does not resolve a hostname.
+
+**Compatibility, same posture as the Claude Code side.** The anchor is `1.18.22` — the release whose
+captured database proved the schema. Major must match, minor may be one step either way (`1.17.x` to
+`1.19.x`), and **the patch component is not compared at all**, so a self-update from `1.18.22` to
+`1.18.23` changes nothing. What refuses a session is the **schema**: if the six tables and the
+columns actually read are not what the fixture pinned, that session renders `unsupported` rather
+than a half-built tree. A database holding sessions written by several versions is normal, and the
+window is applied per session, not to the file.
+
+**Two things it does not do yet.** An OpenCode session's **context** figure reads as an em dash —
+the stored token totals count only uncached input, which would understate the real prompt by roughly
+an order of magnitude, so an honest absence is shown rather than a wrong number. And liveness comes
+from the database's own event cursor rather than from a hook-style tap, because OpenCode has no
+documented equivalent of Claude Code's hooks.
+
+<!-- /engine:opencode -->
+
 ## Requirements
 
 - **VS Code** `^1.134.0`
@@ -85,6 +150,8 @@ window closes. There is no database, no cache file, and nothing is ever written 
   what runs it
 - **Claude Code** on the `2.x` line, within one minor of the anchor (see below). Patch releases are
   read as they come.
+- **OpenCode** — optional, and there is nothing to install or configure if you do not use it. The
+  version window is in [Also observes OpenCode](#also-observes-opencode).
 
 ## Install
 
@@ -266,7 +333,10 @@ measurements. The short version:
 - **Redaction at the parse boundary.** Thinking blocks are dropped, and the `signature` field is
   dropped with them — Claude Code writes thinking blocks with an empty text string and the bytes in
   `signature`, so dropping only the visible text would be doing nothing. Tool payloads are truncated
-  with a marker, including the large ones Claude Code offloads to `tool-results/*.txt`.
+  with a marker, including the large ones Claude Code offloads to `tool-results/*.txt`. The same
+  applies to OpenCode's reasoning parts, where the text is present verbatim in the database — so
+  that test is against real captured bytes and cannot pass vacuously.
+- **The OpenCode side opens no socket**, and its four secret-bearing tables are never queried.
 - **The webview has no filesystem and no network access**, enforced by a strict Content Security
   Policy. It receives snapshot and diff messages and sends back UI intents; that is the whole
   channel.
@@ -310,11 +380,15 @@ honesty is kept, and they were not loosened alongside it.
 ## What it does not do
 
 - **No writes of any kind.** Not to `~/.claude`, not to your Claude Code settings, not to session
-  files. Zero write capability is the trust anchor, not a default that could be configured away.
-- **No launching, wrapping or proxying Claude Code.** It observes what is already there.
+  files, not to OpenCode's database or its config. Zero write capability is the trust anchor, not a
+  default that could be configured away. (The one qualification, SQLite's `-shm` sidecar, is stated
+  in full under [Read-only by design](#read-only-by-design) rather than buried here.)
+- **No launching, wrapping or proxying either engine.** It observes what is already there.
 - **No historical replay and no persistence.** Close the window and the state is gone.
 - **No telemetry, no analytics, no network egress.**
 - **No cost dashboards.** Totals are rendered where they belong on the tree, and that is all.
+- **No settings for the OpenCode side.** It is on when OpenCode's data directory exists and silent
+  when it does not; there is nothing to turn on.
 
 ## Development
 
@@ -333,6 +407,7 @@ See [`LICENSE`](LICENSE).
 
 ## Status
 
-Released on the VS Code Marketplace as `nvitlam.agent-deck`. The parser, the grafter, the liveness
-engine and the renderer are covered by an automated suite that runs against transcripts captured
-from real Claude Code sessions.
+Released on the VS Code Marketplace as `nvitlam.agent-deck`. Both engines' parsers, the grafter, the
+liveness engines and the renderer are covered by an automated suite that runs against transcripts
+captured from real Claude Code sessions and a database captured from a real OpenCode one. Neither
+the live `~/.claude` tree nor the live OpenCode database is ever read by a test.

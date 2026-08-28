@@ -40,7 +40,17 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, copyFileSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  copyFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -148,6 +158,162 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
   'dist/webview/main.js',
   'package.json',
 ];
+
+/**
+ * The count, pinned BESIDE the set rather than instead of it — working-method
+ * rule 19.
+ *
+ * A set comparison accidentally written against a filtered, empty or wrongly
+ * named listing passes vacuously, and this repository's whole catalogue of
+ * packaging defects is "the audit looked in the wrong place and reported
+ * clean". The count is the cheapest thing that goes red when that happens, and
+ * it is derived from nothing: writing `EXPECTED_PACKAGED_FILES.length` here
+ * would make it agree with the set by construction and check nothing at all.
+ */
+const EXPECTED_PACKAGED_FILE_COUNT = 12;
+
+/**
+ * The same artifact, AS THE ZIP NAMES IT. Rule 19's second half.
+ *
+ * vsce renames on the way in, and every rename below was measured by unzipping
+ * a real .vsix rather than predicted: `LICENSE` -> `extension/LICENSE.txt`,
+ * `README.md` -> `extension/readme.md`, `CHANGELOG.md` ->
+ * `extension/changelog.md` (lowercased, both of them), everything else under
+ * `extension/`, and two entries that exist ONLY in the zip —
+ * `extension.vsixmanifest` and `[Content_Types].xml`, which is why this list is
+ * 14 where `vsce ls` says 12.
+ *
+ * `SECURITY.md` is NOT lowercased, and that asymmetry is the reason this is an
+ * enumerated list and not a transformation of the one above. An audit that
+ * assumed the rule and applied it uniformly would look for `extension/security.md`,
+ * find nothing, and pass.
+ */
+const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
+  '[Content_Types].xml',
+  'extension.vsixmanifest',
+  'extension/LICENSE.txt',
+  'extension/SECURITY.md',
+  'extension/changelog.md',
+  'extension/dist/extension.cjs',
+  'extension/dist/webview/main.css',
+  'extension/dist/webview/main.js',
+  'extension/media/icon.png',
+  'extension/media/screenshot-deck.png',
+  'extension/media/screenshot-inspector.png',
+  'extension/media/screenshot-topology.png',
+  'extension/package.json',
+  'extension/readme.md',
+];
+
+/** Same reasoning as `EXPECTED_PACKAGED_FILE_COUNT`, on the other naming. */
+const EXPECTED_ARTIFACT_ENTRY_COUNT = 14;
+
+/**
+ * THE PRIVATE SET — working-method rule 20's second door.
+ *
+ * `.gitignore` and `.vscodeignore` are different doors. git ignoring `lab/`
+ * stops `git add -A` and stops nothing at all from packaging it, because vsce
+ * walks the WORKING TREE and never consults git. Measured on this repository
+ * on 2026-08-28: `lab/` — the private method repository, carrying the identity
+ * set and the only unredacted captures — was correctly gitignored and would
+ * have gone straight into the VSIX.
+ *
+ * Both namings, deliberately. `vsce ls` reports on-disk paths; the zip reports
+ * `extension/`-prefixed ones. A rule written for one naming and run against the
+ * other matches nothing and reports a clean pass — the exact way the licence
+ * rename already caught an audit here.
+ *
+ * The BARE names `docs` and `spike` are not a typo for the globs above them.
+ * vsce enumerates a directory junction as a single FILE entry, so `docs/**`
+ * matches nothing and the bare name is what denies it. Measured: with the bare
+ * name removed, `vsce ls` lists `docs`, and `vsce package` then dies EISDIR
+ * inside secret scanning. See `the junction door` below.
+ */
+const PRIVATE_SET: ReadonlyArray<{ readonly re: RegExp; readonly what: string }> = [
+  { re: /(^|\/)lab\//i, what: 'lab/ — the private repository: the identity set and the only unredacted captures' },
+  { re: /(^|\/)CLAUDE\.md$/i, what: 'CLAUDE.md — the working method' },
+  { re: /(^|\/)PLAN[^/]*\.md$/i, what: 'PLAN.md and any PLAN_*.md under revision — the execution contract' },
+  { re: /(^|\/)HANDOVER\.md$/i, what: 'HANDOVER.md — inter-session state' },
+  { re: /(^|\/)AGENTS\.md$/i, what: 'AGENTS.md — agent guidance' },
+  { re: /agent-deck-spec/i, what: 'the internal specification' },
+  { re: /^docs\//i, what: 'docs/ — the private evidence tree, as vsce ls names it' },
+  { re: /^spike\//i, what: 'spike/ — the frozen Phase 0 reference, as vsce ls names it' },
+  { re: /^extension\/docs\//i, what: 'docs/ — the private evidence tree, as the artifact names it' },
+  { re: /^extension\/spike\//i, what: 'spike/ — the frozen Phase 0 reference, as the artifact names it' },
+  { re: /^(extension\/)?(docs|spike)$/i, what: 'a junction enumerated as a single FILE entry — the EISDIR door' },
+];
+
+/**
+ * A listing that every `PRIVATE_SET` rule must reject, so the set cannot go
+ * silently vacuous.
+ *
+ * Rule 5: when two designs differ only in whether a test can assert anything,
+ * take the one that can. A regex list is exactly the thing that stops matching
+ * after an innocuous edit — this repository has shipped a selector that stopped
+ * matching, a rule shaped `docs/**` that matched nothing at the root, and an
+ * allow-list missing an extension. Each entry here is paired with the rule it
+ * exists to prove is alive.
+ */
+const PRIVATE_SET_WITNESSES: readonly string[] = [
+  'lab/identity.local.json',
+  'CLAUDE.md',
+  'PLAN.md',
+  'PLAN_v0.5.0.md',
+  'HANDOVER.md',
+  'AGENTS.md',
+  'agent-deck-spec.md',
+  'docs/evidence/scrub/SCRUB-2026-08-28.md',
+  'spike/run.mjs',
+  'extension/docs/evidence/privacy/report.json',
+  'extension/spike/run.mjs',
+  'docs',
+  'spike',
+  'extension/docs',
+];
+
+/**
+ * The sweep's identity class, run over the ARTIFACT'S ENTRY NAMES.
+ *
+ * `scripts/privacy-sweep.mjs` scans file CONTENT for the 45-token private list;
+ * nothing scanned the file NAMES a package would ship under. The scrub of
+ * 2026-08-28 found identity in five slug DIRECTORY names as well as in blobs,
+ * so a path is its own leak — `lab/fixtures-raw/cc-2.1.234/projects/<real
+ * slug>/...` was enumerated as packaged content by `vsce ls` during that very
+ * session.
+ *
+ * SAME CONTRACT AS THE SWEEP, including the part that matters most: the token
+ * file lives in `lab/`, which a contributor clone does not have, so its absence
+ * is a REPORTED SKIP and not a silent zero (working-method rule 18, and
+ * reserved decision 11 turns on exactly this distinction). This test file
+ * contains no identity token; it reads them or it says it did not.
+ */
+type IdentityClass =
+  | { readonly status: 'RUN'; readonly tokens: readonly RegExp[] }
+  | { readonly status: 'SKIPPED'; readonly reason: string };
+
+function loadIdentityClass(): IdentityClass {
+  const file = join(REPO_ROOT, 'lab', 'identity.local.json');
+  let raw: string;
+  try {
+    raw = readFileSync(file, 'utf8');
+  } catch {
+    return { status: 'SKIPPED', reason: 'no lab/identity.local.json — contributor clone' };
+  }
+  // Malformed is NOT absent. Absent is a supported state with a reported
+  // verdict; malformed is a broken control, and it throws here rather than
+  // degrading into a skip that reads the same in the output.
+  const doc = JSON.parse(raw) as { version?: unknown; tokens?: unknown };
+  if (doc.version !== 1) throw new Error(`lab/identity.local.json: version is not 1`);
+  if (!Array.isArray(doc.tokens) || doc.tokens.length === 0) {
+    throw new Error('lab/identity.local.json: no tokens');
+  }
+  const tokens = (doc.tokens as { match?: unknown; flags?: unknown }[]).map((t, i) => {
+    if (typeof t.match !== 'string') throw new Error(`lab/identity.local.json: token ${i} is malformed`);
+    const insensitive = String(t.flags ?? 'gi').includes('i');
+    return new RegExp(t.match, insensitive ? 'i' : '');
+  });
+  return { status: 'RUN', tokens };
+}
 
 /** Directories and shapes whose presence in the artifact is a defect, each
  *  paired with the reason it must not ship. */
@@ -339,6 +505,61 @@ describe('the packaged artifact', () => {
     expect([...files].sort()).toEqual([...EXPECTED_PACKAGED_FILES].sort());
   });
 
+  it('ships exactly twelve files, counted rather than derived', () => {
+    // Rule 19. The set assertion above is the real check; this is the one that
+    // goes red when the set assertion is comparing two things that are both
+    // empty, both filtered, or both named in a way vsce stopped using.
+    expect(EXPECTED_PACKAGED_FILES).toHaveLength(EXPECTED_PACKAGED_FILE_COUNT);
+    expect(vsceLs()).toHaveLength(EXPECTED_PACKAGED_FILE_COUNT);
+  });
+
+  it('carries nothing from the private set, and every private-set rule still matches something', () => {
+    // Rule 20's guard on the second door. `lab/` and the five root documents
+    // are gitignored AND denied here; git's door and vsce's door are different
+    // doors and only this one governs what a user installs.
+    const violations = vsceLs().flatMap((file) => {
+      const hit = PRIVATE_SET.find((rule) => rule.re.test(file));
+      return hit ? [`${file} — ${hit.what}`] : [];
+    });
+    expect(violations).toEqual([]);
+
+    // Non-vacuity: every rule above must reject at least one witness. A rule
+    // that has quietly stopped matching anything reads identically to a rule
+    // that is doing its job, which is how a `docs/**`-shaped rule survived a
+    // stray file at the root.
+    const dead = PRIVATE_SET.filter((rule) => !PRIVATE_SET_WITNESSES.some((w) => rule.re.test(w)));
+    expect(
+      dead.map((rule) => rule.what),
+      'these private-set rules match none of their own witnesses and are guarding nothing',
+    ).toEqual([]);
+    // ...and symmetrically, every witness must be caught by something, so a
+    // deleted rule cannot leave a shape uncovered while the list still looks full.
+    const uncaught = PRIVATE_SET_WITNESSES.filter((w) => !PRIVATE_SET.some((rule) => rule.re.test(w)));
+    expect(uncaught, 'these private paths would ship: no private-set rule matches them').toEqual([]);
+  });
+
+  it('names nobody in any packaged path, or reports that it could not look', () => {
+    // The sweep's identity class, applied to the entry NAMES. The scrub found
+    // identity in five slug directory names as well as in file content, so a
+    // path is its own leak.
+    const identity = loadIdentityClass();
+    if (identity.status === 'SKIPPED') {
+      // A reported skip, not a silent zero (rule 18). This is the CONTRIBUTOR's
+      // run and it stays green: the token file is in `lab/`, which a public
+      // clone does not have. The test still asserts the part that needs no
+      // tokens — see below — so it is not a no-op either.
+      expect(identity.reason).toContain('lab/identity.local.json');
+    } else {
+      const hits = vsceLs().filter((file) => identity.tokens.some((re) => re.test(file)));
+      expect(hits, 'a packaged path name matches the private identity list').toEqual([]);
+      expect(identity.tokens.length, 'the identity list is empty, so it looked for nothing').toBeGreaterThan(0);
+    }
+    // True on every clone, tokens or not: no packaged path may be absolute, and
+    // no packaged path may climb out of the package.
+    const shapes = vsceLs().filter((file) => /^[A-Za-z]:/.test(file) || file.startsWith('/') || file.includes('..'));
+    expect(shapes, 'a packaged path is absolute or escapes the package root').toEqual([]);
+  });
+
   it('carries no file from a forbidden directory or of a forbidden shape', () => {
     const files = vsceLs();
     const violations = files.flatMap((file) => {
@@ -482,8 +703,11 @@ describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
           let licenceNamesTheLicensor = false;
           /** Where the DELIBERATE identity was actually found, artifact-named. */
           const identitySeen: string[] = [];
+          /** Every entry, as the ZIP names it. Rule 19's second naming. */
+          const entries: string[] = [];
           for (const file of shipped) {
             const relative = file.slice(extracted.length + 1).split('\\').join('/');
+            entries.push(relative);
             const bytes = readFileSync(file);
             // Byte scan, not a text grep: the leak that happened was inside a
             // CSS comment, and a shipped bundle is not guaranteed to be text.
@@ -519,6 +743,29 @@ describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
             }
           }
           expect(hits).toEqual([]);
+
+          // Rule 19, on the naming only the unzipped artifact knows. This is
+          // the assertion `vsce ls` structurally cannot make: it reports what
+          // is on disk, and vsce renames three files and invents two more on
+          // the way into the zip.
+          expect([...entries].sort()).toEqual([...EXPECTED_ARTIFACT_ENTRIES].sort());
+          expect(entries).toHaveLength(EXPECTED_ARTIFACT_ENTRY_COUNT);
+
+          // Rule 20, on the same naming. `^extension/docs/` and
+          // `^extension/spike/` only ever mean anything here.
+          const privateInArtifact = entries.flatMap((entry) => {
+            const rule = PRIVATE_SET.find((r) => r.re.test(entry));
+            return rule ? [`${entry} — ${rule.what}`] : [];
+          });
+          expect(privateInArtifact).toEqual([]);
+
+          // ...and the identity class over the artifact's own entry names.
+          const identityClass = loadIdentityClass();
+          if (identityClass.status === 'RUN') {
+            const named = entries.filter((entry) => identityClass.tokens.some((re) => re.test(entry)));
+            expect(named, 'an artifact entry name matches the private identity list').toEqual([]);
+          }
+
           for (const required of IDENTITY_REQUIRED_IN_ARTIFACT) {
             expect(
               identitySeen.some((rel) => required.re.test(rel)),
@@ -533,6 +780,257 @@ describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
           ).toBe(true);
         } finally {
           rmSync(staging, { recursive: true, force: true });
+        }
+      },
+      240_000,
+    );
+  },
+);
+
+/* ------------------------------------------------------------------------- *
+ * THE SECOND DOOR (working-method rule 20)
+ *
+ * Everything above audits THIS working tree, which is the maintainer's: `lab/`
+ * happens to be gitignored here, the junctions happen to exist here, and the
+ * `.vscodeignore` happens to be right here. None of that is a test — it is the
+ * state the tests are read in, and it is exactly the state that makes a guard
+ * look alive while proving nothing.
+ *
+ * So these suites stage a SYNTHETIC package root in a temp directory, copy this
+ * repository's real `.vscodeignore` into it verbatim as the artifact under
+ * test, plant the private set inside it, and ask vsce what would ship. A
+ * contributor clone with no `lab/` at all still exercises the guard, because
+ * the guard's input is planted rather than found.
+ *
+ * They never run in `REPO_ROOT` and never touch `dist/`, so they do not race
+ * the shared-build hazard the header describes.
+ * ------------------------------------------------------------------------- */
+
+/** Planted content. Distinctive enough to grep for, and it is not identity. */
+const SENTINEL = 'AGENT-DECK-PRIVATE-SENTINEL';
+
+/**
+ * The minimum `.vscodeignore` that still yields a listing to compare against:
+ * `dist/` denied wholesale with the three shipped artifacts re-admitted, and
+ * nothing else denied at all. The CONTROL ignore file — under it, every planted
+ * private path must appear, which is what proves the plant is real and that the
+ * real ignore file is what removes them.
+ */
+const CONTROL_IGNORE = [
+  'dist/**',
+  '!dist/extension.cjs',
+  '!dist/webview/main.js',
+  '!dist/webview/main.css',
+  '',
+].join('\n');
+
+/**
+ * Stage a package root vsce will accept: the real manifest with `scripts`
+ * stripped, the real `.vscodeignore`, and stubs for everything that ignore file
+ * re-admits.
+ *
+ * `scripts` is stripped because `vsce package` runs `vscode:prepublish`, and in
+ * a temp directory with no `node_modules` that fails for a reason this suite is
+ * not about — a red that says "esbuild is missing" where the question was "what
+ * would ship".
+ */
+function stagePackageRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'agent-deck-guard-'));
+  const manifest = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >;
+  delete manifest['scripts'];
+  writeFileSync(join(root, 'package.json'), JSON.stringify(manifest, null, 2));
+  copyFileSync(join(REPO_ROOT, '.vscodeignore'), join(root, '.vscodeignore'));
+  writeFileSync(join(root, 'README.md'), 'stub\n');
+  copyFileSync(join(REPO_ROOT, 'LICENSE'), join(root, 'LICENSE'));
+  writeFileSync(join(root, 'CHANGELOG.md'), 'stub\n');
+  writeFileSync(join(root, 'SECURITY.md'), 'stub\n');
+  mkdirSync(join(root, 'dist', 'webview'), { recursive: true });
+  writeFileSync(join(root, 'dist', 'extension.cjs'), '//stub\n');
+  writeFileSync(join(root, 'dist', 'webview', 'main.js'), '//stub\n');
+  writeFileSync(join(root, 'dist', 'webview', 'main.css'), '/*stub*/\n');
+  mkdirSync(join(root, 'media'), { recursive: true });
+  copyFileSync(join(REPO_ROOT, 'media', 'icon.png'), join(root, 'media', 'icon.png'));
+  return root;
+}
+
+/** The paths a planted root carries, as `vsce ls` would name them. */
+const PLANTED: readonly string[] = [
+  'lab/identity.local.json',
+  'CLAUDE.md',
+  'PLAN.md',
+  'HANDOVER.md',
+  'AGENTS.md',
+  'agent-deck-spec.md',
+  'docs/evidence/secret.md',
+  // A plain FILE named `spike`. That is the shape vsce reports a directory
+  // JUNCTION as, and it is why the bare names exist beside the globs.
+  'spike',
+];
+
+function plantPrivateSet(root: string): void {
+  mkdirSync(join(root, 'lab'), { recursive: true });
+  mkdirSync(join(root, 'docs', 'evidence'), { recursive: true });
+  for (const rel of PLANTED) writeFileSync(join(root, ...rel.split('/')), `${SENTINEL}\n`);
+}
+
+function vsceLsIn(root: string): readonly string[] {
+  const stdout = execFileSync(process.execPath, [VSCE_BIN, 'ls', '--no-dependencies'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => line.split('\\').join('/'));
+}
+
+describe('the second door: a planted private set', () => {
+  it(
+    'is listed by vsce when nothing denies it — the control that proves the plant is real',
+    () => {
+      const root = stagePackageRoot();
+      try {
+        plantPrivateSet(root);
+        writeFileSync(join(root, '.vscodeignore'), CONTROL_IGNORE);
+        const files = vsceLsIn(root);
+        // Every planted path, present. If this goes red the staging is broken
+        // and the assertion below it means nothing — which is the only way a
+        // guard like this ever fails: by guarding an empty room.
+        const missing = PLANTED.filter((rel) => !files.includes(rel));
+        expect(missing, 'the plant did not take: vsce would not have shipped these anyway').toEqual(
+          [],
+        );
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    120_000,
+  );
+
+  it(
+    'ships none of it under this repository\u2019s real .vscodeignore',
+    () => {
+      const root = stagePackageRoot();
+      try {
+        plantPrivateSet(root);
+        const files = vsceLsIn(root);
+        // Not one of the eight.
+        const shipped = PLANTED.filter((rel) => files.includes(rel));
+        expect(shipped, 'the private set would be packaged').toEqual([]);
+        // ...and nothing shaped like it either, which catches a path the plant
+        // did not think of.
+        const violations = files.flatMap((file) => {
+          const rule = PRIVATE_SET.find((r) => r.re.test(file));
+          return rule ? [`${file} — ${rule.what}`] : [];
+        });
+        expect(violations).toEqual([]);
+        // The listing is a real listing. `[]` satisfies every assertion above.
+        expect(files).toContain('package.json');
+        expect(files).toContain('README.md');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    120_000,
+  );
+});
+
+/**
+ * THE JUNCTION DOOR, and why it needed its own suite.
+ *
+ * `docs/` and `spike/` in the maintainer's checkout are directory JUNCTIONS
+ * into the private `lab/` repository. vsce enumerates a junction as a single
+ * FILE entry, so `docs/**` and `spike/**` — correct-looking rules that read as
+ * complete — match nothing at all, and the junction is packaged as content.
+ * Secret scanning then reads that entry and takes EISDIR.
+ *
+ * Measured on 2026-08-28, both halves, and this suite is written against the
+ * measurements rather than against the expectation:
+ *
+ *   without the bare name   vsce ls lists `docs`
+ *                           vsce package -> exit 1, EISDIR, NO .vsix written
+ *   with the bare name      vsce ls omits it, vsce package exits 0
+ *
+ * The no-partial-artifact half matters as much as the failure: the run that hit
+ * this in the field looked like a success, because a STALE `dist/agent-deck.vsix`
+ * from an earlier run was sitting on disk.
+ *
+ * Windows-only, and the skip is REPORTED rather than silent (rule 18): a
+ * junction is a `cmd` builtin and has no portable equivalent.
+ */
+describe.skipIf(process.platform !== 'win32')(
+  'the junction door (win32 only: mklink /J has no portable equivalent)',
+  () => {
+    /** Stage a root whose `docs` is a junction into a directory it owns. */
+    const stageWithJunction = (): string => {
+      const root = stagePackageRoot();
+      mkdirSync(join(root, 'junction-target'), { recursive: true });
+      writeFileSync(join(root, 'junction-target', 'secret.md'), `${SENTINEL}\n`);
+      execFileSync('cmd.exe', ['/c', 'mklink', '/J', join(root, 'docs'), join(root, 'junction-target')], {
+        encoding: 'utf8',
+      });
+      return root;
+    };
+
+    it(
+      'is closed by the bare name, and the glob alone would not close it',
+      () => {
+        const root = stageWithJunction();
+        try {
+          // The real ignore file, which carries `docs/**` AND a bare `docs`.
+          expect(vsceLsIn(root)).not.toContain('docs');
+
+          // The pre-fix state, reconstructed from scratch rather than by
+          // editing the real file: the glob present, the bare name absent. If
+          // the glob were sufficient this listing would omit `docs` too, and
+          // the bare names in `.vscodeignore` would be dead weight somebody
+          // would eventually delete.
+          writeFileSync(join(root, '.vscodeignore'), `${CONTROL_IGNORE}docs/**\n`);
+          expect(
+            vsceLsIn(root),
+            'the `docs/**` glob matched the junction, so the bare name is no longer load-bearing — re-measure before deleting it',
+          ).toContain('docs');
+        } finally {
+          rmSync(root, { recursive: true, force: true });
+        }
+      },
+      120_000,
+    );
+
+    it(
+      'fails packaging loudly and writes no partial VSIX when it is left open',
+      () => {
+        const root = stageWithJunction();
+        try {
+          writeFileSync(join(root, '.vscodeignore'), `${CONTROL_IGNORE}docs/**\n`);
+          const out = join(root, 'should-not-exist.vsix');
+          let exitCode: number | null = null;
+          let output = '';
+          try {
+            execFileSync(
+              process.execPath,
+              [VSCE_BIN, 'package', '--no-dependencies', '--out', out],
+              { cwd: root, encoding: 'utf8', stdio: 'pipe' },
+            );
+            exitCode = 0;
+          } catch (error) {
+            const err = error as { status?: number; stdout?: string; stderr?: string };
+            exitCode = err.status ?? -1;
+            output = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+          }
+          // LOUD: a non-zero exit naming the syscall.
+          expect(exitCode, 'packaging succeeded over a junction — re-measure this whole suite').not.toBe(0);
+          expect(output).toContain('EISDIR');
+          // ...and NO artifact. The field failure read as a success because a
+          // stale .vsix from an earlier run was still on disk; a partial or
+          // empty file here would do the same to the next person.
+          expect(existsSync(out), 'a .vsix was written by a run that failed').toBe(false);
+        } finally {
+          rmSync(root, { recursive: true, force: true });
         }
       },
       240_000,

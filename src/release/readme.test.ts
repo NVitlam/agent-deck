@@ -74,6 +74,12 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
 import {
+  OC_VERSION_WINDOW,
+  PINNED_OPENCODE_VERSION,
+  isOpencodeVersionAccepted,
+  opencodeVersionWindow,
+} from '../opencode/fingerprint.js';
+import {
   PINNED_CC_VERSION,
   VERSION_WINDOW,
   isVersionAccepted,
@@ -135,6 +141,39 @@ function commandsOf(settings: HookSettings): Map<string, string[]> {
 }
 
 const README = readText('README.md');
+
+/* ------------------------------------------------------------------------- *
+ * TWO ENGINES, TWO VERSION WINDOWS, ONE DOCUMENT.
+ *
+ * Every version guard below was written when this extension observed one
+ * engine, so each of them reads a backticked `x.y.z` literal ANYWHERE in the
+ * README as a Claude Code version. At v0.5.0 that stopped being true, and it
+ * stopped being true in the most dangerous possible way: `1.18.22` is a
+ * perfectly correct OpenCode anchor and a version the CC predicate refuses, so
+ * a correct README would have gone red — and the obvious "fix" is to loosen the
+ * guard that caught the blackout twice.
+ *
+ * So the document is REGIONED instead, with explicit markers a reader can grep:
+ *
+ *   <!-- engine:opencode -->  ...  <!-- /engine:opencode -->
+ *
+ * The CC guards run over everything outside those markers; a mirrored set runs
+ * inside them against `PINNED_OPENCODE_VERSION` and `OC_VERSION_WINDOW`. An
+ * HTML comment renders as nothing on the Marketplace and on GitHub.
+ *
+ * The markers are asserted balanced and the OC region asserted non-empty,
+ * because the failure mode of a regioned guard is a region that quietly covers
+ * the whole document (every CC assertion then passes over nothing) or none of
+ * it (the OC assertions do). Both are checked below.
+ * ------------------------------------------------------------------------- */
+const OC_REGION_RE = /<!-- engine:opencode -->([\s\S]*?)<!-- \/engine:opencode -->/g;
+
+/** The README with every OpenCode region removed: the Claude Code document. */
+const README_CC = README.replace(OC_REGION_RE, '\n');
+
+/** Only the OpenCode regions, joined: the OpenCode document. */
+const README_OC = [...README.matchAll(OC_REGION_RE)].map((m) => m[1] ?? '').join('\n');
+
 /**
  * THE SPEC IS NO LONGER IN THIS REPOSITORY, and the guards below are gated on
  * it rather than deleted.
@@ -413,14 +452,35 @@ describe('the version badge is accurate against the shipped constants', () => {
   const PATCH_CLAIM_RE = /\bpatch \+\/-(\d+)/g;
   const CORNERS_RE = /`(\d+\.\d+\.x)` to `(\d+\.\d+\.x)`/g;
 
+  it('regions the document, so a CC guard cannot silently read an OpenCode version', () => {
+    // The scoping mechanism itself, asserted before anything relies on it. Its
+    // failure modes are a region that covers everything (every CC assertion
+    // below then passes over an empty string) and a region that covers nothing
+    // (the OpenCode mirror does).
+    const opens = [...README.matchAll(/<!-- engine:opencode -->/g)].length;
+    const closes = [...README.matchAll(/<!-- \/engine:opencode -->/g)].length;
+    expect(opens, 'unbalanced engine:opencode markers in README.md').toBe(closes);
+    expect(opens).toBeGreaterThan(0);
+    expect(README_OC.length, 'the OpenCode region is empty').toBeGreaterThan(0);
+    expect(README_CC.length, 'the OpenCode region swallowed the document').toBeGreaterThan(
+      README_OC.length,
+    );
+    // ...and the split actually separates the two anchors, which is the only
+    // property any of this exists for.
+    expect(README_CC).toContain(PINNED_CC_VERSION);
+    expect(README_CC).not.toContain(PINNED_OPENCODE_VERSION);
+    expect(README_OC).toContain(PINNED_OPENCODE_VERSION);
+    expect(README_OC).not.toContain(PINNED_CC_VERSION);
+  });
+
   it('states the anchor version the fingerprint actually uses', () => {
-    const stated = [...README.matchAll(ANCHOR_RE)].map((m) => m[1]);
+    const stated = [...README_CC.matchAll(ANCHOR_RE)].map((m) => m[1]);
     expect(stated.length).toBeGreaterThan(0);
     for (const version of stated) expect(version).toBe(PINNED_CC_VERSION);
   });
 
   it('states the window tolerances the fingerprint actually uses', () => {
-    const minors = [...README.matchAll(MINOR_RE)].map((m) => Number(m[1]));
+    const minors = [...README_CC.matchAll(MINOR_RE)].map((m) => Number(m[1]));
     expect(minors.length).toBeGreaterThan(0);
     for (const minor of minors) expect(minor).toBe(VERSION_WINDOW.minor);
   });
@@ -437,7 +497,7 @@ describe('the version badge is accurate against the shipped constants', () => {
 
   it('states window corners derived from those tolerances', () => {
     const { min, max } = corners();
-    const stated = [...README.matchAll(CORNERS_RE)];
+    const stated = [...README_CC.matchAll(CORNERS_RE)];
     expect(stated.length).toBeGreaterThan(0);
     for (const match of stated) {
       expect(match[1]).toBe(min);
@@ -479,7 +539,12 @@ describe('the version badge is accurate against the shipped constants', () => {
     // hook-reload note names 2.1.234). What survives the change is the thing
     // that was always the point - the README must never name a version as
     // though it worked when the shipped predicate refuses it.
-    const literals = [...README.matchAll(/`(\d+\.\d+\.\d+)`/g)].map((m) => m[1] ?? '');
+    //
+    // SCOPED to the Claude Code region since v0.5.0. An OpenCode anchor is a
+    // correct `x.y.z` literal that this predicate refuses, so running it over
+    // the whole document would make a right README red — and the reflex fix
+    // would be loosening the guard that caught the blackout twice.
+    const literals = [...README_CC.matchAll(/`(\d+\.\d+\.\d+)`/g)].map((m) => m[1] ?? '');
     expect(literals.length).toBeGreaterThan(0);
     for (const literal of literals) {
       expect(isVersionAccepted(literal), `README names refused version ${literal}`).toBe(true);
@@ -493,6 +558,78 @@ describe('the version badge is accurate against the shipped constants', () => {
   it('says the window is a window, not a single supported version', () => {
     expect(README).toContain('versionChangedMidFile');
     expect(README).toContain('major exact');
+  });
+});
+
+/**
+ * The same four assertions, mirrored onto the OpenCode region.
+ *
+ * Not "the CC tests with a different constant" for its own sake: the defect
+ * these exist to prevent has already been paid for once on the CC side, where
+ * the README carried `^1.75.0` while the manifest said `^1.134.0` and nothing
+ * went red because nothing bound the two. A second engine with its own anchor,
+ * its own window and its own prose is the same exposure again, and it arrives
+ * in the same release as the prose.
+ */
+describe('the OpenCode compatibility claims are accurate against the shipped constants', () => {
+  const ocWindow = opencodeVersionWindow();
+  const ocCorners = (): { min: string; max: string } => {
+    if (ocWindow === undefined) throw new Error('PINNED_OPENCODE_VERSION does not parse');
+    return {
+      min: `${String(ocWindow.major)}.${String(ocWindow.minMinor)}.x`,
+      max: `${String(ocWindow.major)}.${String(ocWindow.maxMinor)}.x`,
+    };
+  };
+
+  it('states the anchor the OpenCode fingerprint actually uses', () => {
+    const stated = [...README_OC.matchAll(/\banchor(?:ed on)?:?\s+`(\d+\.\d+\.\d+)`/gi)].map(
+      (m) => m[1],
+    );
+    expect(stated.length, 'the OpenCode region states no anchor').toBeGreaterThan(0);
+    for (const version of stated) expect(version).toBe(PINNED_OPENCODE_VERSION);
+  });
+
+  it('states window corners derived from the shipped tolerance', () => {
+    const { min, max } = ocCorners();
+    const stated = [...README_OC.matchAll(/`(\d+\.\d+\.x)` to `(\d+\.\d+\.x)`/g)];
+    expect(stated.length, 'the OpenCode region states no window corners').toBeGreaterThan(0);
+    for (const match of stated) {
+      expect(match[1]).toBe(min);
+      expect(match[2]).toBe(max);
+    }
+  });
+
+  it('names no OpenCode version the shipped predicate would refuse', () => {
+    const literals = [...README_OC.matchAll(/`(\d+\.\d+\.\d+)`/g)].map((m) => m[1] ?? '');
+    expect(literals.length).toBeGreaterThan(0);
+    for (const literal of literals) {
+      expect(
+        isOpencodeVersionAccepted(literal),
+        `README names refused OpenCode version ${literal}`,
+      ).toBe(true);
+    }
+    expect(literals).toContain(PINNED_OPENCODE_VERSION);
+    // Vacuity control: the predicate does refuse something, and it refuses on
+    // the MAJOR as well as the minor, so no move of the anchor inside 1.x can
+    // make this control silently pass.
+    expect(isOpencodeVersionAccepted('4.4.0')).toBe(false);
+  });
+
+  it('claims no patch tolerance for OpenCode either, because there is none', () => {
+    expect(OC_VERSION_WINDOW).not.toHaveProperty('patch');
+    const claims = [...README_OC.matchAll(/\bpatch \+\/-(\d+)/g)].map((m) => m[0]);
+    expect(claims).toEqual([]);
+    // ...and it says so in words, so a reader is not left inferring it from an
+    // absence. This is the sentence the CC side had to learn to write twice.
+    expect(README_OC).toMatch(/patch (?:component|number) is not compared/i);
+  });
+
+  it('names the four secret-bearing tables it never reads', () => {
+    // The strongest privacy claim in the OpenCode section, and the one a
+    // reader is most entitled to see enumerated rather than summarised.
+    for (const table of ['account', 'control_account', 'credential', 'session_share']) {
+      expect(README_OC, `the OpenCode section does not name ${table}`).toContain(table);
+    }
   });
 });
 

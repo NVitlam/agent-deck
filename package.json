@@ -1,7 +1,7 @@
 {
   "name": "agent-deck",
   "displayName": "Agent Deck for Claude Code",
-  "version": "0.1.2",
+  "version": "0.5.0",
   "publisher": "nvitlam",
   "description": "Live observability for Claude Code multi-agent sessions: subagent trees, tool calls, token burn and cost, in real time.",
   "license": "MIT",
@@ -10,7 +10,8 @@
     "observability",
     "agents",
     "monitor",
-    "subagents"
+    "subagents",
+    "opencode"
   ],
   "repository": {
     "type": "git",

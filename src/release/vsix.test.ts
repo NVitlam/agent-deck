@@ -70,11 +70,45 @@ const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REQUIRED_ARTIFACTS = ['dist/extension.cjs', 'dist/webview/main.js', 'dist/webview/main.css'];
 
 beforeAll(() => {
+  // PRODUCTION, and rebuilt whenever the tree is not already production.
+  //
+  // This audit measures what SHIPS, and what ships is always production:
+  // `vscode:prepublish` runs `esbuild.config.mjs --production`, so no VSIX can
+  // contain a dev bundle. Building dev here made this file's verdict depend on
+  // BUILD MODE.
+  //
+  // Measured 2026-08-28: `esbuild-svelte` emits placeholder comments naming
+  // each component's ABSOLUTE PATH - `fakecss:<abs>/webview/*.esbuild-svelte-
+  // fake-css` - and only `minify` strips them. Dev `main.css` is 28,579 bytes
+  // and carries the developer identity; production is 22,929 and carries none.
+  // `npm run build` is the documented command and it builds DEV, so running it
+  // before the suite turned `carries the deliberate identity only in the files
+  // enumerated for it` RED, while a tree left warm by `vsce package` went
+  // green. Same assertion, opposite answers, decided by which command ran last.
+  //
+  // That is the recorded "`vsce ls` reports files that EXIST, so any assertion
+  // on it depends on build state" class, reached through build MODE rather than
+  // build PRESENCE - which the old missing-only guard could not see, because
+  // the artifacts were present and wrong rather than absent.
+  //
+  // The dev leak is not a shipping defect: `dist/` is gitignored and the
+  // packager always passes --production. It is a defect in what this file was
+  // measuring.
   const missing = REQUIRED_ARTIFACTS.filter((rel) => !existsSync(join(REPO_ROOT, rel)));
-  if (missing.length > 0) {
-    execFileSync(process.execPath, ['esbuild.config.mjs'], { cwd: REPO_ROOT, encoding: 'utf8' });
+  const cssPath = join(REPO_ROOT, 'dist/webview/main.css');
+  const devBuilt =
+    missing.length === 0 && readFileSync(cssPath, 'latin1').includes('fakecss:');
+  if (missing.length > 0 || devBuilt) {
+    execFileSync(process.execPath, ['esbuild.config.mjs', '--production'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    });
     const stillMissing = REQUIRED_ARTIFACTS.filter((rel) => !existsSync(join(REPO_ROOT, rel)));
     expect(stillMissing, 'the build did not emit the artifacts the package needs').toEqual([]);
+    expect(
+      readFileSync(cssPath, 'latin1').includes('fakecss:'),
+      '--production did not strip the esbuild-svelte fake-css placeholders',
+    ).toBe(false);
   }
   // Warm the `vsce ls` cache HERE, inside the hook that already owns a 120 s
   // budget, rather than leaving the one surviving spawn to whichever test runs

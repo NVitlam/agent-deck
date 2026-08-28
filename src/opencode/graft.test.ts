@@ -700,8 +700,31 @@ describe('graftCorpus reproduces the committed goldens', () => {
 
         // (b) EXCLUDES CACHE, which is why it is not `burn.prompt`. Summed
         // across the corpus the cached half dwarfs the counted half.
+        // PINNED EXACTLY, per corpus, and NOT as an inequality.
+        //
+        // This assertion used to read `expect(totalCache).toBeGreaterThan(
+        // totalInput)`. That passes at 8,875,276 and it passes at 1,227,048 -
+        // one more than the counted half - so it could not tell a 7x cache
+        // ratio from a rounding error, and the handoff that cited it as the
+        // pin for these figures was resting on nothing. Caught by the handoff
+        // audit, 2026-08-28.
+        //
+        // The numbers are the whole argument for deferring OpenCode's `burn`:
+        // `session.tokens_input` IS cumulative, so it passes the letter of
+        // "is this a total", and it counts only UNCACHED input, so mapping it
+        // would have re-created the 2-instead-of-42199 defect through the
+        // second engine. An argument that rests on a ratio has to pin the
+        // ratio.
+        const CACHE_VS_INPUT: Record<string, { input: number; cache: number }> = {
+          'opencode-1.18.22': { input: 1_227_047, cache: 8_875_276 },
+          'opencode-1.18.21': { input: 389_665, cache: 4_653_176 },
+        };
         const totalInput = [...stepInput.values()].reduce((a, b) => a + b, 0);
         const totalCache = [...stepCache.values()].reduce((a, b) => a + b, 0);
+        const pinned = CACHE_VS_INPUT[corpusName];
+        expect(pinned, `no pinned cache/input pair for ${corpusName}`).toBeDefined();
+        expect(totalInput, `${corpusName} uncached input`).toBe(pinned!.input);
+        expect(totalCache, `${corpusName} cached prompt`).toBe(pinned!.cache);
         expect(totalCache).toBeGreaterThan(totalInput);
       });
 

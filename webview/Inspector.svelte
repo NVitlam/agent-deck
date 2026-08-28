@@ -32,9 +32,31 @@
     onclose,
     toggled = [],
     ontogglenode,
+    sessionId,
+    engine,
+    breadcrumb = [],
   }: {
     /** The node under inspection. `undefined` renders the empty state. */
     node?: TreeNode | undefined;
+    /**
+     * The FULL session id of the session this node belongs to.
+     *
+     * The header carries the full session id and the full agent id, never a
+     * prefix: those are the two halves of every join key in this system, and a
+     * shortened one cannot be pasted into a grep. The tree truncates a LABEL,
+     * because a label is prose; an id is evidence.
+     */
+    sessionId?: string | undefined;
+    /** Which engine produced this session. Rendered as a two-letter glyph. */
+    engine?: 'cc' | 'opencode' | undefined;
+    /**
+     * The focus path, root first, exactly as the tree drew it.
+     *
+     * Rendered as TEXT, not as controls: the inspector says where a node sits,
+     * and the clickable breadcrumb is the tree's own bar. Two navigations for
+     * one path is two places for it to disagree.
+     */
+    breadcrumb?: readonly { id: string; label: string }[];
     /**
      * Whether the payload previews are expanded. Tool payloads default to
      * COLLAPSED, exactly as they do in the tree — an 8 KB preview open by
@@ -157,6 +179,15 @@
     <p class="empty" data-testid={TESTID.inspectorEmpty}>Select a cell or a dot to inspect it.</p>
   {:else}
     <header class="head">
+      <!-- The engine glyph. `oc` is this UI's vocabulary for the OpenCode
+           engine — `layout.ts:deckEngine` is the one supported conversion, and
+           this surface renders the same two letters, so a user reading a node
+           and a deck card sees one word for one engine. -->
+      {#if engine !== undefined}
+        <span class="engine" data-testid="inspector-engine" data-engine={engine}
+          >{engine === 'opencode' ? 'oc' : 'cc'}</span
+        >
+      {/if}
       <span class="kind" data-testid="inspector-kind">{agent !== undefined ? agent.kind : 'tool'}</span>
       <span class="title" data-testid="inspector-title"
         >{agent !== undefined ? agent.label : tool?.toolName}</span
@@ -170,6 +201,12 @@
     </header>
 
     <dl class="rows">
+      {#if sessionId !== undefined}
+        <div class="row" data-testid="inspector-row" data-field="sessionId">
+          <dt>session</dt>
+          <dd data-testid="inspector-session-id">{sessionId}</dd>
+        </div>
+      {/if}
       <div class="row" data-testid="inspector-row" data-field="id">
         <dt>id</dt>
         <dd data-testid="inspector-id">{node.id}</dd>
@@ -187,13 +224,16 @@
              it under-reported a 42,199-token prompt as 2. Both are
              optional-chained: an engine may report neither, and an em-dash is
              the honest render for a number we do not have. -->
-        <div class="row" data-testid="inspector-row" data-field="tokens">
-          <dt>tokens</dt>
-          <dd data-testid="inspector-tokens"
-            >{formatTokens(agent.contextNow?.prompt)} in ctx / {formatTokens(
-              agent.contextNow?.output,
-            )} out</dd
-          >
+        <!-- CONTEXT IS A LEVEL AND CARRIES ONE NUMBER. It is the last
+             assistant message's whole prompt — input plus both cache
+             components — which is what fills a window. There is NO PERCENTAGE
+             beside it and there must not be: no transcript in either corpus
+             states a context-window size, so a percentage would have to come
+             from a model-name lookup table, which is memory rather than
+             fixture (G6). -->
+        <div class="row" data-testid="inspector-row" data-field="context">
+          <dt>context</dt>
+          <dd data-testid="inspector-tokens">{formatTokens(agent.contextNow?.prompt)}</dd>
         </div>
         <div class="row" data-testid="inspector-row" data-field="burn">
           <dt>burn</dt>
@@ -205,6 +245,12 @@
           <dt>duration</dt>
           <dd data-testid="inspector-duration">{formatDuration(agentDuration)}</dd>
         </div>
+        {#if breadcrumb.length > 0}
+          <div class="row" data-testid="inspector-row" data-field="path">
+            <dt>path</dt>
+            <dd data-testid="inspector-path">{breadcrumb.map((c) => c.label).join(' / ')}</dd>
+          </div>
+        {/if}
       {:else if tool !== undefined}
         <div class="row" data-testid="inspector-row" data-field="duration">
           <dt>duration</dt>
@@ -372,6 +418,15 @@
     font-size: 0.8em;
     opacity: 0.7;
     text-transform: uppercase;
+  }
+
+  .engine {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 0.8em;
+    padding: 0 4px;
+    border-radius: 3px;
+    color: var(--vscode-badge-foreground, inherit);
+    background: var(--vscode-badge-background, transparent);
   }
 
   .title {

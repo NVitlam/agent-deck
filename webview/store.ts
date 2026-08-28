@@ -37,10 +37,20 @@ import type {
 } from '../src/model/events.js';
 import { isAgentNode } from '../src/model/events.js';
 import { applySessionPatch } from '../src/bridge/apply.js';
-import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
-import type { Altitude, ViewMode } from './canvas-contract.js';
+import {
+  DEFAULT_ENGINE_FILTER,
+  DEFAULT_LIVENESS_FILTER,
+  DEFAULT_VIEW_MODE,
+  ENGINE_FILTERS,
+  LIVENESS_FILTERS,
+} from './canvas-contract.js';
+import type {
+  Altitude,
+  EngineFilter,
+  LivenessFilter,
+  ViewMode,
+} from './canvas-contract.js';
 import { countNodes } from './layout.js';
-import { DECK_FILTERS } from './canvas-contract.js';
 import {
   DECK_FIT_PADDING,
   DECK_ZOOM_LIMITS,
@@ -51,7 +61,6 @@ import {
   zoomAbout,
 } from './viewport.js';
 import type { Rect, ViewportSize } from './viewport.js';
-import type { DeckFilter } from './canvas-contract.js';
 
 /** One row of the left rail. */
 export interface SessionSummary {
@@ -91,8 +100,18 @@ export interface SessionSummary {
    * is read off it at all. A big cracked blob would be asserting "this session
    * has a lot in it" from a layout we declined to trust — the partial render
    * the refusal exists to prevent, in the size channel instead of the tree.
-   * A refused blob therefore draws at `layout.ts:DECK_RADIUS_MIN` and carries
-   * no badge, which is the deck saying nothing about content it refused.
+   * A refused card therefore carries no badge and no counts, which is the deck
+   * saying nothing about content it refused.
+   *
+   * THIS COMMENT USED TO NAME A CONSTANT THAT NO LONGER EXISTS. It read "a
+   * refused blob therefore draws at `layout.ts:DECK_RADIUS_MIN`", from the
+   * phyllotaxis deck, where a blob's RADIUS was a function of `nodeCount` and
+   * a refused session had to be pinned to the floor so its size could not
+   * assert anything. Phase 7 deleted that geometry: every card is one shape,
+   * `DECK_CARD_W` x `DECK_CARD_H` = 220 x 88, in all three layouts, and
+   * `deck.test.ts`'s "draws ONE shape in every layout" asserts it. There is no
+   * size channel left for a refusal to leak through, so the zeroes here now
+   * only govern the badge and the card's own figures.
    */
   errorCount: number;
   /**
@@ -241,14 +260,39 @@ export interface WebviewView {
    */
   viewMode: ViewMode;
   /**
-   * Which sessions the deck shows. `sessions` below is ALWAYS the full list —
-   * filtering is applied by the deck, not by the store, so nothing downstream
-   * can mistake a filtered view for the host's account of what exists.
+   * Which LIVENESS the deck shows. `sessions` below is ALWAYS the full list —
+   * filtering is a view over it, so nothing downstream can mistake a filtered
+   * view for the host's account of what exists.
+   *
+   * Renamed from `deckFilter` in Phase 7. There are two deck filters now and
+   * the old name did not say which one it was; the type it carried was called
+   * `DeckFilter` and so was a DIFFERENT type in `layout.ts` meaning an engine.
    */
-  deckFilter: DeckFilter;
+  livenessFilter: LivenessFilter;
   /**
-   * The sessions the current filter admits. A derived convenience, recomputed
+   * Which ENGINE's sessions the deck shows.
+   *
+   * **HERE RATHER THAN IN `Deck.svelte`, and that is a fix rather than a
+   * preference.** It was `$state` in the component, and `App.svelte` mounts
+   * `<Deck>` only while the altitude is `deck` — so entering a session
+   * unmounted the deck and returning re-mounted it at `all`. The engine filter
+   * silently reset on every session visit while the liveness filter beside it,
+   * which was already store state, persisted. Two controls side by side
+   * behaving differently, with nothing on screen explaining why.
+   *
+   * G7 is still satisfied, and by the thing G7 actually asks for: no VS Code
+   * setting, no `workspaceState`, no `localStorage`, no host message. It is
+   * discarded when the panel closes because the store goes with it.
+   */
+  engineFilter: EngineFilter;
+  /**
+   * The sessions the LIVENESS filter admits. A derived convenience, recomputed
    * on every read like everything else here, never stored.
+   *
+   * The engine filter is deliberately NOT applied here. `Deck.svelte` badges
+   * each engine chip with the number of sessions that engine has, which it
+   * counts off the list it is given — a list already narrowed by engine would
+   * make every chip but the active one read 0.
    */
   filteredSessions: readonly SessionSummary[];
   /**
@@ -332,7 +376,16 @@ export interface Store {
   /** The in-panel toggle: canvas ⇄ list. */
   toggleViewMode(): void;
   /** Show only sessions of this liveness, or all of them. */
-  setDeckFilter(filter: DeckFilter): void;
+  setLivenessFilter(filter: LivenessFilter): void;
+  /**
+   * Show only sessions from this engine, or all of them.
+   *
+   * Posts NOTHING and touches no session list, exactly like
+   * {@link Store.setLivenessFilter}. An unknown value is ignored rather than
+   * stored: the deck's chips are built from `ENGINE_FILTERS`, so a value
+   * outside it can only come from a caller that invented one.
+   */
+  setEngineFilter(filter: EngineFilter): void;
   /** Open or shut the inspector panel without changing the selected node. */
   setInspectorOpen(open: boolean): void;
   /** Pan the deck by a delta in CLIENT pixels. `viewport.ts:panBy`. */
@@ -525,7 +578,8 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
   let selectedNodeId: string | undefined;
   let altitude: Altitude = 'deck';
   let viewMode: ViewMode = DEFAULT_VIEW_MODE;
-  let deckFilter: DeckFilter = 'all';
+  let livenessFilter: LivenessFilter = DEFAULT_LIVENESS_FILTER;
+  let engineFilter: EngineFilter = DEFAULT_ENGINE_FILTER;
   let inspectorOpen = false;
   const IDENTITY_VIEW = { x: 0, y: 0, k: 1 };
   let deckView = { ...IDENTITY_VIEW };
@@ -648,15 +702,16 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         toggledNodeIds,
         viewMode,
         altitude,
-        deckFilter,
+        livenessFilter,
+        engineFilter,
         // Derived on every read, never stored: `sessions` above stays the
         // host's full account, and this is one view of it. A component that
         // wanted to know "how many are there really" must not have to undo a
         // filter to find out.
         filteredSessions:
-          deckFilter === 'all'
+          livenessFilter === 'all'
             ? summaries
-            : summaries.filter((row) => row.liveness === deckFilter),
+            : summaries.filter((row) => row.liveness === livenessFilter),
         inspectorOpen,
         deckView: { ...deckView },
         canvasView: { ...canvasView },
@@ -823,9 +878,15 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       notify();
     },
 
-    setDeckFilter(filter: DeckFilter): void {
-      if (!DECK_FILTERS.includes(filter) || filter === deckFilter) return;
-      deckFilter = filter;
+    setLivenessFilter(filter: LivenessFilter): void {
+      if (!LIVENESS_FILTERS.includes(filter) || filter === livenessFilter) return;
+      livenessFilter = filter;
+      notify();
+    },
+
+    setEngineFilter(filter: EngineFilter): void {
+      if (!ENGINE_FILTERS.includes(filter) || filter === engineFilter) return;
+      engineFilter = filter;
       notify();
     },
 

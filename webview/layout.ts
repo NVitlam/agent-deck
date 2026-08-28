@@ -7,26 +7,53 @@
  *     deckLayout(sessions, layout, sort, viewportW) -> { id, x, y }[]
  *     treeLayout(state, rootId, { collapseDepth })  -> TreePlacement[]
  *
- * Three properties are normative, and every one of them is a constraint on
- * how the arithmetic below is allowed to be written:
+ * Two properties are normative, and both are constraints on how the arithmetic
+ * below is allowed to be written:
  *
  *  - DETERMINISTIC. Same arguments in, identical numbers out. Nothing here
  *    reads a clock, a DOM node, a module-level cache, or any source of
  *    entropy. `deckLayout` takes the viewport WIDTH as an argument rather than
  *    measuring one, which is what keeps it a pure function of its inputs.
  *
- *  - INCREMENTAL. A spawn ADDS; it never reflows anything already placed. The
- *    tidy tree gets this from subtree widths: a node's own width is a function
- *    of its own text alone, and per-agent width is MONOTONIC (the store keeps
- *    `max(previous, current)`) so a finished tool call cannot shrink a box and
- *    shove its siblings. The predecessor canvas separated on a DRAWN RADIUS
- *    that grew with child count, so one new tool call moved cells already on
- *    screen. Nothing here may be a function of a drawn size.
- *
  *  - ANIMATION-FREE. Every number is a final position. Motion, if any, is the
  *    renderer's, and pan/zoom is an SVG TRANSFORM applied by `viewport.ts` to
  *    a wrapper group — never a coordinate edited here. That separation is what
  *    keeps these goldens valid as numbers while a user drags the view around.
+ *
+ * NOT INCREMENTAL, AND THIS FILE USED TO CLAIM IT WAS. The claim read "A spawn
+ * ADDS; it never reflows anything already placed", and it was FALSE for both
+ * functions here. Measured through this module, esbuild-bundled, on the mock
+ * tree `layout.test.ts` builds: adding one subagent under `a3` moves `main`
+ * from `x=307.5` to `x=403.5` and `a3` from `x=521` to `x=617` — 2 of the 8
+ * placed nodes. `layout.test.ts`'s "a spawn MOVES every ancestor" pins those
+ * exact numbers.
+ *
+ *  - THE TREE re-centres. {@link treeLayout} places each parent over the middle
+ *    of its children's total span, so a subtree that grows wider re-centres
+ *    every ancestor up to the root. That is not a defect in the arithmetic; it
+ *    IS the tidy tree the frozen design specifies, and no implementation of a
+ *    centred parent can also be coordinate-stable under insertion. What does
+ *    NOT move is anything outside the growing subtree's own ancestry: `a1`,
+ *    `a1a`, `a2`, `a3a`, `a3aa` and `a3b` are byte-identical across the same
+ *    spawn, which is the property the goldens and the width-override test pin.
+ *
+ *  - THE DECK re-places wholesale. {@link deckLayout} sorts and then assigns by
+ *    ARRAY INDEX, so a session arriving anywhere but the end shifts every card
+ *    after it by one slot. Measured: inserting one live session ahead of three
+ *    others moves all three down 100 units in `list`.
+ *
+ * WHAT WAS TRADED, AND FOR WHAT. The predecessor canvas separated cells on a
+ * DRAWN RADIUS that grew with child count, so one new tool call moved cells
+ * already on screen for a reason the user could not see — a size channel
+ * feeding back into position. Byte-identical coordinates under insertion were
+ * the guard against that. The frozen design asked for a tidy tree instead, and
+ * a tidy tree buys legibility (no crossing edges, no overlap, parents visibly
+ * over their children) at the price of that stability. The guard that survives
+ * is weaker but still real: **nothing here may be a function of a DRAWN SIZE.**
+ * A node's own width is a function of its own text alone, and per-agent width
+ * is MONOTONIC in the store (`max(previous, current)`), so a finished tool call
+ * cannot shrink a box and shove its siblings. Motion is bounded by the design's
+ * own arithmetic rather than by render feedback.
  *
  * THE REFERENCE. `webview/layout.reference.mjs` is the frozen design's own
  * implementation of the same arithmetic, and `layout.test.ts` pins this file
@@ -118,15 +145,19 @@ export type DeckLayoutMode = 'list' | 'grid' | 'lanes';
 /** The three deck sorts. */
 export type DeckSortMode = 'live' | 'recent' | 'engine';
 
-/** The three deck filters. */
-export type DeckFilter = 'all' | 'cc' | 'oc';
+/*
+ * THE ENGINE FILTER IS NOT DECLARED HERE. It was — as `DeckFilter`, which
+ * `canvas-contract.ts` also declared, meaning a liveness. Two meanings, one
+ * name, one package, and nothing failed because neither module imported the
+ * other. Both axes are now `EngineFilter` and `LivenessFilter` in
+ * `canvas-contract.ts`, one definition each; this module has no use for either,
+ * because filtering happens before `deckLayout` is called.
+ */
 
 /** Design default: grid. */
 export const DEFAULT_DECK_LAYOUT: DeckLayoutMode = 'grid';
 /** Design default: live first. */
 export const DEFAULT_DECK_SORT: DeckSortMode = 'live';
-/** Design default: all engines. */
-export const DEFAULT_DECK_FILTER: DeckFilter = 'all';
 
 /** Sort rank for {@link DeckStatus}. Lower sorts first. */
 export const DECK_STATUS_RANK: Readonly<Record<DeckStatus, number>> = {
@@ -466,6 +497,11 @@ export interface TreeLayoutOptions {
  * children's widths plus the gaps between them, so the horizontal extent a
  * subtree claims is exactly the extent it occupies.
  *
+ * THAT CENTRING IS ALSO WHY THIS IS NOT INCREMENTAL. A subtree that gains a
+ * node claims more extent, so its parent's centre moves, so ITS parent's centre
+ * moves, all the way to the root. Nodes outside the growing subtree's ancestry
+ * do not move. See the module header for the measured numbers.
+ *
  * Order is pre-order depth first, which is also draw order. Hidden nodes are
  * returned too, positioned at the collapsed ancestor that swallowed them, so a
  * caller can count them, animate an expansion out of the badge, or filter them
@@ -595,10 +631,17 @@ export function autoCollapseDepth(state: SessionState, rootId: string): number {
 /**
  * Where the `i`th spawn dot sits under a placed node.
  *
- * Centred on the node, pitched at {@link SPAWN_DOT_GAP}. The dot row is a
- * function of the tool COUNT, so it is drawn per render rather than pinned as
- * a placement — a node's own x never moves when a tool call arrives, which is
- * the incremental promise the row itself does not have to keep.
+ * Centred on the node, pitched at {@link SPAWN_DOT_GAP}, and DERIVED — a
+ * function of the placement it is given plus the tool count, drawn per render
+ * rather than pinned as a placement of its own. That keeps the dot row out of
+ * {@link TreePlacement} and out of the goldens' coordinate set.
+ *
+ * It does NOT mean a tool call leaves the tree still. A new call changes the
+ * node's row-2 text ("n calls", and "n running" when one is in flight), which
+ * can change {@link nodeWidth}, which re-centres this node's ancestors exactly
+ * as a spawn does. See this module's header: nothing here is coordinate-stable
+ * under insertion, and a comment saying otherwise stood in this file for a
+ * phase.
  */
 export function spawnDotPos(
   node: Pick<TreePlacement, 'x' | 'y' | 'w'>,

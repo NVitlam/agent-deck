@@ -28,12 +28,21 @@
   the same physical gesture, and a proportional factor makes a trackpad and a
   mouse wheel feel like two different controls.
 
-  THE CONTROL BAR'S STATE IS THIS COMPONENT'S (G7). Layout, sort and engine
-  filter are `$state` here: not a VS Code setting, not `workspaceState`, not
-  `localStorage`, and never sent to the host. They reset when the panel closes
-  because the component unmounts, which is the required behaviour rather than
-  an accident of where they live. See the note on `layoutMode` for why they
-  are here rather than in `store.ts`.
+  THE CONTROL BAR'S STATE IS SPLIT, ON PURPOSE, AND THE SPLIT IS THE FIX.
+  Layout and sort are `$state` here. The ENGINE FILTER is not: it arrives as a
+  prop and its changes go out through `onenginefilter`, because `App.svelte`
+  mounts this component only while the altitude is `deck`. Component state
+  therefore dies on entering a session and comes back at its default — which
+  is what the engine filter used to do, silently, while the liveness filter
+  beside it persisted in the store. Two chips side by side behaving
+  differently, with nothing explaining why.
+
+  G7 is satisfied either way and by neither placement in particular: no VS Code
+  setting, no `workspaceState`, no `localStorage`, no host message. What decides
+  it is LIFETIME. A control whose value must outlive an unmount belongs to the
+  store; one that need not, does not. Layout and sort are re-chosen from the bar
+  in front of you; the engine filter answers "which half of my machine am I
+  looking at", and having to re-answer it after every session visit is the bug.
 
   ORDER IS THE SORT'S, AND THE DOM FOLLOWS IT. `deckLayout` returns placements
   in sorted order and the cards are emitted in that same order, so C7.8's
@@ -42,11 +51,16 @@
   between reorders anything a second time.
 -->
 <script lang="ts">
-  import { REDUCED_MOTION_CLASS, TESTID } from './canvas-contract.js';
+  import {
+    DEFAULT_ENGINE_FILTER,
+    ENGINE_FILTERS,
+    REDUCED_MOTION_CLASS,
+    TESTID,
+  } from './canvas-contract.js';
+  import type { EngineFilter } from './canvas-contract.js';
   import {
     DECK_CARD_H,
     DECK_CARD_W,
-    DEFAULT_DECK_FILTER,
     DEFAULT_DECK_LAYOUT,
     DEFAULT_DECK_SORT,
     deckEngine,
@@ -54,7 +68,6 @@
   } from './layout.js';
   import type {
     DeckEngine,
-    DeckFilter,
     DeckLayoutMode,
     DeckSession,
     DeckSortMode,
@@ -79,6 +92,8 @@
     onfit,
     total,
     enabledEngines = ['cc'],
+    engineFilter = DEFAULT_ENGINE_FILTER,
+    onenginefilter,
     now,
     viewportWidth,
     viewportHeight,
@@ -134,6 +149,24 @@
      */
     enabledEngines?: readonly DeckEngine[];
     /**
+     * Which engine's sessions to show. STORE STATE, arriving as a prop.
+     *
+     * The default is here so this component can still be mounted on its own —
+     * it is the value the store also starts at, not a second opinion about
+     * what the default is. `canvas-contract.ts` owns that constant.
+     */
+    engineFilter?: EngineFilter;
+    /**
+     * A chip or a key asked for a different engine. Wired to
+     * `Store.setEngineFilter`.
+     *
+     * Reporting rather than setting: with the value in the store there is
+     * exactly one of it, and a component that also kept its own copy would be
+     * the two-agreeing-literals defect `canvas-contract.ts` exists to prevent,
+     * in state instead of in a name.
+     */
+    onenginefilter?: ((filter: EngineFilter) => void) | undefined;
+    /**
      * The renderer's clock, in epoch milliseconds, for each card's age.
      *
      * Read once per render from `Date.now()` when not supplied, and passed
@@ -169,27 +202,41 @@
    * --------------------------------------------------------------------- */
 
   /**
-   * WHY THESE THREE LIVE HERE AND NOT IN `store.ts`.
+   * WHY THESE TWO LIVE HERE AND THE ENGINE FILTER DOES NOT.
    *
-   * They are webview-only view state either way — no setting, no persistence,
-   * no host message, discarded when the panel closes — so G7 is satisfied by
-   * both placements. What decides it is wiring: `App.svelte` is the only
-   * module that connects a store field to this component's props, it belongs
-   * to no package in this phase, and store state that no component can reach
-   * is a control the user cannot operate. Component state is one source of
-   * truth that works; store state plus an unwritten prop is two places and a
-   * dead control. Recorded here rather than left to be rediscovered.
+   * All three are webview-only view state — no setting, no persistence, no
+   * host message, discarded when the panel closes — so G7 is satisfied
+   * wherever they sit. What decides it is LIFETIME, and this component's
+   * lifetime is shorter than the panel's: `App.svelte` mounts it only while
+   * the altitude is `deck`, so anything held here is reset by a session visit.
+   *
+   * Layout and sort survive that correctly. They are re-chosen from the bar
+   * that is in front of you at the moment you want them, and coming back to
+   * the design's default grid is not a surprise. The engine filter does not:
+   * it is a statement about which sessions the user considers theirs, it has
+   * to hold across an entry and an exit, and it lived here through Phase 7 —
+   * quietly resetting to `all` on every return from a session while the
+   * liveness filter, already store state, held. It is `store.ts`'s now and
+   * arrives as a prop.
    */
   let layoutMode = $state.raw<DeckLayoutMode>(DEFAULT_DECK_LAYOUT);
   let sortMode = $state.raw<DeckSortMode>(DEFAULT_DECK_SORT);
-  let engineFilter = $state.raw<DeckFilter>(DEFAULT_DECK_FILTER);
 
-  /** The chips and segments, in the order they render. */
-  const ENGINE_CHIPS: readonly { value: DeckFilter; label: string; key: string }[] = [
-    { value: 'all', label: 'All', key: 'a' },
-    { value: 'cc', label: 'Claude Code', key: 'c' },
-    { value: 'oc', label: 'OpenCode', key: 'o' },
-  ];
+  /**
+   * The chips and segments, in the order they render.
+   *
+   * The engine chips' VALUES come from `canvas-contract.ts:ENGINE_FILTERS`
+   * rather than being spelled again here; only the label and the access key,
+   * which are this component's, are added. A chip list that restated the
+   * values could drift from the store's own validity check.
+   */
+  const ENGINE_LABELS: Readonly<Record<EngineFilter, { label: string; key: string }>> = {
+    all: { label: 'All', key: 'a' },
+    cc: { label: 'Claude Code', key: 'c' },
+    oc: { label: 'OpenCode', key: 'o' },
+  };
+  const ENGINE_CHIPS: readonly { value: EngineFilter; label: string; key: string }[] =
+    ENGINE_FILTERS.map((value) => ({ value, ...ENGINE_LABELS[value] }));
   const LAYOUTS: readonly { value: DeckLayoutMode; label: string; key: string }[] = [
     { value: 'list', label: 'List', key: '1' },
     { value: 'grid', label: 'Grid', key: '2' },
@@ -397,7 +444,8 @@
     const key = event.key.toLowerCase();
     const engine = ENGINE_CHIPS.find((c) => c.key === key);
     if (engine !== undefined) {
-      engineFilter = engine.value;
+      // Reported, not set. The store owns the value; see the note above.
+      onenginefilter?.(engine.value);
       event.preventDefault();
       return;
     }
@@ -442,7 +490,7 @@
           data-count={String(counts[chip.value])}
           aria-pressed={engineFilter === chip.value}
           title={`${chip.label} (${chip.key.toUpperCase()})`}
-          onclick={() => (engineFilter = chip.value)}
+          onclick={() => onenginefilter?.(chip.value)}
           >{chip.label}<span class="badge">{counts[chip.value]}</span></button
         >
       {/each}

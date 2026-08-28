@@ -69,7 +69,7 @@ silently dropped.
 | `liveness` | `"ended"` if `time_archived` is set, else `"idle"` | OC4 |
 | `schemaOk` | `true` | OC2 |
 | `epochAnchor` | root `session.time_created`, ISO-8601 | house convention |
-| `totals.inputTokens` / `outputTokens` | sum of `tokens_input` / `tokens_output` over the root **and every descendant session** | contract §3 |
+| ~~`totals.inputTokens` / `outputTokens`~~ | **AMENDED 2026-08-28 — the mapping is GONE. See the note below this table.** | — |
 | `totals.costUsd` | sum of the `cost` column | contract §9 |
 | `spawnEdges` | one per agreeing `task` pair | OC3, contract §5 |
 | `parked` | one per `task` part with no child, plus the contradiction codes | OC3, amendment §G |
@@ -81,7 +81,7 @@ silently dropped.
 | `label` | `` `${session.agent}: ${session.title}` `` | OC3 ("`session.agent` + `session.title` fill `AgentNode.label`") |
 | `status` | `running` if any tool part is `running`; else, for a subagent, its spawning `task` part's status; else `done` | OC4 |
 | `spawnDepth` | walked from `parent_id`, never assumed | OC3 ("Depth comes from the data, not from a cap") |
-| `tokens` | that session's own `tokens_input` / `tokens_output` | contract §3 |
+| ~~`tokens`~~ | **AMENDED 2026-08-28 — the field was removed from `AgentNode` and the mapping with it. See the note below this table.** | — |
 | `startedAt` | `session.time_created` | contract §3 |
 | `endedAt` | `time_archived` when set, else `time_updated`; omitted when `running` | OC4 + contract §3 |
 
@@ -93,6 +93,46 @@ silently dropped.
 | `inputPreview` | canonical JSON of `state.input`, cut once at 8,192 bytes, then digested | OC6 |
 | `resultPreview` | `state.output` if a string, else `state.error` if a string, else omitted | contract §4 + a generator decision, below |
 | `durationMs` | `state.time.end - state.time.start` | contract §4 |
+
+### Tokens: the two struck rows above. AMENDED 2026-08-28
+
+**This file is this corpus's mapping authority, so a stale row here is worse than a stale code
+comment: it is the document a reader consults to find out what the golden means.** Two rows in the
+tables above described a mapping that no longer exists, and the regenerated `golden.json` beside
+them had already stopped carrying it. Struck in place rather than rewritten, which is the treatment
+DEVIATION 5 records for a closed-phase finding.
+
+**What the goldens carry now**, measured over both committed corpora on 2026-08-28:
+
+| | claimed by the struck rows | actually in `golden.json` |
+|---|---|---|
+| session `totals` | `{inputTokens, outputTokens, costUsd}` | `{"costUsd": 0}` — one key |
+| session `contextNow` / `burn` | not mentioned | present, `null` in 8 of 8 root sessions (4 here, 4 in the 1.18.21 witness) |
+| agent `tokens` | `{in, out}` | the key does not exist |
+| agent `contextNow` / `burn` | not mentioned | present, `null` in 29 of 29 agent nodes (24 here, 5 in the witness) |
+
+**Why the numbers are absent rather than zero, and why absent is the honest answer.**
+`AgentNode.tokens` was REMOVED from `src/model/events.ts` — not renamed — and replaced by
+`contextNow` (a LEVEL: the last assistant message) and `burn` (a TOTAL: the whole session), because
+reading `input_tokens` alone reported ~2 on every real Claude Code assistant message while the
+prompt lived in the cache fields.
+
+`session.tokens_input` IS a genuine session-cumulative total for OpenCode — all 24 anchor sessions
+equal the sum of their own `step-finish` rows, and `src/opencode/graft.test.ts` pins that. It is
+still the WRONG number for the prompt half, because it counts only UNCACHED input: across this
+corpus `tokens.cache.read` sums to 8,875,276 against `tokens.input`'s 1,227,047 (the figures are
+`src/opencode/graft.ts`'s, quoted rather than re-derived here), so a session whose
+prompt is mostly cache would report roughly a seventh of what it sent — the same defect the pair was
+introduced to remove, arriving through a second engine.
+
+So `src/opencode/graft.ts` and `scripts/opencode-golden.mjs` both OMIT the keys, independently, and
+the serialised form is `null`. Absent renders as an em-dash, "we do not have this number"; `0` would
+be a claim that the session spent nothing. The correct figure is reachable —
+`input + cache.read + cache.write` per `step-finish` row — and building that reader was deferred by
+user decision at the Phase 7 gate rather than guessed at here.
+
+**`totals.costUsd` is unchanged and still live.** It is the third row of the old triple and the only
+one that survived: `sum of the cost column`, contract §9.
 
 ### Previews are digests, and the byte count is the visible half
 

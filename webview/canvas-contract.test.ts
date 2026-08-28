@@ -32,28 +32,38 @@ import * as contract from './canvas-contract.js';
 import { CANVAS_CONTRACT_VERSION } from './canvas-contract.js';
 
 /**
- * Every runtime export of `canvas-contract.ts` at version 2, sorted.
+ * Every runtime export of `canvas-contract.ts` at version 3, sorted.
  *
  * Types and interfaces are absent because they are erased at runtime and this
  * list is built from the module object. That is a real limit and it is stated
- * rather than hidden: a change to `SessionLayout`'s FIELDS does not move this
- * list, so this test guards the contract's runtime NAMES, not its type shapes.
- * `npm run typecheck` covers the shapes, across both projects.
+ * rather than hidden: a change to a shared interface's FIELDS does not move
+ * this list, so this test guards the contract's runtime NAMES, not its type
+ * shapes. `npm run typecheck` covers the shapes, across both projects.
  *
  * WHEN THIS TEST FAILS, do not just update the list. The list moving means the
  * shared host/webview surface moved, which is exactly the moment
  * `CANVAS_CONTRACT_VERSION` is supposed to be bumped. Bump it, update the list,
  * and record what changed in the constant's doc comment.
+ *
+ * **THAT INSTRUCTION WAS NOT FOLLOWED IN PHASE 7, and the audit found it.** The
+ * list moved — `ZOOM_MIN`/`ZOOM_MAX` were removed and the token contract was
+ * rewritten — while the constant stayed at 2. The list was updated and the
+ * version was not, which is the one failure mode this file cannot detect on its
+ * own: a version constant can only be a tripwire for whoever re-reads the rule
+ * above. Version 3 is the correction, and its doc comment names all four
+ * changes.
  */
-const SURFACE_AT_V2: readonly string[] = [
+const SURFACE_AT_V3: readonly string[] = [
   'ANIMATED_CLASSES',
   'CANVAS_CONTRACT_VERSION',
   'CRACKED_CLASS',
-  'DECK_FILTERS',
+  'DEFAULT_ENGINE_FILTER',
+  'DEFAULT_LIVENESS_FILTER',
   'DEFAULT_VIEW_MODE',
-  'DOT_CAP',
+  'ENGINE_FILTERS',
   'FOREIGN_CLASS',
   'HOLLOW_LIVE_CLASS',
+  'LIVENESS_FILTERS',
   'PARKED_CLASS',
   'REDUCED_MOTION_CLASS',
   'SYNTHETIC_CORPUS_PREFIX',
@@ -64,16 +74,53 @@ const SURFACE_AT_V2: readonly string[] = [
 describe('CANVAS_CONTRACT_VERSION', () => {
   it('is the version this file describes', () => {
     // If this fails, someone bumped the constant. That is fine and expected —
-    // but SURFACE_AT_V2 and its name are now describing a version that no
+    // but SURFACE_AT_V3 and its name are now describing a version that no
     // longer exists, so both move together or neither does.
-    expect(CANVAS_CONTRACT_VERSION).toBe(2);
+    expect(CANVAS_CONTRACT_VERSION).toBe(3);
   });
 
   it('pins the shared runtime surface, so the shape cannot move silently', () => {
     const actual = Object.keys(contract)
       .filter((key) => typeof (contract as Record<string, unknown>)[key] !== 'undefined')
       .sort();
-    expect(actual).toEqual([...SURFACE_AT_V2].sort());
+    expect(actual).toEqual([...SURFACE_AT_V3].sort());
+  });
+
+  it('no longer exports the deleted phyllotaxis names', () => {
+    // Named individually rather than left to the set comparison above, because
+    // this is the assertion that says WHY the version moved. Each of these
+    // described code Phase 7 deleted — `sessionLayout()` and the blob deck —
+    // and each was still exported, with no consumer, describing a shape the
+    // renderer no longer draws.
+    for (const gone of [
+      'DOT_CAP',
+      'SessionLayout',
+      'CellPlacement',
+      'DotPlacement',
+      'DeckPlacement',
+      'DeckFilter',
+      'DECK_FILTERS',
+      'ZOOM_MIN',
+      'ZOOM_MAX',
+    ]) {
+      expect({ gone, present: gone in contract }).toStrictEqual({ gone, present: false });
+    }
+  });
+
+  it('names each filter axis once, and the two axes differently', () => {
+    // The collision this version closed: two modules each exported a type
+    // called `DeckFilter`, one meaning an engine and one meaning a liveness.
+    // Types are erased, so only the value halves can be asserted here — but a
+    // value list per axis is exactly what a component iterates to draw chips,
+    // so a re-collision would show up as one of these being wrong.
+    expect(contract.ENGINE_FILTERS).toStrictEqual(['all', 'cc', 'oc']);
+    expect(contract.LIVENESS_FILTERS).toStrictEqual(['all', 'live', 'idle', 'ended']);
+    expect(contract.DEFAULT_ENGINE_FILTER).toBe('all');
+    expect(contract.DEFAULT_LIVENESS_FILTER).toBe('all');
+    // Neither list is a subset of the other, so no single name could cover
+    // both. Stated as an assertion so "just merge them" fails here first.
+    expect(contract.ENGINE_FILTERS.filter((v) => contract.LIVENESS_FILTERS.includes(v as never)))
+      .toStrictEqual(['all']);
   });
 
   it('detects an addition to the surface', () => {
@@ -81,8 +128,8 @@ describe('CANVAS_CONTRACT_VERSION', () => {
     // frozen list itself would turn the assertion above into a permanent pass.
     // A test that cannot fail is the defect this whole file was written to
     // correct, so it would be absurd to reintroduce it one level up.
-    const withExtra = [...SURFACE_AT_V2, 'SOMETHING_NEW'].sort();
-    expect(withExtra).not.toEqual([...SURFACE_AT_V2].sort());
+    const withExtra = [...SURFACE_AT_V3, 'SOMETHING_NEW'].sort();
+    expect(withExtra).not.toEqual([...SURFACE_AT_V3].sort());
   });
 
   it('is imported by something, which is the property that was missing', () => {

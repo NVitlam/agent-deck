@@ -332,21 +332,36 @@
           onreset={() => store.resetCanvasView()}
         />
       </main>
-      {#if view.inspectorOpen && view.selectedNode !== undefined}
-        <aside class="aside">
-          <Inspector
-            node={inspected}
-            toggled={view.toggledNodeIds}
-            ontogglenode={(id) => store.toggleNode(id)}
-            expanded={inspectedExpanded}
-            ontoggle={() => {
-              if (inspected !== undefined) store.toggleNode(inspected.id);
-            }}
-            onclose={() => store.escape()}
-          />
-        </aside>
-      {/if}
     </div>
+    <!-- THE DRAWER, in a grid row of its own (design.md §8.6, amendment A3).
+         Outside `.body`, which is why hiding it cannot re-flow the field above
+         it: the field's row is `1fr` and keeps every pixel the drawer is not
+         using. It was an `<aside>` inside `.body` until 2026-08-28 — a 22em
+         side panel, which is what the design has never described.
+
+         `sessionId`, `engine` and `spawnEdges` are passed HERE for the first
+         time. The props existed and had no caller, so the header's session id
+         and engine glyph, and every call row's "→ child" link, were reachable
+         only from a test. `breadcrumb` is still unwired: the focus path lives
+         in `SessionCanvas.svelte` as component state, so App cannot see it —
+         the same reason §8.6's "re-root to parent" Escape step is unbuilt. -->
+    {#if view.inspectorOpen && view.selectedNode !== undefined}
+      <Inspector
+        node={inspected}
+        sessionId={view.selected.sessionId}
+        engine={view.selected.engine}
+        spawnEdges={view.selected.spawnEdges ?? []}
+        drawerExpanded={view.drawerExpanded}
+        ondrawertoggle={() => store.toggleDrawerExpanded()}
+        detailActionId={view.detailActionId}
+        ondetail={(id) => store.setDetailAction(id)}
+        expanded={inspectedExpanded}
+        ontoggle={() => {
+          if (inspected !== undefined) store.toggleNode(inspected.id);
+        }}
+        onclose={() => store.escape()}
+      />
+    {/if}
   {/if}
 </div>
 
@@ -358,6 +373,15 @@
        needs to copy text: the inspector and the refusal/notice strip. */
     user-select: none;
     -webkit-user-select: none;
+    /* A COLUMN OF BANDS, which is what §8.6 means by the drawer having "a grid
+       row of its own — hiding it must not re-flow other rows". A single-column
+       flex column IS that: the chrome and the drawer size to their content,
+       the field takes `flex: 1`, and showing or hiding the drawer moves the
+       field's boundary and nothing else's.
+       Written as flex rather than as `grid-template-rows` deliberately: the
+       banner and the patch notice are conditional children ahead of the field,
+       so any fixed row template shifts by one every time one of them appears,
+       and the drawer would land on the field's track. */
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -381,16 +405,12 @@
     overflow: hidden;
   }
 
-  .aside {
-    /* Payload text is meant to be copied — that is most of what the inspector
-       is for. */
-    user-select: text;
-    -webkit-user-select: text;
-    width: 22em;
-    max-width: 45%;
-    overflow: auto;
-    border-left: 1px solid var(--vscode-panel-border, transparent);
-  }
+  /* `.aside` is GONE, and its absence is the change. It was a 22em side panel
+     with a `border-left` — the inspector's `0.1.x` placement, carried through
+     the Phase 7 rebuild because no DoD line named the drawer. The drawer is
+     now a bottom row of `.app`'s grid and styles itself; see Inspector.svelte.
+     Its `user-select: text` moved with it, because `.app` turns selection off
+     globally and the payload text is what a person copies. */
 
   .hud {
     display: flex;

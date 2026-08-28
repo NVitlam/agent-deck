@@ -1237,7 +1237,7 @@ describe('the accessibility floor', () => {
     click(one(panel.container, TESTID.nucleus));
     expect(app().dataset['altitude']).toBe('inspector');
     expect(all(panel.container, TESTID.inspector)).toHaveLength(1);
-    // The inspector sits BESIDE the interior, never instead of it.
+    // The drawer opens BELOW the interior, never instead of it.
     expect(all(panel.container, TESTID.canvas)).toHaveLength(1);
 
     escape();
@@ -1252,6 +1252,46 @@ describe('the accessibility floor', () => {
     // A keystroke that changes nothing must not look like a change.
     escape();
     expect(app().dataset['altitude']).toBe('deck');
+  });
+
+  /**
+   * WHERE THE DRAWER SITS, asserted in the assembled app.
+   *
+   * There was no assertion of this kind anywhere before 2026-08-28, and its
+   * absence is the whole reason there was something to fix: `design.md` §8.6
+   * and amendment A3 have specified a BOTTOM DRAWER since the design froze,
+   * and the shipped inspector was a 22 em `<aside>` with a `border-left` —
+   * the `0.1.x` side panel, carried unchanged through the entire Phase 7
+   * rebuild. No Phase 7 DoD line named the drawer, so no work package owned
+   * it, and nothing went red for a design that was never built.
+   *
+   * The structural half is here because only the assembled app can see it: a
+   * component test renders the drawer alone and cannot tell a bottom row from
+   * a side column. `inspector.test.ts` owns the geometry half.
+   */
+  it('opens the inspector as a bottom row of the app, not as a column beside the tree', () => {
+    const panel = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    click(blobFor(panel, 'session-live'));
+    click(one(panel.container, TESTID.nucleus));
+
+    const drawer = one(panel.container, TESTID.inspector);
+    const body = one(panel.container, 'main').parentElement;
+    expect(body, 'the interior has no body wrapper').not.toBeNull();
+
+    // NOT inside the body. That is the difference between a drawer and a side
+    // panel, and it is what makes "hiding it must not re-flow other rows"
+    // true: the body owns the field's row and the drawer owns its own.
+    expect(body?.contains(drawer)).toBe(false);
+    // Siblings, drawer last: it is the bottom band of the column.
+    expect(drawer.parentElement).toBe(body?.parentElement);
+    expect(body?.nextElementSibling).toBe(drawer);
+    expect(drawer.nextElementSibling).toBeNull();
+
+    // ...and closing it gives the row back rather than leaving a gap.
+    escape();
+    expect(all(panel.container, TESTID.inspector)).toHaveLength(0);
+    expect(all(panel.container, TESTID.canvas)).toHaveLength(1);
   });
 
   it('leaves Escape alone in the list view, which has no altitudes', () => {

@@ -301,6 +301,25 @@ export interface WebviewView {
    * makes reopening possible without re-picking the node.
    */
   inspectorOpen: boolean;
+  /**
+   * Whether the drawer is at its expanded height (design.md §8.6: collapsed
+   * max-height 190 px, expanded exactly 46vh).
+   *
+   * In the store rather than in the component because Escape walks it — §8.6's
+   * order is detail → drawer → out — and Escape is handled above the drawer.
+   * A height the component owned privately would be a step the Escape walk
+   * could not see.
+   */
+  drawerExpanded: boolean;
+  /**
+   * The call row whose detail pane is open, if any (§8.6: "opens on row
+   * click, splits the body").
+   *
+   * ONE at a time, and that is the design rather than a simplification: the
+   * pane takes the body's remaining width beside a 340 px list, so two open
+   * details have nowhere to go. It is the first step of the Escape walk.
+   */
+  detailActionId?: string;
   /** Deck pan/zoom. A TRANSFORM, never a coordinate — see `canvas-contract.ts`. */
   deckView: { x: number; y: number; k: number };
   /**
@@ -363,14 +382,37 @@ export interface Store {
    */
   selectNode(nodeId: string): void;
   /**
-   * Walk one altitude up: inspector → session interior → deck (C7.8, the
-   * Escape key). A no-op at the deck, and it notifies nobody there — a
-   * keystroke that changes nothing must not look like a change.
+   * Walk one step up: **detail pane → drawer → session interior → deck**
+   * (design.md §8.6's Escape order, extending C7.8). A no-op at the deck, and
+   * it notifies nobody there — a keystroke that changes nothing must not look
+   * like a change.
    *
    * Lives here rather than in a component so both surfaces walk the same
    * ladder and neither owns the transition.
+   *
+   * **§8.6 names a step this does not take**: between the drawer and the deck
+   * it says "re-root to parent". That step is NOT implemented, and it is not
+   * an oversight of this walk — the focus root lives in `SessionCanvas.svelte`
+   * as component state and the store cannot see it, so there is nothing here
+   * to walk. Moving it would be a store/canvas refactor, not a drawer change.
+   * Recorded so the next reader finds the reason rather than the gap.
    */
   escape(): void;
+  /**
+   * Toggle the drawer between its two heights (§8.6). Ignored when there is
+   * nothing to inspect: a height change on an empty drawer is motion that says
+   * nothing.
+   */
+  toggleDrawerExpanded(): void;
+  /**
+   * Open one call row's detail pane, or shut whichever is open.
+   *
+   * `undefined` shuts it. An unknown id is ignored rather than stored — the
+   * rows are built from the node's own children, so an id outside them can
+   * only come from a caller that invented one, and storing it would open an
+   * empty pane.
+   */
+  setDetailAction(actionId: string | undefined): void;
   /** Switch renderers (C7.2). Not persisted, not a setting, not a message. */
   setViewMode(mode: ViewMode): void;
   /** The in-panel toggle: canvas ⇄ list. */
@@ -581,6 +623,10 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
   let livenessFilter: LivenessFilter = DEFAULT_LIVENESS_FILTER;
   let engineFilter: EngineFilter = DEFAULT_ENGINE_FILTER;
   let inspectorOpen = false;
+  /** §8.6's two drawer heights. Collapsed is the default, on every entry. */
+  let drawerExpanded = false;
+  /** Which call row's detail pane is open. One at a time (§8.6). */
+  let detailActionId: string | undefined;
   const IDENTITY_VIEW = { x: 0, y: 0, k: 1 };
   let deckView = { ...IDENTITY_VIEW };
   let canvasView = { ...IDENTITY_VIEW };
@@ -674,6 +720,12 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         // belonged to the session that left.
         selectedNodeId = undefined;
         inspectorOpen = false;
+        // The drawer's own two states go with the selection that owned them.
+        // A detail pane left open would point at a call in a session that has
+        // left, and an expanded height would be the only thing on screen still
+        // describing it.
+        detailActionId = undefined;
+        drawerExpanded = false;
         altitude = 'deck';
       }
     }
@@ -713,10 +765,12 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
             ? summaries
             : summaries.filter((row) => row.liveness === livenessFilter),
         inspectorOpen,
+        drawerExpanded,
         deckView: { ...deckView },
         canvasView: { ...canvasView },
         resyncs,
       };
+      if (detailActionId !== undefined) view.detailActionId = detailActionId;
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
       if (selected !== undefined) view.selected = selected;
       if (degradedReason !== undefined) view.degradedReason = degradedReason;
@@ -851,6 +905,10 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       // card is the whole of it. Refuse, do not guess a node.
       if (isRefused(selected)) return;
       if (findNode(selected.root, nodeId) === undefined) return;
+      // Selecting a DIFFERENT node shuts the detail pane. The pane describes
+      // one call belonging to one node; carrying it across a selection change
+      // would leave it describing a call the drawer above it no longer lists.
+      if (nodeId !== selectedNodeId) detailActionId = undefined;
       selectedNodeId = nodeId;
       altitude = 'inspector';
       inspectorOpen = true;
@@ -860,15 +918,56 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     },
 
     escape(): void {
-      if (altitude === 'inspector') {
+      // §8.6's order, first step first: the detail pane closes before the
+      // drawer does. Written as its own branch ahead of the altitude ladder
+      // rather than folded into it, because the pane is not an altitude — it
+      // is a split inside one, and collapsing the two would make Escape drop
+      // two levels on one keystroke.
+      if (detailActionId !== undefined) {
+        detailActionId = undefined;
+      } else if (altitude === 'inspector') {
         altitude = 'session';
         inspectorOpen = false;
         selectedNodeId = undefined;
+        // The height goes with the drawer. Reopening on the next selection at
+        // 46vh would be the drawer remembering a state the user left.
+        drawerExpanded = false;
       } else if (altitude === 'session') {
         altitude = 'deck';
       } else {
         return;
       }
+      notify();
+    },
+
+    toggleDrawerExpanded(): void {
+      // Nothing to inspect, nothing to expand. Guarded on the SELECTION rather
+      // than on `inspectorOpen`, because the panel can be shut with a node
+      // still selected — that is what makes reopening possible — and growing a
+      // shut drawer is a height change nobody can see.
+      if (selectedNodeId === undefined) return;
+      drawerExpanded = !drawerExpanded;
+      notify();
+    },
+
+    setDetailAction(actionId: string | undefined): void {
+      if (actionId === undefined) {
+        if (detailActionId === undefined) return;
+        detailActionId = undefined;
+        notify();
+        return;
+      }
+      if (actionId === detailActionId) return;
+      // The id must name a call the SELECTED node actually made. Anything else
+      // opens a pane onto nothing, which is the shape of every "renders a tree
+      // that no longer exists" defect in this repository.
+      if (selectedSessionId === undefined || selectedNodeId === undefined) return;
+      const selected = sessions.get(selectedSessionId);
+      if (selected === undefined) return;
+      const owner = findNode(selected.root, selectedNodeId);
+      if (owner === undefined || !isAgentNode(owner)) return;
+      if (!owner.children.some((child) => child.id === actionId && !isAgentNode(child))) return;
+      detailActionId = actionId;
       notify();
     },
 
@@ -898,6 +997,13 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       // would put the panel at an altitude with nothing in it.
       if (open && selectedNodeId !== undefined) altitude = 'inspector';
       if (!open && altitude === 'inspector') altitude = 'session';
+      // Shutting the drawer discards both of its own states, so reopening
+      // gives the collapsed, undetailed drawer §8.6 describes rather than
+      // whatever it looked like when it was dismissed.
+      if (!open) {
+        detailActionId = undefined;
+        drawerExpanded = false;
+      }
       notify();
     },
 

@@ -225,9 +225,29 @@ export const TESTID = {
   parkedStub: 'canvas-parked-stub',
   elidedBadge: 'canvas-elided-badge',
 
-  /* Inspector */
+  /* Inspector — the BOTTOM DRAWER (design.md §8.6, amendment A3).
+     It is a drawer, not a side panel: it occupies a grid row of its own along
+     the bottom edge, so showing and hiding it cannot re-flow the field above
+     it. `inspector` stays the root's id because every existing caller and
+     golden names it; what changed is where it sits, not what it is. */
   inspector: 'inspector',
   inspectorEmpty: 'inspector-empty',
+  /** The drawer's one-row header: glyph, label, field group, path, controls. */
+  drawerHead: 'drawer-head',
+  /** One label-over-value pair in the header field group. Carries data-field. */
+  drawerField: 'drawer-field',
+  /** Toggles the drawer between its collapsed and expanded heights. */
+  drawerExpand: 'drawer-expand',
+  /** The scrolling body: the call-row list, plus the detail pane when open. */
+  drawerBody: 'drawer-body',
+  /** The detail pane, present only while a call row is open. */
+  drawerDetail: 'drawer-detail',
+  /** The filter row. Exists ONLY in the expanded state (§8.6). */
+  drawerFilters: 'drawer-filters',
+  /** One status filter chip in that row. Carries data-filter and data-active. */
+  drawerFilterChip: 'drawer-filter-chip',
+  /** The tool-name select, pinned right in the filter row. */
+  drawerToolSelect: 'drawer-tool-select',
 
   /** One action row in the inspector: what an agent DID, by description. */
   actionRow: 'action-row',

@@ -34,6 +34,8 @@ import { agent, longPreview, tool } from './testdata.js';
  * specifier is opaque to `tsc` and resolved at runtime by vitest.
  */
 const CHILD_PROCESS = 'node:child_process';
+/** Same trick, same reason — see above. Read by the geometry suite below. */
+const NODE_FS = 'node:fs';
 
 interface ChildProcessModule {
   execFileSync(
@@ -175,13 +177,19 @@ describe('tool detail', () => {
     resultPreview: 'error: exit 2',
   });
 
-  it('shows the id, the tool name, the status chip and the duration', () => {
+  it('shows the id, the tool name, the status and the duration', () => {
     const container = render({ node });
     expect(one(container, TESTID.inspector).dataset['empty']).toBe('false');
     expect(one(container, 'inspector-id').textContent).toBe('tool-read');
     expect(one(container, 'inspector-title').textContent).toBe('Read');
     expect(one(container, 'inspector-kind').textContent).toBe('tool');
-    expect(one(container, 'status-chip').dataset['status']).toBe('error');
+    // §8.6's header carries status as a FIELD in the field group — label over
+    // value, fixed min-width — not as the chip the side panel used. The chip
+    // sized itself to its word, so the fields beside it moved whenever a call
+    // changed state, which is the thing those min-widths exist to stop.
+    const status = one(container, 'inspector-status');
+    expect(status.dataset['status']).toBe('error');
+    expect(status.textContent).toBe('failed');
     expect(one(container, 'inspector-duration').textContent).toBe('1.5s');
   });
 
@@ -302,7 +310,9 @@ describe('the drawer header (DoD 7.6)', () => {
 
   it('carries the status, the spawn depth and the duration', () => {
     const container = render(props);
-    expect(one(container, 'status-chip').dataset['status']).toBe('running');
+    const status = one(container, 'inspector-status');
+    expect(status.dataset['status']).toBe('running');
+    expect(status.textContent).toBe('running');
     expect(one(container, 'inspector-spawn-depth').textContent).toBe('2');
     // No `endedAt`, so there is no duration to state and none is invented.
     expect(one(container, 'inspector-duration').textContent).toBe(EM_DASH);
@@ -364,7 +374,7 @@ describe('G4: the 512-character collapse', () => {
   const node = tool({ id: 'tool-read', inputPreview: 'in', resultPreview: text });
 
   function resultPreview(container: HTMLElement): HTMLElement {
-    const found = all(container, 'payload-preview').find((p) => p.dataset['label'] === 'result');
+    const found = all(container, 'payload-preview').find((p) => p.dataset['label'] === 'output');
     if (found === undefined) throw new Error('no result preview in the inspector');
     return found;
   }
@@ -424,7 +434,7 @@ describe('G4: the 8 KB-capped expand', () => {
   const node = tool({ id: 'tool-read', inputPreview: 'in', resultPreview: HOST_CAPPED_PAYLOAD });
 
   function resultBody(container: HTMLElement): HTMLElement {
-    const found = all(container, 'payload-preview').find((p) => p.dataset['label'] === 'result');
+    const found = all(container, 'payload-preview').find((p) => p.dataset['label'] === 'output');
     if (found === undefined) throw new Error('no result preview in the inspector');
     return one(found, 'preview-body');
   }
@@ -449,7 +459,7 @@ describe('G4: the 8 KB-capped expand', () => {
   it('collapses the same payload to 512 characters and names the 7736 it hides', () => {
     const container = render({ node, expanded: false });
     expect(resultBody(container).textContent).toHaveLength(512);
-    const found = all(container, 'payload-preview').find((p) => p.dataset['label'] === 'result');
+    const found = all(container, 'payload-preview').find((p) => p.dataset['label'] === 'output');
     // 8248 - 512 = 7736, written out for the same reason as 1488 above.
     expect(one(found as HTMLElement, 'preview-marker').textContent).toBe(
       '[+7736 more characters - expand to see all]',
@@ -458,10 +468,14 @@ describe('G4: the 8 KB-capped expand', () => {
 });
 
 describe('accessibility floor (C7.8)', () => {
-  it('exposes the panel as a labelled landmark', () => {
+  it('exposes the drawer as a labelled landmark', () => {
     const container = render({ node: tool({ id: 't', inputPreview: 'x' }) });
     const panel = one(container, TESTID.inspector);
-    expect(panel.tagName).toBe('ASIDE');
+    // SECTION, not ASIDE. `aside` is the element for content tangential to the
+    // page — which is what the inspector was while it sat in a 22em column
+    // beside the tree. §8.6 makes it the drawer along the bottom, the surface
+    // a person reads a call in, so it is a labelled region of the document.
+    expect(panel.tagName).toBe('SECTION');
     expect(panel.getAttribute('aria-label')).toBe('Inspector');
   });
 
@@ -589,30 +603,199 @@ describe('the action list: what an agent DID, by description', () => {
     expect(summaries(container)).toEqual(['Read']);
   });
 
-  it('lists every action in order and expands one downward in place', () => {
+  it('lists every call in order and opens one into the detail pane beside it', () => {
     const actions = [
       tool({ id: 'a1', toolName: 'Bash', inputPreview: bash('one', 'First thing') }),
       tool({ id: 'a2', toolName: 'Bash', inputPreview: bash('two', 'Second thing') }),
       tool({ id: 'a3', toolName: 'Bash', inputPreview: bash('three', 'Third thing') }),
     ];
-    const container = render({ node: agentWithActions(actions), toggled: ['a2'] });
+    const container = render({ node: agentWithActions(actions), detailActionId: 'a2' });
 
     expect(summaries(container)).toEqual(['First thing', 'Second thing', 'Third thing']);
 
     const rows = all(container, TESTID.actionRow);
     expect(rows.map((r) => r.dataset['open'])).toEqual(['false', 'true', 'false']);
 
-    // Expanding opens the payload UNDER its own row, so the list stays the
-    // frame of reference: the open row still sits second of three.
-    const open = rows[1];
-    expect(open?.dataset['actionId']).toBe('a2');
-    expect(all(open as HTMLElement, 'payload-preview').length).toBeGreaterThan(0);
-    expect(all(rows[0] as HTMLElement, 'payload-preview')).toHaveLength(0);
+    // §8.6: the payload opens in a pane that SPLITS the body, not under the
+    // row. The list keeps its order and its width, so the row that was clicked
+    // is still second of three and still under the pointer — which is the
+    // reason the design fixes the list at 340 px rather than letting the pane
+    // push it around.
+    expect(rows[1]?.dataset['actionId']).toBe('a2');
+    for (const row of rows) expect(all(row, 'payload-preview')).toHaveLength(0);
+
+    const detail = one(container, TESTID.drawerDetail);
+    expect(detail.dataset['actionId']).toBe('a2');
+    expect(all(detail, 'payload-preview').length).toBeGreaterThan(0);
+    expect(one(container, TESTID.drawerBody).dataset['split']).toBe('true');
+  });
+
+  it('splits the body only while a call is open', () => {
+    // The other half of the assertion above, and the one that would catch a
+    // pane that renders unconditionally with nothing in it.
+    const container = render({
+      node: agentWithActions([tool({ id: 'a1', toolName: 'Bash', inputPreview: bash('x', 'y') })]),
+    });
+    expect(one(container, TESTID.drawerBody).dataset['split']).toBe('false');
+    expect(all(container, TESTID.drawerDetail)).toHaveLength(0);
   });
 
   it('shows a tool node no action list of its own', () => {
     // Actions belong to an agent. A tool is one.
     const container = render({ node: tool({ id: 't', toolName: 'Bash', inputPreview: bash('x', 'y') }) });
     expect(all(container, TESTID.actionRow)).toHaveLength(0);
+  });
+});
+
+/**
+ * THE DRAWER'S GEOMETRY, read from the component's own stylesheet.
+ *
+ * Asserted against the SOURCE rather than through `getComputedStyle`, and the
+ * reason is measured rather than stylistic: jsdom does not lay anything out,
+ * so a computed height here would be `0px` whatever the design said, and an
+ * assertion that passes over a number nothing produced is the vacuous shape
+ * this repository records more than any other.
+ *
+ * WHY THIS BLOCK EXISTS AT ALL. `design.md` §8.6 and amendment A3 have said
+ * "bottom drawer" since the design froze. What shipped through the whole of
+ * Phase 7 was the `0.1.x` side panel — `<aside>`, `width: 22em`,
+ * `border-left` — because no DoD line named the drawer, so no package owned it
+ * and no test could go red for it. These are the assertions whose absence let
+ * a frozen design and a shipped surface disagree for a whole phase.
+ */
+describe('the drawer is a drawer, not a side panel (design.md §8.6, A3)', () => {
+  let css: string;
+
+  beforeAll(async () => {
+    // NOT `import.meta.url`. Under `@vitest-environment jsdom` that is an
+    // `http://localhost/...` URL, so `fileURLToPath` throws
+    // `ERR_INVALID_URL_SCHEME` — and the whole suite then reported as SIX
+    // SKIPS with a clean `40 passed | 6 skipped` totals line. That is this
+    // repository's most-recorded reporting hazard, met while writing the
+    // assertions that exist to stop a design drifting unnoticed. `cwd` is the
+    // repo root, exactly as the esbuild script at the top of this file assumes.
+    const fs = (await import(/* @vite-ignore */ NODE_FS)) as unknown as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    const source = fs.readFileSync(`${process.cwd()}/webview/Inspector.svelte`, 'utf8');
+    const style = /<style>([\s\S]*)<\/style>/.exec(source);
+    if (style === null) throw new Error('Inspector.svelte has no style block');
+    css = style[1] ?? '';
+  });
+
+  /** The `.drawer` rule's own body — not the whole sheet. */
+  const drawerRule = (): string => {
+    const m = /\n {2}\.drawer \{([\s\S]*?)\n {2}\}/.exec(css);
+    if (m === null) throw new Error('no .drawer rule in Inspector.svelte');
+    return m[1] ?? '';
+  };
+
+  it('takes its border along the TOP edge, and none along a side', () => {
+    const rule = drawerRule();
+    expect(rule).toMatch(/border-top:\s*1px solid var\(--line\)/);
+    // The side panel's signature, and the one line whose return would mean the
+    // drawer had been put back in a column.
+    expect(rule).not.toMatch(/border-left/);
+    expect(rule).not.toMatch(/border-right/);
+  });
+
+  it('is a band with §8.6’s two ceilings: 190px collapsed, exactly 46vh expanded', () => {
+    expect(drawerRule()).toMatch(/max-height:\s*190px/);
+    expect(css).toMatch(/\.drawer\[data-expanded='true'\][\s\S]*?max-height:\s*46vh/);
+    // A ceiling, not a size: a drawer holding two calls is two calls tall.
+    expect(drawerRule()).not.toMatch(/\n\s*height:\s*190px/);
+  });
+
+  it('claims no width of its own, because a bottom row spans the panel', () => {
+    const rule = drawerRule();
+    // `width: 22em; max-width: 45%` is what the side panel declared. A drawer
+    // that declared either would be a column again whatever its border said.
+    expect(rule).not.toMatch(/\n\s*width:/);
+    expect(rule).not.toMatch(/\n\s*max-width:/);
+  });
+
+  it('sizes to its content in the app’s column instead of stretching', () => {
+    // `flex: 0 0 auto` is what gives it a row of its own — §8.6's "hiding it
+    // must not re-flow other rows". A drawer that could grow or shrink would
+    // take space from the field above it as its content changed.
+    expect(drawerRule()).toMatch(/flex:\s*0 0 auto/);
+  });
+
+  it('fixes the call list at 340px once the detail pane splits the body', () => {
+    expect(css).toMatch(/\.body\[data-split='true'\] \.calls \{[\s\S]*?flex:\s*0 0 340px/);
+  });
+
+  it('pins every field min-width §8.6 names, and says which two are not its', () => {
+    // The five §8.6 fixes. They exist so a value changing length never shifts
+    // the field beside it — this row updates while a person reads it.
+    const widths: [string, string][] = [
+      ['status', '58px'],
+      ['id', '128px'],
+      ['spawnDepth', '74px'],
+      ['duration', '64px'],
+      // A6 replaced §8.6's single `tokens` field with `context` and `burn` and
+      // did not re-specify widths. `burn` keeps the 158 the tokens field had;
+      // `context` was chosen. Both are pinned anyway — a number nobody
+      // specified still must not drift silently.
+      ['burn', '158px'],
+      ['context', '104px'],
+    ];
+    // A literal substring, not a built RegExp. The first draft of this
+    // assertion built one from a template literal and lost a backslash level
+    // on the way into the file, so `[data-field='status']` became a character
+    // class and matched nothing — the escaping hazard CLAUDE.md records for
+    // heredocs and `node -e`, arriving in a test's own expectation.
+    for (const [field, width] of widths) {
+      expect(css, `the ${field} field has no pinned min-width`).toContain(
+        `.field[data-field='${field}'] { min-width: ${width}; }`,
+      );
+    }
+  });
+});
+
+describe('the drawer’s two heights and its filter row', () => {
+  const calls = [
+    tool({ id: 'c1', toolName: 'Bash', status: 'done', inputPreview: '{"description":"one"}' }),
+    tool({ id: 'c2', toolName: 'Read', status: 'running', inputPreview: '{"description":"two"}' }),
+    tool({ id: 'c3', toolName: 'Bash', status: 'error', inputPreview: '{"description":"three"}' }),
+  ];
+  const node = agent({ id: 'a', label: 'worker', children: calls });
+
+  it('reports its height state on the element, so the app can be read for it', () => {
+    expect(one(render({ node }), TESTID.inspector).dataset['expanded']).toBe('false');
+    expect(one(render({ node, drawerExpanded: true }), TESTID.inspector).dataset['expanded']).toBe(
+      'true',
+    );
+  });
+
+  it('renders the filter row ONLY when expanded (§8.6)', () => {
+    // Absent, not hidden: a collapsed drawer must not be filterable by a
+    // control nobody can see.
+    expect(all(render({ node }), TESTID.drawerFilters)).toHaveLength(0);
+    expect(all(render({ node, drawerExpanded: true }), TESTID.drawerFilters)).toHaveLength(1);
+  });
+
+  it('counts each status on its own chip', () => {
+    const container = render({ node, drawerExpanded: true });
+    const counts = Object.fromEntries(
+      all(container, TESTID.drawerFilterChip).map((chip) => [
+        chip.dataset['filter'],
+        chip.textContent?.replace(/\D+/g, ''),
+      ]),
+    );
+    expect(counts).toEqual({ all: '3', running: '1', done: '1', error: '1' });
+  });
+
+  it('shows every call unfiltered while collapsed, whatever the filter says', () => {
+    // §8.6: "Collapsed mode always shows the unfiltered list." Asserted by
+    // filtering in the expanded state and then collapsing, because the filter
+    // is only reachable there — the choice survives, and is ignored.
+    const container = render({ node, drawerExpanded: true });
+    const running = all(container, TESTID.drawerFilterChip).find(
+      (c) => c.dataset['filter'] === 'running',
+    );
+    if (running === undefined) throw new Error('no running chip');
+    click(running);
+    expect(all(container, TESTID.actionRow)).toHaveLength(1);
   });
 });

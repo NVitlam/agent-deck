@@ -140,3 +140,14 @@ media/**
 !media/screenshot-deck.png
 !media/screenshot-topology.png
 !media/screenshot-inspector.png
+# private method repo + junctions — never packaged (vsce reads the working tree, not git)
+lab/**
+CLAUDE.md
+PLAN.md
+HANDOVER.md
+AGENTS.md
+agent-deck-spec.md
+docs/**
+spike/**
+docs
+spike

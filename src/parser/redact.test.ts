@@ -397,8 +397,16 @@ describe('parsePersistedOutputPointer (real captured stub)', () => {
   it('parses the measured stub and keeps only the basename', async () => {
     const stub = await realStubText();
     // Pin the captured bytes themselves.
-    expect(stub.length).toBe(2184);
-    expect(Buffer.byteLength(stub, 'utf8')).toBe(2186);
+    //
+    // 2,184 chars / 2,186 bytes before the 2026-08-28 identity scrub, which
+    // shortened the two absolute paths this stub quotes. The numbers are
+    // RE-MEASURED rather than removed: their job is to prove the stub was not
+    // silently regenerated or re-truncated, and that job survives the paths
+    // getting shorter. The two-byte gap between chars and bytes is the box-
+    // drawing character in the preview, and it is unchanged - which is the part
+    // that would move if the capture itself were re-taken.
+    expect(stub.length).toBe(2159);
+    expect(Buffer.byteLength(stub, 'utf8')).toBe(2161);
     expect(stub).toContain(
       'Full output saved to: C:\\Users\\dev\\.claude\\projects\\c--Users-dev-projects-agent-deck\\05c5482d-5568-44ce-97fe-bc9a6c15afc4\\tool-results\\b6uvpgxa4.txt',
     );

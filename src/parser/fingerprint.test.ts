@@ -532,8 +532,11 @@ describe('captured CC 2.1.237 fixture (redacted)', () => {
     const slug = await fingerprintSlugDirectory(CAPTURED_237_SLUG);
     if (!slug.ok) throw new Error(slug.mismatch.reason);
     let longest = '';
+    /** Every string in the capture, so the workspace path can be found by name. */
+    const strings: string[] = [];
     const visit = (value: unknown): void => {
       if (typeof value === 'string') {
+        strings.push(value);
         if (value.length > longest.length) longest = value;
         return;
       }
@@ -555,9 +558,25 @@ describe('captured CC 2.1.237 fixture (redacted)', () => {
       expect(text).toContain('"thinking":"<redacted>"');
       expect(text).toContain('"signature":"<redacted>"');
     }
-    // The one long-ish string is the workspace path, kept deliberately.
+    // NO LONG STRINGS AT ALL: that is the property, and it is what the
+    // whitelist holding actually means. Conversation content is long; ids,
+    // timestamps and paths are not.
     expect(longest.length).toBeLessThanOrEqual(64);
-    expect(longest.toLowerCase()).toContain('agent-deck');
+
+    // This used to add `expect(longest).toContain('agent-deck')`, on the
+    // reasoning that the longest surviving string would be the workspace path.
+    // The 2026-08-28 scrub shortened that path from 52 characters to 31 and the
+    // longest string became a 36-character session UUID, so the assertion
+    // started measuring which of two short strings happened to be longer -
+    // which was never the point and was only ever true by accident.
+    //
+    // The workspace path is asserted DIRECTLY instead, which is both what was
+    // meant and a stronger claim: it must still be there (a capture whose `cwd`
+    // has been normalised away cannot pin the main-thread hook rule) and it
+    // must still name this project.
+    const cwds = strings.filter((s) => s.toLowerCase().includes('agent-deck'));
+    expect(cwds.length, 'the capture no longer names its own workspace').toBeGreaterThan(0);
+    for (const cwd of cwds) expect(cwd.length).toBeLessThanOrEqual(64);
   });
 
   it('leaves the 2.1.237 capture byte-identical (G1: read-only)', async () => {

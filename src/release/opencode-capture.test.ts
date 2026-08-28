@@ -153,7 +153,64 @@ function tableList(db: DatabaseSync): string[] {
   ).map((r) => String(r.name));
 }
 
-const CLAUDE_HOME_RE = /projects[\\/]+([A-Za-z0-9._-]+)/g;
+/**
+ * A Claude Code project directory, anchored on `.claude` and shape-gated.
+ *
+ * IT USED TO BE `/projects[\\/]+([A-Za-z0-9._-]+)/`, which was correct for as
+ * long as the word `projects` appeared in these corpora ONLY as
+ * `.claude/projects/<slug>`. The 2026-08-28 identity scrub made the synthetic
+ * home `<drive>:\Users\dev\projects\agent-deck`, so `projects\` became an
+ * ordinary directory component too, and the unanchored pattern started
+ * reporting ordinary paths as foreign projects.
+ *
+ * Worse, and familiar: a captured transcript stores a newline inside a JSON
+ * string as `\` + `n`, so the prose `~/.claude/projects\ndirectory` parses as a
+ * project named `ndirectory` - measured here at 56 occurrences, plus `n`,
+ * `n35` and `n128`. `scripts/privacy-sweep.mjs` already hit this exact trap and
+ * already fixed it the same way, with a shape gate; its comment on
+ * `SLUG_SHAPE_RE` records the measurement. Two checks over the same corpora had
+ * the same bug and only one of them knew.
+ *
+ * So: anchor on `.claude`, and require the captured token to have the SHAPE of
+ * a slug. A slug is a workspace path with every separator replaced by `-`, so
+ * it always begins `<drive>--` on Windows or `-` on posix. `ndirectory` does
+ * not, and neither does any ordinary word.
+ */
+const CLAUDE_HOME_RE = /\.claude(?:[\\/]|\\{2,4})projects(?:[\\/]|\\{2,4})([A-Za-z0-9._-]+)/g;
+
+/** `<drive>--` or a leading `-`: the shape a slug always has, and prose never. */
+const SLUG_SHAPE_RE = /^(?:[A-Za-z]--|-)/;
+
+/**
+ * The root every row in a corpus must be inside, TAKEN FROM THE CORPUS.
+ *
+ * It used to be `repoIdentityRoots(REPO_ROOT)` - the live checkout, resolved
+ * through git. That was right while the captures carried the real machine's
+ * paths, and the 2026-08-28 identity scrub ended it: the corpora now declare a
+ * synthetic root, so comparing them to wherever this clone happens to sit
+ * asserts something that is false by construction and says nothing about G8.
+ *
+ * What G8 actually protects is that a capture contains ONE project and that the
+ * project is this one - no other person's work rode along. Both halves survive
+ * the scrub and both are checkable from the corpus alone: there must be exactly
+ * one distinct root, and its last segment must be this repository's name. That
+ * is also what the strays test below already claimed to do ("derived from the
+ * fixture's own project.worktree, not hard-coded: this test must keep working
+ * if the repository is renamed or cloned somewhere else") while its siblings
+ * still resolved the live checkout.
+ */
+function corpusRoots(corpus: { projects: { worktree: string }[] }): string[] {
+  const roots = [
+    ...new Set(corpus.projects.map((p) => p.worktree.replace(/[\\/]+$/, '').toLowerCase())),
+  ];
+  for (const root of roots) {
+    expect(
+      path.basename(root),
+      `a captured project root is not this repository: ${root}`,
+    ).toBe(path.basename(REPO_ROOT).toLowerCase());
+  }
+  return roots;
+}
 
 function tallyprojects(db: DatabaseSync, into: Map<string, number>): void {
   const sources = [
@@ -168,7 +225,7 @@ function tallyprojects(db: DatabaseSync, into: Map<string, number>): void {
       let m = CLAUDE_HOME_RE.exec(text);
       while (m !== null) {
         const token = m[1] ?? '';
-        into.set(token, (into.get(token) ?? 0) + 1);
+        if (SLUG_SHAPE_RE.test(token)) into.set(token, (into.get(token) ?? 0) + 1);
         m = CLAUDE_HOME_RE.exec(text);
       }
     }
@@ -485,13 +542,13 @@ describe('4 - G8: every captured row belongs to this repository', () => {
     '%s - every project.worktree resolves to this repo, case-insensitively',
     (name) => {
       const corpus = loadedCorpus(name);
-      const roots = mod?.repoIdentityRoots(REPO_ROOT) ?? [];
-      expect(roots.length).toBeGreaterThan(0);
+      const roots = corpusRoots(corpus);
+      expect(roots.length, `${name} declares no project root at all`).toBe(1);
       expect(corpus.projects.length).toBeGreaterThan(0);
       for (const p of corpus.projects) {
         expect(
           mod?.isOwnLocation(p.worktree, roots),
-          `${name}: project ${p.id} worktree ${p.worktree} is not this repo (roots: ${roots.join(', ')})`,
+          `${name}: project ${p.id} worktree ${p.worktree} is not the corpus root (${roots.join(', ')})`,
         ).toBe(true);
       }
     },
@@ -507,8 +564,10 @@ describe('4 - G8: every captured row belongs to this repository', () => {
     // `c--Users-...` and `C--Users-...` both occur on Windows for the same
     // directory. A case-sensitive comparison here would reject a correct
     // capture on one boot and accept it on the next.
-    const roots = mod?.repoIdentityRoots(REPO_ROOT) ?? [];
-    const first = loadedCorpus(CORPUS_NAMES[0] ?? '').projects[0]?.worktree ?? REPO_ROOT;
+    const corpus = loadedCorpus(CORPUS_NAMES[0] ?? '');
+    const roots = corpusRoots(corpus);
+    const first = corpus.projects[0]?.worktree ?? '';
+    expect(first).not.toBe('');
     expect(mod?.isOwnLocation(first.toUpperCase(), roots)).toBe(true);
     expect(mod?.isOwnLocation(first.toLowerCase(), roots)).toBe(true);
   });
@@ -524,7 +583,7 @@ describe('4 - G8: every captured row belongs to this repository', () => {
 
   it.each(CORPUS_NAMES)('%s - every session directory is inside this repository', (name) => {
     const corpus = loadedCorpus(name);
-    const roots = mod?.repoIdentityRoots(REPO_ROOT) ?? [];
+    const roots = corpusRoots(corpus);
     for (const s of corpus.sessions) {
       if (s.directory === '') continue;
       expect(mod?.isOwnLocation(s.directory, roots), `${name}: session ${s.id} -> ${s.directory}`).toBe(true);
@@ -545,8 +604,14 @@ describe('4 - G8: every captured row belongs to this repository', () => {
       for (const [token, count] of corpus.projectsTokens) {
         // `agent-deck.vsix` and friends: a token that STARTS with an own name
         // is a filename in this project, not another project.
+        //
+        // ...and a token that ENDS with one is this project's own SLUG, which
+        // is the workspace path with every separator replaced by `-`. Before
+        // the 2026-08-28 scrub the slug happened not to reach this tally at
+        // all; the synthetic root put `.claude/projects/<slug>` into the
+        // captured text, so the slug now shows up and is as own as it gets.
         const t = token.toLowerCase();
-        if ([...own].some((o) => t === o || t.startsWith(o))) continue;
+        if ([...own].some((o) => t === o || t.startsWith(o) || t.endsWith(`-${o}`))) continue;
         strays.push(`${token} x${count}`);
       }
       expect(strays, `${name} names other projects: ${strays.join(', ')}`).toEqual([]);

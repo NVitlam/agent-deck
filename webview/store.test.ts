@@ -5,7 +5,8 @@ import type {
   WebviewToHostMessage,
 } from '../src/model/events.js';
 import { createStore } from './store.js';
-import { DEFAULT_VIEW_MODE, ZOOM_MAX, ZOOM_MIN } from './canvas-contract.js';
+import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
+import { DECK_ZOOM_LIMITS } from './viewport.js';
 import {
   DEFAULT_DECK_LAYOUT,
   DEFAULT_DECK_SORT,
@@ -935,9 +936,11 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
 
     for (let i = 0; i < 40; i += 1) store.zoomDeck(1.5, 0, 0);
-    expect(store.getView().deckView.k).toBeLessThanOrEqual(ZOOM_MAX);
+    expect(store.getView().deckView.k).toBeLessThanOrEqual(DECK_ZOOM_LIMITS.max);
+    expect(store.getView().deckView.k).toBe(DECK_ZOOM_LIMITS.max);
     for (let i = 0; i < 80; i += 1) store.zoomDeck(1 / 1.5, 0, 0);
-    expect(store.getView().deckView.k).toBeGreaterThanOrEqual(ZOOM_MIN);
+    expect(store.getView().deckView.k).toBeGreaterThanOrEqual(DECK_ZOOM_LIMITS.min);
+    expect(store.getView().deckView.k).toBe(DECK_ZOOM_LIMITS.min);
 
     store.resetDeckView();
     expect(store.getView().deckView).toEqual({ x: 0, y: 0, k: 1 });

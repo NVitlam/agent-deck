@@ -59,8 +59,6 @@ const SURFACE_AT_V2: readonly string[] = [
   'SYNTHETIC_CORPUS_PREFIX',
   'TESTID',
   'WIRE_CORPUS_DIR',
-  'ZOOM_MAX',
-  'ZOOM_MIN',
 ];
 
 describe('CANVAS_CONTRACT_VERSION', () => {

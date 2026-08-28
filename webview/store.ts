@@ -39,7 +39,8 @@ import { applySessionPatch } from '../src/bridge/apply.js';
 import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
 import type { Altitude, ViewMode } from './canvas-contract.js';
 import { countNodes } from './layout.js';
-import { DECK_FILTERS, ZOOM_MAX, ZOOM_MIN } from './canvas-contract.js';
+import { DECK_FILTERS } from './canvas-contract.js';
+import { DECK_ZOOM_LIMITS, TREE_ZOOM_LIMITS, clampScale } from './viewport.js';
 import type { DeckFilter } from './canvas-contract.js';
 
 /** One row of the left rail. */
@@ -277,7 +278,7 @@ export interface Store {
   setInspectorOpen(open: boolean): void;
   /** Pan the deck by a delta in stage units. */
   panDeck(dx: number, dy: number): void;
-  /** Zoom the deck about a point, clamped to [ZOOM_MIN, ZOOM_MAX]. */
+  /** Zoom the deck about a point, clamped to {@link DECK_ZOOM_LIMITS}. */
   zoomDeck(factor: number, originX: number, originY: number): void;
   /** Move one blob aside by a delta in stage units. Additive. */
   nudgeBlob(sessionId: string, dx: number, dy: number): void;
@@ -723,7 +724,7 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     zoomDeck(factor: number, originX: number, originY: number): void {
       if (!Number.isFinite(factor) || factor <= 0) return;
       if (!Number.isFinite(originX) || !Number.isFinite(originY)) return;
-      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, deckView.k * factor));
+      const next = clampScale(deckView.k * factor, DECK_ZOOM_LIMITS);
       if (next === deckView.k) return;
       // Zoom ABOUT THE POINTER: the stage point under the cursor stays under
       // the cursor. Without this the deck slides away from whatever you were
@@ -747,7 +748,7 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     zoomCanvas(factor: number, originX: number, originY: number): void {
       if (!Number.isFinite(factor) || factor <= 0) return;
       if (!Number.isFinite(originX) || !Number.isFinite(originY)) return;
-      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, canvasView.k * factor));
+      const next = clampScale(canvasView.k * factor, TREE_ZOOM_LIMITS);
       if (next === canvasView.k) return;
       const ratio = next / canvasView.k;
       canvasView = {

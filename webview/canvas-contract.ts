@@ -162,9 +162,19 @@ export type DeckFilter = 'all' | 'live' | 'idle' | 'ended';
 /** The chips, in the order they render. */
 export const DECK_FILTERS: readonly DeckFilter[] = ['all', 'live', 'idle', 'ended'];
 
-/** Zoom bounds for the deck stage. Bounded so a wheel cannot lose the deck. */
-export const ZOOM_MIN = 0.4;
-export const ZOOM_MAX = 3;
+/**
+ * Zoom bounds do NOT live here, and the reason is the whole point of this file.
+ *
+ * A single global pair cannot express what the frozen design specifies: the
+ * deck clamps to 0.5-2 and the tree to 0.4-2. This file held one pair, the
+ * store clamped BOTH stages with it, and `webview/viewport.ts` independently
+ * carried the correct per-altitude limits - two implementations of one rule,
+ * disagreeing, with nothing failing. Exactly the class this file exists to
+ * prevent, committed inside the file that exists to prevent it.
+ *
+ * `viewport.ts` is the single definition: DECK_ZOOM_LIMITS, TREE_ZOOM_LIMITS,
+ * ZOOM_FACTOR, clampScale. Import from there.
+ */
 
 export type ViewMode = 'canvas' | 'list';
 

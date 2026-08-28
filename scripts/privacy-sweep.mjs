@@ -875,7 +875,6 @@ export function sweep(options = {}) {
 
   let t0 = Date.now();
   const wt = newLeg();
-  const wtTally = new Map();
   for (const rel of files) {
     let body;
     try {

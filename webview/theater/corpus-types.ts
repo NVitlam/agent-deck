@@ -65,6 +65,30 @@ export interface WireCorpus {
   producedBy: string;
   /** Repo-relative, forward slashes. Absent on a synthetic corpus. */
   recordedFrom?: string;
+  /**
+   * Which observation engine produced the states (Phase 7, DoD 7.10).
+   *
+   * Absent means Claude Code, which is `SessionState.engine`'s own rule and is
+   * restated here rather than re-decided: a corpus recorded before the second
+   * engine existed carries no such field and must keep reading as CC.
+   *
+   * It is a CORPUS-LEVEL claim about the recording, not a summary of the
+   * states - `webview/wire.test.ts` checks it against every session's own
+   * `engine`, so a corpus that labelled itself wrong fails rather than
+   * mislabelling the theater's picker.
+   */
+  engine?: NonNullable<SessionState['engine']>;
+  /**
+   * The host's own counters at the end of the recording. Counters only, never
+   * a path.
+   *
+   * Recorded so a reader can tell a corpus taken off a healthy store from one
+   * taken off a degraded or refusing one WITHOUT replaying it: a recording in
+   * which `contentReads` is 1 and `schemaMismatches` is 0 is a recording of the
+   * engine working, and one where they are not is a recording of something
+   * else that would otherwise look identical from the outside.
+   */
+  hostDiagnostics?: Readonly<Record<string, number | boolean>>;
   /** The `fixtures/synthetic-layout` case that supplied the refusal, if any. */
   refusedLayoutCase?: string;
   /** The fixed instant the simulated clock started at. Not a record time. */

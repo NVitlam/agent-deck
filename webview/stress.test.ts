@@ -1,5 +1,6 @@
-// R5 — the synthetic stress corpus: does the canvas hold at R2 scale, and what
-// does one diff actually cost?
+// R5 / Phase 7 DoD 7.8 — the synthetic stress corpus: does the tree hold at
+// scale, does the auto-collapse rule fire where it says it does, and what does
+// one diff actually cost?
 //
 // WHAT IS SYNTHETIC HERE, AND WHY THAT IS ALLOWED
 // -----------------------------------------------
@@ -34,15 +35,39 @@
 // framing is reimplemented here: a corpus that framed its own messages would
 // prove the renderer survives a shape the host does not produce.
 //
-// TIMING IS A MEASUREMENT, NOT A GATE
-// ------------------------------------
-// The per-diff numbers below are PRINTED as a median with its n, and nothing
-// asserts a threshold on them. Wall-clock samples are not properties of the
-// code — this repo measured 6.49 s and 35.91 s for the same suite on the same
-// machine — so a threshold here would go red on machine state and be
-// "fixed" by raising it. What IS asserted is that the work per diff does not
-// grow with the number of sessions the store is holding, which is a property
-// of the algorithm rather than of the machine.
+// WHAT PHASE 7 ADDED, AND WHY THE CORPUS GREW
+// --------------------------------------------
+// DoD 7.8 names a boundary: above `AUTO_COLLAPSE_NODES` VISIBLE nodes the tree
+// collapses to `COLLAPSE_DEPTH` on its own and the status line says so. A rule
+// with a boundary is only tested at the boundary, so the corpus now carries
+// three sessions sized `AUTO_COLLAPSE_NODES - 1`, `AUTO_COLLAPSE_NODES` and
+// `AUTO_COLLAPSE_NODES + 1` — 299, 300 and 301 today, and derived from the
+// constant rather than written down, so moving the constant moves the corpus
+// instead of silently making the boundary test measure the interior.
+//
+// VISIBLE nodes are AGENTS. `layout.ts:visibleNodeCount` walks
+// `orderedChildAgents`, and `treeLayout` places agents; tool calls ride on
+// their owning agent as dots. A boundary session is therefore an agent tree of
+// exactly N agents, and it is built four levels deep on purpose: collapsing to
+// depth 2 hides nothing at all in a flat tree, so a flat boundary session
+// would have produced a green test that proved the rule never fires.
+//
+// TIMING IS A MEASUREMENT AND ALSO, NOW, A BUDGET
+// ------------------------------------------------
+// Through Phase 5 this file printed medians and asserted no threshold, on the
+// argument that a wall-clock sample is a property of the machine rather than
+// of the code — this repo has measured 6.49 s and 35.91 s for the same suite
+// on the same machine. That argument is still true and the medians are still
+// printed with their n.
+//
+// DoD 7.8 asks for one number anyway: a >= 300-node corpus must replay "within
+// the perf budget". So `SCALE_BUDGETS` below is a table in the shape
+// `src/perf/budgets.ts` uses, and every limit carries the measurement it was
+// set from and the margin that leaves. The margins are large — one to two
+// orders of magnitude — deliberately: what these budgets exist to catch is an
+// algorithm that went quadratic in the node count, not a machine that was busy.
+// A limit tight enough to go red on load would be re-tuned rather than
+// believed, which is how a budget stops meaning anything.
 //
 // A NODE SUITE, NOT A JSDOM ONE. `scripts/record-wire.mjs` imports esbuild at
 // module scope, and esbuild refuses to start in a jsdom realm (jsdom installs
@@ -72,8 +97,19 @@ import type {
 import { isAgentNode } from '../src/model/events.js';
 import { applySessionPatch } from '../src/bridge/apply.js';
 import { SYNTHETIC_CORPUS_PREFIX, TESTID, WIRE_CORPUS_DIR } from './canvas-contract.js';
-import { countNodes, deckLayout, sessionLayout } from './layout.js';
+import {
+  AUTO_COLLAPSE_NODES,
+  COLLAPSE_DEPTH,
+  autoCollapseDepth,
+  countNodes,
+  deckEngine,
+  deckLayout,
+  treeLayout,
+  visibleNodeCount,
+} from './layout.js';
+import type { DeckSession, DeckStatus } from './layout.js';
 import { createStore } from './store.js';
+import type { SessionSummary } from './store.js';
 import type { WireCorpus, WireEvent } from './theater/corpus-types.js';
 import { bundleHarness } from './testkit.js';
 
@@ -132,6 +168,33 @@ const HEALTHY_SESSIONS = 12;
  */
 const TOOLS_AT_DEPTH = [5, 4, 3, 2] as const;
 const CHILDREN_AT_DEPTH = [2, 1, 1, 0] as const;
+
+/**
+ * The three sizes that surround the auto-collapse boundary.
+ *
+ * DERIVED from `AUTO_COLLAPSE_NODES`, never typed as 299/300/301. The rule is
+ * strictly-greater — `layout.ts:autoCollapseDepth` — so the middle one is the
+ * largest tree that still renders whole and the last is the smallest that does
+ * not. A literal here would keep passing while the constant moved, testing the
+ * middle of the range and calling it the edge.
+ */
+const BOUNDARY_TARGETS = [
+  AUTO_COLLAPSE_NODES - 1,
+  AUTO_COLLAPSE_NODES,
+  AUTO_COLLAPSE_NODES + 1,
+] as const;
+
+/**
+ * Branching of a boundary session, and its deepest agent depth.
+ *
+ * FANOUT ** (DEPTH + 1) must exceed the largest target or the generator cannot
+ * reach the size it was asked for; 8 and 3 give a capacity of 1 + 8 + 64 + 512
+ * = 585 against a largest target of `AUTO_COLLAPSE_NODES + 1`. Depth 3 is the
+ * shallowest tree in which collapsing to `COLLAPSE_DEPTH` (2) hides anything
+ * at all, which is the whole reason the boundary sessions are not flat.
+ */
+const BOUNDARY_FANOUT = 8;
+const BOUNDARY_DEPTH = 3;
 
 /** Diff ticks after the cold start. Each one patches every healthy session. */
 const TICKS = 8;
@@ -233,6 +296,91 @@ function syntheticSession(index: number): SessionState {
   return state;
 }
 
+/**
+ * A session whose tree holds EXACTLY `target` agent nodes, root included.
+ *
+ * Breadth first at a fixed fanout, capped at `BOUNDARY_DEPTH`, so the shape is
+ * a function of one number and nothing else. The exactness is the point: this
+ * is the input to a strictly-greater comparison, and a generator that
+ * overshot by one would move the boundary rather than probe it. Asserted from
+ * the generated tree by `visibleNodeCount`, never trusted from here.
+ *
+ * NO TOKENS ON THESE AGENTS, deliberately. `contextNow` and `burn` are
+ * optional and the OpenCode engine reports neither, so leaving them unset puts
+ * the em-dash path — the one a wrong default would render as `0` — under the
+ * same replay that measures the scale. The twelve healthy sessions carry real
+ * figures, so the corpus asserts both halves rather than only the absent one.
+ */
+function boundaryAgentTree(sessionId: string, target: number): AgentNode {
+  const root: AgentNode = {
+    id: 'root',
+    kind: 'main',
+    label: `main ${sessionId}`,
+    status: 'running',
+    spawnDepth: 0,
+    children: [],
+    startedAt: 1_000,
+  };
+  let made = 1;
+  // The frontier is the agents that may still take children, in creation
+  // order, which is what makes the fill breadth first and therefore a pure
+  // function of `target`.
+  let frontier: AgentNode[] = [root];
+  for (let depth = 1; depth <= BOUNDARY_DEPTH && made < target; depth += 1) {
+    const next: AgentNode[] = [];
+    for (const parent of frontier) {
+      for (let i = 0; i < BOUNDARY_FANOUT && made < target; i += 1) {
+        const child: AgentNode = {
+          id: `${sessionId}-a${String(made).padStart(3, '0')}`,
+          kind: 'subagent',
+          label: `w${String(depth)}.${String(i)}`,
+          status: made % 5 === 0 ? 'running' : 'done',
+          spawnDepth: depth,
+          children: [],
+          startedAt: 1_000 * (depth + 1),
+        };
+        parent.children.push(child);
+        next.push(child);
+        made += 1;
+      }
+    }
+    frontier = next;
+  }
+  if (made !== target) {
+    throw new Error(
+      `boundary tree for ${sessionId} holds ${String(made)} agents, not ${String(target)}: ` +
+        `raise BOUNDARY_FANOUT or BOUNDARY_DEPTH`,
+    );
+  }
+  return root;
+}
+
+/** The id a boundary session of this size carries. Sorts inside the deck. */
+function boundaryId(target: number): string {
+  return `syn-b${String(target)}`;
+}
+
+function boundarySession(target: number): SessionState {
+  const sessionId = boundaryId(target);
+  return {
+    sessionId,
+    projectSlug: 'synthetic-stress-slug',
+    workspaceMatch: true,
+    liveness: 'live',
+    schemaOk: true,
+    root: boundaryAgentTree(sessionId, target),
+    totals: { costUsd: 0 },
+    // No session-level tokens either, for the reason `boundaryAgentTree`
+    // gives: this is the shape the second engine produces.
+    spawnEdges: [],
+  };
+}
+
+/** True for the three sessions that sit on the auto-collapse boundary. */
+function isBoundary(state: SessionState): boolean {
+  return BOUNDARY_TARGETS.some((t) => boundaryId(t) === state.sessionId);
+}
+
 /** The refused session: a real product state, and it must survive the storm. */
 function refusedSession(): SessionState {
   return {
@@ -271,6 +419,29 @@ function toolsOf(state: SessionState): ToolNode[] {
 }
 
 /**
+ * The patch a BOUNDARY session takes on one tick.
+ *
+ * Scalars only — never `insertNode`, never `removeNode`. The whole value of
+ * these three sessions is that their agent count is exactly 299, 300 and 301
+ * at every point in the arc, so a membership op would move the boundary
+ * mid-replay and the collapse assertion would be about whatever the tree
+ * happened to be by then. They still carry diffs, because a boundary that only
+ * holds in the opening snapshot is a boundary the replay never tested.
+ */
+function boundaryTickPatch(tick: number): SessionPatch | undefined {
+  if (tick % 2 !== 0) return undefined;
+  return {
+    tree: [
+      {
+        op: 'updateAgent',
+        id: 'root',
+        fields: { status: tick % 4 === 0 ? 'running' : 'done' },
+      },
+    ],
+  };
+}
+
+/**
  * The patch for one session on one tick.
  *
  * Real ops only — `updateTool`, `updateAgent`, `insertNode` and a `fields`
@@ -279,6 +450,8 @@ function toolsOf(state: SessionState): ToolNode[] {
  * here rather than producing a corpus the store silently stalls on.
  */
 function tickPatch(state: SessionState, tick: number): SessionPatch | undefined {
+  if (isBoundary(state)) return boundaryTickPatch(tick);
+
   const tree: TreeOp[] = [];
 
   // Settle one running tool per tick, deterministically chosen.
@@ -341,8 +514,9 @@ async function generate(recorder: RecorderModule): Promise<Generated> {
 
   let current: SessionState[] = [
     ...Array.from({ length: HEALTHY_SESSIONS }, (_, i) => syntheticSession(i)),
+    ...BOUNDARY_TARGETS.map((target) => boundarySession(target)),
     refusedSession(),
-  ];
+  ].sort((a, b) => (a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0));
   const ids = current.map((s) => s.sessionId);
 
   rec.step(0, 'cold-start', `${ids.length} sessions arrive at once, one of them refused`);
@@ -393,7 +567,8 @@ async function generate(recorder: RecorderModule): Promise<Generated> {
       'INVENTED, not recorded. Every SessionState here was constructed by',
       'webview/stress.test.ts, put on the wire through a real SessionBridge, and',
       'carries no bytes from any Claude Code transcript. The `synthetic-` prefix is',
-      'what keeps it distinguishable from evidence about CC on disk (G6).',
+      'what keeps it distinguishable from evidence about CC on disk (G6). Three of the',
+      'sessions sit on the auto-collapse boundary and are sized from AUTO_COLLAPSE_NODES.',
     ].join(' '),
     producedBy: 'webview/stress.test.ts',
     durationMs: lastEvent === undefined ? 0 : lastEvent.atMs,
@@ -435,6 +610,105 @@ function ms(value: number): string {
 }
 
 /* ------------------------------------------------------------------------ *
+ * The budgets (DoD 7.8)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * One wall-clock limit, with the measurement it was set from.
+ *
+ * The shape `src/perf/budgets.ts` uses, restated here rather than imported,
+ * and the reason is the DoD's: `src/perf/perf.test.ts` is the suite's critical
+ * path at ~31-42 s and this package was told not to touch it. What this table
+ * measures is also a different thing — the WEBVIEW's reducer and layout, with
+ * no filesystem anywhere in it — so it would not have belonged in that file
+ * even if it had been ours to edit.
+ */
+interface ScaleBudget {
+  id: string;
+  what: string;
+  limitMs: number;
+  measured: { valueMs: number; on: string; marginX: number; note: string };
+}
+
+/**
+ * MEASURED on the Windows 11 development machine on 2026-08-28, running this
+ * file through
+ *
+ *     node node_modules/vitest/vitest.mjs run webview/stress.test.ts \
+ *       webview/wire.test.ts webview/timed-replay.test.ts
+ *
+ * Every `valueMs` is the MEDIAN this file printed on the run each limit was set
+ * from, and the count of runs behind each is ONE. That is stated rather than
+ * dressed up: a single run is enough to size a tripwire two orders of magnitude
+ * above it and is not enough to claim a distribution, and the medians are
+ * re-printed on every run so the next reader compares against a number rather
+ * than against this comment.
+ *
+ * THE MARGINS ARE ENORMOUS ON PURPOSE, and the reason is recorded in this
+ * repository rather than guessed. A wall-clock stage here measured 12.3 ms as
+ * its own process and 1050.6 ms inside a fifty-file vitest run — a factor of
+ * 85 that no ordering inside the run could reach, and that was diagnosed twice
+ * before it was understood. A budget set close to a solo measurement therefore
+ * goes red on the full-suite run and gets widened, which is how a budget stops
+ * meaning anything. These are sized so that only a CHANGE IN COMPLEXITY can
+ * trip them: `treeLayout` is a subtree-width pass that must stay linear in the
+ * drawn node count, and one that went quadratic on a 301-node tree would blow
+ * a 40x margin without anybody having to guess the right tight number.
+ */
+const SCALE_BUDGETS: readonly ScaleBudget[] = [
+  {
+    id: 'replay.perDiff',
+    what: 'one diff: store.handleMessage + getView + deckLayout(all) + treeLayout(selected)',
+    limitMs: 25,
+    measured: {
+      valueMs: 0.234,
+      on: 'the committed synthetic-stress corpus, 16 sessions / 1,273 nodes, n=108 diffs',
+      marginX: 106.8,
+      note:
+        'The stage this budget guards is per-diff work that must not grow with the ' +
+        'number of sessions the store holds; the identity-based test below asserts ' +
+        'that property without a clock, and this one prices it. The median splits ' +
+        'roughly 0.17 getView / 0.04 treeLayout / 0.015 handleMessage / 0.005 deck.',
+    },
+  },
+  {
+    id: 'replay.cold',
+    what: 'every corpus event into a fresh store, then a deck layout and a tree layout each',
+    limitMs: 2_000,
+    measured: {
+      valueMs: 19.564,
+      on: 'the committed synthetic-stress corpus, 16 sessions / 1,273 nodes, n=5 replays',
+      marginX: 102.2,
+      note:
+        "DoD 7.8's own sentence, priced: a >= 300-node corpus replayed and laid out " +
+        'end to end. Includes the three boundary sessions at their auto-collapse ' +
+        'depth, and drew 756 nodes on the run this was set from.',
+    },
+  },
+  {
+    id: 'layout.boundaryTree',
+    what: 'treeLayout of the largest boundary session, uncollapsed',
+    limitMs: 200,
+    measured: {
+      valueMs: 4.541,
+      on: 'AUTO_COLLAPSE_NODES + 1 agents, four levels deep, n=20 layouts',
+      marginX: 44.0,
+      note:
+        'The whole tree, collapseDepth Infinity, which is the work the auto-collapse ' +
+        'rule exists to avoid asking a renderer to draw. Measured anyway: the rule is ' +
+        'about what a HUMAN can read, and a layout that could not compute it would ' +
+        'make the rule load-bearing for correctness rather than for legibility.',
+    },
+  },
+];
+
+function budget(id: string): ScaleBudget {
+  const found = SCALE_BUDGETS.find((b) => b.id === id);
+  if (found === undefined) throw new Error(`no scale budget named ${id}`);
+  return found;
+}
+
+/* ------------------------------------------------------------------------ *
  * Fixtures for the suite
  * ------------------------------------------------------------------------ */
 
@@ -442,7 +716,36 @@ let recorder: RecorderModule;
 let generated: Generated;
 let committed: WireCorpus;
 /** Derived from the generated corpus. Printed; never written down as a literal. */
-let facts: { sessions: number; nodes: number; maxDepth: number; diffs: number };
+let facts: {
+  sessions: number;
+  nodes: number;
+  maxDepth: number;
+  diffs: number;
+  /** The largest VISIBLE (agent) count of any one session in the corpus. */
+  largestTree: number;
+};
+
+/** The final state of one session, by id. Throws rather than returning undefined. */
+function finalOf(sessionId: string): SessionState {
+  const found = generated.final.find((s) => s.sessionId === sessionId);
+  if (found === undefined) throw new Error(`the corpus holds no session ${sessionId}`);
+  return found;
+}
+
+/**
+ * `SessionSummary` to `layout.ts:DeckSession`, for the COST measurement below.
+ *
+ * `Deck.svelte` owns the product mapping and this is not a second copy of it
+ * being asserted against: nothing here checks a placement, only how long
+ * `deckLayout` takes over the visible set, which is a function of the array
+ * length and the sort. The one part that IS a shared rule — engine absence
+ * reads as `cc` — goes through `layout.ts:deckEngine` rather than being
+ * restated.
+ */
+function toDeck(row: SessionSummary): DeckSession {
+  const status: DeckStatus = row.refused ? 'unsupported' : row.liveness;
+  return { id: row.sessionId, engine: deckEngine(row.engine), status, last: row.lastEventAt };
+}
 
 beforeAll(async () => {
   recorder = (await import(/* @vite-ignore */ RECORDER_MODULE)) as unknown as RecorderModule;
@@ -461,8 +764,10 @@ beforeAll(async () => {
 
   let nodes = 0;
   let maxDepth = 0;
+  let largestTree = 0;
   for (const state of generated.final) {
     nodes += countNodes(state);
+    largestTree = Math.max(largestTree, visibleNodeCount(state, state.root.id));
     const visit = (node: TreeNode): void => {
       if (!isAgentNode(node)) return;
       if (node.spawnDepth > maxDepth) maxDepth = node.spawnDepth;
@@ -474,6 +779,7 @@ beforeAll(async () => {
     sessions: generated.final.length,
     nodes,
     maxDepth,
+    largestTree,
     diffs: generated.corpus.events.filter((e) => e.message.type === 'diff').length,
   };
 }, 180_000);
@@ -486,12 +792,32 @@ describe('the synthetic stress corpus', () => {
   it('meets the scale the DoD names, measured off the corpus itself', () => {
     console.log(
       `[stress] ${CORPUS_ID}: sessions=${facts.sessions} nodes=${facts.nodes} ` +
-        `maxSpawnDepth=${facts.maxDepth} diffEvents=${facts.diffs}`,
+        `maxSpawnDepth=${facts.maxDepth} largestTree=${facts.largestTree} ` +
+        `diffEvents=${facts.diffs}`,
     );
     expect(facts.sessions).toBeGreaterThanOrEqual(12);
+    // DoD 7.8's floor, and the corpus clears it in one SESSION as well as in
+    // aggregate — a 300-node total spread over twelve trees would say nothing
+    // about a tree the renderer has to draw at once.
     expect(facts.nodes).toBeGreaterThanOrEqual(300);
+    expect(facts.largestTree).toBeGreaterThan(AUTO_COLLAPSE_NODES);
     expect(facts.maxDepth).toBe(3);
     expect(facts.diffs).toBeGreaterThan(0);
+  });
+
+  it('carries a session on each side of the auto-collapse boundary, exactly sized', () => {
+    // The sizes are asserted from the TREE, not from the generator's argument:
+    // a generator that overshot by one would move the boundary and every
+    // collapse assertion below would be about the interior of the range.
+    for (const target of BOUNDARY_TARGETS) {
+      const state = finalOf(boundaryId(target));
+      expect(visibleNodeCount(state, state.root.id), boundaryId(target)).toBe(target);
+    }
+    expect([...BOUNDARY_TARGETS]).toStrictEqual([
+      AUTO_COLLAPSE_NODES - 1,
+      AUTO_COLLAPSE_NODES,
+      AUTO_COLLAPSE_NODES + 1,
+    ]);
   });
 
   it('names itself synthetic, with the prefix that makes that permanent', async () => {
@@ -575,7 +901,7 @@ describe('the store under the storm', () => {
     }
   });
 
-  it('records store and layout time per diff as a number', () => {
+  it('records store and layout time per diff as a number, inside a budget', () => {
     const store = createStore();
     const handleSamples: number[] = [];
     const viewSamples: number[] = [];
@@ -597,9 +923,14 @@ describe('the store under the storm', () => {
       const t1 = performance.now();
       const view = store.getView();
       const t2 = performance.now();
-      deckLayout(view.sessions);
+      deckLayout(view.sessions.map(toDeck), 'grid', 'live', 1_200);
       const t3 = performance.now();
-      if (view.selected !== undefined) sessionLayout(view.selected);
+      const selected = view.selected;
+      if (selected !== undefined) {
+        treeLayout(selected, selected.root.id, {
+          collapseDepth: autoCollapseDepth(selected, selected.root.id),
+        });
+      }
       const t4 = performance.now();
 
       handleSamples.push(t1 - t0);
@@ -628,18 +959,22 @@ describe('the store under the storm', () => {
       `min ${ms(view.minMs)}  max ${ms(view.maxMs)}`);
     console.log(`[stress]   deckLayout(all)      median ${ms(deck.medianMs)}  ` +
       `min ${ms(deck.minMs)}  max ${ms(deck.maxMs)}`);
-    console.log(`[stress]   sessionLayout(one)   median ${ms(layout.medianMs)}  ` +
+    console.log(`[stress]   treeLayout(selected) median ${ms(layout.medianMs)}  ` +
       `min ${ms(layout.minMs)}  max ${ms(layout.maxMs)}`);
     console.log(`[stress]   store + layout TOTAL median ${ms(total.medianMs)}  ` +
       `min ${ms(total.minMs)}  max ${ms(total.maxMs)}`);
 
-    // Nothing here asserts a threshold: a wall-clock sample is a property of
-    // the machine, not of the code. What is asserted is that the numbers are
-    // real numbers over a real sample.
+    // The numbers are real numbers over a real sample. This is the assertion
+    // that keeps the series from being an adjective.
     expect(total.n).toBe(facts.diffs);
     expect(total.n).toBeGreaterThan(30);
     expect(Number.isFinite(total.medianMs)).toBe(true);
     expect(total.medianMs).toBeGreaterThanOrEqual(0);
+
+    // And DoD 7.8's budget, on the MEDIAN rather than on any single sample.
+    const b = budget('replay.perDiff');
+    console.log(`[stress]   budget ${b.id}: ${ms(total.medianMs)} against ${String(b.limitMs)} ms`);
+    expect(total.medianMs).toBeLessThan(b.limitMs);
   });
 
   it('per-diff work does not grow with the number of sessions held', () => {
@@ -677,7 +1012,146 @@ describe('the store under the storm', () => {
 });
 
 /* ------------------------------------------------------------------------ *
- * 3. It renders
+ * 3. Scale: the whole replay, and the collapse boundary (DoD 7.8)
+ * ------------------------------------------------------------------------ */
+
+/** Replay every event into a fresh store and lay out everything it holds. */
+function replayAndLayOut(): { sessions: number; drawn: number } {
+  const store = createStore();
+  for (const event of generated.corpus.events) {
+    store.handleMessage(event.message as HostToWebviewMessage);
+  }
+  const view = store.getView();
+  deckLayout(view.sessions.map(toDeck), 'grid', 'live', 1_200);
+
+  let drawn = 0;
+  for (const state of generated.final) {
+    if (!state.schemaOk) continue;
+    const rootId = state.root.id;
+    const placements = treeLayout(state, rootId, {
+      collapseDepth: autoCollapseDepth(state, rootId),
+    });
+    drawn += placements.filter((p) => !p.hidden).length;
+  }
+  return { sessions: view.sessions.length, drawn };
+}
+
+describe('scale (DoD 7.8)', () => {
+  it('replays and lays out the whole corpus inside the cold-replay budget', () => {
+    const samples: number[] = [];
+    let last = { sessions: 0, drawn: 0 };
+    for (let i = 0; i < 5; i += 1) {
+      const t0 = performance.now();
+      last = replayAndLayOut();
+      samples.push(performance.now() - t0);
+    }
+    const cold = stats(samples);
+    const b = budget('replay.cold');
+    console.log(
+      `[stress] cold replay + layout of ${facts.nodes} nodes over ${facts.sessions} sessions: ` +
+        `median ${ms(cold.medianMs)} min ${ms(cold.minMs)} max ${ms(cold.maxMs)} (n=${cold.n}), ` +
+        `budget ${b.id} ${String(b.limitMs)} ms; drew ${String(last.drawn)} nodes`,
+    );
+    // Not vacuous: the replay really did land a deck and really did draw
+    // trees. A run that produced nothing would otherwise be the fastest one.
+    expect(last.sessions).toBe(facts.sessions);
+    expect(last.drawn).toBeGreaterThan(AUTO_COLLAPSE_NODES);
+    expect(cold.medianMs).toBeLessThan(b.limitMs);
+  });
+
+  it('lays out the largest tree UNCOLLAPSED inside its own budget', () => {
+    const state = finalOf(boundaryId(AUTO_COLLAPSE_NODES + 1));
+    const samples: number[] = [];
+    let drawn = 0;
+    for (let i = 0; i < 20; i += 1) {
+      const t0 = performance.now();
+      const placements = treeLayout(state, state.root.id, {
+        collapseDepth: Number.POSITIVE_INFINITY,
+      });
+      samples.push(performance.now() - t0);
+      drawn = placements.filter((p) => !p.hidden).length;
+    }
+    const whole = stats(samples);
+    const b = budget('layout.boundaryTree');
+    console.log(
+      `[stress] treeLayout of ${String(drawn)} agents, uncollapsed: median ` +
+        `${ms(whole.medianMs)} min ${ms(whole.minMs)} max ${ms(whole.maxMs)} (n=${whole.n}), ` +
+        `budget ${b.id} ${String(b.limitMs)} ms`,
+    );
+    expect(drawn).toBe(AUTO_COLLAPSE_NODES + 1);
+    expect(whole.medianMs).toBeLessThan(b.limitMs);
+  });
+
+  it('every budget states the measurement it was set from', () => {
+    // A limit with no measurement behind it is a round number somebody typed.
+    for (const b of SCALE_BUDGETS) {
+      expect(b.measured.valueMs, b.id).toBeGreaterThan(0);
+      expect(b.limitMs, b.id).toBeGreaterThan(b.measured.valueMs);
+      // The margin is arithmetic, not a claim: it must agree with the two
+      // numbers beside it to within 1%, or one of the three has been edited
+      // alone. A tolerance rather than an equality because the stated margin is
+      // rounded for a reader; a `toBeCloseTo(_, 5)` here would force whoever
+      // re-measures to type twelve digits and would be edited out on the first
+      // attempt, which is worse than a check that survives being used.
+      const derived = b.limitMs / b.measured.valueMs;
+      expect(Math.abs(derived - b.measured.marginX) / b.measured.marginX, b.id).toBeLessThan(0.01);
+      // And the margin is genuinely large. These are complexity tripwires, not
+      // measurements of this machine — see the table's own header.
+      expect(derived, b.id).toBeGreaterThan(20);
+      expect(b.measured.note.length, b.id).toBeGreaterThan(40);
+    }
+  });
+
+  it('the auto-collapse rule fires above the boundary and nowhere below it', () => {
+    // Through the REPLAYED store, not off the generator's objects: the states
+    // this asserts on are the ones a webview would be holding after the whole
+    // corpus arrived, patches and all.
+    const store = createStore();
+    for (const event of generated.corpus.events) {
+      store.handleMessage(event.message as HostToWebviewMessage);
+    }
+
+    const seen: string[] = [];
+    for (const target of BOUNDARY_TARGETS) {
+      const id = boundaryId(target);
+      store.selectSession(id);
+      const state = store.getView().selected;
+      expect(state, id).toBeDefined();
+      if (state === undefined) continue;
+      const rootId = state.root.id;
+
+      const visible = visibleNodeCount(state, rootId);
+      const depth = autoCollapseDepth(state, rootId);
+      const collapsed = depth !== Number.POSITIVE_INFINITY;
+      const drawn = treeLayout(state, rootId, { collapseDepth: depth }).filter((p) => !p.hidden);
+      seen.push(`${id}: visible=${String(visible)} depth=${String(depth)} drawn=${String(drawn.length)}`);
+
+      expect(visible, id).toBe(target);
+      // STRICTLY GREATER. 300 renders whole, 301 collapses.
+      expect(collapsed, id).toBe(target > AUTO_COLLAPSE_NODES);
+      if (collapsed) {
+        expect(depth, id).toBe(COLLAPSE_DEPTH);
+        // A collapse that hid nothing would satisfy every assertion above.
+        expect(drawn.length, id).toBeLessThan(visible);
+        expect(drawn.every((p) => p.depth <= COLLAPSE_DEPTH), id).toBe(true);
+        const badges = drawn.filter((p) => p.collapsed);
+        expect(badges.length, id).toBeGreaterThan(0);
+        expect(
+          badges.reduce((n, p) => n + p.hiddenDescendants, 0) + drawn.length,
+          id,
+        ).toBe(visible);
+      } else {
+        expect(drawn.length, id).toBe(visible);
+        expect(drawn.some((p) => p.collapsed), id).toBe(false);
+      }
+    }
+    console.log(`[stress] collapse boundary (AUTO_COLLAPSE_NODES=${String(AUTO_COLLAPSE_NODES)}):`);
+    for (const line of seen) console.log(`[stress]   ${line}`);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * 4. It renders
  * ------------------------------------------------------------------------ */
 
 /**
@@ -747,11 +1221,30 @@ describe('the canvas renders the stress corpus', () => {
 
       const count = (testId: string): number =>
         container.querySelectorAll(`[data-testid="${testId}"]`).length;
+      const text = (selector: string): string =>
+        container.querySelector(selector)?.textContent ?? '';
 
-      // Altitude 0: one blob per session, and a constellation that saturates
-      // rather than thinning — the cap is the layout's, not asserted here.
+      // Altitude 0: one CARD per session. The predecessor deck drew a blob
+      // with a constellation of faint interior dots and this asserted that
+      // there were more than zero of them; the constellation is deleted, and
+      // the card says the same thing in a figure a test can read BY VALUE.
       expect(count(TESTID.deckBlob)).toBe(facts.sessions);
-      expect(count(TESTID.deckConstellation)).toBeGreaterThan(0);
+      for (const target of BOUNDARY_TARGETS) {
+        const id = boundaryId(target);
+        const cell = `[data-testid="${TESTID.deckBlob}"][data-session-id="${id}"] `;
+        expect(text(`${cell}[data-testid="deck-cell-agents"]`), id).toBe(`${String(target)} ag`);
+        // And the em-dash path, asserted as a VALUE rather than with a
+        // `toContain('—')` that would pass if every figure on the row were a
+        // dash: these sessions report no tokens, and the neighbouring figure
+        // on the same row is a real number.
+        expect(text(`${cell}[data-testid="deck-cell-tokens"]`), id).toBe('—');
+        expect(text(`${cell}[data-testid="deck-cell-inflight"]`), id).toBe('0 in flight');
+      }
+      // The control for that dash: a healthy session on the same deck prints
+      // a figure, so "no tokens" is a property of those three sessions rather
+      // than of the card.
+      const healthy = `[data-testid="${TESTID.deckBlob}"][data-session-id="syn-00"] `;
+      expect(text(`${healthy}[data-testid="deck-cell-tokens"]`)).not.toBe('—');
 
       // Altitude 1, for every session in turn, including the refused one.
       let interiors = 0;
@@ -776,6 +1269,83 @@ describe('the canvas renders the stress corpus', () => {
         }
       }
       expect(interiors).toBe(facts.sessions - 1);
+
+      started.dispose();
+    } finally {
+      window.close();
+    }
+  }, 120_000);
+
+  it('says so in the status line when it collapses a tree on its own', async () => {
+    // DoD 7.8 through the RENDERER, at the boundary. A tree that silently
+    // stopped drawing two thirds of itself is a tree the user reads as
+    // complete, so the assertion is on the sentence as well as on the count.
+    const { JSDOM } = (await import(/* @vite-ignore */ JSDOM_MODULE)) as unknown as JsdomModule;
+    const code = await bundleHarness();
+    const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+      runScripts: 'outside-only',
+      pretendToBeVisual: true,
+    });
+    const { window } = dom;
+    try {
+      window.eval(code + EXPORT_HARNESS);
+      const harness = window.__agentDeckHarness;
+      expect(harness).toBeDefined();
+      if (harness === undefined) return;
+
+      const container = window.document.createElement('div');
+      window.document.body.appendChild(container);
+      const started = harness.start(container, { postMessage: () => {} });
+      for (const event of generated.corpus.events) {
+        harness.flushSync(() => {
+          window.dispatchEvent(new window.MessageEvent('message', { data: event.message }));
+        });
+      }
+
+      const observed: string[] = [];
+      for (const target of BOUNDARY_TARGETS) {
+        const id = boundaryId(target);
+        harness.flushSync(() => {
+          started.store.enterSession(id);
+        });
+        const canvas = container.querySelector(`[data-testid="${TESTID.canvas}"]`);
+        expect(canvas, id).not.toBeNull();
+        const status = container.querySelector('[data-testid="tree-status"]');
+        expect(status, id).not.toBeNull();
+        const statusText = status?.textContent ?? '';
+        const drawnCells = container.querySelectorAll(
+          `[data-testid="${TESTID.cell}"],[data-testid="${TESTID.nucleus}"]`,
+        ).length;
+        observed.push(
+          `${id}: autoCollapsed=${String(canvas?.getAttribute('data-auto-collapsed'))} ` +
+            `depth=${String(canvas?.getAttribute('data-collapse-depth'))} ` +
+            `drawn=${String(drawnCells)} status=${JSON.stringify(statusText)}`,
+        );
+
+        const above = target > AUTO_COLLAPSE_NODES;
+        expect(canvas?.getAttribute('data-auto-collapsed'), id).toBe(String(above));
+        expect(canvas?.getAttribute('data-collapse-depth'), id).toBe(
+          above ? String(COLLAPSE_DEPTH) : 'Infinity',
+        );
+        // The status line's own numbers, BY VALUE. `of <target> nodes` is the
+        // total in both arms; what changes is the count before it and whether
+        // the sentence admits the collapse.
+        expect(statusText, id).toContain(`of ${String(target)} nodes`);
+        if (above) {
+          expect(statusText, id).toContain(
+            `collapsed to depth ${String(COLLAPSE_DEPTH)} automatically above ` +
+              `${String(AUTO_COLLAPSE_NODES)} nodes`,
+          );
+          expect(drawnCells, id).toBeLessThan(target);
+          expect(statusText, id).toContain(`${String(drawnCells)} of`);
+        } else {
+          expect(statusText, id).not.toContain('automatically');
+          expect(drawnCells, id).toBe(target);
+          expect(statusText, id).toBe(`${String(target)} of ${String(target)} nodes`);
+        }
+      }
+      console.log('[stress] status line at the boundary:');
+      for (const line of observed) console.log(`[stress]   ${line}`);
 
       started.dispose();
     } finally {

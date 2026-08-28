@@ -1,0 +1,34 @@
+div
+  div [app] .app data-altitude="deck" data-degraded="false" data-liveness="unsupported" data-refused="true" data-view-mode="list"
+    div .chrome
+      button [view-toggle] .toggle aria-pressed="false" data-view-mode="list" type="button" "List"
+    div .body
+      nav [session-rail] .rail aria-label="Sessions"
+        h2 .rail-title "Sessions"
+        ul
+          li
+            button [rail-item] .rail-item aria-current="false" data-liveness="live" data-refused="false" data-selected="false" data-session-id="05c5482d-5568-44ce-97fe-bc9a6c15afc4" type="button"
+              span .rail-label "05c5482d-5568-44ce-97fe-bc9a6c15afc4"
+              span .rail-meta
+                span [rail-liveness] .liveness .liveness-live data-liveness="live" title="recently active, and something is still believed to be running" "{}live"
+                  span .dot aria-hidden="true"
+          li
+            button [rail-item] .rail-item aria-current="false" data-liveness="live" data-refused="false" data-selected="false" data-session-id="4299490e-4a09-46a0-a544-7ffb0429e7e7" type="button"
+              span .rail-label "4299490e-4a09-46a0-a544-7ffb0429e7e7"
+              span .rail-meta
+                span [rail-liveness] .liveness .liveness-live data-liveness="live" title="recently active, and something is still believed to be running" "{}live"
+                  span .dot aria-hidden="true"
+          li
+            button [rail-item] .rail-item .selected aria-current="true" data-liveness="unsupported" data-refused="true" data-selected="true" data-session-id="deadbeef-0000-4000-8000-000000000001" type="button"
+              span .rail-label "deadbeef-0000-4000-8000-000000000001"
+              span .rail-meta
+                span [rail-liveness] .liveness .liveness-unsupported data-liveness="unsupported" title="the transcript layout was not recognised, so no tree is rendered for this session" "{}unsupported"
+                  span .dot aria-hidden="true"
+      main [main] .main
+        section [refusal-screen] .refusal data-liveness="unsupported" role="alert"
+          h2 "Unsupported session"
+          p "Agent Deck did not recognise the transcript layout for {}, so it is not rendering a tree for it."
+            code [refusal-session-id] "deadbeef-0000-4000-8000-000000000001"
+          p .why "This is deliberate. Agent Deck reads an undocumented on-disk format; when that format does not match what it was pinned against, a partly-understood tree would be a confident guess. It refuses instead."
+          p [refusal-cause] .why "The usual cause is that Claude Code changed its on-disk format since this version of Agent Deck was pinned to it."
+          p .why "Other sessions in the rail are unaffected, and nothing was changed on disk — Agent Deck only ever reads."

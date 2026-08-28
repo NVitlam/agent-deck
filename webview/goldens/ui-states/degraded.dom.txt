@@ -1,0 +1,286 @@
+div
+  div [app] .app data-altitude="deck" data-degraded="true" data-liveness="live" data-refused="false" data-view-mode="list"
+    div [degraded-banner] .banner data-reason="noHookEvents" role="status"
+      span .text "Liveness is degraded — no hook events received. The tree below is still accurate; only \"running right now\" is unavailable. See the README for the hook block."
+      button [degraded-dismiss] .dismiss type="button" "Dismiss"
+    div .chrome
+      button [view-toggle] .toggle aria-pressed="false" data-view-mode="list" type="button" "List"
+    div .body
+      nav [session-rail] .rail aria-label="Sessions"
+        h2 .rail-title "Sessions"
+        ul
+          li
+            button [rail-item] .rail-item .selected aria-current="true" data-liveness="live" data-refused="false" data-selected="true" data-session-id="05c5482d-5568-44ce-97fe-bc9a6c15afc4" type="button"
+              span .rail-label "05c5482d-5568-44ce-97fe-bc9a6c15afc4"
+              span .rail-meta
+                span [rail-liveness] .liveness .liveness-live data-liveness="live" title="recently active, and something is still believed to be running" "{}live"
+                  span .dot aria-hidden="true"
+          li
+            button [rail-item] .rail-item aria-current="false" data-liveness="live" data-refused="false" data-selected="false" data-session-id="4299490e-4a09-46a0-a544-7ffb0429e7e7" type="button"
+              span .rail-label "4299490e-4a09-46a0-a544-7ffb0429e7e7"
+              span .rail-meta
+                span [rail-liveness] .liveness .liveness-live data-liveness="live" title="recently active, and something is still believed to be running" "{}live"
+                  span .dot aria-hidden="true"
+      main [main] .main
+        header [session-header] .header data-liveness="live" data-liveness-inferred="true"
+          div .title
+            span [header-session-id] .session-id "05c5482d-5568-44ce-97fe-bc9a6c15afc4"
+            span [header-liveness] .liveness .liveness-live data-liveness="live" title="recently active, and something is still believed to be running" "{}live"
+              span .dot aria-hidden="true"
+            span [header-liveness-inferred] .inferred title="the hook tap is not reporting, so this is inferred from transcript activity alone" "(inferred)"
+          dl .totals
+            div .total
+              dt "tokens in"
+              dd [header-tokens-in] "32"
+            div .total
+              dt "tokens out"
+              dd [header-tokens-out] "10,300"
+            div .total
+              dt "cost"
+              dd [header-cost] title="cost not computed — no price table" "—"
+        ul [tree] .tree
+          li [tree-node] .node .node-agent data-depth="0" data-expanded="true" data-kind="agent" data-node-id="root" data-spawn-depth="0" data-spawned-by=""
+            div .row
+              button [toggle] .twisty aria-expanded="true" type="button" "▾"
+              span [agent-kind] .agent-kind "main"
+              span [node-label] .label "05c5482d-5568-44ce-97fe-bc9a6c15afc4"
+              span [status-chip] .chip .chip-running data-status="running" "running"
+              span [node-tokens] .meta "4 in / 2,129 out"
+              span [node-duration] .meta "—"
+            ul .children
+              li [tree-node] .node .node-tool data-depth="1" data-expanded="false" data-kind="tool" data-node-id="toolu_017Pp1K6YSjX4SBuJDcmMsKs"
+                div .row
+                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                  span [node-label] .label "Agent"
+                  span [status-chip] .chip .chip-done data-status="done" "done"
+                  span [node-duration] .meta "13.1s"
+                div .payloads
+                  div [payload-preview] .preview data-label="input"
+                    span .preview-label "input"
+                    pre [preview-body] data-truncated="true" "«payload»"
+                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                  div [payload-preview] .preview data-label="result"
+                    span .preview-label "result"
+                    pre [preview-body] data-truncated="false" "«payload»"
+                ul [spawned-children] .children .children-spawned
+                  li [tree-node] .node .node-agent data-depth="2" data-expanded="true" data-kind="agent" data-node-id="a69e0f453d5ca5f43" data-spawn-depth="1" data-spawned-by="toolu_017Pp1K6YSjX4SBuJDcmMsKs"
+                    div .row
+                      button [toggle] .twisty aria-expanded="true" type="button" "▾"
+                      span [agent-kind] .agent-kind "subagent"
+                      span [node-label] .label "general-purpose: inventory"
+                      span [status-chip] .chip .chip-done data-status="done" "done"
+                      span [node-tokens] .meta "4 in / 272 out"
+                      span [node-duration] .meta "11.3s"
+                    ul .children
+                      li [tree-node] .node .node-tool data-depth="3" data-expanded="false" data-kind="tool" data-node-id="toolu_015bjMuhrKGMsdJxXMUq6Dri"
+                        div .row
+                          button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                          span [node-label] .label "Bash"
+                          span [status-chip] .chip .chip-done data-status="done" "done"
+                          span [node-duration] .meta "4.0s"
+                        div .payloads
+                          div [payload-preview] .preview data-label="input"
+                            span .preview-label "input"
+                            pre [preview-body] data-truncated="false" "«payload»"
+                          div [payload-preview] .preview data-label="result"
+                            span .preview-label "result"
+                            pre [preview-body] data-truncated="false" "«payload»"
+              li [tree-node] .node .node-tool data-depth="1" data-expanded="false" data-kind="tool" data-node-id="toolu_01MiUaF4vR8zVMp5nL8njJH6"
+                div .row
+                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                  span [node-label] .label "Agent"
+                  span [status-chip] .chip .chip-done data-status="done" "done"
+                  span [node-duration] .meta "10.7s"
+                div .payloads
+                  div [payload-preview] .preview data-label="input"
+                    span .preview-label "input"
+                    pre [preview-body] data-truncated="true" "«payload»"
+                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                  div [payload-preview] .preview data-label="result"
+                    span .preview-label "result"
+                    pre [preview-body] data-truncated="false" "«payload»"
+                ul [spawned-children] .children .children-spawned
+                  li [tree-node] .node .node-agent data-depth="2" data-expanded="true" data-kind="agent" data-node-id="a32b33ebf1b92e214" data-spawn-depth="1" data-spawned-by="toolu_01MiUaF4vR8zVMp5nL8njJH6"
+                    div .row
+                      button [toggle] .twisty aria-expanded="true" type="button" "▾"
+                      span [agent-kind] .agent-kind "subagent"
+                      span [node-label] .label "general-purpose: bulk-output"
+                      span [status-chip] .chip .chip-done data-status="done" "done"
+                      span [node-tokens] .meta "4 in / 230 out"
+                      span [node-duration] .meta "8.7s"
+                    ul .children
+                      li [tree-node] .node .node-tool data-depth="3" data-expanded="false" data-kind="tool" data-node-id="toolu_01VJxVjoCCqzBQXRzMC97fq3"
+                        div .row
+                          button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                          span [node-label] .label "Bash"
+                          span [status-chip] .chip .chip-done data-status="done" "done"
+                          span [node-duration] .meta "876ms"
+                        div .payloads
+                          div [payload-preview] .preview data-label="input"
+                            span .preview-label "input"
+                            pre [preview-body] data-truncated="false" "«payload»"
+                          div [payload-preview] .preview data-label="result"
+                            span .preview-label "result"
+                            pre [preview-body] data-truncated="false" "«payload»"
+              li [tree-node] .node .node-tool data-depth="1" data-expanded="false" data-kind="tool" data-node-id="toolu_015U2QmdfzyqUd6DrCmCxfFB"
+                div .row
+                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                  span [node-label] .label "Agent"
+                  span [status-chip] .chip .chip-done data-status="done" "done"
+                  span [node-duration] .meta "1m 49s"
+                div .payloads
+                  div [payload-preview] .preview data-label="input"
+                    span .preview-label "input"
+                    pre [preview-body] data-truncated="true" "«payload»"
+                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                  div [payload-preview] .preview data-label="result"
+                    span .preview-label "result"
+                    pre [preview-body] data-truncated="true" "«payload»"
+                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                ul [spawned-children] .children .children-spawned
+                  li [tree-node] .node .node-agent data-depth="2" data-expanded="true" data-kind="agent" data-node-id="a1a53f42c5eca8824" data-spawn-depth="1" data-spawned-by="toolu_015U2QmdfzyqUd6DrCmCxfFB"
+                    div .row
+                      button [toggle] .twisty aria-expanded="true" type="button" "▾"
+                      span [agent-kind] .agent-kind "subagent"
+                      span [node-label] .label "general-purpose: nested-parent"
+                      span [status-chip] .chip .chip-done data-status="done" "done"
+                      span [node-tokens] .meta "4 in / 1,617 out"
+                      span [node-duration] .meta "1m 47s"
+                    ul .children
+                      li [tree-node] .node .node-tool data-depth="3" data-expanded="false" data-kind="tool" data-node-id="toolu_012xCBtQH1ejFcfwn9E1pkAw"
+                        div .row
+                          button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                          span [node-label] .label "Agent"
+                          span [status-chip] .chip .chip-done data-status="done" "done"
+                          span [node-duration] .meta "1m 24s"
+                        div .payloads
+                          div [payload-preview] .preview data-label="input"
+                            span .preview-label "input"
+                            pre [preview-body] data-truncated="true" "«payload»"
+                            span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                          div [payload-preview] .preview data-label="result"
+                            span .preview-label "result"
+                            pre [preview-body] data-truncated="true" "«payload»"
+                            span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                        ul [spawned-children] .children .children-spawned
+                          li [tree-node] .node .node-agent data-depth="4" data-expanded="true" data-kind="agent" data-node-id="a3ecf86bbfb853726" data-spawn-depth="2" data-spawned-by="toolu_012xCBtQH1ejFcfwn9E1pkAw"
+                            div .row
+                              button [toggle] .twisty aria-expanded="true" type="button" "▾"
+                              span [agent-kind] .agent-kind "subagent"
+                              span [node-label] .label "general-purpose: nested-child"
+                              span [status-chip] .chip .chip-done data-status="done" "done"
+                              span [node-tokens] .meta "16 in / 6,052 out"
+                              span [node-duration] .meta "1m 21s"
+                            ul .children
+                              li [tree-node] .node .node-tool data-depth="5" data-expanded="false" data-kind="tool" data-node-id="toolu_01PyKgjjG3y7L4JWHoHtN57c"
+                                div .row
+                                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                                  span [node-label] .label "Bash"
+                                  span [status-chip] .chip .chip-done data-status="done" "done"
+                                  span [node-duration] .meta "498ms"
+                                div .payloads
+                                  div [payload-preview] .preview data-label="input"
+                                    span .preview-label "input"
+                                    pre [preview-body] data-truncated="false" "«payload»"
+                                  div [payload-preview] .preview data-label="result"
+                                    span .preview-label "result"
+                                    pre [preview-body] data-truncated="true" "«payload»"
+                                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                              li [tree-node] .node .node-tool data-depth="5" data-expanded="false" data-kind="tool" data-node-id="toolu_017yERDG4MvrLqUnpfaVuqtp"
+                                div .row
+                                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                                  span [node-label] .label "Glob"
+                                  span [status-chip] .chip .chip-done data-status="done" "done"
+                                  span [node-duration] .meta "406ms"
+                                div .payloads
+                                  div [payload-preview] .preview data-label="input"
+                                    span .preview-label "input"
+                                    pre [preview-body] data-truncated="false" "«payload»"
+                                  div [payload-preview] .preview data-label="result"
+                                    span .preview-label "result"
+                                    pre [preview-body] data-truncated="false" "«payload»"
+                              li [tree-node] .node .node-tool data-depth="5" data-expanded="false" data-kind="tool" data-node-id="toolu_01MobmP15USPJ3NEQRXjrgd6"
+                                div .row
+                                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                                  span [node-label] .label "Bash"
+                                  span [status-chip] .chip .chip-done data-status="done" "done"
+                                  span [node-duration] .meta "2.6s"
+                                div .payloads
+                                  div [payload-preview] .preview data-label="input"
+                                    span .preview-label "input"
+                                    pre [preview-body] data-truncated="false" "«payload»"
+                                  div [payload-preview] .preview data-label="result"
+                                    span .preview-label "result"
+                                    pre [preview-body] data-truncated="true" "«payload»"
+                                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                              li [tree-node] .node .node-tool data-depth="5" data-expanded="false" data-kind="tool" data-node-id="toolu_01TWS9krJUd1aYjVtqq5tFNL"
+                                div .row
+                                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                                  span [node-label] .label "Bash"
+                                  span [status-chip] .chip .chip-done data-status="done" "done"
+                                  span [node-duration] .meta "541ms"
+                                div .payloads
+                                  div [payload-preview] .preview data-label="input"
+                                    span .preview-label "input"
+                                    pre [preview-body] data-truncated="false" "«payload»"
+                                  div [payload-preview] .preview data-label="result"
+                                    span .preview-label "result"
+                                    pre [preview-body] data-truncated="true" "«payload»"
+                                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                              li [tree-node] .node .node-tool data-depth="5" data-expanded="false" data-kind="tool" data-node-id="toolu_01S5FxkdBKV71TppGrq84cHx"
+                                div .row
+                                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                                  span [node-label] .label "Bash"
+                                  span [status-chip] .chip .chip-done data-status="done" "done"
+                                  span [node-duration] .meta "542ms"
+                                div .payloads
+                                  div [payload-preview] .preview data-label="input"
+                                    span .preview-label "input"
+                                    pre [preview-body] data-truncated="false" "«payload»"
+                                  div [payload-preview] .preview data-label="result"
+                                    span .preview-label "result"
+                                    pre [preview-body] data-truncated="true" "«payload»"
+                                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                              li [tree-node] .node .node-tool data-depth="5" data-expanded="false" data-kind="tool" data-node-id="toolu_01RzHR6nU4Hc1xV6a3z4icau"
+                                div .row
+                                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                                  span [node-label] .label "Bash"
+                                  span [status-chip] .chip .chip-done data-status="done" "done"
+                                  span [node-duration] .meta "525ms"
+                                div .payloads
+                                  div [payload-preview] .preview data-label="input"
+                                    span .preview-label "input"
+                                    pre [preview-body] data-truncated="false" "«payload»"
+                                  div [payload-preview] .preview data-label="result"
+                                    span .preview-label "result"
+                                    pre [preview-body] data-truncated="true" "«payload»"
+                                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                              li [tree-node] .node .node-tool data-depth="5" data-expanded="false" data-kind="tool" data-node-id="toolu_011qmTeX9Yk8fXgJZVeQx7MV"
+                                div .row
+                                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                                  span [node-label] .label "Bash"
+                                  span [status-chip] .chip .chip-done data-status="done" "done"
+                                  span [node-duration] .meta "586ms"
+                                div .payloads
+                                  div [payload-preview] .preview data-label="input"
+                                    span .preview-label "input"
+                                    pre [preview-body] data-truncated="false" "«payload»"
+                                  div [payload-preview] .preview data-label="result"
+                                    span .preview-label "result"
+                                    pre [preview-body] data-truncated="true" "«payload»"
+                                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                              li [tree-node] .node .node-tool data-depth="5" data-expanded="false" data-kind="tool" data-node-id="toolu_01LKeTtfabe2frZNrWfXMSKK"
+                                div .row
+                                  button [toggle] .twisty aria-expanded="false" type="button" "▸"
+                                  span [node-label] .label "Bash"
+                                  span [status-chip] .chip .chip-done data-status="done" "done"
+                                  span [node-duration] .meta "875ms"
+                                div .payloads
+                                  div [payload-preview] .preview data-label="input"
+                                    span .preview-label "input"
+                                    pre [preview-body] data-truncated="true" "«payload»"
+                                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"
+                                  div [payload-preview] .preview data-label="result"
+                                    span .preview-label "result"
+                                    pre [preview-body] data-truncated="true" "«payload»"
+                                    span [preview-marker] .preview-marker "[+N more characters - expand to see all]"

@@ -1,0 +1,381 @@
+{
+  "live": {
+    "what": "A supported session the host believes is running, with recent transcript activity.",
+    "howProduced": "Real fixtures grafted by graftSession, then one PreToolUse hook event and a recent transcript mtime per session, against a fixed clock.",
+    "panel": {
+      "dataLiveness": "live",
+      "dataRefused": "false",
+      "dataDegraded": "false"
+    },
+    "counts": {
+      "treeNodes": 19,
+      "modelNodesInSelectedSession": 19,
+      "sessionHeaders": 1,
+      "refusalScreens": 0,
+      "degradedBanners": 0,
+      "livenessInferredMarkers": 0,
+      "statusChips": 19,
+      "payloadPreviews": 28,
+      "railItems": 2
+    },
+    "header": {
+      "present": true,
+      "livenessText": "live",
+      "livenessTitle": "recently active, and something is still believed to be running",
+      "livenessClasses": [
+        "liveness",
+        "liveness-live"
+      ],
+      "dataLivenessInferred": "false",
+      "inferredMarkerText": null,
+      "tokensIn": "32",
+      "tokensOut": "10,300",
+      "cost": "—",
+      "costTitle": "cost not computed — no price table"
+    },
+    "banner": {
+      "present": false
+    },
+    "refusalScreen": {
+      "present": false
+    },
+    "rail": [
+      {
+        "selected": "true",
+        "dataLiveness": "live",
+        "dataRefused": "false",
+        "livenessText": "live",
+        "livenessTitle": "recently active, and something is still believed to be running",
+        "livenessClasses": [
+          "liveness",
+          "liveness-live"
+        ]
+      },
+      {
+        "selected": "false",
+        "dataLiveness": "live",
+        "dataRefused": "false",
+        "livenessText": "live",
+        "livenessTitle": "recently active, and something is still believed to be running",
+        "livenessClasses": [
+          "liveness",
+          "liveness-live"
+        ]
+      }
+    ]
+  },
+  "idle": {
+    "what": "Something is still believed to be running, but nothing recent has happened — so neither extreme is claimed.",
+    "howProduced": "As live, but the transcript mtime and the hook event are both outside the recency threshold.",
+    "panel": {
+      "dataLiveness": "idle",
+      "dataRefused": "false",
+      "dataDegraded": "false"
+    },
+    "counts": {
+      "treeNodes": 19,
+      "modelNodesInSelectedSession": 19,
+      "sessionHeaders": 1,
+      "refusalScreens": 0,
+      "degradedBanners": 0,
+      "livenessInferredMarkers": 0,
+      "statusChips": 19,
+      "payloadPreviews": 28,
+      "railItems": 2
+    },
+    "header": {
+      "present": true,
+      "livenessText": "idle",
+      "livenessTitle": "only one of \"recently active\" and \"still running\" holds, so neither is claimed",
+      "livenessClasses": [
+        "liveness",
+        "liveness-idle"
+      ],
+      "dataLivenessInferred": "false",
+      "inferredMarkerText": null,
+      "tokensIn": "32",
+      "tokensOut": "10,300",
+      "cost": "—",
+      "costTitle": "cost not computed — no price table"
+    },
+    "banner": {
+      "present": false
+    },
+    "refusalScreen": {
+      "present": false
+    },
+    "rail": [
+      {
+        "selected": "true",
+        "dataLiveness": "idle",
+        "dataRefused": "false",
+        "livenessText": "idle",
+        "livenessTitle": "only one of \"recently active\" and \"still running\" holds, so neither is claimed",
+        "livenessClasses": [
+          "liveness",
+          "liveness-idle"
+        ]
+      },
+      {
+        "selected": "false",
+        "dataLiveness": "idle",
+        "dataRefused": "false",
+        "livenessText": "idle",
+        "livenessTitle": "only one of \"recently active\" and \"still running\" holds, so neither is claimed",
+        "livenessClasses": [
+          "liveness",
+          "liveness-idle"
+        ]
+      }
+    ]
+  },
+  "ended": {
+    "what": "Nothing is believed to be running and there has been no recent activity.",
+    "howProduced": "As idle, plus a Stop HOOK event. There is no `stop` entry type in any committed transcript; Stop is a hook event on the other tap.",
+    "panel": {
+      "dataLiveness": "ended",
+      "dataRefused": "false",
+      "dataDegraded": "false"
+    },
+    "counts": {
+      "treeNodes": 19,
+      "modelNodesInSelectedSession": 19,
+      "sessionHeaders": 1,
+      "refusalScreens": 0,
+      "degradedBanners": 0,
+      "livenessInferredMarkers": 0,
+      "statusChips": 19,
+      "payloadPreviews": 28,
+      "railItems": 2
+    },
+    "header": {
+      "present": true,
+      "livenessText": "ended",
+      "livenessTitle": "nothing is believed to be running, and there has been no recent activity",
+      "livenessClasses": [
+        "liveness",
+        "liveness-ended"
+      ],
+      "dataLivenessInferred": "false",
+      "inferredMarkerText": null,
+      "tokensIn": "32",
+      "tokensOut": "10,300",
+      "cost": "—",
+      "costTitle": "cost not computed — no price table"
+    },
+    "banner": {
+      "present": false
+    },
+    "refusalScreen": {
+      "present": false
+    },
+    "rail": [
+      {
+        "selected": "true",
+        "dataLiveness": "ended",
+        "dataRefused": "false",
+        "livenessText": "ended",
+        "livenessTitle": "nothing is believed to be running, and there has been no recent activity",
+        "livenessClasses": [
+          "liveness",
+          "liveness-ended"
+        ]
+      },
+      {
+        "selected": "false",
+        "dataLiveness": "ended",
+        "dataRefused": "false",
+        "livenessText": "ended",
+        "livenessTitle": "nothing is believed to be running, and there has been no recent activity",
+        "livenessClasses": [
+          "liveness",
+          "liveness-ended"
+        ]
+      }
+    ]
+  },
+  "unsupported": {
+    "what": "G3, refuse don’t guess: a transcript layout the real fingerprint refused. No tree is drawn, and no header either.",
+    "howProduced": "The first fixtures/synthetic-layout case graftSession actually refuses, registered under the captured workspace slug and then selected in the rail by clicking it. The neighbouring captured sessions are driven live so that this capture varies ONE thing against the live capture — the refusal — and so the rail shows that a refusal costs only its own session.",
+    "panel": {
+      "dataLiveness": "unsupported",
+      "dataRefused": "true",
+      "dataDegraded": "false"
+    },
+    "counts": {
+      "treeNodes": 0,
+      "modelNodesInSelectedSession": 1,
+      "sessionHeaders": 0,
+      "refusalScreens": 1,
+      "degradedBanners": 0,
+      "livenessInferredMarkers": 0,
+      "statusChips": 0,
+      "payloadPreviews": 0,
+      "railItems": 3
+    },
+    "header": {
+      "present": false
+    },
+    "banner": {
+      "present": false
+    },
+    "refusalScreen": {
+      "present": true,
+      "dataLiveness": "unsupported",
+      "role": "alert",
+      "heading": "Unsupported session",
+      "sessionIdShown": "deadbeef-0000-4000-8000-000000000001",
+      "cause": "The usual cause is that Claude Code changed its on-disk format since this version of Agent Deck was pinned to it."
+    },
+    "rail": [
+      {
+        "selected": "false",
+        "dataLiveness": "live",
+        "dataRefused": "false",
+        "livenessText": "live",
+        "livenessTitle": "recently active, and something is still believed to be running",
+        "livenessClasses": [
+          "liveness",
+          "liveness-live"
+        ]
+      },
+      {
+        "selected": "false",
+        "dataLiveness": "live",
+        "dataRefused": "false",
+        "livenessText": "live",
+        "livenessTitle": "recently active, and something is still believed to be running",
+        "livenessClasses": [
+          "liveness",
+          "liveness-live"
+        ]
+      },
+      {
+        "selected": "true",
+        "dataLiveness": "unsupported",
+        "dataRefused": "true",
+        "livenessText": "unsupported",
+        "livenessTitle": "the transcript layout was not recognised, so no tree is rendered for this session",
+        "livenessClasses": [
+          "liveness",
+          "liveness-unsupported"
+        ]
+      }
+    ]
+  },
+  "unsupported-with-tree": {
+    "what": "The same state, on a session whose MODEL carries a full tree. This is the row that proves the refusal suppresses a tree rather than merely lacking one: modelNodes is non-zero and treeNodes is 0.",
+    "howProduced": "webview/testdata.ts's unsupportedSession() — the one hand-built state in this capture, because no committed fixture both parses into a full tree and is refused. Delivered as a normal snapshot message.",
+    "panel": {
+      "dataLiveness": "unsupported",
+      "dataRefused": "true",
+      "dataDegraded": "false"
+    },
+    "counts": {
+      "treeNodes": 0,
+      "modelNodesInSelectedSession": 7,
+      "sessionHeaders": 0,
+      "refusalScreens": 1,
+      "degradedBanners": 0,
+      "livenessInferredMarkers": 0,
+      "statusChips": 0,
+      "payloadPreviews": 0,
+      "railItems": 1
+    },
+    "header": {
+      "present": false
+    },
+    "banner": {
+      "present": false
+    },
+    "refusalScreen": {
+      "present": true,
+      "dataLiveness": "unsupported",
+      "role": "alert",
+      "heading": "Unsupported session",
+      "sessionIdShown": "session-unsupported",
+      "cause": "The usual cause is that Claude Code changed its on-disk format since this version of Agent Deck was pinned to it."
+    },
+    "rail": [
+      {
+        "selected": "true",
+        "dataLiveness": "unsupported",
+        "dataRefused": "true",
+        "livenessText": "unsupported",
+        "livenessTitle": "the transcript layout was not recognised, so no tree is rendered for this session",
+        "livenessClasses": [
+          "liveness",
+          "liveness-unsupported"
+        ]
+      }
+    ]
+  },
+  "degraded": {
+    "what": "G2: the hook tap is silent. The banner appears, the tree keeps rendering, and the liveness value is marked as inferred.",
+    "howProduced": "Real fixtures with a recent transcript mtime and NO hook events at all — the state a user who has not pasted the hook block is in. The degraded flag comes from the engine, not from a hand-written message.",
+    "panel": {
+      "dataLiveness": "live",
+      "dataRefused": "false",
+      "dataDegraded": "true"
+    },
+    "counts": {
+      "treeNodes": 19,
+      "modelNodesInSelectedSession": 19,
+      "sessionHeaders": 1,
+      "refusalScreens": 0,
+      "degradedBanners": 1,
+      "livenessInferredMarkers": 1,
+      "statusChips": 19,
+      "payloadPreviews": 28,
+      "railItems": 2
+    },
+    "header": {
+      "present": true,
+      "livenessText": "live",
+      "livenessTitle": "recently active, and something is still believed to be running",
+      "livenessClasses": [
+        "liveness",
+        "liveness-live"
+      ],
+      "dataLivenessInferred": "true",
+      "inferredMarkerText": "(inferred)",
+      "tokensIn": "32",
+      "tokensOut": "10,300",
+      "cost": "—",
+      "costTitle": "cost not computed — no price table"
+    },
+    "banner": {
+      "present": true,
+      "dataReason": "noHookEvents",
+      "text": "Liveness is degraded — no hook events received. The tree below is still accurate; only \"running right now\" is unavailable. See the README for the hook block.",
+      "dismissButton": "Dismiss"
+    },
+    "refusalScreen": {
+      "present": false
+    },
+    "rail": [
+      {
+        "selected": "true",
+        "dataLiveness": "live",
+        "dataRefused": "false",
+        "livenessText": "live",
+        "livenessTitle": "recently active, and something is still believed to be running",
+        "livenessClasses": [
+          "liveness",
+          "liveness-live"
+        ]
+      },
+      {
+        "selected": "false",
+        "dataLiveness": "live",
+        "dataRefused": "false",
+        "livenessText": "live",
+        "livenessTitle": "recently active, and something is still believed to be running",
+        "livenessClasses": [
+          "liveness",
+          "liveness-live"
+        ]
+      }
+    ]
+  }
+}

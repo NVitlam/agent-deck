@@ -207,10 +207,34 @@ function corpusRoots(corpus: { projects: { worktree: string }[] }): string[] {
     expect(
       path.basename(root),
       `a captured project root is not this repository: ${root}`,
-    ).toBe(path.basename(REPO_ROOT).toLowerCase());
+    ).toBe(PROJECT_NAME);
   }
   return roots;
 }
+
+/**
+ * This project's name, FROM THE MANIFEST.
+ *
+ * The first version of the check above used `path.basename(REPO_ROOT)` - the
+ * name of the directory this clone happens to sit in. Measured in the
+ * verification clone at `C:\v`: "expected 'agent-deck' to be 'v'", five times.
+ * A guard that depends on what you called the folder you cloned into is a guard
+ * that fails for everyone except its author - the same shape as the CRLF and
+ * MAX_PATH traps this repository already records, and precisely the property
+ * the strays test below claims for itself: "this test must keep working if the
+ * repository is renamed or cloned somewhere else".
+ *
+ * `package.json`'s `name` is checked in, is the extension's identity, and is
+ * already bound to the repository URL by `src/release/manifest.test.ts`.
+ */
+const PROJECT_NAME = ((): string => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as {
+    name?: unknown;
+  };
+  const name = String(manifest.name ?? '');
+  if (name === '') throw new Error('package.json declares no name');
+  return name.toLowerCase();
+})();
 
 function tallyprojects(db: DatabaseSync, into: Map<string, number>): void {
   const sources = [

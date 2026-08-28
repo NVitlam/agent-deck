@@ -53,7 +53,7 @@
 // invalidate the evidence, and neither does it prove anything about it. That
 // is what the human's screenshots are for.
 //
-// G1: writes only under the output directory (default `docs/evidence/ui-states`,
+// G1: writes only under the output directory (default `webview/goldens/ui-states`,
 // inside the repo). G5: no network.
 //
 // Usage:  node scripts/capture-states.mjs [--out <dir>]
@@ -67,7 +67,12 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_OUT = join(REPO_ROOT, 'docs', 'evidence', 'ui-states');
+// `webview/goldens/`, not `docs/evidence/`, since 2026-08-28: `docs/` moved to
+// the maintainer's private repository and took these goldens with it, leaving
+// `webview/capture.test.ts` with nothing to compare against in a fresh clone.
+// They belong here anyway - a rendered-DOM golden is the same kind of artefact
+// as the layout goldens beside them, not a record of how a decision was made.
+const DEFAULT_OUT = join(REPO_ROOT, 'webview', 'goldens', 'ui-states');
 const HARNESS_GLOBAL = 'AgentDeckHarness';
 
 /**

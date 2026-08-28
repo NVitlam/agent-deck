@@ -141,6 +141,23 @@ lab/**
 # none, so this is bloat rather than a privacy defect.
 docs/**
 
+# AND THE BARE ENTRY, because `<dir>/**` does not match the directory ITSELF.
+# `docs` and `spike` are JUNCTIONS into the maintainer-private `lab/` repo, and
+# vsce walks a junction as a single FILE entry - so `docs/**` and `spike/**`,
+# which match only paths UNDER them, matched nothing and both junctions were
+# enumerated as packaged content. It was not merely bloat: `vsce package` then
+# ABORTED, because secret scanning read the entry and got EISDIR, so no VSIX
+# could be produced at all.
+#
+# This is the recorded `docs/**`-shaped-rule class for the third time - first a
+# stray root mockup that the rule failed to match, then per-tooling state
+# directories, now a junction. The lesson each time: the ignore file cannot
+# answer "what does the package contain". Only `vsce ls` and the unzipped
+# artifact can, which is what `src/release/vsix.test.ts` is for, and it is what
+# caught this.
+docs
+spike
+
 # Dev tooling. `vsce ls` was shipping the two recorder/capture scripts before
 # this. None of it is part of the product: a VSIX should carry the product,
 # not the workshop.

@@ -977,12 +977,16 @@ describe('focus / re-root (DoD 7.6)', () => {
    * THE 16-SUBAGENT SESSION — which is how this was reported: "they all appear
    * as a second row".
    *
-   * The tidy tree was right and the viewport was not. Measured on the real
-   * session that prompted it — 16 depth-1 subagents, node widths 176–197 by
-   * A1.1 with `SIB` 24: the child row spans 3,484 stage units and the root is
-   * placed at x = 1658. At the identity transform in a 1,200 px panel that is
-   * 6 of 16 children and NO ROOT — a row of nodes with nothing above them,
-   * which is the whole of the report.
+   * The tidy tree was right and the viewport was not. MEASURED ON THIS TEST'S
+   * OWN TREE — 16 children, each 197 wide by A1.1, `SIB` 24 — so the numbers
+   * here describe what this file builds, not the wide-rank corpus, whose
+   * figures differ and belong to `wide-rank.test.ts`. An earlier draft of this
+   * comment carried three different spans for one shape.
+   *
+   * One row: 3,512 units, needing k = 0.323 against §3.4's 0.4 floor, so it
+   * could not be framed at all. At the identity transform in a 1,200 px panel
+   * that is 6 of 16 children and NO ROOT — a row of nodes with nothing above
+   * them, which is the whole of the report.
    *
    * The assertion is deliberately not "the transform equals this literal". A
    * literal passes just as well against a fit of the wrong subtree. This
@@ -1011,8 +1015,8 @@ describe('focus / re-root (DoD 7.6)', () => {
     // The premise, measured rather than assumed: the rank WRAPS (A8.4 wraps
     // above 8 children, and there are 16), and the tree is still wider than the
     // field, so the entry fit is doing real work. Before A8.4 this same tree
-    // was one row 3,453 units wide and could not be fitted at all — §3.4 floors
-    // the tree at 0.4x and it needed 0.329.
+    // was one row 3,512 units wide and could not be fitted at all — §3.4 floors
+    // the tree at 0.4x and it needed 0.323.
     const placed = treeLayout(state, 'root').filter((p) => !p.hidden);
     const rows = new Set(placed.filter((p) => p.depth === 1).map((p) => p.y));
     expect(rows.size, 'the rank did not wrap').toBe(2);
@@ -1038,11 +1042,10 @@ describe('focus / re-root (DoD 7.6)', () => {
     expect(root.top, 'the root is above the field').toBeGreaterThanOrEqual(-1);
 
     // AND EVERY CHILD IS ON SCREEN TOO. This assertion was "the overflow is
-    // symmetric" until A8.4: sixteen siblings in ONE row span 3,453 units,
-    // need k = 0.329 against §3.4's 0.4 floor, and could not be framed at all —
-    // the best available was a centred, pannable overflow. Wrapped into rows of
-    // 8 the same tree spans 1,849, fits at 0.614, and the honest claim is the
-    // strong one.
+    // symmetric" until A8.4: in ONE row these sixteen span 3,512 units and need
+    // k = 0.323 against §3.4's 0.4 floor, so the best available was a centred,
+    // pannable overflow. Wrapped into rows of 8 the same tree spans 1,744 and
+    // fits at 0.651, so the honest claim is the strong one.
     for (const p of placed) {
       const at = on(p);
       expect(at.left, `${p.id} is off the left edge`).toBeGreaterThanOrEqual(-1);

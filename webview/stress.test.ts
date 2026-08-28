@@ -1255,7 +1255,6 @@ describe('the canvas renders the stress corpus', () => {
         const drawn =
           count(TESTID.nucleus) +
           count(TESTID.cell) +
-          count(TESTID.dot) +
           count(TESTID.filament) +
           count(TESTID.parkedStub);
         if (state.schemaOk) {

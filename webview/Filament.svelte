@@ -15,13 +15,15 @@
   THE CURVE. A cubic Bézier with both control points on the vertical midpoint
   between the two ends:
 
-      M dx,dy+4  C dx,my  cx,my  cx,cy      my = (dy + cy) / 2
+      M dx,dy  C dx,my  cx,my  cx,cy        my = (dy + cy) / 2
 
-  `dy + 4` is the bottom of the dot (radius 4), so the line leaves the dot
-  rather than starting inside it. Both control points share `my`, which is what
-  makes the curve leave vertically and arrive vertically: a spawn reads as
-  descending from the exact call that made it, at any zoom, without an
-  arrowhead.
+  `dy` is the PARENT'S BOTTOM EDGE (design amendment A8.2). It was the bottom
+  of the spawning dot, `dy + 4`, until 2026-08-29; A8.1 removed the dots, and
+  with them the only reason for the offset. Both control points share `my`,
+  which is what makes the curve leave vertically and arrive vertically: a
+  spawn reads as descending from its parent, at any zoom, without an
+  arrowhead. WHICH call spawned it is read in the drawer's call rows, not
+  from where the curve starts.
 
   MOTION (C7.6). One class, `ANIMATED_CLASSES[2]` (`is-flowing`), and only
   while the CHILD is running — the dash flows to say a subagent is working
@@ -44,7 +46,7 @@
     agentId,
     state = 'default',
   }: {
-    /** The SPAWNING tool call's dot centre, from `layout.ts:spawnDotPos`. */
+    /** The parent node's bottom centre: `x + w / 2`, `y + NODE_H` (A8.2). */
     from: { x: number; y: number };
     /** The SPAWNED node's top centre: `placement.x + placement.w / 2`, `y`. */
     to: { x: number; y: number };
@@ -64,13 +66,10 @@
   /** The filament's animation class. Taken from the contract, never typed out. */
   const FLOWING = ANIMATED_CLASSES[2];
 
-  /** Where the curve leaves the dot: its bottom edge. Dot radius is 4. */
-  const DOT_R = 4;
-
   function curve(a: { x: number; y: number }, b: { x: number; y: number }): string {
     const my = roundCoord((a.y + b.y) / 2);
     const ax = roundCoord(a.x);
-    const ay = roundCoord(a.y + DOT_R);
+    const ay = roundCoord(a.y);
     const bx = roundCoord(b.x);
     const by = roundCoord(b.y);
     return `M ${ax} ${ay} C ${ax} ${my} ${bx} ${my} ${bx} ${by}`;

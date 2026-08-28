@@ -731,43 +731,26 @@ describe('the canvas surface, fed the same host-produced states', () => {
     expect(cellIds).toStrictEqual(agentIds);
     expect(agentIds.length).toBeGreaterThan(1);
 
-    // TOOL DOTS, on real host-produced state as well as on fixtures. What
-    // stood here asserted `TESTID.dot` was EMPTY - the 2026-08-21 decision
-    // that moved C7.3's three tool rows up onto the agent - and the tidy tree
-    // reverses it: one dot per call, on the row beneath the node that made it.
+    // TOOL DOTS ARE GONE — design amendment A8.1, and this paragraph asserted
+    // them on real host-produced state. What it proved is still worth proving,
+    // so it is restated on the surface that survives: every tool call the host
+    // sent is REACHABLE, and the node that owns it says how many it has.
     const toolIds = new Set(walkState(state).filter((n) => !isAgentNode(n)).map((n) => n.id));
     expect(toolIds.size).toBeGreaterThan(0);
-
-    const dots = all(panel.container, TESTID.dot);
-    const drawnToolIds = dots.map((d) => d.dataset['toolId'] ?? '');
-    // No call drawn twice. Checked before the set comparison below, which
-    // cannot see a duplicate.
-    expect(new Set(drawnToolIds).size).toBe(drawnToolIds.length);
-
-    // The cap elides calls above `DOT_LIMIT` and draws a `+N` glyph in their
-    // place, so the equality below only holds while this corpus stays under
-    // it. Asserted rather than assumed: if a re-harvest crosses the cap this
-    // fails with its reason attached instead of silently weakening the row.
-    expect(
-      all(panel.container, 'tool-dot-overflow'),
-      'this corpus has crossed DOT_LIMIT - the comparison below needs the cap applied',
-    ).toHaveLength(0);
-    // Every agent is drawn (asserted above) and nothing was elided, so the
-    // drawn dots are exactly the host's tool nodes.
-    expect([...drawnToolIds].sort()).toStrictEqual([...toolIds].sort());
-
-    // The spawn axis is a SHAPE, not a fifth colour: a call that spawned a
-    // subagent draws hollow. It is exactly the `spawnEdges` rows whose
-    // `tool_use` end is in this tree - the primary-key join, on the dot.
+    expect(all(panel.container, 'canvas-dot')).toHaveLength(0);
+    // The spawn axis WAS a shape on the dot — a call that spawned a subagent
+    // drew hollow. With the dots gone the same join is drawn as the FILAMENT,
+    // and it is asserted on real host state here rather than dropped: every
+    // spawn edge whose `tool_use` end is in this tree has a curve.
     const spawning = [...new Set((state.spawnEdges ?? []).map((e) => e.toolUseId))]
       .filter((id) => toolIds.has(id))
       .sort();
     expect(spawning.length).toBeGreaterThan(0);
-    const hollow = dots
-      .filter((d) => d.dataset['spawns'] === 'true')
-      .map((d) => d.dataset['toolId'] ?? '')
+    const drawnEdges = all(panel.container, TESTID.filament)
+      .map((f) => f.dataset['toolUseId'] ?? '')
+      .filter((id) => toolIds.has(id))
       .sort();
-    expect(hollow).toStrictEqual(spawning);
+    expect(drawnEdges).toStrictEqual(spawning);
   });
 
   it('draws the filament for every spawn edge whose two ends are both placed', async () => {
@@ -832,7 +815,6 @@ describe('the canvas surface, fed the same host-produced states', () => {
     for (const testId of [
       TESTID.nucleus,
       TESTID.cell,
-      TESTID.dot,
       TESTID.filament,
       TESTID.parkedStub,
       TESTID.elidedBadge,
@@ -852,7 +834,6 @@ describe('the canvas surface, fed the same host-produced states', () => {
       const pickable = [
         ...all(panel.container, TESTID.nucleus),
         ...all(panel.container, TESTID.cell),
-        ...all(panel.container, TESTID.dot),
       ];
       for (const element of pickable) {
         activate(element);

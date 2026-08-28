@@ -58,11 +58,9 @@ import {
   LABEL_MAX_CHARS,
   NODE_H,
   NODE_W_MIN,
-  SPAWN_DOT_GAP,
   autoCollapseDepth,
   nodeSubText,
   nodeWidth,
-  spawnDotPos,
   treeLayout,
   visibleNodeCount,
 } from './layout.js';
@@ -162,7 +160,6 @@ let componentSources: { path: string; text: string }[] = [];
 const OWNED_COMPONENTS = [
   'webview/SessionCanvas.svelte',
   'webview/AgentCell.svelte',
-  'webview/ToolDot.svelte',
   'webview/Filament.svelte',
 ];
 
@@ -289,9 +286,6 @@ function parkedNodes(root: ParentNode): HTMLElement[] {
   return all(root, TESTID.cell).filter((c) => c.dataset['parked'] === 'true');
 }
 
-function dots(root: ParentNode): HTMLElement[] {
-  return all(root, TESTID.dot);
-}
 
 function filaments(root: ParentNode): HTMLElement[] {
   return all(root, TESTID.filament);
@@ -560,116 +554,36 @@ describe('the tree (altitude 1)', () => {
 });
 
 /* ------------------------------------------------------------------------ *
- * Tool dots
+ * A8.1 — the tool-dot row is GONE
  * ------------------------------------------------------------------------ */
 
-describe('tool dots', () => {
-  it('draws one dot per call, in transcript order, at spawnDotPos', () => {
-    const state = liveSession();
-    const container = render({ session: state });
-    const rootPlacement = treeLayout(state, state.root.id).find((p) => p.id === 'root');
-    expect(rootPlacement).toBeDefined();
-
-    const rootTools = state.root.children.filter((c): c is ToolNode => !isAgentNode(c));
-    expect(rootTools.map((t) => t.id)).toStrictEqual(['tool-read', 'tool-agent-1']);
-
-    const drawn = dots(container).filter((d) => rootTools.some((t) => t.id === d.dataset['toolId']));
-    expect(drawn.map((d) => d.dataset['toolId'])).toStrictEqual(['tool-read', 'tool-agent-1']);
-
-    rootTools.forEach((t, i) => {
-      const at = spawnDotPos(
-        rootPlacement as { x: number; y: number; w: number },
-        rootTools.length,
-        i,
-      );
-      const bud = drawn[i]?.querySelector('circle.bud');
-      expect({
-        cx: Number(bud?.getAttribute('cx')),
-        cy: Number(bud?.getAttribute('cy')),
-        r: Number(bud?.getAttribute('r')),
-      }).toStrictEqual({ cx: at.x, cy: at.y, r: 4 });
-    });
+describe('the tool-dot row, which no longer exists (A8.1)', () => {
+  /*
+   * A `tool dots` describe stood here with eight tests: one dot per call at
+   * `spawnDotPos`, the 13-unit pitch, status colours, hover-only titles, the
+   * 24-cap and its `+N` glyph. Every one of them passed, and the feature they
+   * described put 17 of 18 rows outside their own boxes on the wide-rank
+   * corpus, overlapped 14 sibling pairs, and cost 15 of 15 filaments.
+   *
+   * They are DELETED rather than skipped. A suite of passing tests for a
+   * removed feature is how the feature comes back: the next reader sees
+   * coverage and assumes intent.
+   */
+  it('draws no dot and no elision badge, whatever the call count', () => {
+    const container = render({ session: busySession(240) });
+    expect(all(container, 'canvas-dot')).toHaveLength(0);
+    expect(all(container, 'canvas-elided-badge')).toHaveLength(0);
+    expect(container.querySelectorAll('circle.bud')).toHaveLength(0);
+    // Non-vacuity: the tree IS drawn, so the zeros above are about dots
+    // rather than about an empty render.
+    expect(treeNodes(container).length).toBeGreaterThan(0);
   });
 
-  it('pins the dot row to literal numbers: centred on the node, pitched at 13', () => {
-    const container = render({ session: liveSession() });
-    const read = dots(container).find((d) => dataOf(d) === 'tool-read');
-    const spawn = dots(container).find((d) => dataOf(d) === 'tool-agent-1');
-    // root is x 14.5 w 168 y 0, so the row centre is 98.5 and two dots sit
-    // 6.5 either side of it, on the row at y = 0 + 52 + 11.
-    expect(read?.querySelector('circle.bud')?.getAttribute('cx')).toBe('92');
-    expect(read?.querySelector('circle.bud')?.getAttribute('cy')).toBe('63');
-    expect(spawn?.querySelector('circle.bud')?.getAttribute('cx')).toBe('105');
-    expect(Number(spawn?.querySelector('circle.bud')?.getAttribute('cx')) -
-      Number(read?.querySelector('circle.bud')?.getAttribute('cx'))).toBe(SPAWN_DOT_GAP);
-  });
-
-  function dataOf(el: HTMLElement): string | undefined {
-    return el.dataset['toolId'];
-  }
-
-  it('says the status on the dot and the name ONLY on hover', () => {
-    const container = render({ session: liveSession() });
-    const byStatus = new Map(dots(container).map((d) => [d.dataset['toolId'], d.dataset['status']]));
-    expect(byStatus.get('tool-read')).toBe('done');
-    expect(byStatus.get('tool-agent-2')).toBe('running');
-    expect(byStatus.get('tool-bash')).toBe('error');
-
-    // The name is in a `<title>` and nowhere else: no `<text>` on the dot at
-    // any zoom. A row of labelled dots under a 200-unit node is unreadable.
-    const bash = dots(container).find((d) => d.dataset['toolId'] === 'tool-bash');
-    expect(bash?.querySelector('title')?.textContent).toContain('Bash');
-    expect(bash?.querySelector('text')).toBeNull();
-  });
-
-  it('draws a spawning call HOLLOW, and only a spawning call', () => {
-    const state = liveSession();
-    const spawning = new Set((state.spawnEdges ?? []).map((e) => e.toolUseId));
-    expect(spawning).toEqual(new Set(['tool-agent-1', 'tool-agent-2']));
-    const container = render({ session: state });
-    for (const dot of dots(container)) {
-      expect(dot.dataset['spawns']).toBe(String(spawning.has(dot.dataset['toolId'] ?? '')));
-    }
-    expect(bundle).toContain("[data-spawns='true']");
-  });
-
-  it('caps the row at 24: the LAST 23 calls and a +N glyph in dot 0’s place', () => {
-    const state = busySession(30);
-    const container = render({ session: state });
-
-    const drawn = dots(container);
-    expect(drawn).toHaveLength(23);
-    // The LAST 23: t-7 .. t-29. What is happening now is at the end.
-    expect(drawn.map((d) => d.dataset['toolId'])).toStrictEqual(
-      Array.from({ length: 23 }, (_, i) => `t-${String(i + 7)}`),
-    );
-
-    const glyph = one(container, 'tool-dot-overflow');
-    expect(glyph.dataset['count']).toBe('7');
-    expect(glyph.textContent).toBe('+7');
-
-    // The glyph sits at index 0 of a 24-wide row, and the first drawn dot at
-    // index 1 — so the row still reads left to right in time.
-    const placement = treeLayout(state, 'root').find((p) => p.id === 'root');
-    const at0 = spawnDotPos(placement as { x: number; y: number; w: number }, 24, 0);
-    const at1 = spawnDotPos(placement as { x: number; y: number; w: number }, 24, 1);
-    expect(Number(glyph.getAttribute('x'))).toBe(at0.x);
-    expect(Number(drawn[0]?.querySelector('circle.bud')?.getAttribute('cx'))).toBe(at1.x);
-  });
-
-  it('keeps the COUNTS exact on row 2 while the row is capped', () => {
-    // The cap is a drawing budget. A number it changed would be a number the
-    // user cannot trust, which is worse than a row that says "+7".
-    const container = render({ session: busySession(30) });
-    expect(row2(nodeFor(container, 'root'))).toContain('30 calls');
-    expect(dots(container)).toHaveLength(23);
-  });
-
-  it('draws every dot when there are exactly 24 — the cap is strictly above', () => {
-    const container = render({ session: busySession(24) });
-    expect(dots(container)).toHaveLength(24);
-    expect(all(container, 'tool-dot-overflow')).toHaveLength(0);
-    expect(row2(nodeFor(container, 'root'))).toContain('24 calls');
+  it('still says how many calls there were, on the node itself', () => {
+    // The count did not go away with the dots — it is row 2, where it always
+    // was, and it is exact rather than capped.
+    const container = render({ session: busySession(240) });
+    expect(row2(nodeFor(container, 'root'))).toContain('240 calls');
   });
 });
 
@@ -691,16 +605,20 @@ describe('the filament (C7.4)', () => {
     ).toStrictEqual(edges.map((e) => ({ toolUseId: e.toolUseId, agentId: e.agentId })));
   });
 
-  it('runs from the spawning DOT’s bottom to the child’s TOP CENTRE, as a cubic', () => {
-    // The literal path, written out. The dot for `tool-agent-1` is at
-    // (105, 63) and its radius is 4; `agent-1` is at x 0 w 197 y 164, so the
-    // top centre is (98.5, 164) and the control row is at (63 + 164) / 2.
+  it('runs from the PARENT’s bottom edge to the child’s TOP CENTRE, as a cubic', () => {
+    // The literal path, written out. Design amendment A8.2: the curve leaves
+    // the parent box's bottom centre, not a dot. `root` is x 14.5 w 168 y 0,
+    // so it leaves (98.5, 52); `agent-1` is at x 0 w 197 y 164, so it arrives
+    // at (98.5, 164) and both control points sit on (52 + 164) / 2 = 108.
+    //
+    // It read `M 105 67 C 105 113.5 98.5 113.5 98.5 164` until 2026-08-29 —
+    // the spawning dot's bottom edge, 4 units below its centre at (105, 63).
     const container = render({ session: liveSession() });
     const first = filaments(container).find((f) => f.dataset['agentId'] === 'agent-1');
-    expect(first?.getAttribute('d')).toBe('M 105 67 C 105 113.5 98.5 113.5 98.5 164');
+    expect(first?.getAttribute('d')).toBe('M 98.5 52 C 98.5 108 98.5 108 98.5 164');
 
     const second = filaments(container).find((f) => f.dataset['agentId'] === 'agent-2');
-    expect(second?.getAttribute('d')).toBe('M 98.5 231 C 98.5 277.5 98.5 277.5 98.5 328');
+    expect(second?.getAttribute('d')).toBe('M 98.5 216 C 98.5 272 98.5 272 98.5 328');
   });
 
   it('DERIVATION: the same tree with no spawn edges draws no filament at all', () => {
@@ -718,9 +636,17 @@ describe('the filament (C7.4)', () => {
     expect(treeNodes(b).length).toBe(treeNodes(a).length);
   });
 
-  it('draws nothing for an edge whose spawning dot is not drawn', () => {
-    // Half a key is not a key. An edge naming a `tool_use` id that is in no
-    // drawn row draws no curve rather than one from somewhere plausible.
+  it('draws the edge even when its `tool_use` id names no call in the tree', () => {
+    // CHANGED BY A8.2, and the reasoning changed with it. The curve used to
+    // anchor on the spawning DOT, so an edge whose call was not drawn drew
+    // nothing — correct for a claim about a specific call, and catastrophic
+    // once the dot cap started eliding nearly every call: measured on the
+    // wide-rank corpus, 0 of 15 filaments survived.
+    //
+    // The join this curve now draws is (parentNodeId, agentId), and BOTH ends
+    // resolve here, so the edge is drawn. Nothing is guessed: the `tool_use`
+    // id is still carried verbatim on the element for the drawer to correlate,
+    // and it is still never invented.
     const state = liveSession({
       spawnEdges: [
         {
@@ -733,9 +659,10 @@ describe('the filament (C7.4)', () => {
       ],
     });
     const container = render({ session: state });
-    expect(filaments(container)).toHaveLength(0);
-    // ...and the agent is still drawn: it is in the tree, it just hangs
-    // unjoined on this surface.
+    const drawn = filaments(container);
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]?.dataset['toolUseId']).toBe('toolu_NOT_IN_THIS_TREE');
+    expect(drawn[0]?.dataset['agentId']).toBe('agent-1');
     expect(nodeFor(container, 'agent-1')).toBeDefined();
   });
 
@@ -1050,12 +977,16 @@ describe('focus / re-root (DoD 7.6)', () => {
    * THE 16-SUBAGENT SESSION — which is how this was reported: "they all appear
    * as a second row".
    *
-   * The tidy tree was right and the viewport was not. Measured on the real
-   * session that prompted it — 16 depth-1 subagents, node widths 176–197 by
-   * A1.1 with `SIB` 24: the child row spans 3,484 stage units and the root is
-   * placed at x = 1658. At the identity transform in a 1,200 px panel that is
-   * 6 of 16 children and NO ROOT — a row of nodes with nothing above them,
-   * which is the whole of the report.
+   * The tidy tree was right and the viewport was not. MEASURED ON THIS TEST'S
+   * OWN TREE — 16 children, each 197 wide by A1.1, `SIB` 24 — so the numbers
+   * here describe what this file builds, not the wide-rank corpus, whose
+   * figures differ and belong to `wide-rank.test.ts`. An earlier draft of this
+   * comment carried three different spans for one shape.
+   *
+   * One row: 3,512 units, needing k = 0.323 against §3.4's 0.4 floor, so it
+   * could not be framed at all. At the identity transform in a 1,200 px panel
+   * that is 6 of 16 children and NO ROOT — a row of nodes with nothing above
+   * them, which is the whole of the report.
    *
    * The assertion is deliberately not "the transform equals this literal". A
    * literal passes just as well against a fit of the wrong subtree. This
@@ -1081,15 +1012,18 @@ describe('focus / re-root (DoD 7.6)', () => {
       parked: [],
     });
 
-    // The premise, measured rather than assumed: this tree really is far wider
-    // than the field, and the root really does sit off the right edge at the
-    // identity transform. Without this the assertions below could pass on a
-    // tree that always fitted.
+    // The premise, measured rather than assumed: the rank WRAPS (A8.4 wraps
+    // above 8 children, and there are 16), and the tree is still wider than the
+    // field, so the entry fit is doing real work. Before A8.4 this same tree
+    // was one row 3,512 units wide and could not be fitted at all — §3.4 floors
+    // the tree at 0.4x and it needed 0.323.
     const placed = treeLayout(state, 'root').filter((p) => !p.hidden);
+    const rows = new Set(placed.filter((p) => p.depth === 1).map((p) => p.y));
+    expect(rows.size, 'the rank did not wrap').toBe(2);
     const span = boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H })));
-    expect(span.w).toBeGreaterThan(width * 2);
+    expect(span.w).toBeGreaterThan(width);
     const rootPlacement = placed.find((p) => p.id === 'root');
-    expect(rootPlacement?.x ?? 0).toBeGreaterThan(width);
+    expect(rootPlacement).toBeDefined();
 
     const container = render({ session: state, size: { width, height } });
     const expected = fitTo(span, { width, height }, TREE_FIT_PADDING, TREE_ZOOM_LIMITS);
@@ -1107,19 +1041,17 @@ describe('focus / re-root (DoD 7.6)', () => {
     expect(root.right, 'the root is off the right edge').toBeLessThanOrEqual(width + 1);
     expect(root.top, 'the root is above the field').toBeGreaterThanOrEqual(-1);
 
-    // AND THE OVERFLOW IS SYMMETRIC, which is the honest claim here rather
-    // than "everything is visible". Sixteen siblings CANNOT all be on screen
-    // at once: fitting this span into 1,200 px needs k = 0.323 and §3.4 fixes
-    // the tree's zoom floor at 0.4, so `fitTo` clamps and the row is drawn
-    // 1,405 px wide in a 1,200 px panel — 269 px of overflow. What the fit
-    // buys is that the overflow is centred and pannable instead of the view
-    // sitting at the stage origin with the root 1,658 units off the right.
-    const lefts = placed.map((p) => on(p).left);
-    const rights = placed.map((p) => on(p).right);
-    const overLeft = -Math.min(...lefts);
-    const overRight = Math.max(...rights) - width;
-    expect(overLeft).toBeGreaterThan(0);
-    expect(Math.abs(overLeft - overRight), 'the overflow is lopsided').toBeLessThan(1);
+    // AND EVERY CHILD IS ON SCREEN TOO. This assertion was "the overflow is
+    // symmetric" until A8.4: in ONE row these sixteen span 3,512 units and need
+    // k = 0.323 against §3.4's 0.4 floor, so the best available was a centred,
+    // pannable overflow. Wrapped into rows of 8 the same tree spans 1,744 and
+    // fits at 0.651, so the honest claim is the strong one.
+    for (const p of placed) {
+      const at = on(p);
+      expect(at.left, `${p.id} is off the left edge`).toBeGreaterThanOrEqual(-1);
+      expect(at.right, `${p.id} is off the right edge`).toBeLessThanOrEqual(width + 1);
+      expect(at.top, `${p.id} is above the field`).toBeGreaterThanOrEqual(-1);
+    }
   });
 
   /**
@@ -1264,7 +1196,9 @@ describe('the pulse rule (DoD 7.5, C7.6)', () => {
     const settled = liveSession({ liveness: 'ended', root: settle(liveSession().root) });
     const container = render({ session: settled });
     // The control is only worth anything if there was something to animate.
-    expect(treeNodes(container).length + dots(container).length).toBeGreaterThan(0);
+    // Nodes and filaments, not dots: A8.1 removed the dots, so counting them
+    // here would add zero and quietly weaken the control.
+    expect(treeNodes(container).length).toBeGreaterThan(0);
     expect(filaments(container).length).toBeGreaterThan(0);
     expect(pulsing(container)).toStrictEqual([]);
     expect(animated(container)).toHaveLength(0);
@@ -1300,7 +1234,14 @@ describe('the pulse rule (DoD 7.5, C7.6)', () => {
     // CSS cannot import a TypeScript constant, and Svelte PRUNES a scoped rule
     // it cannot prove is used — which would switch an animation off while
     // every DOM assertion above still passed.
-    for (const cls of ANIMATED_CLASSES) expect(bundle).toContain(`.${cls}`);
+    // `is-breathing` (the node) and `is-flowing` (the filament). NOT the whole
+    // of `ANIMATED_CLASSES`: `is-pulsing` was the TOOL DOT's, and A8.1 removed
+    // the dots, so this bundle no longer carries a rule for it. Narrowed to
+    // what this surface actually animates rather than left iterating a list
+    // whose third member nothing here can satisfy.
+    for (const cls of [ANIMATED_CLASSES[0], ANIMATED_CLASSES[2]]) {
+      expect(bundle).toContain(`.${cls}`);
+    }
     expect(bundle).toContain(`.${REDUCED_MOTION_CLASS}`);
     expect(bundle).toContain('animation:');
   });
@@ -1325,7 +1266,6 @@ describe('refused sessions render no tree (C7.4, G3)', () => {
   const INTERIOR = [
     TESTID.nucleus,
     TESTID.cell,
-    TESTID.dot,
     TESTID.filament,
     TESTID.parkedStub,
     TESTID.elidedBadge,
@@ -1365,9 +1305,9 @@ describe('refused sessions render no tree (C7.4, G3)', () => {
   it('reports zero on every count attribute the panel reads', () => {
     const container = render({ session: unsupportedSession() });
     const canvas = one(container, TESTID.canvas);
-    expect([canvas.dataset['cells'], canvas.dataset['dots'], canvas.dataset['parked']]).toStrictEqual(
-      ['0', '0', '0'],
-    );
+    // `data-dots` was here and is gone with the dots (A8.1): an attribute that
+    // could only ever read '0' is not a count the panel reports.
+    expect([canvas.dataset['cells'], canvas.dataset['parked']]).toStrictEqual(['0', '0']);
   });
 
   it('draws the tree again as soon as the session is not refused', () => {
@@ -1514,9 +1454,12 @@ describe('pan, zoom and fit (DoD 7.4)', () => {
  * ------------------------------------------------------------------------ */
 
 describe('accessibility floor (C7.8)', () => {
-  it('makes every node and dot a real focusable control with a name', () => {
+  it('makes every node a real focusable control with a name', () => {
+    // WAS "every node and dot". A8.1 removed the dots; the assertion is
+    // narrowed to what exists rather than left spreading over an empty array,
+    // which would have kept passing while covering half of what it named.
     const container = render({ session: liveSession() });
-    const controls = [...treeNodes(container), ...dots(container)];
+    const controls = [...treeNodes(container)];
     expect(controls.length).toBeGreaterThan(0);
     for (const el of controls) {
       expect(el.getAttribute('role')).toBe('button');
@@ -1539,16 +1482,13 @@ describe('accessibility floor (C7.8)', () => {
     expect(picked).toStrictEqual(['agent-1', 'agent-1']);
   });
 
-  it('reports the TOOL id when a dot is picked', () => {
-    const picked: string[] = [];
-    const container = render({
-      session: liveSession(),
-      onselect: (id: string) => picked.push(id),
-    });
-    const bash = dots(container).find((d) => d.dataset['toolId'] === 'tool-bash');
-    click(bash as HTMLElement);
-    expect(picked).toStrictEqual(['tool-bash']);
-  });
+  /*
+   * `reports the TOOL id when a dot is picked` stood here. A8.1 removed the
+   * dots, so a tool call is no longer selectable from the canvas at all — it is
+   * selected in §8.6's drawer, whose call rows are covered by
+   * `inspector.test.ts`. Deleted rather than skipped, for the reason the A8.1
+   * describe above gives.
+   */
 
   for (const key of ['Enter', ' ']) {
     it(`selects on ${key === ' ' ? 'Space' : key}`, () => {

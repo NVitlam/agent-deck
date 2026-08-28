@@ -3,9 +3,9 @@
 
   GEOMETRY IS `layout.ts:treeLayout`'s, all of it. This component calls it once
   per render and looks placements up BY ID. It computes no node coordinate of
-  its own. The two families of number it does derive are the tool-dot row
-  (`layout.ts:spawnDotPos`, also imported) and the parked rail, which is not a
-  tree position at all — see below.
+  its own. The one family of number it still derives is the parked rail, which
+  is not a tree position at all — see below. It used to derive the tool-dot row
+  as well; design amendment A8.1 deleted the dots outright.
 
   PAN AND ZOOM ARE `viewport.ts`'s, all of it. `panBy`, `zoomAbout`, `fitTo`,
   `boundsOf`, `transformAttr`, `TREE_ZOOM_LIMITS`, `TREE_FIT_PADDING`. Nothing
@@ -31,9 +31,11 @@
   THE FILAMENT COMES FROM `spawnEdges` AND FROM NOTHING ELSE. Not from tree
   adjacency, not from proximity: `ToolNode` has no `children`, so the spawn
   relationship exists ONLY in `SessionState.spawnEdges` — the host's copy of
-  the sidecar's `meta.toolUseId` primary-key join. An edge whose spawning DOT
-  or whose child NODE is not drawn produces nothing, because the honest
-  alternative to a curve with one end missing is no curve.
+  the sidecar's `meta.toolUseId` primary-key join. An edge whose child NODE is
+  not drawn produces nothing, because the honest alternative to a curve with
+  one end missing is no curve. It used to require the spawning DOT as well,
+  which was correct and catastrophic: the dot cap elided the call, so the curve
+  vanished. A8.2 anchors on the parent's bottom edge and every edge draws.
 
   THE PARKED RAIL IS G3 MADE VISIBLE. An unresolved graft has NO NODE IN THE
   TREE — the grafter deliberately left it off `root`, so `SessionState.parked`
@@ -43,13 +45,13 @@
   be claiming the parked item belongs to the subtree being looked at, which is
   precisely the guess G3 forbids.
 
-  DOM ORDER IS THE TREE, NEVER THE GEOMETRY (C7.8): each node, then its own
-  tool dots, then the next node in pre-order. Filaments are drawn in a separate
+  DOM ORDER IS THE TREE, NEVER THE GEOMETRY (C7.8): each node, then the next
+  node in pre-order. Filaments are drawn in a separate
   group underneath so painting order cannot dictate reading order; they are
   decorative paths with no focus and no accessible name, so they do not enter
   it.
 
-  ZERO HOST CHANGE (C7.7). Picking a node or a dot calls back to
+  ZERO HOST CHANGE (C7.7). Picking a node calls back to
   `Store.selectNode`, which posts nothing. Focus, collapse and the viewport are
   webview-local and reach no message at all.
 -->
@@ -64,7 +66,6 @@
     NODE_H,
     NODE_W_MIN,
     autoCollapseDepth,
-    spawnDotPos,
     toolChildren,
     treeLayout,
     truncateLabel,
@@ -84,7 +85,6 @@
   } from './viewport.js';
   import AgentCell from './AgentCell.svelte';
   import Filament from './Filament.svelte';
-  import ToolDot from './ToolDot.svelte';
 
   let {
     session,
@@ -143,10 +143,6 @@
     onreset?: (() => void) | undefined;
   } = $props();
 
-  /** Above this many tool calls the row draws {@link DOT_KEEP} and a `+N`. */
-  const DOT_LIMIT = 24;
-  /** How many calls the row keeps when it overflows: the LAST 23. */
-  const DOT_KEEP = 23;
   /** Clear space between the widest node and the parked rail. */
   const RAIL_GAP = 64;
   /** The rail's dashed rule sits this far left of the rail's items. */
@@ -234,16 +230,23 @@
   );
   let drawn = $derived(placements.filter((p) => !p.hidden));
 
-  /** One drawn node, with the dot row that belongs to it. */
+  /**
+   * One drawn node. THERE IS NO DOT ROW — design amendment A8.1.
+   *
+   * The row was a flat cap of 24 calls whatever it sat under, so it drew 307
+   * units wide beneath boxes 197–215 wide and adjacent rows collided. Measured
+   * on `webview/wire/synthetic-wide-rank.json`: 17 of 18 rows exceeded their own
+   * box and 14 sibling pairs overlapped, worst 80 units. It also silently cost
+   * the filaments — see the filament derivation below, where the same corpus
+   * measures 0 of 15 drawable.
+   *
+   * What a node DID is row 2 (`{calls} calls`, `{n} running`) and §8.6's drawer,
+   * which lists every call with its status and its spawn link. A capped row of
+   * identical dots was a worse version of a number already on the box.
+   */
   interface DrawnNode {
     placement: TreePlacement;
     agent: AgentNode;
-    /** The dots actually drawn, in transcript order, already positioned. */
-    dots: { tool: ToolNode; x: number; y: number; spawns: boolean }[];
-    /** Calls the cap did not draw. 0 when nothing overflowed. */
-    overflow: number;
-    /** Where the `+N` glyph goes. Only read when `overflow > 0`. */
-    overflowAt: { x: number; y: number };
   }
 
   /** `tool_use` ids that spawned a subagent: one pass over the edges. */
@@ -258,25 +261,7 @@
     for (const placement of drawn) {
       const agent = agentsById.get(placement.id);
       if (agent === undefined) continue;
-      const tools = toolChildren(agent);
-      // THE LAST 23, not the first: what is happening now is at the end. The
-      // `+N` takes dot 0's place, so the row still reads left to right in
-      // time and the elision is where the drawing stops rather than a gap in
-      // the middle of it.
-      const overflow = tools.length > DOT_LIMIT ? tools.length - DOT_KEEP : 0;
-      const shown = overflow > 0 ? tools.slice(-DOT_KEEP) : tools;
-      const count = overflow > 0 ? shown.length + 1 : shown.length;
-      const offset = overflow > 0 ? 1 : 0;
-      out.push({
-        placement,
-        agent,
-        overflow,
-        overflowAt: spawnDotPos(placement, count, 0),
-        dots: shown.map((tool, i) => {
-          const at = spawnDotPos(placement, count, i + offset);
-          return { tool, x: at.x, y: at.y, spawns: spawningToolIds.has(tool.id) };
-        }),
-      });
+      out.push({ placement, agent });
     }
     return out;
   });
@@ -313,16 +298,26 @@
       const parent = byId.get(edge.parentNodeId);
       const child = byId.get(edge.agentId);
       if (parent === undefined || child === undefined) continue;
-      // The spawning DOT, not the parent node: the filament's whole claim is
-      // that THIS call made that agent. A call the cap elided has no drawn
-      // dot, so it draws no curve rather than one from somewhere plausible.
-      const dot = parent.dots.find((d) => d.tool.id === edge.toolUseId);
-      if (dot === undefined) continue;
+      // A8.2: THE PARENT'S BOTTOM EDGE. It anchored on the spawning DOT until
+      // 2026-08-29, and dropped the curve when that dot had been elided — the
+      // honest behaviour for a claim about a specific call, and catastrophic at
+      // scale, because the cap elided nearly everything. Measured on the
+      // wide-rank corpus: a root with 180 calls keeps the last 23, its 15
+      // children were spawned by calls 0, 11, 22 … 154, and so **0 of 15**
+      // filaments drew. Fifteen agents with no visible parent.
+      //
+      // With no dots there is nothing to elide and every edge draws. WHICH call
+      // spawned which agent is read in the drawer, where §8.6's call rows carry
+      // `→ child label` — one surface for that fact instead of a fan of curves
+      // nobody could tell apart.
       claimed.add(edge.agentId);
       out.push({
         toolUseId: edge.toolUseId,
         agentId: edge.agentId,
-        from: { x: dot.x, y: dot.y },
+        from: {
+          x: parent.placement.x + parent.placement.w / 2,
+          y: parent.placement.y + NODE_H,
+        },
         to: {
           x: child.placement.x + child.placement.w / 2,
           y: child.placement.y,
@@ -469,7 +464,7 @@
     fittedFor = `${session.sessionId}:${nodeId}`;
   }
 
-  const INTERACTIVE = `[data-testid="${TESTID.cell}"],[data-testid="${TESTID.nucleus}"],[data-testid="${TESTID.dot}"],[data-testid="${TESTID.elidedBadge}"]`;
+  const INTERACTIVE = `[data-testid="${TESTID.cell}"],[data-testid="${TESTID.nucleus}"]`;
 
   function onPointerDown(event: PointerEvent): void {
     if (event.button !== 0) return;
@@ -592,7 +587,6 @@
   data-collapse-depth={String(collapseDepth)}
   data-auto-collapsed={String(autoCollapsed)}
   data-cells={String(nodes.length)}
-  data-dots={String(nodes.reduce((n, node) => n + node.dots.length, 0))}
   data-parked={String(parkedItems.length)}
   aria-label="Session tree"
   onkeydown={onKeyDown}
@@ -683,18 +677,6 @@
               {onselect}
               onfocus={focusOn}
             />
-            {#if node.overflow > 0}
-              <ToolDot overflow={node.overflow} placement={node.overflowAt} />
-            {/if}
-            {#each node.dots as dot (dot.tool.id)}
-              <ToolDot
-                tool={dot.tool}
-                placement={{ x: dot.x, y: dot.y }}
-                spawns={dot.spawns}
-                selected={dot.tool.id === selectedNodeId}
-                {onselect}
-              />
-            {/each}
           {/each}
         </g>
         {#if parkedItems.length > 0}

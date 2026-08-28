@@ -366,9 +366,31 @@ export const LABEL_PAD = 64;
 export const LABEL_MAX_CHARS = 19;
 
 /** Horizontal pitch of the spawn dots drawn under a node. */
-export const SPAWN_DOT_GAP = 13;
-/** Spawn-dot row, relative to the node's own y. */
-export const SPAWN_DOT_Y = NODE_H + 11;
+/**
+ * More than this many drawn children and the rank WRAPS — design amendment A8.4.
+ *
+ * A rank of 15 spans 3,453 stage units and needs `k = 0.329` to fit a 1,200 px
+ * panel; §3.4 floors the tree at `0.4x`, so before this the rank could not be
+ * framed at all. Measured on `webview/wire/synthetic-wide-rank.json`.
+ */
+export const WRAP_AT = 8;
+
+/**
+ * Vertical gap between two rows of one wrapped rank — A8.4, `LEVEL/2`.
+ *
+ * Derived rather than written down twice: half a level is what makes a wrapped
+ * rank read as one rank in two rows instead of as two ranks.
+ */
+export const ROW_GAP = LEVEL_GAP / 2;
+
+/* THE SPAWN-DOT ROW IS GONE - design amendment A8.1.
+   `SPAWN_DOT_GAP`, `SPAWN_DOT_Y` and `spawnDotPos` were exported from here
+   until 2026-08-29. Nothing draws a dot any more, so nothing here computes
+   one. `layout.reference.mjs` keeps its own `dotPos` for ONE reason, stated
+   at that declaration: the frozen design.md section 7 tables carry spawn-dot
+   columns and must keep reproducing byte-for-byte as a regression guard on
+   the layout arithmetic. That is history, not a second implementation of a
+   live feature. */
 
 /** The depth the `K` key, and the auto-collapse rule, collapse to. */
 export const COLLAPSE_DEPTH = 2;
@@ -522,22 +544,52 @@ export function treeLayout(
 
   const own = new Map<string, number>();
   const subtree = new Map<string, number>();
+  /** Per parent: the shared column widths its children's grid uses (A8.4). */
+  const columns = new Map<string, number[]>();
+  /** Per parent: how many rows its children occupy. 1 unless the rank wrapped. */
+  const childRows = new Map<string, number>();
+  /** Per agent: the depth it was measured at, so rank heights can be summed. */
+  const depthOf = new Map<string, number>();
   const out: TreePlacement[] = [];
 
   const drawnChildren = (agent: AgentNode, depth: number): AgentNode[] =>
     depth + 1 <= collapseDepth ? orderedChildAgents(state, agent.id) : [];
 
+  /**
+   * Measure, with A8.4's wrap.
+   *
+   * COLUMNS ARE SHARED ACROSS ROWS, and that is the part "rows of 8" does not
+   * say on its own: column `c` is as wide as the widest subtree in column `c`
+   * over every row, and each row uses the same grid. Without it a row-1 child
+   * could sit directly above a row-0 child's descendants — two subtrees in one
+   * x range at one depth, which is the single thing the tidy tree exists to
+   * make impossible.
+   *
+   * At `kids.length <= WRAP_AT` there is one column per child and the grid is
+   * `Σ widths + SIB·(n−1)` exactly as before, which is why every frozen §7
+   * table reproduces byte-for-byte.
+   */
   const measure = (agent: AgentNode, depth: number): number => {
     const mine = widthOf(agent);
     own.set(agent.id, mine);
+    depthOf.set(agent.id, depth);
     const kids = drawnChildren(agent, depth);
     if (kids.length === 0) {
       subtree.set(agent.id, mine);
       return mine;
     }
-    let span = SIBLING_GAP * (kids.length - 1);
-    for (const kid of kids) span += measure(kid, depth + 1);
-    const total = Math.max(mine, span);
+    const widths = kids.map((kid) => measure(kid, depth + 1));
+    const cols = Math.min(WRAP_AT, kids.length);
+    const colWidths = new Array<number>(cols).fill(0);
+    widths.forEach((w, i) => {
+      const c = i % cols;
+      colWidths[c] = Math.max(colWidths[c] ?? 0, w);
+    });
+    const grid =
+      colWidths.reduce((sum, w) => sum + w, 0) + SIBLING_GAP * (cols - 1);
+    columns.set(agent.id, colWidths);
+    childRows.set(agent.id, Math.ceil(kids.length / cols));
+    const total = Math.max(mine, grid);
     subtree.set(agent.id, total);
     return total;
   };
@@ -566,11 +618,11 @@ export function treeLayout(
     }
   };
 
-  const place = (agent: AgentNode, depth: number, x0: number): void => {
+  const place = (agent: AgentNode, depth: number, x0: number, row: number): void => {
     const mine = own.get(agent.id) ?? widthOf(agent);
     const span = subtree.get(agent.id) ?? mine;
     const x = roundCoord(x0 + (span - mine) / 2);
-    const y = roundCoord(depth * (NODE_H + LEVEL_GAP));
+    const y = roundCoord(rankTop(depth) + row * (NODE_H + ROW_GAP));
     const kids = drawnChildren(agent, depth);
     const suppressed = kids.length === 0 ? countDescendants(agent) : 0;
     out.push({
@@ -584,15 +636,56 @@ export function treeLayout(
       hiddenDescendants: suppressed,
     });
     if (suppressed > 0) bury(agent, depth + 1, x, y);
-    let cursor = x0;
-    for (const kid of kids) {
-      place(kid, depth + 1, cursor);
-      cursor += (subtree.get(kid.id) ?? widthOf(kid)) + SIBLING_GAP;
+    if (kids.length === 0) return;
+
+    const colWidths = columns.get(agent.id) ?? [];
+    const cols = colWidths.length;
+    const grid =
+      colWidths.reduce((sum, w) => sum + w, 0) + SIBLING_GAP * (cols - 1);
+    for (let start = 0, r = 0; start < kids.length; start += cols, r += 1) {
+      const inRow = kids.slice(start, start + cols);
+      const rowWidth =
+        inRow.reduce((sum, _kid, i) => sum + (colWidths[i] ?? 0), 0) +
+        SIBLING_GAP * (inRow.length - 1);
+      // CENTRED IN THE GRID, never in `span`. With one row `rowWidth === grid`
+      // so this is `x0` exactly, which is what keeps every frozen §7 table
+      // byte-identical; centring in `span` instead would shift a narrow rank
+      // under a wide parent and move coordinates nobody asked to move.
+      let cursor = x0 + (grid - rowWidth) / 2;
+      inRow.forEach((kid, i) => {
+        const colWidth = colWidths[i] ?? 0;
+        const kidSpan = subtree.get(kid.id) ?? widthOf(kid);
+        place(kid, depth + 1, cursor + (colWidth - kidSpan) / 2, r);
+        cursor += colWidth + SIBLING_GAP;
+      });
     }
   };
 
   measure(root, 0);
-  place(root, 0, 0);
+
+  /**
+   * How many rows the nodes AT each depth occupy, and therefore where each rank
+   * starts — A8.4's "every depth below a wrapped rank shifts down by the extra
+   * rows". With no wrap anywhere every rank is one row and `rankTop(d)`
+   * reduces to `d · (NH + LEVEL)`, the expression this replaced.
+   */
+  const rowsAtDepth = new Map<number, number>([[0, 1]]);
+  for (const [id, rows] of childRows) {
+    const depth = (depthOf.get(id) ?? 0) + 1;
+    rowsAtDepth.set(depth, Math.max(rowsAtDepth.get(depth) ?? 1, rows));
+  }
+  const rankTops = new Map<number, number>([[0, 0]]);
+  const rankTop = (depth: number): number => {
+    const known = rankTops.get(depth);
+    if (known !== undefined) return known;
+    const above = rankTop(depth - 1);
+    const rows = rowsAtDepth.get(depth - 1) ?? 1;
+    const value = above + rows * NODE_H + (rows - 1) * ROW_GAP + LEVEL_GAP;
+    rankTops.set(depth, value);
+    return value;
+  };
+
+  place(root, 0, 0, 0);
   return out;
 }
 
@@ -626,31 +719,4 @@ export function autoCollapseDepth(state: SessionState, rootId: string): number {
   return visibleNodeCount(state, rootId) > AUTO_COLLAPSE_NODES
     ? COLLAPSE_DEPTH
     : Number.POSITIVE_INFINITY;
-}
-
-/**
- * Where the `i`th spawn dot sits under a placed node.
- *
- * Centred on the node, pitched at {@link SPAWN_DOT_GAP}, and DERIVED — a
- * function of the placement it is given plus the tool count, drawn per render
- * rather than pinned as a placement of its own. That keeps the dot row out of
- * {@link TreePlacement} and out of the goldens' coordinate set.
- *
- * It does NOT mean a tool call leaves the tree still. A new call changes the
- * node's row-2 text ("n calls", and "n running" when one is in flight), which
- * can change {@link nodeWidth}, which re-centres this node's ancestors exactly
- * as a spawn does. See this module's header: nothing here is coordinate-stable
- * under insertion, and a comment saying otherwise stood in this file for a
- * phase.
- */
-export function spawnDotPos(
-  node: Pick<TreePlacement, 'x' | 'y' | 'w'>,
-  toolCount: number,
-  index: number,
-): { x: number; y: number } {
-  const span = (toolCount - 1) * SPAWN_DOT_GAP;
-  return {
-    x: roundCoord(node.x + node.w / 2 - span / 2 + index * SPAWN_DOT_GAP),
-    y: roundCoord(node.y + SPAWN_DOT_Y),
-  };
 }

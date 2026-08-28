@@ -62,7 +62,7 @@
             "root": {
               "id": "root",
               "kind": "main",
-              "label": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+              "label": "Fixture harvest run for a…",
               "status": "running",
               "spawnDepth": 0,
               "children": [
@@ -318,7 +318,7 @@
             "root": {
               "id": "root",
               "kind": "main",
-              "label": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+              "label": "Explore spike directory",
               "status": "running",
               "spawnDepth": 0,
               "children": [
@@ -552,7 +552,7 @@
             "root": {
               "id": "root",
               "kind": "main",
-              "label": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+              "label": "Fixture harvest run for a…",
               "status": "running",
               "spawnDepth": 0,
               "children": [
@@ -808,7 +808,7 @@
             "root": {
               "id": "root",
               "kind": "main",
-              "label": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+              "label": "Explore spike directory",
               "status": "running",
               "spawnDepth": 0,
               "children": [
@@ -1074,7 +1074,7 @@
         "root": {
           "id": "root",
           "kind": "main",
-          "label": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+          "label": "Fixture harvest run for a…",
           "status": "running",
           "spawnDepth": 0,
           "children": [
@@ -1330,7 +1330,7 @@
         "root": {
           "id": "root",
           "kind": "main",
-          "label": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+          "label": "Explore spike directory",
           "status": "running",
           "spawnDepth": 0,
           "children": [

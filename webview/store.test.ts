@@ -6,7 +6,13 @@ import type {
 } from '../src/model/events.js';
 import { createStore } from './store.js';
 import { DEFAULT_VIEW_MODE, ZOOM_MAX, ZOOM_MIN } from './canvas-contract.js';
-import { countNodes, deckLayout } from './layout.js';
+import {
+  DEFAULT_DECK_LAYOUT,
+  DEFAULT_DECK_SORT,
+  countNodes,
+  deckEngine,
+  deckLayout,
+} from './layout.js';
 import { liveSession, unsupportedSession } from './testdata.js';
 
 /**
@@ -886,10 +892,17 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     store.handleMessage({ type: 'snapshot', sessions: [liveSession(), liveSession({ sessionId: 'session-idle', liveness: 'idle' })] });
 
     // The geometry, before anyone touches the view.
-    const before = deckLayout(store.getView().sessions.map((r) => ({
-      sessionId: r.sessionId,
-      nodeCount: r.nodeCount,
-    })));
+    const before = deckLayout(
+      store.getView().sessions.map((r) => ({
+        id: r.sessionId,
+        engine: deckEngine(r.engine),
+        status: r.liveness,
+        last: 0,
+      })),
+      DEFAULT_DECK_LAYOUT,
+      DEFAULT_DECK_SORT,
+      800,
+    );
 
     store.panDeck(37, -18);
     store.zoomDeck(1.1, 200, 120);
@@ -903,10 +916,17 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     // being a pure function of state, every golden goes stale, and "a spawn
     // adds, it never reflows" quietly stops being true. Byte-identical, not
     // approximately equal — a tolerance here would let a slow drift through.
-    const after = deckLayout(store.getView().sessions.map((r) => ({
-      sessionId: r.sessionId,
-      nodeCount: r.nodeCount,
-    })));
+    const after = deckLayout(
+      store.getView().sessions.map((r) => ({
+        id: r.sessionId,
+        engine: deckEngine(r.engine),
+        status: r.liveness,
+        last: 0,
+      })),
+      DEFAULT_DECK_LAYOUT,
+      DEFAULT_DECK_SORT,
+      800,
+    );
     expect(after).toStrictEqual(before);
   });
 

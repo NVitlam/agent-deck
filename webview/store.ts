@@ -260,16 +260,6 @@ export interface WebviewView {
   /** Deck pan/zoom. A TRANSFORM, never a coordinate — see `canvas-contract.ts`. */
   deckView: { x: number; y: number; k: number };
   /**
-   * Per-session nudges, in stage units, keyed by sessionId.
-   *
-   * Blobs are placed on a golden-angle spiral and can overlap; this lets one
-   * be dragged aside to see what is under it. Like the pan transform it is an
-   * OFFSET APPLIED AT RENDER TIME — `deckLayout` still returns the same
-   * coordinates it always did, so the goldens hold and a session dragged aside
-   * snaps back the moment the user resets the view.
-   */
-  blobNudges: Readonly<Record<string, { dx: number; dy: number }>>;
-  /**
    * Session-interior pan/zoom. Separate from `deckView` deliberately: they are
    * different spaces, and inheriting the deck+#39;s transform on entry would drop
    * you into an interior already panned somewhere you never chose.
@@ -371,8 +361,6 @@ export interface Store {
    * `viewport.ts:boundsOf` measures.
    */
   fitDeck(content: Rect, size: ViewportSize): void;
-  /** Move one blob aside by a delta in stage units. Additive. */
-  nudgeBlob(sessionId: string, dx: number, dy: number): void;
   /** Back to the identity transform, and every blob back where layout put it. */
   resetDeckView(): void;
   /** The same three, for the session interior. */
@@ -541,7 +529,6 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
   let inspectorOpen = false;
   const IDENTITY_VIEW = { x: 0, y: 0, k: 1 };
   let deckView = { ...IDENTITY_VIEW };
-  let blobNudges: Record<string, { dx: number; dy: number }> = {};
   let canvasView = { ...IDENTITY_VIEW };
   let degraded = false;
   let degradedReason: 'noHookEvents' | 'listenerDown' | undefined;
@@ -672,7 +659,6 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
             : summaries.filter((row) => row.liveness === deckFilter),
         inspectorOpen,
         deckView: { ...deckView },
-        blobNudges,
         canvasView: { ...canvasView },
         resyncs,
       };
@@ -910,25 +896,11 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       notify();
     },
 
-    nudgeBlob(sessionId: string, dx: number, dy: number): void {
-      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
-      if (dx === 0 && dy === 0) return;
-      const prev = blobNudges[sessionId] ?? { dx: 0, dy: 0 };
-      // Replaced wholesale rather than mutated, so `getView()` keeps handing
-      // out a value that cannot be changed behind a component's back.
-      blobNudges = { ...blobNudges, [sessionId]: { dx: prev.dx + dx, dy: prev.dy + dy } };
-      notify();
-    },
-
     resetDeckView(): void {
       const already =
-        deckView.x === 0 && deckView.y === 0 && deckView.k === 1 &&
-        Object.keys(blobNudges).length === 0;
+        deckView.x === 0 && deckView.y === 0 && deckView.k === 1;
       if (already) return;
       deckView = { ...IDENTITY_VIEW };
-      // Reset means everything the user moved, not just the camera: a blob
-      // left dragged aside after a "reset view" is the control lying.
-      blobNudges = {};
       notify();
     },
 

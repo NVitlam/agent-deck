@@ -249,10 +249,9 @@
         {reducedMotion}
         onenter={(id) => store.enterSession(id)}
         onpan={(dx, dy) => store.panDeck(dx, dy)}
-        onzoom={(factor, x, y) => store.zoomDeck(factor, x, y)}
+        onzoom={(notches, x, y) => store.zoomDeck(notches, x, y)}
         onreset={() => store.resetDeckView()}
-        blobNudges={view.blobNudges}
-        onnudge={(id, dx, dy) => store.nudgeBlob(id, dx, dy)}
+        onfit={(content, size) => store.fitDeck(content, size)}
       />
     </main>
   {:else}

@@ -31,9 +31,16 @@ media/*
 lab/
 
 # The working method and its evidence. These live in the maintainer's private
-# repository and are presented back at these paths by directory junctions and
-# hardlinks, so `/phase` and `/handoff` still resolve them locally while
-# nothing here tracks a byte of them.
+# repository and are presented back at these paths by links into `lab/`, so
+# `/phase` and `/handoff` still resolve them locally while nothing here tracks
+# a byte of them.
+#
+# `docs/` and `spike/` are directory JUNCTIONS; the five files are SYMLINKS.
+# They are not hardlinks, and the distinction was measured on 2026-08-28: a
+# rename-based write - `sed -i`, and most editors - severs a hardlink and
+# replaces a symlink with a regular file. Either way the edit lands in a
+# detached copy at this root that reads correctly and never reaches `lab/`.
+# Write these paths IN PLACE.
 #
 # ANCHORED WITH A LEADING SLASH, every one of them. `docs/` unanchored would
 # also ignore a future `src/docs/`, and `CLAUDE.md` unanchored would ignore one

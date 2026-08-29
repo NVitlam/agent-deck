@@ -8,7 +8,7 @@ div
         ul
           li
             button [rail-item] .rail-item aria-current="false" data-liveness="live" data-refused="false" data-selected="false" data-session-id="05c5482d-5568-44ce-97fe-bc9a6c15afc4" type="button"
-              span .rail-label "Fixture harvest run for a…"
+              span .rail-label "Fixture harvest run for agent-deck Phase 1"
               span .rail-meta
                 span [rail-liveness] .liveness .liveness-live data-liveness="live" title="recently active, and something is still believed to be running" "{}live"
                   span .dot aria-hidden="true"

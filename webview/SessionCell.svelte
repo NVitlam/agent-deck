@@ -53,7 +53,13 @@
     livenessLabel,
     livenessTitle,
   } from './format.js';
-  import { DECK_CARD_H, DECK_CARD_W, formatCompactTokens } from './layout.js';
+  import {
+    DECK_CARD_H,
+    DECK_CARD_W,
+    formatCompactTokens,
+    labelIsClipped,
+    labelLines,
+  } from './layout.js';
   import type { SessionSummary } from './store.js';
 
   let {
@@ -143,7 +149,9 @@
   const STATIC_CLASS = 'is-static';
 
   /** How long a label may be before it is cut. 220 units at ~6.6/char. */
-  const LABEL_MAX_CHARS = 24;
+  /* `LABEL_MAX_CHARS` lived here and cut the label with an ellipsis. A9.1
+     removed it: the label wraps to two rows and hover carries the whole
+     string. */
 
   /**
    * The row-2 separator: a middle dot with a space either side.
@@ -206,11 +214,16 @@
       !selected,
   );
 
-  let label = $derived(
-    summary.label.length > LABEL_MAX_CHARS
-      ? `${summary.label.slice(0, LABEL_MAX_CHARS - 1)}…`
-      : summary.label,
-  );
+  /**
+  * The card's label, wrapped to two rows — A9.1. No ellipsis anywhere.
+  *
+  * It cut at `LABEL_MAX_CHARS` with a `…` until 2026-08-29. The card is 220
+  * wide with room for two rows, and the whole string is on the card's own
+  * `<title>` for hover, so nothing is lost and nothing is marked.
+  */
+  let labelRows = $derived(labelLines(summary.label, DECK_CARD_W - LABEL_X + 8));
+  let label = $derived(labelRows[0] ?? '');
+  let labelClipped = $derived(labelIsClipped(summary.label, DECK_CARD_W - LABEL_X + 8));
 
   /** `CC` / `OC`. The deck's own two-letter vocabulary; `layout.ts` agrees. */
   let glyph = $derived(summary.engine === 'opencode' ? 'OC' : 'CC');
@@ -272,13 +285,21 @@
    * `schemaMismatch` message on the wire carries NO code (see
    * `src/model/events.ts`), so a card that printed one would be inventing it.
    */
-  let tooltip = $derived(
+  let statusTitle = $derived(
     summary.refused
       ? livenessTitle('unsupported')
       : degraded
         ? `${engineName}: ${degradedReasonText(degradedReason)}`
         : livenessTitle(shown),
   );
+  /**
+   * A9.1: hover carries the WHOLE label, and the status after it.
+   *
+   * The label leads, because that is the thing a card can fail to show in full;
+   * the status was here first and is still one hover away.
+   */
+  let tooltip = $derived(`${summary.label}
+${statusTitle}`);
 
   let groupClass = $derived(
     ['cell', summary.refused ? CRACKED_CLASS : '', foreign ? FOREIGN_CLASS : '']
@@ -410,6 +431,11 @@
     text-anchor="middle">{glyph}</text
   >
   <text class="label" data-testid="deck-cell-label" x={LABEL_X} y={ROW1_Y}>{label}</text>
+  {#if labelRows.length > 1}
+    <text class="label" data-testid="deck-cell-label-2" x={LABEL_X} y={ROW1_Y + 15}
+      >{labelRows[1]}</text
+    >
+  {/if}
 
   {#if foreign}
     <text

@@ -335,8 +335,30 @@ export function deckLayout(
  * labels written straight through each other.
  */
 export const NODE_W_MIN = 168;
-/** Node height. */
+/**
+ * Node height with a ONE-LINE label — the minimum, and the parked rail's fixed
+ * item height.
+ *
+ * §2.3 said "node size is fixed", and A9.2 amends it: a box grows DOWNWARD to
+ * fit a label that wrapped. The thing §2.3 was guarding against is untouched —
+ * it warned that size must not vary with TOKEN SHARE, because a value that
+ * changes every few seconds driving a size that drives a position is render
+ * feedback. A label is written once when the agent is grafted and never moves
+ * again, so it cannot feed back.
+ */
 export const NODE_H = 52;
+
+/**
+ * Node height with a TWO-LINE label (A9.2): one more 18-unit line.
+ *
+ * Row 1 sits at baseline 21 and row 2 at 37, so the sub-text row moves from
+ * baseline 38 to 56 and the box from 52 to 70. `AgentCell.svelte` reads those
+ * baselines off {@link labelLines}'s length rather than duplicating the rule.
+ */
+export const NODE_H_TWO_LINE = 70;
+
+/** Rows a wrapped label may occupy. Past this, the rest is read on hover. */
+export const LABEL_MAX_LINES = 2;
 /** Vertical clear space between one depth and the next. */
 export const LEVEL_GAP = 112;
 /** Horizontal clear space between sibling SUBTREES. */
@@ -362,7 +384,25 @@ export const SUB_PAD = 26;
 /** Fixed chrome either side of the row-1 text (status chip, badge). */
 export const LABEL_PAD = 64;
 
-/** Characters of an agent label kept before the ellipsis. */
+/**
+ * Widest a node box may be drawn — design amendment A9.2.
+ *
+ * A1.1 grows a box with its label, and before this cap a long label grew the
+ * box instead of wrapping, which is half of why a rank of 15 spanned 3,453
+ * units. Past the cap the label WRAPS (see {@link labelLines}) and the box
+ * grows DOWNWARD instead, which is the direction there is room in.
+ */
+export const NODE_W_MAX = 264;
+
+/**
+ * Characters of an agent label kept before the ellipsis.
+ *
+ * **NOT USED FOR DISPLAY SINCE A9.1**, which removed every ellipsis from every
+ * surface: a label now wraps to two rows and anything past that is read on
+ * hover. Kept only because `design.md` §2.3's frozen node-width table quotes it
+ * and `nodeWidth` still measures the FIRST line against it, and removing a
+ * constant two frozen tables are written against buys nothing.
+ */
 export const LABEL_MAX_CHARS = 19;
 
 /** Horizontal pitch of the spawn dots drawn under a node. */
@@ -472,13 +512,99 @@ export function nodeSubText(agent: AgentNode): string {
  * agent and returns a width, and knows nothing about what it returned before.
  */
 export function nodeWidth(agent: AgentNode): number {
-  return Math.ceil(
-    Math.max(
-      NODE_W_MIN,
-      nodeSubText(agent).length * SUB_ADVANCE + SUB_PAD,
-      nodeLabelText(agent).length * LABEL_ADVANCE + LABEL_PAD,
+  return Math.min(
+    NODE_W_MAX,
+    Math.ceil(
+      Math.max(
+        NODE_W_MIN,
+        nodeSubText(agent).length * SUB_ADVANCE + SUB_PAD,
+        nodeLabelText(agent).length * LABEL_ADVANCE + LABEL_PAD,
+      ),
     ),
   );
+}
+
+/**
+ * How many characters of label fit on ONE line of a box `width` wide.
+ *
+ * `LABEL_PAD` is the same allowance A1.1's width formula uses — the two side
+ * insets plus the depth marker on row 1's right — so this function and
+ * {@link nodeWidth} are the same equation solved for different unknowns. That
+ * is what makes wrapping impossible below the cap: a label short enough not to
+ * hit {@link NODE_W_MAX} produces a box wide enough to hold it on one line.
+ */
+export function labelCharsPerLine(width: number): number {
+  return Math.max(1, Math.floor((width - LABEL_PAD) / LABEL_ADVANCE));
+}
+
+/**
+ * A node's label, wrapped to at most {@link LABEL_MAX_LINES} rows — A9.1.
+ *
+ * PURE, greedy, on word boundaries, with a hard split for a single word longer
+ * than a line. Deterministic in the way everything in this module has to be:
+ * same label and same width in, identical rows out, no DOM measurement.
+ *
+ * **Nothing is marked with an ellipsis.** A9.1 removed every `…` from every
+ * surface, so a label too long for two rows is simply not all here, and the
+ * FULL string is carried to the reader on hover — `AgentCell.svelte` puts it in
+ * an SVG `<title>` and sets `data-label-clipped`, so "there is more" is a fact
+ * a test can assert rather than a glyph a user has to interpret.
+ */
+export function labelLines(label: string, width: number): string[] {
+  const perLine = labelCharsPerLine(width);
+  // Break on whitespace AND after a hyphen, keeping the hyphen on the line it
+  // ends. Agent labels in this product are overwhelmingly hyphenated slugs —
+  // `readme-guard-rederive`, `privacy-sweep-audit` — so a splitter that only
+  // knew about spaces would hard-split every one of them mid-word.
+  const words = label.split(/(?<=-)|\s+/u).filter((w) => w !== '');
+  if (words.length === 0) return [''];
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (lines.length === LABEL_MAX_LINES) break;
+    // Join with a space UNLESS the previous piece already ends in the hyphen
+    // it was split on — `test-` + `runner` is `test-runner`, not `test- runner`.
+    const candidate =
+      current === '' ? word : current.endsWith('-') ? `${current}${word}` : `${current} ${word}`;
+    if (candidate.length <= perLine) {
+      current = candidate;
+      continue;
+    }
+    if (current !== '') {
+      lines.push(current);
+      current = '';
+      if (lines.length === LABEL_MAX_LINES) break;
+    }
+    // A single word wider than the line: hard-split it rather than leaving a
+    // row empty. Splitting mid-word is ugly and it is honest; a blank row
+    // beside a too-long word reads as a rendering bug.
+    let rest = word;
+    while (rest.length > perLine && lines.length < LABEL_MAX_LINES) {
+      lines.push(rest.slice(0, perLine));
+      rest = rest.slice(perLine);
+    }
+    current = lines.length === LABEL_MAX_LINES ? '' : rest;
+  }
+  if (current !== '' && lines.length < LABEL_MAX_LINES) lines.push(current);
+  return lines.length === 0 ? [''] : lines;
+}
+
+/** Whether {@link labelLines} could not show all of `label` (A9.1). */
+export function labelIsClipped(label: string, width: number): boolean {
+  const shown = labelLines(label, width).join(' ');
+  return shown.replace(/\s+/gu, ' ').trim() !== label.replace(/\s+/gu, ' ').trim();
+}
+
+/**
+ * A node's drawn height: one line or two — A9.2.
+ *
+ * A function of the agent alone, like {@link nodeWidth}, so the layout stays a
+ * pure function of the tree.
+ */
+export function nodeHeight(agent: AgentNode): number {
+  return labelLines(agent.label, nodeWidth(agent)).length > 1
+    ? NODE_H_TWO_LINE
+    : NODE_H;
 }
 
 /** One placed node. */
@@ -488,6 +614,15 @@ export interface TreePlacement {
   y: number;
   /** Drawn width, from {@link nodeWidth} or the caller's monotonic override. */
   w: number;
+  /**
+   * Drawn HEIGHT — {@link NODE_H} or {@link NODE_H_TWO_LINE} (A9.2).
+   *
+   * On the placement rather than re-derived by each consumer, for the reason
+   * `w` is: `AgentCell`, the filament's anchor, the fit's extents and the
+   * goldens must all agree on one number, and four derivations of one value is
+   * the seam this package has already paid for twice.
+   */
+  h: number;
   depth: number;
   /** Has children that are deliberately not drawn: render a `+N` badge. */
   collapsed: boolean;
@@ -541,6 +676,9 @@ export function treeLayout(
 
   const widthOf = (agent: AgentNode): number =>
     overrides?.get(agent.id) ?? nodeWidth(agent);
+  /** Height follows the width, because wrapping does (A9.2). */
+  const heightOf = (agent: AgentNode): number =>
+    labelLines(agent.label, widthOf(agent)).length > 1 ? NODE_H_TWO_LINE : NODE_H;
 
   const own = new Map<string, number>();
   const subtree = new Map<string, number>();
@@ -550,6 +688,13 @@ export function treeLayout(
   const childRows = new Map<string, number>();
   /** Per agent: the depth it was measured at, so rank heights can be summed. */
   const depthOf = new Map<string, number>();
+  /**
+   * Tallest node at each depth (A9.2). A rank is as tall as its tallest box,
+   * so every row in it shares one baseline — a rank whose rows were each their
+   * own height would step up and down across the screen for no reason a reader
+   * could see.
+   */
+  const tallestAt = new Map<number, number>();
   const out: TreePlacement[] = [];
 
   const drawnChildren = (agent: AgentNode, depth: number): AgentNode[] =>
@@ -573,6 +718,7 @@ export function treeLayout(
     const mine = widthOf(agent);
     own.set(agent.id, mine);
     depthOf.set(agent.id, depth);
+    tallestAt.set(depth, Math.max(tallestAt.get(depth) ?? NODE_H, heightOf(agent)));
     const kids = drawnChildren(agent, depth);
     if (kids.length === 0) {
       subtree.set(agent.id, mine);
@@ -609,6 +755,7 @@ export function treeLayout(
         x,
         y,
         w: widthOf(kid),
+        h: heightOf(kid),
         depth,
         collapsed: false,
         hidden: true,
@@ -622,7 +769,8 @@ export function treeLayout(
     const mine = own.get(agent.id) ?? widthOf(agent);
     const span = subtree.get(agent.id) ?? mine;
     const x = roundCoord(x0 + (span - mine) / 2);
-    const y = roundCoord(rankTop(depth) + row * (NODE_H + ROW_GAP));
+    const rankH = tallestAt.get(depth) ?? NODE_H;
+    const y = roundCoord(rankTop(depth) + row * (rankH + ROW_GAP));
     const kids = drawnChildren(agent, depth);
     const suppressed = kids.length === 0 ? countDescendants(agent) : 0;
     out.push({
@@ -630,6 +778,7 @@ export function treeLayout(
       x,
       y,
       w: mine,
+      h: heightOf(agent),
       depth,
       collapsed: suppressed > 0,
       hidden: false,
@@ -680,7 +829,8 @@ export function treeLayout(
     if (known !== undefined) return known;
     const above = rankTop(depth - 1);
     const rows = rowsAtDepth.get(depth - 1) ?? 1;
-    const value = above + rows * NODE_H + (rows - 1) * ROW_GAP + LEVEL_GAP;
+    const tall = tallestAt.get(depth - 1) ?? NODE_H;
+    const value = above + rows * tall + (rows - 1) * ROW_GAP + LEVEL_GAP;
     rankTops.set(depth, value);
     return value;
   };

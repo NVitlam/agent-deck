@@ -55,6 +55,8 @@
   } from './canvas-contract.js';
   import {
     NODE_H,
+    labelIsClipped,
+    labelLines,
     nodeLabelText,
     nodeSubText,
     roundCoord,
@@ -107,12 +109,16 @@
   const RADIUS = 9;
   /** Row-1 baseline, relative to the box top. */
   const ROW1_Y = 21;
-  /** Row-2 baseline, relative to the box top. */
+  /** Second LABEL line's baseline, when the label wrapped (A9.1). */
+  const LABEL_ROW2_Y = 37;
+  /** Sub-text baseline for a one-line label. */
   const ROW2_Y = 38;
+  /** Sub-text baseline when the label took two lines: one 18-unit row lower. */
+  const ROW2_Y_WRAPPED = 56;
   /** Inset of both rows from the box edge. */
   const PAD_X = 11;
   /** The `+N` collapse badge sits below the box. */
-  const BADGE_Y = NODE_H + 13;
+  const BADGE_DY = 13;
   /** Radius of the static ring the reduced-motion swap shows. */
   const RING_R = 4.5;
   /** The ring sits inside the top-right corner. */
@@ -145,9 +151,24 @@
   let active = $derived(!isParked && (status === 'running' || hasRunningTool));
   let ended = $derived(!isParked && !active);
 
-  let label = $derived(
-    agent === undefined ? nodeId : nodeLabelText(agent),
-  );
+  /**
+   * The FULL label — what hover shows, and what `labelLines` wraps.
+   *
+   * NOT `nodeLabelText`, which cuts at `LABEL_MAX_CHARS` with an ellipsis. A9.1
+   * removed every ellipsis from every surface: the label wraps to two rows and
+   * the whole string is one hover away.
+   */
+  let fullLabel = $derived(agent === undefined ? nodeId : agent.label);
+  /** The rows actually drawn. One or two (A9.1). */
+  let lines = $derived(labelLines(fullLabel, w));
+  /** True when two rows still did not hold it — hover carries the rest. */
+  let clipped = $derived(labelIsClipped(fullLabel, w));
+  /** Row 1, and the name every aria/badge string uses. */
+  let label = $derived(lines[0] ?? '');
+  /** Box height follows the wrap: the placement is the one source (A9.2). */
+  let boxH = $derived(placement.h ?? NODE_H);
+  /** Sub-text drops a row when the label took two. */
+  let subY = $derived(lines.length > 1 ? ROW2_Y_WRAPPED : ROW2_Y);
   /** Row 2. IMPORTED, never restated: the widths were measured from it. */
   let sub = $derived(agent === undefined ? parked?.code ?? '' : nodeSubText(agent));
 
@@ -232,14 +253,20 @@
     <path
       class="stub"
       data-testid={TESTID.parkedStub}
-      d={`M ${roundCoord(x - STUB_LENGTH)} ${roundCoord(y + NODE_H / 2)} l ${STUB_LENGTH} 0`}
+      d={`M ${roundCoord(x - STUB_LENGTH)} ${roundCoord(y + boxH / 2)} l ${STUB_LENGTH} 0`}
     />
-    <rect class={boxClass} {x} {y} width={w} height={NODE_H} rx={RADIUS} />
+    <rect class={boxClass} {x} {y} width={w} height={boxH} rx={RADIUS} />
+    <title>{fullLabel}</title>
     <text class="lbl" x={roundCoord(x + PAD_X)} y={roundCoord(y + ROW1_Y)}>{label}</text>
+    {#if lines.length > 1}
+      <text class="lbl" x={roundCoord(x + PAD_X)} y={roundCoord(y + LABEL_ROW2_Y)}
+        >{lines[1]}</text
+      >
+    {/if}
     <text class="mark" x={roundCoord(x + w - PAD_X)} y={roundCoord(y + ROW1_Y)}
       >{depthMark}</text
     >
-    <text class="sub" x={roundCoord(x + PAD_X)} y={roundCoord(y + ROW2_Y)}
+    <text class="sub" x={roundCoord(x + PAD_X)} y={roundCoord(y + subY)}
       >{AWAITING} · {sub}</text
     >
   </g>
@@ -255,6 +282,8 @@
     data-depth={String(placement.depth ?? 0)}
     data-liveness-inferred={String(active && degraded)}
     data-collapsed={String(collapsed)}
+    data-label-lines={String(lines.length)}
+    data-label-clipped={String(clipped)}
     role="button"
     tabindex="0"
     aria-label={ariaLabel}
@@ -263,12 +292,21 @@
     ondblclick={focusHere}
     onkeydown={onKeyDown}
   >
-    <rect class={boxClass} {x} {y} width={w} height={NODE_H} rx={RADIUS} />
+    <rect class={boxClass} {x} {y} width={w} height={boxH} rx={RADIUS} />
+    <!-- A9.1: the WHOLE label, on hover, always. The two rows below may not
+         hold it, and there is no ellipsis to say so — `data-label-clipped` is
+         how a test asserts the hover is carrying something the box is not. -->
+    <title>{fullLabel}</title>
     <text class="lbl" x={roundCoord(x + PAD_X)} y={roundCoord(y + ROW1_Y)}>{label}</text>
+    {#if lines.length > 1}
+      <text class="lbl" x={roundCoord(x + PAD_X)} y={roundCoord(y + LABEL_ROW2_Y)}
+        >{lines[1]}</text
+      >
+    {/if}
     <text class="mark" x={roundCoord(x + w - PAD_X)} y={roundCoord(y + ROW1_Y)}
       >{depthMark}</text
     >
-    <text class="sub" x={roundCoord(x + PAD_X)} y={roundCoord(y + ROW2_Y)}>{sub}</text>
+    <text class="sub" x={roundCoord(x + PAD_X)} y={roundCoord(y + subY)}>{sub}</text>
     {#if active}
       <!-- The motion channel. The class is on the RING, so the reduced-motion
            swap is one CSS rule on one element: it stops animating and stays
@@ -278,7 +316,7 @@
         data-testid="tree-pulse"
         data-static={String(reducedMotion)}
         cx={roundCoord(x + w - RING_INSET)}
-        cy={roundCoord(y + NODE_H - RING_INSET)}
+        cy={roundCoord(y + boxH - RING_INSET)}
         r={RING_R}
       />
     {/if}
@@ -294,7 +332,7 @@
         tabindex="0"
         aria-label={`Focus ${label}: ${String(hidden)} hidden`}
         x={roundCoord(x + w / 2)}
-        y={roundCoord(y + BADGE_Y)}
+        y={roundCoord(y + boxH + BADGE_DY)}
         onclick={(event) => {
           event.stopPropagation();
           focusHere();

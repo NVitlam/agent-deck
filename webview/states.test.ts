@@ -395,7 +395,10 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
         // why. Asserted by VALUE against `livenessTitle`, not by presence.
         expect(one(blob, 'deck-cell-border').classList.contains(CRACKED_CLASS)).toBe(true);
         expect(blob.dataset['state']).toBe('unsupported');
-        expect(blob.querySelector('title')?.textContent).toBe(livenessTitle('unsupported'));
+        // A9.1 leads the card's tooltip with the LABEL; the status follows.
+        expect(blob.querySelector('title')?.textContent).toContain(
+          livenessTitle('unsupported'),
+        );
         // G3 in the NUMBERS channel too: no figure is read off a refused
         // tree, so every count the card carries is 0 and no badge is drawn.
         expect(blob.dataset['nodes']).toBe('0');

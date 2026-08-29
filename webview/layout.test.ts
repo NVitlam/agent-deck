@@ -44,6 +44,7 @@ import {
   LABEL_MAX_CHARS,
   LEVEL_GAP,
   NODE_H,
+  NODE_H_TWO_LINE,
   NODE_W_MIN,
   SIBLING_GAP,
   SUB_ADVANCE,
@@ -816,11 +817,25 @@ describe('the tidy tree', () => {
     }
   });
 
-  it('puts one level exactly NODE_H + LEVEL_GAP below the last', () => {
+  it('puts one rank a LEVEL_GAP below the tallest box of the rank above', () => {
+    // WAS `p.depth * (NODE_H + LEVEL_GAP)`, which assumed every box was 52
+    // tall. A9.2 lets a box grow to 70 for a wrapped label, so a rank is as
+    // tall as its tallest member and everything below it shifts — the mock
+    // tree's `readme-guard-rederive` is 21 characters, wraps at depth 1, and
+    // moves depths 2 and 3 down by 18.
     const { state } = buildMockState();
-    for (const p of treeLayout(state, 'main').filter((x) => !x.hidden)) {
-      expect(p.y).toBe(p.depth * (NODE_H + LEVEL_GAP));
+    const placed = treeLayout(state, 'main').filter((x) => !x.hidden);
+    const tallestAt = new Map<number, number>();
+    for (const p of placed) {
+      tallestAt.set(p.depth, Math.max(tallestAt.get(p.depth) ?? NODE_H, p.h));
     }
+    const topOf = (depth: number): number =>
+      depth === 0 ? 0 : topOf(depth - 1) + (tallestAt.get(depth - 1) ?? NODE_H) + LEVEL_GAP;
+    for (const p of placed) expect(p.y, p.id).toBe(topOf(p.depth));
+
+    // NON-VACUITY: this tree really does have both heights in it, or the rule
+    // above would be indistinguishable from the fixed-height one it replaced.
+    expect([...new Set(placed.map((p) => p.h))].sort()).toStrictEqual([NODE_H, NODE_H_TWO_LINE]);
   });
 
   it('roots at (x, 0) and re-roots on any agent', () => {

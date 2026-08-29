@@ -72,7 +72,7 @@ const NW_MIN = 168, NH = 52, LEVEL = 112, SIB = 24, DOT_GAP = 13, DOT_Y = NH + 1
 const ADV_SUB = 6.3, ADV_LBL = 7.0; // A1.1 fixed advances: mono 10.5 px / sans 600 12 px
 const subText = a => { const r = a.tools.filter(t => t.status === 'running').length; return `${fmtTok(a.tokens)} · ${a.tools.length} calls${r ? ' · ' + r + ' running' : ''}`; };
 const lblText = a => (a.label.length > 19 ? a.label.slice(0, 18) + '…' : a.label);
-export const nodeWidth = a => Math.ceil(Math.max(NW_MIN, subText(a).length * ADV_SUB + 26, lblText(a).length * ADV_LBL + 64));
+export const nodeWidth = a => Math.min(264, Math.ceil(Math.max(NW_MIN, subText(a).length * ADV_SUB + 26, lblText(a).length * ADV_LBL + 64)));
 function childrenOf(st, id) {
   const p = st.agents.find(a => a.id === id);
   const sq = t => p?.tools.find(x => x.id === t)?.seq ?? 1e9;
@@ -81,12 +81,35 @@ function childrenOf(st, id) {
 // A8.4: more than WRAP children lay out in rows of WRAP, columns shared across
 // rows, row gap LEVEL/2. At <= WRAP children every expression below reduces to
 // what it was, which is why the frozen tables above reproduce byte-for-byte.
+// A9.1/A9.2: a label wraps to at most two rows and the box grows downward.
+// Same rule as `layout.ts` — break on whitespace or after a hyphen, greedy,
+// hard-split a word longer than a line, never an ellipsis.
+const LBL_LINES = 2, NH2 = 70;
+function labelRows(label, w) {
+  const per = Math.max(1, Math.floor((w - 64) / ADV_LBL));
+  const words = String(label).split(/(?<=-)|\s+/u).filter(x => x !== '');
+  if (!words.length) return [''];
+  const out = []; let cur = '';
+  for (const word of words) {
+    if (out.length === LBL_LINES) break;
+    const cand = cur === '' ? word : (cur.endsWith('-') ? cur + word : cur + ' ' + word);
+    if (cand.length <= per) { cur = cand; continue; }
+    if (cur !== '') { out.push(cur); cur = ''; if (out.length === LBL_LINES) break; }
+    let rest = word;
+    while (rest.length > per && out.length < LBL_LINES) { out.push(rest.slice(0, per)); rest = rest.slice(per); }
+    cur = out.length === LBL_LINES ? '' : rest;
+  }
+  if (cur !== '' && out.length < LBL_LINES) out.push(cur);
+  return out.length ? out : [''];
+}
+const nodeH = a => (labelRows(a.label, nodeWidth(a)).length > 1 ? NH2 : NH);
 const WRAP = 8, ROW_GAP = LEVEL / 2;
 export function treeLayout(st, root, collapseDepth = Infinity) {
   const out = [], width = new Map(), nw = new Map(st.agents.map(a => [a.id, nodeWidth(a)]));
-  const cols = new Map(), rowsOf = new Map(), depthOf = new Map();
+  const cols = new Map(), rowsOf = new Map(), depthOf = new Map(), tallest = new Map();
   function measure(id, d) {
     depthOf.set(id, d);
+    tallest.set(d, Math.max(tallest.get(d) ?? NH, nodeH(st.agents.find(a => a.id === id))));
     const k = d + 1 <= collapseDepth ? childrenOf(st, id) : [];
     if (!k.length) { width.set(id, nw.get(id)); return nw.get(id); }
     const kw = k.map(c => measure(c.id, d + 1));
@@ -101,12 +124,12 @@ export function treeLayout(st, root, collapseDepth = Infinity) {
   const rankTop = d => {
     if (rankTops.has(d)) return rankTops.get(d);
     const r = rowsAt.get(d - 1) ?? 1;
-    const v = rankTop(d - 1) + r * NH + (r - 1) * ROW_GAP + LEVEL;
+    const v = rankTop(d - 1) + r * (tallest.get(d - 1) ?? NH) + (r - 1) * ROW_GAP + LEVEL;
     rankTops.set(d, v); return v;
   };
   function place(id, d, x0, row) {
     const w = width.get(id), Wn = nw.get(id), x = x0 + (w - Wn) / 2;
-    const y = rankTop(d) + row * (NH + ROW_GAP);
+    const y = rankTop(d) + row * ((tallest.get(d) ?? NH) + ROW_GAP);
     const k = d + 1 <= collapseDepth ? childrenOf(st, id) : [];
     out.push({ id, x: r3(x), y: r3(y), w: Wn, depth: d });
     if (!k.length) return;

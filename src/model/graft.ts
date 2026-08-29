@@ -423,8 +423,21 @@ function epoch(value: unknown): number | undefined {
  * cache fields still yields exactly `input_tokens` and nothing changes for it.
  * See `events.ts`'s {@link TokenPair}.
  */
-/** Design §0's session-label ceiling. A label is prose; an id is evidence. */
-export const SESSION_LABEL_MAX_CHARS = 26;
+/**
+ * How much of a derived session label reaches the WIRE — design amendment A9.1.
+ *
+ * It was 26, design §0's DISPLAY ceiling, applied here with an ellipsis. A9.1
+ * removed every ellipsis from every surface: the renderer wraps to two rows and
+ * hover carries the rest, so the model's job is to send enough for hover to be
+ * worth doing rather than to decide what fits.
+ *
+ * 200 rather than unbounded because the fallback source is a whole first user
+ * message, which is routinely thousands of characters, and a label is not a
+ * transcript. A cut at 200 is marked by nothing, deliberately: a `…` in the
+ * data is a rendering decision made in the model, and it would arrive on every
+ * surface including the ones with room.
+ */
+export const SESSION_LABEL_MAX_CHARS = 200;
 
 /**
  * A text block the IDE injected rather than something the user typed.
@@ -472,12 +485,12 @@ function captureSessionLabel(acc: AgentAccumulator, entry: TranscriptEntry): voi
   }
 }
 
-/** One line, cut to §0's ceiling with an ellipsis. Never mid-surrogate. */
+/** One line, bounded for the wire. No ellipsis (A9.1). Never mid-surrogate. */
 function toSessionLabel(text: string): string {
   const oneLine = text.replace(/\s+/gu, ' ').trim();
   const chars = [...oneLine];
   if (chars.length <= SESSION_LABEL_MAX_CHARS) return oneLine;
-  return `${chars.slice(0, SESSION_LABEL_MAX_CHARS - 1).join('')}…`;
+  return chars.slice(0, SESSION_LABEL_MAX_CHARS).join('');
 }
 
 function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[], previewBytes: number): void {

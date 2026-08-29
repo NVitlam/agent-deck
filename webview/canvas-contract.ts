@@ -62,9 +62,13 @@
  *  - `ZOOM_MIN` / `ZOOM_MAX` are GONE. One global pair could not express what
  *    the frozen design specifies (deck 0.5-2, tree 0.4-2); `viewport.ts` is the
  *    single definition now and the note further down records why.
- *  - `DOT_CAP` (48) is GONE. Production reads `DOT_LIMIT = 24` in
+ *  - `DOT_CAP` (48) is GONE. Production then read `DOT_LIMIT = 24` in
  *    `SessionCanvas.svelte`, per the frozen design, so the constant here was a
  *    name nothing consumed telling the reader to prefer it over the design.
+ *    (Since A8.1 there is no dot cap ANYWHERE — the row was removed and
+ *    `SessionCanvas.svelte` holds no `DOT_LIMIT` either. Left in the tense it
+ *    was written in, with this correction beside it, because the version-3
+ *    record is what version 3 changed.)
  *  - `SessionLayout`, `CellPlacement`, `DotPlacement` and the four-field
  *    `DeckPlacement { sessionId, x, y, R }` are GONE. They described
  *    `sessionLayout()` and the phyllotaxis deck, both deleted in Phase 7;
@@ -73,6 +77,18 @@
  *    two different things. They are {@link EngineFilter} and
  *    {@link LivenessFilter} here, one definition each.
  *
+ * **4 is the A8/A9 pass (2026-08-29)**, and the bump was owed one amendment
+ * earlier — the A8 handoff audit found it unbumped, which is why it is called
+ * out here rather than quietly corrected. Three things moved:
+ *
+ *  - `TESTID.dot` is GONE. A8.1 removed the tool-dot row outright, so the name
+ *    addressed no element. `TESTID.elidedBadge` STAYS: it is §2.7's collapse
+ *    badge, a live control, and it only ever looked like the dot's `+N` glyph.
+ *  - `TESTID.drawerOrderSelect` is NEW — A9.5's oldest/newest call order.
+ *  - `TreePlacement` gained `h`. A9.2 lets a box grow downward for a wrapped
+ *    label, so a node's height is per-node and travels on the placement rather
+ *    than being re-derived from a constant by four consumers.
+ *
  * **What it is NOT.** It is not a compatibility negotiation and nothing branches
  * on it: the host and the webview ship in one VSIX and are always the same
  * build. It exists so a change to the shared shape has a place to be declared,
@@ -80,7 +96,7 @@
  * job `src/bridge/contract.ts` does for the element id, on the surface where
  * this repo has already paid once for two packages agreeing by hand.
  */
-export const CANVAS_CONTRACT_VERSION = 3;
+export const CANVAS_CONTRACT_VERSION = 4;
 
 /* ------------------------------------------------------------------------ *
  * Layout
@@ -98,7 +114,8 @@ export const CANVAS_CONTRACT_VERSION = 3;
  * "Take the value from this constant — not from the design doc, and not by
  * re-reading either", while production read `DOT_LIMIT = 24` in
  * `SessionCanvas.svelte`, per the frozen design. The instruction pointed at the
- * wrong number and nothing could fail.
+ * wrong number and nothing could fail. Both numbers are now history: A8.1
+ * deleted the dot row, and neither constant exists in any file.
  *
  * The geometry that replaced it is `layout.ts`'s, and it stays there: it is
  * pinned by goldens re-derived from an independent reference implementation,
@@ -256,6 +273,8 @@ export const TESTID = {
   drawerFilters: 'drawer-filters',
   /** One status filter chip in that row. Carries data-filter and data-active. */
   drawerFilterChip: 'drawer-filter-chip',
+  /** The call-order select — oldest first / newest first (A9.5). */
+  drawerOrderSelect: 'drawer-order-select',
   /** The tool-name select, pinned right in the filter row. */
   drawerToolSelect: 'drawer-tool-select',
 

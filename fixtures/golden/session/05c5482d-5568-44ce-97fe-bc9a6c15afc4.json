@@ -51,7 +51,7 @@
     "node": "agent",
     "id": "root",
     "kind": "main",
-    "label": "Fixture harvest run for a…",
+    "label": "Fixture harvest run for agent-deck Phase 1",
     "status": "running",
     "spawnDepth": 0,
     "contextNow": {

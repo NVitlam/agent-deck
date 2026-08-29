@@ -8,7 +8,7 @@ div
         ul
           li
             button [rail-item] .rail-item .selected aria-current="true" data-liveness="ended" data-refused="false" data-selected="true" data-session-id="05c5482d-5568-44ce-97fe-bc9a6c15afc4" type="button"
-              span .rail-label "Fixture harvest run for a…"
+              span .rail-label "Fixture harvest run for agent-deck Phase 1"
               span .rail-meta
                 span [rail-liveness] .liveness .liveness-ended data-liveness="ended" title="nothing is believed to be running, and there has been no recent activity" "{}ended"
                   span .dot aria-hidden="true"
@@ -39,7 +39,7 @@ div
             div .row
               button [toggle] .twisty aria-expanded="true" type="button" "▾"
               span [agent-kind] .agent-kind "main"
-              span [node-label] .label "Fixture harvest run for a…"
+              span [node-label] .label "Fixture harvest run for agent-deck Phase 1"
               span [status-chip] .chip .chip-running data-status="running" "running"
               span [node-tokens] .meta "45,373 in ctx / 617 out"
               span [node-duration] .meta "—"

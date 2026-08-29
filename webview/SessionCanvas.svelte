@@ -68,7 +68,6 @@
     autoCollapseDepth,
     toolChildren,
     treeLayout,
-    truncateLabel,
     visibleNodeCount,
   } from './layout.js';
   import { findAgent } from './tree.js';
@@ -316,7 +315,9 @@
         agentId: edge.agentId,
         from: {
           x: parent.placement.x + parent.placement.w / 2,
-          y: parent.placement.y + NODE_H,
+          // The PARENT'S OWN height (A9.2). A two-line box is 70 tall, and a
+          // filament that left at a fixed 52 would start inside it.
+          y: parent.placement.y + parent.placement.h,
         },
         to: {
           x: child.placement.x + child.placement.w / 2,
@@ -393,7 +394,7 @@
 
   /** Everything on the stage, as extents, for {@link fitTo}. */
   function extentsFor(list: readonly TreePlacement[]): { x: number; y: number; w: number; h: number }[] {
-    return list.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H }));
+    return list.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }));
   }
 
   function fitPlacements(list: readonly TreePlacement[]): void {
@@ -518,8 +519,29 @@
     fitPlacements(drawn);
   }
 
+  /**
+   * RESET = back to the session root, framed whole — design amendment A9.3.
+   *
+   * It set `view = IDENTITY_VIEWPORT` until 2026-08-29, which is the stage
+   * ORIGIN at the field's top-left, not the middle of anything. The tidy tree
+   * centres the root over its children's span, so on any tree wider than the
+   * field "reset" threw the user at the far left with the root off-screen to
+   * the right — the same defect the entry fit had, on the one control whose
+   * whole job is to undo a lost view.
+   *
+   * Two things, in this order, because the first changes what the second has to
+   * frame: re-root on the SESSION ROOT (a reset from inside a focus subtree
+   * that stayed in the subtree is not a reset), then fit that tree.
+   */
   function resetView(): void {
-    view = IDENTITY_VIEWPORT;
+    focusId = session.root.id;
+    const whole = treeLayout(session, session.root.id, { collapseDepth }).filter(
+      (p) => !p.hidden,
+    );
+    if (whole.length > 0) fitPlacements(whole);
+    // The entry fit's guard has to agree, or it would fit again on the next
+    // tick and undo this one.
+    fittedFor = `${session.sessionId}:${session.root.id}`;
     onreset?.();
   }
 
@@ -584,6 +606,7 @@
   data-degraded={String(degraded)}
   data-root-id={rootId}
   data-at-session-root={String(atSessionRoot)}
+  data-focus={rootId}
   data-collapse-depth={String(collapseDepth)}
   data-auto-collapsed={String(autoCollapsed)}
   data-cells={String(nodes.length)}
@@ -613,9 +636,9 @@
           onclick={() => focusOn(crumb.id)}
           >{i === 0
             ? session.root.label !== ''
-              ? truncateLabel(session.root.label)
+              ? session.root.label
               : session.sessionId
-            : truncateLabel(crumb.label)}</button
+            : crumb.label}</button
         >
       {/each}
     </nav>

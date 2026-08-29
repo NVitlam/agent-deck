@@ -161,6 +161,43 @@
   let statusFilter = $state<StatusFilter>('all');
   let toolFilter = $state<string>('all');
 
+  /**
+   * Which end of the run the list starts at — design amendment A9.5.
+   *
+   * `oldest` is the default and is the transcript's own order, so a call's
+   * sequence number and its position agree. `newest` puts what just happened at
+   * the top, which is what a person watching a live session is looking for.
+   */
+  type CallOrder = 'oldest' | 'newest';
+  let callOrder = $state<CallOrder>('oldest');
+
+  /**
+   * FOLLOW THE TAIL — A9.5, and only in `oldest` order, where the newest call
+   * is off the bottom.
+   *
+   * Three things switch it off, and all three are the user saying they are
+   * reading something else:
+   *   - opening a call's detail pane (they are on a specific action);
+   *   - scrolling away from the bottom by hand;
+   *   - `newest` order, where the newest call is already the first row and
+   *     there is nothing to follow.
+   * Scrolling back to the bottom turns it on again, because that gesture means
+   * exactly "I want to see what is arriving".
+   */
+  let followTail = $state(true);
+  /** The scrolling element, so the effect below can move it. */
+  let listEl = $state.raw<HTMLElement | undefined>(undefined);
+  /**
+   * Where the follow-the-tail effect last put the list.
+   *
+   * A POSITION, not a "we are scrolling now" flag. The flag version cleared
+   * itself on a microtask, which is a boundary a synchronous caller can be on
+   * the wrong side of — and was: the first test written against it saw the flag
+   * still set and the handler bail out. A position is decidable at any moment
+   * by looking, which is what a guard on a DOM event needs to be.
+   */
+  let autoScrollTop = -1;
+
   /** The chips, with §8.6's labels. `Failed` is this model's `error`. */
   const STATUS_CHIPS: readonly { value: StatusFilter; label: string }[] = [
     { value: 'all', label: 'All' },
@@ -188,7 +225,7 @@
    * that sets it is off screen is the honest reading of the sentence, and the
    * filter comes back exactly as it was.
    */
-  let visibleCalls = $derived(
+  let filteredCalls = $derived(
     !drawerExpanded
       ? calls
       : calls.filter(
@@ -198,12 +235,54 @@
         ),
   );
 
+  /**
+   * The rows, in the chosen order (A9.5).
+   *
+   * REVERSED FOR DISPLAY ONLY. `seqOf` still reads the call's position in the
+   * agent's own transcript, so a row numbered 12 is the twelfth call whichever
+   * end of the list it is drawn at — the number means the run, not the screen.
+   */
+  let visibleCalls = $derived(
+    callOrder === 'newest' ? [...filteredCalls].reverse() : filteredCalls,
+  );
+
   /** 1-based within the agent's own calls — §8.6 names the column, not this. */
   let seqOf = $derived((call: ToolNode) => calls.indexOf(call) + 1);
 
   let detail = $derived(
     detailActionId === undefined ? undefined : calls.find((c) => c.id === detailActionId),
   );
+
+  /**
+   * Scroll to the newest call when one arrives — A9.5.
+   *
+   * Keyed on the COUNT rather than on the array, so a status change on an
+   * existing call does not yank the list; only an arrival does. `selfScrolling`
+   * is what keeps the programmatic scroll below from being read by `onScroll`
+   * as the user taking over — without it this would switch itself off on its
+   * own first move.
+   */
+  $effect(() => {
+    const arrivals = visibleCalls.length;
+    if (arrivals === 0) return;
+    if (callOrder !== 'oldest' || !followTail || detail !== undefined) return;
+    const el = listEl;
+    if (el === undefined) return;
+    el.scrollTop = el.scrollHeight;
+    autoScrollTop = el.scrollTop;
+  });
+
+  /** The user took over, or gave the tail back. */
+  function onScroll(event: Event): void {
+    const el = event.currentTarget as HTMLElement;
+    // Our own scroll, not the user's: the list is exactly where the effect
+    // above put it, so there is nothing to take over from.
+    if (el.scrollTop === autoScrollTop) return;
+    // 4 px of slack: a list scrolled to the bottom does not always land on an
+    // exact equality after a re-render.
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 4;
+    followTail = atBottom;
+  }
 
   /* ----- the call-row summary ------------------------------------------- */
 
@@ -314,7 +393,10 @@
       {/if}
       <span class="kind" data-testid="inspector-kind">{agent !== undefined ? agent.kind : 'tool'}</span
       >
-      <span class="label" data-testid="inspector-title"
+      <span
+        class="label"
+        data-testid="inspector-title"
+        title={agent !== undefined ? agent.label : (tool?.toolName ?? '')}
         >{agent !== undefined ? agent.label : tool?.toolName}</span
       >
 
@@ -426,6 +508,18 @@
           >
         {/each}
         <span class="spacer"></span>
+        <!-- A9.5: which end of the run the list starts at. Beside the tool
+             filter because it is the same kind of control — it changes what is
+             shown, not what is true. -->
+        <select
+          class="tool-select"
+          data-testid={TESTID.drawerOrderSelect}
+          aria-label="Call order"
+          bind:value={callOrder}
+        >
+          <option value="oldest">Oldest first</option>
+          <option value="newest">Newest first</option>
+        </select>
         <select
           class="tool-select"
           data-testid={TESTID.drawerToolSelect}
@@ -442,7 +536,14 @@
 
     <div class="body" data-testid={TESTID.drawerBody} data-split={String(detail !== undefined)}>
       {#if agent !== undefined}
-        <ul class="calls" aria-label="Calls">
+        <ul
+          class="calls"
+          aria-label="Calls"
+          data-order={callOrder}
+          data-following={String(callOrder === 'oldest' && followTail && detail === undefined)}
+          bind:this={listEl}
+          onscroll={onScroll}
+        >
           {#if visibleCalls.length === 0}
             <li class="calls-empty">
               {calls.length === 0 ? 'No calls yet' : 'No calls match this filter'}
@@ -636,14 +737,15 @@
 
   /* §8.1: sans 600 is reserved for text a human wrote or named. A node label
      is one of the four things that qualifies. */
+  /* A9.1: NO ELLIPSIS. It was `nowrap` + `text-overflow: ellipsis` capped at
+     22ch. A node label is prose and the drawer is as wide as the panel, so it
+     wraps and the whole string is on `title` for hover. */
   .label {
     font-weight: 600;
     font-size: 12.5px;
     letter-spacing: -0.005em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 22ch;
+    overflow-wrap: anywhere;
+    max-width: 44ch;
   }
 
   .fields {
@@ -684,12 +786,13 @@
     white-space: nowrap;
   }
 
+  /* A9.1: a field value is an id, a count or a duration — short, and never
+     worth cutting. It keeps `nowrap` so the label/value pair stays two rows,
+     and it may now push the row wider rather than lose characters. */
   .f-value {
     font-size: 11px;
     color: var(--ink);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .f-value.mono {
@@ -717,14 +820,15 @@
     min-width: 0;
   }
 
+  /* A9.1: the path can be long and it is the one header item that legitimately
+     runs out of room. It wraps rather than elides, and hover carries it whole. */
   .path {
     font-family: var(--mono);
     font-size: 10.5px;
     color: var(--ink-3);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 30ch;
+    overflow-wrap: anywhere;
+    max-width: 60ch;
+    text-align: right;
   }
 
   .head-button {
@@ -810,7 +914,7 @@
     border: 1px solid var(--line);
     border-radius: 5px;
     padding: 2px 6px;
-    max-width: 18ch;
+    max-width: 28ch;
   }
 
   /* ----- body: the call list, and the detail pane beside it -------------- */
@@ -831,10 +935,13 @@
     overflow: auto;
   }
 
-  /* §8.6: with the detail pane open the list FIXES to 340 px and the pane
-     takes the rest, so the row that was clicked does not move. */
+  /* §8.6 fixed the list at 340 px. A9.4 makes it PROPORTIONAL with that as the
+     floor: the drawer is as wide as the panel, and a user who widens the window
+     to read a payload was giving all of the new width to a list that did not
+     need it. 38% keeps the row that was clicked under the pointer — the reason
+     §8.6 fixed it at all — while the pane grows with the window. */
   .body[data-split='true'] .calls {
-    flex: 0 0 340px;
+    flex: 0 0 clamp(340px, 38%, 620px);
     border-right: 1px solid var(--line-soft);
   }
 
@@ -917,12 +1024,15 @@
     color: var(--ink-3);
   }
 
+  /* A9.1: the summary takes every remaining unit of the row, and the whole
+     string is on the row's `title`. It stays ONE line on purpose — a call list
+     whose rows are different heights cannot be scanned — and the row is the one
+     place the design's answer is "hover", not "wrap". */
   .summary {
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
-    text-overflow: ellipsis;
   }
 
   /* §8.6: the child label is amber TEXT. A spawn is the one thing on this row

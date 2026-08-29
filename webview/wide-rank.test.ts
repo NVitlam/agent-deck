@@ -28,6 +28,7 @@ import { isAgentNode } from '../src/model/events.js';
 import {
   LEVEL_GAP,
   NODE_H,
+  NODE_H_TWO_LINE,
   ROW_GAP,
   SIBLING_GAP,
   WRAP_AT,
@@ -147,10 +148,23 @@ describe('A8.4 — the rank wraps, and the layout is the golden', () => {
     expect(rows.get(ys[0] ?? 0)).toHaveLength(WRAP_AT);
     expect(rows.get(ys[1] ?? 0)).toHaveLength(15 - WRAP_AT);
 
-    // Row gap is LEVEL/2, and the second row sits exactly one node plus that
-    // gap below the first.
+    // Row gap is LEVEL/2, and the second row sits one RANK HEIGHT plus that gap
+    // below the first — the rank's height is its TALLEST box (A9.2), and every
+    // row in the rank shares that baseline.
+    //
+    // MEASURED, not assumed: these children are `phase-implementer 0` through
+    // `phase-implementer 14`, at most 20 characters, and 20 is exactly what
+    // fits one row of a 209-wide box. So depth 1 is all one-line here and the
+    // gap is 52 + 56.
     expect(ROW_GAP).toBe(LEVEL_GAP / 2);
-    expect((ys[1] ?? 0) - (ys[0] ?? 0)).toBe(NODE_H + ROW_GAP);
+    const rankH = Math.max(...kids.map((k) => k.h));
+    expect(rankH).toBe(NODE_H);
+    expect((ys[1] ?? 0) - (ys[0] ?? 0)).toBe(rankH + ROW_GAP);
+
+    // The ROOT is this corpus's two-line node — "wide rank reproduction,
+    // sixteen agents" is 37 characters — so the corpus exercises BOTH heights
+    // and the assertion above is not passing because nothing ever wraps.
+    expect(placed.find((p) => p.depth === 0)?.h).toBe(NODE_H_TWO_LINE);
 
     // Spawn order fills left to right, then top to bottom. The corpus names its
     // children `wide-0` … `wide-14` in spawn order, so the reading order of the
@@ -174,15 +188,17 @@ describe('A8.4 — the rank wraps, and the layout is the golden', () => {
     // starts one node and one level below the root; depth 2 starts below BOTH
     // of depth 1's rows plus the gap between them, plus a level.
     const rowsAtOne = 2;
-    const topOfDepth1 = NODE_H + LEVEL_GAP;
-    const heightOfDepth1 = rowsAtOne * NODE_H + (rowsAtOne - 1) * ROW_GAP;
+    const rootH = placed.find((p) => p.depth === 0)?.h ?? NODE_H;
+    const rankOneH = Math.max(...placed.filter((p) => p.depth === 1).map((p) => p.h));
+    const topOfDepth1 = rootH + LEVEL_GAP;
+    const heightOfDepth1 = rowsAtOne * rankOneH + (rowsAtOne - 1) * ROW_GAP;
     const topOfDepth2 = topOfDepth1 + heightOfDepth1 + LEVEL_GAP;
-    expect(topOfDepth2).toBe(436);
+    expect(topOfDepth2).toBe(454);
     expect(d2[0]?.y).toBe(topOfDepth2);
 
-    // ...and WITHOUT the wrap it would have been 328, so this assertion is
-    // about the shift rather than about the arithmetic being self-consistent.
-    expect(topOfDepth1 + NODE_H + LEVEL_GAP).toBe(328);
+    // ...and with ONE row it would have been 346, so this is about the shift
+    // rather than about the arithmetic being self-consistent.
+    expect(topOfDepth1 + rankOneH + LEVEL_GAP).toBe(346);
   });
 
   it('never overlaps two nodes, in any row', () => {

@@ -526,7 +526,10 @@ describe('row 1 — engine glyph and label', () => {
     expect(figure(cell, 'deck-cell-engine')).toBe('CC');
   });
 
-  it('draws the label, and truncates one too long to fit the card', () => {
+  it('draws the label, and WRAPS one too long to fit the card (A9.1)', () => {
+    // It cut at 24 characters with a `…` until 2026-08-29. A9.1 removed every
+    // ellipsis from every surface: the card has room for two rows and the whole
+    // string is on its `<title>` for hover.
     const container = render({
       sessions: [
         summary('s-short', { label: 'main' }),
@@ -534,9 +537,18 @@ describe('row 1 — engine glyph and label', () => {
       ],
     });
     expect(figure(cellFor(container, 's-short'), 'deck-cell-label')).toBe('main');
-    const long = figure(cellFor(container, 's-long'), 'deck-cell-label');
-    expect(long).toBe('a-very-long-session-lab…');
-    expect(long.length).toBe(24);
+    // One row for the short one — the second row is absent, not empty.
+    expect(all(cellFor(container, 's-short'), 'deck-cell-label-2')).toHaveLength(0);
+
+    const long = cellFor(container, 's-long');
+    const row1 = figure(long, 'deck-cell-label');
+    const row2 = figure(long, 'deck-cell-label-2');
+    expect(row1.endsWith('…')).toBe(false);
+    expect(row2.length).toBeGreaterThan(0);
+    // ...and hover carries the whole thing, whatever the two rows held.
+    expect(long.querySelector('title')?.textContent).toContain(
+      'a-very-long-session-label-that-does-not-fit',
+    );
   });
 });
 
@@ -705,8 +717,10 @@ describe('the six card states', () => {
   it('carries the refusal in a tooltip, in words the format module owns', () => {
     // The `schemaMismatch` message on the wire carries NO reason code, so a
     // card printing one would be inventing it.
+    // A9.1 put the LABEL first in the tooltip — it is the thing a card can
+    // fail to show in full — with the status after it.
     const container = render({ sessions: [refusedSummary('s')] });
-    expect(cellFor(container, 's').querySelector('title')?.textContent).toBe(
+    expect(cellFor(container, 's').querySelector('title')?.textContent).toContain(
       livenessTitle('unsupported'),
     );
   });
@@ -718,7 +732,8 @@ describe('the six card states', () => {
       degradedReason: 'listenerDown',
     });
     const tooltip = cellFor(container, 's').querySelector('title')?.textContent ?? '';
-    expect(tooltip).toBe('OpenCode: the hook listener is not running');
+    // A9.1 leads the tooltip with the LABEL; the status follows it.
+    expect(tooltip).toContain('OpenCode: the hook listener is not running');
   });
 
   it('ghosts a foreign session and tags it, in text and in the accessible name', () => {

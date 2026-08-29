@@ -721,8 +721,12 @@ describe('the drawer is a drawer, not a side panel (design.md §8.6, A3)', () =>
     expect(drawerRule()).toMatch(/flex:\s*0 0 auto/);
   });
 
-  it('fixes the call list at 340px once the detail pane splits the body', () => {
-    expect(css).toMatch(/\.body\[data-split='true'\] \.calls \{[\s\S]*?flex:\s*0 0 340px/);
+  it('floors the call list at 340px and lets the pane grow with the window', () => {
+    // §8.6 fixed the list at a flat 340 px. A9.4 makes it proportional with
+    // that as the FLOOR: the drawer is as wide as the panel, and a user who
+    // widened the window to read a payload was giving all the new width to a
+    // list that did not need it.
+    expect(css).toContain("flex: 0 0 clamp(340px, 38%, 620px)");
   });
 
   it('pins every field min-width §8.6 names, and says which two are not its', () => {
@@ -797,5 +801,102 @@ describe('the drawer’s two heights and its filter row', () => {
     if (running === undefined) throw new Error('no running chip');
     click(running);
     expect(all(container, TESTID.actionRow)).toHaveLength(1);
+  });
+});
+
+/**
+ * A9.5 — WHICH END OF THE RUN THE LIST STARTS AT, and following the tail.
+ *
+ * The order control lives in the filter row, which §8.6 makes exist only in the
+ * expanded state, so every test here expands first. `followTail` is asserted
+ * through `data-following` on the list rather than by reading `scrollTop`:
+ * jsdom lays nothing out, so `scrollHeight` is 0 and a scroll assertion would
+ * be a number nothing produced — the vacuity this repository records most.
+ */
+describe('A9.5 — call order, and following the newest call', () => {
+  const calls = [
+    tool({ id: 'c1', toolName: 'Bash', status: 'done', inputPreview: '{"description":"first"}' }),
+    tool({ id: 'c2', toolName: 'Read', status: 'done', inputPreview: '{"description":"second"}' }),
+    tool({ id: 'c3', toolName: 'Edit', status: 'running', inputPreview: '{"description":"third"}' }),
+  ];
+  const node = agent({ id: 'a', label: 'worker', children: calls });
+
+  const rowIds = (container: HTMLElement): (string | undefined)[] =>
+    all(container, TESTID.actionRow).map((r) => r.dataset['actionId']);
+
+  function setOrder(container: HTMLElement, value: string): void {
+    const select = one(container, TESTID.drawerOrderSelect) as HTMLSelectElement;
+    select.value = value;
+    harness.flushSync(() => {
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  it('defaults to the transcript’s own order, oldest first', () => {
+    const container = render({ node, drawerExpanded: true });
+    expect(rowIds(container)).toStrictEqual(['c1', 'c2', 'c3']);
+    const select = one(container, TESTID.drawerOrderSelect) as HTMLSelectElement;
+    expect(select.value).toBe('oldest');
+  });
+
+  it('puts the newest call first when asked, without renumbering it', () => {
+    const container = render({ node, drawerExpanded: true });
+    setOrder(container, 'newest');
+    expect(rowIds(container)).toStrictEqual(['c3', 'c2', 'c1']);
+
+    // THE SEQUENCE NUMBER IS THE RUN, NOT THE SCREEN. Reversing the list must
+    // not renumber the calls, or a row labelled 1 would mean different things
+    // in the two orders and the number would stop being evidence.
+    const seqs = all(container, TESTID.actionRow).map(
+      (r) => r.querySelector('.seq')?.textContent,
+    );
+    expect(seqs).toStrictEqual(['3', '2', '1']);
+  });
+
+  it('follows the tail in oldest order and stops when a call is opened', () => {
+    // The three states A9.5 names, on the attribute the component publishes.
+    const following = (c: HTMLElement): string | undefined =>
+      one(c, 'inspector').querySelector('.calls')?.getAttribute('data-following') ?? undefined;
+
+    const plain = render({ node, drawerExpanded: true });
+    expect(following(plain)).toBe('true');
+
+    // Focused on a specific action: auto-scroll off.
+    const detailed = render({ node, drawerExpanded: true, detailActionId: 'c2' });
+    expect(following(detailed)).toBe('false');
+  });
+
+  it('does not follow in newest order, where the newest row is already first', () => {
+    const container = render({ node, drawerExpanded: true });
+    setOrder(container, 'newest');
+    const list = one(container, 'inspector').querySelector('.calls');
+    expect(list?.getAttribute('data-following')).toBe('false');
+    expect(list?.getAttribute('data-order')).toBe('newest');
+  });
+
+  it('stops following once the user scrolls away from the bottom', () => {
+    const container = render({ node, drawerExpanded: true });
+    const list = one(container, 'inspector').querySelector('.calls') as HTMLElement;
+    expect(list.getAttribute('data-following')).toBe('true');
+
+    // jsdom reports 0 for every layout metric, so a scroll event on it reads as
+    // "not at the bottom" — which is exactly the gesture being tested. The
+    // component must take that as the user taking over.
+    Object.defineProperty(list, 'scrollHeight', { value: 900, configurable: true });
+    Object.defineProperty(list, 'clientHeight', { value: 100, configurable: true });
+    list.scrollTop = 200;
+    harness.flushSync(() => {
+      list.dispatchEvent(new Event('scroll', { bubbles: false }));
+    });
+    expect(list.getAttribute('data-following')).toBe('false');
+
+    // ...and scrolling back to the bottom gives the tail back, because that
+    // gesture means "show me what is arriving".
+    list.scrollTop = 800;
+    harness.flushSync(() => {
+      list.dispatchEvent(new Event('scroll', { bubbles: false }));
+    });
+    expect(list.getAttribute('data-following')).toBe('true');
   });
 });

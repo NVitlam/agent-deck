@@ -76,7 +76,7 @@ describe('CANVAS_CONTRACT_VERSION', () => {
     // If this fails, someone bumped the constant. That is fine and expected —
     // but SURFACE_AT_V3 and its name are now describing a version that no
     // longer exists, so both move together or neither does.
-    expect(CANVAS_CONTRACT_VERSION).toBe(3);
+    expect(CANVAS_CONTRACT_VERSION).toBe(4);
   });
 
   it('pins the shared runtime surface, so the shape cannot move silently', () => {

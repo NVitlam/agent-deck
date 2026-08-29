@@ -55,8 +55,8 @@ import {
 import {
   AUTO_COLLAPSE_NODES,
   COLLAPSE_DEPTH,
-  LABEL_MAX_CHARS,
   NODE_H,
+  NODE_H_TWO_LINE,
   NODE_W_MIN,
   autoCollapseDepth,
   nodeSubText,
@@ -69,6 +69,7 @@ import {
   TREE_ZOOM_LIMITS,
   boundsOf,
   fitTo,
+  panBy,
   transformAttr,
   zoomAbout,
 } from './viewport.js';
@@ -307,6 +308,12 @@ function row1(node: HTMLElement): string {
   return node.querySelector('text.lbl')?.textContent ?? '';
 }
 
+/** The SECOND label row, when the label wrapped (A9.1). '' when it did not. */
+function row2Label(node: HTMLElement): string {
+  const rows = node.querySelectorAll('text.lbl');
+  return rows.length > 1 ? (rows[1]?.textContent ?? '') : '';
+}
+
 function row2(node: HTMLElement): string {
   return node.querySelector('text.sub')?.textContent ?? '';
 }
@@ -435,7 +442,7 @@ describe('the tree (altitude 1)', () => {
         y: Number(box.getAttribute('y')),
         w: Number(box.getAttribute('width')),
         h: Number(box.getAttribute('height')),
-      }).toStrictEqual({ id: p.id, x: p.x, y: p.y, w: p.w, h: NODE_H });
+      }).toStrictEqual({ id: p.id, x: p.x, y: p.y, w: p.w, h: p.h });
     }
   });
 
@@ -451,15 +458,28 @@ describe('the tree (altitude 1)', () => {
     expect(box.getAttribute('rx')).toBe('9');
   });
 
-  it('is FIXED HEIGHT: token share is text, never size', () => {
-    // The predecessor sized a cell by its child count, so one new tool call
-    // moved shapes already on screen. Every box on the canvas is 52 high, and
-    // the widest node is wide because its TEXT is long.
+  it('is one of TWO heights, and only the LABEL decides which', () => {
+    // WAS "is FIXED HEIGHT: token share is text, never size". A9.2 lets a box
+    // grow to 70 when its label wraps to a second row, and the thing the old
+    // test was really guarding is untouched: the predecessor sized a cell by
+    // its CHILD COUNT, so one new tool call moved shapes already on screen. A
+    // label is written once when the agent is grafted and never changes, so it
+    // cannot feed back the way a live count did.
     const container = render({ session: liveSession() });
     const heights = new Set(
       treeNodes(container).map((n) => boxOf(n).getAttribute('height')),
     );
-    expect([...heights]).toStrictEqual([String(NODE_H)]);
+    for (const h of heights) {
+      expect([String(NODE_H), String(NODE_H_TWO_LINE)]).toContain(h);
+    }
+
+    // AND IT IS THE LABEL: every 70-high box reports two label rows, every
+    // 52-high box one. Without this the assertion above would pass on a
+    // renderer that picked a height at random from the two.
+    for (const n of treeNodes(container)) {
+      const tall = boxOf(n).getAttribute('height') === String(NODE_H_TWO_LINE);
+      expect(n.dataset['labelLines'], n.dataset['agentId']).toBe(tall ? '2' : '1');
+    }
   });
 
   it('never draws a node below the collapse depth, though the layout returns it', () => {
@@ -478,16 +498,39 @@ describe('the tree (altitude 1)', () => {
     expect(one(container, TESTID.canvas).dataset['collapseDepth']).toBe(String(COLLAPSE_DEPTH));
   });
 
-  it('truncates row 1 at LABEL_MAX_CHARS and says the depth on the right', () => {
+  it('WRAPS row 1 rather than eliding it, and says the depth on the right', () => {
+    // A9.1: no ellipsis anywhere. The label ran `test-runner: run t…` here
+    // until 2026-08-29 — cut at LABEL_MAX_CHARS with a `…` — and it now takes
+    // a second row, breaking on the space.
     const container = render({ session: liveSession() });
     expect(row1(nodeFor(container, 'root'))).toBe('main session');
-    expect(row1(nodeFor(container, 'agent-1'))).toBe('test-runner: run t…');
-    expect(row1(nodeFor(container, 'agent-1')).length).toBe(LABEL_MAX_CHARS);
-    expect(row1(nodeFor(container, 'agent-2'))).toBe('code-reviewer: che…');
+    expect(row1(nodeFor(container, 'agent-1'))).toBe('test-runner: run');
+    expect(row2Label(nodeFor(container, 'agent-1'))).toBe('the module suite');
+
+    // NOT ONE CHARACTER IS LOST: the two rows rejoin to the whole label.
+    const agent1 = liveSession().root.children.find((c) => c.id === 'agent-1');
+    expect(
+      `${row1(nodeFor(container, 'agent-1'))} ${row2Label(nodeFor(container, 'agent-1'))}`,
+    ).toBe(agent1 !== undefined && 'label' in agent1 ? agent1.label : '');
+
+    // ...and no rendered row ends in an ellipsis, on any node.
+    for (const n of treeNodes(container)) expect(row1(n).endsWith('…')).toBe(false);
 
     expect(depthMark(nodeFor(container, 'root'))).toBe('root');
     expect(depthMark(nodeFor(container, 'agent-1'))).toBe('d1');
     expect(depthMark(nodeFor(container, 'agent-2'))).toBe('d2');
+  });
+
+  it('carries the WHOLE label on hover, always (A9.1)', () => {
+    // The escape hatch the amendment promises: two rows may still not hold a
+    // long label, and the full string is one hover away rather than marked
+    // with a glyph the reader has to interpret.
+    const container = render({ session: liveSession() });
+    for (const n of treeNodes(container)) {
+      const title = n.querySelector('title')?.textContent ?? '';
+      expect(title.length, n.dataset['agentId']).toBeGreaterThan(0);
+      expect(title.startsWith(row1(n))).toBe(true);
+    }
   });
 
   it('row 2 is burn + call count, BY VALUE, and it is the string the width came from', () => {
@@ -617,8 +660,11 @@ describe('the filament (C7.4)', () => {
     const first = filaments(container).find((f) => f.dataset['agentId'] === 'agent-1');
     expect(first?.getAttribute('d')).toBe('M 98.5 52 C 98.5 108 98.5 108 98.5 164');
 
+    // `agent-1`'s label wraps (A9.1), so its box is 70 tall and the curve to
+    // `agent-2` leaves 18 units lower than it did — the anchor is the parent's
+    // OWN height, not a constant.
     const second = filaments(container).find((f) => f.dataset['agentId'] === 'agent-2');
-    expect(second?.getAttribute('d')).toBe('M 98.5 216 C 98.5 272 98.5 272 98.5 328');
+    expect(second?.getAttribute('d')).toBe('M 98.5 234 C 98.5 290 98.5 290 98.5 346');
   });
 
   it('DERIVATION: the same tree with no spawn edges draws no filament at all', () => {
@@ -949,7 +995,7 @@ describe('focus / re-root (DoD 7.6)', () => {
       const placed = treeLayout(state, root).filter((p) => !p.hidden);
       return transformAttr(
         fitTo(
-          boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H }))),
+          boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }))),
           { width: 960, height: 640 },
           TREE_FIT_PADDING,
           TREE_ZOOM_LIMITS,
@@ -961,7 +1007,7 @@ describe('focus / re-root (DoD 7.6)', () => {
     dblclick(nodeFor(container, 'agent-1'));
     const placed = treeLayout(state, 'agent-1').filter((p) => !p.hidden);
     const expected = fitTo(
-      boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H }))),
+      boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }))),
       { width: 960, height: 640 },
       TREE_FIT_PADDING,
       TREE_ZOOM_LIMITS,
@@ -971,6 +1017,51 @@ describe('focus / re-root (DoD 7.6)', () => {
     // A plain selection does not fit, so the view a user framed stays framed.
     click(nodeFor(container, 'agent-2'));
     expect(stageTransform(container)).toBe(transformAttr(expected));
+  });
+
+  it('RESET returns to the session root and frames the whole tree (A9.3)', () => {
+    // The reported defect: "the reset view inside an active session takes the
+    // page to its left side". It set the IDENTITY transform — the stage origin
+    // at the field's top-left — and the tidy tree centres the root over its
+    // children, so on any tree wider than the field reset threw the user at the
+    // far left with the root off-screen. On the one control whose whole job is
+    // to undo a lost view.
+    const state = liveSession();
+    const container = render({ session: state, size: { width: 960, height: 640 } });
+
+    // Go somewhere: focus a child, then pan and zoom away from it.
+    dblclick(nodeFor(container, 'agent-1'));
+    const svg = field(container);
+    pointer(svg, 'pointerdown', 400, 300);
+    pointer(svg, 'pointermove', 700, 120);
+    pointer(svg, 'pointerup', 700, 120);
+    wheel(svg, -100, 200, 100);
+    expect(one(container, TESTID.canvas).dataset['focus']).toBe('agent-1');
+
+    click(one(container, TESTID.canvasReset));
+
+    // BACK AT THE SESSION ROOT — "always start from the main session".
+    expect(one(container, TESTID.canvas).dataset['focus']).toBe(state.root.id);
+
+    // ...and FRAMED, not parked at the origin. The transform is the fit of the
+    // whole tree, and it is emphatically not the identity.
+    const placed = treeLayout(state, state.root.id).filter((p) => !p.hidden);
+    const expected = fitTo(
+      boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }))),
+      { width: 960, height: 640 },
+      TREE_FIT_PADDING,
+      TREE_ZOOM_LIMITS,
+    );
+    expect(stageTransform(container)).toBe(transformAttr(expected));
+    expect(stageTransform(container)).not.toBe(transformAttr({ x: 0, y: 0, k: 1 }));
+
+    // Every node is on screen — which is the property a user means by "reset".
+    for (const p of placed) {
+      const left = p.x * expected.k + expected.x;
+      const right = (p.x + p.w) * expected.k + expected.x;
+      expect(left, `${p.id} off the left`).toBeGreaterThanOrEqual(-1);
+      expect(right, `${p.id} off the right`).toBeLessThanOrEqual(961);
+    }
   });
 
   /**
@@ -1362,13 +1453,35 @@ describe('degraded — hooks silent (C7.3, G2)', () => {
 describe('pan, zoom and fit (DoD 7.4)', () => {
   const SIZE = { width: 960, height: 640 };
 
-  /** Mount, then focus down to `rootId`, then put the view back at identity. */
+  /**
+   * Mount, focus down to `rootId`, and park the view at a KNOWN transform.
+   *
+   * It used to click Reset and assert the identity transform. A9.3 changed what
+   * Reset means — it now re-roots on the session root and FITS, because
+   * "reset" throwing the user at the stage origin with the root off-screen was
+   * the defect that prompted the amendment — so the old helper both asserted a
+   * behaviour that is gone AND undid the focus it had just set up.
+   *
+   * The view is left wherever the ENTRY FIT put it, which is the state a user
+   * is actually in. These tests are about pan and zoom ARITHMETIC, which is a
+   * delta, so the baseline only has to be KNOWN — `baseline()` reads it.
+   */
   function view(state: SessionState, focus: readonly string[]): HTMLElement {
     const container = render({ session: state, size: SIZE });
     for (const id of focus) dblclick(nodeFor(container, id));
-    click(one(container, TESTID.canvasReset));
-    expect(stageTransform(container)).toBe(transformAttr({ x: 0, y: 0, k: 1 }));
     return container;
+  }
+
+  /** Where the view sits right now — what every delta below is measured from. */
+  function baseline(container: HTMLElement): { x: number; y: number; k: number } {
+    return parseTransform(stageTransform(container));
+  }
+
+  /** `translate(x y) scale(k)` back into numbers. */
+  function parseTransform(attr: string): { x: number; y: number; k: number } {
+    const m = /translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)/.exec(attr);
+    if (m === null) throw new Error(`unparseable transform: ${attr}`);
+    return { x: Number(m[1]), y: Number(m[2]), k: Number(m[3]) };
   }
 
   const VIEWS: [string, string[]][] = [
@@ -1382,20 +1495,22 @@ describe('pan, zoom and fit (DoD 7.4)', () => {
       it('pans on a drag across the empty field', () => {
         const container = view(liveSession(), focus);
         const svg = field(container);
+        const base = baseline(container);
         pointer(svg, 'pointerdown', 400, 300);
         pointer(svg, 'pointermove', 430, 280);
-        expect(stageTransform(container)).toBe(transformAttr({ x: 30, y: -20, k: 1 }));
+        expect(stageTransform(container)).toBe(transformAttr(panBy(base, 30, -20)));
         pointer(svg, 'pointerup', 430, 280);
         // The drag ended: further movement does not pan.
         pointer(svg, 'pointermove', 500, 500);
-        expect(stageTransform(container)).toBe(transformAttr({ x: 30, y: -20, k: 1 }));
+        expect(stageTransform(container)).toBe(transformAttr(panBy(base, 30, -20)));
       });
 
       it('zooms ABOUT THE CURSOR, through viewport.zoomAbout, at TREE_ZOOM_LIMITS', () => {
         const container = view(liveSession(), focus);
+        const base = baseline(container);
         wheel(field(container), -100, 200, 100);
         expect(stageTransform(container)).toBe(
-          transformAttr(zoomAbout({ x: 0, y: 0, k: 1 }, 200, 100, 1, TREE_ZOOM_LIMITS)),
+          transformAttr(zoomAbout(base, 200, 100, 1, TREE_ZOOM_LIMITS)),
         );
       });
 
@@ -1417,7 +1532,10 @@ describe('pan, zoom and fit (DoD 7.4)', () => {
         expect(stageTransform(container)).toBe(
           transformAttr(
             fitTo(
-              boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: NODE_H }))),
+              // `p.h`, not `NODE_H`: A9.2 made the box height per-node, and a
+              // fit computed against a fixed 52 would frame a two-line node
+              // 18 units short.
+              boundsOf(placed.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h }))),
               SIZE,
               TREE_FIT_PADDING,
               TREE_ZOOM_LIMITS,
@@ -1428,10 +1546,11 @@ describe('pan, zoom and fit (DoD 7.4)', () => {
 
       it('does not pan when the drag starts on a node', () => {
         const container = view(liveSession(), focus);
+        const base = baseline(container);
         const node = one(container, TESTID.nucleus);
         pointer(node, 'pointerdown', 400, 300);
         pointer(field(container), 'pointermove', 460, 340);
-        expect(stageTransform(container)).toBe(transformAttr({ x: 0, y: 0, k: 1 }));
+        expect(stageTransform(container)).toBe(transformAttr(base));
       });
     });
   }
@@ -1726,8 +1845,11 @@ describe('width is the layout’s, and it is a function of the TEXT', () => {
     expect(Number(boxOf(nodeFor(a, 'root')).getAttribute('width'))).toBeGreaterThan(
       Number(boxOf(nodeFor(b, 'root')).getAttribute('width')),
     );
-    // ...and the drawn label is the truncated one, so the text fits what the
-    // width reserved.
-    expect(row1(nodeFor(a, 'root'))).toHaveLength(LABEL_MAX_CHARS);
+    // ...and NOTHING IS ELIDED (A9.1): the label wraps onto a second row and
+    // the two rows rejoin to the whole string. It asserted a `LABEL_MAX_CHARS`
+    // truncation here until 2026-08-29.
+    const rejoined = `${row1(nodeFor(a, 'root'))}${row2Label(nodeFor(a, 'root'))}`;
+    expect(rejoined).toBe('a-very-long-agent-label-indeed');
+    expect(row1(nodeFor(a, 'root')).endsWith('…')).toBe(false);
   });
 });

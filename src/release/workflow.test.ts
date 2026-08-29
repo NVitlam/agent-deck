@@ -229,10 +229,30 @@ describe('ci.yml', () => {
     expect(stepBlock, 'the spike audit step does not declare shell: bash').toContain('shell: bash');
   });
 
-  it('asserts the checkout is CR-free, which is the only real check on .gitattributes', () => {
+  it('asserts the checkout did not TRANSLATE, which is the only real check on .gitattributes', () => {
+    // CORRECTED 2026-08-29 (audit-0.5.0-record). This test used to assert
+    // `includes(13)` - it PINNED the broken guard, which is this repository's
+    // most-recorded test defect wearing workflow clothes. "No byte 13 under
+    // fixtures/" is a proxy that three tracked files falsify with authentic
+    // captured bytes: a Windows capture whose 151 CRs are all CRLF line
+    // endings, and two SQLite binaries where byte 13 is data. Every run on
+    // `release/0.5.0` failed on it - 10 of 10 - so DoD 8.6 could never be met.
+    //
+    // The property is that the index form and the working-tree form agree.
+    // Asserting the INSTRUMENT (`ls-files --eol`) and the COMPARISON keeps
+    // this test from passing over a guard that merely mentions the roots.
     expect(ci.codeText).toContain('webview/wire');
     expect(ci.codeText).toMatch(/fixtures/);
-    expect(ci.codeText).toContain('includes(13)');
+    expect(ci.codeText).toContain('ls-files');
+    expect(ci.codeText).toContain('--eol');
+    expect(
+      ci.codeText,
+      'the guard must compare index form to worktree form, not count CR bytes',
+    ).toContain('m[1]!==m[2]');
+    expect(
+      ci.codeText,
+      'the byte-13 proxy is back: authentic CRs in captured fixtures will fail CI again',
+    ).not.toContain('includes(13)');
   });
 
   it('pins no fixture-set size: the audit assertions are zeros, not counts', () => {

@@ -142,6 +142,19 @@ function commandsOf(settings: HookSettings): Map<string, string[]> {
 
 const README = readText('README.md');
 
+/**
+ * The four release-gate image slots, in the order the page reads in. Their
+ * bytes are deferred to the release gate; the references ship now. Listed once
+ * so the exemption in 'links only LOCAL images' and the order assertion below
+ * it cannot drift apart.
+ */
+const PLACEHOLDER_IMAGES: readonly string[] = [
+  'media/deck.png',
+  'media/tree.png',
+  'media/focus.png',
+  'media/demo.gif',
+];
+
 /* ------------------------------------------------------------------------- *
  * TWO ENGINES, TWO VERSION WINDOWS, ONE DOCUMENT.
  *
@@ -206,6 +219,13 @@ interface Manifest {
   };
   /** Read by the VS Code floor assertion below. */
   engines?: { vscode?: string };
+  /**
+   * Read by the shipped-documents guard at the end of this file, to find the
+   * CHANGELOG section for the release under audit. Taken from the manifest
+   * rather than written down here, so bumping the version moves the guard with
+   * it instead of leaving it checking a section nobody edits any more.
+   */
+  version: string;
 }
 
 const MANIFEST = JSON.parse(readText('package.json')) as Manifest;
@@ -312,11 +332,42 @@ describe('README exists and ships clean', () => {
     for (const link of links) {
       if (BADGE_HOST.test(link)) continue;
       expect(link, `remote asset in README: ${link}`).not.toMatch(/^[a-z]+:\/\//i);
+      if (PLACEHOLDER_IMAGES.includes(link)) continue; // asserted by the test below
       expect(
         existsSync(join(ROOT, link)),
         `README links ${link}, which does not exist`,
       ).toBe(true);
     }
+  });
+
+  it('carries the four release placeholders, in order, whether or not the files exist yet', () => {
+    // The screenshots and the demo GIF are DEFERRED to the release gate - they
+    // are pictures of a running UI, which no automated step here can produce.
+    // The references ship now so the page has its shape and the gate has four
+    // named slots to fill; the BYTES arrive later.
+    //
+    // This is an exemption from the existsSync check above, narrowed to four
+    // exact paths, and it pays for itself by asserting something the old test
+    // could not: that the references are PRESENT and in the ORDER the page
+    // reads in. Deleting one now fails here rather than passing quietly, which
+    // is the failure mode a plain "every image exists" check has once someone
+    // deletes the reference along with the file.
+    //
+    // WHY `media/` AND NOT `docs/media/`, which is what was asked for: `docs/`
+    // is a JUNCTION into the maintainer's private repository. It is gitignored
+    // here (`.gitignore` `/docs/`) and denied in `.vscodeignore`, so a file at
+    // `docs/media/deck.png` reaches neither GitHub nor the VSIX, and all four
+    // images would render broken on the marketplace listing - which is exactly
+    // what the sibling test 'links to no document that left this repository in
+    // the 2026-08-28 split' already forbids for the same reason. `media/` IS
+    // tracked and IS packaged. Switching back is four strings here and four in
+    // README.md, plus un-ignoring the path in both ignore files.
+    const inOrder = [...README.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)]
+      .map((m) => m[1] ?? '')
+      .filter((link) => PLACEHOLDER_IMAGES.includes(link));
+    expect(inOrder, 'the release placeholders are missing or out of order').toStrictEqual([
+      ...PLACEHOLDER_IMAGES,
+    ]);
   });
 });
 
@@ -850,5 +901,193 @@ describe.skipIf(SPEC === null)('the spec version-posture amendment matches the s
     expect(amendment).toContain('§3');
     expect(amendment.toLowerCase()).toContain('supersedes');
     expect(amendment).toContain(`fixtures/cc-${PINNED_CC_VERSION}/`);
+  });
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * The user-facing documents must not describe a UI that was deleted.
+ * Added 2026-08-29 by `audit-0.5.0-record`, after measurement.
+ *
+ * WHAT WENT WRONG, because the shape of the defect is the argument for the
+ * guard. Design amendment A8.1 (2026-08-29) removed the tool-dot row outright.
+ * `layout.ts` lost its dot API and `webview/layout.test.ts` grew a mutation-
+ * tested "exports no dot API at all" assertion, so the CODE could not regress.
+ * The PROSE was not covered by anything: on the day of this audit `README.md`
+ * still told users "tool calls ride each node as chronological dots", its
+ * Usage section still described the `0.1.x` nucleus renderer and "tokens as
+ * in / out" - a contract A6 deleted - and `CHANGELOG.md`'s `0.5.0` entry, the
+ * text that documents this very release, advertised "Tool dots ride each node,
+ * up to 24 per node with the remainder counted."
+ *
+ * Both files ship. `README.md` IS the Marketplace listing page. So the release
+ * would have described three features that no longer exist to every user who
+ * read it, and nothing in a 2,140-test suite would have said a word.
+ *
+ * A grep for `dot` cannot be the guard: this repository writes about the dots
+ * deliberately and at length, in design amendments, in evidence documents and
+ * in the changelog entry that explains the removal. The guard therefore keys
+ * on an ASSERTIVE present-tense claim and exempts a sentence that is describing
+ * the removal, which is the same exemption shape {@link MARKED_SUPERSEDED}
+ * uses one section above.
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * Markdown wraps one sentence across several lines, and {@link sentencesOf}
+ * splits on newlines first - so a sentence that names a removed surface in one
+ * line and says it was removed in the next arrives here as two fragments, the
+ * exemption in one and the hit in the other. Joining wrapped lines inside a
+ * paragraph is what makes the exemption reach the claim it belongs to. Blank
+ * lines still separate paragraphs, so nothing runs together across a break.
+ */
+function paragraphs(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((block) =>
+      // A continuation line inside a bullet is INDENTED, so a join keyed on
+      // `\n(?=\S)` misses exactly the case this exists for - measured: the
+      // changelog's own explanation of why the dots went still arrived in two
+      // pieces. Join a newline unless what follows starts a new list item or a
+      // heading, which are the two things that really are new blocks.
+      block.replace(/\n[ \t]*(?![-*+][ \t]|#|\d+\.[ \t])(?=\S)/g, ' '),
+    )
+    .join('\n\n');
+}
+
+/**
+ * A CHANGELOG is APPEND-ONLY HISTORY, and that is not a loophole - it is what
+ * the document is. `0.1.0`'s entry describes a nucleus with dot arcs around it
+ * because `0.1.0` had one; rewriting that to match today's UI would be
+ * falsifying the record, which is the opposite of what this guard is for. So
+ * the changelog is checked over the CURRENT version's section only, bounded by
+ * the next `## ` heading, and the release under audit is the one whose prose
+ * has to match the artifact.
+ *
+ * Measured while writing this: over the whole file the guard fires on the
+ * `0.1.0` entry's own accurate history. Scoped, it fires on nothing.
+ */
+function currentChangelogEntry(text: string): string {
+  const version = MANIFEST.version;
+  const start = text.indexOf(`## ${version}`);
+  if (start < 0) return '';
+  const next = text.indexOf('\n## ', start + 1);
+  return next < 0 ? text.slice(start) : text.slice(start, next);
+}
+
+const CHANGELOG_TEXT = readText('CHANGELOG.md');
+
+/** The documents a user actually reads. Both are shipped in the VSIX. */
+const USER_FACING: { readonly name: string; readonly text: string }[] = [
+  { name: 'README.md', text: paragraphs(README) },
+  { name: `CHANGELOG.md (${MANIFEST.version} entry)`, text: paragraphs(currentChangelogEntry(CHANGELOG_TEXT)) },
+];
+
+/**
+ * Present-tense claims about surfaces this product no longer has. Bounded gaps
+ * (`[^.]{0,N}`) keep a match inside one sentence, for the reason the version
+ * guard above states: an unbounded gap turns any two words in a paragraph into
+ * a hit, and a guard that fires on correct prose gets deleted rather than fixed.
+ */
+const REMOVED_UI_PATTERNS: { readonly name: string; readonly re: RegExp }[] = [
+  // "tool calls ride each node as dots", "tool dots ride each node".
+  { name: 'dots-ride-nodes', re: /\bdots?\b[^.]{0,40}\bride\b|\bride\b[^.]{0,40}\bdots?\b/i },
+  // "each tool call is a dot", "every call is drawn as a dot".
+  { name: 'call-is-a-dot', re: /\b(?:each|every|a)\s+tool\s+call\s+is\s+(?:a\s+|drawn\s+as\s+a\s+)?dot\b/i },
+  // "up to 24 per node with the remainder counted" - the cap, in any wording.
+  { name: 'dot-cap', re: /\b(?:up\s+to\s+)?(?:24|48)\b[^.]{0,30}\bper\s+node\b/i },
+  // A8.2 re-anchored the filament to the parent's bottom edge; it is no longer
+  // drawn from a dot, and a call whose dot was capped away drew nothing.
+  { name: 'filament-from-dot', re: /\bfilament\b[^.]{0,60}\bdot\b/i },
+  // The 0.1.x interior: a nucleus with a constellation of calls around it.
+  { name: 'nucleus', re: /\bnucleus\b/i },
+  // A6 removed `AgentNode.tokens`; the drawer reads `context` and `burn`.
+  { name: 'tokens-in-out', re: /\btokens\b[^.]{0,20}\bas\b[^.]{0,10}\bin\s*\/\s*out\b/i },
+  // Deck cells stopped being blobs when the tree landed.
+  { name: 'session-blobs', re: /\bone\s+blob\s+each\b|\bcloud\s+of\s+blobs\b/i },
+  // A9.1: nothing is elided anywhere, so no document may promise truncation.
+  { name: 'label-elision', re: /\blabels?\b[^.]{0,40}\btruncated\s+(?:with|to)\s+(?:an?\s+)?(?:ellipsis|…)/i },
+];
+
+/**
+ * A sentence saying a thing was REMOVED is not claiming the thing exists. The
+ * changelog has to be able to explain what went and why - that is most of its
+ * job - and the design amendments are quoted in evidence documents verbatim.
+ */
+const DESCRIBES_REMOVAL =
+  /\b(?:remov(?:e|ed|es|al)|delet(?:e|ed)|gone|no longer|used to|earlier build|rather than|instead of|not drawn|supersed(?:e|es|ed|ing))\b|\bno\s+tool\s+dots\b/i;
+
+/** Every unexempted hit, as `name: sentence`. */
+function removedUiClaimsIn(text: string): string[] {
+  const found: string[] = [];
+  for (const sentence of sentencesOf(text)) {
+    if (DESCRIBES_REMOVAL.test(sentence)) continue;
+    for (const { name, re } of REMOVED_UI_PATTERNS) {
+      if (re.test(sentence)) found.push(`${name}: ${sentence}`);
+    }
+  }
+  return found;
+}
+
+/**
+ * Vacuity controls: the exact sentences that were shipping on `release/0.5.0`
+ * when this audit measured them, plus rewordings. Held here as strings; the
+ * guard is never run against them in production.
+ */
+const REMOVED_UI_CONTROLS = [
+  'Tool calls ride each node as chronological dots.',
+  'Tool dots ride each node, up to 24 per node with the remainder counted.',
+  'The main agent is the nucleus, each tool call is a dot placed in chronological order around it.',
+  'A subagent hangs off a filament drawn from the exact tool-call dot that spawned it.',
+  'Per agent it lists status, tokens as in / out, duration and spawn depth.',
+  'Every Claude Code session on the machine, one blob each.',
+];
+
+describe('the shipped documents describe the shipped UI', () => {
+  it('claims no surface that was deleted, in README or CHANGELOG', () => {
+    for (const { name, text } of USER_FACING) {
+      expect(removedUiClaimsIn(text), `${name} describes a deleted surface`).toStrictEqual([]);
+    }
+  });
+
+  it('flags every sentence that was really shipping when this was written', () => {
+    // Not vacuous, and the controls are not invented: the first five are
+    // verbatim from README.md and CHANGELOG.md as measured on 2026-08-29.
+    for (const control of REMOVED_UI_CONTROLS) {
+      expect(removedUiClaimsIn(control).length, `no pattern flags: ${control}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('has no pattern that flags nothing at all', () => {
+    for (const { name, re } of REMOVED_UI_PATTERNS) {
+      const live = REMOVED_UI_CONTROLS.some((control) => re.test(control));
+      const selfTested = ['dot-cap', 'label-elision'].includes(name);
+      expect(live || selfTested, `pattern ${name} flags none of the controls`).toBe(true);
+    }
+  });
+
+  it('exempts a removal note without exempting a claim', () => {
+    // The changelog explains the dots at length. That must pass. A bare
+    // present-tense claim in the same words must not.
+    expect(
+      removedUiClaimsIn('An earlier build rode a row of dots on each node, one per tool call.'),
+    ).toStrictEqual([]);
+    expect(
+      removedUiClaimsIn('Tool dots ride each node, up to 24 per node.').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('keeps the removal exemption to notes, not a licence', () => {
+    // Same reasoning as the supersession exemption above: an exempted sentence
+    // is one that both names a removed surface and says it was removed. A
+    // document with many of them is routing around this guard.
+    for (const { name, text } of USER_FACING) {
+      const exempted = sentencesOf(text).filter(
+        (sentence) =>
+          DESCRIBES_REMOVAL.test(sentence) &&
+          REMOVED_UI_PATTERNS.some(({ re }) => re.test(sentence)),
+      );
+      expect(exempted.length, `${name} exempts ${exempted.length} sentences`).toBeLessThanOrEqual(8);
+    }
   });
 });

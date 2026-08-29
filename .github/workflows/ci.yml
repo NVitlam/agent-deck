@@ -96,10 +96,46 @@ jobs:
       # this asserts on the bytes that actually landed. Written in Node rather
       # than shell because a CR literal in a shell script is the control-
       # character trap this repo has already paid for once.
-      - name: Assert checkout is CR-free under fixtures/ and webview/wire/
+      #
+      # CORRECTED 2026-08-29 (audit-0.5.0-record). This step USED TO assert
+      # "no file under these roots contains byte 13", and that is not the
+      # property. It is a proxy for it that stopped being true the moment the
+      # corpora grew a file whose CAPTURED bytes contain a CR:
+      #
+      #   fixtures/cc-2.1.241/.../auto-mode-classifier-error.txt   151 CR,
+      #     ALL 151 followed by LF - a Windows capture whose committed blob
+      #     genuinely holds CRLF line endings, which -text preserved rather
+      #     than rewrote. (An earlier version of this comment said none of
+      #     them was a line terminator, on the strength of grep -c CR-dollar
+      #     returning 0. That command returns 0 on any file: grep strips a
+      #     trailing CR before matching. The bytes were counted afterwards.)
+      #   fixtures/opencode-1.18.21/opencode.db                   1124 CR
+      #   fixtures/opencode-1.18.22/opencode.db                   3096 CR
+      #     - byte 13 inside a SQLite binary is data, not a line ending.
+      #
+      # So CI went red on a false alarm and stayed red. Measured over the whole
+      # history, not one page of it: 49 runs, 37 failure, 12 success - the green
+      # ones on phase-0-tap-validation, main and phase-7-opencode-engine, all
+      # before the OpenCode corpora landed. On release/0.5.0 it is 10 runs and
+      # 10 failures, so DoD 8.6's "CI green" was unreachable while this guard
+      # asked the wrong question. The failing run (33146117739, 2026-08-28)
+      # printed "files scanned: 169, files containing CR: 3", naming exactly
+      # those three.
+      #
+      # The property that was always meant is CHECKOUT DID NOT TRANSLATE THESE
+      # BYTES - the index form and the working-tree form are the same form.
+      # `git ls-files --eol` reports both in one pass, so a file that is
+      # `i/mixed w/mixed` (authentic CRs, untranslated) passes and a file that
+      # is `i/lf w/crlf` (translated) fails, which is the real hazard. It is
+      # also immune to binaries, which have no line endings to compare.
+      #
+      # Not vacuous, measured both ways on 2026-08-29: 171 files scanned and 0
+      # translated under these roots, while the identical check pointed at
+      # src/ - where `text=auto` translates by design - reports 77 of 78.
+      - name: Assert checkout did not translate fixtures/ or webview/wire/
         shell: bash
         run: |
-          node -e 'const fs=require("node:fs"),path=require("node:path");const bad=[];let n=0;const walk=(d)=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(e.isFile()){n++;if(fs.readFileSync(p).includes(13))bad.push(p);}}};for(const r of ["fixtures","webview/wire"])walk(r);console.log("files scanned: "+n+", files containing CR: "+bad.length);for(const b of bad)console.log("  "+b);if(bad.length){console.error("gitattributes -text did not survive checkout: byte offsets and byte-exact goldens are no longer trustworthy");process.exit(1);}'
+          node -e 'const {execFileSync}=require("node:child_process");const roots=["fixtures","webview/wire"];const out=execFileSync("git",["ls-files","--eol","-z","--"].concat(roots),{maxBuffer:1<<28}).toString("utf8");const rows=out.split("\0").filter(Boolean);const bad=[];for(const r of rows){const m=r.match(/^i\/(\S+)\s+w\/(\S+)\s+attr\/(\S*)\s*\t(.*)$/);if(!m){bad.push("UNPARSED: "+r);continue;}if(m[1]!==m[2])bad.push(m[4]+"  index="+m[1]+" worktree="+m[2]);}console.log("files scanned: "+rows.length+", translated on checkout: "+bad.length);for(const b of bad)console.log("  "+b);if(bad.length){console.error("gitattributes -text did not survive checkout: byte offsets and byte-exact goldens are no longer trustworthy");process.exit(1);}'
 
       # The spike audit is this repo's layout regression guard, independent of
       # the TypeScript suite: it re-derives the subagent attribution join from

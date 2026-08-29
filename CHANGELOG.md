@@ -38,15 +38,34 @@ The session view is rebuilt. What is on screen is now the shape of the run:
 - **A tidy tree.** Every agent is a node, children sit under their parent in
   **spawn order**, and the layout is a pure function of the session - the same
   session always draws the same way.
-- **Filaments** connect a parent to each agent it spawned.
-- **Tool dots** ride each node, up to 24 per node with the remainder counted.
+- **Filaments** connect a parent to each agent it spawned, leaving the parent's
+  bottom edge and arriving at the child's top edge. Every spawn draws, always.
+- **No tool dots.** An earlier build rode a row of dots on each node, one per
+  tool call, capped at 24. The row never fitted the box it sat under, and worse,
+  a filament was anchored on the *spawning dot* - so on a node whose calls had
+  been capped away, the connection to its own subagents was simply not drawn.
+  Measured on a real 15-subagent session: 0 of 15 filaments drawable. The row is
+  gone. The node already carries `{calls} calls`, and the drawer lists every
+  call with its status and the child it spawned.
+- **Wide ranks wrap.** More than 8 children lay out in rows of 8 on a shared
+  column grid, so a broad session frames on screen instead of running off it.
+- **Labels wrap; nothing is elided.** No `…` on any surface. A node label takes
+  up to two rows, breaking on whitespace or after a hyphen, the box grows
+  downward to fit, and every node, card and header carries its whole label on
+  hover.
 - **A parked rail** for anything that could not be attached to a parent, each
   item carrying the stable code saying why. Data the deck cannot place is shown
   as unplaced, never guessed into position.
 - **Focus.** Click into any agent and the tree re-roots on it; the breadcrumb
   walks back out.
 - **One viewport.** Pan and zoom behave identically in the deck, the tree and
-  the focus view, because all three now use the same module.
+  the focus view, because all three now use the same module. Entering a session
+  fits the tree to the panel, and **Reset view** re-roots and fits rather than
+  returning to an origin that could leave the root off-screen.
+- **The inspector is a drawer along the bottom**, the width of the panel, with
+  the call list on the left and the detail pane growing beside it. Calls can be
+  read oldest-first or newest-first, and an oldest-first list follows new calls
+  as they arrive until you open one or scroll away.
 - **Cell dragging is gone.** It moved cells without meaning anything, and a
   layout that a user can nudge is a layout that cannot be trusted to show spawn
   order. Removed by design, not deferred.

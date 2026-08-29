@@ -2,10 +2,11 @@
 
 [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/nvitlam.agent-deck?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck)
 
-A **read-only** VS Code extension that renders live agent session topology — subagent trees,
-in-flight tool calls, token and cost totals — by observing what the agent leaves behind. It watches
-**Claude Code** and **OpenCode**, side by side in one deck, and it never wraps, proxies, launches, or
-configures either of them.
+**Live observability for agent swarms, inside VS Code.** When a coding agent spawns subagents, the
+terminal shows you one scrolling column and no shape. Agent Deck shows you the shape: every session
+on the machine, the tree of agents inside each one, which agent spawned which, what each is running
+right now, and what it has cost. It works with **Claude Code** and **OpenCode**, side by side in one
+panel. It observes only — it never wraps, launches, proxies or configures either of them.
 
 > **Claude Code compatibility** — anchor `2.1.246`, accepts `2.0.x` to `2.2.x`, refuses on
 > structural change, not on patch number. See [Claude Code version window](#claude-code-version-window).
@@ -23,123 +24,100 @@ configures either of them.
 
 ---
 
-![Agent Deck](media/screenshot-deck.png)
+## What you see
 
-## Read-only by design
+**The deck** — every session on the machine, one cell each, from either engine. Cells breathe while
+their session is working. Three layouts (List, Grid, Lanes), three sort orders (Live first, Recent,
+Engine), and chips to filter by liveness or by engine. Keyboard: `A C O`, `1 2 3`, `L R E`.
+
+![The deck](media/deck.png)
+
+**The tree** — one session's interior. Every agent is a node; children sit under the parent that
+spawned them, in spawn order; a filament runs from each parent to every agent it spawned. A node
+pulses while one of its tool calls is in flight and stops when the call ends, so the picture tells
+you what is happening now, not only what happened. Wide ranks wrap instead of running off the panel,
+and nothing is ever cut short with an ellipsis — a long label wraps and carries its full text on
+hover. Anything that cannot be attached to a parent goes to a parked rail carrying the reason,
+because unplaced data is shown as unplaced and never guessed into position.
+
+![The tree](media/tree.png)
+
+**Focus** — click any agent to re-root the tree on it and read one branch of a wide run on its own.
+The breadcrumb walks back out; Reset view returns to the whole session, fitted.
+
+![Focus view](media/focus.png)
+
+**The inspector** — a drawer along the bottom, the width of the panel. Its header carries the
+selected node's status, its numbers and its duration; below, every tool call in that agent is listed
+with its status and the child it spawned, oldest-first or newest-first, filterable by tool. Select a
+row to read its payload beside the list. **Show details** / **Hide details** collapses the payload
+and **close** dismisses a row. An oldest-first list follows new calls as they arrive until you open
+one or scroll away.
+
+**Two numbers, because they answer different questions.** **Context** is the last message's prompt —
+a level, what is in the window now, which goes up and down. **Burn** is the running total across the
+session — it only goes up. There is no percentage, because no session states the model's window
+size, and guessing one from a model name would be a number we made up. **Cost** is rendered where it
+belongs on the tree; there are no cost dashboards.
+
+![Agent Deck in use](media/demo.gif)
+
+## Trust
 
 Agent Deck observes. It never acts.
 
-- It reads Claude Code's session JSONL, listens for hook events, and reads
-  OpenCode's session database. That is all.
-- It never wraps, proxies, launches or configures either engine.
-- It never writes to `~/.claude`, to Claude Code settings, or to your session
-  files. Installing the hooks is a manual paste block you control, below.
-- Zero network egress. The only socket it opens is an HTTP listener bound to
-  `127.0.0.1`, which is how the hooks reach it. Non-loopback requests are
-  dropped. **The OpenCode side opens no socket at all.**
-- No telemetry, no analytics, no CDN. Every asset the panel renders is local,
-  enforced by a strict Content-Security-Policy.
+- **Read-only.** It never writes to your agents' settings, your session files, or anything under
+  `~/.claude` or OpenCode's data and config directories. Installing the hooks is a manual paste
+  block you control, below. Zero write capability is the trust anchor, not a default that could be
+  configured away.
+- **Zero network egress.** No telemetry, no analytics, no CDN. Every asset the panel renders is
+  local, enforced by a strict Content-Security-Policy. The only socket it opens is an HTTP listener
+  bound to `127.0.0.1`, which is how the hooks reach it, and non-loopback requests are dropped. The
+  OpenCode side opens **no socket at all**.
+- **Reasoning and thinking content is never displayed.** It is dropped where the data is read, before
+  anything reaches the panel, in both engines. Tool payloads are truncated with an explicit marker.
+- **Secret-bearing storage is never opened.** On the OpenCode side this is enumerated by name
+  rather than summarised - see [Also observes OpenCode](#also-observes-opencode).
 
-**One precise qualification, because "never writes anything" would be the wrong
-claim.** OpenCode's session store —
-`%USERPROFILE%\.local\share\opencode\opencode.db` — is a SQLite database in WAL
-mode, and opening a WAL database *read-only* writes to SQLite's own `-shm` index
-sidecar (creating `-shm`/`-wal` if absent). The database itself is never
-modified, and `auth.json`, `log/`, `snapshot/`, `repos/` and `tool-output/` are
-never opened at all. So the rule is **no writes to any file the observed engine
-treats as content**. Every reader of a WAL database touches that sidecar,
-OpenCode's own process included. `SECURITY.md` §2 carries the measurements.
+**One precise qualification, because "never writes anything" would be the wrong claim.** OpenCode's
+session store is a database in WAL mode, and opening a WAL database *read-only* causes SQLite to
+touch its own index file beside it. The database itself is never modified, and `auth.json`, `log/`,
+`snapshot/`, `repos/` and `tool-output/` are never opened at all. So the rule is **no writes to any
+file the observed engine treats as content** — every reader of a WAL database touches that index
+file, OpenCode's own process included. [`SECURITY.md`](SECURITY.md) §2 carries the measurements.
 
 All state lives in memory and is discarded when the window closes.
-
-## Features
-
-**The deck** - every live session at a glance, from either engine, breathing
-while it works. Three layouts (List, Grid, Lanes), three sort orders (Live
-first, Recent, Engine), and engine chips to show one engine or both. Keyboard:
-`A C O`, `1 2 3`, `L R E`.
-
-![The deck](media/screenshot-deck.png)
-
-**Agent topology** - a tidy tree. Every agent is a node, children sit under
-their parent in spawn order, and each is joined to the exact call that spawned
-it by a filament. That join is a primary key, not a guess. Tool calls ride each
-node as chronological dots; anything the deck cannot attach to a parent goes to
-a parked rail carrying the code that says why, because unplaced data is shown as
-unplaced and never guessed into position. Click into any agent to re-root the
-tree on it.
-
-![Agent topology](media/screenshot-topology.png)
-
-**Tool call inspector** - open any node for its payload, truncated with an
-explicit marker and with thinking and reasoning content dropped at the parse
-boundary, in both engines.
-
-![Tool call inspector](media/screenshot-inspector.png)
-
-> **The three screenshots above still show the 0.1.x panel.** `v0.5.0` replaced
-> the renderer; the pictures are regenerated at the release gate, and this note
-> is here rather than a caption that quietly does not match.
-
-## What it is
-
-Claude Code leaves two kinds of exhaust behind, and Agent Deck reads both without touching either:
-
-| Tap | Source | What it answers |
-| --- | --- | --- |
-| **Hooks** | a hook snippet *you* paste into your settings POSTs to a loopback HTTP listener | what is running right now |
-| **JSONL** | `~/.claude/projects/<slug>/...`, read from local disk | what happened |
-
-The split is deliberate. The hook contract is documented and stable with thin payloads; the session
-files are undocumented and rich. Keeping them on separate failure paths means a Claude Code schema
-change degrades the panel instead of killing it.
-
-Everything the extension knows lives in memory in the extension host and is discarded when the
-window closes. There is no database, no cache file, and nothing is ever written back to Claude Code.
 
 <!-- engine:opencode -->
 
 ## Also observes OpenCode
 
-Since `v0.5.0`, OpenCode sessions appear in the same deck as Claude Code ones, tagged `OC` against
-`CC`, and the engine chips filter to one or show both. Nothing is configured: if OpenCode is
+Since `v0.5.0`, OpenCode sessions appear in the same deck as Claude Code ones. Each cell carries a
+glyph saying which engine wrote it - `OC` or `CC` - and the engine chips, labelled **Claude Code**
+and **OpenCode**, filter to one or show both. Nothing is configured: if OpenCode is
 installed, its sessions are there; if it is not, the deck says nothing about it, because an absent
 data directory is not an error and not a warning.
-
-**What is read — one file.**
-
-```
-%USERPROFILE%\.local\share\opencode\
-  opencode.db     <- the only file Agent Deck opens, read-only
-  auth.json       never opened
-  log/            never opened
-  snapshot/       never opened
-  repos/          never opened
-  tool-output/    never opened
-```
 
 **Four tables are never read**, and this is by name rather than by filter: `account`,
 `control_account`, `credential` and `session_share`. Those are the tables whose schema carries
 access tokens, refresh tokens and share secrets. They are not queried, and they are stripped from
-every test fixture in the project.
+every test corpus in the project.
 
-**No sockets.** The Claude Code side has exactly one — the loopback hook listener you install
-yourself. The OpenCode side has **none**. It does not talk to `opencode serve`, does not open a
-port, and does not resolve a hostname.
+One file is read — the session database under OpenCode's data directory — and nothing else beside
+it. There is no port, no `opencode serve`, and no hostname resolved.
 
 **Compatibility, same posture as the Claude Code side.** The anchor is `1.18.22` — the release whose
 captured database proved the schema. Major must match, minor may be one step either way (`1.17.x` to
-`1.19.x`), and **the patch component is not compared at all**, so a self-update from `1.18.22` to
-`1.18.23` changes nothing. What refuses a session is the **schema**: if the six tables and the
-columns actually read are not what the fixture pinned, that session renders `unsupported` rather
-than a half-built tree. A database holding sessions written by several versions is normal, and the
-window is applied per session, not to the file.
+`1.19.x`), and **the patch component is not compared at all**, so a self-update from `1.18.22` to a
+later patch changes nothing. What refuses a session is the **schema**: if the tables and columns
+actually read are not what the corpus pinned, that session renders `unsupported` rather than a
+half-built tree. A database holding sessions written by several versions is normal, and the window
+is applied per session, not to the file.
 
-**Two things it does not do yet.** An OpenCode session's **context** figure reads as an em dash —
-the stored token totals count only uncached input, which would understate the real prompt by roughly
-an order of magnitude, so an honest absence is shown rather than a wrong number. And liveness comes
-from the database's own event cursor rather than from a hook-style tap, because OpenCode has no
-documented equivalent of Claude Code's hooks.
+**One thing it does not do yet.** An OpenCode session's **context** figure reads as an em dash. Its
+stored token totals count only uncached input, which would understate the real prompt by roughly an
+order of magnitude, so an honest absence is shown rather than a wrong number — never a `0`. **Burn**
+is present.
 
 <!-- /engine:opencode -->
 
@@ -279,95 +257,26 @@ Notes on that block, each of them measured rather than assumed:
   `SubagentStop`, `Stop`. Registering fewer still works — liveness degrades rather than fails, and
   falls back to transcript modification times with a banner — but the panel gets blunter.
 
-## Open the panel
-
-Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> (<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> on
-macOS), type `Agent Deck`, and run **Agent Deck: Open Session Deck**.
-
-That is the **only** entry point. Agent Deck contributes no sidebar icon, no status-bar item and no
-activity-bar view - one command, one panel.
-
-Open the folder your Claude Code session runs in first. The extension matches the open workspace
-against your `~/.claude/projects` directories; if that folder has no Claude Code sessions it says so
-and does nothing else.
-
-## Usage
-
-Three levels, and Escape walks back up out of any of them.
-
-**Deck** - every Claude Code session on the machine, one blob each. The chip row filters by
-liveness: **all**, **live**, **idle**, **ended**, **refused**. Colour is the same channel
-everywhere - green live, yellow idle, grey ended, red refused - and the legend at the bottom of the
-panel restates it. Drag to pan, wheel to zoom, click a session to go inside it.
-
-**Topology** - the session interior. The main agent is the nucleus, each tool call is a dot placed
-in chronological order around it, and a subagent hangs off a filament drawn from the exact tool-call
-dot that spawned it. Click any node to open it in the inspector. The **Deck** breadcrumb returns to
-the deck, and **Reset view** re-centres pan and zoom without changing anything else.
-
-**Inspector** - the detail pane for whatever is selected. Per agent it lists status
-(**running**, **done**, **error**), tokens as *in / out*, duration and spawn depth, with the tool
-payload beneath it. **Show details** / **Hide details** collapses the payload, **Close** dismisses
-the pane.
-
-## Settings
-
-| Setting | What it does |
-| --- | --- |
-| `agentDeck.port` | The loopback port the hook listener binds on `127.0.0.1`. Must match the port in the block you pasted. |
-| `agentDeck.livenessThresholdMs` | How long a session may go quiet before it stops counting as live. Set it too low and one long tool call makes a healthy session flap. |
-| `agentDeck.previewBytes` | Ceiling on tool-payload bytes kept per node for previews. Nothing is ever sent off the machine either way. |
-
-## Privacy
-
-`SECURITY.md` ships inside the VSIX alongside this file and carries the enforcement detail and the
-measurements. The short version:
-
-- **Zero egress.** The only socket is the inbound loopback hook listener, bound to the literal
-  `127.0.0.1`. There is no outbound HTTP client compiled into the shipped bundle at all, and a test
-  fails if that changes. POSTs from a non-loopback origin are dropped on the strength of the
-  socket's own remote address — proxy headers are attacker-controlled strings and are never
-  consulted for that decision.
-- **No persistence, no telemetry.** All state is in memory in the extension host and is discarded
-  when the window closes. No database, no cache file, no analytics of any kind.
-- **Redaction at the parse boundary.** Thinking blocks are dropped, and the `signature` field is
-  dropped with them — Claude Code writes thinking blocks with an empty text string and the bytes in
-  `signature`, so dropping only the visible text would be doing nothing. Tool payloads are truncated
-  with a marker, including the large ones Claude Code offloads to `tool-results/*.txt`. The same
-  applies to OpenCode's reasoning parts, where the text is present verbatim in the database — so
-  that test is against real captured bytes and cannot pass vacuously.
-- **The OpenCode side opens no socket**, and its four secret-bearing tables are never queried.
-- **The webview has no filesystem and no network access**, enforced by a strict Content Security
-  Policy. It receives snapshot and diff messages and sends back UI intents; that is the whole
-  channel.
-- **Stated plainly:** any process running as you can POST to the loopback port and inject fabricated
-  liveness events. There is no authentication, because the only way to add one would be a shared
-  secret carried in the snippet you pasted. What an injected event buys is a wrong picture in a
-  read-only panel: nothing is executed, nothing is written, nothing leaves the machine.
-
 ## Claude Code version window
 
-`src/parser/fingerprint.ts` is the authority for this, and the numbers have exactly one home there:
-`PINNED_CC_VERSION` is the anchor and `VERSION_WINDOW` is the allowance.
-
-- **Anchor `2.1.246`** — the version the committed fixtures were captured from. It is a
+- **Anchor `2.1.246`** — the release the committed corpora were captured from. It is a
   **provenance** anchor rather than a support claim: it names the release whose structure was proved
-  against real bytes, and it moves only when a new fixture is harvested.
+  against real bytes, and it moves only when a new corpus is harvested.
 - **Accepted `2.0.x` to `2.2.x`** — major exact, minor +/-1. **The patch component is not compared
   at all.** Whatever Claude Code ships next on this line is read.
 - **What refuses instead is the structure** — a required field missing or wrong-typed, a subagent
-  sidecar without its join key, the subagent directory convention moving. Those are the changes that
+  record without its join key, the subagent directory convention moving. Those are the changes that
   would make the rendered tree wrong, and they are the ones worth refusing on.
 - Out-of-range, malformed and unreadable versions are still refused: the session renders
   `unsupported`, never a partial tree.
-- A transcript whose version changes partway through — Claude Code updating itself under a live
-  session — is accepted while every version in it stays in range, and refused as
-  `versionChangedMidFile` once the drift leaves it.
+- A session whose version changes partway through — Claude Code updating itself while you work — is
+  accepted while every version in it stays in range, and refused as `versionChangedMidFile` once the
+  drift leaves it.
 
 **How the anchor moves, and why it is not a lever.** One way only: capture a session from the new
-release, check the structural assertions against those bytes, commit the fixture, then move the
-constant. It is never moved to make a version work, because moving it cannot make anything work —
-the patch number is not consulted. If a new release breaks the deck, the structural rules are what
+release, check the structural assertions against those bytes, commit the corpus, then move the
+anchor. It is never moved to make a version work, because moving it cannot make anything work — the
+patch number is not consulted. If a new release breaks the deck, the structural rules are what
 changed, and those are what need looking at.
 
 **What this costs, stated plainly.** Reading releases nobody captured means reading releases nobody
@@ -380,15 +289,24 @@ honesty is kept, and they were not loosened alongside it.
 ## What it does not do
 
 - **No writes of any kind.** Not to `~/.claude`, not to your Claude Code settings, not to session
-  files, not to OpenCode's database or its config. Zero write capability is the trust anchor, not a
-  default that could be configured away. (The one qualification, SQLite's `-shm` sidecar, is stated
-  in full under [Read-only by design](#read-only-by-design) rather than buried here.)
+  files, not to OpenCode's database or its config. The one qualification is stated in full under
+  [Trust](#trust) rather than buried here.
 - **No launching, wrapping or proxying either engine.** It observes what is already there.
 - **No historical replay and no persistence.** Close the window and the state is gone.
 - **No telemetry, no analytics, no network egress.**
 - **No cost dashboards.** Totals are rendered where they belong on the tree, and that is all.
+- **No control surface.** It cannot start, stop, steer or configure an agent, and it is not going to
+  grow one by accident.
 - **No settings for the OpenCode side.** It is on when OpenCode's data directory exists and silent
   when it does not; there is nothing to turn on.
+
+## Settings
+
+| Setting | What it does |
+| --- | --- |
+| `agentDeck.port` | The loopback port the hook listener binds on `127.0.0.1`. Must match the port in the block you pasted. |
+| `agentDeck.livenessThresholdMs` | How long a session may go quiet before it stops counting as live. Set it too low and one long tool call makes a healthy session flap. |
+| `agentDeck.previewBytes` | Ceiling on tool-payload bytes kept per node for previews. Nothing is ever sent off the machine either way. |
 
 ## Development
 

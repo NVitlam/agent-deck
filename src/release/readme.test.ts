@@ -66,6 +66,7 @@
 // with a block that IS firing is the strongest mechanical proxy available, and
 // it is a proxy.
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -143,16 +144,38 @@ function commandsOf(settings: HookSettings): Map<string, string[]> {
 const README = readText('README.md');
 
 /**
- * The four release-gate image slots, in the order the page reads in. Their
- * bytes are deferred to the release gate; the references ship now. Listed once
- * so the exemption in 'links only LOCAL images' and the order assertion below
- * it cannot drift apart.
+ * The four release images, in the order the page reads in.
+ *
+ * THESE WERE PLACEHOLDERS UNTIL 2026-08-30 and are not any more, which is why
+ * this list reads differently from the one it replaced. Phase 8 shipped four
+ * references - `media/deck.png`, `media/tree.png`, `media/focus.png`,
+ * `media/demo.gif` - to files that did not exist, deliberately: they are
+ * pictures of a running UI, which no automated step can produce, so the
+ * references shipped and the BYTES were deferred to the release gate. The
+ * bytes have arrived. The GIF was dropped rather than regenerated (a decision,
+ * not an omission: an animation of a live UI is the one asset the gate could
+ * not check the way it checked the stills), and the focus view lost its own
+ * still to two of the inspector, which is the surface a reader has questions
+ * about.
+ *
+ * So the exemption those four names carried in 'links only LOCAL images' is
+ * GONE, and the existsSync check now covers every image on the page. That is
+ * the whole point of the change: for two phases these four paths were the only
+ * links on this page nothing verified, and a Marketplace listing rendering
+ * four broken images was a shipping defect the suite could not see.
+ *
+ * The names carry UNDERSCORES. The captures had spaces, and a space in a
+ * Markdown image path is `%20`, which the Marketplace renderer and GitHub do
+ * not have to agree about. `.gitignore` and `.vscodeignore` name the same four
+ * plus `media/icon.png`; the private repository keeps the space-named
+ * originals and `lab/docs/evidence/release-0.5.0/MEDIA-GATE.md` is the gate
+ * they passed.
  */
-const PLACEHOLDER_IMAGES: readonly string[] = [
-  'media/deck.png',
-  'media/tree.png',
-  'media/focus.png',
-  'media/demo.gif',
+const RELEASE_IMAGES: readonly string[] = [
+  'media/Session_Deck.png',
+  'media/hero_16_agent_session.png',
+  'media/Internal_Session_Tool_popup.png',
+  'media/Internal_Session_Tool_popup2.png',
 ];
 
 /* ------------------------------------------------------------------------- *
@@ -219,6 +242,12 @@ interface Manifest {
   };
   /** Read by the VS Code floor assertion below. */
   engines?: { vscode?: string };
+  /**
+   * The extension icon, read by the `media/` exact-set assertion so the one
+   * tracked image the README does not link is identified by the manifest that
+   * requires it rather than by a literal written down twice.
+   */
+  icon: string;
   /**
    * Read by the shipped-documents guard at the end of this file, to find the
    * CHANGELOG section for the release under audit. Taken from the manifest
@@ -332,7 +361,10 @@ describe('README exists and ships clean', () => {
     for (const link of links) {
       if (BADGE_HOST.test(link)) continue;
       expect(link, `remote asset in README: ${link}`).not.toMatch(/^[a-z]+:\/\//i);
-      if (PLACEHOLDER_IMAGES.includes(link)) continue; // asserted by the test below
+      // NO EXEMPTION. Until 2026-08-30 the four release slots were skipped
+      // here because their bytes were deferred; they are on disk now, so
+      // every image on the page is checked by the same rule, and the release
+      // images are checked twice - here for existence, below for order.
       expect(
         existsSync(join(ROOT, link)),
         `README links ${link}, which does not exist`,
@@ -340,34 +372,93 @@ describe('README exists and ships clean', () => {
     }
   });
 
-  it('carries the four release placeholders, in order, whether or not the files exist yet', () => {
-    // The screenshots and the demo GIF are DEFERRED to the release gate - they
-    // are pictures of a running UI, which no automated step here can produce.
-    // The references ship now so the page has its shape and the gate has four
-    // named slots to fill; the BYTES arrive later.
-    //
-    // This is an exemption from the existsSync check above, narrowed to four
-    // exact paths, and it pays for itself by asserting something the old test
-    // could not: that the references are PRESENT and in the ORDER the page
-    // reads in. Deleting one now fails here rather than passing quietly, which
-    // is the failure mode a plain "every image exists" check has once someone
-    // deletes the reference along with the file.
+  it('carries the four release images, in order, and no demo GIF', () => {
+    // WHAT THIS ASSERTED BEFORE 2026-08-30, because the change is the point:
+    // it asserted the four references were present and in order WHETHER OR NOT
+    // THE FILES EXISTED, and it carried the exemption that let them not exist.
+    // That was correct while the bytes were deferred and it is the wrong shape
+    // now. Existence moved back to the sibling test above, where it covers
+    // every image on the page rather than all-but-four; what stays here is the
+    // thing a plain existence check still cannot see, which is ORDER, and the
+    // failure mode it was written for: deleting a reference along with its
+    // file passes an existence check silently.
     //
     // WHY `media/` AND NOT `docs/media/`, which is what was asked for: `docs/`
     // is a JUNCTION into the maintainer's private repository. It is gitignored
     // here (`.gitignore` `/docs/`) and denied in `.vscodeignore`, so a file at
-    // `docs/media/deck.png` reaches neither GitHub nor the VSIX, and all four
-    // images would render broken on the marketplace listing - which is exactly
-    // what the sibling test 'links to no document that left this repository in
-    // the 2026-08-28 split' already forbids for the same reason. `media/` IS
-    // tracked and IS packaged. Switching back is four strings here and four in
-    // README.md, plus un-ignoring the path in both ignore files.
+    // `docs/media/...` reaches neither GitHub nor the VSIX, and every image
+    // would render broken on the marketplace listing - which is exactly what
+    // the sibling test 'links to no document that left this repository in the
+    // 2026-08-28 split' already forbids for the same reason. `media/` IS
+    // tracked and IS packaged.
     const inOrder = [...README.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)]
       .map((m) => m[1] ?? '')
-      .filter((link) => PLACEHOLDER_IMAGES.includes(link));
-    expect(inOrder, 'the release placeholders are missing or out of order').toStrictEqual([
-      ...PLACEHOLDER_IMAGES,
+      .filter((link) => RELEASE_IMAGES.includes(link));
+    expect(inOrder, 'the release images are missing or out of order').toStrictEqual([
+      ...RELEASE_IMAGES,
     ]);
+  });
+
+  it('links no demo GIF, and no image this release retired', () => {
+    // THE GIF IS DROPPED, and with no placeholder standing in for it. It was
+    // one of the four Phase 8 slots and the only one that is not a still; the
+    // media gate can measure a PNG's chunks, read its pixels and sweep its
+    // bytes, and an animation is the asset none of that reaches in the same
+    // way. A reference to a file nobody is going to supply is a broken image
+    // on the Marketplace listing page, which is what this release exists to
+    // stop happening.
+    //
+    // The three `screenshot-*.png` names are here for the same reason from the
+    // other direction: they were `0.1.x` captures of a renderer that no longer
+    // exists, they are retired into the private repository's `PNG Archive/`,
+    // and a reference to one is now a link to a deleted file AND a picture of
+    // a deleted UI - the defect class 'the shipped documents describe the
+    // shipped UI' further down this file guards in prose.
+    const RETIRED = [
+      'media/demo.gif',
+      'media/deck.png',
+      'media/tree.png',
+      'media/focus.png',
+      'media/screenshot-deck.png',
+      'media/screenshot-topology.png',
+      'media/screenshot-inspector.png',
+    ];
+    for (const retired of RETIRED) {
+      expect(README, `README still links the retired ${retired}`).not.toContain(retired);
+      expect(
+        existsSync(join(ROOT, retired)),
+        `${retired} is retired but still on disk`,
+      ).toBe(false);
+    }
+    expect(README.toLowerCase()).not.toContain('.gif');
+  });
+
+  it('references every tracked image except the icon, and every reference is tracked', () => {
+    // THE EXACT SET, BOTH WAYS - rule 19, applied to `media/` rather than to
+    // the VSIX. A containment check passes every time this repository has
+    // actually been bitten: `media/` is a folder screenshots accumulate in,
+    // and the recorded case is a stray `media/Action Running.png` that shipped
+    // because a deny-by-name rule lost to the next file nobody thought of.
+    //
+    // `media/icon.png` is the one tracked image the README does not link and
+    // must not be asked to: it is the extension icon `package.json` names, not
+    // a screenshot, and it is read off the manifest here rather than written
+    // down so that renaming it fails in one place instead of passing here and
+    // failing in `vsce package`.
+    const tracked = execFileSync('git', ['ls-files', '--', 'media'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    })
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+    const icon = String(MANIFEST.icon);
+    expect(tracked).toContain(icon);
+    expect([...tracked].sort()).toStrictEqual([icon, ...RELEASE_IMAGES].sort());
+    // Pinned BESIDE the set, not instead of it: a set comparison written
+    // against an empty listing passes vacuously, and a count is the cheapest
+    // thing that goes red when it does.
+    expect(tracked).toHaveLength(5);
   });
 });
 

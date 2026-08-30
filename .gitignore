@@ -11,13 +11,26 @@ coverage/
 *.tsbuildinfo
 spike/hook-events-r3.jsonl
 
-# Working screenshots. Only the four assets package.json and README reference
-# are tracked; the rest stay local. Same allow-list shape as .vscodeignore.
+# Working screenshots. Only the five assets package.json and README reference
+# are tracked; the rest stay local. Same allow-list shape as .vscodeignore, and
+# the two lists must name the same five - they are different doors (rule 20),
+# and src/release/vsix.test.ts is what checks the second one.
+#
+# Re-cut 2026-08-30 for the release. The three `screenshot-*.png` files were
+# `0.1.x` captures of a renderer that no longer exists; they are retired into
+# the private repository's `PNG Archive/` rather than deleted. What replaces
+# them is four images of the shipped UI, gated before they crossed into this
+# tree (`lab/docs/evidence/release-0.5.0/MEDIA-GATE.md`).
+#
+# `icon.png` is NOT one of the four and is not a screenshot: `package.json`
+# names it as the extension icon, so removing it makes the manifest name a
+# file that is not there and `vsce package` fails. It stays.
 media/*
 !media/icon.png
-!media/screenshot-deck.png
-!media/screenshot-topology.png
-!media/screenshot-inspector.png
+!media/Session_Deck.png
+!media/hero_16_agent_session.png
+!media/Internal_Session_Tool_popup.png
+!media/Internal_Session_Tool_popup2.png
 
 # The whole .claude/ directory: agent definitions, skills, working notes and
 # settings.local.json. Local tooling, not product. Untracked before the public

@@ -382,9 +382,18 @@ function expectWorkflowNodeSatisfiesEngines(wf: { codeText: string }): void {
   ).toBe(true);
 }
 
-describe('the gate decision is pinned: package-only, no publisher exists', () => {
-  // Phase 5 gate answer: no Azure DevOps account, no nvitlam publisher, no PAT.
-  // A publish step would be a step that cannot succeed.
+describe('the gate decision is pinned: CI never publishes', () => {
+  // WHY THIS ASSERTION EXISTS, RESTATED 2026-08-30. It used to rest on a
+  // capability: no Azure DevOps account, no nvitlam publisher, no PAT, so a
+  // publish step would be a step that cannot succeed. All three now exist, and
+  // an assertion whose stated reason has evaporated is an assertion somebody
+  // deletes - which is exactly how the CR guard in ci.yml came to be asking the
+  // wrong question for ten consecutive red runs.
+  //
+  // The reason now is reserved decision 2: publishing to the Marketplace is the
+  // user's, always and without exception. That does not expire when a publisher
+  // exists; it is the whole point of it. A publish step in a workflow makes the
+  // decision a push, which is the thing being refused.
   const FORBIDDEN = ['vsce publish', 'VSCE_PAT', 'AZURE_', 'marketplace.visualstudio.com'];
 
   it('no executed line in any workflow publishes or names a marketplace/PAT secret', () => {

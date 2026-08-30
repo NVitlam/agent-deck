@@ -149,10 +149,17 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
   'LICENSE',
   'README.md',
   'SECURITY.md',
+  // FIVE images, not four, and `icon.png` is not one of the four.
+  // `package.json` names it as the extension icon; the other four are
+  // the release screenshots README.md links, re-cut on 2026-08-30 when
+  // three `0.1.x` captures of a deleted renderer were retired into the
+  // maintainer's private repository. `.gitignore` and `.vscodeignore`
+  // carry the same five, by name, in both doors.
   'media/icon.png',
-  'media/screenshot-deck.png',
-  'media/screenshot-inspector.png',
-  'media/screenshot-topology.png',
+  'media/Session_Deck.png',
+  'media/hero_16_agent_session.png',
+  'media/Internal_Session_Tool_popup.png',
+  'media/Internal_Session_Tool_popup2.png',
   'dist/extension.cjs',
   'dist/webview/main.css',
   'dist/webview/main.js',
@@ -170,7 +177,7 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
  * it is derived from nothing: writing `EXPECTED_PACKAGED_FILES.length` here
  * would make it agree with the set by construction and check nothing at all.
  */
-const EXPECTED_PACKAGED_FILE_COUNT = 12;
+const EXPECTED_PACKAGED_FILE_COUNT = 13;
 
 /**
  * The same artifact, AS THE ZIP NAMES IT. Rule 19's second half.
@@ -181,7 +188,9 @@ const EXPECTED_PACKAGED_FILE_COUNT = 12;
  * `extension/changelog.md` (lowercased, both of them), everything else under
  * `extension/`, and two entries that exist ONLY in the zip —
  * `extension.vsixmanifest` and `[Content_Types].xml`, which is why this list is
- * 14 where `vsce ls` says 12.
+ * 15 where `vsce ls` says 13. (It was 14 against 12 until 2026-08-30: the
+ * release swapped three retired screenshots for four, and the two entries
+ * the zip adds are a constant, so both numbers move by exactly one.)
  *
  * `SECURITY.md` is NOT lowercased, and that asymmetry is the reason this is an
  * enumerated list and not a transformation of the one above. An audit that
@@ -197,16 +206,17 @@ const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
   'extension/dist/extension.cjs',
   'extension/dist/webview/main.css',
   'extension/dist/webview/main.js',
+  'extension/media/Internal_Session_Tool_popup.png',
+  'extension/media/Internal_Session_Tool_popup2.png',
+  'extension/media/Session_Deck.png',
+  'extension/media/hero_16_agent_session.png',
   'extension/media/icon.png',
-  'extension/media/screenshot-deck.png',
-  'extension/media/screenshot-inspector.png',
-  'extension/media/screenshot-topology.png',
   'extension/package.json',
   'extension/readme.md',
 ];
 
 /** Same reasoning as `EXPECTED_PACKAGED_FILE_COUNT`, on the other naming. */
-const EXPECTED_ARTIFACT_ENTRY_COUNT = 14;
+const EXPECTED_ARTIFACT_ENTRY_COUNT = 15;
 
 /**
  * THE PRIVATE SET — working-method rule 20's second door.

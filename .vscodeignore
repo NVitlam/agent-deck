@@ -203,13 +203,25 @@ dist/**
 # `docs/**`-shaped rule. A deny-by-name rule loses to the next file nobody
 # thought of, and an image folder is a place files accumulate.
 #
-# So: deny everything under media/, then re-admit the four assets the product
-# actually references - the icon named by package.json and the three
-# screenshots README.md links. Order matters; the `!` lines must follow the
-# denial. A fifth asset has to be named here on purpose to ship, and
+# So: deny everything under media/, then re-admit the assets the product
+# actually references - the icon named by package.json and the screenshots
+# README.md links. Order matters; the `!` lines must follow the denial. A
+# further asset has to be named here on purpose to ship, and
 # src/release/vsix.test.ts goes red on an exact set comparison if one appears.
+#
+# Re-cut 2026-08-30 for the release: three `screenshot-*.png` captures of the
+# deleted `0.1.x` renderer out, four images of the shipped UI in. FIVE lines
+# now, not four, and `.gitignore` carries the same five - they are different
+# doors and neither one gates the other.
+#
+# A NOTE ON THE FILENAMES, because it is the sort of thing that gets tidied
+# and then breaks: they carry UNDERSCORES. The capture names had spaces, and a
+# space in an image path is `%20` in a Markdown link, which the Marketplace
+# renderer and GitHub do not have to agree about. The private repository keeps
+# the space-named originals; these are the same bytes.
 media/**
 !media/icon.png
-!media/screenshot-deck.png
-!media/screenshot-topology.png
-!media/screenshot-inspector.png
+!media/Session_Deck.png
+!media/hero_16_agent_session.png
+!media/Internal_Session_Tool_popup.png
+!media/Internal_Session_Tool_popup2.png

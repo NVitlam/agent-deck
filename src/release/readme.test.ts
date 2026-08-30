@@ -249,6 +249,12 @@ interface Manifest {
    */
   icon: string;
   /**
+   * What vsce rewrites the README's relative image links against when it
+   * packages. See 'keeps the three preconditions the Marketplace render
+   * depends on'.
+   */
+  repository?: { url?: string };
+  /**
    * Read by the shipped-documents guard at the end of this file, to find the
    * CHANGELOG section for the release under audit. Taken from the manifest
    * rather than written down here, so bumping the version moves the guard with
@@ -258,6 +264,29 @@ interface Manifest {
 }
 
 const MANIFEST = JSON.parse(readText('package.json')) as Manifest;
+
+/**
+ * Everything git tracks under `media/`, spawned ONCE at module scope.
+ *
+ * Two tests below need this list and each of them used to spawn its own
+ * `git ls-files`. That is this repository's recorded 'an expensive subprocess
+ * called once per test is a test that passes or fails by CPU load' defect, and
+ * it did exactly what the record says it does: green run alone, and
+ * `Test timed out in 5000ms` in the full suite, on the first run of the gate
+ * that was meant to close this work. vitest's DEFAULT test timeout is 5 s and
+ * nothing here had asked for more.
+ *
+ * One spawn, at import time, where the collect phase's budget covers it. The
+ * tests below also carry an explicit budget, so a slow machine reports a slow
+ * test rather than a mystery.
+ */
+const TRACKED_MEDIA: readonly string[] = execFileSync('git', ['ls-files', '--', 'media'], {
+  cwd: ROOT,
+  encoding: 'utf8',
+})
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter((line) => line !== '');
 const DEFAULT_PORT = MANIFEST.contributes.configuration.properties['agentDeck.port']?.default;
 
 /**
@@ -433,6 +462,55 @@ describe('README exists and ships clean', () => {
     expect(README.toLowerCase()).not.toContain('.gif');
   });
 
+  it('keeps the three preconditions the Marketplace render depends on', () => {
+    // THE MARKETPLACE DOES NOT RENDER THESE IMAGES OUT OF THE VSIX, and until
+    // 2026-08-30 nothing in this repository said so. vsce rewrites every
+    // relative link in the packaged README into an absolute GitHub URL -
+    // `media/Session_Deck.png` ships as
+    // `<repository.url>/raw/HEAD/media/Session_Deck.png` - because the listing
+    // page is served from Microsoft's host, where a relative path means
+    // nothing. So the page fetches them from github.com, anonymously, from the
+    // DEFAULT BRANCH.
+    //
+    // A VSIX carrying four perfect images therefore still shows four broken
+    // ones unless all three of these hold at publish time. This test owns the
+    // two that are properties of the repository; the third is a property of
+    // the world and is named in the message so nobody has to rediscover it.
+    //
+    // The artifact-byte half - that the rewrite actually produced those URLs -
+    // is in src/release/vsix.test.ts's gated leg, because it needs a real
+    // package. Neither half is sufficient alone.
+
+    // (1) There is a repository URL to rewrite against, and it is the GitHub
+    //     form vsce builds from. Without it vsce leaves the links relative and
+    //     every image on the listing is broken, silently.
+    const url = String(MANIFEST.repository?.url ?? '')
+      .replace(/^git\+/, '')
+      .replace(/\.git$/, '');
+    expect(url, 'package.json needs a github.com repository.url').toMatch(
+      /^https:\/\/github\.com\/[^/]+\/[^/]+$/,
+    );
+
+    // (2) Every image the README links is TRACKED, so a push of the default
+    //     branch actually puts it where the rewritten URL points. An image
+    //     that exists only in the working tree passes the existence check
+     //    above and 404s on the listing page.
+    const tracked = TRACKED_MEDIA;
+    for (const image of RELEASE_IMAGES) {
+      expect(tracked, `${image} is linked but not tracked`).toContain(image);
+    }
+
+    // (3) THE THIRD PRECONDITION IS NOT CHECKABLE FROM HERE and must not be
+    //     faked into looking checked: the repository has to be PUBLIC and its
+    //     DEFAULT BRANCH has to carry these files, at the moment of publish.
+    //     Asserting it would need a network call, which G5 forbids and which
+    //     would make this suite depend on github.com being up. It is a step in
+    //     the release checklist instead, and the ordering matters: flip the
+    //     repository public and merge to the default branch BEFORE publishing,
+    //     or the listing goes up with four broken images and stays that way
+    //     until someone looks.
+  }, 20_000);
+
   it('references every tracked image except the icon, and every reference is tracked', () => {
     // THE EXACT SET, BOTH WAYS - rule 19, applied to `media/` rather than to
     // the VSIX. A containment check passes every time this repository has
@@ -445,13 +523,7 @@ describe('README exists and ships clean', () => {
     // a screenshot, and it is read off the manifest here rather than written
     // down so that renaming it fails in one place instead of passing here and
     // failing in `vsce package`.
-    const tracked = execFileSync('git', ['ls-files', '--', 'media'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-    })
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line !== '');
+    const tracked = TRACKED_MEDIA;
     const icon = String(MANIFEST.icon);
     expect(tracked).toContain(icon);
     expect([...tracked].sort()).toStrictEqual([icon, ...RELEASE_IMAGES].sort());
@@ -459,7 +531,7 @@ describe('README exists and ships clean', () => {
     // against an empty listing passes vacuously, and a count is the cheapest
     // thing that goes red when it does.
     expect(tracked).toHaveLength(5);
-  });
+  }, 20_000);
 });
 
 describe('the hook paste block', () => {

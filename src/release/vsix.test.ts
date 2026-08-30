@@ -60,6 +60,18 @@ import { beforeAll, describe, expect, it } from 'vitest';
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 /**
+ * `package.json`, for the one field the artifact assertions need: the
+ * repository URL vsce rewrites the README's relative image links against.
+ * Read rather than written down, so renaming the repository fails here
+ * instead of on the Marketplace listing page, which is the one surface
+ * nothing can test after the fact.
+ */
+const MANIFEST = JSON.parse(
+  readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'),
+) as { repository?: { url?: string } };
+
+
+/**
  * `vsce ls` reports files that EXIST. On a fresh checkout `dist/` does not, so
  * the exact-set assertion below would report the artifacts as missing rather
  * than as unpackaged — a false red that says nothing about the ignore rules.
@@ -217,6 +229,23 @@ const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
 
 /** Same reasoning as `EXPECTED_PACKAGED_FILE_COUNT`, on the other naming. */
 const EXPECTED_ARTIFACT_ENTRY_COUNT = 15;
+
+/**
+ * The four release images as the packaged README must reference them, WITHOUT
+ * the `media/` prefix's repository half - the artifact-byte assertion in the
+ * gated leg builds each full URL from `package.json`'s own `repository.url`
+ * rather than writing the owner and repo name down a second time.
+ *
+ * `icon.png` is NOT here: it is the extension icon, the README never links it,
+ * and it is the one media file the Marketplace really does read out of the
+ * VSIX rather than fetching from GitHub.
+ */
+const RELEASE_IMAGES_IN_ARTIFACT: readonly string[] = [
+  'media/Session_Deck.png',
+  'media/hero_16_agent_session.png',
+  'media/Internal_Session_Tool_popup.png',
+  'media/Internal_Session_Tool_popup2.png',
+];
 
 /**
  * THE PRIVATE SET — working-method rule 20's second door.
@@ -788,6 +817,54 @@ describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
             licenceNamesTheLicensor,
             'the shipped licence does not name its licensor',
           ).toBe(true);
+
+          // ---------------------------------------------------------------
+          // THE README'S IMAGE LINKS, AS THEY SHIP. Added 2026-08-30 after a
+          // verifier found the release's entire deliverable unproven.
+          //
+          // vsce REWRITES relative links in the packaged README into absolute
+          // GitHub URLs, because the Marketplace serves the description from
+          // its own host where a relative path means nothing. The listing page
+          // therefore does not render the images out of this artifact at all -
+          // it fetches them from github.com, anonymously, from the DEFAULT
+          // BRANCH. Which means a VSIX containing four perfect images still
+          // shows four broken ones if the repository is private, or if the
+          // default branch does not carry them.
+          //
+          // Everything above this point pins `extension/readme.md` by NAME and
+          // never opens it. That is the 'only the unzipped artifact knows what
+          // shipped' lesson applied to the file LIST and then not applied to a
+          // file, and it is why nothing went red while the page was broken.
+          //
+          // What is asserted is the TRANSFORMATION, both directions: every
+          // release image arrives as the exact absolute URL vsce built, and no
+          // relative `media/` link survives. A rename of the repository, the
+          // owner or an image now fails HERE rather than on the listing page,
+          // which is the one place nobody can test after the fact.
+          const shippedReadme = readFileSync(
+            join(extracted, 'extension', 'readme.md'),
+            'utf8',
+          );
+          const shippedLinks = [...shippedReadme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map(
+            (m) => m[1] ?? '',
+          );
+          const repoUrl = String(MANIFEST.repository?.url ?? '')
+            .replace(/^git\+/, '')
+            .replace(/\.git$/, '');
+          expect(repoUrl, 'package.json has no repository.url to rewrite against').toMatch(
+            /^https:\/\/github\.com\//,
+          );
+          for (const image of RELEASE_IMAGES_IN_ARTIFACT) {
+            expect(
+              shippedLinks,
+              `the packaged README does not link ${image} at its rewritten URL`,
+            ).toContain(`${repoUrl}/raw/HEAD/${image}`);
+          }
+          // The other direction. A relative link that survived would render
+          // broken on the Marketplace while looking perfect in every local
+          // preview, which is the failure mode with no symptom.
+          const stillRelative = shippedLinks.filter((link) => !/^https?:\/\//i.test(link));
+          expect(stillRelative, 'a relative image link survived into the artifact').toEqual([]);
         } finally {
           rmSync(staging, { recursive: true, force: true });
         }

@@ -709,6 +709,88 @@ describe('the version badge is accurate against the shipped constants', () => {
     PATCH_CLAIM_RE.lastIndex = 0;
   });
 
+  /**
+   * F3 — the teleport caveat.
+   *
+   * A session Claude Code imported from another machine with `--teleport`
+   * carries the imported history at a version this window does not accept, so
+   * the whole session renders `unsupported` — including the part that continued
+   * locally. Measured once, on 2026-08-31:
+   * `docs/evidence/release-0.5.0/DRIFT-2.1.251.md` §3.4.
+   *
+   * **n = 1, AND THAT IS WHY THE WORDING IS GUARDED HERE.** Exactly one
+   * teleported transcript existed on the machine that found it, so this
+   * repository knows what its own parser does with such a file and does NOT
+   * know that every teleport produces one. The release brief's decision 4 is
+   * therefore "write it as *not supported*, not as a description of Claude
+   * Code's behaviour", and a guard that only checked the word `--teleport` was
+   * present would let the next edit turn a limit of ours into a claim about
+   * somebody else's product. The chunk rule below is what pins the phrasing.
+   */
+  const TELEPORT_RE = /--teleport/;
+  /** Bullets and blank-line-separated blocks. Blockquote lines stay together. */
+  const chunksOf = (text: string): string[] => text.split(/\n(?=\s*[-*] )|\n{2,}/);
+
+  it('states the teleport caveat, in the Claude Code region', () => {
+    expect(TELEPORT_RE.test(README_CC)).toBe(true);
+    // NOT in the OpenCode region: `--teleport` is a Claude Code flag, and a
+    // caveat about it under the OpenCode heading would be a false claim about
+    // an engine that has no such feature.
+    expect(TELEPORT_RE.test(README_OC)).toBe(false);
+  });
+
+  it('phrases the caveat as OUR limit, never as a description of Claude Code', () => {
+    const chunks = chunksOf(README_CC).filter((c) => TELEPORT_RE.test(c));
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      expect(
+        chunk.toLowerCase().includes('not supported'),
+        `a --teleport chunk does not say "not supported": ${chunk.slice(0, 160)}`,
+      ).toBe(true);
+    }
+    // Vacuity controls, both directions: the chunker must actually separate
+    // blocks, and the predicate must be capable of failing.
+    const sample = '- one thing\n- a --teleport thing that says nothing\n- three';
+    const found = chunksOf(sample).filter((c) => TELEPORT_RE.test(c));
+    expect(found).toHaveLength(1);
+    expect(found[0]?.toLowerCase().includes('not supported')).toBe(false);
+  });
+
+  it('names no version literal in the caveat, because none was measured', () => {
+    // The imported records carried `1.0` on the one transcript that was seen.
+    // Printing it would state a fact about Claude Code's teleport format off a
+    // single observation — and `names no Claude Code version the shipped parser
+    // would refuse`, below, would then have to make an exception for it.
+    /*
+     * SENTENCE scope, not chunk scope, and the difference is not cosmetic: the
+     * compatibility blockquote legitimately carries the anchor and both window
+     * corners two sentences away from the caveat. A chunk-wide check fails on a
+     * correct README — measured, this assertion went red on `2.1.246` — and the
+     * reflex fix would be deleting the guard rather than aiming it.
+     *
+     * Markdown wraps a sentence across lines, so lines are joined before
+     * sentences are split. That is the same trap `the shipped documents
+     * describe the shipped UI` records further down this file.
+     */
+    const sentences = (text: string): string[] =>
+      text
+        .replace(/\s+/g, ' ')
+        .split(/(?<=\.)\s+(?=[A-Z*`[])/)
+        .filter((s) => TELEPORT_RE.test(s));
+    const caveats = chunksOf(README_CC)
+      .filter((c) => TELEPORT_RE.test(c))
+      .flatMap(sentences);
+    expect(caveats.length).toBeGreaterThan(0);
+    for (const sentence of caveats) {
+      expect(
+        /`\d+\.\d+(?:\.\d+)?`/.test(sentence),
+        `the caveat names a version: ${sentence}`,
+      ).toBe(false);
+    }
+    // Vacuity control: the predicate catches a version literal when there is one.
+    expect(/`\d+\.\d+(?:\.\d+)?`/.test('teleport writes `1.0` records')).toBe(true);
+  });
+
   it('states window corners derived from those tolerances', () => {
     const { min, max } = corners();
     const stated = [...README_CC.matchAll(CORNERS_RE)];

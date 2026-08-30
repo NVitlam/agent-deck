@@ -499,8 +499,18 @@ function load(corpusName: string): Loaded {
          * what makes this a reproduction of the production path rather than of
          * a default the production path never uses.
          */
-        projectSlug: (project) =>
-          project === undefined ? '' : slugFromWorktree(project.worktree),
+        // Both rows, matching the production seam since 2026-08-31:
+        // `session.directory` first, `project.worktree` as the fallback. In
+        // BOTH committed corpora those two strings are identical, which is
+        // exactly why the moved-workspace defect was invisible here — and why
+        // the witness for it is a separate fixture, not this one.
+        projectSlug: (session, project) => {
+          const directory = session?.directory;
+          if (directory !== undefined && directory !== null && directory !== '') {
+            return slugFromWorktree(directory);
+          }
+          return project === undefined ? '' : slugFromWorktree(project.worktree);
+        },
       },
     }),
   };
@@ -1280,8 +1290,12 @@ describe('injected options', () => {
   });
 
   it('defaults workspaceMatch to project-exists and honours an override', () => {
-    expect(defaultWorkspaceMatch(PROJECT)).toBe(true);
-    expect(defaultWorkspaceMatch(undefined)).toBe(false);
+    expect(defaultWorkspaceMatch(root, PROJECT)).toBe(true);
+    expect(defaultWorkspaceMatch(root, undefined)).toBe(false);
+    // The default reads the PROJECT row only, so a session row cannot rescue a
+    // missing project here. That is the seam's neutral value, not the
+    // production rule — `index.ts` owns the resolution order.
+    expect(defaultWorkspaceMatch(undefined, PROJECT)).toBe(true);
     const state = graft([root], [], { workspaceMatch: () => false }).sessions[0] as SessionState;
     expect(state.workspaceMatch).toBe(false);
   });
@@ -1295,11 +1309,29 @@ describe('injected options', () => {
     // OC7 leaves the field open; `slugFromWorktree` in `src/opencode/slug.ts`
     // is what the orchestrator injects (PLAN.md Phase 4 Amendment A1). This
     // module neither imports nor decides it.
-    expect(defaultProjectSlug(PROJECT)).toBe('');
+    expect(defaultProjectSlug(root, PROJECT)).toBe('');
     const state = graft([root], [], {
-      projectSlug: (p) => (p === undefined ? '' : p.worktree.toLowerCase()),
+      projectSlug: (_s, p) => (p === undefined ? '' : p.worktree.toLowerCase()),
     }).sessions[0] as SessionState;
     expect(state.projectSlug).toBe('c:\\repo');
+  });
+
+  it('counts a root whose seam yields no key as opencodeUnkeyed, and still renders it', () => {
+    /*
+     * The `''` answer is the one place a session can end up with no project
+     * key at all. It is COUNTED rather than passed over — rule 18's class, a
+     * silent skip is the fail-open shape — and the session still appears, with
+     * an empty key, because dropping it would make an unkeyed session
+     * indistinguishable from one that never existed.
+     */
+    const keyed = graft([root], [], { projectSlug: () => 'c--repo' });
+    expect(keyed.opencodeUnkeyed).toBe(0);
+    expect((keyed.sessions[0] as SessionState).projectSlug).toBe('c--repo');
+
+    const unkeyed = graft([root], [], { projectSlug: () => '' });
+    expect(unkeyed.opencodeUnkeyed).toBe(1);
+    expect(unkeyed.sessions).toHaveLength(1);
+    expect((unkeyed.sessions[0] as SessionState).projectSlug).toBe('');
   });
 });
 

@@ -131,34 +131,55 @@ export interface OcGraftOptions {
    */
   livenessFor?: (session: OcSessionRow) => SessionState['liveness'];
   /**
-   * Does this session's project belong to an open workspace folder?
+   * Does this session belong to an open workspace folder?
    *
    * Defaults to {@link defaultWorkspaceMatch} — `project !== undefined` — which
    * is what the goldens carry, because every session in both corpora belongs
    * to the one `project` row whose `worktree` is this repository. The real
-   * match is `project.worktree` compared case-insensitively against the host's
-   * open workspace folders (OC8); that is an input from the host, not a fact
-   * in the database, and it is `PLAN.md` DoD 5.2's work.
+   * match compares the host's open workspace folders against the session's own
+   * key (OC8, as amended 2026-08-31); that is an input from the host, not a
+   * fact in the database, and it is `PLAN.md` DoD 5.2's work.
    */
-  workspaceMatch?: (project: OcProjectRow | undefined) => boolean;
+  workspaceMatch?: (
+    session: OcSessionRow | undefined,
+    project: OcProjectRow | undefined,
+  ) => boolean;
   /**
-   * `project.worktree` -> `SessionState.projectSlug`.
+   * The session's project key -> `SessionState.projectSlug`.
    *
    * `src/opencode/index.ts` injects `slugFromWorktree` from
    * `src/opencode/slug.ts`, per `PLAN.md` Phase 4 `Amendment 2026-08-27` A1 —
-   * and **that is what both goldens now carry**, the CC slug for
-   * `project.worktree`. The production path never uses the default.
+   * and **that is what both goldens now carry**. The production path never
+   * uses the default.
    *
    * It is deliberately NOT imported here. This module owns neither the
    * decision nor that file, and keeping the seam means `graft.test.ts` can
    * exercise the assembly without depending on the slug rule.
    *
+   * **BOTH ROWS ARE PASSED, and the order matters (amended 2026-08-31).**
+   * Through 0.5.0 this took the `project` row alone and `index.ts` keyed off
+   * `project.worktree`. OpenCode keeps ONE `project` row per repository
+   * identity and never rewrites `worktree` when the directory moves, so every
+   * session of a moved workspace — including sessions RUN AT THE NEW PATH —
+   * keyed to the old one and matched no open folder. Measured on the live
+   * store 2026-08-31 and pinned by `fixtures/opencode-1.18.25/moved-project/`;
+   * `docs/evidence/release-0.5.0/DRIFT-2.1.251.md` §5.2 is the diagnosis. The
+   * session row carries `directory`, which OpenCode DOES keep current.
+   *
+   * Neither committed corpus could have caught it: in both,
+   * `session.directory` and `project.worktree` are the same string, so the
+   * goldens do not move by one byte across this change. That is why it was
+   * invisible, and it is why the witness fixture had to be captured.
+   *
    * The default {@link defaultProjectSlug} returns `''`, which is what the
-   * goldens carried before A1 closed OC7's open item. It survives only as the
-   * honest answer for a session whose `project` row is absent — there is no
-   * worktree to derive a key from — and as the seam's neutral value.
+   * goldens carried before A1 closed OC7's open item. It survives as the seam's
+   * neutral value, and `''` is also the production answer when neither row can
+   * supply a key — see {@link OcEngineResult.opencodeUnkeyed}.
    */
-  projectSlug?: (project: OcProjectRow | undefined) => string;
+  projectSlug?: (
+    session: OcSessionRow | undefined,
+    project: OcProjectRow | undefined,
+  ) => string;
   /**
    * The session ids the fingerprint REFUSED, so a `task` part naming one can
    * say why the child is missing (`docs/evidence/phase-4/COVERAGE.md` item 29,
@@ -205,12 +226,18 @@ export function defaultSessionLiveness(session: OcSessionRow): SessionState['liv
 }
 
 /** The goldens' `workspaceMatch`: the project row exists. See {@link OcGraftOptions}. */
-export function defaultWorkspaceMatch(project: OcProjectRow | undefined): boolean {
+export function defaultWorkspaceMatch(
+  _session: OcSessionRow | undefined,
+  project: OcProjectRow | undefined,
+): boolean {
   return project !== undefined;
 }
 
 /** The goldens' `projectSlug`: the empty placeholder. See {@link OcGraftOptions}. */
-export function defaultProjectSlug(_project: OcProjectRow | undefined): string {
+export function defaultProjectSlug(
+  _session: OcSessionRow | undefined,
+  _project: OcProjectRow | undefined,
+): string {
   return '';
 }
 
@@ -680,6 +707,7 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
   const roots = sessions.filter((s) => !s.parentId);
   const seenSessionRows = new Set<string>();
   const states: SessionState[] = [];
+  let opencodeUnkeyed = 0;
 
   for (const root of roots) {
     const spawnEdges: SpawnEdge[] = [];
@@ -696,14 +724,19 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
       totals,
     });
     const project = projects.find((p) => p.id === root.projectId);
+    // Resolved ONCE, so the counter below and the field cannot disagree about
+    // what happened. `''` is the seam's "no key available" answer and it is
+    // counted rather than passed over in silence (G3, rule 18's class).
+    const slug = projectSlug(root, project);
+    if (slug === '') opencodeUnkeyed += 1;
     states.push({
       sessionId: root.id,
-      projectSlug: projectSlug(project),
+      projectSlug: slug,
       // OC7: additive and optional; absence reads as `'cc'`, so it is written
       // rather than left to a default. It is what makes G2's cross-engine half
       // assertable at all.
       engine: 'opencode',
-      workspaceMatch: workspaceMatch(project),
+      workspaceMatch: workspaceMatch(root, project),
       liveness: livenessFor(root),
       // Refusal is `fingerprint.ts`'s, not the grafter's (G3, OC2). A session
       // that reaches here was accepted, so this is `true` unconditionally —
@@ -760,6 +793,13 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
   return {
     ...(dataVersion === undefined ? {} : { dataVersion }),
     counts,
+    // DELIBERATELY OUTSIDE `counts`. `counts` is a byte-exact contract (DoD
+    // 4.6) generated by `scripts/opencode-golden.mjs`, an independent
+    // reimplementation; putting a keying counter there would mean restating the
+    // keying rule in a second place, which is this repository's own
+    // "two agreeing literals is not a contract" class. It is a runtime
+    // diagnostic about resolution, not a statistic about the corpus.
+    opencodeUnkeyed,
     sessions: states,
     refused: [],
   };

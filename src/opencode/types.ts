@@ -50,10 +50,19 @@ import type { SessionState } from '../model/events.js';
  * "the column is NULL" and "the engine did not read the column".
  */
 
-/** A `project` row. `worktree` is the workspace join key (OC8). */
+/** A `project` row. `worktree` is the workspace join key's FALLBACK (OC8). */
 export interface OcProjectRow {
   id: string;
-  /** An ABSOLUTE path, so there is no slug decoding at all (OC8). */
+  /**
+   * An ABSOLUTE path, so there is no slug decoding at all (OC8).
+   *
+   * **It goes STALE, and it is no longer the primary key source** (amended
+   * 2026-08-31). OpenCode keeps one `project` row per repository identity and
+   * never rewrites `worktree` when the directory moves; measured on the live
+   * store, a project whose `time_updated` was current still carried a
+   * `worktree` the workspace had left. `session.directory` is consulted first
+   * and this is the fallback. See `fixtures/opencode-1.18.25/moved-project/`.
+   */
   worktree: string;
   vcs: string | null;
 }
@@ -65,7 +74,17 @@ export interface OcSessionRow {
   /** Names the parent session. NULL on a root session; the subagent chain. */
   parentId: string | null;
   slug: string | null;
-  /** The session's cwd. NOT the join key — `project.worktree` is (OC8). */
+  /**
+   * The session's cwd, and the PRIMARY source of the project key (OC8, as
+   * amended 2026-08-31).
+   *
+   * It used to read "NOT the join key — `project.worktree` is". That was true
+   * of the anchor corpora, where the two strings are identical, and wrong of a
+   * workspace that has moved: OpenCode keeps this column current and lets
+   * `project.worktree` go stale. `fixtures/opencode-1.18.25/moved-project/` is
+   * the witness — one session, run at the new path, whose project row still
+   * names the old one.
+   */
   directory: string | null;
   title: string;
   /**
@@ -373,6 +392,21 @@ export interface OcEngineResult {
    */
   readonly dataVersion?: string;
   readonly counts: OcCounts;
+  /**
+   * Root sessions for which NEITHER `session.directory` NOR `project.worktree`
+   * could supply a project key, so `projectSlug` is `''` and the session
+   * matches no workspace folder.
+   *
+   * A sibling of `counts` rather than a member of it, on purpose: `counts` is
+   * compared byte-for-byte against the goldens (DoD 4.6) and is produced by
+   * `scripts/opencode-golden.mjs`, which would then have to restate the keying
+   * rule. See the note at the end of `graftCorpus`.
+   *
+   * Zero in both committed corpora and in the `moved-project` witness. It
+   * exists because the alternative to counting is a silent `''`, and a silent
+   * skip is the fail-open class rule 18 names three doors into.
+   */
+  readonly opencodeUnkeyed: number;
   readonly sessions: readonly SessionState[];
   /**
    * Sessions the fingerprint refused, in the order they were read.

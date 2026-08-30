@@ -76,6 +76,7 @@ import type { PollTrigger, PollTriggerHandle } from './opencode/liveness.js';
 import { webviewHtml } from './bridge/html.js';
 import { DEFAULT_PREVIEW_BYTES as GRAFTER_DEFAULT_PREVIEW_BYTES } from './model/graft.js';
 import type { GraftSessionResult } from './model/graft.js';
+import type { DiagnosticsEvent } from './bridge/diagnostics.js';
 import { TRUNCATION_MARKER_RE, truncationMarker } from './parser/redact.js';
 import { WEBVIEW_ROOT_ID } from './bridge/contract.js';
 import type { HostToWebviewMessage, SessionState, TreeNode } from './model/events.js';
@@ -2657,6 +2658,97 @@ describe('G2: a throwing content path refuses one session and leaves the hook ta
     expect(path.diagnostics.graftErrors).toBe(0);
     expect(path.diagnostics.graftRefusals).toBe(path.diagnostics.grafts);
     expect(path.model.counters().contentFailures).toBe(0);
+    const [victim] = path.model.sessionIds() as [string];
+    expect(path.model.refusalOf(victim)?.mismatch?.reason).toBe('injected refusal');
+  });
+
+  it('F2: a refusal produces one diagnostics event carrying the REASON', async () => {
+    /*
+     * The test above is exactly the state F2 was found in: it asserts
+     * `graftRefusals === grafts` and nothing at all about WHY. That equality is
+     * what was read, on 2026-08-31, as "the CC adapter is broken on 2.1.251"
+     * when the cause was one teleported transcript. A count that cannot be
+     * told apart from a total outage is the defect, and this is the assertion
+     * that says the reason travelled with it.
+     */
+    const workspacePath = await capturedWorkspacePath();
+    const refusal: GraftSessionResult = {
+      ok: false,
+      mismatch: {
+        kind: 'schemaMismatch',
+        code: 'unsupportedVersion',
+        reason: 'transcript was written by an unpinned CC version',
+        path: 'C:\\Users\\somebody\\.claude\\projects\\c--invented-agent-deck\\s.jsonl:1',
+        field: 'version',
+        expected: '2.1.246',
+        actual: '1.0',
+      },
+      diagnostics: { malformedLines: 0, parsedLines: 0, ignoredLines: 0, skippedFiles: [] },
+    };
+    const events: DiagnosticsEvent[] = [];
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: () => {},
+          graft: () => Promise.resolve(refusal),
+          onDiagnostic: (event) => events.push(event),
+        }),
+      ),
+    );
+
+    expect(events).toHaveLength(path.diagnostics.graftRefusals);
+    expect(events.length).toBeGreaterThan(0);
+    const [event] = events as [DiagnosticsEvent];
+    if (event.kind !== 'graftRefused') throw new Error(`unexpected event ${event.kind}`);
+    expect(event.code).toBe('unsupportedVersion');
+    expect(event.field).toBe('version');
+    expect(event.expected).toBe('2.1.246');
+    expect(event.actual).toBe('1.0');
+    // Reduced, not passed through: the absolute path never reaches the channel.
+    expect(event.at).toBe('s.jsonl:1');
+
+    // And kept as a level, the way a THROW has always been kept — which is the
+    // asymmetry F2 closes.
+    const level = path.diagnostics.lastGraftRefusal;
+    expect(level).toBeDefined();
+    expect(level?.code).toBe('unsupportedVersion');
+    expect(level?.at).toBe('s.jsonl:1');
+    expect(path.diagnostics.lastGraftError).toBeUndefined();
+  });
+
+  it('F2: a throwing diagnostics sink cannot break a graft', async () => {
+    // A diagnostics surface that can take the data path down with it is worse
+    // than no diagnostics surface. Counted as a consumer error, like a
+    // throwing `onEmission`, and the refusal itself still lands in the model.
+    const workspacePath = await capturedWorkspacePath();
+    const refusal: GraftSessionResult = {
+      ok: false,
+      mismatch: { kind: 'schemaMismatch', code: 'metaFieldMissing', reason: 'injected refusal' },
+      diagnostics: { malformedLines: 0, parsedLines: 0, ignoredLines: 0, skippedFiles: [] },
+    };
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: () => {},
+          graft: () => Promise.resolve(refusal),
+          onDiagnostic: () => {
+            throw new Error('the channel exploded');
+          },
+        }),
+      ),
+    );
+
+    expect(path.diagnostics.graftErrors).toBe(0);
+    expect(path.diagnostics.graftRefusals).toBe(path.diagnostics.grafts);
+    expect(path.diagnostics.consumerErrors).toBeGreaterThan(0);
     const [victim] = path.model.sessionIds() as [string];
     expect(path.model.refusalOf(victim)?.mismatch?.reason).toBe('injected refusal');
   });

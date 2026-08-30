@@ -44,10 +44,14 @@ makes.
 ## What is NOT in it, and why
 
 A **third session was captured the same day and did not cross the gate**: the `--teleport` import
-that actually refused. Its 465 imported message bodies carry developer identifiers that the path
-redactor does not touch — it rewrites path shapes, and these are prose — so promoting it would
-have shipped 127 identity hits into the public tree. It stays in the maintainer's private
-`lab/fixtures-raw/cc-2.1.251/`.
+that actually refused. It stays in the maintainer's private `lab/fixtures-raw/cc-2.1.251/`.
+
+The reason is precise, because a vaguer version of it was wrong once. `redact-paths.mjs` reports
+`changed: 0` on that file — it is *already* redacted. What survives is the **tail** of paths whose
+`C:\Users\<user>` head was tokenised, and the project **slug**, which the redactor preserves on
+purpose because the slug is a join key. The privacy sweep counts **484 identity-hit lines** on that
+one file, 465 of them on the imported (`version: "1.0"`) bodies. Promoting it would have shipped
+every one of them.
 
 The refusal it witnesses is not lost: `src/bridge/refusal.test.ts` builds a transcript with the
 same shape (a `version` string the window cannot parse) in a temp directory, and `README.md`

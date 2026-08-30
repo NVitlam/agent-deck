@@ -49,10 +49,30 @@ const CORPORA = [
   { version: '2.1.237', slugDir: fixture('cc-2.1.237', 'projects', SLUG), sessions: 1 },
   { version: '2.1.241', slugDir: fixture('cc-2.1.241', 'projects', SLUG), sessions: 1 },
   { version: '2.1.246', slugDir: fixture('cc-2.1.246', 'projects', SLUG), sessions: 1 },
+  /*
+   * F4, 2026-08-31. A WITNESS, NOT A NEW ANCHOR.
+   *
+   * `PINNED_CC_VERSION` stays at `2.1.246`. This corpus was captured because
+   * `2.1.251` was reported as refusing every session; the shape diff found no
+   * structural drift at all — see `docs/evidence/release-0.5.0/DRIFT-2.1.251.md`
+   * §3 — so nothing here justifies moving the anchor, and the anchor is not a
+   * lever anyway (the patch component is not compared). What the corpus buys is
+   * that the claim "2.1.251 is structurally the anchor's shape" is now a test
+   * over real bytes instead of a sentence in an evidence file.
+   *
+   * Two sessions: one flat, one R1 mirror pair. The third session captured that
+   * day — the `--teleport` import that actually refused — is deliberately NOT
+   * here; its imported message bodies could not pass the identity sweep, and
+   * `src/bridge/refusal.test.ts` reproduces that refusal from a built file
+   * instead. The README caveat (F3) is the user-facing half.
+   */
+  { version: '2.1.251', slugDir: fixture('cc-2.1.251', 'projects', SLUG), sessions: 2 },
 ] as const;
 
 const SESSION_246 = '07e6c820-b285-4ea8-8127-98ea762291d9';
 const SESSION_241 = '6082be25-cfea-49b9-9821-2de9c23cac65';
+const SESSION_251 = 'd16538d5-da75-4d0a-aa99-652916287f7c';
+const MAIN_251 = fixture('cc-2.1.251', 'projects', SLUG, `${SESSION_251}.jsonl`);
 
 const MAIN_246 = fixture('cc-2.1.246', 'projects', SLUG, `${SESSION_246}.jsonl`);
 const MAIN_241 = fixture('cc-2.1.241', 'projects', SLUG, `${SESSION_241}.jsonl`);
@@ -115,12 +135,37 @@ describe('every captured corpus parses through the production path', () => {
     }
   });
 
-  it('spans four CC releases, each of which the previous posture refused at some point', () => {
+  it('spans five CC releases, each of which the previous posture refused at some point', () => {
     // Vacuity control on the list above: a corpus set that all sat inside the
     // OLD patch box would prove nothing about the change. 2.1.241 and 2.1.246
-    // were both hard refusals until this phase.
+    // were both hard refusals until this phase, and 2.1.251 is five patches
+    // past the anchor - further than the box that expired ever reached.
     for (const corpus of CORPORA) expect(isVersionAccepted(corpus.version)).toBe(true);
     expect(new Set(CORPORA.map((c) => c.version)).size).toBe(CORPORA.length);
+    // The count is pinned BESIDE the set (rule 19's shape, applied to a corpus
+    // list): a `CORPORA` accidentally filtered to nothing satisfies both
+    // assertions above and neither of these.
+    expect(CORPORA).toHaveLength(5);
+    expect(CORPORA.map((c) => c.version)).toEqual([
+      '2.1.234',
+      '2.1.237',
+      '2.1.241',
+      '2.1.246',
+      '2.1.251',
+    ]);
+  });
+
+  it('the newest corpus is AHEAD of the anchor, which is what makes it a witness', () => {
+    // A corpus at or below the anchor says nothing about reading a release
+    // nobody had captured when the build was cut - which is the exact claim
+    // `README.md`'s "patch releases are read as they come" makes.
+    const newest = CORPORA[CORPORA.length - 1];
+    expect(newest?.version).not.toBe(PINNED_CC_VERSION);
+    const anchor = PINNED_CC_VERSION.split('.').map(Number);
+    const witness = (newest?.version ?? '').split('.').map(Number);
+    expect(witness[0]).toBe(anchor[0]);
+    expect(witness[1]).toBe(anchor[1]);
+    expect(witness[2] ?? 0).toBeGreaterThan(anchor[2] ?? 0);
   });
 });
 
@@ -174,6 +219,54 @@ describe('the provenance anchor is the corpus, not a number in a file', () => {
     expect(toolUseIds).toContain(agent?.meta.toolUseId);
     // No offload directory in this capture; cc-2.1.234 still owns that path.
     expect(value.toolResultsDir).toBeUndefined();
+  });
+
+  it('F4: reads the 2.1.251 R1 mirror pair, join key for join key, like the anchor', async () => {
+    /*
+     * THE SAME ASSERTION AS THE ANCHOR'S, five patch releases later, and that
+     * is the whole point of it. The reported symptom on 2026-08-31 was "2.1.251
+     * refuses every session"; the measured answer was that the structure had
+     * not moved at all. This is that answer as a test over real bytes —
+     * `docs/evidence/release-0.5.0/DRIFT-2.1.251.md` §3.3.
+     *
+     * Every value below is read off the capture, and the four sidecar fields
+     * are the ones `REQUIRED_META_FIELDS` names. `parentAgentId` is absent at
+     * spawnDepth 1, exactly as at the anchor.
+     */
+    const result = await fingerprintSession(MAIN_251);
+    if (!result.ok) throw new Error(`${result.mismatch.code}: ${result.mismatch.reason}`);
+    const value = result.value;
+    expect(value.sessionId).toBe(SESSION_251);
+    expect(value.version).toBe('2.1.251');
+    expect(value.subagents).toHaveLength(1);
+    const [agent] = value.subagents;
+    expect(agent?.agentId).toBe('ab761d54060e2e548');
+    expect(agent?.meta.agentType).toBe('Explore');
+    expect(agent?.meta.spawnDepth).toBe(1);
+    expect(agent?.meta.parentAgentId).toBeUndefined();
+    expect(agent?.meta.toolUseId).toBe('toolu_019XwiUMc6MYBNDQG9wK34A7');
+
+    // 100% VIA THE JOIN KEY: the sidecar's `toolUseId` is a real `tool_use`
+    // block in the main transcript, so the attribution is a primary-key join
+    // and not an inference. Read out of the file, never written down twice.
+    const main = await entriesOf(MAIN_251);
+    const toolUseIds = main.flatMap((entry) => {
+      const message = entry['message'];
+      if (typeof message !== 'object' || message === null) return [];
+      const content = (message as { content?: unknown }).content;
+      if (!Array.isArray(content)) return [];
+      return content
+        .filter(
+          (b): b is { type: string; id: string } =>
+            typeof b === 'object' && b !== null && (b as { type?: unknown }).type === 'tool_use',
+        )
+        .map((b) => b.id);
+    });
+    expect(toolUseIds).toContain(agent?.meta.toolUseId);
+    // Every sidecar in the capture joins, not merely this one — the shape of
+    // the claim is "100%", so it is asserted as a count and not as an example.
+    const joined = value.subagents.filter((s) => toolUseIds.includes(s.meta.toolUseId));
+    expect(joined).toHaveLength(value.subagents.length);
   });
 
   it('carries agent B six scripted tool calls, in order - the mirror-pair check', async () => {

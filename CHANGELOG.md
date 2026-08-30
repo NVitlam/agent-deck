@@ -137,6 +137,39 @@ to say, it never opens itself, and **Agent Deck: Show Diagnostics** in the
 Command Palette is the only thing that reveals it. Nothing is sent anywhere and
 nothing is written to disk.
 
+### Fixed
+
+- **An OpenCode workspace that moved showed nothing.** The project key came from
+  `project.worktree`, and OpenCode keeps one project row per repository and never
+  rewrites that column when the directory moves. So every session of a moved
+  workspace - including sessions run at the *new* path - resolved to the old one,
+  matched no open folder, and the deck rendered nothing at all: absent rather than
+  refused, which looks exactly like an engine that does not work. The key now comes
+  from `session.directory`, which OpenCode does keep current, falling back to
+  `project.worktree` and never guessing. Neither committed corpus could have caught
+  it - in both, those two columns hold the same string - so a corpus was captured
+  for it and no golden byte moved.
+- **A refused session said so without saying why.** A graft that *threw* recorded
+  its message; a graft that *refused* - the ordinary, designed outcome - recorded a
+  bare count. The diagnostics channel now writes one line per refusal naming the
+  code, the file and line, the field, and what was expected against what was found.
+  Every field is a name, a type, a version or a line number: no value out of a
+  transcript reaches the channel, and the absolute path is reduced to a file name.
+- **A session imported from another machine is now documented as unsupported.**
+  Claude Code's `--teleport` writes the imported history into the local transcript
+  with a version the compatibility window does not accept, so the whole session
+  renders `unsupported`. That was already the behaviour; it was not written down.
+
+### Compatibility
+
+- **Claude Code `2.1.251` joins the test corpus.** It was reported as refusing
+  every session. It does not: the version window accepts it, and a field-level
+  comparison against the anchor found no structural drift - the entry fields, the
+  subagent directory convention and the sidecar join keys are unchanged. The
+  corpus is a witness, not a new anchor: `PINNED_CC_VERSION` stays at `2.1.246`,
+  because moving it cannot make a version work and only a fresh harvest may move
+  it. Diagnosis: `docs/evidence/release-0.5.0/DRIFT-2.1.251.md`.
+
 ### Note on `0.1.3`
 
 **This release supersedes the unreleased `0.1.3`.**

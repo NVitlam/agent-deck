@@ -119,13 +119,47 @@ interface Corpus {
  * expensive part - opening each database and scanning its bytes - happens in
  * `beforeAll`. `CORPUS_NAMES` being empty is itself asserted below.
  */
-const CORPUS_NAMES: string[] = fs.existsSync(FIXTURES)
+/**
+ * Every `fixtures/opencode-*` directory, split into the two shapes that exist,
+ * and NEITHER is discarded silently.
+ *
+ * Through v0.5.0 there was one shape — `fixtures/opencode-<version>/opencode.db`
+ * — and the filter below was `isDirectory() && startsWith('opencode-')`. On
+ * 2026-08-31 a second shape arrived: `fixtures/opencode-1.18.25/moved-project/`,
+ * a WITNESS set whose database sits one level down because the directory holds
+ * a case, not a release capture. The old filter picked its parent up as a
+ * corpus and `beforeAll` died on `unable to open database file` — a
+ * collection-time throw, which in this file is the failure mode the comment
+ * above is about.
+ *
+ * The fix is deliberately NOT "filter to directories that happen to contain
+ * `opencode.db`". That reads as tidy and is the fail-open shape rule 18 names
+ * three doors into: a corpus whose database went missing would then vanish from
+ * the list and the file would report a clean pass over the ones that remained.
+ * Instead both shapes are CLASSIFIED, and a directory matching neither is a
+ * hard failure asserted below.
+ */
+const OPENCODE_DIRS: string[] = fs.existsSync(FIXTURES)
   ? fs
       .readdirSync(FIXTURES, { withFileTypes: true })
       .filter((d) => d.isDirectory() && d.name.startsWith('opencode-'))
       .map((d) => d.name)
       .sort()
   : [];
+
+/** A directory that carries its own `opencode.db`: a release capture. */
+const CORPUS_NAMES: string[] = OPENCODE_DIRS.filter((name) =>
+  fs.existsSync(path.join(FIXTURES, name, 'opencode.db')),
+);
+
+/**
+ * A directory whose databases live in named case subdirectories: a witness set.
+ * Its cases are covered by the test that owns them
+ * (`src/opencode/moved.test.ts`), not by this file's capture-procedure audit.
+ */
+const WITNESS_DIRS: string[] = OPENCODE_DIRS.filter(
+  (name) => !CORPUS_NAMES.includes(name),
+);
 
 const corpora = new Map<string, Corpus>();
 
@@ -522,6 +556,36 @@ describe('3 - schema of the committed corpora', () => {
     // And every name found at collection time really loaded, so a corpus that
     // fails to open cannot quietly drop its own tests.
     expect(corpora.size).toBe(CORPUS_NAMES.length);
+  });
+
+  it('every fixtures/opencode-* directory is CLASSIFIED, never quietly dropped', () => {
+    /*
+     * The partition is the assertion. `CORPUS_NAMES` is now a filter over
+     * `OPENCODE_DIRS`, and a filter is exactly how a corpus disappears from a
+     * suite without anybody noticing — rule 18's shape. So: the two classes
+     * must account for every directory, both ways and by count (rule 19), and
+     * a witness directory must really carry a database somewhere under it,
+     * or it is not a witness set, it is a mistake.
+     */
+    expect([...CORPUS_NAMES, ...WITNESS_DIRS].sort()).toEqual([...OPENCODE_DIRS].sort());
+    expect(CORPUS_NAMES.length + WITNESS_DIRS.length).toBe(OPENCODE_DIRS.length);
+    for (const name of CORPUS_NAMES) {
+      expect(fs.existsSync(path.join(FIXTURES, name, 'opencode.db'))).toBe(true);
+    }
+    for (const name of WITNESS_DIRS) {
+      const dir = path.join(FIXTURES, name);
+      const cases = fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name);
+      expect(cases.length, `witness set ${name} holds no case directory`).toBeGreaterThan(0);
+      for (const c of cases) {
+        expect(
+          fs.existsSync(path.join(dir, c, 'opencode.db')),
+          `${name}/${c} carries no opencode.db`,
+        ).toBe(true);
+      }
+    }
   });
 
   it.each(CORPUS_NAMES)('%s - none of the secret-bearing tables exist', (name) => {

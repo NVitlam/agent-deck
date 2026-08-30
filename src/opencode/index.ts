@@ -345,12 +345,13 @@ function messageOf(error: unknown): string {
  *
  * **Why this does not trust the row that failed.** The session refused on
  * `session.version` — a column on the `session` row. `project.worktree`, which
- * is the only thing the match reads, lives in the **`project` table** and is
- * not what refused. Taking the match from the project row is therefore not
- * believing the shape the fingerprint rejected; it is answering a question
- * about a different row entirely. That distinction is the whole licence for
- * this exception, so it is written here rather than left for the next reader to
- * reconstruct.
+ * is the only thing the match reads *at this call site*, lives in the
+ * **`project` table** and is not what refused. Taking the match from the
+ * project row is therefore not believing the shape the fingerprint rejected; it
+ * is answering a question about a different row entirely. That distinction is
+ * the whole licence for this exception, so it is written here rather than left
+ * for the next reader to reconstruct — and the 2026-08-31 keying change was
+ * kept OUT of this path to preserve it. See the call below.
  *
  * **The line, and it is not moving.** `projectSlug` stays `''`, the tree stays
  * empty, the totals stay zero and the label stays whatever the row itself says.
@@ -369,7 +370,10 @@ function unsupportedSession(
   mismatch: OcSessionMismatch,
   sessions: readonly OcSessionRow[],
   projects: readonly OcProjectRow[],
-  matchWorkspace: (project: OcProjectRow | undefined) => boolean,
+  matchWorkspace: (
+    session: OcSessionRow | undefined,
+    project: OcProjectRow | undefined,
+  ) => boolean,
 ): SessionState {
   const row = sessions.find((s) => s.id === mismatch.sessionId);
   const project =
@@ -378,7 +382,19 @@ function unsupportedSession(
     sessionId: mismatch.sessionId,
     projectSlug: '',
     engine: 'opencode',
-    workspaceMatch: matchWorkspace(project),
+    // `undefined` FOR THE SESSION, DELIBERATELY, and it is what keeps the
+    // licence above true after the 2026-08-31 keying change. That licence is
+    // "the match does not read the row that refused": the refusal is on
+    // `session.version`, and a version out of window means we do not know how
+    // to read that row's shape, so reading ANOTHER of its columns —
+    // `session.directory` included — would be exactly the thing the paragraph
+    // says this does not do. Passing `undefined` here resolves the match from
+    // `project.worktree` alone, which is byte-identical to the behaviour this
+    // function has always had. The consequence, stated rather than hidden: a
+    // refused session in a MOVED workspace does not match, and stays on the
+    // deck only through the host's belt-and-braces half, which is why that
+    // redundancy is not to be simplified away.
+    workspaceMatch: matchWorkspace(undefined, project),
     liveness: 'unsupported',
     schemaOk: false,
     totals: { costUsd: 0 },
@@ -400,33 +416,85 @@ function unsupportedSession(
 }
 
 /**
- * `PLAN.md` Phase 4 `Amendment 2026-08-27` A1: `projectSlug` is "the project
- * key" for both engines, and the OpenCode value is the CC slug for
- * `project.worktree`. One workspace observed by two engines, one key.
+ * THE PROJECT KEY, AND WHICH COLUMN IT COMES FROM.
  *
- * A session whose `project` row is absent yields `''` — there is no worktree to
- * derive a key from, and inventing one would be a guess.
+ * `PLAN.md` Phase 4 `Amendment 2026-08-27` A1: `projectSlug` is "the project
+ * key" for both engines, and the OpenCode value is the CC slug for the
+ * session's workspace path. One workspace observed by two engines, one key.
+ *
+ * **The column changed on 2026-08-31, and this is the whole of the fix.**
+ * Through 0.5.0 the key came from `project.worktree` alone. OpenCode keeps ONE
+ * `project` row per repository identity and **never rewrites `worktree` when
+ * the directory moves** — measured on the live store, where a project row with
+ * a current `time_updated` still named a path the workspace had left, and
+ * where a session RUN AT THE NEW PATH landed on that same stale row. Every
+ * OpenCode session then keyed to the old slug, matched no open folder, and the
+ * deck showed nothing at all. **Absent, not refused** — which is the failure
+ * mode a user cannot tell from "this engine does not work".
+ *
+ * `session.directory` is the session's own cwd and OpenCode keeps it current.
+ * It is a REQUIRED column (`fingerprint.ts`'s `REQUIRED_COLUMNS`), so reading
+ * it adds no new schema dependency the fingerprint does not already assert.
+ *
+ * The order, and why it is this order:
+ *
+ *   1. `session.directory` — what this session actually ran in. Current.
+ *   2. `project.worktree`  — the fallback, for a row whose `directory` is NULL
+ *                            or empty. Both committed corpora agree with (1)
+ *                            byte for byte, so no golden moves.
+ *   3. `''`                — neither is available. NOT a guess (G3), counted as
+ *                            {@link OcEngineResult.opencodeUnkeyed}, and the
+ *                            session still renders: an unkeyed session is
+ *                            visible and unmatched, never dropped. Dropping it
+ *                            is the "a refusal invisible to the renderer is not
+ *                            a refusal" hole this file already closed once.
+ *
+ * Diagnosis and measurements: `docs/evidence/release-0.5.0/DRIFT-2.1.251.md`
+ * §5.2. Witness: `fixtures/opencode-1.18.25/moved-project/`.
  */
-function projectSlugOf(project: OcProjectRow | undefined): string {
-  return project === undefined ? '' : slugFromWorktree(project.worktree);
+function projectKeyPath(
+  session: OcSessionRow | undefined,
+  project: OcProjectRow | undefined,
+): string | undefined {
+  // `!== null && !== ''` rather than a truthiness test, so the two "no value"
+  // shapes SQLite can hand back are both handled and neither is confused with
+  // a path that merely sorts falsy.
+  const directory = session?.directory;
+  if (directory !== undefined && directory !== null && directory !== '') return directory;
+  if (project !== undefined && project.worktree !== '') return project.worktree;
+  return undefined;
+}
+
+/** See {@link projectKeyPath}. `''` means "no key available", and it is counted. */
+function projectSlugOf(
+  session: OcSessionRow | undefined,
+  project: OcProjectRow | undefined,
+): string {
+  const path = projectKeyPath(session, project);
+  return path === undefined ? '' : slugFromWorktree(path);
 }
 
 /**
- * `project.worktree` against the host's open workspace folders (OC8).
+ * The session's key path against the host's open workspace folders (OC8).
  *
  * Case-insensitive, via the slug both sides encode to. The Windows
  * drive-letter trap applies here exactly as it does to CC slugs — this repo has
  * measured both `c--Users-…` and `C--Users-…` from Claude Code, and the same
- * variance reaches a `worktree` string as `c:\` versus `C:\`.
+ * variance reaches a `directory` string as `c:\` versus `C:\`.
  *
- * `session.directory` is the session's cwd and is NOT the join key.
+ * It reads {@link projectKeyPath}, the SAME resolution the slug uses, rather
+ * than a second expression of the rule. A session whose key and whose match
+ * disagreed would be the exact module-boundary seam this engine has already
+ * been bitten by once.
  */
 function workspaceMatcher(
   workspacePaths: readonly string[],
-): (project: OcProjectRow | undefined) => boolean {
+): (session: OcSessionRow | undefined, project: OcProjectRow | undefined) => boolean {
   const wanted = new Set(workspacePaths.map((p) => slugFromWorktree(p).toLowerCase()));
-  return (project) =>
-    project !== undefined && wanted.has(slugFromWorktree(project.worktree).toLowerCase());
+  return (session, project) => {
+    const path = projectKeyPath(session, project);
+    return path !== undefined && wanted.has(slugFromWorktree(path).toLowerCase());
+  };
 }
 
 // ---------------------------------------------------------------------------

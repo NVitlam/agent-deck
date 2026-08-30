@@ -9,7 +9,9 @@ right now, and what it has cost. It works with **Claude Code** and **OpenCode**,
 panel. It observes only — it never wraps, launches, proxies or configures either of them.
 
 > **Claude Code compatibility** — anchor `2.1.246`, accepts `2.0.x` to `2.2.x`, refuses on
-> structural change, not on patch number. See [Claude Code version window](#claude-code-version-window).
+> structural change, not on patch number. **A session imported from another machine — Claude
+> Code's `--teleport` — is not supported and renders `unsupported`.** See
+> [Claude Code version window](#claude-code-version-window).
 
 <!-- engine:opencode -->
 
@@ -269,6 +271,10 @@ Notes on that block, each of them measured rather than assumed:
   would make the rendered tree wrong, and they are the ones worth refusing on.
 - Out-of-range, malformed and unreadable versions are still refused: the session renders
   `unsupported`, never a partial tree.
+- **A session imported from another machine is not supported.** Claude Code's `--teleport` writes
+  the imported history into the local transcript with a version this window does not accept, so the
+  whole session renders `unsupported` — including the part of it that continued locally. Sessions
+  started on this machine are unaffected.
 - A session whose version changes partway through — Claude Code updating itself while you work — is
   accepted while every version in it stays in range, and refused as `versionChangedMidFile` once the
   drift leaves it.

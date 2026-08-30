@@ -113,11 +113,17 @@ import {
   DIAGNOSTICS_CHANNEL_NAME,
   DiagnosticsChannel,
   SHOW_DIAGNOSTICS_COMMAND,
+  graftRefusedEvent,
 } from './bridge/diagnostics.js';
-import type { DiagnosticsCounters, DiagnosticsSinkFactory } from './bridge/diagnostics.js';
+import type {
+  DiagnosticsCounters,
+  DiagnosticsEvent,
+  DiagnosticsSinkFactory,
+} from './bridge/diagnostics.js';
 import { correlateWorkspace } from './model/correlate.js';
 import { graftSession } from './model/graft.js';
 import type { GraftSessionOptions, GraftSessionResult } from './model/graft.js';
+import { isFingerprintMismatch } from './parser/fingerprint.js';
 import { LivenessEngine } from './model/liveness.js';
 import { SessionModel, diffSessionState } from './model/session.js';
 import type { SessionDiff, SessionEmission } from './model/session.js';
@@ -806,6 +812,20 @@ export interface DataPathOptions {
   onEmission: (emission: DataPathEmission) => void;
   /** User-visible failures: a port collision, an unexpected throw. */
   onError?: (error: unknown) => void;
+  /**
+   * Receives one {@link DiagnosticsEvent} per refused graft (F2, 2026-08-31).
+   *
+   * A CALLBACK rather than a `DiagnosticsChannel` handle, for the same reason
+   * `onEmission` is one: this class must stay constructible with no channel, no
+   * `vscode`, and no output sink, and `extension.test.ts` drives it that way.
+   * The host passes `channel.record`; absent, refusals are still counted and
+   * still kept in {@link DataPathDiagnostics.lastGraftRefusal}, they simply do
+   * not produce a line.
+   *
+   * Throwing from it is the caller's problem and is caught at the call site —
+   * a diagnostics sink must never be able to break a graft.
+   */
+  onDiagnostic?: (event: DiagnosticsEvent) => void;
   /** Overrides `resolveProjectsRoot` entirely. Tests and fixture replay. */
   projectsRoot?: string;
   env?: Record<string, string | undefined>;
@@ -899,6 +919,24 @@ export interface DataPathDiagnostics {
   graftErrors: number;
   lastGraftError?: string;
   /**
+   * The most recent REFUSAL, kept exactly the way {@link lastGraftError} keeps
+   * the most recent throw (F2, 2026-08-31).
+   *
+   * The asymmetry this closes: a graft that threw was explained and a graft
+   * that refused was a bare number, and refusal is the designed path. Every
+   * field here is a name, a type, a version or a line number — never a value
+   * out of a transcript; `graftRefusedEvent` in `bridge/diagnostics.ts` owns
+   * that contract and the path reduction that goes with it.
+   */
+  lastGraftRefusal?: {
+    sessionId: string;
+    code: string;
+    at?: string;
+    field?: string;
+    expected?: string;
+    actual?: string;
+  };
+  /**
    * Malformed transcript lines across every session currently observed
    * (DoD 5.5.3).
    *
@@ -967,6 +1005,7 @@ export class AgentDeckDataPath {
   readonly #ccEnabled: boolean;
   readonly #onEmission: (emission: DataPathEmission) => void;
   readonly #onError: (error: unknown) => void;
+  readonly #onDiagnostic?: (event: DiagnosticsEvent) => void;
   readonly #scheduler: Scheduler;
   readonly #coalesceMs: number;
   readonly #tickMs: number;
@@ -1001,6 +1040,7 @@ export class AgentDeckDataPath {
   readonly #parseLevels = new Map<string, { malformed: number; ignored: number }>();
   #graftErrors = 0;
   #lastGraftError?: string;
+  #lastGraftRefusal?: DataPathDiagnostics['lastGraftRefusal'];
   #consumerErrors = 0;
   #ccEmitErrors = 0;
   #opencodeEmitErrors = 0;
@@ -1013,6 +1053,7 @@ export class AgentDeckDataPath {
     this.settings = options.settings;
     this.#onEmission = options.onEmission;
     this.#onError = options.onError ?? ((): void => {});
+    this.#onDiagnostic = options.onDiagnostic;
     this.#scheduler = options.scheduler ?? systemScheduler;
     this.#coalesceMs = options.coalesceMs ?? EMIT_COALESCE_MS;
     this.#tickMs = options.tickMs ?? LIVENESS_TICK_MS;
@@ -1097,6 +1138,9 @@ export class AgentDeckDataPath {
       opencode: this.opencode.diagnostics,
       ...(this.#bindError !== undefined ? { bindError: this.#bindError } : {}),
       ...(this.#lastGraftError !== undefined ? { lastGraftError: this.#lastGraftError } : {}),
+      ...(this.#lastGraftRefusal !== undefined
+        ? { lastGraftRefusal: this.#lastGraftRefusal }
+        : {}),
     };
   }
 
@@ -1391,7 +1435,43 @@ export class AgentDeckDataPath {
         previewBytes: this.settings.previewBytes,
       });
       if (this.#disposed) return;
-      if (!result.ok) this.#graftRefusals += 1;
+      if (!result.ok) {
+        this.#graftRefusals += 1;
+        /*
+         * F2 — THE REASON, NOT JUST THE COUNT.
+         *
+         * `result.mismatch` used to be handed to `ingestGraftResult` and
+         * forgotten. `graftRefusals=N` then said a refusal happened and nothing
+         * about which session, which file, which line, or what disagreed —
+         * while the rarer THROW path kept its message and printed it. On
+         * 2026-08-31 that gap made one teleported transcript
+         * (`version: "1.0"`) read as "the CC adapter is broken on 2.1.251".
+         *
+         * Built through `graftRefusedEvent` rather than inline, so the level
+         * below and the line cannot describe the refusal differently and the
+         * path reduction cannot be skipped by one of the two.
+         */
+        const event = graftRefusedEvent(sessionId, 'cc', {
+          code: isFingerprintMismatch(result.mismatch) ? result.mismatch.code : 'schemaMismatch',
+          ...(result.mismatch.path === undefined ? {} : { path: result.mismatch.path }),
+          ...(result.mismatch.field === undefined ? {} : { field: result.mismatch.field }),
+          ...(result.mismatch.expected === undefined
+            ? {}
+            : { expected: result.mismatch.expected }),
+          ...(result.mismatch.actual === undefined ? {} : { actual: result.mismatch.actual }),
+        });
+        if (event.kind === 'graftRefused') {
+          const { kind: _kind, engine: _engine, ...level } = event;
+          this.#lastGraftRefusal = level;
+        }
+        // A diagnostics sink must never be able to break a graft. Counted as a
+        // consumer error, the same as a throwing `onEmission`.
+        try {
+          this.#onDiagnostic?.(event);
+        } catch {
+          this.#consumerErrors += 1;
+        }
+      }
       // Per-session LEVELS, replaced rather than accumulated. See
       // `DataPathDiagnostics.malformedLines` for why a running total would be
       // wrong by a factor of "how live is this session".
@@ -1757,6 +1837,11 @@ export class AgentDeckHost {
         this.#panel?.publish(payload);
         onEmission(payload);
       },
+      // F2. Read through `this.diagnostics` at CALL time rather than captured,
+      // so the arrow is valid whether or not a sink factory was supplied — a
+      // host with no channel records nothing and behaves identically, which is
+      // the property every host test relies on.
+      onDiagnostic: (event: DiagnosticsEvent) => this.diagnostics?.record(event),
     });
   }
 

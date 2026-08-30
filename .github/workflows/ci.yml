@@ -8,10 +8,25 @@
 # unproven leg that goes red teaches everyone to ignore CI. Add one only after
 # the suite has been made to pass on Linux locally.
 #
-# WHAT THIS FILE CANNOT TELL YOU: nothing here has been observed running. The
-# repository is private and no run has been executed against it. The workflow is
-# authored and internally consistent with package.json - src/release/workflow.test.ts
-# asserts that much and nothing more. A green run is remote-pending.
+# WHAT THIS FILE CANNOT TELL YOU - REWRITTEN 2026-08-30, because what it used
+# to say stopped being true and stayed on the page. It read: 'nothing here has
+# been observed running. The repository is private and no run has been executed
+# against it.'
+#
+# Runs have been executed. 49 of them across this repository's history, 10 of
+# them on release/0.5.0, and every one of those 10 FAILED - measured over the
+# whole run history rather than off one page of results. They failed on the
+# checkout-translation step below, which until 2026-08-29 asserted 'no byte 13
+# under fixtures/' and so went red on three files whose CRs are authentic
+# captured bytes. The guard was asking the wrong question; it asks the right one
+# now.
+#
+# So what this file still cannot tell you is narrower and worth stating exactly:
+# src/release/workflow.test.ts reads this YAML as text and asserts its structure
+# without a YAML parser, so it cannot evaluate Actions context rules - it stayed
+# green through a workflow GitHub refused to parse at all. A green RUN is the
+# only evidence that this file works, it is DoD 8.6, and at the time of writing
+# there has never been one on this branch.
 
 name: CI
 
@@ -86,7 +101,11 @@ jobs:
       - name: Use Node 24
         uses: actions/setup-node@v4
         with:
-          # package.json engines.node is '>=20'.
+          # package.json engines.node is '>=22.22.2' - jsdom@30 and its
+          # transitive undici@8 set that floor, and the manifest declared
+          # '>=20' for four phases while nothing could run on 20. This
+          # comment said '>=20' until 2026-08-30, quoting the version of the
+          # manifest that was wrong. 24 satisfies the real floor.
           node-version: '24'
           cache: npm
 

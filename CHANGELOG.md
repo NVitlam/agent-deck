@@ -2,7 +2,7 @@
 
 All notable changes to Agent Deck for Claude Code are documented here.
 
-## 0.5.0 - a second engine, a real tree, and the numbers that were wrong
+## 0.5.0 - 2026-08-30 - a second engine, a real tree, and the numbers that were wrong
 
 **Agent Deck now watches OpenCode sessions as well as Claude Code ones**, renders
 a session's topology as a tree rather than a cloud of blobs, and reports token
@@ -139,10 +139,19 @@ nothing is written to disk.
 
 ### Note on `0.1.3`
 
+**This release supersedes the unreleased `0.1.3`.**
+
 `0.1.3` was built, verified by side-load, and **never published**. Its two fixes
 are the two above and they reach you here. There is no `0.1.3` on the
 Marketplace and there will not be one; `0.1.2` is the version this release
 follows.
+
+If you are reading the repository rather than the Marketplace: the `hotfix/0.1.3`
+branch is kept, not merged and not deleted. Both of its fixes are present on this
+release line already - established by looking for the identifiers on both
+branches rather than by reading the merge graph - so merging it would add nothing
+and deleting it would discard the reference for a build somebody signed off by
+running it.
 
 ## 0.1.2 - compatibility fix
 

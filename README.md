@@ -30,7 +30,7 @@ panel. It observes only — it never wraps, launches, proxies or configures eith
 their session is working. Three layouts (List, Grid, Lanes), three sort orders (Live first, Recent,
 Engine), and chips to filter by liveness or by engine. Keyboard: `A C O`, `1 2 3`, `L R E`.
 
-![The deck](media/deck.png)
+![The deck: every session on the machine, both engines](media/Session_Deck.png)
 
 **The tree** — one session's interior. Every agent is a node; children sit under the parent that
 spawned them, in spawn order; a filament runs from each parent to every agent it spawned. A node
@@ -40,12 +40,10 @@ and nothing is ever cut short with an ellipsis — a long label wraps and carrie
 hover. Anything that cannot be attached to a parent goes to a parked rail carrying the reason,
 because unplaced data is shown as unplaced and never guessed into position.
 
-![The tree](media/tree.png)
+![One session, 16 agents, live tree](media/hero_16_agent_session.png)
 
 **Focus** — click any agent to re-root the tree on it and read one branch of a wide run on its own.
 The breadcrumb walks back out; Reset view returns to the whole session, fitted.
-
-![Focus view](media/focus.png)
 
 **The inspector** — a drawer along the bottom, the width of the panel. Its header carries the
 selected node's status, its numbers and its duration; below, every tool call in that agent is listed
@@ -54,13 +52,15 @@ row to read its payload beside the list. **Show details** / **Hide details** col
 and **close** dismisses a row. An oldest-first list follows new calls as they arrive until you open
 one or scroll away.
 
+![Inspector: tool calls of the selected agent](media/Internal_Session_Tool_popup.png)
+
+![Inspector: one call expanded](media/Internal_Session_Tool_popup2.png)
+
 **Two numbers, because they answer different questions.** **Context** is the last message's prompt —
 a level, what is in the window now, which goes up and down. **Burn** is the running total across the
 session — it only goes up. There is no percentage, because no session states the model's window
 size, and guessing one from a model name would be a number we made up. **Cost** is rendered where it
 belongs on the tree; there are no cost dashboards.
-
-![Agent Deck in use](media/demo.gif)
 
 ## Trust
 

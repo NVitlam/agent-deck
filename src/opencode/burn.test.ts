@@ -306,6 +306,59 @@ describe.each(CORPORA)('burn — %s', (corpusName) => {
     );
   });
 
+  it("OpenCode's OWN total includes reasoning — read from the step rows, not derived", () => {
+    /*
+     * THE MEASUREMENT THE TEST BELOW RESTS ON, AND IT WAS MISSING.
+     *
+     * `phase-verifier` found that the reasoning test computed "OpenCode's
+     * total" itself, from the same five session columns it was comparing
+     * against — making it an algebraic identity in those terms rather than a
+     * check on OpenCode's behaviour. The premise "OpenCode's own total adds
+     * every bucket INCLUDING reasoning" was assumed by the arithmetic, not
+     * asserted. That is this repository's most-recorded defect class: a true
+     * document resting on an assertion that cannot fail.
+     *
+     * `tokens.total` is the one field where OpenCode states its own total, it
+     * is present on every `step-finish` row, and nothing was reading it. This
+     * test reads it.
+     */
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const rows = db
+        .prepare("SELECT data FROM part WHERE json_extract(data,'$.type')='step-finish'")
+        .all() as { data: string }[];
+      expect(rows.length).toBeGreaterThan(0);
+      let discriminating = 0;
+      for (const row of rows) {
+        const t = (JSON.parse(row.data) as { tokens?: Record<string, unknown> }).tokens;
+        if (t === undefined || t['total'] === undefined) continue;
+        const cache = (t['cache'] ?? {}) as { read?: number; write?: number };
+        const reasoning = Number(t['reasoning'] ?? 0);
+        const withReasoning =
+          Number(t['input'] ?? 0) +
+          Number(t['output'] ?? 0) +
+          reasoning +
+          Number(cache.read ?? 0) +
+          Number(cache.write ?? 0);
+        // OpenCode's own number equals the sum of every bucket, reasoning
+        // included. This is the claim; everything else about reasoning follows.
+        expect(Number(t['total']), 'OpenCode total').toBe(withReasoning);
+        if (reasoning > 0) discriminating++;
+      }
+      // Named, not hidden: on a corpus with no reasoning anywhere the identity
+      // above holds for a trivial reason and proves nothing about reasoning.
+      if (discriminating === 0) {
+        expect(
+          rows.length,
+          'no step row here carries reasoning, so this corpus cannot discriminate — ' +
+            'that is the reason, not a pass',
+        ).toBeGreaterThan(0);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
   it('reasoning is in NEITHER field, and the gap to OpenCode total is exactly it', () => {
     /*
      * The decision, pinned. `tokens_reasoning` is its own column and OpenCode's
@@ -348,6 +401,32 @@ describe.each(CORPORA)('burn — %s', (corpusName) => {
         'no reasoning anywhere, so this corpus cannot discriminate — that is the reason, not a pass',
       ).toBe(true);
     }
+  });
+
+  it('RECORDS what this corpus cannot prove about tokens_cache_write', () => {
+    /*
+     * A COVERAGE GAP, ASSERTED SO IT CANNOT BE MISTAKEN FOR COVERAGE.
+     *
+     * `burn.prompt` is `input + cache_read + cache_write`. Measured on both
+     * committed corpora: `tokens_cache_write` is **0 on every session**. So
+     * every test in this file passes identically whether that third term is
+     * included or ignored — the fixtures cannot tell the two mappings apart,
+     * and a reader counting green ticks would never know.
+     *
+     * The live 1.18.25 store the change was measured against is the only
+     * witness, and a live store cannot be committed. Rather than leave the gap
+     * silent, this asserts the gap itself: if a future harvest ever brings a
+     * corpus with a non-zero `cache_write`, this test goes RED and whoever sees
+     * it should delete it, because at that point the coverage is real.
+     */
+    const columns = sessionColumns(dbPath);
+    expect(columns.size).toBeGreaterThan(0);
+    const writes = [...columns.values()].map((c) => c.write);
+    expect(
+      writes.every((w) => w === 0),
+      'a corpus with non-zero tokens_cache_write now exists — the cache_write leg of ' +
+        'burn.prompt is genuinely covered, and this placeholder should be deleted',
+    ).toBe(true);
   });
 
   it('contextNow is still absent on every session and node', () => {

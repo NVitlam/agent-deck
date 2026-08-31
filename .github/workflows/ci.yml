@@ -156,47 +156,36 @@ jobs:
         run: |
           node -e 'const {execFileSync}=require("node:child_process");const roots=["fixtures","webview/wire"];const out=execFileSync("git",["ls-files","--eol","-z","--"].concat(roots),{maxBuffer:1<<28}).toString("utf8");const rows=out.split("\0").filter(Boolean);const bad=[];for(const r of rows){const m=r.match(/^i\/(\S+)\s+w\/(\S+)\s+attr\/(\S*)\s*\t(.*)$/);if(!m){bad.push("UNPARSED: "+r);continue;}if(m[1]!==m[2])bad.push(m[4]+"  index="+m[1]+" worktree="+m[2]);}console.log("files scanned: "+rows.length+", translated on checkout: "+bad.length);for(const b of bad)console.log("  "+b);if(bad.length){console.error("gitattributes -text did not survive checkout: byte offsets and byte-exact goldens are no longer trustworthy");process.exit(1);}'
 
-      # The spike audit is this repo's layout regression guard, independent of
-      # the TypeScript suite: it re-derives the subagent attribution join from
-      # the committed fixture tree.
+      # THE SPIKE LAYOUT AUDIT STEP WAS REMOVED HERE ON 2026-08-31, and the
+      # reason is worth more than the step was.
       #
-      # MEASURED LIMIT, so nobody mistakes it for something it is not: this step
-      # is NOT a CRLF detector. Converting the whole fixture tree to CRLF and
-      # re-running it produced identical output and exit 0 - the reader splits on
-      # LF and JSON.parse treats the stray CR as whitespace. The step above is
-      # the CRLF check; this one is the layout check.
+      # It ran `node spike/run.mjs --audit`. `spike/` is GITIGNORED
+      # (.gitignore:71, `/spike/`) and has not been in this repository since the
+      # 2026-08-28 public-exposure scrub moved the working method into the
+      # private half. `git check-ignore -v spike/run.mjs` reports the rule; the
+      # path does not exist in a checkout at all. So on a runner the step could
+      # only ever exit 1 on a missing module, and it did.
       #
-      # --project takes a workspace path, which the tailer slugifies and matches
-      # case-insensitively against a directory under CLAUDE_PROJECTS_ROOT. That
-      # slug encodes the CAPTURE machine's absolute path, so the runner's
-      # workspace can never match it: deriving the argument from GITHUB_WORKSPACE
-      # exits 2 with 'no project slug dir for ...'. It is derived from the
-      # fixture directory instead - neither hard-coded nor machine-bound.
+      # It was NOT the reason CI was red before 2026-08-29 - that was the
+      # checkout-translation guard above, asking the wrong question - which is
+      # why this one survived the last CI fix: the run died earlier, so nobody
+      # saw the step behind it fail.
       #
-      # Counts are asserted as zeros plus 'at least one resolved' rather than
-      # pinned to today's 5: fixture-set sizes change on the next harvest and a
-      # pinned count reads as a regression when they do.
-      - name: Spike layout audit (subagent attribution join)
-        shell: bash
-        run: |
-          root=fixtures/cc-2.1.234/projects
-          dirs=$(find "$root" -mindepth 1 -maxdepth 1 -type d)
-          count=$(printf '%s\n' "$dirs" | grep -c .)
-          if [ "$count" -ne 1 ]; then
-            echo "expected exactly 1 slug dir under $root, found $count" >&2
-            exit 1
-          fi
-          slug=$(basename "$dirs")
-          echo "project slug under audit: $slug"
-          out=$(CLAUDE_PROJECTS_ROOT="$root" node spike/run.mjs --audit --project "$slug" --all)
-          echo "$out"
-          echo "$out" | grep -Eq '^  RESOLVED +: [1-9][0-9]*$'
-          echo "$out" | grep -Eq '^  AMBIGUOUS +: 0$'
-          echo "$out" | grep -Eq '^  UNRESOLVED +: 0$'
-          echo "$out" | grep -Eq '^  malformed lines skipped: 0$'
-          echo "$out" | grep -Fq 'VERDICT: DETERMINISTIC'
-          echo "spike layout audit OK"
-
+      # WHAT IS LOST, stated rather than glossed: this was the layout regression
+      # guard that was INDEPENDENT of the TypeScript suite. It re-derived the
+      # subagent attribution join from the committed fixture tree with a
+      # different reader. `src/parser/attribution.test.ts` and
+      # `src/parser/corpus.test.ts` still assert that join against the same
+      # fixtures through the production path, so the property is covered - by
+      # one implementation instead of two. Restoring the second reader means
+      # bringing a copy of the audit into the public repository, and that is a
+      # scrub decision, not a CI one.
+      #
+      # The class this belongs to: a gate step naming a path the repository does
+      # not contain. Everything either workflow names was checked with
+      # `git check-ignore -v` on 2026-08-31; the only other ignored path is
+      # `dist/agent-deck.vsix` in release.yml, which is correct - it is produced
+      # by `npm run package` two steps above the step that reads it.
       - name: Install dependencies
         run: npm ci
 

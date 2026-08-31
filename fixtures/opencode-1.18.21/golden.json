@@ -32,7 +32,10 @@
         "costUsd": 0
       },
       "contextNow": null,
-      "burn": null,
+      "burn": {
+        "prompt": 20395,
+        "output": 151
+      },
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -43,7 +46,10 @@
         "status": "done",
         "spawnDepth": 0,
         "contextNow": null,
-        "burn": null,
+        "burn": {
+          "prompt": 20395,
+          "output": 151
+        },
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 186537,
         "children": [
@@ -82,7 +88,10 @@
         "costUsd": 0
       },
       "contextNow": null,
-      "burn": null,
+      "burn": {
+        "prompt": 20395,
+        "output": 237
+      },
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -93,7 +102,10 @@
         "status": "done",
         "spawnDepth": 0,
         "contextNow": null,
-        "burn": null,
+        "burn": {
+          "prompt": 20395,
+          "output": 237
+        },
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 301180,
         "children": [
@@ -152,7 +164,10 @@
         "costUsd": 0
       },
       "contextNow": null,
-      "burn": null,
+      "burn": {
+        "prompt": 2255800,
+        "output": 22858
+      },
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -163,7 +178,10 @@
         "status": "done",
         "spawnDepth": 0,
         "contextNow": null,
-        "burn": null,
+        "burn": {
+          "prompt": 2255800,
+          "output": 22858
+        },
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 7201928,
         "children": [
@@ -712,7 +730,10 @@
         "costUsd": 0
       },
       "contextNow": null,
-      "burn": null,
+      "burn": {
+        "prompt": 2746251,
+        "output": 62179
+      },
       "spawnEdges": [
         {
           "toolUseId": "BPdVjLtL6POCGlDFPuxjVLra5ovq1B84",
@@ -731,7 +752,10 @@
         "status": "done",
         "spawnDepth": 0,
         "contextNow": null,
-        "burn": null,
+        "burn": {
+          "prompt": 2736068,
+          "output": 62153
+        },
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 11523106,
         "children": [
@@ -903,7 +927,10 @@
             "status": "done",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 10183,
+              "output": 26
+            },
             "startedAtOffsetMs": 2491331,
             "endedAtOffsetMs": 2575482,
             "children": []

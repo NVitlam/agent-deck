@@ -487,6 +487,16 @@ interface BuildContext {
   readonly spawnEdges: SpawnEdge[];
   readonly parked: ParkedGraft[];
   readonly totals: { costUsd: number };
+  /**
+   * The session-level {@link SessionState.burn}, accumulated over every agent
+   * in the tree exactly as `totals.costUsd` is (added 2026-08-31).
+   *
+   * A sibling of `totals` rather than a member of it: `totals` is
+   * `SessionState.totals`, whose shape is `{ costUsd }` and whose two token
+   * fields were REMOVED rather than renamed at the Phase 7 gate. Putting a
+   * token figure back inside it would re-create the field that removal was for.
+   */
+  readonly burn: { prompt: number; output: number };
 }
 
 /**
@@ -508,6 +518,12 @@ function buildAgent(session: OcSessionRow, depth: number, ctx: BuildContext): Ag
   // sum, and adding the same values in a different order can differ in the
   // last bits, which a byte-for-byte golden comparison sees.
   ctx.totals.costUsd += session.cost;
+  // Same pre-order, same reason. These are integers so order cannot change the
+  // sum, and they are accumulated here anyway rather than in a second walk:
+  // one traversal means the node's own `burn` and the session's can never
+  // disagree about which agents were counted.
+  ctx.burn.prompt += session.tokensInput + session.tokensCacheRead + session.tokensCacheWrite;
+  ctx.burn.output += session.tokensOutput;
 
   const nodeId = depth === 0 ? 'root' : session.id;
   const tools = [...(ctx.toolsBySession.get(session.id) ?? [])].sort(compareToolRecords);
@@ -594,25 +610,54 @@ function buildAgent(session: OcSessionRow, depth: number, ctx: BuildContext): Ag
     spawnDepth: depth,
     children,
     /*
-     * `contextNow` and `burn` are OMITTED, deliberately, and this is the whole
-     * of the OpenCode token story for now.
+     * `burn` IS EMITTED as of 2026-08-31. `contextNow` is still omitted.
      *
-     * `session.tokens_input` IS a genuine session-cumulative total — measured
-     * on the anchor corpus, all 24 sessions equal the sum of their own
-     * `step-finish` part rows, and `src/opencode/graft.test.ts` pins that. It
-     * is still the WRONG number for `TokenPair.prompt`, because it counts only
-     * UNCACHED input: across the same corpus `tokens.cache.read` sums to
-     * 8,875,276 against `tokens.input`'s 1,227,047, so a session whose prompt
-     * is mostly cache would report roughly a seventh of what it sent. That is
-     * exactly the defect `TokenPair` was introduced to remove, arriving
-     * through a second engine, so it is NOT mapped.
+     * ---- what the old comment here got right, and where it stopped ----
      *
-     * The correct figure is reachable — `input + cache.read + cache.write` per
-     * `step-finish` row — but nothing reads those rows yet, and building that
-     * reader is deferred by user decision at the Phase 7 gate rather than
-     * guessed at here. Until then the keys are ABSENT, never 0: absent renders
-     * as `EM_DASH` ("we do not have this number") and 0 would be a claim.
+     * It rejected `session.tokens_input` as `TokenPair.prompt`, and it was
+     * right to: that column is UNCACHED input only, and on the anchor corpus
+     * `tokens.cache.read` sums to 8,875,276 against `tokens.input`'s 1,227,047
+     * — a session whose prompt is mostly cache would report about a seventh of
+     * what it sent, which is the exact defect `TokenPair` exists to remove.
+     *
+     * Where it stopped: it concluded the figure was reachable only "per
+     * `step-finish` row", and so deferred the whole thing behind a part reader.
+     * **One step further and no reader is needed.** The session row's own
+     * columns already carry it:
+     *
+     *     tokens_input + tokens_cache_read + tokens_cache_write  ==  Σ prompt
+     *     tokens_output                                          ==  Σ output
+     *
+     * over that session's `step-finish` rows. Verified as an identity on
+     * **78 of 78** sessions that have step rows — 5 of 5 in
+     * `fixtures/opencode-1.18.21`, 24 of 24 in `fixtures/opencode-1.18.22`,
+     * 49 of 49 in a live 1.18.25 store — with zero mismatches.
+     * `docs/evidence/release-0.5.0/OC-CTX.md` §2.4 is the measurement and
+     * `graft.test.ts` pins it against the corpora rather than quoting it.
+     *
+     * ---- reasoning is NOT in this number, and that is OpenCode's own shape ----
+     *
+     * `tokens_reasoning` is a separate column from `tokens_output`. Measured on
+     * the 8 rows across the corpora and the live store where `reasoning > 0`:
+     * the row's own `total` equals the sum of every bucket INCLUDING reasoning,
+     * so OpenCode's displayed total is larger than `burn.prompt + burn.output`
+     * by exactly `tokens_reasoning`. `TokenPair` has two fields and reasoning is
+     * neither, so it is left out rather than folded into `output` — folding it
+     * in would make our output figure disagree with the column OpenCode calls
+     * output.
+     *
+     * ---- contextNow stays absent, and it is the 0.5.1 item ----
+     *
+     * A context window is a LEVEL and cannot be recovered from a total, so it
+     * genuinely does need the last `step-finish` row — the reader this file
+     * still does not have. The key stays ABSENT, never 0: absent renders as
+     * `EM_DASH` ("we do not have this number") and 0 would be a claim.
+     * `PLAN.md` §0's CARRY-BACK DEBT item 2 carries it.
      */
+    burn: {
+      prompt: session.tokensInput + session.tokensCacheRead + session.tokensCacheWrite,
+      output: session.tokensOutput,
+    },
     startedAt: session.timeCreated,
     /*
      * `endedAt`: OC4 makes `time_archived` the session-end signal. It is NULL
@@ -713,6 +758,7 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
     const spawnEdges: SpawnEdge[] = [];
     const parked: ParkedGraft[] = [];
     const totals = { costUsd: 0 };
+    const burn = { prompt: 0, output: 0 };
     const rootNode = buildAgent(root, 0, {
       childrenOf,
       toolsBySession: parse.toolsBySession,
@@ -722,6 +768,7 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
       spawnEdges,
       parked,
       totals,
+      burn,
     });
     const project = projects.find((p) => p.id === root.projectId);
     // Resolved ONCE, so the counter below and the field cannot disagree about
@@ -743,6 +790,10 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
       // the grafter has no refusal of its own to express.
       schemaOk: true,
       totals,
+      // Emitted since 2026-08-31. `contextNow` is still ABSENT: a level cannot be
+      // recovered from a total, so it needs the step-finish reader this engine
+      // does not have yet (PLAN.md §0 CARRY-BACK DEBT item 2, now 0.5.1).
+      burn,
       spawnEdges,
       parked,
       root: rootNode,

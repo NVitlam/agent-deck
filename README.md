@@ -116,10 +116,10 @@ actually read are not what the corpus pinned, that session renders `unsupported`
 half-built tree. A database holding sessions written by several versions is normal, and the window
 is applied per session, not to the file.
 
-**One thing it does not do yet.** An OpenCode session's **context** figure reads as an em dash. Its
-stored token totals count only uncached input, which would understate the real prompt by roughly an
-order of magnitude, so an honest absence is shown rather than a wrong number — never a `0`. **Burn**
-is present.
+**One thing it does not do yet.** An OpenCode session's **burn** is present and counts the whole
+prompt, cached tokens included; its **context** figure reads as an em dash, because that number is
+a level rather than a total and Agent Deck does not yet read the per-step rows that carry it — so an
+honest absence is shown rather than a wrong one, never a `0`.
 
 <!-- /engine:opencode -->
 

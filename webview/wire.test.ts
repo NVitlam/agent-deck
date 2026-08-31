@@ -386,19 +386,37 @@ describe('the corpus is a recording of the real wire', () => {
     }
   });
 
-  it('the OpenCode sessions report NO tokens, which is the em-dash path', () => {
-    // The second engine reports neither `contextNow` nor `burn`, and this is
-    // the corpus that puts that in front of the renderer. Asserted as absence
-    // rather than as a rendered dash: a `0` here would be a wrong number, and
-    // `webview/stress.test.ts` is where the dash itself is read off the card.
+  it('the OpenCode sessions report burn but NOT context — the half-em-dash path', () => {
+    /*
+     * **This test asserted that BOTH figures were absent until 2026-08-31.**
+     * That was right when it was written and it is the assertion own-eyes 9.4
+     * eventually contradicted from the other side: OpenCode's own UI showed a
+     * token count while our card showed a dash. `burn` is emitted now — the
+     * whole prompt, cache included — and `contextNow` is still absent, because
+     * a context window is a LEVEL and cannot be recovered from a cumulative
+     * total.
+     *
+     * Asserted as presence and absence rather than as rendered glyphs: a `0`
+     * here would be a wrong number, and the dash itself is read off the card in
+     * the theater test below and in `webview/stress.test.ts`.
+     */
     const corpus = openCodeRecorded();
+    let withBurn = 0;
     for (const session of corpus.final.sessions) {
       expect(session.contextNow ?? null, session.sessionId).toBeNull();
-      expect(session.burn ?? null, session.sessionId).toBeNull();
+      if (!session.schemaOk) continue;
+      const burn = session.burn;
+      expect(burn, session.sessionId).toBeDefined();
+      expect(burn?.prompt, session.sessionId).toBeGreaterThan(0);
+      withBurn += 1;
     }
-    // The control: the CC corpus does report them, so absence is a fact about
-    // the OpenCode engine rather than about this assertion.
+    // Vacuity control: a corpus of nothing but refused sessions would satisfy
+    // the loop above without ever entering the branch that matters.
+    expect(withBurn).toBeGreaterThan(0);
+    // The control that keeps `contextNow`'s absence a fact about the OpenCode
+    // engine rather than about this corpus: the CC arc reports both.
     expect(recorded().final.sessions.some((s) => s.burn !== undefined)).toBe(true);
+    expect(recorded().final.sessions.some((s) => s.contextNow !== undefined)).toBe(true);
   });
 
   it('the OpenCode arc carries a parked graft, which nothing else here does', () => {
@@ -836,10 +854,20 @@ describe('the built theater page', () => {
       await settle();
 
       expect(query('[data-testid="deck-blob"]')).toBe(oc.final.sessions.length);
-      // The OpenCode half of the same pair: every card's token figure is the
-      // em-dash, because that engine reports no burn — and the CC assertion
-      // above is what stops that reading as "the card is broken".
-      expect(checkDeckFigures(doc, oc).numeric).toBe(0);
+      /*
+       * **This asserted `0` until 2026-08-31** — every OpenCode card showing an
+       * em-dash, because the engine reported no burn. That is the exact thing
+       * own-eyes 9.4 reported as a defect, and it is now a real figure.
+       *
+       * `checkDeckFigures` reads each card against its own state, so this is
+       * the count of cards that rendered a NUMBER, and every schema-ok session
+       * in this corpus should. The em-dash path is not lost: `contextNow` is
+       * still absent for this engine and the drawer's context field is where
+       * that dash is now read.
+       */
+      const ocFigures = checkDeckFigures(doc, oc);
+      expect(ocFigures.numeric).toBe(oc.final.sessions.filter((s) => s.schemaOk).length);
+      expect(ocFigures.numeric).toBeGreaterThan(0);
       // Every card says which engine it came from, and they all say the same
       // thing here because this corpus is one engine's.
       const engines = [...doc.querySelectorAll('[data-testid="deck-blob"]')].map((c) =>

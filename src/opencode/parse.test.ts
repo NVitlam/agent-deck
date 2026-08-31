@@ -512,7 +512,26 @@ describe.each(CORPUS_NAMES)('corpus %s', (corpusName) => {
       .filter((n) => !quoted.includes(n))
       .filter((n) => serialized.includes(n) || rawFields.includes(n));
     expect(hits, `reasoning bytes reached the records: ${hits.slice(0, 2).join(' | ')}`).toEqual([]);
-  });
+    /*
+     * AN EXPLICIT BUDGET, on the pattern the two other heavy bodies in this
+     * file already carry (`}, 60_000)` at the corpus load and at the byte
+     * census). This one was missed.
+     *
+     * It cost a red gate on 2026-08-31: `Test timed out in 5000ms` — vitest's
+     * DEFAULT, because no argument was passed — on runs 2 and 3 of a
+     * three-run gate whose run 1 was green on the identical tree. The body
+     * measured 5,656 ms against the 5,000 ms default, i.e. it had been sitting
+     * on the line and a busier machine pushed it over.
+     *
+     * The work is genuinely O(needles x haystack): every reasoning needle is
+     * searched against a joined blob of every non-reasoning row and again
+     * against the serialized records. That is the price of asserting G4 over
+     * raw bytes rather than over a field name, and it is worth paying — but a
+     * test that passes or fails by CPU load is a defect report about the test,
+     * which is this repository's own recorded rule. The budget is the fix; the
+     * assertions are untouched.
+     */
+  }, 60_000);
 
   it('leaves no dropped field name in any preview', () => {
     const records = [...result.toolsBySession.values()].flat();

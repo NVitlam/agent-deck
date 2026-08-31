@@ -160,6 +160,12 @@ nothing is written to disk.
   with a version the compatibility window does not accept, so the whole session
   renders `unsupported`. That was already the behaviour; it was not written down.
 
+- **An OpenCode session now reports its token burn.** It read as an em dash, and the README said
+  otherwise. The figure counts the whole prompt — cached tokens included, which is most of it on a
+  long session — rather than the uncached input alone that would have understated it roughly
+  sevenfold. **Context** still reads as an em dash for OpenCode: that number is a level rather than
+  a total and needs per-step data Agent Deck does not read yet.
+
 ### Compatibility
 
 - **Claude Code `2.1.251` joins the test corpus.** It was reported as refusing

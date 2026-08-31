@@ -246,9 +246,26 @@ const HANDSHAKE_SQL = 'SELECT count(*) AS n FROM sqlite_master';
 
 const PROJECT_SQL = 'SELECT id, worktree, vcs FROM project ORDER BY id';
 
+/**
+ * The cache columns joined this SELECT on 2026-08-31, and that is the whole of
+ * the `burn` fix.
+ *
+ * `tokens_input` alone is UNCACHED input: on `fixtures/opencode-1.18.22` it sums
+ * to 1,227,047 against `tokens_cache_read`'s 8,875,276, so a session whose
+ * prompt is mostly cache reports roughly a seventh of what it sent. Adding the
+ * two cache columns gives the whole of `TokenPair.prompt` — verified as an
+ * identity against the per-step `step-finish` rows on **78 of 78** sessions
+ * across both corpora and the live store
+ * (`docs/evidence/release-0.5.0/OC-CTX.md` §2.4).
+ *
+ * `tokens_reasoning` is deliberately still NOT selected: it is its own bucket in
+ * OpenCode's schema, neither prompt nor output, and `TokenPair` has no place for
+ * it. See `graft.ts` where `burn` is assembled.
+ */
 const SESSION_SQL =
   'SELECT id, project_id, parent_id, slug, directory, title, version, agent, model, cost,' +
-  ' tokens_input, tokens_output, time_created, time_updated, time_archived' +
+  ' tokens_input, tokens_output, tokens_cache_read, tokens_cache_write,' +
+  ' time_created, time_updated, time_archived' +
   ' FROM session ORDER BY time_created, id';
 
 const MESSAGE_SQL =
@@ -535,6 +552,8 @@ function selectSessions(db: DatabaseSync): OcSessionRow[] {
     cost: realOf(row, 'cost', 'session'),
     tokensInput: intOf(row, 'tokens_input', 'session'),
     tokensOutput: intOf(row, 'tokens_output', 'session'),
+    tokensCacheRead: intOf(row, 'tokens_cache_read', 'session'),
+    tokensCacheWrite: intOf(row, 'tokens_cache_write', 'session'),
     timeCreated: intOf(row, 'time_created', 'session'),
     timeUpdated: intOf(row, 'time_updated', 'session'),
     timeArchived: intOrNullOf(row, 'time_archived', 'session'),

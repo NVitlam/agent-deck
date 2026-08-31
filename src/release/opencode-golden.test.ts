@@ -727,15 +727,27 @@ describe.each(CORPUS_NAMES)('%s', (name) => {
           keys: ['costUsd'],
         });
         expect(typeof s.totals.costUsd).toBe('number');
-        // `null`, not absent and not `0`. The generator OMITS the keys because
-        // `session.tokens_input` counts only uncached input; an omitted key
-        // serialises to `null`, which renders as an em-dash. A `0` here would
-        // be a fabricated claim that the session spent nothing.
-        expect({ id: s.sessionId, contextNow: s.contextNow, burn: s.burn }).toStrictEqual({
+        /*
+         * `contextNow` stays `null` — not absent and not `0`. An omitted key
+         * serialises to `null`, which renders as an em-dash; a `0` would be a
+         * fabricated claim that the window is empty. It cannot be filled from
+         * the `session` row because a context window is a LEVEL, and the
+         * per-step reader that would give it is 0.5.1's.
+         *
+         * **`burn` stopped being `null` on 2026-08-31.** The old comment here
+         * said the generator omits it "because `session.tokens_input` counts
+         * only uncached input" — true of that column alone, and it stopped
+         * being the whole story: `tokens_input + tokens_cache_read +
+         * tokens_cache_write` IS the whole prompt, verified against the
+         * `step-finish` rows on every session in both corpora.
+         */
+        expect({ id: s.sessionId, contextNow: s.contextNow }).toStrictEqual({
           id: s.sessionId,
           contextNow: null,
-          burn: null,
         });
+        expect(s.burn, `${s.sessionId} burn`).not.toBeNull();
+        expect(Object.keys(s.burn ?? {}).sort()).toStrictEqual(['output', 'prompt']);
+        expect(s.burn?.prompt, `${s.sessionId} burn.prompt`).toBeGreaterThan(0);
       }
 
       const agents = l.golden.sessions
@@ -743,11 +755,15 @@ describe.each(CORPUS_NAMES)('%s', (name) => {
         .filter((n): n is GoldenAgentNode => n.node === 'agent');
       expect(agents.length).toBeGreaterThan(0);
       for (const a of agents) {
-        expect({ id: a.id, contextNow: a.contextNow, burn: a.burn }).toStrictEqual({
+        // Same split as the session level above: `contextNow` absent, `burn`
+        // present. A node's `burn` is that agent's OWN figure, not its
+        // subtree's — the subtree sum is the session-level one.
+        expect({ id: a.id, contextNow: a.contextNow }).toStrictEqual({
           id: a.id,
           contextNow: null,
-          burn: null,
         });
+        expect(a.burn, `${a.id} burn`).not.toBeNull();
+        expect(Object.keys(a.burn ?? {}).sort()).toStrictEqual(['output', 'prompt']);
         // The removed field is REMOVED, not renamed and not left beside its
         // replacement. `AgentNode.tokens` was deleted from
         // `src/model/events.ts` precisely so every reader breaks; a golden

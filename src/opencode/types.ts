@@ -96,8 +96,23 @@ export interface OcSessionRow {
   agent: string | null;
   model: string | null;
   cost: number;
+  /**
+   * UNCACHED input only. **Never `TokenPair.prompt` on its own** — that is
+   * `tokensInput + tokensCacheRead + tokensCacheWrite`, and the difference is
+   * roughly sevenfold on the anchor corpus.
+   */
   tokensInput: number;
+  /**
+   * Completion tokens. **Excludes reasoning**, which OpenCode keeps in its own
+   * `tokens_reasoning` column — measured on 8 discriminating rows where
+   * `reasoning > 0` and the row's own `total` equals the sum of every bucket
+   * INCLUDING it (`docs/evidence/release-0.5.0/OC-CTX.md` §1).
+   */
   tokensOutput: number;
+  /** Cached prompt tokens re-read. Added 2026-08-31; part of `burn.prompt`. */
+  tokensCacheRead: number;
+  /** Prompt tokens written to cache. Added 2026-08-31; part of `burn.prompt`. */
+  tokensCacheWrite: number;
   timeCreated: number;
   timeUpdated: number;
   /** Set -> the session ended (OC4). NULL throughout both committed corpora. */

@@ -41,9 +41,11 @@
 
 import { execFileSync } from 'node:child_process';
 import {
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -1095,23 +1097,52 @@ describe.skipIf(process.platform !== 'win32')(
         try {
           writeFileSync(join(root, '.vscodeignore'), `${CONTROL_IGNORE}docs/**\n`);
           const out = join(root, 'should-not-exist.vsix');
+
+          // NOT `stdio: 'pipe'`. Measured on the GitHub Actions runner
+          // (release/0.5.0 run 33378755461): `output` came back as exactly the
+          // "Files included in the VSIX:" listing that vsce prints BEFORE it
+          // ever calls the secret scanner - stderr was empty, yet the exit code
+          // was still non-zero and no .vsix was written. Reproduced the same
+          // command locally with the same capture: it passes here and would
+          // have failed the same way there.
+          //
+          // The cause is a Windows-only race, not a different failure mode.
+          // vsce's own catch block does `log.error(...); process.exit(1);`
+          // back to back (secretLint.ts). On Windows a write to a PIPE is
+          // ASYNCHRONOUS - process.exit() can tear the child down before the
+          // OS has actually delivered the bytes - while a write to a REAL FILE
+          // is synchronous, so nothing queued can be lost to that race.
+          // Redirecting stdout/stderr to files instead of pipes removes the
+          // race rather than papering over its output.
+          const stdoutPath = join(root, '.vsce-stdout.log');
+          const stderrPath = join(root, '.vsce-stderr.log');
+          const outFd = openSync(stdoutPath, 'w');
+          const errFd = openSync(stderrPath, 'w');
           let exitCode: number | null = null;
-          let output = '';
           try {
-            execFileSync(
-              process.execPath,
-              [VSCE_BIN, 'package', '--no-dependencies', '--out', out],
-              { cwd: root, encoding: 'utf8', stdio: 'pipe' },
-            );
-            exitCode = 0;
-          } catch (error) {
-            const err = error as { status?: number; stdout?: string; stderr?: string };
-            exitCode = err.status ?? -1;
-            output = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+            try {
+              execFileSync(process.execPath, [VSCE_BIN, 'package', '--no-dependencies', '--out', out], {
+                cwd: root,
+                stdio: ['ignore', outFd, errFd],
+              });
+              exitCode = 0;
+            } catch (error) {
+              exitCode = (error as { status?: number }).status ?? -1;
+            }
+          } finally {
+            closeSync(outFd);
+            closeSync(errFd);
           }
-          // LOUD: a non-zero exit naming the syscall.
+          const output = `${readFileSync(stdoutPath, 'utf8')}${readFileSync(stderrPath, 'utf8')}`;
+
+          // LOUD: a non-zero exit naming the syscall or vsce's own wrapper
+          // around it - either is an acceptable "this failed and said why",
+          // and which one fired is logged rather than silently picked.
           expect(exitCode, 'packaging succeeded over a junction — re-measure this whole suite').not.toBe(0);
-          expect(output).toContain('EISDIR');
+          const eisdir = output.includes('EISDIR');
+          const scannerFailure = output.includes('Error occurred while scanning secrets');
+          console.log(`[junction door] loud signal: EISDIR=${eisdir} scannerFailure=${scannerFailure}`);
+          expect(eisdir || scannerFailure, `packaging failed silently — captured output:\n${output}`).toBe(true);
           // ...and NO artifact. The field failure read as a success because a
           // stale .vsix from an earlier run was still on disk; a partial or
           // empty file here would do the same to the next person.

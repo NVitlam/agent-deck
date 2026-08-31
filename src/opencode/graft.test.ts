@@ -73,6 +73,8 @@ function session(over: Partial<OcSessionRow> & { id: string }): OcSessionRow {
     cost: 0,
     tokensInput: 0,
     tokensOutput: 0,
+    tokensCacheRead: 0,
+    tokensCacheWrite: 0,
     timeCreated: 1_000_000 + rowSeq,
     timeUpdated: 2_000_000 + rowSeq,
     timeArchived: null,
@@ -324,7 +326,8 @@ function readCorpus(dbPath: string): Corpus {
 
     const sessionStmt = db.prepare(
       'SELECT id, project_id, parent_id, slug, directory, title, version, agent, model, cost,' +
-        ' tokens_input, tokens_output, time_created, time_updated, time_archived FROM session' +
+        ' tokens_input, tokens_output, tokens_cache_read, tokens_cache_write,' +
+        ' time_created, time_updated, time_archived FROM session' +
         ' ORDER BY time_created, id',
     );
     sessionStmt.setReadBigInts(true);
@@ -343,6 +346,8 @@ function readCorpus(dbPath: string): Corpus {
       cost: Number(r['cost']),
       tokensInput: Number(r['tokens_input']),
       tokensOutput: Number(r['tokens_output']),
+      tokensCacheRead: Number(r['tokens_cache_read']),
+      tokensCacheWrite: Number(r['tokens_cache_write']),
       timeCreated: Number(r['time_created']),
       timeUpdated: Number(r['time_updated']),
       timeArchived: r['time_archived'] === null ? null : Number(r['time_archived']),
@@ -623,18 +628,21 @@ describe('graftCorpus reproduces the committed goldens', () => {
       });
 
       /*
-       * DEFERRED, AND THE FIXTURE IS WHY - not an oversight.
+       * `burn` IS PRESENT since 2026-08-31; `contextNow` is still absent, and
+       * the split is the point of this test.
        *
-       * `session.tokens_input` IS a genuine session-cumulative total: the test
-       * below measures it against the sum of that session's own `step-finish`
-       * part rows and they agree on every session in both corpora. What it is
-       * NOT is `TokenPair.prompt`, because it counts only UNCACHED input.
-       * Mapping it onto `burn` would under-report by roughly 7x on the anchor
-       * corpus, which is precisely the defect `TokenPair` was introduced to
-       * remove. So `contextNow` and `burn` are left ABSENT for this engine and
-       * these tests pin the absence rather than a wrong number.
+       * `session.tokens_input` alone was never `TokenPair.prompt` - it counts
+       * UNCACHED input and under-reports by roughly 7x on the anchor corpus,
+       * which is the defect `TokenPair` exists to remove. The whole prompt is
+       * that column PLUS `tokens_cache_read` PLUS `tokens_cache_write`, and
+       * the test after this one proves that sum equals the per-step
+       * `step-finish` total on every session in both corpora.
+       *
+       * `contextNow` stays absent because a context window is a LEVEL and
+       * cannot be recovered from a cumulative total. It needs the LAST
+       * `step-finish` row, and that reader is deferred (0.5.1), not guessed.
        */
-      it('leaves contextNow and burn ABSENT on every state and node - never 0', () => {
+      it('carries burn on every state and node, and leaves contextNow ABSENT', () => {
         const { result } = load(corpusName);
         expect(result.sessions.length).toBeGreaterThan(0);
         let nodes = 0;
@@ -642,16 +650,20 @@ describe('graftCorpus reproduces the committed goldens', () => {
           // `in` rather than `=== undefined`: a key present holding `undefined`
           // would serialize to a wire field that claims it was looked up.
           expect('contextNow' in state).toBe(false);
-          expect('burn' in state).toBe(false);
+          expect(state.contextNow).toBeUndefined();
+          expect('burn' in state).toBe(true);
+          expect(typeof state.burn?.prompt).toBe('number');
+          expect(typeof state.burn?.output).toBe('number');
           for (const node of agentsOf(state.root)) {
             nodes++;
             expect('contextNow' in node).toBe(false);
-            expect('burn' in node).toBe(false);
-            // The assertion that makes the two above mean something: absent is
-            // distinguishable from a zero pair, and this engine reports absent.
             expect(node.contextNow).toBeUndefined();
-            expect(node.burn).toBeUndefined();
+            // Absent is distinguishable from a zero pair, and contextNow is
+            // the one this engine still reports as absent.
             expect(node.contextNow).not.toStrictEqual({ prompt: 0, output: 0 });
+            expect('burn' in node).toBe(true);
+            expect(node.burn?.prompt).toBeGreaterThan(0);
+            expect(node.burn?.output).toBeGreaterThan(0);
           }
         }
         expect(nodes).toBeGreaterThan(0);

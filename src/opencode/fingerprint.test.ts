@@ -297,10 +297,44 @@ describe('a mutated schema refuses the whole database, with a stable code', () =
     expect(outcome.mismatch.expected).toBe('time_updated');
   });
 
-  it('a required column nothing reads yet still refuses when it is dropped', () => {
-    // `session.tokens_cache_read` is in the fingerprint target (contract §3)
-    // and is deliberately NOT selected by `db.ts` — `OcSessionRow` has no
-    // field for it. Asserted, not read: dropping it must still refuse.
+  it('a required column nothing reads still refuses when it is dropped', () => {
+    /*
+     * `session.tokens_reasoning` is in the fingerprint target (contract §3) and
+     * is deliberately NOT selected by `db.ts`: OpenCode keeps reasoning in its
+     * own bucket, `TokenPair` has two fields and neither is reasoning, so
+     * reading it would mean inventing a place to put it. Asserted, not read —
+     * dropping it must still refuse.
+     *
+     * **This test named `tokens_cache_read` until 2026-08-31**, when that
+     * column started being read for `burn` and this case stopped being about a
+     * column nothing reads: `sessionsOf` below began failing with
+     * `databaseCorrupt: no such column`, which is an ACCESSOR failure and the
+     * opposite of what the last assertion exists to rule out. Moved to the one
+     * column the description is still true of, rather than deleted — the
+     * property is real and `tokens_reasoning` is now its only witness.
+     */
+    const dbPath = mutatedCopy((sql) => {
+      sql('ALTER TABLE session DROP COLUMN tokens_reasoning');
+    });
+    const outcome = fingerprintDatabase(dbPath);
+    expect(outcome.kind).toBe('schemaMismatch');
+    if (outcome.kind !== 'schemaMismatch') return;
+    expect(outcome.mismatch.code).toBe('missingColumn');
+    expect(outcome.mismatch.at).toBe('session.tokens_reasoning');
+    // And the rows still read fine, which is what makes this a fingerprint
+    // assertion rather than an accessor failure.
+    expect(sessionsOf(dbPath).length).toBeGreaterThan(0);
+  });
+
+  it('a column that IS read now refuses at the fingerprint, before the accessor', () => {
+    /*
+     * The other side of the change, and the reason the test above had to move.
+     * `tokens_cache_read` is now selected by `db.ts`, so dropping it breaks the
+     * accessor as well — but the FINGERPRINT must still be what refuses, and it
+     * must refuse first. If this ever reported `databaseCorrupt` instead, a
+     * schema drift would be reaching users as an engine-wide degrade rather
+     * than as a named missing column.
+     */
     const dbPath = mutatedCopy((sql) => {
       sql('ALTER TABLE session DROP COLUMN tokens_cache_read');
     });
@@ -309,9 +343,6 @@ describe('a mutated schema refuses the whole database, with a stable code', () =
     if (outcome.kind !== 'schemaMismatch') return;
     expect(outcome.mismatch.code).toBe('missingColumn');
     expect(outcome.mismatch.at).toBe('session.tokens_cache_read');
-    // And the rows still read fine, which is what makes this a fingerprint
-    // assertion rather than an accessor failure.
-    expect(sessionsOf(dbPath).length).toBeGreaterThan(0);
   });
 
   it('a database-level refusal refuses EVERY session, not one', () => {

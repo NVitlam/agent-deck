@@ -378,8 +378,9 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
         expect(state?.schemaOk).toBe(false);
         expect(state?.root.children).toStrictEqual([]);
         expect(state?.totals).toStrictEqual({ costUsd: 0 });
-        // ABSENT, not zero: this engine reports no token figures at all, and
-        // a refused session must not be the one place it appears to.
+        // ABSENT, not zero. NOT because this engine has no token figures - it
+        // emits `burn` for accepted sessions since 2026-08-31 - but because a
+        // REFUSED session carries no tree, no totals and no tokens at all.
         expect(state?.contextNow).toBeUndefined();
         expect(state?.burn).toBeUndefined();
       }
@@ -593,8 +594,9 @@ describe('DoD 4.2 end to end — a mixed-version database renders some and refus
         expect(state?.schemaOk).toBe(false);
         expect(state?.root.children).toStrictEqual([]);
         expect(state?.totals).toStrictEqual({ costUsd: 0 });
-        // ABSENT, not zero: this engine reports no token figures at all, and
-        // a refused session must not be the one place it appears to.
+        // ABSENT, not zero. NOT because this engine has no token figures - it
+        // emits `burn` for accepted sessions since 2026-08-31 - but because a
+        // REFUSED session carries no tree, no totals and no tokens at all.
         expect(state?.contextNow).toBeUndefined();
         expect(state?.burn).toBeUndefined();
         expect(state?.projectSlug).toBe('');

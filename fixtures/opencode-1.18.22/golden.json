@@ -32,7 +32,10 @@
         "costUsd": 0
       },
       "contextNow": null,
-      "burn": null,
+      "burn": {
+        "prompt": 9979697,
+        "output": 141224
+      },
       "spawnEdges": [
         {
           "toolUseId": "EGulB7lO1x8TBK1enJsdyADXiQaiXgbY",
@@ -239,7 +242,10 @@
         "status": "done",
         "spawnDepth": 0,
         "contextNow": null,
-        "burn": null,
+        "burn": {
+          "prompt": 8196904,
+          "output": 115555
+        },
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 64084877,
         "children": [
@@ -671,7 +677,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 160157,
+              "output": 757
+            },
             "startedAtOffsetMs": 10967448,
             "endedAtOffsetMs": 11754185,
             "children": [
@@ -765,7 +774,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 23464,
+              "output": 297
+            },
             "startedAtOffsetMs": 11980743,
             "endedAtOffsetMs": 12185761,
             "children": [
@@ -829,7 +841,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 23439,
+              "output": 266
+            },
             "startedAtOffsetMs": 15046214,
             "endedAtOffsetMs": 15259026,
             "children": [
@@ -883,7 +898,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 24586,
+              "output": 763
+            },
             "startedAtOffsetMs": 15933223,
             "endedAtOffsetMs": 16264960,
             "children": [
@@ -957,7 +975,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 11436,
+              "output": 175
+            },
             "startedAtOffsetMs": 19281337,
             "endedAtOffsetMs": 19455190,
             "children": [
@@ -1001,7 +1022,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 23749,
+              "output": 421
+            },
             "startedAtOffsetMs": 19956839,
             "endedAtOffsetMs": 20186897,
             "children": [
@@ -1085,7 +1109,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 100456,
+              "output": 801
+            },
             "startedAtOffsetMs": 23391859,
             "endedAtOffsetMs": 24052731,
             "children": [
@@ -1169,7 +1196,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 23784,
+              "output": 523
+            },
             "startedAtOffsetMs": 24275146,
             "endedAtOffsetMs": 24545655,
             "children": [
@@ -1243,7 +1273,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 229370,
+              "output": 965
+            },
             "startedAtOffsetMs": 27137441,
             "endedAtOffsetMs": 27992115,
             "children": [
@@ -1357,7 +1390,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 23798,
+              "output": 627
+            },
             "startedAtOffsetMs": 28146385,
             "endedAtOffsetMs": 28413037,
             "children": [
@@ -1441,7 +1477,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 73357,
+              "output": 705
+            },
             "startedAtOffsetMs": 30770902,
             "endedAtOffsetMs": 31391272,
             "children": [
@@ -1525,7 +1564,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 23525,
+              "output": 419
+            },
             "startedAtOffsetMs": 31610345,
             "endedAtOffsetMs": 31840001,
             "children": [
@@ -1599,7 +1641,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 23019,
+              "output": 188
+            },
             "startedAtOffsetMs": 35294448,
             "endedAtOffsetMs": 35471787,
             "children": [
@@ -1643,7 +1688,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 41822,
+              "output": 570
+            },
             "startedAtOffsetMs": 35907033,
             "endedAtOffsetMs": 36293325,
             "children": [
@@ -1717,7 +1765,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 23505,
+              "output": 300
+            },
             "startedAtOffsetMs": 36865534,
             "endedAtOffsetMs": 36989241,
             "children": [
@@ -1771,7 +1822,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 54049,
+              "output": 387
+            },
             "startedAtOffsetMs": 37559226,
             "endedAtOffsetMs": 37926044,
             "children": [
@@ -1845,7 +1899,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 111858,
+              "output": 476
+            },
             "startedAtOffsetMs": 40278363,
             "endedAtOffsetMs": 40963543,
             "children": [
@@ -1919,7 +1976,10 @@
             "status": "error",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 23481,
+              "output": 398
+            },
             "startedAtOffsetMs": 41089325,
             "endedAtOffsetMs": 41331195,
             "children": [
@@ -2003,7 +2063,10 @@
             "status": "done",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 275872,
+              "output": 3612
+            },
             "startedAtOffsetMs": 45335575,
             "endedAtOffsetMs": 46764106,
             "children": [
@@ -2327,7 +2390,10 @@
             "status": "done",
             "spawnDepth": 1,
             "contextNow": null,
-            "burn": null,
+            "burn": {
+              "prompt": 488066,
+              "output": 13019
+            },
             "startedAtOffsetMs": 58592135,
             "endedAtOffsetMs": 60906969,
             "children": [
@@ -2918,7 +2984,10 @@
         "costUsd": 0
       },
       "contextNow": null,
-      "burn": null,
+      "burn": {
+        "prompt": 12082,
+        "output": 45
+      },
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -2929,7 +2998,10 @@
         "status": "done",
         "spawnDepth": 0,
         "contextNow": null,
-        "burn": null,
+        "burn": {
+          "prompt": 12082,
+          "output": 45
+        },
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 104559,
         "children": []
@@ -2947,7 +3019,10 @@
         "costUsd": 0
       },
       "contextNow": null,
-      "burn": null,
+      "burn": {
+        "prompt": 80094,
+        "output": 707
+      },
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -2958,7 +3033,10 @@
         "status": "done",
         "spawnDepth": 0,
         "contextNow": null,
-        "burn": null,
+        "burn": {
+          "prompt": 80094,
+          "output": 707
+        },
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 355977,
         "children": [
@@ -3017,7 +3095,10 @@
         "costUsd": 0
       },
       "contextNow": null,
-      "burn": null,
+      "burn": {
+        "prompt": 30450,
+        "output": 144
+      },
       "spawnEdges": [],
       "parked": [],
       "root": {
@@ -3028,7 +3109,10 @@
         "status": "done",
         "spawnDepth": 0,
         "contextNow": null,
-        "burn": null,
+        "burn": {
+          "prompt": 30450,
+          "output": 144
+        },
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 88094,
         "children": [

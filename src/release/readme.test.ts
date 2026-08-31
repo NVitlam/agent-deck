@@ -858,6 +858,76 @@ describe('the version badge is accurate against the shipped constants', () => {
 });
 
 /**
+ * The OpenCode token sentence, bound to what the engine actually emits.
+ *
+ * **This exists because the sentence was WRONG and nothing noticed.** Through
+ * 0.5.0 it ended "**Burn** is present" while `burn` was omitted for OpenCode
+ * exactly as `contextNow` was — both rendered as an em dash, and both committed
+ * goldens carried `null` for both on every session. A user reading the README
+ * would have gone looking for a figure that was not there, and the only reason
+ * it was caught is that someone opened a card and compared.
+ *
+ * So the claim is not asserted against a literal. It is re-derived from the
+ * committed goldens, which are the byte-exact record of what the engine
+ * produces: if `burn` ever went back to `null`, or `contextNow` started being
+ * emitted, the prose and the evidence would disagree and this goes red.
+ */
+describe('the README OpenCode token sentence matches what the engine emits', () => {
+  /** Every session and agent node in both committed goldens. */
+  const goldenNodes = (): { contextNow: unknown; burn: unknown }[] => {
+    const out: { contextNow: unknown; burn: unknown }[] = [];
+    const walk = (node: { contextNow: unknown; burn: unknown; children?: unknown[] }): void => {
+      out.push({ contextNow: node.contextNow, burn: node.burn });
+      for (const child of node.children ?? []) {
+        const c = child as { node?: string };
+        if (c.node === 'agent') walk(child as typeof node);
+      }
+    };
+    for (const rel of [
+      'fixtures/opencode-1.18.21/golden.json',
+      'fixtures/opencode-1.18.22/golden.json',
+    ]) {
+      const parsed = JSON.parse(readText(rel)) as {
+        sessions: { contextNow: unknown; burn: unknown; root: never }[];
+      };
+      for (const session of parsed.sessions) {
+        out.push({ contextNow: session.contextNow, burn: session.burn });
+        walk(session.root);
+      }
+    }
+    return out;
+  };
+
+  it('the goldens show burn PRESENT and contextNow ABSENT, on every session and node', () => {
+    const nodes = goldenNodes();
+    expect(nodes.length).toBeGreaterThan(0);
+    expect(nodes.filter((n) => n.burn === null)).toEqual([]);
+    expect(nodes.filter((n) => n.contextNow !== null)).toEqual([]);
+  });
+
+  it('the README says exactly that, and does not say the opposite', () => {
+    // The OpenCode region only — the CC side has both figures and its own prose.
+    const sentence = README_OC;
+    expect(/\bburn\b[^.]{0,40}\bis present\b/i.test(sentence)).toBe(true);
+    expect(/\bcontext\b[^.]{0,60}\bem dash\b/i.test(sentence)).toBe(true);
+    // The exact wording that shipped wrong, in either order, must not return.
+    expect(/\bcontext\b[^.]{0,40}\bis present\b/i.test(sentence)).toBe(false);
+    expect(/\bburn\b[^.]{0,60}\bem dash\b/i.test(sentence)).toBe(false);
+    // Vacuity control: these patterns can match the shapes they hunt for.
+    expect(/\bburn\b[^.]{0,40}\bis present\b/i.test('Burn is present.')).toBe(true);
+    expect(/\bburn\b[^.]{0,60}\bem dash\b/i.test('burn reads as an em dash')).toBe(true);
+  });
+
+  it('does not repeat the superseded "counts only uncached input" reason', () => {
+    // True of `tokens_input` alone and false of the store, which also keeps
+    // `tokens_cache_read` and `tokens_cache_write` — both now read. Stating it
+    // as a limit of OpenCode was the second wrong half of the old sentence.
+    expect(/only\s+uncached\s+input/i.test(README)).toBe(false);
+    expect(/only\s+uncached\s+input/i.test('counts only uncached input')).toBe(true);
+  });
+});
+
+/**
  * The same four assertions, mirrored onto the OpenCode region.
  *
  * Not "the CC tests with a different constant" for its own sake: the defect

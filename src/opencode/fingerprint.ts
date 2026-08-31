@@ -41,18 +41,32 @@
  * missing file as a drifted OpenCode release.
  *
  * ---------------------------------------------------------------------------
- * THREE REQUIRED COLUMNS THAT NOTHING READS YET — ON PURPOSE
+ * ONE REQUIRED COLUMN THAT NOTHING READS — ON PURPOSE
  * ---------------------------------------------------------------------------
  *
- * {@link REQUIRED_COLUMNS} lists `session.tokens_reasoning`,
- * `session.tokens_cache_read` and `session.tokens_cache_write` because contract
- * §3 names them in the fingerprint target, and `db.ts` does NOT select them
- * because the hand-off type `OcSessionRow` has no field for them and
- * `SessionState`'s token totals are `{ in, out }` (`src/model/events.ts`).
- * They are asserted rather than read: if a future OpenCode drops one, the
- * engine refuses instead of quietly rendering a tree built on a schema it has
- * never seen. This is written down because "a required column nothing reads"
- * looks like an oversight and is not.
+ * **SUPERSEDED 2026-08-31, and the superseded reason is left here because it was
+ * the right reason for two of the three columns and is now wrong for both.**
+ * This paragraph used to read "THREE REQUIRED COLUMNS THAT NOTHING READS YET",
+ * naming `session.tokens_reasoning`, `session.tokens_cache_read` and
+ * `session.tokens_cache_write`, and it explained that `db.ts` did not select
+ * them "because the hand-off type `OcSessionRow` has no field for them and
+ * `SessionState`'s token totals are `{ in, out }`".
+ *
+ * Both halves of that explanation expired. `SessionState`'s totals became
+ * `TokenPair` at the Phase 7 gate, and on 2026-08-31 `OcSessionRow` gained the
+ * two cache fields, because `tokens_input + tokens_cache_read +
+ * tokens_cache_write` IS `TokenPair.prompt` — an identity verified on 78 of 78
+ * sessions (`docs/evidence/release-0.5.0/OC-CTX.md` §2.4). **`db.ts` selects
+ * both cache columns now**, and the assertion here is what guarantees they are
+ * there to select.
+ *
+ * What survives, for **`session.tokens_reasoning` alone**: it is required and
+ * unread. OpenCode keeps reasoning in its own bucket — not inside
+ * `tokens_output` — and `TokenPair` has nowhere to put a third number, so
+ * reading it would mean inventing a place for it. It is asserted rather than
+ * read: if a future OpenCode drops it, the engine refuses instead of quietly
+ * rendering a tree built on a schema it has never seen. Written down because
+ * "a required column nothing reads" looks like an oversight and is not.
  */
 
 import { readSchema } from './db.js';

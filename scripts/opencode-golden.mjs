@@ -218,6 +218,8 @@ export function readCorpus(dbPath) {
       cost: Number(r.cost),
       tokensInput: Number(r.tokens_input),
       tokensOutput: Number(r.tokens_output),
+      tokensCacheRead: Number(r.tokens_cache_read),
+      tokensCacheWrite: Number(r.tokens_cache_write),
       timeCreated: Number(r.time_created),
       timeUpdated: Number(r.time_updated),
       timeArchived: r.time_archived === null ? null : Number(r.time_archived),
@@ -657,28 +659,50 @@ function buildSessionState(ctx) {
   const spawnEdges = [];
   const parked = [];
   /*
-   * COST ONLY. `inputTokens`/`outputTokens` are gone from the contract, and
-   * this generator does NOT replace them with `burn` derived from
-   * `session.tokens_input`.
+   * COST, AND SINCE 2026-08-31 `burn`. `contextNow` is still absent.
    *
-   * Derived from the storage format, independently of `src/opencode/`: the
-   * `session` row's `tokens_input` equals the sum of that session's own
-   * `step-finish` part rows' `tokens.input` - so it IS cumulative - but those
-   * same rows carry a SEPARATE `tokens.cache.read`, and it dwarfs `input`
-   * (1.18.22: 8,875,276 against 1,227,047; 1.18.21: 4,653,176 against
-   * 389,665). `TokenPair.prompt` is the WHOLE prompt, so `tokens_input` is a
-   * fraction of it, not it. Emitting it would reproduce through this engine
-   * the exact "2 instead of 42,199" defect the contract change removes.
+   * Derived here from the storage format, INDEPENDENTLY of `src/opencode/` -
+   * this file imports only `node:` builtins and that is what makes the goldens
+   * evidence rather than a tautology. The reasoning, worked from the rows:
    *
-   * So `contextNow` and `burn` are ABSENT for OpenCode - serialized `null`
-   * here, never 0, because 0 is a claim and absence is the truth.
+   * The `session` row's `tokens_input` equals the sum of that session's own
+   * `step-finish` rows' `tokens.input`, so it IS cumulative - but those rows
+   * carry a SEPARATE `tokens.cache.read` which dwarfs it (1.18.22: 8,875,276
+   * against 1,227,047; 1.18.21: 4,653,176 against 389,665). `TokenPair.prompt`
+   * is the WHOLE prompt, so `tokens_input` alone is a fraction of it and
+   * emitting it would reproduce the "2 instead of 42,199" defect through a
+   * second engine.
+   *
+   * The whole of it is the three prompt-side columns added together:
+   *
+   *     prompt = tokens_input + tokens_cache_read + tokens_cache_write
+   *     output = tokens_output
+   *
+   * which equals the per-step sum over that session's `step-finish` rows on
+   * every session in both corpora. No part reading is required for a TOTAL;
+   * `src/opencode/graft.test.ts` asserts this generator and the engine agree,
+   * session by session.
+   *
+   * `tokens_reasoning` is NOT in either field. It is its own column in
+   * OpenCode's schema - not inside `tokens_output` - and `TokenPair` has two
+   * fields, neither of them reasoning. OpenCode's own displayed `total` DOES
+   * include it, so this pair sums to `total` minus `tokens_reasoning`, and
+   * that difference is deliberate rather than a rounding gap.
+   *
+   * `contextNow` stays ABSENT - serialized `null`, never 0, because 0 is a
+   * claim and absence is the truth. A context window is a LEVEL and cannot be
+   * recovered from a cumulative total; it needs the LAST `step-finish` row,
+   * and reading those rows is deferred rather than guessed.
    */
   const totals = { costUsd: 0 };
+  const burn = { prompt: 0, output: 0 };
 
   /** Recursively build the AgentNode for `session` at `depth`. */
   const buildAgent = (session, depth) => {
     seenSessionRows.add(session.id);
     totals.costUsd += session.cost;
+    burn.prompt += session.tokensInput + session.tokensCacheRead + session.tokensCacheWrite;
+    burn.output += session.tokensOutput;
 
     const nodeId = depth === 0 ? 'root' : session.id;
     const tools = (toolsBySession.get(session.id) ?? [])
@@ -750,9 +774,14 @@ function buildSessionState(ctx) {
       status,
       spawnDepth: depth,
       children,
-      // No `contextNow`, no `burn`: see the note on `totals` above. The
-      // correct prompt is reachable from `step-finish` (`input` + `cache.read`
-      // + `cache.write`) and reading those rows is deferred, not guessed.
+      // `burn` is this SESSION's own figure, not the subtree's - the subtree sum
+      // is the SessionState-level one accumulated above. `contextNow` is still
+      // absent: a level cannot be recovered from a total, so it needs the last
+      // `step-finish` row and that reader is deferred, not guessed.
+      burn: {
+        prompt: session.tokensInput + session.tokensCacheRead + session.tokensCacheWrite,
+        output: session.tokensOutput,
+      },
       startedAt: session.timeCreated,
       /*
        * `endedAt`: OC4 makes `time_archived` the session-end signal. It is NULL
@@ -824,7 +853,7 @@ function buildSessionState(ctx) {
     epochAnchor: new Date(root.timeCreated).toISOString(),
     totals: { costUsd: totals.costUsd },
     contextNow: null,
-    burn: null,
+    burn: { prompt: burn.prompt, output: burn.output },
     spawnEdges,
     parked,
     root: serializeAgent(rootNode, root.timeCreated, counts),

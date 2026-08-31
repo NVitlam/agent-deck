@@ -1,50 +1,57 @@
-# Layout goldens
+# `webview/goldens/layout`
 
-Pinned coordinate **numbers** for `webview/layout.ts`, written and compared by
-`webview/layout.test.ts`. C7.5 of `agent-deck-spec.md` requires numbers rather
-than screenshots, and these are them.
+One golden lives here now: `design-tables.json`.
 
-## What is in here
+## What it is
 
-| File | Subject |
-|---|---|
-| `deck-n00 / n01 / n02 / n06 / n12.json` | `deckLayout` at the five sizes PLAN names. Each file holds both the `input` list and the `output` placements, so a re-harvest that changes the input reads as a legible diff instead of an unexplained coordinate move. |
-| `blob-paths.json` | `blobPath` output for the captured session ids plus three fixed strings, with the `hashSessionId` seed alongside each. |
-| `deck-constellation.json` | `constellationPoints` at count 0, 7 and `CONSTELLATION_CAP + 25`, per captured session-id hash. C7.1's density channel; the cap and the inset are recorded in the file. |
-| `session-deepest-capture.json` | `sessionLayout` of the captured session with the deepest spawn chain, laid out with its resolved spawn edges. `maxSpawnDepth` is recorded in the file. |
-| `session-parked-graft.json` | `sessionLayout` of a committed graft fixture whose graft **parks** an agent. The parked agents and their `ParkCode` are recorded in the file. They get no **cell** — a parked agent has no node in `root` — and they do get a **`parked` placement**, from `SessionState.parked`. |
-| `session-parked-codes.json` | Every committed fixture that parks anything, one entry each, with the distinct `ParkCode` set derived from the fixtures rather than listed. Covers `noMatchingToolUse`, `ambiguousJoinKey` and `parentAgentMissing`, one of them carrying `parentAgentId`. |
-| `session-unanchored-cells.json` | The same captured tree with **no** spawn edges, which is what `toSessionState` in `src/model/graft.ts` returns. Every subagent cell is then unanchored — the geometry the parked visual grammar needs. |
+The **verbatim stdout** of `node webview/layout.reference.mjs`, captured as an
+array of lines. `layout.reference.mjs` is the frozen canvas design's own
+implementation of the layout arithmetic — deck placement for three layouts by
+three sorts, the A1.1 node widths, and three tidy-tree runs — and its output
+reproduces the frozen design document's tables.
 
-Every file also records `source`: the repo-relative path the subject was read
-from. Subjects are selected **by property** ("the deepest capture", "the first
-fixture that parks an agent"), never by naming a session id, so a re-harvest
-moves the subject and the `source` line says so.
-
-A parked placement is a pure function of its own `agentId`, not of its index in
-`session.parked`. That is why the same agent id gets identical coordinates in
-several files here: the host sorts `parked` by `agentId`, so a newly parked
-agent lands in the MIDDLE of the list, and a positional rule would move cells
-already on screen.
-
-## Regenerating
+Regenerate with:
 
 ```
-AGENT_DECK_UPDATE_GOLDENS=1 npx vitest run webview/layout.test.ts
+node webview/layout.reference.mjs
 ```
 
-**That run is designed to fail.** `HANDOVER.md` carry-forward G records the
-existing convention as a live hazard — a golden suite that rewrites itself is a
-rubber stamp. So with the variable set this file set is rewritten *and* the last
-test in `layout.test.ts` fails on purpose, naming what happened. The only route
-to green is to read the diff and commit it. A plain `npx vitest run` writes
-nothing at all.
+and paste the lines back in. Nothing regenerates it automatically, and that is
+deliberate: a golden that rewrites itself is a rubber stamp.
 
-## Line endings
+## What it is for
 
-These are compared as **parsed JSON**, not as bytes. `core.autocrlf=true` is set
-on the dev machine and this directory is not covered by the `fixtures/** -text`
-rule in `.gitattributes`, so a fresh clone may check them out with CRLF. A byte
-comparison would then pass only on the machine that wrote them; parsed numbers
-are indifferent to the line ending they were stored behind, and numbers are what
-C7.5 says to pin.
+`webview/layout.test.ts` re-emits the same tables from **production**
+`webview/layout.ts` and compares them line for line.
+
+The evidence is that **two independent implementations agree**. Three rules
+keep it evidence rather than decoration, and breaking any one of them makes the
+test pass forever while proving nothing:
+
+1. **`layout.ts` must never import `layout.reference.mjs`.** The first test in
+   `layout.test.ts` reads `layout.ts`'s own source text and asserts it does not.
+   A production module that imported the reference would compare the reference
+   against itself.
+2. **`layout.reference.mjs` is frozen and is never edited to make a test pass.**
+   Its own header says so. If production disagrees with it, one of the two is
+   wrong and the answer is in the design.
+3. **A change to any number in this file is a design amendment**, not a test
+   edit.
+
+## Why lines in JSON rather than a `.md`
+
+`.gitattributes` deliberately does not mark `webview/goldens/**` as `-text`,
+because these goldens are compared as **parsed JSON** and line endings
+therefore cannot affect them. A markdown golden would be compared as bytes, and
+this repository's working tree is CRLF while the generator writes LF — the
+comparison would pass only on the machine that produced it. Storing the lines
+inside JSON keeps that hazard out entirely.
+
+## What used to be here
+
+Eleven goldens for the superseded phyllotaxis canvas — `deck-n00` through
+`deck-n12`, `deck-constellation`, `blob-paths` and four `session-*` files. They
+pinned blob radii, golden-angle spiral placement, constellation dots and the
+dot-ring session interior. All of that geometry was deleted from `layout.ts`, so
+the goldens went with it rather than being left behind to pin code that no
+longer exists.

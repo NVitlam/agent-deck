@@ -37,7 +37,8 @@
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import {
   copyFile,
@@ -52,6 +53,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildSync } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { HOOK_LISTENER_HOST } from './listener.js';
@@ -239,9 +241,19 @@ function deniedModulesIn(text: string): string[] {
 describe('G5 dependency review: what the shipped bundle can reach', () => {
   let bundle = '';
 
+  // 120 s for the same reason the census hook below carries one: this body is a
+  // synchronous esbuild subprocess, retried up to three times, and vitest's
+  // DEFAULT hookTimeout is 10 s. It fit inside the default until the suite grew
+  // heavier and this file started running alongside `vsix.test.ts` (spawns
+  // `vsce`) and `webview/capture.test.ts` -- then the hook timed out, the whole
+  // describe reported as SIX SKIPS, and the summary line still read green
+  // because a suite-level failure contributes no failed-test count. Six G5
+  // zero-egress assertions ran zero times. A wall-clock-sensitive subprocess
+  // under the default timeout is a test that passes or fails by CPU load, which
+  // is a recorded defect class in this repo, not noise to re-run.
   beforeAll(() => {
     bundle = buildHostBundle();
-  });
+  }, 120_000);
 
   it('the shipped artifact is the bundle, not a node_modules tree', async () => {
     // If this stops being true the review above is measuring the wrong thing:
@@ -612,6 +624,25 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
     await writeFile(join(stub, 'index.js'), VSCODE_STUB);
     await writeFile(join(stage, 'census.cjs'), CENSUS_PROGRAM);
 
+    // G6: "Tests never read live `~/.claude` or the live OpenCode DB."
+    //
+    // The census spawns the REAL bundled `activate()` and inherits
+    // `process.env`. The CC half has always been pinned by
+    // `CLAUDE_PROJECTS_ROOT` below; until DoD 5.2 there was no OpenCode half to
+    // pin, because the engine was not reachable from the host. Now it is, so an
+    // unpinned run would resolve `%USERPROFILE%/.local/share/opencode` and open
+    // the developer's own database — which on this machine is ~24 MB and in WAL
+    // mode, so a read-only open would also touch its `-shm` sidecar.
+    //
+    // An EMPTY directory rather than a fixture corpus, deliberately: this
+    // describe measures SOCKETS, and the engine finding no data directory is
+    // both the quietest path through it and the one that adds no I/O to a
+    // census that is already timing-sensitive. DoD 5.2's "absent directory →
+    // engine silently off" is what makes that a supported state rather than a
+    // degraded one.
+    const emptyOpencodeRoot = join(stage, 'no-opencode');
+    await mkdir(emptyOpencodeRoot, { recursive: true });
+
     // A known port, probed free immediately before the spawn. The extension
     // refuses to bind port 0 by design, and the live hook tap in this repo may
     // well hold 47821 right now, so the census cannot use either.
@@ -641,6 +672,8 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
         env: {
           ...process.env,
           CLAUDE_PROJECTS_ROOT: CAPTURED_ROOT,
+          // The OpenCode half of the same rule. See the staging comment above.
+          AGENT_DECK_OPENCODE_ROOT: emptyOpencodeRoot,
           CENSUS_WORKSPACE: await capturedWorkspacePath(),
           CENSUS_PORT: String(port),
         },
@@ -781,5 +814,234 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
     expect(external, `unexpected runtime require(s): ${external.join(', ')}`).toStrictEqual(
       [],
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (C) helpers — the OpenCode engine bundle and its corpus
+// ---------------------------------------------------------------------------
+
+/**
+ * Bundle `src/opencode/index.ts` as its own entry point.
+ *
+ * Built here rather than read from `dist/`, for the reason stated at the top of
+ * this file: `npm run package` does not rebuild `dist/`, so trusting an on-disk
+ * artifact silently measures an old one. `esbuild.config.mjs` has no OpenCode
+ * target because the engine is not wired into the host yet (DoD 5.2), so this
+ * mirrors `hostOptions` rather than invoking the config.
+ */
+function buildOpencodeBundle(): string {
+  const result = buildSync({
+    entryPoints: [join(REPO_ROOT, 'src', 'opencode', 'index.ts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node20',
+    write: false,
+    logLevel: 'silent',
+  });
+  const [out] = result.outputFiles;
+  if (out === undefined) throw new Error('the OpenCode engine bundle produced no output');
+  const text = out.text;
+  if (text.length < 5_000) {
+    throw new Error(`the OpenCode engine bundle is implausibly small (${text.length} bytes)`);
+  }
+  return text;
+}
+
+/**
+ * The smallest committed OpenCode corpus, derived from disk.
+ *
+ * Deliberately NOT imported from `src/opencode/synthetic.ts`: that module is
+ * the write-capable one this file asserts is unreachable, and importing it here
+ * would make the test process itself a counter-example to the point it is
+ * making. Sizes are not asserted — the smallest is chosen so the mutation audit
+ * stays quick when a bigger corpus is harvested.
+ */
+function ocCorpusDbPath(): string {
+  const fixtures = join(REPO_ROOT, 'fixtures');
+  const candidates = readdirSync(fixtures, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith('opencode-'))
+    .map((e) => join(fixtures, e.name, 'opencode.db'))
+    .filter((p) => existsSync(p))
+    .sort((a, b) => statSync(a).size - statSync(b).size);
+  const [smallest] = candidates;
+  if (smallest === undefined) throw new Error('no fixtures/opencode-*/opencode.db found');
+  return smallest;
+}
+
+// ---------------------------------------------------------------------------
+// (C) the OpenCode engine — PLAN.md DoD 4.7
+// ---------------------------------------------------------------------------
+
+/**
+ * DoD 4.7: "loading `src/opencode/*` opens zero sockets (`dns`, `net`, `http`
+ * spies); the accessor exposes no write surface (every exported function
+ * audited by a mutation test)."
+ *
+ * **DoD 5.2 landed and the paragraph that stood here is now false.** It said
+ * the engine was "NOT yet reachable from `src/extension.ts`", which was true
+ * when written and was the reason this describe exists. The host bundle audited
+ * in part (A) now DOES contain the engine.
+ *
+ * This describe is kept, and it is not redundant: bundling
+ * `src/opencode/index.ts` as its own entry point denies **`node:http`** too,
+ * which the host bundle cannot do — there the hook listener is the one
+ * sanctioned socket, so a host-bundle scan would pass while an engine that
+ * opened an HTTP client hid behind the listener's allowance. Scanning the
+ * engine alone is what makes the claim about the engine rather than about the
+ * bundle it now travels in.
+ *
+ * `node:http` is DENIED here, unlike in the host bundle. There the listener is
+ * the one sanctioned socket; the OpenCode engine has no listener and no client
+ * — spec OC4 is explicit that the tap is a cursor over the `event` table with
+ * "no listener, no client, no server, no SSE" — so the engine reaching any
+ * socket module at all is a G5 review, and failing here is that review.
+ */
+describe('G5 — the OpenCode engine (DoD 4.7)', () => {
+  let bundle = '';
+
+  // 120 s for the reason both sibling hooks carry one: this body is a
+  // synchronous esbuild subprocess and vitest's DEFAULT hookTimeout is 10 s. A
+  // hook that loses that race reports the whole describe as SKIPS with a
+  // clean-looking tests line and no failed count — which is how six G5
+  // assertions ran zero times in Phase 3.
+  beforeAll(() => {
+    bundle = buildOpencodeBundle();
+  }, 120_000);
+
+  it('reaches no network-capable module at all — not even node:http', () => {
+    const ids = bundleModuleIds(bundle);
+    expect(ids.size, 'a bundle that names no module has not been built').toBeGreaterThan(0);
+    const denied = [...DENIED_MODULE_IDS, 'http'];
+    const found: string[] = [];
+    for (const id of denied) {
+      if (ids.has(id)) found.push(id);
+      if (ids.has(`node:${id}`)) found.push(`node:${id}`);
+    }
+    expect(
+      found.sort(),
+      `the OpenCode engine reaches network-capable module(s): ${found.join(', ')}`,
+    ).toStrictEqual([]);
+  });
+
+  it('names only node builtins — no third-party module survives bundling', () => {
+    for (const id of bundleModuleIds(bundle)) {
+      expect(id, `${id} is not a node: builtin`).toMatch(/^node:/);
+    }
+  });
+
+  it('contains no outbound request API', () => {
+    expect(bundle).not.toMatch(/\bhttps?\.request\s*\(/);
+    expect(bundle).not.toMatch(/\bimport_node_http\d*\.request\s*\(/);
+    expect(bundle).not.toMatch(/\bfetch\s*\(/);
+    expect(bundle).not.toContain('XMLHttpRequest');
+    expect(bundle).not.toContain('new WebSocket(');
+    expect(bundle).not.toContain('createServer');
+    expect(bundle).not.toContain('navigator.sendBeacon');
+  });
+
+  it('the scan sees a dynamic import(), proven by injecting one', () => {
+    // Not asserted, INJECTED — the same guard part (A) carries. A require-only
+    // scan once reported a clean bundle while three denied modules sat one
+    // dynamic import away.
+    for (const denied of ['net', 'dns', 'http']) {
+      const injected = `${bundle}\nglobalThis.__leak = () => import("node:${denied}");\n`;
+      expect(
+        bundleModuleIds(injected),
+        `a dynamic import of node:${denied} slipped past the scan`,
+      ).toContain(`node:${denied}`);
+    }
+  });
+
+  it('never reaches synthetic.ts, the one module here that can write', () => {
+    /*
+     * `src/opencode/synthetic.ts` builds `synthetic-` fixtures: it opens a
+     * database for WRITE and writes files. It is confined to a `mkdtemp`
+     * directory and refuses any path inside `fixtures/`, but the property that
+     * matters is that it can never reach a shipped bundle at all.
+     *
+     * Asserted against the BUNDLE rather than by reading imports, because only
+     * the bundle knows what an import graph actually pulled in — the same
+     * reason the loopback literal in part (A) is asserted post-build.
+     */
+    expect(bundle).not.toContain('refusing to open a committed fixture for write');
+    expect(bundle).not.toContain('agent-deck-oc-');
+    expect(bundle).not.toMatch(/\bmkdtempSync\b/);
+    expect(bundle).not.toMatch(/\bwriteFileSync\b/);
+    expect(bundle).not.toMatch(/\bcopyFileSync\b/);
+  });
+
+  it('opens the database read-only and nowhere else in the engine', () => {
+    // The engine's ONE `new DatabaseSync(...)` is db.ts's, and it passes
+    // `readOnly: true`. A second construction site anywhere on this path would
+    // be a write surface that no mutation test covers.
+    // The identifier is namespaced in the bundle — esbuild emits
+    // `new import_node_sqlite.DatabaseSync(` — so the pattern allows a dotted
+    // prefix. A bare-identifier match finds ZERO sites here and would pass an
+    // assertion that measured nothing.
+    const constructions = [...bundle.matchAll(/new\s+[\w.]*DatabaseSync\s*\(/g)];
+    expect(constructions.length, 'expected exactly one DatabaseSync construction site').toBe(1);
+    expect(bundle).toContain('readOnly: true');
+  });
+
+  it('every exported function of the accessor refuses to write (mutation audit)', async () => {
+    /*
+     * DoD 4.7's second half, done by MUTATION rather than by inspection: take
+     * every exported function of `db.ts`, call the ones that take a database
+     * path against a real corpus, and assert none of them can be made to write.
+     *
+     * The strong half is the handle itself — SQLite enforces `readOnly`, so an
+     * `INSERT` through it throws errcode 8 — and that is asserted in
+     * `db.test.ts`. What is asserted HERE is the surface: no exported function
+     * accepts SQL, and none returns anything through which a caller could get
+     * at the handle.
+     */
+    const db = (await import('../opencode/db.js')) as unknown as Record<string, unknown>;
+    const exported = Object.entries(db).filter(([, v]) => typeof v === 'function');
+    expect(exported.length, 'db.ts exports no functions — the audit is vacuous').toBeGreaterThan(3);
+
+    for (const [name] of exported) {
+      // No exported name may promise a write. A reader is a reader.
+      expect(name).not.toMatch(/write|insert|update|delete|exec/i);
+    }
+
+    /*
+     * SQL verbs are scanned in the BUNDLE, not in the source.
+     *
+     * `db.ts`'s header documents what a read-only handle does when you try to
+     * INSERT through it, so the source contains that word in prose and a
+     * source scan fails on its own documentation. esbuild strips comments, so
+     * the bundle holds only strings and code — which is exactly the corpus the
+     * question "does this code name a mutating statement" is about.
+     */
+    for (const verb of ['INSERT ', 'UPDATE ', 'DELETE ', 'DROP ', 'ALTER ', 'CREATE ']) {
+      expect(bundle.toUpperCase().includes(verb), `the engine names ${verb.trim()}`).toBe(false);
+    }
+    /*
+     * `.exec()` is DatabaseSync's arbitrary-SQL door — and it is ALSO
+     * `RegExp.prototype.exec`, which `fingerprint.ts` uses to parse a version
+     * string. Scanning the whole bundle for it therefore fails on a regex,
+     * which is a false positive rather than a finding.
+     *
+     * The narrow check is the correct one: `db.ts` is the only module on this
+     * path that ever holds a handle (asserted directly above — exactly one
+     * construction site in the whole bundle), so a SQL `.exec()` could only be
+     * written there. Nothing else can reach the handle to call it.
+     */
+    const accessorSource = await readFile(
+      join(REPO_ROOT, 'src', 'opencode', 'db.ts'),
+      'utf8',
+    );
+    expect(accessorSource).not.toMatch(/\.exec\s*\(/);
+
+    const corpus = ocCorpusDbPath();
+    const before = createHash('sha256').update(readFileSync(corpus)).digest('hex');
+    const readers = exported.filter(([name]) => name.startsWith('read'));
+    expect(readers.length, 'no reader was exercised').toBeGreaterThan(0);
+    for (const [, fn] of readers) {
+      (fn as (p: string) => unknown)(corpus);
+    }
+    expect(createHash('sha256').update(readFileSync(corpus)).digest('hex')).toBe(before);
   });
 });

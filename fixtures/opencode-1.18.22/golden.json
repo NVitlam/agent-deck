@@ -1,0 +1,3163 @@
+{
+  "schema": "agent-deck/opencode-golden@1",
+  "generator": "scripts/opencode-golden.mjs",
+  "generatedFrom": "fixtures/opencode-1.18.22/opencode.db",
+  "dataVersion": "1.18.22",
+  "engine": "opencode",
+  "previewBytes": 8192,
+  "counts": {
+    "sessionRows": 24,
+    "rootSessions": 4,
+    "childSessions": 20,
+    "partRows": 865,
+    "partsMalformed": 0,
+    "reasoningPartsDropped": 167,
+    "partsIgnoredNoNode": 452,
+    "toolParts": 246,
+    "taskParts": 29,
+    "taskPartsJoined": 20,
+    "taskPartsParked": 9,
+    "previewsTruncated": 70
+  },
+  "sessions": [
+    {
+      "sessionId": "ses_fc8d8bb41ffeTH4iLV8HiV1kQJ",
+      "projectSlug": "c--Users-dev-projects-agent-deck",
+      "engine": "opencode",
+      "workspaceMatch": true,
+      "liveness": "idle",
+      "schemaOk": true,
+      "epochAnchor": "2026-08-25T04:21:55.519Z",
+      "totals": {
+        "costUsd": 0
+      },
+      "contextNow": null,
+      "burn": {
+        "prompt": 9979697,
+        "output": 141224
+      },
+      "spawnEdges": [
+        {
+          "toolUseId": "EGulB7lO1x8TBK1enJsdyADXiQaiXgbY",
+          "agentId": "ses_fc83161a8ffeRtUMsYpBB5HClg",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "sgAxbmoHL05gRLouB7LW1JBnUAmFKXpe",
+          "agentId": "ses_fc821eb79ffel5tbIxRSwHcWkx",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "1a4HuU14IGiRoPPYEzT4a4WeURMHGABp",
+          "agentId": "ses_fc7f324faffehNBPTIwy8oPjEs",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "zeDCEbIzIZqRcOBNZATHeQnM4PzGK1is",
+          "agentId": "ses_fc7e59c19ffeW14rehTJ8UC2kQ",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "tfIBUOvXn6TR9YkQMx6793a7BTFPZjIl",
+          "agentId": "ses_fc7b28587ffesGr2xNAm1QBT9V",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "6oNVYOnscGREoKh9OcSZykqbzDDz4pH0",
+          "agentId": "ses_fc7a836d9ffe5dv9WYhk1Yhi7E",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "BBwlvnPDygY3ht77vmwhE3rZTgFAFSKy",
+          "agentId": "ses_fc773cccdffeLn1c5Zmn2CC8wR",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "87eas69XGXCLJnzPVmHUT17ixau9ShF7",
+          "agentId": "ses_fc7665276ffe8kOj37dk4cr1A1",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "JzD5bIUMsXxiA8Su6iyrGnwSj7zLuV45",
+          "agentId": "ses_fc73aa59fffeB4bLRCtAEDG5OM",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "U3o9KF16kOkUsFcrf0xP2HOBTGlhH5O5",
+          "agentId": "ses_fc72b406fffe7bHKDyrOFJqjSV",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "zfUkKEwhr8LJPgP6Im8wCyL1XGWOHjjf",
+          "agentId": "ses_fc703346affeGBMdATEnSTYAmt",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "wWtPEg4fXVacMN4FnWgBzFE8gvtqo14b",
+          "agentId": "ses_fc6f66557ffep7WLZDf02D3Pt5",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "WhzovpF4VCkaHK28iZA3sft4C3iBO81r",
+          "agentId": "ses_fc6be2e50ffeaDWc2m8gPVlgyt",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "PmJMWKM9mVVoGlpBQtmp8oO3dw3YZnOQ",
+          "agentId": "ses_fc6b4d567ffeoBwumCF1wOq9uQ",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "OBuCq4GVNGu2cQBE8PimFTYeTFjEQJdo",
+          "agentId": "ses_fc6a63542ffe7QirDckKWEFwxl",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "IN4zYhwpWlZYvmmh9a1eqHBNjW1j6xvA",
+          "agentId": "ses_fc69b9f86ffeUeTEWVBibqlaEA",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "lZHol6cme91Mc2rp8ke1X21xaJuRhvaQ",
+          "agentId": "ses_fc67221e5ffeSu51aTzG1ygMPX",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "W3LkUGcaKW9DgiDgosIGpEFGsMirDgmK",
+          "agentId": "ses_fc665c213ffeqwcuzya94r07Qe",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "wjuhEv24O9rNqj1YAxi8t09whCk2QbMn",
+          "agentId": "ses_fc624f729ffem1pc6oaV3z5zY0",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        },
+        {
+          "toolUseId": "w20X9OxSaZGq7pzwNV4HCskF9GvbMVX6",
+          "agentId": "ses_fc55aafb9ffe34CG12YOZZZcEE",
+          "parentNodeId": "root",
+          "depth": 1,
+          "recordedDepth": 1
+        }
+      ],
+      "parked": [
+        {
+          "agentId": "prt_037de19c1001RbxdXZO7S58mso",
+          "code": "taskWithoutChild",
+          "toolUseId": "HA1N02dFWp9RUsJyVNzzZzO3fkkhJSZ3",
+          "reason": "task part carries no state.metadata.sessionId; no child session to attach (contract amendment §G) - not inferred from timing (OC3)"
+        },
+        {
+          "agentId": "prt_0381a68f7001JYhOdSymZyvJVs",
+          "code": "taskWithoutChild",
+          "toolUseId": "qHcg09KbJv8R2eGFvY8y1X8vNQnuU6VW",
+          "reason": "task part carries no state.metadata.sessionId; no child session to attach (contract amendment §G) - not inferred from timing (OC3)"
+        },
+        {
+          "agentId": "prt_03857ce05001ccMY8Vx3zb1EDU",
+          "code": "taskWithoutChild",
+          "toolUseId": "D3ixmPIFEjo560czVG0OYtZb83JXBpRG",
+          "reason": "task part carries no state.metadata.sessionId; no child session to attach (contract amendment §G) - not inferred from timing (OC3)"
+        },
+        {
+          "agentId": "prt_03899b274001SLrV07D6OjK3UC",
+          "code": "taskWithoutChild",
+          "toolUseId": "zowRLxx0iBSj8yoh5bXJ9fDqq0jk2cx2",
+          "reason": "task part carries no state.metadata.sessionId; no child session to attach (contract amendment §G) - not inferred from timing (OC3)"
+        },
+        {
+          "agentId": "prt_038d4bfc30019gWXIiO5CCaDX6",
+          "code": "taskWithoutChild",
+          "toolUseId": "Ffu0Fiamk7BBileystPtcws9VMJn3hnA",
+          "reason": "task part carries no state.metadata.sessionId; no child session to attach (contract amendment §G) - not inferred from timing (OC3)"
+        },
+        {
+          "agentId": "prt_039099f60001cPfmvuUJbWkhVq",
+          "code": "taskWithoutChild",
+          "toolUseId": "WszOMLacBfaYO2CCwqYQmINHwtGnUEx0",
+          "reason": "task part carries no state.metadata.sessionId; no child session to attach (contract amendment §G) - not inferred from timing (OC3)"
+        },
+        {
+          "agentId": "prt_0394b5a00001RdPZAEq55U3l2n",
+          "code": "taskWithoutChild",
+          "toolUseId": "nH9IzuQiZQx0Y891OhgLpQlwNspN3M5m",
+          "reason": "task part carries no state.metadata.sessionId; no child session to attach (contract amendment §G) - not inferred from timing (OC3)"
+        },
+        {
+          "agentId": "prt_039646523001jffABdFlwrsrmN",
+          "code": "taskWithoutChild",
+          "toolUseId": "y412c08WN09yMUHyS8hjbw92c52l6fak",
+          "reason": "task part carries no state.metadata.sessionId; no child session to attach (contract amendment §G) - not inferred from timing (OC3)"
+        },
+        {
+          "agentId": "prt_0399a3e1d001vSHWTi3A1m7gFb",
+          "code": "taskWithoutChild",
+          "toolUseId": "4aJwYPGNSkXlhoKJLXXSiUQ4JykDzkHH",
+          "reason": "task part carries no state.metadata.sessionId; no child session to attach (contract amendment §G) - not inferred from timing (OC3)"
+        }
+      ],
+      "root": {
+        "node": "agent",
+        "id": "root",
+        "kind": "main",
+        "label": "build: Phase",
+        "status": "done",
+        "spawnDepth": 0,
+        "contextNow": null,
+        "burn": {
+          "prompt": 8196904,
+          "output": 115555
+        },
+        "startedAtOffsetMs": 0,
+        "endedAtOffsetMs": 64084877,
+        "children": [
+          {
+            "node": "tool",
+            "id": "nJf8VZd7wko4KGYIHcT9UGgcspbBvAIc",
+            "toolName": "skill",
+            "status": "done",
+            "inputPreview": "sha256:c6257e5fab56be0d:16",
+            "resultPreview": "sha256:d5965b43e137dc1e:6291",
+            "durationMs": 133,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "3fAKqcDysGKTN0U7jvscyJ0Q5dfpjH5J",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:fe25c4ec39cffe81:60",
+            "resultPreview": "sha256:5685a3c4af7316a3:8248",
+            "durationMs": 128,
+            "truncated": true
+          },
+          {
+            "node": "tool",
+            "id": "X7diRVYUknYjAUHecN3xd7KiUhoXzxwd",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:c87dc50d52b187b1:73",
+            "resultPreview": "sha256:774e8411efca9380:8248",
+            "durationMs": 145,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "LlB79hrrIrIVixk9iNSL9KJWsOsZoot2",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:e61463f588a6ee72:79",
+            "resultPreview": "sha256:996aa64d7455425b:8248",
+            "durationMs": 61,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "ambdFHENjO17SE3pJnjAx0BckHZiXRAv",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:a38cf6eb5c5a1478:62",
+            "resultPreview": "sha256:26f360a4e28c98ef:8248",
+            "durationMs": 112,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "EgOVMdZHMI2L7TjG4Ky4QAaH3MeUzMLf",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:f3e0f6b6e767d059:83",
+            "resultPreview": "sha256:5e3216235e96d1e4:316",
+            "durationMs": 765,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "QIhG161UudWuQMAp4brjfz2tlCNDFKb7",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:3b18a4beaef64b27:81",
+            "resultPreview": "sha256:47c75c6d4bf53424:48",
+            "durationMs": 795,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "Sd6OBP4d7UNbxvROGwGD7xKytSRMcnGh",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:1c32c23a3d65b399:110",
+            "resultPreview": "sha256:ad04a4f82533cf7f:3415",
+            "durationMs": 830,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "SxDLSJrbSfEFHN995BNlf2UktAOxKUcq",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:22f2df081697c51a:160",
+            "resultPreview": "sha256:4e9412f7594077e8:323",
+            "durationMs": 828,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "6T4jZNW43AI6beku2s620iLG54mj7tSS",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:58df91b8590f1ce0:89",
+            "resultPreview": "sha256:1da2217782e001e8:860",
+            "durationMs": 764,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "p0Dl39igpfgM7ukoLSgsCAyyRofYRmwq",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:ac074285f60ef41f:160",
+            "resultPreview": "sha256:385c19e94dd73790:297",
+            "durationMs": 792,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "m8xpHQtn5UyEtmWN1NeJvgHBw3Trfhaf",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:018ab8b52254e814:350",
+            "resultPreview": "sha256:9a88cf5c6c837ccb:376",
+            "durationMs": 1231,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "dEAqpqjBDk9dQfgtUPnV0PAQQe1jH0Yc",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:8c9934e6396984a1:80",
+            "resultPreview": "sha256:01e30795aea94560:345",
+            "durationMs": 1237,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "TPjJ4wrm39TnP0NNZgWi5XPyccoBPovx",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:6f8960add30f8a2f:389",
+            "resultPreview": "sha256:684019395a30f765:548",
+            "durationMs": 735,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "v0zDui8Ncsk8oevlEZjmx3FYOg5mm7JK",
+            "toolName": "grep",
+            "status": "done",
+            "inputPreview": "sha256:94001c0908d17921:122",
+            "resultPreview": "sha256:0b089ce22bfcbdbc:337",
+            "durationMs": 103,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "Mq5LaR0XwTWT4cgFUDndFDLL5grbNU1M",
+            "toolName": "grep",
+            "status": "done",
+            "inputPreview": "sha256:ea251eaff71a60bf:110",
+            "resultPreview": "sha256:a01398f1cd3e373e:363",
+            "durationMs": 84,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "ucKII16pyFZ4IaX1fyMjP0CnuAjhadJj",
+            "toolName": "question",
+            "status": "done",
+            "inputPreview": "sha256:74e5f81d9422f377:4777",
+            "resultPreview": "sha256:f050fe3ad54e7047:2153",
+            "durationMs": 105266,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "qCH4ecaAtI5ad2u4FiJdOCDw0o3qNsej",
+            "toolName": "webfetch",
+            "status": "done",
+            "inputPreview": "sha256:339d2442b48159d8:64",
+            "resultPreview": "sha256:befd1fcc70c248c1:8248",
+            "durationMs": 360,
+            "truncated": true
+          },
+          {
+            "node": "tool",
+            "id": "gBXUbSKWKCMsxa4etMR8krCwB588tmHo",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:54dcecc59cc97b52:249",
+            "resultPreview": "sha256:9efb8ca4e9cd4b63:60",
+            "durationMs": 743,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "gpMCWJRD9dh4tiWBGkBDZe2Lr6oKlshn",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:9a9744cce4b2c9b8:218",
+            "resultPreview": "sha256:5c23747ac5bcc76c:1044",
+            "durationMs": 749,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "0dWnYiYPGMaIdgfEZzh600JmTKBp4XB8",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:2359e682a177ed6c:145",
+            "resultPreview": "sha256:56b90973cb887532:824",
+            "durationMs": 743,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "cIxv9pc1qfeqrXwekxZeVM7UC0sN044S",
+            "toolName": "webfetch",
+            "status": "done",
+            "inputPreview": "sha256:dc6820a2128db708:67",
+            "resultPreview": "sha256:3e582485e7d6db6b:8248",
+            "durationMs": 638,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "GCtyDTEJBZxJCk3zZx2pj7OVsqJywYJ4",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:02e5142a5f73ab48:291",
+            "resultPreview": "sha256:6a74a0f3f1ab8043:814",
+            "durationMs": 722,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "vL9bwgyQrouZATp2S16Mq8cNtWYPxiu8",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:0876cc652f19eda5:82",
+            "resultPreview": "sha256:165b4afd964df1c6:5506",
+            "durationMs": 97,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "bPk3duvQmLWbbUAC5tTvxx3p6tXzCdx1",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:a3fe814a874bec11:180",
+            "resultPreview": "sha256:bd0020b688313d25:595",
+            "durationMs": 734,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "BV24b755xN5XMAEPeHi0WDen2AKntdSJ",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:221c4b41768333f6:378",
+            "resultPreview": "sha256:50638c66cfbd0ffb:491",
+            "durationMs": 734,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "xqxaFNNwqNDxcZoPA6IxEFpFcnfwss5D",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:4a9c864c47ff38ea:374",
+            "resultPreview": "sha256:f159225a032f2f49:182",
+            "durationMs": 724,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "ZIRCQTJpLxmXDo5VK83w0J2fWYIh1DI9",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:73d0bceb24f7afcf:274",
+            "resultPreview": "sha256:267ff89db2619359:281",
+            "durationMs": 701,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "i9DENCgFrW3ySuD7yUMtcI7pJu3896kh",
+            "toolName": "webfetch",
+            "status": "done",
+            "inputPreview": "sha256:0461096f48eb47e8:79",
+            "resultPreview": "sha256:4efce5d2b53ddbac:8248",
+            "durationMs": 356,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "rDwU6pYtYaeASVkehO0b4tEfAu7FRVEd",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:7180813aa8f43c72:214",
+            "resultPreview": "sha256:325f07fea50c5bbf:291",
+            "durationMs": 730,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "xWOrumgDYeFZGDfv4KJUqZV5qnpvi08Z",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:0db7fe2c2cfa59a1:412",
+            "resultPreview": "sha256:8f667685e64a512d:251",
+            "durationMs": 948,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "CVQifMZBdZBWW1w2KQk8kzseCc18QDMc",
+            "toolName": "webfetch",
+            "status": "done",
+            "inputPreview": "sha256:f07b075547848451:62",
+            "resultPreview": "sha256:c6744de579a57a14:8248",
+            "durationMs": 680,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "vmkpsZlckhd2WhEzIQEtpdbRQdLa5zwL",
+            "toolName": "webfetch",
+            "status": "done",
+            "inputPreview": "sha256:9065858411e2db7d:96",
+            "resultPreview": "sha256:75a5c62ed7757fcc:8248",
+            "durationMs": 682,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "ox79lo6EMG3xHH8kaRY2aYfDGO6JXYJP",
+            "toolName": "webfetch",
+            "status": "done",
+            "inputPreview": "sha256:a14350dee7ea99af:75",
+            "resultPreview": "sha256:4749935cdc773bac:8248",
+            "durationMs": 957,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "h8S3w0Qqa3lo8U7Tv8wGnkQOTwFK966t",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:6e6bf6f8dad859ab:363",
+            "resultPreview": "sha256:41a47aa12235cd5b:112",
+            "durationMs": 734,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "qwH6AhMd7E8E9llDId0f2b2H4TtROXkW",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:23943f89fef870f7:85",
+            "resultPreview": "sha256:58ba81e41a86651e:699",
+            "durationMs": 728,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "F5eV5q4sgh2SSDeBM5G3gideJXWH2a4n",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:bdd6ea87624f5d45:431",
+            "resultPreview": "sha256:8463c144cbb63e2e:150",
+            "durationMs": 747,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "mosI6kgq6y6QrpI8BBOF6mHItBHO8FUz",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:1a085a46e1dc0874:5847",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 8,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "PwgJ7N1HNoaqPonx781moesVPFk98ffU",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:98c362f485cebebd:254",
+            "resultPreview": "sha256:eec14c3c89716ab5:240",
+            "durationMs": 750,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "To4YFB5FWz74m2xDvKhNuTbmOs1Wbkt6",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:f36a2399900bf695:65",
+            "resultPreview": "sha256:58dbfd22284ac6b7:4213",
+            "durationMs": 33,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "dIHe7A3pKQrCdXuSwkgwPAYAuqJUCmW7",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:0a436e82bcb97bf8:400",
+            "resultPreview": "sha256:89169c6f111e3366:6899",
+            "durationMs": 780,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "EGulB7lO1x8TBK1enJsdyADXiQaiXgbY",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:288449885f276fe6:5737",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 21009624,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc83161a8ffeRtUMsYpBB5HClg",
+            "kind": "subagent",
+            "label": "general: P0: sweep depth closure (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 160157,
+              "output": 757
+            },
+            "startedAtOffsetMs": 10967448,
+            "endedAtOffsetMs": 11754185,
+            "children": [
+              {
+                "node": "tool",
+                "id": "37E4SCiOW1FNrGubBnz7TWWTGQNJswpE",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:848a600c3c55a31e:110",
+                "resultPreview": "sha256:cbb01c9a2209891f:163",
+                "durationMs": 1118,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "i595d7Vhshai6OZZo2D5pZKgSviOsbs0",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b938189206d31fb7:106",
+                "resultPreview": "sha256:05dab1a9c37a0347:8248",
+                "durationMs": 163,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "hu71l9fBUYtyDk8L61Ngg6lv87RB6Cmb",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:d18f059a1dc1465a:109",
+                "resultPreview": "sha256:076ee2294dc836e2:8248",
+                "durationMs": 111,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "hLtJdyi6x7POni7wtAXTIYcrGs1Nqg36",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:58592ba2245639fc:114",
+                "resultPreview": "sha256:70f59f3d2e858075:8248",
+                "durationMs": 107,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "vDvf2pQ6zhpA4IveDMXXoTvg4AWTlSWb",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:ba4596a0bed1905c:116",
+                "resultPreview": "sha256:4a25ecadc8968551:763",
+                "durationMs": 1585,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "JRCUrodt4EymX5fApBYhx0w0SxNqSoIC",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:fc460d662bfdd42d:103",
+                "resultPreview": "sha256:762f7b7aa94544f3:982",
+                "durationMs": 127,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "RWhu6V3MDTBUE0Q4GDIJ4pxnKyfrWOWa",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:389245ecb5bd3123:112",
+                "resultPreview": "sha256:cb1531b8230b74ba:8248",
+                "durationMs": 71,
+                "truncated": true
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "sgAxbmoHL05gRLouB7LW1JBnUAmFKXpe",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:fddb43422bfb1ddf:5830",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 19996333,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc821eb79ffel5tbIxRSwHcWkx",
+            "kind": "subagent",
+            "label": "general: PSPEC: spec-first amendment (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 23464,
+              "output": 297
+            },
+            "startedAtOffsetMs": 11980743,
+            "endedAtOffsetMs": 12185761,
+            "children": [
+              {
+                "node": "tool",
+                "id": "cPpyx3PswUuRytSCM7kAq60EooBdFN9L",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:7e8cb57cb5422221:113",
+                "resultPreview": "sha256:cbb01c9a2209891f:163",
+                "durationMs": 1085,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "UPgBYLMF15GQjevbrt6wJTLehppaziRP",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:da4ba2c9e376ee3d:101",
+                "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
+                "durationMs": 144,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "n8WKXQlDBKdzasA4NeUil70UiBZpZvTH",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:6828395b09714324:109",
+                "resultPreview": "sha256:48d154b1d6af244d:8248",
+                "durationMs": 106,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "HA1N02dFWp9RUsJyVNzzZzO3fkkhJSZ3",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:44136fa355b3678a:2",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 0,
+            "truncated": null
+          },
+          {
+            "node": "tool",
+            "id": "1a4HuU14IGiRoPPYEzT4a4WeURMHGABp",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:d37aeac5c9dea775:5682",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 16930863,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc7f324faffehNBPTIwy8oPjEs",
+            "kind": "subagent",
+            "label": "general: P0: sweep depth closure (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 23439,
+              "output": 266
+            },
+            "startedAtOffsetMs": 15046214,
+            "endedAtOffsetMs": 15259026,
+            "children": [
+              {
+                "node": "tool",
+                "id": "rua1iY8ftgNhCwnX5wvcGsg45BLscPuJ",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:85a4b93f5bc6fcc9:132",
+                "resultPreview": "sha256:9fd446160c35555f:351",
+                "durationMs": 1421,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "4x8vz9FDGTJT74UXlHbU4lQzjQe7VGpr",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b938189206d31fb7:106",
+                "resultPreview": "sha256:05dab1a9c37a0347:8248",
+                "durationMs": 129,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "x1dbjOB5IbfI9DUvSkfMDOjwPHsTe6SV",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:d18f059a1dc1465a:109",
+                "resultPreview": "sha256:076ee2294dc836e2:8248",
+                "durationMs": 93,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "zeDCEbIzIZqRcOBNZATHeQnM4PzGK1is",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:e414563b0ec54b68:7439",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 16043859,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc7e59c19ffeW14rehTJ8UC2kQ",
+            "kind": "subagent",
+            "label": "general: PSPEC: spec-first amendment (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 24586,
+              "output": 763
+            },
+            "startedAtOffsetMs": 15933223,
+            "endedAtOffsetMs": 16264960,
+            "children": [
+              {
+                "node": "tool",
+                "id": "7TVILjXsnprv5wnU4hIESH4avds2PAks",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:7e8cb57cb5422221:113",
+                "resultPreview": "sha256:cbb01c9a2209891f:163",
+                "durationMs": 1090,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "fOJo16zggCx5AHQOJh5PNMQYMtN3h4Cd",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:ad2d6dbce11ba8d4:140",
+                "resultPreview": "sha256:390bc0fb7afc9adc:9",
+                "durationMs": 1127,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "RJXdvcaVZ2hnqMJetHRhb4vWVTYpG16G",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:da4ba2c9e376ee3d:101",
+                "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
+                "durationMs": 137,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "zG21bUnfTHY7wsNRS8FPv8hSYVEEjK11",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:6828395b09714324:109",
+                "resultPreview": "sha256:48d154b1d6af244d:8248",
+                "durationMs": 112,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "qHcg09KbJv8R2eGFvY8y1X8vNQnuU6VW",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:44136fa355b3678a:2",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 0,
+            "truncated": null
+          },
+          {
+            "node": "tool",
+            "id": "tfIBUOvXn6TR9YkQMx6793a7BTFPZjIl",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:a33ebfc37009c124:5153",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 12695747,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc7b28587ffesGr2xNAm1QBT9V",
+            "kind": "subagent",
+            "label": "general: P0: sweep depth closure (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 11436,
+              "output": 175
+            },
+            "startedAtOffsetMs": 19281337,
+            "endedAtOffsetMs": 19455190,
+            "children": [
+              {
+                "node": "tool",
+                "id": "EEhdtEmytLOINnm5ceDoJx4PHTjzjzop",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:d1ee4c287aa68ce3:111",
+                "resultPreview": "sha256:5a9c7ad602148de7:760",
+                "durationMs": 1119,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "NQpZWtFLnARnOmLOeetfzLlIIt32402G",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b938189206d31fb7:106",
+                "resultPreview": "sha256:05dab1a9c37a0347:8248",
+                "durationMs": 108,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "6oNVYOnscGREoKh9OcSZykqbzDDz4pH0",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:3e4b2661ebc970a0:6166",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 12020247,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc7a836d9ffe5dv9WYhk1Yhi7E",
+            "kind": "subagent",
+            "label": "general: PSPEC: spec-first amendment (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 23749,
+              "output": 421
+            },
+            "startedAtOffsetMs": 19956839,
+            "endedAtOffsetMs": 20186897,
+            "children": [
+              {
+                "node": "tool",
+                "id": "S0qM3rA4eviiztXCMO6CzzS0z2dMtNq1",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:49738be6b138f0c4:164",
+                "resultPreview": "sha256:6ab9fa49509b1988:360",
+                "durationMs": 1192,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "3MPmHusLEJNXAoprrkPWelmKeHteTbB8",
+                "toolName": "glob",
+                "status": "done",
+                "inputPreview": "sha256:9bafa85302404ac8:108",
+                "resultPreview": "sha256:838a4b5cd97fbe48:78",
+                "durationMs": 667,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "pGRQH6j7pE4OLvJf8ZRgXMN1p4GSopA2",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:da4ba2c9e376ee3d:101",
+                "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
+                "durationMs": 64,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "76BpEXmYrNqnZQJZq5h6QC3CbCuugYFG",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:6828395b09714324:109",
+                "resultPreview": "sha256:48d154b1d6af244d:8248",
+                "durationMs": 64,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "uQv0l18OwdghlnePnEbcJBL7olbr4uoY",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:c70e53c2e2ad95c2:111",
+                "resultPreview": "sha256:8a70f06a6882ea57:8248",
+                "durationMs": 132,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "D3ixmPIFEjo560czVG0OYtZb83JXBpRG",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:44136fa355b3678a:2",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 0,
+            "truncated": null
+          },
+          {
+            "node": "tool",
+            "id": "BBwlvnPDygY3ht77vmwhE3rZTgFAFSKy",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:228378c79cd1a63d:5366",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 8585225,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc773cccdffeLn1c5Zmn2CC8wR",
+            "kind": "subagent",
+            "label": "general: P0: sweep depth closure (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 100456,
+              "output": 801
+            },
+            "startedAtOffsetMs": 23391859,
+            "endedAtOffsetMs": 24052731,
+            "children": [
+              {
+                "node": "tool",
+                "id": "w85VwZxGZgdRhFPgGAQMFkMn8X1OPciH",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:13d201a76c44a929:132",
+                "resultPreview": "sha256:34e35940e6bf5779:418",
+                "durationMs": 1417,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "k5iFYC3ZwhNdOEJYJmjaN0MTilQunnuV",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b938189206d31fb7:106",
+                "resultPreview": "sha256:05dab1a9c37a0347:8248",
+                "durationMs": 197,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "jux4Uy78ANJmIRSTfRAzCp3Xod21egm0",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:949c977d88ae3671:161",
+                "resultPreview": "sha256:9369bedffe2701a7:88",
+                "durationMs": 1197,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "tgOr6NH9om3Dzoc8QpyPbu0skKfkT7ef",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:d18f059a1dc1465a:109",
+                "resultPreview": "sha256:076ee2294dc836e2:8248",
+                "durationMs": 340,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "l5cDYcpsJW0nfCAgL7GscxbUy0M0Af3k",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:58592ba2245639fc:114",
+                "resultPreview": "sha256:70f59f3d2e858075:8248",
+                "durationMs": 148,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "eIl1BE5QuwYnZ5MAkYtXmmm1CGbGWSEW",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:5d62ccf40c9699ab:458",
+                "resultPreview": "sha256:10067d1c40e8f21b:597",
+                "durationMs": 1282,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "87eas69XGXCLJnzPVmHUT17ixau9ShF7",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:d98a839e02e90b15:5981",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 7701944,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc7665276ffe8kOj37dk4cr1A1",
+            "kind": "subagent",
+            "label": "general: PSPEC: spec-first amendment (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 23784,
+              "output": 523
+            },
+            "startedAtOffsetMs": 24275146,
+            "endedAtOffsetMs": 24545655,
+            "children": [
+              {
+                "node": "tool",
+                "id": "db7gBEEUcPD8bR4K4667wTaQpHQknQhi",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:62a65e750b9f223d:164",
+                "resultPreview": "sha256:cc867f2c6a805e4c:247",
+                "durationMs": 1214,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "5qZMXONN50x8RVh8vOCiOMPUJhUV50Et",
+                "toolName": "glob",
+                "status": "done",
+                "inputPreview": "sha256:9bafa85302404ac8:108",
+                "resultPreview": "sha256:838a4b5cd97fbe48:78",
+                "durationMs": 616,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Z0MJUAODSWsnGLg7JPPYnMHbaQMx3Uls",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:da4ba2c9e376ee3d:101",
+                "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
+                "durationMs": 156,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "4IWGT7Vv61V2pMBu0AaKfemp1MC6Fz3p",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:6828395b09714324:109",
+                "resultPreview": "sha256:48d154b1d6af244d:8248",
+                "durationMs": 138,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "zowRLxx0iBSj8yoh5bXJ9fDqq0jk2cx2",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:44136fa355b3678a:2",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 0,
+            "truncated": null
+          },
+          {
+            "node": "tool",
+            "id": "JzD5bIUMsXxiA8Su6iyrGnwSj7zLuV45",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:640cf844c1069df3:5213",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 4839647,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc73aa59fffeB4bLRCtAEDG5OM",
+            "kind": "subagent",
+            "label": "general: P0: sweep depth closure (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 229370,
+              "output": 965
+            },
+            "startedAtOffsetMs": 27137441,
+            "endedAtOffsetMs": 27992115,
+            "children": [
+              {
+                "node": "tool",
+                "id": "FjBxnVZS89lwFiGyYFywoxJkKvWA3A5J",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:848a600c3c55a31e:110",
+                "resultPreview": "sha256:cbb01c9a2209891f:163",
+                "durationMs": 1337,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "AyVBVEYSO0mVBBBIzEyHeYK6ximyXukk",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:fc8f6ce5f0ac1dc7:135",
+                "resultPreview": "sha256:83d47ff2ad3c1a31:6",
+                "durationMs": 1231,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "OXHsypKDOcLW4mhd3a2SJNCBk5AFCfdW",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b938189206d31fb7:106",
+                "resultPreview": "sha256:05dab1a9c37a0347:8248",
+                "durationMs": 104,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Qi0AgQT9n0AJsKak7gn1N4Jv6loFYgf8",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:d18f059a1dc1465a:109",
+                "resultPreview": "sha256:076ee2294dc836e2:8248",
+                "durationMs": 136,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "uaHhT1k9xxJb6nngElwoXgW2IgnIFvgu",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:58592ba2245639fc:114",
+                "resultPreview": "sha256:70f59f3d2e858075:8248",
+                "durationMs": 95,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "A9A3LOD1M8Y7JgktmgTHq0xTDDXRoqFu",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:f76e66c2d2fb37f9:156",
+                "resultPreview": "sha256:1a1f87d74baf81ed:407",
+                "durationMs": 382,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "MDJZO5X8LjHIcbS3zouGrdFe9tcyg8fy",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:009e2ab29313d0b2:212",
+                "resultPreview": "sha256:f62aad500b0a5319:215",
+                "durationMs": 1351,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "515nqilJrVAOb1grmeGrapSeunbAA1qY",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:60132f0265664ca9:112",
+                "resultPreview": "sha256:44eb1b2c985225e5:8248",
+                "durationMs": 90,
+                "truncated": true
+              },
+              {
+                "node": "tool",
+                "id": "QVaMarV797GWyW5PdBgRd5VFGacDiDVv",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:c39166d728037a7f:112",
+                "resultPreview": "sha256:b0935a3807ed9126:8248",
+                "durationMs": 106,
+                "truncated": true
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "U3o9KF16kOkUsFcrf0xP2HOBTGlhH5O5",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:b66a1edd3b8810cd:5852",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 3830708,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc72b406fffe7bHKDyrOFJqjSV",
+            "kind": "subagent",
+            "label": "general: PSPEC: spec amendment (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 23798,
+              "output": 627
+            },
+            "startedAtOffsetMs": 28146385,
+            "endedAtOffsetMs": 28413037,
+            "children": [
+              {
+                "node": "tool",
+                "id": "B9wWUsax6uWDZk2GLTZsPtMpaMXxqZCD",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:a3d959fd521b9525:160",
+                "resultPreview": "sha256:5ccbc85a86f1426a:172",
+                "durationMs": 1189,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "tvCxwlKBTBniV8OxZVH8HiXSxKDLsiGs",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:63d350a5c891c469:114",
+                "resultPreview": "sha256:5a9c7ad602148de7:760",
+                "durationMs": 1195,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "EACbwO3TL4yJb31ZEANhFxhFxRTSI2UK",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:da4ba2c9e376ee3d:101",
+                "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
+                "durationMs": 34,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "fSjyOSMc6YGoWCdCXfP0MILNCwk4FXdS",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:6828395b09714324:109",
+                "resultPreview": "sha256:48d154b1d6af244d:8248",
+                "durationMs": 116,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "LA2ggVweYr3dahJMUd0JYRIlj9OpqKDm",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:c70e53c2e2ad95c2:111",
+                "resultPreview": "sha256:8a70f06a6882ea57:8248",
+                "durationMs": 84,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "Ffu0Fiamk7BBileystPtcws9VMJn3hnA",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:44136fa355b3678a:2",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 0,
+            "truncated": null
+          },
+          {
+            "node": "tool",
+            "id": "zfUkKEwhr8LJPgP6Im8wCyL1XGWOHjjf",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:33d84f022fdcc611:5806",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 1206193,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc703346affeGBMdATEnSTYAmt",
+            "kind": "subagent",
+            "label": "general: P7 P0: sweep depth closure (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 73357,
+              "output": 705
+            },
+            "startedAtOffsetMs": 30770902,
+            "endedAtOffsetMs": 31391272,
+            "children": [
+              {
+                "node": "tool",
+                "id": "t3i9LgmnjC0L6voXIjlBjPJgE6eXc2pP",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:848a600c3c55a31e:110",
+                "resultPreview": "sha256:cbb01c9a2209891f:163",
+                "durationMs": 1293,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "PGa2EUcbCsQMWlBDCRDqiHCFTET24goC",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:1a8468e4e60e5b8a:108",
+                "resultPreview": "sha256:efefc15c24ee8645:11",
+                "durationMs": 2532,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "H1JoqrFezvHXsnzDsXi3qGDfy3cJmvMD",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b938189206d31fb7:106",
+                "resultPreview": "sha256:05dab1a9c37a0347:8248",
+                "durationMs": 95,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "CV7HwyHyXeF9h3sjHdj7XKgHyIUV4dsT",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:d18f059a1dc1465a:109",
+                "resultPreview": "sha256:076ee2294dc836e2:8248",
+                "durationMs": 121,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "BXqPjoLW8zfOWdZ2f4vG7QrvUGrKTvmb",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:58592ba2245639fc:114",
+                "resultPreview": "sha256:70f59f3d2e858075:8248",
+                "durationMs": 90,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Fw0m9ZlXz0hOjgXq5uYhVeUU1SkqaSPe",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:41034acdfa39e40e:493",
+                "resultPreview": "sha256:28ca72d0e4791e55:576",
+                "durationMs": 1388,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "wWtPEg4fXVacMN4FnWgBzFE8gvtqo14b",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:0caaad02f019b3b4:6163",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 366762,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc6f66557ffep7WLZDf02D3Pt5",
+            "kind": "subagent",
+            "label": "general: P7 PSPEC: spec-first amendment (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 23525,
+              "output": 419
+            },
+            "startedAtOffsetMs": 31610345,
+            "endedAtOffsetMs": 31840001,
+            "children": [
+              {
+                "node": "tool",
+                "id": "iq5WBRPUivYWK2qBqzHBQl6I9fbILEcn",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:7e8cb57cb5422221:113",
+                "resultPreview": "sha256:cbb01c9a2209891f:163",
+                "durationMs": 1208,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Hrq9EWWMdBnkYCKP2YBVhI7dXa8IacZD",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:526186b1c8912dc4:111",
+                "resultPreview": "sha256:efefc15c24ee8645:11",
+                "durationMs": 2007,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "nAeofEHESA5ZDRPd02XhnApFTICGhD7L",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:6828395b09714324:109",
+                "resultPreview": "sha256:b36d162e60fcf1a8:8248",
+                "durationMs": 118,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Eb7gEawCPLVy2o4x4nSwEorMjkKoMlwE",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:da4ba2c9e376ee3d:101",
+                "resultPreview": "sha256:fc9d2675e40bc1c8:8248",
+                "durationMs": 65,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "WszOMLacBfaYO2CCwqYQmINHwtGnUEx0",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:44136fa355b3678a:2",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 0,
+            "truncated": null
+          },
+          {
+            "node": "tool",
+            "id": "WhzovpF4VCkaHK28iZA3sft4C3iBO81r",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:7c49575872f511ad:5092",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 8672181,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc6be2e50ffeaDWc2m8gPVlgyt",
+            "kind": "subagent",
+            "label": "general: P0: sweep depth closure (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 23019,
+              "output": 188
+            },
+            "startedAtOffsetMs": 35294448,
+            "endedAtOffsetMs": 35471787,
+            "children": [
+              {
+                "node": "tool",
+                "id": "lw742cBnGdVV5nwAsmZgMYc474Uex7w2",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:b5447ea1b55a2787:132",
+                "resultPreview": "sha256:cbb01c9a2209891f:163",
+                "durationMs": 1507,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "29mptAFlmPh5cnx5zdv6TvQm24Xb8IQX",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b938189206d31fb7:106",
+                "resultPreview": "sha256:05dab1a9c37a0347:8248",
+                "durationMs": 93,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "PmJMWKM9mVVoGlpBQtmp8oO3dw3YZnOQ",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:0224799d749068b7:5553",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 8059599,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc6b4d567ffeoBwumCF1wOq9uQ",
+            "kind": "subagent",
+            "label": "general: PSPEC: spec-first amendment (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 41822,
+              "output": 570
+            },
+            "startedAtOffsetMs": 35907033,
+            "endedAtOffsetMs": 36293325,
+            "children": [
+              {
+                "node": "tool",
+                "id": "xDWXb8J5iZgLtsSb6KbrsnVhkR9kb7fM",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:7259ef51d3aa42a3:164",
+                "resultPreview": "sha256:5ccbc85a86f1426a:172",
+                "durationMs": 1288,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "mQeVhwD1KuFz3gc0WLN9iy0xuMCeCZbH",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:da4ba2c9e376ee3d:101",
+                "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
+                "durationMs": 99,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "zivm5rXRssxYjswDYhQgFREuXR3uP20m",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:6828395b09714324:109",
+                "resultPreview": "sha256:48d154b1d6af244d:8248",
+                "durationMs": 86,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Wr0A8dFMplSMzwwoEOgNnhxo4kzxeLGr",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:c70e53c2e2ad95c2:111",
+                "resultPreview": "sha256:8a70f06a6882ea57:8248",
+                "durationMs": 63,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "nH9IzuQiZQx0Y891OhgLpQlwNspN3M5m",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:44136fa355b3678a:2",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 0,
+            "truncated": null
+          },
+          {
+            "node": "tool",
+            "id": "OBuCq4GVNGu2cQBE8PimFTYeTFjEQJdo",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:8e5332915704dac4:6086",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 7101101,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc6a63542ffe7QirDckKWEFwxl",
+            "kind": "subagent",
+            "label": "general: P0: sweep depth closure (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 23505,
+              "output": 300
+            },
+            "startedAtOffsetMs": 36865534,
+            "endedAtOffsetMs": 36989241,
+            "children": [
+              {
+                "node": "tool",
+                "id": "WW6PbnaKafqK5G9ju0iTtkZBf47koVyH",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:848a600c3c55a31e:110",
+                "resultPreview": "sha256:cbb01c9a2209891f:163",
+                "durationMs": 1385,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "EVy1BgCVNlqrriCDbQvyH5WXvunbRTio",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b938189206d31fb7:106",
+                "resultPreview": "sha256:05dab1a9c37a0347:8248",
+                "durationMs": 80,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "4UsUzKWQ4I5eQW1uCi5fUgYi1kYEQgHW",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:d18f059a1dc1465a:109",
+                "resultPreview": "sha256:076ee2294dc836e2:8248",
+                "durationMs": 71,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "IN4zYhwpWlZYvmmh9a1eqHBNjW1j6xvA",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:354f3c58c00f559b:6389",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 6407409,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc69b9f86ffeUeTEWVBibqlaEA",
+            "kind": "subagent",
+            "label": "general: PSPEC: spec-first amendment (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 54049,
+              "output": 387
+            },
+            "startedAtOffsetMs": 37559226,
+            "endedAtOffsetMs": 37926044,
+            "children": [
+              {
+                "node": "tool",
+                "id": "4MT8b1mkW5r8rL5tZUbDOCth8a0HA1Xo",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:7e8cb57cb5422221:113",
+                "resultPreview": "sha256:cbb01c9a2209891f:163",
+                "durationMs": 1279,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "vXAtXd3OQ0riS9uyzwpHARiUQ8WIcteU",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:da4ba2c9e376ee3d:101",
+                "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
+                "durationMs": 167,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "VXrxnQOwSDPSZEmjsqtHZkn5RlLyBMPW",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:6828395b09714324:109",
+                "resultPreview": "sha256:48d154b1d6af244d:8248",
+                "durationMs": 134,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "SWgl61fw5sH1Gx5jQl9G7WTL93Qm9Fuy",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:c70e53c2e2ad95c2:111",
+                "resultPreview": "sha256:8a70f06a6882ea57:8248",
+                "durationMs": 102,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "y412c08WN09yMUHyS8hjbw92c52l6fak",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:44136fa355b3678a:2",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 0,
+            "truncated": null
+          },
+          {
+            "node": "tool",
+            "id": "lZHol6cme91Mc2rp8ke1X21xaJuRhvaQ",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:4a6b0bbe60eab1cd:4849",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 3688273,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc67221e5ffeSu51aTzG1ygMPX",
+            "kind": "subagent",
+            "label": "general: P0: sweep depth closure (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 111858,
+              "output": 476
+            },
+            "startedAtOffsetMs": 40278363,
+            "endedAtOffsetMs": 40963543,
+            "children": [
+              {
+                "node": "tool",
+                "id": "1BmtmLIuab8HxIYBO75tc7VOTergaGMQ",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:03e5491aa956f49e:161",
+                "resultPreview": "sha256:70adbe01bf84ff9e:357",
+                "durationMs": 1434,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "mtHdnTdV86obQTbzPouOkBTEh20bOe5I",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:e6b0c09511363aca:113",
+                "resultPreview": "sha256:f4856d46ea29defb:989",
+                "durationMs": 1448,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "ZaLQnLoMs8I9vVSaA6q3owB4K9tX1VcJ",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b938189206d31fb7:106",
+                "resultPreview": "sha256:05dab1a9c37a0347:8248",
+                "durationMs": 154,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "B6EgV0Y2fSluZ7KSarfCwYLQc5Cud6Yf",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:d18f059a1dc1465a:109",
+                "resultPreview": "sha256:076ee2294dc836e2:8248",
+                "durationMs": 70,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "nWc2U9Z8iRvaKEwbJGafucOoDE5CtZ4B",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:58592ba2245639fc:114",
+                "resultPreview": "sha256:70f59f3d2e858075:8248",
+                "durationMs": 183,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "W3LkUGcaKW9DgiDgosIGpEFGsMirDgmK",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:dc2003db911087c4:5815",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 2877329,
+            "truncated": null
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc665c213ffeqwcuzya94r07Qe",
+            "kind": "subagent",
+            "label": "general: PSPEC: spec amendment (@general subagent)",
+            "status": "error",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 23481,
+              "output": 398
+            },
+            "startedAtOffsetMs": 41089325,
+            "endedAtOffsetMs": 41331195,
+            "children": [
+              {
+                "node": "tool",
+                "id": "W5zG6EHlu40RbpxiqNxZe9jZWteXfZM9",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:0842ea8482970d9d:113",
+                "resultPreview": "sha256:9fd446160c35555f:351",
+                "durationMs": 1250,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Jn2jsEDR5AYLs2RXZFAPnxvB7Fw3Gzvi",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:173cb6d4f8760772:118",
+                "resultPreview": "sha256:390bc0fb7afc9adc:9",
+                "durationMs": 1337,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "dbvS42cHmW0MsKBitVqVzMQho8xbagsC",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:da4ba2c9e376ee3d:101",
+                "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
+                "durationMs": 85,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "EBAmYqi0cA7z5yWSs5rtry3iSog7ipaN",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:6828395b09714324:109",
+                "resultPreview": "sha256:48d154b1d6af244d:8248",
+                "durationMs": 74,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "4aJwYPGNSkXlhoKJLXXSiUQ4JykDzkHH",
+            "toolName": "task",
+            "status": "error",
+            "inputPreview": "sha256:44136fa355b3678a:2",
+            "resultPreview": "sha256:18cc068fbdbecb19:22",
+            "durationMs": 0,
+            "truncated": null
+          },
+          {
+            "node": "tool",
+            "id": "ZiOT4rmAqa2GbGZoXuyXdftDJRaZiz5q",
+            "toolName": "skill",
+            "status": "done",
+            "inputPreview": "sha256:5c6fd0a3e159822f:18",
+            "resultPreview": "sha256:30dfc94caa70f988:1594",
+            "durationMs": 355,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "wjuhEv24O9rNqj1YAxi8t09whCk2QbMn",
+            "toolName": "task",
+            "status": "done",
+            "inputPreview": "sha256:2e7a02dc0364747b:2444",
+            "resultPreview": "sha256:5990310efb49ba40:1820",
+            "durationMs": 1428516,
+            "truncated": false
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc624f729ffem1pc6oaV3z5zY0",
+            "kind": "subagent",
+            "label": "general: test-runner: full baseline (@general subagent)",
+            "status": "done",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 275872,
+              "output": 3612
+            },
+            "startedAtOffsetMs": 45335575,
+            "endedAtOffsetMs": 46764106,
+            "children": [
+              {
+                "node": "tool",
+                "id": "OXGguDtUvJOUeHuDqprD3jimjV7ZcOAQ",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:72899a99d09858f5:97",
+                "resultPreview": "sha256:a80728fd9a3112c2:319",
+                "durationMs": 888,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "6Pfy6FaAdLNMDMxSb8cG8JnCMwouVkwx",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:f41134d0bdd2b155:92",
+                "resultPreview": "sha256:a06d58ef20a41c71:61",
+                "durationMs": 24733,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Lv5JJpguLsmO1rRcXGsXGhnJ1LwJ66vw",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:2571d125fbc2313a:94",
+                "resultPreview": "sha256:c19dde619de767f1:8248",
+                "durationMs": 968,
+                "truncated": true
+              },
+              {
+                "node": "tool",
+                "id": "BXsDqQFF8V66xN1N5ronXnYUYUufmqn5",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:ff83b085d6a5635e:215",
+                "resultPreview": "sha256:cbe4c45e3aa249fb:249",
+                "durationMs": 845,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "WJm2l0BLa1jpSPyeMxgHzW8Ijp0w4gnm",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:032915d31b7a1bcd:140",
+                "resultPreview": "sha256:7b686444508ba7aa:821",
+                "durationMs": 257,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "GsFSzNDoPukuPD5xNSrBcy4mqf5YegbQ",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:a58495b70468b0a7:123",
+                "resultPreview": "sha256:63afdf694c766ca5:4471",
+                "durationMs": 55,
+                "truncated": true
+              },
+              {
+                "node": "tool",
+                "id": "dVZURa8O3eBTei1iwRvyEN5lxQi0EDYR",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:def93d4ef59bab07:254",
+                "resultPreview": "sha256:fad7314cc1e45817:354",
+                "durationMs": 828,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "mFvfBCDvs0bvQevPXay2x2aRVPeeXWcQ",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:bcf99a052522ee5f:264",
+                "resultPreview": "sha256:23907d7eeb86a9dd:1485",
+                "durationMs": 832,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "yjX5dzgMhCnhxLJtsyO9pD2pVG2rMngy",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:4fdafc8b5e2d81c3:151",
+                "resultPreview": "sha256:03772912c5e9f7df:3427",
+                "durationMs": 812,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "ywCYibkqgZWeIkvd1XHZNcjFT67LPCRJ",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:89eb200c86601b7a:64",
+            "resultPreview": "sha256:29161a479828b371:8248",
+            "durationMs": 125,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "lPjnZCBhRMXE0qy1ELPjdx2lDe2DULR0",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:8de33efeb2df291b:66",
+            "resultPreview": "sha256:f42fc791bd0f0839:6191",
+            "durationMs": 78,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "baPYbuMF7HdztGf0XOZ6ZCTS9swLNr08",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:6335c9d6ab280ed0:456",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 5,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "X1WUZzckGEQaXd3VNtwSV4Ec7eRpauf9",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:80c66ffa8f8a451f:530",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 10,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "mOGMcNzQ3XZ65j5KKfCi5IbPa4q37LLt",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:0706d6cdbe5619d1:860",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 9,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "W7X2gBHTrVWTQXqPYpm9snaSefJRG0Z6",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:0281adbe16d90d23:139",
+            "resultPreview": "sha256:cd24e52373a16ec5:49",
+            "durationMs": 786,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "2ROvTOxPIiGZlJO0TIP30bnAWJJIHLCA",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:f19a0a5d2ec9042f:119",
+            "resultPreview": "sha256:2c3d93763cdbb6e6:624",
+            "durationMs": 1152,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "Jm3kuDGqbbk3jKk6LCfTuifDZLtQebES",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:430d4f5fb84f9f62:721",
+            "resultPreview": "sha256:f403d5f85429817d:129",
+            "durationMs": 812,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "UoFkSxc5Cl3zXRy5gITYRfIUYjvL54Iu",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:672f2ec07c2fc510:278",
+            "resultPreview": "sha256:32c39b8e606a3380:3240",
+            "durationMs": 825,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "ZbjJJXQeGKuDonqFoohqPMPeg3NE8kXx",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:e511602d93536b25:267",
+            "resultPreview": "sha256:4c37ee451a5ac390:143",
+            "durationMs": 803,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "VgVKaw5GVeqorcBx9atswtjOONpnW0iJ",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:26fc5dd4bb03f49e:142",
+            "resultPreview": "sha256:a1238e08716b78fd:8248",
+            "durationMs": 784,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "iw1wYmj6ptThbGnb0RzvKr9qfZMDBo4D",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:3ceaf97c3bb11f23:662",
+            "resultPreview": "sha256:ec954224646c6fa9:80",
+            "durationMs": 776,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "tsiIPZ2cPWkgqjpi212ti4h8xPSKCbka",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:a8c9dbe07f168167:585",
+            "resultPreview": "sha256:9439d73d3ce2bc32:55",
+            "durationMs": 800,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "7T4AVJg6XpsWJWmOW9JKHi7a1PXW0DsP",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:196dea7a84513477:886",
+            "resultPreview": "sha256:f1a54fd01fe1dc56:195",
+            "durationMs": 809,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "dsBzNwqgErI93lzs7O7mS9xaNG4l2r6N",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:d74238f12b879ddb:586",
+            "resultPreview": "sha256:4ac672baeb00e3b1:1040",
+            "durationMs": 1080,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "RZNyNJqmut17BbdX13XxIaYRViqr7NkZ",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:ac97acdedb0b526f:550",
+            "resultPreview": "sha256:3eaee42223af1656:63",
+            "durationMs": 771,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "OVLVplJ2nGJAgGkdROjQ3XEglrMq3fa6",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:f27d70964ffef211:381",
+            "resultPreview": "sha256:94a05dadeba1ffaa:1172",
+            "durationMs": 801,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "5xGelsfyjRpTVhsgNEDNFnkoWnlcpasC",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:30b62f5c4c4c8a3a:242",
+            "resultPreview": "sha256:25da406406a503a8:138",
+            "durationMs": 790,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "JzNh7inxVUxoDAJUoS9e3rtGb751zC0N",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:c02910284afca11f:671",
+            "resultPreview": "sha256:eabc9a27adf0d3f1:64",
+            "durationMs": 804,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "CarNGgXX4dVRWBFYD9oAWOpaPKvPwpHp",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:5bcaefaac4d333c4:102",
+            "resultPreview": "sha256:b91e5931a90990a8:113",
+            "durationMs": 889,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "mP0GgsdPV7KPGvN77CCxnTlsQABowMOn",
+            "toolName": "write",
+            "status": "done",
+            "inputPreview": "sha256:64f261ee6452c03e:8248",
+            "resultPreview": "sha256:e3e06ec0f8c95866:24",
+            "durationMs": 55,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "w20X9OxSaZGq7pzwNV4HCskF9GvbMVX6",
+            "toolName": "task",
+            "status": "done",
+            "inputPreview": "sha256:8cbfcd67dcf66481:6438",
+            "resultPreview": "sha256:9f92fabe7956493e:7025",
+            "durationMs": 2314810,
+            "truncated": false
+          },
+          {
+            "node": "agent",
+            "id": "ses_fc55aafb9ffe34CG12YOZZZcEE",
+            "kind": "subagent",
+            "label": "general: Verify handoff draft claims (@general subagent)",
+            "status": "done",
+            "spawnDepth": 1,
+            "contextNow": null,
+            "burn": {
+              "prompt": 488066,
+              "output": 13019
+            },
+            "startedAtOffsetMs": 58592135,
+            "endedAtOffsetMs": 60906969,
+            "children": [
+              {
+                "node": "tool",
+                "id": "eD7PIKKY19TmcihApbX30a98YX5jq9U9",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:5bc8387f9b5e2f0f:80",
+                "resultPreview": "sha256:262ce327c4108554:8246",
+                "durationMs": 97,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Z9xb8nxn3WgszOj3N7YWTyiZqhCjkjj5",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:d55570eb2a8560e0:211",
+                "resultPreview": "sha256:f61c63ddf31dd54f:78",
+                "durationMs": 762,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "A9rLl4vzXGy2dI9uMhgqWYiRoZ6hgvi5",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:4e1a6f81e8aff223:283",
+                "resultPreview": "sha256:b67f6ab14d8f3967:378",
+                "durationMs": 778,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "FDnSjNvACh7YG2LreIcUFU7NMQc5kZRp",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:e269ea3746dc8de6:153",
+                "resultPreview": "sha256:71000100867a1c28:792",
+                "durationMs": 752,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "H1A4fOj63tqkcCbXRc3b9caXiPf2N4O8",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:991c6f4eef96ab3f:568",
+                "resultPreview": "sha256:ec0187026b8487fe:1815",
+                "durationMs": 793,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "c8iZcuQi8jTB68X5lkfp6NyoDgZMTYDu",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:def96a84af8d0f73:149",
+                "resultPreview": "sha256:041a1b600d0e0407:154",
+                "durationMs": 1042,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "Xb07Km3klmPeHm7HWuAxMySr8QiZc82j",
+                "toolName": "webfetch",
+                "status": "done",
+                "inputPreview": "sha256:75f8304c5ae27753:72",
+                "resultPreview": "sha256:dcbfc2d4d10120f8:8248",
+                "durationMs": 704,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "ZHEnQAN6bPj2svsMZCi1vGbYjcqpaemM",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:f4ad57735c4d4f87:139",
+                "resultPreview": "sha256:1e449c66986f6c0b:99",
+                "durationMs": 846,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "LqXVxYd4nnDuz02eOEiUfbKCr7lwISqG",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:ad4d6598b9598dcc:278",
+                "resultPreview": "sha256:1beba321661f70db:1488",
+                "durationMs": 1321,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "OQ9JJXPYPjtyPqKh5pYxS9MD0K17Vlsm",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:580657730840288b:129",
+                "resultPreview": "sha256:8f1807ec146c10ff:3430",
+                "durationMs": 1817,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "LcTAWIds2PYt4YtxAwpb2p8J6WFOzZsC",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:da40571b5b48faa5:239",
+                "resultPreview": "sha256:dcbefe4b4c8797a3:30",
+                "durationMs": 763,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "K9JyPr0kODEKkfIP3pc944XN5AuBoOam",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:2715e4cbdb38b765:161",
+                "resultPreview": "sha256:0276b21ebb7493f8:829",
+                "durationMs": 912,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "uE49Kga7vJVliurufeRFbXeT3XmtCl5C",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:8de33efeb2df291b:66",
+                "resultPreview": "sha256:ca86651522043bd8:6803",
+                "durationMs": 98,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "5wtPMvlKcCV9HbNfo9h8Dj3Rf1QZfu6l",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:a802dded27047439:63",
+                "resultPreview": "sha256:75e56160169675d3:1235",
+                "durationMs": 31,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "eUuw2q3M6cNEGXtPMpdcJPs0vzLXq45n",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:25de9aebaff83b3e:187",
+                "resultPreview": "sha256:5c12960d87a18345:929",
+                "durationMs": 843,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "jPKmYUti1XlugPWKQ42hELeiOCPJh3s9",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:c04203258080c858:609",
+                "resultPreview": "sha256:62975b972db3ffa0:561",
+                "durationMs": 769,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "RDsiAYCDCHfdAxEaTjo2w1nVVWGXn73E",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:50fdb69fa32fc7c4:283",
+                "resultPreview": "sha256:b1929cfbd66335fb:272",
+                "durationMs": 1633,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "t8o2T2K4lENjBO1rHXSM7BpCNr1Oynld",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:02b3cbd8f884720e:91",
+                "resultPreview": "sha256:be38869a21b219e1:193",
+                "durationMs": 872,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "hVbHTVSrmwL7P2LHw9IZ2WljkkQkOlBT",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:bd24ccd6b2649bd6:73",
+                "resultPreview": "sha256:a8c20a69c5d6b8a5:960",
+                "durationMs": 200,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "bdUdjwkbIHReXr1qVz5JCOR1WE3P8wNo",
+                "toolName": "glob",
+                "status": "done",
+                "inputPreview": "sha256:94a1763d6bf83460:75",
+                "resultPreview": "sha256:964969a0cc153998:112",
+                "durationMs": 71,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "fmiKNFcQo7M5cgBt3DwU4a4HzS0axPFz",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:4efddf3cff6027bb:104",
+                "resultPreview": "sha256:6e6f3369ac1b0096:8247",
+                "durationMs": 113,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "xEH2ZXUHZaYHVzJnCyywEiX9rleEiJlY",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:fb422338ccd90cc6:88",
+                "resultPreview": "sha256:334ae47aa7dd4823:4466",
+                "durationMs": 74,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "qG2qR1VFFJCaYjxpvyzoIo6cFzUiaUqu",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:926c797a36a1723e:102",
+                "resultPreview": "sha256:63d823d830374f73:234",
+                "durationMs": 52,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "zrlMbViAQKjlk4wfEdPaZ3iCbf0wTLY1",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:f36a2399900bf695:65",
+                "resultPreview": "sha256:58dbfd22284ac6b7:4213",
+                "durationMs": 27,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "tYCNPYRXoXgRCuYib8k1CjMKj1QPCVTg",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:d4d5a1e5c3587d41:96",
+                "resultPreview": "sha256:1d644c48048e077b:696",
+                "durationMs": 353,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "fUEw3cgGpGckT3YYw8mU7QFEM45Slwws",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:d899ef96612372d9:101",
+                "resultPreview": "sha256:2728c71a5f78b9dd:1028",
+                "durationMs": 14,
+                "truncated": true
+              },
+              {
+                "node": "tool",
+                "id": "96upASNEw17FmwrMcYIPp4BPyxYLujkE",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:29fce214517c4fc4:81",
+                "resultPreview": "sha256:d6aa15186a17b7ba:1468",
+                "durationMs": 40,
+                "truncated": true
+              },
+              {
+                "node": "tool",
+                "id": "DdxJRr5wJgxuhsDfS9pS2e3KQ2CHFjAA",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:3d36f7e800fa6776:76",
+                "resultPreview": "sha256:afe7959ab7732108:926",
+                "durationMs": 423,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "onI2lcSdvKS452yZnvrfrfc9xKD48qNw",
+                "toolName": "read",
+                "status": "done",
+                "inputPreview": "sha256:b6884b71c3bbda54:85",
+                "resultPreview": "sha256:0d0d3a2bbdf24a6b:8248",
+                "durationMs": 12,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "IWdiakOQYIvSXMlbEWIOKUIIMKRODSPn",
+                "toolName": "bash",
+                "status": "done",
+                "inputPreview": "sha256:2b5f86665bae5f67:213",
+                "resultPreview": "sha256:57cf75683b9b408e:323",
+                "durationMs": 900,
+                "truncated": false
+              },
+              {
+                "node": "tool",
+                "id": "MnR96Lga7NwwTcVdTl9ky8z5MPl3K4zk",
+                "toolName": "grep",
+                "status": "done",
+                "inputPreview": "sha256:9bdee85432cc9db3:93",
+                "resultPreview": "sha256:815d92de3b81dc0a:4252",
+                "durationMs": 138,
+                "truncated": false
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "ptSWvDqMZfz9S2UX65gh0OiK8HUWVfYh",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:0900473810c8f158:886",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 8,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "bs1dqFUsXRh88zmkB6YmZDCL7Dl6jCEK",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:72e9801356949ec6:1334",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 12,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "v60vTlsSpCuhd1zA90K1BchFS5ot24AJ",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:5d9dd00c6848a097:461",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 6,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "PFnT9sPIYcgYv9zdHM3Rg3adZDGJwf8h",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:41b075447e78f516:304",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 9,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "vyjshWk4jrzlfFcmIftRl2Q5O14faoX0",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:6e6e7a045e40de4e:185",
+            "resultPreview": "sha256:2dec98d47d075972:4126",
+            "durationMs": 824,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "19JScloqQUOHzLtyZhIB0pXrvXbmCpiJ",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:214fbccd3af122f6:788",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 5,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "tgVy4e59az4f0Evy6cVVI89bbNsLVtFM",
+            "toolName": "grep",
+            "status": "done",
+            "inputPreview": "sha256:0a69abe67e280946:172",
+            "resultPreview": "sha256:dd67cf15c251a3cb:154",
+            "durationMs": 168,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "VNqFpXLKW8r9YLB4U93Mjk56wUOuxedO",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:5dd6f9eb49d4dfdf:104",
+            "resultPreview": "sha256:cddfb1f7639fdf05:3804",
+            "durationMs": 40,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "Bgz9fhgRi6eHGVSl5MFEskeVr2a6xFGA",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:9d679bcae5a49823:669",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 5,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "je9p23jn1Yu5ficRsVda9nnILIp9yNfG",
+            "toolName": "grep",
+            "status": "done",
+            "inputPreview": "sha256:cac371de0b11e2e8:130",
+            "resultPreview": "sha256:62f8045ffd03ca67:260",
+            "durationMs": 59,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "CFJlPELNwaU1tE142iC38RBU8vQnXCUH",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:50cf60123d19d4a4:103",
+            "resultPreview": "sha256:2b2b41001ebe9408:2934",
+            "durationMs": 27,
+            "truncated": true
+          },
+          {
+            "node": "tool",
+            "id": "dECKn076QerN32L2abW0jTILbGwEgM5N",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:1155c76ed4f183cf:643",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 8,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "2Jg2PbUSSSpnirLBlmsEGmIl2EeUNUGi",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:974627b87396a599:87",
+            "resultPreview": "sha256:f79d33e7c944474c:1855",
+            "durationMs": 47,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "FSLFsJom3sAwS5GKPInvFh8SwbfDBXjc",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:e29a7f91a635d4c4:349",
+            "resultPreview": "sha256:d05b1bac36ec2a07:91",
+            "durationMs": 893,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "G0IdWOIRUGhx6aPHoIUp5nJJpuhZIt9T",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:a38cf6eb5c5a1478:62",
+            "resultPreview": "sha256:26f360a4e28c98ef:8248",
+            "durationMs": 35,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "uhErIliwEObhlJSlV2lPGfdDxGS50wZE",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:7a321cb879043e06:1192",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 6,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "WE5Sc3ZWXpjOvj3HKuEw1dUYHA8skpq1",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:375e1e3c6a8e66cb:75",
+            "resultPreview": "sha256:db75074ac319aba7:1935",
+            "durationMs": 37,
+            "truncated": true
+          },
+          {
+            "node": "tool",
+            "id": "FQn3camoDvH5ekuhY1Pu1LCG5oayNMjF",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:b4e549675fc41692:373",
+            "resultPreview": "sha256:49fd4a576e2d47c3:132",
+            "durationMs": 843,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "inQpM6of0IQeXPCxi9LEzK67NOd3TrP3",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:742f18b409361538:3529",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 7,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "xeIdBvTNXCMh4vKeML5B2WdjygeR1k55",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:4ecfe838316673a4:1195",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 6,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "ZcTP13VFyR5EH18jHulvIbt8Mqwp6blo",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:8e538f7dbc42a791:1051",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 9,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "4ZyKC3P3ptFQ70xXsRAJ68JVMvaUgIrg",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:d90bc9b01a982a1f:1891",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 8,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "d4PvDznufOUTyfiGaSojpjux81UskCwW",
+            "toolName": "edit",
+            "status": "done",
+            "inputPreview": "sha256:202ce69f69135853:3197",
+            "resultPreview": "sha256:8caec1349d76de16:26",
+            "durationMs": 6,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "PXjcS527byH8ESeY8eEPycuDflsA5sk5",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:9d862ac6c2ebc5b0:73",
+            "resultPreview": "sha256:5f1b5f88263f0b27:4807",
+            "durationMs": 27,
+            "truncated": true
+          },
+          {
+            "node": "tool",
+            "id": "wJZbdMAdoPRMryLan59AQcg80HR2qcpQ",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:8a64838dedcad425:138",
+            "resultPreview": "sha256:64446484b643347c:410",
+            "durationMs": 834,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "IvmkeZ30sktxRIEVlUQjpcc5kdZYqKDx",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:aa83dd049093bcbc:263",
+            "resultPreview": "sha256:4a9794900670162b:672",
+            "durationMs": 1099,
+            "truncated": false
+          }
+        ]
+      }
+    },
+    {
+      "sessionId": "ses_fc27a62acffeD1MlHk264PvOmI",
+      "projectSlug": "c--Users-dev-projects-agent-deck",
+      "engine": "opencode",
+      "workspaceMatch": true,
+      "liveness": "idle",
+      "schemaOk": true,
+      "epochAnchor": "2026-08-26T10:02:41.875Z",
+      "totals": {
+        "costUsd": 0
+      },
+      "contextNow": null,
+      "burn": {
+        "prompt": 12082,
+        "output": 45
+      },
+      "spawnEdges": [],
+      "parked": [],
+      "root": {
+        "node": "agent",
+        "id": "root",
+        "kind": "main",
+        "label": "build: Howdy greeting",
+        "status": "done",
+        "spawnDepth": 0,
+        "contextNow": null,
+        "burn": {
+          "prompt": 12082,
+          "output": 45
+        },
+        "startedAtOffsetMs": 0,
+        "endedAtOffsetMs": 104559,
+        "children": []
+      }
+    },
+    {
+      "sessionId": "ses_fc0d15641ffevlXKef1jHVzUuN",
+      "projectSlug": "c--Users-dev-projects-agent-deck",
+      "engine": "opencode",
+      "workspaceMatch": true,
+      "liveness": "idle",
+      "schemaOk": true,
+      "epochAnchor": "2026-08-26T17:46:57.854Z",
+      "totals": {
+        "costUsd": 0
+      },
+      "contextNow": null,
+      "burn": {
+        "prompt": 80094,
+        "output": 707
+      },
+      "spawnEdges": [],
+      "parked": [],
+      "root": {
+        "node": "agent",
+        "id": "root",
+        "kind": "main",
+        "label": "build: Project plan summary",
+        "status": "done",
+        "spawnDepth": 0,
+        "contextNow": null,
+        "burn": {
+          "prompt": 80094,
+          "output": 707
+        },
+        "startedAtOffsetMs": 0,
+        "endedAtOffsetMs": 355977,
+        "children": [
+          {
+            "node": "tool",
+            "id": "TCFDs7gi0WDWSO6vdk9uC5tR88CqZW07",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:fe25c4ec39cffe81:60",
+            "resultPreview": "sha256:916db693399d72d6:8248",
+            "durationMs": 92,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "AgkiTRxn0E7bo5BcmY87fUN7tcjiQK6Y",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:89eb200c86601b7a:64",
+            "resultPreview": "sha256:d74d88e1e7337312:8248",
+            "durationMs": 17,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "emMRtPUI8jvWzdQNZbuqMpGIJNfEPKEi",
+            "toolName": "grep",
+            "status": "done",
+            "inputPreview": "sha256:5c8c7a8d45562799:86",
+            "resultPreview": "sha256:3e6d7d3fbe0c0546:6311",
+            "durationMs": 680,
+            "truncated": true
+          },
+          {
+            "node": "tool",
+            "id": "rkG39BMjAPtuXW7kUjiETxctFa3OHvsc",
+            "toolName": "bash",
+            "status": "done",
+            "inputPreview": "sha256:5613383c947f1ae6:62",
+            "resultPreview": "sha256:603b89c0776d4c20:1028",
+            "durationMs": 311,
+            "truncated": false
+          }
+        ]
+      }
+    },
+    {
+      "sessionId": "ses_fc0bab772ffeMg5GAMA0263aZa",
+      "projectSlug": "c--Users-dev-projects-agent-deck",
+      "engine": "opencode",
+      "workspaceMatch": true,
+      "liveness": "idle",
+      "schemaOk": true,
+      "epochAnchor": "2026-08-26T18:11:40.301Z",
+      "totals": {
+        "costUsd": 0
+      },
+      "contextNow": null,
+      "burn": {
+        "prompt": 30450,
+        "output": 144
+      },
+      "spawnEdges": [],
+      "parked": [],
+      "root": {
+        "node": "agent",
+        "id": "root",
+        "kind": "main",
+        "label": "build: Repository investigation with tools and subagents",
+        "status": "done",
+        "spawnDepth": 0,
+        "contextNow": null,
+        "burn": {
+          "prompt": 30450,
+          "output": 144
+        },
+        "startedAtOffsetMs": 0,
+        "endedAtOffsetMs": 88094,
+        "children": [
+          {
+            "node": "tool",
+            "id": "call-a8602bbb-f36e-4887-aa41-723b23ea1e2c",
+            "toolName": "glob",
+            "status": "done",
+            "inputPreview": "sha256:1a60526d10f05ef3:18",
+            "resultPreview": "sha256:e08f397ec9f1824a:5933",
+            "durationMs": 497,
+            "truncated": true
+          },
+          {
+            "node": "tool",
+            "id": "call-681ebf34-1334-4168-a442-fe1896b85c90",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:646707ab7c202f34:62",
+            "resultPreview": "sha256:7a25553f1fa325d7:8248",
+            "durationMs": 8,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "call-8c4e3858-be7c-4f8a-a68a-da968b24662a",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:a38cf6eb5c5a1478:62",
+            "resultPreview": "sha256:54fd1f8958d35568:8248",
+            "durationMs": 6,
+            "truncated": false
+          },
+          {
+            "node": "tool",
+            "id": "call-1719da73-bd77-44e4-bfbc-adea2e7f756a",
+            "toolName": "read",
+            "status": "done",
+            "inputPreview": "sha256:fe25c4ec39cffe81:60",
+            "resultPreview": "sha256:916db693399d72d6:8248",
+            "durationMs": 7,
+            "truncated": false
+          }
+        ]
+      }
+    }
+  ]
+}

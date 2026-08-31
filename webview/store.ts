@@ -27,18 +27,40 @@
  */
 
 import type {
+  ApplyError,
   HostToWebviewMessage,
   SessionState,
+  TokenPair,
   TreeNode,
+  TreeOp,
   WebviewToHostMessage,
 } from '../src/model/events.js';
 import { isAgentNode } from '../src/model/events.js';
 import { applySessionPatch } from '../src/bridge/apply.js';
-import { DEFAULT_VIEW_MODE } from './canvas-contract.js';
-import type { Altitude, ViewMode } from './canvas-contract.js';
+import {
+  DEFAULT_ENGINE_FILTER,
+  DEFAULT_LIVENESS_FILTER,
+  DEFAULT_VIEW_MODE,
+  ENGINE_FILTERS,
+  LIVENESS_FILTERS,
+} from './canvas-contract.js';
+import type {
+  Altitude,
+  EngineFilter,
+  LivenessFilter,
+  ViewMode,
+} from './canvas-contract.js';
 import { countNodes } from './layout.js';
-import { DECK_FILTERS, ZOOM_MAX, ZOOM_MIN } from './canvas-contract.js';
-import type { DeckFilter } from './canvas-contract.js';
+import {
+  DECK_FIT_PADDING,
+  DECK_ZOOM_LIMITS,
+  TREE_ZOOM_LIMITS,
+  clampScale,
+  fitTo,
+  panBy,
+  zoomAbout,
+} from './viewport.js';
+import type { Rect, ViewportSize } from './viewport.js';
 
 /** One row of the left rail. */
 export interface SessionSummary {
@@ -78,16 +100,113 @@ export interface SessionSummary {
    * is read off it at all. A big cracked blob would be asserting "this session
    * has a lot in it" from a layout we declined to trust — the partial render
    * the refusal exists to prevent, in the size channel instead of the tree.
-   * A refused blob therefore draws at `layout.ts:DECK_RADIUS_MIN` and carries
-   * no badge, which is the deck saying nothing about content it refused.
+   * A refused card therefore carries no badge and no counts, which is the deck
+   * saying nothing about content it refused.
+   *
+   * THIS COMMENT USED TO NAME A CONSTANT THAT NO LONGER EXISTS. It read "a
+   * refused blob therefore draws at `layout.ts:DECK_RADIUS_MIN`", from the
+   * phyllotaxis deck, where a blob's RADIUS was a function of `nodeCount` and
+   * a refused session had to be pinned to the floor so its size could not
+   * assert anything. Phase 7 deleted that geometry: every card is one shape,
+   * `DECK_CARD_W` x `DECK_CARD_H` = 220 x 88, in all three layouts, and
+   * `deck.test.ts`'s "draws ONE shape in every layout" asserts it. There is no
+   * size channel left for a refusal to leak through, so the zeroes here now
+   * only govern the badge and the card's own figures.
    */
   errorCount: number;
+  /**
+   * Which observation engine produced this session (DoD 5.4).
+   *
+   * NORMALISED HERE, ONCE. `SessionState.engine` is optional and its absence
+   * reads as `'cc'` — `src/model/events.ts` is the authority for that rule,
+   * and gate amendment B3 makes `src/model/session.ts` stamp `'cc'`
+   * explicitly, so every state the shipping CC model hands out carries it.
+   * Absence stays expressible (an older construction of the interface, or a
+   * test literal), so the default is applied in `summarize` and this field is
+   * REQUIRED on the summary.
+   *
+   * That asymmetry is deliberate. A renderer that had to re-apply the default
+   * would be the second place one rule is stated, and two places stating one
+   * rule is how they come to disagree — the defect `canvas-contract.ts`'s
+   * header describes, in the data instead of in a name.
+   *
+   * The type is derived from `SessionState` rather than written out, so the
+   * day a third engine is added this row cannot be the place that forgot.
+   */
+  engine: NonNullable<SessionState['engine']>;
+  /**
+   * Agent nodes in the tree, root included. The deck card's `{n} ag`.
+   *
+   * Derived here for the reason every other derived number on this row is:
+   * per-session derivation is the store's job, and a component holding its
+   * own tree walk is a second implementation of one rule.
+   *
+   * **0 for a refused session**, like {@link SessionSummary.nodeCount} and for
+   * the same reason (G3): no number is read off a tree the fingerprint
+   * declined to trust.
+   */
+  agents: number;
+  /**
+   * Tool calls whose status is `running`, anywhere in the tree. The card's
+   * `{n} in flight`, and half of the pulse rule (DoD 7.5).
+   *
+   * Tools only. An agent is `running` because a tool under it is, so counting
+   * both would report one in-flight call two or three times on a deep tree.
+   * **0 for a refused session.**
+   */
+  inflight: number;
+  /**
+   * Everything the session has spent, or ABSENT when the engine does not
+   * report it.
+   *
+   * Optional, and the absence is the point: `EM_DASH` is the honest render of
+   * an unreported figure and `0` is a wrong number rather than a missing one.
+   * The OpenCode engine leaves it unset — see `SessionState.burn`. Absent for
+   * a refused session too.
+   */
+  burn?: TokenPair;
+  /**
+   * How full the session's context is right now, or ABSENT. Same optionality
+   * and the same reason as {@link SessionSummary.burn}.
+   */
+  contextNow?: TokenPair;
+  /**
+   * `SessionState.totals.costUsd`, carried unchanged.
+   *
+   * **0 means NOT YET COMPUTED, never "free"** — there is no price table in
+   * this repository. `format.ts:formatCost` is the one place that rule turns
+   * into a rendered string, and it renders 0 as an em-dash.
+   */
+  costUsd: number;
+  /**
+   * The latest moment anything in this session was observed to happen: the
+   * greatest `endedAt ?? startedAt` over every agent in the tree.
+   *
+   * A COMPARABLE ORDINAL, not a wall clock the store owns. It feeds
+   * `layout.ts:DeckSession.last` (which only ever compares it) and the card's
+   * relative-age text (which differences it against a `now` the RENDERER
+   * supplies). This module has no clock and gains none here — that is what
+   * keeps `getView()` idempotent.
+   *
+   * `ToolNode` carries no timestamp at all, so tools contribute nothing; the
+   * agent that owns them does. **0 for a refused session**, which sorts it
+   * last under `recent` and renders its age as an em-dash.
+   */
+  lastEventAt: number;
 }
 
 /** A patch the host sent that could not be applied. */
 export interface PatchFailure {
   sessionId: string;
   message: string;
+  /**
+   * The op that could not be applied, when exactly one could not.
+   *
+   * Carried so the host's diagnostics channel can name it (DoD 5.5.3) without
+   * the webview shipping the op's payload across the boundary — the payload is
+   * renderer-side data and the host has no business trusting it.
+   */
+  op?: TreeOp['op'];
 }
 
 /**
@@ -112,6 +231,16 @@ export interface WebviewView {
    */
   patchFailure?: PatchFailure;
   /**
+   * How many times a resync this store ASKED FOR has been answered with a
+   * snapshot (DoD 5.5.2).
+   *
+   * Counted here as well as on the host because the two numbers answer
+   * different questions: the host's counts requests it received, this one
+   * counts repairs that actually landed. They disagree exactly when a request
+   * is lost, which is the failure this whole phase exists to make visible.
+   */
+  resyncs: number;
+  /**
    * Node ids of the selected session whose expansion the user has TOGGLED
    * AWAY FROM ITS DEFAULT — not the set of expanded nodes.
    *
@@ -131,14 +260,39 @@ export interface WebviewView {
    */
   viewMode: ViewMode;
   /**
-   * Which sessions the deck shows. `sessions` below is ALWAYS the full list —
-   * filtering is applied by the deck, not by the store, so nothing downstream
-   * can mistake a filtered view for the host's account of what exists.
+   * Which LIVENESS the deck shows. `sessions` below is ALWAYS the full list —
+   * filtering is a view over it, so nothing downstream can mistake a filtered
+   * view for the host's account of what exists.
+   *
+   * Renamed from `deckFilter` in Phase 7. There are two deck filters now and
+   * the old name did not say which one it was; the type it carried was called
+   * `DeckFilter` and so was a DIFFERENT type in `layout.ts` meaning an engine.
    */
-  deckFilter: DeckFilter;
+  livenessFilter: LivenessFilter;
   /**
-   * The sessions the current filter admits. A derived convenience, recomputed
+   * Which ENGINE's sessions the deck shows.
+   *
+   * **HERE RATHER THAN IN `Deck.svelte`, and that is a fix rather than a
+   * preference.** It was `$state` in the component, and `App.svelte` mounts
+   * `<Deck>` only while the altitude is `deck` — so entering a session
+   * unmounted the deck and returning re-mounted it at `all`. The engine filter
+   * silently reset on every session visit while the liveness filter beside it,
+   * which was already store state, persisted. Two controls side by side
+   * behaving differently, with nothing on screen explaining why.
+   *
+   * G7 is still satisfied, and by the thing G7 actually asks for: no VS Code
+   * setting, no `workspaceState`, no `localStorage`, no host message. It is
+   * discarded when the panel closes because the store goes with it.
+   */
+  engineFilter: EngineFilter;
+  /**
+   * The sessions the LIVENESS filter admits. A derived convenience, recomputed
    * on every read like everything else here, never stored.
+   *
+   * The engine filter is deliberately NOT applied here. `Deck.svelte` badges
+   * each engine chip with the number of sessions that engine has, which it
+   * counts off the list it is given — a list already narrowed by engine would
+   * make every chip but the active one read 0.
    */
   filteredSessions: readonly SessionSummary[];
   /**
@@ -147,18 +301,27 @@ export interface WebviewView {
    * makes reopening possible without re-picking the node.
    */
   inspectorOpen: boolean;
+  /**
+   * Whether the drawer is at its expanded height (design.md §8.6: collapsed
+   * max-height 190 px, expanded exactly 46vh).
+   *
+   * In the store rather than in the component because Escape walks it — §8.6's
+   * order is detail → drawer → out — and Escape is handled above the drawer.
+   * A height the component owned privately would be a step the Escape walk
+   * could not see.
+   */
+  drawerExpanded: boolean;
+  /**
+   * The call row whose detail pane is open, if any (§8.6: "opens on row
+   * click, splits the body").
+   *
+   * ONE at a time, and that is the design rather than a simplification: the
+   * pane takes the body's remaining width beside a 340 px list, so two open
+   * details have nowhere to go. It is the first step of the Escape walk.
+   */
+  detailActionId?: string;
   /** Deck pan/zoom. A TRANSFORM, never a coordinate — see `canvas-contract.ts`. */
   deckView: { x: number; y: number; k: number };
-  /**
-   * Per-session nudges, in stage units, keyed by sessionId.
-   *
-   * Blobs are placed on a golden-angle spiral and can overlap; this lets one
-   * be dragged aside to see what is under it. Like the pan transform it is an
-   * OFFSET APPLIED AT RENDER TIME — `deckLayout` still returns the same
-   * coordinates it always did, so the goldens hold and a session dragged aside
-   * snaps back the moment the user resets the view.
-   */
-  blobNudges: Readonly<Record<string, { dx: number; dy: number }>>;
   /**
    * Session-interior pan/zoom. Separate from `deckView` deliberately: they are
    * different spaces, and inheriting the deck+#39;s transform on entry would drop
@@ -219,28 +382,80 @@ export interface Store {
    */
   selectNode(nodeId: string): void;
   /**
-   * Walk one altitude up: inspector → session interior → deck (C7.8, the
-   * Escape key). A no-op at the deck, and it notifies nobody there — a
-   * keystroke that changes nothing must not look like a change.
+   * Walk one step up: **detail pane → drawer → session interior → deck**
+   * (design.md §8.6's Escape order, extending C7.8). A no-op at the deck, and
+   * it notifies nobody there — a keystroke that changes nothing must not look
+   * like a change.
    *
    * Lives here rather than in a component so both surfaces walk the same
    * ladder and neither owns the transition.
+   *
+   * **§8.6 names a step this does not take**: between the drawer and the deck
+   * it says "re-root to parent". That step is NOT implemented, and it is not
+   * an oversight of this walk — the focus root lives in `SessionCanvas.svelte`
+   * as component state and the store cannot see it, so there is nothing here
+   * to walk. Moving it would be a store/canvas refactor, not a drawer change.
+   * Recorded so the next reader finds the reason rather than the gap.
    */
   escape(): void;
+  /**
+   * Toggle the drawer between its two heights (§8.6). Ignored when there is
+   * nothing to inspect: a height change on an empty drawer is motion that says
+   * nothing.
+   */
+  toggleDrawerExpanded(): void;
+  /**
+   * Open one call row's detail pane, or shut whichever is open.
+   *
+   * `undefined` shuts it. An unknown id is ignored rather than stored — the
+   * rows are built from the node's own children, so an id outside them can
+   * only come from a caller that invented one, and storing it would open an
+   * empty pane.
+   */
+  setDetailAction(actionId: string | undefined): void;
   /** Switch renderers (C7.2). Not persisted, not a setting, not a message. */
   setViewMode(mode: ViewMode): void;
   /** The in-panel toggle: canvas ⇄ list. */
   toggleViewMode(): void;
   /** Show only sessions of this liveness, or all of them. */
-  setDeckFilter(filter: DeckFilter): void;
+  setLivenessFilter(filter: LivenessFilter): void;
+  /**
+   * Show only sessions from this engine, or all of them.
+   *
+   * Posts NOTHING and touches no session list, exactly like
+   * {@link Store.setLivenessFilter}. An unknown value is ignored rather than
+   * stored: the deck's chips are built from `ENGINE_FILTERS`, so a value
+   * outside it can only come from a caller that invented one.
+   */
+  setEngineFilter(filter: EngineFilter): void;
   /** Open or shut the inspector panel without changing the selected node. */
   setInspectorOpen(open: boolean): void;
-  /** Pan the deck by a delta in stage units. */
+  /** Pan the deck by a delta in CLIENT pixels. `viewport.ts:panBy`. */
   panDeck(dx: number, dy: number): void;
-  /** Zoom the deck about a point, clamped to [ZOOM_MIN, ZOOM_MAX]. */
-  zoomDeck(factor: number, originX: number, originY: number): void;
-  /** Move one blob aside by a delta in stage units. Additive. */
-  nudgeBlob(sessionId: string, dx: number, dy: number): void;
+  /**
+   * Zoom the deck about a client point, in WHEEL NOTCHES.
+   *
+   * Notches, not a factor, and the change is deliberate: `viewport.ts` is the
+   * single definition of pan/zoom for all three altitudes and its
+   * {@link zoomAbout} takes a signed notch count, so a factor here meant this
+   * module re-implementing `ZOOM_FACTOR ** notches` and the clamp beside it —
+   * two implementations of one rule, which is the defect class
+   * `canvas-contract.ts` exists to prevent, in arithmetic instead of in a
+   * name. Positive zooms in; fractional values are allowed so a trackpad's
+   * continuous delta needs no special case.
+   */
+  zoomDeck(notches: number, clientX: number, clientY: number): void;
+  /**
+   * Fit placed deck content into a viewport of this pixel size, with
+   * {@link DECK_FIT_PADDING} of clear space. The double-click-on-empty-field
+   * gesture (DoD 7.4).
+   *
+   * Takes the CONTENT RECTANGLE rather than the sessions, because the bounds
+   * of what is drawn are the renderer's own layout output and this module has
+   * no business re-deriving them: `layout.ts:deckLayout` places, and
+   * `viewport.ts:boundsOf` measures.
+   */
+  fitDeck(content: Rect, size: ViewportSize): void;
   /** Back to the identity transform, and every blob back where layout put it. */
   resetDeckView(): void;
   /** The same three, for the session interior. */
@@ -299,6 +514,41 @@ function countToolErrors(node: TreeNode): number {
   return total;
 }
 
+/** Agent nodes below and including `node`. Tools are walked through. */
+function countAgents(node: TreeNode): number {
+  if (!isAgentNode(node)) return 0;
+  let total = 1;
+  for (const child of node.children) total += countAgents(child);
+  return total;
+}
+
+/**
+ * Tool nodes whose status is `running`, anywhere below `node`.
+ *
+ * Agents are walked through, never counted — see
+ * {@link SessionSummary.inflight} for why counting both would over-report.
+ */
+function countInflight(node: TreeNode): number {
+  if (!isAgentNode(node)) return node.status === 'running' ? 1 : 0;
+  let total = 0;
+  for (const child of node.children) total += countInflight(child);
+  return total;
+}
+
+/**
+ * The greatest agent timestamp in the tree. 0 when the tree has none.
+ *
+ * `endedAt` when the agent has one, `startedAt` otherwise: an agent that has
+ * finished was last heard from when it finished.
+ */
+function lastAgentEvent(node: TreeNode): number {
+  if (!isAgentNode(node)) return 0;
+  let latest = node.endedAt ?? node.startedAt;
+  if (!Number.isFinite(latest)) latest = 0;
+  for (const child of node.children) latest = Math.max(latest, lastAgentEvent(child));
+  return latest;
+}
+
 function summarize(state: SessionState, refused: boolean): SessionSummary {
   return {
     sessionId: state.sessionId,
@@ -312,11 +562,56 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
     // deep-equal view — there is no object identity here to flap.
     nodeCount: refused ? 0 : countNodes(state),
     errorCount: refused ? 0 : countToolErrors(state.root),
+    // Absence reads as `'cc'`. This is the one place that rule is applied;
+    // see the field's own doc above.
+    //
+    // NOT zeroed for a refused session, unlike the two counts above. Those are
+    // numbers read off a tree the fingerprint declined to trust, which is what
+    // G3 forbids; which engine did the refusing is known independently of the
+    // tree and is exactly what a reader needs to know about a cracked blob.
+    engine: state.engine ?? 'cc',
+    // The same G3 treatment as `nodeCount`/`errorCount`: a refused session's
+    // tree was not recognised, so nothing is counted off it. `costUsd` is
+    // zeroed rather than dropped because 0 already means NOT COMPUTED, which
+    // is exactly the claim a refusal supports.
+    agents: refused ? 0 : countAgents(state.root),
+    inflight: refused ? 0 : countInflight(state.root),
+    costUsd: refused ? 0 : state.totals.costUsd,
+    lastEventAt: refused ? 0 : lastAgentEvent(state.root),
+    // Carried by reference, not copied: `applySessionPatch` deep-freezes the
+    // state, so the pair cannot be mutated behind a renderer's back, and
+    // sharing the reference is what keeps `getView()` deep-equal across two
+    // reads of one snapshot.
+    ...(refused || state.contextNow === undefined ? {} : { contextNow: state.contextNow }),
+    ...(refused || state.burn === undefined ? {} : { burn: state.burn }),
   };
 }
 
 export function createStore(postIntent: IntentSink = () => {}): Store {
   const sessions = new Map<string, SessionState>();
+  /** Set between asking for a resync and the snapshot that answers it. */
+  let resyncPending = false;
+  let resyncs = 0;
+
+  /**
+   * Record a patch failure and ask the host for a snapshot.
+   *
+   * One request per divergence episode: `resyncPending` gates it, so a burst
+   * of failing diffs produces one request rather than one per diff. A renderer
+   * that machine-guns the host is a renderer the host will start ignoring.
+   */
+  const failPatch = (failure: PatchFailure, reason: string): void => {
+    patchFailure = failure;
+    if (resyncPending) return;
+    resyncPending = true;
+    const request: WebviewToHostMessage = {
+      type: 'resyncRequest',
+      reason,
+      sessionId: failure.sessionId,
+    };
+    if (failure.op !== undefined) request.failedOp = failure.op;
+    postIntent(request);
+  };
   /** Session order as the host sent it; a Map preserves it, but be explicit. */
   let order: string[] = [];
   const mismatched = new Set<string>();
@@ -325,11 +620,15 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
   let selectedNodeId: string | undefined;
   let altitude: Altitude = 'deck';
   let viewMode: ViewMode = DEFAULT_VIEW_MODE;
-  let deckFilter: DeckFilter = 'all';
+  let livenessFilter: LivenessFilter = DEFAULT_LIVENESS_FILTER;
+  let engineFilter: EngineFilter = DEFAULT_ENGINE_FILTER;
   let inspectorOpen = false;
+  /** §8.6's two drawer heights. Collapsed is the default, on every entry. */
+  let drawerExpanded = false;
+  /** Which call row's detail pane is open. One at a time (§8.6). */
+  let detailActionId: string | undefined;
   const IDENTITY_VIEW = { x: 0, y: 0, k: 1 };
   let deckView = { ...IDENTITY_VIEW };
-  let blobNudges: Record<string, { dx: number; dy: number }> = {};
   let canvasView = { ...IDENTITY_VIEW };
   let degraded = false;
   let degradedReason: 'noHookEvents' | 'listenerDown' | undefined;
@@ -399,6 +698,15 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     }
     // A snapshot is the host's authoritative re-statement, so any earlier
     // failed patch is now moot.
+    //
+    // DoD 5.5.2: if we ASKED for this, count the repair. `resyncPending` is
+    // cleared here and nowhere else, so the counter measures snapshots that
+    // answered a request rather than snapshots in general — the host sends
+    // those for its own reasons too (a session appearing, a panel reload).
+    if (resyncPending) {
+      resyncs += 1;
+      resyncPending = false;
+    }
     patchFailure = undefined;
 
     if (selectedSessionId === undefined || !seen.has(selectedSessionId)) {
@@ -412,6 +720,12 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         // belonged to the session that left.
         selectedNodeId = undefined;
         inspectorOpen = false;
+        // The drawer's own two states go with the selection that owned them.
+        // A detail pane left open would point at a call in a session that has
+        // left, and an expanded height would be the only thing on screen still
+        // describing it.
+        detailActionId = undefined;
+        drawerExpanded = false;
         altitude = 'deck';
       }
     }
@@ -440,20 +754,23 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         toggledNodeIds,
         viewMode,
         altitude,
-        deckFilter,
+        livenessFilter,
+        engineFilter,
         // Derived on every read, never stored: `sessions` above stays the
         // host's full account, and this is one view of it. A component that
         // wanted to know "how many are there really" must not have to undo a
         // filter to find out.
         filteredSessions:
-          deckFilter === 'all'
+          livenessFilter === 'all'
             ? summaries
-            : summaries.filter((row) => row.liveness === deckFilter),
+            : summaries.filter((row) => row.liveness === livenessFilter),
         inspectorOpen,
+        drawerExpanded,
         deckView: { ...deckView },
-        blobNudges,
         canvasView: { ...canvasView },
+        resyncs,
       };
+      if (detailActionId !== undefined) view.detailActionId = detailActionId;
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
       if (selected !== undefined) view.selected = selected;
       if (degradedReason !== undefined) view.degradedReason = degradedReason;
@@ -488,24 +805,54 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
           if (prev === undefined) {
             // A diff for a session we have never seen. Not fatal: the host
             // re-snapshots, and guessing a base state would fabricate a tree.
-            patchFailure = {
-              sessionId: message.sessionId,
-              message: 'diff for an unknown session; waiting for a snapshot',
-            };
+            failPatch(
+              { sessionId: message.sessionId, message: 'diff for an unknown session' },
+              'diff for an unknown session',
+            );
             break;
           }
+          // DoD 5.5.1. Divergence no longer throws: every op that CAN be
+          // applied is, and the ones that cannot are reported here. Keeping
+          // the partial result is the point — the alternative, which `0.1.2`
+          // shipped, is to discard the whole patch, keep a stale tree, and
+          // apply the next patch to that same stale base. That is how a
+          // one-node gap becomes a session-long divergence.
+          const errors: ApplyError[] = [];
           try {
-            sessions.set(message.sessionId, applySessionPatch(prev, message.patch));
-            patchFailure = undefined;
+            const next = applySessionPatch(prev, message.patch, {
+              onError: (e) => errors.push(e),
+            });
+            sessions.set(message.sessionId, next);
           } catch (error: unknown) {
-            // G2/G3: a patch that cannot be applied must not take the webview
-            // down, and must not leave a half-applied tree on screen. Keep the
-            // last good state and say so; the host owes us a snapshot.
-            patchFailure = {
-              sessionId: message.sessionId,
-              message: error instanceof Error ? error.message : String(error),
-            };
+            // Still reachable: a patch that would break the "root is an agent
+            // node" invariant is a producer bug, not divergence, and `apply.ts`
+            // deliberately still throws for it. Keep the last good tree.
+            failPatch(
+              {
+                sessionId: message.sessionId,
+                message: error instanceof Error ? error.message : String(error),
+              },
+              'patch threw',
+            );
+            break;
           }
+          if (errors.length === 0) {
+            patchFailure = undefined;
+            break;
+          }
+          // DoD 5.5.2: tell the host. Before this, the store recorded the
+          // failure, its own comment said "the host owes us a snapshot", and
+          // nothing told the host anything.
+          const first = errors[0];
+          const failure: PatchFailure = {
+            sessionId: message.sessionId,
+            message:
+              errors.length === 1
+                ? `${first?.op ?? 'op'}: ${first?.reason ?? 'unapplicable'}`
+                : `${String(errors.length)} ops could not be applied; first: ${first?.reason ?? 'unapplicable'}`,
+          };
+          if (errors.length === 1 && first !== undefined) failure.op = first.op;
+          failPatch(failure, failure.message);
           break;
         }
         case 'schemaMismatch':
@@ -537,9 +884,17 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     },
 
     enterSession(sessionId: string): void {
-      // A fresh interior starts centred. Carrying the previous session's pan
-      // into a different tree would drop the user somewhere they never chose,
-      // and the two interiors share no coordinate space.
+      // Carrying the previous session's pan into a different tree would drop
+      // the user somewhere they never chose, and the two interiors share no
+      // coordinate space — so this is cleared rather than kept.
+      //
+      // IT DOES NOT CENTRE ANYTHING, and this comment said it did until
+      // 2026-08-28. Identity is the stage origin at the field's top-left, and
+      // the tidy tree puts the root at `(totalWidth − NW) / 2` — 1,658 units
+      // in on a real 16-subagent session, well off the right edge of any
+      // panel. What actually frames a fresh interior is
+      // `SessionCanvas.svelte`'s entry fit, which owns the rendered transform;
+      // this value is not read by it.
       canvasView = { ...IDENTITY_VIEW };
       if (!sessions.has(sessionId)) return;
       if (sessionId !== selectedSessionId) selectedNodeId = undefined;
@@ -558,6 +913,10 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       // card is the whole of it. Refuse, do not guess a node.
       if (isRefused(selected)) return;
       if (findNode(selected.root, nodeId) === undefined) return;
+      // Selecting a DIFFERENT node shuts the detail pane. The pane describes
+      // one call belonging to one node; carrying it across a selection change
+      // would leave it describing a call the drawer above it no longer lists.
+      if (nodeId !== selectedNodeId) detailActionId = undefined;
       selectedNodeId = nodeId;
       altitude = 'inspector';
       inspectorOpen = true;
@@ -567,15 +926,56 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     },
 
     escape(): void {
-      if (altitude === 'inspector') {
+      // §8.6's order, first step first: the detail pane closes before the
+      // drawer does. Written as its own branch ahead of the altitude ladder
+      // rather than folded into it, because the pane is not an altitude — it
+      // is a split inside one, and collapsing the two would make Escape drop
+      // two levels on one keystroke.
+      if (detailActionId !== undefined) {
+        detailActionId = undefined;
+      } else if (altitude === 'inspector') {
         altitude = 'session';
         inspectorOpen = false;
         selectedNodeId = undefined;
+        // The height goes with the drawer. Reopening on the next selection at
+        // 46vh would be the drawer remembering a state the user left.
+        drawerExpanded = false;
       } else if (altitude === 'session') {
         altitude = 'deck';
       } else {
         return;
       }
+      notify();
+    },
+
+    toggleDrawerExpanded(): void {
+      // Nothing to inspect, nothing to expand. Guarded on the SELECTION rather
+      // than on `inspectorOpen`, because the panel can be shut with a node
+      // still selected — that is what makes reopening possible — and growing a
+      // shut drawer is a height change nobody can see.
+      if (selectedNodeId === undefined) return;
+      drawerExpanded = !drawerExpanded;
+      notify();
+    },
+
+    setDetailAction(actionId: string | undefined): void {
+      if (actionId === undefined) {
+        if (detailActionId === undefined) return;
+        detailActionId = undefined;
+        notify();
+        return;
+      }
+      if (actionId === detailActionId) return;
+      // The id must name a call the SELECTED node actually made. Anything else
+      // opens a pane onto nothing, which is the shape of every "renders a tree
+      // that no longer exists" defect in this repository.
+      if (selectedSessionId === undefined || selectedNodeId === undefined) return;
+      const selected = sessions.get(selectedSessionId);
+      if (selected === undefined) return;
+      const owner = findNode(selected.root, selectedNodeId);
+      if (owner === undefined || !isAgentNode(owner)) return;
+      if (!owner.children.some((child) => child.id === actionId && !isAgentNode(child))) return;
+      detailActionId = actionId;
       notify();
     },
 
@@ -585,9 +985,15 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       notify();
     },
 
-    setDeckFilter(filter: DeckFilter): void {
-      if (!DECK_FILTERS.includes(filter) || filter === deckFilter) return;
-      deckFilter = filter;
+    setLivenessFilter(filter: LivenessFilter): void {
+      if (!LIVENESS_FILTERS.includes(filter) || filter === livenessFilter) return;
+      livenessFilter = filter;
+      notify();
+    },
+
+    setEngineFilter(filter: EngineFilter): void {
+      if (!ENGINE_FILTERS.includes(filter) || filter === engineFilter) return;
+      engineFilter = filter;
       notify();
     },
 
@@ -599,30 +1005,42 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       // would put the panel at an altitude with nothing in it.
       if (open && selectedNodeId !== undefined) altitude = 'inspector';
       if (!open && altitude === 'inspector') altitude = 'session';
+      // Shutting the drawer discards both of its own states, so reopening
+      // gives the collapsed, undetailed drawer §8.6 describes rather than
+      // whatever it looked like when it was dismissed.
+      if (!open) {
+        detailActionId = undefined;
+        drawerExpanded = false;
+      }
       notify();
     },
 
     panDeck(dx: number, dy: number): void {
       if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
       if (dx === 0 && dy === 0) return;
-      deckView = { ...deckView, x: deckView.x + dx, y: deckView.y + dy };
+      deckView = panBy(deckView, dx, dy);
       notify();
     },
 
-    zoomDeck(factor: number, originX: number, originY: number): void {
-      if (!Number.isFinite(factor) || factor <= 0) return;
-      if (!Number.isFinite(originX) || !Number.isFinite(originY)) return;
-      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, deckView.k * factor));
-      if (next === deckView.k) return;
-      // Zoom ABOUT THE POINTER: the stage point under the cursor stays under
-      // the cursor. Without this the deck slides away from whatever you were
-      // aiming at, which reads as the zoom being broken rather than centred.
-      const ratio = next / deckView.k;
-      deckView = {
-        k: next,
-        x: originX - (originX - deckView.x) * ratio,
-        y: originY - (originY - deckView.y) * ratio,
-      };
+    zoomDeck(notches: number, clientX: number, clientY: number): void {
+      if (!Number.isFinite(notches) || notches === 0) return;
+      if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+      // `zoomAbout` keeps the stage point under the cursor under the cursor,
+      // clamps to DECK_ZOOM_LIMITS, and returns the SAME OBJECT when the
+      // scale did not move — which is what makes the no-op check below exact
+      // rather than a float comparison.
+      const next = zoomAbout(deckView, clientX, clientY, notches, DECK_ZOOM_LIMITS);
+      if (next === deckView) return;
+      deckView = next;
+      notify();
+    },
+
+    fitDeck(content: Rect, size: ViewportSize): void {
+      const finite = [content.x, content.y, content.w, content.h, size.width, size.height];
+      if (finite.some((n) => !Number.isFinite(n))) return;
+      const next = fitTo(content, size, DECK_FIT_PADDING, DECK_ZOOM_LIMITS);
+      if (next.x === deckView.x && next.y === deckView.y && next.k === deckView.k) return;
+      deckView = next;
       notify();
     },
 
@@ -636,7 +1054,7 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     zoomCanvas(factor: number, originX: number, originY: number): void {
       if (!Number.isFinite(factor) || factor <= 0) return;
       if (!Number.isFinite(originX) || !Number.isFinite(originY)) return;
-      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, canvasView.k * factor));
+      const next = clampScale(canvasView.k * factor, TREE_ZOOM_LIMITS);
       if (next === canvasView.k) return;
       const ratio = next / canvasView.k;
       canvasView = {
@@ -653,25 +1071,11 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       notify();
     },
 
-    nudgeBlob(sessionId: string, dx: number, dy: number): void {
-      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
-      if (dx === 0 && dy === 0) return;
-      const prev = blobNudges[sessionId] ?? { dx: 0, dy: 0 };
-      // Replaced wholesale rather than mutated, so `getView()` keeps handing
-      // out a value that cannot be changed behind a component's back.
-      blobNudges = { ...blobNudges, [sessionId]: { dx: prev.dx + dx, dy: prev.dy + dy } };
-      notify();
-    },
-
     resetDeckView(): void {
       const already =
-        deckView.x === 0 && deckView.y === 0 && deckView.k === 1 &&
-        Object.keys(blobNudges).length === 0;
+        deckView.x === 0 && deckView.y === 0 && deckView.k === 1;
       if (already) return;
       deckView = { ...IDENTITY_VIEW };
-      // Reset means everything the user moved, not just the camera: a blob
-      // left dragged aside after a "reset view" is the control lying.
-      blobNudges = {};
       notify();
     },
 

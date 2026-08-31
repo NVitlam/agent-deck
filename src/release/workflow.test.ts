@@ -210,29 +210,134 @@ describe('ci.yml', () => {
     expect(ci.codeText).toContain('git config --global core.longpaths true');
   });
 
-  it('runs the spike layout audit with the fixture projects root', () => {
-    expect(ci.codeText).toContain('CLAUDE_PROJECTS_ROOT=');
-    expect(ci.codeText).toContain('spike/run.mjs --audit');
-    expect(ci.codeText).toContain('fixtures/cc-2.1.234/projects');
-    // The `VAR=value node ...` prefix is bash syntax. The default shell on a
-    // Windows runner is PowerShell, where it is a parse error, so the step that
-    // contains the audit must declare `shell: bash` ITSELF - not some earlier
-    // step. Scoped to the enclosing step block, which is the nearest preceding
-    // `- name:` line.
-    const auditLine = ci.lines.findIndex(
-      (l) => !isComment(l) && l.includes('spike/run.mjs --audit'),
-    );
-    expect(auditLine, 'no executed spike audit line').toBeGreaterThanOrEqual(0);
-    let stepStart = auditLine;
-    while (stepStart > 0 && !/^\s*- name:/.test(ci.lines[stepStart] ?? '')) stepStart -= 1;
-    const stepBlock = ci.lines.slice(stepStart, auditLine).join('\n');
-    expect(stepBlock, 'the spike audit step does not declare shell: bash').toContain('shell: bash');
+  /** Every executed (non-comment) line of BOTH workflows, joined. */
+  const executedText = (): string =>
+    [ci, byName('release.yml')]
+      .flatMap((w) => w.lines)
+      .filter((l) => !isComment(l))
+      .join('\n');
+
+  it('NAMES NO PATH THE REPOSITORY DOES NOT CONTAIN', () => {
+    /*
+     * THE ASSERTION THAT REPLACED THE SPIKE AUDIT, and it is the general form
+     * of the defect that step was.
+     *
+     * This test used to assert that `ci.yml` RAN `node spike/run.mjs --audit`.
+     * `spike/` is gitignored (`.gitignore:71`, `/spike/`) and has not been in
+     * this repository since the 2026-08-28 scrub, so the step it pinned could
+     * only ever exit 1 on a runner — and the test stayed green the whole time,
+     * because it read the YAML as text and never asked whether the path was
+     * there. A workflow guard that pins a command naming an absent file is the
+     * same class as the `includes(13)` assertion two tests below: the test
+     * pinned the broken step.
+     *
+     * So the specific step is gone and the general property is asserted
+     * instead: **every path an executed line names must resolve in a
+     * checkout.** That is checkable, it would have caught this on the day the
+     * scrub landed, and it catches the next one.
+     *
+     * Scope, stated because a path extractor that matches nothing passes
+     * vacuously: repo-relative paths with a `/` and a known source extension,
+     * plus bare top-level directory names the workflows actually use. Runner
+     * variables, URLs and shell words are not paths and are excluded by the
+     * shape. The count is asserted so an extractor that silently stops
+     * matching goes red.
+     */
+    const EXTS = 'mjs|cjs|js|ts|json|yml|yaml|md|vsix';
+    const PATH_RE = new RegExp(`(?<![\\w./-])([\\w.-]+(?:/[\\w.-]+)+\\.(?:${EXTS}))`, 'g');
+
+    const executed = executedText();
+    const named = [...new Set([...executed.matchAll(PATH_RE)].map((m) => m[1] ?? ''))]
+      .filter((p) => !p.startsWith('http'))
+      .sort();
+
+    /*
+     * VACUITY CONTROL, and the floor is MEASURED rather than guessed. A first
+     * draft asserted `length >= 2` after filtering, and went red at 1: these
+     * two workflows name exactly two file paths between them, and one of them
+     * was already filtered out. The set is asserted whole instead — if the
+     * extractor stops matching, or a step starts naming something new, this
+     * line is what says so.
+     */
+    expect(named).toStrictEqual(['dist/agent-deck.vsix', 'src/release/vsix.test.ts']);
+
+    const missing = named
+      // Written by `npm run package` two steps above the step that reads it, so
+      // it is absent from a checkout ON PURPOSE. Exempt from EXISTENCE only —
+      // it is still in the set above, so it cannot leave unnoticed.
+      .filter((p) => p !== 'dist/agent-deck.vsix')
+      .filter((p) => !existsSync(join(REPO_ROOT, p)));
+    expect(
+      missing,
+      `workflow steps name paths absent from a checkout: ${missing.join(', ')}`,
+    ).toEqual([]);
+
+    // And the specific regression by name: the audit must not come back
+    // without the directory coming back with it.
+    expect(executed).not.toContain('spike/');
+    expect(existsSync(join(REPO_ROOT, 'spike'))).toBe(false);
   });
 
-  it('asserts the checkout is CR-free, which is the only real check on .gitattributes', () => {
+  it('names no gitignored directory root, which is how spike/ survived a checkout', () => {
+    /*
+     * The other half, and the question the previous guard never asked. A path
+     * can exist in the maintainer's tree and be absent from a checkout —
+     * `spike/` and `docs/` are junctions into the private repository here, so
+     * "it works on my machine" is guaranteed and meaningless.
+     *
+     * `.gitignore` is the checkable form of "absent from a checkout", and it is
+     * read from the file rather than shelling out to `git`: a test that spawns
+     * a subprocess per root is the recorded "passes or fails by CPU load"
+     * class, and the rules are three lines of text.
+     */
+    const ignoredRoots = readFileSync(join(REPO_ROOT, '.gitignore'), 'utf8')
+      .split('\n')
+      .map((l) => l.replace(/\r$/, '').trim())
+      .filter((l) => l !== '' && !l.startsWith('#') && !l.startsWith('!'))
+      .filter((l) => l.endsWith('/'))
+      .map((l) => l.replace(/^\//, '').replace(/\/$/, ''));
+
+    // Non-vacuous: `.gitignore` really does ignore the roots this repository is
+    // known to keep private, so a rule list that stopped parsing goes red here
+    // rather than silently exempting everything.
+    expect(ignoredRoots).toContain('spike');
+    expect(ignoredRoots).toContain('docs');
+    expect(ignoredRoots).toContain('lab');
+
+    const executed = executedText();
+    const named = ignoredRoots.filter((root) => executed.includes(`${root}/`));
+    // `dist/` is the one legitimate case: the artifact is produced in-job.
+    const offenders = named.filter((root) => root !== 'dist');
+    expect(
+      offenders,
+      `workflow steps name gitignored roots: ${offenders.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('asserts the checkout did not TRANSLATE, which is the only real check on .gitattributes', () => {
+    // CORRECTED 2026-08-29 (audit-0.5.0-record). This test used to assert
+    // `includes(13)` - it PINNED the broken guard, which is this repository's
+    // most-recorded test defect wearing workflow clothes. "No byte 13 under
+    // fixtures/" is a proxy that three tracked files falsify with authentic
+    // captured bytes: a Windows capture whose 151 CRs are all CRLF line
+    // endings, and two SQLite binaries where byte 13 is data. Every run on
+    // `release/0.5.0` failed on it - 10 of 10 - so DoD 8.6 could never be met.
+    //
+    // The property is that the index form and the working-tree form agree.
+    // Asserting the INSTRUMENT (`ls-files --eol`) and the COMPARISON keeps
+    // this test from passing over a guard that merely mentions the roots.
     expect(ci.codeText).toContain('webview/wire');
     expect(ci.codeText).toMatch(/fixtures/);
-    expect(ci.codeText).toContain('includes(13)');
+    expect(ci.codeText).toContain('ls-files');
+    expect(ci.codeText).toContain('--eol');
+    expect(
+      ci.codeText,
+      'the guard must compare index form to worktree form, not count CR bytes',
+    ).toContain('m[1]!==m[2]');
+    expect(
+      ci.codeText,
+      'the byte-13 proxy is back: authentic CRs in captured fixtures will fail CI again',
+    ).not.toContain('includes(13)');
   });
 
   it('pins no fixture-set size: the audit assertions are zeros, not counts', () => {
@@ -362,9 +467,18 @@ function expectWorkflowNodeSatisfiesEngines(wf: { codeText: string }): void {
   ).toBe(true);
 }
 
-describe('the gate decision is pinned: package-only, no publisher exists', () => {
-  // Phase 5 gate answer: no Azure DevOps account, no nvitlam publisher, no PAT.
-  // A publish step would be a step that cannot succeed.
+describe('the gate decision is pinned: CI never publishes', () => {
+  // WHY THIS ASSERTION EXISTS, RESTATED 2026-08-30. It used to rest on a
+  // capability: no Azure DevOps account, no nvitlam publisher, no PAT, so a
+  // publish step would be a step that cannot succeed. All three now exist, and
+  // an assertion whose stated reason has evaporated is an assertion somebody
+  // deletes - which is exactly how the CR guard in ci.yml came to be asking the
+  // wrong question for ten consecutive red runs.
+  //
+  // The reason now is reserved decision 2: publishing to the Marketplace is the
+  // user's, always and without exception. That does not expire when a publisher
+  // exists; it is the whole point of it. A publish step in a workflow makes the
+  // decision a push, which is the thing being refused.
   const FORBIDDEN = ['vsce publish', 'VSCE_PAT', 'AZURE_', 'marketplace.visualstudio.com'];
 
   it('no executed line in any workflow publishes or names a marketplace/PAT secret', () => {

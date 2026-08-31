@@ -66,6 +66,7 @@
 // with a block that IS firing is the strongest mechanical proxy available, and
 // it is a proxy.
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -73,6 +74,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
+import {
+  OC_VERSION_WINDOW,
+  PINNED_OPENCODE_VERSION,
+  isOpencodeVersionAccepted,
+  opencodeVersionWindow,
+} from '../opencode/fingerprint.js';
 import {
   PINNED_CC_VERSION,
   VERSION_WINDOW,
@@ -135,7 +142,94 @@ function commandsOf(settings: HookSettings): Map<string, string[]> {
 }
 
 const README = readText('README.md');
-const SPEC = readText('agent-deck-spec.md');
+
+/**
+ * The four release images, in the order the page reads in.
+ *
+ * THESE WERE PLACEHOLDERS UNTIL 2026-08-30 and are not any more, which is why
+ * this list reads differently from the one it replaced. Phase 8 shipped four
+ * references - `media/deck.png`, `media/tree.png`, `media/focus.png`,
+ * `media/demo.gif` - to files that did not exist, deliberately: they are
+ * pictures of a running UI, which no automated step can produce, so the
+ * references shipped and the BYTES were deferred to the release gate. The
+ * bytes have arrived. The GIF was dropped rather than regenerated (a decision,
+ * not an omission: an animation of a live UI is the one asset the gate could
+ * not check the way it checked the stills), and the focus view lost its own
+ * still to two of the inspector, which is the surface a reader has questions
+ * about.
+ *
+ * So the exemption those four names carried in 'links only LOCAL images' is
+ * GONE, and the existsSync check now covers every image on the page. That is
+ * the whole point of the change: for two phases these four paths were the only
+ * links on this page nothing verified, and a Marketplace listing rendering
+ * four broken images was a shipping defect the suite could not see.
+ *
+ * The names carry UNDERSCORES. The captures had spaces, and a space in a
+ * Markdown image path is `%20`, which the Marketplace renderer and GitHub do
+ * not have to agree about. `.gitignore` and `.vscodeignore` name the same four
+ * plus `media/icon.png`; the private repository keeps the space-named
+ * originals and `lab/docs/evidence/release-0.5.0/MEDIA-GATE.md` is the gate
+ * they passed.
+ */
+const RELEASE_IMAGES: readonly string[] = [
+  'media/Session_Deck.png',
+  'media/hero_16_agent_session.png',
+  'media/Internal_Session_Tool_popup.png',
+  'media/Internal_Session_Tool_popup2.png',
+];
+
+/* ------------------------------------------------------------------------- *
+ * TWO ENGINES, TWO VERSION WINDOWS, ONE DOCUMENT.
+ *
+ * Every version guard below was written when this extension observed one
+ * engine, so each of them reads a backticked `x.y.z` literal ANYWHERE in the
+ * README as a Claude Code version. At v0.5.0 that stopped being true, and it
+ * stopped being true in the most dangerous possible way: `1.18.22` is a
+ * perfectly correct OpenCode anchor and a version the CC predicate refuses, so
+ * a correct README would have gone red — and the obvious "fix" is to loosen the
+ * guard that caught the blackout twice.
+ *
+ * So the document is REGIONED instead, with explicit markers a reader can grep:
+ *
+ *   <!-- engine:opencode -->  ...  <!-- /engine:opencode -->
+ *
+ * The CC guards run over everything outside those markers; a mirrored set runs
+ * inside them against `PINNED_OPENCODE_VERSION` and `OC_VERSION_WINDOW`. An
+ * HTML comment renders as nothing on the Marketplace and on GitHub.
+ *
+ * The markers are asserted balanced and the OC region asserted non-empty,
+ * because the failure mode of a regioned guard is a region that quietly covers
+ * the whole document (every CC assertion then passes over nothing) or none of
+ * it (the OC assertions do). Both are checked below.
+ * ------------------------------------------------------------------------- */
+const OC_REGION_RE = /<!-- engine:opencode -->([\s\S]*?)<!-- \/engine:opencode -->/g;
+
+/** The README with every OpenCode region removed: the Claude Code document. */
+const README_CC = README.replace(OC_REGION_RE, '\n');
+
+/** Only the OpenCode regions, joined: the OpenCode document. */
+const README_OC = [...README.matchAll(OC_REGION_RE)].map((m) => m[1] ?? '').join('\n');
+
+/**
+ * THE SPEC IS NO LONGER IN THIS REPOSITORY, and the guards below are gated on
+ * it rather than deleted.
+ *
+ * `agent-deck-spec.md` moved to the maintainer's private repository in the
+ * 2026-08-28 split, along with `CLAUDE.md`, `PLAN.md`, `HANDOVER.md` and
+ * `docs/`. The maintainer's checkout presents it at this path again through a
+ * junction, so for them these guards RUN and keep binding the spec's version
+ * posture to `PINNED_CC_VERSION`. For a contributor the file is absent and the
+ * describes below SKIP.
+ *
+ * This is a FOURTH environment-conditional gate and it must be accounted for BY
+ * NAME the way the other three are (`AGENT_DECK_PACKAGE_AUDIT`, the two WSL
+ * gates, `LIVE_SETTINGS`). A suite that fails to collect reports as "skipped"
+ * and reads green in the summary line; knowing which skips are supposed to be
+ * there is the only defence this repository has ever had against that.
+ */
+const SPEC: string | null = existsSync(join(ROOT, 'agent-deck-spec.md'))
+  ? readText('agent-deck-spec.md')
+  : null;
 
 /** Every ```json fence in the README, as raw text. */
 const JSON_FENCES: string[] = [...README.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => m[1] ?? '');
@@ -146,9 +240,53 @@ interface Manifest {
       properties: Record<string, { default?: unknown }>;
     };
   };
+  /** Read by the VS Code floor assertion below. */
+  engines?: { vscode?: string };
+  /**
+   * The extension icon, read by the `media/` exact-set assertion so the one
+   * tracked image the README does not link is identified by the manifest that
+   * requires it rather than by a literal written down twice.
+   */
+  icon: string;
+  /**
+   * What vsce rewrites the README's relative image links against when it
+   * packages. See 'keeps the three preconditions the Marketplace render
+   * depends on'.
+   */
+  repository?: { url?: string };
+  /**
+   * Read by the shipped-documents guard at the end of this file, to find the
+   * CHANGELOG section for the release under audit. Taken from the manifest
+   * rather than written down here, so bumping the version moves the guard with
+   * it instead of leaving it checking a section nobody edits any more.
+   */
+  version: string;
 }
 
 const MANIFEST = JSON.parse(readText('package.json')) as Manifest;
+
+/**
+ * Everything git tracks under `media/`, spawned ONCE at module scope.
+ *
+ * Two tests below need this list and each of them used to spawn its own
+ * `git ls-files`. That is this repository's recorded 'an expensive subprocess
+ * called once per test is a test that passes or fails by CPU load' defect, and
+ * it did exactly what the record says it does: green run alone, and
+ * `Test timed out in 5000ms` in the full suite, on the first run of the gate
+ * that was meant to close this work. vitest's DEFAULT test timeout is 5 s and
+ * nothing here had asked for more.
+ *
+ * One spawn, at import time, where the collect phase's budget covers it. The
+ * tests below also carry an explicit budget, so a slow machine reports a slow
+ * test rather than a mystery.
+ */
+const TRACKED_MEDIA: readonly string[] = execFileSync('git', ['ls-files', '--', 'media'], {
+  cwd: ROOT,
+  encoding: 'utf8',
+})
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter((line) => line !== '');
 const DEFAULT_PORT = MANIFEST.contributes.configuration.properties['agentDeck.port']?.default;
 
 /**
@@ -173,12 +311,121 @@ describe('README exists and ships clean', () => {
     expect(README.trimStart().startsWith('# Agent Deck')).toBe(true);
   });
 
-  it('names no absolute developer path', () => {
-    // Case-insensitive: the project slug capitalises the drive letter both ways
-    // on Windows, and this file ships to strangers.
-    for (const forbidden of ['dev', 'projects', 'C:\\Users']) {
-      expect(README.toLowerCase()).not.toContain(forbidden.toLowerCase());
+  it('names no absolute path at all, developer or otherwise', () => {
+    // WRITTEN AS SHAPES, NOT AS NAMES, and the reason is that the names left.
+    // This test used to list the developer's own folder names; after the
+    // 2026-08-28 split no identity string exists in this repository to list, and
+    // listing one would reintroduce exactly what the split removed. It would
+    // also be a literal the redactor rewrote - which happened: the list became
+    // `['dev', 'projects', 'C:\\Users']`, and `dev` is a substring of
+    // "developer", so the assertion was one README edit away from failing for a
+    // reason that had nothing to do with privacy.
+    //
+    // Shapes are the stronger assertion anyway: they catch an absolute path
+    // belonging to ANYBODY, including the next contributor's.
+    const ABSOLUTE_SHAPES = [
+      /[a-z]:[\\/]users[\\/]/i,
+      /\/home\/[a-z0-9_.-]+\//i,
+      /\/mnt\/[a-z]\/users\//i,
+    ];
+    for (const shape of ABSOLUTE_SHAPES) {
+      expect(shape.test(README), `README names an absolute path: ${String(shape)}`).toBe(false);
     }
+    // Vacuity control: the shapes must match the thing they describe, or this
+    // passes forever over a README full of home paths.
+    expect(ABSOLUTE_SHAPES.some((re) => re.test('see C:\\Users\\someone\\notes'))).toBe(true);
+    expect(ABSOLUTE_SHAPES.some((re) => re.test('see /home/someone/notes'))).toBe(true);
+  });
+
+  it('links to no document that left this repository in the 2026-08-28 split', () => {
+    // `CLAUDE.md`, `PLAN.md`, `HANDOVER.md`, `AGENTS.md`, `agent-deck-spec.md`,
+    // `docs/` and `spike/` are in the maintainer's private repository. A link to
+    // one of them from the SHIPPED README is a 404 for every reader, and the
+    // README is the first and often the only thing a user reads.
+    // `CONTRIBUTING.md` is what replaces them for a contributor.
+    const MOVED = [
+      /\]\(\s*(?:\.\/)?CLAUDE\.md/i,
+      /\]\(\s*(?:\.\/)?PLAN\.md/i,
+      /\]\(\s*(?:\.\/)?HANDOVER\.md/i,
+      /\]\(\s*(?:\.\/)?AGENTS\.md/i,
+      /\]\(\s*(?:\.\/)?agent-deck-spec\.md/i,
+      /\]\(\s*(?:\.\/)?docs\//i,
+      /\]\(\s*(?:\.\/)?spike\//i,
+    ];
+    for (const link of MOVED) {
+      expect(link.test(README), `README links a moved document: ${String(link)}`).toBe(false);
+    }
+    expect(MOVED.some((re) => re.test('see [the plan](PLAN.md) for detail'))).toBe(true);
+    expect(MOVED.some((re) => re.test('see [evidence](docs/evidence/x.md)'))).toBe(true);
+  });
+
+  /**
+   * THE HOW-GUARD — the README says WHAT, and points at SECURITY.md for HOW.
+   *
+   * The `Trust` section's job is a promise a user can act on: read-only, zero
+   * egress, nothing displayed that should not be. It carried a paragraph
+   * explaining the *mechanism* of the one qualification to "read-only" —
+   * write-ahead logging, the index file SQLite touches beside a database, which
+   * of OpenCode's files are never opened. All true, all measured, and all in
+   * `SECURITY.md` §2 already. In a README it asks a reader to evaluate an
+   * implementation detail in order to decide whether to trust a claim, which is
+   * the opposite of what that section is for.
+   *
+   * So the paragraph is one sentence now, and this guard keeps it that way.
+   *
+   * **SCOPE, stated because a guard whose reach is guessed at is worse than
+   * none.** The pattern set is the storage-mechanism vocabulary of the
+   * paragraph that was removed, and nothing wider. It is deliberately NOT a
+   * general "no implementation nouns" lint: the version-window section names a
+   * join key and the subagent directory convention on purpose, because there
+   * the mechanism IS the user-facing rule — what refuses a session. Widening
+   * this to flag those would be a different decision, and it is the user's.
+   *
+   * Case-insensitive, and that is not cosmetic: a case-sensitive `WAL` misses
+   * `Wal`/`wal`, and a `WAL` without word boundaries matches "walks back out"
+   * in the focus paragraph — measured, it does.
+   */
+  const HOW_TERMS =
+    /\bWAL\b|\bSQLite\b|\bsidecar\b|\bindex file\b|\bwrite-ahead\b|-shm\b/i;
+
+  it('the HOW-guard: no storage mechanism in the README, only a pointer to SECURITY.md', () => {
+    const hits = README.split('\n')
+      .map((line, i) => ({ n: i + 1, line }))
+      .filter((row) => HOW_TERMS.test(row.line));
+    expect(hits.map((h) => `${String(h.n)}: ${h.line.trim()}`)).toEqual([]);
+
+    // Vacuity controls. The pattern must catch the sentences it was built from
+    // — otherwise this passes forever over a README that says anything at all.
+    expect(HOW_TERMS.test('OpenCode’s session store is a database in WAL mode')).toBe(true);
+    expect(HOW_TERMS.test('causes SQLite to touch its own index file beside it')).toBe(true);
+    expect(HOW_TERMS.test('it writes the -shm sidecar')).toBe(true);
+    // ...and must NOT catch the word it used to, before the boundaries went in.
+    expect(HOW_TERMS.test('The breadcrumb walks back out')).toBe(false);
+  });
+
+  it('the qualification survives as a claim, pointing at where it is measured', () => {
+    // Removing the mechanism must not remove the ADMISSION. The sentence has to
+    // still say there IS a qualification and where the measurement lives, or
+    // this trade would have bought tidiness by dropping a disclosure.
+    const qualification = README.split('\n\n').find((p) => /qualification/i.test(p));
+    expect(qualification, 'the README no longer admits any qualification').toBeDefined();
+    expect(qualification ?? '').toMatch(/read-only/i);
+    expect(qualification ?? '').toContain('SECURITY.md');
+    // And the link is a real one, to a file that exists and carries a §2.
+    expect(README).toContain('[`SECURITY.md`](SECURITY.md)');
+    expect(existsSync(join(ROOT, 'SECURITY.md'))).toBe(true);
+    expect(readText('SECURITY.md')).toMatch(/##\s*2\./);
+  });
+
+  it('ships a CONTRIBUTING.md that states the constraints a contributor needs', () => {
+    // The constraints used to be readable in `CLAUDE.md`, which is no longer
+    // here. Without this file the split would have removed a contributor's only
+    // statement of the things that fail review.
+    const contributing = readText('CONTRIBUTING.md');
+    for (const claim of ['Read-only', 'egress', 'Refuse', 'Fixtures']) {
+      expect(contributing, `CONTRIBUTING.md does not state: ${claim}`).toContain(claim);
+    }
+    expect(contributing).toContain('privacy-sweep.mjs');
   });
 
   it('links only LOCAL images, and every one of them exists on disk', () => {
@@ -201,12 +448,148 @@ describe('README exists and ships clean', () => {
     for (const link of links) {
       if (BADGE_HOST.test(link)) continue;
       expect(link, `remote asset in README: ${link}`).not.toMatch(/^[a-z]+:\/\//i);
+      // NO EXEMPTION. Until 2026-08-30 the four release slots were skipped
+      // here because their bytes were deferred; they are on disk now, so
+      // every image on the page is checked by the same rule, and the release
+      // images are checked twice - here for existence, below for order.
       expect(
         existsSync(join(ROOT, link)),
         `README links ${link}, which does not exist`,
       ).toBe(true);
     }
   });
+
+  it('carries the four release images, in order, and no demo GIF', () => {
+    // WHAT THIS ASSERTED BEFORE 2026-08-30, because the change is the point:
+    // it asserted the four references were present and in order WHETHER OR NOT
+    // THE FILES EXISTED, and it carried the exemption that let them not exist.
+    // That was correct while the bytes were deferred and it is the wrong shape
+    // now. Existence moved back to the sibling test above, where it covers
+    // every image on the page rather than all-but-four; what stays here is the
+    // thing a plain existence check still cannot see, which is ORDER, and the
+    // failure mode it was written for: deleting a reference along with its
+    // file passes an existence check silently.
+    //
+    // WHY `media/` AND NOT `docs/media/`, which is what was asked for: `docs/`
+    // is a JUNCTION into the maintainer's private repository. It is gitignored
+    // here (`.gitignore` `/docs/`) and denied in `.vscodeignore`, so a file at
+    // `docs/media/...` reaches neither GitHub nor the VSIX, and every image
+    // would render broken on the marketplace listing - which is exactly what
+    // the sibling test 'links to no document that left this repository in the
+    // 2026-08-28 split' already forbids for the same reason. `media/` IS
+    // tracked and IS packaged.
+    const inOrder = [...README.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)]
+      .map((m) => m[1] ?? '')
+      .filter((link) => RELEASE_IMAGES.includes(link));
+    expect(inOrder, 'the release images are missing or out of order').toStrictEqual([
+      ...RELEASE_IMAGES,
+    ]);
+  });
+
+  it('links no demo GIF, and no image this release retired', () => {
+    // THE GIF IS DROPPED, and with no placeholder standing in for it. It was
+    // one of the four Phase 8 slots and the only one that is not a still; the
+    // media gate can measure a PNG's chunks, read its pixels and sweep its
+    // bytes, and an animation is the asset none of that reaches in the same
+    // way. A reference to a file nobody is going to supply is a broken image
+    // on the Marketplace listing page, which is what this release exists to
+    // stop happening.
+    //
+    // The three `screenshot-*.png` names are here for the same reason from the
+    // other direction: they were `0.1.x` captures of a renderer that no longer
+    // exists, they are retired into the private repository's `PNG Archive/`,
+    // and a reference to one is now a link to a deleted file AND a picture of
+    // a deleted UI - the defect class 'the shipped documents describe the
+    // shipped UI' further down this file guards in prose.
+    const RETIRED = [
+      'media/demo.gif',
+      'media/deck.png',
+      'media/tree.png',
+      'media/focus.png',
+      'media/screenshot-deck.png',
+      'media/screenshot-topology.png',
+      'media/screenshot-inspector.png',
+    ];
+    for (const retired of RETIRED) {
+      expect(README, `README still links the retired ${retired}`).not.toContain(retired);
+      expect(
+        existsSync(join(ROOT, retired)),
+        `${retired} is retired but still on disk`,
+      ).toBe(false);
+    }
+    expect(README.toLowerCase()).not.toContain('.gif');
+  });
+
+  it('keeps the three preconditions the Marketplace render depends on', () => {
+    // THE MARKETPLACE DOES NOT RENDER THESE IMAGES OUT OF THE VSIX, and until
+    // 2026-08-30 nothing in this repository said so. vsce rewrites every
+    // relative link in the packaged README into an absolute GitHub URL -
+    // `media/Session_Deck.png` ships as
+    // `<repository.url>/raw/HEAD/media/Session_Deck.png` - because the listing
+    // page is served from Microsoft's host, where a relative path means
+    // nothing. So the page fetches them from github.com, anonymously, from the
+    // DEFAULT BRANCH.
+    //
+    // A VSIX carrying four perfect images therefore still shows four broken
+    // ones unless all three of these hold at publish time. This test owns the
+    // two that are properties of the repository; the third is a property of
+    // the world and is named in the message so nobody has to rediscover it.
+    //
+    // The artifact-byte half - that the rewrite actually produced those URLs -
+    // is in src/release/vsix.test.ts's gated leg, because it needs a real
+    // package. Neither half is sufficient alone.
+
+    // (1) There is a repository URL to rewrite against, and it is the GitHub
+    //     form vsce builds from. Without it vsce leaves the links relative and
+    //     every image on the listing is broken, silently.
+    const url = String(MANIFEST.repository?.url ?? '')
+      .replace(/^git\+/, '')
+      .replace(/\.git$/, '');
+    expect(url, 'package.json needs a github.com repository.url').toMatch(
+      /^https:\/\/github\.com\/[^/]+\/[^/]+$/,
+    );
+
+    // (2) Every image the README links is TRACKED, so a push of the default
+    //     branch actually puts it where the rewritten URL points. An image
+    //     that exists only in the working tree passes the existence check
+     //    above and 404s on the listing page.
+    const tracked = TRACKED_MEDIA;
+    for (const image of RELEASE_IMAGES) {
+      expect(tracked, `${image} is linked but not tracked`).toContain(image);
+    }
+
+    // (3) THE THIRD PRECONDITION IS NOT CHECKABLE FROM HERE and must not be
+    //     faked into looking checked: the repository has to be PUBLIC and its
+    //     DEFAULT BRANCH has to carry these files, at the moment of publish.
+    //     Asserting it would need a network call, which G5 forbids and which
+    //     would make this suite depend on github.com being up. It is a step in
+    //     the release checklist instead, and the ordering matters: flip the
+    //     repository public and merge to the default branch BEFORE publishing,
+    //     or the listing goes up with four broken images and stays that way
+    //     until someone looks.
+  }, 20_000);
+
+  it('references every tracked image except the icon, and every reference is tracked', () => {
+    // THE EXACT SET, BOTH WAYS - rule 19, applied to `media/` rather than to
+    // the VSIX. A containment check passes every time this repository has
+    // actually been bitten: `media/` is a folder screenshots accumulate in,
+    // and the recorded case is a stray `media/Action Running.png` that shipped
+    // because a deny-by-name rule lost to the next file nobody thought of.
+    //
+    // `media/icon.png` is the one tracked image the README does not link and
+    // must not be asked to: it is the extension icon `package.json` names, not
+    // a screenshot, and it is read off the manifest here rather than written
+    // down so that renaming it fails in one place instead of passing here and
+    // failing in `vsce package`.
+    const tracked = TRACKED_MEDIA;
+    const icon = String(MANIFEST.icon);
+    expect(tracked).toContain(icon);
+    expect([...tracked].sort()).toStrictEqual([icon, ...RELEASE_IMAGES].sort());
+    // Pinned BESIDE the set, not instead of it: a set comparison written
+    // against an empty listing passes vacuously, and a count is the cheapest
+    // thing that goes red when it does.
+    expect(tracked).toHaveLength(5);
+  }, 20_000);
 });
 
 describe('the hook paste block', () => {
@@ -341,14 +724,35 @@ describe('the version badge is accurate against the shipped constants', () => {
   const PATCH_CLAIM_RE = /\bpatch \+\/-(\d+)/g;
   const CORNERS_RE = /`(\d+\.\d+\.x)` to `(\d+\.\d+\.x)`/g;
 
+  it('regions the document, so a CC guard cannot silently read an OpenCode version', () => {
+    // The scoping mechanism itself, asserted before anything relies on it. Its
+    // failure modes are a region that covers everything (every CC assertion
+    // below then passes over an empty string) and a region that covers nothing
+    // (the OpenCode mirror does).
+    const opens = [...README.matchAll(/<!-- engine:opencode -->/g)].length;
+    const closes = [...README.matchAll(/<!-- \/engine:opencode -->/g)].length;
+    expect(opens, 'unbalanced engine:opencode markers in README.md').toBe(closes);
+    expect(opens).toBeGreaterThan(0);
+    expect(README_OC.length, 'the OpenCode region is empty').toBeGreaterThan(0);
+    expect(README_CC.length, 'the OpenCode region swallowed the document').toBeGreaterThan(
+      README_OC.length,
+    );
+    // ...and the split actually separates the two anchors, which is the only
+    // property any of this exists for.
+    expect(README_CC).toContain(PINNED_CC_VERSION);
+    expect(README_CC).not.toContain(PINNED_OPENCODE_VERSION);
+    expect(README_OC).toContain(PINNED_OPENCODE_VERSION);
+    expect(README_OC).not.toContain(PINNED_CC_VERSION);
+  });
+
   it('states the anchor version the fingerprint actually uses', () => {
-    const stated = [...README.matchAll(ANCHOR_RE)].map((m) => m[1]);
+    const stated = [...README_CC.matchAll(ANCHOR_RE)].map((m) => m[1]);
     expect(stated.length).toBeGreaterThan(0);
     for (const version of stated) expect(version).toBe(PINNED_CC_VERSION);
   });
 
   it('states the window tolerances the fingerprint actually uses', () => {
-    const minors = [...README.matchAll(MINOR_RE)].map((m) => Number(m[1]));
+    const minors = [...README_CC.matchAll(MINOR_RE)].map((m) => Number(m[1]));
     expect(minors.length).toBeGreaterThan(0);
     for (const minor of minors) expect(minor).toBe(VERSION_WINDOW.minor);
   });
@@ -363,9 +767,91 @@ describe('the version badge is accurate against the shipped constants', () => {
     PATCH_CLAIM_RE.lastIndex = 0;
   });
 
+  /**
+   * F3 — the teleport caveat.
+   *
+   * A session Claude Code imported from another machine with `--teleport`
+   * carries the imported history at a version this window does not accept, so
+   * the whole session renders `unsupported` — including the part that continued
+   * locally. Measured once, on 2026-08-31:
+   * `docs/evidence/release-0.5.0/DRIFT-2.1.251.md` §3.4.
+   *
+   * **n = 1, AND THAT IS WHY THE WORDING IS GUARDED HERE.** Exactly one
+   * teleported transcript existed on the machine that found it, so this
+   * repository knows what its own parser does with such a file and does NOT
+   * know that every teleport produces one. The release brief's decision 4 is
+   * therefore "write it as *not supported*, not as a description of Claude
+   * Code's behaviour", and a guard that only checked the word `--teleport` was
+   * present would let the next edit turn a limit of ours into a claim about
+   * somebody else's product. The chunk rule below is what pins the phrasing.
+   */
+  const TELEPORT_RE = /--teleport/;
+  /** Bullets and blank-line-separated blocks. Blockquote lines stay together. */
+  const chunksOf = (text: string): string[] => text.split(/\n(?=\s*[-*] )|\n{2,}/);
+
+  it('states the teleport caveat, in the Claude Code region', () => {
+    expect(TELEPORT_RE.test(README_CC)).toBe(true);
+    // NOT in the OpenCode region: `--teleport` is a Claude Code flag, and a
+    // caveat about it under the OpenCode heading would be a false claim about
+    // an engine that has no such feature.
+    expect(TELEPORT_RE.test(README_OC)).toBe(false);
+  });
+
+  it('phrases the caveat as OUR limit, never as a description of Claude Code', () => {
+    const chunks = chunksOf(README_CC).filter((c) => TELEPORT_RE.test(c));
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      expect(
+        chunk.toLowerCase().includes('not supported'),
+        `a --teleport chunk does not say "not supported": ${chunk.slice(0, 160)}`,
+      ).toBe(true);
+    }
+    // Vacuity controls, both directions: the chunker must actually separate
+    // blocks, and the predicate must be capable of failing.
+    const sample = '- one thing\n- a --teleport thing that says nothing\n- three';
+    const found = chunksOf(sample).filter((c) => TELEPORT_RE.test(c));
+    expect(found).toHaveLength(1);
+    expect(found[0]?.toLowerCase().includes('not supported')).toBe(false);
+  });
+
+  it('names no version literal in the caveat, because none was measured', () => {
+    // The imported records carried `1.0` on the one transcript that was seen.
+    // Printing it would state a fact about Claude Code's teleport format off a
+    // single observation — and `names no Claude Code version the shipped parser
+    // would refuse`, below, would then have to make an exception for it.
+    /*
+     * SENTENCE scope, not chunk scope, and the difference is not cosmetic: the
+     * compatibility blockquote legitimately carries the anchor and both window
+     * corners two sentences away from the caveat. A chunk-wide check fails on a
+     * correct README — measured, this assertion went red on `2.1.246` — and the
+     * reflex fix would be deleting the guard rather than aiming it.
+     *
+     * Markdown wraps a sentence across lines, so lines are joined before
+     * sentences are split. That is the same trap `the shipped documents
+     * describe the shipped UI` records further down this file.
+     */
+    const sentences = (text: string): string[] =>
+      text
+        .replace(/\s+/g, ' ')
+        .split(/(?<=\.)\s+(?=[A-Z*`[])/)
+        .filter((s) => TELEPORT_RE.test(s));
+    const caveats = chunksOf(README_CC)
+      .filter((c) => TELEPORT_RE.test(c))
+      .flatMap(sentences);
+    expect(caveats.length).toBeGreaterThan(0);
+    for (const sentence of caveats) {
+      expect(
+        /`\d+\.\d+(?:\.\d+)?`/.test(sentence),
+        `the caveat names a version: ${sentence}`,
+      ).toBe(false);
+    }
+    // Vacuity control: the predicate catches a version literal when there is one.
+    expect(/`\d+\.\d+(?:\.\d+)?`/.test('teleport writes `1.0` records')).toBe(true);
+  });
+
   it('states window corners derived from those tolerances', () => {
     const { min, max } = corners();
-    const stated = [...README.matchAll(CORNERS_RE)];
+    const stated = [...README_CC.matchAll(CORNERS_RE)];
     expect(stated.length).toBeGreaterThan(0);
     for (const match of stated) {
       expect(match[1]).toBe(min);
@@ -373,9 +859,32 @@ describe('the version badge is accurate against the shipped constants', () => {
     }
   });
 
+  it('states the VS Code floor the manifest actually declares', () => {
+    // THIS ASSERTION EXISTS BECAUSE ITS ABSENCE WAS THE DEFECT. The README
+    // carried `^1.75.0` while the manifest moved to `^1.134.0` (PLAN.md's
+    // Phase 5 gate amendment B4), and no test went red, because nothing bound
+    // the two. A worker reading the file found it; the suite could not.
+    //
+    // It matters more than a documentation nit: the README ships INSIDE the
+    // VSIX, and after B4 the host imports `node:sqlite` at load. A user who
+    // trusts a too-low floor installs onto a host where `activate` never runs
+    // — an inert extension with no error they can see, which is the same
+    // "manifest and build disagree" class this repo has already shipped once.
+    //
+    // The manifest is READ, never repeated.
+    const declared = MANIFEST.engines?.vscode;
+    expect(declared, 'manifest declares no engines.vscode').toBeTruthy();
+    expect(
+      README.includes(`\`${String(declared)}\``),
+      `README does not state the manifest's VS Code floor ${String(declared)}`,
+    ).toBe(true);
+    // Vacuity control: the check is capable of failing.
+    expect(README.includes('`^0.0.1`')).toBe(false);
+  });
+
   it('names no Claude Code version the shipped parser would refuse', () => {
     // A badge is only accurate if nothing NEXT to it contradicts it. Backticked
-    // `x.y.z` literals are how this document names CC versions; `^1.75.0` and
+    // `x.y.z` literals are how this document names CC versions; `^1.134.0` and
     // `>=22.22.2` do not match because the backtick is not followed by a digit.
     //
     // The rule used to be "the anchor or a corner, and nothing else". It cannot
@@ -384,7 +893,12 @@ describe('the version badge is accurate against the shipped constants', () => {
     // hook-reload note names 2.1.234). What survives the change is the thing
     // that was always the point - the README must never name a version as
     // though it worked when the shipped predicate refuses it.
-    const literals = [...README.matchAll(/`(\d+\.\d+\.\d+)`/g)].map((m) => m[1] ?? '');
+    //
+    // SCOPED to the Claude Code region since v0.5.0. An OpenCode anchor is a
+    // correct `x.y.z` literal that this predicate refuses, so running it over
+    // the whole document would make a right README red — and the reflex fix
+    // would be loosening the guard that caught the blackout twice.
+    const literals = [...README_CC.matchAll(/`(\d+\.\d+\.\d+)`/g)].map((m) => m[1] ?? '');
     expect(literals.length).toBeGreaterThan(0);
     for (const literal of literals) {
       expect(isVersionAccepted(literal), `README names refused version ${literal}`).toBe(true);
@@ -398,6 +912,148 @@ describe('the version badge is accurate against the shipped constants', () => {
   it('says the window is a window, not a single supported version', () => {
     expect(README).toContain('versionChangedMidFile');
     expect(README).toContain('major exact');
+  });
+});
+
+/**
+ * The OpenCode token sentence, bound to what the engine actually emits.
+ *
+ * **This exists because the sentence was WRONG and nothing noticed.** Through
+ * 0.5.0 it ended "**Burn** is present" while `burn` was omitted for OpenCode
+ * exactly as `contextNow` was — both rendered as an em dash, and both committed
+ * goldens carried `null` for both on every session. A user reading the README
+ * would have gone looking for a figure that was not there, and the only reason
+ * it was caught is that someone opened a card and compared.
+ *
+ * So the claim is not asserted against a literal. It is re-derived from the
+ * committed goldens, which are the byte-exact record of what the engine
+ * produces: if `burn` ever went back to `null`, or `contextNow` started being
+ * emitted, the prose and the evidence would disagree and this goes red.
+ */
+describe('the README OpenCode token sentence matches what the engine emits', () => {
+  /** Every session and agent node in both committed goldens. */
+  const goldenNodes = (): { contextNow: unknown; burn: unknown }[] => {
+    const out: { contextNow: unknown; burn: unknown }[] = [];
+    const walk = (node: { contextNow: unknown; burn: unknown; children?: unknown[] }): void => {
+      out.push({ contextNow: node.contextNow, burn: node.burn });
+      for (const child of node.children ?? []) {
+        const c = child as { node?: string };
+        if (c.node === 'agent') walk(child as typeof node);
+      }
+    };
+    for (const rel of [
+      'fixtures/opencode-1.18.21/golden.json',
+      'fixtures/opencode-1.18.22/golden.json',
+    ]) {
+      const parsed = JSON.parse(readText(rel)) as {
+        sessions: { contextNow: unknown; burn: unknown; root: never }[];
+      };
+      for (const session of parsed.sessions) {
+        out.push({ contextNow: session.contextNow, burn: session.burn });
+        walk(session.root);
+      }
+    }
+    return out;
+  };
+
+  it('the goldens show burn PRESENT and contextNow ABSENT, on every session and node', () => {
+    const nodes = goldenNodes();
+    expect(nodes.length).toBeGreaterThan(0);
+    expect(nodes.filter((n) => n.burn === null)).toEqual([]);
+    expect(nodes.filter((n) => n.contextNow !== null)).toEqual([]);
+  });
+
+  it('the README says exactly that, and does not say the opposite', () => {
+    // The OpenCode region only — the CC side has both figures and its own prose.
+    const sentence = README_OC;
+    expect(/\bburn\b[^.]{0,40}\bis present\b/i.test(sentence)).toBe(true);
+    expect(/\bcontext\b[^.]{0,60}\bem dash\b/i.test(sentence)).toBe(true);
+    // The exact wording that shipped wrong, in either order, must not return.
+    expect(/\bcontext\b[^.]{0,40}\bis present\b/i.test(sentence)).toBe(false);
+    expect(/\bburn\b[^.]{0,60}\bem dash\b/i.test(sentence)).toBe(false);
+    // Vacuity control: these patterns can match the shapes they hunt for.
+    expect(/\bburn\b[^.]{0,40}\bis present\b/i.test('Burn is present.')).toBe(true);
+    expect(/\bburn\b[^.]{0,60}\bem dash\b/i.test('burn reads as an em dash')).toBe(true);
+  });
+
+  it('does not repeat the superseded "counts only uncached input" reason', () => {
+    // True of `tokens_input` alone and false of the store, which also keeps
+    // `tokens_cache_read` and `tokens_cache_write` — both now read. Stating it
+    // as a limit of OpenCode was the second wrong half of the old sentence.
+    expect(/only\s+uncached\s+input/i.test(README)).toBe(false);
+    expect(/only\s+uncached\s+input/i.test('counts only uncached input')).toBe(true);
+  });
+});
+
+/**
+ * The same four assertions, mirrored onto the OpenCode region.
+ *
+ * Not "the CC tests with a different constant" for its own sake: the defect
+ * these exist to prevent has already been paid for once on the CC side, where
+ * the README carried `^1.75.0` while the manifest said `^1.134.0` and nothing
+ * went red because nothing bound the two. A second engine with its own anchor,
+ * its own window and its own prose is the same exposure again, and it arrives
+ * in the same release as the prose.
+ */
+describe('the OpenCode compatibility claims are accurate against the shipped constants', () => {
+  const ocWindow = opencodeVersionWindow();
+  const ocCorners = (): { min: string; max: string } => {
+    if (ocWindow === undefined) throw new Error('PINNED_OPENCODE_VERSION does not parse');
+    return {
+      min: `${String(ocWindow.major)}.${String(ocWindow.minMinor)}.x`,
+      max: `${String(ocWindow.major)}.${String(ocWindow.maxMinor)}.x`,
+    };
+  };
+
+  it('states the anchor the OpenCode fingerprint actually uses', () => {
+    const stated = [...README_OC.matchAll(/\banchor(?:ed on)?:?\s+`(\d+\.\d+\.\d+)`/gi)].map(
+      (m) => m[1],
+    );
+    expect(stated.length, 'the OpenCode region states no anchor').toBeGreaterThan(0);
+    for (const version of stated) expect(version).toBe(PINNED_OPENCODE_VERSION);
+  });
+
+  it('states window corners derived from the shipped tolerance', () => {
+    const { min, max } = ocCorners();
+    const stated = [...README_OC.matchAll(/`(\d+\.\d+\.x)` to `(\d+\.\d+\.x)`/g)];
+    expect(stated.length, 'the OpenCode region states no window corners').toBeGreaterThan(0);
+    for (const match of stated) {
+      expect(match[1]).toBe(min);
+      expect(match[2]).toBe(max);
+    }
+  });
+
+  it('names no OpenCode version the shipped predicate would refuse', () => {
+    const literals = [...README_OC.matchAll(/`(\d+\.\d+\.\d+)`/g)].map((m) => m[1] ?? '');
+    expect(literals.length).toBeGreaterThan(0);
+    for (const literal of literals) {
+      expect(
+        isOpencodeVersionAccepted(literal),
+        `README names refused OpenCode version ${literal}`,
+      ).toBe(true);
+    }
+    expect(literals).toContain(PINNED_OPENCODE_VERSION);
+    // Vacuity control: the predicate does refuse something, and it refuses on
+    // the MAJOR as well as the minor, so no move of the anchor inside 1.x can
+    // make this control silently pass.
+    expect(isOpencodeVersionAccepted('4.4.0')).toBe(false);
+  });
+
+  it('claims no patch tolerance for OpenCode either, because there is none', () => {
+    expect(OC_VERSION_WINDOW).not.toHaveProperty('patch');
+    const claims = [...README_OC.matchAll(/\bpatch \+\/-(\d+)/g)].map((m) => m[0]);
+    expect(claims).toEqual([]);
+    // ...and it says so in words, so a reader is not left inferring it from an
+    // absence. This is the sentence the CC side had to learn to write twice.
+    expect(README_OC).toMatch(/patch (?:component|number) is not compared/i);
+  });
+
+  it('names the four secret-bearing tables it never reads', () => {
+    // The strongest privacy claim in the OpenCode section, and the one a
+    // reader is most entitled to see enumerated rather than summarised.
+    for (const table of ['account', 'control_account', 'credential', 'session_share']) {
+      expect(README_OC, `the OpenCode section does not name ${table}`).toContain(table);
+    }
   });
 });
 
@@ -500,9 +1156,9 @@ const SUPERSEDED_CONTROLS = [
   'Do not build drift tolerance into the fingerprint.',
 ];
 
-describe('agent-deck-spec.md restates the superseded version posture nowhere', () => {
+describe.skipIf(SPEC === null)('agent-deck-spec.md restates the superseded version posture nowhere', () => {
   it('carries neither superseded sentence, anywhere in the document', () => {
-    const lower = SPEC.toLowerCase();
+    const lower = (SPEC ?? '').toLowerCase();
     for (const phrase of SUPERSEDED_PHRASES) {
       expect(lower, `agent-deck-spec.md still says "${phrase}"`).not.toContain(phrase);
     }
@@ -511,14 +1167,14 @@ describe('agent-deck-spec.md restates the superseded version posture nowhere', (
   it('carries no reworded restatement of it, in any section', () => {
     // Whole document. The predecessor of this test read section 3 alone, so a
     // contradiction in any other section was untested rather than absent.
-    expect(contradictionsIn(SPEC)).toStrictEqual([]);
+    expect(contradictionsIn(SPEC ?? '')).toStrictEqual([]);
   });
 
   it('keeps the supersession exemption to a note, not a licence', () => {
     // An exempted sentence is one that both restates the old posture and says
     // it is superseded. That is a footnote-shaped thing; a document with many
     // of them is a document routing around this guard.
-    const exempted = sentencesOf(SPEC).filter(
+    const exempted = sentencesOf(SPEC ?? '').filter(
       (sentence) =>
         MARKED_SUPERSEDED.test(sentence) &&
         SUPERSEDED_PATTERNS.some(({ re }) => re.test(sentence)),
@@ -559,18 +1215,23 @@ describe('agent-deck-spec.md restates the superseded version posture nowhere', (
  * it as superseded and quotes the numbers it retired, so a reader who lands on
  * the older text has a route to the newer one.
  */
-describe('the spec version-posture amendment matches the shipped constants', () => {
+describe.skipIf(SPEC === null)('the spec version-posture amendment matches the shipped constants', () => {
   const AMENDMENT_HEADING = '## Amendment 2026-08-26 — Version posture';
 
   /** The last dated amendment: its heading through the end of the document. */
   const amendment = ((): string => {
+    // `describe.skipIf` still RUNS this callback - it marks the tests skipped,
+    // it does not stop collection - so a throw here when the spec is absent
+    // would be a COLLECTION failure, which vitest summarises as a skip and a
+    // reader summarises as green. The recorded shape, one more time.
+    if (SPEC === null) return '';
     const start = SPEC.indexOf(AMENDMENT_HEADING);
     if (start < 0) throw new Error('the dated version-posture amendment could not be located');
     return SPEC.slice(start);
   })();
 
   it('is the last section, so nothing later can quietly contradict it', () => {
-    expect(SPEC.indexOf(AMENDMENT_HEADING)).toBe(SPEC.lastIndexOf(AMENDMENT_HEADING));
+    expect((SPEC ?? '').indexOf(AMENDMENT_HEADING)).toBe((SPEC ?? '').lastIndexOf(AMENDMENT_HEADING));
     expect(amendment.includes('\n## ')).toBe(false);
   });
 
@@ -613,5 +1274,193 @@ describe('the spec version-posture amendment matches the shipped constants', () 
     expect(amendment).toContain('§3');
     expect(amendment.toLowerCase()).toContain('supersedes');
     expect(amendment).toContain(`fixtures/cc-${PINNED_CC_VERSION}/`);
+  });
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * The user-facing documents must not describe a UI that was deleted.
+ * Added 2026-08-29 by `audit-0.5.0-record`, after measurement.
+ *
+ * WHAT WENT WRONG, because the shape of the defect is the argument for the
+ * guard. Design amendment A8.1 (2026-08-29) removed the tool-dot row outright.
+ * `layout.ts` lost its dot API and `webview/layout.test.ts` grew a mutation-
+ * tested "exports no dot API at all" assertion, so the CODE could not regress.
+ * The PROSE was not covered by anything: on the day of this audit `README.md`
+ * still told users "tool calls ride each node as chronological dots", its
+ * Usage section still described the `0.1.x` nucleus renderer and "tokens as
+ * in / out" - a contract A6 deleted - and `CHANGELOG.md`'s `0.5.0` entry, the
+ * text that documents this very release, advertised "Tool dots ride each node,
+ * up to 24 per node with the remainder counted."
+ *
+ * Both files ship. `README.md` IS the Marketplace listing page. So the release
+ * would have described three features that no longer exist to every user who
+ * read it, and nothing in a 2,140-test suite would have said a word.
+ *
+ * A grep for `dot` cannot be the guard: this repository writes about the dots
+ * deliberately and at length, in design amendments, in evidence documents and
+ * in the changelog entry that explains the removal. The guard therefore keys
+ * on an ASSERTIVE present-tense claim and exempts a sentence that is describing
+ * the removal, which is the same exemption shape {@link MARKED_SUPERSEDED}
+ * uses one section above.
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * Markdown wraps one sentence across several lines, and {@link sentencesOf}
+ * splits on newlines first - so a sentence that names a removed surface in one
+ * line and says it was removed in the next arrives here as two fragments, the
+ * exemption in one and the hit in the other. Joining wrapped lines inside a
+ * paragraph is what makes the exemption reach the claim it belongs to. Blank
+ * lines still separate paragraphs, so nothing runs together across a break.
+ */
+function paragraphs(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((block) =>
+      // A continuation line inside a bullet is INDENTED, so a join keyed on
+      // `\n(?=\S)` misses exactly the case this exists for - measured: the
+      // changelog's own explanation of why the dots went still arrived in two
+      // pieces. Join a newline unless what follows starts a new list item or a
+      // heading, which are the two things that really are new blocks.
+      block.replace(/\n[ \t]*(?![-*+][ \t]|#|\d+\.[ \t])(?=\S)/g, ' '),
+    )
+    .join('\n\n');
+}
+
+/**
+ * A CHANGELOG is APPEND-ONLY HISTORY, and that is not a loophole - it is what
+ * the document is. `0.1.0`'s entry describes a nucleus with dot arcs around it
+ * because `0.1.0` had one; rewriting that to match today's UI would be
+ * falsifying the record, which is the opposite of what this guard is for. So
+ * the changelog is checked over the CURRENT version's section only, bounded by
+ * the next `## ` heading, and the release under audit is the one whose prose
+ * has to match the artifact.
+ *
+ * Measured while writing this: over the whole file the guard fires on the
+ * `0.1.0` entry's own accurate history. Scoped, it fires on nothing.
+ */
+function currentChangelogEntry(text: string): string {
+  const version = MANIFEST.version;
+  const start = text.indexOf(`## ${version}`);
+  if (start < 0) return '';
+  const next = text.indexOf('\n## ', start + 1);
+  return next < 0 ? text.slice(start) : text.slice(start, next);
+}
+
+const CHANGELOG_TEXT = readText('CHANGELOG.md');
+
+/** The documents a user actually reads. Both are shipped in the VSIX. */
+const USER_FACING: { readonly name: string; readonly text: string }[] = [
+  { name: 'README.md', text: paragraphs(README) },
+  { name: `CHANGELOG.md (${MANIFEST.version} entry)`, text: paragraphs(currentChangelogEntry(CHANGELOG_TEXT)) },
+];
+
+/**
+ * Present-tense claims about surfaces this product no longer has. Bounded gaps
+ * (`[^.]{0,N}`) keep a match inside one sentence, for the reason the version
+ * guard above states: an unbounded gap turns any two words in a paragraph into
+ * a hit, and a guard that fires on correct prose gets deleted rather than fixed.
+ */
+const REMOVED_UI_PATTERNS: { readonly name: string; readonly re: RegExp }[] = [
+  // "tool calls ride each node as dots", "tool dots ride each node".
+  { name: 'dots-ride-nodes', re: /\bdots?\b[^.]{0,40}\bride\b|\bride\b[^.]{0,40}\bdots?\b/i },
+  // "each tool call is a dot", "every call is drawn as a dot".
+  { name: 'call-is-a-dot', re: /\b(?:each|every|a)\s+tool\s+call\s+is\s+(?:a\s+|drawn\s+as\s+a\s+)?dot\b/i },
+  // "up to 24 per node with the remainder counted" - the cap, in any wording.
+  { name: 'dot-cap', re: /\b(?:up\s+to\s+)?(?:24|48)\b[^.]{0,30}\bper\s+node\b/i },
+  // A8.2 re-anchored the filament to the parent's bottom edge; it is no longer
+  // drawn from a dot, and a call whose dot was capped away drew nothing.
+  { name: 'filament-from-dot', re: /\bfilament\b[^.]{0,60}\bdot\b/i },
+  // The 0.1.x interior: a nucleus with a constellation of calls around it.
+  { name: 'nucleus', re: /\bnucleus\b/i },
+  // A6 removed `AgentNode.tokens`; the drawer reads `context` and `burn`.
+  { name: 'tokens-in-out', re: /\btokens\b[^.]{0,20}\bas\b[^.]{0,10}\bin\s*\/\s*out\b/i },
+  // Deck cells stopped being blobs when the tree landed.
+  { name: 'session-blobs', re: /\bone\s+blob\s+each\b|\bcloud\s+of\s+blobs\b/i },
+  // A9.1: nothing is elided anywhere, so no document may promise truncation.
+  { name: 'label-elision', re: /\blabels?\b[^.]{0,40}\btruncated\s+(?:with|to)\s+(?:an?\s+)?(?:ellipsis|…)/i },
+];
+
+/**
+ * A sentence saying a thing was REMOVED is not claiming the thing exists. The
+ * changelog has to be able to explain what went and why - that is most of its
+ * job - and the design amendments are quoted in evidence documents verbatim.
+ */
+const DESCRIBES_REMOVAL =
+  /\b(?:remov(?:e|ed|es|al)|delet(?:e|ed)|gone|no longer|used to|earlier build|rather than|instead of|not drawn|supersed(?:e|es|ed|ing))\b|\bno\s+tool\s+dots\b/i;
+
+/** Every unexempted hit, as `name: sentence`. */
+function removedUiClaimsIn(text: string): string[] {
+  const found: string[] = [];
+  for (const sentence of sentencesOf(text)) {
+    if (DESCRIBES_REMOVAL.test(sentence)) continue;
+    for (const { name, re } of REMOVED_UI_PATTERNS) {
+      if (re.test(sentence)) found.push(`${name}: ${sentence}`);
+    }
+  }
+  return found;
+}
+
+/**
+ * Vacuity controls: the exact sentences that were shipping on `release/0.5.0`
+ * when this audit measured them, plus rewordings. Held here as strings; the
+ * guard is never run against them in production.
+ */
+const REMOVED_UI_CONTROLS = [
+  'Tool calls ride each node as chronological dots.',
+  'Tool dots ride each node, up to 24 per node with the remainder counted.',
+  'The main agent is the nucleus, each tool call is a dot placed in chronological order around it.',
+  'A subagent hangs off a filament drawn from the exact tool-call dot that spawned it.',
+  'Per agent it lists status, tokens as in / out, duration and spawn depth.',
+  'Every Claude Code session on the machine, one blob each.',
+];
+
+describe('the shipped documents describe the shipped UI', () => {
+  it('claims no surface that was deleted, in README or CHANGELOG', () => {
+    for (const { name, text } of USER_FACING) {
+      expect(removedUiClaimsIn(text), `${name} describes a deleted surface`).toStrictEqual([]);
+    }
+  });
+
+  it('flags every sentence that was really shipping when this was written', () => {
+    // Not vacuous, and the controls are not invented: the first five are
+    // verbatim from README.md and CHANGELOG.md as measured on 2026-08-29.
+    for (const control of REMOVED_UI_CONTROLS) {
+      expect(removedUiClaimsIn(control).length, `no pattern flags: ${control}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('has no pattern that flags nothing at all', () => {
+    for (const { name, re } of REMOVED_UI_PATTERNS) {
+      const live = REMOVED_UI_CONTROLS.some((control) => re.test(control));
+      const selfTested = ['dot-cap', 'label-elision'].includes(name);
+      expect(live || selfTested, `pattern ${name} flags none of the controls`).toBe(true);
+    }
+  });
+
+  it('exempts a removal note without exempting a claim', () => {
+    // The changelog explains the dots at length. That must pass. A bare
+    // present-tense claim in the same words must not.
+    expect(
+      removedUiClaimsIn('An earlier build rode a row of dots on each node, one per tool call.'),
+    ).toStrictEqual([]);
+    expect(
+      removedUiClaimsIn('Tool dots ride each node, up to 24 per node.').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('keeps the removal exemption to notes, not a licence', () => {
+    // Same reasoning as the supersession exemption above: an exempted sentence
+    // is one that both names a removed surface and says it was removed. A
+    // document with many of them is routing around this guard.
+    for (const { name, text } of USER_FACING) {
+      const exempted = sentencesOf(text).filter(
+        (sentence) =>
+          DESCRIBES_REMOVAL.test(sentence) &&
+          REMOVED_UI_PATTERNS.some(({ re }) => re.test(sentence)),
+      );
+      expect(exempted.length, `${name} exempts ${exempted.length} sentences`).toBeLessThanOrEqual(8);
+    }
   });
 });

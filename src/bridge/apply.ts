@@ -23,10 +23,12 @@
 
 import type {
   AgentNode,
+  ApplyError,
   ParkedGraft,
   SessionPatch,
   SessionState,
   SpawnEdge,
+  TokenPair,
   ToolNode,
   TreeNode,
 } from '../model/events.js';
@@ -92,6 +94,12 @@ function cloneTool(node: ToolNode): ToolNode {
   };
   if (node.resultPreview !== undefined) out.resultPreview = node.resultPreview;
   if (node.durationMs !== undefined) out.durationMs = node.durationMs;
+  // An absent key is left absent rather than written as `undefined`: the round
+  // trip compares with `toStrictEqual`, which distinguishes the two, and every
+  // CC-produced tool node has this key absent (the flag is the OpenCode
+  // engine's). A clone that wrote `truncated: undefined` would make
+  // apply(prev, diff) stop deep-equalling `next` for every CC session.
+  if (node.truncated !== undefined) out.truncated = node.truncated;
   return out;
 }
 
@@ -103,7 +111,11 @@ function cloneAgent(node: AgentNode): AgentNode {
     status: node.status,
     spawnDepth: node.spawnDepth,
     children: node.children.map(cloneNode),
-    tokens: { in: node.tokens.in, out: node.tokens.out },
+    // Absence is preserved, never widened into `{}`: spreading `undefined`
+    // yields an object with no members, which is neither the pair nor the
+    // absence and would render as two em-dashes while claiming a value.
+    contextNow: node.contextNow === undefined ? undefined : { ...node.contextNow },
+    burn: node.burn === undefined ? undefined : { ...node.burn },
     startedAt: node.startedAt,
   };
   if (node.endedAt !== undefined) out.endedAt = node.endedAt;
@@ -136,11 +148,56 @@ function locate(root: AgentNode, id: string): Located | undefined {
   return undefined;
 }
 
-function requireAgent(root: AgentNode, id: string, op: string): AgentNode {
+/**
+ * How a patch is applied when the receiver's tree does not match the sender's.
+ *
+ * DoD 5.5.1. Before Phase 5.5 every mismatch threw, and the webview's catch
+ * kept its last good tree and set a `patchFailure` nothing ever read. This
+ * seam is what lets the same reducer be strict on the host (which must never
+ * diverge, so an error there forces a snapshot) and forgiving in the webview
+ * (which must not lose a node while it waits for one).
+ */
+export interface ApplyOptions {
+  /**
+   * Called once per op that could not be applied. The op is SKIPPED and the
+   * rest of the patch is still applied — losing one op is a divergence, and
+   * abandoning the other forty-nine is a bigger one.
+   */
+  onError?: (error: ApplyError) => void;
+}
+
+/**
+ * Apply-time context: the reporter plus the "did anything fail" flag.
+ *
+ * A local type rather than a closure variable because two of the op handlers
+ * need to report and continue, and passing a mutable record makes that
+ * explicit at every call site.
+ */
+interface ApplyCtx {
+  report: (op: ApplyError['op'], id: string | undefined, reason: string) => void;
+}
+
+/**
+ * The agent under `id`, or `undefined` after reporting why not.
+ *
+ * Both failure arms are DIVERGENCE, not producer bugs: an id the receiver has
+ * never seen, and an id whose node is the wrong kind. Either is repaired by a
+ * snapshot and neither is repaired by crashing.
+ */
+function findAgent(
+  root: AgentNode,
+  id: string,
+  op: ApplyError['op'],
+  ctx: ApplyCtx,
+): AgentNode | undefined {
   const found = locate(root, id);
-  if (found === undefined) throw new SessionPatchError(op, `no node with id ${id}`);
+  if (found === undefined) {
+    ctx.report(op, id, `no node with id ${id}`);
+    return undefined;
+  }
   if (!isAgentNode(found.node)) {
-    throw new SessionPatchError(op, `node ${id} is a tool node and has no children`);
+    ctx.report(op, id, `node ${id} is a tool node and has no children`);
+    return undefined;
   }
   return found.node;
 }
@@ -156,20 +213,51 @@ function requireAgent(root: AgentNode, id: string, op: string): AgentNode {
  * parent to another is detached before it is re-inserted. Everything else is
  * applied in order.
  *
- * A patch that cannot be applied throws {@link SessionPatchError} rather than
- * producing a tree that silently disagrees with its source. This function is
- * pure and side-effect free; a caller that cannot afford a throw (the
- * extension host) can catch it and re-send a full snapshot.
+ * **TWO FAILURE CLASSES, AND THEY ARE NOT THE SAME (DoD 5.5.1).**
+ *
+ *   - **Divergence** — an op addressing an id this tree does not have, or has
+ *     with the wrong kind, or a `reorderChildren` whose order is not this
+ *     tree's child set. The receiver's tree is behind or ahead of the
+ *     sender's. Reported through {@link ApplyOptions.onError}, the op is
+ *     skipped, and every other op in the patch is still applied. **Not a
+ *     throw**, because the repair is a snapshot and because the alternative —
+ *     what `0.1.2` shipped — is to abandon the whole patch, keep a stale tree,
+ *     and apply the next patch to that same stale base, compounding forever.
+ *   - **A producer bug** — a patch that would break the invariant that a
+ *     session's root is an agent node. Removing the root, or replacing it with
+ *     a tool node. Still throws {@link SessionPatchError}: divergence cannot
+ *     produce these, so softening them would hide a defect in code that runs
+ *     on both sides of the wire.
+ *
+ * A caller that wants the old all-or-nothing behaviour passes an `onError`
+ * that records, and discards the result when anything was recorded — which is
+ * exactly what `SessionBridge` does, because the host must never diverge.
  */
-export function applySessionPatch(prev: SessionState, patch: SessionPatch): SessionState {
+export function applySessionPatch(
+  prev: SessionState,
+  patch: SessionPatch,
+  options: ApplyOptions = {},
+): SessionState {
   let root = cloneAgent(prev.root);
   const ops = patch.tree ?? [];
+  const onError = options.onError;
+  const ctx: ApplyCtx = {
+    report: (op, id, reason) => {
+      if (onError === undefined) return;
+      const error: ApplyError = { op, reason };
+      if (id !== undefined) error.id = id;
+      onError(error);
+    },
+  };
 
   for (const op of ops) {
     if (op.op !== 'removeNode') continue;
     const found = locate(root, op.id);
     if (found === undefined) {
-      throw new SessionPatchError(op.op, `no node with id ${op.id}`);
+      // Divergence: the node is already gone here. Nothing to detach, and the
+      // desired end state — "not in the tree" — already holds.
+      ctx.report(op.op, op.id, `no node with id ${op.id}`);
+      continue;
     }
     if (found.parent === undefined) {
       throw new SessionPatchError(op.op, 'the root cannot be removed');
@@ -187,7 +275,8 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
       case 'replaceNode': {
         const found = locate(root, op.id);
         if (found === undefined) {
-          throw new SessionPatchError(op.op, `no node with id ${op.id}`);
+          ctx.report(op.op, op.id, `no node with id ${op.id}`);
+          break;
         }
         const replacement = cloneNode(op.node);
         if (found.parent === undefined) {
@@ -201,36 +290,64 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
         break;
       }
       case 'insertNode': {
-        const parent = requireAgent(root, op.parentId, op.op);
-        const index = Math.max(0, Math.min(op.index, parent.children.length));
+        const parent = findAgent(root, op.parentId, op.op, ctx);
+        if (parent === undefined) break;
+        // The sibling anchor, not an index. `null` means "first child".
+        // An anchor this tree does not have is reported and then APPENDED:
+        // wrong order is recoverable from the next `reorderChildren` or from a
+        // resync, and a dropped node is recoverable from neither. See the
+        // `insertNode` doc comment in `events.ts` for why the field changed.
+        let index: number;
+        if (op.afterId === null) {
+          index = 0;
+        } else {
+          const at = parent.children.findIndex((c) => c.id === op.afterId);
+          if (at === -1) {
+            ctx.report(op.op, op.afterId, `anchor ${op.afterId} is not a child of ${op.parentId}`);
+            index = parent.children.length;
+          } else {
+            index = at + 1;
+          }
+        }
         parent.children.splice(index, 0, cloneNode(op.node));
         break;
       }
       case 'reorderChildren': {
-        const parent = requireAgent(root, op.parentId, op.op);
+        const parent = findAgent(root, op.parentId, op.op, ctx);
+        if (parent === undefined) break;
         const byId = new Map<string, TreeNode>(parent.children.map((c) => [c.id, c]));
         if (byId.size !== parent.children.length || byId.size !== op.order.length) {
-          throw new SessionPatchError(op.op, `order for ${op.parentId} is not its child set`);
+          ctx.report(op.op, op.parentId, `order for ${op.parentId} is not its child set`);
+          break;
         }
+        // Divergence-tolerant: reorder the children this tree HAS into the
+        // order the sender asked for, and leave anything it does not have to
+        // the resync. A partial reorder is a cosmetic disagreement; dropping
+        // the children is not.
         const reordered: TreeNode[] = [];
+        let missing = false;
         for (const id of op.order) {
           const child = byId.get(id);
           if (child === undefined) {
-            throw new SessionPatchError(op.op, `${id} is not a child of ${op.parentId}`);
+            ctx.report(op.op, id, `${id} is not a child of ${op.parentId}`);
+            missing = true;
+            continue;
           }
           reordered.push(child);
         }
-        parent.children = reordered;
+        if (!missing) parent.children = reordered;
         break;
       }
       case 'updateAgent': {
-        const node = requireAgent(root, op.id, op.op);
+        const node = findAgent(root, op.id, op.op, ctx);
+        if (node === undefined) break;
         const f = op.fields;
         if (f.kind !== undefined) node.kind = f.kind;
         if (f.label !== undefined) node.label = f.label;
         if (f.status !== undefined) node.status = f.status;
         if (f.spawnDepth !== undefined) node.spawnDepth = f.spawnDepth;
-        if (f.tokens !== undefined) node.tokens = { in: f.tokens.in, out: f.tokens.out };
+        if (f.contextNow !== undefined) node.contextNow = { ...f.contextNow };
+        if (f.burn !== undefined) node.burn = { ...f.burn };
         if (f.startedAt !== undefined) node.startedAt = f.startedAt;
         if (f.endedAt === null) delete node.endedAt;
         else if (f.endedAt !== undefined) node.endedAt = f.endedAt;
@@ -239,10 +356,12 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
       case 'updateTool': {
         const found = locate(root, op.id);
         if (found === undefined) {
-          throw new SessionPatchError(op.op, `no node with id ${op.id}`);
+          ctx.report(op.op, op.id, `no node with id ${op.id}`);
+          break;
         }
         if (isAgentNode(found.node)) {
-          throw new SessionPatchError(op.op, `node ${op.id} is an agent node`);
+          ctx.report(op.op, op.id, `node ${op.id} is an agent node`);
+          break;
         }
         const node = found.node;
         const f = op.fields;
@@ -253,6 +372,14 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
         else if (f.resultPreview !== undefined) node.resultPreview = f.resultPreview;
         if (f.durationMs === null) delete node.durationMs;
         else if (f.durationMs !== undefined) node.durationMs = f.durationMs;
+        // Gate amendment B7. Both directions, or the round trip is not exact:
+        // `null` is the engine withdrawing its truncation claim and must DELETE
+        // the key, `false` is the engine actively claiming the payload is whole
+        // and must be kept as `false`. Collapsing the two — `if (f.truncated)`
+        // — would silently turn a cleared flag into a `false` one, which reads
+        // to a renderer as "known whole" instead of "not claimed".
+        if (f.truncated === null) delete node.truncated;
+        else if (f.truncated !== undefined) node.truncated = f.truncated;
         break;
       }
     }
@@ -260,6 +387,11 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
 
   const fields = patch.fields ?? {};
   const totals = fields.totals ?? prev.totals;
+  // Replaced whole, never merged field-by-field: `prompt` and `output` are
+  // two halves of one measurement and a patch that moved one without the
+  // other would report a pair that never existed.
+  const contextNow: TokenPair | undefined = fields.contextNow ?? prev.contextNow;
+  const burn: TokenPair | undefined = fields.burn ?? prev.burn;
   const edges = patch.spawnEdges ?? edgesOf(prev);
   // Absent means unchanged, so a parked graft carried by an earlier snapshot
   // survives every diff that does not mention it. Getting this wrong is silent:
@@ -270,6 +402,15 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
   // sets it, so this only affects states built before it existed, and writing
   // `parked: []` onto those would change what an unrelated round trip compares.
   const parked = patch.parked ?? prev.parked;
+  // Gate amendment B2. Honoured exactly like `parked`: a patch that does not
+  // mention the engine leaves it alone, and a state that never carried the
+  // field comes out without it rather than gaining a `'cc'` this reducer made
+  // up. `SessionFieldPatch.engine` records why the key can never arrive from
+  // `diffSessionState` — nothing can change a session's engine — and that it
+  // is carried anyway, by decision. **Do not delete this as dead code.** If it
+  // is ever deleted, a patch carrying the key becomes silently ignored rather
+  // than failing.
+  const engine = fields.engine ?? prev.engine;
 
   const next: SessionState = {
     sessionId: prev.sessionId,
@@ -278,13 +419,12 @@ export function applySessionPatch(prev: SessionState, patch: SessionPatch): Sess
     liveness: fields.liveness ?? prev.liveness,
     schemaOk: fields.schemaOk ?? prev.schemaOk,
     root,
-    totals: {
-      inputTokens: totals.inputTokens,
-      outputTokens: totals.outputTokens,
-      costUsd: totals.costUsd,
-    },
+    totals: { costUsd: totals.costUsd },
+    contextNow: contextNow === undefined ? undefined : { ...contextNow },
+    burn: burn === undefined ? undefined : { ...burn },
     spawnEdges: edges.map((e) => ({ ...e })),
   };
   if (parked !== undefined) next.parked = parked.map((p) => ({ ...p }));
+  if (engine !== undefined) next.engine = engine;
   return deepFreeze(next);
 }

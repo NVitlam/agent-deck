@@ -462,6 +462,8 @@ export interface LoadedSession {
   perFile: ReadonlyMap<string, { parsedLines: number; malformedLines: number }>;
   malformedLines: number;
   parsedLines: number;
+  /** Lines skipped for a recognised-but-unmodelled `type` (DoD 5.5.6). */
+  ignoredLines: number;
   /** Files that could not be read at all. */
   unreadable: readonly { path: string; reason: string }[];
 }
@@ -485,6 +487,7 @@ export async function loadSessionForAttribution(
   const unreadable: { path: string; reason: string }[] = [];
   let malformedLines = 0;
   let parsedLines = 0;
+  let ignoredLines = 0;
 
   const ingest = async (path: string, kind: 'main' | 'subagent', agentId?: string) => {
     let text: string;
@@ -504,6 +507,7 @@ export async function loadSessionForAttribution(
     });
     parsedLines += batch.diagnostics.parsedLines;
     malformedLines += batch.diagnostics.malformedLines;
+    ignoredLines += batch.diagnostics.ignoredLines;
     const source: TranscriptSource = {
       kind,
       path,
@@ -529,6 +533,7 @@ export async function loadSessionForAttribution(
     perFile,
     malformedLines,
     parsedLines,
+    ignoredLines,
     unreadable,
   };
 }

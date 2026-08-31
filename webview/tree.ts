@@ -15,7 +15,83 @@
  */
 
 import type { AgentNode, SessionState, ToolNode, TreeNode } from '../src/model/events.js';
-import { isAgentNode } from '../src/model/events.js';
+import { isAgentNode, isToolNode } from '../src/model/events.js';
+
+/* ------------------------------------------------------------------------ *
+ * Spawn order
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The agent children of `agentId`, in SPAWN ORDER.
+ *
+ * Spawn order is the position of the spawning tool call in the parent's
+ * transcript, and nothing else. Never by name, never by hash, never by the
+ * arrival time of the file on disk — each of those is a different order on a
+ * different run, and the tree would rearrange itself under a user watching it.
+ *
+ * The join key is `SessionState.spawnEdges`: `edge.agentId` names the child and
+ * `edge.toolUseId` names the `tool_use` block that spawned it. The RANK is that
+ * tool's index among the parent's own tool children, which is transcript order
+ * because that is the order the grafter appends children in. Both engines reach
+ * the webview through the same door:
+ *
+ *  - CC ranks by the `Task` tool_use whose id matches the sidecar's
+ *    `meta.toolUseId` — the primary-key join, not an inference.
+ *  - OpenCode ranks by the `task` part's message `time.created`, then `callID`,
+ *    which `src/opencode/graft.ts` has already applied when it ordered the
+ *    parent's parts. By the time a state reaches here that ordering IS the
+ *    children array, so this function reads it rather than restating it.
+ *
+ * An agent with no usable edge sorts last, and TIES END ON THE AGENT ID, which
+ * is what makes the result identical on every replay of the same state.
+ */
+export function orderedChildAgents(
+  state: SessionState,
+  agentId: string,
+): AgentNode[] {
+  const parent = findAgent(state.root, agentId);
+  if (parent === undefined) return [];
+
+  const toolRank = new Map<string, number>();
+  let rank = 0;
+  for (const child of parent.children) {
+    if (isToolNode(child)) toolRank.set(child.id, rank++);
+  }
+
+  // First edge wins, so a duplicate edge cannot reorder anything.
+  const spawnedBy = new Map<string, string>();
+  for (const edge of state.spawnEdges ?? []) {
+    if (!spawnedBy.has(edge.agentId)) spawnedBy.set(edge.agentId, edge.toolUseId);
+  }
+
+  const rankOf = (agent: AgentNode): number => {
+    const toolUseId = spawnedBy.get(agent.id);
+    if (toolUseId === undefined) return Number.POSITIVE_INFINITY;
+    return toolRank.get(toolUseId) ?? Number.POSITIVE_INFINITY;
+  };
+
+  const kids = parent.children.filter(isAgentNode);
+  return kids.sort((a, b) => {
+    const ra = rankOf(a);
+    const rb = rankOf(b);
+    // Three-way compare rather than subtraction: `Infinity - Infinity` is NaN,
+    // and a NaN comparator is an unspecified order rather than a failure.
+    if (ra < rb) return -1;
+    if (ra > rb) return 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
+/** The agent node with this id, anywhere beneath `root`. */
+export function findAgent(root: AgentNode, id: string): AgentNode | undefined {
+  if (root.id === id) return root;
+  for (const child of root.children) {
+    if (!isAgentNode(child)) continue;
+    const found = findAgent(child, id);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
 
 export interface RenderAgent {
   kind: 'agent';

@@ -9,7 +9,7 @@
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
   import { displayLiveness, formatTokens } from './format.js';
-  import { DECK_FILTERS, TESTID } from './canvas-contract.js';
+  import { LIVENESS_FILTERS, TESTID } from './canvas-contract.js';
 
   let { store }: { store: Store } = $props();
 
@@ -148,15 +148,15 @@
              host's full account and the count chip on the deck says "n of m",
              so a filter can never be mistaken for "this is all there is". -->
         <div class="filters" role="group" aria-label="Filter sessions">
-          {#each DECK_FILTERS as filter (filter)}
+          {#each LIVENESS_FILTERS as filter (filter)}
             <button
               type="button"
               class="chip"
               data-testid={TESTID.filterChip}
               data-filter={filter}
-              data-active={String(view.deckFilter === filter)}
-              aria-pressed={view.deckFilter === filter}
-              onclick={() => store.setDeckFilter(filter)}>{filter}</button
+              data-active={String(view.livenessFilter === filter)}
+              aria-pressed={view.livenessFilter === filter}
+              onclick={() => store.setLivenessFilter(filter)}>{filter}</button
             >
           {/each}
         </div>
@@ -238,7 +238,14 @@
     <!-- Altitude 0. Also the fallback when nothing is selected: an altitude
          above the deck with no session to show is not a state the store should
          be able to reach, and rendering the deck is the honest answer if it
-         ever does. -->
+         ever does.
+
+         THIS BRANCH IS WHY THE ENGINE FILTER IS STORE STATE. `<Deck>` is
+         mounted only here, so it is DESTROYED on entering a session and
+         rebuilt on returning. Anything the component held is gone; anything
+         the store holds survives. The filter used to be the former and reset
+         to `all` on every session visit, beside a liveness filter that did
+         not. Both are now passed in and reported back. -->
     <main class="main" data-testid="main">
       <Deck
         sessions={view.filteredSessions}
@@ -247,12 +254,13 @@
         selectedSessionId={view.selectedSessionId}
         deckView={view.deckView}
         {reducedMotion}
+        engineFilter={view.engineFilter}
+        onenginefilter={(filter) => store.setEngineFilter(filter)}
         onenter={(id) => store.enterSession(id)}
         onpan={(dx, dy) => store.panDeck(dx, dy)}
-        onzoom={(factor, x, y) => store.zoomDeck(factor, x, y)}
+        onzoom={(notches, x, y) => store.zoomDeck(notches, x, y)}
         onreset={() => store.resetDeckView()}
-        blobNudges={view.blobNudges}
-        onnudge={(id, dx, dy) => store.nudgeBlob(id, dx, dy)}
+        onfit={(content, size) => store.fitDeck(content, size)}
       />
     </main>
   {:else}
@@ -276,9 +284,20 @@
             </span>
           {/if}
           {#if !view.refused}
+            <!-- CONTEXT AND BURN, and this line is why `.svelte` files being
+                 outside the type checker is a recorded hazard rather than a
+                 note. On the hotfix this read `totals.inputTokens` /
+                 `totals.outputTokens` until a `phase-verifier` caught it:
+                 those two fields were REMOVED from the contract, `tsc` does
+                 not see this file, eslint does not lint it, and
+                 `formatTokens(undefined)` returns an em-dash - so the DEFAULT
+                 view's token line rendered `— in · — out · —` on every
+                 session, in the shipped artifact, in the release whose
+                 changelog entry is about token counts being wrong. The tests
+                 assert the VALUES, not the presence of a dash. -->
             <span class="hud-totals" data-testid="hud-totals">
-              {formatTokens(view.selected.totals.inputTokens)} in ·
-              {formatTokens(view.selected.totals.outputTokens)} out ·
+              {formatTokens(view.selected.contextNow?.prompt)} in ctx ·
+              {formatTokens(view.selected.burn?.prompt)} burn ·
               <!-- Cost is an em-dash, never 0. The host sends 0 meaning NOT
                    COMPUTED, and 0 rendered as a number reads as "free", which
                    is a fabricated figure - the same class of defect as a
@@ -313,21 +332,36 @@
           onreset={() => store.resetCanvasView()}
         />
       </main>
-      {#if view.inspectorOpen && view.selectedNode !== undefined}
-        <aside class="aside">
-          <Inspector
-            node={inspected}
-            toggled={view.toggledNodeIds}
-            ontogglenode={(id) => store.toggleNode(id)}
-            expanded={inspectedExpanded}
-            ontoggle={() => {
-              if (inspected !== undefined) store.toggleNode(inspected.id);
-            }}
-            onclose={() => store.escape()}
-          />
-        </aside>
-      {/if}
     </div>
+    <!-- THE DRAWER, in a grid row of its own (design.md §8.6, amendment A3).
+         Outside `.body`, which is why hiding it cannot re-flow the field above
+         it: the field's row is `1fr` and keeps every pixel the drawer is not
+         using. It was an `<aside>` inside `.body` until 2026-08-28 — a 22em
+         side panel, which is what the design has never described.
+
+         `sessionId`, `engine` and `spawnEdges` are passed HERE for the first
+         time. The props existed and had no caller, so the header's session id
+         and engine glyph, and every call row's "→ child" link, were reachable
+         only from a test. `breadcrumb` is still unwired: the focus path lives
+         in `SessionCanvas.svelte` as component state, so App cannot see it —
+         the same reason §8.6's "re-root to parent" Escape step is unbuilt. -->
+    {#if view.inspectorOpen && view.selectedNode !== undefined}
+      <Inspector
+        node={inspected}
+        sessionId={view.selected.sessionId}
+        engine={view.selected.engine}
+        spawnEdges={view.selected.spawnEdges ?? []}
+        drawerExpanded={view.drawerExpanded}
+        ondrawertoggle={() => store.toggleDrawerExpanded()}
+        detailActionId={view.detailActionId}
+        ondetail={(id) => store.setDetailAction(id)}
+        expanded={inspectedExpanded}
+        ontoggle={() => {
+          if (inspected !== undefined) store.toggleNode(inspected.id);
+        }}
+        onclose={() => store.escape()}
+      />
+    {/if}
   {/if}
 </div>
 
@@ -339,6 +373,15 @@
        needs to copy text: the inspector and the refusal/notice strip. */
     user-select: none;
     -webkit-user-select: none;
+    /* A COLUMN OF BANDS, which is what §8.6 means by the drawer having "a grid
+       row of its own — hiding it must not re-flow other rows". A single-column
+       flex column IS that: the chrome and the drawer size to their content,
+       the field takes `flex: 1`, and showing or hiding the drawer moves the
+       field's boundary and nothing else's.
+       Written as flex rather than as `grid-template-rows` deliberately: the
+       banner and the patch notice are conditional children ahead of the field,
+       so any fixed row template shifts by one every time one of them appears,
+       and the drawer would land on the field's track. */
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -362,16 +405,12 @@
     overflow: hidden;
   }
 
-  .aside {
-    /* Payload text is meant to be copied — that is most of what the inspector
-       is for. */
-    user-select: text;
-    -webkit-user-select: text;
-    width: 22em;
-    max-width: 45%;
-    overflow: auto;
-    border-left: 1px solid var(--vscode-panel-border, transparent);
-  }
+  /* `.aside` is GONE, and its absence is the change. It was a 22em side panel
+     with a `border-left` — the inspector's `0.1.x` placement, carried through
+     the Phase 7 rebuild because no DoD line named the drawer. The drawer is
+     now a bottom row of `.app`'s grid and styles itself; see Inspector.svelte.
+     Its `user-select: text` moved with it, because `.app` turns selection off
+     globally and the payload text is what a person copies. */
 
   .hud {
     display: flex;

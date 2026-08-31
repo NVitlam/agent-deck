@@ -1,15 +1,24 @@
-// R6 — the wire corpus, the replay, and the theater's isolation.
+// R6 — the wire corpora, the replay, and the theater's isolation.
 //
 // Four separable obligations, one file, one section each:
 //
-//   1. `scripts/record-wire.mjs` regenerates the committed corpus
+//   1. `scripts/record-wire.mjs` regenerates the committed corpora
 //      DETERMINISTICALLY: run it twice, compare bytes.
-//   2. Replaying the corpus through the REAL store converges on the model's
+//   2. Replaying a corpus through the REAL store converges on the model's
 //      own final snapshot — which is what makes the recording trustworthy
 //      rather than merely plausible.
 //   3. `node esbuild.config.mjs --theater` builds the dev-only page.
 //   4. The theater is UNREACHABLE from `webview/main.ts`, asserted against the
 //      real import graph rather than asserted in a comment.
+//
+// PLURAL SINCE PHASE 7 (DoD 7.10). There are two recorded corpora now, one per
+// observation engine, and the theater replays both. Until this phase every
+// corpus came from Claude Code, so the renderer had never been fed an OpenCode
+// session outside a component test — and the two engines disagree about exactly
+// the fields a deck card reads: OpenCode reports no `contextNow` and no `burn`,
+// which is the difference between an em-dash and a number on every card. The
+// engine-agnostic properties below run over both through `RECORDED_ENGINES`;
+// the ones that are genuinely one engine's say so in their own name.
 //
 // A node suite, not a jsdom one, for two reasons. `scripts/record-wire.mjs`
 // and `webview/theater/import-graph.mjs` both run esbuild, and esbuild refuses
@@ -43,6 +52,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { HostToWebviewMessage, SessionState } from '../src/model/events.js';
 import { isAgentNode } from '../src/model/events.js';
 import { SYNTHETIC_CORPUS_PREFIX, WIRE_CORPUS_DIR } from './canvas-contract.js';
+import { EM_DASH } from './format.js';
+import { formatCompactTokens } from './layout.js';
 import { createStore } from './store.js';
 import type { WebviewView } from './store.js';
 import type { WireCorpus } from './theater/corpus-types.js';
@@ -141,12 +152,42 @@ afterAll(async () => {
   if (tempRoot !== undefined) await rm(tempRoot, { recursive: true, force: true });
 });
 
-/** The one fixture-derived corpus this recorder produces. */
-function recorded(): WireCorpus {
-  const found = corpora.find((c) => c.kind === 'recorded');
-  if (found === undefined) throw new Error('the recorder produced no recorded corpus');
-  return found;
+/**
+ * The fixture-derived corpora this recorder produces, BY ENGINE.
+ *
+ * There are two as of Phase 7 (DoD 7.10), and the selector is the reason this
+ * is not still `corpora.find((c) => c.kind === 'recorded')`. That call returned
+ * whichever recorded corpus sorted first by filename, which was the Claude Code
+ * one only because `cc` sorts before `opencode` — so every assertion written
+ * against "the recorded corpus" would have kept passing while silently testing
+ * one engine and calling it both. Selecting on the engine makes the subject of
+ * each assertion explicit and makes a missing corpus a failure rather than a
+ * silent substitution.
+ */
+function recordedFor(engine: 'cc' | 'opencode'): WireCorpus {
+  const found = corpora.filter((c) => c.kind === 'recorded' && (c.engine ?? 'cc') === engine);
+  if (found.length !== 1) {
+    throw new Error(
+      `expected exactly one recorded ${engine} corpus, found ${String(found.length)}`,
+    );
+  }
+  const only = found[0];
+  if (only === undefined) throw new Error('unreachable');
+  return only;
 }
+
+/** The Claude Code arc. */
+function recorded(): WireCorpus {
+  return recordedFor('cc');
+}
+
+/** The OpenCode arc (DoD 7.10). */
+function openCodeRecorded(): WireCorpus {
+  return recordedFor('opencode');
+}
+
+/** Both, named, for the properties every recording must have. */
+const RECORDED_ENGINES = ['cc', 'opencode'] as const;
 
 // ---------------------------------------------------------------------------
 // 1. Determinism
@@ -246,24 +287,149 @@ describe('the corpus is a recording of the real wire', () => {
       expect(name.startsWith(SYNTHETIC_CORPUS_PREFIX)).toBe(corpus?.kind === 'synthetic');
     }
     expect(recorded().recordedFrom).toBe('fixtures/cc-2.1.234/projects');
+    // Derived rather than pinned: the OpenCode corpus is named from
+    // `PINNED_OPENCODE_VERSION`, so a re-anchor moves it and a literal here
+    // would go red for the wrong reason.
+    expect(openCodeRecorded().recordedFrom).toMatch(/^fixtures\/opencode-\d+\.\d+\.\d+$/);
   });
 
-  it('carries both wire paths: snapshots and diffs', () => {
-    const types = recorded().events.map((e) => e.message.type);
+  it('records BOTH engines, and each corpus agrees with its own sessions', () => {
+    // DoD 7.10. The corpus-level `engine` is a claim about the recording; the
+    // sessions carry their own. A corpus that labelled itself wrong would put
+    // the wrong name in the theater's picker and mislead every reader of the
+    // file, so the two are checked against each other rather than separately.
+    for (const engine of RECORDED_ENGINES) {
+      const corpus = recordedFor(engine);
+      expect(corpus.final.sessions.length, engine).toBeGreaterThan(0);
+      for (const session of corpus.final.sessions) {
+        expect(session.engine ?? 'cc', `${corpus.id}/${session.sessionId}`).toBe(engine);
+      }
+    }
+    // And the two are genuinely different recordings, not the same one twice.
+    expect(recorded().id).not.toBe(openCodeRecorded().id);
+  });
+
+  it.each(RECORDED_ENGINES)('carries both wire paths: snapshots and diffs (%s)', (engine) => {
+    const types = recordedFor(engine).events.map((e) => e.message.type);
     expect(types.filter((t) => t === 'snapshot').length).toBeGreaterThanOrEqual(2);
     expect(types.filter((t) => t === 'diff').length).toBeGreaterThan(0);
-    expect(types).toContain('schemaMismatch');
     expect(types).toContain('degraded');
   });
 
-  it('ends on diffs, so convergence is not a snapshot re-statement', () => {
-    // If the last event were a full snapshot, "replay converges on the final
-    // state" would hold whether or not one patch applied correctly. The arc is
-    // ordered so the reload sits in the middle; this is the property that says
-    // so, checked rather than trusted.
+  it('the CC arc carries a refusal on the wire', () => {
+    // `schemaMismatch` is CC-only in these two recordings and saying so is the
+    // point: the OpenCode anchor corpus refuses nothing, so asserting the
+    // message type across both engines would have forced either a fixture that
+    // does not exist or an assertion nobody could satisfy honestly.
     const types = recorded().events.map((e) => e.message.type);
-    const lastSnapshot = types.lastIndexOf('snapshot');
-    expect(types.slice(lastSnapshot + 1)).toContain('diff');
+    expect(types).toContain('schemaMismatch');
+    expect(openCodeRecorded().final.schemaMismatchSessionIds).toStrictEqual([]);
+  });
+
+  it.each(RECORDED_ENGINES)(
+    'ends on diffs, so convergence is not a snapshot re-statement (%s)',
+    (engine) => {
+      // If the last event were a full snapshot, "replay converges on the final
+      // state" would hold whether or not one patch applied correctly. Both arcs
+      // put the panel reload in the middle; this is the property that says so,
+      // checked rather than trusted.
+      const types = recordedFor(engine).events.map((e) => e.message.type);
+      const lastSnapshot = types.lastIndexOf('snapshot');
+      expect(types.slice(lastSnapshot + 1)).toContain('diff');
+    },
+  );
+
+  it('the OpenCode arc is the shipped host reading a healthy store', () => {
+    const corpus = openCodeRecorded();
+    const diagnostics = corpus.hostDiagnostics ?? {};
+    // Counters, not prose. A recording taken off a store that degraded or
+    // refused would look identical from the outside and mean something else.
+    expect(diagnostics['contentFailures'], 'contentFailures').toBe(0);
+    expect(diagnostics['schemaMismatches'], 'schemaMismatches').toBe(0);
+    expect(diagnostics['degradedReads'], 'degradedReads').toBe(0);
+    expect(diagnostics['livenessDegraded'], 'livenessDegraded').toBe(false);
+    // One content read for the whole arc: the cursor never moved, because the
+    // committed store is static. That is `OpenCodeEnginePath`'s own rule -
+    // re-read only when `event_sequence.seq` says something happened - and a
+    // recording in which it read on every poll would be recording a busy loop.
+    expect(diagnostics['contentReads'], 'contentReads').toBe(1);
+    expect(diagnostics['livenessPolls'], 'livenessPolls').toBeGreaterThan(1);
+    expect(diagnostics['sessions'], 'sessions').toBe(corpus.final.sessions.length);
+    // No host path travelled with them.
+    expect(JSON.stringify(diagnostics)).not.toMatch(/[A-Za-z]:\\\\/);
+  });
+
+  it('the OpenCode arc records real liveness transitions, engine-produced', () => {
+    // The diffs in that corpus are liveness moves the real `OcLivenessEngine`
+    // made as the simulated clock passed each session's recency threshold. If
+    // the arc opened in its final state there would be nothing to replay, and
+    // "the theater shows the second engine" would be a still photograph.
+    const corpus = openCodeRecorded();
+    const first = corpus.events.find((e) => e.message.type === 'snapshot');
+    expect(first).toBeDefined();
+    if (first?.message.type !== 'snapshot') return;
+
+    const opening = first.message.sessions.map((s) => s.liveness);
+    const ending = corpus.final.sessions.map((s) => s.liveness);
+    expect(opening.length).toBe(ending.length);
+    expect(opening).not.toStrictEqual(ending);
+    // BY VALUE, not by inequality alone: the arc ends with every session past
+    // the threshold, which is the state the transitions were arranged to reach.
+    expect(new Set(ending)).toStrictEqual(new Set(['idle']));
+    expect(opening).toContain('live');
+
+    const diffs = corpus.events.filter((e) => e.message.type === 'diff');
+    expect(diffs.length).toBeGreaterThan(0);
+    for (const event of diffs) {
+      if (event.message.type !== 'diff') continue;
+      expect(event.message.patch.fields?.liveness, event.message.sessionId).toBe('idle');
+    }
+  });
+
+  it('the OpenCode sessions report burn but NOT context — the half-em-dash path', () => {
+    /*
+     * **This test asserted that BOTH figures were absent until 2026-08-31.**
+     * That was right when it was written and it is the assertion own-eyes 9.4
+     * eventually contradicted from the other side: OpenCode's own UI showed a
+     * token count while our card showed a dash. `burn` is emitted now — the
+     * whole prompt, cache included — and `contextNow` is still absent, because
+     * a context window is a LEVEL and cannot be recovered from a cumulative
+     * total.
+     *
+     * Asserted as presence and absence rather than as rendered glyphs: a `0`
+     * here would be a wrong number, and the dash itself is read off the card in
+     * the theater test below and in `webview/stress.test.ts`.
+     */
+    const corpus = openCodeRecorded();
+    let withBurn = 0;
+    for (const session of corpus.final.sessions) {
+      expect(session.contextNow ?? null, session.sessionId).toBeNull();
+      if (!session.schemaOk) continue;
+      const burn = session.burn;
+      expect(burn, session.sessionId).toBeDefined();
+      expect(burn?.prompt, session.sessionId).toBeGreaterThan(0);
+      withBurn += 1;
+    }
+    // Vacuity control: a corpus of nothing but refused sessions would satisfy
+    // the loop above without ever entering the branch that matters.
+    expect(withBurn).toBeGreaterThan(0);
+    // The control that keeps `contextNow`'s absence a fact about the OpenCode
+    // engine rather than about this corpus: the CC arc reports both.
+    expect(recorded().final.sessions.some((s) => s.burn !== undefined)).toBe(true);
+    expect(recorded().final.sessions.some((s) => s.contextNow !== undefined)).toBe(true);
+  });
+
+  it('the OpenCode arc carries a parked graft, which nothing else here does', () => {
+    // G3 drawn: an agent the grafter could not join has no node in the tree at
+    // all, and the parked rail is the only place it exists. The anchor corpus
+    // holds several, so the theater is the one surface where a human can see
+    // that rail with real data.
+    const parked = openCodeRecorded().final.sessions.flatMap((s) => s.parked ?? []);
+    expect(parked.length).toBeGreaterThan(0);
+    for (const entry of parked) {
+      expect(entry.agentId.length).toBeGreaterThan(0);
+      expect(entry.code.length).toBeGreaterThan(0);
+    }
   });
 
   it('G4: no thinking signature bytes survive into the corpus', async () => {
@@ -342,9 +508,66 @@ function countNodes(state: SessionState): number {
   return n;
 }
 
+/** Agent nodes only, root included — the figure a deck card prints as `n ag`. */
+function countAgents(state: SessionState): number {
+  let n = 0;
+  const visit = (node: SessionState['root'] | SessionState['root']['children'][number]): void => {
+    if (!isAgentNode(node)) return;
+    n += 1;
+    for (const child of node.children) visit(child);
+  };
+  visit(state.root);
+  return n;
+}
+
+/**
+ * Every deck card's figures, checked against the corpus's own trees.
+ *
+ * BY VALUE, per session, and that is the whole point of it: the assertion this
+ * replaced counted faint dots and asked for more than one, which is the shape
+ * of check that keeps passing while the number on screen is wrong. `toContain`
+ * on the concatenated row would be the same mistake in a different costume -
+ * this repo shipped a fully-dashed token line once - so each figure is read out
+ * of its own `tspan`.
+ *
+ * Returns the number of cards showing a NUMERIC token figure, so a caller can
+ * state the control and the treatment: the CC corpus must have some, and the
+ * OpenCode corpus must have none, because that engine reports no burn at all.
+ */
+function checkDeckFigures(doc: Document, corpus: WireCorpus): { numeric: number } {
+  let numeric = 0;
+  for (const state of corpus.final.sessions) {
+    const card = doc.querySelector(
+      `[data-testid="deck-blob"][data-session-id="${state.sessionId}"]`,
+    );
+    expect(card, `${corpus.id}: no card for ${state.sessionId}`).not.toBeNull();
+    if (card === null) continue;
+
+    // G3 through the theater: a refused session reports NOTHING about a tree
+    // the fingerprint declined to trust — not a small number, none.
+    const expectedAgents = state.schemaOk ? countAgents(state) : 0;
+    expect(card.getAttribute('data-agents'), state.sessionId).toBe(String(expectedAgents));
+    expect(
+      card.querySelector('[data-testid="deck-cell-agents"]')?.textContent,
+      state.sessionId,
+    ).toBe(`${String(expectedAgents)} ag`);
+
+    const tokens = card.querySelector('[data-testid="deck-cell-tokens"]')?.textContent ?? '';
+    const burn = state.schemaOk ? state.burn : undefined;
+    if (burn === undefined) {
+      expect(tokens, state.sessionId).toBe(EM_DASH);
+    } else {
+      expect(tokens, state.sessionId).toBe(formatCompactTokens(burn.prompt + burn.output));
+      expect(tokens, state.sessionId).not.toBe(EM_DASH);
+      numeric += 1;
+    }
+  }
+  return { numeric };
+}
+
 describe('replaying the corpus through the real store', () => {
-  it('lands on a view equal to the direct-snapshot golden', () => {
-    const corpus = recorded();
+  it.each(RECORDED_ENGINES)('lands on a view equal to the direct-snapshot golden (%s)', (engine) => {
+    const corpus = recordedFor(engine);
 
     const replayed = createStore();
     replayAll(corpus, (message) => {
@@ -356,38 +579,44 @@ describe('replaying the corpus through the real store', () => {
     expect(replayed.getView()).toStrictEqual(viewOf(goldenMessages(corpus)));
   });
 
-  it('applies every patch: nothing was skipped or half-applied', () => {
-    const corpus = recorded();
-    const replayed = createStore();
-    replayAll(corpus, (message) => {
-      replayed.handleMessage(message);
-    });
-    const view = replayed.getView();
+  it.each(RECORDED_ENGINES)(
+    'applies every patch: nothing was skipped or half-applied (%s)',
+    (engine) => {
+      const corpus = recordedFor(engine);
+      const replayed = createStore();
+      replayAll(corpus, (message) => {
+        replayed.handleMessage(message);
+      });
+      const view = replayed.getView();
 
-    // A failed patch leaves the last good state on screen and records why.
-    // Without this the equality above could pass because both sides stalled.
-    expect(view.patchFailure).toBeUndefined();
-    expect(view.sessions.length).toBe(corpus.final.sessions.length);
-    expect(view.selected).toBeDefined();
-    // Not an empty tree, so nothing above is vacuous.
-    const nodes = corpus.final.sessions.map(countNodes);
-    expect(Math.max(...nodes)).toBeGreaterThan(1);
-  });
+      // A failed patch leaves the last good state on screen and records why.
+      // Without this the equality above could pass because both sides stalled.
+      expect(view.patchFailure).toBeUndefined();
+      expect(view.sessions.length).toBe(corpus.final.sessions.length);
+      expect(view.selected).toBeDefined();
+      // Not an empty tree, so nothing above is vacuous.
+      const nodes = corpus.final.sessions.map(countNodes);
+      expect(Math.max(...nodes)).toBeGreaterThan(1);
+    },
+  );
 
-  it('the diffs carry information: mid-arc is not the final view', () => {
-    // If the trailing diffs were no-ops, "converges on the final state" would
-    // be true of the last snapshot alone. Replay up to and including the last
-    // snapshot and the view must DIFFER from the final one.
-    const corpus = recorded();
-    const types = corpus.events.map((e) => e.message.type);
-    const lastSnapshot = types.lastIndexOf('snapshot');
-    const partial = viewOf(corpus.events.slice(0, lastSnapshot + 1).map((e) => e.message));
-    const final = viewOf(goldenMessages(corpus));
+  it.each(RECORDED_ENGINES)(
+    'the diffs carry information: mid-arc is not the final view (%s)',
+    (engine) => {
+      // If the trailing diffs were no-ops, "converges on the final state" would
+      // be true of the last snapshot alone. Replay up to and including the last
+      // snapshot and the view must DIFFER from the final one.
+      const corpus = recordedFor(engine);
+      const types = corpus.events.map((e) => e.message.type);
+      const lastSnapshot = types.lastIndexOf('snapshot');
+      const partial = viewOf(corpus.events.slice(0, lastSnapshot + 1).map((e) => e.message));
+      const final = viewOf(goldenMessages(corpus));
 
-    expect(partial.sessions.map((s) => s.liveness)).not.toStrictEqual(
-      final.sessions.map((s) => s.liveness),
-    );
-  });
+      expect(partial.sessions.map((s) => s.liveness)).not.toStrictEqual(
+        final.sessions.map((s) => s.liveness),
+      );
+    },
+  );
 
   it('the refused session renders as refused on both paths', () => {
     // G3 through the wire: a session the fingerprint refused reaches the store
@@ -491,6 +720,15 @@ const JSDOM_MODULE = 'jsdom';
 interface TheaterWindow {
   document: Document;
   Event: typeof Event;
+  /**
+   * `element.click()` is on `HTMLElement` and NOT on `SVGElement`, and every
+   * deck card is SVG — so activating one goes through a dispatched
+   * `MouseEvent`, `bubbles: true` because Svelte 5 delegates `onclick` to the
+   * mount root. `webview/testkit.ts:press` is the same move for the jsdom the
+   * component suites run in; this file builds its own window, so it needs the
+   * constructor off that window rather than the ambient one.
+   */
+  MouseEvent: typeof MouseEvent;
   eval(code: string): unknown;
   close(): void;
 }
@@ -567,7 +805,18 @@ describe('the built theater page', () => {
       // The whole arc has played: the deck holds every session the host sent,
       // drawn from the corpus rather than from anything hand-made.
       expect(query('[data-testid="deck-blob"]')).toBe(corpus.final.sessions.length);
-      expect(query('[data-testid="deck-constellation"]')).toBeGreaterThan(1);
+      // WHAT USED TO BE HERE, AND WHY IT IS NOT.
+      //
+      // `expect(query('[data-testid="deck-constellation"]')).toBeGreaterThan(1)`.
+      // The constellation was the faint interior dot per node on the old blob -
+      // density without a number - and Phase 7 replaced the blob with a card
+      // that states the number. So the same question ("does the deck say how
+      // big each session is") is now asked BY VALUE, per session, against the
+      // corpus's own trees, which is a strictly stronger assertion than a count
+      // greater than one.
+      // The CC half of the control pair: these sessions DO report a burn, so
+      // at least one card prints a number rather than a dash.
+      expect(checkDeckFigures(doc, corpus).numeric).toBeGreaterThan(0);
       const app = doc.querySelector('[data-testid="app"]');
       expect(app?.getAttribute('data-liveness')).toBe(
         corpus.final.sessions[0]?.liveness ?? 'missing',
@@ -579,10 +828,79 @@ describe('the built theater page', () => {
       scrubber.dispatchEvent(new window.Event('input'));
       await settle();
       expect(query('[data-testid="tree-node"]')).toBe(0);
+      expect(query('[data-testid="deck-blob"]')).toBe(0);
+
+      // ---------------------------------------------------------------------
+      // DoD 7.10: the SECOND engine, on the same page, through the same picker.
+      // ---------------------------------------------------------------------
+      const picker = doc.querySelector<HTMLSelectElement>('.theater-corpus');
+      expect(picker).not.toBeNull();
+      if (picker === null) return;
+
+      const oc = openCodeRecorded();
+      picker.value = oc.id;
+      picker.dispatchEvent(new window.Event('change'));
+      await settle();
+      // Switching corpora remounts the renderer at position zero: the panel is
+      // blank until the new corpus's first message arrives, which is the same
+      // G7 property asserted for the first corpus above.
+      expect(query('[data-testid="deck-blob"]')).toBe(0);
+
+      const ocScrubber = doc.querySelector<HTMLInputElement>('.theater-scrubber');
+      expect(ocScrubber).not.toBeNull();
+      if (ocScrubber === null) return;
+      ocScrubber.value = String(oc.events.length);
+      ocScrubber.dispatchEvent(new window.Event('input'));
+      await settle();
+
+      expect(query('[data-testid="deck-blob"]')).toBe(oc.final.sessions.length);
+      /*
+       * **This asserted `0` until 2026-08-31** — every OpenCode card showing an
+       * em-dash, because the engine reported no burn. That is the exact thing
+       * own-eyes 9.4 reported as a defect, and it is now a real figure.
+       *
+       * `checkDeckFigures` reads each card against its own state, so this is
+       * the count of cards that rendered a NUMBER, and every schema-ok session
+       * in this corpus should. The em-dash path is not lost: `contextNow` is
+       * still absent for this engine and the drawer's context field is where
+       * that dash is now read.
+       */
+      const ocFigures = checkDeckFigures(doc, oc);
+      expect(ocFigures.numeric).toBe(oc.final.sessions.filter((s) => s.schemaOk).length);
+      expect(ocFigures.numeric).toBeGreaterThan(0);
+      // Every card says which engine it came from, and they all say the same
+      // thing here because this corpus is one engine's.
+      const engines = [...doc.querySelectorAll('[data-testid="deck-blob"]')].map((c) =>
+        c.getAttribute('data-engine'),
+      );
+      expect(engines.length).toBe(oc.final.sessions.length);
+      expect(new Set(engines)).toStrictEqual(new Set(['opencode']));
+
+      // And the interior renders: enter the largest session and count what the
+      // tree drew, against the corpus's own agent count.
+      const largest = [...oc.final.sessions].sort((a, b) => countAgents(b) - countAgents(a))[0];
+      expect(largest).toBeDefined();
+      if (largest === undefined) return;
+      const card = doc.querySelector(
+        `[data-testid="deck-blob"][data-session-id="${largest.sessionId}"]`,
+      );
+      expect(card).not.toBeNull();
+      card?.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+      await settle();
+
+      const canvas = doc.querySelector('[data-testid="session-canvas"]');
+      expect(canvas, 'the OpenCode session interior did not render').not.toBeNull();
+      expect(canvas?.getAttribute('data-session-id')).toBe(largest.sessionId);
+      expect(canvas?.getAttribute('data-refused')).toBe('false');
+      // The parked rail, with real parked grafts on it — the one surface no
+      // other committed corpus can show a human.
+      expect(canvas?.getAttribute('data-parked')).toBe(String((largest.parked ?? []).length));
+      expect((largest.parked ?? []).length).toBeGreaterThan(0);
+      expect(query('[data-testid="parked-rail"]')).toBe(1);
     } finally {
       window.close();
     }
-  }, 60_000);
+  }, 120_000);
 });
 
 // ---------------------------------------------------------------------------

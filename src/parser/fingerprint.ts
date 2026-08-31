@@ -442,7 +442,7 @@ function errorMessage(error: unknown): string {
 }
 
 function emptyDiagnostics(): ParseDiagnostics {
-  return { malformedLines: 0, parsedLines: 0, skippedFiles: [] };
+  return { malformedLines: 0, parsedLines: 0, ignoredLines: 0, skippedFiles: [] };
 }
 
 function mismatch(

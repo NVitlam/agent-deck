@@ -36,7 +36,7 @@ import {
   fingerprintSlugDirectory,
   isVersionAccepted,
 } from './fingerprint.js';
-import { KNOWN_ENTRY_TYPES, parseLines } from './parse.js';
+import { IGNORED_ENTRY_TYPES, KNOWN_ENTRY_TYPES, parseLines } from './parse.js';
 import type { ParseOptions, ParsedBatch } from './parse.js';
 
 const SLUG = 'c--Users-dev-projects-agent-deck';
@@ -49,10 +49,30 @@ const CORPORA = [
   { version: '2.1.237', slugDir: fixture('cc-2.1.237', 'projects', SLUG), sessions: 1 },
   { version: '2.1.241', slugDir: fixture('cc-2.1.241', 'projects', SLUG), sessions: 1 },
   { version: '2.1.246', slugDir: fixture('cc-2.1.246', 'projects', SLUG), sessions: 1 },
+  /*
+   * F4, 2026-08-31. A WITNESS, NOT A NEW ANCHOR.
+   *
+   * `PINNED_CC_VERSION` stays at `2.1.246`. This corpus was captured because
+   * `2.1.251` was reported as refusing every session; the shape diff found no
+   * structural drift at all — see `docs/evidence/release-0.5.0/DRIFT-2.1.251.md`
+   * §3 — so nothing here justifies moving the anchor, and the anchor is not a
+   * lever anyway (the patch component is not compared). What the corpus buys is
+   * that the claim "2.1.251 is structurally the anchor's shape" is now a test
+   * over real bytes instead of a sentence in an evidence file.
+   *
+   * Two sessions: one flat, one R1 mirror pair. The third session captured that
+   * day — the `--teleport` import that actually refused — is deliberately NOT
+   * here; its imported message bodies could not pass the identity sweep, and
+   * `src/bridge/refusal.test.ts` reproduces that refusal from a built file
+   * instead. The README caveat (F3) is the user-facing half.
+   */
+  { version: '2.1.251', slugDir: fixture('cc-2.1.251', 'projects', SLUG), sessions: 2 },
 ] as const;
 
 const SESSION_246 = '07e6c820-b285-4ea8-8127-98ea762291d9';
 const SESSION_241 = '6082be25-cfea-49b9-9821-2de9c23cac65';
+const SESSION_251 = 'd16538d5-da75-4d0a-aa99-652916287f7c';
+const MAIN_251 = fixture('cc-2.1.251', 'projects', SLUG, `${SESSION_251}.jsonl`);
 
 const MAIN_246 = fixture('cc-2.1.246', 'projects', SLUG, `${SESSION_246}.jsonl`);
 const MAIN_241 = fixture('cc-2.1.241', 'projects', SLUG, `${SESSION_241}.jsonl`);
@@ -115,12 +135,37 @@ describe('every captured corpus parses through the production path', () => {
     }
   });
 
-  it('spans four CC releases, each of which the previous posture refused at some point', () => {
+  it('spans five CC releases, each of which the previous posture refused at some point', () => {
     // Vacuity control on the list above: a corpus set that all sat inside the
     // OLD patch box would prove nothing about the change. 2.1.241 and 2.1.246
-    // were both hard refusals until this phase.
+    // were both hard refusals until this phase, and 2.1.251 is five patches
+    // past the anchor - further than the box that expired ever reached.
     for (const corpus of CORPORA) expect(isVersionAccepted(corpus.version)).toBe(true);
     expect(new Set(CORPORA.map((c) => c.version)).size).toBe(CORPORA.length);
+    // The count is pinned BESIDE the set (rule 19's shape, applied to a corpus
+    // list): a `CORPORA` accidentally filtered to nothing satisfies both
+    // assertions above and neither of these.
+    expect(CORPORA).toHaveLength(5);
+    expect(CORPORA.map((c) => c.version)).toEqual([
+      '2.1.234',
+      '2.1.237',
+      '2.1.241',
+      '2.1.246',
+      '2.1.251',
+    ]);
+  });
+
+  it('the newest corpus is AHEAD of the anchor, which is what makes it a witness', () => {
+    // A corpus at or below the anchor says nothing about reading a release
+    // nobody had captured when the build was cut - which is the exact claim
+    // `README.md`'s "patch releases are read as they come" makes.
+    const newest = CORPORA[CORPORA.length - 1];
+    expect(newest?.version).not.toBe(PINNED_CC_VERSION);
+    const anchor = PINNED_CC_VERSION.split('.').map(Number);
+    const witness = (newest?.version ?? '').split('.').map(Number);
+    expect(witness[0]).toBe(anchor[0]);
+    expect(witness[1]).toBe(anchor[1]);
+    expect(witness[2] ?? 0).toBeGreaterThan(anchor[2] ?? 0);
   });
 });
 
@@ -174,6 +219,54 @@ describe('the provenance anchor is the corpus, not a number in a file', () => {
     expect(toolUseIds).toContain(agent?.meta.toolUseId);
     // No offload directory in this capture; cc-2.1.234 still owns that path.
     expect(value.toolResultsDir).toBeUndefined();
+  });
+
+  it('F4: reads the 2.1.251 R1 mirror pair, join key for join key, like the anchor', async () => {
+    /*
+     * THE SAME ASSERTION AS THE ANCHOR'S, five patch releases later, and that
+     * is the whole point of it. The reported symptom on 2026-08-31 was "2.1.251
+     * refuses every session"; the measured answer was that the structure had
+     * not moved at all. This is that answer as a test over real bytes —
+     * `docs/evidence/release-0.5.0/DRIFT-2.1.251.md` §3.3.
+     *
+     * Every value below is read off the capture, and the four sidecar fields
+     * are the ones `REQUIRED_META_FIELDS` names. `parentAgentId` is absent at
+     * spawnDepth 1, exactly as at the anchor.
+     */
+    const result = await fingerprintSession(MAIN_251);
+    if (!result.ok) throw new Error(`${result.mismatch.code}: ${result.mismatch.reason}`);
+    const value = result.value;
+    expect(value.sessionId).toBe(SESSION_251);
+    expect(value.version).toBe('2.1.251');
+    expect(value.subagents).toHaveLength(1);
+    const [agent] = value.subagents;
+    expect(agent?.agentId).toBe('ab761d54060e2e548');
+    expect(agent?.meta.agentType).toBe('Explore');
+    expect(agent?.meta.spawnDepth).toBe(1);
+    expect(agent?.meta.parentAgentId).toBeUndefined();
+    expect(agent?.meta.toolUseId).toBe('toolu_019XwiUMc6MYBNDQG9wK34A7');
+
+    // 100% VIA THE JOIN KEY: the sidecar's `toolUseId` is a real `tool_use`
+    // block in the main transcript, so the attribution is a primary-key join
+    // and not an inference. Read out of the file, never written down twice.
+    const main = await entriesOf(MAIN_251);
+    const toolUseIds = main.flatMap((entry) => {
+      const message = entry['message'];
+      if (typeof message !== 'object' || message === null) return [];
+      const content = (message as { content?: unknown }).content;
+      if (!Array.isArray(content)) return [];
+      return content
+        .filter(
+          (b): b is { type: string; id: string } =>
+            typeof b === 'object' && b !== null && (b as { type?: unknown }).type === 'tool_use',
+        )
+        .map((b) => b.id);
+    });
+    expect(toolUseIds).toContain(agent?.meta.toolUseId);
+    // Every sidecar in the capture joins, not merely this one — the shape of
+    // the claim is "100%", so it is asserted as a count and not as an example.
+    const joined = value.subagents.filter((s) => toolUseIds.includes(s.meta.toolUseId));
+    expect(joined).toHaveLength(value.subagents.length);
   });
 
   it('carries agent B six scripted tool calls, in order - the mirror-pair check', async () => {
@@ -280,33 +373,78 @@ describe('a session on a local local-model model is read like any other', () => 
     expect(snapshot.counts.toolNodes).toBe(21);
   });
 
-  it('counts the two record types it does not know, and refuses neither', async () => {
-    // `atis-latch` and `system` are entry TYPES outside KNOWN_ENTRY_TYPES, so
-    // the line parser rejects them as `unknownType` - one line each, counted,
-    // skipped. Unknown FIELDS are a different thing and are kept silently;
-    // that is the `atis` half, asserted below.
+  /**
+   * DoD 5.5.6 MOVED THESE ELEVEN LINES OUT OF `malformedLines`, and this test
+   * is where the move is measured.
+   *
+   * They were never broken. `atis-latch` and `system` are entry types CC
+   * writes and this model does not read, so filing them under "malformed" made
+   * a healthy `2.1.241` session report 9.1% of its lines as damaged. The
+   * counter now has two buckets and this corpus lands **0 malformed, 11
+   * ignored** — which is the true answer, and the reason a future non-zero
+   * `malformedLines` will be worth reading.
+   *
+   * Unknown FIELDS remain a third thing entirely, kept silently; that is the
+   * `atis` half, asserted in the next test.
+   */
+  it('files its two unmodelled record types as ignored, not malformed, and refuses neither', async () => {
     const text = await readFile(MAIN_241, 'utf8');
     const lines = text.split('\n').filter((line) => line.trim() !== '');
     expect(lines).toHaveLength(121);
 
     const batch = parseLines(lines);
     if (!batch.ok) throw new Error('parseLines never reports ok:false');
-    const unknown = batch.value.rejections.filter((r) => r.rejection === 'unknownType');
-    expect(unknown).toHaveLength(11);
-    expect(batch.diagnostics.malformedLines).toBe(11);
+
+    // The bucket that means "this line is broken" is EMPTY for this corpus.
+    expect(batch.diagnostics.malformedLines).toBe(0);
+    expect(batch.value.rejections.filter((r) => r.rejection === 'unknownType')).toHaveLength(0);
+
+    const ignored = batch.value.rejections.filter((r) => r.rejection === 'ignoredType');
+    expect(ignored).toHaveLength(11);
+    expect(batch.diagnostics.ignoredLines).toBe(11);
     expect(batch.diagnostics.parsedLines).toBe(110);
-    expect(batch.diagnostics.malformedLines + batch.diagnostics.parsedLines).toBe(lines.length);
+    // All THREE buckets sum to the input. A fourth bucket that forgot to be
+    // counted would fail here rather than quietly losing lines.
+    expect(
+      batch.diagnostics.malformedLines +
+        batch.diagnostics.ignoredLines +
+        batch.diagnostics.parsedLines,
+    ).toBe(lines.length);
 
     const byType = new Map<string, number>();
-    for (const r of unknown) {
-      const type = r.reason.replace('unknown type: ', '');
+    for (const r of ignored) {
+      const type = r.reason.replace('ignored type: ', '');
       byType.set(type, (byType.get(type) ?? 0) + 1);
     }
     expect(Object.fromEntries(byType)).toEqual({ 'atis-latch': 9, system: 2 });
     for (const type of byType.keys()) expect(KNOWN_ENTRY_TYPES.has(type)).toBe(false);
+    for (const type of byType.keys()) expect(IGNORED_ENTRY_TYPES.has(type)).toBe(true);
     // The fingerprint tolerates the same two: an unrecognised record kind is
-    // not a layout change, so only `type` itself is required of it.
+    // not a layout change, so only `type` itself is required of it. UNCHANGED
+    // by 5.5.6 — the structural fingerprint is not what moved.
     for (const type of byType.keys()) expect(REQUIRED_ENTRY_FIELDS.has(type)).toBe(false);
+  });
+
+  /**
+   * The other direction, and the one that keeps 5.5.6 from being a licence to
+   * ignore everything: a type in NEITHER set is still counted as malformed and
+   * still skipped. G3 is unchanged.
+   */
+  it('still counts a genuinely unknown type as malformed', () => {
+    const batch = parseLines([
+      JSON.stringify({ type: 'some-type-cc-has-never-written', uuid: 'x' }),
+      JSON.stringify({ type: 'mode', mode: 'x', sessionId: 'y' }),
+      '{ not json',
+    ]);
+    if (!batch.ok) throw new Error('parseLines never reports ok:false');
+    expect(batch.diagnostics.malformedLines).toBe(2);
+    expect(batch.diagnostics.ignoredLines).toBe(1);
+    expect(batch.diagnostics.parsedLines).toBe(0);
+    expect(batch.value.rejections.map((r) => r.rejection)).toEqual([
+      'unknownType',
+      'ignoredType',
+      'invalidJson',
+    ]);
   });
 
   it('treats `atis` as part of the atis-latch record, not as a new envelope key', async () => {

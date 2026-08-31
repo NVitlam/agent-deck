@@ -708,7 +708,7 @@ describe('the canvas surface, fed the same host-produced states', () => {
     }
   });
 
-  it('draws every agent as a cell, and no tool dots at all', async () => {
+  it('draws every agent as a cell, and every tool call as a dot', async () => {
     const panel = render('canvas');
     const run = await hostRun(panel);
 
@@ -731,12 +731,26 @@ describe('the canvas surface, fed the same host-produced states', () => {
     expect(cellIds).toStrictEqual(agentIds);
     expect(agentIds.length).toBeGreaterThan(1);
 
-    // NO tool dots, on real host-produced state as well as on fixtures. The
-    // tree still HAS the tool nodes - they reach the inspector, by
-    // description - they are simply not drawn on the canvas any more.
+    // TOOL DOTS ARE GONE — design amendment A8.1, and this paragraph asserted
+    // them on real host-produced state. What it proved is still worth proving,
+    // so it is restated on the surface that survives: every tool call the host
+    // sent is REACHABLE, and the node that owns it says how many it has.
     const toolIds = new Set(walkState(state).filter((n) => !isAgentNode(n)).map((n) => n.id));
     expect(toolIds.size).toBeGreaterThan(0);
-    expect(all(panel.container, TESTID.dot)).toHaveLength(0);
+    expect(all(panel.container, 'canvas-dot')).toHaveLength(0);
+    // The spawn axis WAS a shape on the dot — a call that spawned a subagent
+    // drew hollow. With the dots gone the same join is drawn as the FILAMENT,
+    // and it is asserted on real host state here rather than dropped: every
+    // spawn edge whose `tool_use` end is in this tree has a curve.
+    const spawning = [...new Set((state.spawnEdges ?? []).map((e) => e.toolUseId))]
+      .filter((id) => toolIds.has(id))
+      .sort();
+    expect(spawning.length).toBeGreaterThan(0);
+    const drawnEdges = all(panel.container, TESTID.filament)
+      .map((f) => f.dataset['toolUseId'] ?? '')
+      .filter((id) => toolIds.has(id))
+      .sort();
+    expect(drawnEdges).toStrictEqual(spawning);
   });
 
   it('draws the filament for every spawn edge whose two ends are both placed', async () => {
@@ -801,7 +815,6 @@ describe('the canvas surface, fed the same host-produced states', () => {
     for (const testId of [
       TESTID.nucleus,
       TESTID.cell,
-      TESTID.dot,
       TESTID.filament,
       TESTID.parkedStub,
       TESTID.elidedBadge,
@@ -821,7 +834,6 @@ describe('the canvas surface, fed the same host-produced states', () => {
       const pickable = [
         ...all(panel.container, TESTID.nucleus),
         ...all(panel.container, TESTID.cell),
-        ...all(panel.container, TESTID.dot),
       ];
       for (const element of pickable) {
         activate(element);

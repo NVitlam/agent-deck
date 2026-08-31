@@ -40,6 +40,37 @@ These are build-time law in this repository, not guidelines. A change that break
   `.claude/settings.local.json` precisely so that `~/.claude` stays untouched.
   `src/hooks/listener.ts` imports no filesystem API at all, and a test asserts that against the
   source text — including that it never resolves a home directory.
+
+  **Amended 2026-08-27, when a second observation source arrived and measurement contradicted the
+  plain reading.** Agent Deck also reads OpenCode's SQLite store,
+  `%USERPROFILE%\.local\share\opencode\opencode.db`, and that database is in **WAL** mode. Opening a
+  WAL database read-only **writes to SQLite's own `-shm` shared-memory index**, and **creates
+  `-shm`/`-wal` if they are absent**. So G1's claim is stated precisely rather than absolutely:
+
+  > **No writes to any file the observed engine treats as content.**
+
+  `opencode.db` itself is never modified — measured byte- and mtime-identical across every probe —
+  and `auth.json`, `log/`, `snapshot/`, `repos/` and `tool-output/` are never opened at all. What is
+  touched is SQLite's lock and index sidecar, which **every** reader of a WAL database touches,
+  including OpenCode's own process, and which holds no session content. The read-only handle is
+  still the enforcement: a write through it throws `ERR_SQLITE_ERROR` errcode 8, `attempt to write a
+  readonly database`.
+
+  The one mode that writes nothing at all, `file:…?immutable=1`, was **rejected for the live
+  database and is used only for this repository's committed test fixtures**. It buys zero writes by
+  skipping the WAL, which against a live database means silently returning whatever was last
+  checkpointed — a confidently wrong tree, which is worse than a sidecar. Requesting it on a
+  WAL-mode file is refused in code, so it cannot later be pointed at your data.
+
+  Four secret-bearing tables — `account`, `control_account`, `credential`, `session_share` — are
+  never read. **Five** are dropped **by schema** from any committed fixture: those four plus
+  `account_state`, which holds no secret itself and exists only to point at `account`. A superset
+  is the safe direction for a drop list, and the fifth is named here because this document
+  previously implied the two counts were the same one. Dropped *by schema* means the table is never
+  created in the fixture, so no column named `access_token`, `refresh_token`, `value` or `secret`
+  exists in the artifact at all — there is nothing to leak even if the drop of a *row* were ever
+  missed. All five measured zero rows at capture time, which is exactly why the rule keys on the
+  schema rather than on the rows.
 - **G2 — source separation.** A JSONL parse failure must never take liveness down, and vice versa.
   The two taps do not share a failure path.
 - **G3 — refuse, don't guess.** Malformed input increments a counter and is skipped. A schema
@@ -50,12 +81,57 @@ These are build-time law in this repository, not guidelines. A change that break
   **empty** `thinking` string and the bytes in `signature`, so a redaction that dropped only the
   visible text would be doing nothing. Tool payloads are truncated with a marker, and large payloads
   offloaded to `tool-results/*.txt` go through the same path. Current truncation behaviour, its
-  measured limits and its open items are tracked in `PLAN.md`; this document does not restate them,
-  because a live description written from inside the phase that is changing them would be wrong by
-  the time it merged.
+  measured limits and its open items are tracked in the maintainer's working notes; this document
+  does not restate them, because a live description written from inside the phase that is changing
+  them would be wrong by the time it merged.
 - **G5 — zero egress.** No network except the loopback hook listener. Non-loopback requests are
   dropped. This is the subject of §4.
 - **G6 — fixtures are law.** Parser behaviour is pinned to bytes captured from real sessions.
+
+### The second read-only source, stated in full
+
+G1 above says what is never touched. This says what *is*, because "read-only" is a claim about
+scope as much as about direction, and a reader cannot check a scope that is only ever described by
+its complement.
+
+**Where.** `%USERPROFILE%\.local\share\opencode\opencode.db` — one SQLite file, opened through
+`node:sqlite`'s `DatabaseSync` with `{ readOnly: true }`. `AGENT_DECK_OPENCODE_ROOT` overrides the
+directory, which is how every test reaches a fixture instead of your data. Nothing else in that
+directory is opened: not `auth.json`, not `log/`, `snapshot/`, `repos/` or `tool-output/`.
+
+**What.** Six tables, and only these columns. The engine asserts every one of them before it reads
+anything; a missing table or column refuses the store outright rather than rendering a partial tree
+(G3). Unknown tables and columns are ignored and counted, never read.
+
+| Table | Columns read |
+|---|---|
+| `project` | `id`, `worktree`, `vcs` |
+| `session` | `id`, `project_id`, `parent_id`, `version`, `agent`, `title`, `directory`, `slug`, `model`, `cost`, `tokens_input`, `tokens_output`, `tokens_reasoning`, `tokens_cache_read`, `tokens_cache_write`, `time_created`, `time_updated`, `time_archived` |
+| `message` | `id`, `session_id`, `time_created`, `time_updated`, `data` |
+| `part` | `id`, `message_id`, `session_id`, `time_created`, `time_updated`, `data` |
+| `event` | `id`, `aggregate_id`, `seq`, `type`, `data` |
+| `event_sequence` | `aggregate_id`, `seq`, `owner_id` |
+
+Three of those `session` columns — `tokens_reasoning`, `tokens_cache_read`, `tokens_cache_write` —
+are **asserted but never selected**. The schema contract names them, so if a future OpenCode drops
+one the engine refuses instead of quietly rendering a tree built on a shape it has never seen. A
+required column that nothing reads looks like an oversight and is not.
+
+**Reasoning content is dropped at the parse boundary**, before any record is built — the G4 rule,
+applied to the second engine. For OpenCode the reasoning bytes exist verbatim in the store, so
+unlike the Claude Code case that test cannot be vacuous: it searches the produced `SessionState`
+for the literal captured bytes.
+
+**No SQL from a caller, ever.** Every statement is a fixed SELECT written in `src/opencode/db.ts`;
+no query is assembled from input, and no database handle escapes that module.
+
+**How it degrades, without ever crashing (G3).** A missing file, an unreadable one, or a corrupt
+one each surface as a named degrade — `databaseMissing`, `databaseUnreadable`, `databaseCorrupt` —
+and leave Claude Code sessions rendering unchanged (G2). A schema that is not OpenCode's renders
+every session `unsupported`. A graft that cannot place a row surfaces as `graftFailed`, which is a
+*containment* rather than a fix: it keeps a throw from escaping into the extension host, at the
+cost of darkening every OpenCode session over one unplaceable row. That trade is recorded rather
+than presented as a solution.
 
 ---
 
@@ -117,7 +193,18 @@ running code as you has far better options than lying to a read-only panel.
 
 ## 4. The zero-egress audit
 
-Two halves, both in `src/hooks/egress.test.ts`, both run in the ordinary suite. Neither can skip.
+**Three parts**, all in `src/hooks/egress.test.ts`, all run in the ordinary suite. None can skip.
+§4a and §4b below describe the first two, which cover the shipped host bundle.
+
+The third covers the **OpenCode engine**, and it exists because the first two cannot: it bundles
+`src/opencode/index.ts` as its own entry point and denies **`node:http` as well** as `dns` and
+`net`. The host bundle cannot make that claim, because there the loopback hook listener is the one
+sanctioned socket — so a host-bundle scan would pass while an engine that opened an HTTP client hid
+behind the listener's allowance. **The OpenCode engine opens zero sockets of any kind.** Its
+liveness is a cursor over the `event_sequence` table, not a subscription; the SSE accelerator
+OpenCode offers is deliberately not used. The same describe asserts the shipped bundle never
+reaches the test-only fixture builder, which is the one module in that tree that opens a database
+for writing.
 
 ### 4a. Dependency review — what could open a socket
 
@@ -201,7 +288,7 @@ about the command in that block matter for your own safety rather than ours:
 - **It must fail fast when nothing is listening**, because it runs inside your real Claude Code
   session. The block uses `node -e` rather than `curl`: `node` takes `ECONNREFUSED` and exits `0`.
   Measured once on this machine against a closed loopback port: `node -e` **81 ms, exit 0**;
-  `curl.exe` **2,098 ms, exit 7**. (An earlier measurement recorded in `CLAUDE.md` gives ~1.14 s and
+  `curl.exe` **2,098 ms, exit 7**. (An earlier measurement on the same machine gives ~1.14 s and
   exit 28 for `curl.exe` — the exit code differs because that port was filtered rather than refused.
   The conclusion is the same either way and the ratio is not close.)
 - **The POST is unconditional.** With nothing bound, it is refused and nothing happens. Do not read

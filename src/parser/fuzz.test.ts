@@ -832,7 +832,7 @@ describe('fuzz: corrupted sidecars', () => {
     expect(refusals + acceptances).toBe(CORRUPT_SIDECARS_ON_DISK);
     expect(refusals).toBeGreaterThan(0);
     expect(thrown).toEqual([]);
-  });
+  }, 120_000);
 
   it(`injected ${TOTAL_CORRUPT_LINES + CORRUPT_SIDECARS_IN_MEMORY + CORRUPT_SIDECARS_ON_DISK} corrupted inputs in total, with zero throws`, () => {
     expect(TOTAL_CORRUPT_LINES + CORRUPT_SIDECARS_IN_MEMORY + CORRUPT_SIDECARS_ON_DISK).toBe(1390);

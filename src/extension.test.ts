@@ -22,12 +22,14 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, statSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { basename, dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -39,7 +41,9 @@ import {
   DEFAULT_LIVENESS_THRESHOLD_MS,
   DEFAULT_PORT,
   DEFAULT_PREVIEW_BYTES,
+  OPENCODE_ABSENT_LOG,
   OPEN_COMMAND,
+  OpenCodeEnginePath,
   PanelController,
   SETTING_BOUNDS,
   WEBVIEW_SCRIPT_SEGMENTS,
@@ -48,17 +52,31 @@ import {
   currentHost,
   deactivate,
   inactiveReasonFor,
+  opencodeStoreExists,
   readSettings,
+  workspacePathsOf,
 } from './extension.js';
 import type {
   AgentDeckSettings,
   DataPathEmission,
+  HostLogLevel,
   PanelSurface,
   Unsubscribe,
 } from './extension.js';
+import type { WebviewToHostMessage } from './model/events.js';
+import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
+import {
+  copyCorpus,
+  corpusDbPath,
+  listCorpora,
+  withWritableDb,
+} from './opencode/synthetic.js';
+import { DEFAULT_OC_POLL_INTERVAL_MS } from './opencode/liveness.js';
+import type { PollTrigger, PollTriggerHandle } from './opencode/liveness.js';
 import { webviewHtml } from './bridge/html.js';
 import { DEFAULT_PREVIEW_BYTES as GRAFTER_DEFAULT_PREVIEW_BYTES } from './model/graft.js';
 import type { GraftSessionResult } from './model/graft.js';
+import type { DiagnosticsEvent } from './bridge/diagnostics.js';
 import { TRUNCATION_MARKER_RE, truncationMarker } from './parser/redact.js';
 import { WEBVIEW_ROOT_ID } from './bridge/contract.js';
 import type { HostToWebviewMessage, SessionState, TreeNode } from './model/events.js';
@@ -67,6 +85,7 @@ import { slugifyWorkspace, snapshotTree } from './parser/tailer.js';
 import type { DiscoveryFailure, DiscoveryFailureKind, TreeSnapshotEntry } from './parser/tailer.js';
 import { correlateWorkspace } from './model/correlate.js';
 import {
+  Uri,
   createExtensionContext,
   mock,
   resetVscodeMock,
@@ -492,11 +511,32 @@ function trackHost(host: AgentDeckHost): AgentDeckHost {
   return host;
 }
 
-beforeEach(() => {
+/**
+ * THE OPENCODE STORE IS POINTED SOMEWHERE EMPTY FOR EVERY TEST IN THIS FILE.
+ *
+ * `activate()` resolves the OpenCode data directory from `process.env` — that
+ * is the production path and it has no injection seam, deliberately — so on a
+ * developer machine that actually runs OpenCode, every `activate()` test in
+ * this file would open the user's real 24 MB `opencode.db`. `PLAN.md` Phase 4
+ * Amendment A2 is explicit that a test must never read a live database: it
+ * measures the machine it ran on, and here it would also make the whole file's
+ * results depend on whether the person running it uses OpenCode.
+ *
+ * `AGENT_DECK_OPENCODE_ROOT` is the engine's own documented override (spec
+ * OC1, on the `CLAUDE_PROJECTS_ROOT` precedent). Pointing it at a fresh empty
+ * directory makes the store ABSENT for every test here, which is also the state
+ * the discovery tests below assert about.
+ */
+const savedOpencodeRoot = process.env[OPENCODE_DATA_ROOT_ENV];
+
+beforeEach(async () => {
   resetVscodeMock();
+  process.env[OPENCODE_DATA_ROOT_ENV] = await makeTempDir();
 });
 
 afterEach(async () => {
+  if (savedOpencodeRoot === undefined) delete process.env[OPENCODE_DATA_ROOT_ENV];
+  else process.env[OPENCODE_DATA_ROOT_ENV] = savedOpencodeRoot;
   await deactivate();
   for (const host of liveHosts.splice(0)) await host.dispose();
   for (const path of liveDataPaths.splice(0)) await path.dispose();
@@ -837,10 +877,13 @@ describe('PanelController', () => {
         status: 'running',
         spawnDepth: 0,
         children: [],
-        tokens: { in: 0, out: 0 },
+        contextNow: { prompt: 0, output: 0 },
+        burn: { prompt: 0, output: 0 },
         startedAt: 0,
       },
-      totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+      totals: { costUsd: 0 },
+      contextNow: { prompt: 0, output: 0 },
+      burn: { prompt: 0, output: 0 },
       spawnEdges: [],
     };
   }
@@ -1002,6 +1045,121 @@ describe('PanelController', () => {
     expect(controller.bridge.counters.postFailures).toBeGreaterThan(0);
     controller.dispose();
   });
+
+  // -------------------------------------------------------------------------
+  // DoD 5.5.2 — the host half of the resync contract
+  // -------------------------------------------------------------------------
+
+  /**
+   * The repair the renderer could not ask for before Phase 5.5.
+   *
+   * `onDidBecomeVisible` already did exactly this for a panel RELOAD, and the
+   * two are the same repair for opposite reasons: a reload is the editor
+   * tearing the document down, which is normal, and a resync is the renderer
+   * reporting that a patch did not apply, which is not. Counted separately so
+   * one cannot hide inside the other.
+   */
+  it('a resyncRequest resets the bridge, re-snapshots, and is counted', () => {
+    const panel = fakePanel();
+    let snapshotsAsked = 0;
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {
+        snapshotsAsked += 1;
+      },
+    });
+
+    // The webview has been sent its one snapshot; the bridge now believes it
+    // knows what the renderer holds, and a second publish of the same state
+    // therefore sends nothing.
+    controller.publish(emission([state('s1')]));
+    controller.publish(emission([state('s1')]));
+    expect(controller.bridge.counters.snapshotsSent).toBe(1);
+    expect(controller.counters.resyncs).toBe(0);
+
+    panel.fireMessage({
+      type: 'resyncRequest',
+      reason: 'updateTool: no node with id ghost',
+      failedOp: 'updateTool',
+      sessionId: 's1',
+    });
+
+    expect(controller.counters.resyncs).toBe(1);
+    expect(snapshotsAsked).toBe(1);
+    // The bridge forgot what it thought the renderer had, so the NEXT emission
+    // is a full snapshot rather than a diff against a state that no longer
+    // exists on the other side. Without the reset this publish would send
+    // nothing at all, exactly as the second one above did.
+    controller.publish(emission([state('s1')]));
+    expect(controller.bridge.counters.snapshotsSent).toBe(2);
+    const last = panel.posted[panel.posted.length - 1];
+    expect(last?.type).toBe('degraded');
+    expect(panel.posted.filter((m) => m.type === 'snapshot')).toHaveLength(2);
+
+    controller.dispose();
+  });
+
+  it('an invalid resyncRequest is dropped and repairs nothing', () => {
+    const panel = fakePanel();
+    let snapshotsAsked = 0;
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {
+        snapshotsAsked += 1;
+      },
+    });
+    controller.publish(emission([state('s1')]));
+
+    // `failedOp` outside the closed set; `reason` missing; both refused by the
+    // guard before `#receive` ever branches on the type.
+    panel.fireMessage({ type: 'resyncRequest', reason: 'x', failedOp: 'dropTables' });
+    panel.fireMessage({ type: 'resyncRequest' });
+
+    expect(controller.counters.resyncs).toBe(0);
+    expect(snapshotsAsked).toBe(0);
+    expect(controller.counters.messagesDropped).toBe(2);
+    controller.dispose();
+  });
+
+  it('a resyncRequest still reaches onMessage, so the host can log it', () => {
+    const panel = fakePanel();
+    const seen: WebviewToHostMessage[] = [];
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onMessage: (m) => seen.push(m),
+    });
+    panel.fireMessage({ type: 'resyncRequest', reason: 'insertNode failed', sessionId: 's1' });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.type).toBe('resyncRequest');
+    controller.dispose();
+  });
+
+  it('an onMessage that throws does not stop the repair, which already happened', () => {
+    const panel = fakePanel();
+    let snapshotsAsked = 0;
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {
+        snapshotsAsked += 1;
+      },
+      onMessage: () => {
+        throw new Error('a logger blew up');
+      },
+    });
+    controller.publish(emission([state('s1')]));
+    expect(() => {
+      panel.fireMessage({ type: 'resyncRequest', reason: 'x', sessionId: 's1' });
+    }).not.toThrow();
+    // Order is the assertion: the reset and the snapshot request run BEFORE
+    // the host's handler, so a broken logger cannot cost the user a repair.
+    expect(controller.counters.resyncs).toBe(1);
+    expect(snapshotsAsked).toBe(1);
+    controller.dispose();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1054,8 +1212,10 @@ describe('AgentDeckDataPath', () => {
       expect(session.totals.costUsd).toBe(0);
     }
 
+    // `burn` is the session's spend. Reading the LEVEL here would work too but
+    // says less: a session that has spent nothing is the thing being excluded.
     const tokenBearing = sessions.filter(
-      (s) => s.totals.inputTokens > 0 || s.totals.outputTokens > 0,
+      (s) => (s.burn?.prompt ?? 0) > 0 || (s.burn?.output ?? 0) > 0,
     );
     expect(tokenBearing.length).toBeGreaterThan(0);
 
@@ -1289,11 +1449,9 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
     // No tree. Not a smaller tree — none.
     expect(state?.root.children).toStrictEqual([]);
     expect(state?.spawnEdges).toStrictEqual([]);
-    expect(state?.totals).toStrictEqual({
-      inputTokens: 0,
-      outputTokens: 0,
-      costUsd: 0,
-    });
+    expect(state?.totals).toStrictEqual({ costUsd: 0 });
+    expect(state?.contextNow).toStrictEqual({ prompt: 0, output: 0 });
+    expect(state?.burn).toStrictEqual({ prompt: 0, output: 0 });
 
     const mismatches = panel.posted.filter((m) => m.type === 'schemaMismatch');
     expect(mismatches).toStrictEqual([{ type: 'schemaMismatch', sessionId }]);
@@ -1916,11 +2074,50 @@ describe('G1: the extension host writes nothing', () => {
 
   it('imports no write-capable module', async () => {
     const source = stripComments(await readFile(EXTENSION_SOURCE, 'utf8'));
-    // The host entry composes; it does not touch the filesystem itself. The
-    // only modules that do are the parser and the watcher, which are read-only
-    // and have their own G1 proofs.
-    expect(source).not.toMatch(/from '(node:)?fs/);
+
+    /*
+     * THIS ASSERTION WAS NARROWED IN PHASE 5, AND THE NARROWING IS RECORDED
+     * RATHER THAN QUIETLY MADE.
+     *
+     * It used to be `not.toMatch(/from '(node:)?fs/)` — no filesystem module at
+     * all — on the stated grounds that "the host entry composes; it does not
+     * touch the filesystem itself". DoD 5.2 made that false: the OpenCode
+     * engine is "on by default when the data directory exists", so the host has
+     * to ask whether a file exists.
+     *
+     * The property this test stands for is G1 — the host writes nothing — and a
+     * blanket ban on the module name was a PROXY for it. The proxy is replaced
+     * by the thing itself: exactly one `node:fs` import, naming exactly one
+     * binding, and that binding is `existsSync`, which cannot write. The
+     * write-API name ban in the sibling test above is unchanged and still lists
+     * every write call by name.
+     *
+     * The alternative was to answer "does this file exist" by opening the
+     * database and reading its degrade code, which would have constructed and
+     * torn down a SQLite handle and a filesystem watch to avoid one syscall —
+     * worse code, chosen to satisfy a proxy rather than the property.
+     */
+    const fsImports = [
+      ...source.matchAll(/import\s*\{([^}]*)\}\s*from\s*'(?:node:)?fs'/g),
+    ];
+    expect(fsImports, 'src/extension.ts must import node:fs at most once').toHaveLength(1);
+    const bound = (fsImports[0]?.[1] ?? '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter((name) => name !== '');
+    expect(bound, 'the only node:fs binding may be the read-only existsSync').toStrictEqual([
+      'existsSync',
+    ]);
+
+    // Everything else stays banned outright: the promises API, the default
+    // namespace form, and any `require`.
+    expect(source).not.toMatch(/from '(node:)?fs\/promises'/);
+    expect(source).not.toMatch(/import\s+\*\s+as\s+\w+\s+from\s+'(node:)?fs'/);
     expect(source).not.toMatch(/require\(\s*['"](node:)?fs/);
+
+    // Vacuity control: the matcher above does find a real import, so a rename
+    // of the import form cannot silently turn this test into a no-op.
+    expect(source).toContain("from 'node:fs'");
   });
 
   it('opens no socket other than the loopback hook listener', async () => {
@@ -2443,7 +2640,7 @@ describe('G2: a throwing content path refuses one session and leaves the hook ta
     const refusal: GraftSessionResult = {
       ok: false,
       mismatch: { kind: 'schemaMismatch', code: 'subagentsDirectoryMisnamed', reason: 'injected refusal' },
-      diagnostics: { malformedLines: 0, parsedLines: 0, skippedFiles: [] },
+      diagnostics: { malformedLines: 0, parsedLines: 0, ignoredLines: 0, skippedFiles: [] },
     };
     const path = await startDataPathOnFreePort((port) =>
       trackDataPath(
@@ -2463,6 +2660,618 @@ describe('G2: a throwing content path refuses one session and leaves the hook ta
     expect(path.model.counters().contentFailures).toBe(0);
     const [victim] = path.model.sessionIds() as [string];
     expect(path.model.refusalOf(victim)?.mismatch?.reason).toBe('injected refusal');
+  });
+
+  it('F2: a refusal produces one diagnostics event carrying the REASON', async () => {
+    /*
+     * The test above is exactly the state F2 was found in: it asserts
+     * `graftRefusals === grafts` and nothing at all about WHY. That equality is
+     * what was read, on 2026-08-31, as "the CC adapter is broken on 2.1.251"
+     * when the cause was one teleported transcript. A count that cannot be
+     * told apart from a total outage is the defect, and this is the assertion
+     * that says the reason travelled with it.
+     */
+    const workspacePath = await capturedWorkspacePath();
+    const refusal: GraftSessionResult = {
+      ok: false,
+      mismatch: {
+        kind: 'schemaMismatch',
+        code: 'unsupportedVersion',
+        reason: 'transcript was written by an unpinned CC version',
+        path: 'C:\\Users\\somebody\\.claude\\projects\\c--invented-agent-deck\\s.jsonl:1',
+        field: 'version',
+        expected: '2.1.246',
+        actual: '1.0',
+      },
+      diagnostics: { malformedLines: 0, parsedLines: 0, ignoredLines: 0, skippedFiles: [] },
+    };
+    const events: DiagnosticsEvent[] = [];
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: () => {},
+          graft: () => Promise.resolve(refusal),
+          onDiagnostic: (event) => events.push(event),
+        }),
+      ),
+    );
+
+    expect(events).toHaveLength(path.diagnostics.graftRefusals);
+    expect(events.length).toBeGreaterThan(0);
+    const [event] = events as [DiagnosticsEvent];
+    if (event.kind !== 'graftRefused') throw new Error(`unexpected event ${event.kind}`);
+    expect(event.code).toBe('unsupportedVersion');
+    expect(event.field).toBe('version');
+    expect(event.expected).toBe('2.1.246');
+    expect(event.actual).toBe('1.0');
+    // Reduced, not passed through: the absolute path never reaches the channel.
+    expect(event.at).toBe('s.jsonl:1');
+
+    // And kept as a level, the way a THROW has always been kept — which is the
+    // asymmetry F2 closes.
+    const level = path.diagnostics.lastGraftRefusal;
+    expect(level).toBeDefined();
+    expect(level?.code).toBe('unsupportedVersion');
+    expect(level?.at).toBe('s.jsonl:1');
+    expect(path.diagnostics.lastGraftError).toBeUndefined();
+  });
+
+  it('F2: a throwing diagnostics sink cannot break a graft', async () => {
+    // A diagnostics surface that can take the data path down with it is worse
+    // than no diagnostics surface. Counted as a consumer error, like a
+    // throwing `onEmission`, and the refusal itself still lands in the model.
+    const workspacePath = await capturedWorkspacePath();
+    const refusal: GraftSessionResult = {
+      ok: false,
+      mismatch: { kind: 'schemaMismatch', code: 'metaFieldMissing', reason: 'injected refusal' },
+      diagnostics: { malformedLines: 0, parsedLines: 0, ignoredLines: 0, skippedFiles: [] },
+    };
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: () => {},
+          graft: () => Promise.resolve(refusal),
+          onDiagnostic: () => {
+            throw new Error('the channel exploded');
+          },
+        }),
+      ),
+    );
+
+    expect(path.diagnostics.graftErrors).toBe(0);
+    expect(path.diagnostics.graftRefusals).toBe(path.diagnostics.grafts);
+    expect(path.diagnostics.consumerErrors).toBeGreaterThan(0);
+    const [victim] = path.model.sessionIds() as [string];
+    expect(path.model.refusalOf(victim)?.mismatch?.reason).toBe('injected refusal');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.2 — OpenCode discovery, the switch, and the chained liveness engine
+// ---------------------------------------------------------------------------
+
+/** A log sink. Every level recorded, so "at info level" is assertable. */
+function captureLog(): {
+  log: (level: HostLogLevel, message: string) => void;
+  lines: { level: HostLogLevel; message: string }[];
+} {
+  const lines: { level: HostLogLevel; message: string }[] = [];
+  return {
+    lines,
+    log: (level, message) => {
+      lines.push({ level, message });
+    },
+  };
+}
+
+/** A poll trigger the test fires by hand. No timer, no wall clock (A2). */
+function manualPollTrigger(): {
+  trigger: PollTrigger;
+  fire: () => void;
+  registrations: number[];
+  stops: () => number;
+} {
+  const runs: (() => void)[] = [];
+  const registrations: number[] = [];
+  let stops = 0;
+  const trigger: PollTrigger = (run, intervalMs): PollTriggerHandle => {
+    runs.push(run);
+    registrations.push(intervalMs);
+    return {
+      stop: () => {
+        stops += 1;
+      },
+    };
+  };
+  return {
+    trigger,
+    registrations,
+    fire: () => {
+      for (const run of runs) run();
+    },
+    stops: () => stops,
+  };
+}
+
+/**
+ * The smallest committed OpenCode corpus, chosen BY SIZE rather than by name.
+ *
+ * Nothing in this file depends on which corpus it is, and the recorded rule is
+ * not to assert fixture-set sizes or hard-code a capture's name.
+ */
+function smallestCorpus(): string {
+  const names = listCorpora();
+  expect(names.length).toBeGreaterThan(0);
+  let best = '';
+  let bestSize = Number.POSITIVE_INFINITY;
+  for (const name of names) {
+    const size = statSync(corpusDbPath(name)).size;
+    if (size < bestSize) {
+      bestSize = size;
+      best = name;
+    }
+  }
+  return best;
+}
+
+/** The one `project.worktree` in a corpus, READ OFF THE DATABASE. */
+function worktreeOf(dbPath: string): string {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const rows = db.prepare('SELECT worktree FROM project ORDER BY id').all() as Record<
+      string,
+      unknown
+    >[];
+    const first = rows[0]?.['worktree'];
+    expect(typeof first, 'the corpus must carry a project row').toBe('string');
+    return first as string;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Every ROOT session id in a corpus, read off the database and sorted.
+ *
+ * Root, because `readOpenCodeEngine` emits one `SessionState` per root and a
+ * refused CHILD is a different, still-open item (`COVERAGE.md` item 29).
+ */
+function rootSessionIdsOf(dbPath: string): string[] {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    return (
+      db.prepare('SELECT id FROM session WHERE parent_id IS NULL ORDER BY id').all() as Record<
+        string,
+        unknown
+      >[]
+    ).map((row) => String(row['id']));
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Root sessions that have NO child session.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS IS NOT "ANY ROOT", AND THE DEFECT THAT MADE IT NECESSARY
+ * ---------------------------------------------------------------------------
+ * MEASURED while writing the test below. Pushing a root session out of the
+ * version window when that root HAS AN ACCEPTED CHILD makes
+ * `readOpenCodeEngine` THROW:
+ *
+ *   session rows reachable from no root: ses_...
+ *
+ * — which its own doc comment says cannot happen ("Never thrown, always
+ * returned"). The child stays in the accepted partition while its parent is
+ * parked, so the grafter finds a row it cannot reach from any root. The whole
+ * OpenCode deck then reads EMPTY for that user, which is the same G3 hole this
+ * block is about, arriving through a different door.
+ *
+ * That is `src/opencode/**` and is NOT this package’s to fix; it is reported
+ * rather than pinned, because asserting the current behaviour would freeze a
+ * defect. It is closely related to `COVERAGE.md` item 29 (a refused CHILD gets
+ * the wrong park code) — this is the same join seen from the parent side.
+ *
+ * The one thing this file DOES do about it is the `contentFailures: 0`
+ * assertion at each call site: the tests below would otherwise have passed
+ * their "healthy sessions stay hidden" control on an empty read.
+ */
+function childlessRootIdsOf(dbPath: string): string[] {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const rows = db
+      .prepare(
+        'SELECT id FROM session WHERE parent_id IS NULL AND id NOT IN (SELECT parent_id FROM session WHERE parent_id IS NOT NULL) ORDER BY id',
+      )
+      .all() as Record<string, unknown>[];
+    return rows.map((row) => String(row['id']));
+  } finally {
+    db.close();
+  }
+}
+
+/** A started OpenCode path over one database, with no timer and no watcher. */
+function openOcPath(dbPath: string, paths: readonly string[]): OpenCodeEnginePath {
+  const path = new OpenCodeEnginePath({
+    workspacePaths: paths,
+    thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+    onChange: () => {},
+    dbPath,
+    now: () => 1_000,
+    pollTrigger: () => ({ stop: () => {} }),
+    walWatchFactory: () => ({ close: () => {} }),
+    log: () => {},
+  });
+  path.start();
+  return path;
+}
+
+/** The same path with its Windows drive letter case-flipped, or null. */
+function flipDriveLetter(path: string): string | null {
+  const match = /^([A-Za-z]):/.exec(path);
+  if (match === null) return null;
+  const letter = match[1] as string;
+  const flipped = letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase();
+  return flipped + path.slice(1);
+}
+
+describe('DoD 5.2 — the OpenCode engine is on when its store exists, and off when it does not', () => {
+  const previousProjectsRoot = process.env['CLAUDE_PROJECTS_ROOT'];
+
+  afterEach(() => {
+    if (previousProjectsRoot === undefined) delete process.env['CLAUDE_PROJECTS_ROOT'];
+    else process.env['CLAUDE_PROJECTS_ROOT'] = previousProjectsRoot;
+  });
+
+  it('is silently OFF with an absent store, and says so exactly ONCE at info level', () => {
+    const missing = join(process.env[OPENCODE_DATA_ROOT_ENV] as string, 'opencode.db');
+    expect(existsSync(missing)).toBe(false);
+    const sink = captureLog();
+
+    const path = new OpenCodeEnginePath({
+      workspacePaths: ['/anywhere'],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      dbPath: missing,
+      log: sink.log,
+    });
+    path.start();
+    // "Once" is a claim about repetition, so it is driven by repeating.
+    path.start();
+    path.start();
+
+    expect(sink.lines).toStrictEqual([{ level: 'info', message: OPENCODE_ABSENT_LOG }]);
+    const diagnostics = path.diagnostics;
+    expect(diagnostics.enabled).toBe(false);
+    expect(diagnostics.absentLogs).toBe(1);
+    // Silently off means OFF: no store was read and nothing is polling, so
+    // there is no tick that could produce a second line later.
+    expect(diagnostics.contentReads).toBe(0);
+    expect(diagnostics.livenessPolls).toBe(0);
+    expect(path.livenessEngine).toBeNull();
+    expect(path.sessions()).toStrictEqual([]);
+    path.dispose();
+  });
+
+  it('is ON when the store exists, with no setting anywhere in the manifest', async () => {
+    const dir = await makeTempDir();
+    const dbPath = copyCorpus(smallestCorpus(), dir);
+    const sink = captureLog();
+    const poll = manualPollTrigger();
+    let clock = 1_000;
+
+    const path = new OpenCodeEnginePath({
+      workspacePaths: [worktreeOf(dbPath)],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      dbPath,
+      log: sink.log,
+      now: () => clock,
+      pollTrigger: poll.trigger,
+      // No WAL watch: this test drives the cadence itself, and chokidar's
+      // absence is what keeps it from measuring the filesystem.
+      walWatchFactory: () => ({ close: () => {} }),
+    });
+    path.start();
+
+    expect(sink.lines).toStrictEqual([]);
+    expect(path.diagnostics.enabled).toBe(true);
+    expect(path.diagnostics.contentReads).toBe(1);
+    expect(path.sessions().length).toBeGreaterThan(0);
+    for (const session of path.sessions()) {
+      expect(session.engine).toBe('opencode');
+      expect(session.workspaceMatch).toBe(true);
+    }
+
+    // B5: the liveness engine is CHAINED, not merely constructible. The
+    // trigger it registered is the host's, the interval is the engine's
+    // constant, and firing it advances the poll counter.
+    expect(poll.registrations).toStrictEqual([DEFAULT_OC_POLL_INTERVAL_MS]);
+    const before = path.diagnostics.livenessPolls;
+    expect(before).toBeGreaterThan(0);
+    clock += 1;
+    poll.fire();
+    expect(path.diagnostics.livenessPolls).toBe(before + 1);
+
+    path.dispose();
+    expect(poll.stops()).toBe(1);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('declares no OpenCode setting: the switch is the store, and only the store', async () => {
+    const manifest = JSON.parse(
+      await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+    ) as { contributes?: { configuration?: { properties?: Record<string, unknown> } } };
+    const keys = Object.keys(manifest.contributes?.configuration?.properties ?? {});
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      expect(key.toLowerCase(), `${key} is an OpenCode setting; DoD 5.2 says there is none`)
+        .not.toContain('opencode');
+    }
+  });
+
+  it('matches project.worktree case-insensitively, drive letter included', async () => {
+    const dir = await makeTempDir();
+    const dbPath = copyCorpus(smallestCorpus(), dir);
+    const worktree = worktreeOf(dbPath);
+    const flipped = flipDriveLetter(worktree);
+    expect(flipped, 'the corpus worktree carries no drive letter to flip').not.toBeNull();
+    expect(flipped).not.toBe(worktree);
+
+    const openWith = (paths: readonly string[]): OpenCodeEnginePath => {
+      const path = new OpenCodeEnginePath({
+        workspacePaths: paths,
+        thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+        onChange: () => {},
+        dbPath,
+        now: () => 1_000,
+        pollTrigger: () => ({ stop: () => {} }),
+        walWatchFactory: () => ({ close: () => {} }),
+      });
+      path.start();
+      return path;
+    };
+
+    const asWritten = openWith([worktree]);
+    const asFlipped = openWith([flipped as string]);
+    // Also flip the case of a non-drive component, which must NOT be the thing
+    // doing the work: the comparison is case-insensitive throughout.
+    const asShouted = openWith([worktree.toUpperCase()]);
+    const asForeign = openWith([join(dir, 'not-the-project')]);
+
+    const ids = (path: OpenCodeEnginePath): string[] =>
+      path.sessions().map((s) => s.sessionId).sort();
+
+    expect(ids(asWritten).length).toBeGreaterThan(0);
+    expect(ids(asFlipped)).toStrictEqual(ids(asWritten));
+    expect(ids(asShouted)).toStrictEqual(ids(asWritten));
+    // The vacuity control: the matcher does refuse something.
+    expect(ids(asForeign)).toStrictEqual([]);
+
+    for (const path of [asWritten, asFlipped, asShouted, asForeign]) path.dispose();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('B6: every open workspace folder reaches the engine, not just the first', async () => {
+    const staged = await stageFixtureSlug(await capturedSlugDir());
+    process.env['CLAUDE_PROJECTS_ROOT'] = staged.projectsRoot;
+    const second = join(await makeTempDir(), 'second-root');
+    await mkdir(second, { recursive: true });
+
+    await activateOnFreePort((port) => {
+      // The mock's setter is single-folder and this package does not own that
+      // file, so the folder list is installed directly. `activateOnFreePort`
+      // resets the mock first, so this must happen inside it.
+      mock.state.workspaceFolders = [
+        { uri: Uri.file(staged.workspacePath), name: 'a', index: 0 },
+        { uri: Uri.file(second), name: 'b', index: 1 },
+      ];
+      expect(workspacePathsOf(mock.state.workspaceFolders)).toStrictEqual([
+        staged.workspacePath,
+        second,
+      ]);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+
+    const host = currentHost();
+    expect(host).not.toBeNull();
+    // The asymmetry, asserted rather than described: OpenCode gets both roots,
+    // Claude Code gets the first. Recorded as an open item at the call site.
+    expect(host?.dataPath.workspacePaths).toStrictEqual([staged.workspacePath, second]);
+    expect(host?.dataPath.workspacePath).toBe(staged.workspacePath);
+    expect(host?.dataPath.opencode.workspacePaths).toStrictEqual([
+      staged.workspacePath,
+      second,
+    ]);
+  });
+
+  it('workspacePathsOf answers [] for no folders, so the engine matches nothing', () => {
+    expect(workspacePathsOf(undefined)).toStrictEqual([]);
+    expect(workspacePathsOf([])).toStrictEqual([]);
+  });
+
+  it("opencodeStoreExists follows the engine's own environment override", async () => {
+    const empty = await makeTempDir();
+    expect(opencodeStoreExists({ [OPENCODE_DATA_ROOT_ENV]: empty })).toBe(false);
+    expect(opencodeDataDir({ [OPENCODE_DATA_ROOT_ENV]: empty })).toBe(empty);
+
+    const stocked = await makeTempDir();
+    copyCorpus(smallestCorpus(), stocked);
+    expect(opencodeStoreExists({ [OPENCODE_DATA_ROOT_ENV]: stocked })).toBe(true);
+    await rm(stocked, { recursive: true, force: true });
+  });
+
+  it('activate() with no Claude Code project but a live store starts the OpenCode half only', async () => {
+    const stocked = await makeTempDir();
+    copyCorpus(smallestCorpus(), stocked);
+    process.env[OPENCODE_DATA_ROOT_ENV] = stocked;
+
+    // A workspace with no Claude Code project directory at all, in a projects
+    // root that is real and empty — so the refusal is a measured absence and
+    // not a missing-root error.
+    process.env['CLAUDE_PROJECTS_ROOT'] = await makeTempDir();
+    const lonely = join(await makeTempDir(), 'no-cc-here');
+    await mkdir(lonely, { recursive: true });
+
+    resetVscodeMock();
+    mock.setWorkspaceFolder(lonely);
+    mock.setConfig(CONFIG_SECTION, { port: DEFAULT_PORT });
+    await activate(extensionContext());
+
+    const host = currentHost();
+    expect(host, 'an OpenCode-only workspace still gets a deck').not.toBeNull();
+    const diagnostics = host?.dataPath.diagnostics;
+    // The correlation gate's point survives: no watcher, no socket, no CC tick.
+    expect(diagnostics?.ccEnabled).toBe(false);
+    expect(diagnostics?.listening).toBe(false);
+    expect(diagnostics?.opencode.enabled).toBe(true);
+
+    await deactivate();
+    await rm(stocked, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.2 / G3 — the deck filter hides other workspaces, and never refusals
+// ---------------------------------------------------------------------------
+
+/*
+ * WHY THIS BLOCK EXISTS, SO IT IS NOT READ AS A DUPLICATE OF THE ONE ABOVE.
+ *
+ * The deck filter and the engine were each locally correct and composed into a
+ * G3 hole: `src/opencode/index.ts` hard-coded `workspaceMatch: false` on a
+ * session its fingerprint refused, and this host filtered on `workspaceMatch`,
+ * so a user whose OpenCode version drifted out of the window saw NOTHING on
+ * the deck instead of an `unsupported` card. `index.ts` carries the sentence
+ * it violated: "a refusal that is invisible to the renderer is not a refusal."
+ *
+ * BOTH SIDES ARE FIXED, by user decision, so neither file can reintroduce the
+ * hole alone. These tests are written to hold WHETHER OR NOT the engine half
+ * has landed: nothing here asserts what `workspaceMatch` reads on a refused
+ * session, only that the refusal reaches the deck.
+ */
+describe('DoD 5.2 / G3 — a refused OpenCode session is never filtered off the deck', () => {
+  it('keeps the refusal while a healthy session in another workspace stays hidden', async () => {
+    const dir = await makeTempDir();
+    const dbPath = copyCorpus(smallestCorpus(), dir);
+
+    const roots = rootSessionIdsOf(dbPath);
+    const childless = childlessRootIdsOf(dbPath);
+    expect(roots.length, 'the corpus must carry more than one root').toBeGreaterThan(1);
+    expect(childless.length, 'the corpus must carry a childless root').toBeGreaterThan(0);
+    // See `childlessRootIdsOf`: refusing a root that HAS a child makes the
+    // engine throw, which is a separate, reported defect and not this test.
+    const victim = childless[0] as string;
+    const survivors = roots.filter((id) => id !== victim);
+
+    // Push ONE root out of the version window. Major 9 is out on the MAJOR
+    // component, so no move of the anchor inside 1.x can re-admit it — the rule
+    // the CC refusal fixtures were twice re-versioned under, applied here so
+    // this test cannot quietly stop refusing anything.
+    withWritableDb(dbPath, (db) => {
+      db.prepare('UPDATE session SET version = ? WHERE id = ?').run('9.9.9', victim);
+    });
+
+    // A workspace the corpus was NOT captured in, so nothing matches.
+    const foreign = join(dir, 'a-workspace-this-corpus-was-not-captured-in');
+    const path = openOcPath(dbPath, [foreign]);
+    try {
+      // THE READ ACTUALLY SUCCEEDED. Without this, "the refusal is on the
+      // deck" could pass for the wrong reason on a read that returned nothing
+      // at all — and it very nearly did: see the note on `childlessRootIdsOf`.
+      expect(path.diagnostics, JSON.stringify(path.diagnostics)).toMatchObject({
+        contentReads: 1,
+        contentFailures: 0,
+        schemaMismatches: 0,
+        degradedReads: 0,
+      });
+      const onDeck = path.sessions();
+      const ids = onDeck.map((s) => s.sessionId);
+
+      // The carve-out: the refusal is on the deck even though it matches no
+      // open workspace. Nothing is asserted about its `workspaceMatch` — the
+      // engine half may or may not have landed when this runs.
+      expect(
+        ids,
+        'a refused session must never be filtered off the deck',
+      ).toContain(victim);
+      const refused = onDeck.find((s) => s.sessionId === victim);
+      expect(refused?.schemaOk).toBe(false);
+      expect(refused?.liveness).toBe('unsupported');
+      // A refusal renders NOTHING. It is not a hole to smuggle content through.
+      expect(refused?.root.children).toStrictEqual([]);
+      expect(refused?.totals).toStrictEqual({ costUsd: 0 });
+      // ABSENT rather than zero, and the difference is the engine's: this is an
+      // OPENCODE refusal, and that engine reports no token figures at all yet.
+      // The CC refusal path (`unsupportedCopy` in `extension.ts`) zeroes them
+      // instead, because CC does report them and 0 is the honest reading there.
+      expect(refused?.contextNow).toBeUndefined();
+      expect(refused?.burn).toBeUndefined();
+
+      // THE CONTROL. Without it this test cannot tell the carve-out apart from
+      // deleting the filter: healthy sessions in a non-matching workspace must
+      // still be hidden.
+      expect(survivors.length).toBeGreaterThan(0);
+      for (const id of survivors) {
+        expect(
+          ids,
+          `healthy session ${id} in another workspace must stay hidden`,
+        ).not.toContain(id);
+      }
+      expect(onDeck).toHaveLength(1);
+    } finally {
+      path.dispose();
+    }
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('and with a MATCHING workspace, the refusal renders beside the healthy ones', async () => {
+    const dir = await makeTempDir();
+    const dbPath = copyCorpus(smallestCorpus(), dir);
+    const roots = rootSessionIdsOf(dbPath);
+    const victim = childlessRootIdsOf(dbPath)[0] as string;
+
+    withWritableDb(dbPath, (db) => {
+      db.prepare('UPDATE session SET version = ? WHERE id = ?').run('9.9.9', victim);
+    });
+
+    const path = openOcPath(dbPath, [worktreeOf(dbPath)]);
+    try {
+      // THE READ ACTUALLY SUCCEEDED. Without this, "the refusal is on the
+      // deck" could pass for the wrong reason on a read that returned nothing
+      // at all — and it very nearly did: see the note on `childlessRootIdsOf`.
+      expect(path.diagnostics, JSON.stringify(path.diagnostics)).toMatchObject({
+        contentReads: 1,
+        contentFailures: 0,
+        schemaMismatches: 0,
+        degradedReads: 0,
+      });
+      const ids = path
+        .sessions()
+        .map((s) => s.sessionId)
+        .sort();
+      // Every root, refused and healthy alike, and each EXACTLY ONCE: the
+      // carve-out must not double-count a session that also matches.
+      expect(ids).toStrictEqual([...roots].sort());
+      for (const session of path.sessions()) {
+        expect(
+          session.schemaOk,
+          `${session.sessionId} schemaOk`,
+        ).toBe(session.sessionId !== victim);
+      }
+    } finally {
+      path.dispose();
+    }
+    await rm(dir, { recursive: true, force: true });
   });
 });
 

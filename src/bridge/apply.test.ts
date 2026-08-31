@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import type { SessionState } from '../model/events.js';
+import type { ApplyError, SessionState, ToolNode } from '../model/events.js';
 import { SessionPatchError, applySessionPatch, deepFreeze, parkedOf } from './apply.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -215,18 +215,42 @@ describe('applySessionPatch — the properties the bridge relies on', () => {
       status: 'running',
       spawnDepth: 0,
       children: [],
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       startedAt: 1,
     },
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
     spawnEdges: [],
   });
 
-  it('throws SessionPatchError on a patch that cannot be applied', () => {
+  /**
+   * DoD 5.5.1 changed what "cannot be applied" costs. An op addressing an id
+   * this tree does not have is DIVERGENCE — reported, skipped, survivable —
+   * and only a patch that would leave the session without an agent root is
+   * still fatal. This test asserts both halves rather than one, because the
+   * whole value of the change is in the difference between them.
+   */
+  it('reports a divergent op and throws only on a broken root invariant', () => {
+    const errors: ApplyError[] = [];
+    const next = applySessionPatch(
+      base,
+      { tree: [{ op: 'updateAgent', id: 'ghost', fields: { status: 'done' } }] },
+      { onError: (e) => errors.push(e) },
+    );
+    expect(errors).toEqual([
+      { op: 'updateAgent', id: 'ghost', reason: 'no node with id ghost' },
+    ]);
+    // Skipped, not half-applied: the tree is what it was.
+    expect(next.root.status).toBe('running');
+    // And with no reporter it is silent rather than fatal — the property that
+    // lets a renderer call this without somewhere to put an exception.
     expect(() =>
       applySessionPatch(base, {
         tree: [{ op: 'updateAgent', id: 'ghost', fields: { status: 'done' } }],
       }),
+    ).not.toThrow();
+
+    expect(() =>
+      applySessionPatch(base, { tree: [{ op: 'removeNode', id: base.root.id }] }),
     ).toThrow(SessionPatchError);
   });
 
@@ -265,10 +289,10 @@ describe('applySessionPatch — parked', () => {
       status: 'running',
       spawnDepth: 0,
       children: [],
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       startedAt: 1,
     },
-    totals: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
     spawnEdges: [],
   });
 
@@ -339,5 +363,144 @@ describe('applySessionPatch — parked', () => {
     });
     expect('toolUseId' in (next.parked?.[0] as object)).toBe(false);
     expect('parentAgentId' in (next.parked?.[0] as object)).toBe(false);
+  });
+});
+
+/**
+ * `engine` — gate amendment B2.
+ *
+ * The reducer has to honour a key `diffSessionState` can never emit, because
+ * nothing can change a session's engine. That makes this file the ONLY place
+ * the behaviour can be exercised at all: every state here is a literal, so a
+ * patch carrying `engine` can be handed to the reducer directly. Nothing below
+ * claims a production path produces such a patch — none does, by construction,
+ * and `src/model/session.test.ts` says so where it tests the diff half.
+ */
+describe('applySessionPatch — engine', () => {
+  const base: SessionState = deepFreeze({
+    sessionId: 's1',
+    projectSlug: 'c--Users-dev-repo',
+    workspaceMatch: true,
+    liveness: 'live',
+    schemaOk: true,
+    root: {
+      id: 'root',
+      kind: 'main',
+      label: 'root',
+      status: 'running',
+      spawnDepth: 0,
+      children: [],
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
+      startedAt: 1,
+    },
+    totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
+    spawnEdges: [],
+  });
+
+  const stamped: SessionState = deepFreeze({ ...base, engine: 'cc' as const });
+
+  it('a state that never carried engine comes out without it, not with a made-up cc', () => {
+    // Absence reads as `'cc'` by documented convention, which is exactly why
+    // the reducer must not WRITE `'cc'` here: a state built before the field
+    // existed — the webview's own test data among them — has to survive a patch
+    // byte-for-byte, or apply(prev, diff) stops deep-equalling next for reasons
+    // that have nothing to do with engines.
+    const next = applySessionPatch(base, { fields: { liveness: 'idle' } });
+    expect('engine' in next).toBe(false);
+  });
+
+  it('a patch that does not mention engine keeps it — absence means unchanged', () => {
+    const next = applySessionPatch(stamped, { fields: { liveness: 'ended' } });
+    expect(next.liveness).toBe('ended');
+    expect(next.engine).toBe('cc');
+  });
+
+  it('honours an engine key if one ever arrives, in both directions', () => {
+    // This is the branch the gate bought and knowingly paid for. It cannot be
+    // reached from `diffSessionState`; it is reachable here because the patch
+    // is a literal. If the key were dropped from the reducer as dead code, a
+    // patch carrying it would be silently ignored instead of failing.
+    expect(applySessionPatch(base, { fields: { engine: 'opencode' } }).engine).toBe('opencode');
+    expect(applySessionPatch(stamped, { fields: { engine: 'opencode' } }).engine).toBe('opencode');
+    expect(applySessionPatch(stamped, { fields: { engine: 'cc' } }).engine).toBe('cc');
+  });
+});
+
+/**
+ * `truncated` — gate amendment B7.
+ *
+ * The observed engine's OWN truncation claim, which `redact.ts`'s marker is
+ * not. The CC engine never sets it, so a CC state simply never has the key;
+ * what is being tested here is that the wire can carry it at all, because an
+ * optional field the patch cannot express breaks the exactness of the round
+ * trip rather than merely under-reporting it.
+ */
+describe('applySessionPatch — ToolNode.truncated', () => {
+  function stateWith(truncated: boolean | undefined): SessionState {
+    const tool: ToolNode = {
+      id: 't1',
+      toolName: 'Bash',
+      status: 'done',
+      inputPreview: 'ls',
+    };
+    if (truncated !== undefined) tool.truncated = truncated;
+    return deepFreeze<SessionState>({
+      sessionId: 's1',
+      projectSlug: 'c--Users-dev-repo',
+      workspaceMatch: true,
+      liveness: 'live',
+      schemaOk: true,
+      root: {
+        id: 'root',
+        kind: 'main',
+        label: 'root',
+        status: 'running',
+        spawnDepth: 0,
+        children: [tool],
+        contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
+        startedAt: 1,
+      },
+      totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
+      spawnEdges: [],
+    });
+  }
+
+  function toolOf(state: SessionState): ToolNode {
+    return state.root.children[0] as ToolNode;
+  }
+
+  it('carries the flag through a patch that does not mention it', () => {
+    // The clone is where this is lost: a `cloneTool` that forgot the key would
+    // drop the flag on EVERY patch, including ones about an unrelated node.
+    const next = applySessionPatch(stateWith(true), { fields: { liveness: 'idle' } });
+    expect(toolOf(next).truncated).toBe(true);
+  });
+
+  it('sets, changes and clears it, and a clear removes the key rather than writing false', () => {
+    const set = applySessionPatch(stateWith(undefined), {
+      tree: [{ op: 'updateTool', id: 't1', fields: { truncated: true } }],
+    });
+    expect(toolOf(set).truncated).toBe(true);
+
+    const changed = applySessionPatch(stateWith(true), {
+      tree: [{ op: 'updateTool', id: 't1', fields: { truncated: false } }],
+    });
+    // `false` is the engine claiming the payload IS whole, which is a different
+    // statement from making no claim. It must survive as `false`.
+    expect(toolOf(changed).truncated).toBe(false);
+    expect('truncated' in toolOf(changed)).toBe(true);
+
+    const cleared = applySessionPatch(stateWith(true), {
+      tree: [{ op: 'updateTool', id: 't1', fields: { truncated: null } }],
+    });
+    expect('truncated' in toolOf(cleared)).toBe(false);
+  });
+
+  it('a tool node that never carried the flag comes out without the key', () => {
+    const next = applySessionPatch(stateWith(undefined), {
+      tree: [{ op: 'updateTool', id: 't1', fields: { status: 'error' } }],
+    });
+    expect('truncated' in toolOf(next)).toBe(false);
+    expect(toolOf(next)['status']).toBe('error');
   });
 });

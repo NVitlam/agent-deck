@@ -11,18 +11,64 @@ coverage/
 *.tsbuildinfo
 spike/hook-events-r3.jsonl
 
-# Working screenshots. Only the four assets package.json and README reference
-# are tracked; the rest stay local. Same allow-list shape as .vscodeignore.
+# Working screenshots. Only the five assets package.json and README reference
+# are tracked; the rest stay local. Same allow-list shape as .vscodeignore, and
+# the two lists must name the same five - they are different doors (rule 20),
+# and src/release/vsix.test.ts is what checks the second one.
+#
+# Re-cut 2026-08-30 for the release. The three `screenshot-*.png` files were
+# `0.1.x` captures of a renderer that no longer exists; they are retired into
+# the private repository's `PNG Archive/` rather than deleted. What replaces
+# them is four images of the shipped UI, gated before they crossed into this
+# tree (`lab/docs/evidence/release-0.5.0/MEDIA-GATE.md`).
+#
+# `icon.png` is NOT one of the four and is not a screenshot: `package.json`
+# names it as the extension icon, so removing it makes the manifest name a
+# file that is not there and `vsce package` fails. It stays.
 media/*
 !media/icon.png
-!media/screenshot-deck.png
-!media/screenshot-topology.png
-!media/screenshot-inspector.png
+!media/Session_Deck.png
+!media/hero_16_agent_session.png
+!media/Internal_Session_Tool_popup.png
+!media/Internal_Session_Tool_popup2.png
 
 # The whole .claude/ directory: agent definitions, skills, working notes and
 # settings.local.json. Local tooling, not product. Untracked before the public
 # flip - untracking is reversible, publishing is not.
 .claude/
+
+# The maintainer's private working checkout, if they have one. It is not part
+# of this project and nothing here depends on it: the suite is green without
+# it, and `scripts/privacy-sweep.mjs` reports `identity=SKIPPED` rather than
+# failing when it is absent. Contributors will not have one and do not need one.
+lab/
+
+# The working method and its evidence. These live in the maintainer's private
+# repository and are presented back at these paths by links into `lab/`, so
+# `/phase` and `/handoff` still resolve them locally while nothing here tracks
+# a byte of them.
+#
+# `docs/` and `spike/` are directory JUNCTIONS; the five files are SYMLINKS.
+# They are not hardlinks, and the distinction was measured on 2026-08-28: a
+# rename-based write - `sed -i`, and most editors - severs a hardlink and
+# replaces a symlink with a regular file. Either way the edit lands in a
+# detached copy at this root that reads correctly and never reaches `lab/`.
+# Write these paths IN PLACE.
+#
+# ANCHORED WITH A LEADING SLASH, every one of them. `docs/` unanchored would
+# also ignore a future `src/docs/`, and `CLAUDE.md` unanchored would ignore one
+# at any depth. The recorded class is a rule shaped for one place matching
+# somewhere else - it has cost this repository a shipped 38 KB mockup already,
+# in the other direction.
+#
+# `CONTRIBUTING.md` is what a contributor reads instead, and it IS tracked.
+/CLAUDE.md
+/PLAN.md
+/HANDOVER.md
+/AGENTS.md
+/agent-deck-spec.md
+/docs/
+/spike/
 
 # OpenCode's per-project state directory: opencode.json, its own node_modules,
 # package files. Local tooling of the engine this repo now observes - same

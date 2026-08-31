@@ -65,6 +65,7 @@ import type {
   SessionPatch,
   SessionState,
   SpawnEdge,
+  TokenPair,
   ToolNode,
   ToolNodeFieldPatch,
   TreeNode,
@@ -120,7 +121,8 @@ function refusedRoot(): AgentNode {
     status: 'running',
     spawnDepth: 0,
     children: [],
-    tokens: { in: 0, out: 0 },
+    contextNow: { prompt: 0, output: 0 },
+    burn: { prompt: 0, output: 0 },
     startedAt: 0,
   };
 }
@@ -149,11 +151,20 @@ function toWireParked(p: GraftParkedGraft): ParkedGraft {
 // Diffing
 // ---------------------------------------------------------------------------
 function sameTotals(a: SessionState['totals'], b: SessionState['totals']): boolean {
-  return (
-    a.inputTokens === b.inputTokens &&
-    a.outputTokens === b.outputTokens &&
-    a.costUsd === b.costUsd
-  );
+  return a.costUsd === b.costUsd;
+}
+
+/**
+ * Equality over an OPTIONAL pair, absence included.
+ *
+ * Absent and `{ prompt: 0, output: 0 }` are DIFFERENT and must diff as a
+ * change: one says "this engine does not report a figure" and the other says
+ * "the figure is zero". Collapsing them is how an em-dash silently becomes a 0
+ * in the renderer.
+ */
+function samePair(a: TokenPair | undefined, b: TokenPair | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.prompt === b.prompt && a.output === b.output;
 }
 
 function sameEdges(a: readonly SpawnEdge[], b: readonly SpawnEdge[]): boolean {
@@ -209,9 +220,6 @@ function hasDuplicateIds(nodes: readonly TreeNode[]): boolean {
   return false;
 }
 
-function sameTokens(a: AgentNode['tokens'], b: AgentNode['tokens']): boolean {
-  return a.in === b.in && a.out === b.out;
-}
 
 function agentFieldPatch(prev: AgentNode, next: AgentNode): AgentNodeFieldPatch | undefined {
   const fields: AgentNodeFieldPatch = {};
@@ -232,8 +240,12 @@ function agentFieldPatch(prev: AgentNode, next: AgentNode): AgentNodeFieldPatch 
     fields.spawnDepth = next.spawnDepth;
     changed = true;
   }
-  if (!sameTokens(prev.tokens, next.tokens)) {
-    fields.tokens = { in: next.tokens.in, out: next.tokens.out };
+  if (!samePair(prev.contextNow, next.contextNow) && next.contextNow !== undefined) {
+    fields.contextNow = { ...next.contextNow };
+    changed = true;
+  }
+  if (!samePair(prev.burn, next.burn) && next.burn !== undefined) {
+    fields.burn = { ...next.burn };
     changed = true;
   }
   if (prev.startedAt !== next.startedAt) {
@@ -268,6 +280,18 @@ function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | un
   }
   if (prev.durationMs !== next.durationMs) {
     fields.durationMs = next.durationMs === undefined ? null : next.durationMs;
+    changed = true;
+  }
+  // Gate amendment B7. The CC engine never sets `truncated` — only the
+  // OpenCode engine does — but the PATCH contract has to carry it anyway, and
+  // that is not bookkeeping. `events.ts` states the contract as exact: for any
+  // two states the model produces, apply(prev, diff(prev, next)) deep-equals
+  // `next`. An optional field a patch cannot express BREAKS that property
+  // rather than merely under-reporting it, so the flag is diffed here in the
+  // same three-way shape as `durationMs` — `null` means the engine stopped
+  // claiming the payload was truncated, an absent key means unchanged.
+  if (prev.truncated !== next.truncated) {
+    fields.truncated = next.truncated === undefined ? null : next.truncated;
     changed = true;
   }
   return changed ? fields : undefined;
@@ -309,12 +333,26 @@ function diffNode(prev: TreeNode, next: TreeNode, ops: TreeOp[]): void {
     if (!nextIdSet.has(child.id)) ops.push({ op: 'removeNode', id: child.id });
   }
 
+  // The anchor is the PRECEDING SIBLING in `next`, not the index in `next`
+  // (DoD 5.5.1). `null` for the first child. Two properties this buys, and
+  // both matter on a receiver whose tree is behind:
+  //
+  //   * a run of consecutive inserts chains — each new node anchors on the one
+  //     before it, so the run lands in order even if the surrounding children
+  //     differ from what the sender assumed;
+  //   * an anchor the receiver does not have is a NAMED failure it can report,
+  //     where a wrong index is silent and permanent.
+  //
+  // `afterId` names a node in `next`, which may itself be inserted by an
+  // earlier op in this same patch. That is why insert order is preserved and
+  // why the ops are emitted in ascending child order.
   for (let i = 0; i < next.children.length; i += 1) {
     const child = next.children[i];
     if (child === undefined) continue;
     const before = prevById.get(child.id);
     if (before === undefined) {
-      ops.push({ op: 'insertNode', parentId: prev.id, index: i, node: child });
+      const previousSibling = i === 0 ? null : (next.children[i - 1]?.id ?? null);
+      ops.push({ op: 'insertNode', parentId: prev.id, afterId: previousSibling, node: child });
       continue;
     }
     diffNode(before, child, ops);
@@ -362,6 +400,35 @@ export function diffSessionState(
   }
   if (!sameTotals(prev.totals, next.totals)) {
     fields.totals = { ...next.totals };
+    fieldsChanged = true;
+  }
+  if (!samePair(prev.contextNow, next.contextNow) && next.contextNow !== undefined) {
+    fields.contextNow = { ...next.contextNow };
+    fieldsChanged = true;
+  }
+  if (!samePair(prev.burn, next.burn) && next.burn !== undefined) {
+    fields.burn = { ...next.burn };
+    fieldsChanged = true;
+  }
+  // Gate amendment B2, and it is DELIBERATE DEAD CODE — do not "simplify" it
+  // away. The engine that observed a session cannot change while the session
+  // exists, so for any two states this model produces `prev.engine` and
+  // `next.engine` are both `'cc'` and this branch provably never fires. It is
+  // here because DoD 5.1 specifies `engine` as "the same move as `spawnEdges`
+  // and `parked`", and both of those are patch fields. The user took that
+  // trade at the Phase 5 gate with the cost stated: uniformity, bought with a
+  // branch production cannot reach. `applySessionPatch` honours the key if one
+  // ever does arrive.
+  //
+  // The `!== undefined` half is not defensive padding either. `SessionFieldPatch`
+  // has no `null` for this key — unlike `ToolNodeFieldPatch.truncated` — so a
+  // transition from a stamped engine to an ABSENT one is not expressible on the
+  // wire, and writing `engine: undefined` into the patch would both produce a
+  // "changed" patch that changes nothing and be read back as "unchanged". No
+  // state this model produces makes that transition (every one is stamped), so
+  // the inexpressible case is recorded here rather than faked.
+  if (prev.engine !== next.engine && next.engine !== undefined) {
+    fields.engine = next.engine;
     fieldsChanged = true;
   }
   if (fieldsChanged) {
@@ -421,8 +488,24 @@ export interface SerializedSessionState {
   workspaceMatch: boolean;
   liveness: SessionState['liveness'];
   schemaOk: boolean;
+  /**
+   * Which engine stamped this state, verbatim — `null` when the field is
+   * absent, NOT normalized to `'cc'`.
+   *
+   * Absence reads as `'cc'` everywhere else (`SessionState.engine` says so),
+   * and normalizing here would be the one place that reading is wrong: it
+   * would make a golden identical whether or not gate amendment B3's stamp was
+   * applied, so deleting the stamp would leave every golden green. `null` in a
+   * golden means "the model handed out a state with no engine tag", which is a
+   * regression these files should fail on.
+   */
+  engine: SessionState['engine'] | null;
   epochAnchor: string | null;
   totals: SessionState['totals'];
+  /** `null` when the engine reports no context level. NOT a zero pair. */
+  contextNow: TokenPair | null;
+  /** `null` when the engine reports no spend. NOT a zero pair. */
+  burn: TokenPair | null;
   spawnEdges: SpawnEdge[];
   root: SerializedSessionNode;
 }
@@ -449,7 +532,8 @@ function serializeSessionNode(
     label: node.label,
     status: node.status,
     spawnDepth: node.spawnDepth,
-    tokens: { in: node.tokens.in, out: node.tokens.out },
+    contextNow: node.contextNow === undefined ? null : { ...node.contextNow },
+    burn: node.burn === undefined ? null : { ...node.burn },
     startedAtOffsetMs:
       anchor === undefined || node.startedAt === 0 ? null : node.startedAt - anchor,
     endedAtOffsetMs:
@@ -471,8 +555,11 @@ export function serializeSessionState(state: SessionState): SerializedSessionSta
     workspaceMatch: state.workspaceMatch,
     liveness: state.liveness,
     schemaOk: state.schemaOk,
+    engine: state.engine ?? null,
     epochAnchor: anchor === undefined ? null : new Date(anchor).toISOString(),
     totals: { ...state.totals },
+    contextNow: state.contextNow === undefined ? null : { ...state.contextNow },
+    burn: state.burn === undefined ? null : { ...state.burn },
     spawnEdges: edgesOf(state).map((e) => ({ ...e })),
     root: serializeSessionNode(state.root, anchor),
   };
@@ -556,6 +643,8 @@ interface ContentView {
   schemaOk: boolean;
   root: AgentNode;
   totals: SessionState['totals'];
+  contextNow?: TokenPair;
+  burn?: TokenPair;
   spawnEdges: readonly SpawnEdge[];
   parked: readonly ParkedGraft[];
 }
@@ -571,11 +660,16 @@ interface SessionRecord {
   view?: ContentView;
 }
 
-const REFUSED_TOTALS: SessionState['totals'] = Object.freeze({
-  inputTokens: 0,
-  outputTokens: 0,
-  costUsd: 0,
-});
+const REFUSED_TOTALS: SessionState['totals'] = Object.freeze({ costUsd: 0 });
+
+/**
+ * A refused session reports no tokens, and zero is the only honest value.
+ *
+ * G3's "never a partial tree" covers numbers: a context level computed from a
+ * session whose layout we have refused to understand is a wrong number, not a
+ * smaller one.
+ */
+const REFUSED_PAIR: TokenPair = Object.freeze({ prompt: 0, output: 0 });
 
 const NO_EDGES: readonly SpawnEdge[] = Object.freeze([]);
 
@@ -813,6 +907,8 @@ export class SessionModel {
       schemaOk: true,
       root: snapshot.root,
       totals: { ...snapshot.totals },
+      contextNow: { ...snapshot.contextNow },
+      burn: { ...snapshot.burn },
       spawnEdges: snapshot.edges.map((e: GraftEdge) => ({
         toolUseId: e.toolUseId,
         agentId: e.agentId,
@@ -847,6 +943,8 @@ export class SessionModel {
         schemaOk: false,
         root: refusedRoot(),
         totals: REFUSED_TOTALS,
+        contextNow: REFUSED_PAIR,
+        burn: REFUSED_PAIR,
         spawnEdges: NO_EDGES,
         // G3: a refused session renders nothing. Parked grafts are content read
         // out of a session whose schema we have just refused to understand, so
@@ -884,8 +982,26 @@ export class SessionModel {
       schemaOk: view.schemaOk,
       root: view.root,
       totals: view.totals,
+      contextNow: view.contextNow,
+      burn: view.burn,
       spawnEdges: view.spawnEdges,
       parked: view.parked,
+      // Gate amendment B3. This module IS the CC engine's assembly point — it
+      // is the only place a `SessionState` is built from CC's two taps — so it
+      // names the engine rather than leaving the CC case to be inferred from
+      // absence. Every state that leaves here, refused ones included, says
+      // which engine produced it.
+      //
+      // A refused session is stamped too, on purpose: G3 withholds the TREE,
+      // not the state's identity, and a cross-engine isolation test ("a
+      // corrupt OpenCode database leaves CC sessions rendering unchanged") can
+      // only name the sessions that must be unaffected if the refused ones are
+      // tagged as well.
+      //
+      // The field stays optional on the interface. Absence still reads as
+      // `'cc'`; making it required would invalidate every earlier construction
+      // of `SessionState`, which is the whole reason it was added optional.
+      engine: 'cc',
     });
   }
 

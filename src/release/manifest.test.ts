@@ -22,8 +22,11 @@
  *                     "Agent Deck for Claude Code" must keep passing.
  *
  *   keywords          Ordered, exact. Marketplace search ranks on them and
- *                     PLAN pins the list, so "someone appended a sixth" and
- *                     "someone dropped one" are both regressions.
+ *                     PLAN pins the list, so "someone appended one" and
+ *                     "someone dropped one" are both regressions. The list is
+ *                     SIX at v0.5.0: Phase 8 DoD 8.1 added `opencode`, by a
+ *                     deliberate edit here in the same commit as the manifest,
+ *                     which is the only way this list is allowed to move.
  *
  *   licence           `"license": "MIT"` with no LICENSE file is the defect
  *                     this pins: the manifest asserts a grant the artifact
@@ -94,13 +97,21 @@ interface Manifest {
 const readManifest = async (): Promise<Manifest> =>
   JSON.parse(await readRepoFile('package.json')) as Manifest;
 
-/** PLAN, Phase 5: exactly these five, in this order. */
+/**
+ * PLAN, Phase 5: exactly these, in this order.
+ *
+ * `opencode` was added at Phase 8 (DoD 8.1) and is SIXTH deliberately. Order is
+ * asserted because the Marketplace ranks on it, and `v0.5.0` ships a second
+ * observation engine without changing what the extension leads with: it is
+ * still, first, for Claude Code.
+ */
 const EXPECTED_KEYWORDS = [
   'claude code',
   'observability',
   'agents',
   'monitor',
   'subagents',
+  'opencode',
 ];
 
 /** The first word, case-insensitively — "Claude Code" is fine anywhere else. */
@@ -135,7 +146,7 @@ describe('marketplace identity', () => {
     }
   });
 
-  it('carries exactly the five PLAN keywords, in order', async () => {
+  it('carries exactly the six PLAN keywords, in order', async () => {
     const manifest = await readManifest();
     expect(manifest.keywords).toEqual(EXPECTED_KEYWORDS);
   });
@@ -146,7 +157,26 @@ describe('marketplace identity', () => {
     expect(typeof repository?.url, 'package.json must declare repository.url').toBe(
       'string',
     );
-    expect(String(repository?.url)).toContain('github.com/dev/agent-deck');
+    // DERIVED, not hardcoded, and that is the point rather than a tidy-up.
+    // The owner segment is the developer's GitHub handle - one of the two
+    // identity strings the scrub of 2026-08-28 leaves standing, and it stands
+    // in `package.json` ALONE. Writing it here as a literal would put it back
+    // into a second file and make the scrub's success criterion - a `git grep`
+    // returning zero outside the licence and the manifest - false. It would
+    // also be a literal the redactor rewrote, which is how this line briefly
+    // came to read `github.com/dev/agent-deck` and assert a repository nobody
+    // owns.
+    //
+    // Asserting the SHAPE, with the repo segment bound to the manifest's own
+    // `name`, still catches every failure the literal caught: a missing url, a
+    // non-GitHub url, an http url, or a url naming a different extension.
+    const url = String(repository?.url);
+    const shape = new RegExp(
+      `^https://github\\.com/[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/${String(manifest.name)}\\.git$`,
+    );
+    expect(url, `repository.url is not an https GitHub url for ${String(manifest.name)}`).toMatch(
+      shape,
+    );
   });
 
   it('declares a version that is not the 0.0.0 placeholder', async () => {

@@ -8,10 +8,25 @@
 # unproven leg that goes red teaches everyone to ignore CI. Add one only after
 # the suite has been made to pass on Linux locally.
 #
-# WHAT THIS FILE CANNOT TELL YOU: nothing here has been observed running. The
-# repository is private and no run has been executed against it. The workflow is
-# authored and internally consistent with package.json - src/release/workflow.test.ts
-# asserts that much and nothing more. A green run is remote-pending.
+# WHAT THIS FILE CANNOT TELL YOU - REWRITTEN 2026-08-30, because what it used
+# to say stopped being true and stayed on the page. It read: 'nothing here has
+# been observed running. The repository is private and no run has been executed
+# against it.'
+#
+# Runs have been executed. 49 of them across this repository's history, 10 of
+# them on release/0.5.0, and every one of those 10 FAILED - measured over the
+# whole run history rather than off one page of results. They failed on the
+# checkout-translation step below, which until 2026-08-29 asserted 'no byte 13
+# under fixtures/' and so went red on three files whose CRs are authentic
+# captured bytes. The guard was asking the wrong question; it asks the right one
+# now.
+#
+# So what this file still cannot tell you is narrower and worth stating exactly:
+# src/release/workflow.test.ts reads this YAML as text and asserts its structure
+# without a YAML parser, so it cannot evaluate Actions context rules - it stayed
+# green through a workflow GitHub refused to parse at all. A green RUN is the
+# only evidence that this file works, it is DoD 8.6, and at the time of writing
+# there has never been one on this branch.
 
 name: CI
 
@@ -86,7 +101,11 @@ jobs:
       - name: Use Node 24
         uses: actions/setup-node@v4
         with:
-          # package.json engines.node is '>=20'.
+          # package.json engines.node is '>=22.22.2' - jsdom@30 and its
+          # transitive undici@8 set that floor, and the manifest declared
+          # '>=20' for four phases while nothing could run on 20. This
+          # comment said '>=20' until 2026-08-30, quoting the version of the
+          # manifest that was wrong. 24 satisfies the real floor.
           node-version: '24'
           cache: npm
 
@@ -96,52 +115,77 @@ jobs:
       # this asserts on the bytes that actually landed. Written in Node rather
       # than shell because a CR literal in a shell script is the control-
       # character trap this repo has already paid for once.
-      - name: Assert checkout is CR-free under fixtures/ and webview/wire/
+      #
+      # CORRECTED 2026-08-29 (audit-0.5.0-record). This step USED TO assert
+      # "no file under these roots contains byte 13", and that is not the
+      # property. It is a proxy for it that stopped being true the moment the
+      # corpora grew a file whose CAPTURED bytes contain a CR:
+      #
+      #   fixtures/cc-2.1.241/.../auto-mode-classifier-error.txt   151 CR,
+      #     ALL 151 followed by LF - a Windows capture whose committed blob
+      #     genuinely holds CRLF line endings, which -text preserved rather
+      #     than rewrote. (An earlier version of this comment said none of
+      #     them was a line terminator, on the strength of grep -c CR-dollar
+      #     returning 0. That command returns 0 on any file: grep strips a
+      #     trailing CR before matching. The bytes were counted afterwards.)
+      #   fixtures/opencode-1.18.21/opencode.db                   1124 CR
+      #   fixtures/opencode-1.18.22/opencode.db                   3096 CR
+      #     - byte 13 inside a SQLite binary is data, not a line ending.
+      #
+      # So CI went red on a false alarm and stayed red. Measured over the whole
+      # history, not one page of it: 49 runs, 37 failure, 12 success - the green
+      # ones on phase-0-tap-validation, main and phase-7-opencode-engine, all
+      # before the OpenCode corpora landed. On release/0.5.0 it is 10 runs and
+      # 10 failures, so DoD 8.6's "CI green" was unreachable while this guard
+      # asked the wrong question. The failing run (33146117739, 2026-08-28)
+      # printed "files scanned: 169, files containing CR: 3", naming exactly
+      # those three.
+      #
+      # The property that was always meant is CHECKOUT DID NOT TRANSLATE THESE
+      # BYTES - the index form and the working-tree form are the same form.
+      # `git ls-files --eol` reports both in one pass, so a file that is
+      # `i/mixed w/mixed` (authentic CRs, untranslated) passes and a file that
+      # is `i/lf w/crlf` (translated) fails, which is the real hazard. It is
+      # also immune to binaries, which have no line endings to compare.
+      #
+      # Not vacuous, measured both ways on 2026-08-29: 171 files scanned and 0
+      # translated under these roots, while the identical check pointed at
+      # src/ - where `text=auto` translates by design - reports 77 of 78.
+      - name: Assert checkout did not translate fixtures/ or webview/wire/
         shell: bash
         run: |
-          node -e 'const fs=require("node:fs"),path=require("node:path");const bad=[];let n=0;const walk=(d)=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(e.isFile()){n++;if(fs.readFileSync(p).includes(13))bad.push(p);}}};for(const r of ["fixtures","webview/wire"])walk(r);console.log("files scanned: "+n+", files containing CR: "+bad.length);for(const b of bad)console.log("  "+b);if(bad.length){console.error("gitattributes -text did not survive checkout: byte offsets and byte-exact goldens are no longer trustworthy");process.exit(1);}'
+          node -e 'const {execFileSync}=require("node:child_process");const roots=["fixtures","webview/wire"];const out=execFileSync("git",["ls-files","--eol","-z","--"].concat(roots),{maxBuffer:1<<28}).toString("utf8");const rows=out.split("\0").filter(Boolean);const bad=[];for(const r of rows){const m=r.match(/^i\/(\S+)\s+w\/(\S+)\s+attr\/(\S*)\s*\t(.*)$/);if(!m){bad.push("UNPARSED: "+r);continue;}if(m[1]!==m[2])bad.push(m[4]+"  index="+m[1]+" worktree="+m[2]);}console.log("files scanned: "+rows.length+", translated on checkout: "+bad.length);for(const b of bad)console.log("  "+b);if(bad.length){console.error("gitattributes -text did not survive checkout: byte offsets and byte-exact goldens are no longer trustworthy");process.exit(1);}'
 
-      # The spike audit is this repo's layout regression guard, independent of
-      # the TypeScript suite: it re-derives the subagent attribution join from
-      # the committed fixture tree.
+      # THE SPIKE LAYOUT AUDIT STEP WAS REMOVED HERE ON 2026-08-31, and the
+      # reason is worth more than the step was.
       #
-      # MEASURED LIMIT, so nobody mistakes it for something it is not: this step
-      # is NOT a CRLF detector. Converting the whole fixture tree to CRLF and
-      # re-running it produced identical output and exit 0 - the reader splits on
-      # LF and JSON.parse treats the stray CR as whitespace. The step above is
-      # the CRLF check; this one is the layout check.
+      # It ran `node spike/run.mjs --audit`. `spike/` is GITIGNORED
+      # (.gitignore:71, `/spike/`) and has not been in this repository since the
+      # 2026-08-28 public-exposure scrub moved the working method into the
+      # private half. `git check-ignore -v spike/run.mjs` reports the rule; the
+      # path does not exist in a checkout at all. So on a runner the step could
+      # only ever exit 1 on a missing module, and it did.
       #
-      # --project takes a workspace path, which the tailer slugifies and matches
-      # case-insensitively against a directory under CLAUDE_PROJECTS_ROOT. That
-      # slug encodes the CAPTURE machine's absolute path, so the runner's
-      # workspace can never match it: deriving the argument from GITHUB_WORKSPACE
-      # exits 2 with 'no project slug dir for ...'. It is derived from the
-      # fixture directory instead - neither hard-coded nor machine-bound.
+      # It was NOT the reason CI was red before 2026-08-29 - that was the
+      # checkout-translation guard above, asking the wrong question - which is
+      # why this one survived the last CI fix: the run died earlier, so nobody
+      # saw the step behind it fail.
       #
-      # Counts are asserted as zeros plus 'at least one resolved' rather than
-      # pinned to today's 5: fixture-set sizes change on the next harvest and a
-      # pinned count reads as a regression when they do.
-      - name: Spike layout audit (subagent attribution join)
-        shell: bash
-        run: |
-          root=fixtures/cc-2.1.234/projects
-          dirs=$(find "$root" -mindepth 1 -maxdepth 1 -type d)
-          count=$(printf '%s\n' "$dirs" | grep -c .)
-          if [ "$count" -ne 1 ]; then
-            echo "expected exactly 1 slug dir under $root, found $count" >&2
-            exit 1
-          fi
-          slug=$(basename "$dirs")
-          echo "project slug under audit: $slug"
-          out=$(CLAUDE_PROJECTS_ROOT="$root" node spike/run.mjs --audit --project "$slug" --all)
-          echo "$out"
-          echo "$out" | grep -Eq '^  RESOLVED +: [1-9][0-9]*$'
-          echo "$out" | grep -Eq '^  AMBIGUOUS +: 0$'
-          echo "$out" | grep -Eq '^  UNRESOLVED +: 0$'
-          echo "$out" | grep -Eq '^  malformed lines skipped: 0$'
-          echo "$out" | grep -Fq 'VERDICT: DETERMINISTIC'
-          echo "spike layout audit OK"
-
+      # WHAT IS LOST, stated rather than glossed: this was the layout regression
+      # guard that was INDEPENDENT of the TypeScript suite. It re-derived the
+      # subagent attribution join from the committed fixture tree with a
+      # different reader. `src/parser/attribution.test.ts` and
+      # `src/parser/corpus.test.ts` still assert that join against the same
+      # fixtures through the production path, so the property is covered - by
+      # one implementation instead of two. Restoring the second reader means
+      # bringing a copy of the audit into the public repository, and that is a
+      # scrub decision, not a CI one.
+      #
+      # The class this belongs to: a gate step naming a path the repository does
+      # not contain. Everything either workflow names was checked with
+      # `git check-ignore -v` on 2026-08-31; the only other ignored path is
+      # `dist/agent-deck.vsix` in release.yml, which is correct - it is produced
+      # by `npm run package` two steps above the step that reads it.
       - name: Install dependencies
         run: npm ci
 

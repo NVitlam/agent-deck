@@ -40,10 +40,12 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   AgentNode,
+  ApplyError,
   NormalizedHookEvent,
   RawHookPayload,
   SessionState,
   SubagentMeta,
+  ToolNode,
   TranscriptEntry,
   TreeNode,
 } from './events.js';
@@ -624,18 +626,19 @@ describe('R4: two interleaved sessions', () => {
       const isolated = await graftSession(join(slugDir, `${sessionId}.jsonl`));
       if (!isolated.ok) throw new Error('captured session refused');
       const state = model.sessionState(sessionId);
-      expect(state?.totals.inputTokens, sessionId).toBe(isolated.snapshot.totals.inputTokens);
-      expect(state?.totals.outputTokens, sessionId).toBe(isolated.snapshot.totals.outputTokens);
+      expect(state?.burn?.prompt, sessionId).toBe(isolated.snapshot.burn.prompt);
+      expect(state?.burn?.output, sessionId).toBe(isolated.snapshot.burn.output);
+      expect(state?.contextNow, sessionId).toStrictEqual(isolated.snapshot.contextNow);
       // Not yet computed, and 0 does not mean "this session was free".
       expect(state?.totals.costUsd, sessionId).toBe(0);
-      summed += isolated.snapshot.totals.outputTokens;
+      summed += isolated.snapshot.burn.output;
     }
     // A pooled accumulator would give every session the sum; assert no session
     // carries it (guarded so a hypothetical single-session capture cannot pass
     // this vacuously).
     if (sessionIds.length > 1) {
       for (const sessionId of sessionIds) {
-        expect(model.sessionState(sessionId)?.totals.outputTokens).not.toBe(summed);
+        expect(model.sessionState(sessionId)?.burn?.output).not.toBe(summed);
       }
     }
   });
@@ -759,7 +762,11 @@ describe('G2: a parser hard failure never reaches liveness', () => {
     expect(after?.liveness).toBe('unsupported');
     // G3: no partial tree. Not a smaller tree — no tree.
     expect(after?.root.children).toStrictEqual([]);
-    expect(after?.totals).toStrictEqual({ inputTokens: 0, outputTokens: 0, costUsd: 0 });
+    expect(after?.totals).toStrictEqual({ costUsd: 0 });
+    // A refused session reports zero tokens rather than the numbers it had:
+    // G3's 'never a partial tree' covers numbers too.
+    expect(after?.contextNow).toStrictEqual({ prompt: 0, output: 0 });
+    expect(after?.burn).toStrictEqual({ prompt: 0, output: 0 });
     expect(after?.spawnEdges).toStrictEqual([]);
     const serialized = JSON.stringify(serializeSessionState(after as SessionState));
     for (const id of beforeAgents) {
@@ -907,7 +914,7 @@ function baseState(): SessionState {
       label: 'root',
       status: 'running',
       spawnDepth: 0,
-      tokens: { in: 1, out: 2 },
+      contextNow: { prompt: 1, output: 2 }, burn: { prompt: 1, output: 2 },
       startedAt: 100,
       children: [
         {
@@ -924,7 +931,7 @@ function baseState(): SessionState {
           label: 'general-purpose: one',
           status: 'running',
           spawnDepth: 1,
-          tokens: { in: 3, out: 4 },
+          contextNow: { prompt: 3, output: 4 }, burn: { prompt: 3, output: 4 },
           startedAt: 110,
           children: [
             { id: 't2', toolName: 'Bash', status: 'running', inputPreview: 'ls' },
@@ -933,7 +940,7 @@ function baseState(): SessionState {
         },
       ],
     },
-    totals: { inputTokens: 4, outputTokens: 6, costUsd: 0 },
+    totals: { costUsd: 0 }, contextNow: { prompt: 4, output: 6 }, burn: { prompt: 4, output: 6 },
     spawnEdges: [
       { toolUseId: 't1', agentId: 'a1', parentNodeId: 'root', depth: 1, recordedDepth: 1 },
     ],
@@ -968,7 +975,8 @@ describe('snapshot/diff contract', () => {
     const agent = next.root.children[1] as AgentNode;
     agent.status = 'done';
     agent.endedAt = 500;
-    agent.tokens = { in: 9, out: 9 };
+    agent.contextNow = { prompt: 9, output: 9 };
+    agent.burn = { prompt: 18, output: 18 };
     const tool = agent.children[1];
     if (tool !== undefined && !isAgentNode(tool)) {
       tool.status = 'error';
@@ -1028,7 +1036,7 @@ describe('snapshot/diff contract', () => {
       label: 'was a tool',
       status: 'running',
       spawnDepth: 1,
-      tokens: { in: 0, out: 0 },
+      contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
       startedAt: 1,
       children: [],
     };
@@ -1051,15 +1059,122 @@ describe('snapshot/diff contract', () => {
     const next = baseState();
     next.liveness = 'ended';
     next.schemaOk = false;
-    next.totals = { inputTokens: 99, outputTokens: 1, costUsd: 0 };
+    next.totals = { costUsd: 0 };
+    next.contextNow = { prompt: 99, output: 1 };
+    next.burn = { prompt: 198, output: 2 };
     const patch = diffSessionState(prev, next);
     expect(patch?.tree).toBeUndefined();
     expect(patch?.fields).toStrictEqual({
       liveness: 'ended',
       schemaOk: false,
-      totals: { inputTokens: 99, outputTokens: 1, costUsd: 0 },
+      contextNow: { prompt: 99, output: 1 },
+      burn: { prompt: 198, output: 2 },
     });
     roundTrip(prev, next);
+  });
+
+  // -------------------------------------------------------------------------
+  // ToolNode.truncated — gate amendment B7
+  // -------------------------------------------------------------------------
+  // The CC engine never sets this flag; the OpenCode engine does. What is at
+  // stake here is not the flag's content but the EXACTNESS of the patch
+  // contract: `events.ts` states that apply(prev, diff(prev, next)) deep-equals
+  // `next` for any two states the model produces, and an optional field the
+  // patch cannot express breaks that property rather than under-reporting it.
+  // So all three transitions are pinned — set, changed, and cleared — and the
+  // clear has to remove the key rather than write `false`.
+
+  it('a tool node gaining truncated round-trips', () => {
+    const prev = baseState();
+    const next = baseState();
+    (next.root.children[0] as ToolNode).truncated = true;
+    const patch = diffSessionState(prev, next);
+    expect(patch?.tree).toContainEqual({
+      op: 'updateTool',
+      id: 't1',
+      fields: { truncated: true },
+    });
+    roundTrip(prev, next);
+  });
+
+  it('a tool node changing truncated from true to false round-trips as false, not as a clear', () => {
+    // `false` is the engine claiming the payload IS whole. That is a different
+    // statement from making no claim at all, and collapsing the two would tell
+    // a renderer a truncated payload is retrievable.
+    const prev = baseState();
+    (prev.root.children[0] as ToolNode).truncated = true;
+    const next = baseState();
+    (next.root.children[0] as ToolNode).truncated = false;
+    const patch = diffSessionState(prev, next);
+    expect(patch?.tree).toContainEqual({
+      op: 'updateTool',
+      id: 't1',
+      fields: { truncated: false },
+    });
+    const applied = applySessionPatch(prev, patch as NonNullable<typeof patch>);
+    expect((applied.root.children[0] as ToolNode).truncated).toBe(false);
+    roundTrip(prev, next);
+  });
+
+  it('a tool node losing truncated emits null and the key really goes away', () => {
+    const prev = baseState();
+    (prev.root.children[0] as ToolNode).truncated = true;
+    const next = baseState();
+    const patch = diffSessionState(prev, next);
+    expect(patch?.tree).toContainEqual({
+      op: 'updateTool',
+      id: 't1',
+      fields: { truncated: null },
+    });
+    const applied = applySessionPatch(prev, patch as NonNullable<typeof patch>);
+    const appliedTool = applied.root.children[0];
+    expect(appliedTool && 'truncated' in appliedTool).toBe(false);
+    roundTrip(prev, next);
+  });
+
+  // -------------------------------------------------------------------------
+  // SessionState.engine — gate amendment B2
+  // -------------------------------------------------------------------------
+  // These states are hand-built on purpose. `diffSessionState` can never see an
+  // engine change from the model — `stateOf` stamps `'cc'` on every state it
+  // produces and nothing can change a session's engine — so the branch is
+  // reachable only from literals. Nothing below claims otherwise.
+
+  it('two states carrying the same engine produce no patch at all', () => {
+    const prev = baseState();
+    prev.engine = 'cc';
+    const next = baseState();
+    next.engine = 'cc';
+    expect(diffSessionState(prev, next)).toBeUndefined();
+  });
+
+  it('an engine change is expressible and round-trips, though no engine produces one', () => {
+    const prev = baseState();
+    prev.engine = 'cc';
+    const next = baseState();
+    next.engine = 'opencode';
+    const patch = diffSessionState(prev, next);
+    expect(patch?.fields).toStrictEqual({ engine: 'opencode' });
+    expect(patch?.tree).toBeUndefined();
+    roundTrip(prev, next);
+  });
+
+  it('a stamped state going back to an UNSTAMPED one is inexpressible, and says nothing', () => {
+    // Recorded rather than papered over. `SessionFieldPatch.engine` has no
+    // `null` — unlike `ToolNodeFieldPatch.truncated` — so "the engine tag went
+    // away" cannot be put on the wire. This is therefore the one state pair for
+    // which apply(prev, diff(prev, next)) does NOT deep-equal `next`.
+    //
+    // It is safe because no state the model produces makes that transition:
+    // every one is stamped. What IS asserted is that the diff stays silent
+    // instead of emitting `engine: undefined`, which would be a patch claiming
+    // a change it cannot make and would be read back as "unchanged" anyway.
+    const prev = baseState();
+    prev.engine = 'cc';
+    const next = baseState();
+    expect(diffSessionState(prev, next)).toBeUndefined();
+    expect(applySessionPatch(prev, {}).engine).toBe('cc');
+    expect(applySessionPatch(next, {}).engine).toBeUndefined();
   });
 
   it('applying a patch does not mutate the state it was applied to', () => {
@@ -1074,20 +1189,124 @@ describe('snapshot/diff contract', () => {
     expect(JSON.stringify(prev)).toBe(snapshotBefore);
   });
 
-  it('an unapplicable patch throws rather than producing a wrong tree', () => {
+  /**
+   * DoD 5.5.1 SPLIT THIS TEST IN TWO, and the split is the whole point of the
+   * item. Before Phase 5.5 all four cases below threw, and the webview's catch
+   * discarded the entire patch — which is how one missing node became a
+   * session-long divergence (`AUDIT-2026-08-27` section 7.3, H5).
+   *
+   * Now: a DIVERGENCE (an id this tree does not have) is reported and skipped,
+   * and a PRODUCER BUG (a patch that would leave the session without an agent
+   * root) still throws.
+   */
+  it('a divergent op is reported and skipped, not thrown', () => {
     const prev = baseState();
-    expect(() => applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'nope' }] })).toThrow(
-      SessionPatchError,
+    const errors: ApplyError[] = [];
+    const collect = { onError: (e: ApplyError) => errors.push(e) };
+
+    const afterRemove = applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'nope' }] }, collect);
+    expect(errors.map((e) => e.op)).toEqual(['removeNode']);
+    expect(errors[0]?.id).toBe('nope');
+    // The tree is untouched: the op asked for a node to be absent and it is.
+    // `toStrictEqual` rather than a JSON compare — the reducer rebuilds every
+    // node, so key ORDER legitimately differs while the value does not.
+    expect(afterRemove.root).toStrictEqual(prev.root);
+
+    errors.length = 0;
+    applySessionPatch(
+      prev,
+      { tree: [{ op: 'insertNode', parentId: 't1', afterId: null, node: prev.root }] },
+      collect,
     );
+    expect(errors.map((e) => e.op)).toEqual(['insertNode']);
+    expect(errors[0]?.id).toBe('t1');
+
+    errors.length = 0;
+    applySessionPatch(
+      prev,
+      { tree: [{ op: 'reorderChildren', parentId: 'root', order: ['t1'] }] },
+      collect,
+    );
+    expect(errors.map((e) => e.op)).toEqual(['reorderChildren']);
+
+    // And with NO reporter the same patches are silent rather than fatal —
+    // which is what makes the reducer safe to call from a renderer that has
+    // nowhere to put an exception.
+    expect(() => applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'nope' }] })).not.toThrow();
+  });
+
+  it('a patch that would break the root invariant still throws', () => {
+    const prev = baseState();
+    // Removing the root cannot be a divergence: every session has one, and a
+    // producer that asks for this is broken rather than behind.
     expect(() => applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'root' }] })).toThrow(
       SessionPatchError,
     );
+    // Same class: the root must be an agent node.
     expect(() =>
-      applySessionPatch(prev, { tree: [{ op: 'insertNode', parentId: 't1', index: 0, node: prev.root }] }),
+      applySessionPatch(prev, {
+        tree: [{ op: 'replaceNode', id: 'root', node: prev.root.children[0] as TreeNode }],
+      }),
     ).toThrow(SessionPatchError);
+    // A reporter does not soften either one.
     expect(() =>
-      applySessionPatch(prev, { tree: [{ op: 'reorderChildren', parentId: 'root', order: ['t1'] }] }),
+      applySessionPatch(prev, { tree: [{ op: 'removeNode', id: 'root' }] }, { onError: () => {} }),
     ).toThrow(SessionPatchError);
+  });
+
+  /**
+   * THE REGRESSION TEST FOR THE SHIPPED DEFECT (DoD 5.5.1).
+   *
+   * Stage the exact `0.1.2` failure shape — a receiver whose child list is one
+   * node short of the sender's — then drive fifty further ops through it. With
+   * index-keyed inserts every one of those fifty landed in the wrong place or
+   * addressed a node that was not there. With sibling anchors the tree
+   * converges: every node the sender ever inserted is present at the end.
+   */
+  it('converges after a missing node instead of compounding (the 0.1.2 shape)', () => {
+    const prev = baseState();
+    // The receiver is missing one child the sender believes it has.
+    const short = structuredClone(prev) as SessionState;
+    const shortRoot = short.root as AgentNode;
+    const dropped = shortRoot.children[0] as TreeNode;
+    shortRoot.children = shortRoot.children.slice(1);
+
+    const errors: ApplyError[] = [];
+    let receiver: SessionState = short;
+    const ids: string[] = [];
+    for (let i = 0; i < 50; i += 1) {
+      const id = `late-${String(i)}`;
+      ids.push(id);
+      const node: ToolNode = {
+        id,
+        toolName: 'Bash',
+        status: 'done',
+        inputPreview: '',
+      };
+      // Anchored on the node inserted immediately before it, exactly as
+      // `diffNode` emits a run of consecutive inserts. The FIRST one anchors
+      // on the child the receiver is missing, which is the divergence.
+      const afterId = i === 0 ? dropped.id : `late-${String(i - 1)}`;
+      receiver = applySessionPatch(
+        receiver,
+        { tree: [{ op: 'insertNode', parentId: 'root', afterId, node }] },
+        { onError: (e) => errors.push(e) },
+      );
+    }
+
+    // Exactly ONE op could not be honoured as written — the first, whose
+    // anchor is the missing node. The other forty-nine anchored on nodes this
+    // tree does have, so they are not merely present, they are IN ORDER.
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.op).toBe('insertNode');
+    expect(errors[0]?.id).toBe(dropped.id);
+
+    const present = (receiver.root as AgentNode).children.map((c) => c.id);
+    for (const id of ids) expect(present).toContain(id);
+    // The run kept its relative order despite starting from a divergence.
+    const positions = ids.map((id) => present.indexOf(id));
+    const sorted = [...positions].sort((a, b) => a - b);
+    expect(positions).toEqual(sorted);
   });
 });
 
@@ -1538,5 +1757,103 @@ describe('SessionState.parked — the parked graft reaches the wire', () => {
     expect(refused?.parked).toStrictEqual([]);
     expect(refused?.root.children).toStrictEqual([]);
     expect(refused?.spawnEdges).toStrictEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The engine stamp — gate amendment B3
+// ---------------------------------------------------------------------------
+
+/**
+ * Until Phase 5 the CC engine identified itself by NOT setting a field, and
+ * absence was documented as reading `'cc'`. That is unassertable from outside:
+ * a state with no tag is indistinguishable from a state whose tag was dropped
+ * on the way through the bridge. From here the CC engine names itself, so a
+ * cross-engine isolation test can say which sessions must be unaffected.
+ *
+ * Everything below goes through `SessionModel` — `stateOf` is the production
+ * construction site and `toSessionState` in `graft.ts` has no production
+ * callers at all — so a stamp added only to a convenience helper would fail
+ * here rather than pass.
+ */
+describe('SessionState.engine — the CC engine stamps its own name', () => {
+  it('every state the model hands out is stamped cc, on both output paths', async () => {
+    const { sessionIds } = await fixtures();
+    const { model } = await replayInterleaved();
+    const snapshot = model.snapshot();
+    // Guard against a vacuous loop: an empty snapshot would satisfy every
+    // assertion below while measuring nothing.
+    expect(snapshot.length).toBeGreaterThan(0);
+    for (const state of snapshot) expect(state.engine, state.sessionId).toBe('cc');
+    for (const sessionId of sessionIds) {
+      expect(model.sessionState(sessionId)?.engine, sessionId).toBe('cc');
+    }
+    for (const state of model.allSessions()) expect(state.engine, state.sessionId).toBe('cc');
+  });
+
+  it('the stamp survives a diff and an apply, so the wire never loses it', async () => {
+    const { sessionIds } = await fixtures();
+    const { reconstructed } = await replayInterleaved();
+    for (const sessionId of sessionIds) {
+      // `reconstructed` is built by applying every emitted patch in order — the
+      // webview's own path — so this is the field surviving the reducer, not
+      // just the snapshot.
+      expect(reconstructed.get(sessionId)?.engine, sessionId).toBe('cc');
+    }
+  });
+
+  it('a REFUSED session is stamped too: G3 withholds the tree, not the identity', async () => {
+    const { workspacePath, sessionIds, replays } = await fixtures();
+    const slug = slugifyWorkspace(workspacePath);
+    const model = makeModel(workspacePath);
+    const sessionId = sessionIds[0] as string;
+    const replay = replays[0] as ReplaySession;
+    model.ingestTranscript(sessionId, slug, {
+      kind: 'main',
+      path: replay.main.path,
+      entries: replay.main.entries,
+    });
+    model.refuseSession(sessionId, slug, {
+      kind: 'schemaMismatch',
+      reason: 'injected refusal',
+    });
+    const refused = model.sessionState(sessionId);
+    expect(refused?.schemaOk).toBe(false);
+    expect(refused?.root.children).toStrictEqual([]);
+    expect(refused?.engine).toBe('cc');
+  });
+
+  it('no CC-produced tool node carries truncated - the flag belongs to the other engine', async () => {
+    // `ToolNode.truncated` is OpenCode's `state.metadata.truncated`. CC's
+    // `<persisted-output>` stub is the opposite mechanism: it offloads bytes to
+    // `tool-results/` and they are still there to read. This is why the golden
+    // serializer does not record the flag — it would be a constant `null` in
+    // every file here — and this test is what pins that reasoning instead.
+    const { model } = await replayInterleaved();
+    let toolNodes = 0;
+    for (const state of model.snapshot()) {
+      walk(state.root, (node: TreeNode) => {
+        if (isAgentNode(node)) return;
+        toolNodes += 1;
+        expect('truncated' in node, `${state.sessionId}/${node.id}`).toBe(false);
+      });
+    }
+    expect(toolNodes, 'no tool nodes were examined').toBeGreaterThan(0);
+  });
+
+  it('the golden serializer records the tag verbatim, never normalised', async () => {
+    // `state.engine ?? null`, not `?? 'cc'`. If the stamp were deleted the
+    // goldens must go to `null` and fail; normalising would make the committed
+    // files identical with and without B3, which is a golden that cannot
+    // observe the thing it exists to observe.
+    const { sessionIds } = await fixtures();
+    const { model } = await replayInterleaved();
+    for (const sessionId of sessionIds) {
+      const state = model.sessionState(sessionId) as SessionState;
+      expect(serializeSessionState(state).engine, sessionId).toBe('cc');
+    }
+    // A state that was never stamped serialises as `null`, not as `'cc'`.
+    const untagged = baseState();
+    expect(serializeSessionState(untagged).engine).toBeNull();
   });
 });

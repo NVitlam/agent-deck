@@ -4,11 +4,18 @@
   "workspaceMatch": true,
   "liveness": "live",
   "schemaOk": true,
+  "engine": "cc",
   "epochAnchor": "2026-08-18T21:56:22.855Z",
   "totals": {
-    "inputTokens": 18,
-    "outputTokens": 6861,
     "costUsd": 0
+  },
+  "contextNow": {
+    "prompt": 43263,
+    "output": 1611
+  },
+  "burn": {
+    "prompt": 312436,
+    "output": 6861
   },
   "spawnEdges": [
     {
@@ -23,12 +30,16 @@
     "node": "agent",
     "id": "root",
     "kind": "main",
-    "label": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+    "label": "Explore spike directory",
     "status": "running",
     "spawnDepth": 0,
-    "tokens": {
-      "in": 4,
-      "out": 1998
+    "contextNow": {
+      "prompt": 43263,
+      "output": 1611
+    },
+    "burn": {
+      "prompt": 83299,
+      "output": 1998
     },
     "startedAtOffsetMs": 0,
     "endedAtOffsetMs": null,
@@ -38,8 +49,8 @@
         "id": "toolu_018fbDjBX1ah7FTXs727doeC",
         "toolName": "Agent",
         "status": "done",
-        "inputPreview": "sha256:1959cd632d131a23:565",
-        "resultPreview": "sha256:9f0e01fa63461b84:566",
+        "inputPreview": "sha256:49cdfc105b3cdb27:565",
+        "resultPreview": "sha256:b54b57ce6609b9a4:566",
         "durationMs": 69943
       },
       {
@@ -49,9 +60,13 @@
         "label": "Explore: List contents of spike/",
         "status": "done",
         "spawnDepth": 1,
-        "tokens": {
-          "in": 14,
-          "out": 4863
+        "contextNow": {
+          "prompt": 43174,
+          "output": 2731
+        },
+        "burn": {
+          "prompt": 229137,
+          "output": 4863
         },
         "startedAtOffsetMs": 8244,
         "endedAtOffsetMs": 75962,
@@ -61,8 +76,8 @@
             "id": "toolu_011nTykNQkdSbgEZRZy3oNLA",
             "toolName": "Bash",
             "status": "done",
-            "inputPreview": "sha256:f8b937e60703bbe2:267",
-            "resultPreview": "sha256:424d95fa8e7f45ba:387",
+            "inputPreview": "sha256:0451a4e61fdc61ba:221",
+            "resultPreview": "sha256:e469531b700fd40d:272",
             "durationMs": 3931
           },
           {
@@ -70,7 +85,7 @@
             "id": "toolu_01FHSx2pnp4BRAi7vx14Rvjn",
             "toolName": "Bash",
             "status": "done",
-            "inputPreview": "sha256:47147faba15d6781:301",
+            "inputPreview": "sha256:8281da175c85a78c:278",
             "resultPreview": "sha256:16908e0d9c6700f2:109",
             "durationMs": 3663
           },
@@ -79,7 +94,7 @@
             "id": "toolu_01N7By6ZusBvjfxi53mooTa2",
             "toolName": "Read",
             "status": "done",
-            "inputPreview": "sha256:c08b2d3cc379f493:85",
+            "inputPreview": "sha256:ff3839dc10c877ad:62",
             "resultPreview": "sha256:45c3d51089f0efb0:567",
             "durationMs": 384
           },
@@ -88,7 +103,7 @@
             "id": "toolu_01YSoSzgLbvgcyCqGbsubsC3",
             "toolName": "Read",
             "status": "done",
-            "inputPreview": "sha256:4b39b0334c4bbedd:88",
+            "inputPreview": "sha256:82e20cabb9f71575:65",
             "resultPreview": "sha256:6c30f24c11c97d9b:567",
             "durationMs": 338
           },
@@ -97,7 +112,7 @@
             "id": "toolu_01UEhyCRWLpoqVNe1h5W3sJm",
             "toolName": "Read",
             "status": "done",
-            "inputPreview": "sha256:34f75d4b301b4d06:97",
+            "inputPreview": "sha256:9fa5893da13b2cd0:74",
             "resultPreview": "sha256:f01a2151aeb92dcf:566",
             "durationMs": 348
           },
@@ -106,7 +121,7 @@
             "id": "toolu_01UuJXnFE8fFhwaMxZaJyaY1",
             "toolName": "Read",
             "status": "done",
-            "inputPreview": "sha256:9d9e855c6c674089:99",
+            "inputPreview": "sha256:e58028b90463cc7d:76",
             "resultPreview": "sha256:e625b791991d45dd:566",
             "durationMs": 316
           },
@@ -115,8 +130,8 @@
             "id": "toolu_017NKCMxJb5XpZUf2U1jQTdC",
             "toolName": "Read",
             "status": "done",
-            "inputPreview": "sha256:3e7a9cf408ae1c23:86",
-            "resultPreview": "sha256:b8fd93640b9f8ca3:567",
+            "inputPreview": "sha256:7cab20e0ea072156:63",
+            "resultPreview": "sha256:d20a58fae5d00593:567",
             "durationMs": 305
           },
           {
@@ -124,7 +139,7 @@
             "id": "toolu_01AVV2rC7MzgrLELpdhdQ7rN",
             "toolName": "Bash",
             "status": "done",
-            "inputPreview": "sha256:b19c2f571152cac9:340",
+            "inputPreview": "sha256:c82eacf658b0c65e:317",
             "resultPreview": "sha256:f7d3bdc57cc1bd16:241",
             "durationMs": 838
           },
@@ -133,7 +148,7 @@
             "id": "toolu_017RzoiVeMaTR129YtyEkpvS",
             "toolName": "Grep",
             "status": "done",
-            "inputPreview": "sha256:051f0118cf87e1a8:185",
+            "inputPreview": "sha256:7b498b085e01dd02:162",
             "resultPreview": "sha256:74198b9c2dd9ea18:111",
             "durationMs": 414
           },
@@ -142,8 +157,8 @@
             "id": "toolu_019WMq2qnQ3wR6MxHTNgyKHu",
             "toolName": "Bash",
             "status": "done",
-            "inputPreview": "sha256:210ba3beb3bfe2de:181",
-            "resultPreview": "sha256:47ccefc99d9ea6d4:276",
+            "inputPreview": "sha256:008dc8f809fefe5f:158",
+            "resultPreview": "sha256:09af621043c0737f:266",
             "durationMs": 519
           },
           {
@@ -151,8 +166,8 @@
             "id": "toolu_01U6zdM6JSvkptyWkiddCj4V",
             "toolName": "Bash",
             "status": "done",
-            "inputPreview": "sha256:4ff325969151fede:565",
-            "resultPreview": "sha256:e66b2f50c94e3782:565",
+            "inputPreview": "sha256:ccf12800f6520c12:565",
+            "resultPreview": "sha256:313b67cf85099c16:565",
             "durationMs": 2579
           }
         ]

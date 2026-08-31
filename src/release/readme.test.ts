@@ -359,6 +359,64 @@ describe('README exists and ships clean', () => {
     expect(MOVED.some((re) => re.test('see [evidence](docs/evidence/x.md)'))).toBe(true);
   });
 
+  /**
+   * THE HOW-GUARD — the README says WHAT, and points at SECURITY.md for HOW.
+   *
+   * The `Trust` section's job is a promise a user can act on: read-only, zero
+   * egress, nothing displayed that should not be. It carried a paragraph
+   * explaining the *mechanism* of the one qualification to "read-only" —
+   * write-ahead logging, the index file SQLite touches beside a database, which
+   * of OpenCode's files are never opened. All true, all measured, and all in
+   * `SECURITY.md` §2 already. In a README it asks a reader to evaluate an
+   * implementation detail in order to decide whether to trust a claim, which is
+   * the opposite of what that section is for.
+   *
+   * So the paragraph is one sentence now, and this guard keeps it that way.
+   *
+   * **SCOPE, stated because a guard whose reach is guessed at is worse than
+   * none.** The pattern set is the storage-mechanism vocabulary of the
+   * paragraph that was removed, and nothing wider. It is deliberately NOT a
+   * general "no implementation nouns" lint: the version-window section names a
+   * join key and the subagent directory convention on purpose, because there
+   * the mechanism IS the user-facing rule — what refuses a session. Widening
+   * this to flag those would be a different decision, and it is the user's.
+   *
+   * Case-insensitive, and that is not cosmetic: a case-sensitive `WAL` misses
+   * `Wal`/`wal`, and a `WAL` without word boundaries matches "walks back out"
+   * in the focus paragraph — measured, it does.
+   */
+  const HOW_TERMS =
+    /\bWAL\b|\bSQLite\b|\bsidecar\b|\bindex file\b|\bwrite-ahead\b|-shm\b/i;
+
+  it('the HOW-guard: no storage mechanism in the README, only a pointer to SECURITY.md', () => {
+    const hits = README.split('\n')
+      .map((line, i) => ({ n: i + 1, line }))
+      .filter((row) => HOW_TERMS.test(row.line));
+    expect(hits.map((h) => `${String(h.n)}: ${h.line.trim()}`)).toEqual([]);
+
+    // Vacuity controls. The pattern must catch the sentences it was built from
+    // — otherwise this passes forever over a README that says anything at all.
+    expect(HOW_TERMS.test('OpenCode’s session store is a database in WAL mode')).toBe(true);
+    expect(HOW_TERMS.test('causes SQLite to touch its own index file beside it')).toBe(true);
+    expect(HOW_TERMS.test('it writes the -shm sidecar')).toBe(true);
+    // ...and must NOT catch the word it used to, before the boundaries went in.
+    expect(HOW_TERMS.test('The breadcrumb walks back out')).toBe(false);
+  });
+
+  it('the qualification survives as a claim, pointing at where it is measured', () => {
+    // Removing the mechanism must not remove the ADMISSION. The sentence has to
+    // still say there IS a qualification and where the measurement lives, or
+    // this trade would have bought tidiness by dropping a disclosure.
+    const qualification = README.split('\n\n').find((p) => /qualification/i.test(p));
+    expect(qualification, 'the README no longer admits any qualification').toBeDefined();
+    expect(qualification ?? '').toMatch(/read-only/i);
+    expect(qualification ?? '').toContain('SECURITY.md');
+    // And the link is a real one, to a file that exists and carries a §2.
+    expect(README).toContain('[`SECURITY.md`](SECURITY.md)');
+    expect(existsSync(join(ROOT, 'SECURITY.md'))).toBe(true);
+    expect(readText('SECURITY.md')).toMatch(/##\s*2\./);
+  });
+
   it('ships a CONTRIBUTING.md that states the constraints a contributor needs', () => {
     // The constraints used to be readable in `CLAUDE.md`, which is no longer
     // here. Without this file the split would have removed a contributor's only

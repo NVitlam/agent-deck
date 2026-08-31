@@ -81,12 +81,8 @@ Agent Deck observes. It never acts.
 - **Secret-bearing storage is never opened.** On the OpenCode side this is enumerated by name
   rather than summarised - see [Also observes OpenCode](#also-observes-opencode).
 
-**One precise qualification, because "never writes anything" would be the wrong claim.** OpenCode's
-session store is a database in WAL mode, and opening a WAL database *read-only* causes SQLite to
-touch its own index file beside it. The database itself is never modified, and `auth.json`, `log/`,
-`snapshot/`, `repos/` and `tool-output/` are never opened at all. So the rule is **no writes to any
-file the observed engine treats as content** — every reader of a WAL database touches that index
-file, OpenCode's own process included. [`SECURITY.md`](SECURITY.md) §2 carries the measurements.
+The single qualification to "read-only" — what a read of OpenCode's store touches beside it — is
+measured in [`SECURITY.md`](SECURITY.md) §2.
 
 All state lives in memory and is discarded when the window closes.
 

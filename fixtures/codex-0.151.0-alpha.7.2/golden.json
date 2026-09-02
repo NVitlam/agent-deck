@@ -1,0 +1,2733 @@
+{
+  "anchor_cli_version": "0.151.0-alpha.7.2",
+  "corpus": "codex-0.151.0-alpha.7.2",
+  "generator": "scripts/codex-golden.mjs",
+  "runs": [
+    {
+      "dialect": "v2",
+      "dialect_evidence": {
+        "exec_toolsets": [
+          "custom_tool_call:exec"
+        ],
+        "models": [
+          "gpt-5.6-terra"
+        ],
+        "session_meta_multi_agent_version": [
+          "v2"
+        ],
+        "spawn_namespaces": [
+          "collaboration"
+        ],
+        "turn_context_multi_agent_version": [
+          "v2"
+        ]
+      },
+      "dialect_source": "turn_context.multi_agent_version",
+      "hook_join": {
+        "envelope_tool_use_id_equals_raw": 12,
+        "events": {
+          "PostToolUse": 6,
+          "PreToolUse": 6,
+          "SessionStart": 1,
+          "Stop": 1,
+          "SubagentStart": 1,
+          "SubagentStop": 1
+        },
+        "main_thread_records": 12,
+        "malformed_lines": 0,
+        "records": 16,
+        "records_with_agent_id": 4,
+        "records_with_tool_use_id": 12,
+        "resolves_both": 4,
+        "resolves_call_id": 4,
+        "resolves_call_id_only": 0,
+        "resolves_item_id": 12,
+        "resolves_item_id_only": 8,
+        "resolves_neither": 0,
+        "resolves_union": 12,
+        "stream_present": true
+      },
+      "liveness": {
+        "agents": [
+          {
+            "agent_id": "01a063dd-883a-7523-a2da-30b0c7367d66",
+            "agent_transcript_path_on_stop": true,
+            "distinct_stop_turn_ids": 1,
+            "distinct_turn_ids": 1,
+            "subagent_start_count": 1,
+            "subagent_stop_count": 1,
+            "turn_ids": [
+              "01a063dd-88ec-7043-b737-9892985eeb05"
+            ]
+          }
+        ],
+        "agents_with_multiple_stops": 0,
+        "session_start_count": 1,
+        "stop_count": 1,
+        "subagent_start_count": 1,
+        "subagent_stop_count": 1,
+        "subagent_stops_without_a_start": 0
+      },
+      "redaction": {
+        "ciphertext_bytes": 4588,
+        "ciphertext_sites": [
+          {
+            "bytes": 268,
+            "count": 1,
+            "field_path": "response_item/agent_message.content[].encrypted_content"
+          },
+          {
+            "bytes": 268,
+            "count": 1,
+            "field_path": "response_item/function_call.arguments{spawn_agent}.message"
+          },
+          {
+            "bytes": 4052,
+            "count": 3,
+            "field_path": "response_item/reasoning.encrypted_content"
+          }
+        ],
+        "ciphertext_strings": 5,
+        "encrypted_bytes_copied_into_golden": 0,
+        "reasoning_completed_items": 3,
+        "reasoning_response_items": 3,
+        "reasoning_with_non_empty_summary": 0,
+        "spawn_messages_encrypted": 1,
+        "spawn_messages_plaintext": 0
+      },
+      "run": "baseline",
+      "sizes": {
+        "hook_stream_bytes": 13609,
+        "longest_record": {
+          "file": "rollout-2026-09-02T23-43-54-01a063dd-2cc6-7940-9df9-57a1e53017b8.jsonl",
+          "ordinal": 2,
+          "type": "response_item/message"
+        },
+        "longest_record_bytes": 9457,
+        "transcript_bytes_total": 106871
+      },
+      "spawn_summary": {
+        "count": 1,
+        "refused": 0,
+        "resolved_to_child": 1,
+        "unresolved": 0
+      },
+      "spawns": [
+        {
+          "activity_agent_path": {
+            "present": true,
+            "value": "/root/alpha"
+          },
+          "activity_agent_thread_id": "01a063dd-883a-7523-a2da-30b0c7367d66",
+          "argument_keys": [
+            "fork_turns",
+            "message",
+            "task_name"
+          ],
+          "call_id": "call_38XDXjnF492kYOd5HFCHTQAN",
+          "child_resolved_by": "output_task_name_equals_agent_path",
+          "child_thread_id": "01a063dd-883a-7523-a2da-30b0c7367d66",
+          "file": "rollout-2026-09-02T23-43-54-01a063dd-2cc6-7940-9df9-57a1e53017b8.jsonl",
+          "item_id": "call_38XDXjnF492kYOd5HFCHTQAN",
+          "item_type": "SubAgentActivity",
+          "message_bytes": 268,
+          "message_encrypted": true,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 24,
+          "output_agent_id": null,
+          "output_nickname": null,
+          "output_present": true,
+          "output_task_name": "/root/alpha",
+          "refusal_text": null,
+          "refused": false,
+          "requested_task_name": "alpha",
+          "thread_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8"
+        }
+      ],
+      "thread_summary": {
+        "agent_path_absent": 1,
+        "agent_path_present": 1,
+        "count": 2,
+        "max_depth": 1,
+        "spawn_agent_path_null": 0,
+        "subagent_threads": 1,
+        "user_threads": 1
+      },
+      "threads": [
+        {
+          "agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "agent_path": {
+            "present": false,
+            "value": null
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 2,
+          "declared_in_files": 2,
+          "forked_from_id": {
+            "present": false,
+            "value": null
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 0,
+          "multi_agent_version": {
+            "present": false,
+            "value": null
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-02T23-43-54-01a063dd-2cc6-7940-9df9-57a1e53017b8.jsonl",
+          "parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "records_in_owning_file": 42,
+          "session_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+          "spawn_agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_path": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_role": {
+            "present": false,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": false,
+            "value": null
+          },
+          "spawn_parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "spawn_present": false,
+          "subagent_history_start_ordinal": {
+            "present": false,
+            "value": null
+          },
+          "thread_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+          "thread_source": "user"
+        },
+        {
+          "agent_nickname": {
+            "present": true,
+            "value": "Socrates"
+          },
+          "agent_path": {
+            "present": true,
+            "value": "/root/alpha"
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 1,
+          "declared_in_files": 1,
+          "forked_from_id": {
+            "present": true,
+            "value": "01a063dd-2cc6-7940-9df9-57a1e53017b8"
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 9,
+          "multi_agent_version": {
+            "present": true,
+            "value": "v2"
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-02T23-44-17-01a063dd-883a-7523-a2da-30b0c7367d66.jsonl",
+          "parent_thread_id": {
+            "present": true,
+            "value": "01a063dd-2cc6-7940-9df9-57a1e53017b8"
+          },
+          "records_in_owning_file": 30,
+          "session_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+          "spawn_agent_nickname": {
+            "present": true,
+            "value": "Socrates"
+          },
+          "spawn_agent_path": {
+            "present": true,
+            "value": "/root/alpha"
+          },
+          "spawn_agent_role": {
+            "present": true,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": true,
+            "value": 1
+          },
+          "spawn_parent_thread_id": {
+            "present": true,
+            "value": "01a063dd-2cc6-7940-9df9-57a1e53017b8"
+          },
+          "spawn_present": true,
+          "subagent_history_start_ordinal": {
+            "present": true,
+            "value": 9
+          },
+          "thread_id": "01a063dd-883a-7523-a2da-30b0c7367d66",
+          "thread_source": "subagent"
+        }
+      ],
+      "tool_call_summary": {
+        "by_id_relation": {
+          "item_id_distinct_from_call_id": 4,
+          "item_id_equals_call_id": 2,
+          "no_item": 0
+        },
+        "call_ids_that_are_also_item_ids": 2,
+        "completed_items_claimed_by_no_tool_call": {
+          "AgentMessage": 4,
+          "Reasoning": 3,
+          "SubAgentActivity": 1,
+          "UserMessage": 1
+        },
+        "count": 6,
+        "distinct_call_ids": 6,
+        "distinct_item_ids": 15
+      },
+      "tool_calls": [
+        {
+          "call_id": "call_yYjYGALozkxlZyrVDuVMtS1P",
+          "file": "rollout-2026-09-02T23-43-54-01a063dd-2cc6-7940-9df9-57a1e53017b8.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-9b8cce02-a121-41d4-8fa5-60fce8ebf0e6",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 12,
+          "thread_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8"
+        },
+        {
+          "call_id": "call_BfF9zZwbLUIW9hNNSTjG6mNF",
+          "file": "rollout-2026-09-02T23-43-54-01a063dd-2cc6-7940-9df9-57a1e53017b8.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-536dbc77-c27b-4a36-b6c7-529edfb5cac3",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 16,
+          "thread_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8"
+        },
+        {
+          "call_id": "call_weQrsiEdMNYJWbKKJ0u9KiHl",
+          "file": "rollout-2026-09-02T23-43-54-01a063dd-2cc6-7940-9df9-57a1e53017b8.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-c1d51273-6641-407d-acd5-eb93f550a1e6",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 20,
+          "thread_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8"
+        },
+        {
+          "call_id": "call_38XDXjnF492kYOd5HFCHTQAN",
+          "file": "rollout-2026-09-02T23-43-54-01a063dd-2cc6-7940-9df9-57a1e53017b8.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_38XDXjnF492kYOd5HFCHTQAN",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 24,
+          "thread_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8"
+        },
+        {
+          "call_id": "call_dKiZQmrZXtsZrSMPNizQr6zo",
+          "file": "rollout-2026-09-02T23-43-54-01a063dd-2cc6-7940-9df9-57a1e53017b8.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_dKiZQmrZXtsZrSMPNizQr6zo",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 31,
+          "thread_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8"
+        },
+        {
+          "call_id": "call_dP6fNl2yPKft1bUhKXYdaA4K",
+          "file": "rollout-2026-09-02T23-44-17-01a063dd-883a-7523-a2da-30b0c7367d66.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-436200da-b16a-48e0-9d1d-4aab3b300f95",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 20,
+          "thread_id": "01a063dd-883a-7523-a2da-30b0c7367d66"
+        }
+      ],
+      "transcripts": [
+        {
+          "bytes": 50367,
+          "file": "rollout-2026-09-02T23-43-54-01a063dd-2cc6-7940-9df9-57a1e53017b8.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+          "records": 42,
+          "session_meta_count": 1
+        },
+        {
+          "bytes": 56504,
+          "file": "rollout-2026-09-02T23-44-17-01a063dd-883a-7523-a2da-30b0c7367d66.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a063dd-883a-7523-a2da-30b0c7367d66",
+          "records": 30,
+          "session_meta_count": 2
+        }
+      ]
+    },
+    {
+      "dialect": "v2",
+      "dialect_evidence": {
+        "exec_toolsets": [
+          "custom_tool_call:exec"
+        ],
+        "models": [
+          "gpt-5.6-terra"
+        ],
+        "session_meta_multi_agent_version": [
+          "v2"
+        ],
+        "spawn_namespaces": [
+          "collaboration"
+        ],
+        "turn_context_multi_agent_version": [
+          "v2"
+        ]
+      },
+      "dialect_source": "turn_context.multi_agent_version",
+      "hook_join": {
+        "envelope_tool_use_id_equals_raw": 21,
+        "events": {
+          "PostToolUse": 10,
+          "PreToolUse": 11,
+          "SessionStart": 1,
+          "Stop": 1,
+          "SubagentStart": 2,
+          "SubagentStop": 2
+        },
+        "main_thread_records": 11,
+        "malformed_lines": 0,
+        "records": 27,
+        "records_with_agent_id": 16,
+        "records_with_tool_use_id": 21,
+        "resolves_both": 14,
+        "resolves_call_id": 17,
+        "resolves_call_id_only": 3,
+        "resolves_item_id": 18,
+        "resolves_item_id_only": 4,
+        "resolves_neither": 0,
+        "resolves_union": 21,
+        "stream_present": true
+      },
+      "liveness": {
+        "agents": [
+          {
+            "agent_id": "01a0641e-f36c-7503-be16-25989a8aa7b2",
+            "agent_transcript_path_on_stop": true,
+            "distinct_stop_turn_ids": 1,
+            "distinct_turn_ids": 1,
+            "subagent_start_count": 1,
+            "subagent_stop_count": 1,
+            "turn_ids": [
+              "01a0641e-f408-7843-88b3-24da31aaa702"
+            ]
+          },
+          {
+            "agent_id": "01a0641f-2ad6-7173-831c-bdbc535f874a",
+            "agent_transcript_path_on_stop": true,
+            "distinct_stop_turn_ids": 1,
+            "distinct_turn_ids": 1,
+            "subagent_start_count": 1,
+            "subagent_stop_count": 1,
+            "turn_ids": [
+              "01a0641f-2b5b-70c3-ad47-045115d68edd"
+            ]
+          }
+        ],
+        "agents_with_multiple_stops": 0,
+        "session_start_count": 1,
+        "stop_count": 1,
+        "subagent_start_count": 2,
+        "subagent_stop_count": 2,
+        "subagent_stops_without_a_start": 0
+      },
+      "redaction": {
+        "ciphertext_bytes": 19672,
+        "ciphertext_sites": [
+          {
+            "bytes": 1712,
+            "count": 5,
+            "field_path": "response_item/agent_message.content[].encrypted_content"
+          },
+          {
+            "bytes": 1088,
+            "count": 3,
+            "field_path": "response_item/function_call.arguments{send_message}.message"
+          },
+          {
+            "bytes": 916,
+            "count": 3,
+            "field_path": "response_item/function_call.arguments{spawn_agent}.message"
+          },
+          {
+            "bytes": 15956,
+            "count": 11,
+            "field_path": "response_item/reasoning.encrypted_content"
+          }
+        ],
+        "ciphertext_strings": 22,
+        "encrypted_bytes_copied_into_golden": 0,
+        "reasoning_completed_items": 11,
+        "reasoning_response_items": 11,
+        "reasoning_with_non_empty_summary": 0,
+        "spawn_messages_encrypted": 3,
+        "spawn_messages_plaintext": 0
+      },
+      "run": "dup-names",
+      "sizes": {
+        "hook_stream_bytes": 26486,
+        "longest_record": {
+          "file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "ordinal": 2,
+          "type": "response_item/message"
+        },
+        "longest_record_bytes": 9456,
+        "transcript_bytes_total": 190282
+      },
+      "spawn_summary": {
+        "count": 3,
+        "refused": 1,
+        "resolved_to_child": 2,
+        "unresolved": 0
+      },
+      "spawns": [
+        {
+          "activity_agent_path": {
+            "present": true,
+            "value": "/root/dup"
+          },
+          "activity_agent_thread_id": "01a0641e-f36c-7503-be16-25989a8aa7b2",
+          "argument_keys": [
+            "fork_turns",
+            "message",
+            "task_name"
+          ],
+          "call_id": "call_QYxobYOYX1Zhq3985RBjy44q",
+          "child_resolved_by": "output_task_name_equals_agent_path",
+          "child_thread_id": "01a0641e-f36c-7503-be16-25989a8aa7b2",
+          "file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "item_id": "call_QYxobYOYX1Zhq3985RBjy44q",
+          "item_type": "SubAgentActivity",
+          "message_bytes": 292,
+          "message_encrypted": true,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 14,
+          "output_agent_id": null,
+          "output_nickname": null,
+          "output_present": true,
+          "output_task_name": "/root/dup",
+          "refusal_text": null,
+          "refused": false,
+          "requested_task_name": "dup",
+          "thread_id": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+        },
+        {
+          "activity_agent_path": {
+            "present": false,
+            "value": null
+          },
+          "activity_agent_thread_id": null,
+          "argument_keys": [
+            "fork_turns",
+            "message",
+            "task_name"
+          ],
+          "call_id": "call_7E4FZoTXfCxAwq4V7oPNzlxU",
+          "child_resolved_by": "refused",
+          "child_thread_id": null,
+          "file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "item_id": null,
+          "item_type": null,
+          "message_bytes": 292,
+          "message_encrypted": true,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 19,
+          "output_agent_id": null,
+          "output_nickname": null,
+          "output_present": true,
+          "output_task_name": null,
+          "refusal_text": "agent path `/root/dup` already exists",
+          "refused": true,
+          "requested_task_name": "dup",
+          "thread_id": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+        },
+        {
+          "activity_agent_path": {
+            "present": true,
+            "value": "/root/dup/dup"
+          },
+          "activity_agent_thread_id": "01a0641f-2ad6-7173-831c-bdbc535f874a",
+          "argument_keys": [
+            "fork_turns",
+            "message",
+            "task_name"
+          ],
+          "call_id": "call_5D1irRt1uKYTsMdfl8Uh86Ch",
+          "child_resolved_by": "output_task_name_equals_agent_path",
+          "child_thread_id": "01a0641f-2ad6-7173-831c-bdbc535f874a",
+          "file": "rollout-2026-09-03T00-55-45-01a0641e-f36c-7503-be16-25989a8aa7b2.jsonl",
+          "item_id": "call_5D1irRt1uKYTsMdfl8Uh86Ch",
+          "item_type": "SubAgentActivity",
+          "message_bytes": 332,
+          "message_encrypted": true,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 31,
+          "output_agent_id": null,
+          "output_nickname": null,
+          "output_present": true,
+          "output_task_name": "/root/dup/dup",
+          "refusal_text": null,
+          "refused": false,
+          "requested_task_name": "dup",
+          "thread_id": "01a0641e-f36c-7503-be16-25989a8aa7b2"
+        }
+      ],
+      "thread_summary": {
+        "agent_path_absent": 1,
+        "agent_path_present": 2,
+        "count": 3,
+        "max_depth": 2,
+        "spawn_agent_path_null": 0,
+        "subagent_threads": 2,
+        "user_threads": 1
+      },
+      "threads": [
+        {
+          "agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "agent_path": {
+            "present": false,
+            "value": null
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 2,
+          "declared_in_files": 2,
+          "forked_from_id": {
+            "present": false,
+            "value": null
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 0,
+          "multi_agent_version": {
+            "present": false,
+            "value": null
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "records_in_owning_file": 48,
+          "session_id": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+          "spawn_agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_path": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_role": {
+            "present": false,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": false,
+            "value": null
+          },
+          "spawn_parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "spawn_present": false,
+          "subagent_history_start_ordinal": {
+            "present": false,
+            "value": null
+          },
+          "thread_id": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+          "thread_source": "user"
+        },
+        {
+          "agent_nickname": {
+            "present": true,
+            "value": "Hume"
+          },
+          "agent_path": {
+            "present": true,
+            "value": "/root/dup"
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 2,
+          "declared_in_files": 2,
+          "forked_from_id": {
+            "present": true,
+            "value": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 9,
+          "multi_agent_version": {
+            "present": true,
+            "value": "v2"
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-55-45-01a0641e-f36c-7503-be16-25989a8aa7b2.jsonl",
+          "parent_thread_id": {
+            "present": true,
+            "value": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+          },
+          "records_in_owning_file": 57,
+          "session_id": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+          "spawn_agent_nickname": {
+            "present": true,
+            "value": "Hume"
+          },
+          "spawn_agent_path": {
+            "present": true,
+            "value": "/root/dup"
+          },
+          "spawn_agent_role": {
+            "present": true,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": true,
+            "value": 1
+          },
+          "spawn_parent_thread_id": {
+            "present": true,
+            "value": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+          },
+          "spawn_present": true,
+          "subagent_history_start_ordinal": {
+            "present": true,
+            "value": 9
+          },
+          "thread_id": "01a0641e-f36c-7503-be16-25989a8aa7b2",
+          "thread_source": "subagent"
+        },
+        {
+          "agent_nickname": {
+            "present": true,
+            "value": "Einstein"
+          },
+          "agent_path": {
+            "present": true,
+            "value": "/root/dup/dup"
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 1,
+          "declared_in_files": 1,
+          "forked_from_id": {
+            "present": true,
+            "value": "01a0641e-f36c-7503-be16-25989a8aa7b2"
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 13,
+          "multi_agent_version": {
+            "present": true,
+            "value": "v2"
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-55-59-01a0641f-2ad6-7173-831c-bdbc535f874a.jsonl",
+          "parent_thread_id": {
+            "present": true,
+            "value": "01a0641e-f36c-7503-be16-25989a8aa7b2"
+          },
+          "records_in_owning_file": 38,
+          "session_id": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+          "spawn_agent_nickname": {
+            "present": true,
+            "value": "Einstein"
+          },
+          "spawn_agent_path": {
+            "present": true,
+            "value": "/root/dup/dup"
+          },
+          "spawn_agent_role": {
+            "present": true,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": true,
+            "value": 2
+          },
+          "spawn_parent_thread_id": {
+            "present": true,
+            "value": "01a0641e-f36c-7503-be16-25989a8aa7b2"
+          },
+          "spawn_present": true,
+          "subagent_history_start_ordinal": {
+            "present": true,
+            "value": 13
+          },
+          "thread_id": "01a0641f-2ad6-7173-831c-bdbc535f874a",
+          "thread_source": "subagent"
+        }
+      ],
+      "tool_call_summary": {
+        "by_id_relation": {
+          "item_id_distinct_from_call_id": 2,
+          "item_id_equals_call_id": 7,
+          "no_item": 2
+        },
+        "call_ids_that_are_also_item_ids": 7,
+        "completed_items_claimed_by_no_tool_call": {
+          "AgentMessage": 6,
+          "Reasoning": 11,
+          "SubAgentActivity": 2,
+          "UserMessage": 1
+        },
+        "count": 11,
+        "distinct_call_ids": 11,
+        "distinct_item_ids": 29
+      },
+      "tool_calls": [
+        {
+          "call_id": "call_QYxobYOYX1Zhq3985RBjy44q",
+          "file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_QYxobYOYX1Zhq3985RBjy44q",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 14,
+          "thread_id": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+        },
+        {
+          "call_id": "call_7E4FZoTXfCxAwq4V7oPNzlxU",
+          "file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "id_relation": "no_item",
+          "item_id": null,
+          "item_type": null,
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 19,
+          "thread_id": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+        },
+        {
+          "call_id": "call_MWWGCXxUybFEym3wszCb7oSU",
+          "file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_MWWGCXxUybFEym3wszCb7oSU",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "send_message",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 24,
+          "thread_id": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+        },
+        {
+          "call_id": "call_EGeepYSTLZedKRiycpr2ACL1",
+          "file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_EGeepYSTLZedKRiycpr2ACL1",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 30,
+          "thread_id": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+        },
+        {
+          "call_id": "call_qvoq6xY07TwBqp1xE7K9BFVM",
+          "file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "id_relation": "no_item",
+          "item_id": null,
+          "item_type": null,
+          "kind": "function_call",
+          "name": "list_agents",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 38,
+          "thread_id": "01a0641e-d278-7230-a2c7-e5810d6d8327"
+        },
+        {
+          "call_id": "call_LoxmmiWjz6FUudtvqCgy2jCX",
+          "file": "rollout-2026-09-03T00-55-45-01a0641e-f36c-7503-be16-25989a8aa7b2.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-68149016-f5de-41cf-8863-802b06cbab54",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 20,
+          "thread_id": "01a0641e-f36c-7503-be16-25989a8aa7b2"
+        },
+        {
+          "call_id": "call_5D1irRt1uKYTsMdfl8Uh86Ch",
+          "file": "rollout-2026-09-03T00-55-45-01a0641e-f36c-7503-be16-25989a8aa7b2.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_5D1irRt1uKYTsMdfl8Uh86Ch",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 31,
+          "thread_id": "01a0641e-f36c-7503-be16-25989a8aa7b2"
+        },
+        {
+          "call_id": "call_dF41aKRttWqqziwFQgMnBX7M",
+          "file": "rollout-2026-09-03T00-55-45-01a0641e-f36c-7503-be16-25989a8aa7b2.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_dF41aKRttWqqziwFQgMnBX7M",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 38,
+          "thread_id": "01a0641e-f36c-7503-be16-25989a8aa7b2"
+        },
+        {
+          "call_id": "call_tZSf3sxmHVO1th298RhoNMKX",
+          "file": "rollout-2026-09-03T00-55-45-01a0641e-f36c-7503-be16-25989a8aa7b2.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_tZSf3sxmHVO1th298RhoNMKX",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "send_message",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 47,
+          "thread_id": "01a0641e-f36c-7503-be16-25989a8aa7b2"
+        },
+        {
+          "call_id": "call_MSQPR3pPwoaXaPzneoNztLJQ",
+          "file": "rollout-2026-09-03T00-55-59-01a0641f-2ad6-7173-831c-bdbc535f874a.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-23229206-ec81-426d-83cb-84f95bcc3455",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 24,
+          "thread_id": "01a0641f-2ad6-7173-831c-bdbc535f874a"
+        },
+        {
+          "call_id": "call_eCkOadJt5J7wyCfQbSl6KJ46",
+          "file": "rollout-2026-09-03T00-55-59-01a0641f-2ad6-7173-831c-bdbc535f874a.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_eCkOadJt5J7wyCfQbSl6KJ46",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "send_message",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 30,
+          "thread_id": "01a0641f-2ad6-7173-831c-bdbc535f874a"
+        }
+      ],
+      "transcripts": [
+        {
+          "bytes": 53860,
+          "file": "rollout-2026-09-03T00-55-36-01a0641e-d278-7230-a2c7-e5810d6d8327.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+          "records": 48,
+          "session_meta_count": 1
+        },
+        {
+          "bytes": 74787,
+          "file": "rollout-2026-09-03T00-55-45-01a0641e-f36c-7503-be16-25989a8aa7b2.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641e-f36c-7503-be16-25989a8aa7b2",
+          "records": 57,
+          "session_meta_count": 2
+        },
+        {
+          "bytes": 61635,
+          "file": "rollout-2026-09-03T00-55-59-01a0641f-2ad6-7173-831c-bdbc535f874a.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641f-2ad6-7173-831c-bdbc535f874a",
+          "records": 38,
+          "session_meta_count": 2
+        }
+      ]
+    },
+    {
+      "dialect": "v1",
+      "dialect_evidence": {
+        "exec_toolsets": [
+          "function_call:exec_command"
+        ],
+        "models": [
+          "gpt-5.4-mini"
+        ],
+        "session_meta_multi_agent_version": [],
+        "spawn_namespaces": [],
+        "turn_context_multi_agent_version": [
+          "v1"
+        ]
+      },
+      "dialect_source": "turn_context.multi_agent_version",
+      "hook_join": {
+        "envelope_tool_use_id_equals_raw": 2,
+        "events": {
+          "PostToolUse": 1,
+          "PreToolUse": 1,
+          "SessionStart": 1,
+          "Stop": 1
+        },
+        "main_thread_records": 4,
+        "malformed_lines": 0,
+        "records": 4,
+        "records_with_agent_id": 0,
+        "records_with_tool_use_id": 2,
+        "resolves_both": 2,
+        "resolves_call_id": 2,
+        "resolves_call_id_only": 0,
+        "resolves_item_id": 2,
+        "resolves_item_id_only": 0,
+        "resolves_neither": 0,
+        "resolves_union": 2,
+        "stream_present": true
+      },
+      "liveness": {
+        "agents": [],
+        "agents_with_multiple_stops": 0,
+        "session_start_count": 1,
+        "stop_count": 1,
+        "subagent_start_count": 0,
+        "subagent_stop_count": 0,
+        "subagent_stops_without_a_start": 0
+      },
+      "redaction": {
+        "ciphertext_bytes": 2992,
+        "ciphertext_sites": [
+          {
+            "bytes": 2992,
+            "count": 2,
+            "field_path": "response_item/reasoning.encrypted_content"
+          }
+        ],
+        "ciphertext_strings": 2,
+        "encrypted_bytes_copied_into_golden": 0,
+        "reasoning_completed_items": 2,
+        "reasoning_response_items": 2,
+        "reasoning_with_non_empty_summary": 0,
+        "spawn_messages_encrypted": 0,
+        "spawn_messages_plaintext": 0
+      },
+      "run": "long-output",
+      "sizes": {
+        "hook_stream_bytes": 44035,
+        "longest_record": {
+          "file": "rollout-2026-09-03T00-56-40-01a0641f-c9c0-7471-821c-946af20ef96e.jsonl",
+          "ordinal": 13,
+          "type": "event_msg/item_completed/CommandExecution"
+        },
+        "longest_record_bytes": 554128,
+        "transcript_bytes_total": 635402
+      },
+      "spawn_summary": {
+        "count": 0,
+        "refused": 0,
+        "resolved_to_child": 0,
+        "unresolved": 0
+      },
+      "spawns": [],
+      "thread_summary": {
+        "agent_path_absent": 1,
+        "agent_path_present": 0,
+        "count": 1,
+        "max_depth": null,
+        "spawn_agent_path_null": 0,
+        "subagent_threads": 0,
+        "user_threads": 1
+      },
+      "threads": [
+        {
+          "agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "agent_path": {
+            "present": false,
+            "value": null
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 1,
+          "declared_in_files": 1,
+          "forked_from_id": {
+            "present": false,
+            "value": null
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 0,
+          "multi_agent_version": {
+            "present": false,
+            "value": null
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-56-40-01a0641f-c9c0-7471-821c-946af20ef96e.jsonl",
+          "parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "records_in_owning_file": 22,
+          "session_id": "01a0641f-c9c0-7471-821c-946af20ef96e",
+          "spawn_agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_path": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_role": {
+            "present": false,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": false,
+            "value": null
+          },
+          "spawn_parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "spawn_present": false,
+          "subagent_history_start_ordinal": {
+            "present": false,
+            "value": null
+          },
+          "thread_id": "01a0641f-c9c0-7471-821c-946af20ef96e",
+          "thread_source": "user"
+        }
+      ],
+      "tool_call_summary": {
+        "by_id_relation": {
+          "item_id_distinct_from_call_id": 0,
+          "item_id_equals_call_id": 1,
+          "no_item": 0
+        },
+        "call_ids_that_are_also_item_ids": 1,
+        "completed_items_claimed_by_no_tool_call": {
+          "AgentMessage": 2,
+          "Reasoning": 2,
+          "UserMessage": 1
+        },
+        "count": 1,
+        "distinct_call_ids": 1,
+        "distinct_item_ids": 6
+      },
+      "tool_calls": [
+        {
+          "call_id": "call_3W9VUPy9qvbIR51MFH428xjp",
+          "file": "rollout-2026-09-03T00-56-40-01a0641f-c9c0-7471-821c-946af20ef96e.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_3W9VUPy9qvbIR51MFH428xjp",
+          "item_type": "CommandExecution",
+          "kind": "function_call",
+          "name": "exec_command",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 12,
+          "thread_id": "01a0641f-c9c0-7471-821c-946af20ef96e"
+        }
+      ],
+      "transcripts": [
+        {
+          "bytes": 635402,
+          "file": "rollout-2026-09-03T00-56-40-01a0641f-c9c0-7471-821c-946af20ef96e.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641f-c9c0-7471-821c-946af20ef96e",
+          "records": 22,
+          "session_meta_count": 1
+        }
+      ]
+    },
+    {
+      "dialect": "v1",
+      "dialect_evidence": {
+        "exec_toolsets": [
+          "function_call:exec_command"
+        ],
+        "models": [
+          "gpt-5.4-mini"
+        ],
+        "session_meta_multi_agent_version": [
+          "v1"
+        ],
+        "spawn_namespaces": [
+          "multi_agent_v1"
+        ],
+        "turn_context_multi_agent_version": [
+          "v1"
+        ]
+      },
+      "dialect_source": "turn_context.multi_agent_version",
+      "hook_join": {
+        "envelope_tool_use_id_equals_raw": 16,
+        "events": {
+          "PostToolUse": 8,
+          "PreToolUse": 8,
+          "SessionStart": 1,
+          "Stop": 1,
+          "SubagentStart": 1,
+          "SubagentStop": 2
+        },
+        "main_thread_records": 10,
+        "malformed_lines": 0,
+        "records": 21,
+        "records_with_agent_id": 11,
+        "records_with_tool_use_id": 16,
+        "resolves_both": 16,
+        "resolves_call_id": 16,
+        "resolves_call_id_only": 0,
+        "resolves_item_id": 16,
+        "resolves_item_id_only": 0,
+        "resolves_neither": 0,
+        "resolves_union": 16,
+        "stream_present": true
+      },
+      "liveness": {
+        "agents": [
+          {
+            "agent_id": "01a06421-20fe-72d2-96da-cfa765ee5fd9",
+            "agent_transcript_path_on_stop": true,
+            "distinct_stop_turn_ids": 2,
+            "distinct_turn_ids": 2,
+            "subagent_start_count": 1,
+            "subagent_stop_count": 2,
+            "turn_ids": [
+              "01a06421-2159-7f03-bbc4-0a25c745a4e3",
+              "01a06421-8b33-7d41-b0fb-a815132d0a44"
+            ]
+          }
+        ],
+        "agents_with_multiple_stops": 1,
+        "session_start_count": 1,
+        "stop_count": 1,
+        "subagent_start_count": 1,
+        "subagent_stop_count": 2,
+        "subagent_stops_without_a_start": 0
+      },
+      "redaction": {
+        "ciphertext_bytes": 16488,
+        "ciphertext_sites": [
+          {
+            "bytes": 16488,
+            "count": 11,
+            "field_path": "response_item/reasoning.encrypted_content"
+          }
+        ],
+        "ciphertext_strings": 11,
+        "encrypted_bytes_copied_into_golden": 0,
+        "reasoning_completed_items": 11,
+        "reasoning_response_items": 11,
+        "reasoning_with_non_empty_summary": 0,
+        "spawn_messages_encrypted": 0,
+        "spawn_messages_plaintext": 1
+      },
+      "run": "resume-twice-v1",
+      "sizes": {
+        "hook_stream_bytes": 18985,
+        "longest_record": {
+          "file": "rollout-2026-09-03T00-57-58-01a06420-fabe-7943-a641-08659246b8cb.jsonl",
+          "ordinal": 13,
+          "type": "response_item/tool_search_output"
+        },
+        "longest_record_bytes": 20087,
+        "transcript_bytes_total": 150386
+      },
+      "spawn_summary": {
+        "count": 1,
+        "refused": 0,
+        "resolved_to_child": 1,
+        "unresolved": 0
+      },
+      "spawns": [
+        {
+          "activity_agent_path": {
+            "present": false,
+            "value": null
+          },
+          "activity_agent_thread_id": null,
+          "argument_keys": [
+            "message",
+            "reasoning_effort"
+          ],
+          "call_id": "call_BzisJ0rx62dgjD4mDEuPoRQf",
+          "child_resolved_by": "output_agent_id_equals_thread_id",
+          "child_thread_id": "01a06421-20fe-72d2-96da-cfa765ee5fd9",
+          "file": "rollout-2026-09-03T00-57-58-01a06420-fabe-7943-a641-08659246b8cb.jsonl",
+          "item_id": "call_BzisJ0rx62dgjD4mDEuPoRQf",
+          "item_type": "CollabAgentToolCall",
+          "message_bytes": 138,
+          "message_encrypted": false,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "multi_agent_v1"
+          },
+          "ordinal": 21,
+          "output_agent_id": "01a06421-20fe-72d2-96da-cfa765ee5fd9",
+          "output_nickname": "Arendt",
+          "output_present": true,
+          "output_task_name": null,
+          "refusal_text": null,
+          "refused": false,
+          "requested_task_name": null,
+          "thread_id": "01a06420-fabe-7943-a641-08659246b8cb"
+        }
+      ],
+      "thread_summary": {
+        "agent_path_absent": 2,
+        "agent_path_present": 0,
+        "count": 2,
+        "max_depth": 1,
+        "spawn_agent_path_null": 1,
+        "subagent_threads": 1,
+        "user_threads": 1
+      },
+      "threads": [
+        {
+          "agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "agent_path": {
+            "present": false,
+            "value": null
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 1,
+          "declared_in_files": 1,
+          "forked_from_id": {
+            "present": false,
+            "value": null
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 0,
+          "multi_agent_version": {
+            "present": false,
+            "value": null
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-57-58-01a06420-fabe-7943-a641-08659246b8cb.jsonl",
+          "parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "records_in_owning_file": 57,
+          "session_id": "01a06420-fabe-7943-a641-08659246b8cb",
+          "spawn_agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_path": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_role": {
+            "present": false,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": false,
+            "value": null
+          },
+          "spawn_parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "spawn_present": false,
+          "subagent_history_start_ordinal": {
+            "present": false,
+            "value": null
+          },
+          "thread_id": "01a06420-fabe-7943-a641-08659246b8cb",
+          "thread_source": "user"
+        },
+        {
+          "agent_nickname": {
+            "present": true,
+            "value": "Arendt"
+          },
+          "agent_path": {
+            "present": false,
+            "value": null
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 1,
+          "declared_in_files": 1,
+          "forked_from_id": {
+            "present": false,
+            "value": null
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 0,
+          "multi_agent_version": {
+            "present": true,
+            "value": "v1"
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-58-07-01a06421-20fe-72d2-96da-cfa765ee5fd9.jsonl",
+          "parent_thread_id": {
+            "present": true,
+            "value": "01a06420-fabe-7943-a641-08659246b8cb"
+          },
+          "records_in_owning_file": 52,
+          "session_id": "01a06420-fabe-7943-a641-08659246b8cb",
+          "spawn_agent_nickname": {
+            "present": true,
+            "value": "Arendt"
+          },
+          "spawn_agent_path": {
+            "present": true,
+            "value": null
+          },
+          "spawn_agent_role": {
+            "present": true,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": true,
+            "value": 1
+          },
+          "spawn_parent_thread_id": {
+            "present": true,
+            "value": "01a06420-fabe-7943-a641-08659246b8cb"
+          },
+          "spawn_present": true,
+          "subagent_history_start_ordinal": {
+            "present": false,
+            "value": null
+          },
+          "thread_id": "01a06421-20fe-72d2-96da-cfa765ee5fd9",
+          "thread_source": "subagent"
+        }
+      ],
+      "tool_call_summary": {
+        "by_id_relation": {
+          "item_id_distinct_from_call_id": 0,
+          "item_id_equals_call_id": 8,
+          "no_item": 1
+        },
+        "call_ids_that_are_also_item_ids": 8,
+        "completed_items_claimed_by_no_tool_call": {
+          "AgentMessage": 11,
+          "Reasoning": 11,
+          "UserMessage": 3
+        },
+        "count": 9,
+        "distinct_call_ids": 9,
+        "distinct_item_ids": 33
+      },
+      "tool_calls": [
+        {
+          "call_id": "call_sBuL6ZvrUD7G5VcUr0HAWlSP",
+          "file": "rollout-2026-09-03T00-57-58-01a06420-fabe-7943-a641-08659246b8cb.jsonl",
+          "id_relation": "no_item",
+          "item_id": null,
+          "item_type": null,
+          "kind": "tool_search_call",
+          "name": "",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 12,
+          "thread_id": "01a06420-fabe-7943-a641-08659246b8cb"
+        },
+        {
+          "call_id": "call_BzisJ0rx62dgjD4mDEuPoRQf",
+          "file": "rollout-2026-09-03T00-57-58-01a06420-fabe-7943-a641-08659246b8cb.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_BzisJ0rx62dgjD4mDEuPoRQf",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "multi_agent_v1"
+          },
+          "ordinal": 21,
+          "thread_id": "01a06420-fabe-7943-a641-08659246b8cb"
+        },
+        {
+          "call_id": "call_QsIRhVJBATluj4x7cbDOGe8L",
+          "file": "rollout-2026-09-03T00-57-58-01a06420-fabe-7943-a641-08659246b8cb.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_QsIRhVJBATluj4x7cbDOGe8L",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "multi_agent_v1"
+          },
+          "ordinal": 30,
+          "thread_id": "01a06420-fabe-7943-a641-08659246b8cb"
+        },
+        {
+          "call_id": "call_mWkIKVNaVOzk2vXkQaK9lKIJ",
+          "file": "rollout-2026-09-03T00-57-58-01a06420-fabe-7943-a641-08659246b8cb.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_mWkIKVNaVOzk2vXkQaK9lKIJ",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "send_input",
+          "namespace": {
+            "present": true,
+            "value": "multi_agent_v1"
+          },
+          "ordinal": 39,
+          "thread_id": "01a06420-fabe-7943-a641-08659246b8cb"
+        },
+        {
+          "call_id": "call_HvESAPZB3r2ocJgr2KeYLBVs",
+          "file": "rollout-2026-09-03T00-57-58-01a06420-fabe-7943-a641-08659246b8cb.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_HvESAPZB3r2ocJgr2KeYLBVs",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "multi_agent_v1"
+          },
+          "ordinal": 47,
+          "thread_id": "01a06420-fabe-7943-a641-08659246b8cb"
+        },
+        {
+          "call_id": "call_GTQ0N6Fwp8IVtE5lRSLyEiiu",
+          "file": "rollout-2026-09-03T00-58-07-01a06421-20fe-72d2-96da-cfa765ee5fd9.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_GTQ0N6Fwp8IVtE5lRSLyEiiu",
+          "item_type": "CommandExecution",
+          "kind": "function_call",
+          "name": "exec_command",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 12,
+          "thread_id": "01a06421-20fe-72d2-96da-cfa765ee5fd9"
+        },
+        {
+          "call_id": "call_iUNYvYWjLWs9UuyNOhzc88g8",
+          "file": "rollout-2026-09-03T00-58-07-01a06421-20fe-72d2-96da-cfa765ee5fd9.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_iUNYvYWjLWs9UuyNOhzc88g8",
+          "item_type": "CommandExecution",
+          "kind": "function_call",
+          "name": "exec_command",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 20,
+          "thread_id": "01a06421-20fe-72d2-96da-cfa765ee5fd9"
+        },
+        {
+          "call_id": "call_DDbVG3QyK7TFhqN8OIk8OCN2",
+          "file": "rollout-2026-09-03T00-58-07-01a06421-20fe-72d2-96da-cfa765ee5fd9.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_DDbVG3QyK7TFhqN8OIk8OCN2",
+          "item_type": "CommandExecution",
+          "kind": "function_call",
+          "name": "exec_command",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 26,
+          "thread_id": "01a06421-20fe-72d2-96da-cfa765ee5fd9"
+        },
+        {
+          "call_id": "call_6KZ1waoxYnUUsGkqXAyOxVIP",
+          "file": "rollout-2026-09-03T00-58-07-01a06421-20fe-72d2-96da-cfa765ee5fd9.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_6KZ1waoxYnUUsGkqXAyOxVIP",
+          "item_type": "CommandExecution",
+          "kind": "function_call",
+          "name": "exec_command",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 44,
+          "thread_id": "01a06421-20fe-72d2-96da-cfa765ee5fd9"
+        }
+      ],
+      "transcripts": [
+        {
+          "bytes": 85957,
+          "file": "rollout-2026-09-03T00-57-58-01a06420-fabe-7943-a641-08659246b8cb.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a06420-fabe-7943-a641-08659246b8cb",
+          "records": 57,
+          "session_meta_count": 1
+        },
+        {
+          "bytes": 64429,
+          "file": "rollout-2026-09-03T00-58-07-01a06421-20fe-72d2-96da-cfa765ee5fd9.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a06421-20fe-72d2-96da-cfa765ee5fd9",
+          "records": 52,
+          "session_meta_count": 1
+        }
+      ]
+    },
+    {
+      "dialect": "v2",
+      "dialect_evidence": {
+        "exec_toolsets": [
+          "custom_tool_call:exec"
+        ],
+        "models": [
+          "gpt-5.6-terra"
+        ],
+        "session_meta_multi_agent_version": [
+          "v2"
+        ],
+        "spawn_namespaces": [
+          "collaboration"
+        ],
+        "turn_context_multi_agent_version": [
+          "v2"
+        ]
+      },
+      "dialect_source": "turn_context.multi_agent_version",
+      "hook_join": {
+        "envelope_tool_use_id_equals_raw": 30,
+        "events": {
+          "PostToolUse": 15,
+          "PreToolUse": 15,
+          "SessionStart": 1,
+          "Stop": 1,
+          "SubagentStart": 5,
+          "SubagentStop": 5
+        },
+        "main_thread_records": 20,
+        "malformed_lines": 0,
+        "records": 42,
+        "records_with_agent_id": 22,
+        "records_with_tool_use_id": 30,
+        "resolves_both": 22,
+        "resolves_call_id": 22,
+        "resolves_call_id_only": 0,
+        "resolves_item_id": 30,
+        "resolves_item_id_only": 8,
+        "resolves_neither": 0,
+        "resolves_union": 30,
+        "stream_present": true
+      },
+      "liveness": {
+        "agents": [
+          {
+            "agent_id": "01a0641d-9c3c-7612-a666-786b575d4194",
+            "agent_transcript_path_on_stop": true,
+            "distinct_stop_turn_ids": 1,
+            "distinct_turn_ids": 1,
+            "subagent_start_count": 1,
+            "subagent_stop_count": 1,
+            "turn_ids": [
+              "01a0641d-9cd9-7203-b560-eb66ad319e33"
+            ]
+          },
+          {
+            "agent_id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+            "agent_transcript_path_on_stop": true,
+            "distinct_stop_turn_ids": 1,
+            "distinct_turn_ids": 1,
+            "subagent_start_count": 1,
+            "subagent_stop_count": 1,
+            "turn_ids": [
+              "01a0641d-abdd-73f2-a00d-0759d8deeff2"
+            ]
+          },
+          {
+            "agent_id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+            "agent_transcript_path_on_stop": true,
+            "distinct_stop_turn_ids": 1,
+            "distinct_turn_ids": 1,
+            "subagent_start_count": 1,
+            "subagent_stop_count": 1,
+            "turn_ids": [
+              "01a0641d-bb58-7651-9a4a-0ae9d1807092"
+            ]
+          },
+          {
+            "agent_id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+            "agent_transcript_path_on_stop": true,
+            "distinct_stop_turn_ids": 1,
+            "distinct_turn_ids": 1,
+            "subagent_start_count": 1,
+            "subagent_stop_count": 1,
+            "turn_ids": [
+              "01a0641e-002a-7d20-b27d-ceb1ed701873"
+            ]
+          },
+          {
+            "agent_id": "01a0641e-19d6-7800-8330-98371a1683a5",
+            "agent_transcript_path_on_stop": true,
+            "distinct_stop_turn_ids": 1,
+            "distinct_turn_ids": 1,
+            "subagent_start_count": 1,
+            "subagent_stop_count": 1,
+            "turn_ids": [
+              "01a0641e-1a5f-7b70-aa8d-ccf0629dcc86"
+            ]
+          }
+        ],
+        "agents_with_multiple_stops": 0,
+        "session_start_count": 1,
+        "stop_count": 1,
+        "subagent_start_count": 5,
+        "subagent_stop_count": 5,
+        "subagent_stops_without_a_start": 0
+      },
+      "redaction": {
+        "ciphertext_bytes": 12956,
+        "ciphertext_sites": [
+          {
+            "bytes": 1620,
+            "count": 5,
+            "field_path": "response_item/agent_message.content[].encrypted_content"
+          },
+          {
+            "bytes": 1620,
+            "count": 5,
+            "field_path": "response_item/function_call.arguments{spawn_agent}.message"
+          },
+          {
+            "bytes": 9716,
+            "count": 7,
+            "field_path": "response_item/reasoning.encrypted_content"
+          }
+        ],
+        "ciphertext_strings": 17,
+        "encrypted_bytes_copied_into_golden": 0,
+        "reasoning_completed_items": 7,
+        "reasoning_response_items": 7,
+        "reasoning_with_non_empty_summary": 0,
+        "spawn_messages_encrypted": 5,
+        "spawn_messages_plaintext": 0
+      },
+      "run": "spawn-shapes",
+      "sizes": {
+        "hook_stream_bytes": 38174,
+        "longest_record": {
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "ordinal": 2,
+          "type": "response_item/message"
+        },
+        "longest_record_bytes": 9457,
+        "transcript_bytes_total": 350677
+      },
+      "spawn_summary": {
+        "count": 5,
+        "refused": 0,
+        "resolved_to_child": 5,
+        "unresolved": 0
+      },
+      "spawns": [
+        {
+          "activity_agent_path": {
+            "present": true,
+            "value": "/root/p1"
+          },
+          "activity_agent_thread_id": "01a0641d-9c3c-7612-a666-786b575d4194",
+          "argument_keys": [
+            "fork_turns",
+            "message",
+            "task_name"
+          ],
+          "call_id": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+          "child_resolved_by": "output_task_name_equals_agent_path",
+          "child_thread_id": "01a0641d-9c3c-7612-a666-786b575d4194",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "item_id": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+          "item_type": "SubAgentActivity",
+          "message_bytes": 268,
+          "message_encrypted": true,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 12,
+          "output_agent_id": null,
+          "output_nickname": null,
+          "output_present": true,
+          "output_task_name": "/root/p1",
+          "refusal_text": null,
+          "refused": false,
+          "requested_task_name": "p1",
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "activity_agent_path": {
+            "present": true,
+            "value": "/root/p2"
+          },
+          "activity_agent_thread_id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+          "argument_keys": [
+            "fork_turns",
+            "message",
+            "task_name"
+          ],
+          "call_id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+          "child_resolved_by": "output_task_name_equals_agent_path",
+          "child_thread_id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "item_id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+          "item_type": "SubAgentActivity",
+          "message_bytes": 268,
+          "message_encrypted": true,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 17,
+          "output_agent_id": null,
+          "output_nickname": null,
+          "output_present": true,
+          "output_task_name": "/root/p2",
+          "refusal_text": null,
+          "refused": false,
+          "requested_task_name": "p2",
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "activity_agent_path": {
+            "present": true,
+            "value": "/root/p3"
+          },
+          "activity_agent_thread_id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+          "argument_keys": [
+            "fork_turns",
+            "message",
+            "task_name"
+          ],
+          "call_id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+          "child_resolved_by": "output_task_name_equals_agent_path",
+          "child_thread_id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "item_id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+          "item_type": "SubAgentActivity",
+          "message_bytes": 268,
+          "message_encrypted": true,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 22,
+          "output_agent_id": null,
+          "output_nickname": null,
+          "output_present": true,
+          "output_task_name": "/root/p3",
+          "refusal_text": null,
+          "refused": false,
+          "requested_task_name": "p3",
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "activity_agent_path": {
+            "present": true,
+            "value": "/root/outer"
+          },
+          "activity_agent_thread_id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+          "argument_keys": [
+            "fork_turns",
+            "message",
+            "task_name"
+          ],
+          "call_id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+          "child_resolved_by": "output_task_name_equals_agent_path",
+          "child_thread_id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "item_id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+          "item_type": "SubAgentActivity",
+          "message_bytes": 484,
+          "message_encrypted": true,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 52,
+          "output_agent_id": null,
+          "output_nickname": null,
+          "output_present": true,
+          "output_task_name": "/root/outer",
+          "refusal_text": null,
+          "refused": false,
+          "requested_task_name": "outer",
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "activity_agent_path": {
+            "present": true,
+            "value": "/root/outer/inner"
+          },
+          "activity_agent_thread_id": "01a0641e-19d6-7800-8330-98371a1683a5",
+          "argument_keys": [
+            "fork_turns",
+            "message",
+            "task_name"
+          ],
+          "call_id": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+          "child_resolved_by": "output_task_name_equals_agent_path",
+          "child_thread_id": "01a0641e-19d6-7800-8330-98371a1683a5",
+          "file": "rollout-2026-09-03T00-54-42-01a0641d-ffa4-77a3-8134-a253f01f1bd6.jsonl",
+          "item_id": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+          "item_type": "SubAgentActivity",
+          "message_bytes": 332,
+          "message_encrypted": true,
+          "message_present": true,
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 23,
+          "output_agent_id": null,
+          "output_nickname": null,
+          "output_present": true,
+          "output_task_name": "/root/outer/inner",
+          "refusal_text": null,
+          "refused": false,
+          "requested_task_name": "inner",
+          "thread_id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6"
+        }
+      ],
+      "thread_summary": {
+        "agent_path_absent": 1,
+        "agent_path_present": 5,
+        "count": 6,
+        "max_depth": 2,
+        "spawn_agent_path_null": 0,
+        "subagent_threads": 5,
+        "user_threads": 1
+      },
+      "threads": [
+        {
+          "agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "agent_path": {
+            "present": false,
+            "value": null
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 5,
+          "declared_in_files": 5,
+          "forked_from_id": {
+            "present": false,
+            "value": null
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 0,
+          "multi_agent_version": {
+            "present": false,
+            "value": null
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "records_in_owning_file": 73,
+          "session_id": "01a0641d-8281-7703-97fa-5a829bb77563",
+          "spawn_agent_nickname": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_path": {
+            "present": false,
+            "value": null
+          },
+          "spawn_agent_role": {
+            "present": false,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": false,
+            "value": null
+          },
+          "spawn_parent_thread_id": {
+            "present": false,
+            "value": null
+          },
+          "spawn_present": false,
+          "subagent_history_start_ordinal": {
+            "present": false,
+            "value": null
+          },
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563",
+          "thread_source": "user"
+        },
+        {
+          "agent_nickname": {
+            "present": true,
+            "value": "Hegel"
+          },
+          "agent_path": {
+            "present": true,
+            "value": "/root/p1"
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 1,
+          "declared_in_files": 1,
+          "forked_from_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 9,
+          "multi_agent_version": {
+            "present": true,
+            "value": "v2"
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-54-17-01a0641d-9c3c-7612-a666-786b575d4194.jsonl",
+          "parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "records_in_owning_file": 28,
+          "session_id": "01a0641d-8281-7703-97fa-5a829bb77563",
+          "spawn_agent_nickname": {
+            "present": true,
+            "value": "Hegel"
+          },
+          "spawn_agent_path": {
+            "present": true,
+            "value": "/root/p1"
+          },
+          "spawn_agent_role": {
+            "present": true,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": true,
+            "value": 1
+          },
+          "spawn_parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "spawn_present": true,
+          "subagent_history_start_ordinal": {
+            "present": true,
+            "value": 9
+          },
+          "thread_id": "01a0641d-9c3c-7612-a666-786b575d4194",
+          "thread_source": "subagent"
+        },
+        {
+          "agent_nickname": {
+            "present": true,
+            "value": "Poincare"
+          },
+          "agent_path": {
+            "present": true,
+            "value": "/root/p2"
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 1,
+          "declared_in_files": 1,
+          "forked_from_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 10,
+          "multi_agent_version": {
+            "present": true,
+            "value": "v2"
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-54-21-01a0641d-ab50-76e1-829c-4ccda108e7b4.jsonl",
+          "parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "records_in_owning_file": 29,
+          "session_id": "01a0641d-8281-7703-97fa-5a829bb77563",
+          "spawn_agent_nickname": {
+            "present": true,
+            "value": "Poincare"
+          },
+          "spawn_agent_path": {
+            "present": true,
+            "value": "/root/p2"
+          },
+          "spawn_agent_role": {
+            "present": true,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": true,
+            "value": 1
+          },
+          "spawn_parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "spawn_present": true,
+          "subagent_history_start_ordinal": {
+            "present": true,
+            "value": 10
+          },
+          "thread_id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+          "thread_source": "subagent"
+        },
+        {
+          "agent_nickname": {
+            "present": true,
+            "value": "Hubble"
+          },
+          "agent_path": {
+            "present": true,
+            "value": "/root/p3"
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 1,
+          "declared_in_files": 1,
+          "forked_from_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 11,
+          "multi_agent_version": {
+            "present": true,
+            "value": "v2"
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-54-25-01a0641d-bacc-7bd3-8027-baa3ffecd15c.jsonl",
+          "parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "records_in_owning_file": 30,
+          "session_id": "01a0641d-8281-7703-97fa-5a829bb77563",
+          "spawn_agent_nickname": {
+            "present": true,
+            "value": "Hubble"
+          },
+          "spawn_agent_path": {
+            "present": true,
+            "value": "/root/p3"
+          },
+          "spawn_agent_role": {
+            "present": true,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": true,
+            "value": 1
+          },
+          "spawn_parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "spawn_present": true,
+          "subagent_history_start_ordinal": {
+            "present": true,
+            "value": 11
+          },
+          "thread_id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+          "thread_source": "subagent"
+        },
+        {
+          "agent_nickname": {
+            "present": true,
+            "value": "Locke"
+          },
+          "agent_path": {
+            "present": true,
+            "value": "/root/outer"
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 2,
+          "declared_in_files": 2,
+          "forked_from_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 12,
+          "multi_agent_version": {
+            "present": true,
+            "value": "v2"
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-54-42-01a0641d-ffa4-77a3-8134-a253f01f1bd6.jsonl",
+          "parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "records_in_owning_file": 39,
+          "session_id": "01a0641d-8281-7703-97fa-5a829bb77563",
+          "spawn_agent_nickname": {
+            "present": true,
+            "value": "Locke"
+          },
+          "spawn_agent_path": {
+            "present": true,
+            "value": "/root/outer"
+          },
+          "spawn_agent_role": {
+            "present": true,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": true,
+            "value": 1
+          },
+          "spawn_parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-8281-7703-97fa-5a829bb77563"
+          },
+          "spawn_present": true,
+          "subagent_history_start_ordinal": {
+            "present": true,
+            "value": 12
+          },
+          "thread_id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+          "thread_source": "subagent"
+        },
+        {
+          "agent_nickname": {
+            "present": true,
+            "value": "Confucius"
+          },
+          "agent_path": {
+            "present": true,
+            "value": "/root/outer/inner"
+          },
+          "cli_version": "0.151.0-alpha.7.2",
+          "declarations_in_corpus_run": 1,
+          "declared_in_files": 1,
+          "forked_from_id": {
+            "present": true,
+            "value": "01a0641d-ffa4-77a3-8134-a253f01f1bd6"
+          },
+          "history_mode": {
+            "present": true,
+            "value": "paginated"
+          },
+          "inherited_records_before_fork_start": 16,
+          "multi_agent_version": {
+            "present": true,
+            "value": "v2"
+          },
+          "originator": "codex_exec",
+          "owning_declaration_ordinal": 0,
+          "owning_file": "rollout-2026-09-03T00-54-49-01a0641e-19d6-7800-8330-98371a1683a5.jsonl",
+          "parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-ffa4-77a3-8134-a253f01f1bd6"
+          },
+          "records_in_owning_file": 37,
+          "session_id": "01a0641d-8281-7703-97fa-5a829bb77563",
+          "spawn_agent_nickname": {
+            "present": true,
+            "value": "Confucius"
+          },
+          "spawn_agent_path": {
+            "present": true,
+            "value": "/root/outer/inner"
+          },
+          "spawn_agent_role": {
+            "present": true,
+            "value": null
+          },
+          "spawn_depth": {
+            "present": true,
+            "value": 2
+          },
+          "spawn_parent_thread_id": {
+            "present": true,
+            "value": "01a0641d-ffa4-77a3-8134-a253f01f1bd6"
+          },
+          "spawn_present": true,
+          "subagent_history_start_ordinal": {
+            "present": true,
+            "value": 16
+          },
+          "thread_id": "01a0641e-19d6-7800-8330-98371a1683a5",
+          "thread_source": "subagent"
+        }
+      ],
+      "tool_call_summary": {
+        "by_id_relation": {
+          "item_id_distinct_from_call_id": 4,
+          "item_id_equals_call_id": 11,
+          "no_item": 0
+        },
+        "call_ids_that_are_also_item_ids": 11,
+        "completed_items_claimed_by_no_tool_call": {
+          "AgentMessage": 13,
+          "Reasoning": 7,
+          "SubAgentActivity": 5,
+          "UserMessage": 1
+        },
+        "count": 15,
+        "distinct_call_ids": 15,
+        "distinct_item_ids": 41
+      },
+      "tool_calls": [
+        {
+          "call_id": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 12,
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "call_id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 17,
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "call_id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 22,
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "call_id": "call_tKVRDV43tRvYRodryJdaFXJ6",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_tKVRDV43tRvYRodryJdaFXJ6",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 27,
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "call_id": "call_sdxbW21gqrEROfSmFTqtH9AG",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_sdxbW21gqrEROfSmFTqtH9AG",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 34,
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "call_id": "call_gHEgJ9QqzOG4qNyWjhY3hue9",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_gHEgJ9QqzOG4qNyWjhY3hue9",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 41,
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "call_id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 52,
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "call_id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 57,
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "call_id": "call_wYC0jwTFy9FjFSYO5vj9s0Mc",
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_wYC0jwTFy9FjFSYO5vj9s0Mc",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 62,
+          "thread_id": "01a0641d-8281-7703-97fa-5a829bb77563"
+        },
+        {
+          "call_id": "call_BE9vBpoJjPAbC7DAxskoILMM",
+          "file": "rollout-2026-09-03T00-54-17-01a0641d-9c3c-7612-a666-786b575d4194.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-9b812401-9504-417a-80d7-a00e833c7bfa",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 20,
+          "thread_id": "01a0641d-9c3c-7612-a666-786b575d4194"
+        },
+        {
+          "call_id": "call_ONMOik3EagyBYuF8MqvFMPhT",
+          "file": "rollout-2026-09-03T00-54-21-01a0641d-ab50-76e1-829c-4ccda108e7b4.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-47d1ab16-b60f-4143-a436-52c730522d0b",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 21,
+          "thread_id": "01a0641d-ab50-76e1-829c-4ccda108e7b4"
+        },
+        {
+          "call_id": "call_7JqUX0steA2WiEAGz7WYRRuh",
+          "file": "rollout-2026-09-03T00-54-25-01a0641d-bacc-7bd3-8027-baa3ffecd15c.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-149dc7a3-5134-45c4-b437-497686bae34f",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 22,
+          "thread_id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c"
+        },
+        {
+          "call_id": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+          "file": "rollout-2026-09-03T00-54-42-01a0641d-ffa4-77a3-8134-a253f01f1bd6.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+          "item_type": "SubAgentActivity",
+          "kind": "function_call",
+          "name": "spawn_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 23,
+          "thread_id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6"
+        },
+        {
+          "call_id": "call_IKWCISCaJiX2efcibFiQcjR5",
+          "file": "rollout-2026-09-03T00-54-42-01a0641d-ffa4-77a3-8134-a253f01f1bd6.jsonl",
+          "id_relation": "item_id_equals_call_id",
+          "item_id": "call_IKWCISCaJiX2efcibFiQcjR5",
+          "item_type": "CollabAgentToolCall",
+          "kind": "function_call",
+          "name": "wait_agent",
+          "namespace": {
+            "present": true,
+            "value": "collaboration"
+          },
+          "ordinal": 28,
+          "thread_id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6"
+        },
+        {
+          "call_id": "call_rrdzcU2KEerrDXZt0NQeDTi0",
+          "file": "rollout-2026-09-03T00-54-49-01a0641e-19d6-7800-8330-98371a1683a5.jsonl",
+          "id_relation": "item_id_distinct_from_call_id",
+          "item_id": "exec-22918ab2-539d-4654-90af-cb8fbe8c4f88",
+          "item_type": "CommandExecution",
+          "kind": "custom_tool_call",
+          "name": "exec",
+          "namespace": {
+            "present": false,
+            "value": null
+          },
+          "ordinal": 27,
+          "thread_id": "01a0641e-19d6-7800-8330-98371a1683a5"
+        }
+      ],
+      "transcripts": [
+        {
+          "bytes": 61969,
+          "file": "rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641d-8281-7703-97fa-5a829bb77563",
+          "records": 73,
+          "session_meta_count": 1
+        },
+        {
+          "bytes": 55982,
+          "file": "rollout-2026-09-03T00-54-17-01a0641d-9c3c-7612-a666-786b575d4194.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641d-9c3c-7612-a666-786b575d4194",
+          "records": 28,
+          "session_meta_count": 2
+        },
+        {
+          "bytes": 56255,
+          "file": "rollout-2026-09-03T00-54-21-01a0641d-ab50-76e1-829c-4ccda108e7b4.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+          "records": 29,
+          "session_meta_count": 2
+        },
+        {
+          "bytes": 56434,
+          "file": "rollout-2026-09-03T00-54-25-01a0641d-bacc-7bd3-8027-baa3ffecd15c.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+          "records": 30,
+          "session_meta_count": 2
+        },
+        {
+          "bytes": 59657,
+          "file": "rollout-2026-09-03T00-54-42-01a0641d-ffa4-77a3-8134-a253f01f1bd6.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+          "records": 39,
+          "session_meta_count": 2
+        },
+        {
+          "bytes": 60380,
+          "file": "rollout-2026-09-03T00-54-49-01a0641e-19d6-7800-8330-98371a1683a5.jsonl",
+          "malformed_lines": 0,
+          "owning_thread_id": "01a0641e-19d6-7800-8330-98371a1683a5",
+          "records": 37,
+          "session_meta_count": 2
+        }
+      ]
+    }
+  ],
+  "schema": "agent-deck/codex-golden@1",
+  "summary": {
+    "agents_with_multiple_stops": 1,
+    "ciphertext_bytes": 56696,
+    "ciphertext_strings": 57,
+    "dialect_sources": {
+      "turn_context.multi_agent_version": 5
+    },
+    "dialects": {
+      "v1": 2,
+      "v2": 3
+    },
+    "hook_records": 110,
+    "hook_records_with_tool_use_id": 81,
+    "hook_resolves_call_id": 61,
+    "hook_resolves_item_id": 78,
+    "hook_resolves_neither": 0,
+    "hook_resolves_union": 81,
+    "longest_record_bytes": 554128,
+    "malformed_lines": 0,
+    "max_depth": 2,
+    "reasoning_response_items": 34,
+    "records": 582,
+    "run_count": 5,
+    "spawns": 10,
+    "spawns_refused": 1,
+    "spawns_resolved_to_child": 9,
+    "subagent_starts": 9,
+    "subagent_stops": 10,
+    "subagent_stops_without_a_start": 0,
+    "threads": 14,
+    "tool_calls": 42,
+    "tool_calls_item_id_distinct": 10,
+    "tool_calls_item_id_equals_call_id": 29,
+    "tool_calls_without_item": 3,
+    "transcripts": 14
+  }
+}

@@ -42,7 +42,20 @@ export default tseslint.config(
       // the first .mjs to use the obvious API (`docs/ui/goldens.mjs`) turned
       // `npm run lint` red on a documentation-only branch. A Node global that
       // every Node script may legitimately use belongs in the globals list.
-      globals: { process: 'readonly', console: 'readonly' },
+      //
+      // `Buffer` and `URL` were added 2026-09-03 for the same reason, and the
+      // same way it was found: `npm run lint` was ALREADY RED at HEAD, because
+      // `scripts/capture-codex.mjs` landed in a8d87ea using `Buffer.byteLength`
+      // and `new URL(import.meta.url)` — two errors that had nothing to do with
+      // the file and everything to do with this list. Both are Node globals any
+      // script may use; the alternative was per-file disable comments, which
+      // would have spread the incompleteness instead of fixing it.
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+      },
     },
   },
 );

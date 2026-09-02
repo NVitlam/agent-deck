@@ -417,6 +417,68 @@ function looksLikeRegexSource(value) {
   return REGEX_SOURCE_NEEDLES.some((needle) => value.includes(needle));
 }
 
+/* ------------------------------------------------------------------ *
+ * Codex shapes (v0.6.0 Phase 1)
+ *
+ * The Codex corpus is the third observation engine's capture, and it produces
+ * exactly two captured-value shapes that name no project of ours. Both are
+ * exempted BY VALUE below, and both are pinned SEGMENT BY SEGMENT rather than
+ * by directory.
+ *
+ * That is not stylistic. The recorded failure here is a whole-directory ALLOW
+ * PREFIX: it forgives every value under a path, so a genuinely foreign token
+ * arriving inside that directory can never gate, and nobody finds out. These
+ * two patterns leave exactly one free segment between them - the home
+ * directory's user component - and a user name is not a project name. Every
+ * other segment is a literal, a date, or a UUID, so there is nowhere for a
+ * project name to hide, and any Codex fixture value that is NOT one of these
+ * two shapes still gates.
+ *
+ * Fail-closed on purpose: a future harvest under a different scratch repo or a
+ * relocated CODEX_HOME stops matching and the sweep goes red, which is the
+ * direction that asks for a written reason instead of assuming one.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A home directory in any spelling this repository has measured, matched
+ * against a value that `normalisePathToken` has already lowercased and
+ * forward-slashed: a drive-letter path, an MSYS `/<drive>/` path, a WSL
+ * `/mnt/<drive>/` path, or a posix `/home/`. `file:` URL forms occur too - the
+ * Codex hook tap reports one run's cwd that way - so the scheme is optional at
+ * the front.
+ */
+const HOME_DIR_PREFIX_SRC = '(?:file:/{0,3})?(?:/mnt/[a-z]|/[a-z]|[a-z]:)?/(?:users|home)/[^/]+';
+
+/**
+ * The scratch repository the Codex probe captures against.
+ *
+ * `scripts/capture-codex.mjs` REFUSES a corpus whose transcripts have any other
+ * cwd (its G8 check), so every captured cwd in a Codex corpus is this one
+ * location by construction. It is deliberately not `agent-deck`: observing the
+ * repository that holds the observer would make the workspace-discovery rule
+ * untestable. The name is pinned as a literal because the capture script takes
+ * the scratch root as an argument - a corpus harvested somewhere else is a new
+ * decision and should have to be written down here.
+ */
+const CODEX_SCRATCH_RE = new RegExp(`^${HOME_DIR_PREFIX_SRC}/codex-probe/scratch(?:/|$)`);
+
+/**
+ * A Codex rollout transcript path.
+ *
+ * Codex files a session under CODEX_HOME by CAPTURE DATE - year, month, day,
+ * then `rollout-<timestamp>-<uuid>.jsonl`. There is no project component
+ * anywhere in it, which is the opposite of Claude Code, whose transcript path
+ * carries the project slug. So this shape cannot name a project at all, foreign
+ * or otherwise, and every segment below is pinned to prove that claim rather
+ * than assert it.
+ */
+const CODEX_ROLLOUT_RE = new RegExp(
+  `^${HOME_DIR_PREFIX_SRC}` +
+    '/\\.codex/sessions/\\d{4}/\\d{2}/\\d{2}/' +
+    'rollout-\\d{4}-\\d{2}-\\d{2}t\\d{2}-\\d{2}-\\d{2}-' +
+    '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.jsonl$',
+);
+
 /**
  * FOREIGN exemptions, by VALUE - each with a written reason that says what was
  * measured.
@@ -476,6 +538,38 @@ const FOREIGN_VALUE_EXEMPTIONS = [
       'unchanged by it - 0 of the 32 raw hits needed it, because the identifier ' +
       'inventory reaches those files by another route.',
     exempt: (value) => isSyntheticValue(value),
+  },
+  {
+    id: 'codex-probe-scratch-repo',
+    reason:
+      'The Codex corpus captures against a dedicated scratch repository, never ' +
+      'against agent-deck: the workspace-discovery rule cannot be pinned by a ' +
+      'fixture whose cwd is the observing repository itself, so the probe needs a ' +
+      'separate subject. scripts/capture-codex.mjs enforces that - its G8 check ' +
+      'refuses a corpus whose transcripts carry any other working directory - ' +
+      'which is why every captured value of this shape in fixtures/codex-* is ' +
+      'the same one location. Measured on fixtures/codex-0.151.0-alpha.7.2 ' +
+      '(2026-09-03): 194 of the 314 raw FOREIGN hits the corpus produces are this value, 179 ' +
+      'as a drive-letter path and 15 as a file: URL. It is NOT a directory ' +
+      'prefix - the whole value is pinned segment by segment, home component ' +
+      'aside, so a different project name under the same home still gates.',
+    exempt: (value) => CODEX_SCRATCH_RE.test(normalisePathToken(value)),
+  },
+  {
+    id: 'codex-rollout-transcript-path',
+    reason:
+      'A Codex rollout transcript is filed under CODEX_HOME by CAPTURE DATE - ' +
+      'year, month, day, then rollout-<timestamp>-<uuid>.jsonl - and carries no ' +
+      'project component anywhere. That is the opposite of Claude Code, whose ' +
+      'transcript path spells the project slug, and it is why this shape cannot ' +
+      'name a foreign project even in principle. The pattern pins every segment ' +
+      'to a literal, a date field or a UUID field, leaving only the home ' +
+      'directory user component free, so the claim is checked rather than ' +
+      'asserted. Measured on fixtures/codex-0.151.0-alpha.7.2 (2026-09-03): the ' +
+      'remaining 120 of the 314 raw FOREIGN hits the corpus produces, across the ' +
+      'transcript_path and agent_transcript_path keys. A relocated CODEX_HOME ' +
+      'stops matching and gates, which is the fail-closed direction.',
+    exempt: (value) => CODEX_ROLLOUT_RE.test(normalisePathToken(value)),
   },
   {
     id: 'planted-negative-control',

@@ -331,6 +331,72 @@ function parityLine(value: string): string {
   return `{"hook_event_name":"Stop",${CWD_KEY}${value}"}\n`;
 }
 
+/**
+ * CODEX CONTROL (v0.6.0 Phase 1) - the two Codex FOREIGN exemptions, proved
+ * non-vacuous.
+ *
+ * `fixtures/codex-*` produces exactly two captured-value shapes that name no
+ * project: the probe's scratch repository, which `scripts/capture-codex.mjs`
+ * enforces with a G8 refusal, and a Codex rollout transcript path, which is
+ * filed under CODEX_HOME by capture DATE and carries no project component at
+ * all. Both are exempted by VALUE in `scripts/privacy-sweep.mjs`.
+ *
+ * The recorded failure mode for exactly this situation is a whole-directory
+ * ALLOW PREFIX: the two `capture-opencode-*` rules forgave every value under a
+ * path, so foreign content reaching those files could never gate and nobody
+ * would find out. An exemption is only safe if something proves what it does
+ * NOT forgive, so the four rows below come in pairs - the exempt shape, and the
+ * nearest thing to it that must still gate. The near misses share the home
+ * directory, and one of them is rollout-shaped in every segment but one.
+ *
+ * The keys are ASSEMBLED, like `CWD_KEY` above and for the same reason: the
+ * sweep reads this file's own bytes, and a source line holding a scanned key
+ * beside a location IS a hit.
+ */
+const TRANSCRIPT_KEY = ['"transcript_path"', ':', '"'].join('');
+const CODEX_HOME = 'C:\\\\Users\\\\dev';
+const CODEX_ROLLOUT_TAIL =
+  '.codex\\\\sessions\\\\2026\\\\09\\\\03\\\\' +
+  'rollout-2026-09-03T00-54-10-01a0641d-8281-7703-97fa-5a829bb77563.jsonl';
+const CODEX_SHAPES = [
+  {
+    id: 'codex-scratch-repo',
+    file: 'fixtures/codex-control/exempt-scratch.jsonl',
+    key: CWD_KEY,
+    value: `${CODEX_HOME}\\\\codex-probe\\\\scratch`,
+    expectFlagged: false,
+    why: 'the probe scratch repo: the one cwd capture-codex.mjs permits, and not a project of ours',
+  },
+  {
+    id: 'codex-rollout-path',
+    file: 'fixtures/codex-control/exempt-rollout.jsonl',
+    key: TRANSCRIPT_KEY,
+    value: `${CODEX_HOME}\\\\${CODEX_ROLLOUT_TAIL}`,
+    expectFlagged: false,
+    why: 'a rollout filed by date under CODEX_HOME: date and UUID only, no project component',
+  },
+  {
+    id: 'codex-sibling-of-scratch',
+    file: 'fixtures/codex-control/gates-sibling.jsonl',
+    key: CWD_KEY,
+    value: `${CODEX_HOME}\\\\codex-probe\\\\${PARITY_PROJECT}`,
+    expectFlagged: true,
+    why: 'THE NEAR MISS. Same home, same parent directory, different project - a prefix rule forgives it',
+  },
+  {
+    id: 'codex-rollout-with-project-segment',
+    file: 'fixtures/codex-control/gates-rollout.jsonl',
+    key: TRANSCRIPT_KEY,
+    value: `${CODEX_HOME}\\\\${PARITY_PROJECT}\\\\${CODEX_ROLLOUT_TAIL}`,
+    expectFlagged: true,
+    why: 'rollout-shaped in every segment but one, and that one names another project',
+  },
+] as const;
+
+function codexLine(key: string, value: string): string {
+  return `{"hook_event_name":"Stop",${key}${value}"}\n`;
+}
+
 let scratch = '';
 
 function writeScratch(rel: string, body: string | Buffer): void {
@@ -390,6 +456,10 @@ beforeAll(async () => {
 
   // (f) Wave 0: the five shapes, one file each.
   for (const shape of PARITY_SHAPES) writeScratch(shape.file, parityLine(shape.value));
+
+  // (g) v0.6.0 Phase 1: the two Codex exemptions and their nearest near misses,
+  //     one file each so a single miss cannot hide behind a neighbour's hit.
+  for (const shape of CODEX_SHAPES) writeScratch(shape.file, codexLine(shape.key, shape.value));
 }, 120_000);
 
 afterAll(() => {
@@ -822,6 +892,42 @@ describe('negative controls', () => {
       const ids = planted.config.foreignValueExemptions.map((r) => r.id);
       expect(ids).toContain('regex-source-not-a-location');
       expect(ids).not.toContain('not-an-absolute-location');
+    });
+  });
+
+  describe('v0.6.0 Phase 1: the Codex exemptions forgive two shapes and nothing else', () => {
+    it.each(CODEX_SHAPES)('$id -> flagged=$expectFlagged ($why)', (shape) => {
+      const hits = planted.workingTree.foreign.filter((h) => h.path === shape.file);
+      expect(hits.length > 0, `${shape.id}: ${shape.why}`).toBe(shape.expectFlagged);
+    });
+
+    it('is a control, not a tautology: two exempt, two gating, four distinct files', () => {
+      // Without this, "fixing" a red row by flipping expectFlagged passes.
+      expect(CODEX_SHAPES.filter((s) => s.expectFlagged)).toHaveLength(2);
+      expect(CODEX_SHAPES.filter((s) => !s.expectFlagged)).toHaveLength(2);
+      expect(new Set(CODEX_SHAPES.map((s) => s.file)).size).toBe(CODEX_SHAPES.length);
+      // And the pairing is the point: each gating row shares the exempt row's
+      // home directory, so a rule written as a directory prefix cannot pass.
+      expect(CODEX_SHAPES.every((s) => s.value.startsWith(CODEX_HOME))).toBe(true);
+    });
+
+    it('names both exemptions, so a rename cannot orphan this control', () => {
+      const ids = planted.config.foreignValueExemptions.map((r) => r.id);
+      expect(ids).toContain('codex-probe-scratch-repo');
+      expect(ids).toContain('codex-rollout-transcript-path');
+    });
+
+    it('neither Codex exemption is scoped to a path, which is what makes it a value rule', () => {
+      // A `paths` entry on either would reintroduce the whole-directory ALLOW
+      // PREFIX shape the two `capture-opencode-*` rules had - the recorded
+      // reason foreign content inside those corpora could never gate.
+      const codex = planted.config.foreignValueExemptions.filter((r) =>
+        r.id.startsWith('codex-'),
+      );
+      expect(codex).toHaveLength(2);
+      for (const rule of codex) {
+        expect(rule.paths, `${rule.id} is path-scoped`).toBeNull();
+      }
     });
   });
 

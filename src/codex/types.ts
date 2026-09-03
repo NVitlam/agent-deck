@@ -378,6 +378,14 @@ export interface CodexSpawn {
   readonly childThreadId: string | null;
   readonly childResolvedBy: CodexSpawnResolution;
   /**
+   * What the `SubAgentActivity` item on this call states about the child.
+   * A THIRD witness to the same edge, beside the output's two join keys, and
+   * carried for the same reason as {@link CodexThread.threadSpawn}: it is
+   * topology, and the golden may not exclude topology.
+   */
+  readonly activityAgentPath: CodexOptional<string>;
+  readonly activityAgentThreadId: string | null;
+  /**
    * The engine ENFORCES `agent_path` uniqueness: a second spawn asking for a
    * taken path is refused with `agent path /root/dup already exists`.
    *
@@ -469,6 +477,29 @@ export interface CodexThread {
 
   readonly toolCalls: readonly CodexToolCall[];
   readonly spawns: readonly CodexSpawn[];
+  /**
+   * The NESTED `source.subagent.thread_spawn` record, verbatim as optionals.
+   *
+   * **This is NOT {@link CodexThread.agentPath}'s field and must never be
+   * conflated with it** — that is the top-level key, this is the spawn
+   * record's own, and on a v1 subagent they disagree exactly (absent against
+   * present-and-null). Carrying both, under names that cannot be mistaken
+   * for one another, is what stops the confusion recurring.
+   *
+   * Carried because the golden reproduces it: an exclusion may not hide a key
+   * that carries TOPOLOGY (Amendment 2026-09-03), and `parent_thread_id`
+   * inside this record plainly does.
+   *
+   * `present: false` on every root thread — a root was not spawned.
+   */
+  readonly threadSpawn: {
+    readonly present: boolean;
+    readonly agentPath: CodexOptional<string>;
+    readonly agentNickname: CodexOptional<string>;
+    readonly agentRole: CodexOptional<string>;
+    readonly parentThreadId: CodexOptional<string>;
+    readonly depth: CodexOptional<number>;
+  };
   readonly counters: CodexCounters;
   readonly records: number;
   /**
@@ -633,6 +664,15 @@ export interface CodexEngineResult {
   /** Every thread parsed, root and subagent, for the golden and diagnostics. */
   readonly threads: readonly CodexThread[];
   readonly refused: readonly CodexRefusal[];
+  /**
+   * Every spawn-to-child join the grafter resolved, or failed to.
+   *
+   * `graft.ts` has always computed these; the engine did not pass them on,
+   * so the golden had to EXCLUDE the join — the single most important thing
+   * DoD 2.4 is about. Amendment 2026-09-03 forbids that, and this field is
+   * what makes reproducing it possible.
+   */
+  readonly spawnJoins: readonly { readonly callId: string; readonly childThreadId: string | null; readonly resolvedBy: CodexSpawnResolution }[];
   readonly counters: CodexCounters;
   readonly discovery: CodexDiscovery;
 }

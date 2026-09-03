@@ -327,6 +327,10 @@ async function readDiscovered(
     sessions: grafted.sessions,
     threads,
     refused,
+    // Amendment 2026-09-03: the golden may not exclude topology, and the
+    // spawn-to-child join is the topology. graft.ts always computed these;
+    // the engine simply did not pass them on.
+    spawnJoins: grafted.spawnJoins,
     counters,
     discovery,
   };

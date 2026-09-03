@@ -271,7 +271,10 @@ function readThread(file: string): CodexThread {
     const refused =
       raw !== undefined && raw !== '' && outputTaskName === null && outputAgentId === null;
 
+    const activityItem = obj(completion?.item);
     spawns.push({
+      activityAgentPath: opt<string>(activityItem, 'agent_path'),
+      activityAgentThreadId: activityItem === undefined ? null : str(activityItem['agent_thread_id']),
       threadId: str(payload['id']) ?? '',
       file: path.basename(file),
       ordinal: r.ordinal,
@@ -353,6 +356,14 @@ function readThread(file: string): CodexThread {
   const dialect = (dialectFromMeta ?? dialectFromTurn ?? null) as CodexThread['dialect'];
 
   return {
+    threadSpawn: {
+      present: spawn !== undefined,
+      agentPath: opt<string>(spawn, 'agent_path'),
+      agentNickname: opt<string>(spawn, 'agent_nickname'),
+      agentRole: opt<string>(spawn, 'agent_role'),
+      parentThreadId: opt<string>(spawn, 'parent_thread_id'),
+      depth: opt<number>(spawn, 'depth'),
+    },
     threadId: str(payload['id']) ?? '',
     sessionId: str(payload['session_id']) ?? '',
     owningFile: path.basename(file),
@@ -466,6 +477,14 @@ const ABSENT: CodexOptional<never> = { present: false, value: null };
 
 function makeThread(over: Partial<CodexThread> & { threadId: string; sessionId: string }): CodexThread {
   return {
+    threadSpawn: {
+      present: false,
+      agentPath: ABSENT,
+      agentNickname: ABSENT,
+      agentRole: ABSENT,
+      parentThreadId: ABSENT,
+      depth: ABSENT,
+    },
     owningFile: `rollout-${over.threadId}.jsonl`,
     cwd: 'C:/w',
     cliVersion: '0.151.0-alpha.7.2',
@@ -507,6 +526,8 @@ function makeRoot(id: string, over: Partial<CodexThread> = {}): CodexThread {
 
 function makeSpawn(over: Partial<CodexSpawn> & { threadId: string; callId: string }): CodexSpawn {
   return {
+    activityAgentPath: { present: false, value: null },
+    activityAgentThreadId: null,
     file: 'rollout.jsonl',
     ordinal: 1,
     itemId: over.callId,

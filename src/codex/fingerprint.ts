@@ -246,7 +246,32 @@ export const CODEX_SESSION_META_FIELDS: readonly string[] = ['id', 'cwd', 'threa
  * `agent_path` is present-and-`null`. `types.ts` leaves the corresponding code
  * out of `CodexMismatchCode` for the same reason.
  */
-export const CODEX_THREAD_SPAWN_FIELDS: readonly string[] = ['depth', 'parent_thread_id'];
+/**
+ * The JOIN KEYS a subagent's `thread_spawn` must carry AT LEAST ONE of.
+ *
+ * **Amendment 2026-09-03 (user, at the Phase 2 gate).** This was
+ * `CODEX_THREAD_SPAWN_FIELDS = ['depth', 'parent_thread_id']`, and every
+ * listed field was REQUIRED. DoD 2.2 as originally written went further and
+ * required `agent_path` too, which spec C3 forbids in bold — the DoD was
+ * written before the dialect finding and the spec was right.
+ *
+ * The amended rule refuses only a `thread_spawn` that carries **neither**
+ * `agent_path` **nor** `parent_thread_id` — a subagent with no way to be
+ * attached to anything by either dialect's join (C4a). Everything weaker is a
+ * PARK, decided by the grafter, never a refusal that blanks the session.
+ *
+ * **`depth` is no longer required.** It was, and requiring it refused a
+ * session over a field nothing joins on: `CodexThread.spawnDepth` is a
+ * `CodexOptional`, so absence is representable, and DoD 2.4 takes depth from
+ * the transcript when it is there rather than depending on it being there.
+ *
+ * "Carries" means THE KEY IS PRESENT, not that its value is non-null. A `v1`
+ * subagent's nested `agent_path` is present-and-`null`, and that is a
+ * carried key: the whole `CodexOptional` distinction exists because those
+ * two states are different facts, and reading present-and-null as absent is
+ * what parked an entire dialect twice.
+ */
+export const CODEX_THREAD_SPAWN_JOIN_KEYS: readonly string[] = ['agent_path', 'parent_thread_id'];
 
 /**
  * The `response_item.payload.type` values that must carry a `call_id` (DoD
@@ -481,7 +506,7 @@ export function resolveCodexDialect(
  *   3. its `id` / `cwd` / `thread_source`       -> `sessionMetaFieldMissing`
  *   4. its `cli_version` present                -> `cliVersionMissing`
  *   5. that version inside the G9 window        -> `versionOutOfWindow`
- *   6. EVERY subagent `session_meta`'s spawn    -> `subagentSpawnMissing`
+ *   6. EVERY subagent spawn carries a join key -> `subagentSpawnMissing`
  *   7. every call's `call_id`                   -> `callIdMissing`
  *   8. the dialect                              -> `dialectContradiction`
  *
@@ -555,15 +580,18 @@ export function fingerprintThread(
         'session_meta.payload.source.subagent.thread_spawn',
       );
     }
-    for (const field of CODEX_THREAD_SPAWN_FIELDS) {
-      const value = spawn[field];
-      if (value === undefined || value === null) {
-        return refuse(
-          'subagentSpawnMissing',
-          at(record.ordinal),
-          `session_meta.payload.source.subagent.thread_spawn.${field}`,
-        );
-      }
+    // Amendment 2026-09-03: NEITHER key, not "any key missing". A spawn
+    // record carrying one of the two is joinable by one of the two dialects
+    // (C4a), and refusing it would blank a session that renders perfectly.
+    // Key PRESENCE, not a non-null value — a v1 nested agent_path is
+    // present-and-null and that is carried.
+    const carries = CODEX_THREAD_SPAWN_JOIN_KEYS.filter((k) => Object.hasOwn(spawn, k));
+    if (carries.length === 0) {
+      return refuse(
+        'subagentSpawnMissing',
+        at(record.ordinal),
+        `session_meta.payload.source.subagent.thread_spawn.${CODEX_THREAD_SPAWN_JOIN_KEYS.join('|')}`,
+      );
     }
   }
 

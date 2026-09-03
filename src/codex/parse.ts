@@ -596,6 +596,13 @@ interface CompletedItem {
   readonly ordinal: number;
   readonly id: string;
   readonly type: string;
+  /**
+   * A `SubAgentActivity` item names the child it is about. That is TOPOLOGY,
+   * and Amendment 2026-09-03 forbids the golden from excluding topology, so
+   * it is carried rather than discarded. Absent on every other item type.
+   */
+  readonly agentPath: CodexOptional<string>;
+  readonly agentThreadId: string | null;
   claimed: boolean;
 }
 
@@ -637,6 +644,9 @@ function pairCalls(kept: readonly CodexRecord[]): { calls: RawCall[]; items: Com
         ordinal: record.ordinal,
         id: typeof item?.['id'] === 'string' ? item['id'] : '',
         type: typeof item?.['type'] === 'string' ? item['type'] : '',
+        agentPath: optionalString(item, 'agent_path'),
+        agentThreadId:
+          typeof item?.['agent_thread_id'] === 'string' ? item['agent_thread_id'] : null,
         claimed: false,
       });
       continue;
@@ -876,6 +886,16 @@ export function parseCodexThread(
     agentNickname: optionalString(ownerPayload, 'agent_nickname'),
     parentThreadId: optionalString(ownerPayload, 'parent_thread_id'),
     spawnDepth: optionalNumber(spawnMeta, 'depth'),
+    threadSpawn: {
+      present: spawnMeta !== null,
+      agentPath: optionalString(spawnMeta, 'agent_path'),
+      agentNickname:
+        optionalString(spawnMeta, 'agent_nickname'),
+      agentRole: optionalString(spawnMeta, 'agent_role'),
+      parentThreadId:
+        optionalString(spawnMeta, 'parent_thread_id'),
+      depth: optionalNumber(spawnMeta, 'depth'),
+    },
     subagentHistoryStartOrdinal: optionalNumber(ownerPayload, 'subagent_history_start_ordinal'),
     forkedFromId: optionalString(ownerPayload, 'forked_from_id'),
     inheritedRecordsBeforeForkStart: redaction.counters.inheritedRecordsDropped,
@@ -985,6 +1005,8 @@ function buildSpawn(
     // NOT this module's join - see the header. Both keys are above.
     childThreadId: null,
     childResolvedBy: 'unresolved',
+    activityAgentPath: call.item === null ? { present: false, value: null } : call.item.agentPath,
+    activityAgentThreadId: call.item === null ? null : call.item.agentThreadId,
     refused,
     refusalText: refused ? renderedOutput : null,
     messagePresent: typeof message === 'string',

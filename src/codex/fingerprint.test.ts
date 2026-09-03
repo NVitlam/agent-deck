@@ -39,7 +39,7 @@ import {
   CODEX_RECORD_KEYS,
   CODEX_SESSION_META_FIELDS,
   CODEX_SPAWN_TOOL_NAME,
-  CODEX_THREAD_SPAWN_FIELDS,
+  CODEX_THREAD_SPAWN_JOIN_KEYS,
   CODEX_VERSION_WINDOW,
   PINNED_CODEX_VERSION,
   codexVersionWindow,
@@ -316,9 +316,9 @@ describe('the asserted structure is the structure the corpus has', () => {
         const spawn = (
           r.payload['source'] as { subagent: { thread_spawn: Record<string, unknown> } }
         ).subagent.thread_spawn;
-        for (const field of CODEX_THREAD_SPAWN_FIELDS) {
-          expect(spawn[field], `${field} on ${runOf(path)}`).not.toBeUndefined();
-        }
+        // Amendment 2026-09-03: at least ONE join key, not every field.
+        const carried = CODEX_THREAD_SPAWN_JOIN_KEYS.filter((k) => Object.hasOwn(spawn, k));
+        expect(carried.length, `join keys on ${runOf(path)}`).toBeGreaterThan(0);
       }
     }
     expect(metas).toBeGreaterThan(0);
@@ -483,14 +483,9 @@ const REFUSALS: [string, CodexMismatchCode, string][] = [
     'session_meta.payload.source.subagent.thread_spawn',
   ],
   [
-    'subagent-spawn-no-depth.jsonl',
+    'subagent-spawn-neither-join-key.jsonl',
     'subagentSpawnMissing',
-    'session_meta.payload.source.subagent.thread_spawn.depth',
-  ],
-  [
-    'subagent-spawn-no-parent-thread-id.jsonl',
-    'subagentSpawnMissing',
-    'session_meta.payload.source.subagent.thread_spawn.parent_thread_id',
+    'session_meta.payload.source.subagent.thread_spawn.agent_path|parent_thread_id',
   ],
   ['call-id-missing-function-call.jsonl', 'callIdMissing', 'function_call.call_id'],
   ['call-id-missing-custom-tool-call.jsonl', 'callIdMissing', 'custom_tool_call.call_id'],
@@ -534,6 +529,11 @@ const ACCEPTED: [string, 'v1' | 'v2' | null, string | null][] = [
   ['ok-root-v1.jsonl', 'v1', 'turn_context.multi_agent_version'],
   ['ok-root-v1-no-spawn.jsonl', 'v1', 'turn_context.multi_agent_version'],
   ['subagent-agent-path-absent.jsonl', 'v2', 'turn_context.multi_agent_version'],
+  // Amendment 2026-09-03 moved these two from REFUSALS to ACCEPTED. Neither
+  // missing field is a join key, and refusing on one blanked a session that
+  // renders perfectly.
+  ['subagent-spawn-no-depth.jsonl', 'v2', 'turn_context.multi_agent_version'],
+  ['subagent-spawn-no-parent-thread-id.jsonl', 'v2', 'turn_context.multi_agent_version'],
   ['subagent-agent-path-null.jsonl', 'v2', 'turn_context.multi_agent_version'],
   ['dialect-absent.jsonl', null, null],
   ['dialect-unrecognised.jsonl', null, null],
@@ -665,9 +665,39 @@ describe('the structural half and the version half cannot be confused', () => {
 // ---------------------------------------------------------------------------
 
 describe('agent_path is deliberately outside the fingerprint (spec C3)', () => {
-  it('is absent from the required thread_spawn fields', () => {
-    expect(CODEX_THREAD_SPAWN_FIELDS).toEqual(['depth', 'parent_thread_id']);
-    expect(CODEX_THREAD_SPAWN_FIELDS).not.toContain('agent_path');
+  it('is one of TWO join keys, either of which is enough (Amendment 2026-09-03)', () => {
+    // The amendment did not put agent_path into a REQUIRED list — it made the
+    // pair an OR. A subagent carrying either key is joinable by one dialect
+    // or the other (C4a), and only a spawn carrying neither is refused.
+    expect(CODEX_THREAD_SPAWN_JOIN_KEYS).toEqual(['agent_path', 'parent_thread_id']);
+    expect(CODEX_THREAD_SPAWN_JOIN_KEYS).not.toContain('depth');
+  });
+
+  it('accepts a subagent whose thread_spawn has no depth — it is not a join key', () => {
+    const records = mutation('subagent-spawn-no-depth.jsonl');
+    // Non-vacuity: the fixture really lacks it, or this asserts nothing.
+    for (const record of records) {
+      const r = record as { type: string; payload: Record<string, unknown> };
+      if (r.type !== 'session_meta') continue;
+      if (r.payload['thread_source'] !== 'subagent') continue;
+      const src = r.payload['source'] as { subagent: { thread_spawn: Record<string, unknown> } };
+      expect(Object.hasOwn(src.subagent.thread_spawn, 'depth')).toBe(false);
+    }
+    expect(fingerprintThread(records).ok).toBe(true);
+  });
+
+  it('accepts a subagent with agent_path but no parent_thread_id — one key is enough', () => {
+    const records = mutation('subagent-spawn-no-parent-thread-id.jsonl');
+    for (const record of records) {
+      const r = record as { type: string; payload: Record<string, unknown> };
+      if (r.type !== 'session_meta') continue;
+      if (r.payload['thread_source'] !== 'subagent') continue;
+      const src = r.payload['source'] as { subagent: { thread_spawn: Record<string, unknown> } };
+      const spawn = src.subagent.thread_spawn;
+      expect(Object.hasOwn(spawn, 'parent_thread_id')).toBe(false);
+      expect(Object.hasOwn(spawn, 'agent_path')).toBe(true);
+    }
+    expect(fingerprintThread(records).ok).toBe(true);
   });
 
   it('a subagent with NO agent_path key at all is accepted', () => {

@@ -106,6 +106,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { readCodexEngine } from './index.js';
+import { readCodexHookStream } from './liveness.js';
 import type {
   CodexEngineResult,
   CodexThread,
@@ -199,6 +200,8 @@ const PARTITION: Readonly<Record<string, Partition>> = {
     reproduced: [
       'dialect',
       'dialect_evidence',
+      'hook_join',
+      'liveness',
       'dialect_source',
       'redaction',
       'sizes',
@@ -215,12 +218,6 @@ const PARTITION: Readonly<Record<string, Partition>> = {
         'CLASS 1 — the JOIN KEY. It is the run directory this file pointed the ' +
         'engine at, so reproducing it would be reading back our own argument. ' +
         'It is asserted separately: `discovery.root` lies under that directory.',
-      hook_join:
-        'CLASS 2 hook-stream — describes hook-stream.jsonl, which the engine ' +
-        'does not read. liveness.ts is deliberately not chained (DoD 3.2).',
-      liveness:
-        'CLASS 2 hook-stream — SubagentStart/Stop accounting over the same ' +
-        'unread file.',
     },
   },
 
@@ -266,6 +263,11 @@ const PARTITION: Readonly<Record<string, Partition>> = {
       'records_in_owning_file',
       'session_id',
       'spawn_depth',
+      'spawn_present',
+      'spawn_agent_path',
+      'spawn_agent_nickname',
+      'spawn_agent_role',
+      'spawn_parent_thread_id',
       'subagent_history_start_ordinal',
       'thread_id',
       'thread_source',
@@ -285,23 +287,6 @@ const PARTITION: Readonly<Record<string, Partition>> = {
         'carries no cross-file census.',
       declared_in_files:
         'CLASS 4 — the same cross-file census, counted by distinct file.',
-      spawn_present:
-        'CLASS 4 — whether source.subagent.thread_spawn exists. fingerprint.ts ' +
-        'REQUIRES it for any subagent declaration (subagentSpawnMissing), so an ' +
-        'accepted subagent always has one; the flag itself is not carried.',
-      spawn_agent_path:
-        'CLASS 4 — the NESTED thread_spawn.agent_path, which is where the v1 ' +
-        'dialect writes its present-and-null. CodexThread.agent_path is the ' +
-        'TOP-LEVEL key and is a different fact; conflating them is exactly the ' +
-        'v1 mistake types.ts records.',
-      spawn_agent_nickname:
-        'CLASS 4 — nested thread_spawn.agent_nickname. CodexThread carries the ' +
-        'top-level agent_nickname only.',
-      spawn_agent_role:
-        'CLASS 4 — nested thread_spawn.agent_role, not on the hand-off line.',
-      spawn_parent_thread_id:
-        'CLASS 4 — nested thread_spawn.parent_thread_id. CodexThread carries the ' +
-        'top-level parent_thread_id, which is the key graft.ts joins on.',
     },
   },
 
@@ -311,13 +296,11 @@ const PARTITION: Readonly<Record<string, Partition>> = {
       'agent_path_present',
       'count',
       'max_depth',
+      'spawn_agent_path_null',
       'subagent_threads',
       'user_threads',
     ],
     excluded: {
-      spawn_agent_path_null:
-        'CLASS 4 — counts threads whose NESTED thread_spawn.agent_path is present ' +
-        'and null. That field is excluded above, so its summary is too.',
     },
   },
 
@@ -361,7 +344,11 @@ const PARTITION: Readonly<Record<string, Partition>> = {
 
   'golden.runs[].spawns[]': {
     reproduced: [
+      'activity_agent_path',
+      'activity_agent_thread_id',
       'call_id',
+      'child_resolved_by',
+      'child_thread_id',
       'file',
       'item_id',
       'item_type',
@@ -380,37 +367,16 @@ const PARTITION: Readonly<Record<string, Partition>> = {
       'thread_id',
     ],
     excluded: {
-      child_thread_id:
-        'CLASS 4 — THE JOIN. graft.ts performs it and reports it on ' +
-        'CodexGraftResult.spawnJoins, which CodexEngineResult does not carry. ' +
-        'CodexSpawn.childThreadId is a PLACEHOLDER: parse.ts sees one thread at a ' +
-        'time and sets it null by design, so reproducing it from there would print ' +
-        'null for a join that succeeded. The join IS asserted separately, against ' +
-        'SessionState.spawnEdges and SessionState.parked.',
-      child_resolved_by:
-        'CLASS 4 — the same placeholder problem, one level worse: CodexSpawn.' +
-        'childResolvedBy is "unresolved" on every spawn at this boundary while the ' +
-        'grafter resolved 9 of 10. Deriving the right value here means ' +
-        're-implementing joinSpawns, i.e. a second engine.',
       argument_keys:
         'CLASS 4 — the sorted key list of the spawn call\u2019s parsed `arguments`. ' +
         'parse.ts reads the three keys it needs (task_name, message) and does not ' +
         'carry the key set.',
-      activity_agent_path:
-        'CLASS 4 — read off the paired SubAgentActivity item\u2019s payload. ' +
-        'CodexToolCall carries the item\u2019s id and type, never its body.',
-      activity_agent_thread_id:
-        'CLASS 4 — the same SubAgentActivity payload field.',
     },
   },
 
   'golden.runs[].spawn_summary': {
-    reproduced: ['count', 'refused'],
+    reproduced: ['count', 'refused', 'resolved_to_child', 'unresolved'],
     excluded: {
-      resolved_to_child:
-        'CLASS 4 — a count of the join excluded above.',
-      unresolved:
-        'CLASS 4 — a count of the join excluded above.',
     },
   },
 
@@ -443,7 +409,7 @@ const PARTITION: Readonly<Record<string, Partition>> = {
   },
 
   'golden.runs[].sizes': {
-    reproduced: ['transcript_bytes_total'],
+    reproduced: ['hook_stream_bytes', 'transcript_bytes_total'],
     excluded: {
       longest_record_bytes:
         'CLASS 4 — per-RECORD byte sizes. The tailer measures bytes per FILE and ' +
@@ -451,21 +417,30 @@ const PARTITION: Readonly<Record<string, Partition>> = {
         'the hand-off line.',
       longest_record:
         'CLASS 4 — the file/ordinal/type of that record, same reason.',
-      hook_stream_bytes:
-        'CLASS 2 hook-stream — the size of a file this engine does not open.',
     },
   },
 
   'golden.summary': {
     reproduced: [
+      'agents_with_multiple_stops',
       'dialect_sources',
       'dialects',
+      'hook_records',
+      'hook_records_with_tool_use_id',
+      'hook_resolves_call_id',
+      'hook_resolves_item_id',
+      'hook_resolves_neither',
+      'hook_resolves_union',
+      'subagent_starts',
+      'subagent_stops',
+      'subagent_stops_without_a_start',
       'malformed_lines',
       'max_depth',
       'records',
       'run_count',
       'spawns',
       'spawns_refused',
+      'spawns_resolved_to_child',
       'threads',
       'tool_calls',
       'tool_calls_item_id_distinct',
@@ -474,17 +449,6 @@ const PARTITION: Readonly<Record<string, Partition>> = {
       'transcripts',
     ],
     excluded: {
-      spawns_resolved_to_child: 'CLASS 4 — an aggregate of the excluded join.',
-      hook_records: 'CLASS 2 hook-stream.',
-      hook_records_with_tool_use_id: 'CLASS 2 hook-stream.',
-      hook_resolves_call_id: 'CLASS 2 hook-stream.',
-      hook_resolves_item_id: 'CLASS 2 hook-stream.',
-      hook_resolves_union: 'CLASS 2 hook-stream.',
-      hook_resolves_neither: 'CLASS 2 hook-stream.',
-      subagent_starts: 'CLASS 2 hook-stream.',
-      subagent_stops: 'CLASS 2 hook-stream.',
-      agents_with_multiple_stops: 'CLASS 2 hook-stream.',
-      subagent_stops_without_a_start: 'CLASS 2 hook-stream.',
       reasoning_response_items:
         'CLASS 4 — an aggregate of the per-run key excluded above (one engine ' +
         'counter covers it and reasoning_completed_items together).',
@@ -557,10 +521,114 @@ function sole<T>(values: readonly T[], what: string): T {
  * selection, sorting, de-duplication and counting; nothing is derived from a
  * corpus byte and no rule of the generator's is re-implemented.
  */
-function projectRun(result: CodexEngineResult): Record<string, unknown> {
+/**
+ * The hook half, derived through PRODUCTION `readCodexHookStream`.
+ *
+ * Amendment 2026-09-03 forbids the excluded partition from carrying
+ * liveness, and it was carrying all of it. `readCodexEngine` deliberately
+ * does not chain liveness (Phase 3, DoD 3.2), so this reads the stream with
+ * the engine's own reader instead — production code, not a second engine.
+ * The JOIN counts below resolve against ids the ENGINE parsed out of the
+ * transcripts, so they are a statement about the engine's output, not about
+ * this file's arithmetic.
+ */
+function projectHooks(
+  result: CodexEngineResult,
+  streamText: string | null,
+): { liveness: Record<string, unknown>; hook_join: Record<string, unknown>; bytes: number } {
+  const callIds = new Set<string>();
+  const itemIds = new Set<string>();
+  for (const th of result.threads) {
+    for (const c of th.toolCalls) {
+      callIds.add(c.callId);
+      if (c.itemId !== null) itemIds.add(c.itemId);
+    }
+  }
+
+  const read = streamText === null ? null : readCodexHookStream(streamText);
+  const events = read === null ? [] : read.events;
+  const payloads = events.map((e) => e.payload as Record<string, unknown>);
+  const s = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
+  const eventCounts: Record<string, number> = {};
+  for (const p of payloads) {
+    const name = s(p['hook_event_name']);
+    if (name !== null) eventCounts[name] = (eventCounts[name] ?? 0) + 1;
+  }
+
+  const withTool = payloads.filter((p) => s(p['tool_use_id']) !== null);
+  const byCall = withTool.filter((p) => callIds.has(s(p['tool_use_id']) as string));
+  const byItem = withTool.filter((p) => itemIds.has(s(p['tool_use_id']) as string));
+  const both = withTool.filter(
+    (p) => callIds.has(s(p['tool_use_id']) as string) && itemIds.has(s(p['tool_use_id']) as string),
+  );
+  const union = withTool.filter(
+    (p) => callIds.has(s(p['tool_use_id']) as string) || itemIds.has(s(p['tool_use_id']) as string),
+  );
+
+  // Per-agent liveness. C11: a main-thread event OMITS agent_id rather than
+  // sending a sentinel, so absence is the signal and grouping on it is safe.
+  const agentIds = [...new Set(payloads.map((p) => s(p['agent_id'])).filter((v): v is string => v !== null))].sort();
+  const agents = agentIds.map((id) => {
+    const mine = payloads.filter((p) => s(p['agent_id']) === id);
+    const stops = mine.filter((p) => s(p['hook_event_name']) === 'SubagentStop');
+    const starts = mine.filter((p) => s(p['hook_event_name']) === 'SubagentStart');
+    const turnIds = [...new Set(mine.map((p) => s(p['turn_id'])).filter((v): v is string => v !== null))].sort();
+    const stopTurnIds = new Set(stops.map((p) => s(p['turn_id'])).filter((v) => v !== null));
+    return {
+      agent_id: id,
+      agent_transcript_path_on_stop: stops.some((p) => s(p['agent_transcript_path']) !== null),
+      distinct_stop_turn_ids: stopTurnIds.size,
+      distinct_turn_ids: turnIds.length,
+      subagent_start_count: starts.length,
+      subagent_stop_count: stops.length,
+      turn_ids: turnIds,
+    };
+  });
+
+  const stopped = new Set(
+    payloads.filter((p) => s(p['hook_event_name']) === 'SubagentStop').map((p) => s(p['agent_id'])),
+  );
+  const started = new Set(
+    payloads.filter((p) => s(p['hook_event_name']) === 'SubagentStart').map((p) => s(p['agent_id'])),
+  );
+
+  return {
+    bytes: streamText === null ? 0 : Buffer.byteLength(streamText, 'utf8'),
+    liveness: {
+      agents,
+      agents_with_multiple_stops: agents.filter((a) => a.subagent_stop_count > 1).length,
+      session_start_count: eventCounts['SessionStart'] ?? 0,
+      stop_count: eventCounts['Stop'] ?? 0,
+      subagent_start_count: eventCounts['SubagentStart'] ?? 0,
+      subagent_stop_count: eventCounts['SubagentStop'] ?? 0,
+      subagent_stops_without_a_start: [...stopped].filter((id) => !started.has(id)).length,
+    },
+    hook_join: {
+      envelope_tool_use_id_equals_raw: withTool.length - (read?.envelopeDisagreements ?? 0),
+      events: eventCounts,
+      main_thread_records: payloads.filter((p) => s(p['agent_id']) === null).length,
+      malformed_lines: read?.malformedLines ?? 0,
+      records: payloads.length,
+      records_with_agent_id: payloads.filter((p) => s(p['agent_id']) !== null).length,
+      records_with_tool_use_id: withTool.length,
+      resolves_both: both.length,
+      resolves_call_id: byCall.length,
+      resolves_call_id_only: byCall.length - both.length,
+      resolves_item_id: byItem.length,
+      resolves_item_id_only: byItem.length - both.length,
+      resolves_neither: withTool.length - union.length,
+      resolves_union: union.length,
+      stream_present: streamText !== null,
+    },
+  };
+}
+
+function projectRun(result: CodexEngineResult, streamText: string | null): Record<string, unknown> {
   const threads = [...result.threads].sort(byKeys((t: CodexThread) => [t.threadId]));
   const bytesByFile = new Map(result.discovery.transcripts.map((t) => [t.file, t.bytes]));
   const calls = threads.flatMap((t) => t.toolCalls);
+  const joinByCall = new Map(result.spawnJoins.map((j) => [j.callId, j]));
   const callById = new Map(calls.map((c) => [c.callId, c]));
   const spawns = threads.flatMap((t) => t.spawns);
 
@@ -588,7 +656,11 @@ function projectRun(result: CodexEngineResult): Record<string, unknown> {
     thread_id: c.threadId,
   });
 
+  const hooks = projectHooks(result, streamText);
+
   return {
+    hook_join: hooks.hook_join,
+    liveness: hooks.liveness,
     dialect: sole(threads.map((t) => t.dialect), 'dialect'),
     dialect_source: sole(threads.map((t) => t.dialectSource), 'dialect_source'),
     dialect_evidence: {
@@ -637,7 +709,12 @@ function projectRun(result: CodexEngineResult): Record<string, unknown> {
       parent_thread_id: t.parentThreadId,
       records_in_owning_file: t.records,
       session_id: t.sessionId,
+      spawn_agent_nickname: t.threadSpawn.agentNickname,
+      spawn_agent_path: t.threadSpawn.agentPath,
+      spawn_agent_role: t.threadSpawn.agentRole,
       spawn_depth: t.spawnDepth,
+      spawn_parent_thread_id: t.threadSpawn.parentThreadId,
+      spawn_present: t.threadSpawn.present,
       subagent_history_start_ordinal: t.subagentHistoryStartOrdinal,
       thread_id: t.threadId,
       thread_source: t.threadSource,
@@ -647,6 +724,9 @@ function projectRun(result: CodexEngineResult): Record<string, unknown> {
       agent_path_present: threads.filter((t) => t.agentPath.present).length,
       count: threads.length,
       max_depth: depths.length > 0 ? Math.max(...depths) : null,
+      spawn_agent_path_null: threads.filter(
+        (t) => t.threadSpawn.agentPath.present && t.threadSpawn.agentPath.value === null,
+      ).length,
       subagent_threads: threads.filter((t) => t.threadSource === 'subagent').length,
       user_threads: threads.filter((t) => t.threadSource === 'user').length,
     },
@@ -673,8 +753,15 @@ function projectRun(result: CodexEngineResult): Record<string, unknown> {
          * both lists, so the lookup cannot miss.
          */
         const call = callById.get(s.callId);
+        // THE JOIN, from the engine's own result. Amendment 2026-09-03: the
+        // partition may not exclude topology, and this is the topology.
+        const join = joinByCall.get(s.callId);
         return {
+          activity_agent_path: s.activityAgentPath,
+          activity_agent_thread_id: s.activityAgentThreadId,
           call_id: s.callId,
+          child_resolved_by: join === undefined ? 'unresolved' : join.resolvedBy,
+          child_thread_id: join === undefined ? null : join.childThreadId,
           file: s.file,
           item_id: s.itemId,
           item_type: call === undefined ? null : call.itemType,
@@ -703,18 +790,33 @@ function projectRun(result: CodexEngineResult): Record<string, unknown> {
           String(s['call_id']),
         ]),
       ),
-    spawn_summary: { count: spawns.length, refused: spawns.filter((s) => s.refused).length },
+    spawn_summary: {
+      count: spawns.length,
+      refused: spawns.filter((s) => s.refused).length,
+      resolved_to_child: spawns.filter(
+        (s) => (joinByCall.get(s.callId)?.childThreadId ?? null) !== null,
+      ).length,
+      unresolved: spawns.filter(
+        (s) => joinByCall.get(s.callId)?.resolvedBy === 'unresolved',
+      ).length,
+    },
     redaction: {
       spawn_messages_encrypted: spawns.filter((s) => s.messageEncrypted).length,
       spawn_messages_plaintext: spawns.filter((s) => s.messagePresent && !s.messageEncrypted).length,
     },
     sizes: {
+      hook_stream_bytes: hooks.bytes,
       transcript_bytes_total: result.discovery.transcripts.reduce((n, t) => n + t.bytes, 0),
     },
   };
 }
 
 /** The whole corpus in the golden's shape, from the per-run projections. */
+const livenessOf = (run: Record<string, unknown>): Record<string, unknown> =>
+  run['liveness'] as Record<string, unknown>;
+const hookJoinOf = (run: Record<string, unknown>): Record<string, unknown> =>
+  run['hook_join'] as Record<string, unknown>;
+
 function projectCorpus(
   results: readonly CodexEngineResult[],
   runs: readonly Record<string, unknown>[],
@@ -752,10 +854,25 @@ function projectCorpus(
         return typeof depth === 'number' && depth > best ? depth : best;
       }, 0),
       records: sum((run) => transcriptsOf(run).reduce((n, t) => n + t.records, 0)),
+      agents_with_multiple_stops: sum((run) => livenessOf(run)['agents_with_multiple_stops'] as number),
+      hook_records: sum((run) => hookJoinOf(run)['records'] as number),
+      hook_records_with_tool_use_id: sum((run) => hookJoinOf(run)['records_with_tool_use_id'] as number),
+      hook_resolves_call_id: sum((run) => hookJoinOf(run)['resolves_call_id'] as number),
+      hook_resolves_item_id: sum((run) => hookJoinOf(run)['resolves_item_id'] as number),
+      hook_resolves_neither: sum((run) => hookJoinOf(run)['resolves_neither'] as number),
+      hook_resolves_union: sum((run) => hookJoinOf(run)['resolves_union'] as number),
       run_count: runs.length,
+      subagent_starts: sum((run) => livenessOf(run)['subagent_start_count'] as number),
+      subagent_stops: sum((run) => livenessOf(run)['subagent_stop_count'] as number),
+      subagent_stops_without_a_start: sum(
+        (run) => livenessOf(run)['subagent_stops_without_a_start'] as number,
+      ),
       spawns: sum((run) => (run['spawns'] as unknown[]).length),
       spawns_refused: sum(
         (run) => (run['spawn_summary'] as Record<string, number>)['refused'] as number,
+      ),
+      spawns_resolved_to_child: sum(
+        (run) => (run['spawn_summary'] as Record<string, number>)['resolved_to_child'] as number,
       ),
       threads: sum((run) => (run['threads'] as unknown[]).length),
       tool_calls: sum((run) => (run['tool_calls'] as unknown[]).length),
@@ -908,7 +1025,10 @@ describe('DoD 2.7 — readCodexEngine() reproduces the golden', () => {
         }
         results.push(outcome.result);
       }
-      const runs = results.map(projectRun);
+      const runs = results.map((r, i) => {
+        const p = join(FIXTURES, corpus, RUNS[i] as string, 'hook-stream.jsonl');
+        return projectRun(r, existsSync(p) ? readFileSync(p, 'utf8') : null);
+      });
       cached = {
         goldenText,
         golden: JSON.parse(goldenText) as Record<string, unknown>,
@@ -1424,5 +1544,102 @@ describe('DoD 2.1 / 2.7 — the engine returns rather than throws', () => {
     });
     if (foreign.kind !== 'ok') throw new Error('engine did not read the corpus');
     expect(foreign.result.sessions.some((s) => s.workspaceMatch)).toBe(false);
+  });
+});
+
+// ===========================================================================
+// THE EXCLUSION IS NOT ALLOWED TO HIDE ANYTHING THAT MATTERS
+// (Amendment 2026-09-03, user, at the Phase 2 gate)
+// ===========================================================================
+
+/**
+ * The five concepts an exclusion may never carry.
+ *
+ * The partition answers "what do we reproduce". It cannot, by itself, answer
+ * "is what we DON'T reproduce harmless" — a partition that is merely honest
+ * about its gaps can still be quietly excluding the whole product. This is the
+ * guard the user added when approving Amendment 2, and it earned its place on
+ * the first run: **26 violations**, including the entire spawn-to-child JOIN
+ * and every liveness key. Both are now reproduced.
+ *
+ * `context` targets the TOKEN concept, not the `turn_context` RECORD TYPE.
+ * The golden's two `turn_context…` keys name where the dialect was read from
+ * (C3a's resolution order) and carry no token figure at all; matching them
+ * would be matching a spelling rather than a meaning. The narrowing is
+ * recorded here rather than done silently, because narrowing a guard's
+ * pattern is exactly how a guard stops guarding.
+ */
+const FORBIDDEN_IN_EXCLUSIONS: readonly (readonly [string, RegExp])[] = [
+  ['topology', /child|parent|spawn|agent_path|thread_id|resolved|depth/i],
+  ['liveness', /liveness|hook|subagent_start|subagent_stop|stop_count|turn_id/i],
+  ['burn', /burn|total_token/i],
+  ['context', /context_now|contextnow|last_token/i],
+  ['window', /window/i],
+];
+
+/**
+ * Which of the five the golden's vocabulary contains AT ALL, pinned.
+ *
+ * Measured over every key at every depth of `golden.json`: topology 27,
+ * liveness 18, **burn 0, context 0, window 0**.
+ *
+ * **That is a real coverage statement and it is not a comfortable one: the
+ * golden does not audit tokens or the context window at all.** DoD 2.6's
+ * `windowTokens` and the `contextNow`/`burn` contract are covered by
+ * `graft.test.ts`, and by nothing here. Reproducing this golden says nothing
+ * about them.
+ *
+ * Pinned so the fact cannot drift silently: a future harvest whose generator
+ * emits a burn or window key changes this list and fails, which forces
+ * whoever adds it to classify it rather than let it land unclassified.
+ */
+const CONCEPTS_IN_THE_GOLDEN: readonly string[] = ['liveness', 'topology'];
+
+describe('the excluded partition carries no topology, liveness, burn, context or window', () => {
+  it('names no excluded key matching any of the five concepts', () => {
+    const offences: string[] = [];
+    for (const [level, part] of Object.entries(PARTITION)) {
+      for (const key of Object.keys(part.excluded)) {
+        for (const [concept, re] of FORBIDDEN_IN_EXCLUSIONS) {
+          if (re.test(key)) offences.push(`${level}.${key} -> ${concept}`);
+        }
+      }
+    }
+    expect(offences.sort()).toStrictEqual([]);
+  });
+
+  it('is non-vacuous: every concept the golden HAS is matched by its pattern', () => {
+    // A guard whose patterns match nothing passes forever. This walks the
+    // golden's real key set rather than the partition, so the patterns are
+    // checked against the vocabulary they police.
+    const corpus = CORPORA[0];
+    expect(corpus, 'no codex corpus on disk').toBeDefined();
+    const golden: unknown = JSON.parse(
+      readFileSync(join(FIXTURES, corpus as string, 'golden.json'), 'utf8'),
+    );
+    const keys = new Set<string>();
+    const walk = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v !== null && typeof v === 'object') {
+        for (const [k, x] of Object.entries(v)) {
+          keys.add(k);
+          walk(x);
+        }
+      }
+    };
+    walk(golden);
+
+    const present = FORBIDDEN_IN_EXCLUSIONS.filter(([, re]) =>
+      [...keys].some((k) => re.test(k)),
+    ).map(([concept]) => concept);
+    expect(present.sort()).toStrictEqual([...CONCEPTS_IN_THE_GOLDEN].sort());
+
+    // And the two that ARE present are matched in bulk, not by one lucky key.
+    for (const concept of CONCEPTS_IN_THE_GOLDEN) {
+      const re = FORBIDDEN_IN_EXCLUSIONS.find(([c]) => c === concept)?.[1];
+      expect(re, concept).toBeDefined();
+      const hits = [...keys].filter((k) => (re as RegExp).test(k));
+      expect(hits.length, `${concept} matches too few keys to be a real guard`).toBeGreaterThan(5);
+    }
   });
 });

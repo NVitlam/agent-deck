@@ -2202,6 +2202,50 @@ describe('fixtures/synthetic-hook-fuzz: hostile input never crashes the listener
     expect(new Set(corpus.map((c) => c.id)).size).toBe(corpus.length);
   });
 
+  it('DoD 3.1: covers Codex-shaped hostile input, not just reused class names', async () => {
+    // The class-name floor above proves nothing about the DISCRIMINATOR: a
+    // corpus could satisfy every required class with zero payloads carrying
+    // `model` at all, which is exactly the gap this test closes. Every base64
+    // body is decoded and searched for the literal `"model"` key, so the
+    // count is read off the bytes rather than trusted from the `id`.
+    const corpus = await readFuzzCorpus();
+    const withModelKey = corpus.filter((c) => {
+      if (c.body.kind !== 'base64') return false;
+      const text = Buffer.from(c.body.data, 'base64').toString('utf8');
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // A malformed body can still carry the literal bytes `"model"` without
+        // being valid JSON — the discriminator case this corpus most needs.
+        return text.includes('"model"');
+      }
+      return (
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        Object.prototype.hasOwnProperty.call(parsed, 'model')
+      );
+    });
+    // Both directions, over real bytes: at least one case where a `model` key
+    // routes to Codex, and at least one where `model` is present in the bytes
+    // but the discriminator must never see it (the malformed-json case) —
+    // mirroring `docs/codex-contract.md` §A5's own "both directions, both
+    // counted" methodology.
+    const routedToCodex = withModelKey.filter(
+      (c) => (c.expect.counters as Record<string, number>).acceptedCodex === 1,
+    );
+    const modelBytesButNotRouted = withModelKey.filter(
+      (c) => (c.expect.counters as Record<string, number>).acceptedCodex === undefined,
+    );
+    expect(withModelKey.length, 'the corpus must carry `model`-bearing bytes').toBeGreaterThan(0);
+    expect(routedToCodex.length, 'at least one case must route to Codex').toBeGreaterThan(0);
+    expect(
+      modelBytesButNotRouted.length,
+      'at least one case must carry `model` in the bytes without reaching the discriminator (e.g. malformed JSON)',
+    ).toBeGreaterThan(0);
+  });
+
   it('replays every loopback case: exact status, exact counter deltas, still serving', async () => {
     const corpus = await readFuzzCorpus();
     const cases = corpus.filter((c) => c.remote === undefined);

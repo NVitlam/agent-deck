@@ -1131,9 +1131,16 @@ export function graftCodexThreads(input: CodexGraftInput): CodexGraftResult {
       ...(root.contextNow === undefined ? {} : { contextNow: root.contextNow }),
       ...(burn === undefined ? {} : { burn }),
       // DoD 2.6 / spec C8. `model_context_window` from the transcript and from
-      // nowhere else - `models_cache.json` states a different figure for what
-      // looks like the same concept and is on the G10 never-opened list.
-      // ABSENT -> the key is omitted, never `0`.
+      // nowhere else - Codex's network-fetched model cache states a different
+      // figure for what looks like the same concept and is on the G10
+      // never-opened list. ABSENT -> the key is omitted, never `0`.
+      //
+      // The cache is NOT NAMED here, and the omission is load-bearing:
+      // `never-open.ts` is the one file under `src/codex/` allowed to write
+      // those filenames, and `never-open.test.ts` greps every sibling and
+      // asserts each name appears only there. Writing the literal turned that
+      // test red - which is the guard working, on a comment, exactly as
+      // designed.
       ...(windowTokens === undefined ? {} : { windowTokens }),
       spawnEdges,
       parked,

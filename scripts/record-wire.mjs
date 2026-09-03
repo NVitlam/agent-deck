@@ -91,8 +91,9 @@
 // `kind`, so an invented corpus cannot be committed looking like evidence
 // about Claude Code. That rule is `SYNTHETIC_CORPUS_PREFIX`'s whole job.
 
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -943,9 +944,55 @@ async function richestCodexRun(host, fixtureDir) {
   return best;
 }
 
+/**
+ * `AgentNode.endedAt` for a non-running Codex thread is `thread.mtimeMs` -
+ * `src/codex/graft.ts`'s own deliberate choice, the same reasoning the
+ * OpenCode grafter applies to `time_updated`. But that value is a REAL
+ * filesystem mtime read via `statSync` on the committed fixture file, and git
+ * does not preserve mtimes across a clone or a checkout - two checkouts of the
+ * identical bytes can legitimately disagree on when they were "last written".
+ * Measured: a corpus recorded from this repository's own working copy differed
+ * from one recorded minutes later, on the SAME machine, by the exact gap
+ * between two checkouts of the fixture tree.
+ *
+ * Every other source this recorder reads from is CONTENT (transcript bytes,
+ * a SQLite row, a hook payload) - stable across any clone because git DOES
+ * preserve content. mtime is the one exception, and staging a copy with every
+ * file's mtime pinned to a fixed instant is what makes `readCodexEngine`
+ * produce the same `endedAt` values regardless of when or where this script
+ * runs, without touching `src/codex/graft.ts`'s own, already-closed, choice
+ * of source.
+ */
+const CODEX_STAGED_MTIME = new Date('2026-09-03T00:00:00.000Z');
+
+/**
+ * Copy `root` into a fresh temp directory and pin every file's mtime.
+ * Returns the staged root and a cleanup function; the caller must call it.
+ */
+async function stageCodexRootWithFixedMtimes(root) {
+  const stage = await mkdtemp(join(tmpdir(), 'agent-deck-codex-wire-'));
+  const stagedRoot = join(stage, '.codex');
+  await cp(root, stagedRoot, { recursive: true });
+
+  const pin = async (dir) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await pin(full);
+      } else if (entry.isFile()) {
+        await utimes(full, CODEX_STAGED_MTIME, CODEX_STAGED_MTIME);
+      }
+    }
+  };
+  await pin(stagedRoot);
+
+  return { stagedRoot, cleanup: () => rm(stage, { recursive: true, force: true }) };
+}
+
 async function recordCodexArc(host) {
   const fixtureDir = codexFixtureDir(host);
   const chosen = await richestCodexRun(host, fixtureDir);
+  const { stagedRoot, cleanup: cleanupStage } = await stageCodexRootWithFixedMtimes(chosen.root);
 
   // EVERY open workspace folder, derived from the run's own threads rather
   // than named — the same argument `recordOpenCodeArc` makes for
@@ -984,7 +1031,7 @@ async function recordCodexArc(host) {
 
   const pollRuns = [];
   const path = new host.CodexEnginePath({
-    root: chosen.root,
+    root: stagedRoot,
     workspaceFolders,
     thresholdMs,
     onChange: () => {},
@@ -1042,6 +1089,7 @@ async function recordCodexArc(host) {
 
   const diagnostics = path.diagnostics;
   path.dispose();
+  await cleanupStage();
 
   return { recorder, hooks, final, fixtureDir, run: chosen.run, root: chosen.root, epochMs, diagnostics };
 }

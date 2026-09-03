@@ -36,6 +36,9 @@ div
               dt "burn"
               dd [header-burn] "579,333"
             div .total
+              dt "window"
+              dd [header-window] "—"
+            div .total
               dt "cost"
               dd [header-cost] title="cost not computed — no price table" "—"
         ul [tree] .tree

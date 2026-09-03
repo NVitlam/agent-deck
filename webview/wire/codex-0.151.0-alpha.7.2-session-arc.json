@@ -139,7 +139,7 @@
                     "output": 125
                   },
                   "startedAt": 1788386057354,
-                  "endedAt": 1788451016306.2595
+                  "endedAt": 1788393600000
                 },
                 {
                   "id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
@@ -174,7 +174,7 @@
                     "output": 137
                   },
                   "startedAt": 1788386061217,
-                  "endedAt": 1788451016317.278
+                  "endedAt": 1788393600000
                 },
                 {
                   "id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
@@ -209,7 +209,7 @@
                     "output": 139
                   },
                   "startedAt": 1788386065184,
-                  "endedAt": 1788451016327.2908
+                  "endedAt": 1788393600000
                 },
                 {
                   "id": "call_tKVRDV43tRvYRodryJdaFXJ6",
@@ -283,7 +283,7 @@
                         "output": 132
                       },
                       "startedAt": 1788386089509,
-                      "endedAt": 1788451016347.6733
+                      "endedAt": 1788393600000
                     },
                     {
                       "id": "call_IKWCISCaJiX2efcibFiQcjR5",
@@ -303,7 +303,7 @@
                     "output": 150
                   },
                   "startedAt": 1788386082798,
-                  "endedAt": 1788451016336.6516
+                  "endedAt": 1788393600000
                 },
                 {
                   "id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
@@ -331,7 +331,7 @@
                 "output": 499
               },
               "startedAt": 1788386050871,
-              "endedAt": 1788451016295.3271
+              "endedAt": 1788393600000
             }
           }
         ]
@@ -449,7 +449,7 @@
                     "output": 125
                   },
                   "startedAt": 1788386057354,
-                  "endedAt": 1788451016306.2595
+                  "endedAt": 1788393600000
                 },
                 {
                   "id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
@@ -484,7 +484,7 @@
                     "output": 137
                   },
                   "startedAt": 1788386061217,
-                  "endedAt": 1788451016317.278
+                  "endedAt": 1788393600000
                 },
                 {
                   "id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
@@ -519,7 +519,7 @@
                     "output": 139
                   },
                   "startedAt": 1788386065184,
-                  "endedAt": 1788451016327.2908
+                  "endedAt": 1788393600000
                 },
                 {
                   "id": "call_tKVRDV43tRvYRodryJdaFXJ6",
@@ -593,7 +593,7 @@
                         "output": 132
                       },
                       "startedAt": 1788386089509,
-                      "endedAt": 1788451016347.6733
+                      "endedAt": 1788393600000
                     },
                     {
                       "id": "call_IKWCISCaJiX2efcibFiQcjR5",
@@ -613,7 +613,7 @@
                     "output": 150
                   },
                   "startedAt": 1788386082798,
-                  "endedAt": 1788451016336.6516
+                  "endedAt": 1788393600000
                 },
                 {
                   "id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
@@ -641,7 +641,7 @@
                 "output": 499
               },
               "startedAt": 1788386050871,
-              "endedAt": 1788451016295.3271
+              "endedAt": 1788393600000
             }
           }
         ]
@@ -769,7 +769,7 @@
                 "output": 125
               },
               "startedAt": 1788386057354,
-              "endedAt": 1788451016306.2595
+              "endedAt": 1788393600000
             },
             {
               "id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
@@ -804,7 +804,7 @@
                 "output": 137
               },
               "startedAt": 1788386061217,
-              "endedAt": 1788451016317.278
+              "endedAt": 1788393600000
             },
             {
               "id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
@@ -839,7 +839,7 @@
                 "output": 139
               },
               "startedAt": 1788386065184,
-              "endedAt": 1788451016327.2908
+              "endedAt": 1788393600000
             },
             {
               "id": "call_tKVRDV43tRvYRodryJdaFXJ6",
@@ -913,7 +913,7 @@
                     "output": 132
                   },
                   "startedAt": 1788386089509,
-                  "endedAt": 1788451016347.6733
+                  "endedAt": 1788393600000
                 },
                 {
                   "id": "call_IKWCISCaJiX2efcibFiQcjR5",
@@ -933,7 +933,7 @@
                 "output": 150
               },
               "startedAt": 1788386082798,
-              "endedAt": 1788451016336.6516
+              "endedAt": 1788393600000
             },
             {
               "id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
@@ -961,7 +961,7 @@
             "output": 499
           },
           "startedAt": 1788386050871,
-          "endedAt": 1788451016295.3271
+          "endedAt": 1788393600000
         }
       }
     ],

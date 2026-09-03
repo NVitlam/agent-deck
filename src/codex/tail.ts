@@ -3,7 +3,7 @@
  * (PLAN.md v0.6.0 Phase 2, DoD 2.1).
  *
  * ---------------------------------------------------------------------------
- * SAME SEMANTICS AS THE CLAUDE CODE TAILER, AND A TEST THAT PROVES IT
+ * THIS IS A WRAPPER. THE TAILER IS THE CLAUDE CODE ONE.
  * ---------------------------------------------------------------------------
  *
  * `PLAN.md` Phase 2, open question, answered:
@@ -12,32 +12,27 @@
  *   > semantics. Any change needed is made in `src/watch` with CC tests kept
  *   > green.
  *
- * The **debounce** half is reused literally: `Debouncer`, `Clock`, `Scheduler`
- * and `ManualTime` are re-exported from `../parser/tailer.js` below, so a Codex
- * caller wiring burst coalescing gets the same objects the CC watcher uses,
- * with the clock and the timer injected and no test needing to sleep.
+ * Both halves of that are taken literally. {@link CodexFileTail} holds a
+ * `FileTail` from `../parser/tailer.js` and delegates every byte to it; the
+ * `Debouncer` seam is re-exported unchanged. There is no second implementation
+ * of "hold the last line back until its newline arrives" in this repository,
+ * which is the only way that property can be guaranteed not to drift.
  *
- * The **byte-offset and partial-line** half is a deliberate port rather than a
- * wrap, and the reason is one field of the frozen hand-off line:
+ * **One additive change was needed there, and the reason is recorded because it
+ * is not obvious.** An earlier draft of this file PORTED the algorithm, because
+ * `CodexTailState.pending` is declared `string` in the frozen hand-off line
+ * while `FileTail` exposed only `pendingBytes`, a number. Filling `pending`
+ * with the empty string was rejected as a silent wrong answer rather than a
+ * small inaccuracy: `offset` counts bytes CONSUMED FROM THE FILE, pending ones
+ * included, so a downstream package reading an empty `pending` beside a
+ * non-zero `offset` concludes that every consumed byte became a line.
+ * `FileTail` now carries a read-only `get pending(): string` beside
+ * `get pendingBytes()`, and this file is a wrapper again.
  *
- *   > `CodexTailState.pending` — "Bytes read but not yet terminated by a
- *   > newline." Declared `string`.
- *
- * `FileTail` keeps its partial buffer in a `#private` field and exposes only
- * `pendingBytes`, a number. A wrapper therefore cannot fill `pending`
- * truthfully, and filling it with `''` would be worse than useless: `offset`
- * counts bytes CONSUMED FROM THE FILE, pending ones included, so a downstream
- * package reading `{offset, pending: ''}` would conclude that every byte up to
- * `offset` had been emitted as a line. That is a silent wrong answer of exactly
- * the shape this repository keeps recording.
- *
- * Filling it truthfully by wrapping would need a one-line `get pending()` on
- * `FileTail`, in `src/parser/`, which this package does not own. So the
- * algorithm is ported here — and, because a second implementation of a property
- * is a second place for it to be subtly wrong, `tail.test.ts` runs the same
- * byte streams through BOTH tailers and asserts identical lines, identical
- * offsets and identical reset behaviour. The duplication is pinned rather than
- * trusted.
+ * `tail.test.ts` keeps its differential suite, which now does a different job:
+ * it pins the WRAPPER's faithfulness — that nothing is dropped, renumbered or
+ * re-ordered on the way through — rather than an independent algorithm's
+ * agreement with the one it was copied from.
  *
  * ---------------------------------------------------------------------------
  * THE PARTIAL LINE IS THE NORMAL STATE, NOT A CORNER CASE
@@ -49,31 +44,24 @@
  *
  *   - A read landing mid-line is the ordinary case for a live session. A tailer
  *     that emitted the fragment would hand `parse.ts` a truncated JSON line,
- *     which it would count as malformed — and the record would then be lost for
+ *     which it would count as malformed — and the record would be lost for
  *     good: the bytes are consumed, the counter says "malformed", and nothing
  *     ever re-reads them. **Holding the partial back is not deferring a
  *     problem; it is the only correct answer.**
  *   - {@link CODEX_MAX_PARTIAL_BYTES} is 32 MiB rather than `FileTail`'s 8 MiB
  *     default. The measured line is 554 KB and 8 MiB would hold it, but this
- *     ceiling is a RESYNC threshold: a line exceeding it is dropped and the tail
- *     resynchronises at the next newline. Sizing it against the largest line
- *     anyone has captured so far would make the drop a function of how big the
- *     next build log was. 32 MiB is ~58x the measured maximum and still a bound.
+ *     ceiling is a RESYNC threshold: a line exceeding it is dropped and the
+ *     tail resynchronises at the next newline. Sizing it against the largest
+ *     line anyone has captured so far would make the drop a function of how big
+ *     the next build log was. 32 MiB is ~58x the measured maximum and still a
+ *     bound.
  *
- * G1 read-only: every handle is opened with flag `'r'` and this module creates,
- * writes, renames and deletes nothing, anywhere.
- * G3 refuse, don't guess: no input makes a call throw. Unreadable, vanished,
- * zero-byte, truncated, directory-where-a-file-was-expected and
- * unterminated-line are all surfaced as counters or result fields.
- * G5 zero egress: node built-ins only.
- * G7 in-memory only: the offset lives in this object and dies with the process.
+ * G1 read-only, G3 never throws, G5 no sockets, G7 offsets in memory only — all
+ * inherited from `FileTail`, which is the other half of why this is a wrapper.
  */
 
-import { Buffer } from 'node:buffer';
-import { open } from 'node:fs/promises';
-import { StringDecoder } from 'node:string_decoder';
-
 import type { SkippedFile } from '../model/events.js';
+import { FileTail } from '../parser/tailer.js';
 import type { CodexTailState } from './types.js';
 
 // The debounce seam, reused literally rather than restated. One import site for
@@ -124,15 +112,6 @@ export interface CodexFileTailOptions {
   readonly maxPartialBytes?: number;
 }
 
-function errorCode(error: unknown): string {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === 'string' ? code : 'EUNKNOWN';
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /**
  * Incremental tail of one rollout transcript.
  *
@@ -144,7 +123,8 @@ function errorMessage(error: unknown): string {
  * inside the file at ordinal 0. A tail that invented an id from the filename
  * would be classifying by path, which the spec says cannot work. So a line
  * carries `file`, the key the golden itself uses, and identity is `parse.ts`'s
- * to establish.
+ * to establish. The inner `FileTail` is handed the basename because it requires
+ * a session id; that value is never re-exported under a name implying identity.
  *
  * The caller drives it: no watcher, no ambient timer, exactly as in
  * `../parser/tailer.js`.
@@ -152,40 +132,36 @@ function errorMessage(error: unknown): string {
 export class CodexFileTail {
   readonly path: string;
   readonly file: string;
-
-  #offset = 0;
-  #lineNo = 0;
-  #partial = '';
-  #decoder = new StringDecoder('utf8');
-  #resyncing = false;
-  readonly #maxPartialBytes: number;
+  readonly #tail: FileTail;
 
   constructor(path: string, options: CodexFileTailOptions = {}) {
     this.path = path;
     this.file = basenameOf(path);
-    this.#maxPartialBytes = options.maxPartialBytes ?? CODEX_MAX_PARTIAL_BYTES;
+    this.#tail = new FileTail(path, {
+      sessionId: this.file,
+      agentId: null,
+      maxPartialBytes: options.maxPartialBytes ?? CODEX_MAX_PARTIAL_BYTES,
+    });
   }
 
   /** Bytes consumed from the file, pending ones included. In memory only (G7). */
   get offset(): number {
-    return this.#offset;
+    return this.#tail.offset;
   }
 
   /** Bytes currently held back because their line has no newline yet. */
   get pendingBytes(): number {
-    return Buffer.byteLength(this.#partial, 'utf8');
+    return this.#tail.pendingBytes;
+  }
+
+  /** The held-back text itself, which is what makes `state.pending` honest. */
+  get pending(): string {
+    return this.#tail.pending;
   }
 
   /** The hand-off shape of `types.ts`. `pending` is the real held-back text. */
   get state(): CodexTailState {
-    return { path: this.path, offset: this.#offset, pending: this.#partial };
-  }
-
-  #reset(): void {
-    this.#offset = 0;
-    this.#partial = '';
-    this.#decoder = new StringDecoder('utf8');
-    this.#resyncing = false;
+    return { path: this.path, offset: this.#tail.offset, pending: this.#tail.pending };
   }
 
   /**
@@ -193,106 +169,21 @@ export class CodexFileTail {
    * never throws (G3) — failures come back as `skipped`.
    */
   async read(): Promise<CodexReadResult> {
-    const empty = { lines: [] as CodexTailLine[], bytesRead: 0, reset: false, oversized: 0 };
-
-    let handle;
-    try {
-      handle = await open(this.path, 'r');
-    } catch (error) {
-      return {
-        ...empty,
-        skipped: {
-          path: this.path,
-          reason: `${errorCode(error)}: cannot open for reading (${errorMessage(error)})`,
-        },
-        state: this.state,
-      };
-    }
-
-    try {
-      const stats = await handle.stat();
-
-      if (!stats.isFile()) {
-        return {
-          ...empty,
-          skipped: {
-            path: this.path,
-            reason: 'ENOTFILE: expected a file, found a directory or special file',
-          },
-          state: this.state,
-        };
-      }
-
-      let reset = false;
-      if (stats.size < this.#offset) {
-        // Smaller than where we stopped: the file was replaced, not appended
-        // to. Reading from the stale offset would yield garbage.
-        this.#reset();
-        reset = true;
-      }
-      if (stats.size === this.#offset) {
-        return { ...empty, reset, state: this.state };
-      }
-
-      const length = stats.size - this.#offset;
-      const buffer = Buffer.alloc(length);
-      let total = 0;
-      while (total < length) {
-        const { bytesRead } = await handle.read(buffer, total, length - total, this.#offset + total);
-        if (bytesRead === 0) break; // shrank mid-read; take what we got
-        total += bytesRead;
-      }
-      this.#offset += total;
-
-      // A UTF-8 sequence split across two reads is stitched by the decoder
-      // rather than decoded twice and corrupted.
-      const decoded = this.#decoder.write(buffer.subarray(0, total));
-      const consumed = this.#consume(decoded);
-      return { ...consumed, bytesRead: total, reset, state: this.state };
-    } catch (error) {
-      return {
-        ...empty,
-        skipped: {
-          path: this.path,
-          reason: `${errorCode(error)}: read failed (${errorMessage(error)})`,
-        },
-        state: this.state,
-      };
-    } finally {
-      await handle.close().catch(() => undefined);
-    }
-  }
-
-  /** Split decoded text into complete lines, holding any tail back. */
-  #consume(decoded: string): { lines: CodexTailLine[]; oversized: number } {
-    let text = decoded;
-    let oversized = 0;
-
-    if (this.#resyncing) {
-      const nl = text.indexOf('\n');
-      if (nl === -1) return { lines: [], oversized };
-      text = text.slice(nl + 1);
-      this.#resyncing = false;
-    }
-
-    text = this.#partial + text;
-    const parts = text.split('\n');
-    this.#partial = parts.pop() ?? '';
-
-    if (Buffer.byteLength(this.#partial, 'utf8') > this.#maxPartialBytes) {
-      this.#partial = '';
-      this.#resyncing = true;
-      oversized += 1;
-    }
-
-    const lines: CodexTailLine[] = [];
-    for (const part of parts) {
-      const content = part.endsWith('\r') ? part.slice(0, -1) : part;
-      if (content.trim() === '') continue; // blank separator, not a record
-      this.#lineNo += 1;
-      lines.push({ path: this.path, file: this.file, text: content, lineNo: this.#lineNo });
-    }
-    return { lines, oversized };
+    const result = await this.#tail.read();
+    const lines: CodexTailLine[] = result.lines.map((line) => ({
+      path: line.path,
+      file: this.file,
+      text: line.text,
+      lineNo: line.lineNo,
+    }));
+    const base = {
+      lines,
+      bytesRead: result.bytesRead,
+      reset: result.reset,
+      oversized: result.oversized,
+      state: this.state,
+    };
+    return result.skipped === undefined ? base : { ...base, skipped: result.skipped };
   }
 }
 

@@ -242,6 +242,88 @@ describe('resolveCodexRoot — both env vars faked, with a live negative control
 });
 
 // ===========================================================================
+// An explicit root, and the precedence between the three sources
+// ===========================================================================
+
+describe('an explicit root wins, and says so', () => {
+  it('is reported as `explicit`, not translated into CODEX_HOME', () => {
+    const { root } = plantRoot();
+    expect(resolveCodexRoot({ root })).toEqual({ root, rootSource: 'explicit' });
+  });
+
+  it('beats a set CODEX_HOME', () => {
+    // The chosen precedence: explicit > CODEX_HOME > home. An explicit root is
+    // an instruction from the code that owns the poll and is how a caller
+    // points at a fixture rather than a live `~/.codex` (G6); a variable that
+    // outranked it would make G6 depend on the developer's shell.
+    const { root } = plantRoot();
+    const elsewhere = tmp('cx-precedence-');
+    const resolved = resolveCodexRoot({ root, env: { [CODEX_HOME_VAR]: elsewhere } });
+    expect(resolved).toEqual({ root, rootSource: 'explicit' });
+    expect(resolved.root).not.toBe(elsewhere);
+  });
+
+  it('beats a faked home', () => {
+    const { root } = plantRoot();
+    const other = plantRoot();
+    const resolved = resolveCodexRoot({ root, env: { [HOME_VAR]: dirname(other.root) } });
+    expect(resolved.rootSource).toBe('explicit');
+    expect(resolved.root).toBe(root);
+  });
+
+  it('CODEX_HOME still beats the home when no explicit root is given', () => {
+    const home = join('C:', 'Users', 'someone');
+    const named = join('D:', 'named');
+    expect(resolveCodexRoot({ env: { [HOME_VAR]: home, [CODEX_HOME_VAR]: named } })).toEqual({
+      root: named,
+      rootSource: 'CODEX_HOME',
+    });
+  });
+
+  it('an empty or whitespace explicit root falls through, exactly as an empty CODEX_HOME does', () => {
+    const named = join('D:', 'named');
+    for (const value of ['', '   ', '\t']) {
+      expect(resolveCodexRoot({ root: value, env: { [CODEX_HOME_VAR]: named } })).toEqual({
+        root: named,
+        rootSource: 'CODEX_HOME',
+      });
+      expect(
+        resolveCodexRoot({ root: value, env: { [HOME_VAR]: join('C:', 'Users', 'someone') } }),
+      ).toEqual({ root: join('C:', 'Users', 'someone', '.codex'), rootSource: 'homedir' });
+    }
+  });
+
+  it('carries through locateCodex: the walk follows the explicit root', () => {
+    const { root, planted } = plantRoot();
+    const elsewhere = tmp('cx-explicit-walk-');
+    const discovery = locateCodex({ root, env: { [CODEX_HOME_VAR]: elsewhere } });
+    expect(discovery.rootSource).toBe('explicit');
+    expect(discovery.rootExists).toBe(true);
+    expect(discovery.transcripts.map((r) => r.path)).toEqual(planted);
+    expect(discovery.lockDir).toBe(join(root, CODEX_LOCK_DIR_NAME));
+  });
+
+  it('carries through CodexLocator, and the absent-root line names `explicit`', () => {
+    const records: CodexLocateLogRecord[] = [];
+    const gone = join(tmp('cx-explicit-absent-'), 'no-such-codex');
+    const locator = new CodexLocator({ root: gone, log: (r) => records.push(r) });
+    for (let i = 0; i < 3; i += 1) expect(locator.locate().rootExists).toBe(false);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.rootSource).toBe('explicit');
+    expect(records[0]?.root).toBe(gone);
+  });
+
+  it('the corpus is reached by an explicit root, with no environment involved', () => {
+    // G6, stated positively: this is the shape every other engine test should
+    // use, because it cannot accidentally resolve a live root at all.
+    const root = join(CORPUS, 'spawn-shapes', 'home', '.codex');
+    const discovery = locateCodex({ root, env: {} });
+    expect(discovery.rootSource).toBe('explicit');
+    expect(discovery.transcripts.map((r) => r.path).sort()).toEqual(expectedRollouts(root));
+  });
+});
+
+// ===========================================================================
 // An absent root is a value, not an error (DoD 2.1)
 // ===========================================================================
 

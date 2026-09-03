@@ -20,6 +20,16 @@
  * host started, or a test that faked it, would be observed against a stale
  * root — and the failure is silence, not an error.
  *
+ * **1a. Three sources, one field that says which.** Precedence is
+ * **explicit root > `CODEX_HOME` > home**, and {@link CodexDiscovery.rootSource}
+ * reports which one answered. An explicit root wins because it is an
+ * instruction from the code that owns the poll rather than a property of the
+ * machine, and because it is how a caller points at a fixture instead of at a
+ * live `~/.codex` (G6) — a variable that outranked it would make G6 depend on
+ * the developer's shell. It is a THIRD value rather than an internal
+ * translation into `{ CODEX_HOME: root }`: that field's only job is to say
+ * where the root came from.
+ *
  * **2. The home fallback is PLATFORM-FAITHFUL, and that is a test property.**
  * `os.homedir()` reads `USERPROFILE` on Windows and `HOME` on POSIX.
  * {@link resolveCodexRoot} consults exactly the one its platform would, so the
@@ -184,13 +194,23 @@ export type CodexLocateLogger = (record: CodexLocateLogRecord) => void;
 
 export interface CodexRootOptions {
   /**
-   * The environment to resolve against. Defaults to `process.env`.
+   * The data root, named outright by the caller
+   * ({@link CodexEngineOptions.root} in `types.ts`).
    *
-   * An explicit data root is expressed as `{ CODEX_HOME: '<path>' }` rather
-   * than as a separate `root` option, because that is precisely what the
-   * variable means (C1) — and because {@link CodexDiscovery.rootSource} has two
-   * members, so a third source of truth would have to be reported as a lie.
+   * **Precedence: explicit root > `CODEX_HOME` > home.** An explicit root is an
+   * instruction from the code that owns the poll, and it is how a caller points
+   * at a fixture instead of at a live `~/.codex` (G6); an environment variable
+   * that outranked it would make G6 depend on the developer's shell.
+   *
+   * It is reported as its own {@link CodexDiscovery.rootSource} value and is
+   * NOT implemented by synthesising `{ CODEX_HOME: root }` internally. That
+   * field's only job is to say where the root came from, so answering
+   * `'CODEX_HOME'` when no environment variable was involved would be a wrong
+   * answer in the one field that exists to give the right one.
    */
+  readonly root?: string;
+
+  /** The environment to resolve against. Defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv;
 }
 
@@ -214,15 +234,22 @@ function homeFromEnv(env: NodeJS.ProcessEnv): string {
 }
 
 /**
- * `$CODEX_HOME` when set and non-empty, else `<home>/.codex`. Resolved on every
- * call; nothing is memoised (property 1).
+ * An explicit root when the caller named one, else `$CODEX_HOME` when set and
+ * non-empty, else `<home>/.codex`. Resolved on every call; nothing is memoised
+ * (property 1).
  *
- * An empty or whitespace-only `CODEX_HOME` is treated as unset. A variable set
- * to the empty string is how a shell spells "I cleared this", and honouring it
- * literally would resolve the root to `sessions` relative to the process cwd —
- * a wrong answer that reads as a Codex with no sessions.
+ * **An empty or whitespace-only value is treated as unset, for BOTH the option
+ * and the variable.** A variable set to the empty string is how a shell spells
+ * "I cleared this", and honouring either literally would resolve the root to
+ * `sessions` relative to the process cwd — a wrong answer that reads as a Codex
+ * with no sessions rather than as the caller error it is. One rule for both, so
+ * there is nothing to remember about which is which.
  */
 export function resolveCodexRoot(options: CodexRootOptions = {}): CodexResolvedRoot {
+  const explicit = options.root;
+  if (typeof explicit === 'string' && explicit.trim() !== '') {
+    return { root: explicit, rootSource: 'explicit' };
+  }
   const env = options.env ?? process.env;
   const fromVar = env[CODEX_HOME_VAR];
   if (typeof fromVar === 'string' && fromVar.trim() !== '') {

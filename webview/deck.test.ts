@@ -744,13 +744,62 @@ describe('the six card states', () => {
 
   it('names the ENGINE and the reason in a degraded card’s tooltip', () => {
     const container = render({
-      sessions: [summary('s', { engine: 'opencode' })],
+      sessions: [summary('s', { engine: 'cc' })],
       degraded: true,
       degradedReason: 'listenerDown',
     });
     const tooltip = cellFor(container, 's').querySelector('title')?.textContent ?? '';
     // A9.1 leads the tooltip with the LABEL; the status follows it.
-    expect(tooltip).toContain('OpenCode: the hook listener is not running');
+    expect(tooltip).toContain('Claude Code: the hook listener is not running');
+  });
+
+  /*
+   * D2 (2026-09-03) — THE DEGRADED CHIP IS THE CLAUDE CODE TAP'S, AND ONLY ITS.
+   *
+   * The test above used to pass `engine: 'opencode'` and assert the card said
+   * "OpenCode: the hook listener is not running". That assertion pinned the
+   * defect: `degraded` is produced by `LivenessEngine.degradedState()`, which
+   * reads `eventsReceived === 0` on the CLAUDE CODE engine alone. OpenCode's
+   * liveness comes from its own SQLite cursor and Codex's from its own hook
+   * reduction, so neither is described by that flag at all.
+   *
+   * Reported by own eyes against the shipped `release/0.6.0` build: Codex cells
+   * reading "hooks silent" while Codex hooks were arriving and being attributed
+   * (`src/hooks/listener.test.ts`'s D2 block proves the host half). It was
+   * invisible before Phase 3's discriminator because every Codex payload was
+   * also dispatched into the CC handler, which kept `eventsReceived` moving.
+   *
+   * The same mislabelling has been shipping for OpenCode since v0.5.0.
+   */
+  it('shows the degraded chip on a Claude Code card and on no other engine', () => {
+    const container = render({
+      sessions: [
+        summary('s-cc', { engine: 'cc' }),
+        summary('s-oc', { engine: 'opencode' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
+      degraded: true,
+      degradedReason: 'noHookEvents',
+    });
+
+    const cc = cellFor(container, 's-cc');
+    const oc = cellFor(container, 's-oc');
+    const cx = cellFor(container, 's-cx');
+
+    // The Claude Code card wears it — the control, so the assertions below
+    // cannot pass because the panel simply is not degraded.
+    expect(cc.dataset['state']).toBe('degraded');
+    expect(cc.querySelector('title')?.textContent).toContain(
+      'Claude Code: no hook events received',
+    );
+
+    // The other two do not, and they still report their own liveness rather
+    // than nothing at all.
+    for (const cell of [oc, cx]) {
+      expect(cell.dataset['state']).not.toBe('degraded');
+      expect(cell.dataset['state']).toBe('live');
+      expect(cell.querySelector('title')?.textContent ?? '').not.toContain('hook');
+    }
   });
 
   it('ghosts a foreign session and tags it, in text and in the accessible name', () => {

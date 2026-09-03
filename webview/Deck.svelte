@@ -580,11 +580,28 @@
       <g data-testid={TESTID.deckStage} {transform}>
         {#each cards as card (card.placement.id)}
           {#if card.summary !== undefined}
+            <!--
+              D2 (2026-09-03): `degraded` is the CLAUDE CODE hook tap's health
+              and it is panel-wide, so it is passed only to a Claude Code card.
+
+              It used to go to every card, which put "Codex: no hook events"
+              on a Codex cell whose hooks were arriving perfectly — reported by
+              own eyes against the shipped release/0.6.0 build. The banner is
+              produced by `LivenessEngine.degradedState()`, which reads
+              `eventsReceived === 0` on the CC engine alone; before Phase 3's
+              discriminator every Codex payload was ALSO dispatched into the CC
+              handler, so that counter moved and the tap looked alive. Routing
+              them correctly is what exposed the mislabelling.
+
+              The same reasoning the sort key above already states: a fact
+              about none of these sessions must not be rendered onto all of
+              them.
+            -->
             <SessionCell
               summary={card.summary}
               x={card.placement.x}
               y={card.placement.y}
-              {degraded}
+              degraded={degraded && engineOf(card.summary) === 'cc'}
               {degradedReason}
               {reducedMotion}
               now={clock}

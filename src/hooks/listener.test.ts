@@ -74,7 +74,8 @@ import {
   isLoopbackAddress,
   normalizeHookEvent,
 } from './listener.js';
-import type { CodexHookEvent } from '../codex/liveness.js';
+import { CodexLivenessEngine, type CodexHookEvent } from '../codex/liveness.js';
+import { LivenessEngine } from '../model/liveness.js';
 
 const LOOPBACK = '127.0.0.1';
 
@@ -2563,5 +2564,112 @@ describe('malformed at the transport layer, not in the body', () => {
     expect(seen.split('HTTP/1.1 200').length - 1).toBe(2);
     expect(listener.counters.accepted).toBe(2);
     expect(listener.listening).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D2 — the payloads are RECEIVED and ATTRIBUTED; the silent tap is the other one
+// ---------------------------------------------------------------------------
+//
+// The own-eyes report against the shipped `release/0.6.0` build was that Codex
+// cells wore "liveness degraded — hooks inferred, hooks silent" while Codex
+// hooks were demonstrably firing. The question that had to be answered before
+// anything was changed was the one the report itself posed: are the payloads
+// DROPPED AT THE DISCRIMINATOR, or RECEIVED AND NOT ATTRIBUTED?
+//
+// Neither. This block composes the real `HookListener` with the real
+// `CodexLivenessEngine` and the real Claude Code `LivenessEngine`, feeds it the
+// captured payload bytes, and shows all three facts at once:
+//
+//   1. every Codex payload is received (`acceptedCodex` moves);
+//   2. every one is attributed to its thread, by the payload's own
+//      `session_id`, and the thread reads `live`;
+//   3. the Claude Code engine's `eventsReceived` stays 0 and its
+//      `degradedState()` is `noHookEvents` — CORRECTLY, because no Claude Code
+//      hook event arrived.
+//
+// (3) is the whole defect: that degraded state is panel-wide and it belongs to
+// the Claude Code tap, and the webview was painting it onto every cell,
+// labelled with that cell's own engine. Before Phase 3's discriminator every
+// Codex payload was ALSO dispatched into the CC handler, so `eventsReceived`
+// moved and the tap never looked silent — routing them correctly is what
+// exposed the mislabelling. The fix is in `Deck.svelte` and `App.svelte`; this
+// test pins the host-side facts those two now depend on.
+
+describe('D2 — a real Codex payload is received, attributed, and does not feed the CC tap', () => {
+  it('reaches the Codex liveness engine, keyed by the payload session_id', async () => {
+    const payloads = (await readCodexRawPayloads()) as Record<string, unknown>[];
+    expect(payloads.length).toBeGreaterThan(0);
+
+    // The thread ids the payloads themselves name. Derived from the corpus, so
+    // a re-harvest cannot leave this asserting a stale id.
+    const threadIds = [
+      ...new Set(
+        payloads.map((p) => (typeof p['agent_id'] === 'string' ? p['agent_id'] : p['session_id'])),
+      ),
+    ].filter((id): id is string => typeof id === 'string' && id !== '');
+    expect(threadIds.length).toBeGreaterThan(0);
+
+    /*
+     * THE CLOCK HAS TO BE THE LISTENER'S, OFFSET — not an invented one.
+     *
+     * `HookListener` stamps `receivedAtMs` with the real `Date.now()`, so an
+     * injected constant makes `now - lastEventMs` hugely NEGATIVE and every
+     * thread reads `live` forever, including after the threshold is "passed".
+     * The first draft of this test did exactly that and its own vacuity
+     * control caught it: `expected 'live' not to be 'live'`.
+     */
+    let offsetMs = 0;
+    const codex = new CodexLivenessEngine({
+      now: () => Date.now() + offsetMs,
+      livenessThresholdMs: 120_000,
+      // Every thread the payloads name, so attribution has something to land
+      // on. No lock directory: a committed capture has none, and D0.1's row 2
+      // is reachable without one.
+      sample: () => ({ threads: threadIds.map((id) => ({ threadId: id, sessionId: id })) }),
+    });
+    const cc = new LivenessEngine({ hookListenerRunning: true });
+
+    const { listener, port } = await startEphemeralListener();
+    try {
+      listener.subscribe(cc.onHookEvent);
+      listener.subscribeCodex((event) => {
+        codex.ingest(event);
+      });
+
+      const before = listener.counters;
+      for (const payload of payloads) {
+        expect((await postJson(port, payload)).status).toBe(200);
+      }
+      const after = listener.counters;
+
+      // 1. RECEIVED — not dropped at the discriminator.
+      expect(after.acceptedCodex - before.acceptedCodex).toBe(payloads.length);
+
+      // 2. ATTRIBUTED — every event landed on a thread, none was unusable, and
+      //    the threads read `live` against a clock that has not moved past the
+      //    threshold.
+      const report = codex.poll();
+      expect(report.counters.eventsSeen).toBe(payloads.length);
+      expect(report.counters.eventsUnusable).toBe(0);
+      expect(report.counters.hookStatesWithoutThread).toBe(0);
+      expect(report.counters.threadsWithoutHookEvents).toBe(0);
+      expect(report.threads.length).toBe(threadIds.length);
+      for (const thread of report.threads) expect(thread.state).toBe('live');
+
+      // ...and the same engine says `dead` once the clock passes the threshold
+      // with nothing new arriving. Without this the `live` above could be a
+      // constant rather than a reading.
+      offsetMs += 120_001;
+      for (const thread of codex.poll().threads) expect(thread.state).not.toBe('live');
+
+      // 3. The Claude Code tap saw NOTHING, and says so. This is the panel-wide
+      //    banner the webview must no longer paint onto a Codex cell.
+      expect(after.accepted - before.accepted).toBe(0);
+      expect(cc.counters().eventsReceived).toBe(0);
+      expect(cc.degradedState()).toStrictEqual({ degraded: true, reason: 'noHookEvents' });
+    } finally {
+      await listener.stop();
+    }
   });
 });

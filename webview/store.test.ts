@@ -875,6 +875,24 @@ describe('SessionSummary — the deck card\u2019s own figures', () => {
     expect('burn' in (row ?? {})).toBe(false);
   });
 
+  it('carries windowTokens by value, same absence rule, same reason (v0.6.0 Phase 3)', () => {
+    // The Codex engine's context-window ceiling. CC and OpenCode sessions
+    // never set it, so the CC-shaped `liveSession()` fixture leaves it unset
+    // by construction — that IS the case this test pins, not an oversight.
+    const cc = createStore();
+    cc.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    const ccRow = cc.getView().sessions[0];
+    expect(ccRow?.windowTokens).toBeUndefined();
+    expect('windowTokens' in (ccRow ?? {})).toBe(false);
+
+    const codex = createStore();
+    codex.handleMessage({
+      type: 'snapshot',
+      sessions: [liveSession({ sessionId: 'session-codex', engine: 'codex', windowTokens: 200_000 })],
+    });
+    expect(codex.getView().sessions[0]?.windowTokens).toBe(200_000);
+  });
+
   it('takes lastEventAt from the greatest agent timestamp in the tree', () => {
     // `liveSession()`: root at 1,000, agent-1 at 2,000, agent-2 at 3,000.
     // Tools carry no timestamp at all, so they contribute nothing.
@@ -907,7 +925,10 @@ describe('SessionSummary — the deck card\u2019s own figures', () => {
 
   it('reads NO number off a refused session — G3, on every one of the new fields', () => {
     const store = createStore();
-    store.handleMessage({ type: 'snapshot', sessions: [unsupportedSession()] });
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [unsupportedSession({ engine: 'codex', windowTokens: 200_000 })],
+    });
     const row = store.getView().sessions[0];
     expect(row?.refused).toBe(true);
     expect(row?.agents).toBe(0);
@@ -916,6 +937,9 @@ describe('SessionSummary — the deck card\u2019s own figures', () => {
     expect(row?.lastEventAt).toBe(0);
     expect(row?.burn).toBeUndefined();
     expect(row?.contextNow).toBeUndefined();
+    // Even a Codex session that DID report a window ceiling reads none of it
+    // once refused — the same G3 treatment `burn`/`contextNow` already get.
+    expect(row?.windowTokens).toBeUndefined();
   });
 });
 
@@ -982,7 +1006,9 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     expect(store.getView().livenessFilter).toBe('live');
   });
 
-  it('refuses an engine value that is not one of the three, and notifies nobody', () => {
+  it('refuses an engine value that is not one of the four, and notifies nobody', () => {
+    // "Four" as of v0.6.0 Phase 3: `all` / `cc` / `oc` / `cx`. This test's
+    // title said "three" before Codex widened `ENGINE_FILTERS`.
     const store = createStore();
     store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
     let notifications = 0;
@@ -1003,6 +1029,12 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     // And setting the value it already holds is not a change.
     store.setEngineFilter('oc');
     expect(notifications).toBe(1);
+
+    // The fourth value is a real one too, not merely tolerated by the guard
+    // above failing to reject it.
+    store.setEngineFilter('cx');
+    expect(store.getView().engineFilter).toBe('cx');
+    expect(notifications).toBe(2);
   });
 
   it('sends the host NOTHING for either filter — both are view state (G7)', () => {

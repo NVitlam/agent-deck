@@ -463,6 +463,31 @@ const HOME_DIR_PREFIX_SRC = '(?:file:/{0,3})?(?:/mnt/[a-z]|/[a-z]|[a-z]:)?/(?:us
 const CODEX_SCRATCH_RE = new RegExp(`^${HOME_DIR_PREFIX_SRC}/codex-probe/scratch(?:/|$)`);
 
 /**
+ * The SAME scratch location, in `SessionState.projectSlug`'s encoding rather
+ * than a path's.
+ *
+ * `src/codex/index.ts`'s `codexProjectSlug` runs the scratch repo's `cwd`
+ * through `workspaceSlug` (== `slugifyWorkspace`), which collapses every `:`,
+ * `\` and `/` to `-` — so `C:\Users\dev\codex-probe\scratch` becomes
+ * `C--Users-dev-codex-probe-scratch`, a value `CODEX_SCRATCH_RE` above cannot
+ * match: it has no `/` left to anchor on at all. This shape did not exist in
+ * Phase 1's census (raw harvested JSONL carries no `projectSlug` field — it is
+ * a value the ENGINE derives) and first appeared when Phase 3's wire-corpus
+ * recorder embedded a live `SessionState.projectSlug` in committed evidence.
+ * Measured on `webview/wire/codex-0.151.0-alpha.7.2-session-arc.json`
+ * (2026-09-03): exactly one distinct value, 3 occurrences, all
+ * `C--Users-dev-codex-probe-scratch` — the same location `CODEX_SCRATCH_RE`
+ * already clears, spelled the other way.
+ *
+ * `[^-]+` for the user-directory component, not `.+`: the slug's separator
+ * IS the character being matched around, so a loose `.+` would swallow real
+ * structure a dash could carry. This narrower form is exact for the measured
+ * value and fails closed on a hyphenated username, which would need a written
+ * widening here rather than silently passing.
+ */
+const CODEX_SCRATCH_SLUG_RE = /^[a-z]--users-[^-]+-codex-probe-scratch$/;
+
+/**
  * A Codex rollout transcript path.
  *
  * Codex files a session under CODEX_HOME by CAPTURE DATE - year, month, day,
@@ -554,6 +579,22 @@ const FOREIGN_VALUE_EXEMPTIONS = [
       'prefix - the whole value is pinned segment by segment, home component ' +
       'aside, so a different project name under the same home still gates.',
     exempt: (value) => CODEX_SCRATCH_RE.test(normalisePathToken(value)),
+  },
+  {
+    id: 'codex-probe-scratch-repo-slug',
+    reason:
+      'The same scratch location as codex-probe-scratch-repo above, in ' +
+      'SessionState.projectSlug\'s dash-collapsed encoding rather than a path\'s ' +
+      '(src/codex/index.ts\'s codexProjectSlug runs it through workspaceSlug, which ' +
+      'CODEX_SCRATCH_RE cannot match - there is no "/" left in a slug to anchor on). ' +
+      'Not visible in Phase 1\'s census: raw harvested JSONL carries no projectSlug ' +
+      'field at all, it is a value the ENGINE derives, so this shape first appeared ' +
+      'when Phase 3\'s wire-corpus recorder embedded a live SessionState in committed ' +
+      'evidence. Measured on webview/wire/codex-0.151.0-alpha.7.2-session-arc.json ' +
+      '(2026-09-03): one distinct value, 3 occurrences, C--Users-dev-codex-probe-scratch - ' +
+      'the identical location codex-probe-scratch-repo already clears. Segment-pinned ' +
+      'the same way: only the user-directory component is free.',
+    exempt: (value) => CODEX_SCRATCH_SLUG_RE.test(normalisePathToken(value)),
   },
   {
     id: 'codex-rollout-transcript-path',

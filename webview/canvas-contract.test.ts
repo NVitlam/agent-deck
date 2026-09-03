@@ -76,7 +76,7 @@ describe('CANVAS_CONTRACT_VERSION', () => {
     // If this fails, someone bumped the constant. That is fine and expected —
     // but SURFACE_AT_V3 and its name are now describing a version that no
     // longer exists, so both move together or neither does.
-    expect(CANVAS_CONTRACT_VERSION).toBe(4);
+    expect(CANVAS_CONTRACT_VERSION).toBe(5);
   });
 
   it('pins the shared runtime surface, so the shape cannot move silently', () => {
@@ -113,7 +113,7 @@ describe('CANVAS_CONTRACT_VERSION', () => {
     // Types are erased, so only the value halves can be asserted here — but a
     // value list per axis is exactly what a component iterates to draw chips,
     // so a re-collision would show up as one of these being wrong.
-    expect(contract.ENGINE_FILTERS).toStrictEqual(['all', 'cc', 'oc']);
+    expect(contract.ENGINE_FILTERS).toStrictEqual(['all', 'cc', 'oc', 'cx']);
     expect(contract.LIVENESS_FILTERS).toStrictEqual(['all', 'live', 'idle', 'ended']);
     expect(contract.DEFAULT_ENGINE_FILTER).toBe('all');
     expect(contract.DEFAULT_LIVENESS_FILTER).toBe('all');
@@ -121,6 +121,14 @@ describe('CANVAS_CONTRACT_VERSION', () => {
     // both. Stated as an assertion so "just merge them" fails here first.
     expect(contract.ENGINE_FILTERS.filter((v) => contract.LIVENESS_FILTERS.includes(v as never)))
       .toStrictEqual(['all']);
+  });
+
+  it('carries the third engine (v0.6.0 Phase 3, Codex) as a fourth filter value', () => {
+    // The widening this version bump records. `cx` is added beside `cc`/`oc`
+    // — never replacing either — and `all` still leads the list.
+    expect(contract.ENGINE_FILTERS).toContain('cx');
+    expect(contract.ENGINE_FILTERS.indexOf('all')).toBe(0);
+    expect(contract.ENGINE_FILTERS).toHaveLength(4);
   });
 
   it('detects an addition to the surface', () => {

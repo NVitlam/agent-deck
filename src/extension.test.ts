@@ -37,7 +37,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AgentDeckDataPath,
   AgentDeckHost,
+  CODEX_ABSENT_LOG,
   CONFIG_SECTION,
+  CodexEnginePath,
+  DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS,
   DEFAULT_LIVENESS_THRESHOLD_MS,
   DEFAULT_PORT,
   DEFAULT_PREVIEW_BYTES,
@@ -65,6 +68,8 @@ import type {
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
+import { CODEX_HOME_VAR, readCodexEngine } from './codex/index.js';
+import type { CodexThread } from './codex/index.js';
 import {
   copyCorpus,
   corpusDbPath,
@@ -528,15 +533,27 @@ function trackHost(host: AgentDeckHost): AgentDeckHost {
  * the discovery tests below assert about.
  */
 const savedOpencodeRoot = process.env[OPENCODE_DATA_ROOT_ENV];
+/**
+ * Same discipline, same reason, for the third engine (DoD 3.2). Every
+ * `AgentDeckDataPath`/`CodexEnginePath` constructed in this file without an
+ * explicit `codex.root` resolves `$CODEX_HOME` from `process.env` by
+ * default, and this machine's real `~/.codex` is not this suite's to read —
+ * G6 again, one door over. Pointing it at a fresh empty directory makes the
+ * Codex root ABSENT for every test here unless a test stages one explicitly.
+ */
+const savedCodexHome = process.env[CODEX_HOME_VAR];
 
 beforeEach(async () => {
   resetVscodeMock();
   process.env[OPENCODE_DATA_ROOT_ENV] = await makeTempDir();
+  process.env[CODEX_HOME_VAR] = await makeTempDir();
 });
 
 afterEach(async () => {
   if (savedOpencodeRoot === undefined) delete process.env[OPENCODE_DATA_ROOT_ENV];
   else process.env[OPENCODE_DATA_ROOT_ENV] = savedOpencodeRoot;
+  if (savedCodexHome === undefined) delete process.env[CODEX_HOME_VAR];
+  else process.env[CODEX_HOME_VAR] = savedCodexHome;
   await deactivate();
   for (const host of liveHosts.splice(0)) await host.dispose();
   for (const path of liveDataPaths.splice(0)) await path.dispose();
@@ -3319,3 +3336,235 @@ function sameBytes(a: TreeSnapshotEntry[], b: TreeSnapshotEntry[]): boolean {
   }
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// DoD 3.2 — the Codex engine path
+// ---------------------------------------------------------------------------
+
+/** The committed real Codex corpus's `.codex` root, containing `sessions/`. */
+const CODEX_FIXTURE_ROOT = fileURLToPath(
+  new URL(
+    '../fixtures/codex-0.151.0-alpha.7.2/baseline/home/.codex',
+    import.meta.url,
+  ),
+);
+
+/**
+ * A private copy of the fixture root, so a test may add a real (possibly
+ * empty) `thread-writer-locks/` directory beside it without mutating the
+ * committed fixture (G6).
+ */
+async function stageCodexRoot(withEmptyLockDir: boolean): Promise<string> {
+  const dir = await makeTempDir();
+  const root = join(dir, '.codex');
+  await cp(CODEX_FIXTURE_ROOT, root, { recursive: true });
+  if (withEmptyLockDir) {
+    await mkdir(join(root, 'thread-writer-locks'), { recursive: true });
+  }
+  return root;
+}
+
+/** The fixture's ROOT thread — `cwd` and `sessionId` — read through the production engine. */
+async function codexBaselineRoot(root: string): Promise<{ cwd: string; sessionId: string }> {
+  const outcome = await readCodexEngine({ root });
+  expect(outcome.kind).toBe('ok');
+  if (outcome.kind !== 'ok') throw new Error('unreachable: asserted above');
+  const rootThread = outcome.result.threads.find(
+    (t: CodexThread) => t.threadSource === 'user',
+  );
+  expect(rootThread, 'the Codex fixture must carry a root thread').toBeDefined();
+  return { cwd: (rootThread as CodexThread).cwd, sessionId: (rootThread as CodexThread).sessionId };
+}
+
+describe('DoD 3.2 — the Codex engine is on when its data root exists, and off when it does not', () => {
+  it('is silently OFF with an absent root, and says so exactly ONCE at info level', async () => {
+    const dir = await makeTempDir();
+    const missing = join(dir, 'no-such-.codex');
+    expect(existsSync(missing)).toBe(false);
+    const sink = captureLog();
+
+    const path = new CodexEnginePath({
+      workspaceFolders: ['/anywhere'],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root: missing,
+      log: sink.log,
+    });
+    await path.start();
+    // "Once" is a claim about repetition, so it is driven by repeating.
+    await path.start();
+    await path.start();
+
+    expect(sink.lines).toStrictEqual([{ level: 'info', message: CODEX_ABSENT_LOG }]);
+    const diagnostics = path.diagnostics;
+    expect(diagnostics.enabled).toBe(false);
+    expect(diagnostics.absentLogs).toBe(1);
+    expect(diagnostics.contentReads).toBe(1);
+    expect(diagnostics.livenessPolls).toBe(0);
+    expect(path.livenessEngine).toBeNull();
+    expect(path.sessions()).toStrictEqual([]);
+    path.dispose();
+  });
+
+  it('is ON when the data root exists, with no setting anywhere in the manifest', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd, sessionId } = await codexBaselineRoot(root);
+    const sink = captureLog();
+    const poll = manualPollTrigger();
+    let clock = 1_000;
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      log: sink.log,
+      now: () => clock,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+
+    expect(sink.lines).toStrictEqual([]);
+    expect(path.diagnostics.enabled).toBe(true);
+    expect(path.diagnostics.contentReads).toBe(1);
+    const session = path.sessions().find((s) => s.sessionId === sessionId);
+    expect(session, 'the root session must render').toBeDefined();
+    expect(session?.engine).toBe('codex');
+    expect(session?.workspaceMatch).toBe(true);
+
+    // The liveness engine is CHAINED, not merely constructible: it registers
+    // its own poll AND this class registers a second one for the periodic
+    // content re-read — two triggers, the same interval, because there is no
+    // cheap cursor to gate the content half on (see
+    // `DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS`'s doc comment).
+    expect(poll.registrations).toStrictEqual([
+      DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS,
+      DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS,
+    ]);
+    const beforePolls = path.diagnostics.livenessPolls;
+    expect(beforePolls).toBeGreaterThan(0);
+    clock += 1;
+    poll.fire();
+    expect(path.diagnostics.livenessPolls).toBe(beforePolls + 1);
+    // The content-refresh trigger fired too — its increment is synchronous
+    // (before the read's own `await`), so it is observable immediately.
+    expect(path.diagnostics.contentReads).toBe(2);
+
+    path.dispose();
+    expect(poll.stops()).toBe(2);
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('declares no Codex setting: the switch is the data root, and only the data root', async () => {
+    const manifest = JSON.parse(
+      await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+    ) as { contributes?: { configuration?: { properties?: Record<string, unknown> } } };
+    const keys = Object.keys(manifest.contributes?.configuration?.properties ?? {});
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      expect(key.toLowerCase(), `${key} is a Codex setting; DoD 3.2 says there is none`)
+        .not.toContain('codex');
+    }
+  });
+
+  it('a Codex hook event moves the root session from idle to live', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd, sessionId } = await codexBaselineRoot(root);
+    const clock = 10_000;
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => clock,
+      pollTrigger: () => ({ stop: () => {} }),
+    });
+    await path.start();
+    const before = path.sessions().find((s) => s.sessionId === sessionId);
+    expect(before, 'the root session must render').toBeDefined();
+
+    // DoD 3.1's other half: the seam `AgentDeckDataPath` wires
+    // `listener.subscribeCodex` to.
+    path.ingestHookEvent({
+      receivedAtMs: clock,
+      payload: {
+        session_id: sessionId,
+        hook_event_name: 'PreToolUse',
+        model: 'gpt-5.6-terra',
+        tool_use_id: 'call_x',
+      },
+    });
+    // Re-render against the ingested event, the same thing a periodic poll
+    // would do.
+    path.livenessEngine?.poll();
+
+    const after = path.sessions().find((s) => s.sessionId === sessionId);
+    expect(after?.liveness).toBe('live');
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it("D0.1 'dead' maps to 'ended': an empty lock directory and no hook events", async () => {
+    const root = await stageCodexRoot(true);
+    const { cwd, sessionId } = await codexBaselineRoot(root);
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => 10_000,
+      pollTrigger: () => ({ stop: () => {} }),
+    });
+    await path.start();
+    const session = path.sessions().find((s) => s.sessionId === sessionId);
+    expect(session, 'the root session must render').toBeDefined();
+    expect(session?.liveness).toBe('ended');
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('disposing stops both the content-refresh trigger and the liveness poll trigger', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd } = await codexBaselineRoot(root);
+    let stops = 0;
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => 1_000,
+      pollTrigger: () => ({
+        stop: () => {
+          stops += 1;
+        },
+      }),
+    });
+    await path.start();
+    expect(stops).toBe(0);
+    path.dispose();
+    expect(stops).toBe(2);
+    expect(path.sessions()).toStrictEqual([]);
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it("AgentDeckDataPath mounts the Codex engine with the same crash isolation as OpenCode: it shares no CC or OpenCode object", async () => {
+    const source = await readFile(
+      fileURLToPath(new URL('./extension.ts', import.meta.url)),
+      'utf8',
+    );
+    const construction = /this\.codex = new CodexEnginePath\(\{[\s\S]*?\n {4}\}\);/.exec(source);
+    expect(construction, 'the Codex path construction site must be findable').not.toBeNull();
+    const text = construction?.[0] ?? '';
+    for (const forbidden of [
+      'this.liveness',
+      'this.model',
+      'this.listener',
+      'this.watcher',
+      'this.opencode',
+    ]) {
+      expect(text, `the Codex path was handed ${forbidden}`).not.toContain(forbidden);
+    }
+  });
+});

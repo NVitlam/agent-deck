@@ -7,6 +7,7 @@ import {
   formatCost,
   formatDuration,
   formatTokens,
+  formatWindowTokens,
 } from './format.js';
 import { longPreview } from './testdata.js';
 
@@ -73,6 +74,29 @@ describe('formatTokens', () => {
 
   it('refuses non-finite input rather than printing NaN', () => {
     expect(formatTokens(Number.NaN)).toBe(EM_DASH);
+  });
+});
+
+describe('formatWindowTokens', () => {
+  // `SessionState.windowTokens` — the Codex engine's context-window ceiling
+  // (v0.6.0 Phase 3, spec C8, D0.2). Same idiom as `formatTokens`, restated
+  // under its own name: absent is EM_DASH, never 0, and CC/OpenCode sessions
+  // (which never set the field) get the em-dash forever, with no per-engine
+  // branch anywhere in the function.
+  it('groups thousands, exactly like formatTokens', () => {
+    expect(formatWindowTokens(0)).toBe('0');
+    expect(formatWindowTokens(200_000)).toBe('200,000');
+    expect(formatWindowTokens(1_234_567)).toBe('1,234,567');
+  });
+
+  it('renders absent (undefined) as EM_DASH, never 0 — the CC/OpenCode case', () => {
+    // CC and OpenCode sessions never set `windowTokens` at all, so this is
+    // the render every non-Codex session gets, permanently.
+    expect(formatWindowTokens(undefined)).toBe(EM_DASH);
+  });
+
+  it('refuses non-finite input rather than printing NaN', () => {
+    expect(formatWindowTokens(Number.NaN)).toBe(EM_DASH);
   });
 });
 

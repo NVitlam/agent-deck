@@ -46,6 +46,7 @@ import {
   type NormalizedHookEvent,
   type RawHookPayload,
 } from '../model/events.js';
+import type { CodexHookEvent } from '../codex/liveness.js';
 
 /**
  * The bind address. Hard-coded and deliberately not configurable (G5).
@@ -73,6 +74,16 @@ const HARD_ABORT_MULTIPLE = 16;
 export interface HookListenerCounters {
   /** Payloads accepted, normalized and dispatched. */
   accepted: number;
+  /**
+   * Payloads routed to the CODEX handlers instead of the CC ones (DoD 3.1).
+   *
+   * A separate counter rather than folding into {@link accepted}: that one's
+   * existing meaning, and every already-passing test that reads it, must not
+   * change. A Codex payload never touches `accepted`, `normalizeHookEvent`,
+   * `unconfirmedEventName` or `#seq` — those are CC's own accounting and a
+   * second engine's traffic must not perturb them.
+   */
+  acceptedCodex: number;
   /** Accepted payloads whose `hook_event_name` is not a confirmed type. */
   unconfirmedEventName: number;
   /** Requests whose remote address was not loopback (G5). */
@@ -102,6 +113,7 @@ export interface HookListenerCounters {
 function zeroCounters(): HookListenerCounters {
   return {
     accepted: 0,
+    acceptedCodex: 0,
     unconfirmedEventName: 0,
     droppedNonLoopback: 0,
     malformedJson: 0,
@@ -145,6 +157,21 @@ export function isHookListenerBindError(
 }
 
 export type HookEventHandler = (event: NormalizedHookEvent) => void;
+
+/**
+ * A Codex hook-event consumer (DoD 3.1). Registered via {@link HookListener.subscribeCodex}.
+ */
+export type CodexHookEventHandler = (event: CodexHookEvent) => void;
+
+/**
+ * The wire key whose PRESENCE discriminates a Codex hook payload from a CC
+ * one (spec/`docs/codex-contract.md` §A5): measured 160/160 Codex against
+ * 0/305 CC, with a vacuity control against `cwd`/`hook_event_name`. Presence
+ * is tested with `hasOwnProperty`, the same style {@link AGENT_ID_KEY} already
+ * uses here — never by comparing the value, which is CC's own recorded
+ * "main-thread" trap in a second costume.
+ */
+const CODEX_DISCRIMINATOR_KEY = 'model';
 
 export interface HookListenerOptions {
   /** Defaults to {@link DEFAULT_HOOK_PORT}. Port 0 is refused, not honoured. */
@@ -298,6 +325,7 @@ export class HookListener {
   #server: Server | null = null;
   #counters: HookListenerCounters = zeroCounters();
   #handlers = new Set<HookEventHandler>();
+  #codexHandlers = new Set<CodexHookEventHandler>();
   #seq = 0;
   #spoofRemoteAddress: string | undefined;
   #allowEphemeralPort: boolean;
@@ -337,6 +365,19 @@ export class HookListener {
     this.#handlers.add(handler);
     return () => {
       this.#handlers.delete(handler);
+    };
+  }
+
+  /**
+   * Register a CODEX consumer (DoD 3.1). Same shape as {@link subscribe},
+   * a separate set: a Codex-shaped payload is never handed to a
+   * {@link subscribe} handler and a CC-shaped one is never handed to one of
+   * these.
+   */
+  subscribeCodex(handler: CodexHookEventHandler): () => void {
+    this.#codexHandlers.add(handler);
+    return () => {
+      this.#codexHandlers.delete(handler);
     };
   }
 
@@ -443,6 +484,17 @@ export class HookListener {
       } catch {
         // G3: a consumer that throws must not affect the listener or any
         // other consumer.
+        this.#counters.handlerErrors += 1;
+      }
+    }
+  }
+
+  /** Same discipline as {@link #dispatch}, over the Codex handler set. */
+  #dispatchCodex(event: CodexHookEvent): void {
+    for (const handler of this.#codexHandlers) {
+      try {
+        handler(event);
+      } catch {
         this.#counters.handlerErrors += 1;
       }
     }
@@ -575,6 +627,27 @@ export class HookListener {
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
         this.#counters.notAnObject += 1;
         endWithStatus(res, 400);
+        return;
+      }
+
+      /*
+       * DoD 3.1 — LISTENER DISCRIMINATION.
+       *
+       * A Codex hook payload reuses `session_id` / `agent_id` / `tool_use_id`,
+       * the same join keys the CC layout uses, so every accepted JSON object
+       * used to be handed to `normalizeHookEvent` and the CC handler set
+       * unconditionally — a real Codex payload was silently misrouted into the
+       * CC pipeline. `model` as a KEY (never its value) is the discriminator,
+       * measured 160/160 Codex against 0/305 CC. The split is total given what
+       * has been measured: A5 found no payload carrying neither shape, so
+       * there is no third "unknown engine" bucket here — a future ambiguous
+       * shape would still need counting and dropping (G3) rather than a guess,
+       * but nothing observed requires that branch today.
+       */
+      if (Object.prototype.hasOwnProperty.call(parsed, CODEX_DISCRIMINATOR_KEY)) {
+        this.#counters.acceptedCodex += 1;
+        this.#dispatchCodex({ receivedAtMs: Date.now(), payload: parsed });
+        endWithStatus(res, 200);
         return;
       }
 

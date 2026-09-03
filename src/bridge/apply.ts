@@ -392,6 +392,11 @@ export function applySessionPatch(
   // other would report a pair that never existed.
   const contextNow: TokenPair | undefined = fields.contextNow ?? prev.contextNow;
   const burn: TokenPair | undefined = fields.burn ?? prev.burn;
+  // A bare scalar, unlike `contextNow`/`burn` above: there is no pair to keep
+  // in step, so a plain `??` is the whole rule. Absent means unchanged, same
+  // as every other key here — a state that never carried the field comes out
+  // without it rather than gaining a fabricated `0`.
+  const windowTokens: number | undefined = fields.windowTokens ?? prev.windowTokens;
   const edges = patch.spawnEdges ?? edgesOf(prev);
   // Absent means unchanged, so a parked graft carried by an earlier snapshot
   // survives every diff that does not mention it. Getting this wrong is silent:
@@ -426,5 +431,6 @@ export function applySessionPatch(
   };
   if (parked !== undefined) next.parked = parked.map((p) => ({ ...p }));
   if (engine !== undefined) next.engine = engine;
+  if (windowTokens !== undefined) next.windowTokens = windowTokens;
   return deepFreeze(next);
 }

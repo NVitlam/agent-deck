@@ -95,6 +95,8 @@ export interface DiagnosticsCounters {
   opencodeSessions: number;
   /** Claude Code sessions currently observed. */
   ccSessions: number;
+  /** Codex sessions currently observed. Widened in v0.6.0 Phase 3, DoD 3.2. */
+  codexSessions: number;
 }
 
 /**
@@ -335,7 +337,8 @@ export function formatCounters(counters: DiagnosticsCounters, isoTime: string): 
     ` patchesFailed=${String(counters.patchesFailed)}` +
     ` resyncs=${String(counters.resyncs)}` +
     ` cc=${String(counters.ccSessions)}` +
-    ` opencode=${String(counters.opencodeSessions)}`
+    ` opencode=${String(counters.opencodeSessions)}` +
+    ` codex=${String(counters.codexSessions)}`
   );
 }
 

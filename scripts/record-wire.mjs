@@ -16,20 +16,22 @@
 // and why `webview/wire.test.ts` can assert that replaying it converges on the
 // model's own final snapshot.
 //
-// TWO ENGINES, AS OF PHASE 7 (DoD 7.10)
-// --------------------------------------
+// THREE ENGINES, AS OF v0.6.0 PHASE 3 (DoD 3.3, extending DoD 7.10)
+// -------------------------------------------------------------------
 // A default run writes ONE corpus PER OBSERVATION ENGINE:
 //
-//   cc-<version>-session-arc.json         the Claude Code arc (buildCapturedCorpus)
-//   opencode-<version>-session-arc.json   the OpenCode arc    (buildOpenCodeCorpus)
+//   cc-<version>-session-arc.json      the Claude Code arc (buildCapturedCorpus)
+//   opencode-<version>-session-arc.json the OpenCode arc    (buildOpenCodeCorpus)
+//   codex-<version>-session-arc.json   the Codex arc        (buildCodexCorpus)
 //
-// The theater embeds every `*.json` under the corpus directory, so writing the
-// second one here is what puts an OpenCode session in front of the real
-// renderer. Both go through the same `createRecorder` and the same
+// The theater embeds every `*.json` under the corpus directory, so writing
+// each one here is what puts that engine's session in front of the real
+// renderer. All three go through the same `createRecorder` and the same
 // `SessionBridge`; what differs is the host half that produces the emissions —
-// `SessionModel` for CC, the shipped `OpenCodeEnginePath` for OpenCode. Neither
-// arc's schedule is the other's, and neither is invented: see
-// `recordCapturedArc`'s seven moments and `opencodeSchedule`'s derivation.
+// `SessionModel` for CC, the shipped `OpenCodeEnginePath` for OpenCode, the
+// shipped `CodexEnginePath` for Codex. No arc's schedule is another's, and
+// none is invented: see `recordCapturedArc`'s seven moments,
+// `opencodeSchedule`'s derivation, and `recordCodexArc`'s own comment.
 //
 // DETERMINISM IS THE PRODUCT
 // --------------------------
@@ -157,6 +159,20 @@ export async function loadHostModules() {
     [
       'export { OcLivenessEngine, DEFAULT_OC_LIVENESS_THRESHOLD_MS }',
       "from './src/opencode/liveness.js';",
+    ].join(' '),
+    // The THIRD engine (DoD 3.3). `CodexEnginePath` is the SHIPPED host class
+    // - the same one `activate()` constructs - exactly the precedent
+    // `OpenCodeEnginePath` above sets: recorded off production code, never a
+    // second implementation written for the recorder.
+    "export { CodexEnginePath } from './src/extension.js';",
+    "export { readCodexEngine, PINNED_CODEX_VERSION } from './src/codex/index.js';",
+    // `readCodexHookStream` and the threshold constant are NOT on index.ts's
+    // re-export list (PLAN.md's own hand-off line names it frozen), so they are
+    // pulled directly from liveness.js — the same move this file already makes
+    // for `OcLivenessEngine`, which is not on `opencode/index.ts`'s list either.
+    [
+      'export { readCodexHookStream, DEFAULT_CODEX_LIVENESS_THRESHOLD_MS }',
+      "from './src/codex/liveness.js';",
     ].join(' '),
   ].join('\n');
 
@@ -824,6 +840,275 @@ async function buildOpenCodeCorpus(host) {
 }
 
 // ---------------------------------------------------------------------------
+// The THIRD ENGINE: Codex (v0.6.0 Phase 3, DoD 3.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * WHAT IS REAL HERE, WHICH IS EVERYTHING EXCEPT THE SCHEDULE — same rule
+ * `recordOpenCodeArc`'s own header states, applied to the third engine.
+ *
+ *   - The content read is `readCodexEngine`, reached through `CodexEnginePath`
+ *     - the shipped host class, unmodified, with no `read` override.
+ *   - Liveness is the real `CodexLivenessEngine`, chained INSIDE
+ *     `CodexEnginePath` and driven by an INJECTED clock and an INJECTED poll
+ *     trigger — the same `PollTrigger` shape `OpenCodeEnginePath` accepts,
+ *     reused rather than re-declared (`CodexPathOptions.pollTrigger`'s own
+ *     doc comment says so). No wall clock and no timer.
+ *   - The hook event fed into it is a REAL, committed record read out of the
+ *     run's own `hook-stream.jsonl` via `readCodexHookStream` — not invented.
+ *   - The diffs are `CodexEnginePath.emit()`'s, which is `diffSessionState` —
+ *     the same single diff implementation every engine uses.
+ *   - The messages are a real `SessionBridge`'s.
+ *
+ * WHY LIVENESS CAN MOVE HERE AT ALL, WHICH `readCodexEngine()` ALONE CANNOT DO.
+ *
+ * `src/codex/index.ts`'s own doc comment says every session it produces
+ * carries STATIC `idle` liveness, because a one-shot file read has no clock.
+ * `CodexEnginePath` is the DoD 3.2 wiring that chains a real, injectable
+ * `CodexLivenessEngine` on top — the thing that comment names as its own
+ * follow-up. D0.1's rule (`src/codex/liveness.ts`) has FOUR rows and this
+ * fixture corpus can only ever exercise two of them: there is no
+ * `thread-writer-locks` directory in a committed transcript capture (a lock is
+ * live-process state, not something `capture-codex.mjs` snapshots), so
+ * `lockKnown` is always false and rows 3 and 4 (lock-present idle, lock-gone
+ * dead) are UNREACHABLE from any fixture. What remains is row 1 (a RECENT hook
+ * event -> `live`) and row 2 (no lock directory -> `idle` if the transcript's
+ * mtime is recent, else `unknown`) — and both arms of row 2 map to the SAME
+ * `SessionState.liveness` value, `'idle'`, through `mapCodexLiveness`. That is
+ * exactly what keeps this deterministic: the transcript's real filesystem
+ * mtime (`CodexThread.mtimeMs`) has NO injection seam anywhere on this path —
+ * unlike the CC arc's `observeJsonl({ mtimeMs })` override — so it is whatever
+ * the checkout happens to be. Because both of row 2's branches render
+ * identically, that non-determinism never reaches the wire: the recorded
+ * `live -> idle` transition below holds on every machine and every checkout
+ * regardless of what the real mtime says.
+ *
+ * THE SCHEDULE is this file's, exactly as the other two arcs' are: ingest one
+ * real hook event, poll (-> `live`), advance the simulated clock past the
+ * session's own liveness threshold, poll again (-> `idle`). The reload sits in
+ * the MIDDLE for the same reason `recordCapturedArc`'s does — see that
+ * function's comment.
+ */
+
+/** Deterministic per-arc constant: the ingested hook event lands at offset 0. */
+const CODEX_HOOK_ARRIVE_OFFSET_MS = 0;
+/** The reload lands shortly after, while the session is still `live`. */
+const CODEX_RELOAD_OFFSET_MS = 500;
+
+/**
+ * The committed Codex corpus the engine is ANCHORED on, named from
+ * `PINNED_CODEX_VERSION` rather than written down — the same
+ * `src/parser/corpus.test.ts` precedent `opencodeFixtureDir` follows.
+ */
+function codexFixtureDir(host) {
+  return join(REPO_ROOT, 'fixtures', `codex-${host.PINNED_CODEX_VERSION}`);
+}
+
+/** Every run directory under the corpus — read off the disk, never named. */
+async function codexRuns(fixtureDir) {
+  const entries = await readdir(fixtureDir, { withFileTypes: true });
+  const runs = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    try {
+      await readFile(join(fixtureDir, entry.name, 'hook-stream.jsonl'), 'utf8');
+      runs.push(entry.name);
+    } catch {
+      // Not a run directory (e.g. it has no hook stream); skip it.
+    }
+  }
+  return runs.sort();
+}
+
+/**
+ * The run with the most threads — chosen by asking the real engine, not by
+ * naming one. On this corpus that is deterministically `spawn-shapes` (a
+ * depth-2 tree, five subagents), but the SELECTION is derived so a future
+ * harvest that changes which run is richest changes what gets recorded rather
+ * than silently going stale against a hard-coded name.
+ */
+async function richestCodexRun(host, fixtureDir) {
+  const runs = await codexRuns(fixtureDir);
+  let best;
+  for (const run of runs) {
+    const root = join(fixtureDir, run, 'home', '.codex');
+    const outcome = await host.readCodexEngine({ root });
+    if (outcome.kind !== 'ok') continue;
+    const count = outcome.result.threads.length;
+    if (best === undefined || count > best.count) {
+      best = { run, root, count, result: outcome.result };
+    }
+  }
+  if (best === undefined) throw new Error(`no run under ${fixtureDir} produced a readable engine outcome`);
+  return best;
+}
+
+async function recordCodexArc(host) {
+  const fixtureDir = codexFixtureDir(host);
+  const chosen = await richestCodexRun(host, fixtureDir);
+
+  // EVERY open workspace folder, derived from the run's own threads rather
+  // than named — the same argument `recordOpenCodeArc` makes for
+  // `workspacePaths`, pointed at real `cwd` strings instead of slugs because
+  // that is what `CodexEnginePath.workspaceFolders` is matched against
+  // (`sameWorkspace`, case-insensitive — spec C1).
+  const workspaceFolders = [
+    ...new Set(chosen.result.threads.map((t) => t.cwd).filter((cwd) => cwd !== '')),
+  ].sort();
+
+  const hookText = await readFile(join(fixtureDir, chosen.run, 'hook-stream.jsonl'), 'utf8');
+  const hookRead = host.readCodexHookStream(hookText);
+  // A ROOT-THREAD event: `agent_id` ABSENT from the payload, never the string
+  // "main" — the same rule the CC arc's `mainEvent` states, on the other tap.
+  const rootEvent = hookRead.events.find((event) => {
+    const payload = event.payload;
+    return payload !== null && typeof payload === 'object' && !('agent_id' in payload);
+  });
+  if (rootEvent === undefined) {
+    throw new Error(`no root-thread hook event found in ${chosen.run}'s hook stream`);
+  }
+
+  const thresholdMs = host.DEFAULT_CODEX_LIVENESS_THRESHOLD_MS;
+  // Anchored on the REAL event's own arrival time, exactly as `recordOpenCodeArc`
+  // anchors on the store's own `time_updated` — never on a wall clock read at
+  // record time.
+  const epochMs = rootEvent.receivedAtMs;
+
+  let offsetMs = 0;
+  const now = () => epochMs + offsetMs;
+  const recorder = createRecorder(host);
+  // The CC hook tap's own degraded channel — panel-wide, exactly as
+  // `recordOpenCodeArc`'s `hooks` is. A panel showing only Codex sessions
+  // still reports whatever the CC listener reports.
+  const hooks = new host.LivenessEngine({ now });
+
+  const pollRuns = [];
+  const path = new host.CodexEnginePath({
+    root: chosen.root,
+    workspaceFolders,
+    thresholdMs,
+    onChange: () => {},
+    now,
+    // CAPTURED, not scheduled — this recorder advances the clock and polls by
+    // hand, so no timer exists anywhere in the recording. `CodexEnginePath`
+    // registers this trigger TWICE (once for its internal liveness engine,
+    // once for its own content re-read); both handles are kept so either can
+    // be fired independently, and only the liveness one ever is below — the
+    // content re-read of a static fixture would be a no-op busy loop.
+    pollTrigger: (run) => {
+      pollRuns.push(run);
+      return { stop() {} };
+    },
+    log: () => {},
+  });
+
+  let final = { sessions: [] };
+  const publish = () => {
+    const emission = path.emit();
+    final = emission;
+    recorder.bridge.publish(emission);
+    recorder.bridge.publishDegraded(hooks.degradedState());
+    return emission;
+  };
+
+  // --- discover + the first hook event, folded into one step -------------
+  //
+  // `path.start()` alone would publish a static `idle`/`unknown` root (row 2,
+  // no hook seen yet) — a corpus that opened there and only ever went to
+  // `idle` later would show no transition at all. Ingesting the real event
+  // and polling BEFORE the first `publish()` means the FIRST snapshot already
+  // shows the engine-produced `live` state, matching `recordOpenCodeArc`'s own
+  // shape (that arc's discovery step opens on freshly-live sessions too).
+  offsetMs = CODEX_HOOK_ARRIVE_OFFSET_MS;
+  recorder.step(offsetMs, 'discover', 'the root is read once; a real hook event arrives and the root goes live');
+  await path.start();
+  path.ingestHookEvent(rootEvent);
+  const [livenessPoll] = pollRuns;
+  if (livenessPoll === undefined) throw new Error('CodexEnginePath registered no liveness poll trigger');
+  livenessPoll();
+  publish();
+
+  // --- panel-reload: sits in the middle, still live -----------------------
+  offsetMs = CODEX_RELOAD_OFFSET_MS;
+  recorder.step(offsetMs, 'panel-reload', 'the webview is reloaded and re-snapshotted, still live');
+  recorder.bridge.reset();
+  publish();
+
+  // --- goes-quiet: past the threshold, nothing new -------------------------
+  offsetMs = CODEX_HOOK_ARRIVE_OFFSET_MS + thresholdMs + 1;
+  recorder.step(offsetMs, 'goes-quiet', 'past the recency threshold with no further hook events');
+  livenessPoll();
+  publish();
+
+  const diagnostics = path.diagnostics;
+  path.dispose();
+
+  return { recorder, hooks, final, fixtureDir, run: chosen.run, root: chosen.root, epochMs, diagnostics };
+}
+
+const CODEX_DESCRIPTION = [
+  'Every message a real SessionBridge put on the wire while the SHIPPED CodexEnginePath - the',
+  'same class activate() constructs - read one committed Codex run and chained the real',
+  'CodexLivenessEngine over a simulated clock, fed one REAL hook event read out of that run’s',
+  'own hook-stream.jsonl. No writer-lock directory exists in a committed capture, so only rows',
+  '1 and 2 of D0.1’s table are reachable from any fixture; both arms of row 2 render the same',
+  "SessionState liveness, which is what keeps the recorded live -> idle transition deterministic",
+  'despite the transcript mtime having no injection seam on this path. `final` is the host’s own',
+  'last emission, not the diffs replayed.',
+].join(' ');
+
+async function buildCodexCorpus(host) {
+  const { recorder, hooks, final, fixtureDir, run, root, epochMs, diagnostics } =
+    await recordCodexArc(host);
+
+  // The corpus id names the fixture directory it came from, derived rather
+  // than written down — the same rule the other two arcs' ids follow.
+  const captureName = repoRelative(fixtureDir).split('/')[1];
+
+  const schemaMismatchSessionIds = [
+    ...new Set(
+      recorder.events
+        .filter((e) => e.message.type === 'schemaMismatch')
+        .map((e) => e.message.sessionId),
+    ),
+  ].sort();
+
+  const lastEvent = recorder.events[recorder.events.length - 1];
+
+  return {
+    formatVersion: WIRE_FORMAT_VERSION,
+    id: `${captureName}-session-arc`,
+    kind: 'recorded',
+    title: `${captureName} — the third engine (${run}), live through idle, on its own clock`,
+    description: CODEX_DESCRIPTION,
+    producedBy: 'scripts/record-wire.mjs',
+    recordedFrom: repoRelative(root),
+    engine: 'codex',
+    simulatedEpochMs: epochMs,
+    // The host's own account of the read, so a reader can tell a corpus
+    // recorded off a healthy root from one recorded off a degraded one
+    // without replaying it. Counters only — never a path.
+    hostDiagnostics: {
+      absentLogs: diagnostics.absentLogs,
+      contentReads: diagnostics.contentReads,
+      contentFailures: diagnostics.contentFailures,
+      unreadableReads: diagnostics.unreadableReads,
+      livenessPolls: diagnostics.livenessPolls,
+      emissions: diagnostics.emissions,
+      sessions: diagnostics.sessions,
+    },
+    durationMs: lastEvent === undefined ? 0 : lastEvent.atMs,
+    steps: recorder.steps,
+    events: recorder.events,
+    final: {
+      sessions: JSON.parse(JSON.stringify(final.sessions)),
+      degraded: hooks.degradedState(),
+      schemaMismatchSessionIds,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Timed replay of a REAL captured session (PLAN.md Phase 5.5, DoD 5.5.5)
 // ---------------------------------------------------------------------------
 
@@ -1185,10 +1470,14 @@ async function main() {
     return;
   }
 
-  // BOTH ENGINES (DoD 7.10). The theater embeds every corpus in this
-  // directory, so adding the second one here is what puts an OpenCode session
+  // ALL THREE ENGINES (DoD 7.10, DoD 3.3). The theater embeds every corpus in
+  // this directory, so adding the third one here is what puts a Codex session
   // in front of the real renderer.
-  const corpora = [await buildCapturedCorpus(host), await buildOpenCodeCorpus(host)];
+  const corpora = [
+    await buildCapturedCorpus(host),
+    await buildOpenCodeCorpus(host),
+    await buildCodexCorpus(host),
+  ];
 
   await mkdir(outDir, { recursive: true });
   // Clear only what THIS script generates. A synthetic corpus written by

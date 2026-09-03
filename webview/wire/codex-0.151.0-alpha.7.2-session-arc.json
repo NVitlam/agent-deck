@@ -1,0 +1,974 @@
+{
+  "formatVersion": 2,
+  "id": "codex-0.151.0-alpha.7.2-session-arc",
+  "kind": "recorded",
+  "title": "codex-0.151.0-alpha.7.2 — the third engine (spawn-shapes), live through idle, on its own clock",
+  "description": "Every message a real SessionBridge put on the wire while the SHIPPED CodexEnginePath - the same class activate() constructs - read one committed Codex run and chained the real CodexLivenessEngine over a simulated clock, fed one REAL hook event read out of that run’s own hook-stream.jsonl. No writer-lock directory exists in a committed capture, so only rows 1 and 2 of D0.1’s table are reachable from any fixture; both arms of row 2 render the same SessionState liveness, which is what keeps the recorded live -> idle transition deterministic despite the transcript mtime having no injection seam on this path. `final` is the host’s own last emission, not the diffs replayed.",
+  "producedBy": "scripts/record-wire.mjs",
+  "recordedFrom": "fixtures/codex-0.151.0-alpha.7.2/spawn-shapes/home/.codex",
+  "engine": "codex",
+  "simulatedEpochMs": 1788386053106,
+  "hostDiagnostics": {
+    "absentLogs": 0,
+    "contentReads": 1,
+    "contentFailures": 0,
+    "unreadableReads": 0,
+    "livenessPolls": 3,
+    "emissions": 3,
+    "sessions": 1
+  },
+  "durationMs": 120001,
+  "steps": [
+    {
+      "atMs": 0,
+      "label": "discover",
+      "what": "the root is read once; a real hook event arrives and the root goes live"
+    },
+    {
+      "atMs": 500,
+      "label": "panel-reload",
+      "what": "the webview is reloaded and re-snapshotted, still live"
+    },
+    {
+      "atMs": 120001,
+      "label": "goes-quiet",
+      "what": "past the recency threshold with no further hook events"
+    }
+  ],
+  "events": [
+    {
+      "atMs": 0,
+      "label": "discover",
+      "message": {
+        "type": "snapshot",
+        "sessions": [
+          {
+            "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+            "projectSlug": "C--Users-dev-codex-probe-scratch",
+            "engine": "codex",
+            "workspaceMatch": true,
+            "liveness": "live",
+            "schemaOk": true,
+            "totals": {
+              "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 16151,
+              "output": 62
+            },
+            "burn": {
+              "prompt": 345745,
+              "output": 1182
+            },
+            "windowTokens": 258400,
+            "spawnEdges": [
+              {
+                "toolUseId": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+                "agentId": "01a0641d-9c3c-7612-a666-786b575d4194",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              },
+              {
+                "toolUseId": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+                "agentId": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              },
+              {
+                "toolUseId": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+                "agentId": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              },
+              {
+                "toolUseId": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+                "agentId": "01a0641e-19d6-7800-8330-98371a1683a5",
+                "parentNodeId": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+                "depth": 2,
+                "recordedDepth": 2
+              },
+              {
+                "toolUseId": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+                "agentId": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              }
+            ],
+            "parked": [],
+            "root": {
+              "id": "root",
+              "kind": "main",
+              "label": "/root",
+              "status": "done",
+              "spawnDepth": 0,
+              "children": [
+                {
+                  "id": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+                  "toolName": "spawn_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.spawn_agent p1",
+                  "resultPreview": "{\"task_name\":\"/root/p1\"}",
+                  "truncated": false
+                },
+                {
+                  "id": "01a0641d-9c3c-7612-a666-786b575d4194",
+                  "kind": "subagent",
+                  "label": "p1",
+                  "status": "done",
+                  "spawnDepth": 1,
+                  "children": [
+                    {
+                      "id": "call_BE9vBpoJjPAbC7DAxskoILMM",
+                      "toolName": "exec",
+                      "status": "done",
+                      "inputPreview": "exec",
+                      "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 01: scratch fixture row for the Codex kill gate.\r\n",
+                      "truncated": false
+                    }
+                  ],
+                  "contextNow": {
+                    "prompt": 17175,
+                    "output": 18
+                  },
+                  "burn": {
+                    "prompt": 34206,
+                    "output": 125
+                  },
+                  "startedAt": 1788386057354,
+                  "endedAt": 1788451016306.2595
+                },
+                {
+                  "id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+                  "toolName": "spawn_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.spawn_agent p2",
+                  "resultPreview": "{\"task_name\":\"/root/p2\"}",
+                  "truncated": false
+                },
+                {
+                  "id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+                  "kind": "subagent",
+                  "label": "p2",
+                  "status": "done",
+                  "spawnDepth": 1,
+                  "children": [
+                    {
+                      "id": "call_ONMOik3EagyBYuF8MqvFMPhT",
+                      "toolName": "exec",
+                      "status": "done",
+                      "inputPreview": "exec",
+                      "resultPreview": "Script completed\nWall time 3.0 seconds\nOutput:\n\nLine 02: scratch fixture row for the Codex kill gate.\r\n",
+                      "truncated": false
+                    }
+                  ],
+                  "contextNow": {
+                    "prompt": 17187,
+                    "output": 18
+                  },
+                  "burn": {
+                    "prompt": 34218,
+                    "output": 137
+                  },
+                  "startedAt": 1788386061217,
+                  "endedAt": 1788451016317.278
+                },
+                {
+                  "id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+                  "toolName": "spawn_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.spawn_agent p3",
+                  "resultPreview": "{\"task_name\":\"/root/p3\"}",
+                  "truncated": false
+                },
+                {
+                  "id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+                  "kind": "subagent",
+                  "label": "p3",
+                  "status": "done",
+                  "spawnDepth": 1,
+                  "children": [
+                    {
+                      "id": "call_7JqUX0steA2WiEAGz7WYRRuh",
+                      "toolName": "exec",
+                      "status": "done",
+                      "inputPreview": "exec",
+                      "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 03: scratch fixture row for the Codex kill gate.\r\n",
+                      "truncated": false
+                    }
+                  ],
+                  "contextNow": {
+                    "prompt": 17189,
+                    "output": 18
+                  },
+                  "burn": {
+                    "prompt": 34220,
+                    "output": 139
+                  },
+                  "startedAt": 1788386065184,
+                  "endedAt": 1788451016327.2908
+                },
+                {
+                  "id": "call_tKVRDV43tRvYRodryJdaFXJ6",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait completed.\\n\\nRequested timeout of 600ms was clamped to the minimum of 10000ms.\",\"timed_out\":false}",
+                  "truncated": false
+                },
+                {
+                  "id": "call_sdxbW21gqrEROfSmFTqtH9AG",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+                  "truncated": false
+                },
+                {
+                  "id": "call_gHEgJ9QqzOG4qNyWjhY3hue9",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+                  "truncated": false
+                },
+                {
+                  "id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+                  "toolName": "spawn_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.spawn_agent outer",
+                  "resultPreview": "{\"task_name\":\"/root/outer\"}",
+                  "truncated": false
+                },
+                {
+                  "id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+                  "kind": "subagent",
+                  "label": "outer",
+                  "status": "done",
+                  "spawnDepth": 1,
+                  "children": [
+                    {
+                      "id": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+                      "toolName": "spawn_agent",
+                      "status": "done",
+                      "inputPreview": "collaboration.spawn_agent inner",
+                      "resultPreview": "{\"task_name\":\"/root/outer/inner\"}",
+                      "truncated": false
+                    },
+                    {
+                      "id": "01a0641e-19d6-7800-8330-98371a1683a5",
+                      "kind": "subagent",
+                      "label": "inner",
+                      "status": "done",
+                      "spawnDepth": 2,
+                      "children": [
+                        {
+                          "id": "call_rrdzcU2KEerrDXZt0NQeDTi0",
+                          "toolName": "exec",
+                          "status": "done",
+                          "inputPreview": "exec",
+                          "resultPreview": "Script completed\nWall time 2.8 seconds\nOutput:\n\n20\r\n",
+                          "truncated": false
+                        }
+                      ],
+                      "contextNow": {
+                        "prompt": 17186,
+                        "output": 16
+                      },
+                      "burn": {
+                        "prompt": 34231,
+                        "output": 132
+                      },
+                      "startedAt": 1788386089509,
+                      "endedAt": 1788451016347.6733
+                    },
+                    {
+                      "id": "call_IKWCISCaJiX2efcibFiQcjR5",
+                      "toolName": "wait_agent",
+                      "status": "done",
+                      "inputPreview": "collaboration.wait_agent",
+                      "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+                      "truncated": false
+                    }
+                  ],
+                  "contextNow": {
+                    "prompt": 17285,
+                    "output": 11
+                  },
+                  "burn": {
+                    "prompt": 51536,
+                    "output": 150
+                  },
+                  "startedAt": 1788386082798,
+                  "endedAt": 1788451016336.6516
+                },
+                {
+                  "id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait timed out.\",\"timed_out\":true}",
+                  "truncated": false
+                },
+                {
+                  "id": "call_wYC0jwTFy9FjFSYO5vj9s0Mc",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+                  "truncated": false
+                }
+              ],
+              "contextNow": {
+                "prompt": 16151,
+                "output": 62
+              },
+              "burn": {
+                "prompt": 157334,
+                "output": 499
+              },
+              "startedAt": 1788386050871,
+              "endedAt": 1788451016295.3271
+            }
+          }
+        ]
+      }
+    },
+    {
+      "atMs": 0,
+      "label": "discover",
+      "message": {
+        "type": "degraded",
+        "degraded": true,
+        "reason": "noHookEvents"
+      }
+    },
+    {
+      "atMs": 500,
+      "label": "panel-reload",
+      "message": {
+        "type": "snapshot",
+        "sessions": [
+          {
+            "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+            "projectSlug": "C--Users-dev-codex-probe-scratch",
+            "engine": "codex",
+            "workspaceMatch": true,
+            "liveness": "live",
+            "schemaOk": true,
+            "totals": {
+              "costUsd": 0
+            },
+            "contextNow": {
+              "prompt": 16151,
+              "output": 62
+            },
+            "burn": {
+              "prompt": 345745,
+              "output": 1182
+            },
+            "windowTokens": 258400,
+            "spawnEdges": [
+              {
+                "toolUseId": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+                "agentId": "01a0641d-9c3c-7612-a666-786b575d4194",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              },
+              {
+                "toolUseId": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+                "agentId": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              },
+              {
+                "toolUseId": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+                "agentId": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              },
+              {
+                "toolUseId": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+                "agentId": "01a0641e-19d6-7800-8330-98371a1683a5",
+                "parentNodeId": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+                "depth": 2,
+                "recordedDepth": 2
+              },
+              {
+                "toolUseId": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+                "agentId": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              }
+            ],
+            "parked": [],
+            "root": {
+              "id": "root",
+              "kind": "main",
+              "label": "/root",
+              "status": "done",
+              "spawnDepth": 0,
+              "children": [
+                {
+                  "id": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+                  "toolName": "spawn_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.spawn_agent p1",
+                  "resultPreview": "{\"task_name\":\"/root/p1\"}",
+                  "truncated": false
+                },
+                {
+                  "id": "01a0641d-9c3c-7612-a666-786b575d4194",
+                  "kind": "subagent",
+                  "label": "p1",
+                  "status": "done",
+                  "spawnDepth": 1,
+                  "children": [
+                    {
+                      "id": "call_BE9vBpoJjPAbC7DAxskoILMM",
+                      "toolName": "exec",
+                      "status": "done",
+                      "inputPreview": "exec",
+                      "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 01: scratch fixture row for the Codex kill gate.\r\n",
+                      "truncated": false
+                    }
+                  ],
+                  "contextNow": {
+                    "prompt": 17175,
+                    "output": 18
+                  },
+                  "burn": {
+                    "prompt": 34206,
+                    "output": 125
+                  },
+                  "startedAt": 1788386057354,
+                  "endedAt": 1788451016306.2595
+                },
+                {
+                  "id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+                  "toolName": "spawn_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.spawn_agent p2",
+                  "resultPreview": "{\"task_name\":\"/root/p2\"}",
+                  "truncated": false
+                },
+                {
+                  "id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+                  "kind": "subagent",
+                  "label": "p2",
+                  "status": "done",
+                  "spawnDepth": 1,
+                  "children": [
+                    {
+                      "id": "call_ONMOik3EagyBYuF8MqvFMPhT",
+                      "toolName": "exec",
+                      "status": "done",
+                      "inputPreview": "exec",
+                      "resultPreview": "Script completed\nWall time 3.0 seconds\nOutput:\n\nLine 02: scratch fixture row for the Codex kill gate.\r\n",
+                      "truncated": false
+                    }
+                  ],
+                  "contextNow": {
+                    "prompt": 17187,
+                    "output": 18
+                  },
+                  "burn": {
+                    "prompt": 34218,
+                    "output": 137
+                  },
+                  "startedAt": 1788386061217,
+                  "endedAt": 1788451016317.278
+                },
+                {
+                  "id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+                  "toolName": "spawn_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.spawn_agent p3",
+                  "resultPreview": "{\"task_name\":\"/root/p3\"}",
+                  "truncated": false
+                },
+                {
+                  "id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+                  "kind": "subagent",
+                  "label": "p3",
+                  "status": "done",
+                  "spawnDepth": 1,
+                  "children": [
+                    {
+                      "id": "call_7JqUX0steA2WiEAGz7WYRRuh",
+                      "toolName": "exec",
+                      "status": "done",
+                      "inputPreview": "exec",
+                      "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 03: scratch fixture row for the Codex kill gate.\r\n",
+                      "truncated": false
+                    }
+                  ],
+                  "contextNow": {
+                    "prompt": 17189,
+                    "output": 18
+                  },
+                  "burn": {
+                    "prompt": 34220,
+                    "output": 139
+                  },
+                  "startedAt": 1788386065184,
+                  "endedAt": 1788451016327.2908
+                },
+                {
+                  "id": "call_tKVRDV43tRvYRodryJdaFXJ6",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait completed.\\n\\nRequested timeout of 600ms was clamped to the minimum of 10000ms.\",\"timed_out\":false}",
+                  "truncated": false
+                },
+                {
+                  "id": "call_sdxbW21gqrEROfSmFTqtH9AG",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+                  "truncated": false
+                },
+                {
+                  "id": "call_gHEgJ9QqzOG4qNyWjhY3hue9",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+                  "truncated": false
+                },
+                {
+                  "id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+                  "toolName": "spawn_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.spawn_agent outer",
+                  "resultPreview": "{\"task_name\":\"/root/outer\"}",
+                  "truncated": false
+                },
+                {
+                  "id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+                  "kind": "subagent",
+                  "label": "outer",
+                  "status": "done",
+                  "spawnDepth": 1,
+                  "children": [
+                    {
+                      "id": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+                      "toolName": "spawn_agent",
+                      "status": "done",
+                      "inputPreview": "collaboration.spawn_agent inner",
+                      "resultPreview": "{\"task_name\":\"/root/outer/inner\"}",
+                      "truncated": false
+                    },
+                    {
+                      "id": "01a0641e-19d6-7800-8330-98371a1683a5",
+                      "kind": "subagent",
+                      "label": "inner",
+                      "status": "done",
+                      "spawnDepth": 2,
+                      "children": [
+                        {
+                          "id": "call_rrdzcU2KEerrDXZt0NQeDTi0",
+                          "toolName": "exec",
+                          "status": "done",
+                          "inputPreview": "exec",
+                          "resultPreview": "Script completed\nWall time 2.8 seconds\nOutput:\n\n20\r\n",
+                          "truncated": false
+                        }
+                      ],
+                      "contextNow": {
+                        "prompt": 17186,
+                        "output": 16
+                      },
+                      "burn": {
+                        "prompt": 34231,
+                        "output": 132
+                      },
+                      "startedAt": 1788386089509,
+                      "endedAt": 1788451016347.6733
+                    },
+                    {
+                      "id": "call_IKWCISCaJiX2efcibFiQcjR5",
+                      "toolName": "wait_agent",
+                      "status": "done",
+                      "inputPreview": "collaboration.wait_agent",
+                      "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+                      "truncated": false
+                    }
+                  ],
+                  "contextNow": {
+                    "prompt": 17285,
+                    "output": 11
+                  },
+                  "burn": {
+                    "prompt": 51536,
+                    "output": 150
+                  },
+                  "startedAt": 1788386082798,
+                  "endedAt": 1788451016336.6516
+                },
+                {
+                  "id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait timed out.\",\"timed_out\":true}",
+                  "truncated": false
+                },
+                {
+                  "id": "call_wYC0jwTFy9FjFSYO5vj9s0Mc",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+                  "truncated": false
+                }
+              ],
+              "contextNow": {
+                "prompt": 16151,
+                "output": 62
+              },
+              "burn": {
+                "prompt": 157334,
+                "output": 499
+              },
+              "startedAt": 1788386050871,
+              "endedAt": 1788451016295.3271
+            }
+          }
+        ]
+      }
+    },
+    {
+      "atMs": 500,
+      "label": "panel-reload",
+      "message": {
+        "type": "degraded",
+        "degraded": true,
+        "reason": "noHookEvents"
+      }
+    },
+    {
+      "atMs": 120001,
+      "label": "goes-quiet",
+      "message": {
+        "type": "diff",
+        "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+        "patch": {
+          "fields": {
+            "liveness": "idle"
+          }
+        }
+      }
+    }
+  ],
+  "final": {
+    "sessions": [
+      {
+        "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+        "projectSlug": "C--Users-dev-codex-probe-scratch",
+        "engine": "codex",
+        "workspaceMatch": true,
+        "liveness": "idle",
+        "schemaOk": true,
+        "totals": {
+          "costUsd": 0
+        },
+        "contextNow": {
+          "prompt": 16151,
+          "output": 62
+        },
+        "burn": {
+          "prompt": 345745,
+          "output": 1182
+        },
+        "windowTokens": 258400,
+        "spawnEdges": [
+          {
+            "toolUseId": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+            "agentId": "01a0641d-9c3c-7612-a666-786b575d4194",
+            "parentNodeId": "root",
+            "depth": 1,
+            "recordedDepth": 1
+          },
+          {
+            "toolUseId": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+            "agentId": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+            "parentNodeId": "root",
+            "depth": 1,
+            "recordedDepth": 1
+          },
+          {
+            "toolUseId": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+            "agentId": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+            "parentNodeId": "root",
+            "depth": 1,
+            "recordedDepth": 1
+          },
+          {
+            "toolUseId": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+            "agentId": "01a0641e-19d6-7800-8330-98371a1683a5",
+            "parentNodeId": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+            "depth": 2,
+            "recordedDepth": 2
+          },
+          {
+            "toolUseId": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+            "agentId": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+            "parentNodeId": "root",
+            "depth": 1,
+            "recordedDepth": 1
+          }
+        ],
+        "parked": [],
+        "root": {
+          "id": "root",
+          "kind": "main",
+          "label": "/root",
+          "status": "done",
+          "spawnDepth": 0,
+          "children": [
+            {
+              "id": "call_foK7fk0dgSSVGBhb8Pj4xblp",
+              "toolName": "spawn_agent",
+              "status": "done",
+              "inputPreview": "collaboration.spawn_agent p1",
+              "resultPreview": "{\"task_name\":\"/root/p1\"}",
+              "truncated": false
+            },
+            {
+              "id": "01a0641d-9c3c-7612-a666-786b575d4194",
+              "kind": "subagent",
+              "label": "p1",
+              "status": "done",
+              "spawnDepth": 1,
+              "children": [
+                {
+                  "id": "call_BE9vBpoJjPAbC7DAxskoILMM",
+                  "toolName": "exec",
+                  "status": "done",
+                  "inputPreview": "exec",
+                  "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 01: scratch fixture row for the Codex kill gate.\r\n",
+                  "truncated": false
+                }
+              ],
+              "contextNow": {
+                "prompt": 17175,
+                "output": 18
+              },
+              "burn": {
+                "prompt": 34206,
+                "output": 125
+              },
+              "startedAt": 1788386057354,
+              "endedAt": 1788451016306.2595
+            },
+            {
+              "id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
+              "toolName": "spawn_agent",
+              "status": "done",
+              "inputPreview": "collaboration.spawn_agent p2",
+              "resultPreview": "{\"task_name\":\"/root/p2\"}",
+              "truncated": false
+            },
+            {
+              "id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+              "kind": "subagent",
+              "label": "p2",
+              "status": "done",
+              "spawnDepth": 1,
+              "children": [
+                {
+                  "id": "call_ONMOik3EagyBYuF8MqvFMPhT",
+                  "toolName": "exec",
+                  "status": "done",
+                  "inputPreview": "exec",
+                  "resultPreview": "Script completed\nWall time 3.0 seconds\nOutput:\n\nLine 02: scratch fixture row for the Codex kill gate.\r\n",
+                  "truncated": false
+                }
+              ],
+              "contextNow": {
+                "prompt": 17187,
+                "output": 18
+              },
+              "burn": {
+                "prompt": 34218,
+                "output": 137
+              },
+              "startedAt": 1788386061217,
+              "endedAt": 1788451016317.278
+            },
+            {
+              "id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
+              "toolName": "spawn_agent",
+              "status": "done",
+              "inputPreview": "collaboration.spawn_agent p3",
+              "resultPreview": "{\"task_name\":\"/root/p3\"}",
+              "truncated": false
+            },
+            {
+              "id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+              "kind": "subagent",
+              "label": "p3",
+              "status": "done",
+              "spawnDepth": 1,
+              "children": [
+                {
+                  "id": "call_7JqUX0steA2WiEAGz7WYRRuh",
+                  "toolName": "exec",
+                  "status": "done",
+                  "inputPreview": "exec",
+                  "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 03: scratch fixture row for the Codex kill gate.\r\n",
+                  "truncated": false
+                }
+              ],
+              "contextNow": {
+                "prompt": 17189,
+                "output": 18
+              },
+              "burn": {
+                "prompt": 34220,
+                "output": 139
+              },
+              "startedAt": 1788386065184,
+              "endedAt": 1788451016327.2908
+            },
+            {
+              "id": "call_tKVRDV43tRvYRodryJdaFXJ6",
+              "toolName": "wait_agent",
+              "status": "done",
+              "inputPreview": "collaboration.wait_agent",
+              "resultPreview": "{\"message\":\"Wait completed.\\n\\nRequested timeout of 600ms was clamped to the minimum of 10000ms.\",\"timed_out\":false}",
+              "truncated": false
+            },
+            {
+              "id": "call_sdxbW21gqrEROfSmFTqtH9AG",
+              "toolName": "wait_agent",
+              "status": "done",
+              "inputPreview": "collaboration.wait_agent",
+              "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+              "truncated": false
+            },
+            {
+              "id": "call_gHEgJ9QqzOG4qNyWjhY3hue9",
+              "toolName": "wait_agent",
+              "status": "done",
+              "inputPreview": "collaboration.wait_agent",
+              "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+              "truncated": false
+            },
+            {
+              "id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
+              "toolName": "spawn_agent",
+              "status": "done",
+              "inputPreview": "collaboration.spawn_agent outer",
+              "resultPreview": "{\"task_name\":\"/root/outer\"}",
+              "truncated": false
+            },
+            {
+              "id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+              "kind": "subagent",
+              "label": "outer",
+              "status": "done",
+              "spawnDepth": 1,
+              "children": [
+                {
+                  "id": "call_UmCi1BmYHE9KfrzlmFAVUNlK",
+                  "toolName": "spawn_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.spawn_agent inner",
+                  "resultPreview": "{\"task_name\":\"/root/outer/inner\"}",
+                  "truncated": false
+                },
+                {
+                  "id": "01a0641e-19d6-7800-8330-98371a1683a5",
+                  "kind": "subagent",
+                  "label": "inner",
+                  "status": "done",
+                  "spawnDepth": 2,
+                  "children": [
+                    {
+                      "id": "call_rrdzcU2KEerrDXZt0NQeDTi0",
+                      "toolName": "exec",
+                      "status": "done",
+                      "inputPreview": "exec",
+                      "resultPreview": "Script completed\nWall time 2.8 seconds\nOutput:\n\n20\r\n",
+                      "truncated": false
+                    }
+                  ],
+                  "contextNow": {
+                    "prompt": 17186,
+                    "output": 16
+                  },
+                  "burn": {
+                    "prompt": 34231,
+                    "output": 132
+                  },
+                  "startedAt": 1788386089509,
+                  "endedAt": 1788451016347.6733
+                },
+                {
+                  "id": "call_IKWCISCaJiX2efcibFiQcjR5",
+                  "toolName": "wait_agent",
+                  "status": "done",
+                  "inputPreview": "collaboration.wait_agent",
+                  "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+                  "truncated": false
+                }
+              ],
+              "contextNow": {
+                "prompt": 17285,
+                "output": 11
+              },
+              "burn": {
+                "prompt": 51536,
+                "output": 150
+              },
+              "startedAt": 1788386082798,
+              "endedAt": 1788451016336.6516
+            },
+            {
+              "id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
+              "toolName": "wait_agent",
+              "status": "done",
+              "inputPreview": "collaboration.wait_agent",
+              "resultPreview": "{\"message\":\"Wait timed out.\",\"timed_out\":true}",
+              "truncated": false
+            },
+            {
+              "id": "call_wYC0jwTFy9FjFSYO5vj9s0Mc",
+              "toolName": "wait_agent",
+              "status": "done",
+              "inputPreview": "collaboration.wait_agent",
+              "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
+              "truncated": false
+            }
+          ],
+          "contextNow": {
+            "prompt": 16151,
+            "output": 62
+          },
+          "burn": {
+            "prompt": 157334,
+            "output": 499
+          },
+          "startedAt": 1788386050871,
+          "endedAt": 1788451016295.3271
+        }
+      }
+    ],
+    "degraded": {
+      "degraded": true,
+      "reason": "noHookEvents"
+    },
+    "schemaMismatchSessionIds": []
+  }
+}

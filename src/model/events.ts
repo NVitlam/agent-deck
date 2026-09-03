@@ -205,12 +205,19 @@ export interface SessionState {
    * a percentage or a gauge**, because two of the three cannot report one.
    *
    * The Codex engine reads it from the transcript's `model_context_window`
-   * and from nowhere else. `~/.codex/models_cache.json` states a different
-   * figure (`272000`) for what looks like the same concept; it is a
-   * network-fetched cache rather than exhaust, it is on the G10
-   * never-opened list, and `docs/codex-contract.md` A7 records it as a
-   * non-evidence observation so a later reader meets it there instead of
-   * rediscovering it and concluding the transcript is wrong.
+   * and from nowhere else. Codex also ships a network-fetched model cache
+   * stating a different figure for what looks like the same concept; that
+   * file is on the G10 never-opened list and `docs/codex-contract.md` A7
+   * records the number as a non-evidence observation, so a later reader
+   * meets it there instead of rediscovering it and concluding the
+   * transcript is wrong.
+   *
+   * **The cache is deliberately not NAMED here.** `src/codex/never-open.ts`
+   * is the one place its filename appears, and the G10 test greps for each
+   * name and asserts it occurs only in that list. The grep is scoped to
+   * `src/codex/` today, so a literal here would pass — and would break the
+   * moment anyone widened the scope, which is the direction that guard
+   * should be free to move.
    *
    * The CC and OpenCode engines leave it unset: no CC transcript states a
    * window size (a census over every `cc-*` fixture for any key containing
@@ -321,7 +328,64 @@ export type ParkCode =
    * `unsupported`; a refused child parks here instead, so its parent still
    * renders its remaining tree.
    */
-  | 'childSessionUnsupported';
+  | 'childSessionUnsupported'
+  // -- Codex engine only (v0.6.0 Phase 2). Same treatment as the OpenCode
+  // block above: `src/model/graft.ts`'s own narrower union does NOT carry
+  // these, because the CC grafter cannot produce them and widening its
+  // union would say it could. This union is the wire's, so it is the
+  // superset, and `session.ts`'s `toWireParked` assignment still holds.
+  /**
+   * A Codex subagent carrying NEITHER join key — no `agent_path` to match a
+   * spawn's `task_name`, and no thread id matching a spawn's `agent_id`.
+   *
+   * **This is a TRIPWIRE and it is expected to fire zero times**, which is
+   * the opposite of what its name suggests and the reason this comment
+   * exists. It is NOT the routine state of the `v1` dialect. `v1` children
+   * graft perfectly well — by id rather than by name (`agent-deck-spec.md`
+   * C4a) — and an earlier ruling that parked the whole dialect with no
+   * filament was reversed on corrected evidence. The premise had been that
+   * a `v1` child "cannot be grafted, there is no `task_name` to join on";
+   * `task_name` is indeed absent, and the join is not. *"I did not find a
+   * join"* had been written down as *"there is no join"*.
+   *
+   * A test asserts this code fires zero times across the whole corpus. A
+   * tripwire that fires routinely is not a tripwire.
+   */
+  | 'dialectV1'
+  /**
+   * A Codex subagent whose `agent_path` key is ABSENT.
+   *
+   * Distinct from present-and-`null`, which is what a `v1` thread carries
+   * and which GRAFTS. Collapsing the two is how the dialect was nearly
+   * refused, and it is why `CodexOptional` exists at all.
+   */
+  | 'noAgentPath'
+  /**
+   * A spawn whose `tool_response` names a child that no thread carries.
+   * The spawn happened and the child is not there — so the call renders and
+   * nothing is invented to hang off it (G3).
+   */
+  | 'orphanSpawn'
+  /**
+   * Two threads claiming one `agent_path`.
+   *
+   * **A second tripwire expected to fire zero times.** Codex ENFORCES path
+   * uniqueness in the engine — a second spawn asking for a taken path is
+   * refused outright with `agent path /root/dup already exists`, which is a
+   * refused CALL, not a park. This code exists for the day that stops being
+   * true, and a test pins the zero.
+   */
+  | 'duplicateAgentPath'
+  /**
+   * A forked subagent whose `subagent_history_start_ordinal` is missing
+   * while its transcript plainly carries inherited records.
+   *
+   * Absence of the key is normally the legitimate `fork_turns: "none"`
+   * signal and drops nothing; this is the contradictory case, where the
+   * boundary is needed and not stated, so the thread's own work cannot be
+   * separated from its parent's.
+   */
+  | 'forkBoundaryMissing';
 
 /** One agent that is known to exist and is deliberately not in the tree. */
 export interface ParkedGraft {

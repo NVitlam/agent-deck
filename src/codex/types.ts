@@ -142,8 +142,18 @@ export interface CodexTranscriptRef {
 export interface CodexDiscovery {
   /** `$CODEX_HOME` when set, else `~/.codex` — resolved at READ time (C1). */
   readonly root: string;
-  /** Which of the two supplied the root. Logged, and asserted in tests. */
-  readonly rootSource: 'CODEX_HOME' | 'homedir';
+  /**
+   * Which source supplied the root. Logged, and asserted in tests.
+   *
+   * `'explicit'` is {@link CodexEngineOptions.root} — a caller naming the
+   * root outright, which is how every test points at a fixture instead of
+   * at a live `~/.codex` (G6). It is a THIRD value rather than a
+   * translation into `{CODEX_HOME: path}`, because this field's only job is
+   * to say where the root came from, and answering `'CODEX_HOME'` when no
+   * environment variable was involved is a wrong answer in the one field
+   * that exists to give the right one.
+   */
+  readonly rootSource: 'CODEX_HOME' | 'homedir' | 'explicit';
   readonly rootExists: boolean;
   readonly transcripts: readonly CodexTranscriptRef[];
   /** `<root>/thread-writer-locks`. May not exist. */
@@ -250,6 +260,24 @@ export interface CodexCounters {
   readonly inheritedRecordsDropped: number;
   /** Payloads cut by the existing truncation marker. */
   readonly payloadsTruncated: number;
+  /**
+   * `response_item` payload types the parser recognised as records but had
+   * no handler for — counted, skipped, and NAMED.
+   *
+   * This exists because of working-method rule 18: **a sweep or a reader
+   * that skips an input reports the skip in its verdict, and a silent skip
+   * is the fail-open class this repository has shipped through three
+   * separate doors.** Without a field here the census had nowhere to go but
+   * a module-local type, and the skip would have stopped existing at the
+   * engine boundary — which is precisely a count of zero that nobody can
+   * tell apart from "nothing was skipped".
+   *
+   * Sorted, de-duplicated, so it is comparable across runs. Distinct from
+   * {@link CodexCounters.unknownRecordTypes}, which counts unknown TOP-LEVEL
+   * record types (C2's six); this one is a level deeper, inside
+   * `response_item`.
+   */
+  readonly skippedResponseItemTypes: readonly string[];
 }
 
 /**
@@ -273,7 +301,22 @@ export interface CodexToolCall {
   readonly threadId: string;
   readonly file: string;
   readonly ordinal: number;
-  readonly kind: 'function_call' | 'custom_tool_call';
+  /**
+   * **Three members, not two.** An earlier version of this file listed only
+   * `function_call` and `custom_tool_call`. The corpus holds a third,
+   * `tool_search_call` — one record, in `resume-twice-v1` — and
+   * `golden.json` COUNTS IT AS A TOOL CALL: its total of 42 is 31 + 10 + 1.
+   *
+   * A parser that cannot express it emits 41, and DoD 2.7's byte-exact
+   * reproduction fails on a number nobody would immediately connect to a
+   * union in a types file. It was found because P3 refused to mislabel the
+   * record as one of the two it had, counted it as skipped, and reported the
+   * arithmetic — which is the behaviour the hand-off line asks for.
+   *
+   * n=1 in this corpus, so nothing about `tool_search_call`'s shape beyond
+   * its presence is claimed here.
+   */
+  readonly kind: 'function_call' | 'custom_tool_call' | 'tool_search_call';
   readonly name: string;
   readonly namespace: CodexOptional<string>;
   /** `response_item.payload.call_id`. Always `call_<…>`. */
@@ -296,9 +339,26 @@ export interface CodexToolCall {
  *   v2  `output.task_name` ↔ child `agent_path`
  *   v1  `output.agent_id`  ↔ child `session_meta.payload.id`
  */
+/**
+ * **These four strings are compared BYTE-FOR-BYTE against `golden.json`**
+ * (DoD 2.7), so they are not free naming choices — they are quoted values.
+ * The golden's own distribution over the corpus is 8 / 1 / 1 / 0.
+ *
+ * The middle one read `output_agent_id_equals_child_id` when this file was
+ * first written, against the golden's `..._thread_id`. Nothing would have
+ * caught it before the golden test ran: the parser never resolves a child
+ * (it sees one file), and the grafter would have been written against
+ * whatever this file said. It was found by re-deriving the golden's actual
+ * value set rather than by reading either document.
+ *
+ * `refused` is a resolution, not a park: the engine ENFORCES agent-path
+ * uniqueness and declines the second spawn outright. DoD 2.4 renders it as
+ * a failed call.
+ */
 export type CodexSpawnResolution =
   | 'output_task_name_equals_agent_path'
-  | 'output_agent_id_equals_child_id'
+  | 'output_agent_id_equals_thread_id'
+  | 'refused'
   | 'unresolved';
 
 export interface CodexSpawn {
@@ -383,6 +443,25 @@ export interface CodexThread {
   readonly spawns: readonly CodexSpawn[];
   readonly counters: CodexCounters;
   readonly records: number;
+  /**
+   * When the thread STARTED, from the `session_meta` record's own
+   * `timestamp` at ordinal 0.
+   *
+   * **Added because `mtimeMs` is an END and was about to be used as a
+   * START.** `AgentNode.startedAt` is required, `CodexThread` carried no
+   * start, and the only time available was the file's last-write — so the
+   * grafter defaulted to it, said so at the seam, and reported the gap
+   * rather than letting a plausible wrong number through. On the corpus's
+   * baseline root those two differ by 40 seconds (20:43:54 against
+   * 20:44:34), and on a long session they differ by its whole duration.
+   *
+   * Required, not optional: the fingerprint already refuses a thread with
+   * no `session_meta` at ordinal 0, so this value always exists — and a
+   * required field breaks every producer at compile time rather than
+   * letting one quietly omit it and fall back to the end time again.
+   */
+  readonly startedAtMs: number;
+  /** Last write to the owning file. An END. Liveness corroboration only. */
   readonly mtimeMs: number;
 }
 
@@ -461,7 +540,29 @@ export type CodexParkCode =
   | 'noAgentPath'
   | 'orphanSpawn'
   | 'duplicateAgentPath'
-  | 'forkBoundaryMissing';
+  | 'forkBoundaryMissing'
+  /**
+   * A subagent whose `parent_thread_id` names a thread that is not there,
+   * and a subagent whose parent itself parked.
+   *
+   * **These two were not in `PLAN.md`'s answered list**, which named five
+   * codes, all describing the SPAWN side. P4 found two child-side cases the
+   * five have no word for, mapped both onto `orphanSpawn`, documented the
+   * stretch and asked for it to be reviewed — which is the right way to
+   * surface a vocabulary gap.
+   *
+   * The review's answer is that no new vocabulary is needed: **the wire
+   * union already carries both words.** `parentAgentMissing` and
+   * `parentNotGrafted` are existing Claude Code codes meaning precisely
+   * these two situations, already rendered by the webview. Reusing them
+   * adds nothing a user must learn and stops two distinct stories being
+   * told under one name — the same distinction `taskWithoutChild` and
+   * `joinKeyContradiction` already draw for OpenCode, and for the reason
+   * recorded there: a user reading the wrong code goes looking for the
+   * wrong problem.
+   */
+  | 'parentAgentMissing'
+  | 'parentNotGrafted';
 
 // ===========================================================================
 // P6 — index.ts, `readCodexEngine()`  (DoD 2.7)

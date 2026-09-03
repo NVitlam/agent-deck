@@ -174,8 +174,8 @@ export const CODEX_PARK_REASONS: Readonly<Record<CodexParkCode, string>> = {
    * apart and this code depends on the distinction.
    */
   noAgentPath:
-    'subagent spawn record carries no agent_path key at all (spec C4) - distinct from ' +
-    'a present-and-null agent_path, which is the v1 dialect and grafts by id',
+    'no spawn names this subagent by either key, and its top-level agent_path key is ' +
+    'absent, so there is nothing to join on (spec C4)',
   /**
    * THE SPAWN SIDE ONLY, which is `PLAN.md`'s gloss for it: "path with no
    * child". A `spawn_agent` output names an `agent_path` or an `agent_id` that

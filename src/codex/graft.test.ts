@@ -69,6 +69,7 @@ import {
   codexNodeLabel,
   graftCodexThreads,
 } from './graft.js';
+import { readCodexEngine } from './index.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -1643,3 +1644,183 @@ describe('the injected seams', () => {
     expect(result.counters.skippedResponseItemTypes.length).not.toBe(3);
   });
 });
+
+
+// ===========================================================================
+// 4b — END TO END, through `readCodexEngine` (the half this file did not have)
+// ===========================================================================
+
+/*
+ * WHY THIS SECTION EXISTS, AND WHAT IT IS WORTH.
+ *
+ * Everything above builds `CodexThread[]` in this file and hands it to
+ * `graftCodexThreads`. That proves the grafter against a contract. It cannot
+ * prove the grafter against the PARSER, and the defect P6 found lived exactly
+ * there: `parse.ts` reads the top-level `agent_path` and this file's reader read
+ * the nested one, so the grafter was fed a different value in production than in
+ * every test above. Every join assertion passed; every `v1` subagent parked.
+ *
+ * Two lessons, and the second is the general one:
+ *
+ *  - a test that builds its own input cannot see a seam in the input;
+ *  - "the join resolved" is not "the node is in the tree". A node can be joined
+ *    and then dropped one branch later, and every assertion about the join
+ *    still passes. The question to ask of any assertion here is **would this
+ *    still pass if the node were joined and then dropped?** Where the answer is
+ *    yes, the assertion is measuring the join, not the outcome.
+ */
+describe('end to end through readCodexEngine: no v1 subagent is lost', () => {
+  /** Every run directory, derived from the corpus. */
+  const RUNS = CORPUS === null ? [] : runDirs(CORPUS);
+
+  it('finds run directories to walk', () => {
+    expect(RUNS.length).toBeGreaterThan(0);
+  });
+
+  /** `readCodexEngine` over one run's own `home/.codex`. */
+  async function engineFor(run: string): Promise<{
+    sessions: readonly SessionState[];
+    threads: readonly CodexThread[];
+  }> {
+    if (CORPUS === null) throw new Error('no codex corpus on disk');
+    const outcome = await readCodexEngine({ root: path.join(CORPUS, run, 'home', '.codex') });
+    if (outcome.kind !== 'ok') throw new Error(`engine outcome ${outcome.kind} for ${run}`);
+    return { sessions: outcome.result.sessions, threads: outcome.result.threads };
+  }
+
+  it('parks nothing and loses no subagent, in any run of the corpus', async () => {
+    for (const run of RUNS) {
+      const { sessions, threads } = await engineFor(run);
+      const subagents = threads.filter((t) => t.threadSource === 'subagent');
+      const inTree = new Set(
+        sessions.flatMap((s) => agentsOf(s.root)).map((a) => a.id),
+      );
+      for (const sub of subagents) {
+        expect(`${run}:${sub.threadId} in tree`).toBe(
+          `${run}:${sub.threadId} ${inTree.has(sub.threadId) ? 'in tree' : 'PARKED OR LOST'}`,
+        );
+      }
+      expect(sessions.flatMap((s) => s.parked ?? [])).toStrictEqual([]);
+      // One filament per subagent: joined AND drawn.
+      expect(sessions.flatMap((s) => s.spawnEdges ?? []).length).toBe(subagents.length);
+    }
+  });
+
+  it('grafts every v1 subagent in the corpus and labels it by nickname', async () => {
+    // Derived from the corpus, not named: a re-harvest that adds a v1 run is
+    // covered, and one that removes them fails the floor below instead of
+    // passing on an empty loop.
+    let v1Subagents = 0;
+    for (const run of RUNS) {
+      const { sessions, threads } = await engineFor(run);
+      for (const sub of threads) {
+        if (sub.threadSource !== 'subagent') continue;
+        if (sub.dialect !== 'v1') continue;
+        v1Subagents += 1;
+
+        // The shape that caused the defect, asserted so it cannot be re-read as
+        // "present and null" by the next person: the TOP-LEVEL key is absent.
+        expect(sub.agentPath.present).toBe(false);
+
+        const state = sessions.find((s) => s.sessionId === sub.sessionId);
+        expect(state).toBeDefined();
+        if (state === undefined) continue;
+
+        // (a) in the tree
+        const node = agentsOf(state.root).find((a) => a.id === sub.threadId);
+        expect(node).toBeDefined();
+        // (b) labelled by agent_nickname (C7), never by an id
+        expect(node?.label).toBe(sub.agentNickname.value);
+        expect(node?.label).not.toBe(sub.threadId);
+        // (c) drawing a filament
+        expect((state.spawnEdges ?? []).some((e) => e.agentId === sub.threadId)).toBe(true);
+        // (d) and NOT parked, by any code
+        expect((state.parked ?? []).map((pk) => pk.agentId)).not.toContain(sub.threadId);
+      }
+    }
+    expect(v1Subagents).toBeGreaterThan(0);
+  });
+
+  it('reproduces the reported resume-twice-v1 numbers exactly', async () => {
+    // The bug report's own three lines: spawnEdges 0, parked 1 (noAgentPath),
+    // labels ["/root"]. They must now read 1, 0, ["/root", "Arendt"].
+    const { sessions, threads } = await engineFor('resume-twice-v1');
+    expect(sessions.length).toBe(1);
+    const state = sessions[0];
+    if (state === undefined) throw new Error('no session');
+    expect((state.spawnEdges ?? []).length).toBe(1);
+    expect(state.parked ?? []).toStrictEqual([]);
+    const labels = agentsOf(state.root).map((a) => a.label);
+    const nickname = threads.find((t) => t.threadSource === 'subagent')?.agentNickname.value;
+    expect(nickname).toBe('Arendt');
+    expect(labels).toStrictEqual([CODEX_ROOT_LABEL, nickname]);
+    // And the child's own tool calls came with it. A dropped subagent takes its
+    // calls out of the tree too, which is the cheapest independent witness that
+    // it is really there.
+    const child = threads.find((t) => t.threadSource === 'subagent');
+    expect(child?.toolCalls.length).toBeGreaterThan(0);
+    const toolIds = new Set(toolsOf(state.root).map((n) => n.id));
+    for (const call of child?.toolCalls ?? []) expect(toolIds.has(call.callId)).toBe(true);
+  });
+
+  it('agrees with parse.ts field by field, so this file cannot drift again', async () => {
+    /*
+     * THE GUARD FOR THE WHOLE CLASS.
+     *
+     * `readCorpusThreads` is a second reader of the same hand-off line, and it
+     * disagreed with `parse.ts` about which `agent_path` feeds
+     * `CodexThread.agentPath`. Nothing caught that, because both readers were
+     * internally consistent — the recorded "two agreeing literals is not a
+     * contract" defect, with the two literals being two readers.
+     *
+     * So the readers are compared directly on every field this module joins,
+     * labels or parks on. A future divergence fails HERE, naming the field,
+     * rather than three suites away as a wrong tree.
+     */
+    let compared = 0;
+    for (const run of RUNS) {
+      const { threads: production } = await engineFor(run);
+      const mine = new Map(readCorpusThreads(run).map((t) => [t.threadId, t]));
+      expect(production.length).toBeGreaterThan(0);
+      for (const prod of production) {
+        const ours = mine.get(prod.threadId);
+        expect(ours).toBeDefined();
+        if (ours === undefined) continue;
+        compared += 1;
+        const at = `${run}:${prod.threadId.slice(0, 8)}`;
+        expect(`${at} agentPath ${JSON.stringify(ours.agentPath)}`).toBe(
+          `${at} agentPath ${JSON.stringify(prod.agentPath)}`,
+        );
+        expect(`${at} agentNickname ${JSON.stringify(ours.agentNickname)}`).toBe(
+          `${at} agentNickname ${JSON.stringify(prod.agentNickname)}`,
+        );
+        expect(`${at} parentThreadId ${JSON.stringify(ours.parentThreadId)}`).toBe(
+          `${at} parentThreadId ${JSON.stringify(prod.parentThreadId)}`,
+        );
+        expect(`${at} spawnDepth ${JSON.stringify(ours.spawnDepth)}`).toBe(
+          `${at} spawnDepth ${JSON.stringify(prod.spawnDepth)}`,
+        );
+        expect(`${at} sessionId ${ours.sessionId}`).toBe(`${at} sessionId ${prod.sessionId}`);
+        expect(`${at} threadSource ${ours.threadSource}`).toBe(
+          `${at} threadSource ${prod.threadSource}`,
+        );
+        expect(`${at} startedAtMs ${ours.startedAtMs}`).toBe(
+          `${at} startedAtMs ${prod.startedAtMs}`,
+        );
+        expect(`${at} window ${String(ours.modelContextWindow)}`).toBe(
+          `${at} window ${String(prod.modelContextWindow)}`,
+        );
+        expect(`${at} spawn callIds ${ours.spawns.map((s) => s.callId).sort().join(',')}`).toBe(
+          `${at} spawn callIds ${prod.spawns.map((s) => s.callId).sort().join(',')}`,
+        );
+        expect(
+          `${at} spawn keys ${ours.spawns.map((s) => `${String(s.outputTaskName)}/${String(s.outputAgentId)}/${String(s.refused)}`).sort().join(',')}`,
+        ).toBe(
+          `${at} spawn keys ${prod.spawns.map((s) => `${String(s.outputTaskName)}/${String(s.outputAgentId)}/${String(s.refused)}`).sort().join(',')}`,
+        );
+      }
+    }
+    expect(compared).toBeGreaterThan(0);
+  });
+});
+

@@ -307,7 +307,17 @@ function longestRecordBytes(c) {
 function checklist(collected) {
   const anyRun = (fn) => collected.filter(fn).map((c) => c.run);
   const subs = (c) => threadsOf(c).filter((x) => x.source === 'subagent');
-  const named = (c) => subs(c).filter((x) => typeof x.agentPath === 'string' && x.agentPath);
+  // DISTINCT threads, not rows. `threadsOf` emits one row per session_meta, and a
+  // forked child re-serialises a second one (spec C5), so counting rows credited
+  // `dup-names` with three named subagents when it has two — a derived checklist
+  // ticking on a fork-boundary duplicate. Found by phase-verifier, 2026-09-03.
+  const named = (c) => {
+    const byId = new Map();
+    for (const x of subs(c)) {
+      if (typeof x.agentPath === 'string' && x.agentPath) byId.set(x.id ?? x.agentPath, x);
+    }
+    return [...byId.values()];
+  };
 
   return [
     {
@@ -319,7 +329,7 @@ function checklist(collected) {
       runs: anyRun(hasDuplicatePathRefusal),
     },
     {
-      item: 'parallel-3: three or more named subagents in one session',
+      item: 'parallel-3: three or more DISTINCT named subagents in one session',
       runs: anyRun((c) => named(c).length >= 3),
     },
     {

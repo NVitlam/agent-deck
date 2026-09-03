@@ -101,6 +101,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import * as vscode from 'vscode';
 
@@ -150,6 +151,16 @@ import {
   HookListener,
   isHookListenerBindError,
 } from './hooks/listener.js';
+import { readCodexEngine, resolveCodexRoot } from './codex/index.js';
+import type { CodexEngineOptions, CodexEngineOutcome, CodexThread } from './codex/index.js';
+import { CODEX_LOCK_DIR_NAME } from './codex/locate.js';
+import { CodexLivenessEngine, scanCodexWriterLocks } from './codex/liveness.js';
+import type {
+  CodexHookEvent,
+  CodexLivenessReport,
+  CodexLivenessSample,
+} from './codex/liveness.js';
+import type { CodexAgentLiveness, CodexToolCall } from './codex/types.js';
 import { ProjectWatcher } from './watch/watcher.js';
 import type { WatchFactory } from './watch/watcher.js';
 import { createJsonlInferenceSource } from './watch/inference.js';
@@ -795,6 +806,445 @@ function unsupportedCopy(session: SessionState): SessionState {
 }
 
 // ---------------------------------------------------------------------------
+// (b1) The Codex engine path (PLAN.md v0.6.0 DoD 3.2)
+// ---------------------------------------------------------------------------
+
+/** The message logged, ONCE, when there is no Codex data root to observe. */
+export const CODEX_ABSENT_LOG =
+  'Agent Deck: no Codex data root found; the Codex engine is off.';
+
+/**
+ * How often BOTH the Codex content re-read and the Codex liveness poll fire,
+ * absent an override.
+ *
+ * One knob rather than two, and that is a deliberate simplification stated
+ * rather than hidden: `readCodexEngine()` is a one-shot full read with no
+ * cursor to advance between calls (`src/codex/index.ts`'s own doc comment —
+ * "a fresh `CodexFileTail` is constructed per call"), so unlike the OpenCode
+ * engine's `event_sequence.seq`-gated re-read there is nothing cheap to poll
+ * that would tell this class whether a re-read is worth taking. Incremental,
+ * cursor-based re-reading is explicitly OUT OF SCOPE here — `HANDOVER.md`
+ * records "no perf budget covers the Codex engine" as a known, deliberately
+ * unscheduled Phase 4 gap, not a Phase 3 one. `DEFAULT_OC_POLL_INTERVAL_MS`
+ * is the naming precedent this constant follows.
+ */
+export const DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS = 1000;
+
+export interface CodexPathOptions {
+  /**
+   * Matched against `session_meta.payload.cwd` (spec C1), the same way
+   * `OpenCodePathOptions.workspacePaths` is matched against
+   * `project.worktree` — EVERY open workspace folder, not just the first.
+   */
+  workspaceFolders: readonly string[];
+  /** `agentDeck.livenessThresholdMs`. The same setting every engine reads. */
+  thresholdMs: number;
+  /** Something changed; schedule an emission. Coalesced by the caller. */
+  onChange: () => void;
+  /**
+   * Overrides `$CODEX_HOME` / `~/.codex`. Tests and fixture replay only (G6) —
+   * the same role {@link OpenCodePathOptions.dataDir} plays for OpenCode.
+   */
+  root?: string;
+  env?: Record<string, string | undefined>;
+  /** Injected clock. Defaults to `Date.now`. */
+  now?: () => number;
+  pollIntervalMs?: number;
+  /**
+   * Defaults to {@link systemPollTrigger}. Reused rather than re-declared:
+   * `PollTrigger`/`PollTriggerHandle` from `src/opencode/liveness.ts` are
+   * structurally identical to `CodexPollTrigger`/`CodexPollTriggerHandle`
+   * from `src/codex/liveness.ts` — both are exactly
+   * `(run: () => void, intervalMs: number) => { stop(): void }` — so one
+   * production implementation serves both engines rather than two agreeing
+   * ones drifting apart.
+   */
+  pollTrigger?: PollTrigger;
+  log?: HostLogger;
+  /**
+   * The content read. Defaults to {@link readCodexEngine}.
+   *
+   * Injected for the reason {@link DataPathOptions.graft} and
+   * {@link OpenCodePathOptions.read} are, pointed a third way: DoD 5.3's
+   * isolation property now has a THIRD direction (a Codex-side failure must
+   * leave CC and OpenCode sessions unaffected), and `readCodexEngine` is
+   * documented never to throw — so without this seam the corresponding catch
+   * below is unreachable from any test. Production never passes this.
+   */
+  read?: (options: CodexEngineOptions) => Promise<CodexEngineOutcome>;
+}
+
+export interface CodexEngineDiagnostics {
+  /** False when the Codex root was absent at {@link CodexEnginePath.start}. */
+  enabled: boolean;
+  started: boolean;
+  disposed: boolean;
+  /** The resolved root, whether or not it exists. */
+  root: string;
+  /** Times {@link CODEX_ABSENT_LOG} was emitted. */
+  absentLogs: number;
+  /** Content reads attempted (the initial one plus every periodic re-read). */
+  contentReads: number;
+  /** Content reads whose injected `read` THREW. Should stay 0; counted so it cannot crash. */
+  contentFailures: number;
+  /** Reads returning `unreadable` — the last good content is kept (G3/G2). */
+  unreadableReads: number;
+  /** Liveness polls the engine reports having attempted. */
+  livenessPolls: number;
+  /** Emissions produced by {@link CodexEnginePath.emit}. */
+  emissions: number;
+  /** Workspace-matching sessions currently held. */
+  sessions: number;
+  lastError?: string;
+}
+
+/**
+ * The Codex half of the host: one-shot content reads on a timer, plus the
+ * live cursor chained on top (DoD 3.2; `src/codex/index.ts`'s own doc comment
+ * names this exact wiring as its own follow-up).
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS IS NOT A COPY OF `OpenCodeEnginePath`
+ * ---------------------------------------------------------------------------
+ * `readCodexEngine()` is ASYNC — it awaits file reads — while
+ * `OpenCodeEnginePath`'s content read is synchronous end-to-end
+ * (`node:sqlite` reads synchronously). So {@link start} is `async` and takes
+ * one initial `await readCodexEngine(...)` before anything else can begin,
+ * and every subsequent content re-read goes through a plain interval rather
+ * than the cursor-gated re-read OpenCode's WAL `seq` makes possible — see
+ * {@link DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS}'s comment for why a cursor is
+ * not available here at all.
+ *
+ * ---------------------------------------------------------------------------
+ * THE OVERLAY PATTERN, MIRRORED FROM `OpenCodeEnginePath.sessions()`
+ * ---------------------------------------------------------------------------
+ * Liveness is SESSION-LEVEL only, exactly as it is for the other two engines:
+ * `AgentNode` carries no liveness field anywhere in this codebase, and
+ * `SessionState.liveness` is the one place a verdict is rendered. The engine
+ * therefore overlays {@link CodexLivenessEngine}'s latest report onto the
+ * ROOT session only, keyed on `threadId === sessionId` (spec C11 — a root
+ * thread's id equals its session id), the same "join, don't invent a second
+ * representation" rule {@link OpenCodeEnginePath.sessions} already follows.
+ *
+ * `CodexAgentLiveness` ('live' | 'idle' | 'dead' | 'unknown') is a FOUR-value
+ * union and `SessionState.liveness` is a different four-value union
+ * ('live' | 'idle' | 'ended' | 'unsupported'). Neither `'dead'` nor
+ * `'unknown'` names a member the other side has, so {@link mapCodexLiveness}
+ * is a real decision, not a rename, and it is made once, in one place:
+ * `'dead'` (the lock is gone AND no hook event arrived — D0.1, both
+ * conjuncts) reads as `'ended'`, the closest existing claim about a session
+ * that is no longer running. `'unknown'` (D0.1 could not be evaluated at
+ * all — no lock directory to read and no hook event either) reads as
+ * `'idle'` rather than as any stronger claim, matching `graft.ts`'s own
+ * static default before any liveness is chained at all — the least
+ * presumptuous of the three renderable values for a state that is genuinely
+ * unread. This mapping is a Phase 3 decision, not a spec quotation; a
+ * reviewer wanting a different one should treat it as the seam to change.
+ *
+ * ---------------------------------------------------------------------------
+ * G1 / G2
+ * ---------------------------------------------------------------------------
+ * G1: every open below is read-only (`readCodexEngine` and
+ * `scanCodexWriterLocks` between them use only `statSync` / `readdirSync` /
+ * file reads; the G10 never-open list is applied inside `locate.ts`, not
+ * here). G2: nothing in here can throw into the Claude Code or OpenCode
+ * paths — every entry point catches, counts and continues, and {@link emit}
+ * is called from a `try` of its own in {@link AgentDeckDataPath.pump}.
+ */
+export class CodexEnginePath {
+  readonly root: string;
+  readonly workspaceFolders: readonly string[];
+
+  readonly #onChange: () => void;
+  readonly #log: HostLogger;
+  readonly #read: (options: CodexEngineOptions) => Promise<CodexEngineOutcome>;
+  readonly #rootOverride?: string;
+  readonly #env?: Record<string, string | undefined>;
+  readonly #now: () => number;
+  readonly #thresholdMs: number;
+  readonly #pollIntervalMs: number;
+  readonly #pollTrigger: PollTrigger;
+
+  #liveness: CodexLivenessEngine | null = null;
+  #contentPollHandle: PollTriggerHandle | undefined;
+  #content: readonly SessionState[] = [];
+  #threads: readonly CodexThread[] = [];
+  /**
+   * `<root>/thread-writer-locks`, computed at construction — a deterministic
+   * function of `root`, so it is correct even before any content read has
+   * succeeded. Overwritten (to the identical value) once a real discovery
+   * reports it, so this is the single source of truth rather than a second
+   * one that happens to agree.
+   */
+  #lockDir: string;
+  #previous = new Map<string, SessionState>();
+
+  #enabled = false;
+  #started = false;
+  #disposed = false;
+
+  #absentLogs = 0;
+  #contentReads = 0;
+  #contentFailures = 0;
+  #unreadableReads = 0;
+  #livenessPolls = 0;
+  #emissions = 0;
+  #lastError?: string;
+
+  constructor(options: CodexPathOptions) {
+    this.workspaceFolders = [...options.workspaceFolders];
+    const resolved = resolveCodexRoot({
+      ...(options.root === undefined ? {} : { root: options.root }),
+      ...(options.env === undefined ? {} : { env: options.env }),
+    });
+    this.root = resolved.root;
+    this.#lockDir = join(this.root, CODEX_LOCK_DIR_NAME);
+    if (options.root !== undefined) this.#rootOverride = options.root;
+    this.#onChange = options.onChange;
+    this.#log = options.log ?? consoleLogger;
+    this.#read = options.read ?? readCodexEngine;
+    if (options.env !== undefined) this.#env = options.env;
+    this.#now = options.now ?? Date.now;
+    this.#thresholdMs = options.thresholdMs;
+    this.#pollIntervalMs = options.pollIntervalMs ?? DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS;
+    this.#pollTrigger = options.pollTrigger ?? systemPollTrigger;
+  }
+
+  get diagnostics(): CodexEngineDiagnostics {
+    return {
+      enabled: this.#enabled,
+      started: this.#started,
+      disposed: this.#disposed,
+      root: this.root,
+      absentLogs: this.#absentLogs,
+      contentReads: this.#contentReads,
+      contentFailures: this.#contentFailures,
+      unreadableReads: this.#unreadableReads,
+      livenessPolls: this.#livenessPolls,
+      emissions: this.#emissions,
+      sessions: this.#content.length,
+      ...(this.#lastError !== undefined ? { lastError: this.#lastError } : {}),
+    };
+  }
+
+  /** The live engine, or null when the root was absent at start. Diagnostics only. */
+  get livenessEngine(): CodexLivenessEngine | null {
+    return this.#liveness;
+  }
+
+  /**
+   * Read once. Present -> start polling both content and liveness. Absent ->
+   * off, logged once at info (DoD 2.1's rule, applied at the host boundary).
+   *
+   * Never throws, and never surfaces a dialog: a machine without Codex
+   * installed is the normal case, not a fault.
+   */
+  async start(): Promise<void> {
+    if (this.#disposed || this.#started) return;
+    this.#started = true;
+
+    const outcome = await this.#readAndApply();
+    if (this.#disposed) return;
+
+    if (outcome.kind === 'rootAbsent') {
+      // ONCE. The probe is not on a tick before this point, so there is no
+      // second call site for the initial absence; the counter exists so a
+      // test can prove that rather than assume it.
+      this.#absentLogs += 1;
+      this.#log('info', CODEX_ABSENT_LOG);
+      return;
+    }
+    this.#enabled = true;
+
+    this.#liveness = new CodexLivenessEngine({
+      now: this.#now,
+      livenessThresholdMs: this.#thresholdMs,
+      sample: () => this.#sample(),
+      pollIntervalMs: this.#pollIntervalMs,
+      pollTrigger: this.#pollTrigger,
+      // The report itself is not consumed here: `sessions()` reads
+      // `this.#liveness.latest` lazily, the same relationship
+      // `OpenCodeEnginePath.sessions()` has with its own liveness engine.
+      onUpdate: (_report: CodexLivenessReport) => {
+        this.#livenessPolls += 1;
+        this.#onChange();
+      },
+    });
+    // The first content read (above) happens before the first liveness poll,
+    // same reasoning `OpenCodeEnginePath.start` states: a snapshot taken
+    // between the two is a tree with stale liveness rather than liveness
+    // with no tree.
+    this.#liveness.start();
+
+    this.#contentPollHandle = this.#pollTrigger(() => {
+      void this.#refresh();
+    }, this.#pollIntervalMs);
+
+    this.#onChange();
+  }
+
+  /** Idempotent. After this nothing here polls or holds a handle. */
+  dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#liveness?.stop();
+    this.#liveness = null;
+    this.#contentPollHandle?.stop();
+    this.#contentPollHandle = undefined;
+    this.#content = [];
+    this.#threads = [];
+    this.#previous.clear();
+  }
+
+  /** One hook event from the loopback listener (DoD 3.1's other half). Never throws. */
+  ingestHookEvent(event: CodexHookEvent): void {
+    this.#liveness?.ingest(event);
+  }
+
+  /** The workspace-matching Codex sessions, with liveness overlaid onto the root. */
+  sessions(): readonly SessionState[] {
+    if (this.#disposed) return [];
+    const report = this.#liveness?.latest;
+    if (report === undefined) return this.#content;
+    const byThread = new Map(report.threads.map((t) => [t.threadId, t] as const));
+    return this.#content.map((session) => {
+      const live = byThread.get(session.sessionId);
+      if (live === undefined) return session;
+      const mapped = mapCodexLiveness(live.state);
+      if (mapped === session.liveness) return session;
+      return { ...session, liveness: mapped };
+    });
+  }
+
+  /**
+   * A `SessionEmission` for the Codex half, diffed against the last one.
+   *
+   * The same shape `SessionModel.emit()` and `OpenCodeEnginePath.emit()`
+   * produce, built with the same pure `diffSessionState` — not a third diff
+   * implementation.
+   */
+  emit(): SessionEmission {
+    if (this.#disposed) return EMPTY_EMISSION;
+    const next = new Map<string, SessionState>();
+    for (const session of this.sessions()) {
+      next.set(session.sessionId, deepFreeze({ ...session }));
+    }
+
+    const diffs: SessionDiff[] = [];
+    const addedSessionIds: string[] = [];
+    const removedSessionIds: string[] = [];
+    const schemaMismatchSessionIds: string[] = [];
+
+    for (const [sessionId, state] of next) {
+      const prev = this.#previous.get(sessionId);
+      if (prev === undefined) {
+        addedSessionIds.push(sessionId);
+        if (!state.schemaOk) schemaMismatchSessionIds.push(sessionId);
+        continue;
+      }
+      const patch = diffSessionState(prev, state);
+      if (patch !== undefined) diffs.push({ sessionId, patch });
+      if (!state.schemaOk && prev.schemaOk) schemaMismatchSessionIds.push(sessionId);
+    }
+    for (const sessionId of this.#previous.keys()) {
+      if (!next.has(sessionId)) removedSessionIds.push(sessionId);
+    }
+
+    this.#previous = next;
+    this.#emissions += 1;
+    return {
+      sessions: [...next.values()],
+      diffs,
+      addedSessionIds,
+      removedSessionIds,
+      schemaMismatchSessionIds,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // internals
+  // -------------------------------------------------------------------------
+
+  /** What one liveness poll samples: the cached threads, plus a fresh lock scan. */
+  #sample(): CodexLivenessSample {
+    const lockScan = scanCodexWriterLocks(this.#lockDir);
+    const toolCalls: CodexToolCall[] = this.#threads.flatMap((t) => [...t.toolCalls]);
+    return { threads: this.#threads, lockScan, toolCalls };
+  }
+
+  /** A periodic content re-read. Never throws; failures are counted (G2). */
+  async #refresh(): Promise<void> {
+    if (this.#disposed) return;
+    await this.#readAndApply();
+    if (this.#disposed) return;
+    this.#onChange();
+  }
+
+  /**
+   * Read the Codex engine once and apply the outcome. Returns the outcome so
+   * {@link start} can decide whether the root was absent on the FIRST call
+   * without a second read.
+   */
+  async #readAndApply(): Promise<CodexEngineOutcome> {
+    this.#contentReads += 1;
+    let outcome: CodexEngineOutcome;
+    try {
+      outcome = await this.#read({
+        ...(this.#rootOverride === undefined ? {} : { root: this.#rootOverride }),
+        ...(this.#env === undefined ? {} : { env: this.#env }),
+        workspaceFolders: this.workspaceFolders,
+      });
+    } catch (error) {
+      // Documented never to happen — the engine returns outcomes rather than
+      // throwing — and caught anyway, for the same reason
+      // `OpenCodeEnginePath.#refreshContent` catches: DoD 5.3's isolation
+      // property must hold whatever this engine does.
+      this.#contentFailures += 1;
+      this.#lastError = error instanceof Error ? error.message : String(error);
+      return { kind: 'unreadable', root: this.root, reason: this.#lastError };
+    }
+
+    switch (outcome.kind) {
+      case 'ok':
+        this.#threads = outcome.result.threads;
+        this.#lockDir = outcome.result.discovery.lockDir;
+        this.#content = outcome.result.sessions.filter(belongsOnDeck);
+        return outcome;
+      case 'unreadable':
+        // G3/G2: the engine is unusable right now. The last good content and
+        // threads are KEPT — the engine has stopped seeing, it has not
+        // learned that anything ended — matching
+        // `OpenCodeEnginePath.#refreshContent`'s degraded-read reasoning.
+        this.#unreadableReads += 1;
+        this.#lastError = `codex engine unreadable: ${outcome.reason}`;
+        return outcome;
+      case 'rootAbsent':
+        // Only reachable here on a poll AFTER the root existed at `start()`
+        // (a `start()`-time absence returns before any poll is registered).
+        // Last good content is kept for the same reason as `unreadable`; the
+        // ONCE-logged line belongs to `start()` alone, so nothing is logged
+        // again here.
+        this.#lastError = `codex root absent: ${outcome.root}`;
+        return outcome;
+    }
+  }
+}
+
+/** `CodexAgentLiveness` -> `SessionState.liveness`. See the class doc above. */
+function mapCodexLiveness(state: CodexAgentLiveness): SessionState['liveness'] {
+  switch (state) {
+    case 'live':
+      return 'live';
+    case 'idle':
+      return 'idle';
+    case 'dead':
+      return 'ended';
+    case 'unknown':
+      return 'idle';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // (b) The data path
 // ---------------------------------------------------------------------------
 
@@ -889,6 +1339,16 @@ export interface DataPathOptions {
   >;
 
   /**
+   * The Codex half's options, minus the ones this data path supplies.
+   *
+   * Same "absent is NOT off" rule as {@link DataPathOptions.opencode}: the
+   * path is still constructed and still probes for a data root, because the
+   * switch is the root's existence and nothing else (DoD 3.2, mirroring DoD
+   * 5.2's "on by default").
+   */
+  codex?: Omit<CodexPathOptions, 'workspaceFolders' | 'thresholdMs' | 'onChange' | 'env'>;
+
+  /**
    * EVERY open workspace folder (gate amendment B6). Defaults to
    * `[workspacePath]`.
    *
@@ -979,8 +1439,15 @@ export interface DataPathDiagnostics {
    * without its half. DoD 5.3's OpenCode -> CC direction, counted.
    */
   opencodeEmitErrors: number;
+  /**
+   * {@link CodexEnginePath.emit} threw and the emission was assembled
+   * without its half. DoD 5.3's Codex -> {CC, OpenCode} direction, counted.
+   */
+  codexEmitErrors: number;
   /** The OpenCode half's own counters. */
   opencode: OpenCodeDiagnostics;
+  /** The Codex half's own counters. */
+  codex: CodexEngineDiagnostics;
 }
 
 /**
@@ -1001,6 +1468,8 @@ export class AgentDeckDataPath {
   readonly watcher: ProjectWatcher;
   /** The second engine. Always constructed; enabled by its store's existence. */
   readonly opencode: OpenCodeEnginePath;
+  /** The third engine. Always constructed; enabled by its data root's existence. */
+  readonly codex: CodexEnginePath;
 
   readonly #ccEnabled: boolean;
   readonly #onEmission: (emission: DataPathEmission) => void;
@@ -1044,6 +1513,7 @@ export class AgentDeckDataPath {
   #consumerErrors = 0;
   #ccEmitErrors = 0;
   #opencodeEmitErrors = 0;
+  #codexEmitErrors = 0;
   #bindError?: { code: string; port: number; message: string };
 
   constructor(options: DataPathOptions) {
@@ -1110,6 +1580,22 @@ export class AgentDeckDataPath {
       ...(options.now !== undefined ? { now: options.now } : {}),
       ...options.opencode,
     });
+
+    // ---- the third engine (DoD 3.2) --------------------------------------
+    //
+    // Same discipline as the OpenCode construction immediately above: shares
+    // nothing with the CC objects or with `this.opencode` — no clock, no
+    // scheduler, no watcher, no socket, and no failure path.
+    this.codex = new CodexEnginePath({
+      workspaceFolders: this.workspacePaths,
+      thresholdMs: options.settings.livenessThresholdMs,
+      onChange: () => {
+        this.#scheduleEmit();
+      },
+      ...(options.log !== undefined ? { log: options.log } : {}),
+      ...(options.now !== undefined ? { now: options.now } : {}),
+      ...options.codex,
+    });
   }
 
   /** Sum one per-session parse level across the sessions still known. */
@@ -1133,9 +1619,11 @@ export class AgentDeckDataPath {
       ccEnabled: this.#ccEnabled,
       ccEmitErrors: this.#ccEmitErrors,
       opencodeEmitErrors: this.#opencodeEmitErrors,
+      codexEmitErrors: this.#codexEmitErrors,
       malformedLines: this.#parseLevel('malformed'),
       ignoredLines: this.#parseLevel('ignored'),
       opencode: this.opencode.diagnostics,
+      codex: this.codex.diagnostics,
       ...(this.#bindError !== undefined ? { bindError: this.#bindError } : {}),
       ...(this.#lastGraftError !== undefined ? { lastGraftError: this.#lastGraftError } : {}),
       ...(this.#lastGraftRefusal !== undefined
@@ -1161,9 +1649,18 @@ export class AgentDeckDataPath {
     // become false without a single test going red.
     this.opencode.start();
 
+    // Same placement, same reasoning, for the third engine. Awaited because
+    // `CodexEnginePath.start()` performs one initial async `readCodexEngine()`
+    // call before it can begin polling; this method is already `async`, so
+    // awaiting here costs nothing that was not already being paid, and it
+    // must happen before the `!this.#ccEnabled` early return below for the
+    // same reason `this.opencode.start()` does: no Claude Code failure or
+    // disablement may be reachable from whether Codex started.
+    await this.codex.start();
+
     if (!this.#ccEnabled) {
-      // No watcher, no socket, no CC tick. The OpenCode half is already
-      // running and `pump()` still emits, so the deck renders.
+      // No watcher, no socket, no CC tick. The OpenCode and Codex halves are
+      // already running and `pump()` still emits, so the deck renders.
       this.pump();
       return;
     }
@@ -1171,6 +1668,11 @@ export class AgentDeckDataPath {
     this.listener.subscribe(this.model.onHookEvent);
     this.listener.subscribe(() => {
       this.#scheduleEmit();
+    });
+    // DoD 3.1's other half: Codex-shaped hook events the listener already
+    // routed to its own handler set land on the Codex liveness engine.
+    this.listener.subscribeCodex((event) => {
+      this.codex.ingestHookEvent(event);
     });
 
     try {
@@ -1220,30 +1722,32 @@ export class AgentDeckDataPath {
     this.#cancelEmitTimer();
 
     /*
-     * TWO HALVES, TWO `try`s, AND THAT IS THE WHOLE OF DoD 5.3 IN CODE.
+     * THREE HALVES, THREE `try`s, AND THAT IS THE WHOLE OF DoD 5.3 IN CODE.
      *
-     * A single `try` around both would be a shared failure path: a throw out of
-     * either engine's `emit()` would drop the OTHER engine's sessions from the
-     * round, which is precisely the cross-contamination the phase exists to
-     * forbid. Each half is assembled independently, each failure is counted,
-     * and a round is abandoned only when BOTH halves failed — which is also
-     * what preserves the pre-Phase-5 behaviour exactly when there is no
-     * OpenCode store (`#emitOpenCode` returns null and a CC throw aborts the
-     * round, as it always did).
+     * A single `try` around all three would be a shared failure path: a throw
+     * out of any one engine's `emit()` would drop the OTHER engines' sessions
+     * from the round, which is precisely the cross-contamination the phase
+     * exists to forbid. Each half is assembled independently, each failure is
+     * counted, and a round is abandoned only when ALL THREE failed — which is
+     * also what preserves the pre-Phase-5 behaviour exactly when there is no
+     * OpenCode store and no Codex root (`#emitOpenCode`/`#emitCodex` return
+     * null and a CC throw aborts the round, as it always did).
      */
     const cc = this.#emitCc();
     const oc = this.#emitOpenCode();
-    if (cc === null && oc === null) return;
+    const codex = this.#emitCodex();
+    if (cc === null && oc === null && codex === null) return;
 
     const payload: DataPathEmission = {
-      emission: mergeEmissions(cc ?? EMPTY_EMISSION, oc ?? EMPTY_EMISSION),
-      // The hook tap's health, and only that. The OpenCode engine's health is
-      // NOT folded in here: `DegradedMessage.reason` is a two-value union
-      // naming hook-tap states (`noHookEvents`, `listenerDown`), so reporting
-      // an OpenCode degrade through it would tell the webview the hook
-      // listener was down when it is not. A second engine's health needs its
-      // own channel; that is a later phase's contract change, and its absence
-      // is recorded in `diagnostics.opencode` meanwhile.
+      emission: mergeEmissions(cc ?? EMPTY_EMISSION, oc ?? EMPTY_EMISSION, codex ?? EMPTY_EMISSION),
+      // The hook tap's health, and only that. Neither the OpenCode nor the
+      // Codex engine's health is folded in here: `DegradedMessage.reason` is
+      // a two-value union naming hook-tap states (`noHookEvents`,
+      // `listenerDown`), so reporting either engine's degrade through it
+      // would tell the webview the hook listener was down when it is not. A
+      // second or third engine's health needs its own channel; that is a
+      // later phase's contract change, and its absence is recorded in
+      // `diagnostics.opencode` / `diagnostics.codex` meanwhile.
       degraded: this.#degradedState(),
     };
     this.#emissions += 1;
@@ -1273,9 +1777,11 @@ export class AgentDeckDataPath {
     this.#cancelEmitTimer();
     this.#cancelTick();
     this.#dirty.clear();
-    // First, and unconditionally: the OpenCode poll trigger and WAL watch must
-    // not outlive the host even if a Claude Code teardown below rejects.
+    // First, and unconditionally: the OpenCode poll trigger and WAL watch, and
+    // the Codex poll triggers, must not outlive the host even if a Claude Code
+    // teardown below rejects.
     this.opencode.dispose();
+    this.codex.dispose();
     await this.watcher.dispose();
     await this.listener.stop();
   }
@@ -1310,6 +1816,24 @@ export class AgentDeckDataPath {
       return this.opencode.emit();
     } catch (error) {
       this.#opencodeEmitErrors += 1;
+      this.#onError(error);
+      return null;
+    }
+  }
+
+  /**
+   * The Codex half, or null when it threw OR when there is no data root.
+   *
+   * Same `null`-for-"absent" contract as {@link #emitOpenCode}, and for the
+   * same reason: a host with no Codex root behaves byte-identically to one
+   * with only CC and OpenCode, `pump()`'s three-way null guard included.
+   */
+  #emitCodex(): SessionEmission | null {
+    if (!this.codex.diagnostics.enabled) return null;
+    try {
+      return this.codex.emit();
+    } catch (error) {
+      this.#codexEmitErrors += 1;
       this.#onError(error);
       return null;
     }
@@ -1527,27 +2051,38 @@ export class AgentDeckDataPath {
 }
 
 /**
- * Two engines' emissions, concatenated into the one the bridge publishes.
+ * Three engines' emissions, concatenated into the one the bridge publishes.
  *
  * Concatenation and nothing else: no dedup, no re-sort, no merge of two
  * sessions that happen to share an id. Session ids come from different
- * namespaces (a CC UUID and an OpenCode `ses_*`), so a collision would be a
- * defect to surface rather than a case to smooth over — and smoothing it over
- * is how one engine would start silently overwriting the other's tree.
+ * namespaces (a CC UUID, an OpenCode `ses_*`, a Codex thread uuid), so a
+ * collision would be a defect to surface rather than a case to smooth over —
+ * and smoothing it over is how one engine would start silently overwriting
+ * another's tree.
  *
- * Claude Code first, so the deck's order is stable as the OpenCode set changes.
+ * Claude Code first, then OpenCode, then Codex, so the deck's order is stable
+ * as either of the other two sets changes.
  */
-function mergeEmissions(cc: SessionEmission, oc: SessionEmission): SessionEmission {
-  if (oc === EMPTY_EMISSION) return cc;
-  if (cc === EMPTY_EMISSION) return oc;
+function mergeEmissions(
+  cc: SessionEmission,
+  oc: SessionEmission,
+  codex: SessionEmission,
+): SessionEmission {
+  return mergeTwo(mergeTwo(cc, oc), codex);
+}
+
+/** The pairwise merge {@link mergeEmissions} folds three engines through. */
+function mergeTwo(a: SessionEmission, b: SessionEmission): SessionEmission {
+  if (b === EMPTY_EMISSION) return a;
+  if (a === EMPTY_EMISSION) return b;
   return {
-    sessions: [...cc.sessions, ...oc.sessions],
-    diffs: [...cc.diffs, ...oc.diffs],
-    addedSessionIds: [...cc.addedSessionIds, ...oc.addedSessionIds],
-    removedSessionIds: [...cc.removedSessionIds, ...oc.removedSessionIds],
+    sessions: [...a.sessions, ...b.sessions],
+    diffs: [...a.diffs, ...b.diffs],
+    addedSessionIds: [...a.addedSessionIds, ...b.addedSessionIds],
+    removedSessionIds: [...a.removedSessionIds, ...b.removedSessionIds],
     schemaMismatchSessionIds: [
-      ...cc.schemaMismatchSessionIds,
-      ...oc.schemaMismatchSessionIds,
+      ...a.schemaMismatchSessionIds,
+      ...b.schemaMismatchSessionIds,
     ],
   };
 }
@@ -1814,7 +2349,11 @@ export class AgentDeckHost {
    * same reason `#recordEmission` is: the emission is what the renderer was
    * given, so a counters line and the deck describe the same moment.
    */
-  #engineCounts: { cc: number; opencode: number } = { cc: 0, opencode: 0 };
+  #engineCounts: { cc: number; opencode: number; codex: number } = {
+    cc: 0,
+    opencode: 0,
+    codex: 0,
+  };
   #panel: PanelController | null = null;
   #panelsCreated = 0;
   #disposed = false;
@@ -1856,13 +2395,16 @@ export class AgentDeckHost {
   #recordEmission(payload: DataPathEmission): void {
     let cc = 0;
     let opencode = 0;
+    let codex = 0;
     for (const session of payload.emission.sessions) {
-      if ((session.engine ?? 'cc') === 'opencode') opencode += 1;
+      const engine = session.engine ?? 'cc';
+      if (engine === 'opencode') opencode += 1;
+      else if (engine === 'codex') codex += 1;
       else cc += 1;
     }
     // Updated even with no channel: `counters()` is public and a test may read
     // it without ever asking for diagnostics.
-    this.#engineCounts = { cc, opencode };
+    this.#engineCounts = { cc, opencode, codex };
 
     const channel = this.diagnostics;
     if (channel === undefined) return;
@@ -1921,6 +2463,7 @@ export class AgentDeckHost {
       resyncs: panel?.resyncs ?? 0,
       ccSessions: this.#engineCounts.cc,
       opencodeSessions: this.#engineCounts.opencode,
+      codexSessions: this.#engineCounts.codex,
     };
   }
 

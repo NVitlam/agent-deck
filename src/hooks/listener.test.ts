@@ -74,6 +74,7 @@ import {
   isLoopbackAddress,
   normalizeHookEvent,
 } from './listener.js';
+import type { CodexHookEvent } from '../codex/liveness.js';
 
 const LOOPBACK = '127.0.0.1';
 
@@ -93,6 +94,24 @@ const HOOK_FIXTURE_PATH = fileURLToPath(
 const SESSIONSTART_FIXTURE_PATH = fileURLToPath(
   new URL(
     '../../fixtures/hook-events/cc-2.1.234-sessionstart.jsonl',
+    import.meta.url,
+  ),
+);
+/** Real CC hook payloads, one JSON object per line — never carries `model`. */
+const CC_REDACTED_FIXTURE_PATH = fileURLToPath(
+  new URL('../../fixtures/hook-events/cc-2.1.234-redacted.jsonl', import.meta.url),
+);
+/**
+ * A real captured Codex hook stream, in the LISTENER'S ENVELOPE form
+ * (`{raw: <payload>, receivedAt, ...}` per line — the same shape
+ * `readCodexHookStream` in `src/codex/liveness.ts` reads). DoD 3.1 must be
+ * proved against the `.raw` PAYLOAD, which is the actual wire body a real
+ * Codex hook POSTs — not against the envelope, which is this repository's
+ * own capture opinion of it.
+ */
+const CODEX_HOOK_STREAM_PATH = fileURLToPath(
+  new URL(
+    '../../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl',
     import.meta.url,
   ),
 );
@@ -290,6 +309,21 @@ async function readFixturePayloads(): Promise<RawHookPayload[]> {
 /** Never hard-code the count: derive it from the committed capture (G6). */
 async function readSessionStartPayloads(): Promise<RawHookPayload[]> {
   return readPayloadsFrom(SESSIONSTART_FIXTURE_PATH);
+}
+
+/**
+ * Extract the `.raw` payload from each line of a captured listener-envelope
+ * stream — the real wire body a Codex hook POSTs, not the capture's own
+ * opinion of it. Mirrors `readCodexHookStream`'s reader in
+ * `src/codex/liveness.ts` without importing that module (a work package may
+ * not touch `src/codex/*`, and this is three lines of the same shape).
+ */
+async function readCodexRawPayloads(): Promise<unknown[]> {
+  const text = await readFile(CODEX_HOOK_STREAM_PATH, 'utf8');
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => (JSON.parse(line) as { raw: unknown }).raw);
 }
 
 // ---------------------------------------------------------------------------
@@ -604,6 +638,125 @@ describe('fixtures/phase0-evidence/synthetic-hook-events.jsonl', () => {
 });
 
 // ---------------------------------------------------------------------------
+// DoD 3.1 — listener discrimination, over real bytes, both directions
+// ---------------------------------------------------------------------------
+//
+// This is the "join test that tests the join and not the outcome" trap in
+// listener clothes: asserting `normalizeHookEvent`'s TYPE says nothing about
+// which handler set a real POST actually reaches. Every payload here is
+// POSTed through a real `HookListener` over a real loopback socket, and the
+// outcome asserted is which of `subscribe` / `subscribeCodex` received it —
+// not a value derived independently of the routing itself.
+
+describe('DoD 3.1 — listener discrimination, over real bytes, both directions', () => {
+  it('every real Codex hook payload lands in subscribeCodex and none in subscribe', async () => {
+    const payloads = await readCodexRawPayloads();
+    expect(payloads.length).toBeGreaterThan(0);
+    // The corpus really does carry the discriminator on every line — the
+    // control for the assertion below being non-vacuous.
+    for (const payload of payloads) {
+      expect(Object.prototype.hasOwnProperty.call(payload, 'model')).toBe(true);
+    }
+
+    const { listener, port } = await startEphemeralListener();
+    try {
+      const ccReceived: NormalizedHookEvent[] = [];
+      const codexReceived: CodexHookEvent[] = [];
+      listener.subscribe((event) => ccReceived.push(event));
+      listener.subscribeCodex((event) => codexReceived.push(event));
+
+      const before = listener.counters;
+      for (const payload of payloads) {
+        const reply = await postJson(port, payload);
+        expect(reply.status).toBe(200);
+      }
+      const after = listener.counters;
+
+      expect(codexReceived).toHaveLength(payloads.length);
+      expect(ccReceived).toHaveLength(0);
+      expect(after.acceptedCodex - before.acceptedCodex).toBe(payloads.length);
+      // Byte-for-byte unchanged: a Codex payload must not perturb CC's own
+      // counters at all.
+      expect(after.accepted - before.accepted).toBe(0);
+      expect(after.unconfirmedEventName - before.unconfirmedEventName).toBe(0);
+    } finally {
+      await listener.stop();
+    }
+  });
+
+  it('every real CC hook payload lands in subscribe and none in subscribeCodex', async () => {
+    const payloads = await readPayloadsFrom(CC_REDACTED_FIXTURE_PATH);
+    expect(payloads.length).toBeGreaterThan(0);
+    // The cross-check: none of this corpus carries the discriminator, or the
+    // "0% in subscribeCodex" assertion below would be vacuous.
+    for (const payload of payloads) {
+      expect(Object.prototype.hasOwnProperty.call(payload, 'model')).toBe(false);
+    }
+
+    const { listener, port } = await startEphemeralListener();
+    try {
+      const ccReceived: NormalizedHookEvent[] = [];
+      const codexReceived: CodexHookEvent[] = [];
+      listener.subscribe((event) => ccReceived.push(event));
+      listener.subscribeCodex((event) => codexReceived.push(event));
+
+      const before = listener.counters;
+      for (const payload of payloads) {
+        const reply = await postJson(port, payload);
+        expect(reply.status).toBe(200);
+      }
+      const after = listener.counters;
+
+      expect(ccReceived).toHaveLength(payloads.length);
+      expect(codexReceived).toHaveLength(0);
+      expect(after.accepted - before.accepted).toBe(payloads.length);
+      expect(after.acceptedCodex - before.acceptedCodex).toBe(0);
+    } finally {
+      await listener.stop();
+    }
+  });
+
+  it('subscribeCodex hands back an unsubscribe function, mirroring subscribe', async () => {
+    const { listener, port } = await startEphemeralListener();
+    try {
+      let calls = 0;
+      const unsubscribe = listener.subscribeCodex(() => {
+        calls += 1;
+      });
+      await postJson(port, { session_id: 'x', model: 'gpt-5.6-terra' });
+      expect(calls).toBe(1);
+      unsubscribe();
+      await postJson(port, { session_id: 'x', model: 'gpt-5.6-terra' });
+      expect(calls).toBe(1);
+    } finally {
+      await listener.stop();
+    }
+  });
+
+  it('a throwing Codex consumer is counted as handlerErrors and never breaks the listener', async () => {
+    const { listener, port } = await startEphemeralListener();
+    try {
+      listener.subscribeCodex(() => {
+        throw new Error('injected Codex consumer failure');
+      });
+      const before = listener.counters;
+      const reply = await postJson(port, { session_id: 'x', model: 'gpt-5.6-terra' });
+      expect(reply.status).toBe(200);
+      const after = listener.counters;
+      expect(after.handlerErrors - before.handlerErrors).toBe(1);
+      expect(after.acceptedCodex - before.acceptedCodex).toBe(1);
+
+      // The listener is still serving afterwards — a throwing Codex handler
+      // must not take the socket down, same G3 discipline `subscribe` has.
+      const again = await postJson(port, { session_id: 'y', model: 'gpt-5.4-mini' });
+      expect(again.status).toBe(200);
+    } finally {
+      await listener.stop();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // the listener over a real loopback socket
 // ---------------------------------------------------------------------------
 
@@ -727,25 +880,58 @@ describe('HookListener over a real loopback socket', () => {
 
   it('replays every fixture payload over the wire', async () => {
     const payloads = await readFixturePayloads();
-    for (const payload of payloads) {
-      const reply = await postJson(port, payload);
-      expect(reply.status).toBe(200);
-    }
 
-    const expectedMain = payloads.filter(
-      (p) => !Object.prototype.hasOwnProperty.call(p, 'agent_id'),
-    ).length;
-    const expectedUnconfirmed = payloads.filter(
-      (p) => !isConfirmedHookEventName(p.hook_event_name),
-    ).length;
-
-    expect(listener.counters.accepted).toBe(payloads.length);
-    expect(received).toHaveLength(payloads.length);
-    expect(received.filter((e) => e.isMainThread)).toHaveLength(expectedMain);
-    expect(listener.counters.unconfirmedEventName).toBe(expectedUnconfirmed);
-    expect(received.map((e) => e.seq)).toEqual(
-      payloads.map((_, index) => index + 1),
+    // DoD 3.1: this fixture predates the Codex discriminator and its
+    // `SessionStart` line carries a `model` key — real CC hook payloads never
+    // carry that key (measured 160/160 Codex against 0/305 CC in
+    // `docs/codex-contract.md` A5, reproduced against the real CC corpus in
+    // the "DoD 3.1" describe block above), so that one line is itself an
+    // inaccurate synthetic payload, exposed rather than hidden by the more
+    // precise routing. It is now correctly treated as Codex-shaped, and this
+    // test accounts for the split rather than asserting a total that the
+    // listener no longer produces.
+    const ccPayloads = payloads.filter(
+      (p) => !Object.prototype.hasOwnProperty.call(p, 'model'),
     );
+    const codexPayloads = payloads.filter((p) =>
+      Object.prototype.hasOwnProperty.call(p, 'model'),
+    );
+    // Not vacuous: the fixture really does carry one of each kind, or the
+    // split below asserts nothing this test did not already assert before.
+    expect(codexPayloads.length).toBeGreaterThan(0);
+    expect(ccPayloads.length).toBeGreaterThan(0);
+
+    const codexReceived: CodexHookEvent[] = [];
+    const unsubscribeCodex = listener.subscribeCodex((event) => {
+      codexReceived.push(event);
+    });
+    try {
+      for (const payload of payloads) {
+        const reply = await postJson(port, payload);
+        expect(reply.status).toBe(200);
+      }
+
+      const expectedMain = ccPayloads.filter(
+        (p) => !Object.prototype.hasOwnProperty.call(p, 'agent_id'),
+      ).length;
+      const expectedUnconfirmed = ccPayloads.filter(
+        (p) => !isConfirmedHookEventName(p.hook_event_name),
+      ).length;
+
+      expect(listener.counters.accepted).toBe(ccPayloads.length);
+      expect(listener.counters.acceptedCodex).toBe(codexPayloads.length);
+      expect(received).toHaveLength(ccPayloads.length);
+      expect(codexReceived).toHaveLength(codexPayloads.length);
+      expect(received.filter((e) => e.isMainThread)).toHaveLength(expectedMain);
+      expect(listener.counters.unconfirmedEventName).toBe(expectedUnconfirmed);
+      // `#seq` is CC's own ordinal and a Codex payload must not perturb it:
+      // still dense and monotonic from 1, over the CC-routed events alone.
+      expect(received.map((e) => e.seq)).toEqual(
+        ccPayloads.map((_, index) => index + 1),
+      );
+    } finally {
+      unsubscribeCodex();
+    }
   });
 
   it('drops a non-loopback POST with 403 and counts it', async () => {
@@ -1757,10 +1943,20 @@ describe('grounding guards, asserted against the source text', () => {
     // No home-directory resolution either: the listener has no business
     // knowing where ~/.claude is, let alone opening anything in it.
     expect(source).not.toMatch(/homedir|USERPROFILE|process\.env\.HOME/);
-    // Only the two modules it actually needs are imported.
+    // Only the modules it actually needs are imported. `../codex/liveness.js`
+    // is a TYPE-ONLY import (`CodexHookEvent`, DoD 3.1) — it names no runtime
+    // value and is erased at build time, so it adds no filesystem API to the
+    // bundle; it is allowed here rather than exempted from the scan, because
+    // the scan is a source-text census and the import really is in the text.
     const imports = [...source.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
     expect(new Set(imports)).toEqual(
-      new Set(['node:buffer', 'node:http', 'node:net', '../model/events.js']),
+      new Set([
+        'node:buffer',
+        'node:http',
+        'node:net',
+        '../model/events.js',
+        '../codex/liveness.js',
+      ]),
     );
   });
 

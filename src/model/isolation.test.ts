@@ -77,6 +77,8 @@ import {
 } from '../opencode/synthetic.js';
 import { DEFAULT_OC_LIVENESS_THRESHOLD_MS } from '../opencode/liveness.js';
 import type { PollTrigger, PollTriggerHandle } from '../opencode/liveness.js';
+import { readCodexEngine } from '../codex/index.js';
+import type { CodexThread } from '../codex/index.js';
 
 // ---------------------------------------------------------------------------
 // Fixture roots — derived, never named
@@ -84,6 +86,18 @@ import type { PollTrigger, PollTriggerHandle } from '../opencode/liveness.js';
 
 const CC_ROOT = fileURLToPath(new URL('../../fixtures/cc-2.1.234/projects', import.meta.url));
 const EXTENSION_SOURCE = fileURLToPath(new URL('../extension.ts', import.meta.url));
+/** The committed real Codex corpus's `.codex` root, containing `sessions/`. */
+const CODEX_ROOT_DIR = fileURLToPath(
+  new URL('../../fixtures/codex-0.151.0-alpha.7.2/baseline/home/.codex', import.meta.url),
+);
+/**
+ * A deterministic, guaranteed-nonexistent root — the Codex engine's default
+ * "off" state for every test in this file that does not stage it. Never
+ * created, so no real filesystem access happens (G6): `statSync` on it fails
+ * ENOENT and the engine reports `rootAbsent`, exactly as it would on a
+ * machine with no Codex installed.
+ */
+const ABSENT_CODEX_ROOT = join(tmpdir(), 'agent-deck-isolation-codex-absent-does-not-exist');
 
 /**
  * A fixed Claude Code clock, taken ONCE before anything is staged.
@@ -219,6 +233,32 @@ async function stageOc(): Promise<StagedOc> {
   return { dir, dbPath, worktree: worktree as string, freshestRootId, maxTimeUpdated };
 }
 
+interface StagedCodex {
+  root: string;
+  workspaceFolder: string;
+  rootSessionId: string;
+}
+
+/**
+ * The committed Codex fixture's ROOT thread, read through the PRODUCTION
+ * engine (`readCodexEngine`) rather than by hand-parsing the transcript —
+ * the same rule `stageOc` follows by reading rows off the real database
+ * rather than trusting a filename. Nothing here mutates the fixture (G6):
+ * it is read directly, in place, never copied.
+ */
+async function stageCodex(): Promise<StagedCodex> {
+  const outcome = await readCodexEngine({ root: CODEX_ROOT_DIR });
+  expect(outcome.kind, 'the Codex fixture must be readable').toBe('ok');
+  if (outcome.kind !== 'ok') throw new Error('unreachable: asserted above');
+  const root = outcome.result.threads.find((t: CodexThread) => t.threadSource === 'user');
+  expect(root, 'the Codex fixture must carry a root thread').toBeDefined();
+  return {
+    root: CODEX_ROOT_DIR,
+    workspaceFolder: (root as CodexThread).cwd,
+    rootSessionId: (root as CodexThread).sessionId,
+  };
+}
+
 /** Bump one session's `event_sequence.seq`. The one mutation these tests make. */
 function bumpSeq(dbPath: string, sessionId: string, by = 1): number {
   const db = new DatabaseSync(dbPath);
@@ -330,6 +370,16 @@ interface HarnessOptions {
   graft?: DataPathOptions['graft'];
   ocRead?: NonNullable<DataPathOptions['opencode']>['read'];
   ocPollTrigger?: PollTrigger;
+  /**
+   * Defaults to {@link ABSENT_CODEX_ROOT} — the Codex engine off,
+   * deterministically (G6): a test that wants it ON must stage it and pass
+   * `stageCodex()`'s `root` explicitly, the same opt-in shape `ocDbPath` has
+   * for OpenCode's absent case.
+   */
+  codexRoot?: string;
+  /** Required to make a staged Codex session workspace-match. See B6 below. */
+  codexWorkspace?: string;
+  codexRead?: NonNullable<DataPathOptions['codex']>['read'];
   /** Every emission the path produced, in order. */
   captured?: DataPathEmission[];
 }
@@ -338,9 +388,13 @@ function buildDataPath(options: HarnessOptions, port: number): AgentDeckDataPath
   const captured = options.captured;
   return new AgentDeckDataPath({
     workspacePath: options.cc.workspacePath,
-    // B6: both roots, because the OpenCode corpus was captured in a different
+    // B6: every root, because each corpus was captured in a different
     // directory from the staged Claude Code workspace.
-    workspacePaths: [options.cc.workspacePath, options.ocWorktree],
+    workspacePaths: [
+      options.cc.workspacePath,
+      options.ocWorktree,
+      ...(options.codexWorkspace !== undefined ? [options.codexWorkspace] : []),
+    ],
     settings: {
       port,
       livenessThresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
@@ -362,6 +416,13 @@ function buildDataPath(options: HarnessOptions, port: number): AgentDeckDataPath
       log: () => {},
       ...(options.ocRead !== undefined ? { read: options.ocRead } : {}),
     },
+    codex: {
+      root: options.codexRoot ?? ABSENT_CODEX_ROOT,
+      now: () => CC_CLOCK,
+      pollTrigger: (): PollTriggerHandle => ({ stop: () => {} }),
+      log: () => {},
+      ...(options.codexRead !== undefined ? { read: options.codexRead } : {}),
+    },
   });
 }
 
@@ -369,6 +430,7 @@ function buildDataPath(options: HarnessOptions, port: number): AgentDeckDataPath
 interface Split {
   cc: SessionState[];
   opencode: SessionState[];
+  codex: SessionState[];
 }
 
 /**
@@ -391,6 +453,7 @@ function split(emission: DataPathEmission): Split {
   return {
     cc: sessions.filter((s) => engineOf(s) === 'cc'),
     opencode: sessions.filter((s) => engineOf(s) === 'opencode'),
+    codex: sessions.filter((s) => engineOf(s) === 'codex'),
   };
 }
 
@@ -664,6 +727,130 @@ describe('DoD 5.3 (3) — the hook listener being down leaves OpenCode liveness 
   });
 });
 
+/**
+ * PLAN.md v0.6.0 DoD 3.2's isolation requirement: three engines means three
+ * isolation directions, not the two DoD 5.3 checked before Codex existed.
+ * The two blocks below are the new ones — a Codex-side failure leaving the
+ * other two unaffected, and either of the other two failing leaving Codex
+ * unaffected — using the same byte-comparison methodology and the same
+ * "assert the sabotage really landed" discipline the file's header describes.
+ */
+describe('DoD 3.2 (3rd direction) — a broken Codex engine leaves Claude Code and OpenCode sessions unchanged', () => {
+  it('renders the same CC and OpenCode sessions with the Codex root healthy, absent, and throwing', async () => {
+    const cc = await stageCc();
+    const oc = await stageOc();
+    ocClock = oc.maxTimeUpdated + DEFAULT_OC_LIVENESS_THRESHOLD_MS + 1;
+    const codex = await stageCodex();
+
+    // (a) HEALTHY. The baseline both other engines render from, with Codex on.
+    const healthy = await runOnce({
+      cc,
+      ocDbPath: oc.dbPath,
+      ocWorktree: oc.worktree,
+      codexRoot: codex.root,
+      codexWorkspace: codex.workspaceFolder,
+    });
+    const ccBaseline = JSON.stringify(healthy.split.cc);
+    const ocBaseline = JSON.stringify(healthy.split.opencode);
+    expect(healthy.split.cc.length, 'the CC fixture must produce sessions').toBeGreaterThan(0);
+    expect(
+      healthy.split.opencode.length,
+      'the OpenCode corpus must produce sessions',
+    ).toBeGreaterThan(0);
+    expect(
+      healthy.split.codex.length,
+      'the Codex fixture must produce a session, or the sabotage below removes nothing',
+    ).toBeGreaterThan(0);
+    expect(healthy.path.diagnostics.codex.enabled).toBe(true);
+
+    // (b) ABSENT. `codexRoot` omitted -> `ABSENT_CODEX_ROOT` (G6: never a live
+    // root, always a path guaranteed not to exist).
+    const absent = await runOnce({ cc, ocDbPath: oc.dbPath, ocWorktree: oc.worktree });
+    expect(JSON.stringify(absent.split.cc)).toBe(ccBaseline);
+    expect(JSON.stringify(absent.split.opencode)).toBe(ocBaseline);
+    // The control: the sabotage landed.
+    expect(absent.path.diagnostics.codex.enabled).toBe(false);
+    expect(absent.split.codex).toStrictEqual([]);
+
+    // (c) THROWING. `readCodexEngine` is documented never to throw, so the
+    // only way to prove the catch is to inject one — the same argument
+    // `DataPathOptions.graft` and `OpenCodePathOptions.read` make for their
+    // own engines.
+    const thrown = await runOnce({
+      cc,
+      ocDbPath: oc.dbPath,
+      ocWorktree: oc.worktree,
+      codexRoot: codex.root,
+      codexWorkspace: codex.workspaceFolder,
+      codexRead: () => {
+        throw new Error('injected Codex read failure');
+      },
+    });
+    expect(JSON.stringify(thrown.split.cc)).toBe(ccBaseline);
+    expect(JSON.stringify(thrown.split.opencode)).toBe(ocBaseline);
+    expect(thrown.path.diagnostics.codex.contentFailures).toBeGreaterThan(0);
+    expect(thrown.path.diagnostics.codex.lastError).toContain('injected Codex read failure');
+    expect(thrown.split.codex).toStrictEqual([]);
+    // ...and neither of the other two engines ever noticed.
+    expect(thrown.path.diagnostics.graftErrors).toBe(0);
+    expect(thrown.path.diagnostics.ccEmitErrors).toBe(0);
+    expect(thrown.path.diagnostics.opencodeEmitErrors).toBe(0);
+  }, 120_000);
+});
+
+describe('DoD 3.2 (3rd direction) — a Claude Code or OpenCode failure leaves Codex sessions unchanged', () => {
+  it('renders the same Codex sessions while the CC content path throws and while the OpenCode store is corrupt', async () => {
+    const cc = await stageCc();
+    const oc = await stageOc();
+    ocClock = oc.maxTimeUpdated + DEFAULT_OC_LIVENESS_THRESHOLD_MS + 1;
+    const codex = await stageCodex();
+
+    const healthy = await runOnce({
+      cc,
+      ocDbPath: oc.dbPath,
+      ocWorktree: oc.worktree,
+      codexRoot: codex.root,
+      codexWorkspace: codex.workspaceFolder,
+    });
+    const codexBaseline = JSON.stringify(healthy.split.codex);
+    expect(healthy.split.codex.length).toBeGreaterThan(0);
+    expect(healthy.path.diagnostics.graftRefusals).toBe(0);
+    expect(healthy.path.diagnostics.graftErrors).toBe(0);
+
+    // (a) The CC content path THROWS.
+    const ccThrew = await runOnce({
+      cc,
+      ocDbPath: oc.dbPath,
+      ocWorktree: oc.worktree,
+      codexRoot: codex.root,
+      codexWorkspace: codex.workspaceFolder,
+      graft: () => {
+        throw new Error('injected CC parse failure');
+      },
+    });
+    expect(JSON.stringify(ccThrew.split.codex)).toBe(codexBaseline);
+    // The control: the CC content path really did throw.
+    expect(ccThrew.path.diagnostics.graftErrors).toBeGreaterThan(0);
+    expect(ccThrew.path.diagnostics.codexEmitErrors).toBe(0);
+
+    // (b) The OpenCode store is CORRUPT — a file that is present, non-empty,
+    // and not a database.
+    const corruptDir = await makeTempDir('agent-deck-isolation-corrupt-codex-');
+    const corrupt = writeNonDatabase(corruptDir);
+    const ocBroken = await runOnce({
+      cc,
+      ocDbPath: corrupt,
+      ocWorktree: oc.worktree,
+      codexRoot: codex.root,
+      codexWorkspace: codex.workspaceFolder,
+    });
+    expect(JSON.stringify(ocBroken.split.codex)).toBe(codexBaseline);
+    // The control: the sabotage landed.
+    expect(ocBroken.path.diagnostics.opencode.degradedReads).toBeGreaterThan(0);
+    expect(ocBroken.path.diagnostics.codexEmitErrors).toBe(0);
+  });
+});
+
 describe('the two engines share no state that could carry a failure across', () => {
   it('the OpenCode path holds its own clock, trigger and store, and none of the CC objects', async () => {
     const cc = await stageCc();
@@ -729,6 +916,13 @@ describe('the two engines share no state that could carry a failure across', () 
             }),
             log: () => {},
           },
+          // G6: never a live root. This construction site bypasses
+          // `buildDataPath`, which is the only other place that supplies it.
+          codex: {
+            root: ABSENT_CODEX_ROOT,
+            pollTrigger: () => ({ stop: () => {} }),
+            log: () => {},
+          },
         }),
     );
     expect(stops).toBe(0);
@@ -757,5 +951,16 @@ describe('the harness itself', () => {
     expect(oc.freshestRootId).toMatch(/^ses_/);
     expect(oc.maxTimeUpdated).toBeGreaterThan(0);
     expect(corpusName).not.toBe('');
+  });
+
+  it('stages a Codex corpus with a workspace folder and a root session id', async () => {
+    const codex = await stageCodex();
+    expect(codex.root).toBe(CODEX_ROOT_DIR);
+    expect(codex.workspaceFolder).not.toBe('');
+    expect(codex.rootSessionId).not.toBe('');
+  });
+
+  it('ABSENT_CODEX_ROOT really does not exist', () => {
+    expect(existsSync(ABSENT_CODEX_ROOT)).toBe(false);
   });
 });

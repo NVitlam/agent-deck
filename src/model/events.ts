@@ -553,6 +553,17 @@ export interface SessionFieldPatch {
   /** Replaced whole, same rule as {@link SessionFieldPatch.contextNow}. */
   burn?: TokenPair;
   /**
+   * See {@link SessionState.windowTokens}. A bare number, never patched
+   * apart from anything — there is nothing else to keep it in step with.
+   *
+   * Added alongside the Codex host wiring (v0.6.0 Phase 3, DoD 3.2): without
+   * this key a Codex session's window-token count could be carried on the
+   * first snapshot but never diffed onto the wire afterwards, which is the
+   * same silent-drop shape `SessionFieldPatch.engine`'s own history warns
+   * about.
+   */
+  windowTokens?: number;
+  /**
    * See {@link SessionState.engine}.
    *
    * **This key can never be present in a patch the model produces**, and that is

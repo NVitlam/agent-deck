@@ -200,6 +200,15 @@ function ciphertextStrings(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
+/** The committed golden, read as DATA. The generator is never imported. */
+function readGolden(): unknown {
+  for (const corpus of listCorpora()) {
+    const file = path.join(FIXTURES, corpus, 'golden.json');
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
+  }
+  return null;
+}
+
 /** C7's two reasoning shapes, derived here rather than imported from parse.ts. */
 function isReasoningRaw(raw: Record<string, unknown>): boolean {
   const payload = raw['payload'];
@@ -669,6 +678,191 @@ describe('C5 - the fork boundary, and the `=== null` trap', () => {
     expect(parsed.thread?.toolCalls.map((c) => c.callId)).toEqual(['call_own']);
     expect(parsed.thread?.spawns).toEqual([]);
     expect(JSON.stringify(parsed.kept)).not.toContain('call_inherited');
+  });
+});
+
+describe('the third tool-call kind, and the skip list that names what it drops', () => {
+  it('EMITS `tool_search_call`, and matches the golden on the total and on `no_item`', () => {
+    // Derived from `golden.json` at test time, never written down here. The
+    // golden is produced by a standalone reader that shares no code with
+    // `parse.ts`, which is what makes this a cross-check rather than a
+    // restatement.
+    const golden = readGolden();
+    expect(golden).not.toBeNull();
+    const summary = (golden as Record<string, unknown>)['summary'] as Record<string, number>;
+
+    const relations = new Map<string, number>();
+    const kinds = new Map<string, number>();
+    for (const transcript of ALL) {
+      const parsed = parseCodexTranscript(transcript.text, { file: transcript.file });
+      for (const call of parsed.thread?.toolCalls ?? []) {
+        relations.set(call.idRelation, (relations.get(call.idRelation) ?? 0) + 1);
+        kinds.set(call.kind, (kinds.get(call.kind) ?? 0) + 1);
+      }
+    }
+
+    // The arithmetic that found the defect in the hand-off line: the golden's
+    // total is `function_call` + `custom_tool_call` + ONE `tool_search_call`,
+    // and a parser that cannot express the third kind emits one fewer.
+    expect(kinds.get('tool_search_call')).toBe(1);
+    expect(
+      (kinds.get('function_call') ?? 0)
+      + (kinds.get('custom_tool_call') ?? 0)
+      + (kinds.get('tool_search_call') ?? 0),
+    ).toBe(summary['tool_calls']);
+
+    expect(relations.get('no_item') ?? 0).toBe(summary['tool_calls_without_item']);
+    expect(relations.get('item_id_equals_call_id') ?? 0).toBe(summary['tool_calls_item_id_equals_call_id']);
+    expect(relations.get('item_id_distinct_from_call_id') ?? 0).toBe(summary['tool_calls_item_id_distinct']);
+  });
+
+  it('states only what n=1 shows about `tool_search_call`', () => {
+    // One record, in `resume-twice-v1`. Everything asserted here is read off
+    // that record first, so the expectations cannot outrun the evidence.
+    let raw: Record<string, unknown> | null = null;
+    let owner: Transcript | null = null;
+    for (const transcript of ALL) {
+      for (const entry of transcript.raw) {
+        const payload = entry['payload'] as Record<string, unknown> | null;
+        if (entry['type'] !== 'response_item' || payload === null || typeof payload !== 'object') continue;
+        if (payload['type'] !== 'tool_search_call') continue;
+        raw = payload;
+        owner = transcript;
+      }
+    }
+    expect(raw).not.toBeNull();
+    expect(owner).not.toBeNull();
+    const payload = raw as Record<string, unknown>;
+
+    // The two fields it does NOT carry, and the one whose shape differs.
+    expect(Object.prototype.hasOwnProperty.call(payload, 'name')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(payload, 'namespace')).toBe(false);
+    expect(typeof payload['arguments']).toBe('object');
+
+    const source = owner as Transcript;
+    const parsed = parseCodexTranscript(source.text, { file: source.file });
+    const call = (parsed.thread?.toolCalls ?? []).find((c) => c.kind === 'tool_search_call');
+    expect(call).toBeDefined();
+    expect(call?.callId).toBe(payload['call_id']);
+    // An absent `namespace` IS representable and IS represented. An absent
+    // `name` is not - the type is a bare string - so it is the empty string,
+    // which is exactly what the reference reader writes into the golden
+    // rather than a default chosen here.
+    expect(call?.namespace).toEqual({ present: false, value: null });
+    expect(call?.name).toBe('');
+    expect(call?.idRelation).toBe('no_item');
+    expect(call?.itemId).toBeNull();
+    // `tool_search_output` is skipped, so no preview is built from it.
+    expect(call?.outputPreview).toBeUndefined();
+  });
+
+  it('NAMES every skipped response_item type on the shared counters', () => {
+    // Rule 18: a reader that skips an input reports the skip in its verdict.
+    // The value is asserted per run, and BOTH a non-empty and an empty case
+    // are required - an all-empty result would be indistinguishable from a
+    // counter that is never written at all.
+    const perRun = new Map<string, Set<string>>();
+    for (const run of RUNS) {
+      const seen = new Set<string>();
+      for (const transcript of run.transcripts) {
+        const parsed = parseCodexTranscript(transcript.text, { file: transcript.file });
+        for (const type of parsed.counters.skippedResponseItemTypes) seen.add(type);
+        // Sorted and de-duplicated, per the field's contract.
+        expect([...parsed.counters.skippedResponseItemTypes]).toEqual(
+          [...new Set(parsed.counters.skippedResponseItemTypes)].sort(),
+        );
+        expect(parsed.thread?.counters.skippedResponseItemTypes).toEqual(
+          parsed.counters.skippedResponseItemTypes,
+        );
+      }
+      perRun.set(run.run, seen);
+    }
+    const withSkips = [...perRun.entries()].filter(([, seen]) => seen.size > 0);
+    const withoutSkips = [...perRun.entries()].filter(([, seen]) => seen.size === 0);
+    expect(withSkips.length).toBeGreaterThan(0);
+    expect(withoutSkips.length).toBeGreaterThan(0);
+    for (const [, seen] of withSkips) expect([...seen].sort()).toEqual(['tool_search_output']);
+  });
+
+  it('an UNDECLARED type is named as skipped as well as unhandled', () => {
+    // Declared-and-skipped and never-seen-before are different facts and both
+    // reach the counter. If only the first did, a new Codex release would add
+    // a type that produced nothing and said nothing.
+    const parsed = parseCodexThread(
+      [
+        sessionMeta(0, {}),
+        record(1, 'response_item', { type: 'brand_new_thing' }),
+        record(2, 'response_item', { type: 'tool_search_output', tools: [] }),
+      ],
+      { file: 'novel.jsonl' },
+    );
+    expect(parsed.counters.skippedResponseItemTypes).toEqual(['brand_new_thing', 'tool_search_output']);
+    expect(parsed.unhandledResponseItemTypes).toEqual(['brand_new_thing']);
+    expect(parsed.thread?.toolCalls).toEqual([]);
+  });
+});
+
+describe('startedAtMs - a START, and never the end used as one', () => {
+  it("is the session_meta record's own timestamp, not the file mtime", () => {
+    let widestGapMs = 0;
+    for (const transcript of ALL) {
+      const metas = transcript.raw
+        .filter((entry) => entry['type'] === 'session_meta')
+        .sort((a, b) => Number(a['ordinal']) - Number(b['ordinal']));
+      const owner = metas[0];
+      expect(owner).toBeDefined();
+      const envelope = Date.parse(String((owner as Record<string, unknown>)['timestamp']));
+
+      // `mtimeMs` is handed the LAST record's time - which is what a file's
+      // last write actually is - so a parser reaching for it lands on a
+      // plausible, wrong, LATER number rather than on something obviously
+      // broken. That is the shape of the defect this field replaced.
+      const last = transcript.raw[transcript.raw.length - 1];
+      const endMs = Date.parse(String((last as Record<string, unknown>)['timestamp']));
+      const parsed = parseCodexTranscript(transcript.text, {
+        file: transcript.file,
+        mtimeMs: endMs,
+      });
+
+      expect(parsed.thread?.startedAtMs).toBe(envelope);
+      expect(parsed.thread?.mtimeMs).toBe(endMs);
+      expect(parsed.thread?.startedAtMs).toBeLessThan(endMs);
+      widestGapMs = Math.max(widestGapMs, endMs - envelope);
+
+      // The ENVELOPE timestamp, not `payload.timestamp`. They differ.
+      const payload = (owner as Record<string, unknown>)['payload'] as Record<string, unknown>;
+      if (typeof payload['timestamp'] === 'string') {
+        expect(Date.parse(payload['timestamp'])).not.toBe(envelope);
+      }
+    }
+    // The control: if start and end were the same instant everywhere, the
+    // assertion above would hold for a parser that used either one.
+    expect(widestGapMs).toBeGreaterThan(30_000);
+  });
+
+  it("a forked child reports ITS OWN start, not its parent's", () => {
+    const forked = ALL.find((transcript) => boundaryOf(transcript) !== undefined);
+    expect(forked).toBeDefined();
+    const transcript = forked as Transcript;
+    const metas = transcript.raw
+      .filter((entry) => entry['type'] === 'session_meta')
+      .sort((a, b) => Number(a['ordinal']) - Number(b['ordinal']));
+    const own = Date.parse(String(metas[0]?.['timestamp']));
+    const inherited = Date.parse(String(metas[1]?.['timestamp']));
+    expect(own).not.toBe(inherited);
+    const parsed = parseCodexTranscript(transcript.text, { file: transcript.file });
+    expect(parsed.thread?.startedAtMs).toBe(own);
+  });
+
+  it('an unparseable timestamp is visibly wrong rather than plausibly wrong', () => {
+    const parsed = parseCodexThread(
+      [{ timestamp: 'not a date', ordinal: 0, type: 'session_meta', payload: { id: 't', session_id: 's' } }],
+      { file: 'bad.jsonl', mtimeMs: 1_788_381_874_925 },
+    );
+    // 0 renders as 1970. The alternative - falling back to `mtimeMs` - is a
+    // plausible wrong date, which is the whole defect.
+    expect(parsed.thread?.startedAtMs).toBe(0);
+    expect(parsed.thread?.mtimeMs).toBe(1_788_381_874_925);
   });
 });
 

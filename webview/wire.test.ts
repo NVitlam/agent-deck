@@ -164,7 +164,7 @@ afterAll(async () => {
  * each assertion explicit and makes a missing corpus a failure rather than a
  * silent substitution.
  */
-function recordedFor(engine: 'cc' | 'opencode'): WireCorpus {
+function recordedFor(engine: 'cc' | 'opencode' | 'codex'): WireCorpus {
   const found = corpora.filter((c) => c.kind === 'recorded' && (c.engine ?? 'cc') === engine);
   if (found.length !== 1) {
     throw new Error(
@@ -186,8 +186,13 @@ function openCodeRecorded(): WireCorpus {
   return recordedFor('opencode');
 }
 
-/** Both, named, for the properties every recording must have. */
-const RECORDED_ENGINES = ['cc', 'opencode'] as const;
+/** The Codex arc (v0.6.0 DoD 3.3, the third engine). */
+function codexRecorded(): WireCorpus {
+  return recordedFor('codex');
+}
+
+/** All three, named, for the properties every recording must have. */
+const RECORDED_ENGINES = ['cc', 'opencode', 'codex'] as const;
 
 // ---------------------------------------------------------------------------
 // 1. Determinism
@@ -291,6 +296,11 @@ describe('the corpus is a recording of the real wire', () => {
     // `PINNED_OPENCODE_VERSION`, so a re-anchor moves it and a literal here
     // would go red for the wrong reason.
     expect(openCodeRecorded().recordedFrom).toMatch(/^fixtures\/opencode-\d+\.\d+\.\d+$/);
+    // Same rule for Codex: named from `PINNED_CODEX_VERSION` plus whichever
+    // run the recorder picked as richest, never written down as a literal.
+    expect(codexRecorded().recordedFrom).toMatch(
+      /^fixtures\/codex-\d+\.\d+\.\d+-[^/]+\/[^/]+\/home\/\.codex$/,
+    );
   });
 
   it('records BOTH engines, and each corpus agrees with its own sessions', () => {
@@ -430,6 +440,98 @@ describe('the corpus is a recording of the real wire', () => {
       expect(entry.agentId.length).toBeGreaterThan(0);
       expect(entry.code.length).toBeGreaterThan(0);
     }
+  });
+
+  it('the Codex arc is the shipped host reading a healthy root', () => {
+    // The Codex analogue of the OpenCode check above: counters off the real
+    // `CodexEnginePath.diagnostics`, not prose. A recording taken off a root
+    // that failed to read or went unreadable mid-arc would look identical from
+    // the outside and mean something else.
+    const corpus = codexRecorded();
+    const diagnostics = corpus.hostDiagnostics ?? {};
+    expect(diagnostics['absentLogs'], 'absentLogs').toBe(0);
+    expect(diagnostics['contentFailures'], 'contentFailures').toBe(0);
+    expect(diagnostics['unreadableReads'], 'unreadableReads').toBe(0);
+    // One content read for the whole arc: this recorder never fires the
+    // content poll trigger `CodexEnginePath` registers alongside the liveness
+    // one — the committed run is static, so a second read of it would be
+    // recording a busy loop, the same rule `contentReads === 1` states for
+    // the OpenCode arc above.
+    expect(diagnostics['contentReads'], 'contentReads').toBe(1);
+    expect(diagnostics['livenessPolls'], 'livenessPolls').toBeGreaterThan(1);
+    expect(diagnostics['sessions'], 'sessions').toBe(corpus.final.sessions.length);
+    expect(diagnostics['sessions'], 'sessions').toBeGreaterThan(0);
+    // No host path travelled with them.
+    expect(JSON.stringify(diagnostics)).not.toMatch(/[A-Za-z]:\\\\/);
+  });
+
+  it('the Codex arc records a liveness transition, engine-produced', () => {
+    // The Codex analogue of the OpenCode transition check above. Unlike that
+    // arc, the Codex corpus opens ALREADY live: a real hook event is ingested
+    // and polled before the first snapshot leaves the bridge (see
+    // `recordCodexArc`'s own comment for why that shape, rather than
+    // `discover` opening idle, is what makes the transition below the
+    // engine's rather than the recorder's), and ends `idle` once the
+    // simulated clock crosses the session's own recency threshold with no
+    // further hook events.
+    const corpus = codexRecorded();
+    const first = corpus.events.find((e) => e.message.type === 'snapshot');
+    expect(first).toBeDefined();
+    if (first?.message.type !== 'snapshot') return;
+
+    const opening = first.message.sessions.map((s) => s.liveness);
+    const ending = corpus.final.sessions.map((s) => s.liveness);
+    expect(opening.length).toBe(ending.length);
+    expect(opening).not.toStrictEqual(ending);
+    expect(opening).toContain('live');
+    expect(new Set(ending)).toStrictEqual(new Set(['idle']));
+
+    const diffs = corpus.events.filter((e) => e.message.type === 'diff');
+    expect(diffs.length).toBeGreaterThan(0);
+    for (const event of diffs) {
+      if (event.message.type !== 'diff') continue;
+      expect(event.message.patch.fields?.liveness, event.message.sessionId).toBe('idle');
+    }
+  });
+
+  it('the Codex sessions carry windowTokens, the field unique to the third engine', () => {
+    // Neither CC nor OpenCode ever populates `SessionState.windowTokens` — it
+    // is Codex's own `model_context_window`, and its presence on the wire is
+    // the one thing this corpus shows that neither of the other two can.
+    // Asserted as a genuine number, never an em-dash, with the vacuity control
+    // the OpenCode burn test uses: a corpus of nothing but refused sessions
+    // would satisfy a loop that never checks anything.
+    const corpus = codexRecorded();
+    let withWindow = 0;
+    for (const session of corpus.final.sessions) {
+      if (!session.schemaOk) continue;
+      expect(typeof session.windowTokens, session.sessionId).toBe('number');
+      expect(session.windowTokens, session.sessionId).toBeGreaterThan(0);
+      withWindow += 1;
+    }
+    expect(withWindow).toBeGreaterThan(0);
+    // The control that keeps this a fact about the Codex engine rather than
+    // about this corpus: neither other arc ever sets the field at all.
+    expect(recorded().final.sessions.some((s) => s.windowTokens !== undefined)).toBe(false);
+    expect(openCodeRecorded().final.sessions.some((s) => s.windowTokens !== undefined)).toBe(
+      false,
+    );
+  });
+
+  it('the Codex arc carries no parked graft — none of the five harvested runs produce one', () => {
+    // Documented rather than silently absent (rule 18's shape applied to a
+    // corpus property instead of a sweep). `CodexParkCode`'s own doc comment
+    // says `dialectV1` "fires ZERO TIMES" on the measured corpus, and the
+    // other park codes describe shapes (a duplicate agent_path with a SECOND
+    // thread claiming it, an orphaned spawn) that Codex itself already
+    // refuses before a second thread can ever exist — measured directly
+    // against `readCodexEngine()` for all five runs while building this
+    // corpus, not assumed. This test is the negative control: if a future
+    // re-harvest ever produces one on the run this recorder picks, it
+    // should be caught here rather than silently start passing a stale
+    // assertion.
+    const parked = codexRecorded().final.sessions.flatMap((s) => s.parked ?? []);
+    expect(parked).toStrictEqual([]);
   });
 
   it('G4: no thinking signature bytes survive into the corpus', async () => {

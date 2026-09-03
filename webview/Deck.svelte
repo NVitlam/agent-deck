@@ -234,6 +234,7 @@
     all: { label: 'All', key: 'a' },
     cc: { label: 'Claude Code', key: 'c' },
     oc: { label: 'OpenCode', key: 'o' },
+    cx: { label: 'Codex', key: 'x' },
   };
   const ENGINE_CHIPS: readonly { value: EngineFilter; label: string; key: string }[] =
     ENGINE_FILTERS.map((value) => ({ value, ...ENGINE_LABELS[value] }));
@@ -252,6 +253,7 @@
   const WAITING: Readonly<Record<DeckEngine, string>> = {
     cc: 'Waiting for a Claude Code session…',
     oc: 'Waiting for an OpenCode session…',
+    cx: 'Waiting for a Codex session…',
   };
 
   /* --------------------------------------------------------------------- *
@@ -283,6 +285,7 @@
     all: sessions.length,
     cc: sessions.filter((row) => engineOf(row) === 'cc').length,
     oc: sessions.filter((row) => engineOf(row) === 'oc').length,
+    cx: sessions.filter((row) => engineOf(row) === 'cx').length,
   });
 
   /**

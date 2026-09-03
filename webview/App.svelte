@@ -8,7 +8,7 @@
   import Deck from './Deck.svelte';
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
-  import { displayLiveness, formatTokens } from './format.js';
+  import { displayLiveness, formatTokens, formatWindowTokens } from './format.js';
   import { LIVENESS_FILTERS, TESTID } from './canvas-contract.js';
 
   let { store }: { store: Store } = $props();
@@ -298,6 +298,14 @@
             <span class="hud-totals" data-testid="hud-totals">
               {formatTokens(view.selected.contextNow?.prompt)} in ctx ·
               {formatTokens(view.selected.burn?.prompt)} burn ·
+              <!-- Same row as context and burn, per D0.2 (spec C8, v0.6.0
+                   Phase 3 Codex widening): a third figure beside them, never
+                   a gauge and never a percentage. CC and OpenCode sessions
+                   leave `windowTokens` unset, so the em-dash IS the correct
+                   render for them - `formatWindowTokens` carries the same
+                   absence rule `formatTokens` already states, restated under
+                   its own name. -->
+              {formatWindowTokens(view.selected.windowTokens)} window ·
               <!-- Cost is an em-dash, never 0. The host sends 0 meaning NOT
                    COMPUTED, and 0 rendered as a number reads as "free", which
                    is a fabricated figure - the same class of defect as a

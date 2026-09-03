@@ -577,6 +577,10 @@ describe('the deck', () => {
     expect(DECK_LANE_HEADER_Y).toBe(-28);
     expect(deckLaneX('cc')).toBe(0);
     expect(deckLaneX('oc')).toBe(DECK_CARD_W + 40);
+    // Codex (v0.6.0 Phase 3) takes the third fixed rank slot; the cc/oc
+    // numbers above are unaffected by its addition — the rank-based formula
+    // reduces to exactly the old two-lane arithmetic at cc:0, oc:1.
+    expect(deckLaneX('cx')).toBe(2 * (DECK_CARD_W + 40));
   });
 
   it('defaults to grid · live first · all', () => {
@@ -656,6 +660,19 @@ describe('the deck', () => {
     }
   });
 
+  it('ranks engine cc < oc < cx under the engine sort', () => {
+    const rows: DeckSession[] = [
+      { id: 'cx-1', engine: 'cx', status: 'live', last: -1 },
+      { id: 'oc-1', engine: 'oc', status: 'live', last: -1 },
+      { id: 'cc-1', engine: 'cc', status: 'live', last: -1 },
+    ];
+    expect(sortDeckSessions(rows, 'engine').map((s) => s.engine)).toEqual([
+      'cc',
+      'oc',
+      'cx',
+    ]);
+  });
+
   it('ranks status live < idle < degraded < unsupported < ended', () => {
     const rows: DeckSession[] = (
       ['ended', 'unsupported', 'degraded', 'idle', 'live'] as const
@@ -679,8 +696,22 @@ describe('the deck', () => {
     expect(deckLayout([], 'lanes', 'live', 800)).toEqual([]);
   });
 
+  it('places a third (Codex) lane at rank 2, and all three lanes together do not degrade', () => {
+    const three: DeckSession[] = [
+      { id: 'cc-1', engine: 'cc', status: 'live', last: -1 },
+      { id: 'oc-1', engine: 'oc', status: 'live', last: -1 },
+      { id: 'cx-1', engine: 'cx', status: 'live', last: -1 },
+    ];
+    expect(deckLanesDegrade(three)).toBe(false);
+    const placed = deckLayout(three, 'lanes', 'live', 800);
+    expect(placed.find((p) => p.id === 'cc-1')?.x).toBe(deckLaneX('cc'));
+    expect(placed.find((p) => p.id === 'oc-1')?.x).toBe(deckLaneX('oc'));
+    expect(placed.find((p) => p.id === 'cx-1')?.x).toBe(deckLaneX('cx'));
+  });
+
   it('maps SessionState.engine onto the deck vocabulary, absence reading as cc', () => {
     expect(deckEngine('opencode')).toBe('oc');
+    expect(deckEngine('codex')).toBe('cx');
     expect(deckEngine('cc')).toBe('cc');
     expect(deckEngine(undefined)).toBe('cc');
   });
@@ -692,6 +723,13 @@ describe('the deck', () => {
       engine: 'oc',
       status: 'live',
       last: -42,
+    });
+    // The third leg, minimal per the same helper.
+    expect(toDeckSession({ ...state, engine: 'codex' }, -7)).toEqual({
+      id: 'mock',
+      engine: 'cx',
+      status: 'live',
+      last: -7,
     });
   });
 

@@ -123,11 +123,12 @@ export const DECK_LANE_HEADER_Y = -28;
 /**
  * The deck's engine tag.
  *
- * Two letters, not `SessionState['engine']`'s `'cc' | 'opencode'`: the deck is
- * the design's vocabulary and the design says `oc`. {@link deckEngine} is the
- * one supported conversion, so the mapping exists once.
+ * Two letters, not `SessionState['engine']`'s `'cc' | 'opencode' | 'codex'`:
+ * the deck is the design's vocabulary and the design says `oc`/`cx`.
+ * {@link deckEngine} is the one supported conversion, so the mapping exists
+ * once. `cx` is the Codex engine (v0.6.0 Phase 3).
  */
-export type DeckEngine = 'cc' | 'oc';
+export type DeckEngine = 'cc' | 'oc' | 'cx';
 
 /**
  * What a card says about itself.
@@ -172,6 +173,7 @@ export const DECK_STATUS_RANK: Readonly<Record<DeckStatus, number>> = {
 export const DECK_ENGINE_RANK: Readonly<Record<DeckEngine, number>> = {
   cc: 0,
   oc: 1,
+  cx: 2,
 };
 
 /**
@@ -199,8 +201,22 @@ export interface DeckPlacement {
 /** The one supported way to put `SessionState.engine` on the deck. */
 export function deckEngine(engine: SessionState['engine']): DeckEngine {
   // Absence reads as `'cc'`; `src/model/events.ts` is the authority for that
-  // rule and this function is the only place the webview restates it.
-  return engine === 'opencode' ? 'oc' : 'cc';
+  // rule and this function is the only place the webview restates it. A
+  // three-way `switch` rather than a chained ternary on purpose: the ternary
+  // this replaced read `engine === 'opencode' ? 'oc' : 'cc'`, so ANY value
+  // that was not `'opencode'` — including `'codex'` — silently fell into
+  // `'cc'`. That is the exact silent-default shape this repository's own
+  // notes warn about; the `default` branch below still exists (absence and
+  // `'cc'` both take it), but `'codex'` now has its own case rather than
+  // sharing the fallback with "nothing was said at all".
+  switch (engine) {
+    case 'opencode':
+      return 'oc';
+    case 'codex':
+      return 'cx';
+    default:
+      return 'cc';
+  }
 }
 
 /** Every node in a session tree — agents and tools, root included. */
@@ -260,9 +276,30 @@ export function deckColumns(viewportW: number): number {
   );
 }
 
-/** Left edge of an engine's lane. */
+/**
+ * Left edge of an engine's lane.
+ *
+ * `DECK_ENGINE_RANK[engine] * (DECK_CARD_W + DECK_LANE_GAP)` — a fixed slot
+ * per engine, ordered by rank, rather than the binary `engine === 'cc' ? 0 :
+ * DECK_CARD_W + DECK_LANE_GAP` this replaced. At `cc: 0, oc: 1` that formula
+ * reduces to exactly the old expression (`0` and `DECK_CARD_W + DECK_LANE_GAP`
+ * respectively), so the two deck-engine goldens are unaffected; `cx: 2` gets
+ * the next slot at `2 * (DECK_CARD_W + DECK_LANE_GAP)`.
+ *
+ * **Known consequence, not fixed here.** With three possible lanes, a session
+ * mix that holds the two OUTER engines (`cc` and `cx`) but not the middle one
+ * (`oc`) leaves a visible gap where `oc`'s slot would sit — `deckLanesDegrade`
+ * only collapses to `list` when FEWER THAN TWO engines are present, and two
+ * of three present is not that case. The two-engine design could never
+ * produce this shape (either both lanes were populated or the single one
+ * degraded to `list`), so it is a genuinely new case rather than a regression.
+ * Compacting lanes to the PRESENT set rather than the full rank would need
+ * `deckLaneX` to see the whole visible set, not just one engine, which is a
+ * bigger change than this phase's brief authorizes — recorded rather than
+ * silently worked around; see the design amendment for the same note.
+ */
 export function deckLaneX(engine: DeckEngine): number {
-  return engine === 'cc' ? 0 : DECK_CARD_W + DECK_LANE_GAP;
+  return DECK_ENGINE_RANK[engine] * (DECK_CARD_W + DECK_LANE_GAP);
 }
 
 /**
@@ -314,7 +351,7 @@ export function deckLayout(
 
   if (deckLanesDegrade(sorted)) return asList();
 
-  const next: Record<DeckEngine, number> = { cc: 0, oc: 0 };
+  const next: Record<DeckEngine, number> = { cc: 0, oc: 0, cx: 0 };
   return sorted.map((s) => ({
     id: s.id,
     x: deckLaneX(s.engine),

@@ -420,7 +420,35 @@ export interface CodexThread {
   readonly dialectSource: CodexDialectSource | null;
   readonly multiAgentVersion: CodexOptional<string>;
 
-  /** Present-and-null under `v1`; absent on a root thread (C3a, C4a). */
+  /**
+   * The TOP-LEVEL `session_meta.payload.agent_path`, and the word top-level
+   * is the whole comment.
+   *
+   * **This comment used to read "present-and-null under `v1`", and that was
+   * FALSE — measured on `resume-twice-v1`:**
+   *
+   * | field | v1 subagent |
+   * |---|---|
+   * | `payload.agent_path` (this one) | **key ABSENT** |
+   * | `payload.source.subagent.thread_spawn.agent_path` | present, `null` |
+   *
+   * The spec's C3a table says a `v1` thread's `agent_path` is `null` without
+   * saying WHICH of the two, and the claim is true of the nested one and false
+   * of this one. That imprecision propagated into this file and then into the
+   * grafter, where `!agentPath.present` was read as "unjoinable" and parked
+   * every `v1` subagent as `noAgentPath` — reintroducing, through a third
+   * door, the exact ruling the user reversed on corrected evidence.
+   *
+   * **So: absence here is NOT a reason to park.** It is the normal state of a
+   * `v1` subagent and of every root thread. It is the `v2` join key, and
+   * `v2` alone; a `v1` child joins by id (C4a), and whether a thread is
+   * joinable is answered by asking the SPAWNS, never by this field's absence.
+   * `noAgentPath` is for a thread no spawn names either way.
+   *
+   * The nested `thread_spawn.agent_path` is a DIFFERENT field with a
+   * different meaning and is deliberately not carried here under the same
+   * name. Conflating the two is what this comment exists to stop.
+   */
   readonly agentPath: CodexOptional<string>;
   /** Populated in BOTH dialects, and the only label `v1` has (C7). */
   readonly agentNickname: CodexOptional<string>;

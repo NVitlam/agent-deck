@@ -1791,9 +1791,19 @@ describe('D3 — the slash-command wrapper never reaches a label', () => {
     expect(result.snapshot.root.label).not.toContain('<command');
   });
 
-  it('no committed fixture produces a label carrying command markup', async () => {
-    // The corpus-wide version of the assertion above: every captured session
-    // this repository holds, not just the one that was reported.
+  it('no session in the ANCHOR corpus produces a label carrying command markup', async () => {
+    /*
+     * SCOPE, STATED RATHER THAN IMPLIED: `CAPTURED_SLUG` is
+     * `fixtures/cc-2.1.234` and nothing else. An earlier version of this test
+     * claimed "every captured session this repository holds", which is false —
+     * it never opens `cc-2.1.241` (where the OTHER tag ordering lives), nor
+     * `cc-2.1.237`, `cc-2.1.246` or the synthetic corpora. Corrected after a
+     * verifier read the helper instead of the sentence.
+     *
+     * The reported fixture is covered by its own test above; this one is the
+     * anchor-corpus sweep, and `commandLabelFrom`'s unit block covers the
+     * orderings the anchor does not contain.
+     */
     const sessionIds = await capturedSessionIds();
     expect(sessionIds.length).toBeGreaterThan(0);
     for (const sessionId of sessionIds) {
@@ -1826,6 +1836,19 @@ describe('commandLabelFrom', () => {
     expect(
       commandLabelFrom('<command-name>/phase</command-name><command-args>  3  </command-args>'),
     ).toBe('/phase 3');
+  });
+
+  it('carries no markup out, even from a NESTED tag', () => {
+    // The tags nest and the args capture is non-greedy, so the inner element
+    // arrives whole. Found by a verifier probing the boundary, not by the
+    // corpus — no committed fixture reaches this — and it is what makes the
+    // user-facing "no markup reaches a label" claim true rather than nearly
+    // true.
+    const label = commandLabelFrom(
+      '<command-name>/phase</command-name><command-args><command-name>/y</command-name></command-args>',
+    );
+    expect(label).not.toContain('<command');
+    expect(label).toBe('/phase /y');
   });
 
   it('is null for anything that is not a command, so the id fallback still works', () => {

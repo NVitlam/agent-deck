@@ -1157,8 +1157,16 @@ interface Usage {
  * ended before any usage existed, so Context and Burn are correctly ABSENT -
  * but the window was stated at ordinal 1 and the deck showed an em dash for it.
  * Reading the top-level key as well is a strict widening: the key name means
- * one thing wherever it appears, and no transcript states two different values
- * (125 occurrences, 1 distinct value, `docs/codex-contract.md` A7).
+ * one thing wherever it appears, and no transcript states two different values.
+ * Re-measured over BOTH committed corpora on 2026-09-03 — 28 top-level plus 73
+ * under `info`, **101 occurrences, exactly 1 distinct value (258400)**.
+ *
+ * An earlier draft of this comment cited A7's `125` instead. That figure is
+ * real but it counts a DIFFERENT scope (the Phase 1 corpus plus the lab
+ * witnesses), and quoting it here made a number look re-derived when it had
+ * only been copied — this repository's most-recorded defect, caught by
+ * `phase-verifier` re-deriving it. The count moves with the corpus; the
+ * ONE DISTINCT VALUE is the half this widening actually rests on.
  */
 function readUsage(kept: readonly CodexRecord[]): Usage {
   let contextNow: TokenPair | undefined;

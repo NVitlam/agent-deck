@@ -13,14 +13,18 @@ All notable changes to Agent Deck for Claude Code are documented here.
   on its deck card and at the root of its tree. It now reads `/phase`, with any
   arguments appended - `/phase 3`. No `<command-...>` markup reaches a label on
   any surface.
-- **"Hooks silent" is only ever said about Claude Code.** The hook tap belongs
-  to the Claude Code engine, and when it was quiet the warning was written onto
-  every card in the deck, labelled with that card's own engine - so a Codex card
-  said Codex hooks were silent while they were arriving, and an OpenCode card
-  said the hook listener was down when OpenCode does not use it at all.
-  OpenCode's liveness comes from its own database cursor and Codex's from its
-  own hook stream; neither is described by that warning, and neither shows it
-  any more.
+- **"Hooks silent" is only ever said about Claude Code.** That warning counts
+  Claude Code hook events, and when none had arrived it was written onto every
+  card in the deck, labelled with that card's own engine - so a Codex card said
+  Codex hooks were silent while they were arriving and being read, and an
+  OpenCode card said the hook listener was down when OpenCode never uses it.
+  The per-card warning is now shown on Claude Code cards only.
+
+  Two things it is worth being exact about. The panel-wide banner is unchanged:
+  a quiet Claude Code tap is still announced there. And the hook listener is
+  shared - if it is down, Codex liveness really is affected too, so that case is
+  still reported by the banner even though the Codex card no longer claims it.
+  Per-engine liveness warnings do not exist yet; the banner is the only channel.
 - **The context-window figure survives a turn that recorded no usage.** Codex
   states the window in two places and Agent Deck read only one of them, so a
   session whose turn ended before any token usage existed - an interrupted turn,

@@ -1481,9 +1481,9 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
      * tree, and "never" includes the snapshots posted before the first graft
      * finished.
      *
-     * The `schemaOk` half is asserted from the schemaMismatch onward rather
-     * than on every snapshot, and the reason is a measured property of the
-     * host that this test used to depend on by accident. A session is
+     * The `schemaOk` half is NOT asserted in this loop at all — it is asserted
+     * on the model and on a freshly-opened panel instead, for a measured
+     * reason this test used to depend on by accident. A session is
      * REGISTERED at discovery and GRAFTED asynchronously, so between those two
      * moments it is publishable with its default `schemaOk: true` and an empty
      * root. Observed sequence when the machine is quiet — the session's first
@@ -1501,15 +1501,19 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
      * about the test, and the fix is to assert the property meant rather than
      * the ordering that happened to hold.
      *
-     * The pre-graft publishability of a session is recorded in the handoff as
-     * a product question (should an ungrafted session claim `schemaOk: true`
-     * at all?); it is deliberately NOT changed here.
+     * `schemaOk === false` IS STILL ASSERTED TWICE, and neither depends on
+     * ordering: on the model's own state above, and — the one that is the
+     * actual user guarantee — on a panel opened AFTER the refusal, at the end
+     * of this test, which is where a real webview's refusal screen comes from.
+     * (The `schemaMismatch` message asserted above is NOT a third: it is
+     * `{ type, sessionId }` and carries no `schemaOk` to check.)
      *
-     * `schemaOk === false` IS STILL ASSERTED, THREE TIMES, and none of the
-     * three depends on ordering: on the model's own state above, on the
-     * `schemaMismatch` message above, and — the one that is the actual user
-     * guarantee — on a panel opened AFTER the refusal, at the end of this
-     * test, which is where a real webview's refusal screen comes from.
+     * WHAT THIS ACCEPTS WITHOUT CHANGING IT, stated so it is not mistaken for
+     * something nobody noticed: a session really can be published with
+     * `schemaOk: true` and an empty root between registration and its first
+     * graft. Whether an ungrafted session should claim `schemaOk: true` at all
+     * is a product question (reserved 9 — a product-visible default), and it
+     * is carried into the handoff rather than decided here.
      */
     let carriedOnTheWire = 0;
     for (const message of panel.posted) {

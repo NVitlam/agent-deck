@@ -815,6 +815,55 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
   // --- the third engine (v0.6.0 Phase 3: Codex) -----------------------------
 
+  /*
+   * D2 (2026-09-03) — THE "HOOKS SILENT" CHIP IS THE CLAUDE CODE TAP'S.
+   *
+   * `degraded` on the wire is produced by `LivenessEngine.degradedState()`,
+   * which reads `eventsReceived === 0` on the CLAUDE CODE engine and nothing
+   * else. It is panel-wide, and `App.svelte` used to hand it to whichever
+   * session was selected — so selecting a Codex session while the CC tap was
+   * quiet said "liveness inferred — hooks silent" about a Codex session whose
+   * hooks were arriving and being attributed. Reported by own eyes against the
+   * shipped `release/0.6.0` build.
+   *
+   * `webview/deck.test.ts` guards the deck CARD. This guards the SELECTED
+   * SESSION surfaces, which is `App.svelte`'s `degradedHere` derivation — and
+   * it exists because a `phase-verifier` mutation showed the App.svelte half of
+   * that fix was completely unguarded: reverting all three of its call sites
+   * left this whole project green.
+   */
+  it('does not say "hooks silent" about a non-Claude-Code session', () => {
+    const panel = render();
+    useView(panel, mode);
+    send({ type: 'snapshot', sessions: [liveSession({ engine: 'codex' })] });
+    send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    enter(panel, mode, 'session-live');
+
+    if (mode === 'canvas') {
+      // The HUD is still there; the CHIP on it is not.
+      expect(all(panel.container, TESTID.hud)).toHaveLength(1);
+      expect(all(panel.container, TESTID.hudDegradedChip)).toHaveLength(0);
+    } else {
+      expect(one(panel.container, 'session-header').dataset['livenessInferred']).toBe('false');
+    }
+  });
+
+  it('control: it DOES say it about a Claude Code session, on the same panel state', () => {
+    // Without this the assertion above passes if the degraded message never
+    // arrived, or if the chip were deleted outright.
+    const panel = render();
+    useView(panel, mode);
+    send({ type: 'snapshot', sessions: [liveSession({ engine: 'cc' })] });
+    send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    enter(panel, mode, 'session-live');
+
+    if (mode === 'canvas') {
+      expect(one(panel.container, TESTID.hudDegradedChip).textContent).toContain('inferred');
+    } else {
+      expect(one(panel.container, 'session-header').dataset['livenessInferred']).toBe('true');
+    }
+  });
+
   it('reaches this surface tagged codex, with a Window figure beside context and burn', () => {
     // The state-matrix row this phase adds: `engine: 'codex'` all the way
     // through the router to whichever surface is showing, PLUS the third

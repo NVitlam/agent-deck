@@ -487,10 +487,24 @@ const COMMAND_ANY_TAG = /<command-[a-z-]+>[\s\S]*?<\/command-[a-z-]+>/gi;
  * would put an empty string where the id fallback belongs.
  */
 export function commandLabelFrom(text: string): string | null {
-  const name = COMMAND_NAME_TAG.exec(text)?.[1]?.trim();
-  if (name === undefined || name === '') return null;
-  const args = COMMAND_ARGS_TAG.exec(text)?.[1]?.trim() ?? '';
+  const name = stripCommandTags(COMMAND_NAME_TAG.exec(text)?.[1] ?? '');
+  if (name === '') return null;
+  const args = stripCommandTags(COMMAND_ARGS_TAG.exec(text)?.[1] ?? '');
   return args === '' ? name : `${name} ${args}`;
+}
+
+/**
+ * Remove every `<command-*>` tag from a captured name or argument list.
+ *
+ * The tags NEST — `<command-args><command-name>/y</command-name></command-args>`
+ * is well-formed and the args regex above captures the inner element whole. Not
+ * reachable from any committed fixture, and found by `phase-verifier` probing
+ * the boundary rather than by the corpus, which is the only way it was ever
+ * going to be found. Without this the composed label carries markup and the
+ * user-facing claim that none of it reaches a label is simply false.
+ */
+function stripCommandTags(value: string): string {
+  return value.replace(/<\/?command-[a-z-]+>/gi, ' ').replace(/\s+/gu, ' ').trim();
 }
 
 /**

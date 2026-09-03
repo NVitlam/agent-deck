@@ -86,6 +86,14 @@ const CORPUS_DIRS = fs
   .readdirSync(FIXTURES)
   .filter((name) => name.startsWith('codex-'))
   .filter((name) => fs.statSync(path.join(FIXTURES, name)).isDirectory())
+  // THE ANCHOR CORPUS IS THE ONE WITH A `golden.json`, and saying so is what
+  // stops this from depending on sort order. A WITNESS corpus
+  // (`codex-vscode-*`, added 2026-09-03) carries no golden by design; before
+  // this filter it was excluded only because `codex-0…` happens to sort before
+  // `codex-vscode-…`, which a differently-named future witness would break
+  // silently. `golden.test.ts` and `src/hooks/egress.test.ts` already select
+  // this way; this file and `fingerprint.test.ts` now agree with them.
+  .filter((name) => fs.existsSync(path.join(FIXTURES, name, 'golden.json')))
   .sort();
 
 const CORPUS = CORPUS_DIRS[0] === undefined ? null : path.join(FIXTURES, CORPUS_DIRS[0]);

@@ -142,8 +142,18 @@ export interface CodexTranscriptRef {
 export interface CodexDiscovery {
   /** `$CODEX_HOME` when set, else `~/.codex` — resolved at READ time (C1). */
   readonly root: string;
-  /** Which of the two supplied the root. Logged, and asserted in tests. */
-  readonly rootSource: 'CODEX_HOME' | 'homedir';
+  /**
+   * Which source supplied the root. Logged, and asserted in tests.
+   *
+   * `'explicit'` is {@link CodexEngineOptions.root} — a caller naming the
+   * root outright, which is how every test points at a fixture instead of
+   * at a live `~/.codex` (G6). It is a THIRD value rather than a
+   * translation into `{CODEX_HOME: path}`, because this field's only job is
+   * to say where the root came from, and answering `'CODEX_HOME'` when no
+   * environment variable was involved is a wrong answer in the one field
+   * that exists to give the right one.
+   */
+  readonly rootSource: 'CODEX_HOME' | 'homedir' | 'explicit';
   readonly rootExists: boolean;
   readonly transcripts: readonly CodexTranscriptRef[];
   /** `<root>/thread-writer-locks`. May not exist. */

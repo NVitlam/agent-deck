@@ -176,7 +176,48 @@ export interface SessionState {
    * which is the entire reason it — like `spawnEdges` and `parked` — was added
    * optional in the first place.
    */
-  engine?: 'cc' | 'opencode';
+  /**
+   * **Widened for the Codex engine (v0.6.0 Phase 2, spec C11).** The field
+   * keeps every property described above: still optional, absence still
+   * reads as `'cc'`, and no earlier construction of this interface is
+   * invalidated. Codex sessions are tagged `'codex'`.
+   *
+   * `src/bridge/diagnostics.ts` declares the same three-way union
+   * SEPARATELY, because that module imports nothing at all by design. The
+   * two declarations are kept in step by hand; `typecheck` is what catches
+   * them drifting, and it did — widening only this one produced three
+   * errors, which is how the second site was found rather than assumed.
+   * Nothing emits a `'codex'` diagnostic until the host mounts the engine
+   * in Phase 3 (DoD 3.2); the channel can carry one now so the pair does
+   * not have to be widened twice.
+   */
+  engine?: 'cc' | 'opencode' | 'codex';
+
+  /**
+   * The model's context window for this session, in tokens — the third
+   * number a Codex cell carries beside Context and Burn (Phase 0 decision
+   * **D0.2**, spec C8).
+   *
+   * **OPTIONAL, and absent is never `0`.** `0` would claim a model with no
+   * context at all, which is a wrong number rather than a missing one — the
+   * same rule {@link SessionState.contextNow} states for its own absence. A
+   * renderer shows `EM_DASH` when it is unset, and per D0.2 **no engine gets
+   * a percentage or a gauge**, because two of the three cannot report one.
+   *
+   * The Codex engine reads it from the transcript's `model_context_window`
+   * and from nowhere else. `~/.codex/models_cache.json` states a different
+   * figure (`272000`) for what looks like the same concept; it is a
+   * network-fetched cache rather than exhaust, it is on the G10
+   * never-opened list, and `docs/codex-contract.md` A7 records it as a
+   * non-evidence observation so a later reader meets it there instead of
+   * rediscovering it and concluding the transcript is wrong.
+   *
+   * The CC and OpenCode engines leave it unset: no CC transcript states a
+   * window size (a census over every `cc-*` fixture for any key containing
+   * context/window/limit/max finds tool INPUTS only), and a model-name
+   * lookup table would be memory rather than fixture (G6).
+   */
+  windowTokens?: number;
 }
 
 /**

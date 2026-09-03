@@ -380,7 +380,7 @@ interface Split {
  * assertion hard-coded to one spelling would go red on a merge rather than on a
  * defect.
  */
-function engineOf(state: SessionState): 'cc' | 'opencode' {
+function engineOf(state: SessionState): 'cc' | 'opencode' | 'codex' {
   return state.engine ?? 'cc';
 }
 

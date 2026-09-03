@@ -105,11 +105,25 @@ export interface DiagnosticsCounters {
  * the events are enumerable. A test can then walk this union instead of
  * trusting a reviewer to have found every call site.
  */
+/**
+ * The engine tag is spelled out here rather than imported from
+ * `../model/events.js`, and that is deliberate: **this module imports
+ * nothing at all**, which is the property it is audited for. Widening it
+ * for a fourth engine means editing these literals again. That is the
+ * cost of the no-imports rule and it is paid on purpose — do not "fix" it
+ * by adding an import.
+ *
+ * Widened to `'codex'` in v0.6.0 Phase 2 alongside
+ * {@link SessionState.engine}. The host does not mount the Codex engine
+ * until Phase 3 (DoD 3.2), so nothing emits a `'codex'` diagnostic yet;
+ * the channel is able to CARRY one, which is what keeps the two
+ * declarations from drifting apart in the meantime.
+ */
 export type DiagnosticsEvent =
-  | { kind: 'sessionDiscovered'; sessionId: string; engine: 'cc' | 'opencode' }
-  | { kind: 'sessionRemoved'; sessionId: string; engine: 'cc' | 'opencode' }
-  | { kind: 'engineDegraded'; engine: 'cc' | 'opencode'; reason: string }
-  | { kind: 'sessionRefused'; sessionId: string; engine: 'cc' | 'opencode'; code: string }
+  | { kind: 'sessionDiscovered'; sessionId: string; engine: 'cc' | 'opencode' | 'codex' }
+  | { kind: 'sessionRemoved'; sessionId: string; engine: 'cc' | 'opencode' | 'codex' }
+  | { kind: 'engineDegraded'; engine: 'cc' | 'opencode' | 'codex'; reason: string }
+  | { kind: 'sessionRefused'; sessionId: string; engine: 'cc' | 'opencode' | 'codex'; code: string }
   /**
    * A graft that came back `ok: false` — WITH THE REASON.
    *
@@ -141,7 +155,7 @@ export type DiagnosticsEvent =
   | {
       kind: 'graftRefused';
       sessionId: string;
-      engine: 'cc' | 'opencode';
+      engine: 'cc' | 'opencode' | 'codex';
       code: string;
       /** `<basename>:<line>`, already reduced. Absent when the mismatch had no path. */
       at?: string;
@@ -242,7 +256,7 @@ export function refusalLocation(path: string | undefined): string | undefined {
  */
 export function graftRefusedEvent(
   sessionId: string,
-  engine: 'cc' | 'opencode',
+  engine: 'cc' | 'opencode' | 'codex',
   mismatch: RefusalMismatch,
 ): DiagnosticsEvent {
   const at = refusalLocation(mismatch.path);

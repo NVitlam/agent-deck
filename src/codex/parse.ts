@@ -21,9 +21,11 @@
  *   > class this project has shipped through three separate doors. The counter
  *   > is what makes the ignore honest, so it is normative, not advisory.
  *
- * So every drop this module makes lands on one of {@link CodexCounters}' five
- * fields, and no input - malformed, novel, hostile or 554 KB - produces a
- * throw or a refusal.
+ * So every drop this module makes lands on one of {@link CodexCounters}' six
+ * fields - including {@link CodexCounters.skippedResponseItemTypes}, which
+ * NAMES a skipped `response_item` payload type rather than merely counting it,
+ * because a bare zero there cannot be told apart from an empty corpus. No
+ * input - malformed, novel, hostile or 554 KB - produces a throw or a refusal.
  *
  * ---------------------------------------------------------------------------
  * THE BOUNDARY IS A REAL FILTER, NOT AN OMISSION
@@ -177,14 +179,34 @@ export const CODEX_RECORD_TYPES: ReadonlySet<string> = new Set([
  * appears here, so a later harvest carrying a new type fails a test instead of
  * being silently ignored.
  *
- * `tool_search_call` and `tool_search_output` are `ignored` and that is a
- * DEVIATION worth naming: `tool_search_call` IS a tool call the model made
- * (1 record in the corpus, in `resume-twice-v1`), but
- * {@link CodexToolCall.kind} is `'function_call' | 'custom_tool_call'` and
- * `types.ts` is the hand-off line no work package may edit. It is therefore
- * counted-skipped - it appears in {@link CodexParseResult.responseItemTypes}
- * with an `ignored` disposition - rather than mislabelled as a `function_call`.
- * If a later phase wants it on the canvas, `kind` has to widen first.
+ * A type whose disposition is `skipped` - and any type with no entry here at
+ * all - is NAMED on {@link CodexCounters.skippedResponseItemTypes}, not merely
+ * absent from the output. That field exists because the census used to live on
+ * this module's own result type, where it stopped existing at the engine
+ * boundary: a count of zero nobody can tell apart from "nothing was skipped",
+ * which is working-method rule 18's silent skip.
+ *
+ * `tool_search_call` IS a tool call and is emitted as one. An earlier version
+ * of this file counted it as skipped, because `CodexToolCall.kind` then had
+ * two members and `types.ts` is the hand-off line no work package may edit -
+ * so the record was reported rather than mislabelled as a `function_call`.
+ * `types.ts` gained the third member at `4515669` and the arithmetic is the
+ * evidence: `golden.json`'s 42 tool calls are 31 `function_call` + 10
+ * `custom_tool_call` + 1 `tool_search_call`, and its 3 `no_item` relations are
+ * this repository's 2 plus that one.
+ *
+ * **n=1, and nothing about its shape is claimed beyond that record.** Two
+ * differences from the other two kinds are measured rather than assumed:
+ * it carries NO `name` key (so `name` is `''`, which is what the reference
+ * reader writes into the golden, not a default chosen here) and NO
+ * `namespace` key (so `namespace` is `{present: false}`, which the type can
+ * state honestly). Its `arguments` is a JSON OBJECT, where the other two
+ * kinds carry a JSON string.
+ *
+ * `tool_search_output` stays SKIPPED: it is a ~25 KB catalogue of tool
+ * schemas rather than a result a user reads, so it feeds no
+ * {@link CodexToolCall.outputPreview} - and it is named on the counter
+ * instead of quietly producing nothing.
  */
 export type CodexResponseItemDisposition =
   /** Becomes a {@link CodexToolCall}. */
@@ -195,23 +217,34 @@ export type CodexResponseItemDisposition =
   | 'reasoning'
   /** Recognised, carries no node: conversation content. */
   | 'content'
-  /** Recognised, deliberately produces nothing. */
-  | 'ignored';
+  /** Recognised, produces nothing, and SAYS SO on the counters. */
+  | 'skipped';
 
 export const CODEX_RESPONSE_ITEM_DISPOSITION: Readonly<Record<string, CodexResponseItemDisposition>> = {
   function_call: 'tool_call',
   custom_tool_call: 'tool_call',
+  tool_search_call: 'tool_call',
   function_call_output: 'tool_output',
   custom_tool_call_output: 'tool_output',
   reasoning: 'reasoning',
   message: 'content',
   agent_message: 'content',
-  tool_search_call: 'ignored',
-  tool_search_output: 'ignored',
+  tool_search_output: 'skipped',
 };
 
 /** The payload types that become a {@link CodexToolCall}. */
-const TOOL_CALL_PAYLOAD_TYPES: ReadonlySet<string> = new Set(['function_call', 'custom_tool_call']);
+const TOOL_CALL_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
+  'function_call',
+  'custom_tool_call',
+  'tool_search_call',
+]);
+
+/** Narrow a checked payload type onto the union, explicitly rather than by cast. */
+function toolCallKind(type: string): CodexToolCall['kind'] {
+  if (type === 'custom_tool_call') return 'custom_tool_call';
+  if (type === 'tool_search_call') return 'tool_search_call';
+  return 'function_call';
+}
 
 /** The payload types that carry a call's result. */
 const TOOL_OUTPUT_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
@@ -469,7 +502,14 @@ export interface CodexRedaction {
   readonly counters: CodexCounters;
   /** Every `response_item` payload type seen, and how many. A diagnostic. */
   readonly responseItemTypes: Readonly<Record<string, number>>;
-  /** Payload types with no entry in {@link CODEX_RESPONSE_ITEM_DISPOSITION}. */
+  /**
+   * The NARROWER of the two skip lists: payload types with no entry in
+   * {@link CODEX_RESPONSE_ITEM_DISPOSITION} at all, i.e. types this build has
+   * never seen. Kept beside {@link CodexCounters.skippedResponseItemTypes},
+   * which is the wider one P6 surfaces (declared-and-skipped, plus these).
+   * A novel type must appear on BOTH: undeclared is a strictly stronger
+   * statement than unhandled, and collapsing them loses it.
+   */
   readonly unhandledResponseItemTypes: readonly string[];
   /** Ciphertext strings replaced by {@link ciphertextMarker}. */
   readonly ciphertextStringsDropped: number;
@@ -495,6 +535,7 @@ export function redactCodexRecords(
   const kept: CodexRecord[] = [];
   const responseItemTypes: Record<string, number> = {};
   const unhandled = new Set<string>();
+  const skipped = new Set<string>();
   let unknownRecordTypes = 0;
   let reasoningDropped = 0;
   let inheritedRecordsDropped = 0;
@@ -512,7 +553,12 @@ export function redactCodexRecords(
       const payload = asObject(record.payload);
       const name = typeof payload?.['type'] === 'string' ? payload['type'] : '(absent)';
       responseItemTypes[name] = (responseItemTypes[name] ?? 0) + 1;
-      if (CODEX_RESPONSE_ITEM_DISPOSITION[name] === undefined) unhandled.add(name);
+      const disposition = CODEX_RESPONSE_ITEM_DISPOSITION[name];
+      // Undeclared and declared-but-skipped are DIFFERENT facts and both are
+      // reported. A type with no handler is named either way, so a skip can
+      // never be a zero the reader cannot distinguish from an empty corpus.
+      if (disposition === undefined) unhandled.add(name);
+      if (disposition === undefined || disposition === 'skipped') skipped.add(name);
     }
     if (isReasoningRecord(record)) {
       reasoningDropped++;
@@ -534,6 +580,7 @@ export function redactCodexRecords(
       reasoningDropped,
       inheritedRecordsDropped,
       payloadsTruncated: state.truncated,
+      skippedResponseItemTypes: [...skipped].sort(),
     },
     responseItemTypes,
     unhandledResponseItemTypes: [...unhandled].sort(),
@@ -554,7 +601,7 @@ interface CompletedItem {
 
 interface RawCall {
   readonly ordinal: number;
-  readonly kind: 'function_call' | 'custom_tool_call';
+  readonly kind: CodexToolCall['kind'];
   readonly name: string;
   readonly namespace: CodexOptional<string>;
   readonly callId: string;
@@ -599,7 +646,7 @@ function pairCalls(kept: readonly CodexRecord[]): { calls: RawCall[]; items: Com
     if (typeof kind !== 'string' || !TOOL_CALL_PAYLOAD_TYPES.has(kind)) continue;
     calls.push({
       ordinal: record.ordinal,
-      kind: kind === 'custom_tool_call' ? 'custom_tool_call' : 'function_call',
+      kind: toolCallKind(kind),
       name: typeof payload['name'] === 'string' ? payload['name'] : '',
       namespace: optionalString(payload, 'namespace'),
       callId: typeof payload['call_id'] === 'string' ? payload['call_id'] : '',
@@ -698,7 +745,12 @@ function renderOutput(value: unknown): string | null {
 export interface CodexParseOptions {
   /** Basename of the rollout file. Recorded on the thread and on every call. */
   readonly file: string;
-  /** `statSync().mtimeMs`. Liveness corroboration only. Defaults to 0. */
+  /**
+   * `statSync().mtimeMs` - the file's LAST WRITE, an END. Liveness
+   * corroboration only, and never a start: the thread's start comes off the
+   * `session_meta` record's own timestamp ({@link CodexThread.startedAtMs}).
+   * Defaults to 0.
+   */
   readonly mtimeMs?: number;
   readonly maxPayloadBytes?: number;
   /** Malformed lines already counted by {@link parseCodexLines}. */
@@ -790,6 +842,7 @@ export function parseCodexThread(
     reasoningDropped: redaction.counters.reasoningDropped,
     inheritedRecordsDropped: redaction.counters.inheritedRecordsDropped,
     payloadsTruncated: redaction.counters.payloadsTruncated + previewTruncations,
+    skippedResponseItemTypes: redaction.counters.skippedResponseItemTypes,
   };
 
   const base: Omit<CodexParseResult, 'thread'> = {
@@ -830,6 +883,7 @@ export function parseCodexThread(
     spawns,
     counters,
     records: records.length,
+    startedAtMs: startedAtMs(owner),
     mtimeMs: options.mtimeMs ?? 0,
   };
   if (usage.modelContextWindow !== undefined) thread.modelContextWindow = usage.modelContextWindow;
@@ -846,6 +900,35 @@ export function parseCodexTranscript(
 ): CodexParseResult {
   const lines = parseCodexLines(text);
   return parseCodexThread(lines.records, { ...options, malformedLines: lines.malformedLines });
+}
+
+/**
+ * When the thread started: the OWNING `session_meta` record's own envelope
+ * `timestamp`, as epoch milliseconds.
+ *
+ * The ENVELOPE timestamp, not `payload.timestamp` - they differ. On the
+ * corpus's baseline root the envelope says `20:43:54.630Z` and the payload
+ * says `20:43:54.496Z`, 134 ms apart. The envelope is the record's own time
+ * and is the one every other record in the file is keyed on.
+ *
+ * For a forked child this is the CHILD's start, because the owning
+ * declaration is the lowest-ordinal `session_meta` and a child's own
+ * declaration sits at ordinal 0 with its parent's re-serialised above it.
+ *
+ * **It is emphatically not `mtimeMs`.** That is the file's last write - an
+ * end used as a start, differing by 40 s on the baseline root and by a whole
+ * session's duration on a long one. `types.ts` records that this field exists
+ * because the grafter was about to default to exactly that.
+ *
+ * An unparseable or absent timestamp yields 0, which renders as 1970 and is
+ * therefore visibly wrong. That is deliberate: the alternative is a PLAUSIBLE
+ * wrong date, which is the defect this field was added to remove. It cannot
+ * be reached from a fingerprint-accepted thread - C2 requires the timestamp
+ * and `asCodexRecord` refuses a record without one.
+ */
+function startedAtMs(owner: CodexRecord): number {
+  const parsed = Date.parse(owner.timestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 /**

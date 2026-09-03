@@ -92,7 +92,10 @@ const CORPUS_DIRS = fs
   // this filter it was excluded only because `codex-0…` happens to sort before
   // `codex-vscode-…`, which a differently-named future witness would break
   // silently. `golden.test.ts` and `src/hooks/egress.test.ts` already select
-  // this way; this file and `fingerprint.test.ts` now agree with them.
+  // this way and this file now joins them. `fingerprint.test.ts` does NOT
+  // select by golden and does not need to: it names the anchor
+  // (`codex-${PINNED_CODEX_VERSION}`) and only asserts the directory list
+  // CONTAINS it, so it has no `[0]` pick to be fragile about.
   .filter((name) => fs.existsSync(path.join(FIXTURES, name, 'golden.json')))
   .sort();
 

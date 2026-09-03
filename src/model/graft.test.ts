@@ -1849,6 +1849,22 @@ describe('commandLabelFrom', () => {
     );
     expect(label).not.toContain('<command');
     expect(label).toBe('/phase /y');
+
+    // A digit and an attribute, because the first draft of `stripCommandTags`
+    // was `[a-z-]+` and both of these walked straight through it.
+    expect(
+      commandLabelFrom('<command-name>/a</command-name><command-args><command-name2>/b</command-name2></command-args>'),
+    ).not.toContain('<command');
+    expect(
+      commandLabelFrom('<command-name>/a</command-name><command-args><command-name x="1">/b</command-name></command-args>'),
+    ).not.toContain('<command');
+  });
+
+  it('leaves a sentence ABOUT commands alone — those are the user’s own words', () => {
+    // The boundary of the rule, asserted so nobody later "fixes" it into
+    // editing a person's prose. Text that merely mentions the tag is not a
+    // command wrapper, so it is not a label built by this function at all.
+    expect(commandLabelFrom('type <command-name> to see the list')).toBeNull();
   });
 
   it('is null for anything that is not a command, so the id fallback still works', () => {

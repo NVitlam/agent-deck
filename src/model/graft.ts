@@ -494,17 +494,27 @@ export function commandLabelFrom(text: string): string | null {
 }
 
 /**
- * Remove every `<command-*>` tag from a captured name or argument list.
+ * Remove every `<command-…>` TAG from a captured name or argument list.
  *
  * The tags NEST — `<command-args><command-name>/y</command-name></command-args>`
  * is well-formed and the args regex above captures the inner element whole. Not
  * reachable from any committed fixture, and found by `phase-verifier` probing
  * the boundary rather than by the corpus, which is the only way it was ever
- * going to be found. Without this the composed label carries markup and the
- * user-facing claim that none of it reaches a label is simply false.
+ * going to be found.
+ *
+ * `[^>]*` rather than `[a-z-]+`, because the first draft was narrower than its
+ * own claim: `<command-name2>` (a digit) and `<command-name x="1">` (an
+ * attribute) both survived it. Same verifier, same round.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO: strip a `<command…` fragment that is not
+ * a tag. If a person's first message says *type `<command-name>` to see the
+ * list*, those are THEIR words and the label is supposed to show them. The rule
+ * is "no `<command-…>` tag reaches a label", not "no session may be named after
+ * a sentence about commands" — and the difference matters, because the second
+ * would have this function editing a user's prose.
  */
 function stripCommandTags(value: string): string {
-  return value.replace(/<\/?command-[a-z-]+>/gi, ' ').replace(/\s+/gu, ' ').trim();
+  return value.replace(/<\/?command-[^>]*>/gi, ' ').replace(/\s+/gu, ' ').trim();
 }
 
 /**

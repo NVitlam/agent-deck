@@ -11,8 +11,9 @@ All notable changes to Agent Deck for Claude Code are documented here.
   begun with `/phase` showed
   `<command-message>phase</command-message> <command-name>/phase</command-name>`
   on its deck card and at the root of its tree. It now reads `/phase`, with any
-  arguments appended - `/phase 3`. No `<command-...>` markup reaches a label on
-  any surface.
+  arguments appended - `/phase 3`, and no `<command-...>` tag survives into a
+  label. A message that merely mentions such a tag is left alone: those are your
+  words, and a label is supposed to show them.
 - **"Hooks silent" is only ever said about Claude Code.** That warning counts
   Claude Code hook events, and when none had arrived it was written onto every
   card in the deck, labelled with that card's own engine - so a Codex card said

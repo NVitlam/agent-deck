@@ -89,6 +89,15 @@
  *    label, so a node's height is per-node and travels on the placement rather
  *    than being re-derived from a constant by four consumers.
  *
+ * **5 is the v0.6.0 Phase 3 Codex widening.** {@link EngineFilter} and
+ * {@link ENGINE_FILTERS} gain `'cx'` — the deck's own two-letter tag for the
+ * Codex engine, the same vocabulary `'cc'`/`'oc'` already use. Nothing else on
+ * this contract moved: no new exported name, no `TESTID` addition. That is
+ * exactly the "a value changed shape without the version saying so" case the
+ * `TESTID.drawerOrderSelect` entry above already set the precedent for — an
+ * existing export's CONTENT moving is still a shared-surface change, so it
+ * still bumps.
+ *
  * **What it is NOT.** It is not a compatibility negotiation and nothing branches
  * on it: the host and the webview ship in one VSIX and are always the same
  * build. It exists so a change to the shared shape has a place to be declared,
@@ -96,7 +105,7 @@
  * job `src/bridge/contract.ts` does for the element id, on the surface where
  * this repo has already paid once for two packages agreeing by hand.
  */
-export const CANVAS_CONTRACT_VERSION = 4;
+export const CANVAS_CONTRACT_VERSION = 5;
 
 /* ------------------------------------------------------------------------ *
  * Layout
@@ -158,9 +167,10 @@ export type Altitude = 'deck' | 'session' | 'inspector';
  * Which ENGINE's sessions the deck shows. View state only: filtering never
  * touches the store's session list and never reaches the host.
  *
- * `oc`, not `opencode` — this is the deck's own two-letter vocabulary, and
- * `layout.ts:deckEngine` is the one supported conversion from
- * `SessionState['engine']`.
+ * `oc`/`cx`, not `opencode`/`codex` — this is the deck's own two-letter
+ * vocabulary, and `layout.ts:deckEngine` is the one supported conversion from
+ * `SessionState['engine']`. `cx` is the Codex engine (v0.6.0 Phase 3), added
+ * beside `cc`/`oc` rather than replacing either.
  *
  * NOTE the deliberate exception it creates. `deckLayout` places by array index,
  * so changing a filter changes the array and cards move. That is not a breach
@@ -168,10 +178,10 @@ export type Altitude = 'deck' | 'session' | 'inspector';
  * is the honest response to that. See `layout.ts`'s header for what the layout
  * does and does not promise about movement.
  */
-export type EngineFilter = 'all' | 'cc' | 'oc';
+export type EngineFilter = 'all' | 'cc' | 'oc' | 'cx';
 
 /** The engine chips, in the order they render. */
-export const ENGINE_FILTERS: readonly EngineFilter[] = ['all', 'cc', 'oc'];
+export const ENGINE_FILTERS: readonly EngineFilter[] = ['all', 'cc', 'oc', 'cx'];
 
 /** Design default: all engines. */
 export const DEFAULT_ENGINE_FILTER: EngineFilter = 'all';

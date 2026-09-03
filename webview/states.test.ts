@@ -813,6 +813,61 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     }
   });
 
+  // --- the third engine (v0.6.0 Phase 3: Codex) -----------------------------
+
+  it('reaches this surface tagged codex, with a Window figure beside context and burn', () => {
+    // The state-matrix row this phase adds: `engine: 'codex'` all the way
+    // through the router to whichever surface is showing, PLUS the third
+    // token figure (D0.2, spec C8) that only a Codex session ever carries.
+    const panel = panelWith([liveSession({ engine: 'codex', windowTokens: 200_000 })]);
+
+    if (mode === 'canvas') {
+      const blob = blobFor(panel, 'session-live');
+      expect(blob.dataset['engine']).toBe('codex');
+      enter(panel, mode, 'session-live');
+      const totals = one(panel.container, 'hud-totals');
+      // The two other figures on the row are unchanged; the window figure is
+      // the addition, grouped-thousands, on the same row.
+      expect(totals.textContent).toContain('17,745');
+      expect(totals.textContent).toContain('35,490');
+      expect(totals.textContent).toContain('200,000');
+    } else {
+      // The list view's session header has no engine glyph of its own (only
+      // the canvas card and the drawer do), so this half asserts the OTHER
+      // new fact: the Window figure on the same totals row as context/burn.
+      const header = one(panel.container, 'session-header');
+      expect(one(header, 'header-context').textContent?.trim()).toBe('17,745');
+      expect(one(header, 'header-burn').textContent?.trim()).toBe('35,490');
+      expect(one(header, 'header-window').textContent?.trim()).toBe('200,000');
+    }
+  });
+
+  it('renders EM_DASH for the Window figure on a CC session, in both surfaces', () => {
+    // CC (and OpenCode) sessions never set `windowTokens`; a renderer that
+    // wrote `0` instead of the absence rule would claim a zero-token window.
+    const panel = panelWith([liveSession()]);
+    expect(liveSession().windowTokens).toBeUndefined();
+
+    if (mode === 'canvas') {
+      enter(panel, mode, 'session-live');
+      // `toContain(EM_DASH)` alone would be vacuous here — the row's COST
+      // figure is ALWAYS an em-dash (no price table exists), so it passes
+      // whether or not the window figure rendered correctly. Count instead:
+      // context and burn are real numbers on `liveSession()`, so exactly TWO
+      // dashes (window, cost) is the property that actually distinguishes
+      // "window rendered EM_DASH" from "window rendered something else and
+      // cost's dash was the only one counted".
+      const text = one(panel.container, 'hud-totals').textContent ?? '';
+      const dashCount = text.split(EM_DASH).length - 1;
+      expect(dashCount).toBe(2);
+      expect(text).toContain('17,745');
+      expect(text).toContain('35,490');
+    } else {
+      const header = one(panel.container, 'session-header');
+      expect(one(header, 'header-window').textContent?.trim()).toBe(EM_DASH);
+    }
+  });
+
   // --- patch failure -------------------------------------------------------
 
   it('shows the thin patch-failure notice and clears it on the next snapshot', () => {

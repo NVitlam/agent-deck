@@ -171,6 +171,17 @@ export interface SessionSummary {
    */
   contextNow?: TokenPair;
   /**
+   * `SessionState.windowTokens`, carried unchanged (v0.6.0 Phase 3, spec C8).
+   *
+   * The Codex engine's context-window ceiling, in tokens. Optional for the
+   * same reason as {@link SessionSummary.burn} and
+   * {@link SessionSummary.contextNow}: the CC and OpenCode engines never set
+   * it, absent is never `0`, and `format.ts:formatWindowTokens` is the one
+   * place that rule turns into a rendered string. Absent for a refused
+   * session too, alongside the other two.
+   */
+  windowTokens?: number;
+  /**
    * `SessionState.totals.costUsd`, carried unchanged.
    *
    * **0 means NOT YET COMPUTED, never "free"** — there is no price table in
@@ -584,6 +595,7 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
     // reads of one snapshot.
     ...(refused || state.contextNow === undefined ? {} : { contextNow: state.contextNow }),
     ...(refused || state.burn === undefined ? {} : { burn: state.burn }),
+    ...(refused || state.windowTokens === undefined ? {} : { windowTokens: state.windowTokens }),
   };
 }
 

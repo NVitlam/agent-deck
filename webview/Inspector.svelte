@@ -72,7 +72,7 @@
      */
     sessionId?: string | undefined;
     /** Which engine produced this session. Rendered as a two-letter glyph. */
-    engine?: 'cc' | 'opencode' | undefined;
+    engine?: 'cc' | 'opencode' | 'codex' | undefined;
     /**
      * The focus path, root first, exactly as the tree drew it.
      *
@@ -382,13 +382,17 @@
          close. The spacer is what pins the path and the controls right without
          any of the five preceding items having to know a width. -->
     <header class="head" data-testid={TESTID.drawerHead}>
-      <!-- The engine glyph. `oc` is this UI's vocabulary for the OpenCode
-           engine — `layout.ts:deckEngine` is the one supported conversion, and
-           this surface renders the same two letters, so a user reading a node
-           and a deck card sees one word for one engine. -->
+      <!-- The engine glyph. `oc`/`cx` is this UI's vocabulary for the
+           OpenCode/Codex engines — `layout.ts:deckEngine` is the one
+           supported conversion, and this surface renders the same letters,
+           so a user reading a node and a deck card sees one word for one
+           engine. Three explicit cases, not a chained ternary that lets an
+           unrecognised value fall into `'cc'` unremarked — the exact shape
+           `layout.ts:deckEngine` and `SessionCell.svelte`'s glyph both had
+           until the same widening fixed them. -->
       {#if engine !== undefined}
         <span class="engine" data-testid="inspector-engine" data-engine={engine}
-          >{engine === 'opencode' ? 'oc' : 'cc'}</span
+          >{engine === 'opencode' ? 'oc' : engine === 'codex' ? 'cx' : 'cc'}</span
         >
       {/if}
       <span class="kind" data-testid="inspector-kind">{agent !== undefined ? agent.kind : 'tool'}</span
@@ -725,6 +729,14 @@
 
   .engine[data-engine='opencode'] {
     border-radius: 999px;
+  }
+
+  /* Codex's own non-color shape cue (v0.6.0 Phase 3, design.md amendment):
+     a chamfered corner, distinct from CC's uniform 3 px radius and OC's full
+     pill — a third shape rather than a third hue alone reaching a reader who
+     cannot separate the hues. */
+  .engine[data-engine='codex'] {
+    border-radius: 6px 0 6px 0;
   }
 
   .kind {

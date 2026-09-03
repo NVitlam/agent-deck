@@ -501,22 +501,39 @@ describe('placement comes from deckLayout(sessions, layout, sort, viewportW)', (
  * ------------------------------------------------------------------------ */
 
 describe('row 1 — engine glyph and label', () => {
-  it('draws CC for Claude Code and OC for OpenCode', () => {
+  it('draws CC for Claude Code, OC for OpenCode, and CX for Codex', () => {
     const container = render({
-      sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
+      sessions: [
+        summary('s-cc'),
+        summary('s-oc', { engine: 'opencode' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
     });
     expect(figure(cellFor(container, 's-cc'), 'deck-cell-engine')).toBe('CC');
     expect(figure(cellFor(container, 's-oc'), 'deck-cell-engine')).toBe('OC');
+    expect(figure(cellFor(container, 's-cx'), 'deck-cell-engine')).toBe('CX');
   });
 
-  it('NEGATIVE CONTROL: a card never shows the OTHER engine’s glyph', () => {
+  it('NEGATIVE CONTROL: a card never shows another engine’s glyph', () => {
     const container = render({
-      sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
+      sessions: [
+        summary('s-cc'),
+        summary('s-oc', { engine: 'opencode' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
     });
     expect(figure(cellFor(container, 's-cc'), 'deck-cell-engine')).not.toBe('OC');
+    expect(figure(cellFor(container, 's-cc'), 'deck-cell-engine')).not.toBe('CX');
     expect(figure(cellFor(container, 's-oc'), 'deck-cell-engine')).not.toBe('CC');
+    expect(figure(cellFor(container, 's-oc'), 'deck-cell-engine')).not.toBe('CX');
+    // The case this control exists for: `'codex'` is neither `'opencode'` nor
+    // `'cc'`, so a ternary that folds anything-not-opencode into `'CC'` would
+    // draw the wrong glyph here and every assertion above would still pass.
+    expect(figure(cellFor(container, 's-cx'), 'deck-cell-engine')).not.toBe('CC');
+    expect(figure(cellFor(container, 's-cx'), 'deck-cell-engine')).not.toBe('OC');
     expect(cellFor(container, 's-cc').dataset['engine']).toBe('cc');
     expect(cellFor(container, 's-oc').dataset['engine']).toBe('opencode');
+    expect(cellFor(container, 's-cx').dataset['engine']).toBe('codex');
   });
 
   it('tags a refused session too: G3 withholds the tree, not who was reading', () => {
@@ -916,17 +933,26 @@ describe('the engine filter (DoD 7.7)', () => {
     summary('s-cc-1'),
     summary('s-cc-2'),
     summary('s-oc-1', { engine: 'opencode' }),
+    summary('s-cx-1', { engine: 'codex' }),
   ];
 
   function chips(root: ParentNode): HTMLElement[] {
     return all(root, 'deck-engine-chip');
   }
 
-  it('offers exactly three chips, in the design’s order, with All active', () => {
+  it('offers exactly four chips, in the design’s order, with All active', () => {
+    // Three as of Phase 7, four from v0.6.0 Phase 3's Codex chip — the
+    // widening this describe block records.
     const container = render({ sessions: rows });
-    expect(chips(container).map((c) => c.dataset['engine'])).toStrictEqual(['all', 'cc', 'oc']);
+    expect(chips(container).map((c) => c.dataset['engine'])).toStrictEqual([
+      'all',
+      'cc',
+      'oc',
+      'cx',
+    ]);
     expect(chips(container).map((c) => c.dataset['active'])).toStrictEqual([
       'true',
+      'false',
       'false',
       'false',
     ]);
@@ -935,11 +961,12 @@ describe('the engine filter (DoD 7.7)', () => {
 
   it('badges each chip with the number of sessions that engine has', () => {
     const container = render({ sessions: rows });
-    expect(chips(container).map((c) => c.dataset['count'])).toStrictEqual(['3', '2', '1']);
+    expect(chips(container).map((c) => c.dataset['count'])).toStrictEqual(['4', '2', '1', '1']);
     expect(chips(container).map((c) => c.textContent)).toStrictEqual([
-      'All3',
+      'All4',
       'Claude Code2',
       'OpenCode1',
+      'Codex1',
     ]);
   });
 
@@ -957,7 +984,7 @@ describe('the engine filter (DoD 7.7)', () => {
     // it was given. A component holding its own copy would read 'cc' here and
     // would then be a second source of truth for the same value.
     expect(one(container, TESTID.deck).dataset['engineFilter']).toBe('all');
-    expect(cells(container)).toHaveLength(3);
+    expect(cells(container)).toHaveLength(4);
   });
 
   it('is SINGLE-SELECT: the value it is given activates exactly one chip', () => {
@@ -966,12 +993,23 @@ describe('the engine filter (DoD 7.7)', () => {
       'false',
       'true',
       'false',
+      'false',
     ]);
     expect(chips(container).filter((c) => c.dataset['active'] === 'true')).toHaveLength(1);
     expect(chips(container).map((c) => c.getAttribute('aria-pressed'))).toStrictEqual([
       'false',
       'true',
       'false',
+      'false',
+    ]);
+
+    // The fourth chip activates exactly as the first three do.
+    const cx = render({ sessions: rows, engineFilter: 'cx' });
+    expect(chips(cx).map((c) => c.dataset['active'])).toStrictEqual([
+      'false',
+      'false',
+      'false',
+      'true',
     ]);
   });
 
@@ -980,28 +1018,33 @@ describe('the engine filter (DoD 7.7)', () => {
     expect(cells(cc).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-cc-1', 's-cc-2']);
     const count = one(cc, 'deck-count');
     expect(count.dataset['shown']).toBe('2');
-    expect(count.dataset['total']).toBe('3');
-    expect(count.textContent).toBe('2 of 3');
+    expect(count.dataset['total']).toBe('4');
+    expect(count.textContent).toBe('2 of 4');
 
     const oc = render({ sessions: rows, engineFilter: 'oc' });
     expect(cells(oc).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-oc-1']);
-    expect(one(oc, 'deck-count').textContent).toBe('1 of 3');
+    expect(one(oc, 'deck-count').textContent).toBe('1 of 4');
+
+    const cx = render({ sessions: rows, engineFilter: 'cx' });
+    expect(cells(cx).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-cx-1']);
+    expect(one(cx, 'deck-count').textContent).toBe('1 of 4');
 
     const all_ = render({ sessions: rows, engineFilter: 'all' });
-    expect(cells(all_)).toHaveLength(3);
-    expect(one(all_, 'deck-count').textContent).toBe('3');
+    expect(cells(all_)).toHaveLength(4);
+    expect(one(all_, 'deck-count').textContent).toBe('4');
     // The badges are counted off the FULL list, so every chip still says what
     // it would show even while another chip is the active one.
-    expect(chips(cc).map((c) => c.dataset['count'])).toStrictEqual(['3', '2', '1']);
+    expect(chips(cc).map((c) => c.dataset['count'])).toStrictEqual(['4', '2', '1', '1']);
   });
 
-  it('answers A C O by reporting, and steals nothing else', () => {
+  it('answers A C O X by reporting, and steals nothing else', () => {
     const asked: string[] = [];
     render({ sessions: rows, onenginefilter: (filter: string) => asked.push(filter) });
     key('c');
     key('o');
+    key('x');
     key('a');
-    expect(asked).toStrictEqual(['cc', 'oc', 'all']);
+    expect(asked).toStrictEqual(['cc', 'oc', 'cx', 'all']);
   });
 
   it('sends the host NOTHING and asks for no fit: it is view state only', () => {
@@ -1020,6 +1063,7 @@ describe('the engine filter (DoD 7.7)', () => {
     });
     key('c');
     key('o');
+    key('x');
     key('a');
     expect(fits).toStrictEqual([]);
     expect(zooms).toStrictEqual([]);
@@ -1503,6 +1547,13 @@ describe('driven by a real store', () => {
     expect(view.sessions[0]?.engine).toBe('opencode');
     const container = render({ sessions: view.sessions, now: NOW });
     expect(figure(cellFor(container, 's-oc-real'), 'deck-cell-engine')).toBe('OC');
+  });
+
+  it('renders a codex-stamped state as CX, store to canvas (v0.6.0 Phase 3)', () => {
+    const view = viewOf([liveSession({ sessionId: 's-cx-real', engine: 'codex' })]);
+    expect(view.sessions[0]?.engine).toBe('codex');
+    const container = render({ sessions: view.sessions, now: NOW });
+    expect(figure(cellFor(container, 's-cx-real'), 'deck-cell-engine')).toBe('CX');
   });
 
   it('shows the badge count the store derived, and that count is not zero', () => {

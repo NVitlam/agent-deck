@@ -1045,3 +1045,196 @@ describe('G5 — the OpenCode engine (DoD 4.7)', () => {
     expect(createHash('sha256').update(readFileSync(corpus)).digest('hex')).toBe(before);
   });
 });
+
+// ---------------------------------------------------------------------------
+// (D) helpers - the Codex engine bundle and its corpus
+// ---------------------------------------------------------------------------
+
+/**
+ * Bundle `src/codex/index.ts` as its own entry point.
+ *
+ * Built here rather than read from `dist/`, for the reason stated at the top of
+ * this file: `npm run package` does not rebuild `dist/`, so trusting an on-disk
+ * artifact silently measures an old one. `esbuild.config.mjs` has no Codex
+ * target because the engine is not wired into the host yet (DoD 3.x), so this
+ * mirrors `buildOpencodeBundle` rather than invoking the config.
+ */
+function buildCodexBundle(): string {
+  const result = buildSync({
+    entryPoints: [join(REPO_ROOT, 'src', 'codex', 'index.ts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node20',
+    write: false,
+    logLevel: 'silent',
+  });
+  const [out] = result.outputFiles;
+  if (out === undefined) throw new Error('the Codex engine bundle produced no output');
+  const text = out.text;
+  if (text.length < 5_000) {
+    throw new Error(`the Codex engine bundle is implausibly small (${text.length} bytes)`);
+  }
+  return text;
+}
+
+/**
+ * The Codex data root of one committed run, derived from disk.
+ *
+ * Sizes are not asserted and no corpus name is written down: the corpus and its
+ * runs are enumerated, and the first is used. A hard-coded fixture name breaks
+ * on the next harvest and reads as a regression.
+ */
+function codexRunRoot(): string {
+  const fixtures = join(REPO_ROOT, 'fixtures');
+  const corpora = readdirSync(fixtures, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith('codex-'))
+    .map((e) => e.name)
+    .filter((name) => existsSync(join(fixtures, name, 'golden.json')))
+    .sort();
+  const [corpus] = corpora;
+  if (corpus === undefined) throw new Error('no fixtures/codex- corpus with a golden.json found');
+  const runs = readdirSync(join(fixtures, corpus), { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .filter((name) => existsSync(join(fixtures, corpus, name, 'home', '.codex')))
+    .sort();
+  const [run] = runs;
+  if (run === undefined) throw new Error(`${corpus} has no run with a home/.codex root`);
+  return join(fixtures, corpus, run, 'home', '.codex');
+}
+
+// ---------------------------------------------------------------------------
+// (D) the Codex engine - PLAN.md v0.6.0 DoD 2.8
+// ---------------------------------------------------------------------------
+
+/**
+ * DoD 2.8: "the Codex engine opens zero sockets."
+ *
+ * Two properties have to hold at `src/codex/index.ts` rather than merely being
+ * true today, and both are asserted against the BUNDLE, because only a bundle
+ * knows what an import graph actually pulled in:
+ *
+ *   - it imports no network-capable module, directly or transitively;
+ *   - the bundled graph rooted at that file opens zero sockets.
+ *
+ * `node:http` is DENIED here, exactly as it is for the OpenCode engine and
+ * unlike in the host bundle. G5 is absolute: there is ONE socket in this
+ * product, the loopback hook listener. The Codex engine has no listener, no
+ * client, no App Server connection and no socket to Codex - spec C1 and C6 put
+ * every fact it reads in a FILE, and `never-open.ts` is the list of the files it
+ * must not even open. So this engine reaching any socket module at all is a G5
+ * review, and failing here is that review.
+ *
+ * Scanning the engine ALONE is what makes the claim about the engine rather
+ * than about whatever bundle it eventually travels in: once DoD 3.x wires it
+ * into the host, the host bundle's `node:http` allowance would hide a Codex
+ * HTTP client behind the listener's exemption.
+ */
+describe('G5 - the Codex engine (DoD 2.8)', () => {
+  let bundle = '';
+
+  // 120 s for the reason both sibling hooks carry one: this body is a
+  // synchronous esbuild subprocess and vitest's DEFAULT hookTimeout is 10 s. A
+  // hook that loses that race reports the whole describe as SKIPS with a
+  // clean-looking tests line and no failed count - which is how six G5
+  // assertions ran zero times in Phase 3.
+  beforeAll(() => {
+    bundle = buildCodexBundle();
+  }, 120_000);
+
+  it('reaches no network-capable module at all - not even node:http', () => {
+    const ids = bundleModuleIds(bundle);
+    expect(ids.size, 'a bundle that names no module has not been built').toBeGreaterThan(0);
+    const denied = [...DENIED_MODULE_IDS, 'http'];
+    const found: string[] = [];
+    for (const id of denied) {
+      if (ids.has(id)) found.push(id);
+      if (ids.has(`node:${id}`)) found.push(`node:${id}`);
+    }
+    expect(
+      found.sort(),
+      `the Codex engine reaches network-capable module(s): ${found.join(', ')}`,
+    ).toStrictEqual([]);
+  });
+
+  it('names only node builtins - no third-party module survives bundling', () => {
+    for (const id of bundleModuleIds(bundle)) {
+      expect(id, `${id} is not a node: builtin`).toMatch(/^node:/);
+    }
+  });
+
+  it('contains no outbound request API and no server', () => {
+    expect(bundle).not.toMatch(/\bhttps?\.request\s*\(/);
+    expect(bundle).not.toMatch(/\bimport_node_http\d*\.request\s*\(/);
+    expect(bundle).not.toMatch(/\bfetch\s*\(/);
+    expect(bundle).not.toContain('XMLHttpRequest');
+    expect(bundle).not.toContain('new WebSocket(');
+    expect(bundle).not.toContain('createServer');
+    expect(bundle).not.toContain('createConnection');
+    expect(bundle).not.toContain('navigator.sendBeacon');
+    // Codex ships an App Server with an HTTP surface. Nothing in this engine
+    // may name it: the tap is the rollout files and the hook listener the host
+    // already owns, and a URL literal here would be the first step to a second
+    // socket. `localhost` is checked as well as the loopback literal because a
+    // client would plausibly be written either way.
+    expect(bundle).not.toContain('127.0.0.1');
+    expect(bundle).not.toContain('localhost');
+    expect(bundle).not.toContain('http://');
+  });
+
+  it('the scan sees a dynamic import(), proven by injecting one', () => {
+    // Not asserted, INJECTED - the same guard parts (A) and (C) carry. A
+    // require-only scan once reported a clean bundle while three denied modules
+    // sat one dynamic import away.
+    for (const denied of ['net', 'dns', 'http']) {
+      const injected = `${bundle}\nglobalThis.__leak = () => import("node:${denied}");\n`;
+      expect(
+        bundleModuleIds(injected),
+        `a dynamic import of node:${denied} slipped past the scan`,
+      ).toContain(`node:${denied}`);
+    }
+  });
+
+  it('opens every file read-only and writes nothing (G1)', () => {
+    /*
+     * The engine's reads all go through `FileTail`, which opens with the read
+     * flag and nothing else. What is asserted here is the SURFACE: no writing
+     * API survives bundling at all. `src/codex/never-open.ts` is on this path
+     * deliberately - it is the G10 list - so its NAMES appear in the bundle as
+     * strings; that is the list of things not to open, not an open.
+     */
+    expect(bundle).not.toMatch(/\bwriteFileSync\b/);
+    expect(bundle).not.toMatch(/\bappendFileSync\b/);
+    expect(bundle).not.toMatch(/\bmkdtempSync\b/);
+    expect(bundle).not.toMatch(/\bcopyFileSync\b/);
+    expect(bundle).not.toMatch(/\brmSync\b/);
+    expect(bundle).not.toMatch(/\bunlinkSync\b/);
+    // `node:sqlite` is the OpenCode engine's door and has no business here.
+    expect(bundleModuleIds(bundle).has('node:sqlite')).toBe(false);
+  });
+
+  it('the scanned entry point is the one that really reads a corpus', async () => {
+    /*
+     * THE VACUITY CONTROL FOR EVERY SCAN ABOVE. A bundle that reaches no socket
+     * because it reaches nothing at all would pass all of them. So the same
+     * entry point is imported and RUN against a committed Codex root here, in
+     * this process, and must produce real sessions.
+     *
+     * And the bundle is pinned to that same engine by two literals only the
+     * real discovery path carries - the rollout filename prefix and the writer
+     * lock directory - so a future refactor cannot leave this file scanning a
+     * stub while the engine lives somewhere else.
+     */
+    expect(bundle).toContain('rollout-');
+    expect(bundle).toContain('thread-writer-locks');
+
+    const { readCodexEngine } = await import('../codex/index.js');
+    const outcome = await readCodexEngine({ root: codexRunRoot() });
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    expect(outcome.result.sessions.length).toBeGreaterThan(0);
+    expect(outcome.result.threads.length).toBeGreaterThan(0);
+    for (const session of outcome.result.sessions) expect(session.engine).toBe('codex');
+  });
+});

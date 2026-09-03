@@ -505,9 +505,21 @@ export interface CodexLiveness {
 }
 
 /**
- * The clock and the poll trigger are INJECTED, exactly as `src/opencode/
- * liveness.ts` injects them. A module that reads `Date.now()` internally
- * cannot have the D0.1 threshold tested without sleeping.
+ * The clock is INJECTED, exactly as `src/opencode/liveness.ts` injects its
+ * own. A module that reads `Date.now()` internally cannot have the D0.1
+ * threshold tested without sleeping, and a test that sleeps is a test that
+ * fails under load.
+ *
+ * **The POLL TRIGGER is deliberately not here, and this comment used to say
+ * it was.** P5 reported the mismatch rather than editing the hand-off line to
+ * match its own implementation, which is what a worker is asked to do.
+ *
+ * The reason it stays out: these two fields are what the PURE RENDER PATH
+ * needs — given a clock and a threshold, a set of hook records and locks
+ * reduces to a `CodexLiveness` with no other input. A trigger belongs to the
+ * POLLING ENGINE that wraps that path, so `liveness.ts` declares it and
+ * composes it on top. Putting it here would oblige every caller of the pure
+ * function to supply something it never uses.
  */
 export interface CodexLivenessDeps {
   readonly now: () => number;

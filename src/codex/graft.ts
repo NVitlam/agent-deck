@@ -733,15 +733,34 @@ function joinSpawns(
  *
  * The order is normative and every step is a different fact:
  *
- *  1. `noAgentPath`      - the KEY is absent (not null): a structural oddity.
+ *  1. `noAgentPath`      - the KEY is absent AND no spawn named this thread.
  *  2. `forkBoundaryMissing` - the C5 pair is half-declared.
- *  3. `dialectV1`        - neither join key. TRIPWIRE, must fire zero times.
+ *  3. `dialectV1`        - the key is present-and-null AND no spawn named it.
+ *                          TRIPWIRE, must fire zero times.
  *  4. `duplicateAgentPath` - a path already claimed. TRIPWIRE, engine-enforced.
  *  5. `parentAgentMissing` - `parent_thread_id` absent, or naming no thread.
  *
  * `parentNotGrafted` is the sixth and is NOT decided here: whether a child's
  * parent ended up in the tree is not knowable until the tree has been walked,
  * so it is applied afterwards, in {@link graftCodexThreads}.
+ *
+ * **`noAgentPath` CONSULTS THE SPAWNS, AND THE FIRST VERSION OF IT DID NOT.**
+ * It returned on `!thread.agentPath.present` alone, and that parked EVERY v1
+ * subagent: the top-level `session_meta.payload.agent_path` key is ABSENT on a
+ * v1 thread (the present-and-`null` field is the NESTED
+ * `source.subagent.thread_spawn.agent_path`, which is a different field).
+ * Measured on `resume-twice-v1`: the spawn join resolved the child correctly
+ * as `output_agent_id_equals_thread_id`, and this function threw the result
+ * away one line later — 0 spawn edges, 1 park, a tree containing only
+ * `/root`. That is the ruling the user REVERSED on corrected evidence in
+ * Phase 1, reintroduced through a third door, and the park's own `reason`
+ * string described the correct behaviour while the code did the opposite.
+ *
+ * Absence of the top-level key is the NORMAL state of a v1 subagent and of
+ * every root thread. It is the v2 join key and v2's alone. **Whether a thread
+ * is joinable is answered by asking the SPAWNS**, never by this field.
+ * `noAgentPath` keeps a real population — a thread no spawn names by either
+ * key — and that is what it now means.
  *
  * `dialectV1` is checked BEFORE placement on purpose. A keyless child with a
  * good `parent_thread_id` could be placed, and placing it would make the
@@ -754,7 +773,9 @@ function parkCodeFor(
   duplicatePath: boolean,
   threadsById: ReadonlyMap<string, CodexThread>,
 ): CodexParkCode | null {
-  if (!thread.agentPath.present) return 'noAgentPath';
+  // ABSENCE OF THE TOP-LEVEL KEY IS NOT A REASON TO PARK, and reading it as
+  // one parked every v1 subagent in existence. See the doc block above.
+  if (!thread.agentPath.present && !namedBySpawn) return 'noAgentPath';
 
   const forkedFrom = thread.forkedFromId.present;
   const forkStart = thread.subagentHistoryStartOrdinal.present;

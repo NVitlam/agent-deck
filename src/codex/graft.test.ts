@@ -367,11 +367,28 @@ function readThread(file: string): CodexThread {
           ? 'turn_context.multi_agent_version'
           : null,
     multiAgentVersion: opt<string>(payload, 'multi_agent_version'),
-    // Spec C3a/C4a: the SUBAGENT's `agent_path` lives on the spawn record and
-    // is PRESENT-AND-NULL under `v1`. A root has no spawn record at all, so the
-    // key is absent. Those are different facts and `CodexOptional` keeps them
-    // apart; collapsing them is how the `v1` dialect was nearly refused.
-    agentPath: opt<string>(spawn, 'agent_path'),
+    // THIS READER USED TO READ THE WRONG FIELD, AND THAT IS WHY 57 TESTS
+    // STAYED GREEN THROUGH A DEFECT THAT EMPTIED EVERY v1 TREE.
+    //
+    // It read `spawn` — the NESTED `source.subagent.thread_spawn.agent_path` —
+    // while `parse.ts` reads the TOP-LEVEL `payload.agent_path`. Two different
+    // fields under one name. On a v1 subagent they disagree exactly:
+    //
+    //   payload.agent_path                              key ABSENT
+    //   ...source.subagent.thread_spawn.agent_path      present, null
+    //
+    // So this file's `CodexThread`s never carried the absent case, the branch
+    // that parks on it was unreachable from here, and every assertion below —
+    // including the ones that DO check the tree — passed while production put
+    // no v1 child in any tree at all.
+    //
+    // A second reader is evidence only while it models the same thing. When it
+    // models a neighbouring field it is a second opinion about a different
+    // question, delivered in the voice of the first.
+    //
+    // It now reads what `parse.ts` reads. `agentNickname` and `spawnDepth`
+    // legitimately live on the spawn record and still come from `spawn`.
+    agentPath: opt<string>(payload, 'agent_path'),
     agentNickname: opt<string>(spawn, 'agent_nickname'),
     parentThreadId: opt<string>(payload, 'parent_thread_id'),
     spawnDepth: opt<number>(spawn, 'depth'),
@@ -632,14 +649,17 @@ describe('the v1 join: output.agent_id <-> child thread id', () => {
    *
    * These tests exist so that ruling cannot come back by accident.
    */
-  it('has a child that carries a present-and-null agent_path and no task_name', () => {
+  it('has a child whose TOP-LEVEL agent_path key is absent, and no task_name', () => {
     const threads = readCorpusThreads('resume-twice-v1');
     const child = threads.find((t) => t.threadSource === 'subagent');
     expect(child).toBeDefined();
     if (child === undefined) return;
-    // Present, and null. Not absent. This is the distinction the whole reversal
-    // turned on, so it is asserted before the join is.
-    expect(child.agentPath.present).toBe(true);
+    // ABSENT. This assertion said `present === true` until 2026-09-03, and it
+    // was measuring the reader's own mistake rather than the corpus: it read
+    // the nested `thread_spawn.agent_path` (present, null) where production
+    // reads the top-level key (absent). The corpus is the authority and it
+    // says absent, so the graft must not treat absence as unjoinable.
+    expect(child.agentPath.present).toBe(false);
     expect(child.agentPath.value).toBeNull();
     expect(threads.flatMap((t) => t.spawns).every((s) => s.requestedTaskName === null)).toBe(true);
   });
@@ -678,6 +698,104 @@ describe('the v1 join: output.agent_id <-> child thread id', () => {
     const node = agentById(state, child.threadId);
     expect(node?.label).toBe(child.agentNickname.value);
     expect(node?.label).not.toBe(child.threadId);
+  });
+});
+
+// ===========================================================================
+// 1c — THE OUTCOME, over the whole corpus (DoD 2.4)
+// ===========================================================================
+
+describe('every subagent in the corpus reaches a tree or a park, by outcome', () => {
+  /*
+   * WHY THIS BLOCK EXISTS, AND WHAT IT WOULD HAVE CAUGHT.
+   *
+   * On 2026-09-03 the grafter parked EVERY v1 subagent and put none of them in
+   * any tree, and this file passed 57 of 57 both before and after that defect
+   * was fixed. Not one test changed state.
+   *
+   * The reason was not that the assertions were join-only — the v1 block above
+   * already checked `agentById` and `parked`. It was that this file's own
+   * reader built `agentPath` from the NESTED `thread_spawn.agent_path` while
+   * `parse.ts` builds it from the TOP-LEVEL `payload.agent_path`. Those
+   * disagree exactly on a v1 subagent — present-and-null against absent — so
+   * the input that triggers the defect was never constructed here.
+   *
+   * A second reader is evidence only while it models the same field. This
+   * block is therefore written to be reader-agnostic where it can be: it
+   * asserts a TOTAL over the corpus, so a thread that goes missing is caught
+   * even if the reason it went missing is one nobody predicted.
+   */
+
+  it('accounts for every subagent: in a tree, or parked with a code, never neither', () => {
+    const threads = readWholeCorpus();
+    const subagents = threads.filter((t) => t.threadSource === 'subagent');
+    expect(subagents.length).toBeGreaterThan(0);
+
+    const result = graftCodexThreads({ threads });
+    const inTree = new Set<string>();
+    const parked = new Set<string>();
+    for (const state of result.sessions) {
+      for (const node of agentsOf(state.root as AgentNode)) inTree.add(node.id);
+      inTree.add((state.root as AgentNode).id);
+      for (const p of state.parked ?? []) parked.add(p.agentId);
+    }
+
+    const missing = subagents
+      .map((t) => t.threadId)
+      .filter((id) => !inTree.has(id) && !parked.has(id));
+    expect(missing).toStrictEqual([]);
+
+    // And never both, which would mean the tree and the refusal disagree.
+    const both = subagents.map((t) => t.threadId).filter((id) => inTree.has(id) && parked.has(id));
+    expect(both).toStrictEqual([]);
+  });
+
+  it('puts EVERY v1 subagent in a tree, and parks none of them', () => {
+    const threads = readWholeCorpus();
+    const v1Subagents = threads.filter((t) => t.threadSource === 'subagent' && t.dialect === 'v1');
+
+    // Non-vacuity: the corpus must actually contain the population this
+    // asserts about, or the empty list below proves nothing. If a later
+    // harvest drops the v1 runs, this line fails rather than the test
+    // silently becoming an assertion about nothing.
+    expect(v1Subagents.length).toBeGreaterThan(0);
+
+    const result = graftCodexThreads({ threads });
+    const inTree = new Set<string>();
+    const parkedBy = new Map<string, string>();
+    for (const state of result.sessions) {
+      for (const node of agentsOf(state.root as AgentNode)) inTree.add(node.id);
+      for (const p of state.parked ?? []) parkedBy.set(p.agentId, p.code);
+    }
+
+    const parkedV1 = v1Subagents
+      .map((t) => t.threadId)
+      .filter((id) => parkedBy.has(id))
+      .map((id) => `${id}:${parkedBy.get(id) ?? '?'}`);
+    expect(parkedV1).toStrictEqual([]);
+
+    const absent = v1Subagents.map((t) => t.threadId).filter((id) => !inTree.has(id));
+    expect(absent).toStrictEqual([]);
+  });
+
+  it('gives every v1 subagent a filament and a nickname label, not an id', () => {
+    const threads = readWholeCorpus();
+    const v1Subagents = threads.filter((t) => t.threadSource === 'subagent' && t.dialect === 'v1');
+    expect(v1Subagents.length).toBeGreaterThan(0);
+
+    const result = graftCodexThreads({ threads });
+    for (const child of v1Subagents) {
+      const state = result.sessions.find((s) => agentById(s, child.threadId) !== undefined);
+      expect(state, `no session contains ${child.threadId}`).toBeDefined();
+      if (state === undefined) continue;
+
+      const edge = (state.spawnEdges ?? []).find((e) => e.agentId === child.threadId);
+      expect(edge, `no spawn edge for ${child.threadId}`).toBeDefined();
+
+      const node = agentById(state, child.threadId);
+      expect(node?.label).toBe(child.agentNickname.value);
+      expect(node?.label).not.toBe(child.threadId);
+    }
   });
 });
 

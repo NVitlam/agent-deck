@@ -168,6 +168,24 @@ describe('a single very long line survives whole', () => {
     expect(Buffer.byteLength(longest, 'utf8')).toBeGreaterThan(500_000);
   });
 
+  /*
+   * THE TWO BODIES BELOW CARRY AN EXPLICIT BUDGET, AND THEY EARNED IT.
+   *
+   * Both move the 554,126-byte line through a real file and compare it byte
+   * for byte; measured at ~2.4 s run alone, against vitest's **5 s default**
+   * `testTimeout`, which neither of them declared. Adding one fixture corpus
+   * elsewhere in the suite (`fixtures/codex-vscode-*`, 2026-09-03) was enough
+   * extra load to push the second one over, and it reported as a TIMEOUT with
+   * no failing assertion — the shape rule 14 exists to refuse a gate on.
+   *
+   * This is the "a test that passes or fails by CPU load is a defect report
+   * about the test" class this repository already records for `vsce ls` and
+   * for the `egress.test.ts` hook, reached by a third door: not a subprocess
+   * and not a hook, just a big buffer under a default budget. 30 s is ~12x the
+   * measured cost, so it fails on a real regression and not on a busy machine.
+   */
+  const LONG_LINE_BUDGET_MS = 30_000;
+
   it('tails the corpus transcript and emits that line intact', async () => {
     const tail = new CodexFileTail(LONG_OUTPUT_FILE);
     const result = await tail.read();
@@ -179,7 +197,7 @@ describe('a single very long line survives whole', () => {
     expect(result.state.pending).toBe('');
     expect(result.state.offset).toBe(readFileSync(LONG_OUTPUT_FILE).length);
     expect(result.skipped).toBeUndefined();
-  });
+  }, LONG_LINE_BUDGET_MS);
 
   it('holds it back across an arbitrary split and reassembles it byte-identically', async () => {
     const dir = tmp('cx-longline-');
@@ -201,7 +219,7 @@ describe('a single very long line survives whole', () => {
     expect(second.lines[0]?.text).toBe(longest);
     expect(Buffer.from(second.lines[0]?.text ?? '', 'utf8')).toEqual(bytes.subarray(0, bytes.length - 1));
     expect(tail.pendingBytes).toBe(0);
-  });
+  }, LONG_LINE_BUDGET_MS);
 
   it('the default ceiling is well above the measured maximum', () => {
     expect(CODEX_MAX_PARTIAL_BYTES).toBeGreaterThan(Buffer.byteLength(longest, 'utf8') * 10);

@@ -100,6 +100,24 @@ const CODEX_ROOT_DIR = fileURLToPath(
 const ABSENT_CODEX_ROOT = join(tmpdir(), 'agent-deck-isolation-codex-absent-does-not-exist');
 
 /**
+ * The budget every body in this file that STAGES A CORPUS needs, and did not
+ * all carry.
+ *
+ * Two of them declared `120_000` from the day they were written; the rest ran
+ * on vitest's **5 s default** while doing the same work — copying a Claude Code
+ * projects tree, an OpenCode SQLite store and a Codex rollout root, then
+ * building a whole data path over each. That is fine run alone and a coin flip
+ * under a loaded suite: adding one fixture corpus elsewhere (2026-09-03) was
+ * enough to turn one of them red, as a TIMEOUT with no failing assertion —
+ * the shape rule 14 refuses a gate on, and the class this repository already
+ * records for `vsce ls` and for `egress.test.ts`'s hook.
+ *
+ * Named once rather than repeated five times, so the next body that stages
+ * something inherits the decision instead of re-discovering it at a gate.
+ */
+const STAGING_BUDGET_MS = 120_000;
+
+/**
  * A fixed Claude Code clock, taken ONCE before anything is staged.
  *
  * The CC liveness engine reads transcript mtimes against a clock, so an
@@ -609,7 +627,7 @@ describe('DoD 5.3 (2) — a Claude Code parse failure leaves OpenCode sessions u
     expect(threw.path.diagnostics.opencode.contentFailures).toBe(0);
     expect(threw.path.diagnostics.opencode.degradedReads).toBe(0);
     expect(threw.path.diagnostics.opencodeEmitErrors).toBe(0);
-  });
+  }, STAGING_BUDGET_MS);
 });
 
 describe('DoD 5.3 (3) — the hook listener being down leaves OpenCode liveness alone', () => {
@@ -724,7 +742,7 @@ describe('DoD 5.3 (3) — the hook listener being down leaves OpenCode liveness 
     } finally {
       await release();
     }
-  });
+  }, STAGING_BUDGET_MS);
 });
 
 /**
@@ -848,7 +866,7 @@ describe('DoD 3.2 (3rd direction) — a Claude Code or OpenCode failure leaves C
     // The control: the sabotage landed.
     expect(ocBroken.path.diagnostics.opencode.degradedReads).toBeGreaterThan(0);
     expect(ocBroken.path.diagnostics.codexEmitErrors).toBe(0);
-  });
+  }, STAGING_BUDGET_MS);
 });
 
 describe('the two engines share no state that could carry a failure across', () => {
@@ -877,7 +895,7 @@ describe('the two engines share no state that could carry a failure across', () 
     } finally {
       await path.dispose();
     }
-  });
+  }, STAGING_BUDGET_MS);
 
   it('disposing the data path stops the OpenCode poll trigger and the WAL watch', async () => {
     const cc = await stageCc();
@@ -933,7 +951,7 @@ describe('the two engines share no state that could carry a failure across', () 
     expect(path.diagnostics.timersArmed).toBe(0);
     expect(path.diagnostics.listening).toBe(false);
     expect(path.opencode.sessions()).toStrictEqual([]);
-  });
+  }, STAGING_BUDGET_MS);
 });
 
 /** Kept honest: the staging helpers must actually produce something. */

@@ -1137,6 +1137,28 @@ interface Usage {
  * `0`: PLAN's answered question says burn shows an em dash when the contract
  * says absent, and a zero here would be a wrong number rather than a missing
  * one.
+ *
+ * ---------------------------------------------------------------------------
+ * THE WINDOW HAS TWO SOURCES AND THE USAGE FIGURES HAVE ONE (amended 2026-09-03)
+ * ---------------------------------------------------------------------------
+ *
+ * `model_context_window` is stated in two places, and reading only the second
+ * shipped a defect the user caught by own-eyes on the `release/0.6.0` build:
+ *
+ *   - `event_msg` `task_started`, at the payload's TOP level. Present on every
+ *     transcript in both the committed corpus and the live capture this was
+ *     measured against - 11 of 11 live threads, every fixture thread.
+ *   - `event_msg` `token_count`, under `info`. Present only once a turn has
+ *     recorded usage.
+ *
+ * **`token_count.info` can be `null`.** Measured on a live terra session that
+ * hit the account's usage limit: one `token_count` record, `info: null`, and a
+ * `task_complete` carrying `codex_error_info: "usage_limit_exceeded"`. The turn
+ * ended before any usage existed, so Context and Burn are correctly ABSENT -
+ * but the window was stated at ordinal 1 and the deck showed an em dash for it.
+ * Reading the top-level key as well is a strict widening: the key name means
+ * one thing wherever it appears, and no transcript states two different values
+ * (125 occurrences, 1 distinct value, `docs/codex-contract.md` A7).
  */
 function readUsage(kept: readonly CodexRecord[]): Usage {
   let contextNow: TokenPair | undefined;
@@ -1146,13 +1168,25 @@ function readUsage(kept: readonly CodexRecord[]): Usage {
   for (const record of kept) {
     if (record.type !== 'event_msg') continue;
     const payload = asObject(record.payload);
-    if (payload === null || payload['type'] !== 'token_count') continue;
+    if (payload === null) continue;
+
+    // Source 1, and it is read for EVERY `event_msg` rather than for
+    // `task_started` by name: the key is unambiguous, so a future event type
+    // that states it is read rather than silently ignored. Measured today only
+    // on `task_started`.
+    const declared = payload['model_context_window'];
+    if (typeof declared === 'number' && Number.isFinite(declared) && declared > 0) {
+      window = declared;
+    }
+
+    if (payload['type'] !== 'token_count') continue;
     const info = asObject(payload['info']);
     if (info === null) continue;
     const last = tokenPair(info['last_token_usage']);
     const total = tokenPair(info['total_token_usage']);
     if (last !== null) contextNow = last;
     if (total !== null) burn = total;
+    // Source 2. Same key, one level down, and the two never disagree.
     const stated = info['model_context_window'];
     if (typeof stated === 'number' && Number.isFinite(stated) && stated > 0) window = stated;
   }

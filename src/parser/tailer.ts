@@ -475,6 +475,24 @@ export class FileTail {
     return Buffer.byteLength(this.#partial, 'utf8');
   }
 
+  /**
+   * The held-back text itself, not just its size.
+   *
+   * Added for `src/codex/tail.ts`, whose hand-off type `CodexTailState`
+   * declares `pending` as a `string` (PLAN.md v0.6.0 Phase 2: reuse the CC
+   * tailer, and any change needed is made here with CC tests kept green).
+   * Reporting `''` there would be a silent wrong answer rather than a missing
+   * feature: {@link offset} counts bytes CONSUMED FROM THE FILE, pending ones
+   * included, so a reader of `{offset, pending: ''}` concludes that every
+   * consumed byte became a line.
+   *
+   * Read-only and additive. Nothing here mutates, `#partial` stays private and
+   * stays the single copy, and no existing caller's behaviour changes.
+   */
+  get pending(): string {
+    return this.#partial;
+  }
+
   #reset(): void {
     this.#offset = 0;
     this.#partial = '';

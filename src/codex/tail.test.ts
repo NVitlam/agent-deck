@@ -367,6 +367,7 @@ describe('differential — identical behaviour to the Claude Code FileTail', () 
       expect(a.oversized).toBe(b.oversized);
       expect(codex.offset).toBe(cc.offset);
       expect(codex.pendingBytes).toBe(cc.pendingBytes);
+      expect(codex.pending).toBe(cc.pending);
     }
   });
 
@@ -388,6 +389,51 @@ describe('differential — identical behaviour to the Claude Code FileTail', () 
     expect(a.reset).toBe(true);
     expect(a.lines.map((l) => l.text)).toEqual(b.lines.map((l) => l.text));
     expect(codex.offset).toBe(cc.offset);
+  });
+});
+
+// ===========================================================================
+// The accessor this wrapper rests on
+// ===========================================================================
+
+describe('FileTail.pending — the one additive change made in src/parser', () => {
+  it('is the held-back text, and agrees with pendingBytes', async () => {
+    const path = newFile('rollout-a-1.jsonl', '{"a":1}\n{"unterminated"');
+    const cc = new FileTail(path, { sessionId: 'x', agentId: null });
+    await cc.read();
+    expect(cc.pending).toBe('{"unterminated"');
+    expect(Buffer.byteLength(cc.pending, 'utf8')).toBe(cc.pendingBytes);
+  });
+
+  it('is empty when every consumed byte became a line', async () => {
+    const path = newFile('rollout-a-1.jsonl', '{"a":1}\n');
+    const cc = new FileTail(path, { sessionId: 'x', agentId: null });
+    await cc.read();
+    expect(cc.pending).toBe('');
+    expect(cc.pendingBytes).toBe(0);
+  });
+
+  it('clears on a truncation reset, like every other piece of tail state', async () => {
+    const path = newFile('rollout-a-1.jsonl', '{"a":1}\n{"held"');
+    const cc = new FileTail(path, { sessionId: 'x', agentId: null });
+    await cc.read();
+    expect(cc.pending).not.toBe('');
+    writeFileSync(path, 'z\n');
+    await cc.read();
+    expect(cc.pending).toBe('');
+  });
+
+  it('is what makes `state.pending` honest beside `state.offset`', async () => {
+    // The whole reason the accessor exists. `offset` counts bytes CONSUMED,
+    // pending ones included, so an empty `pending` beside a non-zero `offset`
+    // asserts that every consumed byte became a line. Here it has not.
+    const path = newFile('rollout-a-1.jsonl', '{"a":1}\n{"held"');
+    const tail = new CodexFileTail(path);
+    const result = await tail.read();
+    expect(result.state.offset).toBe(15);
+    expect(result.state.pending).toBe('{"held"');
+    const emitted = result.lines.reduce((n, l) => n + Buffer.byteLength(l.text, 'utf8') + 1, 0);
+    expect(emitted + Buffer.byteLength(result.state.pending, 'utf8')).toBe(result.state.offset);
   });
 });
 

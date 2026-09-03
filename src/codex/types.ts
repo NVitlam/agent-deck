@@ -443,6 +443,25 @@ export interface CodexThread {
   readonly spawns: readonly CodexSpawn[];
   readonly counters: CodexCounters;
   readonly records: number;
+  /**
+   * When the thread STARTED, from the `session_meta` record's own
+   * `timestamp` at ordinal 0.
+   *
+   * **Added because `mtimeMs` is an END and was about to be used as a
+   * START.** `AgentNode.startedAt` is required, `CodexThread` carried no
+   * start, and the only time available was the file's last-write — so the
+   * grafter defaulted to it, said so at the seam, and reported the gap
+   * rather than letting a plausible wrong number through. On the corpus's
+   * baseline root those two differ by 40 seconds (20:43:54 against
+   * 20:44:34), and on a long session they differ by its whole duration.
+   *
+   * Required, not optional: the fingerprint already refuses a thread with
+   * no `session_meta` at ordinal 0, so this value always exists — and a
+   * required field breaks every producer at compile time rather than
+   * letting one quietly omit it and fall back to the end time again.
+   */
+  readonly startedAtMs: number;
+  /** Last write to the owning file. An END. Liveness corroboration only. */
   readonly mtimeMs: number;
 }
 
@@ -521,7 +540,29 @@ export type CodexParkCode =
   | 'noAgentPath'
   | 'orphanSpawn'
   | 'duplicateAgentPath'
-  | 'forkBoundaryMissing';
+  | 'forkBoundaryMissing'
+  /**
+   * A subagent whose `parent_thread_id` names a thread that is not there,
+   * and a subagent whose parent itself parked.
+   *
+   * **These two were not in `PLAN.md`'s answered list**, which named five
+   * codes, all describing the SPAWN side. P4 found two child-side cases the
+   * five have no word for, mapped both onto `orphanSpawn`, documented the
+   * stretch and asked for it to be reviewed — which is the right way to
+   * surface a vocabulary gap.
+   *
+   * The review's answer is that no new vocabulary is needed: **the wire
+   * union already carries both words.** `parentAgentMissing` and
+   * `parentNotGrafted` are existing Claude Code codes meaning precisely
+   * these two situations, already rendered by the webview. Reusing them
+   * adds nothing a user must learn and stops two distinct stories being
+   * told under one name — the same distinction `taskWithoutChild` and
+   * `joinKeyContradiction` already draw for OpenCode, and for the reason
+   * recorded there: a user reading the wrong code goes looking for the
+   * wrong problem.
+   */
+  | 'parentAgentMissing'
+  | 'parentNotGrafted';
 
 // ===========================================================================
 // P6 — index.ts, `readCodexEngine()`  (DoD 2.7)

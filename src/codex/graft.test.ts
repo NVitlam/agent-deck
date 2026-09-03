@@ -341,6 +341,7 @@ function readThread(file: string): CodexThread {
     reasoningDropped,
     inheritedRecordsDropped: all.length - own.length,
     payloadsTruncated,
+    skippedResponseItemTypes: [],
   };
 
   const dialectFromMeta = str(payload['multi_agent_version']);
@@ -384,6 +385,10 @@ function readThread(file: string): CodexThread {
     spawns,
     counters,
     records: own.length,
+    // The `session_meta` record's OWN timestamp, not the file's mtime. On this
+    // very corpus the baseline root's two differ by 40 seconds, and `mtimeMs`
+    // is the LAST write - an end, not a start.
+    startedAtMs: Date.parse(meta.timestamp),
     mtimeMs: Math.round(fs.statSync(file).mtimeMs),
   };
 }
@@ -466,9 +471,14 @@ function makeThread(over: Partial<CodexThread> & { threadId: string; sessionId: 
       reasoningDropped: 0,
       inheritedRecordsDropped: 0,
       payloadsTruncated: 0,
+      skippedResponseItemTypes: [],
     },
     records: 1,
-    mtimeMs: 1_700_000_000_000,
+    startedAtMs: 1_700_000_000_000,
+    // Deliberately DIFFERENT from `startedAtMs`, and later, so any test that
+    // reads a start and gets an end fails instead of passing on two equal
+    // numbers. That equality is what made the old `mtimeMs` default invisible.
+    mtimeMs: 1_700_000_555_000,
     ...over,
   };
 }
@@ -646,7 +656,7 @@ describe('the v1 join: output.agent_id <-> child thread id', () => {
 
     const join = result.spawnJoins.find((j) => j.childThreadId === child.threadId);
     expect(join).toBeDefined();
-    expect(join?.resolvedBy).toBe('output_agent_id_equals_child_id');
+    expect(join?.resolvedBy).toBe('output_agent_id_equals_thread_id');
 
     // In the tree, with a filament, and NOT parked.
     expect(agentById(state, child.threadId)).toBeDefined();
@@ -784,7 +794,11 @@ describe('each park code fires on a constructed input, with the exact code', () 
     ]);
   });
 
-  it('orphanSpawn: a subagent whose parent_thread_id names no thread', () => {
+  it('parentAgentMissing: a subagent whose parent_thread_id names no thread', () => {
+    // Was `orphanSpawn` until the review. `orphanSpawn` is the SPAWN side - the
+    // engine named a child we cannot find - and this is the child side, where
+    // we have the child and cannot find its parent. Two codes because a user
+    // reading the wrong one goes looking at the wrong end of the data.
     const root = makeRoot('r');
     const child = makeThread({
       threadId: 'c',
@@ -794,9 +808,61 @@ describe('each park code fires on a constructed input, with the exact code', () 
     });
     const result = graftCodexThreads({ threads: [root, child] });
     const parked = result.sessions[0]?.parked ?? [];
-    expect(parked.map((p) => p.code)).toStrictEqual(['orphanSpawn']);
+    expect(parked.map((p) => p.code)).toStrictEqual(['parentAgentMissing']);
     expect(parked[0]?.agentId).toBe('c');
     expect(parked[0]?.parentAgentId).toBe('nobody');
+    expect(parked[0]?.reason).toBe(CODEX_PARK_REASONS.parentAgentMissing);
+    // And it is NOT the spawn-side code.
+    expect(parked[0]?.code).not.toBe('orphanSpawn');
+  });
+
+  it('parentAgentMissing: a subagent with no parent_thread_id key at all', () => {
+    const root = makeRoot('r');
+    const child = makeThread({
+      threadId: 'c',
+      sessionId: 'r',
+      agentPath: { present: true, value: '/root/x' },
+      parentThreadId: ABSENT,
+    });
+    const result = graftCodexThreads({ threads: [root, child] });
+    const parked = result.sessions[0]?.parked ?? [];
+    expect(parked.map((p) => p.code)).toStrictEqual(['parentAgentMissing']);
+    // No `parentAgentId` key: there was no parent id to quote. An empty string
+    // would claim a key was read and found blank.
+    expect(Object.prototype.hasOwnProperty.call(parked[0], 'parentAgentId')).toBe(false);
+  });
+
+  it('parentNotGrafted: a subagent whose own parent parked', () => {
+    // A three-level chain whose MIDDLE link parks. The grandchild is otherwise
+    // perfectly well formed - it has a path, a parent that exists and was read,
+    // and a fork boundary - so without this code it would be reachable from
+    // neither the tree nor `parked`: a silently dropped agent, which is the
+    // failure the whole park vocabulary exists to make visible.
+    const root = makeRoot('r');
+    const middle = makeThread({
+      threadId: 'm',
+      sessionId: 'r',
+      // Parks as `noAgentPath`: the KEY is absent.
+      agentPath: ABSENT,
+      parentThreadId: { present: true, value: 'r' },
+    });
+    const grandchild = makeThread({
+      threadId: 'g',
+      sessionId: 'r',
+      agentPath: { present: true, value: '/root/m/g' },
+      parentThreadId: { present: true, value: 'm' },
+    });
+    const result = graftCodexThreads({ threads: [root, middle, grandchild] });
+    const parked = result.sessions[0]?.parked ?? [];
+    expect(parked.map((p) => p.code).sort()).toStrictEqual(['noAgentPath', 'parentNotGrafted']);
+    const entry = parked.find((p) => p.agentId === 'g');
+    expect(entry?.code).toBe('parentNotGrafted');
+    expect(entry?.reason).toBe(CODEX_PARK_REASONS.parentNotGrafted);
+    expect(entry?.parentAgentId).toBe('m');
+    // Neither is in the tree, and the root still renders.
+    expect(agentById(result.sessions[0] as SessionState, 'g')).toBeUndefined();
+    expect(agentById(result.sessions[0] as SessionState, 'm')).toBeUndefined();
+    expect(result.sessions[0]?.root.id).toBe('root');
   });
 
   it('duplicateAgentPath: two threads carrying one agent_path', () => {
@@ -917,14 +983,33 @@ describe('dup-names: one child, one refused spawn', () => {
     expect((state.spawnEdges ?? []).some((e) => e.toolUseId === refusedCallId)).toBe(false);
   });
 
-  it('records the refused spawn as unresolved in the join, naming no child', () => {
+  it('records the refused spawn as REFUSED in the join, naming no child', () => {
+    // `refused` is a RESOLUTION, not an unresolved join: the engine answered
+    // the call by declining it. The golden's distribution over this corpus is
+    // 8 / 1 / 1 / 0, so `unresolved` is the member that fires zero times.
     const threads = readCorpusThreads('dup-names');
     const result = graftCodexThreads({ threads });
     const refusedCallId = threads.flatMap((t) => t.spawns).find((s) => s.refused)?.callId;
     const join = result.spawnJoins.find((j) => j.callId === refusedCallId);
     expect(join).toBeDefined();
-    expect(join?.resolvedBy).toBe('unresolved');
+    expect(join?.resolvedBy).toBe('refused');
     expect(join?.childThreadId).toBeNull();
+  });
+
+  it('leaves the whole corpus with no unresolved join at all', () => {
+    // The vacuity guard on the line above: `unresolved` reaching zero is only
+    // evidence if something states the whole distribution. Every spawn in the
+    // corpus is resolved by one of the two keys or refused.
+    const result = graftCodexThreads({ threads: readWholeCorpus() });
+    const byKind = new Map<string, number>();
+    for (const join of result.spawnJoins) {
+      byKind.set(join.resolvedBy, (byKind.get(join.resolvedBy) ?? 0) + 1);
+    }
+    expect(byKind.get('unresolved') ?? 0).toBe(0);
+    expect(byKind.get('refused')).toBe(result.spawnsRefused);
+    expect(result.spawnJoins.length).toBe(
+      readWholeCorpus().flatMap((t) => t.spawns).length,
+    );
   });
 });
 
@@ -1317,7 +1402,41 @@ describe('the injected seams', () => {
     expect(state.liveness).toBe('idle');
     expect(state.workspaceMatch).toBe(true);
     expect(state.projectSlug).toBe('');
-    expect(state.root.startedAt).toBe(1_700_000_000_000);
+  });
+
+  it('takes startedAt from startedAtMs, never from mtimeMs', () => {
+    // There is no `startedAtFor` seam and there used to be, defaulting to
+    // `mtimeMs` - the last write, i.e. an END used as a START. The two are
+    // deliberately different numbers on every hand-built thread so this cannot
+    // pass by coincidence.
+    const root = makeRoot('r');
+    expect(root.startedAtMs).not.toBe(root.mtimeMs);
+    const result = graftCodexThreads({ threads: [root] });
+    const state = result.sessions[0];
+    if (state === undefined) throw new Error('no session');
+    expect(state.root.startedAt).toBe(root.startedAtMs);
+    expect(state.root.startedAt).not.toBe(root.mtimeMs);
+    // `endedAt` IS the mtime: for a thread that is not running, the last write
+    // is when it stopped changing.
+    expect(state.root.endedAt).toBe(root.mtimeMs);
+  });
+
+  it('reads every corpus thread"s start from its session_meta, before its mtime', () => {
+    const threads = readWholeCorpus();
+    const result = graftCodexThreads({ threads });
+    let checked = 0;
+    for (const state of result.sessions) {
+      for (const agent of agentsOf(state.root)) {
+        const id = agent.id === 'root' ? state.sessionId : agent.id;
+        const thread = threads.find((t) => t.threadId === id);
+        if (thread === undefined) continue;
+        expect(agent.startedAt).toBe(thread.startedAtMs);
+        // Real transcripts: the start precedes the last write.
+        expect(thread.startedAtMs).toBeLessThan(thread.mtimeMs);
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 
   it('honours every override', () => {
@@ -1327,7 +1446,6 @@ describe('the injected seams', () => {
         livenessFor: () => 'live',
         workspaceMatch: () => false,
         projectSlug: () => 'c--w',
-        startedAtFor: () => 42,
       },
     });
     const state = result.sessions[0];
@@ -1335,7 +1453,6 @@ describe('the injected seams', () => {
     expect(state.liveness).toBe('live');
     expect(state.workspaceMatch).toBe(false);
     expect(state.projectSlug).toBe('c--w');
-    expect(state.root.startedAt).toBe(42);
   });
 
   it('never throws on a thread set with nothing joinable in it', () => {
@@ -1358,6 +1475,12 @@ describe('the injected seams', () => {
         inheritedRecordsDropped:
           acc.inheritedRecordsDropped + t.counters.inheritedRecordsDropped,
         payloadsTruncated: acc.payloadsTruncated + t.counters.payloadsTruncated,
+        // NOT summed: a census of distinct type names, unioned and sorted.
+        // Adding lengths would report "9 kinds skipped" for one kind seen in
+        // nine threads.
+        skippedResponseItemTypes: [
+          ...new Set([...acc.skippedResponseItemTypes, ...t.counters.skippedResponseItemTypes]),
+        ].sort(),
       }),
       {
         malformedLines: 0,
@@ -1365,9 +1488,40 @@ describe('the injected seams', () => {
         reasoningDropped: 0,
         inheritedRecordsDropped: 0,
         payloadsTruncated: 0,
+        skippedResponseItemTypes: [] as readonly string[],
       },
     );
     expect(result.counters).toStrictEqual(expected);
     expect(result.counters.inheritedRecordsDropped).toBeGreaterThan(0);
+  });
+
+  it('UNIONS the skipped response-item census instead of summing it', () => {
+    // No thread in the corpus skips a response-item type, so this branch has no
+    // fixture at all and is proved on hand-built threads. It is the only member
+    // of `CodexCounters` that is not a number, and adding lengths would report
+    // "3 kinds skipped" for one kind seen in three threads - a wrong number
+    // rather than a missing one.
+    const mk = (id: string, types: string[]): CodexThread =>
+      makeRoot(id, {
+        counters: {
+          malformedLines: 0,
+          unknownRecordTypes: 0,
+          reasoningDropped: 0,
+          inheritedRecordsDropped: 0,
+          payloadsTruncated: 0,
+          skippedResponseItemTypes: types,
+        },
+      });
+    const result = graftCodexThreads({
+      threads: [mk('a', ['web_search_call']), mk('b', ['web_search_call']), mk('c', ['mcp_call'])],
+    });
+    // Two threads saw the same type and one saw another: two DISTINCT kinds,
+    // not three occurrences. Sorted, so the answer does not depend on the order
+    // the threads arrived in.
+    expect(result.counters.skippedResponseItemTypes).toStrictEqual([
+      'mcp_call',
+      'web_search_call',
+    ]);
+    expect(result.counters.skippedResponseItemTypes.length).not.toBe(3);
   });
 });

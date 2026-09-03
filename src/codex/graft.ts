@@ -177,21 +177,53 @@ export const CODEX_PARK_REASONS: Readonly<Record<CodexParkCode, string>> = {
     'subagent spawn record carries no agent_path key at all (spec C4) - distinct from ' +
     'a present-and-null agent_path, which is the v1 dialect and grafts by id',
   /**
-   * A spawn's output names a child that no thread in the corpus carries, or a
-   * subagent whose own parent thread is not in the corpus. Both directions of
-   * one broken spawn/child edge.
+   * THE SPAWN SIDE ONLY, which is `PLAN.md`'s gloss for it: "path with no
+   * child". A `spawn_agent` output names an `agent_path` or an `agent_id` that
+   * no thread in the corpus carries.
    *
-   * **A RECORDED STRETCH OF THE NAME.** `PLAN.md` glosses `orphanSpawn` as
-   * "path with no child", which is the spawn's side only. The park-code union
-   * has no sixth member for the child's side, and the alternatives were worse:
-   * `dialectV1` means "neither join key" and would be false of a child that
-   * carries one, and hanging such a child off the root would be the guess G3
-   * forbids. Named at its own site so a later reader meets the decision instead
-   * of inferring it.
+   * **It used to carry the child side too, and that was a stretch this package
+   * flagged rather than hid.** The five codes `PLAN.md` answered all describe
+   * the spawn's side; two child-side cases had no word, so both were mapped
+   * here with the stretch documented and sent for review. The review's answer
+   * was that no new vocabulary was needed — the wire union already carried
+   * `parentAgentMissing` and `parentNotGrafted`, existing Claude Code codes
+   * meaning exactly those two things and already rendered by the webview. They
+   * are `CodexParkCode` members as of that review and this code is back to one
+   * meaning.
+   *
+   * Why that matters and is not tidying: a user reading the wrong code goes
+   * looking for the wrong problem. `orphanSpawn` says "the engine told us about
+   * a child we cannot find"; `parentAgentMissing` says "we have a child and
+   * cannot find its parent". Those send a reader to opposite ends of the data.
    */
   orphanSpawn:
-    'the spawn/child edge names something the corpus does not contain: a spawn output ' +
-    'naming no thread, or a subagent whose parent_thread_id names no thread',
+    'a spawn_agent output names a child the corpus does not contain: no thread carries ' +
+    'that agent_path, and none carries that thread id',
+  /**
+   * A subagent whose `parent_thread_id` is absent, or names a thread that is
+   * not in the corpus at all.
+   *
+   * Reachable in normal operation rather than exotic: the Codex data root is a
+   * day-partitioned tree and discovery walks a window of it, so a parent
+   * transcript can legitimately sit outside the window that was read. The child
+   * is real and there is no node to attach it under.
+   */
+  parentAgentMissing:
+    "the subagent's parent_thread_id is absent, or names a thread the corpus does not " +
+    'contain, so there is no node to attach it under',
+  /**
+   * A subagent whose own parent PARKED, so the chain to the root is broken.
+   *
+   * Distinct from `parentAgentMissing` on purpose: here the parent thread
+   * exists and was read, and the reason this child is absent from the tree is a
+   * decision taken one level up. Collapsing the two would leave the wire unable
+   * to say whether the parent was missing or refused, and a reader chasing the
+   * second under the first's name goes looking for a transcript that is
+   * present.
+   */
+  parentNotGrafted:
+    "this subagent's parent parked, so the chain to the root is broken; the reason is " +
+    "one level up, at the parent's own park entry",
   /**
    * TRIPWIRE. The engine enforces `agent_path` uniqueness — a second spawn
    * asking for a taken path is REFUSED, which is a failed call and not a park —
@@ -289,22 +321,24 @@ export interface CodexGraftOptions {
    * one.
    */
   projectSlug?: (thread: CodexThread) => string;
-  /**
-   * Thread -> `AgentNode.startedAt`.
-   *
-   * **THIS DEFAULT IS THE WEAKEST NUMBER THIS MODULE EMITS, and it is a seam
-   * rather than a literal for exactly that reason.** `AgentNode.startedAt` is
-   * REQUIRED, and {@link CodexThread} carries no start timestamp at all — its
-   * only time is `mtimeMs`, the transcript's last write. For a finished thread
-   * that is when it STOPPED, so the default names an end as a start.
-   *
-   * The transcript does state the real value: `session_meta.payload.timestamp`.
-   * It is not on the hand-off line, which this package may not edit, so the
-   * choice is recorded here and reported rather than hidden behind a plausible
-   * number. Defaults to {@link defaultCodexStartedAt}.
-   */
-  startedAtFor?: (thread: CodexThread) => number;
 }
+
+/*
+ * THERE IS NO `startedAtFor` SEAM, AND THERE USED TO BE.
+ *
+ * `AgentNode.startedAt` is required and the first version of `CodexThread`
+ * carried no start timestamp, so this module took one as an injected seam
+ * defaulting to `mtimeMs` — the transcript's LAST WRITE, which for a finished
+ * thread is when it stopped. An end used as a start. The seam existed so that
+ * wrong number was visible and reportable rather than quietly plausible.
+ *
+ * `CodexThread.startedAtMs` is now a REQUIRED field, read from the ordinal-0
+ * `session_meta` record's own `timestamp`. On the corpus's baseline root the
+ * two differ by 40 seconds; on a long session they differ by its whole
+ * duration. So the seam is DELETED rather than re-pointed: keeping a defaulted
+ * seam beside a required field would leave the wrong number reachable by every
+ * caller that passes no options, which is every caller with no reason to.
+ */
 
 /**
  * The static liveness rule: `idle`.
@@ -326,11 +360,6 @@ export function defaultCodexWorkspaceMatch(_thread: CodexThread): boolean {
 /** The default project slug: the empty placeholder. See {@link CodexGraftOptions.projectSlug}. */
 export function defaultCodexProjectSlug(_thread: CodexThread): string {
   return '';
-}
-
-/** The default start time: the transcript's mtime. See {@link CodexGraftOptions.startedAtFor}. */
-export function defaultCodexStartedAt(thread: CodexThread): number {
-  return thread.mtimeMs;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +397,7 @@ export interface CodexGraftResult {
   readonly spawnsRefused: number;
   /** Spawns whose output resolved to a thread in the corpus. */
   readonly spawnsResolved: number;
-  /** Spawns naming a child no thread carries. Each parked `orphanSpawn`. */
+  /** Spawns naming a child no thread carries. Each parks `orphanSpawn`. */
   readonly spawnsOrphaned: number;
   /**
    * Spawns that were not refused and whose output carried NEITHER key, so there
@@ -388,8 +417,9 @@ export interface CodexGraftResult {
   /**
    * Every spawning call and the key that resolved it (spec C4a).
    *
-   * A refused spawn appears here with `resolvedBy: 'unresolved'` and a null
-   * child: it named nothing, because the engine declined the call.
+   * A refused spawn appears here with `resolvedBy: 'refused'` and a null
+   * child - the engine answered the call by declining it, which is a different
+   * fact from a join that was attempted and found nothing.
    */
   readonly spawnJoins: readonly CodexSpawnJoin[];
   /** Recorded `spawn_depth` against walked depth. The recorded value is emitted. */
@@ -474,9 +504,22 @@ function emptyCounters(): CodexCounters {
     reasoningDropped: 0,
     inheritedRecordsDropped: 0,
     payloadsTruncated: 0,
+    skippedResponseItemTypes: [],
   };
 }
 
+/**
+ * Sum two {@link CodexCounters}.
+ *
+ * The fields are listed one by one rather than spread, so a counter added to
+ * the type is a COMPILE ERROR here and has to be decided about — which is what
+ * happened when `skippedResponseItemTypes` arrived. It is the only member that
+ * is not a number, and it does not sum: it is a CENSUS of distinct type names,
+ * so the two are unioned and sorted. Adding its lengths would report "we
+ * skipped 9 kinds of thing" for one kind seen in nine threads, which is a
+ * wrong number rather than a missing one — the same rule this module applies
+ * to `windowTokens`. Sorted so the result does not depend on thread order.
+ */
 function addCounters(total: CodexCounters, one: CodexCounters): CodexCounters {
   return {
     malformedLines: total.malformedLines + one.malformedLines,
@@ -484,6 +527,9 @@ function addCounters(total: CodexCounters, one: CodexCounters): CodexCounters {
     reasoningDropped: total.reasoningDropped + one.reasoningDropped,
     inheritedRecordsDropped: total.inheritedRecordsDropped + one.inheritedRecordsDropped,
     payloadsTruncated: total.payloadsTruncated + one.payloadsTruncated,
+    skippedResponseItemTypes: [
+      ...new Set([...total.skippedResponseItemTypes, ...one.skippedResponseItemTypes]),
+    ].sort(),
   };
 }
 
@@ -615,7 +661,12 @@ function joinSpawns(
     // counted as an orphan either - there is no missing child to report.
     if (spawn.refused) {
       refused += 1;
-      joins.push({ callId: spawn.callId, childThreadId: null, resolvedBy: 'unresolved' });
+      // `refused` IS A RESOLUTION, not a park and not an unresolved join. The
+      // engine answered the call - it declined it - and that is a different
+      // fact from a join that was attempted and found nothing. The golden's
+      // own distribution over this corpus is 8 / 1 / 1 / 0 across the four
+      // members, so `unresolved` is the one that fires zero times, not this.
+      joins.push({ callId: spawn.callId, childThreadId: null, resolvedBy: 'refused' });
       continue;
     }
 
@@ -648,7 +699,7 @@ function joinSpawns(
         joins.push({
           callId: spawn.callId,
           childThreadId: child.threadId,
-          resolvedBy: 'output_agent_id_equals_child_id',
+          resolvedBy: 'output_agent_id_equals_thread_id',
         });
         continue;
       }
@@ -686,7 +737,11 @@ function joinSpawns(
  *  2. `forkBoundaryMissing` - the C5 pair is half-declared.
  *  3. `dialectV1`        - neither join key. TRIPWIRE, must fire zero times.
  *  4. `duplicateAgentPath` - a path already claimed. TRIPWIRE, engine-enforced.
- *  5. `orphanSpawn`      - no parent thread in the corpus.
+ *  5. `parentAgentMissing` - `parent_thread_id` absent, or naming no thread.
+ *
+ * `parentNotGrafted` is the sixth and is NOT decided here: whether a child's
+ * parent ended up in the tree is not knowable until the tree has been walked,
+ * so it is applied afterwards, in {@link graftCodexThreads}.
  *
  * `dialectV1` is checked BEFORE placement on purpose. A keyless child with a
  * good `parent_thread_id` could be placed, and placing it would make the
@@ -711,7 +766,7 @@ function parkCodeFor(
   if (duplicatePath) return 'duplicateAgentPath';
 
   const parentId = optionalString(thread.parentThreadId);
-  if (parentId === null || !threadsById.has(parentId)) return 'orphanSpawn';
+  if (parentId === null || !threadsById.has(parentId)) return 'parentAgentMissing';
 
   return null;
 }
@@ -726,7 +781,6 @@ interface SessionBuild {
   readonly join: SpawnJoin;
   readonly spawnEdges: SpawnEdge[];
   readonly parked: ParkedGraft[];
-  readonly startedAtFor: (thread: CodexThread) => number;
   readonly depthDisagreements: CodexDepthDisagreement[];
   readonly agentsWithoutSpawnEdgeRef: { count: number };
   /**
@@ -848,7 +902,9 @@ function buildAgent(thread: CodexThread, walkedDepth: number, build: SessionBuil
     // which is a wrong number rather than a missing one.
     ...(contextNow === undefined ? {} : { contextNow }),
     ...(burn === undefined ? {} : { burn }),
-    startedAt: build.startedAtFor(thread),
+    // `session_meta`'s own timestamp at ordinal 0, never `mtimeMs` — see the
+    // note beside {@link CodexGraftOptions}.
+    startedAt: thread.startedAtMs,
     // `mtimeMs` is the last write to the transcript, which for a thread that is
     // not running IS when it stopped changing - the same reasoning the OpenCode
     // grafter applies to `time_updated`. A running agent has no end and the KEY
@@ -879,7 +935,6 @@ export function graftCodexThreads(input: CodexGraftInput): CodexGraftResult {
   const livenessFor = input.options?.livenessFor ?? defaultCodexLiveness;
   const workspaceMatch = input.options?.workspaceMatch ?? defaultCodexWorkspaceMatch;
   const projectSlug = input.options?.projectSlug ?? defaultCodexProjectSlug;
-  const startedAtFor = input.options?.startedAtFor ?? defaultCodexStartedAt;
 
   // ---- indexes -----------------------------------------------------------
   const threadsById = new Map<string, CodexThread>();
@@ -1017,7 +1072,6 @@ export function graftCodexThreads(input: CodexGraftInput): CodexGraftResult {
       join,
       spawnEdges,
       parked,
-      startedAtFor,
       depthDisagreements,
       agentsWithoutSpawnEdgeRef,
       visited: new Set<string>(),
@@ -1025,18 +1079,19 @@ export function graftCodexThreads(input: CodexGraftInput): CodexGraftResult {
     const rootNode = buildAgent(root, 0, build);
 
     // A thread that passed every park check and is still not in the tree: its
-    // own parent parked, so the chain to the root is broken. `orphanSpawn`
-    // again, for the same reason the child-side case uses it - the union has no
-    // member for "parent not grafted", the Claude Code grafter's word for this,
-    // and hanging it off the root would be the guess G3 forbids.
+    // own parent parked, so the chain to the root is broken. This is exactly
+    // what the Claude Code grafter calls `parentNotGrafted`, and the webview
+    // already renders it - the reason lives one level up, at the parent's own
+    // park entry, which is why it is a different code from `parentAgentMissing`
+    // rather than a second use of it.
     for (const thread of attachable) {
       if (build.visited.has(thread.threadId)) continue;
       const spawn = join.childToSpawn.get(thread.threadId);
       parked.push({
         agentId: thread.threadId,
-        code: 'orphanSpawn',
+        code: 'parentNotGrafted',
         ...(spawn === undefined ? {} : { toolUseId: spawn.callId }),
-        reason: CODEX_PARK_REASONS.orphanSpawn,
+        reason: CODEX_PARK_REASONS.parentNotGrafted,
         ...(optionalString(thread.parentThreadId) === null
           ? {}
           : { parentAgentId: optionalString(thread.parentThreadId) as string }),

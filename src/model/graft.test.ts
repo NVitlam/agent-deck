@@ -37,6 +37,7 @@ import {
   ROOT_NODE_ID,
   TreeGrafter,
   agentNodes,
+  commandLabelFrom,
   findNode,
   goldenText,
   graftSession,
@@ -1729,5 +1730,110 @@ describe('degenerate input never throws', () => {
       meta: { agentType: 't', description: 'd', spawnDepth: 1 } as unknown as SubagentMeta,
     });
     expect(grafter.snapshot().parked.map((p) => p.code)).toEqual(['missingJoinKey']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D3 — a session that opens with a slash command is labelled with the command
+// ---------------------------------------------------------------------------
+//
+// Reported by own eyes against the shipped build: a session whose first user
+// message is `/phase` rendered its deck card and its tree root as the raw
+// wrapper —
+//
+//   <command-message>phase</command-message> <command-name>/phase</command-name>
+//
+// `INJECTED_BLOCK` in `graft.ts` skips an IDE-injected first block by matching
+// `^<[a-z_]+>`, and every tag in this family carries a HYPHEN, so it never
+// matched and the markup went straight through `firstUserText` onto both
+// surfaces. Nothing in this suite asserted the root label at all before this
+// block, which is how it shipped in v0.5.0 and survived v0.6.0's three phases.
+
+const COMMAND_FIXTURE = fileURLToPath(
+  new URL(
+    '../../fixtures/synthetic-dropped-actions/projects/'
+      + 'c--Users-dev-projects-agent-deck/41194183-a387-4072-bb84-bc472bf7b5e9.jsonl',
+    import.meta.url,
+  ),
+);
+
+describe('D3 — the slash-command wrapper never reaches a label', () => {
+  it('vacuity control: the fixture really does open with a command wrapper', async () => {
+    const text = await readFile(COMMAND_FIXTURE, 'utf8');
+    const firstUser = text
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => JSON.parse(line) as { type?: string; message?: { content?: unknown } })
+      .find((entry) => entry.type === 'user');
+    const content = firstUser?.message?.content;
+    const raw = typeof content === 'string'
+      ? content
+      : Array.isArray(content)
+        ? content
+            .filter((b): b is { type: string; text: string } =>
+              typeof b === 'object' && b !== null && (b as { type?: unknown }).type === 'text')
+            .map((b) => b.text)
+            .join('')
+        : '';
+    // Both halves: it is the FIRST user message, and it is the wrapper.
+    expect(raw).toContain('<command-name>');
+    expect(raw).toContain('/phase');
+    // And the tag really is hyphenated, which is why INJECTED_BLOCK missed it.
+    expect(/^\s*<[a-z_]+>/i.test(raw.trim())).toBe(false);
+  });
+
+  it('labels the session `/phase`, not the markup', async () => {
+    const result = await graftSession(COMMAND_FIXTURE);
+    if (!result.ok) throw new Error(`fixture refused: ${result.mismatch.code}`);
+    expect(result.snapshot.root.label).toBe('/phase');
+    // The defect, stated as its own assertion so a regression names itself
+    // rather than showing a diff of two long strings.
+    expect(result.snapshot.root.label).not.toContain('<command');
+  });
+
+  it('no committed fixture produces a label carrying command markup', async () => {
+    // The corpus-wide version of the assertion above: every captured session
+    // this repository holds, not just the one that was reported.
+    const sessionIds = await capturedSessionIds();
+    expect(sessionIds.length).toBeGreaterThan(0);
+    for (const sessionId of sessionIds) {
+      const result = await graftSession(join(CAPTURED_SLUG, `${sessionId}.jsonl`));
+      if (!result.ok) continue;
+      expect(result.snapshot.root.label).not.toContain('<command');
+    }
+  });
+});
+
+describe('commandLabelFrom', () => {
+  it('reads the name in either tag order, because both orderings are committed', () => {
+    // `fixtures/synthetic-dropped-actions` — message first, no args tag.
+    expect(
+      commandLabelFrom('<command-message>phase</command-message>\n<command-name>/phase</command-name>'),
+    ).toBe('/phase');
+    // `fixtures/cc-2.1.241` — name first, empty args tag.
+    expect(
+      commandLabelFrom(
+        '<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n'
+          + '            <command-args></command-args>',
+      ),
+    ).toBe('/compact');
+  });
+
+  it('appends arguments when there are any', () => {
+    expect(
+      commandLabelFrom('<command-name>/phase</command-name><command-args>3</command-args>'),
+    ).toBe('/phase 3');
+    expect(
+      commandLabelFrom('<command-name>/phase</command-name><command-args>  3  </command-args>'),
+    ).toBe('/phase 3');
+  });
+
+  it('is null for anything that is not a command, so the id fallback still works', () => {
+    expect(commandLabelFrom('just a sentence')).toBeNull();
+    expect(commandLabelFrom('<ide_opened_file>The user opened a file</ide_opened_file>')).toBeNull();
+    // An empty name is NOT a command: returning '' would put a blank string
+    // where design §0's `label-fallback` belongs.
+    expect(commandLabelFrom('<command-name></command-name>')).toBeNull();
+    expect(commandLabelFrom('<command-name>   </command-name>')).toBeNull();
   });
 });

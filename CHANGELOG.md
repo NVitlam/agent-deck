@@ -2,6 +2,32 @@
 
 All notable changes to Agent Deck for Claude Code are documented here.
 
+## 0.6.0 - unreleased - a third engine, Codex
+
+### Fixed
+
+- **A session that starts with a slash command is named after the command.** It
+  used to be named after the markup Claude Code writes around it, so a session
+  begun with `/phase` showed
+  `<command-message>phase</command-message> <command-name>/phase</command-name>`
+  on its deck card and at the root of its tree. It now reads `/phase`, with any
+  arguments appended - `/phase 3`. No `<command-...>` markup reaches a label on
+  any surface.
+- **"Hooks silent" is only ever said about Claude Code.** The hook tap belongs
+  to the Claude Code engine, and when it was quiet the warning was written onto
+  every card in the deck, labelled with that card's own engine - so a Codex card
+  said Codex hooks were silent while they were arriving, and an OpenCode card
+  said the hook listener was down when OpenCode does not use it at all.
+  OpenCode's liveness comes from its own database cursor and Codex's from its
+  own hook stream; neither is described by that warning, and neither shows it
+  any more.
+- **The context-window figure survives a turn that recorded no usage.** Codex
+  states the window in two places and Agent Deck read only one of them, so a
+  session whose turn ended before any token usage existed - an interrupted turn,
+  or one that hit an account limit - showed an em dash for a number the
+  transcript states plainly. Context and burn still show an em dash there, which
+  is correct: those figures genuinely do not exist yet.
+
 ## 0.5.0 - 2026-08-30 - a second engine, a real tree, and the numbers that were wrong
 
 **Agent Deck now watches OpenCode sessions as well as Claude Code ones**, renders

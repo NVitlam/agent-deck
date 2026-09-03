@@ -451,6 +451,67 @@ export const SESSION_LABEL_MAX_CHARS = 200;
 const INJECTED_BLOCK = /^\s*<[a-z_]+>/i;
 
 /**
+ * A slash command, as Claude Code actually writes it into the transcript.
+ *
+ * MEASURED on the committed fixtures, and BOTH ORDERINGS OCCUR, which is why
+ * nothing here depends on position:
+ *
+ *   fixtures/cc-2.1.241/…/6082be25…jsonl
+ *     `<command-name>/compact</command-name>` then `<command-message>` then
+ *     an EMPTY `<command-args></command-args>`
+ *   fixtures/synthetic-dropped-actions/…/41194183…jsonl
+ *     `<command-message>phase</command-message>` then
+ *     `<command-name>/phase</command-name>`, with no `<command-args>` at all
+ *
+ * `INJECTED_BLOCK` above does not catch these and cannot be made to: its class
+ * is `[a-z_]+`, and every tag in this family carries a HYPHEN. So the raw
+ * wrapper reached `firstUserText` and a session opened with `/phase` was
+ * labelled, on the deck card and on the tree root, with the literal
+ * `<command-message>phase</command-message> <command-name>/phase</command-name>`.
+ * Reported by own eyes against the shipped build (D3, 2026-09-03); the Claude
+ * Code engine has shipped it since v0.5.0.
+ *
+ * The rule: the label is the command NAME with any ARGS appended — `/phase`,
+ * or `/phase 3` — and no `<command-*>` markup survives into it.
+ */
+const COMMAND_NAME_TAG = /<command-name>([\s\S]*?)<\/command-name>/i;
+const COMMAND_ARGS_TAG = /<command-args>([\s\S]*?)<\/command-args>/i;
+/** Every tag in the family, WITH its content: nothing of it reaches a label. */
+const COMMAND_ANY_TAG = /<command-[a-z-]+>[\s\S]*?<\/command-[a-z-]+>/gi;
+
+/**
+ * `<command-*>` wrapper -> the command as a person typed it, or `null`.
+ *
+ * `null` means "not a command wrapper", never "an empty label": a
+ * `<command-name>` whose content is blank is not a command, and returning `''`
+ * would put an empty string where the id fallback belongs.
+ */
+export function commandLabelFrom(text: string): string | null {
+  const name = COMMAND_NAME_TAG.exec(text)?.[1]?.trim();
+  if (name === undefined || name === '') return null;
+  const args = COMMAND_ARGS_TAG.exec(text)?.[1]?.trim() ?? '';
+  return args === '' ? name : `${name} ${args}`;
+}
+
+/**
+ * The text a label may be built from: the wrapper's own words if it is a
+ * command, otherwise the text with any stray `<command-*>` block removed.
+ *
+ * The second half is not decoration. A message that quotes a command tag
+ * without being one — or a future member of the family this build has not
+ * met — must not put markup on a card either, and stripping the tag WITH its
+ * content is what guarantees that. An empty result is no label at all, so the
+ * caller keeps looking.
+ */
+function labelSourceFrom(text: string): string | null {
+  const command = commandLabelFrom(text);
+  if (command !== null) return command;
+  if (!/<command-[a-z-]+>/i.test(text)) return text;
+  const stripped = text.replace(COMMAND_ANY_TAG, '').trim();
+  return stripped === '' ? null : stripped;
+}
+
+/**
  * §0's label sources, captured as the entries go past — A8.6.
  *
  * FIRST WINS for both, so a re-read of the same transcript cannot change a
@@ -470,7 +531,12 @@ function captureSessionLabel(acc: AgentAccumulator, entry: TranscriptEntry): voi
   const content = (message as { content?: unknown }).content;
   if (typeof content === 'string') {
     const text = content.trim();
-    if (text !== '' && !INJECTED_BLOCK.test(text)) acc.firstUserText = text;
+    if (text === '') return;
+    // A command wrapper is checked BEFORE the injected-block skip, and it has
+    // to be: it is the user's own first action, not something the IDE put in
+    // front of it, and `INJECTED_BLOCK` cannot see it anyway (D3).
+    const source = labelSourceFrom(text);
+    if (source !== null && !INJECTED_BLOCK.test(source)) acc.firstUserText = source;
     return;
   }
   if (!Array.isArray(content)) return;
@@ -479,8 +545,10 @@ function captureSessionLabel(acc: AgentAccumulator, entry: TranscriptEntry): voi
     const b = block as { type?: unknown; text?: unknown };
     if (b.type !== 'text' || typeof b.text !== 'string') continue;
     const text = b.text.trim();
-    if (text === '' || INJECTED_BLOCK.test(text)) continue;
-    acc.firstUserText = text;
+    if (text === '') continue;
+    const source = labelSourceFrom(text);
+    if (source === null || INJECTED_BLOCK.test(source)) continue;
+    acc.firstUserText = source;
     return;
   }
 }

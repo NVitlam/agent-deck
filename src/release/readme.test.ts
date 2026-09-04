@@ -367,6 +367,12 @@ interface Manifest {
    */
   icon: string;
   /**
+   * The product's name. Read by the shipped-documents guard so the CHANGELOG
+   * is bound to it rather than repeating it - a second copy is what went
+   * stale, twice, in the release that changed the name.
+   */
+  displayName?: string;
+  /**
    * What vsce rewrites the README's relative image links against when it
    * packages. See 'keeps the three preconditions the Marketplace render
    * depends on'.

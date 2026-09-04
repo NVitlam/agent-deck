@@ -51,10 +51,17 @@
  *
  * So the input is built here instead, by MUTATING a run of the anchor corpus —
  * whose cwd is `codex-probe/scratch` — in the one field the defect is about.
- * That is a strictly stronger test than the withdrawn one, because it holds
- * BOTH arms of the comparison against otherwise identical bytes: the same run,
- * unmutated, must render a context number, and mutated must still render the
- * window. A harvested fixture could only ever show one arm.
+ *
+ * **Stronger in one direction and weaker in another, and it is worth being
+ * exact about which.** Stronger on the comparison: it holds BOTH arms against
+ * otherwise identical bytes, so the same run must render a context number
+ * unmutated and the window mutated, and the tool-row count must not move
+ * between them. A harvested fixture can only ever show one arm, so it can say
+ * "this session shows a window" and never "and it is the null `info` that makes
+ * the difference". Weaker on PROVENANCE (G6): nothing in `fixtures/` now
+ * witnesses that Codex ever emits `info: null` at all. That rests on the
+ * withdrawn capture, on the live measurement recorded in contract A9, and on
+ * the re-harvest owed below.
  *
  * The real capture is still owed: PLAN.md Phase 4 carries a DoD line to
  * re-harvest this case from `codex-probe/scratch` once the account's usage

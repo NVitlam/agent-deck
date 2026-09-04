@@ -100,7 +100,7 @@
  *       file. Everything dies with the window.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import * as vscode from 'vscode';
@@ -2789,9 +2789,24 @@ export function opencodeStoreExists(env: NodeJS.ProcessEnv = process.env): boole
  * installed-but-never-run Codex still fires hook events the moment it runs,
  * and the listener has to be bound BEFORE that happens or the first session of
  * the day is the one with no liveness.
+ *
+ * **`isDirectory()`, not `existsSync`, and that is the engine's predicate
+ * rather than a near-enough one.** `locateCodex` decides `rootExists` with
+ * `statSync(root).isDirectory()`. An `existsSync` here would answer `true` for
+ * a regular FILE at that path, so activation would start a deck for a machine
+ * the engine then reports as having no Codex — two probes for one question,
+ * disagreeing silently, which is the class this file already carries a comment
+ * about at the `start()` gate. Cheap to get right, and there is no second
+ * answer to reconcile.
  */
 export function codexRootExists(env: NodeJS.ProcessEnv = process.env): boolean {
-  return existsSync(resolveCodexRoot({ env }).root);
+  try {
+    return statSync(resolveCodexRoot({ env }).root).isDirectory();
+  } catch {
+    // Absent, unreadable, or a broken link: not a root. G3 — an absent root is
+    // a value, never an error, and never a throw on the activation path.
+    return false;
+  }
 }
 
 /**

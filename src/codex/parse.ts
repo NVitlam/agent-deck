@@ -1158,15 +1158,22 @@ interface Usage {
  * but the window was stated at ordinal 1 and the deck showed an em dash for it.
  * Reading the top-level key as well is a strict widening: the key name means
  * one thing wherever it appears, and no transcript states two different values.
- * Re-measured over BOTH committed corpora on 2026-09-03 — 28 top-level plus 73
- * under `info`, **101 occurrences, exactly 1 distinct value (258400)**.
+ * Re-measured over every committed `fixtures/codex*` corpus on 2026-09-04 —
+ * 25 top-level plus 58 under `info`, **83 occurrences, exactly 1 distinct
+ * value (258400)**.
  *
- * An earlier draft of this comment cited A7's `125` instead. That figure is
- * real but it counts a DIFFERENT scope (the Phase 1 corpus plus the lab
- * witnesses), and quoting it here made a number look re-derived when it had
- * only been copied — this repository's most-recorded defect, caught by
- * `phase-verifier` re-deriving it. The count moves with the corpus; the
- * ONE DISTINCT VALUE is the half this widening actually rests on.
+ * THIS NUMBER HAS NOW BEEN WRONG TWICE, IN BOTH DIRECTIONS, AND THE PATTERN IS
+ * WORTH MORE THAN THE FIGURE. It was first written as A7's `125`, which is
+ * real but counts a different scope — a number that looked re-derived and had
+ * only been copied. Corrected to `101` on 2026-09-03 over the two corpora
+ * committed that day. One of those two was WITHDRAWN the next day (a G8
+ * ruling), taking `3 + 15 = 18` occurrences with it, and `101` went stale
+ * **by deletion** while naming a corpus that no longer exists. Both times it
+ * was `phase-verifier` re-deriving it that caught it.
+ *
+ * So: the count moves with the corpus, in both directions, and it is not what
+ * this widening rests on. **The ONE DISTINCT VALUE is** — a key that means the
+ * same thing wherever it appears, with no transcript stating two.
  */
 function readUsage(kept: readonly CodexRecord[]): Usage {
   let contextNow: TokenPair | undefined;

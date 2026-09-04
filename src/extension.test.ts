@@ -2159,10 +2159,22 @@ describe('G1: the extension host writes nothing', () => {
      *
      * The property this test stands for is G1 — the host writes nothing — and a
      * blanket ban on the module name was a PROXY for it. The proxy is replaced
-     * by the thing itself: exactly one `node:fs` import, naming exactly one
-     * binding, and that binding is `existsSync`, which cannot write. The
-     * write-API name ban in the sibling test above is unchanged and still lists
-     * every write call by name.
+     * by the thing itself: exactly one `node:fs` import, naming an EXACT SET of
+     * bindings, every one of which is a read. The write-API name ban in the
+     * sibling test above is unchanged and still lists every write call by name.
+     *
+     * **`statSync` joined it on 2026-09-04, and the guard is what forced the
+     * decision to be a decision.** `codexRootExists` first used `existsSync`,
+     * which answers `true` for a regular FILE at the Codex root path — while
+     * `locateCodex` decides `rootExists` with `statSync(root).isDirectory()`.
+     * Two probes, one question, disagreeing silently. Aligning them means the
+     * host needs the same syscall the engine uses. Both are reads and neither
+     * can create, truncate or modify anything.
+     *
+     * The set stays EXACT rather than becoming a deny-list: this file's own
+     * history is a blanket ban that had to be replaced when it stopped being
+     * true, and a containment here would let a future `openSync` through
+     * silently. Widening it is meant to cost a paragraph.
      *
      * The alternative was to answer "does this file exist" by opening the
      * database and reading its degrade code, which would have constructed and
@@ -2177,9 +2189,13 @@ describe('G1: the extension host writes nothing', () => {
       .split(',')
       .map((name) => name.trim())
       .filter((name) => name !== '');
-    expect(bound, 'the only node:fs binding may be the read-only existsSync').toStrictEqual([
-      'existsSync',
-    ]);
+    expect(
+      bound,
+      'every node:fs binding in the host must be a read, and the set is exact',
+    ).toStrictEqual(['existsSync', 'statSync']);
+    // The count beside the set (rule 19): a set comparison written against an
+    // accidentally-empty match list passes vacuously, and this goes red first.
+    expect(bound).toHaveLength(2);
 
     // Everything else stays banned outright: the promises API, the default
     // namespace form, and any `require`.
@@ -3714,6 +3730,22 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
     expect(codexRootExists({ [CODEX_HOME_VAR]: staged })).toBe(true);
   });
 
+  it('codexRootExists asks the ENGINE\'S question: a file at the root path is not a root', async () => {
+    // `locateCodex` decides `rootExists` with `statSync(root).isDirectory()`.
+    // An `existsSync` here would answer `true` for a regular file and start a
+    // deck for a machine the engine then reports as having no Codex — two
+    // probes for one question, disagreeing silently.
+    const file = join(await makeTempDir(), 'codex-is-a-file');
+    await writeFile(file, 'not a directory', 'utf8');
+    expect(existsSync(file), 'the control: it does exist').toBe(true);
+    expect(codexRootExists({ [CODEX_HOME_VAR]: file })).toBe(false);
+
+    // And the engine agrees, which is the property being held rather than the
+    // implementation being restated.
+    const outcome = await readCodexEngine({ root: file });
+    expect(outcome.kind).toBe('rootAbsent');
+  });
+
   it('activate() starts for a Codex-only workspace, which it used to refuse outright', async () => {
     process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
     const lonely = await workspaceWithNoClaudeCode();
@@ -3757,15 +3789,43 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
     // Received AND routed: `acceptedCodex` is the discriminator's own count.
     expect(host?.dataPath.listener.counters.acceptedCodex).toBe(payloads.length);
 
-    // ATTRIBUTED, which is the half a counter alone cannot show. The staged
-    // root is the same run the stream was captured beside, so every hook state
-    // must find its thread; a hook state with no thread is an event that
-    // arrived and landed nowhere.
+    /*
+     * ATTRIBUTED, and this assertion had to be rewritten to say so.
+     *
+     * The first version asserted `hookStatesWithoutThread === 0`, which reads
+     * like attribution and is not: `src/codex/liveness.ts` derives it by
+     * walking the STATE MAP, so it is 0 when the map is EMPTY. `eventsSeen` is
+     * incremented above the `session_id` usability check, so it moves for an
+     * event that is then discarded. A verifier proved the pair vacuous by
+     * making every event unusable — both assertions stayed green.
+     *
+     * `lastHookEventMs` is the per-thread evidence and cannot be faked by an
+     * empty map: it is non-null only when a hook state exists FOR THAT THREAD.
+     * The staged root is the same run the stream was captured beside, so every
+     * thread the payloads name must carry one.
+     */
     const report = host?.dataPath.codex.livenessEngine?.poll();
     expect(report, 'the Codex liveness engine must exist for a present root').toBeDefined();
     expect(report?.counters.eventsSeen).toBe(payloads.length);
-    expect(report?.counters.hookStatesWithoutThread).toBe(0);
-    expect(report?.threads.length).toBeGreaterThan(0);
+    // Every payload was USABLE, so each one created or updated a state. Zero
+    // here is what makes `eventsSeen` mean what it looks like it means.
+    expect(report?.counters.eventsUnusable).toBe(0);
+
+    // Derived from the payloads, never written down: the thread each one names
+    // is `agent_id` when present and `session_id` otherwise — the recorded
+    // main-thread rule, where ABSENCE of the key is the signal.
+    const named = new Set(
+      payloads.map((p) => (p['agent_id'] as string | undefined) ?? (p['session_id'] as string)),
+    );
+    expect(named.size).toBeGreaterThan(0);
+    for (const threadId of named) {
+      const thread = report?.threads.find((t) => t.threadId === threadId);
+      expect(thread, `no thread ${threadId} in the tree the engine read`).toBeDefined();
+      expect(
+        thread?.lastHookEventMs,
+        `thread ${threadId} was named by a payload and carries no hook event`,
+      ).not.toBeNull();
+    }
   });
 
   it('does not report a Codex-only window as "hooks silent"', async () => {
@@ -3863,7 +3923,14 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
         },
       }),
     );
-    // "Once" is a claim about repetition, so it is driven by repeating.
+    /*
+     * Repeated, and the comment its siblings carry would be an over-read here.
+     * `start()` opens with `if (this.#disposed || this.#started) return;`, so
+     * calls 2 and 3 never reach the log site: what this repetition proves is
+     * the `#started` guard, NOT that the log site itself is once-only. The
+     * once-ness rests on there being exactly one call site, which
+     * `noHookEngineLogs === 1` records and a second site would break.
+     */
     await path.start();
     await path.start();
     await path.start();

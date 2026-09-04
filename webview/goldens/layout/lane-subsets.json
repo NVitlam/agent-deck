@@ -1,0 +1,102 @@
+{
+  "goldenFor": "DoD 5.0c - deckLaneX() closes the middle-lane gap",
+  "producedBy": "hand-written from the design's lane arithmetic; NOT emitted by layout.ts",
+  "note": "Every number here is a design statement. webview/layout.test.ts reproduces it through production deckLayout() and deckLaneX(). Changing a number here is a design amendment, not a test edit.",
+  "geometry": {
+    "cardW": 220,
+    "cardH": 88,
+    "laneGap": 40,
+    "gapY": 12,
+    "lanePitch": 260,
+    "rowPitch": 100
+  },
+  "laneOrder": ["cc", "oc", "cx"],
+  "sessions": {
+    "note": "Two cards per present engine, so a lane pins both its x and its row stacking. All live, all with the same last-event time, so the sort resolves on id alone.",
+    "idsPerEngine": ["<engine>-1", "<engine>-2"],
+    "sort": "engine",
+    "viewportW": 800
+  },
+  "subsets": [
+    {
+      "engines": ["cc"],
+      "mode": "list",
+      "why": "one engine visible: deckLanesDegrade collapses lanes to the list, and no lane is drawn at all",
+      "laneX": { "cc": 0 },
+      "placements": [
+        { "id": "cc-1", "x": 0, "y": 0 },
+        { "id": "cc-2", "x": 0, "y": 100 }
+      ]
+    },
+    {
+      "engines": ["oc"],
+      "mode": "list",
+      "why": "one engine visible",
+      "laneX": { "oc": 0 },
+      "placements": [
+        { "id": "oc-1", "x": 0, "y": 0 },
+        { "id": "oc-2", "x": 0, "y": 100 }
+      ]
+    },
+    {
+      "engines": ["cx"],
+      "mode": "list",
+      "why": "one engine visible",
+      "laneX": { "cx": 0 },
+      "placements": [
+        { "id": "cx-1", "x": 0, "y": 0 },
+        { "id": "cx-2", "x": 0, "y": 100 }
+      ]
+    },
+    {
+      "engines": ["cc", "oc"],
+      "mode": "lanes",
+      "why": "adjacent ranks: the compacted index equals the absolute rank, so this shape is unchanged by DoD 5.0c",
+      "laneX": { "cc": 0, "oc": 260 },
+      "placements": [
+        { "id": "cc-1", "x": 0, "y": 0 },
+        { "id": "cc-2", "x": 0, "y": 100 },
+        { "id": "oc-1", "x": 260, "y": 0 },
+        { "id": "oc-2", "x": 260, "y": 100 }
+      ]
+    },
+    {
+      "engines": ["cc", "cx"],
+      "mode": "lanes",
+      "why": "THE DEFECT DoD 5.0c FIXES. The absolute-rank form put cx at 520 and left an empty column at 260 where oc would have sat. cx is the second visible engine, so it draws in the second lane.",
+      "laneX": { "cc": 0, "cx": 260 },
+      "placements": [
+        { "id": "cc-1", "x": 0, "y": 0 },
+        { "id": "cc-2", "x": 0, "y": 100 },
+        { "id": "cx-1", "x": 260, "y": 0 },
+        { "id": "cx-2", "x": 260, "y": 100 }
+      ]
+    },
+    {
+      "engines": ["oc", "cx"],
+      "mode": "lanes",
+      "why": "the LEADING gap. The absolute-rank form put oc at 260 and cx at 520, leaving column 0 empty. Compacted, the pair starts at 0.",
+      "laneX": { "oc": 0, "cx": 260 },
+      "placements": [
+        { "id": "oc-1", "x": 0, "y": 0 },
+        { "id": "oc-2", "x": 0, "y": 100 },
+        { "id": "cx-1", "x": 260, "y": 0 },
+        { "id": "cx-2", "x": 260, "y": 100 }
+      ]
+    },
+    {
+      "engines": ["cc", "oc", "cx"],
+      "mode": "lanes",
+      "why": "the full set: compaction is the identity, so this shape is unchanged by DoD 5.0c",
+      "laneX": { "cc": 0, "oc": 260, "cx": 520 },
+      "placements": [
+        { "id": "cc-1", "x": 0, "y": 0 },
+        { "id": "cc-2", "x": 0, "y": 100 },
+        { "id": "oc-1", "x": 260, "y": 0 },
+        { "id": "oc-2", "x": 260, "y": 100 },
+        { "id": "cx-1", "x": 520, "y": 0 },
+        { "id": "cx-2", "x": 520, "y": 100 }
+      ]
+    }
+  ]
+}

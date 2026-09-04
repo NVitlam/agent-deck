@@ -82,6 +82,7 @@ const readRepoFile = (relative: string): Promise<string> =>
 interface Manifest {
   name?: unknown;
   displayName?: unknown;
+  description?: unknown;
   publisher?: unknown;
   version?: unknown;
   license?: unknown;
@@ -164,9 +165,9 @@ describe('marketplace identity', () => {
     expect(String(manifest.displayName)).not.toContain('>');
   });
 
-  it('leads neither displayName nor name with "Claude"', async () => {
+  it('leads none of displayName, name or description with "Claude"', async () => {
     const manifest = await readManifest();
-    for (const field of ['displayName', 'name'] as const) {
+    for (const field of ['displayName', 'name', 'description'] as const) {
       const value = manifest[field];
       expect(typeof value, `package.json must declare a string ${field}`).toBe('string');
       expect(
@@ -176,6 +177,42 @@ describe('marketplace identity', () => {
     }
   });
 
+  /**
+   * THE DESCRIPTION, HELD TO THE SAME STANDARD AS THE DISPLAY NAME, and for
+   * the same reason: the Marketplace shows both, one under the other.
+   *
+   * It read 'Live observability for Claude Code multi-agent sessions' until
+   * 0.6.0 - naming ONE of the three engines this extension observes, in the
+   * sentence directly beneath the name Gate H1 had just changed for exactly
+   * that property. H1 addressed `displayName` and stopped there, so the
+   * description was left saying what the name had been corrected for saying.
+   * Nothing asserted it at all: it was raised at the Phase 5 gate by a
+   * `phase-verifier`, as a thing nobody had claimed.
+   *
+   * The em dash is checked BY CODE POINT, the same discipline `displayName`
+   * gets above and for the same recorded reason - this repository has shipped
+   * seven em dashes silently turned into the control byte 0x14 by a latin1
+   * write, and a hyphen substituted here would be a different string that
+   * looks identical in a diff.
+   */
+  it('describes all three engines, with a real em dash', async () => {
+    const manifest = await readManifest();
+    expect(manifest.description).toBe(
+      'Live observability for coding-agent swarms \u2014 Claude Code, OpenCode and Codex, ' +
+        'side by side in VS Code. Read-only, zero egress.',
+    );
+
+    const description = String(manifest.description);
+    const dashes = [...description].filter((c) => c === '\u2014');
+    expect(dashes, 'the separator must be one em dash, not a hyphen').toHaveLength(1);
+
+    // The engine SET, asserted separately from the sentence. The wording may
+    // be rewritten; a rewrite that silently drops an engine is the defect this
+    // item exists to prevent, and it would read perfectly well.
+    for (const engine of ['Claude Code', 'OpenCode', 'Codex']) {
+      expect(description, `the description does not name ${engine}`).toContain(engine);
+    }
+  });
   it('carries exactly the PLAN keywords, in order, and the count beside the set', async () => {
     const manifest = await readManifest();
     expect(manifest.keywords).toEqual(EXPECTED_KEYWORDS);

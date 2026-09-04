@@ -3,7 +3,7 @@
   "displayName": "Agent Deck — Watch Your Agents Work.",
   "version": "0.6.0",
   "publisher": "nvitlam",
-  "description": "Live observability for Claude Code multi-agent sessions: subagent trees, tool calls, token burn and cost, in real time.",
+  "description": "Live observability for coding-agent swarms — Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
   "license": "MIT",
   "keywords": [
     "claude code",

@@ -60,8 +60,22 @@
  * BUCKETS
  * -------
  *   IDENTITY    a match against the private token list, anywhere, outside that
- *               list's own `exemptPaths` (the licence and the manifest, where
- *               the author's name is the correct content). Gate: must be empty.
+ *               list's own `exemptPaths`, where the author's name is the
+ *               CORRECT content: the licence, the manifest and its lock, and
+ *               - added 2026-09-05, by the user, for DoD 5.9 - the project
+ *               page at `site/index.html`.
+ *
+ *               THE PAGE'S EXEMPTION IS NOT A WIDENING OF WHAT IS PUBLIC, and
+ *               the distinction is the whole reason an exemption was taken
+ *               rather than the links being lowercased to slip past a
+ *               case-sensitive token. Its three hits are all the repository's
+ *               own public URL - the same string `package.json`'s
+ *               `repository.url` already carries under this same list, and the
+ *               one `vsce` rewrites every relative README image link into
+ *               inside a published VSIX. Lowercasing would have passed the
+ *               check while publishing the identical fact, which is the
+ *               fail-open shape working-method rule 18 exists to stop.
+ *               Gate: must be empty.
  *               Reported as path:line plus the token's NOTE - never the matched
  *               text, because this report is committed.
  *               SKIPPED, and said so in the verdict line, when the token file

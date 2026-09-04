@@ -112,6 +112,9 @@ const EXPECTED_KEYWORDS = [
   'monitor',
   'subagents',
   'opencode',
+  // v0.6.0. One keyword per observed engine, and the order is the order the
+  // engines arrived, which is also the order the README introduces them.
+  'codex',
 ];
 
 /** The first word, case-insensitively — "Claude Code" is fine anywhere else. */
@@ -129,9 +132,36 @@ describe('marketplace identity', () => {
     );
   });
 
-  it('displays as "Agent Deck for Claude Code"', async () => {
+  /**
+   * GATE H1 (DoD 5.4), decided by the user on 2026-09-05.
+   *
+   * It was 'Agent Deck for Claude Code', which named one of three observed
+   * engines in the string a user reads first. The gate existed to protect one
+   * property - that the name does not LEAD with 'Claude' - and the new one
+   * clears it by not naming an engine at all.
+   *
+   * The Marketplace ID `nvitlam.agent-deck` is permanent and is untouched by
+   * this; a display name is not an identity. The test above pins that.
+   *
+   * THE ANGLE BRACKETS IN THE RULING ARE NOT PART OF THE STRING. It was
+   * written `Agent Deck - <Watch Your Agents Work.>`, and the brackets are
+   * read as delimiting the text that fills the blank rather than as literal
+   * characters. Recorded here rather than silently normalised, because a
+   * displayName carrying `<` and `>` would be a deliberate choice and this is
+   * where a reader would come to correct it.
+   *
+   * The dash is an EM DASH (U+2014), asserted by code point rather than by
+   * eye: this repository has shipped seven em dashes silently turned into the
+   * control byte 0x14 by a latin1 write, and a hyphen here would be a
+   * different name that looks the same in a diff.
+   */
+  it('displays as the Gate H1 name, with a real em dash', async () => {
     const manifest = await readManifest();
-    expect(manifest.displayName).toBe('Agent Deck for Claude Code');
+    expect(manifest.displayName).toBe('Agent Deck \u2014 Watch Your Agents Work.');
+    const dashes = [...String(manifest.displayName)].filter((c) => c === '\u2014');
+    expect(dashes, 'the separator must be one em dash, not a hyphen').toHaveLength(1);
+    expect(String(manifest.displayName)).not.toContain('<');
+    expect(String(manifest.displayName)).not.toContain('>');
   });
 
   it('leads neither displayName nor name with "Claude"', async () => {
@@ -146,9 +176,12 @@ describe('marketplace identity', () => {
     }
   });
 
-  it('carries exactly the six PLAN keywords, in order', async () => {
+  it('carries exactly the PLAN keywords, in order, and the count beside the set', async () => {
     const manifest = await readManifest();
     expect(manifest.keywords).toEqual(EXPECTED_KEYWORDS);
+    // Rule 19's shape: the count beside the set, so a comparison written
+    // accidentally against an empty or filtered list cannot pass vacuously.
+    expect(manifest.keywords).toHaveLength(7);
   });
 
   it('names the repository vsce asks for', async () => {

@@ -464,7 +464,7 @@ async function recordCapturedArc(host) {
   const publish = () => {
     const emission = model.emit();
     recorder.bridge.publish(emission);
-    recorder.bridge.publishDegraded(engine.degradedState());
+    recorder.bridge.publishDegraded('cc', engine.degradedState());
     return emission;
   };
 
@@ -756,7 +756,7 @@ async function recordOpenCodeArc(host) {
     const emission = path.emit();
     final = emission;
     recorder.bridge.publish(emission);
-    recorder.bridge.publishDegraded(hooks.degradedState());
+    recorder.bridge.publishDegraded('cc', hooks.degradedState());
     return emission;
   };
 
@@ -1054,7 +1054,7 @@ async function recordCodexArc(host) {
     const emission = path.emit();
     final = emission;
     recorder.bridge.publish(emission);
-    recorder.bridge.publishDegraded(hooks.degradedState());
+    recorder.bridge.publishDegraded('cc', hooks.degradedState());
     return emission;
   };
 
@@ -1417,7 +1417,7 @@ async function recordTimedSession(host, sourceDir, options = {}) {
     const emission = model.emit();
     final = emission;
     recorder.bridge.publish(emission);
-    recorder.bridge.publishDegraded(engine.degradedState());
+    recorder.bridge.publishDegraded('cc', engine.degradedState());
   }
 
   const digests = {};

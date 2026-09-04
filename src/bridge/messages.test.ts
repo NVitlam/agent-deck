@@ -473,7 +473,7 @@ describe('SessionBridge — degraded', () => {
     const port = new RecordingPort();
     const bridge = new SessionBridge(port);
     bridge.publishDegraded('cc', { degraded: false });
-    expect(port.sent).toEqual([{ type: 'degraded', degraded: false }]);
+    expect(port.sent).toEqual([{ type: 'degraded', engine: 'cc', degraded: false }]);
   });
 
   it('carries the reason when degraded', () => {
@@ -483,7 +483,7 @@ describe('SessionBridge — degraded', () => {
       reason: 'noHookEvents',
     });
     expect(port.sent).toEqual([
-      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
     ]);
   });
 
@@ -506,10 +506,10 @@ describe('SessionBridge — degraded', () => {
     bridge.publishDegraded('cc', { degraded: false });
     bridge.publishDegraded('cc', { degraded: true, reason: 'listenerDown' });
     expect(port.sent).toEqual([
-      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
-      { type: 'degraded', degraded: true, reason: 'listenerDown' },
-      { type: 'degraded', degraded: false },
-      { type: 'degraded', degraded: true, reason: 'listenerDown' },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' },
+      { type: 'degraded', engine: 'cc', degraded: false },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' },
     ]);
   });
 
@@ -518,9 +518,41 @@ describe('SessionBridge — degraded', () => {
     const bridge = new SessionBridge(port);
     bridge.publishDegraded('cc', { degraded: true, reason: 'listenerDown' });
     bridge.publishDegraded('cc', { degraded: false, reason: 'listenerDown' });
-    expect(port.sent[1]).toEqual({ type: 'degraded', degraded: false });
+    expect(port.sent[1]).toEqual({ type: 'degraded', engine: 'cc', degraded: false });
   });
 
+  /*
+   * DoD 5.0b - THE NO-NAGGING MEMORY IS PER TAP, NOT SHARED.
+   *
+   * `lastDegraded` was one field. With two taps publishing on every emission,
+   * one field means a Codex send suppresses the next Claude Code send that
+   * happens to carry the same boolean - the webview would then be told about
+   * whichever tap moved first and never about the other. That is the
+   * two-taps-sharing-one-value collapse the `engine` field exists to undo,
+   * reappearing in the de-duplication rather than in the message.
+   */
+  it('remembers each tap separately, so one tap cannot suppress the other', () => {
+    const port = new RecordingPort();
+    const bridge = new SessionBridge(port);
+
+    bridge.publishDegraded('cc', { degraded: true, reason: 'noHookEvents' });
+    // Same booleans, same reason, DIFFERENT TAP. A shared memory swallows it.
+    bridge.publishDegraded('codex', { degraded: true, reason: 'noHookEvents' });
+
+    expect(port.sent).toEqual([
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'codex', degraded: true, reason: 'noHookEvents' },
+    ]);
+    expect(bridge.counters.degradedSent).toBe(2);
+
+    // And each tap still refuses to nag on its OWN repeats - the property the
+    // split must not have cost. Both directions, in one mount.
+    for (let i = 0; i < 20; i += 1) {
+      bridge.publishDegraded('cc', { degraded: true, reason: 'noHookEvents' });
+      bridge.publishDegraded('codex', { degraded: true, reason: 'noHookEvents' });
+    }
+    expect(port.sent).toHaveLength(2);
+  });
   it('re-sends after reset, because the new webview was never told', () => {
     const port = new RecordingPort();
     const bridge = new SessionBridge(port);

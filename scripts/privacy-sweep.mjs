@@ -251,6 +251,20 @@ const CAPTURE_CORPORA = [
   // caught the omission on the next run, which is what it is for.
   'media/',
   'scripts/',
+  // The GitHub Pages source, tracked for DoD 5.9. FOURTH time the
+  // completeness guard in src/release/privacy.test.ts has caught a newly
+  // tracked top-level directory on the first full run after it appeared -
+  // after media/, .vscode/ and .opencode/ - and the fourth time it has been
+  // the only thing that noticed. A directory outside this list is not swept
+  // for FOREIGN content at all, and the sweep still exits 0, which is why
+  // the guard asserts coverage rather than trusting the verdict.
+  //
+  // It carries an HTML page and four PNGs copied from media/. The PNGs are
+  // byte-identical to files already swept under media/, so this adds no new
+  // capture content - but 'already swept elsewhere' is a fact about today's
+  // contents, not a property of the directory, and the next thing to land
+  // here would be unswept.
+  'site/',
   'src/',
   'test/',
   'webview/',

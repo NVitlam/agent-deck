@@ -1015,22 +1015,41 @@ describe('PanelController', () => {
     });
 
     controller.publish(emission([state('s1')], { added: ['s1'] }));
-    expect(panel.posted.map((m) => m.type)).toStrictEqual(['snapshot', 'degraded']);
+    // TWO degraded lines, not one, since DoD 5.0b: a publish announces every
+    // hook tap's health and there are two taps. The ORDER is part of the
+    // contract - the snapshot first, then the taps - because a webview that
+    // heard about a degraded tap before it had any sessions would have
+    // nothing to attach it to.
+    expect(panel.posted.map((m) => m.type)).toStrictEqual([
+      'snapshot',
+      'degraded',
+      'degraded',
+    ]);
+    expect(
+      panel.posted.filter((m) => m.type === 'degraded').map((m) => m.engine),
+      'one line per tap, each naming itself',
+    ).toStrictEqual(['cc', 'codex']);
 
     // Publishing again with nothing changed sends nothing: no snapshot, and no
-    // repeated degraded message.
+    // repeated degraded message from EITHER tap.
     controller.publish(emission([state('s1')]));
-    expect(panel.posted).toHaveLength(2);
+    expect(panel.posted).toHaveLength(3);
 
     panel.fireBecameVisible();
     expect(controller.counters.reloads).toBe(1);
     expect(snapshotsRequested).toBe(1);
 
     controller.publish(emission([state('s1')]));
+    // After a reload the bridge has forgotten BOTH taps, so both are
+    // re-announced beside the fresh snapshot. `reset()` clears the whole
+    // per-tap map for this reason: a webview that was never told is not the
+    // same as a tap that has not moved.
     expect(panel.posted.map((m) => m.type)).toStrictEqual([
       'snapshot',
       'degraded',
+      'degraded',
       'snapshot',
+      'degraded',
       'degraded',
     ]);
     controller.dispose();
@@ -1041,11 +1060,21 @@ describe('PanelController', () => {
     const controller = new PanelController({ panel: panel.surface, nonce: 'AAAAAAAA' });
     for (let i = 0; i < 12; i += 1) controller.publish(emission([state('s1')], { degraded: true }));
     const degraded = panel.posted.filter((m) => m.type === 'degraded');
+    // Twelve publishes, TWO lines: one per tap, each sent once. The point of
+    // the test is unchanged - no nagging - and it is now also a check that
+    // the two taps do not share a de-duplication memory, which would have
+    // shown up here as a single line.
     expect(degraded).toStrictEqual([
-      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'codex', degraded: false },
     ]);
+    // The Claude Code tap recovers. That is ONE new line - the Codex tap has
+    // not moved, so it must not be re-announced alongside it, which is the
+    // per-tap no-nagging rule seen from the other side.
     controller.publish(emission([state('s1')], { degraded: false }));
-    expect(panel.posted.filter((m) => m.type === 'degraded')).toHaveLength(2);
+    const after = panel.posted.filter((m) => m.type === 'degraded');
+    expect(after).toHaveLength(3);
+    expect(after.at(-1)).toStrictEqual({ type: 'degraded', engine: 'cc', degraded: false });
     controller.dispose();
   });
 
@@ -1635,8 +1664,13 @@ describe('degraded mode', () => {
     for (let i = 0; i < 20; i += 1) host.dataPath.pump();
 
     const degraded = panel.posted.filter((m) => m.type === 'degraded');
+    // Twenty pumps, two lines: one per tap, each announced once. The Codex
+    // half is `false` because this workspace has no Codex root - an engine
+    // that is not running is not degraded, it is silent, and saying otherwise
+    // would be the D2 mistake pointed at the other engine.
     expect(degraded).toStrictEqual([
-      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'codex', degraded: false },
     ]);
     // The socket is bound and healthy; the reason is the absence of events,
     // which is the honest one.

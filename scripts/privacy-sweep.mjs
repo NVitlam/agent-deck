@@ -1252,6 +1252,39 @@ function untrackedScanFiles(root, tracked) {
  * `git cat-file --batch` is fed the whole object list at once and its output
  * is parsed as bytes, which keeps NUL-containing blobs intact.
  */
+/**
+ * Every blob id the CHECKOUT holds, one entry per distinct object.
+ *
+ * `git ls-files -s` prints the index, so this is blob IDS and not file
+ * bytes - which is the whole point. Two paths holding identical content are
+ * one entry here and two files on disk, and conflating those is what made
+ * the old byte comparison wrong.
+ */
+function trackedBlobShas(root) {
+  const r = git(root, ['ls-files', '-s'], { encoding: 'buffer' });
+  if (r.status !== 0) throw new Error('git ls-files -s failed');
+  const shas = new Set();
+  for (const line of r.stdout.toString('utf8').split('\n')) {
+    const m = /^\d+ ([0-9a-f]{40}) \d+\t/.exec(line);
+    if (m !== null) shas.add(m[1]);
+  }
+  return shas;
+}
+
+/**
+ * True when this clone was made with `--depth`, i.e. its history is a stub.
+ *
+ * Reported rather than inferred from a count, because "few blobs" and "no
+ * history" are different diagnoses and only git can tell them apart. On a
+ * shallow clone the history leg is the checkout under another name, which is
+ * exactly the clean-looking nothing rule 18 is about.
+ */
+function isShallowRepo(root) {
+  const r = git(root, ['rev-parse', '--is-shallow-repository'], { encoding: 'utf8' });
+  if (r.status !== 0) return false;
+  return String(r.stdout).trim() === 'true';
+}
+
 function historyBlobs(root) {
   const rev = git(root, ['rev-list', '--all', '--objects'], { encoding: 'utf8' });
   if (rev.status !== 0) throw new Error('git rev-list failed');
@@ -1308,6 +1341,9 @@ function newLeg() {
   return {
     filesScanned: 0,
     bytesScanned: 0,
+    // History only. Distinct blob ids this leg scanned that the CHECKOUT does
+    // not hold - the number that says whether history was really swept.
+    blobsNotInWorkingTree: 0,
     nulFiles: [],
     identity: { hits: [], exemptHits: 0 },
     secrets: [],
@@ -1422,6 +1458,11 @@ export function sweep(options = {}) {
     activeLeg = hist;
     const blobs = historyBlobs(root);
     hist.blobsScanned = blobs.length;
+    // THE MEASUREMENT THE OLD BYTE COMPARISON WAS REACHING FOR. A blob the
+    // checkout already holds tells us nothing about whether history was
+    // swept; a blob it does NOT hold can only have come from an older commit.
+    const checkoutShas = trackedBlobShas(root);
+    hist.blobsNotInWorkingTree = blobs.filter((b) => !checkoutShas.has(b.sha)).length;
     for (const blob of blobs) {
       // A blob stored at several paths is scanned once per path, so a path that
       // is exempt in one place and not in another is judged in each.
@@ -1448,6 +1489,9 @@ export function sweep(options = {}) {
     generatedAt: options.stamp ?? new Date().toISOString(),
     head,
     historyScope: history === null ? 'skipped' : 'all-refs',
+    // Stated on every report, including runs that skip history, so a reader
+    // never has to infer it from a count that looks plausible either way.
+    shallow: gitRepo ? isShallowRepo(root) : false,
     config: {
       // WHAT the identity class did, never WHAT it looked for. `tokenCount` and
       // the notes are safe to commit; the patterns are not, and neither is the

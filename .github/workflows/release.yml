@@ -83,6 +83,25 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # FULL history, not the default shallow fetch-depth: 1.
+          #
+          # THIS JOB RUNS THE WHOLE SUITE (npx vitest run, below), and the
+          # suite contains a full-history privacy sweep. ci.yml has carried
+          # fetch-depth: 0 and a comment about this since run 32521971501;
+          # this file did not, and the v0.6.0 tag push is what found that -
+          # a tag triggers THIS workflow, not ci.yml, so the guard that was
+          # fixed in one place had never applied here.
+          #
+          # On a depth-1 clone the sweep scans one commit, finds every blob
+          # already in the checkout, and prints VERDICT PASS - a clean result
+          # from a corpus that is not there. src/release/privacy.test.ts now
+          # asserts both halves: that history holds at least one blob the
+          # checkout does not, and that the clone is not shallow.
+          #
+          # src/release/workflow.test.ts asserts this line exists on every
+          # workflow that runs the suite, so the next one cannot omit it.
+          fetch-depth: 0
 
       # Set here rather than in a job-level `env:` block: the `runner` context
       # is NOT available to `jobs.<id>.env` (only github/needs/strategy/matrix/

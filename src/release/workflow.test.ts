@@ -605,6 +605,68 @@ describe('every job that builds or tests runs on windows-latest', () => {
   });
 });
 
+/**
+ * Workflows that RUN THE SUITE, derived rather than listed.
+ *
+ * The suite contains a full-history privacy sweep, so any workflow that runs
+ * it needs the whole history checked out. Derived from what each file actually
+ * invokes, because a hand-written list is a list somebody forgets to add to -
+ * which is precisely how this defect happened.
+ */
+const SUITE_RUNNERS = WORKFLOWS.filter((wf) =>
+  wf.code.some((l) => /\bnpx\s+vitest\b|\bnpm\s+test\b/.test(l)),
+);
+
+describe('a workflow that runs the suite checks out full history', () => {
+  /*
+   * FOUND BY THE v0.6.0 TAG PUSH, and the shape is the transferable part.
+   *
+   * `ci.yml` has carried `fetch-depth: 0` since run 32521971501, with a comment
+   * explaining that the privacy sweep walks every blob reachable from every ref
+   * and that a depth-1 clone would scan the checkout under another name and
+   * still print VERDICT PASS.
+   *
+   * `release.yml` runs the SAME suite and had no `with:` block at all, so it
+   * took actions/checkout's default of 1. A tag push triggers release.yml and
+   * not ci.yml, so the guard that was fixed in one file had never once applied
+   * to the other - and nothing compared them. The fix went in beside a comment
+   * describing the danger, in a file where the danger was already handled.
+   *
+   * This is the recorded 'a capability gated on the wrong condition is usually
+   * gated on it twice' finding, arriving in CI configuration: when you fix a
+   * setting because it was wrong somewhere, grep for every other place that
+   * setting has to hold.
+   */
+  it('finds at least one suite-running workflow, so the rule is not vacuous', () => {
+    expect(
+      SUITE_RUNNERS.map((wf) => wf.name),
+      'no workflow invokes the suite - this rule would pass over an empty set',
+    ).not.toHaveLength(0);
+  });
+
+  it('every one of them sets fetch-depth: 0 on its checkout', () => {
+    for (const wf of SUITE_RUNNERS) {
+      expect(
+        wf.codeText,
+        `${wf.name} runs the suite - which contains a full-history privacy sweep - ` +
+          'but does not set `fetch-depth: 0`, so actions/checkout defaults to a ' +
+          'depth-1 clone and the sweep reports a clean nothing',
+      ).toContain('fetch-depth: 0');
+    }
+  });
+
+  it('the checkout action is the one being configured', () => {
+    // `fetch-depth` is only meaningful on actions/checkout. Asserting the
+    // string alone would pass on a comment mentioning it, which is the
+    // substring-matches-the-prose class this repository has already been bitten
+    // by - a checklist row that ticked on the operator's own prompt text.
+    for (const wf of SUITE_RUNNERS) {
+      expect(wf.codeText, `${wf.name} sets fetch-depth without a checkout step`).toContain(
+        'actions/checkout',
+      );
+    }
+  });
+});
 describe('plausible workflow YAML, checked without a parser', () => {
   // No YAML parser is installed and none may be added (no new dependencies).
   // These are the properties checkable by scanning, and they cover the failure

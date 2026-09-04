@@ -848,6 +848,85 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     }
   });
 
+  /*
+   * DoD 5.0b - THE RENDER WIRE, AND IT IS HERE BECAUSE A VERIFIER PROVED IT
+   * WAS MISSING.
+   *
+   * `App.svelte` is the only place production hands `degradedByEngine` to
+   * `<Deck>`. Deleting that one attribute left the ENTIRE webview project
+   * green - 18 files, 703 tests - while a Codex card could never again show a
+   * degraded chip. The three `deck.test.ts` tests that cover the behaviour all
+   * mount `Deck` directly and pass the prop BY HAND, so they prove the
+   * component honours a value nothing was shown to send it.
+   *
+   * That is defect D4 verbatim - "a component test standing in for a wiring
+   * that does not exist" - committed in the same phase whose own store tests
+   * cite D4 by name, one layer further out than the place it was fixed. The
+   * rule it breaks is this repository's own: for any prop that changes
+   * user-visible output, ONE test must reach it the way production does.
+   *
+   * So these send a wire message into the real store and read the real deck.
+   * Nothing is passed by hand.
+   */
+  it('a Codex degraded message reaches a Codex deck card, through the real App', () => {
+    // NO `useView` here, and that is not an omission: the deck sits ABOVE the
+    // session-interior view mode, and one of the two modes this block runs
+    // under enters a session during setup - which leaves no deck to read.
+    const panel = render();
+    send({
+      type: 'snapshot',
+      sessions: [liveSession({ engine: 'codex' }), liveSession({ engine: 'cc', sessionId: 'session-cc' })],
+    });
+    send({ type: 'degraded', engine: 'codex', degraded: true, reason: 'noHookEvents' });
+
+    const cards = all(panel.container, TESTID.deckBlob);
+    const codex = cards.find((c) => c.dataset['engine'] === 'codex');
+    const cc = cards.find((c) => c.dataset['engine'] === 'cc');
+    expect(codex, 'the Codex card must be on the deck').toBeDefined();
+    expect(cc, 'the Claude Code card must be on the deck').toBeDefined();
+
+    expect(codex?.dataset['livenessInferred']).toBe('true');
+    expect(codex?.dataset['state']).toBe('degraded');
+    // BOTH DIRECTIONS IN ONE MOUNT: a Codex message must not touch the Claude
+    // Code card, which is D2 running backwards.
+    expect(cc?.dataset['livenessInferred']).toBe('false');
+    expect(cc?.dataset['state']).not.toBe('degraded');
+  });
+
+  it('control: a Claude Code degraded message leaves the Codex card alone', () => {
+    // Without this the test above passes for a deck that degrades every card
+    // on any message - which is the D2 defect it is meant to prevent.
+    const panel = render();
+    send({
+      type: 'snapshot',
+      sessions: [liveSession({ engine: 'codex' }), liveSession({ engine: 'cc', sessionId: 'session-cc' })],
+    });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
+
+    const cards = all(panel.container, TESTID.deckBlob);
+    const codex = cards.find((c) => c.dataset['engine'] === 'codex');
+    const cc = cards.find((c) => c.dataset['engine'] === 'cc');
+
+    expect(cc?.dataset['livenessInferred']).toBe('true');
+    expect(codex?.dataset['livenessInferred']).toBe('false');
+  });
+
+  it('a Codex degraded message reaches the SELECTED-SESSION surfaces too', () => {
+    // The other half of App.svelte's derivation: `degradedHere` used to be
+    // `view.degraded && selectedIsCc`, so a Codex session could never show it
+    // however silent its own tap was. Same message, different surface.
+    const panel = render();
+    useView(panel, mode);
+    send({ type: 'snapshot', sessions: [liveSession({ engine: 'codex' })] });
+    send({ type: 'degraded', engine: 'codex', degraded: true, reason: 'noHookEvents' });
+    enter(panel, mode, 'session-live');
+
+    if (mode === 'canvas') {
+      expect(one(panel.container, TESTID.hudDegradedChip).textContent).toContain('inferred');
+    } else {
+      expect(one(panel.container, 'session-header').dataset['livenessInferred']).toBe('true');
+    }
+  });
   it('control: it DOES say it about a Claude Code session, on the same panel state', () => {
     // Without this the assertion above passes if the degraded message never
     // arrived, or if the chip were deleted outright.

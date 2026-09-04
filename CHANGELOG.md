@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Agent Deck for Claude Code are documented here.
+All notable changes to Agent Deck are documented here.
 
 ## 0.6.0 - unreleased - a third engine, Codex
 
@@ -26,7 +26,7 @@ All notable changes to Agent Deck for Claude Code are documented here.
   only Claude Code had this, which meant a Codex user with no hooks saw a deck
   that simply never went live, with nothing to act on. OpenCode has no hook tap
   at all and is deliberately never given this warning.
-- **The extension is now named "Agent Deck - Watch Your Agents Work."** It read
+- **The extension is now named "Agent Deck — Watch Your Agents Work."** It read
   "Agent Deck for Claude Code", which named one of the three engines it
   observes. The Marketplace ID is unchanged, so this is a rename on the listing
   page and nowhere else - your installed extension updates in place.

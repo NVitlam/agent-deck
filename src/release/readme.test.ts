@@ -1918,6 +1918,70 @@ function currentChangelogEntry(text: string): string {
 
 const CHANGELOG_TEXT = readText('CHANGELOG.md');
 
+/**
+ * THE SHIPPED DOCUMENTS CALL THE PRODUCT WHAT THE MANIFEST CALLS IT.
+ *
+ * Both of these were found by a `phase-verifier` round at the 0.6.0 gate, in a
+ * release whose whole point was the rename, and neither had a test:
+ *
+ *   1. `CHANGELOG.md`'s masthead read "All notable changes to Agent Deck for
+ *      Claude Code are documented here" - the OLD `displayName`, used as the
+ *      current product name, in the release that replaced it.
+ *   2. The 0.6.0 entry QUOTED the new name with an ASCII hyphen while
+ *      `package.json` carries U+2014. `manifest.test.ts` asserts that dash by
+ *      code point precisely because "a hyphen here would be a different name
+ *      that looks the same in a diff" - and the changelog printed the hyphen.
+ *
+ * This file ships: `extension/changelog.md` inside the VSIX, and a tab on the
+ * Marketplace listing. A shipped document naming a product that no longer
+ * exists is the 'documents describing a state the same release changed' class,
+ * which this repository has now hit in the README (three deleted features),
+ * in the CHANGELOG (a feature the same entry removed) and here.
+ *
+ * Bound to the manifest rather than written down a second time, which is the
+ * only shape that cannot go stale: the README went stale in exactly this way
+ * before it was bound.
+ */
+describe('the shipped documents name the shipped product', () => {
+  it('the CHANGELOG masthead does not carry a superseded product name', () => {
+    const masthead = CHANGELOG_TEXT.split('\n').slice(0, 6).join(' ');
+    expect(masthead, 'the masthead must name the product').toContain('Agent Deck');
+    expect(
+      masthead,
+      'the CHANGELOG masthead still carries the pre-0.6.0 display name',
+    ).not.toContain('Agent Deck for Claude Code');
+  });
+
+  it('every quoted display name in the current entry matches the manifest exactly', () => {
+    // Quoted names only - prose that merely mentions Claude Code is fine and
+    // must stay fine, since the product still observes it. What is pinned is a
+    // string presented AS the product's name.
+    const entry = currentChangelogEntry(CHANGELOG_TEXT);
+    const quoted = [...entry.matchAll(/"(Agent Deck[^"]*)"/g)].map((m) => m[1] ?? '');
+    expect(
+      quoted.length,
+      'the entry quotes no display name - this check would be vacuous',
+    ).toBeGreaterThan(0);
+
+    const displayName = String(MANIFEST.displayName);
+    for (const name of quoted) {
+      // The OLD name is allowed to appear, but only as history - i.e. only
+      // when the entry also carries the new one. Asserted as membership in the
+      // pair rather than equality, because a rename entry legitimately names
+      // both.
+      expect(
+        [displayName, 'Agent Deck for Claude Code'],
+        `${name} is neither the manifest's display name nor the one it replaced`,
+      ).toContain(name);
+    }
+    expect(
+      quoted,
+      'the rename entry must quote the name the manifest actually carries',
+    ).toContain(displayName);
+  });
+});
+
+
 /** The documents a user actually reads. Both are shipped in the VSIX. */
 const USER_FACING: { readonly name: string; readonly text: string }[] = [
   { name: 'README.md', text: paragraphs(README) },

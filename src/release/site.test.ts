@@ -104,7 +104,7 @@ const MANIFEST = JSON.parse(readText('package.json')) as {
  */
 const SITE_IMAGES: readonly string[] = [
   'Session_Deck.png',
-  'hero_16_agent_session.png',
+  'hero_26_agent_session.png',
   'Internal_Session_Tool_popup.png',
   'Internal_Session_Tool_popup2.png',
 ];

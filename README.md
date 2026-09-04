@@ -53,7 +53,7 @@ and nothing is ever cut short with an ellipsis — a long label wraps and carrie
 hover. Anything that cannot be attached to a parent goes to a parked rail carrying the reason,
 because unplaced data is shown as unplaced and never guessed into position.
 
-![One session, 16 agents, live tree](media/hero_16_agent_session.png)
+![One session, 26 agents, live tree](media/hero_26_agent_session.png)
 
 **Focus** — click any agent to re-root the tree on it and read one branch of a wide run on its own.
 The breadcrumb walks back out; Reset view returns to the whole session, fitted.

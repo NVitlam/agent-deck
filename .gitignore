@@ -28,7 +28,7 @@ spike/hook-events-r3.jsonl
 media/*
 !media/icon.png
 !media/Session_Deck.png
-!media/hero_16_agent_session.png
+!media/hero_26_agent_session.png
 !media/Internal_Session_Tool_popup.png
 !media/Internal_Session_Tool_popup2.png
 # The hero GIF, added for 0.6.0 (DoD 5.8). It is a SIXTH tracked image and

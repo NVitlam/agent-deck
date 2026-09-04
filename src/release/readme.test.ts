@@ -228,7 +228,7 @@ const README = readText('README.md');
 const RELEASE_IMAGES: readonly string[] = [
   'media/agent-deck-hero.gif',
   'media/Session_Deck.png',
-  'media/hero_16_agent_session.png',
+  'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
 ];

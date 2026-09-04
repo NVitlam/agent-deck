@@ -158,6 +158,22 @@ docs/**
 docs
 spike
 
+# THE PROJECT PAGE. Not the extension, and not in it.
+#
+# `site/` is the GitHub Pages source: one HTML file plus BYTE-IDENTICAL copies
+# of four README screenshots, ~1.5 MB, published by .github/workflows/pages.yml.
+# A user installing the extension has no use for a copy of the landing page,
+# and the screenshots are already in the artifact once via `media/`.
+#
+# It is denied HERE as well as being irrelevant to the build because
+# `.gitignore` and `.vscodeignore` are DIFFERENT DOORS (working-method rule
+# 20): `site/` is deliberately TRACKED, which is exactly the condition under
+# which vsce - walking the working tree, never consulting git - packages a
+# directory nobody named. `src/release/site.test.ts` asserts this line exists,
+# because the exact-set audit that would otherwise catch it is gated behind
+# AGENT_DECK_PACKAGE_AUDIT=1 and does not run in an ordinary suite pass.
+site/**
+
 # Dev tooling. `vsce ls` was shipping the two recorder/capture scripts before
 # this. None of it is part of the product: a VSIX should carry the product,
 # not the workshop.
@@ -225,3 +241,20 @@ media/**
 !media/hero_16_agent_session.png
 !media/Internal_Session_Tool_popup.png
 !media/Internal_Session_Tool_popup2.png
+
+# THE HERO GIF IS TRACKED AND DELIBERATELY NOT RE-ADMITTED HERE (DoD 5.8
+# item 2, which authorises either outcome so long as it is recorded with the
+# byte count). `media/agent-deck-hero.gif` is 4,658,677 bytes - more than
+# twice the entire 0.5.0 VSIX at 2,109,155 - so admitting it would make the
+# package the animation plus an extension.
+#
+# It costs the listing page nothing, and that is the load-bearing half: the
+# Marketplace does not read README images out of the VSIX. `vsce` rewrites
+# every relative image link in the packaged README into an absolute
+# <repository.url>/raw/HEAD/<path> URL, and the listing fetches it
+# anonymously from the DEFAULT BRANCH of the public repository. So the GIF
+# renders from GitHub, which is why DoD 5.8 orders itself after the merge and
+# the public flip: publishing before both ships a broken image.
+#
+# `.gitignore` DOES admit it (a sixth `!` line there). Different doors, and
+# this is the one case where the two allow-lists are meant to disagree.

@@ -1,0 +1,88 @@
+name: Pages
+
+# Publishes the project page at `site/` to GitHub Pages.
+#
+# WHY THIS WORKFLOW EXISTS RATHER THAN `main` / `/docs`, which is what PLAN.md
+# DoD 5.9 asks for. `docs/` in this working tree is a directory JUNCTION into
+# the maintainer's private `lab/` repository. It is gitignored here
+# (`.gitignore` `/docs/`) and denied in `.vscodeignore`, so a file at
+# `docs/index.html` is tracked by nothing, reaches GitHub never, and would
+# render as a 404 rather than a page. Un-ignoring it would make `git add -A`
+# walk the junction into the private tree, which is the hazard `.gitignore`'s
+# own comment block exists to prevent, and `src/release/readme.test.ts` already
+# records this exact reasoning from the last time a `docs/`-shaped path was
+# asked for (it is why the README's images live at `media/` and not
+# `docs/media/`).
+#
+# Pages' "GitHub Actions" source can publish any path, so the page lives at a
+# real tracked directory and the junction is untouched. The consequence for
+# whoever sets this up: the repository's Pages source must be set to
+# **GitHub Actions**, not to a branch and folder. That is a USER step in
+# DoD 5.5, and until it is taken this workflow deploys nothing.
+#
+# WHAT THIS FILE CANNOT TELL YOU. `src/release/site.test.ts` asserts the
+# CONTENT of `site/` - that every image the page references exists and is
+# byte-identical to its `media/` twin, and that the page reaches no host
+# outside the two allowed ones. It cannot assert that this YAML is one GitHub
+# will parse: `src/release/workflow.test.ts` reads workflow files as text
+# without a YAML parser and has already stayed green through a workflow GitHub
+# refused to run. A green run is the only evidence this file works, and at the
+# time of writing there has never been one.
+#
+# ZERO EGRESS (G5) IS ABOUT THE EXTENSION, NOT ABOUT CI, and the distinction is
+# worth stating so nobody reads this workflow as a breach. G5 constrains what
+# the shipped extension opens at runtime: one loopback socket, no network. A CI
+# job that uploads a static page is not the extension and opens nothing on a
+# user's machine. What the page itself may reach IS constrained, and that is
+# what the URL allow-list in `src/release/site.test.ts` enforces.
+
+on:
+  # The page goes live with the 0.6.0 publish, not before: it is served from
+  # the default branch of a repository that is private today, and the
+  # Marketplace/GitHub images it carries only resolve once that flip has
+  # happened. Restricting the trigger to `main` is what keeps a phase branch
+  # from publishing a page ahead of the release.
+  push:
+    branches:
+      - main
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A page is a single published thing, so a second run supersedes the first
+# rather than racing it. `cancel-in-progress: false` because cancelling a
+# half-finished deployment is how a site ends up serving a partial upload.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # `site/` is uploaded WHOLE and is self-contained: it carries its own
+      # `media/` copies rather than reaching up into the repository's, because
+      # a Pages artifact has no parent directory to reach into. Those copies
+      # are byte-identical to the originals and `src/release/site.test.ts`
+      # asserts it both ways, which is what stops the two sets diverging.
+      # Identical bytes are one blob in git, so the copies cost no repository
+      # size at all - only the divergence risk, which the test removes.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

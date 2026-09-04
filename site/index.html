@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Deck — See the shape of your agent work</title>
+<meta name="description" content="Agent Deck turns a scrolling swarm of coding-agent activity into a live, legible map—sessions, subagents, tool calls, and cost, all inside VS Code.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<style>
+  /* Tokens — from nvitlam.github.io/assets/css/tokens.css */
+  :root{
+    --bg-primary:#080c16;--bg-secondary:#0d1220;--bg-card:rgba(13,18,32,.85);--bg-card-hover:rgba(18,26,46,.95);
+    --bg-card-border:rgba(74,124,165,.08);--bg-card-border-hv:rgba(74,124,165,.22);
+    --blue:#4a7ca5;--blue-light:#6a9ec4;--blue-bright:#7eb8de;--blue-soft:rgba(74,124,165,.10);
+    --orange:#c44b2b;--orange-light:#d4654a;--orange-soft:rgba(196,75,43,.10);
+    --text-primary:#dce0e8;--text-secondary:#7a8599;--text-muted:#3e4758;--text-inverse:#080c16;
+    --green:#5a9e5f;--green-soft:rgba(90,158,95,.10);--green-border:rgba(90,158,95,.25);
+    --border:rgba(255,255,255,.06);--border-hover:rgba(255,255,255,.14);
+    --font-display:'Courier Prime','Courier New',monospace;
+    --font-body:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --font-mono:'IBM Plex Mono','Courier Prime',Consolas,monospace;
+    --max-width:980px;--radius:8px;--radius-sm:4px;--measure:66ch;
+    --t-fast:.15s ease;--t-base:.3s ease;
+  }
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-primary);line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--blue-light);text-decoration:none;transition:color var(--t-fast)}
+  a:hover{color:var(--blue-bright)}
+  a:focus-visible,summary:focus-visible{outline:2px solid var(--blue-bright);outline-offset:3px}
+  ::selection{background:var(--blue);color:var(--text-primary)}
+  code,.mono{font-family:var(--font-mono);font-size:.9em}
+  code:not(.block){color:var(--blue-bright);background:var(--blue-soft);padding:.05em .35em;border-radius:var(--radius-sm)}
+  h1,h2,h3{line-height:1.15;color:var(--text-primary)}
+  h1{font-family:var(--font-display);font-size:clamp(2rem,4.6vw,3.2rem);font-weight:700;letter-spacing:.06em;text-transform:uppercase;max-width:20ch}
+  h2{font-family:var(--font-display);font-size:clamp(1.35rem,2.6vw,1.8rem);font-weight:700;letter-spacing:.04em;max-width:var(--measure)}
+  h3{font-size:1.05rem;font-weight:600}
+  p,li{max-width:var(--measure);color:var(--text-secondary)}
+  strong,b{color:var(--text-primary);font-weight:600}
+  ul,ol{padding-left:1.2rem}
+  li{margin:.3rem 0}
+  li::marker{color:var(--blue)}
+  .wrap{max-width:var(--max-width);margin:0 auto;padding:0 24px}
+  /* section label — portfolio .section-label */
+  .tag{display:block;font-family:var(--font-mono);font-size:.7rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+  section.wrap{padding-top:64px;padding-bottom:32px}
+  .lead{font-size:1.02rem;color:var(--text-secondary);max-width:60ch;margin:12px 0 28px}
+  header.top{position:sticky;top:0;z-index:20;background:rgba(8,12,22,.9);border-bottom:1px solid var(--border);backdrop-filter:blur(6px)}
+  .nav{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:14px;padding-bottom:14px;flex-wrap:wrap}
+  .brand{font-family:var(--font-display);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-primary);display:inline-flex;align-items:center;gap:10px;font-size:.95rem}
+  .mark{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
+  .links a,.github{font-family:var(--font-mono);font-size:.8rem;color:var(--text-secondary);margin-left:20px}
+  .links a:hover,.github:hover{color:var(--blue-light)}
+  .hero{padding-top:80px;padding-bottom:48px;border-bottom:1px solid var(--border)}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:.76rem;font-weight:500;letter-spacing:.04em;color:var(--green);background:var(--green-soft);border:1px solid var(--green-border);border-radius:var(--radius-sm);padding:8px 16px;margin-bottom:28px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:status-pulse 2s ease-in-out infinite}
+  @keyframes status-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.dot{animation:none}}
+  .hero p.intro{font-size:1.08rem;max-width:58ch;margin:20px 0 28px;color:var(--text-secondary)}
+  .actions{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:40px}
+  .button{display:inline-block;padding:11px 20px;border:1px solid var(--bg-card-border-hv);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-mono);font-size:.84rem;font-weight:500;transition:all var(--t-base)}
+  .button:hover{border-color:var(--blue-light);color:var(--blue-bright)}
+  .button.primary{background:var(--blue);border-color:var(--blue);color:var(--text-primary)}
+  .button.primary:hover{background:var(--blue-light);border-color:var(--blue-light);color:var(--text-inverse)}
+  figure{margin:0}
+  figure img{display:block;width:100%;height:auto;border:1px solid var(--bg-card-border-hv);border-radius:var(--radius);background:var(--bg-secondary)}
+  figcaption{font-family:var(--font-mono);font-size:.74rem;color:var(--text-muted);margin-top:10px;letter-spacing:.04em}
+  /* trust strip */
+  .trust{border-bottom:1px solid var(--border);background:var(--bg-secondary);padding:32px 0}
+  .trust .wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  .trust strong{display:block;margin-bottom:4px}
+  .trust p{font-size:.92rem;margin:0}
+  .icon{display:inline-block;width:1.4rem;color:var(--blue-light)}
+  /* cards — portfolio .project-card */
+  .cards,.engines,.limits{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .limits{grid-template-columns:1fr 1fr}
+  .card,.engine,.limits article{position:relative;overflow:hidden;background:var(--bg-card);border:1px solid var(--bg-card-border);border-radius:var(--radius);padding:24px;transition:all var(--t-base)}
+  .card::before,.engine::before,.limits article::before{content:'';position:absolute;top:0;left:0;width:100%;height:2px;background:linear-gradient(90deg,var(--blue) 0%,transparent 100%);opacity:0;transition:opacity var(--t-base)}
+  .card:hover,.engine:hover,.limits article:hover{border-color:var(--bg-card-border-hv);background:var(--bg-card-hover)}
+  .card:hover::before,.engine:hover::before,.limits article:hover::before{opacity:1}
+  .limits .no::before{background:linear-gradient(90deg,var(--orange) 0%,transparent 100%)}
+  .card .tag{border:0;padding:0;margin-bottom:10px}
+  .card h3{margin-bottom:8px}
+  .card p{font-size:.92rem}
+  .card figure{margin-top:16px}
+  .engine header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .engine a{font-family:var(--font-mono);font-size:.8rem;display:inline-block;margin-top:12px}
+  .pill{font-family:var(--font-mono);font-size:.72rem;font-weight:600;letter-spacing:.08em;color:var(--blue-bright);background:var(--blue-soft);border:1px solid var(--bg-card-border-hv);border-radius:var(--radius-sm);padding:3px 8px}
+  .limits h3{margin-bottom:10px}
+  .limits .yes h3{color:var(--blue-bright)}
+  .limits .no h3{color:var(--orange-light)}
+  /* install */
+  .install{display:grid;grid-template-columns:1.1fr 1fr;gap:32px;align-items:start}
+  .steps li{margin:8px 0}
+  .code{background:var(--bg-secondary);border:1px solid var(--bg-card-border);border-radius:var(--radius);padding:20px 22px;font-family:var(--font-mono);font-size:.84rem;line-height:1.7;color:var(--text-primary)}
+  .code .comment{color:var(--text-muted)}
+  .code code.block{color:var(--blue-bright)}
+  /* compatibility */
+  .compat{border:1px solid var(--bg-card-border);border-radius:var(--radius);overflow:hidden;background:var(--bg-card)}
+  .compat .row{display:grid;grid-template-columns:1fr .8fr 2.2fr;gap:16px;padding:12px 18px;border-bottom:1px solid var(--border);font-size:.92rem}
+  .compat .row:last-child{border-bottom:0}
+  .compat .row.head{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);background:var(--bg-secondary)}
+  .compat .row b{color:var(--text-primary);font-weight:600}
+  .compat .mono{color:var(--blue-bright)}
+  .callout{background:var(--orange-soft);border-left:2px solid var(--orange);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:14px 18px;max-width:var(--measure);margin:24px 0;color:var(--text-secondary)}
+  /* faq */
+  .faq details{border-bottom:1px solid var(--border);padding:14px 0;max-width:var(--measure)}
+  .faq summary{cursor:pointer;color:var(--text-primary);font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::after{content:'+';font-family:var(--font-mono);color:var(--blue-light)}
+  .faq details[open] summary::after{content:'\2212'}
+  .faq p{margin-top:10px;font-size:.95rem}
+  .footer{border-top:1px solid var(--border);padding:32px 0 60px;margin-top:64px;font-family:var(--font-mono);font-size:.8rem;color:var(--text-secondary)}
+  .footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .footer a{color:var(--text-secondary)}
+  .footer a:hover{color:var(--blue-light)}
+  @media (max-width:820px){.trust .wrap,.cards,.engines,.limits,.install{grid-template-columns:1fr}.compat .row{grid-template-columns:1fr;gap:4px}.links{display:none}}
+</style>
+</head>
+<body>
+  <header class="top"><nav class="wrap nav"><a class="brand" href="#top"><i class="mark"></i>Agent Deck</a><div class="links"><a href="#see">What you see</a><a href="#install">Install</a><a href="#trust">Trust</a><a href="#compatibility">Compatibility</a></div><a class="github" href="https://github.com/NVitlam/agent-deck">View on GitHub ↗</a></nav></header>
+  <main id="top">
+    <div class="wrap hero">
+      <span class="eyebrow"><i class="dot"></i> VS Code extension · Open source</span>
+      <h1>See the shape of your agent work.</h1>
+      <p class="intro">Agent Deck turns a scrolling swarm of coding-agent activity into a live, legible map—sessions, subagents, tool calls, and cost, all inside VS Code. Claude Code, OpenCode and Codex, side by side in one panel.</p>
+      <div class="actions"><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install Agent Deck <span>→</span></a><a class="button" href="#see">See how it works</a></div>
+      <figure>
+        <img src="media/hero_16_agent_session.png" alt="Agent Deck showing one session as a live tree of sixteen agents" width="1600" height="900">
+        <figcaption>One session, 16 agents, live tree.</figcaption>
+      </figure>
+    </div>
+    <section class="trust" id="trust"><div class="wrap"><article><strong><span class="icon">◉</span>Read-only by design</strong><p>Observes sessions; never launches, wraps, or edits your agents.</p></article><article><strong><span class="icon">⌁</span>Zero network egress</strong><p>No telemetry, analytics, CDNs, or outbound requests.</p></article><article><strong><span class="icon">⌂</span>Local and temporary</strong><p>State stays in memory and disappears when the window closes.</p></article></div></section>
+    <section class="wrap" id="see"><span class="tag">Observe, don’t operate</span><h2>Your terminal has a timeline. Your work has a topology.</h2><p class="lead">The deck makes parallel work understandable without becoming another control surface.</p>
+      <div class="cards">
+        <article class="card"><span class="tag">01 · Deck</span><h3>Every session, at a glance</h3><p>Live sessions from every engine in a compact deck, with layout, sort, and engine filters.</p><figure><img src="media/Session_Deck.png" alt="The deck: every session on the machine, both engines" width="1600" height="900"></figure></article>
+        <article class="card"><span class="tag">02 · Tree</span><h3>See parentage and activity</h3><p>Follow each spawned agent, its tool activity, and any unplaced data without invented connections.</p><figure><img src="media/hero_16_agent_session.png" alt="One session's tree of agents" width="1600" height="900"></figure></article>
+        <article class="card"><span class="tag">03 · Inspector</span><h3>Read the useful detail</h3><p>Open a node to inspect calls, status, duration, context, burn, and cost where they belong.</p><figure><img src="media/Internal_Session_Tool_popup2.png" alt="The inspector with one tool call expanded" width="1600" height="900"></figure></article>
+      </div>
+    </section>
+    <section class="wrap" id="install"><div class="install"><div><span class="tag">Get started</span><h2>Two minutes to a clearer session.</h2><p class="lead">Install the extension, then add the optional manual hook that makes liveness truly live. You retain control of your configuration.</p><ol class="steps"><li>Install from the VS Code Marketplace.</li><li>Open <b>Agent Deck: Open Session Deck</b>.</li><li>For live activity, paste the documented hook into your Claude Code or Codex settings.</li></ol></div><div class="code"><span class="comment"># Install from your terminal</span><br><br><code class="block">code --install-extension nvitlam.agent-deck</code><br><br><span class="comment"># Then open the Command Palette</span><br><code class="block">Agent Deck: Open Session Deck</code><br><br><span class="comment"># Need live Claude Code or Codex liveness?</span><br><span>Copy the full, reviewed hook block from the <a href="https://github.com/NVitlam/agent-deck#install-the-hook-one-manual-paste">README</a>.</span></div></div></section>
+    <section class="wrap"><span class="tag">Sources</span><h2>One panel. Three engines.</h2><p class="lead">Agent Deck shows what is already on your machine. Each parser fails closed on structural mismatches instead of guessing.</p><div class="engines"><article class="engine"><header><h3>Claude Code</h3><span class="pill">CC</span></header><ul><li>Reads session transcripts for structure and content.</li><li>Optional loopback hooks provide live liveness.</li><li>Supports the documented version window, structurally verified.</li></ul><a href="#compatibility">Read compatibility details →</a></article><article class="engine"><header><h3>OpenCode</h3><span class="pill">OC</span></header><ul><li>Reads only the session database and named-safe tables.</li><li>No listener, server, or configuration needed.</li><li>Secret-bearing tables are never queried.</li></ul><a href="#compatibility">Read compatibility details →</a></article><!-- engine:codex --><article class="engine"><header><h3>Codex</h3><span class="pill">CX</span></header><ul><li>Reads rollout transcripts under <span class="mono">~/.codex</span> for structure and content.</li><li>Optional loopback hooks, pasted and trusted by you, provide live liveness.</li><li>No App Server, no socket to Codex; secret-bearing files are never opened.</li></ul><a href="#compatibility">Read compatibility details →</a></article><!-- /engine:codex --></div></section>
+    <section class="wrap"><span class="tag">The boundary is the feature</span><h2>Useful because it stays out of the way.</h2><div class="limits"><article class="yes"><h3>What it does</h3><ul><li>Maps sessions, subagents, calls, and liveness.</li><li>Shows context, accumulated burn, and cost in place.</li><li>Redacts reasoning at the read boundary.</li><li>Refuses unsupported structures honestly.</li></ul></article><article class="no"><h3>What it never does</h3><ul><li>Write to agent settings, transcripts, or databases.</li><li>Launch, proxy, steer, or configure an agent.</li><li>Persist history or build cost dashboards.</li><li>Send data to a network service.</li></ul></article></div></section>
+    <section class="wrap" id="compatibility"><span class="tag">Compatibility</span><h2>Explicit support, not hopeful parsing.</h2><p class="lead">Versions are a provenance signal; required structure is the actual gate. Unsupported sessions render as unsupported, never as a plausible but wrong tree.</p><div class="compat"><div class="row head"><b>Engine</b><b>Anchor</b><b>Acceptance rule</b></div><div class="row"><b>Claude Code</b><span class="mono">2.1.246</span><span>Major 2; minor ±1. Patch releases are not used as a cutoff.</span></div><div class="row"><b>OpenCode</b><span class="mono">1.18.22</span><span>Major 1; minor ±1. Patch releases are not used as a cutoff.</span></div><!-- engine:codex --><div class="row"><b>Codex</b><span class="mono">0.151.0-alpha.7.2</span><span>Major 0; minor ±1. Patch and prerelease tags are not compared. Sessions from models on the older multi-agent dialect render without a tree, never as a guessed one.</span></div><!-- /engine:codex --></div><div class="callout">Imported Claude Code <span class="mono">--teleport</span> sessions intentionally render unsupported. This is an honesty boundary, not a partial-support promise.</div></section>
+    <section class="wrap"><span class="tag">Questions</span><h2>Details without making the first screen do all the work.</h2><div class="faq"><details open><summary>Why is the hook manual?</summary><p>Because “read-only” includes configuration. Agent Deck never edits a Claude Code or Codex settings file; the README provides a full paste block you can inspect and choose to add.</p></details><details><summary>What happens if the hook is not installed?</summary><p>The deck can still read session content and topology. Liveness falls back to file modification time and is shown as degraded rather than silently pretending to be live.</p></details><details><summary>What data is displayed?</summary><p>Session metadata, topology, tool-call previews, and measured numbers needed by the UI. Thinking and reasoning content is discarded at the parse boundary.</p></details><details><summary>Can it control my agents?</summary><p>No. It is deliberately an observer, not an orchestration layer.</p></details></div></section>
+  </main>
+  <footer class="footer"><div class="wrap"><span><b>Agent Deck</b> · Live observability for coding-agent swarms.</span><span><a href="https://github.com/NVitlam/agent-deck/blob/main/LICENSE">MIT License</a> · <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">VS Code Marketplace</a> · <a href="https://github.com/NVitlam/agent-deck">GitHub</a></span></div></footer>
+</body>
+</html>

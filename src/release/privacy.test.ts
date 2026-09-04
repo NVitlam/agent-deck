@@ -95,6 +95,12 @@ interface SweepLeg {
   filesScanned: number;
   bytesScanned: number;
   blobsScanned?: number;
+  /**
+   * HISTORY ONLY. Distinct blob ids this leg scanned that the CHECKOUT does
+   * not hold - the number that says whether history was really swept, and the
+   * one the byte comparison it replaced could never be.
+   */
+  blobsNotInWorkingTree?: number;
   nulFiles: string[];
   identity: { hits: IdentityHit[]; exemptHits: number };
   secrets: SecretHit[];
@@ -134,6 +140,14 @@ interface SweepReport {
   generatedAt: string;
   head: string | null;
   historyScope: 'all-refs' | 'skipped';
+  /**
+   * True when this clone was made with `--depth`, i.e. its history is a stub.
+   *
+   * Reported by the sweep rather than inferred from a count here, because
+   * "few blobs" and "no history" are different diagnoses and only git can
+   * tell them apart.
+   */
+  shallow: boolean;
   config: {
     identity: {
       status: 'RUN' | 'SKIPPED';
@@ -626,13 +640,73 @@ describe('privacy sweep against this repository', () => {
     expect(report.verdict.pass).toBe(true);
   });
 
+  /*
+   * WHAT THIS ASSERTED UNTIL 2026-09-05, AND WHY IT WAS WRONG.
+   *
+   * It compared BYTES: `history.bytesScanned > workingTree.bytesScanned`. The
+   * intent was right and is unchanged - "full history" must not be the
+   * checkout under another name - but the two numbers are not comparable, and
+   * for two independent reasons:
+   *
+   *   1. THE WORKING TREE COUNTS PATHS; HISTORY COUNTS DISTINCT BLOBS. Two
+   *      paths holding identical content are two files on disk and ONE object
+   *      in git. `site/media/` exists precisely because it is byte-identical to
+   *      `media/` - `site.test.ts` asserts that by sha256 - so the moment the
+   *      site landed, the working tree gained 2,275,306 bytes that history
+   *      counts once. Nine blobs in this repository sit at more than one path;
+   *      the four screenshots are the large ones, and eleven synthetic-layout
+   *      fixtures share five blobs between them.
+   *   2. THE WORKING TREE READS FILES FROM DISK; HISTORY READS BLOBS. On a
+   *      CRLF checkout a text file is LARGER on disk than the blob it came
+   *      from, so the comparison also moves with the platform.
+   *
+   * It passed for years because a full clone's history holds thousands of old
+   * blobs and the total swamped both effects. It was measuring the SIZE of the
+   * history, not its EXISTENCE.
+   *
+   * MEASURED, on run 32521971501's successor and reproduced locally by cloning
+   * this repository with `--depth 1`:
+   *
+   *   full clone     history 1359 blobs / 93,845,220 B   worktree 53,795,318 B  -> passed
+   *   shallow clone  history  413 blobs / 51,361,391 B   worktree 53,795,988 B  -> FAILED
+   *
+   * The shallow figures are byte-for-byte the ones CI reported. So the trigger
+   * was a SHALLOW CLONE and the mechanism was the dedup above: on a depth-1
+   * clone history is exactly the checkout's own blobs, deduped, which is
+   * necessarily smaller than the same content summed per path.
+   *
+   * The assertion now says what it means, and says it about OBJECT IDENTITY
+   * rather than about size.
+   */
   it('actually swept history, not just the working tree', () => {
     expect(report.historyScope).toBe('all-refs');
     expect(report.history).not.toBeNull();
     expect(report.history?.blobsScanned ?? 0).toBeGreaterThan(0);
-    // History must cover blobs the working tree does not - otherwise "full
-    // history" is just the checkout under another name.
-    expect(report.history?.bytesScanned ?? 0).toBeGreaterThan(report.workingTree.bytesScanned);
+
+    // THE POINT: at least one blob that the checkout does not hold. Such a blob
+    // can only have come from an older commit, so it is proof that history was
+    // walked - and unlike a byte total it cannot be inflated by a duplicate
+    // path or by a line ending.
+    expect(
+      report.history?.blobsNotInWorkingTree ?? 0,
+      'history scanned no blob the checkout does not already hold, so the history leg ' +
+        'is the checkout under another name',
+    ).toBeGreaterThan(0);
+  });
+
+  it('fails loudly on a shallow clone rather than reporting a clean nothing', () => {
+    // A depth-1 clone sweeps one commit and prints VERDICT PASS - a clean
+    // result from a corpus that is not there, which is the fail-open class
+    // working-method rule 18 exists for. The assertion above already catches
+    // it (`blobsNotInWorkingTree` is 0 on such a clone, measured), but it
+    // catches it as a symptom. This names the cause, so a reader of a red CI
+    // log is told what to change rather than left to infer it.
+    expect(
+      report.shallow,
+      'this is a SHALLOW clone: the history leg swept one commit. Set ' +
+        '`fetch-depth: 0` on actions/checkout in the workflow that runs this suite ' +
+        '- see .github/workflows/ci.yml, which carries it and the reason.',
+    ).toBe(false);
   });
 
   it('read through the tracked file that contains real NUL bytes', () => {

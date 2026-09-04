@@ -357,32 +357,66 @@ function key(name: string): void {
  * ------------------------------------------------------------------------ */
 
 describe('the empty deck', () => {
-  it('says it is waiting for the ONE engine this install observes, by default', () => {
+  it('says ONE line, and it names no engine (D4)', () => {
     const container = render({ sessions: [] });
     const deck = one(container, TESTID.deck);
     expect(deck.dataset['sessions']).toBe('0');
     const lines = all(container, 'deck-waiting').map((p) => p.textContent);
-    expect(lines).toStrictEqual(['Waiting for a Claude Code session…']);
+    expect(lines).toStrictEqual(['Waiting for a session to start.']);
     expect(cells(container)).toHaveLength(0);
     expect(container.querySelector('svg')).toBeNull();
   });
 
-  it('says one line per enabled engine when both are enabled', () => {
-    const container = render({ sessions: [], enabledEngines: ['cc', 'oc'] });
-    expect(all(container, 'deck-waiting').map((p) => p.textContent)).toStrictEqual([
-      'Waiting for a Claude Code session…',
-      'Waiting for an OpenCode session…',
-    ]);
+  it('D4: no generic empty state names an engine, in either branch', () => {
+    /*
+     * WHAT THIS REPLACED, because the deleted tests were not wrong — they were
+     * pinning a mechanism that never ran.
+     *
+     * `Deck.svelte` used to take `enabledEngines` and print one waiting line
+     * per engine this installation observes, precisely so a machine with no
+     * OpenCode was never shown a panel waiting for one. **Nothing ever passed
+     * the prop.** `App.svelte` did not, so the `['cc']` default applied on
+     * every install and an empty deck told a Codex-only user that Agent Deck
+     * was "Waiting for a Claude Code session…". Three tests asserted that
+     * behaviour and all three passed, because they supplied the prop the
+     * product never supplied. The user found it by own eyes at DoD 3.5.
+     *
+     * The rule now: a state that is ABOUT THE WHOLE PANEL names no engine.
+     */
+    const engineNames = ['Claude Code', 'Claude', 'OpenCode', 'Codex'];
+
+    // Branch 1: nothing has started.
+    const emptyDeck = one(render({ sessions: [] }), TESTID.deckEmpty).textContent ?? '';
+    expect(emptyDeck.trim()).toBe('Waiting for a session to start.');
+    for (const name of engineNames) expect(emptyDeck).not.toContain(name);
+
+    // Branch 2: something exists and the filter hides it. Already engine-free,
+    // asserted here so both branches are covered by one rule rather than one.
+    const filtered = one(
+      render({ sessions: [summary('s-1')], engineFilter: 'oc' }),
+      TESTID.deckEmpty,
+    ).textContent ?? '';
+    expect(filtered.trim()).toBe('No sessions match this filter.');
+    for (const name of engineNames) expect(filtered).not.toContain(name);
   });
 
-  it('NEGATIVE CONTROL: says NOTHING about an engine that is not enabled', () => {
-    // The row that matters. A line reading "Waiting for an OpenCode session"
-    // on a machine with no OpenCode is the panel waiting for something that
-    // cannot arrive, which reads to a user as a fault in Agent Deck.
-    const container = render({ sessions: [], enabledEngines: ['oc'] });
-    const lines = all(container, 'deck-waiting').map((p) => p.textContent);
-    expect(lines).toStrictEqual(['Waiting for an OpenCode session…']);
-    expect(one(container, TESTID.deckEmpty).textContent).not.toContain('Claude Code');
+  it('D4 boundary: copy that IS about one engine still names it', () => {
+    /*
+     * The other half, and it is what keeps the rule above from being read as
+     * "never write an engine name in the webview". A filter chip and a card's
+     * tag are statements about one engine, so naming it is the whole point;
+     * a rule that stripped them would make the deck unreadable in the name of
+     * making one line correct.
+     *
+     * This also fails if someone "fixes" D4 by deleting the chips.
+     */
+    const container = render({ sessions: [summary('s-1')] });
+    const chips = all(container, 'deck-engine-chip')
+      .map((el) => el.textContent ?? '')
+      .join(' ');
+    for (const name of ['Claude Code', 'OpenCode', 'Codex']) {
+      expect(chips, `the ${name} filter chip must still be named`).toContain(name);
+    }
   });
 
   it('distinguishes "nothing yet" from "nothing matches the filter"', () => {

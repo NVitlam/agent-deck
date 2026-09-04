@@ -91,7 +91,6 @@
     onreset,
     onfit,
     total,
-    enabledEngines = ['cc'],
     engineFilter = DEFAULT_ENGINE_FILTER,
     onenginefilter,
     now,
@@ -137,17 +136,23 @@
     onfit?: ((content: Rect, size: ViewportSize) => void) | undefined;
     /** How many sessions exist before filtering. Defaults to what is shown. */
     total?: number | undefined;
-    /**
-     * Which engines this installation is actually observing.
+    /*
+     * `enabledEngines` WAS HERE, and its removal is the D4 fix (2026-09-04).
      *
-     * Feeds the empty state and NOTHING else. An engine whose data directory
-     * is absent shows nothing about itself: a line reading "Waiting for an
-     * OpenCode session…" on a machine with no OpenCode is the panel waiting
-     * for something that cannot arrive, which reads as a fault in Agent Deck.
-     * Defaults to Claude Code alone, which is the only engine every install
-     * of this extension observes.
+     * It fed the empty state and nothing else: one waiting line per engine
+     * this installation observes, so a machine with no OpenCode was never
+     * shown a panel waiting for one. Sound reasoning, and it produced a
+     * user-visible defect anyway — NOTHING EVER PASSED THE PROP. `App.svelte`
+     * did not, so the default `['cc']` applied on every install, and an empty
+     * deck told a Codex-only user that Agent Deck was "Waiting for a Claude
+     * Code session…". The user found it by own eyes at the DoD 3.5 pass.
+     *
+     * The ruling is that a GENERIC state names no engine at all, so the prop
+     * has nothing left to feed and is deleted rather than left as a parameter
+     * whose documentation describes a behaviour that no longer exists.
+     * Per-engine copy still exists where it is ABOUT one engine — the filter
+     * chips, and a card's own tag — and `deck.test.ts` pins that boundary.
      */
-    enabledEngines?: readonly DeckEngine[];
     /**
      * Which engine's sessions to show. STORE STATE, arriving as a prop.
      *
@@ -249,12 +254,15 @@
     { value: 'engine', label: 'Engine', key: 'e' },
   ];
 
-  /** The empty state's one line per enabled engine. */
-  const WAITING: Readonly<Record<DeckEngine, string>> = {
-    cc: 'Waiting for a Claude Code session…',
-    oc: 'Waiting for an OpenCode session…',
-    cx: 'Waiting for a Codex session…',
-  };
+  /**
+   * The empty deck's one line. ENGINE-FREE, by ruling (D4, 2026-09-04).
+   *
+   * A deck with no sessions is a statement about the whole panel, so naming an
+   * engine in it is naming the wrong thing twice over: it is not true of the
+   * other engines, and it tells a user whose engine IS running that the panel
+   * is waiting for a different one.
+   */
+  const WAITING = 'Waiting for a session to start.';
 
   /* --------------------------------------------------------------------- *
    * Derived geometry
@@ -547,16 +555,14 @@
   </div>
 
   {#if visible.length === 0}
-    <!-- One quiet line per ENABLED engine. Not an error, not a spinner, and
-         not a call to action; and nothing at all about an engine this
-         installation is not observing. -->
+    <!-- One quiet line. Not an error, not a spinner, not a call to action —
+         and it names no engine, because an empty deck is a fact about the
+         panel rather than about any one of the three things feeding it. -->
     <div class="empty" data-testid={TESTID.deckEmpty}>
       {#if sessions.length > 0}
         <p data-testid="deck-empty-filtered">No sessions match this filter.</p>
       {:else}
-        {#each enabledEngines as engine (engine)}
-          <p data-testid="deck-waiting" data-engine={engine}>{WAITING[engine]}</p>
-        {/each}
+        <p data-testid="deck-waiting">{WAITING}</p>
       {/if}
     </div>
   {:else}

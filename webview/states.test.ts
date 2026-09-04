@@ -945,22 +945,27 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     const panel = panelWith([]);
     expect(one(panel.container, 'app').dataset['liveness']).toBe('none');
     if (mode === 'canvas') {
-      // ONE LINE PER ENABLED ENGINE, which replaced the single
-      // 'No sessions in this workspace.' this row used to pin. `App.svelte`
-      // passes no `enabledEngines`, so `Deck.svelte`'s default applies and
-      // Claude Code is the only engine named — an installation with no
-      // OpenCode must not be shown a panel waiting for one.
+      // ONE LINE, NAMING NO ENGINE (D4, 2026-09-04). This row has pinned three
+      // different things now: 'No sessions in this workspace.', then one line
+      // per enabled engine, and now this. The middle one is why the rule is
+      // worth stating rather than just satisfying — it was correct in design
+      // and defective in the product, because nothing ever passed
+      // `enabledEngines`, so the panel named Claude Code to every user of
+      // every engine.
       //
-      // Asserted as the whole list, by value: a second line, or a line for an
-      // engine this install is not observing, fails here.
+      // Asserted through the WHOLE PANEL rather than the component, which is
+      // what this file is for: the component test can be handed a prop the
+      // product never passes, and this one cannot.
       const waiting = all(panel.container, 'deck-waiting');
-      expect(waiting.map((p) => p.dataset['engine'])).toStrictEqual(['cc']);
       expect(waiting.map((p) => p.textContent?.trim())).toStrictEqual([
-        'Waiting for a Claude Code session…',
+        'Waiting for a session to start.',
       ]);
       expect(one(panel.container, TESTID.deckEmpty).textContent?.trim()).toBe(
-        'Waiting for a Claude Code session…',
+        'Waiting for a session to start.',
       );
+      for (const name of ['Claude', 'OpenCode', 'Codex']) {
+        expect(one(panel.container, TESTID.deckEmpty).textContent).not.toContain(name);
+      }
       expect(all(panel.container, 'deck-empty-filtered')).toHaveLength(0);
       expect(all(panel.container, TESTID.deckBlob)).toHaveLength(0);
       expect(one(panel.container, TESTID.deck).dataset['sessions']).toBe('0');

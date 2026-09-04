@@ -6,6 +6,13 @@ All notable changes to Agent Deck for Claude Code are documented here.
 
 ### Fixed
 
+- **The empty deck no longer names an engine.** With no sessions to show it read
+  "Waiting for a Claude Code session…" — on every install, whichever engines you
+  actually run, because the panel never told the deck which engines it was
+  observing and the deck fell back to naming Claude Code. It now reads "Waiting
+  for a session to start." Copy that really is about one engine is unchanged:
+  the filter chips still say Claude Code, OpenCode and Codex, and a card still
+  carries its own engine's tag.
 - **A session that starts with a slash command is named after the command.** It
   used to be named after the markup Claude Code writes around it, so a session
   begun with `/phase` showed

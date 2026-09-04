@@ -1,27 +1,26 @@
 # Security posture
 
-Agent Deck observes Claude Code's exhaust and renders it. It never writes to Claude Code, never
-launches or wraps it, and never sends anything anywhere. This document records **what is enforced,
-how it is enforced, and how that enforcement was measured** — not intentions.
+Agent Deck reads what Claude Code, OpenCode and Codex leave on disk, and renders it. It never
+writes to any of them, never launches or wraps any of them, and never sends anything anywhere.
+This document records **what is enforced, how it is enforced, and how that enforcement was
+measured** — not intentions.
 
-Scope note: this file is Phase 4 groundwork. It deliberately contains no vulnerability-disclosure
-address, no support commitment and no version-support matrix, because none of those exist yet.
-Phase 5 owns the published version. The repository is **private** at time of writing; before it is
-ever made public, read the privacy note in `fixtures/README.md` first — the committed fixtures are
-content-free but **not anonymous**.
+Scope note: this file carries no vulnerability-disclosure address and no support commitment,
+because neither exists yet. What it does carry is every version window, every file and table that
+is read, and every one that is deliberately never opened.
 
 ---
 
 ## 1. The architecture is the guarantee
 
-Two independent taps, and neither of them is a network client.
+Two kinds of source, and neither of them is a network client.
 
-| tap | source | what it answers |
+| source | where it comes from | what it answers |
 | --- | --- | --- |
-| **hooks** | a user-installed hook snippet POSTs to a loopback HTTP listener | what is running right now |
-| **JSONL** | `~/.claude/projects/<slug>/…` read from local disk | what happened |
+| **hooks** | a hook snippet you paste yourself POSTs to a loopback HTTP listener — Claude Code's and Codex's both, to the one listener | what is running right now |
+| **session files** | read from local disk: Claude Code's `~/.claude/projects/<slug>/…`, OpenCode's session database, Codex's transcripts under `$CODEX_HOME` or `~/.codex` | what happened |
 
-Everything the extension knows comes from those two, both local. The host holds state in memory
+Everything the extension knows comes from those, all local. The host holds state in memory
 only and discards it when the window closes: no database, no cache file, no persistence.
 
 This matters because "we promise not to send telemetry" is a policy and policies drift. **There is
@@ -392,6 +391,6 @@ about the command in that block matter for your own safety rather than ours:
 ## 6. Hard exclusions
 
 Not implemented, and not accepted as contributions: writes of any kind · historical replay or
-persistence · wrapping or launching Claude Code · telemetry or any egress. v1's zero write
+persistence · wrapping or launching any observed engine · telemetry or any egress. v1's zero write
 capability is the trust anchor, and the point of writing it down is that it is easier to defend a
 boundary than to relocate one.

@@ -46,8 +46,27 @@
  *   > An engine testing `=== null` reads `undefined`, takes the wrong branch,
  *   > and throws nothing.
  *
- * But `null` also occurs as a real, present value — a `v1` thread's
- * `agent_path` IS `null` (C3a), which is a different fact from "no such key".
+ * But `null` also occurs as a real, present value, and a `v1` subagent shows
+ * BOTH shapes at once under one field name. Re-derived from spec C3a as
+ * amended 2026-09-05 — the row it used to quote said `agent_path` is `null`
+ * WITHOUT SAYING WHICH `agent_path`, and there are two:
+ *
+ *   payload.agent_path                              v1: THE KEY IS ABSENT
+ *   payload.source.subagent.thread_spawn.agent_path v1: PRESENT, and null
+ *
+ * Under `v2` both are present and carry the same string. Measured over the
+ * committed corpus: 10 v2 subagent `session_meta` records against 1 v1; over
+ * the whole evidence tree, 16 against 2. The shape is what this rests on, not
+ * the counts — those move with the corpus.
+ *
+ * THIS COMMENT IS WHY THE FIELD IS TYPED THE WAY IT IS, and the history is
+ * worth the four lines. The old wording was copied here from the unqualified
+ * spec row; `graft.ts` then read "no `agent_path`" as "unjoinable" and parked
+ * EVERY v1 subagent, so an entire dialect of live sessions rendered with no
+ * children. Nine tests guarded that join and all nine passed, because they
+ * exercised the join and not the outcome: a child resolved correctly and then
+ * discarded satisfies every one of them.
+ *
  * The two must stay distinguishable all the way to the golden, whose every
  * optional field is `{present, value}` for exactly this reason.
  *
@@ -66,8 +85,13 @@ import type { SessionState, TokenPair } from '../model/events.js';
  * `{present: true,  value: null}` — the key was there and held `null`.
  *
  * Those are different sessions, not two spellings of one. Collapsing them is
- * how the `v1` dialect was nearly refused: its `agent_path` is present-and-null
- * and was read as absent.
+ * how the `v1` dialect was nearly refused: its NESTED `agent_path` is
+ * present-and-null — while its TOP-LEVEL one is genuinely absent — and the
+ * nested one was read as absent.
+ *
+ * `asObject(null)` answers `null` for both shapes, which is the exact collapse
+ * that produced the defect. Read the pair at each name; never infer one field
+ * from the other.
  */
 export interface CodexOptional<T> {
   readonly present: boolean;

@@ -171,7 +171,7 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
   // carry the same five, by name, in both doors.
   'media/icon.png',
   'media/Session_Deck.png',
-  'media/hero_16_agent_session.png',
+  'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
   'dist/extension.cjs',
@@ -223,7 +223,7 @@ const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
   'extension/media/Internal_Session_Tool_popup.png',
   'extension/media/Internal_Session_Tool_popup2.png',
   'extension/media/Session_Deck.png',
-  'extension/media/hero_16_agent_session.png',
+  'extension/media/hero_26_agent_session.png',
   'extension/media/icon.png',
   'extension/package.json',
   'extension/readme.md',
@@ -244,7 +244,7 @@ const EXPECTED_ARTIFACT_ENTRY_COUNT = 15;
  */
 const RELEASE_IMAGES_IN_ARTIFACT: readonly string[] = [
   'media/Session_Deck.png',
-  'media/hero_16_agent_session.png',
+  'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
 ];

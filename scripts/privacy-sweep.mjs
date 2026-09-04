@@ -60,8 +60,22 @@
  * BUCKETS
  * -------
  *   IDENTITY    a match against the private token list, anywhere, outside that
- *               list's own `exemptPaths` (the licence and the manifest, where
- *               the author's name is the correct content). Gate: must be empty.
+ *               list's own `exemptPaths`, where the author's name is the
+ *               CORRECT content: the licence, the manifest and its lock, and
+ *               - added 2026-09-05, by the user, for DoD 5.9 - the project
+ *               page at `site/index.html`.
+ *
+ *               THE PAGE'S EXEMPTION IS NOT A WIDENING OF WHAT IS PUBLIC, and
+ *               the distinction is the whole reason an exemption was taken
+ *               rather than the links being lowercased to slip past a
+ *               case-sensitive token. Its three hits are all the repository's
+ *               own public URL - the same string `package.json`'s
+ *               `repository.url` already carries under this same list, and the
+ *               one `vsce` rewrites every relative README image link into
+ *               inside a published VSIX. Lowercasing would have passed the
+ *               check while publishing the identical fact, which is the
+ *               fail-open shape working-method rule 18 exists to stop.
+ *               Gate: must be empty.
  *               Reported as path:line plus the token's NOTE - never the matched
  *               text, because this report is committed.
  *               SKIPPED, and said so in the verdict line, when the token file
@@ -237,6 +251,20 @@ const CAPTURE_CORPORA = [
   // caught the omission on the next run, which is what it is for.
   'media/',
   'scripts/',
+  // The GitHub Pages source, tracked for DoD 5.9. FOURTH time the
+  // completeness guard in src/release/privacy.test.ts has caught a newly
+  // tracked top-level directory on the first full run after it appeared -
+  // after media/, .vscode/ and .opencode/ - and the fourth time it has been
+  // the only thing that noticed. A directory outside this list is not swept
+  // for FOREIGN content at all, and the sweep still exits 0, which is why
+  // the guard asserts coverage rather than trusting the verdict.
+  //
+  // It carries an HTML page and four PNGs copied from media/. The PNGs are
+  // byte-identical to files already swept under media/, so this adds no new
+  // capture content - but 'already swept elsewhere' is a fact about today's
+  // contents, not a property of the directory, and the next thing to land
+  // here would be unswept.
+  'site/',
   'src/',
   'test/',
   'webview/',
@@ -474,10 +502,14 @@ const CODEX_SCRATCH_RE = new RegExp(`^${HOME_DIR_PREFIX_SRC}/codex-probe/scratch
  * Phase 1's census (raw harvested JSONL carries no `projectSlug` field — it is
  * a value the ENGINE derives) and first appeared when Phase 3's wire-corpus
  * recorder embedded a live `SessionState.projectSlug` in committed evidence.
- * Measured on `webview/wire/codex-0.151.0-alpha.7.2-session-arc.json`
- * (2026-09-03): exactly one distinct value, 3 occurrences, all
- * `C--Users-dev-codex-probe-scratch` — the same location `CODEX_SCRATCH_RE`
- * already clears, spelled the other way.
+ * First seen on `webview/wire/codex-0.151.0-alpha.7.2-session-arc.json`
+ * (2026-09-03), as one shape: `C--Users-dev-codex-probe-scratch` — the same
+ * location `CODEX_SCRATCH_RE` already clears, spelled the other way. HOW MANY
+ * of them there are is deliberately not written here any more. The run counts
+ * its own occurrences, its own distinct values and the files they were in, and
+ * states them in this rule's `reason` (see `measurementFor` and
+ * `codexSlugPhrase`) - a census written into a comment is invalidated by the
+ * next harvest and nothing reports that it has gone false.
  *
  * `[^-]+` for the user-directory component, not `.+`: the slug's separator
  * IS the character being matched around, so a loose `.+` would swallow real
@@ -503,6 +535,265 @@ const CODEX_ROLLOUT_RE = new RegExp(
     'rollout-\\d{4}-\\d{2}-\\d{2}t\\d{2}-\\d{2}-\\d{2}-' +
     '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.jsonl$',
 );
+
+/* ------------------------------------------------------------------ *
+ * THE RUN'S OWN CENSUS (v0.6.0 DoD 5.0d)
+ *
+ * Every number a FOREIGN exemption's reason states is computed here, by the
+ * run that prints it. None of them is written down.
+ *
+ * WHY. Five Codex figures used to stand in the prose below - a corpus total, a
+ * rule's share of it twice over, and a two-way split by value spelling. All
+ * five re-derived on the day they were written; all five would have gone false
+ * on the next harvest, silently, inside a file no harvest touches. That is this
+ * repository's most-recorded defect, and it had already been committed here
+ * once by a count over a corpus that a later commit REMOVED.
+ *
+ * RULE 18 APPLIES TO A CENSUS. A count of zero is evidence only when something
+ * says what was looked at, so the census records which Codex corpus
+ * directories were SCANNED and how many files were in them, whether or not any
+ * value was found in them - and a composed sentence over an absent corpus says
+ * the corpus is absent instead of printing a confident 0.
+ *
+ * SCOPE: the WORKING TREE leg, and every composed sentence says so. The
+ * history leg re-scans older copies of the same corpus once per blob per path,
+ * so folding it in would count one corpus several times over and the figure
+ * would move with the branch topology rather than with the data.
+ * ------------------------------------------------------------------ */
+
+/** A Codex capture corpus directory, derived from the path, never listed. */
+const CODEX_CORPUS_RE = /^fixtures\/(codex-[^/]+)\//;
+
+/** How many file names a composed sentence names before it counts instead. */
+const NAMED_FILES_MAX = 3;
+
+/** How many file names the JSON report carries as a sample. */
+const SAMPLE_FILES_MAX = 4;
+
+const codexCensus = {
+  corpora: new Set(),
+  corpusFiles: 0,
+  corpusCandidates: 0,
+  rules: new Map(),
+};
+
+/**
+ * The leg being scanned right now.
+ *
+ * `foreignExemption` is called from deep inside `scanForeign`, which knows
+ * nothing about legs; this is how the per-leg candidate count and the
+ * working-tree scope of the census are kept without threading a parameter
+ * through three call sites that have no other use for it.
+ */
+let activeLeg = null;
+let censusActive = false;
+
+function resetCodexCensus() {
+  codexCensus.corpora = new Set();
+  codexCensus.corpusFiles = 0;
+  codexCensus.corpusCandidates = 0;
+  codexCensus.rules = new Map();
+}
+
+/**
+ * Record that a file inside a Codex capture corpus was READ. Called for every
+ * such file, hit or no hit, because "what was looked at" is the half that
+ * makes a later zero mean anything.
+ */
+function noteScannedFile(relPath) {
+  const m = CODEX_CORPUS_RE.exec(relPath);
+  if (m === null) return;
+  codexCensus.corpora.add(`fixtures/${m[1]}`);
+  codexCensus.corpusFiles += 1;
+}
+
+/**
+ * The spelling a captured location arrived in.
+ *
+ * Every pattern is anchored at `^`. None can restart at every offset - the
+ * 2026-09-03 quadratic, measured at 61,962 ms on a corpus whose defining
+ * fixture is a single 554,122-byte line.
+ */
+function pathValueShape(normalised) {
+  if (normalised.startsWith('file:')) return 'a file: URL';
+  if (/^[a-z]:\//.test(normalised)) return 'a drive-letter path';
+  if (/^\/mnt\/[a-z]\//.test(normalised)) return 'a WSL /mnt path';
+  if (/^\/[a-z]\//.test(normalised)) return 'an MSYS drive path';
+  if (normalised.startsWith('/')) return 'a posix path';
+  return 'an unrooted value';
+}
+
+function censusRecord(ruleId, relPath, value, inCodexCorpus, key) {
+  let r = codexCensus.rules.get(ruleId);
+  if (r === undefined) {
+    r = {
+      occurrences: 0,
+      inCorpus: 0,
+      files: new Set(),
+      values: new Set(),
+      shapes: new Map(),
+      corpusShapes: new Map(),
+      keys: new Set(),
+    };
+    codexCensus.rules.set(ruleId, r);
+  }
+  r.occurrences += 1;
+  if (inCodexCorpus) r.inCorpus += 1;
+  r.files.add(relPath);
+  // The DISTINCT VALUES are counted, never published. This report is
+  // committed, and the identity class already learned what happens when a
+  // report quotes what it found: 9,203 occurrences inside the file whose job
+  // was proving the repository clean.
+  const normalised = normalisePathToken(value);
+  r.values.add(normalised);
+  const shape = pathValueShape(normalised);
+  r.shapes.set(shape, (r.shapes.get(shape) ?? 0) + 1);
+  // The same split, scoped to the capture corpora. The September figure this
+  // replaced was corpus-scoped ("179 as a drive-letter path and 15 as a file:
+  // URL"), and the repository-wide split is a different, larger number - the
+  // two are kept apart so neither sentence quietly answers the other's
+  // question.
+  if (inCodexCorpus) r.corpusShapes.set(shape, (r.corpusShapes.get(shape) ?? 0) + 1);
+  if (key !== null && key !== undefined) r.keys.add(key);
+}
+
+/** What this run measured for one rule. Published in the report. */
+function measurementFor(ruleId) {
+  const r = codexCensus.rules.get(ruleId) ?? null;
+  const files = r === null ? [] : [...r.files].sort();
+  const byCount = (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]);
+  const shapes = r === null ? [] : [...r.shapes].sort(byCount);
+  const corpusShapes = r === null ? [] : [...r.corpusShapes].sort(byCount);
+  return {
+    scope: 'working tree',
+    occurrences: r === null ? 0 : r.occurrences,
+    distinctValues: r === null ? 0 : r.values.size,
+    fileCount: files.length,
+    sampleFiles: files.slice(0, SAMPLE_FILES_MAX),
+    keys: r === null ? [] : [...r.keys].sort(),
+    shapes: Object.fromEntries(shapes),
+    codexCorpora: {
+      present: [...codexCensus.corpora].sort(),
+      filesScanned: codexCensus.corpusFiles,
+      candidates: codexCensus.corpusCandidates,
+      forgivenHere: r === null ? 0 : r.inCorpus,
+      shapes: Object.fromEntries(corpusShapes),
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Composing a reason out of what the run found.
+ *
+ * The prose that explains the REASONING stays in the rule. Only the
+ * arithmetic is composed here, and it is appended after MEASURED_MARKER so a
+ * reader - and `src/release/privacy.test.ts` - can tell the durable half from
+ * the run-dependent half at a glance. The test asserts that every standalone
+ * integer after that marker is one of the numbers this run derived, which is
+ * what makes "computed, not quoted" checkable rather than asserted.
+ * ------------------------------------------------------------------ */
+
+const MEASURED_MARKER = 'MEASURED BY THIS RUN - ';
+
+function count(n, unit) {
+  return `${n} ${unit}${n === 1 ? '' : 's'}`;
+}
+
+function joinList(items) {
+  if (items.length === 0) return 'nothing';
+  if (items.length === 1) return items[0];
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+function filesPhrase(m) {
+  if (m.fileCount === 0) return 'in no file';
+  if (m.fileCount <= NAMED_FILES_MAX) return `in ${joinList(m.sampleFiles)}`;
+  return `across ${count(m.fileCount, 'file')}`;
+}
+
+function shapesOf(shapes) {
+  const entries = Object.entries(shapes);
+  if (entries.length === 0) return '';
+  return `, ${joinList(entries.map(([shape, n]) => `${n} as ${shape}`))}`;
+}
+
+function shapesPhrase(m) {
+  return shapesOf(m.shapes);
+}
+
+function capitalise(s) {
+  return s.length === 0 ? s : `${s[0].toUpperCase()}${s.slice(1)}`;
+}
+
+function corporaPhrase(m) {
+  const c = m.codexCorpora;
+  if (c.present.length === 0) {
+    return (
+      'no Codex capture corpus (fixtures/codex-*) is present in this tree, so ' +
+      'nothing was counted there - an absence, stated, rather than a zero ' +
+      'offered as evidence'
+    );
+  }
+  const one = c.present.length === 1;
+  return (
+    `the Codex capture ${one ? 'corpus' : 'corpora'} present in this tree ` +
+    `${one ? 'is' : 'are'} ${joinList(c.present)} (${count(c.filesScanned, 'file')} ` +
+    `scanned, ${count(c.candidates, 'capture value')} examined)`
+  );
+}
+
+function repoWideSentence(m, withShapes) {
+  if (m.occurrences === 0) {
+    return (
+      'Repository-wide in the working tree this rule forgave nothing on this ' +
+      'run: there is no population here to describe, which is a statement ' +
+      'about the tree and not a count offered as evidence.'
+    );
+  }
+  return (
+    `Repository-wide in the working tree it forgave ${count(m.occurrences, 'value')}` +
+    `${withShapes ? shapesPhrase(m) : ''}, ${count(m.distinctValues, 'distinct value')}, ` +
+    `${filesPhrase(m)}.`
+  );
+}
+
+function genericMeasuredPhrase(m) {
+  return `${MEASURED_MARKER}${repoWideSentence(m, false)}`;
+}
+
+function codexScratchPhrase(m) {
+  const corpusHalf =
+    m.codexCorpora.present.length === 0
+      ? `${corporaPhrase(m)}.`
+      : `${corporaPhrase(m)}; ${m.codexCorpora.forgivenHere} of those examined ` +
+        `values are this one location${shapesOf(m.codexCorpora.shapes)}.`;
+  return `${MEASURED_MARKER}${corpusHalf} ${repoWideSentence(m, true)}`;
+}
+
+function codexRolloutPhrase(m) {
+  const corpusHalf =
+    m.codexCorpora.present.length === 0
+      ? `${corporaPhrase(m)}.`
+      : `${corporaPhrase(m)}; ${m.codexCorpora.forgivenHere} of those examined ` +
+        `values are this shape${shapesOf(m.codexCorpora.shapes)}.`;
+  const keys =
+    m.keys.length === 0
+      ? 'No capture key produced one on this run.'
+      : `It arrived under the ${joinList(m.keys)} ${m.keys.length === 1 ? 'key' : 'keys'} - ` +
+        'the run reports which, rather than this file asserting them.';
+  return `${MEASURED_MARKER}${corpusHalf} ${repoWideSentence(m, true)} ${keys}`;
+}
+
+function codexSlugPhrase(m) {
+  const corpusHalf = capitalise(
+    m.codexCorpora.present.length === 0
+      ? `${corporaPhrase(m)}.`
+      : `${corporaPhrase(m)}, of which ${m.codexCorpora.forgivenHere} are this ` +
+        'shape - a Codex CAPTURE corpus is expected to carry none, because ' +
+        'projectSlug is derived by the engine and never harvested.',
+  );
+  return `${MEASURED_MARKER}${repoWideSentence(m, false)} ${corpusHalf}`;
+}
 
 /**
  * FOREIGN exemptions, by VALUE - each with a written reason that says what was
@@ -535,6 +826,16 @@ const CODEX_ROLLOUT_RE = new RegExp(
  * closes and that no rule has gone dead. Re-derive with
  * `node scripts/privacy-sweep.mjs --json <path>` and read the report; do not
  * quote a number from this comment, because there is deliberately none to quote.
+ *
+ * THAT SENTENCE WAS NOT YET TRUE OF THE THREE CODEX RULES when it was written
+ * (v0.6.0 DoD 5.0d, 2026-09-04). They still carried five September figures - a
+ * corpus total, a rule's share of it twice, and a split by value spelling - and
+ * every one of them was of the shape the paragraph above says is forbidden.
+ * They are gone. Each rule now carries a `measuredPhrase`, appended to its
+ * reason after MEASURED_MARKER and composed from the run's own census; each
+ * report entry carries the structured `measured` block those sentences are
+ * built from. A rule with no `measuredPhrase` gets the generic one, so no
+ * reason in this file states a count that the run did not just take.
  */
 const FOREIGN_VALUE_EXEMPTIONS = [
   {
@@ -596,11 +897,16 @@ const FOREIGN_VALUE_EXEMPTIONS = [
       'separate subject. scripts/capture-codex.mjs enforces that - its G8 check ' +
       'refuses a corpus whose transcripts carry any other working directory - ' +
       'which is why every captured value of this shape in fixtures/codex-* is ' +
-      'the same one location. Measured on fixtures/codex-0.151.0-alpha.7.2 ' +
-      '(2026-09-03): 194 of the 314 raw FOREIGN hits the corpus produces are this value, 179 ' +
-      'as a drive-letter path and 15 as a file: URL. It is NOT a directory ' +
-      'prefix - the whole value is pinned segment by segment, home component ' +
-      'aside, so a different project name under the same home still gates.',
+      'the same one location. It is NOT a directory prefix - the whole value is ' +
+      'pinned segment by segment, home component aside, so a different project ' +
+      'name under the same home still gates. The value arrives in more than one ' +
+      'spelling and they are the same location either way: a drive-letter path, ' +
+      'and a file: URL, which is how the Codex hook tap reports one run\'s ' +
+      'working directory. WHERE THE ARITHMETIC WENT: this reason used to carry a ' +
+      'September census of the corpus it was written against. The corpus has ' +
+      'grown since, and nothing would have reported that the sentence had gone ' +
+      'false, so the counts are taken from the run in progress and appear below.',
+    measuredPhrase: codexScratchPhrase,
     exempt: (value) => CODEX_SCRATCH_RE.test(normalisePathToken(value)),
   },
   {
@@ -613,10 +919,13 @@ const FOREIGN_VALUE_EXEMPTIONS = [
       'Not visible in Phase 1\'s census: raw harvested JSONL carries no projectSlug ' +
       'field at all, it is a value the ENGINE derives, so this shape first appeared ' +
       'when Phase 3\'s wire-corpus recorder embedded a live SessionState in committed ' +
-      'evidence. Measured on webview/wire/codex-0.151.0-alpha.7.2-session-arc.json ' +
-      '(2026-09-03): one distinct value, 3 occurrences, C--Users-dev-codex-probe-scratch - ' +
-      'the identical location codex-probe-scratch-repo already clears. Segment-pinned ' +
-      'the same way: only the user-directory component is free.',
+      'evidence - which is also why a Codex CAPTURE corpus need not contain this shape ' +
+      'at all: raw harvested JSONL has no such field, so the population lives in the ' +
+      'recorded wire evidence rather than in fixtures/codex-*. The location is the ' +
+      'identical one codex-probe-scratch-repo already clears. Segment-pinned the same ' +
+      'way: only the user-directory component is free. Its census used to be frozen ' +
+      'here as a September figure and is now taken from the run in progress.',
+    measuredPhrase: codexSlugPhrase,
     exempt: (value) => CODEX_SCRATCH_SLUG_RE.test(normalisePathToken(value)),
   },
   {
@@ -629,10 +938,11 @@ const FOREIGN_VALUE_EXEMPTIONS = [
       'name a foreign project even in principle. The pattern pins every segment ' +
       'to a literal, a date field or a UUID field, leaving only the home ' +
       'directory user component free, so the claim is checked rather than ' +
-      'asserted. Measured on fixtures/codex-0.151.0-alpha.7.2 (2026-09-03): the ' +
-      'remaining 120 of the 314 raw FOREIGN hits the corpus produces, across the ' +
-      'transcript_path and agent_transcript_path keys. A relocated CODEX_HOME ' +
-      'stops matching and gates, which is the fail-closed direction.',
+      'asserted. A relocated CODEX_HOME stops matching and gates, which is the ' +
+      'fail-closed direction. Its share of the corpus, and the capture keys it ' +
+      'arrives under, used to be frozen here as a September census over a corpus ' +
+      'that has since grown; both are now taken from the run in progress.',
+    measuredPhrase: codexRolloutPhrase,
     exempt: (value) => CODEX_ROLLOUT_RE.test(normalisePathToken(value)),
   },
   {
@@ -677,6 +987,11 @@ function resetForeignTally() {
 
 function foreignExemption(relPath, value, opts = {}) {
   foreignTally.candidates += 1;
+  // Per LEG as well as in total: the census below is working-tree scoped, so
+  // its conservation law needs a working-tree denominator to close against.
+  if (activeLeg !== null) activeLeg.foreignCandidates += 1;
+  const inCodexCorpus = censusActive && CODEX_CORPUS_RE.test(relPath);
+  if (inCodexCorpus) codexCensus.corpusCandidates += 1;
   for (const rule of FOREIGN_VALUE_EXEMPTIONS) {
     if (rule.absolutePathValuesOnly === true && opts.slug === true) continue;
     if (
@@ -687,6 +1002,7 @@ function foreignExemption(relPath, value, opts = {}) {
     }
     if (rule.exempt(value)) {
       foreignTally.forgiven.set(rule.id, (foreignTally.forgiven.get(rule.id) ?? 0) + 1);
+      if (censusActive) censusRecord(rule.id, relPath, value, inCodexCorpus, opts.key ?? null);
       return rule;
     }
   }
@@ -822,7 +1138,11 @@ function scanForeign(text, starts, relPath, sink) {
     // still matches the shape and is still flagged - the parity control in
     // src/release/privacy.test.ts plants exactly that and asserts it.
     if (key === 'slug' && !SLUG_SHAPE_RE.test(value)) continue;
-    if (foreignExemption(relPath, value) !== null) continue;
+    // The KEY travels with the value so the census can report which capture
+    // keys a shape actually arrived under. The rollout rule's reason used to
+    // name `transcript_path` and `agent_transcript_path` as a written claim;
+    // now the run says which keys it saw.
+    if (foreignExemption(relPath, value, { key }) !== null) continue;
     sink({
       path: relPath,
       line: lineOf(starts, m.index),
@@ -838,7 +1158,7 @@ function scanForeign(text, starts, relPath, sink) {
     if (namesOwnProject(slug)) continue;
     // A slug is not an absolute path, so `not-an-absolute-location` must not be
     // consulted here; `SLUG_SHAPE_RE` above is this leg's equivalent shape gate.
-    if (foreignExemption(relPath, slug, { slug: true }) !== null) continue;
+    if (foreignExemption(relPath, slug, { slug: true, key: 'projects-slug' }) !== null) continue;
     sink({
       path: relPath,
       line: lineOf(starts, s.index),
@@ -991,6 +1311,10 @@ function newLeg() {
     nulFiles: [],
     identity: { hits: [], exemptHits: 0 },
     secrets: [],
+    // Every value that reached the exemption rules in THIS leg. The
+    // repository-wide total is in `verdict.foreignCandidates`; this is the
+    // denominator the working-tree census closes against.
+    foreignCandidates: 0,
     foreign: [],
   };
 }
@@ -1000,6 +1324,9 @@ function scanUnit(leg, relPath, body, identity) {
   const starts = lineIndex(text);
   leg.filesScanned += 1;
   leg.bytesScanned += body.length;
+  // Recorded for every file inside a Codex corpus, hit or no hit: a later
+  // count of zero is evidence only when something says what was opened.
+  if (censusActive) noteScannedFile(relPath);
   if (body.includes(0)) leg.nulFiles.push(relPath);
 
   if (identity.status === 'RUN') {
@@ -1053,6 +1380,9 @@ export function sweep(options = {}) {
   // the first one's counts. `src/release/privacy.test.ts` calls sweep() several
   // times per run, which is exactly how that would have been found late.
   resetForeignTally();
+  resetCodexCensus();
+  activeLeg = null;
+  censusActive = false;
   const identity = loadIdentity(root, options.identityFile ?? null);
 
   const gitRepo = isGitRepo(root);
@@ -1065,6 +1395,8 @@ export function sweep(options = {}) {
 
   let t0 = Date.now();
   const wt = newLeg();
+  activeLeg = wt;
+  censusActive = true;
   for (const rel of files) {
     let body;
     try {
@@ -1075,12 +1407,19 @@ export function sweep(options = {}) {
     scanUnit(wt, rel, body, identity);
   }
   finaliseLeg(wt);
+  activeLeg = null;
+  // The census is working-tree scoped and closes here. See the census header:
+  // a history blob is an older copy of the same corpus, scanned once per path
+  // it was ever stored at, so counting it would multiply one corpus by the
+  // branch topology.
+  censusActive = false;
   timings.workingTreeMs = Date.now() - t0;
 
   let history = null;
   if (gitRepo && wantHistory) {
     t0 = Date.now();
     const hist = newLeg();
+    activeLeg = hist;
     const blobs = historyBlobs(root);
     hist.blobsScanned = blobs.length;
     for (const blob of blobs) {
@@ -1090,6 +1429,7 @@ export function sweep(options = {}) {
       for (const rel of at) scanUnit(hist, rel, blob.body, identity);
     }
     finaliseLeg(hist);
+    activeLeg = null;
     history = hist;
     timings.historyMs = Date.now() - t0;
   }
@@ -1119,18 +1459,33 @@ export function sweep(options = {}) {
         exemptPaths: identity.exemptPaths,
       },
       ownProject: OWN_PROJECT,
+      // Published rather than duplicated: the test splits a reason on this to
+      // separate the durable prose from the run-derived arithmetic, and a
+      // marker written down in two places is a marker that drifts.
+      measuredMarker: MEASURED_MARKER,
       captureCorpora: CAPTURE_CORPORA,
       captureRootFiles: CAPTURE_ROOT_FILES,
-      foreignValueExemptions: FOREIGN_VALUE_EXEMPTIONS.map((r) => ({
-        id: r.id,
-        paths: r.paths ?? null,
-        absolutePathValuesOnly: r.absolutePathValuesOnly === true,
-        reason: r.reason,
-        // How many candidates this rule forgave in THIS run, across both legs.
-        // A rule at 0 is a rule whose written reason no longer describes any
-        // data in the repository - see the note on `foreignTally`.
-        forgiven: foreignTally.forgiven.get(r.id) ?? 0,
-      })),
+      foreignValueExemptions: FOREIGN_VALUE_EXEMPTIONS.map((r) => {
+        // The reason a human reads is a statement about THIS run: the durable
+        // prose, then MEASURED_MARKER, then arithmetic taken from the census.
+        // Nothing after that marker is written down anywhere in this file.
+        const measured = measurementFor(r.id);
+        const phrase = (r.measuredPhrase ?? genericMeasuredPhrase)(measured);
+        return {
+          id: r.id,
+          paths: r.paths ?? null,
+          absolutePathValuesOnly: r.absolutePathValuesOnly === true,
+          reason: `${r.reason} ${phrase}`,
+          // The structured half of the same thing, so a reader - and the test -
+          // can check the sentence against the numbers rather than parse prose
+          // to find out what the run measured.
+          measured,
+          // How many candidates this rule forgave in THIS run, across both legs.
+          // A rule at 0 is a rule whose written reason no longer describes any
+          // data in the repository - see the note on `foreignTally`.
+          forgiven: foreignTally.forgiven.get(r.id) ?? 0,
+        };
+      }),
       secretRules: [...SECRET_RULES.map((r) => r.id), 'generic-high-entropy'],
       // Untracked mode, and WHAT it read - a boolean alone would not say
       // whether the walk found anything, which is the interesting half.
@@ -1199,6 +1554,26 @@ function printLeg(name, leg, status, reason) {
   }
 }
 
+/**
+ * What each FOREIGN exemption forgave on this run, and the sentence it composed
+ * from it.
+ *
+ * Printed because an exemption removes a GATING hit: the count is the only
+ * thing standing between "this rule protects other people's work" and "this
+ * rule is a hole somebody wrote a reason on". A rule at 0 is visible here
+ * without opening the JSON.
+ */
+function printForeignExemptions(report) {
+  say(`\nFOREIGN exemptions (${report.verdict.foreignCandidates} capture values examined)`);
+  for (const rule of report.config.foreignValueExemptions) {
+    const marker = report.config.measuredMarker;
+    const at = rule.reason.indexOf(marker);
+    const measured = at === -1 ? '(no measurement)' : rule.reason.slice(at + marker.length);
+    say(`  ${rule.id}  forgiven=${rule.forgiven}`);
+    say(`    ${measured}`);
+  }
+}
+
 function parseArgs(argv) {
   const opts = { json: null, root: process.cwd(), history: true, quiet: false, stamp: null };
   for (let i = 0; i < argv.length; i += 1) {
@@ -1226,6 +1601,7 @@ function main(argv) {
     say(`privacy sweep - root HEAD ${report.head ?? '(not a git repo)'}`);
     printLeg('working tree', report.workingTree, st, why);
     printLeg('history', report.history, st, why);
+    printForeignExemptions(report);
     say(
       `\nVERDICT ${report.verdict.pass ? 'PASS' : 'FAIL'}  ` +
         // The identity class reports its STATUS in the verdict line, always. A

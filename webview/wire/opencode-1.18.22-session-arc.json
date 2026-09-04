@@ -2876,6 +2876,7 @@
       "label": "discover",
       "message": {
         "type": "degraded",
+        "engine": "cc",
         "degraded": true,
         "reason": "noHookEvents"
       }
@@ -5717,6 +5718,7 @@
       "label": "panel-reload",
       "message": {
         "type": "degraded",
+        "engine": "cc",
         "degraded": true,
         "reason": "noHookEvents"
       }

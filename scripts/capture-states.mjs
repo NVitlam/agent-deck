@@ -280,7 +280,7 @@ async function hostRun(host, dispatch, configure) {
 
   const emission = model.emit();
   bridge.publish(emission);
-  bridge.publishDegraded(engine.degradedState());
+  bridge.publishDegraded('cc', engine.degradedState());
 
   const states = new Map();
   for (const state of emission.sessions) states.set(state.sessionId, state);

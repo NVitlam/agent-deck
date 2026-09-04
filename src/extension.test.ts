@@ -22,7 +22,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
@@ -70,6 +70,7 @@ import type {
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
+import type { DiagnosticsSink } from './bridge/diagnostics.js';
 import { CODEX_HOME_VAR, readCodexEngine } from './codex/index.js';
 import type { CodexThread } from './codex/index.js';
 import {
@@ -873,7 +874,7 @@ describe('PanelController', () => {
    */
   function emission(
     sessions: SessionState[],
-    options: { degraded?: boolean; added?: string[] } = {},
+    options: { degraded?: boolean; codexDegraded?: boolean; added?: string[] } = {},
   ): DataPathEmission {
     return {
       emission: {
@@ -885,6 +886,13 @@ describe('PanelController', () => {
       },
       degraded:
         options.degraded === true
+          ? { degraded: true, reason: 'noHookEvents' }
+          : { degraded: false },
+      // DoD 5.0b. Defaults to healthy and is set INDEPENDENTLY of `degraded`,
+      // which is what lets a test drive one tap silent while the other is
+      // fine - the shape the item requires to be tested in both directions.
+      codexDegraded:
+        options.codexDegraded === true
           ? { degraded: true, reason: 'noHookEvents' }
           : { degraded: false },
     };
@@ -1007,22 +1015,41 @@ describe('PanelController', () => {
     });
 
     controller.publish(emission([state('s1')], { added: ['s1'] }));
-    expect(panel.posted.map((m) => m.type)).toStrictEqual(['snapshot', 'degraded']);
+    // TWO degraded lines, not one, since DoD 5.0b: a publish announces every
+    // hook tap's health and there are two taps. The ORDER is part of the
+    // contract - the snapshot first, then the taps - because a webview that
+    // heard about a degraded tap before it had any sessions would have
+    // nothing to attach it to.
+    expect(panel.posted.map((m) => m.type)).toStrictEqual([
+      'snapshot',
+      'degraded',
+      'degraded',
+    ]);
+    expect(
+      panel.posted.filter((m) => m.type === 'degraded').map((m) => m.engine),
+      'one line per tap, each naming itself',
+    ).toStrictEqual(['cc', 'codex']);
 
     // Publishing again with nothing changed sends nothing: no snapshot, and no
-    // repeated degraded message.
+    // repeated degraded message from EITHER tap.
     controller.publish(emission([state('s1')]));
-    expect(panel.posted).toHaveLength(2);
+    expect(panel.posted).toHaveLength(3);
 
     panel.fireBecameVisible();
     expect(controller.counters.reloads).toBe(1);
     expect(snapshotsRequested).toBe(1);
 
     controller.publish(emission([state('s1')]));
+    // After a reload the bridge has forgotten BOTH taps, so both are
+    // re-announced beside the fresh snapshot. `reset()` clears the whole
+    // per-tap map for this reason: a webview that was never told is not the
+    // same as a tap that has not moved.
     expect(panel.posted.map((m) => m.type)).toStrictEqual([
       'snapshot',
       'degraded',
+      'degraded',
       'snapshot',
+      'degraded',
       'degraded',
     ]);
     controller.dispose();
@@ -1033,11 +1060,21 @@ describe('PanelController', () => {
     const controller = new PanelController({ panel: panel.surface, nonce: 'AAAAAAAA' });
     for (let i = 0; i < 12; i += 1) controller.publish(emission([state('s1')], { degraded: true }));
     const degraded = panel.posted.filter((m) => m.type === 'degraded');
+    // Twelve publishes, TWO lines: one per tap, each sent once. The point of
+    // the test is unchanged - no nagging - and it is now also a check that
+    // the two taps do not share a de-duplication memory, which would have
+    // shown up here as a single line.
     expect(degraded).toStrictEqual([
-      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'codex', degraded: false },
     ]);
+    // The Claude Code tap recovers. That is ONE new line - the Codex tap has
+    // not moved, so it must not be re-announced alongside it, which is the
+    // per-tap no-nagging rule seen from the other side.
     controller.publish(emission([state('s1')], { degraded: false }));
-    expect(panel.posted.filter((m) => m.type === 'degraded')).toHaveLength(2);
+    const after = panel.posted.filter((m) => m.type === 'degraded');
+    expect(after).toHaveLength(3);
+    expect(after.at(-1)).toStrictEqual({ type: 'degraded', engine: 'cc', degraded: false });
     controller.dispose();
   });
 
@@ -1553,6 +1590,9 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
     controller.publish({
       emission: path.model.emit(),
       degraded: path.liveness.degradedState(),
+      // DoD 5.0b. This test is about a Claude Code refusal snapshot, so the
+      // Codex tap has nothing to say and says so.
+      codexDegraded: { degraded: false },
     });
     const snapshot = later.posted.find((m) => m.type === 'snapshot');
     expect(snapshot?.type).toBe('snapshot');
@@ -1624,8 +1664,13 @@ describe('degraded mode', () => {
     for (let i = 0; i < 20; i += 1) host.dataPath.pump();
 
     const degraded = panel.posted.filter((m) => m.type === 'degraded');
+    // Twenty pumps, two lines: one per tap, each announced once. The Codex
+    // half is `false` because this workspace has no Codex root - an engine
+    // that is not running is not degraded, it is silent, and saying otherwise
+    // would be the D2 mistake pointed at the other engine.
     expect(degraded).toStrictEqual([
-      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'codex', degraded: false },
     ]);
     // The socket is bound and healthy; the reason is the absence of events,
     // which is the honest one.
@@ -3955,5 +4000,378 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
     }
     // The deck still renders. A window with no hook engine is not a dead one.
     expect(path.diagnostics.emissions).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.0a - `sessionRemoved` carries the engine the session actually had
+// ---------------------------------------------------------------------------
+
+/**
+ * A diagnostics sink that keeps every line.
+ *
+ * The channel creates its sink on the FIRST line, never at construction, so
+ * the factory has to hand back the same object each time or a test reads an
+ * empty transcript from a channel that has been writing happily.
+ */
+function collectingSink(): { lines: string[]; factory: () => DiagnosticsSink } {
+  const lines: string[] = [];
+  const sink: DiagnosticsSink = {
+    appendLine: (line: string) => {
+      lines.push(line);
+    },
+    show: () => {},
+    dispose: () => {},
+  };
+  return { lines, factory: () => sink };
+}
+
+/** Every `.jsonl` under a Codex `sessions/` tree, at any YYYY/MM/DD depth. */
+async function findTranscripts(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...(await findTranscripts(full)));
+    else if (entry.name.endsWith('.jsonl')) found.push(full);
+  }
+  return found;
+}
+
+describe('DoD 5.0a - a removed session is announced under its own engine', () => {
+  /**
+   * WHY THIS DRIVES A WHOLE HOST OVER A REAL CORPUS instead of calling the
+   * bookkeeping directly.
+   *
+   * The defect it pins was live for a phase WITH a green test beside it.
+   * `src/bridge/diagnostics.test.ts` records a `sessionRemoved` sample
+   * carrying `engine: 'opencode'` and asserts the line it formats - and it
+   * passes, because the sample is written by hand. It proves the CHANNEL
+   * honours an engine. Nothing proved the HOST supplies one, and the host was
+   * supplying the literal 'cc' for all three.
+   *
+   * That is the D4 shape exactly: a test that stands in for a wiring which
+   * does not exist, by passing in the value the product never passes. The
+   * only assertion that cannot be satisfied that way is one where the engine
+   * reaches the line the way production sends it - so the session here is a
+   * real Codex thread, read by the real engine, announced by the real host.
+   */
+  it('reads `session removed codex <id>` for a Codex session that goes away', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd, sessionId } = await codexBaselineRoot(root);
+    const sink = collectingSink();
+    const poll = manualPollTrigger();
+
+    const host = await startHostOnFreePort((port) =>
+      trackHost(
+        new AgentDeckHost({
+          workspacePath: cwd,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: () => {},
+          createDiagnosticsSink: sink.factory,
+          codex: { root, pollTrigger: poll.trigger },
+        }),
+      ),
+    );
+    host.dataPath.pump();
+
+    // DISCOVERY FIRST, and asserted rather than assumed: a removal line for a
+    // session that was never announced would be a different bug wearing the
+    // same output, and the assertion below would not tell them apart.
+    const discovered = sink.lines.filter((l) => l.includes(`session discovered`));
+    expect(
+      discovered.some((l) => l.endsWith(`session discovered codex ${sessionId}`)),
+      `the Codex session was never announced; lines: ${discovered.join(' | ')}`,
+    ).toBe(true);
+
+    // Now take the session away at the source - the ONE transcript the engine
+    // reads - and let the engine re-read. This is removal as a user causes it,
+    // not a hand-built emission with a session omitted.
+    //
+    // THE WHOLE `sessions/` TREE IS NOT DELETED, and the first draft of this
+    // test did exactly that and saw no removal line at all. Removing the tree
+    // makes the root read DEGRADED, and a degraded read deliberately keeps the
+    // last good content rather than blanking the deck (G3: refuse, do not
+    // guess). That is correct product behaviour and it is not this item's
+    // subject - so the fixture is emptied of transcripts while remaining a
+    // readable root, which is the state a real deleted session leaves behind.
+    // The path under `sessions/` is YYYY/MM/DD of the capture, so it is walked
+    // rather than written down: a hard-coded date is a test that breaks on the
+    // next harvest for a reason that has nothing to do with what it measures.
+    // (The first draft wrote 2026/09/03; the corpus is 2026/09/02.)
+    const transcripts = await findTranscripts(join(root, 'sessions'));
+    expect(transcripts.length, 'the fixture must have a transcript to remove').toBeGreaterThan(0);
+    for (const file of transcripts) await rm(file, { force: true });
+
+    // The content re-read is asynchronous. Poll the engine's own counter
+    // rather than sleeping: a fixed wait is a test that passes or fails by CPU
+    // load, which this repository has already been bitten by.
+    // TWO THINGS HAVE TO HAPPEN, and only waiting for the second one works.
+    // The content re-read is asynchronous, and the EMISSION that follows it is
+    // scheduled rather than synchronous - `#recordEmission` is driven off the
+    // emission, which is the point (a session the deck shows and one the
+    // diagnostics announce are then the same set). An earlier draft waited on
+    // `contentReads` and asserted straight after: the engine had correctly
+    // dropped the session, `codex.sessions()` was already 0, and no line had
+    // been written because no emission had been made yet.
+    //
+    // Polled rather than slept on: a fixed wait is a test that passes or fails
+    // by CPU load, which this repository has been bitten by before.
+    const reads = host.dataPath.codex.diagnostics.contentReads;
+    const emissions = host.dataPath.diagnostics.emissions;
+    poll.fire();
+    // The loop waits for THE OUTCOME, not for a counter, and the difference
+    // bit once already: `#contentReads` increments at the TOP of the read, so
+    // it moves while the read is still in flight and an emission from that
+    // same tick still carries the old content. Waiting on a removal line is
+    // both simpler and not a race - and it is not a way of making the test
+    // pass, because a product that never writes the line simply exhausts the
+    // loop and fails the assertion below, which is where the evidence is.
+    for (let i = 0; i < 400; i += 1) {
+      if (sink.lines.some((l) => l.includes('session removed'))) break;
+      host.dataPath.pump();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(
+      host.dataPath.codex.diagnostics.contentReads,
+      'the Codex engine never re-read after the transcript was removed',
+    ).toBeGreaterThan(reads);
+    expect(
+      host.dataPath.codex.sessions(),
+      'the Codex engine still holds the session whose transcript is gone',
+    ).toStrictEqual([]);
+    expect(
+      host.dataPath.diagnostics.emissions,
+      'no emission followed the removal, so nothing could have been announced',
+    ).toBeGreaterThan(emissions);
+
+    const removed = sink.lines.filter((l) => l.includes(`session removed`));
+    expect(
+      removed,
+      'exactly one removal line, for the session that went away',
+    ).toHaveLength(1);
+    // THE WHOLE POINT: `codex`, not `cc`. Before DoD 5.0a this read
+    // `session removed cc <id>` because `#announced` was a Set of ids and the
+    // engine had been discarded by the time the removal was detected.
+    expect(removed[0]).toMatch(/ session removed codex /);
+    expect(removed[0]).toContain(sessionId);
+    expect(removed[0], `a Codex removal must not be labelled cc`).not.toMatch(
+      / session removed cc /,
+    );
+  });
+
+  /**
+   * The composite key, from the other side.
+   *
+   * `#announced` is keyed by `(engine, id)` rather than by id, so two engines
+   * minting the same id cannot suppress one another. This asserts the key is
+   * a pair by asserting the FUNCTION of a pair, which is the only part of it
+   * that is observable from outside.
+   */
+  it('announces the same id under two engines as two separate sessions', async () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('./extension.ts', import.meta.url)),
+      'utf8',
+    );
+    // The removal path reads the engine off what was ANNOUNCED. A reader who
+    // "simplifies" this back to a Set of ids reintroduces the defect, and the
+    // test above would still pass for a single-engine deck - so the shape is
+    // pinned here too.
+    expect(source).toContain(
+      'readonly #announced = new Map<string, { id: string; engine: DiagnosticsEngine }>();',
+    );
+    expect(source, 'the removal line must not hard-code an engine').not.toContain(
+      "kind: 'sessionRemoved', sessionId: id, engine: 'cc'",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.0b - each hook tap reports its OWN health
+// ---------------------------------------------------------------------------
+
+describe('DoD 5.0b - the Codex tap has a health of its own', () => {
+  /**
+   * WHY BOTH DIRECTIONS, and why the item insisted on it.
+   *
+   * A one-directional test - "a silent Codex tap degrades Codex cells" - is
+   * satisfied by a banner that is ALWAYS ON. The second direction is what
+   * separates a working channel from a stuck one, and the third (a silent
+   * CLAUDE CODE tap must not degrade Codex) is the D2 defect itself: a flag
+   * about one engine rendered against another.
+   *
+   * These read the emission rather than the rendered panel because the
+   * emission is where the two values are SOURCED, and sourcing is what D2 got
+   * wrong. The rendering half is pinned in `webview/deck.test.ts`.
+   */
+  /** POST one hook payload to the listener, exactly as a real hook does. */
+  async function postHook(port: number, payload: unknown): Promise<number> {
+    const body = Buffer.from(JSON.stringify(payload), `utf8`);
+    return new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: `127.0.0.1`,
+          port,
+          path: `/event`,
+          method: `POST`,
+          agent: false,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': body.length,
+            connection: `close`,
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on(`end`, () => resolve(res.statusCode ?? 0));
+        },
+      );
+      req.on(`error`, reject);
+      req.end(body);
+    });
+  }
+
+  /** The real captured Codex hook payloads - the `.raw` wire bodies. */
+  async function codexPayloads(): Promise<Record<string, unknown>[]> {
+    const stream = await readFile(
+      fileURLToPath(
+        new URL(
+          '../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
+    return stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => (JSON.parse(line) as { raw: Record<string, unknown> }).raw);
+  }
+
+  /**
+   * A host with BOTH hook-driven engines live: a real Claude Code workspace
+   * (so `ccEnabled` is true and the CC liveness engine is running) and a
+   * staged Codex root beside it.
+   *
+   * Both taps therefore start silent, which is the only starting point from
+   * which "one of them went quiet" is a statement about one of them.
+   */
+  async function bothEnginesHost(): Promise<{
+    host: AgentDeckHost;
+    port: number;
+    seen: DataPathEmission[];
+  }> {
+    const workspacePath = await capturedWorkspacePath();
+    const root = await stageCodexRoot(false);
+    let chosen = 0;
+    const seen: DataPathEmission[] = [];
+    const host = await startHostOnFreePort((port) => {
+      chosen = port;
+      seen.length = 0;
+      return trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: (payload: DataPathEmission) => {
+            seen.push(payload);
+          },
+          codex: { root },
+        }),
+      );
+    });
+    return { host, port: chosen, seen };
+  }
+
+  /** The two taps, as the emission carries them. */
+  function taps(
+    host: AgentDeckHost,
+    seen: DataPathEmission[],
+  ): {
+    cc: { degraded: boolean; reason?: string };
+    codex: { degraded: boolean; reason?: string };
+  } {
+    host.dataPath.pump();
+    const last = seen.at(-1);
+    if (last === undefined) throw new Error(`the data path produced no emission`);
+    return { cc: last.degraded, codex: last.codexDegraded };
+  }
+
+  it('a silent Codex tap degrades CODEX and leaves Claude Code alone', async () => {
+    const { host, port, seen } = await bothEnginesHost();
+
+    // Claude Code hears something; Codex hears nothing. The CC payloads are
+    // this repository's own captured hook events.
+    const ccStream = await readFile(
+      fileURLToPath(
+        new URL('../fixtures/hook-events/cc-2.1.234-sessionstart.jsonl', import.meta.url),
+      ),
+      'utf8',
+    );
+    const ccLine = ccStream.split(/\r?\n/).filter((l) => l.trim() !== '')[0];
+    expect(ccLine, 'the CC hook corpus must carry a payload').toBeDefined();
+    const ccEvents = JSON.parse(ccLine ?? '{}') as Record<string, unknown>;
+    expect(await postHook(port, ccEvents), 'the listener accepted the CC payload').toBe(200);
+
+    const { cc, codex } = taps(host, seen);
+    expect(codex.degraded, `a Codex tap that has heard nothing is degraded`).toBe(true);
+    expect(codex.reason).toBe('noHookEvents');
+    // THE POINT: the two are independent. A Codex banner must not be the price
+    // of a healthy Claude Code one.
+    expect(cc.degraded, `Claude Code heard an event and is not degraded`).toBe(false);
+  });
+
+  it('a silent Claude Code tap does NOT degrade Codex', async () => {
+    const { host, port, seen } = await bothEnginesHost();
+
+    // The mirror image, and the one that is D2 itself. Codex hears a real
+    // captured payload; Claude Code hears nothing at all.
+    const payloads = await codexPayloads();
+    expect(payloads.length, `the corpus must carry a Codex hook payload`).toBeGreaterThan(0);
+    expect(await postHook(port, payloads[0]), 'the listener accepted the Codex payload').toBe(200);
+
+    const { cc, codex } = taps(host, seen);
+    expect(cc.degraded, `Claude Code has heard nothing and is degraded`).toBe(true);
+    expect(cc.reason).toBe('noHookEvents');
+    // Before 5.0b there was no second value to be right: the panel had one
+    // flag, and it was this one.
+    expect(codex.degraded, `Codex heard its own event and is NOT degraded`).toBe(false);
+    expect(codex.reason).toBeUndefined();
+  });
+
+  it('the Codex tap is quiet about an engine that is not running', async () => {
+    // No Codex root at all. `noHookEvents` would be TRUE and MEANINGLESS - the
+    // tap has heard nothing because there is no Codex on this machine, which
+    // is the exact shape of the mistake `#degradedState` documents for the CC
+    // half when `ccEnabled` is false.
+    const workspacePath = await capturedWorkspacePath();
+    const absentRoot = join(await makeTempDir(), 'no-such-.codex');
+    const seen: DataPathEmission[] = [];
+    const host = await startHostOnFreePort((port) =>
+      trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: (payload: DataPathEmission) => {
+            seen.push(payload);
+          },
+          codex: { root: absentRoot },
+        }),
+      ),
+    );
+
+    const { codex } = taps(host, seen);
+    expect(host.dataPath.codex.diagnostics.enabled, `the control: Codex is off`).toBe(false);
+    expect(codex.degraded, `an engine that is not running is not degraded`).toBe(false);
   });
 });

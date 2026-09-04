@@ -529,9 +529,50 @@ describe('G5 applied to CI: the pipeline fetches nothing', () => {
   });
 });
 
-describe('every job runs on windows-latest', () => {
+/**
+ * Workflows that BUILD OR TEST this extension, which is what the
+ * Windows-only rule is about.
+ *
+ * NARROWED 2026-09-05, when `pages.yml` arrived, and narrowed rather than
+ * relaxed. The rule's REASON has always been that this repository is
+ * Windows-native and a Linux leg would be an unproven leg: every fixture was
+ * captured on Windows, the project-slug encoding is a Windows path, and the
+ * WSL leg of the path matrix needs a real distro a hosted runner does not
+ * have. `ci.yml`'s own header says exactly that.
+ *
+ * None of it is true of a job that uploads a static directory to GitHub Pages.
+ * It runs no test, imports no fixture and touches no path encoding; what it
+ * does is `tar` a folder, and `actions/upload-pages-artifact` is built for a
+ * Linux runner. Forcing it onto `windows-latest` to satisfy a rule about the
+ * TEST matrix would be obeying the letter of the guard while breaking the
+ * deploy - and would teach the next reader that the rule is arbitrary.
+ *
+ * So the exemption is BY NAME and it is one name. A new workflow is covered by
+ * default and has to be added here deliberately, which is the same shape as
+ * `.vscodeignore`'s allow-lists and for the same reason: a rule that exempts
+ * by pattern loses to the next file nobody thought of.
+ */
+const DEPLOY_ONLY_WORKFLOWS: readonly string[] = ['pages.yml'];
+
+const BUILDING_WORKFLOWS = WORKFLOWS.filter((wf) => !DEPLOY_ONLY_WORKFLOWS.includes(wf.name));
+
+describe('every job that builds or tests runs on windows-latest', () => {
+  it('the exemption list names workflows that exist, and does not swallow them all', () => {
+    // Both directions. An exemption naming a file that is gone is a stale rule
+    // nobody notices; an exemption list that happened to cover every workflow
+    // would make the assertions below vacuous, which is this repository's
+    // most-recorded defect class.
+    for (const name of DEPLOY_ONLY_WORKFLOWS) {
+      expect(
+        WORKFLOWS.map((wf) => wf.name),
+        `${name} is exempted from the runner rule but does not exist`,
+      ).toContain(name);
+    }
+    expect(BUILDING_WORKFLOWS.length, 'every workflow is exempt - the rule is vacuous').toBeGreaterThan(0);
+  });
+
   it('has at least one runs-on line per workflow and all of them are windows-latest', () => {
-    for (const wf of WORKFLOWS) {
+    for (const wf of BUILDING_WORKFLOWS) {
       const runsOn = wf.code.filter((l) => l.includes('runs-on:'));
       expect(runsOn.length, `${wf.name} declares no runner`).toBeGreaterThan(0);
       for (const line of runsOn) {
@@ -541,10 +582,25 @@ describe('every job runs on windows-latest', () => {
   });
 
   it('declares no matrix leg, because only Windows is proven', () => {
-    for (const wf of WORKFLOWS) {
+    for (const wf of BUILDING_WORKFLOWS) {
       expect(wf.codeText, `${wf.name} has a matrix`).not.toContain('strategy:');
       expect(wf.codeText).not.toContain('ubuntu-latest');
       expect(wf.codeText).not.toContain('macos-latest');
+    }
+  });
+
+  it('a deploy-only workflow really does run no build and no test', () => {
+    // THE EXEMPTION HAS TO EARN ITSELF. Without this, `pages.yml` could grow a
+    // `npm test` step on ubuntu and nothing would say so - the exemption would
+    // have quietly become the Linux test leg the rule exists to forbid.
+    for (const name of DEPLOY_ONLY_WORKFLOWS) {
+      const wf = byName(name);
+      for (const line of wf.code) {
+        expect(
+          /\bnpm\b|\bnpx\b|\bvitest\b|\btsc\b|\beslint\b|\bvsce\b|\bnode\b/.test(line),
+          `${name} runs a build or test step on a non-Windows runner: "${line.trim()}"`,
+        ).toBe(false);
+      }
     }
   });
 });

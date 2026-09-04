@@ -82,6 +82,7 @@
     sessions = [],
     degraded = false,
     degradedReason = undefined,
+    degradedByEngine = undefined,
     selectedSessionId,
     reducedMotion = false,
     onenter,
@@ -99,9 +100,35 @@
   }: {
     /** Every session the host reported, summarised by the store. */
     sessions?: readonly SessionSummary[];
-    /** The hook tap is silent: liveness is inferred everywhere (G2). */
+    /**
+     * The CLAUDE CODE hook tap is silent (G2).
+     *
+     * Still here because `data-degraded` on the section is a panel-wide
+     * attribute and this is the panel-wide fact. Cards do NOT read it -
+     * see `degradedByEngine`.
+     */
     degraded?: boolean;
     degradedReason?: 'noHookEvents' | 'listenerDown' | undefined;
+    /**
+     * EVERY hook tap's health, by engine (DoD 5.0b). What CARDS read.
+     *
+     * D2's fix stopped a Claude Code flag being painted onto Codex cards
+     * by giving the cards nothing; this gives them the right thing. A
+     * Codex card whose own tap is silent now says so, and one whose tap is
+     * fine says nothing, which is what a user reported was missing.
+     *
+     * NO `oc` MEMBER: OpenCode has no hook tap at all, so an OpenCode card
+     * asking is a type error rather than a rule to remember.
+     *
+     * Optional, and absent means "no tap is degraded" rather than
+     * "Claude Code's value applies to everyone" - the default is what
+     * every mount that does not care gets, and it must not be a lie.
+     */
+    degradedByEngine?:
+      | Readonly<
+          Record<'cc' | 'codex', { degraded: boolean; reason?: 'noHookEvents' | 'listenerDown' }>
+        >
+      | undefined;
     /** The store's selected session, if any. */
     selectedSessionId?: string | undefined;
     /** The user prefers reduced motion. Swapped by class, never by query alone. */
@@ -310,6 +337,38 @@
    * whole deck the moment the tap went quiet — for every session at once, on a
    * fact about none of them.
    */
+  /**
+   * The tap health for ONE engine (DoD 5.0b).
+   *
+   * `oc` returns a healthy tap rather than throwing, because OpenCode cards
+   * are drawn by the same loop: it has no hook tap, so it can never be
+   * hook-degraded, and that is a true answer rather than a fallback. The
+   * TYPE is what forbids storing an `oc` value; this is what lets the
+   * renderer stay one loop.
+   *
+   * When `degradedByEngine` is absent it falls back to the SCALAR for `cc`
+   * only. That keeps every existing mount that passes `degraded` alone
+   * behaving exactly as it did, and it is the one place the two shapes are
+   * allowed to meet.
+   */
+  function tapFor(
+    engine: DeckEngine,
+  ): { degraded: boolean; reason?: 'noHookEvents' | 'listenerDown' } {
+    if (engine === 'oc') return { degraded: false };
+    // THE TWO VOCABULARIES MEET HERE, IN ONE PLACE, ON PURPOSE. The deck's
+    // engine tag is `cx`; the tap record's key is `codex`, because that is
+    // what `SessionState.engine` and the wire message call it. Two agreeing
+    // literals is not a contract - this repository's recorded module-seam
+    // defect - so the translation is a single expression rather than a
+    // convention repeated at each call site. Written the wrong way first,
+    // and `webview/deck.test.ts` caught it as a TypeError rather than as a
+    // silently absent chip.
+    const key = engine === 'cx' ? 'codex' : 'cc';
+    if (degradedByEngine !== undefined) return degradedByEngine[key];
+    if (key !== 'cc') return { degraded: false };
+    return degradedReason === undefined ? { degraded } : { degraded, reason: degradedReason };
+  }
+
   let deckSessions = $derived<DeckSession[]>(
     visible.map((row) => ({
       id: row.sessionId,
@@ -607,8 +666,8 @@
               summary={card.summary}
               x={card.placement.x}
               y={card.placement.y}
-              degraded={degraded && engineOf(card.summary) === 'cc'}
-              {degradedReason}
+              degraded={tapFor(engineOf(card.summary)).degraded}
+              degradedReason={tapFor(engineOf(card.summary)).reason}
               {reducedMotion}
               now={clock}
               selected={card.summary.sessionId === selectedSessionId}

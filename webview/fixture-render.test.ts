@@ -221,7 +221,10 @@ async function hostRun(
 
   const emission = model.emit();
   bridge.publish(emission);
-  bridge.publishDegraded(engine.degradedState());
+  // 'cc' explicitly: this harness drives the CLAUDE CODE liveness engine, and
+  // DoD 5.0b made the tap a required argument precisely so a caller has to say
+  // which one rather than a default deciding for it.
+  bridge.publishDegraded('cc', engine.degradedState());
 
   const states = new Map<string, SessionState>();
   for (const state of emission.sessions) states.set(state.sessionId, state);

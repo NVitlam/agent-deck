@@ -60,7 +60,24 @@
   let selectedIsCc = $derived(
     view.selected === undefined ? false : deckEngine(view.selected.engine) === 'cc',
   );
-  let degradedHere = $derived(view.degraded && selectedIsCc);
+  /**
+   * DoD 5.0b: the SELECTED session's own tap, not Claude Code's.
+   *
+   * D2's fix made this `view.degraded && selectedIsCc` - correct, and as
+   * far as it could go, because Codex had no health of its own to read.
+   * It does now, so the interior surfaces ask about the engine in front
+   * of the user instead of falling silent for two engines out of three.
+   *
+   * OpenCode still reads `false`, and still by design: no hook tap.
+   */
+  let selectedTap = $derived(
+    view.selected === undefined
+      ? { degraded: false }
+      : deckEngine(view.selected.engine) === 'oc'
+        ? { degraded: false }
+        : view.degradedByEngine[deckEngine(view.selected.engine) === 'cc' ? 'cc' : 'codex'],
+  );
+  let degradedHere = $derived(selectedTap.degraded);
 
   // The whole panel's state in two attributes, so "which of the five states is
   // this?" has exactly one answer rather than one per component. `none` is not
@@ -276,6 +293,7 @@
         sessions={view.filteredSessions}
         total={view.sessions.length}
         degraded={view.degraded}
+        degradedByEngine={view.degradedByEngine}
         selectedSessionId={view.selectedSessionId}
         deckView={view.deckView}
         {reducedMotion}

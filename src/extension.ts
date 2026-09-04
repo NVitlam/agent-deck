@@ -118,6 +118,7 @@ import {
 } from './bridge/diagnostics.js';
 import type {
   DiagnosticsCounters,
+  DiagnosticsEngine,
   DiagnosticsEvent,
   DiagnosticsSinkFactory,
 } from './bridge/diagnostics.js';
@@ -895,6 +896,15 @@ export interface CodexEngineDiagnostics {
   emissions: number;
   /** Workspace-matching sessions currently held. */
   sessions: number;
+  /**
+   * Hook events handed to this path since it was constructed (DoD 5.0b).
+   *
+   * The Codex tap's evidence of life, and the only thing that separates "the
+   * socket is up and Codex is quiet" from "the socket is up and the paste
+   * block was never trusted". Zero while listening is what makes
+   * `noHookEvents` true FOR CODEX rather than borrowed from Claude Code.
+   */
+  hookEventsIngested: number;
   lastError?: string;
 }
 
@@ -969,6 +979,8 @@ export class CodexEnginePath {
   #contentPollHandle: PollTriggerHandle | undefined;
   #content: readonly SessionState[] = [];
   #threads: readonly CodexThread[] = [];
+  /** Hook events this path has been handed. DoD 5.0b. */
+  #hookEventsIngested = 0;
   /**
    * `<root>/thread-writer-locks`, computed at construction — a deterministic
    * function of `root`, so it is correct even before any content read has
@@ -1023,6 +1035,7 @@ export class CodexEnginePath {
       livenessPolls: this.#livenessPolls,
       emissions: this.#emissions,
       sessions: this.#content.length,
+      hookEventsIngested: this.#hookEventsIngested,
       ...(this.#lastError !== undefined ? { lastError: this.#lastError } : {}),
     };
   }
@@ -1098,6 +1111,11 @@ export class CodexEnginePath {
 
   /** One hook event from the loopback listener (DoD 3.1's other half). Never throws. */
   ingestHookEvent(event: CodexHookEvent): void {
+    // Counted BEFORE the null-check on the liveness engine, deliberately.
+    // The question this counter answers is "has the Codex tap ever heard
+    // anything", which is about the SOCKET and the user's paste block, not
+    // about whether this path happens to have started its engine yet.
+    this.#hookEventsIngested += 1;
     this.#liveness?.ingest(event);
   }
 
@@ -1251,7 +1269,20 @@ function mapCodexLiveness(state: CodexAgentLiveness): SessionState['liveness'] {
 /** What {@link AgentDeckDataPath} hands its consumer on every emission. */
 export interface DataPathEmission {
   emission: SessionEmission;
+  /**
+   * The CLAUDE CODE tap's health. Kept under its old name because that is
+   * what it always was - the name simply did not say so.
+   */
   degraded: BridgeDegradedState;
+  /**
+   * The CODEX tap's health (DoD 5.0b), sourced from the Codex path and
+   * never from `liveness.degradedState()`.
+   *
+   * A separate field rather than a merged worst-of, because merging is how
+   * D2 happened: one value cannot be true of two taps, and a panel that
+   * renders the worse of the two tells a working engine it is broken.
+   */
+  codexDegraded: BridgeDegradedState;
 }
 
 export interface DataPathOptions {
@@ -1840,6 +1871,7 @@ export class AgentDeckDataPath {
       // later phase's contract change, and its absence is recorded in
       // `diagnostics.opencode` / `diagnostics.codex` meanwhile.
       degraded: this.#degradedState(),
+      codexDegraded: this.#codexDegradedState(),
     };
     this.#emissions += 1;
     try {
@@ -1960,6 +1992,39 @@ export class AgentDeckDataPath {
    *                                      hook-driven, so there is nothing to
    *                                      be degraded about.
    */
+  /**
+   * THE CODEX TAP'S HEALTH (DoD 5.0b), and it asks the Codex path, never the
+   * Claude Code liveness engine.
+   *
+   * The same three questions {@link #degradedState} asks about Claude Code,
+   * asked about the other tap - which is the point of the item. D2 stopped
+   * the panel LYING about Codex by narrowing what it rendered; it did not
+   * give Codex anything true to say, so a Codex user whose paste block was
+   * missing or whose port was taken saw a deck that simply never went live,
+   * with no banner and nothing to act on.
+   *
+   *   - engine off (no Codex data root) -> not degraded. There is nothing
+   *     here to be degraded about, and a banner would be about an engine
+   *     the user does not run.
+   *   - bind never attempted            -> not degraded, same reason.
+   *   - bind attempted, socket down     -> `listenerDown`. True and
+   *     actionable: Codex liveness is blind.
+   *   - listening, nothing ever heard   -> `noHookEvents`. The paste block
+   *     is missing, or the six commands were never trusted.
+   *
+   * The last case is what `livenessThresholdMs` means for this tap: a
+   * session whose hooks never arrive falls back to transcript-mtime
+   * inference, which is the same degraded footing Claude Code lands on.
+   */
+  #codexDegradedState(): BridgeDegradedState {
+    if (!this.codex.diagnostics.enabled) return { degraded: false };
+    if (!this.#hookBindAttempted) return { degraded: false };
+    if (!this.listener.listening) return { degraded: true, reason: 'listenerDown' };
+    return this.codex.diagnostics.hookEventsIngested === 0
+      ? { degraded: true, reason: 'noHookEvents' }
+      : { degraded: false };
+  }
+
   #degradedState(): BridgeDegradedState {
     if (!this.#ccEnabled) {
       if (!this.#hookBindAttempted) return { degraded: false };
@@ -2353,7 +2418,11 @@ export class PanelController {
   publish(payload: DataPathEmission): void {
     if (this.#disposed) return;
     this.bridge.publish(payload.emission);
-    this.bridge.publishDegraded(payload.degraded);
+    // BOTH TAPS, every publish (DoD 5.0b). The bridge remembers each one
+    // separately, so this is still send-on-transition and still no-nagging -
+    // it is two independent no-nagging rules rather than one shared one.
+    this.bridge.publishDegraded('cc', payload.degraded);
+    this.bridge.publishDegraded('codex', payload.codexDegraded);
   }
 
   reveal(): void {
@@ -2445,6 +2514,33 @@ export interface AgentDeckHostOptions extends DataPathOptions {
  * wall-clock-sensitive fact, and a panel opened after five minutes of watching
  * should show the truth immediately rather than start warming up.
  */
+/**
+ * The key `AgentDeckHost` announces a session under: `(engine, id)`.
+ *
+ * A single string rather than a nested map because a `Map` keyed on it is
+ * the whole point of DoD 5.0a: the engine has to still be there when the
+ * session is NOT, which is the moment a removal is detected.
+ *
+ * `JSON.stringify` of the pair rather than a separator character, and the
+ * reason is worth the line. A session id is engine-chosen and this code does
+ * not get to assume its alphabet, so the separator has to be one no id can
+ * contain - which points at a control character, and this repository has a
+ * standing rule against writing one into source (a real NUL in a test file
+ * once made it BINARY TO GIT, with no reviewable diff ever again). Writing
+ * it as the escape `\u0000` is safe in the file and was NOT safe to author:
+ * the first attempt at this function reached disk with four real NUL bytes,
+ * because a quoted heredoc delivered one backslash where the script said
+ * two. That is the third recorded instance of that trap here.
+ *
+ * A JSON array is injective over the pair, needs no escape to author, and
+ * every byte of it is printable. `["cc","a"]` cannot collide with
+ * `["cc","a"]` built from different halves, which a `+` join on a colon or a
+ * dash could.
+ */
+function announceKey(engine: DiagnosticsEngine, sessionId: string): string {
+  return JSON.stringify([engine, sessionId]);
+}
+
 export class AgentDeckHost {
   readonly dataPath: AgentDeckDataPath;
 
@@ -2464,8 +2560,29 @@ export class AgentDeckHost {
   readonly #nonce?: string;
   readonly #scheduler: Scheduler;
   #countersTimer: TimerHandle | null = null;
-  /** Session ids the diagnostics channel has already announced. */
-  readonly #announced = new Set<string>();
+  /**
+   * Sessions the diagnostics channel has already announced, keyed by
+   * `(engine, id)` — NOT by id alone (DoD 5.0a).
+   *
+   * It was a `Set<string>` of ids, and the engine was therefore GONE by the
+   * time a removal was detected, so `sessionRemoved` was emitted with a
+   * hard-coded `engine: 'cc'` for all three engines. A user watching the
+   * Agent Deck output channel read `session removed cc <id>` when a Codex or
+   * OpenCode session went away. `DiagnosticsEvent` types that field as all
+   * three engines and the diagnostics tests even sample it as `opencode`, so
+   * this was a defect and never a design.
+   *
+   * SAME FAMILY AS THE D2 MISLABELLING, moved into the diagnostics log: a
+   * value that describes one engine, printed against another. The fix is the
+   * data structure rather than the literal, which is why it was a DoD line.
+   *
+   * The key is COMPOSITE rather than a `Map<id, engine>` because the three
+   * engines mint ids in unrelated id spaces and nothing guarantees they never
+   * collide. Keying on the id alone would let one engine's session suppress
+   * the other's discovery line and then emit its removal under the wrong
+   * name — the same class of bug one layer down.
+   */
+  readonly #announced = new Map<string, { id: string; engine: DiagnosticsEngine }>();
   /**
    * Sessions per engine, as of the last emission.
    *
@@ -2534,10 +2651,11 @@ export class AgentDeckHost {
     if (channel === undefined) return;
     const present = new Set<string>();
     for (const session of payload.emission.sessions) {
-      present.add(session.sessionId);
       const engine = session.engine ?? 'cc';
-      if (!this.#announced.has(session.sessionId)) {
-        this.#announced.add(session.sessionId);
+      const key = announceKey(engine, session.sessionId);
+      present.add(key);
+      if (!this.#announced.has(key)) {
+        this.#announced.set(key, { id: session.sessionId, engine });
         channel.record({ kind: 'sessionDiscovered', sessionId: session.sessionId, engine });
         // A session that arrives already refused is announced AND explained,
         // in that order, because "it appeared" and "it is unusable" are two
@@ -2552,10 +2670,16 @@ export class AgentDeckHost {
         }
       }
     }
-    for (const id of [...this.#announced]) {
-      if (present.has(id)) continue;
-      this.#announced.delete(id);
-      channel.record({ kind: 'sessionRemoved', sessionId: id, engine: 'cc' });
+    for (const [key, announced] of [...this.#announced]) {
+      if (present.has(key)) continue;
+      this.#announced.delete(key);
+      // The engine comes from what was ANNOUNCED, which is the only place it
+      // still exists: the session is gone from the emission by definition.
+      channel.record({
+        kind: 'sessionRemoved',
+        sessionId: announced.id,
+        engine: announced.engine,
+      });
     }
   }
 

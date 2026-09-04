@@ -12423,6 +12423,7 @@
       "label": "cold-start",
       "message": {
         "type": "degraded",
+        "engine": "cc",
         "degraded": true,
         "reason": "noHookEvents"
       }
@@ -15504,6 +15505,7 @@
       "label": "tick-7",
       "message": {
         "type": "degraded",
+        "engine": "cc",
         "degraded": false
       }
     }

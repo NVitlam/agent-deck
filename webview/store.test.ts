@@ -236,35 +236,109 @@ describe('refusal', () => {
 describe('degraded', () => {
   it('records the flag and reason', () => {
     const store = createStore();
-    store.handleMessage({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
     expect(store.getView().degraded).toBe(true);
     expect(store.getView().degradedReason).toBe('listenerDown');
   });
 
+  /*
+   * DoD 5.0b - THE STORE ROUTES BY ENGINE, AND THIS TEST EXISTS BECAUSE A
+   * MUTATION PROVED NOTHING WAS CHECKING IT.
+   *
+   * The rendering half is pinned in `webview/deck.test.ts` and the sourcing
+   * half in `src/extension.test.ts`. Between them sits this reducer, and
+   * replacing its engine check with `if (false)` - routing every message into
+   * the Claude Code slot - left BOTH of those suites green: the component
+   * tests mount with `degradedByEngine` supplied BY HAND, so they prove the
+   * component honours a value the store might never produce.
+   *
+   * That is the D4 shape exactly, and it is the reason this file has to drive
+   * the reducer with a real wire message instead.
+   */
+  it('routes a Codex message to the Codex tap and leaves Claude Code alone', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'degraded', engine: 'codex', degraded: true, reason: 'noHookEvents' });
+
+    const view = store.getView();
+    expect(view.degradedByEngine.codex).toStrictEqual({
+      degraded: true,
+      reason: 'noHookEvents',
+    });
+    // The Claude Code half is untouched - both in the by-engine record and in
+    // the scalar the panel banner reads. A Codex message moving the banner is
+    // D2 running backwards.
+    expect(view.degradedByEngine.cc).toStrictEqual({ degraded: false });
+    expect(view.degraded).toBe(false);
+    expect(view.degradedReason).toBeUndefined();
+  });
+
+  it('routes a Claude Code message to the Claude Code tap and leaves Codex alone', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
+
+    const view = store.getView();
+    expect(view.degradedByEngine.cc).toStrictEqual({
+      degraded: true,
+      reason: 'listenerDown',
+    });
+    expect(view.degradedByEngine.codex).toStrictEqual({ degraded: false });
+  });
+
+  it('keeps two taps in different states at the same time', () => {
+    // The state a single flag cannot hold, which is the whole point of the
+    // item. Different reasons as well as different booleans, so a shared value
+    // cannot satisfy both.
+    const store = createStore();
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
+    store.handleMessage({ type: 'degraded', engine: 'codex', degraded: true, reason: 'listenerDown' });
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: false });
+
+    const view = store.getView();
+    expect(view.degradedByEngine.cc).toStrictEqual({ degraded: false });
+    expect(view.degradedByEngine.codex).toStrictEqual({
+      degraded: true,
+      reason: 'listenerDown',
+    });
+  });
+
+  it('a Codex message never touches the banner dismissal', () => {
+    // The dismissal silences ONE episode of the Claude Code banner. A Codex
+    // message arriving in between must not re-open it, which is the "no
+    // nagging" rule surviving the second tap.
+    const store = createStore();
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
+    store.dismissDegraded();
+    expect(store.getView().degradedDismissed).toBe(true);
+
+    store.handleMessage({ type: 'degraded', engine: 'codex', degraded: true, reason: 'noHookEvents' });
+    store.handleMessage({ type: 'degraded', engine: 'codex', degraded: false });
+
+    expect(store.getView().degradedDismissed).toBe(true);
+  });
   it('clears the reason when the tap recovers', () => {
     const store = createStore();
-    store.handleMessage({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
-    store.handleMessage({ type: 'degraded', degraded: false });
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: false });
     expect(store.getView().degraded).toBe(false);
     expect(store.getView().degradedReason).toBeUndefined();
   });
 
   it('stays dismissed across repeats of the same degraded message (no nagging)', () => {
     const store = createStore();
-    store.handleMessage({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
     store.dismissDegraded();
     for (let i = 0; i < 5; i += 1) {
-      store.handleMessage({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+      store.handleMessage({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
     }
     expect(store.getView().degradedDismissed).toBe(true);
   });
 
   it('shows the banner again for a NEW degraded episode', () => {
     const store = createStore();
-    store.handleMessage({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
     store.dismissDegraded();
-    store.handleMessage({ type: 'degraded', degraded: false });
-    store.handleMessage({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: false });
+    store.handleMessage({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
     expect(store.getView().degradedDismissed).toBe(false);
   });
 });

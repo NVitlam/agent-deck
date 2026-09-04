@@ -472,13 +472,13 @@ describe('SessionBridge — degraded', () => {
   it('sends the first state it is told, degraded or not', () => {
     const port = new RecordingPort();
     const bridge = new SessionBridge(port);
-    bridge.publishDegraded({ degraded: false });
+    bridge.publishDegraded('cc', { degraded: false });
     expect(port.sent).toEqual([{ type: 'degraded', degraded: false }]);
   });
 
   it('carries the reason when degraded', () => {
     const port = new RecordingPort();
-    new SessionBridge(port).publishDegraded({
+    new SessionBridge(port).publishDegraded('cc', {
       degraded: true,
       reason: 'noHookEvents',
     });
@@ -491,7 +491,7 @@ describe('SessionBridge — degraded', () => {
     const port = new RecordingPort();
     const bridge = new SessionBridge(port);
     for (let i = 0; i < 50; i += 1) {
-      bridge.publishDegraded({ degraded: true, reason: 'noHookEvents' });
+      bridge.publishDegraded('cc', { degraded: true, reason: 'noHookEvents' });
     }
     expect(port.sent).toHaveLength(1);
     expect(bridge.counters.degradedSent).toBe(1);
@@ -500,11 +500,11 @@ describe('SessionBridge — degraded', () => {
   it('sends on every transition, including a changed reason', () => {
     const port = new RecordingPort();
     const bridge = new SessionBridge(port);
-    bridge.publishDegraded({ degraded: true, reason: 'noHookEvents' });
-    bridge.publishDegraded({ degraded: true, reason: 'listenerDown' });
-    bridge.publishDegraded({ degraded: false });
-    bridge.publishDegraded({ degraded: false });
-    bridge.publishDegraded({ degraded: true, reason: 'listenerDown' });
+    bridge.publishDegraded('cc', { degraded: true, reason: 'noHookEvents' });
+    bridge.publishDegraded('cc', { degraded: true, reason: 'listenerDown' });
+    bridge.publishDegraded('cc', { degraded: false });
+    bridge.publishDegraded('cc', { degraded: false });
+    bridge.publishDegraded('cc', { degraded: true, reason: 'listenerDown' });
     expect(port.sent).toEqual([
       { type: 'degraded', degraded: true, reason: 'noHookEvents' },
       { type: 'degraded', degraded: true, reason: 'listenerDown' },
@@ -516,24 +516,24 @@ describe('SessionBridge — degraded', () => {
   it('never carries a reason when not degraded', () => {
     const port = new RecordingPort();
     const bridge = new SessionBridge(port);
-    bridge.publishDegraded({ degraded: true, reason: 'listenerDown' });
-    bridge.publishDegraded({ degraded: false, reason: 'listenerDown' });
+    bridge.publishDegraded('cc', { degraded: true, reason: 'listenerDown' });
+    bridge.publishDegraded('cc', { degraded: false, reason: 'listenerDown' });
     expect(port.sent[1]).toEqual({ type: 'degraded', degraded: false });
   });
 
   it('re-sends after reset, because the new webview was never told', () => {
     const port = new RecordingPort();
     const bridge = new SessionBridge(port);
-    bridge.publishDegraded({ degraded: true, reason: 'noHookEvents' });
+    bridge.publishDegraded('cc', { degraded: true, reason: 'noHookEvents' });
     bridge.reset();
-    bridge.publishDegraded({ degraded: true, reason: 'noHookEvents' });
+    bridge.publishDegraded('cc', { degraded: true, reason: 'noHookEvents' });
     expect(port.sent).toHaveLength(2);
   });
 
   it('is independent of content: a refused session changes nothing here (G2)', () => {
     const port = new RecordingPort();
     const bridge = new SessionBridge(port);
-    bridge.publishDegraded({ degraded: false });
+    bridge.publishDegraded('cc', { degraded: false });
     bridge.publish(
       emission({
         sessions: [session('s1')],

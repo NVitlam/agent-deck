@@ -479,7 +479,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
   describe('degraded — the hook tap is silent (G2)', () => {
     it('keeps the content and marks the liveness as inferred', () => {
       const panel = panelWith([liveSession()]);
-      send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
 
       expect(one(panel.container, 'app').dataset['degraded']).toBe('true');
 
@@ -522,7 +522,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
     it('carries both reasons into the DOM', () => {
       const panel = panelWith([liveSession({ liveness: 'idle' })]);
-      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
       expect(one(panel.container, 'degraded-banner').dataset['reason']).toBe('listenerDown');
       expect(one(panel.container, 'degraded-banner').textContent).toContain(
         'the hook listener is not running',
@@ -534,10 +534,10 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
       // number. Phase 3 semantics, unchanged (spec C4: informative, not
       // nagging) — restated here because the router now owns the banner.
       const panel = panelWith([liveSession()]);
-      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
       click(one(panel.container, 'degraded-dismiss'));
       for (let i = 0; i < 10; i += 1) {
-        send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+        send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
       }
 
       expect(all(panel.container, 'degraded-banner')).toHaveLength(0);
@@ -551,8 +551,8 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
     it('drops the banner and the hollowing when the tap recovers', () => {
       const panel = panelWith([liveSession()]);
-      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
-      send({ type: 'degraded', degraded: false });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
+      send({ type: 'degraded', engine: 'cc', degraded: false });
 
       expect(all(panel.container, 'degraded-banner')).toHaveLength(0);
       expect(one(panel.container, 'app').dataset['degraded']).toBe('false');
@@ -567,7 +567,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
     it('composes with a refusal: two independent taps, both allowed to fail', () => {
       const panel = panelWith([unsupportedSession()]);
-      send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
       enter(panel, mode, 'session-unsupported');
 
       expect(all(panel.container, 'degraded-banner')).toHaveLength(1);
@@ -836,7 +836,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     const panel = render();
     useView(panel, mode);
     send({ type: 'snapshot', sessions: [liveSession({ engine: 'codex' })] });
-    send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
     enter(panel, mode, 'session-live');
 
     if (mode === 'canvas') {
@@ -854,7 +854,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     const panel = render();
     useView(panel, mode);
     send({ type: 'snapshot', sessions: [liveSession({ engine: 'cc' })] });
-    send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
     enter(panel, mode, 'session-live');
 
     if (mode === 'canvas') {
@@ -1429,7 +1429,7 @@ describe('C7.3 rows that were unimplemented and now are not', () => {
   it('shows the HUD, and its degraded chip when the hook tap is silent', () => {
     const panel = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
-    send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
     click(blobFor(panel, 'session-live'));
 
     // C7.3: degraded ⇒ a HUD chip saying liveness is being INFERRED, because

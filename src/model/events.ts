@@ -685,8 +685,39 @@ export interface SchemaMismatchMessage {
  * satisfiable together, because no message carried the flag. This is the
  * smaller change: a fourth message, rather than a field on every session.
  */
+/**
+ * A HOOK TAP's health. DoD 5.0b: it says which tap.
+ *
+ * It had no `engine` field, because when it was written there was one tap and
+ * the question did not arise. Then there were three engines and the message
+ * still described exactly one of them - Claude Code's - while the webview
+ * painted it onto every card and labelled it with that card's own engine. A
+ * Codex session whose hooks were arriving and being attributed was told its
+ * hooks were silent (defect D2, own eyes, 2026-09-03).
+ *
+ * D2's fix stopped the lie by narrowing the render to Claude Code cells. It
+ * did not give the other engines a truth of their own, and that is what this
+ * field is for: the message now NAMES its subject, so a tap that has something
+ * to say can say it, and a surface that renders it knows what it is rendering.
+ *
+ * OPENCODE IS EXEMPT BY DESIGN AND WILL NEVER APPEAR HERE. It has no hook tap
+ * at all - its liveness comes from a cursor on `event_sequence.seq` - so
+ * "hooks silent" is not a true-or-false statement about it, it is a category
+ * error. The union is `'cc' | 'codex'` rather than the three-engine tag for
+ * exactly that reason: the type refuses the message that cannot be meaningful,
+ * which is cheaper than a rule someone has to remember.
+ */
 export interface DegradedMessage {
   type: 'degraded';
+  /**
+   * Which tap this is about.
+   *
+   * Required, not optional-defaulting-to-`cc`. An absent engine defaulting to
+   * Claude Code is how the panel-wide flag became a per-card lie in the first
+   * place, and a default is exactly what stops a reviewer noticing that a new
+   * send site forgot to say.
+   */
+  engine: 'cc' | 'codex';
   degraded: boolean;
   /** Absent when `degraded` is false. Mirrors `DegradedReason` in liveness.ts. */
   reason?: 'noHookEvents' | 'listenerDown';

@@ -836,6 +836,105 @@ describe('the six card states', () => {
     }
   });
 
+  /*
+   * DoD 5.0b - AND NOW CODEX HAS ONE OF ITS OWN.
+   *
+   * D2's fix, pinned by the test above, stopped the panel LYING about Codex by
+   * giving Codex cards nothing. That was right and it was not the end: a Codex
+   * user whose paste block was missing, or whose six hook commands were never
+   * trusted, saw a deck that simply never went live, with no banner and
+   * nothing to act on. The tap now reports its own health and the card wears
+   * it.
+   *
+   * BOTH DIRECTIONS, because a one-directional test is satisfied by a chip
+   * that is always on - which is exactly what the D2 defect was.
+   */
+  it('shows the degraded chip on a CODEX card when the CODEX tap is silent', () => {
+    const container = render({
+      sessions: [
+        summary('s-cc', { engine: 'cc' }),
+        summary('s-oc', { engine: 'opencode' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
+      degradedByEngine: {
+        cc: { degraded: false },
+        codex: { degraded: true, reason: 'noHookEvents' },
+      },
+    });
+
+    const cx = cellFor(container, 's-cx');
+    expect(cx.dataset['state']).toBe('degraded');
+    expect(cx.querySelector('title')?.textContent).toContain(
+      'Codex: no hook events received',
+    );
+
+    // THE OTHER DIRECTION, in the same mount: the Claude Code card is NOT
+    // degraded, because its own tap is fine. Without this the test would pass
+    // for a renderer that painted the Codex flag onto everything - which is
+    // D2 with the engines swapped.
+    const cc = cellFor(container, 's-cc');
+    expect(cc.dataset['state']).not.toBe('degraded');
+    expect(cc.querySelector('title')?.textContent ?? '').not.toContain('hook');
+
+    // OPENCODE IS EXEMPT BY DESIGN, and this states it rather than leaving it
+    // to be inferred from an absence. OpenCode has NO HOOK TAP at all - its
+    // liveness is a cursor on `event_sequence.seq` - so "hooks silent" is not
+    // false about it, it is meaningless. `WebviewView.degradedByEngine` has no
+    // `oc` member for exactly this reason, which makes an OpenCode card asking
+    // the question a type error rather than a rule someone has to remember.
+    const oc = cellFor(container, 's-oc');
+    expect(oc.dataset['state']).not.toBe('degraded');
+    expect(oc.querySelector('title')?.textContent ?? '').not.toContain('hook');
+  });
+
+  it('shows it on the CLAUDE CODE card when the Claude Code tap is the silent one', () => {
+    // The mirror image of the test above, and together they are what stops a
+    // stuck channel reading as a working one.
+    const container = render({
+      sessions: [
+        summary('s-cc', { engine: 'cc' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
+      degradedByEngine: {
+        cc: { degraded: true, reason: 'listenerDown' },
+        codex: { degraded: false },
+      },
+    });
+
+    const cc = cellFor(container, 's-cc');
+    expect(cc.dataset['state']).toBe('degraded');
+    expect(cc.querySelector('title')?.textContent).toContain('Claude Code:');
+
+    const cx = cellFor(container, 's-cx');
+    expect(cx.dataset['state']).not.toBe('degraded');
+    expect(cx.querySelector('title')?.textContent ?? '').not.toContain('hook');
+  });
+
+  it('reads the reason from the card’s OWN tap, not from the other one', () => {
+    // Both degraded, for DIFFERENT reasons. A renderer that took the engine
+    // from the card and the reason from a single shared value would pass every
+    // assertion above and fail this one - which is the seam D2 lived in.
+    const container = render({
+      sessions: [
+        summary('s-cc', { engine: 'cc' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
+      degradedByEngine: {
+        cc: { degraded: true, reason: 'noHookEvents' },
+        codex: { degraded: true, reason: 'listenerDown' },
+      },
+    });
+
+    const ccTitle = cellFor(container, 's-cc').querySelector('title')?.textContent ?? '';
+    const cxTitle = cellFor(container, 's-cx').querySelector('title')?.textContent ?? '';
+
+    expect(ccTitle).toContain('Claude Code: no hook events received');
+    expect(cxTitle).toContain('Codex:');
+    // The two reasons are different strings, so a shared value cannot satisfy
+    // both. Asserted as an inequality as well, so the check does not rest on
+    // the exact wording of either message.
+    expect(ccTitle).not.toBe(cxTitle);
+  });
   it('ghosts a foreign session and tags it, in text and in the accessible name', () => {
     const container = render({
       sessions: [summary('s-mine'), summary('s-theirs', { workspaceMatch: false })],

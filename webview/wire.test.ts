@@ -594,8 +594,8 @@ function goldenMessages(corpus: WireCorpus): HostToWebviewMessage[] {
   const { degraded, reason } = corpus.final.degraded;
   messages.push(
     degraded && reason !== undefined
-      ? { type: 'degraded', degraded: true, reason }
-      : { type: 'degraded', degraded },
+      ? { type: 'degraded', engine: 'cc', degraded: true, reason }
+      : { type: 'degraded', engine: 'cc', degraded },
   );
   return messages;
 }

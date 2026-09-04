@@ -896,6 +896,15 @@ export interface CodexEngineDiagnostics {
   emissions: number;
   /** Workspace-matching sessions currently held. */
   sessions: number;
+  /**
+   * Hook events handed to this path since it was constructed (DoD 5.0b).
+   *
+   * The Codex tap's evidence of life, and the only thing that separates "the
+   * socket is up and Codex is quiet" from "the socket is up and the paste
+   * block was never trusted". Zero while listening is what makes
+   * `noHookEvents` true FOR CODEX rather than borrowed from Claude Code.
+   */
+  hookEventsIngested: number;
   lastError?: string;
 }
 
@@ -970,6 +979,8 @@ export class CodexEnginePath {
   #contentPollHandle: PollTriggerHandle | undefined;
   #content: readonly SessionState[] = [];
   #threads: readonly CodexThread[] = [];
+  /** Hook events this path has been handed. DoD 5.0b. */
+  #hookEventsIngested = 0;
   /**
    * `<root>/thread-writer-locks`, computed at construction — a deterministic
    * function of `root`, so it is correct even before any content read has
@@ -1024,6 +1035,7 @@ export class CodexEnginePath {
       livenessPolls: this.#livenessPolls,
       emissions: this.#emissions,
       sessions: this.#content.length,
+      hookEventsIngested: this.#hookEventsIngested,
       ...(this.#lastError !== undefined ? { lastError: this.#lastError } : {}),
     };
   }
@@ -1099,6 +1111,11 @@ export class CodexEnginePath {
 
   /** One hook event from the loopback listener (DoD 3.1's other half). Never throws. */
   ingestHookEvent(event: CodexHookEvent): void {
+    // Counted BEFORE the null-check on the liveness engine, deliberately.
+    // The question this counter answers is "has the Codex tap ever heard
+    // anything", which is about the SOCKET and the user's paste block, not
+    // about whether this path happens to have started its engine yet.
+    this.#hookEventsIngested += 1;
     this.#liveness?.ingest(event);
   }
 
@@ -1252,7 +1269,20 @@ function mapCodexLiveness(state: CodexAgentLiveness): SessionState['liveness'] {
 /** What {@link AgentDeckDataPath} hands its consumer on every emission. */
 export interface DataPathEmission {
   emission: SessionEmission;
+  /**
+   * The CLAUDE CODE tap's health. Kept under its old name because that is
+   * what it always was - the name simply did not say so.
+   */
   degraded: BridgeDegradedState;
+  /**
+   * The CODEX tap's health (DoD 5.0b), sourced from the Codex path and
+   * never from `liveness.degradedState()`.
+   *
+   * A separate field rather than a merged worst-of, because merging is how
+   * D2 happened: one value cannot be true of two taps, and a panel that
+   * renders the worse of the two tells a working engine it is broken.
+   */
+  codexDegraded: BridgeDegradedState;
 }
 
 export interface DataPathOptions {
@@ -1841,6 +1871,7 @@ export class AgentDeckDataPath {
       // later phase's contract change, and its absence is recorded in
       // `diagnostics.opencode` / `diagnostics.codex` meanwhile.
       degraded: this.#degradedState(),
+      codexDegraded: this.#codexDegradedState(),
     };
     this.#emissions += 1;
     try {
@@ -1961,6 +1992,39 @@ export class AgentDeckDataPath {
    *                                      hook-driven, so there is nothing to
    *                                      be degraded about.
    */
+  /**
+   * THE CODEX TAP'S HEALTH (DoD 5.0b), and it asks the Codex path, never the
+   * Claude Code liveness engine.
+   *
+   * The same three questions {@link #degradedState} asks about Claude Code,
+   * asked about the other tap - which is the point of the item. D2 stopped
+   * the panel LYING about Codex by narrowing what it rendered; it did not
+   * give Codex anything true to say, so a Codex user whose paste block was
+   * missing or whose port was taken saw a deck that simply never went live,
+   * with no banner and nothing to act on.
+   *
+   *   - engine off (no Codex data root) -> not degraded. There is nothing
+   *     here to be degraded about, and a banner would be about an engine
+   *     the user does not run.
+   *   - bind never attempted            -> not degraded, same reason.
+   *   - bind attempted, socket down     -> `listenerDown`. True and
+   *     actionable: Codex liveness is blind.
+   *   - listening, nothing ever heard   -> `noHookEvents`. The paste block
+   *     is missing, or the six commands were never trusted.
+   *
+   * The last case is what `livenessThresholdMs` means for this tap: a
+   * session whose hooks never arrive falls back to transcript-mtime
+   * inference, which is the same degraded footing Claude Code lands on.
+   */
+  #codexDegradedState(): BridgeDegradedState {
+    if (!this.codex.diagnostics.enabled) return { degraded: false };
+    if (!this.#hookBindAttempted) return { degraded: false };
+    if (!this.listener.listening) return { degraded: true, reason: 'listenerDown' };
+    return this.codex.diagnostics.hookEventsIngested === 0
+      ? { degraded: true, reason: 'noHookEvents' }
+      : { degraded: false };
+  }
+
   #degradedState(): BridgeDegradedState {
     if (!this.#ccEnabled) {
       if (!this.#hookBindAttempted) return { degraded: false };
@@ -2354,7 +2418,11 @@ export class PanelController {
   publish(payload: DataPathEmission): void {
     if (this.#disposed) return;
     this.bridge.publish(payload.emission);
-    this.bridge.publishDegraded(payload.degraded);
+    // BOTH TAPS, every publish (DoD 5.0b). The bridge remembers each one
+    // separately, so this is still send-on-transition and still no-nagging -
+    // it is two independent no-nagging rules rather than one shared one.
+    this.bridge.publishDegraded('cc', payload.degraded);
+    this.bridge.publishDegraded('codex', payload.codexDegraded);
   }
 
   reveal(): void {

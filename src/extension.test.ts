@@ -874,7 +874,7 @@ describe('PanelController', () => {
    */
   function emission(
     sessions: SessionState[],
-    options: { degraded?: boolean; added?: string[] } = {},
+    options: { degraded?: boolean; codexDegraded?: boolean; added?: string[] } = {},
   ): DataPathEmission {
     return {
       emission: {
@@ -886,6 +886,13 @@ describe('PanelController', () => {
       },
       degraded:
         options.degraded === true
+          ? { degraded: true, reason: 'noHookEvents' }
+          : { degraded: false },
+      // DoD 5.0b. Defaults to healthy and is set INDEPENDENTLY of `degraded`,
+      // which is what lets a test drive one tap silent while the other is
+      // fine - the shape the item requires to be tested in both directions.
+      codexDegraded:
+        options.codexDegraded === true
           ? { degraded: true, reason: 'noHookEvents' }
           : { degraded: false },
     };
@@ -1554,6 +1561,9 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
     controller.publish({
       emission: path.model.emit(),
       degraded: path.liveness.degradedState(),
+      // DoD 5.0b. This test is about a Claude Code refusal snapshot, so the
+      // Codex tap has nothing to say and says so.
+      codexDegraded: { degraded: false },
     });
     const snapshot = later.posted.find((m) => m.type === 'snapshot');
     expect(snapshot?.type).toBe('snapshot');
@@ -4142,5 +4152,192 @@ describe('DoD 5.0a - a removed session is announced under its own engine', () =>
     expect(source, 'the removal line must not hard-code an engine').not.toContain(
       "kind: 'sessionRemoved', sessionId: id, engine: 'cc'",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.0b - each hook tap reports its OWN health
+// ---------------------------------------------------------------------------
+
+describe('DoD 5.0b - the Codex tap has a health of its own', () => {
+  /**
+   * WHY BOTH DIRECTIONS, and why the item insisted on it.
+   *
+   * A one-directional test - "a silent Codex tap degrades Codex cells" - is
+   * satisfied by a banner that is ALWAYS ON. The second direction is what
+   * separates a working channel from a stuck one, and the third (a silent
+   * CLAUDE CODE tap must not degrade Codex) is the D2 defect itself: a flag
+   * about one engine rendered against another.
+   *
+   * These read the emission rather than the rendered panel because the
+   * emission is where the two values are SOURCED, and sourcing is what D2 got
+   * wrong. The rendering half is pinned in `webview/deck.test.ts`.
+   */
+  /** POST one hook payload to the listener, exactly as a real hook does. */
+  async function postHook(port: number, payload: unknown): Promise<number> {
+    const body = Buffer.from(JSON.stringify(payload), `utf8`);
+    return new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: `127.0.0.1`,
+          port,
+          path: `/event`,
+          method: `POST`,
+          agent: false,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': body.length,
+            connection: `close`,
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on(`end`, () => resolve(res.statusCode ?? 0));
+        },
+      );
+      req.on(`error`, reject);
+      req.end(body);
+    });
+  }
+
+  /** The real captured Codex hook payloads - the `.raw` wire bodies. */
+  async function codexPayloads(): Promise<Record<string, unknown>[]> {
+    const stream = await readFile(
+      fileURLToPath(
+        new URL(
+          '../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
+    return stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => (JSON.parse(line) as { raw: Record<string, unknown> }).raw);
+  }
+
+  /**
+   * A host with BOTH hook-driven engines live: a real Claude Code workspace
+   * (so `ccEnabled` is true and the CC liveness engine is running) and a
+   * staged Codex root beside it.
+   *
+   * Both taps therefore start silent, which is the only starting point from
+   * which "one of them went quiet" is a statement about one of them.
+   */
+  async function bothEnginesHost(): Promise<{
+    host: AgentDeckHost;
+    port: number;
+    seen: DataPathEmission[];
+  }> {
+    const workspacePath = await capturedWorkspacePath();
+    const root = await stageCodexRoot(false);
+    let chosen = 0;
+    const seen: DataPathEmission[] = [];
+    const host = await startHostOnFreePort((port) => {
+      chosen = port;
+      seen.length = 0;
+      return trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: (payload: DataPathEmission) => {
+            seen.push(payload);
+          },
+          codex: { root },
+        }),
+      );
+    });
+    return { host, port: chosen, seen };
+  }
+
+  /** The two taps, as the emission carries them. */
+  function taps(
+    host: AgentDeckHost,
+    seen: DataPathEmission[],
+  ): {
+    cc: { degraded: boolean; reason?: string };
+    codex: { degraded: boolean; reason?: string };
+  } {
+    host.dataPath.pump();
+    const last = seen.at(-1);
+    if (last === undefined) throw new Error(`the data path produced no emission`);
+    return { cc: last.degraded, codex: last.codexDegraded };
+  }
+
+  it('a silent Codex tap degrades CODEX and leaves Claude Code alone', async () => {
+    const { host, port, seen } = await bothEnginesHost();
+
+    // Claude Code hears something; Codex hears nothing. The CC payloads are
+    // this repository's own captured hook events.
+    const ccStream = await readFile(
+      fileURLToPath(
+        new URL('../fixtures/hook-events/cc-2.1.234-sessionstart.jsonl', import.meta.url),
+      ),
+      'utf8',
+    );
+    const ccLine = ccStream.split(/\r?\n/).filter((l) => l.trim() !== '')[0];
+    expect(ccLine, 'the CC hook corpus must carry a payload').toBeDefined();
+    const ccEvents = JSON.parse(ccLine ?? '{}') as Record<string, unknown>;
+    expect(await postHook(port, ccEvents), 'the listener accepted the CC payload').toBe(200);
+
+    const { cc, codex } = taps(host, seen);
+    expect(codex.degraded, `a Codex tap that has heard nothing is degraded`).toBe(true);
+    expect(codex.reason).toBe('noHookEvents');
+    // THE POINT: the two are independent. A Codex banner must not be the price
+    // of a healthy Claude Code one.
+    expect(cc.degraded, `Claude Code heard an event and is not degraded`).toBe(false);
+  });
+
+  it('a silent Claude Code tap does NOT degrade Codex', async () => {
+    const { host, port, seen } = await bothEnginesHost();
+
+    // The mirror image, and the one that is D2 itself. Codex hears a real
+    // captured payload; Claude Code hears nothing at all.
+    const payloads = await codexPayloads();
+    expect(payloads.length, `the corpus must carry a Codex hook payload`).toBeGreaterThan(0);
+    expect(await postHook(port, payloads[0]), 'the listener accepted the Codex payload').toBe(200);
+
+    const { cc, codex } = taps(host, seen);
+    expect(cc.degraded, `Claude Code has heard nothing and is degraded`).toBe(true);
+    expect(cc.reason).toBe('noHookEvents');
+    // Before 5.0b there was no second value to be right: the panel had one
+    // flag, and it was this one.
+    expect(codex.degraded, `Codex heard its own event and is NOT degraded`).toBe(false);
+    expect(codex.reason).toBeUndefined();
+  });
+
+  it('the Codex tap is quiet about an engine that is not running', async () => {
+    // No Codex root at all. `noHookEvents` would be TRUE and MEANINGLESS - the
+    // tap has heard nothing because there is no Codex on this machine, which
+    // is the exact shape of the mistake `#degradedState` documents for the CC
+    // half when `ccEnabled` is false.
+    const workspacePath = await capturedWorkspacePath();
+    const absentRoot = join(await makeTempDir(), 'no-such-.codex');
+    const seen: DataPathEmission[] = [];
+    const host = await startHostOnFreePort((port) =>
+      trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: (payload: DataPathEmission) => {
+            seen.push(payload);
+          },
+          codex: { root: absentRoot },
+        }),
+      ),
+    );
+
+    const { codex } = taps(host, seen);
+    expect(host.dataPath.codex.diagnostics.enabled, `the control: Codex is off`).toBe(false);
+    expect(codex.degraded, `an engine that is not running is not degraded`).toBe(false);
   });
 });

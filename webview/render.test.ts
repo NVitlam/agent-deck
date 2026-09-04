@@ -272,7 +272,7 @@ describe('degraded banner (spec C4: informative, not nagging)', () => {
   it('renders the banner and keeps the tree underneath', () => {
     const { container } = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
-    send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
 
     const banner = one(container, 'degraded-banner');
     expect(banner.textContent).toContain('no hook events received');
@@ -283,12 +283,12 @@ describe('degraded banner (spec C4: informative, not nagging)', () => {
   it('stays dismissed while the same degraded message repeats', () => {
     const { container } = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
-    send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
     click(one(container, 'degraded-dismiss'));
     expect(all(container, 'degraded-banner')).toHaveLength(0);
 
     for (let i = 0; i < 10; i += 1) {
-      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
     }
     expect(all(container, 'degraded-banner')).toHaveLength(0);
   });
@@ -296,9 +296,9 @@ describe('degraded banner (spec C4: informative, not nagging)', () => {
   it('disappears when the tap recovers', () => {
     const { container } = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
-    send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
     expect(all(container, 'degraded-banner')).toHaveLength(1);
-    send({ type: 'degraded', degraded: false });
+    send({ type: 'degraded', engine: 'cc', degraded: false });
     expect(all(container, 'degraded-banner')).toHaveLength(0);
   });
 });

@@ -5,8 +5,10 @@
 **Live observability for agent swarms, inside VS Code.** When a coding agent spawns subagents, the
 terminal shows you one scrolling column and no shape. Agent Deck shows you the shape: every session
 on the machine, the tree of agents inside each one, which agent spawned which, what each is running
-right now, and what it has cost. It works with **Claude Code** and **OpenCode**, side by side in one
-panel. It observes only — it never wraps, launches, proxies or configures either of them.
+right now, and what it has cost. It works with **Claude Code**, **OpenCode** and **Codex**, side by
+side in one panel. It observes only — it never wraps, launches, proxies or configures any of them.
+
+![Agent Deck: one panel, every session on the machine, live](media/agent-deck-hero.gif)
 
 > **Claude Code compatibility** — anchor `2.1.246`, accepts `2.0.x` to `2.2.x`, refuses on
 > structural change, not on patch number. **A session imported from another machine — Claude
@@ -21,6 +23,14 @@ panel. It observes only — it never wraps, launches, proxies or configures eith
 
 <!-- /engine:opencode -->
 
+<!-- engine:codex -->
+
+> **Codex compatibility** — anchor `0.151.0-alpha.7.2`, accepts `0.150.x` to `0.152.x`, same rule:
+> neither the patch component nor the prerelease tag is compared, and what refuses is the structure.
+> See [Also observes Codex](#also-observes-codex).
+
+<!-- /engine:codex -->
+
 > This badge is text, not a remote image: a project whose selling point is zero egress should not
 > make its own README phone home to a badge service to render.
 
@@ -28,11 +38,12 @@ panel. It observes only — it never wraps, launches, proxies or configures eith
 
 ## What you see
 
-**The deck** — every session on the machine, one cell each, from either engine. Cells breathe while
-their session is working. Three layouts (List, Grid, Lanes), three sort orders (Live first, Recent,
-Engine), and chips to filter by liveness or by engine. Keyboard: `A C O`, `1 2 3`, `L R E`.
+**The deck** — every session on the machine, one cell each, from any of the three engines. Cells
+breathe while their session is working. Three layouts (List, Grid, Lanes), three sort orders (Live
+first, Recent, Engine), and chips to filter by liveness or by engine. Keyboard: `A C O X`, `1 2 3`,
+`L R E`.
 
-![The deck: every session on the machine, both engines](media/Session_Deck.png)
+![The deck: every session on the machine, every engine](media/Session_Deck.png)
 
 **The tree** — one session's interior. Every agent is a node; children sit under the parent that
 spawned them, in spawn order; a filament runs from each parent to every agent it spawned. A node
@@ -58,28 +69,33 @@ one or scroll away.
 
 ![Inspector: one call expanded](media/Internal_Session_Tool_popup2.png)
 
-**Two numbers, because they answer different questions.** **Context** is the last message's prompt —
+**Two numbers, and a third where the engine states one.** **Context** is the last message's prompt —
 a level, what is in the window now, which goes up and down. **Burn** is the running total across the
-session — it only goes up. There is no percentage, because no session states the model's window
-size, and guessing one from a model name would be a number we made up. **Cost** is rendered where it
-belongs on the tree; there are no cost dashboards.
+session — it only goes up. **Window** sits beside them and is read from the session itself: a Codex
+transcript states the model's context window, Claude Code's and OpenCode's do not, so for those two
+it reads as an em dash rather than a guess. There is no percentage anywhere — two of the three
+engines report no window at all, and deriving one from a model name would be a number we made up.
+**Cost** is rendered where it belongs on the tree; there are no cost dashboards.
 
 ## Trust
 
 Agent Deck observes. It never acts.
 
 - **Read-only.** It never writes to your agents' settings, your session files, or anything under
-  `~/.claude` or OpenCode's data and config directories. Installing the hooks is a manual paste
-  block you control, below. Zero write capability is the trust anchor, not a default that could be
-  configured away.
+  `~/.claude`, OpenCode's data and config directories, or Codex's data root. Installing the hooks is
+  a manual paste block you control, below. Zero write capability is the trust anchor, not a default
+  that could be configured away.
 - **Zero network egress.** No telemetry, no analytics, no CDN. Every asset the panel renders is
   local, enforced by a strict Content-Security-Policy. The only socket it opens is an HTTP listener
   bound to `127.0.0.1`, which is how the hooks reach it, and non-loopback requests are dropped. The
-  OpenCode side opens **no socket at all**.
+  OpenCode side opens **no socket at all**, and Codex's hooks arrive on that same one listener —
+  there is no second port for a second engine.
 - **Reasoning and thinking content is never displayed.** It is dropped where the data is read, before
-  anything reaches the panel, in both engines. Tool payloads are truncated with an explicit marker.
+  anything reaches the panel, in all three engines — including a Codex spawn's encrypted task
+  description, which is never decoded. Tool payloads are truncated with an explicit marker.
 - **Secret-bearing storage is never opened.** On the OpenCode side this is enumerated by name
-  rather than summarised - see [Also observes OpenCode](#also-observes-opencode).
+  rather than summarised - see [Also observes OpenCode](#also-observes-opencode); the Codex side is
+  enumerated the same way, in [Also observes Codex](#also-observes-codex).
 
 The single qualification to "read-only" — what a read of OpenCode's store touches beside it — is
 measured in [`SECURITY.md`](SECURITY.md) §2.
@@ -119,6 +135,57 @@ honest absence is shown rather than a wrong one, never a `0`.
 
 <!-- /engine:opencode -->
 
+<!-- engine:codex -->
+
+## Also observes Codex
+
+Since `v0.6.0`, Codex sessions appear in the same deck as Claude Code and OpenCode ones. Each cell
+carries a glyph saying which engine wrote it - `CX` - and the engine chips, labelled **Claude Code**,
+**OpenCode** and **Codex**, filter to one or show them all. Nothing is configured: if Codex has
+written sessions under its data root, they are there; if it has not, the deck says nothing about it,
+because an absent data root is not an error and not a warning.
+
+**What is read is the transcripts, and nothing beside them.** The data root is `$CODEX_HOME` when
+you set it and `~/.codex` otherwise, resolved every time rather than remembered — that variable
+moves Codex's whole surface, credentials included, so an engine that assumed the home location
+would observe nothing for such a user while reporting a confident absence.
+
+**Five things under that root are never opened**, and this is by name rather than by filter, the
+same treatment the OpenCode tables get: the credential file `auth.json`, the sandbox-secret
+directory `.sandbox-secrets/`, the two machine identifiers `installation_id` and `cap_sid`, the
+network-fetched `models_cache.json`, and every local database Codex keeps there. The name is judged
+before any path is joined or opened, so there is no moment at which one of them has been handed to
+the filesystem. [`SECURITY.md`](SECURITY.md) enumerates the list.
+
+**No socket to Codex. No App Server, no `app-server proxy`, no second port.** Codex ships an App
+Server; Agent Deck never connects to it, and that is a boundary this product keeps rather than a
+feature it has not got round to. Codex hooks POST to the *same* loopback listener Claude Code's do
+— one socket for the whole extension. Neither `hooks.json` nor `config.toml` is opened by this
+extension either: those are Codex's own files, and yours.
+
+**Compatibility, same posture as the other two engines.** The anchor is `0.151.0-alpha.7.2` — the
+release whose captured transcripts proved the structure, taken from the corpus's own
+`session_meta.payload.cli_version` and never from what a binary reports about itself. Major must
+match, minor may be one step either way (`0.150.x` to `0.152.x`), and **neither the patch component
+nor the prerelease tag is compared at all**. What refuses a session is the **structure**: if the
+records actually read are not what the corpus pinned, that session renders `unsupported` rather
+than a half-built tree. The anchor moves one way only — by harvesting a corpus from a new release —
+and moving it cannot make a version work, because the parts it names are the parts nothing compares.
+
+**One thing Codex gives that the others do not.** Its transcripts state the model's context window,
+so a Codex session's **window** figure is a real number read from the session. It is stated in two
+places and one of them can be empty on a turn that ended before any usage was recorded, so the
+figure comes from whichever of them the session actually carries, and reads as an em dash only when
+neither does.
+
+**One thing it needs that the others do not.** Codex's hook block is a separate paste from Claude
+Code's, in a different file, with a trust step of its own — see
+[Install the Codex hook](#install-the-codex-hook-one-manual-paste). Without it a Codex session
+still renders in full, because the tree, the tool calls and the numbers all come from the
+transcript; what degrades is liveness, which falls back to file modification times.
+
+<!-- /engine:codex -->
+
 ## Requirements
 
 - **VS Code** `^1.134.0`
@@ -128,6 +195,9 @@ honest absence is shown rather than a wrong one, never a `0`.
   read as they come.
 - **OpenCode** — optional, and there is nothing to install or configure if you do not use it. The
   version window is in [Also observes OpenCode](#also-observes-opencode).
+- **Codex** — optional in the same way, with one difference: liveness needs its own hook block
+  pasted and trusted. The version window is in [Also observes Codex](#also-observes-codex) and the
+  paste is in [Install the Codex hook](#install-the-codex-hook-one-manual-paste).
 
 ## Install
 
@@ -255,6 +325,130 @@ Notes on that block, each of them measured rather than assumed:
   `SubagentStop`, `Stop`. Registering fewer still works — liveness degrades rather than fails, and
   falls back to transcript modification times with a banner — but the panel gets blunter.
 
+<!-- engine:codex -->
+
+## Install the Codex hook (one manual paste)
+
+Codex keeps its hooks in its own file and gates them behind its own trust step, so this is a
+second paste rather than a variant of the one above. Both engines POST to the **same** listener on
+the **same** port: there is no second socket, and nothing else to turn on.
+
+Paste the `"hooks"` key below into `~/.codex/hooks.json` — the user-level file, and the only place
+this is offered. Repo-local hook discovery has been reported broken on some Codex releases, and a
+paste that looks installed and never fires is worse than one you had to put somewhere central.
+
+That file is a JSON object. Merge the `"hooks"` key into whatever is already there rather than
+replacing the file.
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\"",
+            "commandWindows": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\"",
+            "commandWindows": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\"",
+            "commandWindows": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\"",
+            "commandWindows": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\""
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\"",
+            "commandWindows": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\"",
+            "commandWindows": "node -e \"let b='';process.stdin.setEncoding('utf8');process.stdin.on('error',()=>process.exit(0));process.stdin.on('data',c=>b+=c);process.stdin.on('end',()=>{const r=require('http').request({host:'127.0.0.1',port:47821,path:'/event',method:'POST',headers:{'content-type':'application/json','content-length':Buffer.byteLength(b),connection:'close'}},s=>{s.resume();s.on('end',()=>process.exit(0))});r.on('error',()=>process.exit(0));r.setTimeout(1000,()=>{r.destroy();process.exit(0)});r.end(b)});setTimeout(()=>process.exit(0),2000)\""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Then, in this order — and the order is the point, because every step after a missed one looks
+exactly like "the extension does not work":
+
+1. **Restart Codex.** It reads this file at startup, so nothing you paste arrives in a session
+   that was already running. This is the opposite of Claude Code, which re-reads its own hook
+   settings per invocation.
+2. **Trust the hook when Codex asks.** Codex will not run a hook command it has not been told to
+   trust. That prompt is Codex's own and it is the only step Agent Deck cannot do anything about,
+   because Agent Deck never writes either of the files involved.
+3. **Expect six of those, not one.** Six events sharing one identical command produce six
+   distinct trust entries, one per event. Trusting one of them arms one event.
+4. **Re-trust after any edit.** Editing `hooks.json` invalidates the trust entry for the events
+   you touched, and those hooks then stop firing **silently** — no error, no warning, just a deck
+   that has gone quiet. If liveness stops after you edit that file, this is why.
+
+Notes on that block, each of them measured rather than assumed:
+
+- **Both `command` and `commandWindows` are given**, carrying the same one-liner. This is a
+  byte-for-byte copy of the block that produced this project's captured Codex hook corpus, both
+  keys included; a hand-trimmed version of it is a version nothing here has evidence about.
+- **It is `node -e`, not `curl`, for the reason the Claude Code block gives above.** Against a
+  closed loopback port — what the hook finds whenever Agent Deck is not running — `node` takes
+  `ECONNREFUSED` and exits in well under a fifth of a second, while `curl.exe` burns its full
+  connect timeout on every tool call of every session. `SECURITY.md` §5 carries both engines'
+  numbers.
+- **The port must match `agentDeck.port`,** which is the same `47821` the Claude Code block names,
+  because it is the same listener. Change the setting and you change both blocks.
+- **Six events are registered:** `SessionStart`, `PreToolUse`, `PostToolUse`, `SubagentStart`,
+  `SubagentStop`, `Stop`. Registering fewer still works — liveness degrades to transcript
+  modification times rather than failing — and it is also six trust prompts rather than seven,
+  which is why the list is exactly this long.
+- **Agent Deck reads neither `hooks.json` nor `config.toml`, and writes neither.** You paste it;
+  you own it. What reaches the extension is what your Codex sends to the loopback listener, and
+  nothing else.
+
+<!-- /engine:codex -->
 ## Claude Code version window
 
 - **Anchor `2.1.246`** — the release the committed corpora were captured from. It is a
@@ -291,16 +485,17 @@ honesty is kept, and they were not loosened alongside it.
 ## What it does not do
 
 - **No writes of any kind.** Not to `~/.claude`, not to your Claude Code settings, not to session
-  files, not to OpenCode's database or its config. The one qualification is stated in full under
-  [Trust](#trust) rather than buried here.
-- **No launching, wrapping or proxying either engine.** It observes what is already there.
+  files, not to OpenCode's database or its config, not to Codex's `hooks.json` or `config.toml`. The
+  one qualification is stated in full under [Trust](#trust) rather than buried here.
+- **No launching, wrapping or proxying any of the three engines.** It observes what is already there.
 - **No historical replay and no persistence.** Close the window and the state is gone.
 - **No telemetry, no analytics, no network egress.**
 - **No cost dashboards.** Totals are rendered where they belong on the tree, and that is all.
 - **No control surface.** It cannot start, stop, steer or configure an agent, and it is not going to
   grow one by accident.
-- **No settings for the OpenCode side.** It is on when OpenCode's data directory exists and silent
-  when it does not; there is nothing to turn on.
+- **No settings for the OpenCode or Codex sides.** Each is on when its data directory exists and
+  silent when it does not; there is nothing to turn on. Codex's hook block is the one thing you
+  paste, and it is pasted into Codex, not into Agent Deck.
 
 ## Settings
 
@@ -327,7 +522,8 @@ See [`LICENSE`](LICENSE).
 
 ## Status
 
-Released on the VS Code Marketplace as `nvitlam.agent-deck`. Both engines' parsers, the grafter, the
-liveness engines and the renderer are covered by an automated suite that runs against transcripts
-captured from real Claude Code sessions and a database captured from a real OpenCode one. Neither
-the live `~/.claude` tree nor the live OpenCode database is ever read by a test.
+Released on the VS Code Marketplace as `nvitlam.agent-deck`. All three engines' parsers, the
+grafter, the liveness engines and the renderer are covered by an automated suite that runs against
+transcripts captured from real Claude Code sessions, a database captured from a real OpenCode one,
+and transcripts and hook payloads captured from real Codex ones. No live data directory of any of
+the three is ever read by a test.

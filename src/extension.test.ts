@@ -22,7 +22,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
@@ -70,6 +70,7 @@ import type {
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
+import type { DiagnosticsSink } from './bridge/diagnostics.js';
 import { CODEX_HOME_VAR, readCodexEngine } from './codex/index.js';
 import type { CodexThread } from './codex/index.js';
 import {
@@ -3955,5 +3956,191 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
     }
     // The deck still renders. A window with no hook engine is not a dead one.
     expect(path.diagnostics.emissions).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.0a - `sessionRemoved` carries the engine the session actually had
+// ---------------------------------------------------------------------------
+
+/**
+ * A diagnostics sink that keeps every line.
+ *
+ * The channel creates its sink on the FIRST line, never at construction, so
+ * the factory has to hand back the same object each time or a test reads an
+ * empty transcript from a channel that has been writing happily.
+ */
+function collectingSink(): { lines: string[]; factory: () => DiagnosticsSink } {
+  const lines: string[] = [];
+  const sink: DiagnosticsSink = {
+    appendLine: (line: string) => {
+      lines.push(line);
+    },
+    show: () => {},
+    dispose: () => {},
+  };
+  return { lines, factory: () => sink };
+}
+
+/** Every `.jsonl` under a Codex `sessions/` tree, at any YYYY/MM/DD depth. */
+async function findTranscripts(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...(await findTranscripts(full)));
+    else if (entry.name.endsWith('.jsonl')) found.push(full);
+  }
+  return found;
+}
+
+describe('DoD 5.0a - a removed session is announced under its own engine', () => {
+  /**
+   * WHY THIS DRIVES A WHOLE HOST OVER A REAL CORPUS instead of calling the
+   * bookkeeping directly.
+   *
+   * The defect it pins was live for a phase WITH a green test beside it.
+   * `src/bridge/diagnostics.test.ts` records a `sessionRemoved` sample
+   * carrying `engine: 'opencode'` and asserts the line it formats - and it
+   * passes, because the sample is written by hand. It proves the CHANNEL
+   * honours an engine. Nothing proved the HOST supplies one, and the host was
+   * supplying the literal 'cc' for all three.
+   *
+   * That is the D4 shape exactly: a test that stands in for a wiring which
+   * does not exist, by passing in the value the product never passes. The
+   * only assertion that cannot be satisfied that way is one where the engine
+   * reaches the line the way production sends it - so the session here is a
+   * real Codex thread, read by the real engine, announced by the real host.
+   */
+  it('reads `session removed codex <id>` for a Codex session that goes away', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd, sessionId } = await codexBaselineRoot(root);
+    const sink = collectingSink();
+    const poll = manualPollTrigger();
+
+    const host = await startHostOnFreePort((port) =>
+      trackHost(
+        new AgentDeckHost({
+          workspacePath: cwd,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: () => {},
+          createDiagnosticsSink: sink.factory,
+          codex: { root, pollTrigger: poll.trigger },
+        }),
+      ),
+    );
+    host.dataPath.pump();
+
+    // DISCOVERY FIRST, and asserted rather than assumed: a removal line for a
+    // session that was never announced would be a different bug wearing the
+    // same output, and the assertion below would not tell them apart.
+    const discovered = sink.lines.filter((l) => l.includes(`session discovered`));
+    expect(
+      discovered.some((l) => l.endsWith(`session discovered codex ${sessionId}`)),
+      `the Codex session was never announced; lines: ${discovered.join(' | ')}`,
+    ).toBe(true);
+
+    // Now take the session away at the source - the ONE transcript the engine
+    // reads - and let the engine re-read. This is removal as a user causes it,
+    // not a hand-built emission with a session omitted.
+    //
+    // THE WHOLE `sessions/` TREE IS NOT DELETED, and the first draft of this
+    // test did exactly that and saw no removal line at all. Removing the tree
+    // makes the root read DEGRADED, and a degraded read deliberately keeps the
+    // last good content rather than blanking the deck (G3: refuse, do not
+    // guess). That is correct product behaviour and it is not this item's
+    // subject - so the fixture is emptied of transcripts while remaining a
+    // readable root, which is the state a real deleted session leaves behind.
+    // The path under `sessions/` is YYYY/MM/DD of the capture, so it is walked
+    // rather than written down: a hard-coded date is a test that breaks on the
+    // next harvest for a reason that has nothing to do with what it measures.
+    // (The first draft wrote 2026/09/03; the corpus is 2026/09/02.)
+    const transcripts = await findTranscripts(join(root, 'sessions'));
+    expect(transcripts.length, 'the fixture must have a transcript to remove').toBeGreaterThan(0);
+    for (const file of transcripts) await rm(file, { force: true });
+
+    // The content re-read is asynchronous. Poll the engine's own counter
+    // rather than sleeping: a fixed wait is a test that passes or fails by CPU
+    // load, which this repository has already been bitten by.
+    // TWO THINGS HAVE TO HAPPEN, and only waiting for the second one works.
+    // The content re-read is asynchronous, and the EMISSION that follows it is
+    // scheduled rather than synchronous - `#recordEmission` is driven off the
+    // emission, which is the point (a session the deck shows and one the
+    // diagnostics announce are then the same set). An earlier draft waited on
+    // `contentReads` and asserted straight after: the engine had correctly
+    // dropped the session, `codex.sessions()` was already 0, and no line had
+    // been written because no emission had been made yet.
+    //
+    // Polled rather than slept on: a fixed wait is a test that passes or fails
+    // by CPU load, which this repository has been bitten by before.
+    const reads = host.dataPath.codex.diagnostics.contentReads;
+    const emissions = host.dataPath.diagnostics.emissions;
+    poll.fire();
+    // The loop waits for THE OUTCOME, not for a counter, and the difference
+    // bit once already: `#contentReads` increments at the TOP of the read, so
+    // it moves while the read is still in flight and an emission from that
+    // same tick still carries the old content. Waiting on a removal line is
+    // both simpler and not a race - and it is not a way of making the test
+    // pass, because a product that never writes the line simply exhausts the
+    // loop and fails the assertion below, which is where the evidence is.
+    for (let i = 0; i < 400; i += 1) {
+      if (sink.lines.some((l) => l.includes('session removed'))) break;
+      host.dataPath.pump();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(
+      host.dataPath.codex.diagnostics.contentReads,
+      'the Codex engine never re-read after the transcript was removed',
+    ).toBeGreaterThan(reads);
+    expect(
+      host.dataPath.codex.sessions(),
+      'the Codex engine still holds the session whose transcript is gone',
+    ).toStrictEqual([]);
+    expect(
+      host.dataPath.diagnostics.emissions,
+      'no emission followed the removal, so nothing could have been announced',
+    ).toBeGreaterThan(emissions);
+
+    const removed = sink.lines.filter((l) => l.includes(`session removed`));
+    expect(
+      removed,
+      'exactly one removal line, for the session that went away',
+    ).toHaveLength(1);
+    // THE WHOLE POINT: `codex`, not `cc`. Before DoD 5.0a this read
+    // `session removed cc <id>` because `#announced` was a Set of ids and the
+    // engine had been discarded by the time the removal was detected.
+    expect(removed[0]).toMatch(/ session removed codex /);
+    expect(removed[0]).toContain(sessionId);
+    expect(removed[0], `a Codex removal must not be labelled cc`).not.toMatch(
+      / session removed cc /,
+    );
+  });
+
+  /**
+   * The composite key, from the other side.
+   *
+   * `#announced` is keyed by `(engine, id)` rather than by id, so two engines
+   * minting the same id cannot suppress one another. This asserts the key is
+   * a pair by asserting the FUNCTION of a pair, which is the only part of it
+   * that is observable from outside.
+   */
+  it('announces the same id under two engines as two separate sessions', async () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('./extension.ts', import.meta.url)),
+      'utf8',
+    );
+    // The removal path reads the engine off what was ANNOUNCED. A reader who
+    // "simplifies" this back to a Set of ids reintroduces the defect, and the
+    // test above would still pass for a single-engine deck - so the shape is
+    // pinned here too.
+    expect(source).toContain(
+      'readonly #announced = new Map<string, { id: string; engine: DiagnosticsEngine }>();',
+    );
+    expect(source, 'the removal line must not hard-code an engine').not.toContain(
+      "kind: 'sessionRemoved', sessionId: id, engine: 'cc'",
+    );
   });
 });

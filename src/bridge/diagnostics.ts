@@ -121,11 +121,28 @@ export interface DiagnosticsCounters {
  * the channel is able to CARRY one, which is what keeps the two
  * declarations from drifting apart in the meantime.
  */
+/**
+ * The engine tag, as ONE declaration.
+ *
+ * It was spelled out at six call sites in {@link DiagnosticsEvent}. That was
+ * not the no-imports rule asking for it — the rule forbids IMPORTING the tag
+ * from `../model/events.js`, and a local alias imports nothing. Six copies is
+ * simply six places to miss when a fourth engine arrives, and DoD 5.0a needed
+ * a NAME for the type so `AgentDeckHost` could store an engine alongside an
+ * announced session id rather than losing it and printing `cc`.
+ *
+ * Still spelled out rather than imported, which is the property this module is
+ * audited for. Widening it for a fourth engine is now one edit here and a
+ * deliberate re-check against {@link SessionState.engine}, which stays a
+ * separate declaration on purpose.
+ */
+export type DiagnosticsEngine = 'cc' | 'opencode' | 'codex';
+
 export type DiagnosticsEvent =
-  | { kind: 'sessionDiscovered'; sessionId: string; engine: 'cc' | 'opencode' | 'codex' }
-  | { kind: 'sessionRemoved'; sessionId: string; engine: 'cc' | 'opencode' | 'codex' }
-  | { kind: 'engineDegraded'; engine: 'cc' | 'opencode' | 'codex'; reason: string }
-  | { kind: 'sessionRefused'; sessionId: string; engine: 'cc' | 'opencode' | 'codex'; code: string }
+  | { kind: 'sessionDiscovered'; sessionId: string; engine: DiagnosticsEngine }
+  | { kind: 'sessionRemoved'; sessionId: string; engine: DiagnosticsEngine }
+  | { kind: 'engineDegraded'; engine: DiagnosticsEngine; reason: string }
+  | { kind: 'sessionRefused'; sessionId: string; engine: DiagnosticsEngine; code: string }
   /**
    * A graft that came back `ok: false` — WITH THE REASON.
    *
@@ -157,7 +174,7 @@ export type DiagnosticsEvent =
   | {
       kind: 'graftRefused';
       sessionId: string;
-      engine: 'cc' | 'opencode' | 'codex';
+      engine: DiagnosticsEngine;
       code: string;
       /** `<basename>:<line>`, already reduced. Absent when the mismatch had no path. */
       at?: string;
@@ -258,7 +275,7 @@ export function refusalLocation(path: string | undefined): string | undefined {
  */
 export function graftRefusedEvent(
   sessionId: string,
-  engine: 'cc' | 'opencode' | 'codex',
+  engine: DiagnosticsEngine,
   mismatch: RefusalMismatch,
 ): DiagnosticsEvent {
   const at = refusalLocation(mismatch.path);

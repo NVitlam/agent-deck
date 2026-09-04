@@ -118,6 +118,7 @@ import {
 } from './bridge/diagnostics.js';
 import type {
   DiagnosticsCounters,
+  DiagnosticsEngine,
   DiagnosticsEvent,
   DiagnosticsSinkFactory,
 } from './bridge/diagnostics.js';
@@ -2445,6 +2446,33 @@ export interface AgentDeckHostOptions extends DataPathOptions {
  * wall-clock-sensitive fact, and a panel opened after five minutes of watching
  * should show the truth immediately rather than start warming up.
  */
+/**
+ * The key `AgentDeckHost` announces a session under: `(engine, id)`.
+ *
+ * A single string rather than a nested map because a `Map` keyed on it is
+ * the whole point of DoD 5.0a: the engine has to still be there when the
+ * session is NOT, which is the moment a removal is detected.
+ *
+ * `JSON.stringify` of the pair rather than a separator character, and the
+ * reason is worth the line. A session id is engine-chosen and this code does
+ * not get to assume its alphabet, so the separator has to be one no id can
+ * contain - which points at a control character, and this repository has a
+ * standing rule against writing one into source (a real NUL in a test file
+ * once made it BINARY TO GIT, with no reviewable diff ever again). Writing
+ * it as the escape `\u0000` is safe in the file and was NOT safe to author:
+ * the first attempt at this function reached disk with four real NUL bytes,
+ * because a quoted heredoc delivered one backslash where the script said
+ * two. That is the third recorded instance of that trap here.
+ *
+ * A JSON array is injective over the pair, needs no escape to author, and
+ * every byte of it is printable. `["cc","a"]` cannot collide with
+ * `["cc","a"]` built from different halves, which a `+` join on a colon or a
+ * dash could.
+ */
+function announceKey(engine: DiagnosticsEngine, sessionId: string): string {
+  return JSON.stringify([engine, sessionId]);
+}
+
 export class AgentDeckHost {
   readonly dataPath: AgentDeckDataPath;
 
@@ -2464,8 +2492,29 @@ export class AgentDeckHost {
   readonly #nonce?: string;
   readonly #scheduler: Scheduler;
   #countersTimer: TimerHandle | null = null;
-  /** Session ids the diagnostics channel has already announced. */
-  readonly #announced = new Set<string>();
+  /**
+   * Sessions the diagnostics channel has already announced, keyed by
+   * `(engine, id)` — NOT by id alone (DoD 5.0a).
+   *
+   * It was a `Set<string>` of ids, and the engine was therefore GONE by the
+   * time a removal was detected, so `sessionRemoved` was emitted with a
+   * hard-coded `engine: 'cc'` for all three engines. A user watching the
+   * Agent Deck output channel read `session removed cc <id>` when a Codex or
+   * OpenCode session went away. `DiagnosticsEvent` types that field as all
+   * three engines and the diagnostics tests even sample it as `opencode`, so
+   * this was a defect and never a design.
+   *
+   * SAME FAMILY AS THE D2 MISLABELLING, moved into the diagnostics log: a
+   * value that describes one engine, printed against another. The fix is the
+   * data structure rather than the literal, which is why it was a DoD line.
+   *
+   * The key is COMPOSITE rather than a `Map<id, engine>` because the three
+   * engines mint ids in unrelated id spaces and nothing guarantees they never
+   * collide. Keying on the id alone would let one engine's session suppress
+   * the other's discovery line and then emit its removal under the wrong
+   * name — the same class of bug one layer down.
+   */
+  readonly #announced = new Map<string, { id: string; engine: DiagnosticsEngine }>();
   /**
    * Sessions per engine, as of the last emission.
    *
@@ -2534,10 +2583,11 @@ export class AgentDeckHost {
     if (channel === undefined) return;
     const present = new Set<string>();
     for (const session of payload.emission.sessions) {
-      present.add(session.sessionId);
       const engine = session.engine ?? 'cc';
-      if (!this.#announced.has(session.sessionId)) {
-        this.#announced.add(session.sessionId);
+      const key = announceKey(engine, session.sessionId);
+      present.add(key);
+      if (!this.#announced.has(key)) {
+        this.#announced.set(key, { id: session.sessionId, engine });
         channel.record({ kind: 'sessionDiscovered', sessionId: session.sessionId, engine });
         // A session that arrives already refused is announced AND explained,
         // in that order, because "it appeared" and "it is unusable" are two
@@ -2552,10 +2602,16 @@ export class AgentDeckHost {
         }
       }
     }
-    for (const id of [...this.#announced]) {
-      if (present.has(id)) continue;
-      this.#announced.delete(id);
-      channel.record({ kind: 'sessionRemoved', sessionId: id, engine: 'cc' });
+    for (const [key, announced] of [...this.#announced]) {
+      if (present.has(key)) continue;
+      this.#announced.delete(key);
+      // The engine comes from what was ANNOUNCED, which is the only place it
+      // still exists: the session is gone from the emission by definition.
+      channel.record({
+        kind: 'sessionRemoved',
+        sessionId: announced.id,
+        engine: announced.engine,
+      });
     }
   }
 

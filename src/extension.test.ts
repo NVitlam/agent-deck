@@ -44,6 +44,7 @@ import {
   DEFAULT_LIVENESS_THRESHOLD_MS,
   DEFAULT_PORT,
   DEFAULT_PREVIEW_BYTES,
+  NO_HOOK_ENGINE_LOG,
   OPENCODE_ABSENT_LOG,
   OPEN_COMMAND,
   OpenCodeEnginePath,
@@ -52,6 +53,7 @@ import {
   WEBVIEW_SCRIPT_SEGMENTS,
   WEBVIEW_STYLE_SEGMENTS,
   activate,
+  codexRootExists,
   currentHost,
   deactivate,
   inactiveReasonFor,
@@ -538,15 +540,23 @@ const savedOpencodeRoot = process.env[OPENCODE_DATA_ROOT_ENV];
  * `AgentDeckDataPath`/`CodexEnginePath` constructed in this file without an
  * explicit `codex.root` resolves `$CODEX_HOME` from `process.env` by
  * default, and this machine's real `~/.codex` is not this suite's to read —
- * G6 again, one door over. Pointing it at a fresh empty directory makes the
- * Codex root ABSENT for every test here unless a test stages one explicitly.
+ * G6 again, one door over.
+ *
+ * **It points at a path that does NOT exist, and the difference started
+ * mattering on 2026-09-04.** This used to be a fresh EMPTY directory, described
+ * here as making the root "absent"; it did not. `locateCodex` reports
+ * `rootExists` from `statSync(root).isDirectory()`, so an empty directory is a
+ * root that exists and holds no sessions — indistinguishable from absent while
+ * the only consumer was content, and a different answer entirely now that the
+ * hook socket binds when a Codex root exists. A non-existent path is what the
+ * comment always claimed, so tests that assert "nothing here" now assert it.
  */
 const savedCodexHome = process.env[CODEX_HOME_VAR];
 
 beforeEach(async () => {
   resetVscodeMock();
   process.env[OPENCODE_DATA_ROOT_ENV] = await makeTempDir();
-  process.env[CODEX_HOME_VAR] = await makeTempDir();
+  process.env[CODEX_HOME_VAR] = join(await makeTempDir(), 'no-codex-root-here');
 });
 
 afterEach(async () => {
@@ -3611,5 +3621,272 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
     ]) {
       expect(text, `the Codex path was handed ${forbidden}`).not.toContain(forbidden);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §6.1 — the hook socket binds for ANY hook-driven engine (user decision,
+// 2026-09-04)
+// ---------------------------------------------------------------------------
+
+/*
+ * WHAT WAS BROKEN, AND WHY NOTHING WENT RED FOR IT.
+ *
+ * `activate()` sets `ccEnabled` from the Claude Code correlation, so it is
+ * false whenever the open workspace has no matching CC project — AN ORDINARY
+ * STATE for someone running Codex where Claude Code has never run. On that
+ * path `AgentDeckDataPath.start()` returned early ABOVE `listener.start()` and
+ * ABOVE `subscribeCodex`: the loopback socket was never bound, and Codex
+ * liveness never saw a hook event. Outside that, `activate()` itself returned
+ * before constructing anything at all unless CC correlated or an OpenCode
+ * store existed — so for a Codex-only user there was no data path to fix.
+ *
+ * Both gates are closed here, and both are tested, because closing either one
+ * alone leaves the user exactly where they were.
+ *
+ * The rule, as decided: bind when ANY hook-driven engine is observable — a CC
+ * project correlates OR a Codex data root exists. Neither, and the socket is
+ * deliberately not bound, said once at info. A port collision remains an error
+ * and is never a silent re-pick.
+ */
+describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
+  /** POST one hook payload to the listener, exactly as a real hook does. */
+  async function post(port: number, payload: unknown): Promise<number> {
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    return new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/event',
+          method: 'POST',
+          agent: false,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': body.length,
+            connection: 'close',
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode ?? 0));
+        },
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+  }
+
+  /**
+   * The captured Codex hook payloads for the baseline run — the `.raw` bodies,
+   * which are the actual wire form a Codex hook POSTs, not this repository's
+   * capture envelope around them.
+   */
+  async function capturedCodexPayloads(): Promise<Record<string, unknown>[]> {
+    const stream = await readFile(
+      fileURLToPath(
+        new URL(
+          '../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
+    return stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => (JSON.parse(line) as { raw: Record<string, unknown> }).raw);
+  }
+
+  /** A real, empty workspace with no Claude Code project anywhere near it. */
+  async function workspaceWithNoClaudeCode(): Promise<string> {
+    process.env['CLAUDE_PROJECTS_ROOT'] = await makeTempDir();
+    const dir = join(await makeTempDir(), 'codex-only-workspace');
+    await mkdir(dir, { recursive: true });
+    return dir;
+  }
+
+  it('codexRootExists follows $CODEX_HOME, the way the engine resolves it', async () => {
+    const absent = join(await makeTempDir(), 'no-such-.codex');
+    expect(codexRootExists({ [CODEX_HOME_VAR]: absent })).toBe(false);
+
+    const staged = await stageCodexRoot(false);
+    expect(codexRootExists({ [CODEX_HOME_VAR]: staged })).toBe(true);
+  });
+
+  it('activate() starts for a Codex-only workspace, which it used to refuse outright', async () => {
+    process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
+    const lonely = await workspaceWithNoClaudeCode();
+
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(lonely);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+
+    const host = currentHost();
+    expect(host, 'a Codex-only workspace gets a deck').not.toBeNull();
+    const diagnostics = host?.dataPath.diagnostics;
+    // The CC half is still off — the correlation gate's point is preserved,
+    // not deleted.
+    expect(diagnostics?.ccEnabled).toBe(false);
+    expect(diagnostics?.codex.enabled).toBe(true);
+  });
+
+  it('binds the socket with no Claude Code project, and a real Codex hook is attributed', async () => {
+    process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
+    const lonely = await workspaceWithNoClaudeCode();
+
+    const port = await activateOnFreePort((freePort) => {
+      mock.setWorkspaceFolder(lonely);
+      mock.setConfig(CONFIG_SECTION, { port: freePort });
+    });
+
+    const host = currentHost();
+    expect(host).not.toBeNull();
+    const before = host?.dataPath.diagnostics;
+    expect(before?.ccEnabled).toBe(false);
+    // THE DEFECT, in one line: this was `false`.
+    expect(before?.hookBindAttempted).toBe(true);
+    expect(before?.listening).toBe(true);
+    expect(before?.noHookEngineLogs).toBe(0);
+
+    const payloads = await capturedCodexPayloads();
+    expect(payloads.length, 'the captured stream must not be empty').toBeGreaterThan(0);
+    for (const payload of payloads) expect(await post(port, payload)).toBe(200);
+
+    // Received AND routed: `acceptedCodex` is the discriminator's own count.
+    expect(host?.dataPath.listener.counters.acceptedCodex).toBe(payloads.length);
+
+    // ATTRIBUTED, which is the half a counter alone cannot show. The staged
+    // root is the same run the stream was captured beside, so every hook state
+    // must find its thread; a hook state with no thread is an event that
+    // arrived and landed nowhere.
+    const report = host?.dataPath.codex.livenessEngine?.poll();
+    expect(report, 'the Codex liveness engine must exist for a present root').toBeDefined();
+    expect(report?.counters.eventsSeen).toBe(payloads.length);
+    expect(report?.counters.hookStatesWithoutThread).toBe(0);
+    expect(report?.threads.length).toBeGreaterThan(0);
+  });
+
+  it('does not report a Codex-only window as "hooks silent"', async () => {
+    // The panel-wide banner is the CLAUDE CODE tap's health, and with the CC
+    // half off its `eventsReceived === 0` is a statement about an engine that
+    // is not running. This is the D2 defect one level up from where D2 was
+    // fixed, and it only became reachable when the socket started binding
+    // here: before, this window never bound and never emitted about hooks.
+    process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
+    const lonely = await workspaceWithNoClaudeCode();
+
+    const emissions: DataPathEmission[] = [];
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: lonely,
+          projectsRoot: process.env['CLAUDE_PROJECTS_ROOT'] as string,
+          ccEnabled: false,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      ),
+    );
+
+    expect(path.diagnostics.listening).toBe(true);
+    expect(emissions.length).toBeGreaterThan(0);
+    for (const emission of emissions) {
+      expect(emission.degraded, 'a bound socket is not a degraded tap').toStrictEqual({
+        degraded: false,
+      });
+    }
+  });
+
+  it('a collision on that socket is still an error, and still never a silent re-pick', async () => {
+    process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
+    const lonely = await workspaceWithNoClaudeCode();
+    const { port, release } = await heldPort();
+
+    try {
+      const emissions: DataPathEmission[] = [];
+      const path = trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: lonely,
+          projectsRoot: process.env['CLAUDE_PROJECTS_ROOT'] as string,
+          ccEnabled: false,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+          onError: () => {},
+        }),
+      );
+      await path.start();
+
+      expect(path.diagnostics.hookBindAttempted).toBe(true);
+      expect(path.diagnostics.listening).toBe(false);
+      expect(path.diagnostics.bindError?.code).toBe('EADDRINUSE');
+      // The port it was told to use, not one it chose for itself.
+      expect(path.diagnostics.bindError?.port).toBe(port);
+      expect(path.settings.port).toBe(port);
+      // And the user is told: Codex liveness is blind without this socket, so
+      // `listenerDown` here is true and actionable rather than the CC tap's
+      // meaningless silence.
+      expect(emissions.at(-1)?.degraded).toStrictEqual({
+        degraded: true,
+        reason: 'listenerDown',
+      });
+    } finally {
+      await release();
+    }
+  });
+
+  it('binds NOTHING when neither engine is hook-driven, and says so exactly once at info', async () => {
+    const lonely = await workspaceWithNoClaudeCode();
+    const absent = join(await makeTempDir(), 'no-such-.codex');
+    expect(existsSync(absent)).toBe(false);
+    const sink = captureLog();
+
+    const emissions: DataPathEmission[] = [];
+    const path = trackDataPath(
+      new AgentDeckDataPath({
+        workspacePath: lonely,
+        projectsRoot: process.env['CLAUDE_PROJECTS_ROOT'] as string,
+        ccEnabled: false,
+        codex: { root: absent },
+        settings: settings({ port: DEFAULT_PORT }),
+        tickMs: 0,
+        log: sink.log,
+        onEmission: (payload) => {
+          emissions.push(payload);
+        },
+      }),
+    );
+    // "Once" is a claim about repetition, so it is driven by repeating.
+    await path.start();
+    await path.start();
+    await path.start();
+
+    expect(path.diagnostics.hookBindAttempted).toBe(false);
+    expect(path.diagnostics.listening).toBe(false);
+    expect(path.diagnostics.noHookEngineLogs).toBe(1);
+    // All three, in the order `start()` reaches them, and pinned as a whole
+    // rather than by `toContain`: an extra line here would be a second engine
+    // reporting an absence nobody asked about, which is worth a red.
+    expect(sink.lines).toStrictEqual([
+      { level: 'info', message: OPENCODE_ABSENT_LOG },
+      { level: 'info', message: CODEX_ABSENT_LOG },
+      { level: 'info', message: NO_HOOK_ENGINE_LOG },
+    ]);
+    // Not degraded: nothing here is hook-driven, so there is nothing to be
+    // degraded ABOUT. Reporting `listenerDown` for a socket nobody wants is
+    // the same mislabelling as reporting a silent CC tap that is switched off.
+    expect(emissions.length).toBeGreaterThan(0);
+    for (const emission of emissions) {
+      expect(emission.degraded).toStrictEqual({ degraded: false });
+    }
+    // The deck still renders. A window with no hook engine is not a dead one.
+    expect(path.diagnostics.emissions).toBeGreaterThan(0);
   });
 });

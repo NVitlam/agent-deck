@@ -21,11 +21,26 @@ All notable changes to Agent Deck for Claude Code are documented here.
   OpenCode card said the hook listener was down when OpenCode never uses it.
   The per-card warning is now shown on Claude Code cards only.
 
-  Two things it is worth being exact about. The panel-wide banner is unchanged:
-  a quiet Claude Code tap is still announced there. And the hook listener is
-  shared - if it is down, Codex liveness really is affected too, so that case is
-  still reported by the banner even though the Codex card no longer claims it.
-  Per-engine liveness warnings do not exist yet; the banner is the only channel.
+  Two things it is worth being exact about. A quiet Claude Code tap is still
+  announced in the panel-wide banner - but only while the Claude Code half is
+  actually running; see the next entry. And the hook listener is shared - if it
+  is down, Codex liveness really is affected too, so that case is still reported
+  by the banner even though the Codex card no longer claims it. Per-engine
+  liveness warnings do not exist yet; the banner is the only channel.
+- **Codex liveness works in a workspace where Claude Code has never run.** The
+  loopback hook listener is shared by both engines, and it was only ever started
+  when the open folder matched a Claude Code project. Open a folder that Claude
+  Code has never touched and the listener was never started at all: Codex hook
+  events had nowhere to arrive, so Codex sessions showed no live status and no
+  in-flight tool calls, silently. If the folder also had no OpenCode database,
+  the extension did not start at all.
+
+  The listener now starts whenever anything that uses it is present - a Claude
+  Code project for this folder, or a Codex installation on the machine. If
+  neither is there it is deliberately not started, and the Output channel says
+  so once. A port already in use is still reported as an error and the port is
+  never silently changed: the port is a setting, and a listener that quietly
+  moved would be a recorder that quietly recorded nothing.
 - **The context-window figure survives a turn that recorded no usage.** Codex
   states the window in two places and Agent Deck read only one of them, so a
   session whose turn ended before any token usage existed - an interrupted turn,

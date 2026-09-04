@@ -1430,6 +1430,18 @@ export interface DataPathDiagnostics {
   /** False when the Claude Code half was switched off at construction. */
   ccEnabled: boolean;
   /**
+   * Whether {@link AgentDeckDataPath.start} tried to bind the hook socket.
+   *
+   * `false` is a DECISION, not a failure: no Claude Code project correlated
+   * and no Codex data root exists, so nothing in this window is hook-driven
+   * and binding a port would be allocating a socket for no observer. Read it
+   * beside `listening` — `attempted && !listening` is a real bind failure and
+   * `!attempted && !listening` is a quiet window.
+   */
+  hookBindAttempted: boolean;
+  /** Times {@link NO_HOOK_ENGINE_LOG} was emitted. Exactly 0 or 1. */
+  noHookEngineLogs: number;
+  /**
    * `SessionModel.emit()` threw and the emission was assembled without its
    * half. DoD 5.3's CC -> OpenCode direction, counted.
    */
@@ -1457,6 +1469,17 @@ export interface DataPathDiagnostics {
  * seams, so the tests exercise the REAL `SessionModel`, `ProjectWatcher`,
  * `HookListener` and `LivenessEngine` against fixtures with no editor present.
  */
+/**
+ * The message logged, ONCE, when nothing in this window is hook-driven so the
+ * loopback socket is deliberately not bound.
+ *
+ * A named constant for the reason {@link OPENCODE_ABSENT_LOG} is one: "logged
+ * exactly once" is an assertable property only while the string is the same
+ * string every time.
+ */
+export const NO_HOOK_ENGINE_LOG =
+  'Agent Deck: no Claude Code project and no Codex data root; the hook listener is not bound.';
+
 export class AgentDeckDataPath {
   readonly workspacePath: string;
   /** Every open workspace folder. See {@link DataPathOptions.workspacePaths}. */
@@ -1472,6 +1495,7 @@ export class AgentDeckDataPath {
   readonly codex: CodexEnginePath;
 
   readonly #ccEnabled: boolean;
+  readonly #log: HostLogger;
   readonly #onEmission: (emission: DataPathEmission) => void;
   readonly #onError: (error: unknown) => void;
   readonly #onDiagnostic?: (event: DiagnosticsEvent) => void;
@@ -1514,12 +1538,23 @@ export class AgentDeckDataPath {
   #ccEmitErrors = 0;
   #opencodeEmitErrors = 0;
   #codexEmitErrors = 0;
+  /** Times {@link NO_HOOK_ENGINE_LOG} was emitted. The rule's "once" is 1. */
+  #noHookEngineLogs = 0;
+  /**
+   * Whether {@link start} intended to bind the socket at all.
+   *
+   * Not the same question as `listening`: this one is "was anything in this
+   * window hook-driven", and it is what makes an unbound socket a fact rather
+   * than a fault. See {@link AgentDeckDataPath.#degradedState}.
+   */
+  #hookBindAttempted = false;
   #bindError?: { code: string; port: number; message: string };
 
   constructor(options: DataPathOptions) {
     this.workspacePath = options.workspacePath;
     this.workspacePaths = options.workspacePaths ?? [options.workspacePath];
     this.#ccEnabled = options.ccEnabled ?? true;
+    this.#log = options.log ?? consoleLogger;
     this.settings = options.settings;
     this.#onEmission = options.onEmission;
     this.#onError = options.onError ?? ((): void => {});
@@ -1617,6 +1652,8 @@ export class AgentDeckDataPath {
       consumerErrors: this.#consumerErrors,
       timersArmed: (this.#emitTimer === null ? 0 : 1) + (this.#tickTimer === null ? 0 : 1),
       ccEnabled: this.#ccEnabled,
+      hookBindAttempted: this.#hookBindAttempted,
+      noHookEngineLogs: this.#noHookEngineLogs,
       ccEmitErrors: this.#ccEmitErrors,
       opencodeEmitErrors: this.#opencodeEmitErrors,
       codexEmitErrors: this.#codexEmitErrors,
@@ -1658,23 +1695,67 @@ export class AgentDeckDataPath {
     // disablement may be reachable from whether Codex started.
     await this.codex.start();
 
-    if (!this.#ccEnabled) {
-      // No watcher, no socket, no CC tick. The OpenCode and Codex halves are
-      // already running and `pump()` still emits, so the deck renders.
-      this.pump();
-      return;
-    }
+    /*
+     * -----------------------------------------------------------------------
+     * THE SOCKET BINDS FOR *ANY* HOOK-DRIVEN ENGINE (user decision 2026-09-04)
+     * -----------------------------------------------------------------------
+     *
+     * Until this ruling the bind sat behind `ccEnabled`, and the consequence
+     * was a live product gap rather than a tidiness question: `activate()`
+     * sets `ccEnabled` from the Claude Code correlation, so it is false
+     * whenever the open workspace has no matching CC project — AN ORDINARY
+     * STATE for someone running Codex where Claude Code has never run. The old
+     * early return came out of this method above `listener.start()` and above
+     * `subscribeCodex`, so the socket was never bound and Codex liveness never
+     * saw a hook event. Nothing failed; the tap was simply silent, which is
+     * the failure shape this repository keeps paying for.
+     *
+     * The rule now: bind when ANY engine that is fed by hooks is observable —
+     * a CC project correlates, OR there is a Codex data root. Neither, and the
+     * socket is deliberately not bound, said once at info. A port collision
+     * remains an error surfaced to the user and is NEVER a silent re-pick: the
+     * port is a setting, and a listener that quietly moves is a capture that
+     * silently records nothing.
+     *
+     * `codex.diagnostics.enabled` is the probe, and it is deliberately the
+     * engine's OWN answer rather than a second `existsSync` here: `start()`
+     * above has already resolved the root (honouring `$CODEX_HOME` and any
+     * injected fixture root) and read it. A separate check could disagree with
+     * the engine it is deciding for, and would do it silently.
+     */
+    const codexObservable = this.codex.diagnostics.enabled;
 
-    this.listener.subscribe(this.model.onHookEvent);
-    this.listener.subscribe(() => {
-      this.#scheduleEmit();
-    });
-    // DoD 3.1's other half: Codex-shaped hook events the listener already
-    // routed to its own handler set land on the Codex liveness engine.
+    /*
+     * SUBSCRIBED UNCONDITIONALLY, AND BEFORE THE CC GATE BELOW.
+     *
+     * G2 in the wiring dimension, and the same placement reasoning as
+     * `opencode.start()` above: no Claude Code disablement may be reachable
+     * from whether a Codex hook event finds its handler. It is a subscription
+     * on an object that exists either way, so it costs nothing when the socket
+     * never binds.
+     */
     this.listener.subscribeCodex((event) => {
       this.codex.ingestHookEvent(event);
     });
 
+    if (this.#ccEnabled) {
+      this.listener.subscribe(this.model.onHookEvent);
+      this.listener.subscribe(() => {
+        this.#scheduleEmit();
+      });
+    }
+
+    if (!this.#ccEnabled && !codexObservable) {
+      // ONCE, and at info: a window with neither engine is a normal window,
+      // not a fault. The counter exists so a test can prove the "once" rather
+      // than assume it — the same shape as CODEX_ABSENT_LOG.
+      this.#noHookEngineLogs += 1;
+      this.#log('info', NO_HOOK_ENGINE_LOG);
+      this.pump();
+      return;
+    }
+
+    this.#hookBindAttempted = true;
     try {
       await this.listener.start();
       this.liveness.setHookListenerRunning(true);
@@ -1701,6 +1782,16 @@ export class AgentDeckDataPath {
       // check confirmed removing it changes no behaviour — and unreachable
       // safety code is the kind that rots into a false assurance.
       this.#onError(error);
+    }
+
+    if (!this.#ccEnabled) {
+      // The socket is bound — for Codex — and everything below this line is
+      // the Claude Code half: its watcher, its first drain, its tick. The
+      // correlation gate's original point (a non-matching workspace allocates
+      // no watcher and no CC timer) is preserved exactly; what it no longer
+      // takes down with it is the shared tap.
+      this.pump();
+      return;
     }
 
     if (this.#disposed) return;
@@ -1839,8 +1930,41 @@ export class AgentDeckDataPath {
     }
   }
 
-  /** The hook tap's health, defended against a liveness engine that throws. */
+  /**
+   * The hook tap's health, defended against a liveness engine that throws.
+   *
+   * -------------------------------------------------------------------------
+   * THIS IS THE CLAUDE CODE TAP'S HEALTH, AND ONLY WHILE THAT TAP IS RUNNING
+   * -------------------------------------------------------------------------
+   *
+   * `LivenessEngine.degradedState()` answers with `noHookEvents` as soon as
+   * `eventsReceived === 0`, which is a true statement about the CC engine and
+   * a MEANINGLESS one when the CC engine is switched off — it has received no
+   * events because nothing feeds it, not because the user's hooks are silent.
+   * Reporting it anyway is the D2 defect one level up from where D2 was fixed:
+   * the webview stopped labelling every CARD with a CC-only flag on
+   * 2026-09-03, and this is the panel-wide banner saying the same wrong thing.
+   *
+   * It became reachable on 2026-09-04, when the socket started binding for
+   * Codex alone. Before that a `ccEnabled: false` window never bound and never
+   * emitted anything about hooks; now it binds, works, and would have claimed
+   * its own hooks were silent forever.
+   *
+   * So when the CC half is off, the only question left with an answer is
+   * whether the socket Codex needs is up:
+   *
+   *   - bind attempted and listening  -> not degraded.
+   *   - bind attempted and not up     -> `listenerDown`, which is true and
+   *                                      actionable: Codex liveness is blind.
+   *   - never attempted               -> not degraded. Nothing here is
+   *                                      hook-driven, so there is nothing to
+   *                                      be degraded about.
+   */
   #degradedState(): BridgeDegradedState {
+    if (!this.#ccEnabled) {
+      if (!this.#hookBindAttempted) return { degraded: false };
+      return this.listener.listening ? { degraded: false } : { degraded: true, reason: 'listenerDown' };
+    }
     try {
       return this.liveness.degradedState();
     } catch {
@@ -2652,6 +2776,25 @@ export function opencodeStoreExists(env: NodeJS.ProcessEnv = process.env): boole
 }
 
 /**
+ * Does this machine have a Codex data root at all?
+ *
+ * The third engine's answer to "is there anything here?", and the twin of
+ * {@link opencodeStoreExists}. Resolved through {@link resolveCodexRoot}, so
+ * `$CODEX_HOME` is honoured — a user who relocated their Codex surface has the
+ * whole surface there, sessions and `hooks.json` alike, and probing `~/.codex`
+ * for them observes nothing while reporting a confident absence.
+ *
+ * **The ROOT, not `<root>/sessions`.** The narrower probe would answer "has
+ * Codex ever written a transcript", and this question is "is Codex here" — an
+ * installed-but-never-run Codex still fires hook events the moment it runs,
+ * and the listener has to be bound BEFORE that happens or the first session of
+ * the day is the one with no liveness.
+ */
+export function codexRootExists(env: NodeJS.ProcessEnv = process.env): boolean {
+  return existsSync(resolveCodexRoot({ env }).root);
+}
+
+/**
  * Adapt a real `vscode.WebviewPanel` to {@link PanelSurface}.
  *
  * The one place where the editor API and this file's own vocabulary meet.
@@ -2771,21 +2914,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   /*
-   * TWO ENGINES, TWO INDEPENDENT ANSWERS TO "IS THERE ANYTHING HERE?"
+   * THREE ENGINES, THREE INDEPENDENT ANSWERS TO "IS THERE ANYTHING HERE?"
    *
    * Claude Code answers with a project-slug correlation; OpenCode answers with
    * the existence of its store (DoD 5.2 — "on by default when the data
-   * directory exists", no setting). Either is enough to start; only both
-   * failing means there is nothing to show.
+   * directory exists", no setting); Codex answers with the existence of its
+   * data root, resolved the way the engine resolves it. Any one is enough to
+   * start; only all three failing means there is nothing to show.
+   *
+   * **The Codex arm was missing until 2026-09-04**, and it is the outer half
+   * of the same gap the socket-binding rule closes inside
+   * {@link AgentDeckDataPath.start}: a window with Codex sessions, no Claude
+   * Code project and no OpenCode store returned here, so there was no data
+   * path to bind a socket at all. Fixing the inner gate alone would have
+   * fixed nothing for exactly the user this is for.
    *
    * The correlation gate's original point — a non-matching workspace allocates
-   * no watcher, no socket and no timer — is preserved by `ccEnabled` rather
-   * than by returning: a workspace with no CC project directory still starts
-   * nothing on the CC side.
+   * no watcher, no CC timer — is preserved by `ccEnabled` rather than by
+   * returning: a workspace with no CC project directory still starts nothing
+   * on the CC side.
    */
   const correlation = await correlateWorkspace(workspacePath);
   const opencodeAvailable = opencodeStoreExists();
-  if (!correlation.ok && !opencodeAvailable) {
+  const codexAvailable = codexRootExists();
+  if (!correlation.ok && !opencodeAvailable && !codexAvailable) {
     inactiveReason = inactiveReasonFor(correlation.failure);
     return;
   }

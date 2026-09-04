@@ -2,7 +2,7 @@
 
 All notable changes to Agent Deck are documented here.
 
-## 0.6.0 - unreleased - a third engine, Codex
+## 0.6.0 - 2026-09-04 - a third engine, Codex
 
 ### Added
 
@@ -270,7 +270,8 @@ nothing is written to disk.
   subagent directory convention and the sidecar join keys are unchanged. The
   corpus is a witness, not a new anchor: `PINNED_CC_VERSION` stays at `2.1.246`,
   because moving it cannot make a version work and only a fresh harvest may move
-  it. Diagnosis: `docs/evidence/release-0.5.0/DRIFT-2.1.251.md`.
+  it. The report behind this was a session-by-session field comparison of a
+  `2.1.251` capture against the anchor, and it found no difference at all.
 
 ### Note on `0.1.3`
 

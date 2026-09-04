@@ -358,8 +358,8 @@ interface Manifest {
       properties: Record<string, { default?: unknown }>;
     };
   };
-  /** Read by the VS Code floor assertion below. */
-  engines?: { vscode?: string };
+  /** Read by the VS Code and Node floor assertions below. */
+  engines?: { vscode?: string; node?: string };
   /**
    * The extension icon, read by the `media/` exact-set assertion so the one
    * tracked image the README does not link is identified by the manifest that
@@ -1206,6 +1206,37 @@ describe('the version badge is accurate against the shipped constants', () => {
     ).toBe(true);
     // Vacuity control: the check is capable of failing.
     expect(README.includes('`^0.0.1`')).toBe(false);
+  });
+
+  it('states the Node floor the manifest actually declares', () => {
+    // THE SIBLING DEFECT, FOUND THE SAME WAY AND ONE RELEASE LATER. The
+    // Requirements list said `>=20` while `package.json` declared `>=22.22.2`,
+    // and nothing bound them — the identical gap this file's VS Code assertion
+    // above exists to close, on the other engines key.
+    //
+    // `>=20` was not an arbitrary number either: it is the floor `engines.node`
+    // ITSELF carried until CI proved it false (`workflow.test.ts`'s
+    // 'engines.node tells the truth about what this project can run on' — the
+    // manifest said `>=20`, `actions/setup-node` honoured it, and the suite
+    // died on jsdom). The manifest was corrected; the README kept the number.
+    //
+    // WHY IT MATTERS THOUGH THE HOOK IS ONLY A ONE-LINER. The line is about the
+    // reader's OWN `node` on `PATH`, not about the extension host, so a reader
+    // could reasonably conclude the two numbers describe different things and
+    // that one of them is stale. Naming the manifest's floor makes the page say
+    // one thing, and it is the measured one.
+    //
+    // The manifest is READ, never repeated — same rule as the sibling.
+    const declared = MANIFEST.engines?.node;
+    expect(declared, 'manifest declares no engines.node').toBeTruthy();
+    expect(
+      README.includes(`\`${String(declared)}\``),
+      `README does not state the manifest's Node floor ${String(declared)}`,
+    ).toBe(true);
+    // Vacuity controls, both directions: the check can fail, and the number it
+    // is now bound to is not the one that was wrong.
+    expect(README.includes('`>=0.0.1`')).toBe(false);
+    expect(README.includes('`>=20`'), 'the README still carries the stale Node floor').toBe(false);
   });
 
   it('names no Claude Code version the shipped parser would refuse', () => {

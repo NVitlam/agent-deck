@@ -31,9 +31,6 @@ side in one panel. It observes only — it never wraps, launches, proxies or con
 
 <!-- /engine:codex -->
 
-> This badge is text, not a remote image: a project whose selling point is zero egress should not
-> make its own README phone home to a badge service to render.
-
 ---
 
 ## What you see
@@ -188,8 +185,8 @@ transcript; what degrades is liveness, which falls back to file modification tim
 ## Requirements
 
 - **VS Code** `^1.134.0`
-- **Node** `>=20` on your `PATH` — the hook block below is a `node -e` one-liner, so your Node is
-  what runs it
+- **Node** `>=22.22.2` on your `PATH` — the hook block below is a `node -e` one-liner, so your Node
+  is what runs it
 - **Claude Code** on the `2.x` line, within one minor of the anchor (see below). Patch releases are
   read as they come.
 - **OpenCode** — optional, and there is nothing to install or configure if you do not use it. The
@@ -210,9 +207,9 @@ code --install-extension nvitlam.agent-deck
 **To open it:** run **Agent Deck: Open Session Deck** from the Command Palette. Your sessions
 appear on their own — there is nothing to point it at and nothing to switch on.
 
-**Then install the hook block below.** It is not optional: without it Agent Deck can still read
-session transcripts, but nothing tells it what is running right now, so a session counts as live
-only while its transcript file keeps changing.
+**Then install the hook block below. Optional.** Without it Agent Deck still shows the tree, but it
+cannot tell you what is running right now — liveness is inferred from file times and the panel says
+so.
 
 ## Install the hook (one manual paste)
 
@@ -312,11 +309,10 @@ Notes on that block, each of them measured rather than assumed:
 
 - **It is `node -e`, not `curl`, and that is not a style choice.** This command runs inside your real
   Claude Code session on every tool call. Against a closed loopback port — which is what it finds
-  whenever Agent Deck is not running — `node` takes `ECONNREFUSED` and exits `0` in well under a
-  fifth of a second, while `curl.exe` burns its full connect timeout (measured between 1.1 s and
-  2.1 s, exiting non-zero) and stalls your session that long every single time. Simplifying it to
-  `curl` costs you roughly an order of magnitude, forever, on the common path. `SECURITY.md` §5
-  carries the numbers.
+  whenever Agent Deck is not running — `node` takes `ECONNREFUSED` and exits `0` immediately, while
+  `curl.exe` burns its full connect timeout and stalls your session that long every single time.
+  Simplifying it to `curl` costs you roughly an order of magnitude, forever, on the common path.
+  Measured in `SECURITY.md` §5.
 - **The port must match `agentDeck.port`.** The block names `47821` literally, which is that
   setting's default. If you change one, change the other: Agent Deck reports a port collision as an
   error and never silently picks a different port, because the block you pasted has no way of being

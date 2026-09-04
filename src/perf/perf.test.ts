@@ -783,7 +783,19 @@ describe('DoD 4.2a — the Codex engine read', () => {
     // and a fast zero passes every limit ever written.
     expect(samples.length).toBe(7);
     expect(sessionCount).toBeGreaterThan(0);
-    expect(longestLine).toBeGreaterThan(500_000);
+    /*
+     * PINNED EXACTLY, and the reason is that the loose form let a wrong number
+     * ship. `budgets.ts` and `PLAN.md` first carried "554,122 bytes", which is
+     * the CHARACTER count — `line.length` — of the same line whose UTF-8 byte
+     * length is 554,126. `> 500_000` was true of both, so nothing went red, and
+     * `src/perf/EVIDENCE.md` had the right figure the whole time. A verifier
+     * caught it by measuring both.
+     *
+     * The exact form is safe here for the reason a fixture-set SIZE is not: this
+     * is one line of one committed transcript, and a re-harvest that changes it
+     * SHOULD go red — the budget's whole subject is that line.
+     */
+    expect(longestLine).toBe(554_126);
   });
 
   it('reads the whole Codex corpus inside its budget', () => {

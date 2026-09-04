@@ -303,7 +303,7 @@ export const REAL_CORPUS_GRAFT_BUDGET: TimingBudget = {
  * **73 lines**; that half is BLOCKED-QUOTA until 2026-10-03 and is tracked as
  * 4.2b. But line count is the wrong axis for this engine. Codex stores tool
  * output **whole and inline** — no offload file — so its stress shape is a
- * single enormous LINE, and the corpus already carries one of **554,122 bytes**.
+ * single enormous LINE, and the corpus already carries one of **554,126 bytes**.
  * That is the shape that turned a plausible scan pattern quadratic and cost the
  * privacy sweep 62 seconds on 2026-09-03. A 10k-line transcript of ordinary
  * lines would exercise less of what is actually risky here.
@@ -321,7 +321,7 @@ export const CODEX_ENGINE_READ_BUDGET: TimingBudget = {
   enforced: true,
   measured: {
     valueMs: 29.1,
-    on: 'fixtures/codex-0.151.0-alpha.7.2, 5 runs / 14 transcripts / longest line 554,122 bytes, 2026-09-04',
+    on: 'fixtures/codex-0.151.0-alpha.7.2, 5 runs / 14 transcripts / longest line 554,126 bytes, 2026-09-04',
     marginX: 13.7,
     note:
       'One readCodexEngine() per run directory — discovery, fingerprint, parse, ' +

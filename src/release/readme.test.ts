@@ -1536,7 +1536,12 @@ describe("DoD 4.4 — SECURITY.md states the Codex engine's reads and its never-
       ['it does not read Codex config', /Neither `hooks\.json` nor `config\.toml` is opened/],
       ['no second socket', /no second port/i],
       ['the manual trust step', /trust/i],
-      ['the hook cost against a closed port', /\b89 ms\b/],
+      // NOT the literal `89 ms`, which is what this row asserted first. A
+      // verifier pointed out the trap and it is a good one: pinning the digits
+      // of a measurement means the next honest re-measure turns this red, and
+      // the cheapest way back to green is to keep quoting a number nobody
+      // re-took. The claim is that a hook cost is STATED, not what it was.
+      ['the hook cost against a closed port', /closed loopback port/i],
       ['the curl comparison', /curl\.exe/],
     ];
     for (const [what, re] of claims) {

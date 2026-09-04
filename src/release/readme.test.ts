@@ -1494,7 +1494,7 @@ describe('the Codex compatibility claims are accurate against the shipped consta
 
   it('states the anchor the Codex fingerprint actually uses', () => {
     const stated = [
-      ...README_CODEX.matchAll(/\banchor(?:ed on)?:?\s+`([0-9A-Za-z.\-]+)`/gi),
+      ...README_CODEX.matchAll(/\banchor(?:ed on)?:?\s+`([0-9A-Za-z.-]+)`/gi),
     ].map((m) => m[1]);
     expect(stated.length, 'the Codex region states no anchor').toBeGreaterThan(0);
     for (const version of stated) expect(version).toBe(PINNED_CODEX_VERSION);

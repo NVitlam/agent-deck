@@ -277,29 +277,56 @@ export function deckColumns(viewportW: number): number {
 }
 
 /**
- * Left edge of an engine's lane.
+ * The distinct engines a visible set holds, ordered by {@link DECK_ENGINE_RANK}.
  *
- * `DECK_ENGINE_RANK[engine] * (DECK_CARD_W + DECK_LANE_GAP)` — a fixed slot
- * per engine, ordered by rank, rather than the binary `engine === 'cc' ? 0 :
- * DECK_CARD_W + DECK_LANE_GAP` this replaced. At `cc: 0, oc: 1` that formula
- * reduces to exactly the old expression (`0` and `DECK_CARD_W + DECK_LANE_GAP`
- * respectively), so the two deck-engine goldens are unaffected; `cx: 2` gets
- * the next slot at `2 * (DECK_CARD_W + DECK_LANE_GAP)`.
- *
- * **Known consequence, not fixed here.** With three possible lanes, a session
- * mix that holds the two OUTER engines (`cc` and `cx`) but not the middle one
- * (`oc`) leaves a visible gap where `oc`'s slot would sit — `deckLanesDegrade`
- * only collapses to `list` when FEWER THAN TWO engines are present, and two
- * of three present is not that case. The two-engine design could never
- * produce this shape (either both lanes were populated or the single one
- * degraded to `list`), so it is a genuinely new case rather than a regression.
- * Compacting lanes to the PRESENT set rather than the full rank would need
- * `deckLaneX` to see the whole visible set, not just one engine, which is a
- * bigger change than this phase's brief authorizes — recorded rather than
- * silently worked around; see the design amendment for the same note.
+ * One definition of "the present set", because three things need the same
+ * answer: {@link deckLanesDegrade}, {@link deckLaneX}, and any renderer drawing
+ * lane headers. Two of those agreeing by hand is the two-agreeing-literals
+ * shape this repository has already shipped a silent seam through.
  */
-export function deckLaneX(engine: DeckEngine): number {
-  return DECK_ENGINE_RANK[engine] * (DECK_CARD_W + DECK_LANE_GAP);
+export function deckLaneEngines(sessions: readonly DeckSession[]): DeckEngine[] {
+  const engines = new Set<DeckEngine>();
+  for (const s of sessions) engines.add(s.engine);
+  return [...engines].sort((a, b) => cmp(DECK_ENGINE_RANK[a], DECK_ENGINE_RANK[b]));
+}
+
+/**
+ * Left edge of an engine's lane, COMPACTED to the visible set (DoD 5.0c).
+ *
+ * `visible` is every engine the deck is currently drawing — pass
+ * {@link deckLaneEngines}, or any iterable of engine tags; duplicates and
+ * ordering are both irrelevant, since only the distinct set is read. The x is
+ * `(number of visible engines ranking BELOW `engine`) * (DECK_CARD_W +
+ * DECK_LANE_GAP)`: an index within the present set, not an absolute rank.
+ * Lane ORDER is still {@link DECK_ENGINE_RANK} — only the slot arithmetic
+ * changed.
+ *
+ * **What this fixes.** The previous form was
+ * `DECK_ENGINE_RANK[engine] * (DECK_CARD_W + DECK_LANE_GAP)` — a fixed slot per
+ * engine — so a visible set holding the two OUTER engines (`cc` and `cx`) but
+ * not the middle one (`oc`) drew cards at slots 0 and 2 and left an empty
+ * column where `oc` would sit, which the user has to read as meaning
+ * something. `deckLanesDegrade` does not catch it: it collapses to `list` only
+ * when FEWER THAN TWO engines are present, and two of three is not that case.
+ * `{cc, cx}` now draws at 0 and 1.
+ *
+ * **What did NOT move.** For `{cc, oc}` and `{cc, oc, cx}` a compacted index
+ * equals the absolute rank, so both deck-engine golden tables are byte-for-byte
+ * unchanged — that is asserted, not assumed, by `layout.test.ts`'s DoD 7.2
+ * comparison against the frozen reference.
+ *
+ * Total and pure: an `engine` absent from `visible` gets the slot it WOULD
+ * occupy, and an empty `visible` gets 0. No caller depends on that — every
+ * production call passes an engine the set contains — but a lane function that
+ * can return `NaN` or throw is a lane function that can put a card at `x = NaN`.
+ */
+export function deckLaneX(engine: DeckEngine, visible: Iterable<DeckEngine>): number {
+  const rank = DECK_ENGINE_RANK[engine];
+  const below = new Set<DeckEngine>();
+  for (const e of visible) {
+    if (DECK_ENGINE_RANK[e] < rank) below.add(e);
+  }
+  return below.size * (DECK_CARD_W + DECK_LANE_GAP);
 }
 
 /**
@@ -309,11 +336,12 @@ export function deckLaneX(engine: DeckEngine): number {
  * meaning something, so a visible set holding one engine degrades to the list.
  * Stated as its own predicate because the renderer needs the same answer to
  * decide whether to draw lane headers at all.
+ *
+ * It is NOT the whole empty-lane defence, and was never meant to be: an
+ * interior gap inside a two-of-three set is {@link deckLaneX}'s job.
  */
 export function deckLanesDegrade(sessions: readonly DeckSession[]): boolean {
-  const engines = new Set<DeckEngine>();
-  for (const s of sessions) engines.add(s.engine);
-  return engines.size < 2;
+  return deckLaneEngines(sessions).length < 2;
 }
 
 /**
@@ -351,10 +379,14 @@ export function deckLayout(
 
   if (deckLanesDegrade(sorted)) return asList();
 
+  // Computed ONCE from the visible set, so every card in a lane agrees about
+  // where that lane is, and the set that decided not to degrade is the same
+  // set that decides the slots.
+  const visible = deckLaneEngines(sorted);
   const next: Record<DeckEngine, number> = { cc: 0, oc: 0, cx: 0 };
   return sorted.map((s) => ({
     id: s.id,
-    x: deckLaneX(s.engine),
+    x: deckLaneX(s.engine, visible),
     y: roundCoord(next[s.engine]++ * (DECK_CARD_H + DECK_GAP_Y)),
   }));
 }

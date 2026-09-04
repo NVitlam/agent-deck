@@ -171,6 +171,17 @@ export interface SessionSummary {
    */
   contextNow?: TokenPair;
   /**
+   * `SessionState.windowTokens`, carried unchanged (v0.6.0 Phase 3, spec C8).
+   *
+   * The Codex engine's context-window ceiling, in tokens. Optional for the
+   * same reason as {@link SessionSummary.burn} and
+   * {@link SessionSummary.contextNow}: the CC and OpenCode engines never set
+   * it, absent is never `0`, and `format.ts:formatWindowTokens` is the one
+   * place that rule turns into a rendered string. Absent for a refused
+   * session too, alongside the other two.
+   */
+  windowTokens?: number;
+  /**
    * `SessionState.totals.costUsd`, carried unchanged.
    *
    * **0 means NOT YET COMPUTED, never "free"** — there is no price table in
@@ -214,6 +225,12 @@ export interface PatchFailure {
  * state, never accumulated: feeding the same snapshot twice yields a
  * deep-equal view.
  */
+/** One hook tap's health, as a surface reads it. */
+export interface DegradedTap {
+  degraded: boolean;
+  reason?: 'noHookEvents' | 'listenerDown';
+}
+
 export interface WebviewView {
   sessions: readonly SessionSummary[];
   selectedSessionId?: string;
@@ -221,10 +238,32 @@ export interface WebviewView {
   selected?: SessionState;
   /** True when the selected session must render the refusal screen (G3). */
   refused: boolean;
+  /**
+   * The CLAUDE CODE tap's health.
+   *
+   * Unchanged in meaning - it is what this field always held, and D2 was
+   * the discovery that the NAME did not say so. Kept for the panel banner,
+   * which is a Claude Code surface.
+   */
   degraded: boolean;
   degradedReason?: 'noHookEvents' | 'listenerDown';
   /** The user closed the banner for this degraded episode. */
   degradedDismissed: boolean;
+  /**
+   * EVERY hook tap's health, by engine (DoD 5.0b).
+   *
+   * `cc` here and {@link degraded} above are the same value; this is the
+   * shape a surface should read when it knows which engine it is drawing,
+   * and the scalar is what the panel-wide banner reads.
+   *
+   * THERE IS NO `oc` MEMBER AND THERE NEVER WILL BE. OpenCode has no hook
+   * tap - its liveness is a cursor on `event_sequence.seq` - so "hooks
+   * silent" is not false about it, it is meaningless. Leaving the key out
+   * makes an OpenCode cell asking this question a TYPE ERROR rather than a
+   * rule someone has to remember, which is the difference between D2
+   * happening again and not.
+   */
+  degradedByEngine: Readonly<Record<'cc' | 'codex', DegradedTap>>;
   /**
    * The last patch that failed to apply, if the host has not re-snapshotted
    * since. Surfaced quietly; the host is required to send a fresh snapshot.
@@ -584,6 +623,7 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
     // reads of one snapshot.
     ...(refused || state.contextNow === undefined ? {} : { contextNow: state.contextNow }),
     ...(refused || state.burn === undefined ? {} : { burn: state.burn }),
+    ...(refused || state.windowTokens === undefined ? {} : { windowTokens: state.windowTokens }),
   };
 }
 
@@ -633,6 +673,9 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
   let degraded = false;
   let degradedReason: 'noHookEvents' | 'listenerDown' | undefined;
   let degradedDismissed = false;
+  /** DoD 5.0b. `cc` mirrors the two scalars above; `codex` is its own tap. */
+  let codexDegraded = false;
+  let codexDegradedReason: 'noHookEvents' | 'listenerDown' | undefined;
   let patchFailure: PatchFailure | undefined;
   const listeners = new Set<() => void>();
 
@@ -751,6 +794,13 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         refused: selected !== undefined && isRefused(selected),
         degraded,
         degradedDismissed,
+        degradedByEngine: {
+          cc: degradedReason === undefined ? { degraded } : { degraded, reason: degradedReason },
+          codex:
+            codexDegradedReason === undefined
+              ? { degraded: codexDegraded }
+              : { degraded: codexDegraded, reason: codexDegradedReason },
+        },
         toggledNodeIds,
         viewMode,
         altitude,
@@ -859,6 +909,14 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
           mismatched.add(message.sessionId);
           break;
         case 'degraded':
+          // DoD 5.0b: the message NAMES its tap, so this routes rather than
+          // assuming. A Codex message must never move the Claude Code
+          // banner's state, which is the whole defect D2 was.
+          if (message.engine === 'codex') {
+            codexDegraded = message.degraded;
+            codexDegradedReason = message.degraded ? message.reason : undefined;
+            break;
+          }
           if (message.degraded !== degraded) {
             // A new degraded episode gets a fresh banner; the dismissal only
             // silences the episode the user dismissed. Re-showing the same

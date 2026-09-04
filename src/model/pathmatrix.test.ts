@@ -34,6 +34,35 @@
  * with BOTH `HOME` and `USERPROFILE` faked, because `os.homedir()` reads
  * `USERPROFILE` on Windows and faking only `HOME` has already produced one
  * green, false pass in this repo's history.
+ *
+ * ---------------------------------------------------------------------------
+ * v0.6.0 PHASE 4, DoD 4.1 — THE THIRD ENGINE'S ROOT
+ * ---------------------------------------------------------------------------
+ *
+ * "Windows native + `CODEX_HOME` + WSL leg (or documented gap) for the Codex
+ * root; slug/cwd matching cases from the corpus." **The WSL leg is a working
+ * leg, not a gap**: measured 2026-09-04, `wsl.exe` is usable on this machine
+ * and `$HOME/.local/opt/node-v24.19.0-linux-x64/bin/node` reports
+ * `process.platform === 'linux'`, so the same probe binary runs both halves.
+ * On a machine without that Node the Codex WSL test skips through the SAME
+ * `skipIf(!WSL.usable)` gate as the Claude Code one, with `WSL.reason` printed
+ * once on stderr — and the pure and corpus legs below, which carry the
+ * precedence rule and every slug/cwd case, run on every machine regardless.
+ *
+ * Four Codex legs, in file order:
+ *
+ *   1f. **Pure.** `resolveCodexRoot`'s precedence (explicit > `CODEX_HOME` >
+ *       home), the blank-is-unset rule, read-time resolution, and the DECOY
+ *       home variable that must not move the root.
+ *   1g. **Corpus roots.** The committed corpus is laid out as
+ *       `<run>/home/.codex/...`, which is what lets all three sources point at
+ *       the SAME real captured tree and be required to agree, file for file,
+ *       against an enumeration that never touches the engine.
+ *   1h. **Slug / cwd.** The project key derived from the corpus's own declared
+ *       `cwd` through `readCodexEngine`, cross-checked against the recorded
+ *       wire corpus, plus the four spellings of that one directory.
+ *   Native and WSL. The probe's `codex` section, asserted by one shared
+ *       function so the two platforms cannot drift apart.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -46,6 +75,9 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { readCodexEngine } from '../codex/index.js';
+import { locateCodex, resolveCodexRoot } from '../codex/locate.js';
+import type { CodexEngineResult } from '../codex/types.js';
 import {
   discoverSessions,
   resolveProjectsRoot,
@@ -353,6 +385,318 @@ describe('negative control: no CLAUDE_PROJECTS_ROOT and no ~/.claude', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Leg 1f — the CODEX data root (v0.6.0 Phase 4, DoD 4.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The one home variable `os.homedir()` reads on this platform, and the one it
+ * does not.
+ *
+ * `resolveCodexRoot` consults exactly the first. Reading both would hide the
+ * recorded trap — a control that fakes only the decoy runs happily against the
+ * machine's REAL home and reports a green, confident, completely false pass —
+ * so the decoy test below is the assertion that goes red if this is ever
+ * "helpfully" widened.
+ */
+const CODEX_HOME_FALLBACK_VAR = process.platform === 'win32' ? 'USERPROFILE' : 'HOME';
+const CODEX_DECOY_VAR = process.platform === 'win32' ? 'HOME' : 'USERPROFILE';
+
+describe('Codex root resolution (pure: explicit > CODEX_HOME > home, on every platform)', () => {
+  const home = join(tmpdir(), 'agent-deck-codex-home');
+  const codexHome = join(tmpdir(), 'agent-deck-codex-var');
+  const explicit = join(tmpdir(), 'agent-deck-codex-explicit');
+
+  it('an explicit root outranks both, and calls itself explicit rather than CODEX_HOME', () => {
+    expect(
+      resolveCodexRoot({
+        root: explicit,
+        env: { [CODEX_HOME_FALLBACK_VAR]: home, CODEX_HOME: codexHome },
+      }),
+    ).toEqual({ root: explicit, rootSource: 'explicit' });
+  });
+
+  it('CODEX_HOME outranks the home fallback', () => {
+    expect(
+      resolveCodexRoot({ env: { [CODEX_HOME_FALLBACK_VAR]: home, CODEX_HOME: codexHome } }),
+    ).toEqual({ root: codexHome, rootSource: 'CODEX_HOME' });
+  });
+
+  it('the home fallback is <home>/.codex, joined with the HOST separator', () => {
+    expect(resolveCodexRoot({ env: { [CODEX_HOME_FALLBACK_VAR]: home } })).toEqual({
+      root: join(home, '.codex'),
+      rootSource: 'homedir',
+    });
+    if (process.platform === 'win32') {
+      expect(resolveCodexRoot({ env: { USERPROFILE: 'C:\\Users\\Probe' } }).root).toBe(
+        'C:\\Users\\Probe\\.codex',
+      );
+    } else {
+      expect(resolveCodexRoot({ env: { HOME: '/home/probe' } }).root).toBe('/home/probe/.codex');
+    }
+  });
+
+  it('the DECOY home variable does NOT move the root', () => {
+    const decoy = join(tmpdir(), 'agent-deck-codex-not-the-home');
+    const resolved = resolveCodexRoot({ env: { [CODEX_DECOY_VAR]: decoy } });
+    expect(resolved).toEqual({ root: join(homedir(), '.codex'), rootSource: 'homedir' });
+    expect(resolved.root).not.toBe(join(decoy, '.codex'));
+  });
+
+  it('a blank or whitespace-only value is "unset" for BOTH the option and the variable', () => {
+    expect(
+      resolveCodexRoot({
+        root: '   ',
+        env: { [CODEX_HOME_FALLBACK_VAR]: home, CODEX_HOME: codexHome },
+      }),
+    ).toEqual({ root: codexHome, rootSource: 'CODEX_HOME' });
+    expect(
+      resolveCodexRoot({ root: '', env: { [CODEX_HOME_FALLBACK_VAR]: home, CODEX_HOME: ' \t ' } }),
+    ).toEqual({ root: join(home, '.codex'), rootSource: 'homedir' });
+  });
+
+  it('resolves at READ time: one options object gives a new answer after the env moves', () => {
+    const env: NodeJS.ProcessEnv = { [CODEX_HOME_FALLBACK_VAR]: home };
+    const options = { env };
+    expect(resolveCodexRoot(options)).toEqual({
+      root: join(home, '.codex'),
+      rootSource: 'homedir',
+    });
+    env['CODEX_HOME'] = codexHome;
+    expect(resolveCodexRoot(options)).toEqual({ root: codexHome, rootSource: 'CODEX_HOME' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Leg 1g — the same three sources, against the committed Codex corpus
+// ---------------------------------------------------------------------------
+
+const FIXTURES_DIR = join(REPO_ROOT, 'fixtures');
+
+/** Every file under `dir`, as `/`-joined paths relative to it, sorted. */
+async function listFilesUnder(dir: string, prefix = ''): Promise<string[]> {
+  const out: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const rel = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...(await listFilesUnder(join(dir, entry.name), rel)));
+    else if (entry.isFile()) out.push(rel);
+  }
+  return out.sort();
+}
+
+/**
+ * The Codex ANCHOR corpus, chosen the way this repository's rule says to choose
+ * one: an anchor carries `golden.json` and a witness does not. Choosing by name
+ * — or by taking `[0]` after a sort, which happened to work only because
+ * `codex-0…` sorts before `codex-vscode-…` — is what breaks the day another
+ * corpus lands beside it.
+ */
+const CODEX_ANCHOR_CORPORA: string[] = [];
+for (const entry of await readdir(FIXTURES_DIR, { withFileTypes: true })) {
+  if (!entry.isDirectory() || !entry.name.startsWith('codex-')) continue;
+  if ((await readdir(join(FIXTURES_DIR, entry.name))).includes('golden.json')) {
+    CODEX_ANCHOR_CORPORA.push(entry.name);
+  }
+}
+CODEX_ANCHOR_CORPORA.sort();
+const CODEX_CORPUS_NAME = CODEX_ANCHOR_CORPORA[0] ?? '';
+const CODEX_CORPUS = join(FIXTURES_DIR, CODEX_CORPUS_NAME);
+
+/** Each harvest run in the corpus: a directory holding `home/.codex`. */
+const CODEX_RUNS: string[] = [];
+for (const entry of await readdir(CODEX_CORPUS, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const home = join(CODEX_CORPUS, entry.name, 'home');
+  const inHome = await readdir(home).catch(() => [] as string[]);
+  if (inHome.includes('.codex')) CODEX_RUNS.push(entry.name);
+}
+CODEX_RUNS.sort();
+
+const codexRunHome = (run: string): string => join(CODEX_CORPUS, run, 'home');
+const codexRunRoot = (run: string): string => join(codexRunHome(run), '.codex');
+
+/** The rollout paths under a run's root, enumerated WITHOUT the engine. */
+async function rolloutPathsOf(run: string): Promise<string[]> {
+  const root = codexRunRoot(run);
+  return (await listFilesUnder(root))
+    .filter((rel) => /(^|\/)rollout-[^/]*\.jsonl$/.test(rel))
+    .map((rel) => join(root, ...rel.split('/')))
+    .sort();
+}
+
+/** The `cwd` a run's first transcript declares, read as bytes, not via the engine. */
+async function corpusCwdOf(run: string): Promise<string> {
+  const paths = await rolloutPathsOf(run);
+  const first = paths[0];
+  if (first === undefined) throw new Error(`run '${run}' holds no rollout transcript`);
+  const line = (await readFile(first, 'utf8')).split('\n')[0] ?? '';
+  const meta = JSON.parse(line) as { payload?: { cwd?: string } };
+  const cwd = meta.payload?.cwd;
+  if (typeof cwd !== 'string' || cwd === '') throw new Error(`no cwd in ${first}`);
+  return cwd;
+}
+
+async function codexEngineOk(options: {
+  root: string;
+  workspaceFolders?: readonly string[];
+}): Promise<CodexEngineResult> {
+  const outcome = await readCodexEngine(options);
+  if (outcome.kind !== 'ok') throw new Error(`codex engine returned '${outcome.kind}'`);
+  return outcome.result;
+}
+
+describe('Codex root: the committed corpus, through all three sources', () => {
+  it('the corpus is selected by its golden, and it has runs', () => {
+    expect(
+      CODEX_ANCHOR_CORPORA,
+      'exactly one fixtures/codex-* directory may carry golden.json',
+    ).toHaveLength(1);
+    expect(CODEX_CORPUS_NAME).toMatch(/^codex-\d/);
+    expect(CODEX_RUNS.length).toBeGreaterThan(0);
+  });
+
+  it('every run resolves to the same transcripts whether named explicitly, via CODEX_HOME, or via the home fallback', async () => {
+    for (const run of CODEX_RUNS) {
+      const root = codexRunRoot(run);
+      const expectedPaths = await rolloutPathsOf(run);
+      expect(expectedPaths.length, run).toBeGreaterThan(0);
+
+      const explicit = locateCodex({ root, env: {} });
+      const viaVar = locateCodex({ env: { CODEX_HOME: root } });
+      const viaHome = locateCodex({ env: { [CODEX_HOME_FALLBACK_VAR]: codexRunHome(run) } });
+
+      expect(explicit.rootSource, run).toBe('explicit');
+      expect(viaVar.rootSource, run).toBe('CODEX_HOME');
+      expect(viaHome.rootSource, run).toBe('homedir');
+
+      for (const discovery of [explicit, viaVar, viaHome]) {
+        expect(discovery.root, run).toBe(root);
+        expect(discovery.rootExists, run).toBe(true);
+        expect(discovery.lockDir, run).toBe(join(root, 'thread-writer-locks'));
+        expect(discovery.transcripts.map((t) => t.path).sort(), run).toEqual(expectedPaths);
+      }
+    }
+  }, 30_000);
+
+  it('discovery is scoped to <root>/sessions: the run\u2019s own hook-stream.jsonl is never a transcript', async () => {
+    for (const run of CODEX_RUNS) {
+      // The negative is real captured data, not a planted decoy: every run
+      // carries a sibling `.jsonl` that is not a transcript.
+      expect(await readdir(join(CODEX_CORPUS, run)), run).toContain('hook-stream.jsonl');
+      // Point CODEX_HOME one level up, at the directory that holds it.
+      const above = locateCodex({ env: { CODEX_HOME: join(CODEX_CORPUS, run) } });
+      expect(above.rootExists, run).toBe(true);
+      expect(above.transcripts, run).toEqual([]);
+
+      const discovery = locateCodex({ root: codexRunRoot(run), env: {} });
+      const sessions = join(codexRunRoot(run), 'sessions');
+      for (const transcript of discovery.transcripts) {
+        expect(transcript.path.startsWith(sessions), transcript.path).toBe(true);
+        expect(transcript.file).not.toBe('hook-stream.jsonl');
+      }
+    }
+  }, 30_000);
+
+  it('reports the day directory the tree spelled rather than one composed from a clock', async () => {
+    const today = new Date();
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    const todayDay = `${today.getFullYear()}/${pad(today.getMonth() + 1)}/${pad(today.getDate())}`;
+    const days = new Set<string>();
+
+    for (const run of CODEX_RUNS) {
+      const root = codexRunRoot(run);
+      for (const transcript of locateCodex({ root, env: {} }).transcripts) {
+        expect(transcript.day).toMatch(/^\d{4}\/\d{2}\/\d{2}$/);
+        // The day is the segments walked: rebuilding the path from it must
+        // land back on the file the walk reported.
+        expect(join(root, 'sessions', ...transcript.day.split('/'), transcript.file)).toBe(
+          transcript.path,
+        );
+        days.add(transcript.day);
+      }
+    }
+    expect(days.size).toBeGreaterThan(0);
+    expect([...days]).not.toContain(todayDay);
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// Leg 1h — slug / cwd matching, from the corpus
+// ---------------------------------------------------------------------------
+
+describe('Codex slug and cwd matching (corpus-driven)', () => {
+  it('the project key is the corpus cwd through the production path, and equals the recorded wire corpus', async () => {
+    // The wire corpus is an INDEPENDENT witness: `scripts/record-wire.mjs`
+    // recorded it from this corpus through the shipped host, so comparing to
+    // it pins the key by value without this file writing the slug down.
+    const wire = JSON.parse(
+      await readFile(join(REPO_ROOT, 'webview', 'wire', `${CODEX_CORPUS_NAME}-session-arc.json`), 'utf8'),
+    ) as { recordedFrom: string; final: { sessions: { projectSlug: string }[] } };
+
+    const run = CODEX_RUNS.find((name) => wire.recordedFrom.includes(`/${name}/`));
+    expect(run, `no run of ${CODEX_CORPUS_NAME} matches recordedFrom '${wire.recordedFrom}'`,
+    ).toBeTypeOf('string');
+
+    const cwd = await corpusCwdOf(run as string);
+    const result = await codexEngineOk({ root: codexRunRoot(run as string) });
+
+    // Every thread in the run declares that one cwd, so the key is a fact
+    // about the run rather than about whichever thread happened to be first.
+    expect([...new Set(result.threads.map((t) => t.cwd))]).toEqual([cwd]);
+
+    const slug = slugifyWorkspace(cwd);
+    expect(result.sessions.length).toBeGreaterThan(0);
+    expect([...new Set(result.sessions.map((s) => s.projectSlug))]).toEqual([slug]);
+    expect([...new Set(wire.final.sessions.map((s) => s.projectSlug))]).toEqual([slug]);
+  }, 60_000);
+
+  it('one workspace, four spellings: case and separator match, the WSL mount form does not', async () => {
+    const run = CODEX_RUNS[0] as string;
+    const root = codexRunRoot(run);
+    const cwd = await corpusCwdOf(run);
+
+    // Every spelling is DERIVED from the captured cwd, so none of them is a
+    // second copy of it that could drift.
+    const driveLower = cwd.charAt(0).toLowerCase() + cwd.slice(1);
+    const forwardSlashes = cwd.replace(/\\/g, '/');
+    const wslMount = `/mnt/${cwd.charAt(0).toLowerCase()}${cwd.slice(2).replace(/\\/g, '/')}`;
+    const foreign = join(tmpdir(), 'agent-deck-not-the-codex-workspace');
+
+    expect(driveLower).not.toBe(cwd);
+    expect(forwardSlashes).not.toBe(cwd);
+    expect(wslMount.startsWith('/mnt/')).toBe(true);
+
+    const unfiltered = await codexEngineOk({ root });
+    expect(unfiltered.sessions.length).toBeGreaterThan(0);
+
+    const flagsFor = async (folder: string): Promise<boolean[]> => {
+      const result = await codexEngineOk({ root, workspaceFolders: [folder] });
+      // A non-matching session is FLAGGED, never dropped: the count must not
+      // move, or this test would be reading a filter as a mismatch.
+      expect(result.sessions.length, folder).toBe(unfiltered.sessions.length);
+      return result.sessions.map((s) => s.workspaceMatch);
+    };
+
+    const all = (flags: boolean[]): boolean => flags.length > 0 && flags.every((f) => f);
+    const none = (flags: boolean[]): boolean => flags.length > 0 && flags.every((f) => !f);
+
+    expect(all(await flagsFor(cwd))).toBe(true);
+    expect(all(await flagsFor(driveLower))).toBe(true);
+    expect(all(await flagsFor(forwardSlashes))).toBe(true);
+    expect(none(await flagsFor(wslMount))).toBe(true);
+    expect(none(await flagsFor(foreign))).toBe(true);
+
+    // And the boundary itself, stated as the rule rather than as an outcome:
+    // the two spellings of one physical directory are not case variants.
+    expect(sameWorkspace(cwd, driveLower)).toBe(true);
+    expect(sameWorkspace(cwd, forwardSlashes)).toBe(true);
+    expect(sameWorkspace(cwd, wslMount)).toBe(false);
+    expect(normalizeSlug(slugifyWorkspace(cwd))).not.toBe(
+      normalizeSlug(slugifyWorkspace(wslMount)),
+    );
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------
 // The probe, bundled once and executed as a child process on each platform
 // ---------------------------------------------------------------------------
 
@@ -397,6 +741,100 @@ function runNativeProbe(envOverrides: Record<string, string> = {}): ProbeReport 
     },
   );
   return JSON.parse(stdout) as ProbeReport;
+}
+
+/**
+ * The Codex half of a probe report, asserted the same way on both platforms.
+ *
+ * Every expected path is BUILT from the report's own separator and the roots
+ * the report named, so this runs unchanged under Windows and under Linux and a
+ * difference between the legs is a real difference rather than two assertion
+ * lists drifting apart.
+ *
+ * The three precedence rows are distinguished by the FILENAME each tree holds.
+ * A precedence test whose trees hold interchangeable content cannot fail: it
+ * would pass with the precedence reversed, because both answers are non-empty.
+ */
+function assertCodexProbeSection(report: ProbeReport): void {
+  const codex = report.codex;
+  const sep = report.pathSeparator;
+  const j = (...parts: string[]): string => parts.join(sep);
+  const dayParts = codex.plantedDay.split('/');
+  const planted = [codex.planted.home, codex.planted.codexHome, codex.planted.explicit];
+
+  expect(codex.homeVariable).toBe(report.platform === 'win32' ? 'USERPROFILE' : 'HOME');
+  expect(codex.decoyVariable).toBe(report.platform === 'win32' ? 'HOME' : 'USERPROFILE');
+  expect(codex.homeVariable).not.toBe(codex.decoyVariable);
+  expect(new Set(planted).size, 'the three trees must be distinguishable by filename').toBe(3);
+  // Never today's: a walk that composed YYYY/MM/DD from a clock finds nothing.
+  expect(codex.plantedDay).toMatch(/^\d{4}\/\d{2}\/\d{2}$/);
+
+  const populated = [
+    codex.fromHome,
+    codex.fromCodexHome,
+    codex.explicitBeatsBoth,
+    codex.blankCodexHomeFallsBackToHome,
+  ];
+  for (const row of populated) {
+    expect(row.rootExists).toBe(true);
+    expect(row.root.endsWith(`${sep}.codex`)).toBe(true);
+    expect(row.lockDir).toBe(j(row.root, 'thread-writer-locks'));
+    expect(row.days).toEqual([codex.plantedDay]);
+    expect(row.files).toHaveLength(1);
+    // Right extension, wrong prefix: the walk reports transcripts, not files.
+    expect(row.files).not.toContain('notes.jsonl');
+    expect(row.paths).toEqual([j(row.root, 'sessions', ...dayParts, row.files[0] as string)]);
+  }
+
+  expect(codex.fromHome.rootSource).toBe('homedir');
+  expect(codex.fromHome.files).toEqual([codex.planted.home]);
+
+  expect(codex.fromCodexHome.rootSource).toBe('CODEX_HOME');
+  expect(codex.fromCodexHome.files).toEqual([codex.planted.codexHome]);
+  expect(codex.fromCodexHome.root).not.toBe(codex.fromHome.root);
+
+  expect(codex.explicitBeatsBoth.rootSource).toBe('explicit');
+  expect(codex.explicitBeatsBoth.files).toEqual([codex.planted.explicit]);
+  expect(codex.explicitBeatsBoth.root).not.toBe(codex.fromHome.root);
+  expect(codex.explicitBeatsBoth.root).not.toBe(codex.fromCodexHome.root);
+
+  // Whitespace is how a shell spells "I cleared this".
+  expect(codex.blankCodexHomeFallsBackToHome.rootSource).toBe('homedir');
+  expect(codex.blankCodexHomeFallsBackToHome.root).toBe(codex.fromHome.root);
+  expect(codex.blankCodexHomeFallsBackToHome.files).toEqual([codex.planted.home]);
+
+  // The decoy row is resolution-ONLY, and its shape says so: no `rootExists`
+  // means no walk happened, which is how it can name the machine's real home
+  // without enumerating a live session tree.
+  expect('rootExists' in codex.decoyAlone).toBe(false);
+  expect(codex.decoyAlone.rootSource).toBe('homedir');
+  expect(codex.decoyAlone.root).toBe(j(report.homedir, '.codex'));
+  expect(codex.decoyAlone.root).not.toBe(j(codex.decoyAlone.decoyValue, '.codex'));
+
+  // Absent, empty and file-at-the-path are THREE different answers.
+  expect(codex.absentRoot.rootExists).toBe(false);
+  expect(codex.absentRoot.files).toEqual([]);
+  expect(codex.absentRoot.root.endsWith(`${sep}.codex`)).toBe(true);
+  expect(codex.absentRoot.lockDir).toBe(j(codex.absentRoot.root, 'thread-writer-locks'));
+
+  expect(codex.emptyRoot.rootExists).toBe(true);
+  expect(codex.emptyRoot.files).toEqual([]);
+  expect(codex.emptyRoot.days).toEqual([]);
+
+  expect(codex.fileAtRootPath.rootExists).toBe(false);
+  expect(codex.fileAtRootPath.files).toEqual([]);
+
+  // All three planted roots are distinct directories, so no row above was
+  // reading another row's tree.
+  const roots = new Set([
+    codex.fromHome.root,
+    codex.fromCodexHome.root,
+    codex.explicitBeatsBoth.root,
+    codex.absentRoot.root,
+    codex.emptyRoot.root,
+    codex.fileAtRootPath.root,
+  ]);
+  expect(roots.size).toBe(6);
 }
 
 describe('native leg: the same probe the WSL leg runs, in a child process', () => {
@@ -471,6 +909,19 @@ describe('native leg: the same probe the WSL leg runs, in a child process', () =
     } finally {
       await rm(temp, { recursive: true, force: true });
     }
+  });
+
+  it('resolves the CODEX data root through all three sources, and tells absent from empty', () => {
+    const report = runNativeProbe();
+
+    expect(report.platform).toBe(process.platform);
+    assertCodexProbeSection(report);
+
+    // The decoy row, restated against this process's own homedir rather than
+    // against the report's, so the two have to agree.
+    expect(report.codex.decoyAlone.root).toBe(join(homedir(), '.codex'));
+    expect(report.codex.homeVariable).toBe(CODEX_HOME_FALLBACK_VAR);
+    expect(report.codex.decoyVariable).toBe(CODEX_DECOY_VAR);
   });
 
   it('with ONLY HOME faked, Windows does NOT move — the trap that produced a false pass in this repo', async () => {
@@ -674,6 +1125,42 @@ describe.skipIf(!WSL.usable)('WSL leg: this repo\u2019s resolution code under re
         ]);
         expect(claudeAfter).toBe(claudeBefore);
         expect(claudeAfter).toBe(MEASURED.wsl.claudeDirectoryPresent ? 'present' : 'absent');
+      }
+    },
+    180_000,
+  );
+
+  it(
+    'the CODEX data root under real Linux Node: $HOME/.codex, CODEX_HOME, and the USERPROFILE decoy that must not move it',
+    () => {
+      const linuxNode = WSL.linuxNode as string;
+      const bundleLinux = wsl(['wslpath', '-u', forWslpath(BUNDLE)]);
+      const casesLinux = wsl(['wslpath', '-u', forWslpath(CASES_PATH)]);
+      const report = JSON.parse(
+        wsl([linuxNode, bundleLinux, '--agent-deck-path-probe', casesLinux]),
+      ) as ProbeReport;
+
+      expect(report.platform).toBe('linux');
+      expect(report.pathSeparator).toBe('/');
+      assertCodexProbeSection(report);
+
+      // The half that is genuinely different from the Windows leg: on POSIX
+      // the home variable is HOME and USERPROFILE is the decoy — the exact
+      // reverse of the native leg, from the same probe source.
+      expect(report.codex.homeVariable).toBe('HOME');
+      expect(report.codex.decoyVariable).toBe('USERPROFILE');
+      expect(report.codex.decoyAlone.root).toBe(`${report.homedir}/.codex`);
+      expect(report.codex.decoyAlone.root.includes('\\')).toBe(false);
+
+      // Every planted root is a posix path under the distro's temp dir, so
+      // nothing here read the distro's own ~/.codex.
+      for (const root of [
+        report.codex.fromHome.root,
+        report.codex.fromCodexHome.root,
+        report.codex.explicitBeatsBoth.root,
+      ]) {
+        expect(root.startsWith('/tmp/')).toBe(true);
+        expect(root.startsWith(`${report.homedir}/`)).toBe(false);
       }
     },
     180_000,

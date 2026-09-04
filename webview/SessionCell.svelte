@@ -225,11 +225,23 @@
   let label = $derived(labelRows[0] ?? '');
   let labelClipped = $derived(labelIsClipped(summary.label, DECK_CARD_W - LABEL_X + 8));
 
-  /** `CC` / `OC`. The deck's own two-letter vocabulary; `layout.ts` agrees. */
-  let glyph = $derived(summary.engine === 'opencode' ? 'OC' : 'CC');
+  /**
+   * `CC` / `OC` / `CX`. The deck's own two-letter vocabulary; `layout.ts`
+   * agrees. Three explicit cases rather than a chained ternary: the ternary
+   * this replaced (`summary.engine === 'opencode' ? 'OC' : 'CC'`) put
+   * `'codex'` into the `'CC'` fallback along with real absence, the same
+   * silent-default shape `layout.ts:deckEngine` had.
+   */
+  let glyph = $derived(
+    summary.engine === 'opencode' ? 'OC' : summary.engine === 'codex' ? 'CX' : 'CC',
+  );
   /** The engine, spelled out, for the accessible name and the tooltip. */
   let engineName = $derived(
-    summary.engine === 'opencode' ? 'OpenCode' : 'Claude Code',
+    summary.engine === 'opencode'
+      ? 'OpenCode'
+      : summary.engine === 'codex'
+        ? 'Codex'
+        : 'Claude Code',
   );
 
   /**

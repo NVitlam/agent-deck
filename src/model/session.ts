@@ -410,6 +410,15 @@ export function diffSessionState(
     fields.burn = { ...next.burn };
     fieldsChanged = true;
   }
+  // v0.6.0 Phase 3, DoD 3.2. A bare scalar, same `!== undefined` guard as
+  // `engine` below: `SessionFieldPatch` has no `null` for this key, so a
+  // transition from a stated window to an ABSENT one is not expressible on
+  // the wire and is not one any engine produces (a model's context window
+  // does not shrink to nothing mid-session).
+  if (prev.windowTokens !== next.windowTokens && next.windowTokens !== undefined) {
+    fields.windowTokens = next.windowTokens;
+    fieldsChanged = true;
+  }
   // Gate amendment B2, and it is DELIBERATE DEAD CODE — do not "simplify" it
   // away. The engine that observed a session cannot change while the session
   // exists, so for any two states this model produces `prev.engine` and

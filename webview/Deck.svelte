@@ -82,6 +82,7 @@
     sessions = [],
     degraded = false,
     degradedReason = undefined,
+    degradedByEngine = undefined,
     selectedSessionId,
     reducedMotion = false,
     onenter,
@@ -91,7 +92,6 @@
     onreset,
     onfit,
     total,
-    enabledEngines = ['cc'],
     engineFilter = DEFAULT_ENGINE_FILTER,
     onenginefilter,
     now,
@@ -100,9 +100,35 @@
   }: {
     /** Every session the host reported, summarised by the store. */
     sessions?: readonly SessionSummary[];
-    /** The hook tap is silent: liveness is inferred everywhere (G2). */
+    /**
+     * The CLAUDE CODE hook tap is silent (G2).
+     *
+     * Still here because `data-degraded` on the section is a panel-wide
+     * attribute and this is the panel-wide fact. Cards do NOT read it -
+     * see `degradedByEngine`.
+     */
     degraded?: boolean;
     degradedReason?: 'noHookEvents' | 'listenerDown' | undefined;
+    /**
+     * EVERY hook tap's health, by engine (DoD 5.0b). What CARDS read.
+     *
+     * D2's fix stopped a Claude Code flag being painted onto Codex cards
+     * by giving the cards nothing; this gives them the right thing. A
+     * Codex card whose own tap is silent now says so, and one whose tap is
+     * fine says nothing, which is what a user reported was missing.
+     *
+     * NO `oc` MEMBER: OpenCode has no hook tap at all, so an OpenCode card
+     * asking is a type error rather than a rule to remember.
+     *
+     * Optional, and absent means "no tap is degraded" rather than
+     * "Claude Code's value applies to everyone" - the default is what
+     * every mount that does not care gets, and it must not be a lie.
+     */
+    degradedByEngine?:
+      | Readonly<
+          Record<'cc' | 'codex', { degraded: boolean; reason?: 'noHookEvents' | 'listenerDown' }>
+        >
+      | undefined;
     /** The store's selected session, if any. */
     selectedSessionId?: string | undefined;
     /** The user prefers reduced motion. Swapped by class, never by query alone. */
@@ -137,17 +163,23 @@
     onfit?: ((content: Rect, size: ViewportSize) => void) | undefined;
     /** How many sessions exist before filtering. Defaults to what is shown. */
     total?: number | undefined;
-    /**
-     * Which engines this installation is actually observing.
+    /*
+     * `enabledEngines` WAS HERE, and its removal is the D4 fix (2026-09-04).
      *
-     * Feeds the empty state and NOTHING else. An engine whose data directory
-     * is absent shows nothing about itself: a line reading "Waiting for an
-     * OpenCode session…" on a machine with no OpenCode is the panel waiting
-     * for something that cannot arrive, which reads as a fault in Agent Deck.
-     * Defaults to Claude Code alone, which is the only engine every install
-     * of this extension observes.
+     * It fed the empty state and nothing else: one waiting line per engine
+     * this installation observes, so a machine with no OpenCode was never
+     * shown a panel waiting for one. Sound reasoning, and it produced a
+     * user-visible defect anyway — NOTHING EVER PASSED THE PROP. `App.svelte`
+     * did not, so the default `['cc']` applied on every install, and an empty
+     * deck told a Codex-only user that Agent Deck was "Waiting for a Claude
+     * Code session…". The user found it by own eyes at the DoD 3.5 pass.
+     *
+     * The ruling is that a GENERIC state names no engine at all, so the prop
+     * has nothing left to feed and is deleted rather than left as a parameter
+     * whose documentation describes a behaviour that no longer exists.
+     * Per-engine copy still exists where it is ABOUT one engine — the filter
+     * chips, and a card's own tag — and `deck.test.ts` pins that boundary.
      */
-    enabledEngines?: readonly DeckEngine[];
     /**
      * Which engine's sessions to show. STORE STATE, arriving as a prop.
      *
@@ -234,6 +266,7 @@
     all: { label: 'All', key: 'a' },
     cc: { label: 'Claude Code', key: 'c' },
     oc: { label: 'OpenCode', key: 'o' },
+    cx: { label: 'Codex', key: 'x' },
   };
   const ENGINE_CHIPS: readonly { value: EngineFilter; label: string; key: string }[] =
     ENGINE_FILTERS.map((value) => ({ value, ...ENGINE_LABELS[value] }));
@@ -248,11 +281,15 @@
     { value: 'engine', label: 'Engine', key: 'e' },
   ];
 
-  /** The empty state's one line per enabled engine. */
-  const WAITING: Readonly<Record<DeckEngine, string>> = {
-    cc: 'Waiting for a Claude Code session…',
-    oc: 'Waiting for an OpenCode session…',
-  };
+  /**
+   * The empty deck's one line. ENGINE-FREE, by ruling (D4, 2026-09-04).
+   *
+   * A deck with no sessions is a statement about the whole panel, so naming an
+   * engine in it is naming the wrong thing twice over: it is not true of the
+   * other engines, and it tells a user whose engine IS running that the panel
+   * is waiting for a different one.
+   */
+  const WAITING = 'Waiting for a session to start.';
 
   /* --------------------------------------------------------------------- *
    * Derived geometry
@@ -283,6 +320,7 @@
     all: sessions.length,
     cc: sessions.filter((row) => engineOf(row) === 'cc').length,
     oc: sessions.filter((row) => engineOf(row) === 'oc').length,
+    cx: sessions.filter((row) => engineOf(row) === 'cx').length,
   });
 
   /**
@@ -299,6 +337,38 @@
    * whole deck the moment the tap went quiet — for every session at once, on a
    * fact about none of them.
    */
+  /**
+   * The tap health for ONE engine (DoD 5.0b).
+   *
+   * `oc` returns a healthy tap rather than throwing, because OpenCode cards
+   * are drawn by the same loop: it has no hook tap, so it can never be
+   * hook-degraded, and that is a true answer rather than a fallback. The
+   * TYPE is what forbids storing an `oc` value; this is what lets the
+   * renderer stay one loop.
+   *
+   * When `degradedByEngine` is absent it falls back to the SCALAR for `cc`
+   * only. That keeps every existing mount that passes `degraded` alone
+   * behaving exactly as it did, and it is the one place the two shapes are
+   * allowed to meet.
+   */
+  function tapFor(
+    engine: DeckEngine,
+  ): { degraded: boolean; reason?: 'noHookEvents' | 'listenerDown' } {
+    if (engine === 'oc') return { degraded: false };
+    // THE TWO VOCABULARIES MEET HERE, IN ONE PLACE, ON PURPOSE. The deck's
+    // engine tag is `cx`; the tap record's key is `codex`, because that is
+    // what `SessionState.engine` and the wire message call it. Two agreeing
+    // literals is not a contract - this repository's recorded module-seam
+    // defect - so the translation is a single expression rather than a
+    // convention repeated at each call site. Written the wrong way first,
+    // and `webview/deck.test.ts` caught it as a TypeError rather than as a
+    // silently absent chip.
+    const key = engine === 'cx' ? 'codex' : 'cc';
+    if (degradedByEngine !== undefined) return degradedByEngine[key];
+    if (key !== 'cc') return { degraded: false };
+    return degradedReason === undefined ? { degraded } : { degraded, reason: degradedReason };
+  }
+
   let deckSessions = $derived<DeckSession[]>(
     visible.map((row) => ({
       id: row.sessionId,
@@ -544,16 +614,14 @@
   </div>
 
   {#if visible.length === 0}
-    <!-- One quiet line per ENABLED engine. Not an error, not a spinner, and
-         not a call to action; and nothing at all about an engine this
-         installation is not observing. -->
+    <!-- One quiet line. Not an error, not a spinner, not a call to action —
+         and it names no engine, because an empty deck is a fact about the
+         panel rather than about any one of the three things feeding it. -->
     <div class="empty" data-testid={TESTID.deckEmpty}>
       {#if sessions.length > 0}
         <p data-testid="deck-empty-filtered">No sessions match this filter.</p>
       {:else}
-        {#each enabledEngines as engine (engine)}
-          <p data-testid="deck-waiting" data-engine={engine}>{WAITING[engine]}</p>
-        {/each}
+        <p data-testid="deck-waiting">{WAITING}</p>
       {/if}
     </div>
   {:else}
@@ -577,12 +645,29 @@
       <g data-testid={TESTID.deckStage} {transform}>
         {#each cards as card (card.placement.id)}
           {#if card.summary !== undefined}
+            <!--
+              D2 (2026-09-03): `degraded` is the CLAUDE CODE hook tap's health
+              and it is panel-wide, so it is passed only to a Claude Code card.
+
+              It used to go to every card, which put "Codex: no hook events"
+              on a Codex cell whose hooks were arriving perfectly — reported by
+              own eyes against the shipped release/0.6.0 build. The banner is
+              produced by `LivenessEngine.degradedState()`, which reads
+              `eventsReceived === 0` on the CC engine alone; before Phase 3's
+              discriminator every Codex payload was ALSO dispatched into the CC
+              handler, so that counter moved and the tap looked alive. Routing
+              them correctly is what exposed the mislabelling.
+
+              The same reasoning the sort key above already states: a fact
+              about none of these sessions must not be rendered onto all of
+              them.
+            -->
             <SessionCell
               summary={card.summary}
               x={card.placement.x}
               y={card.placement.y}
-              {degraded}
-              {degradedReason}
+              degraded={tapFor(engineOf(card.summary)).degraded}
+              degradedReason={tapFor(engineOf(card.summary)).reason}
               {reducedMotion}
               now={clock}
               selected={card.summary.sessionId === selectedSessionId}

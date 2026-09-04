@@ -22,7 +22,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
@@ -37,10 +37,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AgentDeckDataPath,
   AgentDeckHost,
+  CODEX_ABSENT_LOG,
   CONFIG_SECTION,
+  CodexEnginePath,
+  DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS,
   DEFAULT_LIVENESS_THRESHOLD_MS,
   DEFAULT_PORT,
   DEFAULT_PREVIEW_BYTES,
+  NO_HOOK_ENGINE_LOG,
   OPENCODE_ABSENT_LOG,
   OPEN_COMMAND,
   OpenCodeEnginePath,
@@ -49,6 +53,7 @@ import {
   WEBVIEW_SCRIPT_SEGMENTS,
   WEBVIEW_STYLE_SEGMENTS,
   activate,
+  codexRootExists,
   currentHost,
   deactivate,
   inactiveReasonFor,
@@ -65,6 +70,9 @@ import type {
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
+import type { DiagnosticsSink } from './bridge/diagnostics.js';
+import { CODEX_HOME_VAR, readCodexEngine } from './codex/index.js';
+import type { CodexThread } from './codex/index.js';
 import {
   copyCorpus,
   corpusDbPath,
@@ -528,15 +536,35 @@ function trackHost(host: AgentDeckHost): AgentDeckHost {
  * the discovery tests below assert about.
  */
 const savedOpencodeRoot = process.env[OPENCODE_DATA_ROOT_ENV];
+/**
+ * Same discipline, same reason, for the third engine (DoD 3.2). Every
+ * `AgentDeckDataPath`/`CodexEnginePath` constructed in this file without an
+ * explicit `codex.root` resolves `$CODEX_HOME` from `process.env` by
+ * default, and this machine's real `~/.codex` is not this suite's to read —
+ * G6 again, one door over.
+ *
+ * **It points at a path that does NOT exist, and the difference started
+ * mattering on 2026-09-04.** This used to be a fresh EMPTY directory, described
+ * here as making the root "absent"; it did not. `locateCodex` reports
+ * `rootExists` from `statSync(root).isDirectory()`, so an empty directory is a
+ * root that exists and holds no sessions — indistinguishable from absent while
+ * the only consumer was content, and a different answer entirely now that the
+ * hook socket binds when a Codex root exists. A non-existent path is what the
+ * comment always claimed, so tests that assert "nothing here" now assert it.
+ */
+const savedCodexHome = process.env[CODEX_HOME_VAR];
 
 beforeEach(async () => {
   resetVscodeMock();
   process.env[OPENCODE_DATA_ROOT_ENV] = await makeTempDir();
+  process.env[CODEX_HOME_VAR] = join(await makeTempDir(), 'no-codex-root-here');
 });
 
 afterEach(async () => {
   if (savedOpencodeRoot === undefined) delete process.env[OPENCODE_DATA_ROOT_ENV];
   else process.env[OPENCODE_DATA_ROOT_ENV] = savedOpencodeRoot;
+  if (savedCodexHome === undefined) delete process.env[CODEX_HOME_VAR];
+  else process.env[CODEX_HOME_VAR] = savedCodexHome;
   await deactivate();
   for (const host of liveHosts.splice(0)) await host.dispose();
   for (const path of liveDataPaths.splice(0)) await path.dispose();
@@ -846,7 +874,7 @@ describe('PanelController', () => {
    */
   function emission(
     sessions: SessionState[],
-    options: { degraded?: boolean; added?: string[] } = {},
+    options: { degraded?: boolean; codexDegraded?: boolean; added?: string[] } = {},
   ): DataPathEmission {
     return {
       emission: {
@@ -858,6 +886,13 @@ describe('PanelController', () => {
       },
       degraded:
         options.degraded === true
+          ? { degraded: true, reason: 'noHookEvents' }
+          : { degraded: false },
+      // DoD 5.0b. Defaults to healthy and is set INDEPENDENTLY of `degraded`,
+      // which is what lets a test drive one tap silent while the other is
+      // fine - the shape the item requires to be tested in both directions.
+      codexDegraded:
+        options.codexDegraded === true
           ? { degraded: true, reason: 'noHookEvents' }
           : { degraded: false },
     };
@@ -980,22 +1015,41 @@ describe('PanelController', () => {
     });
 
     controller.publish(emission([state('s1')], { added: ['s1'] }));
-    expect(panel.posted.map((m) => m.type)).toStrictEqual(['snapshot', 'degraded']);
+    // TWO degraded lines, not one, since DoD 5.0b: a publish announces every
+    // hook tap's health and there are two taps. The ORDER is part of the
+    // contract - the snapshot first, then the taps - because a webview that
+    // heard about a degraded tap before it had any sessions would have
+    // nothing to attach it to.
+    expect(panel.posted.map((m) => m.type)).toStrictEqual([
+      'snapshot',
+      'degraded',
+      'degraded',
+    ]);
+    expect(
+      panel.posted.filter((m) => m.type === 'degraded').map((m) => m.engine),
+      'one line per tap, each naming itself',
+    ).toStrictEqual(['cc', 'codex']);
 
     // Publishing again with nothing changed sends nothing: no snapshot, and no
-    // repeated degraded message.
+    // repeated degraded message from EITHER tap.
     controller.publish(emission([state('s1')]));
-    expect(panel.posted).toHaveLength(2);
+    expect(panel.posted).toHaveLength(3);
 
     panel.fireBecameVisible();
     expect(controller.counters.reloads).toBe(1);
     expect(snapshotsRequested).toBe(1);
 
     controller.publish(emission([state('s1')]));
+    // After a reload the bridge has forgotten BOTH taps, so both are
+    // re-announced beside the fresh snapshot. `reset()` clears the whole
+    // per-tap map for this reason: a webview that was never told is not the
+    // same as a tap that has not moved.
     expect(panel.posted.map((m) => m.type)).toStrictEqual([
       'snapshot',
       'degraded',
+      'degraded',
       'snapshot',
+      'degraded',
       'degraded',
     ]);
     controller.dispose();
@@ -1006,11 +1060,21 @@ describe('PanelController', () => {
     const controller = new PanelController({ panel: panel.surface, nonce: 'AAAAAAAA' });
     for (let i = 0; i < 12; i += 1) controller.publish(emission([state('s1')], { degraded: true }));
     const degraded = panel.posted.filter((m) => m.type === 'degraded');
+    // Twelve publishes, TWO lines: one per tap, each sent once. The point of
+    // the test is unchanged - no nagging - and it is now also a check that
+    // the two taps do not share a de-duplication memory, which would have
+    // shown up here as a single line.
     expect(degraded).toStrictEqual([
-      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'codex', degraded: false },
     ]);
+    // The Claude Code tap recovers. That is ONE new line - the Codex tap has
+    // not moved, so it must not be re-announced alongside it, which is the
+    // per-tap no-nagging rule seen from the other side.
     controller.publish(emission([state('s1')], { degraded: false }));
-    expect(panel.posted.filter((m) => m.type === 'degraded')).toHaveLength(2);
+    const after = panel.posted.filter((m) => m.type === 'degraded');
+    expect(after).toHaveLength(3);
+    expect(after.at(-1)).toStrictEqual({ type: 'degraded', engine: 'cc', degraded: false });
     controller.dispose();
   });
 
@@ -1456,15 +1520,60 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
     const mismatches = panel.posted.filter((m) => m.type === 'schemaMismatch');
     expect(mismatches).toStrictEqual([{ type: 'schemaMismatch', sessionId }]);
 
-    // And nothing that DID reach the webview carries a tree for this session.
+    /*
+     * AND NOTHING THAT DID REACH THE WEBVIEW CARRIES A TREE FOR THIS SESSION.
+     *
+     * The no-tree half is G3 itself and is asserted on EVERY snapshot,
+     * unconditionally: a refused session must never be rendered as a smaller
+     * tree, and "never" includes the snapshots posted before the first graft
+     * finished.
+     *
+     * The `schemaOk` half is NOT asserted in this loop at all — it is asserted
+     * on the model and on a freshly-opened panel instead, for a measured
+     * reason this test used to depend on by accident. A session is
+     * REGISTERED at discovery and GRAFTED asynchronously, so between those two
+     * moments it is publishable with its default `schemaOk: true` and an empty
+     * root. Observed sequence when the machine is quiet — the session's first
+     * appearance is already refused, which is why this was invisible:
+     *
+     *   0:snapshot(mine=0)  1:degraded
+     *   2:snapshot(mine=1 schemaOk=false nodes=1)  3:schemaMismatch  4:degraded
+     *
+     * Under a loaded suite a pump lands inside that window and a
+     * `schemaOk=true, nodes=1` snapshot appears at index 1 — measured
+     * 2026-09-03, one failure in three full runs, and `tickMs: 0` here (a test
+     * setting; production is a real tick) is what makes the window wide enough
+     * to hit at all. That is a pre-paint state, not a partial tree, so G3 is
+     * intact — but a test that passes or fails by CPU load is a defect report
+     * about the test, and the fix is to assert the property meant rather than
+     * the ordering that happened to hold.
+     *
+     * `schemaOk === false` IS STILL ASSERTED TWICE, and neither depends on
+     * ordering: on the model's own state above, and — the one that is the
+     * actual user guarantee — on a panel opened AFTER the refusal, at the end
+     * of this test, which is where a real webview's refusal screen comes from.
+     * (The `schemaMismatch` message asserted above is NOT a third: it is
+     * `{ type, sessionId }` and carries no `schemaOk` to check.)
+     *
+     * WHAT THIS ACCEPTS WITHOUT CHANGING IT, stated so it is not mistaken for
+     * something nobody noticed: a session really can be published with
+     * `schemaOk: true` and an empty root between registration and its first
+     * graft. Whether an ungrafted session should claim `schemaOk: true` at all
+     * is a product question (reserved 9 — a product-visible default), and it
+     * is carried into the handoff rather than decided here.
+     */
+    let carriedOnTheWire = 0;
     for (const message of panel.posted) {
       if (message.type !== 'snapshot') continue;
       for (const session of message.sessions) {
         if (session.sessionId !== sessionId) continue;
-        expect(session.schemaOk).toBe(false);
         expect(countNodes(session.root)).toBe(1);
+        carriedOnTheWire += 1;
       }
     }
+    // Not vacuous: the loop above proves nothing if no snapshot ever carried
+    // this session, which is exactly what a broken stage would produce.
+    expect(carriedOnTheWire).toBeGreaterThan(0);
 
     // The mismatch is announced once, not on every emission (no nagging).
     for (let i = 0; i < 5; i += 1) path.pump();
@@ -1481,6 +1590,9 @@ describe('a mutated layout renders unsupported and exposes no tree (G3)', () => 
     controller.publish({
       emission: path.model.emit(),
       degraded: path.liveness.degradedState(),
+      // DoD 5.0b. This test is about a Claude Code refusal snapshot, so the
+      // Codex tap has nothing to say and says so.
+      codexDegraded: { degraded: false },
     });
     const snapshot = later.posted.find((m) => m.type === 'snapshot');
     expect(snapshot?.type).toBe('snapshot');
@@ -1552,8 +1664,13 @@ describe('degraded mode', () => {
     for (let i = 0; i < 20; i += 1) host.dataPath.pump();
 
     const degraded = panel.posted.filter((m) => m.type === 'degraded');
+    // Twenty pumps, two lines: one per tap, each announced once. The Codex
+    // half is `false` because this workspace has no Codex root - an engine
+    // that is not running is not degraded, it is silent, and saying otherwise
+    // would be the D2 mistake pointed at the other engine.
     expect(degraded).toStrictEqual([
-      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
+      { type: 'degraded', engine: 'codex', degraded: false },
     ]);
     // The socket is bound and healthy; the reason is the absence of events,
     // which is the honest one.
@@ -2087,10 +2204,22 @@ describe('G1: the extension host writes nothing', () => {
      *
      * The property this test stands for is G1 — the host writes nothing — and a
      * blanket ban on the module name was a PROXY for it. The proxy is replaced
-     * by the thing itself: exactly one `node:fs` import, naming exactly one
-     * binding, and that binding is `existsSync`, which cannot write. The
-     * write-API name ban in the sibling test above is unchanged and still lists
-     * every write call by name.
+     * by the thing itself: exactly one `node:fs` import, naming an EXACT SET of
+     * bindings, every one of which is a read. The write-API name ban in the
+     * sibling test above is unchanged and still lists every write call by name.
+     *
+     * **`statSync` joined it on 2026-09-04, and the guard is what forced the
+     * decision to be a decision.** `codexRootExists` first used `existsSync`,
+     * which answers `true` for a regular FILE at the Codex root path — while
+     * `locateCodex` decides `rootExists` with `statSync(root).isDirectory()`.
+     * Two probes, one question, disagreeing silently. Aligning them means the
+     * host needs the same syscall the engine uses. Both are reads and neither
+     * can create, truncate or modify anything.
+     *
+     * The set stays EXACT rather than becoming a deny-list: this file's own
+     * history is a blanket ban that had to be replaced when it stopped being
+     * true, and a containment here would let a future `openSync` through
+     * silently. Widening it is meant to cost a paragraph.
      *
      * The alternative was to answer "does this file exist" by opening the
      * database and reading its degrade code, which would have constructed and
@@ -2105,9 +2234,13 @@ describe('G1: the extension host writes nothing', () => {
       .split(',')
       .map((name) => name.trim())
       .filter((name) => name !== '');
-    expect(bound, 'the only node:fs binding may be the read-only existsSync').toStrictEqual([
-      'existsSync',
-    ]);
+    expect(
+      bound,
+      'every node:fs binding in the host must be a read, and the set is exact',
+    ).toStrictEqual(['existsSync', 'statSync']);
+    // The count beside the set (rule 19): a set comparison written against an
+    // accidentally-empty match list passes vacuously, and this goes red first.
+    expect(bound).toHaveLength(2);
 
     // Everything else stays banned outright: the promises API, the default
     // namespace form, and any `require`.
@@ -3319,3 +3452,926 @@ function sameBytes(a: TreeSnapshotEntry[], b: TreeSnapshotEntry[]): boolean {
   }
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// DoD 3.2 — the Codex engine path
+// ---------------------------------------------------------------------------
+
+/** The committed real Codex corpus's `.codex` root, containing `sessions/`. */
+const CODEX_FIXTURE_ROOT = fileURLToPath(
+  new URL(
+    '../fixtures/codex-0.151.0-alpha.7.2/baseline/home/.codex',
+    import.meta.url,
+  ),
+);
+
+/**
+ * A private copy of the fixture root, so a test may add a real (possibly
+ * empty) `thread-writer-locks/` directory beside it without mutating the
+ * committed fixture (G6).
+ */
+async function stageCodexRoot(withEmptyLockDir: boolean): Promise<string> {
+  const dir = await makeTempDir();
+  const root = join(dir, '.codex');
+  await cp(CODEX_FIXTURE_ROOT, root, { recursive: true });
+  if (withEmptyLockDir) {
+    await mkdir(join(root, 'thread-writer-locks'), { recursive: true });
+  }
+  return root;
+}
+
+/** The fixture's ROOT thread — `cwd` and `sessionId` — read through the production engine. */
+async function codexBaselineRoot(root: string): Promise<{ cwd: string; sessionId: string }> {
+  const outcome = await readCodexEngine({ root });
+  expect(outcome.kind).toBe('ok');
+  if (outcome.kind !== 'ok') throw new Error('unreachable: asserted above');
+  const rootThread = outcome.result.threads.find(
+    (t: CodexThread) => t.threadSource === 'user',
+  );
+  expect(rootThread, 'the Codex fixture must carry a root thread').toBeDefined();
+  return { cwd: (rootThread as CodexThread).cwd, sessionId: (rootThread as CodexThread).sessionId };
+}
+
+describe('DoD 3.2 — the Codex engine is on when its data root exists, and off when it does not', () => {
+  it('is silently OFF with an absent root, and says so exactly ONCE at info level', async () => {
+    const dir = await makeTempDir();
+    const missing = join(dir, 'no-such-.codex');
+    expect(existsSync(missing)).toBe(false);
+    const sink = captureLog();
+
+    const path = new CodexEnginePath({
+      workspaceFolders: ['/anywhere'],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root: missing,
+      log: sink.log,
+    });
+    await path.start();
+    // "Once" is a claim about repetition, so it is driven by repeating.
+    await path.start();
+    await path.start();
+
+    expect(sink.lines).toStrictEqual([{ level: 'info', message: CODEX_ABSENT_LOG }]);
+    const diagnostics = path.diagnostics;
+    expect(diagnostics.enabled).toBe(false);
+    expect(diagnostics.absentLogs).toBe(1);
+    expect(diagnostics.contentReads).toBe(1);
+    expect(diagnostics.livenessPolls).toBe(0);
+    expect(path.livenessEngine).toBeNull();
+    expect(path.sessions()).toStrictEqual([]);
+    path.dispose();
+  });
+
+  it('is ON when the data root exists, with no setting anywhere in the manifest', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd, sessionId } = await codexBaselineRoot(root);
+    const sink = captureLog();
+    const poll = manualPollTrigger();
+    let clock = 1_000;
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      log: sink.log,
+      now: () => clock,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+
+    expect(sink.lines).toStrictEqual([]);
+    expect(path.diagnostics.enabled).toBe(true);
+    expect(path.diagnostics.contentReads).toBe(1);
+    const session = path.sessions().find((s) => s.sessionId === sessionId);
+    expect(session, 'the root session must render').toBeDefined();
+    expect(session?.engine).toBe('codex');
+    expect(session?.workspaceMatch).toBe(true);
+
+    // The liveness engine is CHAINED, not merely constructible: it registers
+    // its own poll AND this class registers a second one for the periodic
+    // content re-read — two triggers, the same interval, because there is no
+    // cheap cursor to gate the content half on (see
+    // `DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS`'s doc comment).
+    expect(poll.registrations).toStrictEqual([
+      DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS,
+      DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS,
+    ]);
+    const beforePolls = path.diagnostics.livenessPolls;
+    expect(beforePolls).toBeGreaterThan(0);
+    clock += 1;
+    poll.fire();
+    expect(path.diagnostics.livenessPolls).toBe(beforePolls + 1);
+    // The content-refresh trigger fired too — its increment is synchronous
+    // (before the read's own `await`), so it is observable immediately.
+    expect(path.diagnostics.contentReads).toBe(2);
+
+    path.dispose();
+    expect(poll.stops()).toBe(2);
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('declares no Codex setting: the switch is the data root, and only the data root', async () => {
+    const manifest = JSON.parse(
+      await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+    ) as { contributes?: { configuration?: { properties?: Record<string, unknown> } } };
+    const keys = Object.keys(manifest.contributes?.configuration?.properties ?? {});
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      expect(key.toLowerCase(), `${key} is a Codex setting; DoD 3.2 says there is none`)
+        .not.toContain('codex');
+    }
+  });
+
+  it('a Codex hook event moves the root session from idle to live', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd, sessionId } = await codexBaselineRoot(root);
+    const clock = 10_000;
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => clock,
+      pollTrigger: () => ({ stop: () => {} }),
+    });
+    await path.start();
+    const before = path.sessions().find((s) => s.sessionId === sessionId);
+    expect(before, 'the root session must render').toBeDefined();
+
+    // DoD 3.1's other half: the seam `AgentDeckDataPath` wires
+    // `listener.subscribeCodex` to.
+    path.ingestHookEvent({
+      receivedAtMs: clock,
+      payload: {
+        session_id: sessionId,
+        hook_event_name: 'PreToolUse',
+        model: 'gpt-5.6-terra',
+        tool_use_id: 'call_x',
+      },
+    });
+    // Re-render against the ingested event, the same thing a periodic poll
+    // would do.
+    path.livenessEngine?.poll();
+
+    const after = path.sessions().find((s) => s.sessionId === sessionId);
+    expect(after?.liveness).toBe('live');
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it("D0.1 'dead' maps to 'ended': an empty lock directory and no hook events", async () => {
+    const root = await stageCodexRoot(true);
+    const { cwd, sessionId } = await codexBaselineRoot(root);
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => 10_000,
+      pollTrigger: () => ({ stop: () => {} }),
+    });
+    await path.start();
+    const session = path.sessions().find((s) => s.sessionId === sessionId);
+    expect(session, 'the root session must render').toBeDefined();
+    expect(session?.liveness).toBe('ended');
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('disposing stops both the content-refresh trigger and the liveness poll trigger', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd } = await codexBaselineRoot(root);
+    let stops = 0;
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => 1_000,
+      pollTrigger: () => ({
+        stop: () => {
+          stops += 1;
+        },
+      }),
+    });
+    await path.start();
+    expect(stops).toBe(0);
+    path.dispose();
+    expect(stops).toBe(2);
+    expect(path.sessions()).toStrictEqual([]);
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it("AgentDeckDataPath mounts the Codex engine with the same crash isolation as OpenCode: it shares no CC or OpenCode object", async () => {
+    const source = await readFile(
+      fileURLToPath(new URL('./extension.ts', import.meta.url)),
+      'utf8',
+    );
+    const construction = /this\.codex = new CodexEnginePath\(\{[\s\S]*?\n {4}\}\);/.exec(source);
+    expect(construction, 'the Codex path construction site must be findable').not.toBeNull();
+    const text = construction?.[0] ?? '';
+    for (const forbidden of [
+      'this.liveness',
+      'this.model',
+      'this.listener',
+      'this.watcher',
+      'this.opencode',
+    ]) {
+      expect(text, `the Codex path was handed ${forbidden}`).not.toContain(forbidden);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §6.1 — the hook socket binds for ANY hook-driven engine (user decision,
+// 2026-09-04)
+// ---------------------------------------------------------------------------
+
+/*
+ * WHAT WAS BROKEN, AND WHY NOTHING WENT RED FOR IT.
+ *
+ * `activate()` sets `ccEnabled` from the Claude Code correlation, so it is
+ * false whenever the open workspace has no matching CC project — AN ORDINARY
+ * STATE for someone running Codex where Claude Code has never run. On that
+ * path `AgentDeckDataPath.start()` returned early ABOVE `listener.start()` and
+ * ABOVE `subscribeCodex`: the loopback socket was never bound, and Codex
+ * liveness never saw a hook event. Outside that, `activate()` itself returned
+ * before constructing anything at all unless CC correlated or an OpenCode
+ * store existed — so for a Codex-only user there was no data path to fix.
+ *
+ * Both gates are closed here, and both are tested, because closing either one
+ * alone leaves the user exactly where they were.
+ *
+ * The rule, as decided: bind when ANY hook-driven engine is observable — a CC
+ * project correlates OR a Codex data root exists. Neither, and the socket is
+ * deliberately not bound, said once at info. A port collision remains an error
+ * and is never a silent re-pick.
+ */
+describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
+  /** POST one hook payload to the listener, exactly as a real hook does. */
+  async function post(port: number, payload: unknown): Promise<number> {
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    return new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/event',
+          method: 'POST',
+          agent: false,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': body.length,
+            connection: 'close',
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode ?? 0));
+        },
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+  }
+
+  /**
+   * The captured Codex hook payloads for the baseline run — the `.raw` bodies,
+   * which are the actual wire form a Codex hook POSTs, not this repository's
+   * capture envelope around them.
+   */
+  async function capturedCodexPayloads(): Promise<Record<string, unknown>[]> {
+    const stream = await readFile(
+      fileURLToPath(
+        new URL(
+          '../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
+    return stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => (JSON.parse(line) as { raw: Record<string, unknown> }).raw);
+  }
+
+  /** A real, empty workspace with no Claude Code project anywhere near it. */
+  async function workspaceWithNoClaudeCode(): Promise<string> {
+    process.env['CLAUDE_PROJECTS_ROOT'] = await makeTempDir();
+    const dir = join(await makeTempDir(), 'codex-only-workspace');
+    await mkdir(dir, { recursive: true });
+    return dir;
+  }
+
+  it('codexRootExists follows $CODEX_HOME, the way the engine resolves it', async () => {
+    const absent = join(await makeTempDir(), 'no-such-.codex');
+    expect(codexRootExists({ [CODEX_HOME_VAR]: absent })).toBe(false);
+
+    const staged = await stageCodexRoot(false);
+    expect(codexRootExists({ [CODEX_HOME_VAR]: staged })).toBe(true);
+  });
+
+  it('codexRootExists asks the ENGINE\'S question: a file at the root path is not a root', async () => {
+    // `locateCodex` decides `rootExists` with `statSync(root).isDirectory()`.
+    // An `existsSync` here would answer `true` for a regular file and start a
+    // deck for a machine the engine then reports as having no Codex — two
+    // probes for one question, disagreeing silently.
+    const file = join(await makeTempDir(), 'codex-is-a-file');
+    await writeFile(file, 'not a directory', 'utf8');
+    expect(existsSync(file), 'the control: it does exist').toBe(true);
+    expect(codexRootExists({ [CODEX_HOME_VAR]: file })).toBe(false);
+
+    // And the engine agrees, which is the property being held rather than the
+    // implementation being restated.
+    const outcome = await readCodexEngine({ root: file });
+    expect(outcome.kind).toBe('rootAbsent');
+  });
+
+  it('activate() starts for a Codex-only workspace, which it used to refuse outright', async () => {
+    process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
+    const lonely = await workspaceWithNoClaudeCode();
+
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(lonely);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+
+    const host = currentHost();
+    expect(host, 'a Codex-only workspace gets a deck').not.toBeNull();
+    const diagnostics = host?.dataPath.diagnostics;
+    // The CC half is still off — the correlation gate's point is preserved,
+    // not deleted.
+    expect(diagnostics?.ccEnabled).toBe(false);
+    expect(diagnostics?.codex.enabled).toBe(true);
+  });
+
+  it('binds the socket with no Claude Code project, and a real Codex hook is attributed', async () => {
+    process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
+    const lonely = await workspaceWithNoClaudeCode();
+
+    const port = await activateOnFreePort((freePort) => {
+      mock.setWorkspaceFolder(lonely);
+      mock.setConfig(CONFIG_SECTION, { port: freePort });
+    });
+
+    const host = currentHost();
+    expect(host).not.toBeNull();
+    const before = host?.dataPath.diagnostics;
+    expect(before?.ccEnabled).toBe(false);
+    // THE DEFECT, in one line: this was `false`.
+    expect(before?.hookBindAttempted).toBe(true);
+    expect(before?.listening).toBe(true);
+    expect(before?.noHookEngineLogs).toBe(0);
+
+    const payloads = await capturedCodexPayloads();
+    expect(payloads.length, 'the captured stream must not be empty').toBeGreaterThan(0);
+    for (const payload of payloads) expect(await post(port, payload)).toBe(200);
+
+    // Received AND routed: `acceptedCodex` is the discriminator's own count.
+    expect(host?.dataPath.listener.counters.acceptedCodex).toBe(payloads.length);
+
+    /*
+     * ATTRIBUTED, and this assertion had to be rewritten to say so.
+     *
+     * The first version asserted `hookStatesWithoutThread === 0`, which reads
+     * like attribution and is not: `src/codex/liveness.ts` derives it by
+     * walking the STATE MAP, so it is 0 when the map is EMPTY. `eventsSeen` is
+     * incremented above the `session_id` usability check, so it moves for an
+     * event that is then discarded. A verifier proved the pair vacuous by
+     * making every event unusable — both assertions stayed green.
+     *
+     * `lastHookEventMs` is the per-thread evidence and cannot be faked by an
+     * empty map: it is non-null only when a hook state exists FOR THAT THREAD.
+     * The staged root is the same run the stream was captured beside, so every
+     * thread the payloads name must carry one.
+     */
+    const report = host?.dataPath.codex.livenessEngine?.poll();
+    expect(report, 'the Codex liveness engine must exist for a present root').toBeDefined();
+    expect(report?.counters.eventsSeen).toBe(payloads.length);
+    // Every payload was USABLE, so each one created or updated a state. Zero
+    // here is what makes `eventsSeen` mean what it looks like it means.
+    expect(report?.counters.eventsUnusable).toBe(0);
+
+    // Derived from the payloads, never written down: the thread each one names
+    // is `agent_id` when present and `session_id` otherwise — the recorded
+    // main-thread rule, where ABSENCE of the key is the signal.
+    const named = new Set(
+      payloads.map((p) => (p['agent_id'] as string | undefined) ?? (p['session_id'] as string)),
+    );
+    expect(named.size).toBeGreaterThan(0);
+    for (const threadId of named) {
+      const thread = report?.threads.find((t) => t.threadId === threadId);
+      expect(thread, `no thread ${threadId} in the tree the engine read`).toBeDefined();
+      expect(
+        thread?.lastHookEventMs,
+        `thread ${threadId} was named by a payload and carries no hook event`,
+      ).not.toBeNull();
+    }
+  });
+
+  it('does not report a Codex-only window as "hooks silent"', async () => {
+    // The panel-wide banner is the CLAUDE CODE tap's health, and with the CC
+    // half off its `eventsReceived === 0` is a statement about an engine that
+    // is not running. This is the D2 defect one level up from where D2 was
+    // fixed, and it only became reachable when the socket started binding
+    // here: before, this window never bound and never emitted about hooks.
+    process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
+    const lonely = await workspaceWithNoClaudeCode();
+
+    const emissions: DataPathEmission[] = [];
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: lonely,
+          projectsRoot: process.env['CLAUDE_PROJECTS_ROOT'] as string,
+          ccEnabled: false,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      ),
+    );
+
+    expect(path.diagnostics.listening).toBe(true);
+    expect(emissions.length).toBeGreaterThan(0);
+    for (const emission of emissions) {
+      expect(emission.degraded, 'a bound socket is not a degraded tap').toStrictEqual({
+        degraded: false,
+      });
+    }
+  });
+
+  it('a collision on that socket is still an error, and still never a silent re-pick', async () => {
+    process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
+    const lonely = await workspaceWithNoClaudeCode();
+    const { port, release } = await heldPort();
+
+    try {
+      const emissions: DataPathEmission[] = [];
+      const path = trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: lonely,
+          projectsRoot: process.env['CLAUDE_PROJECTS_ROOT'] as string,
+          ccEnabled: false,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+          onError: () => {},
+        }),
+      );
+      await path.start();
+
+      expect(path.diagnostics.hookBindAttempted).toBe(true);
+      expect(path.diagnostics.listening).toBe(false);
+      expect(path.diagnostics.bindError?.code).toBe('EADDRINUSE');
+      // The port it was told to use, not one it chose for itself.
+      expect(path.diagnostics.bindError?.port).toBe(port);
+      expect(path.settings.port).toBe(port);
+      // And the user is told: Codex liveness is blind without this socket, so
+      // `listenerDown` here is true and actionable rather than the CC tap's
+      // meaningless silence.
+      expect(emissions.at(-1)?.degraded).toStrictEqual({
+        degraded: true,
+        reason: 'listenerDown',
+      });
+    } finally {
+      await release();
+    }
+  });
+
+  it('binds NOTHING when neither engine is hook-driven, and says so exactly once at info', async () => {
+    const lonely = await workspaceWithNoClaudeCode();
+    const absent = join(await makeTempDir(), 'no-such-.codex');
+    expect(existsSync(absent)).toBe(false);
+    const sink = captureLog();
+
+    const emissions: DataPathEmission[] = [];
+    const path = trackDataPath(
+      new AgentDeckDataPath({
+        workspacePath: lonely,
+        projectsRoot: process.env['CLAUDE_PROJECTS_ROOT'] as string,
+        ccEnabled: false,
+        codex: { root: absent },
+        settings: settings({ port: DEFAULT_PORT }),
+        tickMs: 0,
+        log: sink.log,
+        onEmission: (payload) => {
+          emissions.push(payload);
+        },
+      }),
+    );
+    /*
+     * Repeated, and the comment its siblings carry would be an over-read here.
+     * `start()` opens with `if (this.#disposed || this.#started) return;`, so
+     * calls 2 and 3 never reach the log site: what this repetition proves is
+     * the `#started` guard, NOT that the log site itself is once-only. The
+     * once-ness rests on there being exactly one call site, which
+     * `noHookEngineLogs === 1` records and a second site would break.
+     */
+    await path.start();
+    await path.start();
+    await path.start();
+
+    expect(path.diagnostics.hookBindAttempted).toBe(false);
+    expect(path.diagnostics.listening).toBe(false);
+    expect(path.diagnostics.noHookEngineLogs).toBe(1);
+    // All three, in the order `start()` reaches them, and pinned as a whole
+    // rather than by `toContain`: an extra line here would be a second engine
+    // reporting an absence nobody asked about, which is worth a red.
+    expect(sink.lines).toStrictEqual([
+      { level: 'info', message: OPENCODE_ABSENT_LOG },
+      { level: 'info', message: CODEX_ABSENT_LOG },
+      { level: 'info', message: NO_HOOK_ENGINE_LOG },
+    ]);
+    // Not degraded: nothing here is hook-driven, so there is nothing to be
+    // degraded ABOUT. Reporting `listenerDown` for a socket nobody wants is
+    // the same mislabelling as reporting a silent CC tap that is switched off.
+    expect(emissions.length).toBeGreaterThan(0);
+    for (const emission of emissions) {
+      expect(emission.degraded).toStrictEqual({ degraded: false });
+    }
+    // The deck still renders. A window with no hook engine is not a dead one.
+    expect(path.diagnostics.emissions).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.0a - `sessionRemoved` carries the engine the session actually had
+// ---------------------------------------------------------------------------
+
+/**
+ * A diagnostics sink that keeps every line.
+ *
+ * The channel creates its sink on the FIRST line, never at construction, so
+ * the factory has to hand back the same object each time or a test reads an
+ * empty transcript from a channel that has been writing happily.
+ */
+function collectingSink(): { lines: string[]; factory: () => DiagnosticsSink } {
+  const lines: string[] = [];
+  const sink: DiagnosticsSink = {
+    appendLine: (line: string) => {
+      lines.push(line);
+    },
+    show: () => {},
+    dispose: () => {},
+  };
+  return { lines, factory: () => sink };
+}
+
+/** Every `.jsonl` under a Codex `sessions/` tree, at any YYYY/MM/DD depth. */
+async function findTranscripts(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...(await findTranscripts(full)));
+    else if (entry.name.endsWith('.jsonl')) found.push(full);
+  }
+  return found;
+}
+
+describe('DoD 5.0a - a removed session is announced under its own engine', () => {
+  /**
+   * WHY THIS DRIVES A WHOLE HOST OVER A REAL CORPUS instead of calling the
+   * bookkeeping directly.
+   *
+   * The defect it pins was live for a phase WITH a green test beside it.
+   * `src/bridge/diagnostics.test.ts` records a `sessionRemoved` sample
+   * carrying `engine: 'opencode'` and asserts the line it formats - and it
+   * passes, because the sample is written by hand. It proves the CHANNEL
+   * honours an engine. Nothing proved the HOST supplies one, and the host was
+   * supplying the literal 'cc' for all three.
+   *
+   * That is the D4 shape exactly: a test that stands in for a wiring which
+   * does not exist, by passing in the value the product never passes. The
+   * only assertion that cannot be satisfied that way is one where the engine
+   * reaches the line the way production sends it - so the session here is a
+   * real Codex thread, read by the real engine, announced by the real host.
+   */
+  it('reads `session removed codex <id>` for a Codex session that goes away', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd, sessionId } = await codexBaselineRoot(root);
+    const sink = collectingSink();
+    const poll = manualPollTrigger();
+
+    const host = await startHostOnFreePort((port) =>
+      trackHost(
+        new AgentDeckHost({
+          workspacePath: cwd,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: () => {},
+          createDiagnosticsSink: sink.factory,
+          codex: { root, pollTrigger: poll.trigger },
+        }),
+      ),
+    );
+    host.dataPath.pump();
+
+    // DISCOVERY FIRST, and asserted rather than assumed: a removal line for a
+    // session that was never announced would be a different bug wearing the
+    // same output, and the assertion below would not tell them apart.
+    const discovered = sink.lines.filter((l) => l.includes(`session discovered`));
+    expect(
+      discovered.some((l) => l.endsWith(`session discovered codex ${sessionId}`)),
+      `the Codex session was never announced; lines: ${discovered.join(' | ')}`,
+    ).toBe(true);
+
+    // Now take the session away at the source - the ONE transcript the engine
+    // reads - and let the engine re-read. This is removal as a user causes it,
+    // not a hand-built emission with a session omitted.
+    //
+    // THE WHOLE `sessions/` TREE IS NOT DELETED, and the first draft of this
+    // test did exactly that and saw no removal line at all. Removing the tree
+    // makes the root read DEGRADED, and a degraded read deliberately keeps the
+    // last good content rather than blanking the deck (G3: refuse, do not
+    // guess). That is correct product behaviour and it is not this item's
+    // subject - so the fixture is emptied of transcripts while remaining a
+    // readable root, which is the state a real deleted session leaves behind.
+    // The path under `sessions/` is YYYY/MM/DD of the capture, so it is walked
+    // rather than written down: a hard-coded date is a test that breaks on the
+    // next harvest for a reason that has nothing to do with what it measures.
+    // (The first draft wrote 2026/09/03; the corpus is 2026/09/02.)
+    const transcripts = await findTranscripts(join(root, 'sessions'));
+    expect(transcripts.length, 'the fixture must have a transcript to remove').toBeGreaterThan(0);
+    for (const file of transcripts) await rm(file, { force: true });
+
+    // The content re-read is asynchronous. Poll the engine's own counter
+    // rather than sleeping: a fixed wait is a test that passes or fails by CPU
+    // load, which this repository has already been bitten by.
+    // TWO THINGS HAVE TO HAPPEN, and only waiting for the second one works.
+    // The content re-read is asynchronous, and the EMISSION that follows it is
+    // scheduled rather than synchronous - `#recordEmission` is driven off the
+    // emission, which is the point (a session the deck shows and one the
+    // diagnostics announce are then the same set). An earlier draft waited on
+    // `contentReads` and asserted straight after: the engine had correctly
+    // dropped the session, `codex.sessions()` was already 0, and no line had
+    // been written because no emission had been made yet.
+    //
+    // Polled rather than slept on: a fixed wait is a test that passes or fails
+    // by CPU load, which this repository has been bitten by before.
+    const reads = host.dataPath.codex.diagnostics.contentReads;
+    const emissions = host.dataPath.diagnostics.emissions;
+    poll.fire();
+    // The loop waits for THE OUTCOME, not for a counter, and the difference
+    // bit once already: `#contentReads` increments at the TOP of the read, so
+    // it moves while the read is still in flight and an emission from that
+    // same tick still carries the old content. Waiting on a removal line is
+    // both simpler and not a race - and it is not a way of making the test
+    // pass, because a product that never writes the line simply exhausts the
+    // loop and fails the assertion below, which is where the evidence is.
+    for (let i = 0; i < 400; i += 1) {
+      if (sink.lines.some((l) => l.includes('session removed'))) break;
+      host.dataPath.pump();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(
+      host.dataPath.codex.diagnostics.contentReads,
+      'the Codex engine never re-read after the transcript was removed',
+    ).toBeGreaterThan(reads);
+    expect(
+      host.dataPath.codex.sessions(),
+      'the Codex engine still holds the session whose transcript is gone',
+    ).toStrictEqual([]);
+    expect(
+      host.dataPath.diagnostics.emissions,
+      'no emission followed the removal, so nothing could have been announced',
+    ).toBeGreaterThan(emissions);
+
+    const removed = sink.lines.filter((l) => l.includes(`session removed`));
+    expect(
+      removed,
+      'exactly one removal line, for the session that went away',
+    ).toHaveLength(1);
+    // THE WHOLE POINT: `codex`, not `cc`. Before DoD 5.0a this read
+    // `session removed cc <id>` because `#announced` was a Set of ids and the
+    // engine had been discarded by the time the removal was detected.
+    expect(removed[0]).toMatch(/ session removed codex /);
+    expect(removed[0]).toContain(sessionId);
+    expect(removed[0], `a Codex removal must not be labelled cc`).not.toMatch(
+      / session removed cc /,
+    );
+  });
+
+  /**
+   * The composite key, from the other side.
+   *
+   * `#announced` is keyed by `(engine, id)` rather than by id, so two engines
+   * minting the same id cannot suppress one another. This asserts the key is
+   * a pair by asserting the FUNCTION of a pair, which is the only part of it
+   * that is observable from outside.
+   */
+  it('announces the same id under two engines as two separate sessions', async () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('./extension.ts', import.meta.url)),
+      'utf8',
+    );
+    // The removal path reads the engine off what was ANNOUNCED. A reader who
+    // "simplifies" this back to a Set of ids reintroduces the defect, and the
+    // test above would still pass for a single-engine deck - so the shape is
+    // pinned here too.
+    expect(source).toContain(
+      'readonly #announced = new Map<string, { id: string; engine: DiagnosticsEngine }>();',
+    );
+    expect(source, 'the removal line must not hard-code an engine').not.toContain(
+      "kind: 'sessionRemoved', sessionId: id, engine: 'cc'",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.0b - each hook tap reports its OWN health
+// ---------------------------------------------------------------------------
+
+describe('DoD 5.0b - the Codex tap has a health of its own', () => {
+  /**
+   * WHY BOTH DIRECTIONS, and why the item insisted on it.
+   *
+   * A one-directional test - "a silent Codex tap degrades Codex cells" - is
+   * satisfied by a banner that is ALWAYS ON. The second direction is what
+   * separates a working channel from a stuck one, and the third (a silent
+   * CLAUDE CODE tap must not degrade Codex) is the D2 defect itself: a flag
+   * about one engine rendered against another.
+   *
+   * These read the emission rather than the rendered panel because the
+   * emission is where the two values are SOURCED, and sourcing is what D2 got
+   * wrong. The rendering half is pinned in `webview/deck.test.ts`.
+   */
+  /** POST one hook payload to the listener, exactly as a real hook does. */
+  async function postHook(port: number, payload: unknown): Promise<number> {
+    const body = Buffer.from(JSON.stringify(payload), `utf8`);
+    return new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: `127.0.0.1`,
+          port,
+          path: `/event`,
+          method: `POST`,
+          agent: false,
+          headers: {
+            'content-type': 'application/json',
+            'content-length': body.length,
+            connection: `close`,
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on(`end`, () => resolve(res.statusCode ?? 0));
+        },
+      );
+      req.on(`error`, reject);
+      req.end(body);
+    });
+  }
+
+  /** The real captured Codex hook payloads - the `.raw` wire bodies. */
+  async function codexPayloads(): Promise<Record<string, unknown>[]> {
+    const stream = await readFile(
+      fileURLToPath(
+        new URL(
+          '../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
+    return stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => (JSON.parse(line) as { raw: Record<string, unknown> }).raw);
+  }
+
+  /**
+   * A host with BOTH hook-driven engines live: a real Claude Code workspace
+   * (so `ccEnabled` is true and the CC liveness engine is running) and a
+   * staged Codex root beside it.
+   *
+   * Both taps therefore start silent, which is the only starting point from
+   * which "one of them went quiet" is a statement about one of them.
+   */
+  async function bothEnginesHost(): Promise<{
+    host: AgentDeckHost;
+    port: number;
+    seen: DataPathEmission[];
+  }> {
+    const workspacePath = await capturedWorkspacePath();
+    const root = await stageCodexRoot(false);
+    let chosen = 0;
+    const seen: DataPathEmission[] = [];
+    const host = await startHostOnFreePort((port) => {
+      chosen = port;
+      seen.length = 0;
+      return trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: (payload: DataPathEmission) => {
+            seen.push(payload);
+          },
+          codex: { root },
+        }),
+      );
+    });
+    return { host, port: chosen, seen };
+  }
+
+  /** The two taps, as the emission carries them. */
+  function taps(
+    host: AgentDeckHost,
+    seen: DataPathEmission[],
+  ): {
+    cc: { degraded: boolean; reason?: string };
+    codex: { degraded: boolean; reason?: string };
+  } {
+    host.dataPath.pump();
+    const last = seen.at(-1);
+    if (last === undefined) throw new Error(`the data path produced no emission`);
+    return { cc: last.degraded, codex: last.codexDegraded };
+  }
+
+  it('a silent Codex tap degrades CODEX and leaves Claude Code alone', async () => {
+    const { host, port, seen } = await bothEnginesHost();
+
+    // Claude Code hears something; Codex hears nothing. The CC payloads are
+    // this repository's own captured hook events.
+    const ccStream = await readFile(
+      fileURLToPath(
+        new URL('../fixtures/hook-events/cc-2.1.234-sessionstart.jsonl', import.meta.url),
+      ),
+      'utf8',
+    );
+    const ccLine = ccStream.split(/\r?\n/).filter((l) => l.trim() !== '')[0];
+    expect(ccLine, 'the CC hook corpus must carry a payload').toBeDefined();
+    const ccEvents = JSON.parse(ccLine ?? '{}') as Record<string, unknown>;
+    expect(await postHook(port, ccEvents), 'the listener accepted the CC payload').toBe(200);
+
+    const { cc, codex } = taps(host, seen);
+    expect(codex.degraded, `a Codex tap that has heard nothing is degraded`).toBe(true);
+    expect(codex.reason).toBe('noHookEvents');
+    // THE POINT: the two are independent. A Codex banner must not be the price
+    // of a healthy Claude Code one.
+    expect(cc.degraded, `Claude Code heard an event and is not degraded`).toBe(false);
+  });
+
+  it('a silent Claude Code tap does NOT degrade Codex', async () => {
+    const { host, port, seen } = await bothEnginesHost();
+
+    // The mirror image, and the one that is D2 itself. Codex hears a real
+    // captured payload; Claude Code hears nothing at all.
+    const payloads = await codexPayloads();
+    expect(payloads.length, `the corpus must carry a Codex hook payload`).toBeGreaterThan(0);
+    expect(await postHook(port, payloads[0]), 'the listener accepted the Codex payload').toBe(200);
+
+    const { cc, codex } = taps(host, seen);
+    expect(cc.degraded, `Claude Code has heard nothing and is degraded`).toBe(true);
+    expect(cc.reason).toBe('noHookEvents');
+    // Before 5.0b there was no second value to be right: the panel had one
+    // flag, and it was this one.
+    expect(codex.degraded, `Codex heard its own event and is NOT degraded`).toBe(false);
+    expect(codex.reason).toBeUndefined();
+  });
+
+  it('the Codex tap is quiet about an engine that is not running', async () => {
+    // No Codex root at all. `noHookEvents` would be TRUE and MEANINGLESS - the
+    // tap has heard nothing because there is no Codex on this machine, which
+    // is the exact shape of the mistake `#degradedState` documents for the CC
+    // half when `ccEnabled` is false.
+    const workspacePath = await capturedWorkspacePath();
+    const absentRoot = join(await makeTempDir(), 'no-such-.codex');
+    const seen: DataPathEmission[] = [];
+    const host = await startHostOnFreePort((port) =>
+      trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: (payload: DataPathEmission) => {
+            seen.push(payload);
+          },
+          codex: { root: absentRoot },
+        }),
+      ),
+    );
+
+    const { codex } = taps(host, seen);
+    expect(host.dataPath.codex.diagnostics.enabled, `the control: Codex is off`).toBe(false);
+    expect(codex.degraded, `an engine that is not running is not degraded`).toBe(false);
+  });
+});

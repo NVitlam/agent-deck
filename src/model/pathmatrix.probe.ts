@@ -9,9 +9,10 @@
  * Linux Node, which means the probe must be type-checked, linted and
  * bundleable exactly like the code it exercises.
  *
- * What it does: run every question the Phase 4 path matrix asks — projects
- * root resolution, slug encoding, discovery, the case-variant rules and the
- * negative control — against whatever environment it finds itself in, and
+ * What it does: run every question the path matrix asks — the Claude Code
+ * projects root, slug encoding, discovery, the case-variant rules, the
+ * negative control, and (v0.6.0 Phase 4, DoD 4.1) the CODEX data root's three
+ * sources — against whatever environment it finds itself in, and
  * return the answers as data. The same probe runs in-process on Windows and,
  * bundled by esbuild, under Linux Node inside WSL. One implementation, two
  * platforms, so a difference between the legs is a real difference and not two
@@ -32,6 +33,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { locateCodex, resolveCodexRoot } from '../codex/locate.js';
 import { discoverSessions, resolveProjectsRoot, slugifyWorkspace } from '../parser/tailer.js';
 import { correlateWorkspace } from './correlate.js';
 
@@ -100,6 +102,74 @@ export interface CaseVariantRow {
   slugOnDisk?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Codex root shapes (Phase 4 DoD 4.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * A root resolution with NO filesystem walk.
+ *
+ * The decoy row uses this shape deliberately: its expected answer is the
+ * machine's REAL home, and walking a real `~/.codex` would enumerate a live
+ * session tree (G8's single-subject rule) to prove a fact about a string.
+ */
+export interface CodexRootResolution {
+  root: string;
+  rootSource: string;
+}
+
+/** A root resolution plus the discovery pass over it. */
+export interface CodexRootDiscovery extends CodexRootResolution {
+  rootExists: boolean;
+  /** Rollout basenames found, sorted. Empty is a value, not a failure. */
+  files: string[];
+  /** Full paths, sorted, so the test can say WHICH tree answered. */
+  paths: string[];
+  /** The day segments the walk actually spelled, deduped and sorted. */
+  days: string[];
+  lockDir: string;
+}
+
+/**
+ * The Codex half of the matrix: `resolveCodexRoot`'s three sources and
+ * `locateCodex`'s three "is this a root" answers, measured against trees this
+ * probe planted under its own temp directory.
+ *
+ * Every row is driven by an INJECTED environment, so nothing here depends on
+ * the process's own variables — except {@link decoyAlone}, which is the point
+ * of that row.
+ *
+ * The three trees each hold a DIFFERENTLY NAMED transcript, so "which source
+ * won" is proven by the filename that came back rather than by a non-empty
+ * list. A precedence test whose trees are interchangeable cannot fail.
+ */
+export interface CodexProbeSection {
+  /** The one home variable `os.homedir()` reads on this platform. */
+  homeVariable: string;
+  /** The one it does NOT read — the decoy that produced a false pass here. */
+  decoyVariable: string;
+  /** The rollout filename planted in each of the three trees. */
+  planted: { home: string; codexHome: string; explicit: string };
+  /** The day directory every planted transcript sits under. Never today's. */
+  plantedDay: string;
+  /** Home variable alone: `<home>/.codex`. */
+  fromHome: CodexRootDiscovery;
+  /** `CODEX_HOME` set beside a valid home: the variable wins. */
+  fromCodexHome: CodexRootDiscovery;
+  /** All three set: the explicit root wins and says `explicit`. */
+  explicitBeatsBoth: CodexRootDiscovery;
+  /** `CODEX_HOME` set to whitespace is "unset", so home answers. */
+  blankCodexHomeFallsBackToHome: CodexRootDiscovery;
+  /** The decoy variable set alone: the root must NOT move to it. */
+  decoyAlone: CodexRootResolution & { decoyValue: string };
+  /** A home with no `.codex` at all: absent is a value, not a throw. */
+  absentRoot: CodexRootDiscovery;
+  /** An EMPTY `.codex`: a root that EXISTS and holds no sessions. */
+  emptyRoot: CodexRootDiscovery;
+  /** A regular FILE at the root path: not a root. */
+  fileAtRootPath: CodexRootDiscovery;
+}
+
 export interface ProbeReport {
   platform: string;
   nodeVersion: string;
@@ -118,6 +188,8 @@ export interface ProbeReport {
   ambiguousSlug: CaseVariantRow;
   /** Exact spelling present alongside a case variant: exact must win. */
   exactBeatsCaseVariant: CaseVariantRow;
+  /** Phase 4 DoD 4.1: the Codex data root, on whichever platform this is. */
+  codex: CodexProbeSection;
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +243,129 @@ async function makeProjectTree(root: string, slug: string): Promise<void> {
 /** The workspace path this platform would actually hand the extension host. */
 export function nativeProbeWorkspace(platform: string): string {
   return platform === 'win32' ? 'C:\\Users\\Probe\\ws' : '/mnt/c/Users/Probe/ws';
+}
+
+// ---------------------------------------------------------------------------
+// Codex helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * The directory names the Codex layout uses, spelled out as LITERALS.
+ *
+ * `locate.ts` exports `CODEX_DEFAULT_DIR_NAME` and `CODEX_SESSIONS_DIR_NAME`
+ * and importing them here would be the wrong kind of tidy: a harness that
+ * plants its tree wherever the module under test looks agrees with that module
+ * by construction, so renaming either constant would move the code and the
+ * fixture together and nothing would go red. The harness states the layout
+ * independently; the test compares the two answers.
+ */
+const CODEX_DIR = '.codex';
+const CODEX_SESSIONS_DIR = 'sessions';
+
+/**
+ * A day that is emphatically not today, so a walk that composed `YYYY/MM/DD`
+ * from a clock would find nothing here. Spec C1: the date directories are keyed
+ * on the day a thread STARTED.
+ */
+const CODEX_PLANT_DAY = ['2019', '07', '04'] as const;
+
+/**
+ * Plant `<home>/.codex/sessions/2019/07/04/<rollout>` plus one file the walk
+ * must NOT report.
+ *
+ * The decoy file has the right extension and the wrong prefix, which is the
+ * only thing separating a transcript from anything else Codex may one day put
+ * in a day directory.
+ */
+async function makeCodexTree(home: string, rollout: string): Promise<string> {
+  const root = join(home, CODEX_DIR);
+  const day = join(root, CODEX_SESSIONS_DIR, ...CODEX_PLANT_DAY);
+  await mkdir(day, { recursive: true });
+  await writeFile(join(day, rollout), ONE_LINE, 'utf8');
+  await writeFile(join(day, 'notes.jsonl'), ONE_LINE, 'utf8');
+  return root;
+}
+
+/** One `locateCodex` pass, flattened to comparable values. */
+function codexRow(options: {
+  readonly root?: string;
+  readonly env: NodeJS.ProcessEnv;
+}): CodexRootDiscovery {
+  const discovery = locateCodex(options);
+  const byPath = [...discovery.transcripts].sort((a, b) => (a.path < b.path ? -1 : 1));
+  return {
+    root: discovery.root,
+    rootSource: discovery.rootSource,
+    rootExists: discovery.rootExists,
+    files: byPath.map((t) => t.file),
+    paths: byPath.map((t) => t.path),
+    days: [...new Set(byPath.map((t) => t.day))].sort(),
+    lockDir: discovery.lockDir,
+  };
+}
+
+/**
+ * The whole Codex half, against trees planted under `temp`.
+ *
+ * Called BEFORE the CC negative control fakes `HOME`/`USERPROFILE`, because
+ * {@link CodexProbeSection.decoyAlone} resolves through `os.homedir()` and this
+ * is a real process, where an env write does move it.
+ */
+async function runCodexProbe(temp: string): Promise<CodexProbeSection> {
+  const homeVariable = process.platform === 'win32' ? 'USERPROFILE' : 'HOME';
+  const decoyVariable = process.platform === 'win32' ? 'HOME' : 'USERPROFILE';
+
+  const planted = {
+    home: 'rollout-2019-07-04T00-00-01-11111111-1111-4111-8111-111111111111.jsonl',
+    codexHome: 'rollout-2019-07-04T00-00-02-22222222-2222-4222-8222-222222222222.jsonl',
+    explicit: 'rollout-2019-07-04T00-00-03-33333333-3333-4333-8333-333333333333.jsonl',
+  };
+
+  const homeDir = join(temp, 'codex-home');
+  await makeCodexTree(homeDir, planted.home);
+  const codexHomeRoot = await makeCodexTree(join(temp, 'codex-var'), planted.codexHome);
+  const explicitRoot = await makeCodexTree(join(temp, 'codex-explicit'), planted.explicit);
+
+  const homeEnv: NodeJS.ProcessEnv = { [homeVariable]: homeDir };
+
+  // A home with no `.codex` beneath it at all.
+  const absentHome = join(temp, 'codex-absent-home');
+  await mkdir(absentHome, { recursive: true });
+
+  // A `.codex` that exists and is empty: installed, never run.
+  const emptyHome = join(temp, 'codex-empty-home');
+  await mkdir(join(emptyHome, CODEX_DIR), { recursive: true });
+
+  // A regular FILE where the root would be.
+  const fileHome = join(temp, 'codex-file-home');
+  await mkdir(fileHome, { recursive: true });
+  await writeFile(join(fileHome, CODEX_DIR), ONE_LINE, 'utf8');
+
+  const decoyValue = join(temp, 'codex-decoy-home');
+  await makeCodexTree(decoyValue, planted.home);
+  const decoyResolution = resolveCodexRoot({ env: { [decoyVariable]: decoyValue } });
+
+  return {
+    homeVariable,
+    decoyVariable,
+    planted,
+    plantedDay: CODEX_PLANT_DAY.join('/'),
+    fromHome: codexRow({ env: homeEnv }),
+    fromCodexHome: codexRow({ env: { ...homeEnv, CODEX_HOME: codexHomeRoot } }),
+    explicitBeatsBoth: codexRow({
+      root: explicitRoot,
+      env: { ...homeEnv, CODEX_HOME: codexHomeRoot },
+    }),
+    blankCodexHomeFallsBackToHome: codexRow({ env: { ...homeEnv, CODEX_HOME: '   ' } }),
+    decoyAlone: {
+      root: decoyResolution.root,
+      rootSource: decoyResolution.rootSource,
+      decoyValue,
+    },
+    absentRoot: codexRow({ env: { [homeVariable]: absentHome } }),
+    emptyRoot: codexRow({ env: { [homeVariable]: emptyHome } }),
+    fileAtRootPath: codexRow({ env: { [homeVariable]: fileHome } }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +481,11 @@ export async function runPathProbe(cases: readonly SlugCase[]): Promise<ProbeRep
       };
     }
 
+    // --- the Codex data root (DoD 4.1) ------------------------------------
+    // Ordered before the negative control on purpose: `decoyAlone` resolves
+    // through os.homedir(), and in a real process an env write moves it.
+    const codex = await runCodexProbe(temp);
+
     // --- negative control: BOTH home variables faked ----------------------
     // os.homedir() reads USERPROFILE on Windows and HOME on POSIX. Faking one
     // of the two runs the "we never touch a real ~/.claude" check against the
@@ -324,6 +524,7 @@ export async function runPathProbe(cases: readonly SlugCase[]): Promise<ProbeRep
       caseInsensitiveMatch,
       ambiguousSlug,
       exactBeatsCaseVariant,
+      codex,
     };
   } finally {
     if (savedHome === undefined) delete process.env['HOME'];

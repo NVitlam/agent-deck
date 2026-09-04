@@ -298,6 +298,11 @@ describe('the drawer header (DoD 7.6)', () => {
     expect(one(container, 'inspector-engine').textContent).toBe('oc');
     expect(one(container, 'inspector-engine').dataset['engine']).toBe('opencode');
     expect(one(render({ ...props, engine: 'cc' }), 'inspector-engine').textContent).toBe('cc');
+    // The third engine (v0.6.0 Phase 3). Its own case, not the `'cc'`
+    // fallback a chained ternary used to fold every non-opencode value into.
+    const codex = render({ ...props, engine: 'codex' });
+    expect(one(codex, 'inspector-engine').textContent).toBe('cx');
+    expect(one(codex, 'inspector-engine').dataset['engine']).toBe('codex');
   });
 
   it('carries the FULL session id and the FULL agent id, never a prefix', () => {

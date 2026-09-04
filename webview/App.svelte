@@ -8,8 +8,9 @@
   import Deck from './Deck.svelte';
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
-  import { displayLiveness, formatTokens } from './format.js';
+  import { displayLiveness, formatTokens, formatWindowTokens } from './format.js';
   import { LIVENESS_FILTERS, TESTID } from './canvas-contract.js';
+  import { deckEngine } from './layout.js';
 
   let { store }: { store: Store } = $props();
 
@@ -36,6 +37,47 @@
       view = store.getView();
     });
   });
+
+  /**
+   * D2 (2026-09-03): `view.degraded` is the CLAUDE CODE hook tap's health.
+   *
+   * It is panel-wide — `LivenessEngine.degradedState()` reads
+   * `eventsReceived === 0` on the CC engine and nothing else — so every
+   * SELECTED-SESSION surface below asks this instead of asking `view.degraded`
+   * directly. On a Codex session the old code rendered "liveness inferred —
+   * hooks silent" while that session's hooks were arriving and its own
+   * liveness engine was consuming them; reported by own eyes against the
+   * shipped `release/0.6.0` build.
+   *
+   * Before Phase 3's discriminator the mislabelling was invisible: every Codex
+   * payload was also dispatched into the CC handler, so `eventsReceived` moved
+   * and the tap never looked silent. Routing them to the right engine is what
+   * exposed it.
+   *
+   * `deckEngine` rather than `=== 'cc'` because absence has to read as Claude
+   * Code, and that rule lives in exactly one place.
+   */
+  let selectedIsCc = $derived(
+    view.selected === undefined ? false : deckEngine(view.selected.engine) === 'cc',
+  );
+  /**
+   * DoD 5.0b: the SELECTED session's own tap, not Claude Code's.
+   *
+   * D2's fix made this `view.degraded && selectedIsCc` - correct, and as
+   * far as it could go, because Codex had no health of its own to read.
+   * It does now, so the interior surfaces ask about the engine in front
+   * of the user instead of falling silent for two engines out of three.
+   *
+   * OpenCode still reads `false`, and still by design: no hook tap.
+   */
+  let selectedTap = $derived(
+    view.selected === undefined
+      ? { degraded: false }
+      : deckEngine(view.selected.engine) === 'oc'
+        ? { degraded: false }
+        : view.degradedByEngine[deckEngine(view.selected.engine) === 'cc' ? 'cc' : 'codex'],
+  );
+  let degradedHere = $derived(selectedTap.degraded);
 
   // The whole panel's state in two attributes, so "which of the five states is
   // this?" has exactly one answer rather than one per component. `none` is not
@@ -229,7 +271,7 @@
                the failure mode this screen exists to prevent. -->
           <RefusalScreen sessionId={view.selected.sessionId} />
         {:else}
-          <SessionHeader session={view.selected} degraded={view.degraded} />
+          <SessionHeader session={view.selected} degraded={degradedHere} />
           <TreeView session={view.selected} {store} toggled={view.toggledNodeIds} />
         {/if}
       </main>
@@ -251,6 +293,7 @@
         sessions={view.filteredSessions}
         total={view.sessions.length}
         degraded={view.degraded}
+        degradedByEngine={view.degradedByEngine}
         selectedSessionId={view.selectedSessionId}
         deckView={view.deckView}
         {reducedMotion}
@@ -275,10 +318,14 @@
              thing a refused session may still say is that it refused. -->
         <div class="hud" data-testid={TESTID.hud}>
           <span class="hud-id">{view.selected.sessionId}</span>
-          {#if view.degraded}
+          {#if degradedHere}
             <!-- C7.3: liveness is being INFERRED from the JSONL tap because the
                  hook tap is silent. The chip says so rather than showing the
-                 same confident green a hook event would have earned (G2). -->
+                 same confident green a hook event would have earned (G2).
+
+                 `degradedHere`, not `view.degraded`: the flag is the Claude
+                 Code tap's, and this chip names the SELECTED session. See the
+                 derivation's comment. -->
             <span class="hud-chip" data-testid={TESTID.hudDegradedChip}>
               liveness inferred — hooks silent
             </span>
@@ -298,6 +345,14 @@
             <span class="hud-totals" data-testid="hud-totals">
               {formatTokens(view.selected.contextNow?.prompt)} in ctx ·
               {formatTokens(view.selected.burn?.prompt)} burn ·
+              <!-- Same row as context and burn, per D0.2 (spec C8, v0.6.0
+                   Phase 3 Codex widening): a third figure beside them, never
+                   a gauge and never a percentage. CC and OpenCode sessions
+                   leave `windowTokens` unset, so the em-dash IS the correct
+                   render for them - `formatWindowTokens` carries the same
+                   absence rule `formatTokens` already states, restated under
+                   its own name. -->
+              {formatWindowTokens(view.selected.windowTokens)} window ·
               <!-- Cost is an em-dash, never 0. The host sends 0 meaning NOT
                    COMPUTED, and 0 rendered as a number reads as "free", which
                    is a fabricated figure - the same class of defect as a
@@ -322,7 +377,7 @@
         <SessionCanvas
           session={view.selected}
           refused={view.refused}
-          degraded={view.degraded}
+          degraded={degradedHere}
           selectedNodeId={view.selectedNodeId}
           canvasView={view.canvasView}
           {reducedMotion}

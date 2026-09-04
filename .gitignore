@@ -28,9 +28,16 @@ spike/hook-events-r3.jsonl
 media/*
 !media/icon.png
 !media/Session_Deck.png
-!media/hero_16_agent_session.png
+!media/hero_26_agent_session.png
 !media/Internal_Session_Tool_popup.png
 !media/Internal_Session_Tool_popup2.png
+# The hero GIF, added for 0.6.0 (DoD 5.8). It is a SIXTH tracked image and
+# not one of the four: 4,658,677 bytes, referenced by README.md, and denied
+# in `.vscodeignore` so it does not ship inside the VSIX - the Marketplace
+# fetches README images from the default branch of the public repository, so
+# the listing renders it from GitHub rather than from the package. Different
+# doors, and this one has to admit it.
+!media/agent-deck-hero.gif
 
 # The whole .claude/ directory: agent definitions, skills, working notes and
 # settings.local.json. Local tooling, not product. Untracked before the public

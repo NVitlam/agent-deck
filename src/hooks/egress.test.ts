@@ -56,6 +56,8 @@ import { fileURLToPath } from 'node:url';
 import { buildSync } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { slugFromWorktree } from '../opencode/slug.js';
+
 import { HOOK_LISTENER_HOST } from './listener.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -345,6 +347,18 @@ interface HandleRecord {
   port?: number;
   remote?: string;
   listening?: boolean;
+  /**
+   * This handle is the HARNESS's own POST client, not the extension's.
+   *
+   * Tagged on the socket object in the child before it connects, so the census
+   * can name it rather than quietly filter it. It is needed because the
+   * client survives in `process._getActiveHandles()` after the response
+   * completes — with `_handle` already released, so it reports as
+   * `Socket/none` — and the phases it survives into vary run to run. The
+   * previous census filtered on `handle === 'TCP'` and therefore never saw it
+   * at all, which is why the question never came up.
+   */
+  harness?: boolean;
 }
 
 interface OutboundRecord {
@@ -366,6 +380,23 @@ interface CensusReport {
   outboundFinal: OutboundRecord[];
   dnsFinal: OutboundRecord[];
   phases: Record<string, HandleRecord[]>;
+  /**
+   * Every line the diagnostics channel wrote, in order.
+   *
+   * The per-engine evidence, and the reason the `vscode` stub grew a
+   * `createOutputChannel`. `DiagnosticsChannel` creates its sink lazily inside
+   * a `try` that swallows a throwing factory (G2), so the stub's previous
+   * SILENCE was indistinguishable from a host with nothing to say: a census
+   * child whose OpenCode and Codex engines never mounted at all produced
+   * exactly the same evidence as one where all three ran.
+   */
+  diagnosticsLines: string[];
+  /**
+   * The port of the DECOY listener, when the harness asked the child to open a
+   * second socket. `null` on every scenario that did not. See the vacuity
+   * control at the end of part (B).
+   */
+  decoyPort: number | null;
 }
 
 /**
@@ -472,6 +503,11 @@ function describeHandle(h) {
   } catch (_) {}
   try { if (h && typeof h.remoteAddress === 'string') rec.remote = h.remoteAddress; } catch (_) {}
   try { if (h && typeof h.listening === 'boolean') rec.listening = h.listening; } catch (_) {}
+  // The harness's own client, tagged on the object itself before it connects.
+  // Reported, never omitted: a handle this program dropped from its own
+  // census would be a skip nobody could see, and the census would then be
+  // asserting over a list it had edited.
+  try { if (h && h.__censusHarness === true) rec.harness = true; } catch (_) {}
   return rec;
 }
 
@@ -495,7 +531,25 @@ const report = {
   outboundFinal: [],
   dnsFinal: [],
   phases: {},
+  diagnosticsLines: [],
+  decoyPort: null,
 };
+
+// The engines that have announced a session on the diagnostics channel.
+//
+// One line per session the DECK ACTUALLY SHOWS - the host writes it from the
+// emission rather than from any engine's internals - so an engine appearing
+// here read a real corpus, matched a real workspace folder and reached the
+// renderer's input. That is what makes "three engines" a measurement instead
+// of three environment variables.
+function enginesAnnounced(lines) {
+  const seen = new Set();
+  for (const line of lines) {
+    const m = / session discovered (\S+) /.exec(line);
+    if (m) seen.add(m[1]);
+  }
+  return seen;
+}
 
 function emit() {
   report.requiredIds = requiredIds;
@@ -520,6 +574,12 @@ function postEvent(port) {
   return new Promise((resolve) => {
     const body = JSON.stringify({ session_id: 'census', hook_event_name: 'Stop' });
     const sock = new net.Socket();
+    // See HandleRecord.harness: this socket outlives the response inside
+    // process._getActiveHandles(), so it is labelled at the source rather
+    // than guessed at from the far side. (No backtick in this comment on
+    // purpose - the whole program is a String.raw template, and a backtick
+    // here ends it mid-file with a diagnostic that points nowhere near.)
+    sock.__censusHarness = true;
     let text = '';
     sock.setEncoding('utf8');
     sock.on('data', (c) => { text += c; });
@@ -545,18 +605,68 @@ async function main() {
   report.outboundAtLoad = outbound.slice();
 
   const vscode = require('vscode');
-  vscode.__setWorkspace(process.env.CENSUS_WORKSPACE);
+  vscode.__setWorkspace(JSON.parse(process.env.CENSUS_WORKSPACES));
   vscode.__setConfig({ port: Number(process.env.CENSUS_PORT) });
 
   await mod.activate(vscode.__context());
   report.activated = true;
+
+  // THE DECOY, and it is the harness deliberately breaking its own rule.
+  //
+  // Everywhere else this program is careful not to appear in its own census.
+  // Here it opens a SECOND loopback listener on purpose, so that one scenario
+  // can prove the census reports two sockets when two sockets exist. Without
+  // it, "exactly one listener" rests on the assumption that the enumeration
+  // would have shown a second one - which is the assumption, not the evidence.
+  // Opened AFTER activation and BEFORE the activated census, because that is
+  // the phase the exact-set assertion is made against.
+  let decoy = null;
+  if (process.env.CENSUS_DECOY === '1') {
+    decoy = net.createServer();
+    await new Promise((resolve, reject) => {
+      decoy.once('error', reject);
+      decoy.listen(0, '127.0.0.1', resolve);
+    });
+    report.decoyPort = decoy.address().port;
+  }
+
   report.phases.activated = census();
   // The load-bearing number: from require through activation, on real
   // fixtures, the extension attempted zero outbound connections.
   report.outboundAtActivate = outbound.slice();
 
+  // Emissions are COALESCED on a timer, so the engines have not necessarily
+  // announced anything by the time activation resolves. Wait for the named
+  // ones - bounded, and a timeout is NOT an error here: the wait falls
+  // through, the lines are reported as they stand, and the assertion that
+  // wanted them fails with the real list rather than with a timeout.
+  const wanted = String(process.env.CENSUS_WAIT_ENGINES || '')
+    .split(',')
+    .filter((name) => name !== '');
+  if (wanted.length > 0) {
+    const deadline = Date.now() + 15000;
+    for (;;) {
+      const seen = enginesAnnounced(vscode.__lines);
+      if (wanted.every((name) => seen.has(name))) break;
+      if (Date.now() > deadline) break;
+      await sleep(25);
+    }
+  }
+  // THE PHASE THE DoD IS ABOUT, and it is taken BEFORE the POST on purpose:
+  // every engine has now read its corpus and put its sessions on the deck,
+  // and nothing has yet connected to the listener, so whatever is open here
+  // is what three live engines cost. Serving is measured separately below,
+  // because an accepted connection is a socket the extension is supposed to
+  // have and folding it into this phase would blur the two claims.
+  report.phases.engines = census();
+  report.diagnosticsLines = vscode.__lines.slice();
+
   report.postStatus = await postEvent(Number(process.env.CENSUS_PORT));
   report.phases.serving = census();
+
+  if (decoy !== null) {
+    await new Promise((resolve) => decoy.close(resolve));
+  }
 
   await mod.deactivate();
   await sleep(150);
@@ -574,8 +684,9 @@ main().then(
 /** A `vscode` stub good enough for `activate()` and nothing more. */
 const VSCODE_STUB = String.raw`
 'use strict';
-let workspacePath = null;
+let workspaceList = [];
 let config = {};
+const lines = [];
 const noop = { dispose() {} };
 const api = {
   Uri: {
@@ -586,30 +697,101 @@ const api = {
   commands: { registerCommand: () => noop },
   window: {
     createWebviewPanel: () => { throw new Error('the census never opens a panel'); },
+    // A LINE COLLECTOR, and not decoration. DiagnosticsChannel creates its
+    // sink lazily inside a try/catch (G2: a channel that cannot be created
+    // must not take the data path down), so a stub without this method makes
+    // every diagnostic vanish silently - and a census whose OpenCode and Codex
+    // engines never mounted would look exactly like one where all three ran.
+    // The channel is never revealed, so nothing here calls show() for real.
+    createOutputChannel: () => ({
+      appendLine: (line) => { lines.push(String(line)); },
+      show() {},
+      dispose() {},
+    }),
     showInformationMessage: () => undefined,
     showErrorMessage: (m) => { api.__errors.push(String(m)); },
   },
   workspace: {
+    // MULTI-ROOT, because the three engines answer to different folders: the
+    // Claude Code half reads the FIRST folder only (firstWorkspacePath) while
+    // the OpenCode and Codex halves are handed every folder
+    // (workspacePaths()). A single-folder stub could therefore mount at most
+    // two of the three engines, whatever the environment said.
     get workspaceFolders() {
-      return workspacePath === null ? undefined : [{ uri: api.Uri.file(workspacePath), name: 'w', index: 0 }];
+      return workspaceList.length === 0
+        ? undefined
+        : workspaceList.map((p, index) => ({ uri: api.Uri.file(p), name: 'w' + index, index }));
     },
     getConfiguration: () => ({ get: (key) => config[key] }),
     onDidChangeConfiguration: () => noop,
   },
   __errors: [],
-  __setWorkspace: (p) => { workspacePath = p; },
+  __lines: lines,
+  __setWorkspace: (paths) => { workspaceList = paths; },
   __setConfig: (c) => { config = c; },
   __context: () => ({ subscriptions: [], extensionUri: api.Uri.file('/census/ext') }),
 };
 module.exports = api;
 `;
 
-describe('G5 runtime socket census: only the loopback listener opens', () => {
-  let report: CensusReport;
-  let port = 0;
-  let stderr = '';
+// ---------------------------------------------------------------------------
+// (B.1) the census harness: staged once, spawned per scenario
+// ---------------------------------------------------------------------------
 
-  beforeAll(async () => {
+/**
+ * One census run's environment.
+ *
+ * A record rather than four positional arguments because DoD 4.3 needs the
+ * census run in several ENVIRONMENTS, not just once: three engines live, Codex
+ * alone, nothing observable at all, and one deliberately-broken run that opens
+ * a second socket. Each of those is a different answer to "should anything be
+ * listening", and a census that could only be run one way could not tell the
+ * difference between "no extra socket opened" and "nothing opened at all".
+ */
+interface CensusScenario {
+  /** Every folder the `vscode` stub reports. The FIRST is the Claude Code one. */
+  readonly workspaces: readonly string[];
+  /** `CLAUDE_PROJECTS_ROOT`. An empty directory means no CC project correlates. */
+  readonly claudeProjectsRoot: string;
+  /** `AGENT_DECK_OPENCODE_ROOT`. A directory with no `opencode.db` means off. */
+  readonly opencodeRoot: string;
+  /** `CODEX_HOME`. A path that does not exist means the Codex engine is off. */
+  readonly codexHome: string;
+  /** Engine tags to wait for on the diagnostics channel before the last census. */
+  readonly waitForEngines?: readonly string[];
+  /** Open a SECOND loopback listener in the child. The vacuity control only. */
+  readonly decoy?: boolean;
+  /**
+   * Whether a listening socket is the expected outcome.
+   *
+   * Drives the bind RETRY and nothing else: a scenario that expects no bind
+   * must not retry, or a correct "nothing is listening" would be re-rolled
+   * five times and then asserted anyway.
+   */
+  readonly expectBind: boolean;
+}
+
+interface CensusRun {
+  readonly report: CensusReport;
+  /** The port the child was configured with. */
+  readonly port: number;
+  readonly stderr: string;
+  readonly attempts: number;
+}
+
+/**
+ * The staged census directory: the freshly built bundle, the `vscode` stub and
+ * the census program, memoised for the whole file.
+ *
+ * Memoised because it is the expensive half (an esbuild subprocess) and it is
+ * identical for every scenario — what differs between runs is the ENVIRONMENT,
+ * which is passed at spawn time. Re-staging per scenario would quadruple the
+ * build cost to produce four byte-identical directories.
+ */
+let stagePromise: Promise<string> | null = null;
+
+async function stagedCensusDir(): Promise<string> {
+  stagePromise ??= (async (): Promise<string> => {
     const bundleText = buildHostBundle();
     const stage = await makeTempDir();
     const staged = join(stage, 'dist', 'extension.cjs');
@@ -623,101 +805,344 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
     await writeFile(join(stub, 'package.json'), '{"name":"vscode","main":"index.js"}\n');
     await writeFile(join(stub, 'index.js'), VSCODE_STUB);
     await writeFile(join(stage, 'census.cjs'), CENSUS_PROGRAM);
+    return stage;
+  })();
+  return stagePromise;
+}
 
-    // G6: "Tests never read live `~/.claude` or the live OpenCode DB."
-    //
-    // The census spawns the REAL bundled `activate()` and inherits
-    // `process.env`. The CC half has always been pinned by
-    // `CLAUDE_PROJECTS_ROOT` below; until DoD 5.2 there was no OpenCode half to
-    // pin, because the engine was not reachable from the host. Now it is, so an
-    // unpinned run would resolve `%USERPROFILE%/.local/share/opencode` and open
-    // the developer's own database — which on this machine is ~24 MB and in WAL
-    // mode, so a read-only open would also touch its `-shm` sidecar.
-    //
-    // An EMPTY directory rather than a fixture corpus, deliberately: this
-    // describe measures SOCKETS, and the engine finding no data directory is
-    // both the quietest path through it and the one that adds no I/O to a
-    // census that is already timing-sensitive. DoD 5.2's "absent directory →
-    // engine silently off" is what makes that a supported state rather than a
-    // degraded one.
-    const emptyOpencodeRoot = join(stage, 'no-opencode');
-    await mkdir(emptyOpencodeRoot, { recursive: true });
+/** An empty directory inside the stage. The shape of "this engine has nothing". */
+async function stagedEmptyDir(name: string): Promise<string> {
+  const dir = join(await stagedCensusDir(), name);
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
 
-    // A known port, probed free immediately before the spawn. The extension
-    // refuses to bind port 0 by design, and the live hook tap in this repo may
-    // well hold 47821 right now, so the census cannot use either.
-    //
-    // The retry, argued rather than assumed. Everywhere else in this package a
-    // port race was CLOSED, not narrowed — the listener binds port 0 itself and
-    // no bare number is ever handed around. That is unavailable here: the child
-    // runs the shipped `activate()`, which takes its port from configuration
-    // and refuses 0, and a bound socket cannot be handed to another process
-    // portably on Windows. What is left is to shrink the window (a band the OS
-    // never assigns, probed free microseconds earlier) and to retry on a
-    // DIFFERENT port when the child reports no listening socket. The retry is
-    // bounded and it cannot hide a product defect: a bind that fails on five
-    // separately-probed ports is not a race, and the assertions below then run
-    // against the last report and fail with it.
-    const MAX_BIND_ATTEMPTS = 5;
-    let attempts = 0;
-    let parsed: CensusReport | undefined;
-    let lastStdout = '';
-    for (;;) {
-      attempts += 1;
-      port = await reserveCensusPort();
+/** A path inside the stage that is deliberately never created. */
+async function stagedAbsentPath(name: string): Promise<string> {
+  const path = join(await stagedCensusDir(), name);
+  expect(existsSync(path), `${path} must not exist`).toBe(false);
+  return path;
+}
 
-      const run = spawnSync(process.execPath, [join(stage, 'census.cjs')], {
-        encoding: 'utf8',
-        timeout: 60_000,
-        env: {
-          ...process.env,
-          CLAUDE_PROJECTS_ROOT: CAPTURED_ROOT,
-          // The OpenCode half of the same rule. See the staging comment above.
-          AGENT_DECK_OPENCODE_ROOT: emptyOpencodeRoot,
-          CENSUS_WORKSPACE: await capturedWorkspacePath(),
-          CENSUS_PORT: String(port),
-        },
-      });
-      stderr = run.stderr ?? '';
-      lastStdout = run.stdout ?? '';
-      const line = lastStdout
-        .split(/\r?\n/)
-        .find((l) => l.startsWith('__CENSUS__'));
-      if (line !== undefined) {
-        parsed = JSON.parse(line.slice('__CENSUS__'.length)) as CensusReport;
-        const bound = (parsed.phases['activated'] ?? []).some(
-          (h) => h.handle === 'TCP',
-        );
-        if (bound) break;
-      }
-      if (attempts >= MAX_BIND_ATTEMPTS) break;
+/**
+ * Spawn one census child and return its report.
+ *
+ * The retry, argued rather than assumed. Everywhere else in this package a
+ * port race was CLOSED, not narrowed — the listener binds port 0 itself and no
+ * bare number is ever handed around. That is unavailable here: the child runs
+ * the shipped `activate()`, which takes its port from configuration and
+ * refuses 0, and a bound socket cannot be handed to another process portably
+ * on Windows. What is left is to shrink the window (a band the OS never
+ * assigns, probed free microseconds earlier) and to retry on a DIFFERENT port
+ * when the child reports no listening socket. The retry is bounded and it
+ * cannot hide a product defect: a bind that fails on five separately-probed
+ * ports is not a race, and the assertions then run against the last report and
+ * fail with it.
+ *
+ * `expectBind: false` scenarios never retry — see {@link CensusScenario}.
+ */
+async function runCensus(scenario: CensusScenario): Promise<CensusRun> {
+  const stage = await stagedCensusDir();
+  const MAX_BIND_ATTEMPTS = 5;
+  let attempts = 0;
+  let parsed: CensusReport | undefined;
+  let lastStdout = '';
+  let stderr = '';
+  let port = 0;
+  for (;;) {
+    attempts += 1;
+    port = await reserveCensusPort();
+
+    const run = spawnSync(process.execPath, [join(stage, 'census.cjs')], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        // G6, three times over: the census spawns the REAL bundled
+        // `activate()` and inherits `process.env`, so every engine's root is
+        // pinned at a committed fixture or at a directory this file made.
+        // An unpinned run reads the developer's own `~/.claude`,
+        // `%USERPROFILE%/.local/share/opencode` (~24 MB, WAL mode, so a
+        // read-only open touches its `-shm` sidecar) and `~/.codex`.
+        CLAUDE_PROJECTS_ROOT: scenario.claudeProjectsRoot,
+        AGENT_DECK_OPENCODE_ROOT: scenario.opencodeRoot,
+        CODEX_HOME: scenario.codexHome,
+        CENSUS_WORKSPACES: JSON.stringify(scenario.workspaces),
+        CENSUS_PORT: String(port),
+        CENSUS_WAIT_ENGINES: (scenario.waitForEngines ?? []).join(','),
+        CENSUS_DECOY: scenario.decoy === true ? '1' : '0',
+      },
+    });
+    stderr = run.stderr ?? '';
+    lastStdout = run.stdout ?? '';
+    const line = lastStdout.split(/\r?\n/).find((l) => l.startsWith('__CENSUS__'));
+    if (line !== undefined) {
+      parsed = JSON.parse(line.slice('__CENSUS__'.length)) as CensusReport;
+      if (!scenario.expectBind) break;
+      const bound = (parsed.phases['activated'] ?? []).some((h) => h.handle === 'TCP');
+      if (bound) break;
     }
-    if (attempts > 1) {
-      // Never silent: a retried census is a fact a reviewer should see even on
-      // a green run, because a rising count means the band is getting crowded.
-      process.stderr.write(
-        `[census] the child needed ${String(attempts)} bind attempt(s)\n`,
-      );
-    }
-    expect(
-      parsed,
-      `census child produced no report after ${String(attempts)} attempt(s).\nstdout:\n${lastStdout}\nstderr:\n${stderr}`,
-    ).toBeDefined();
-    report = parsed as CensusReport;
-
-    // The census is evidence, and evidence nobody can print is hard to audit.
-    // `AGENT_DECK_CENSUS_DEBUG=1 npx vitest run src/hooks/egress.test.ts`
-    // dumps the raw report so a reviewer can read the handle list themselves
-    // instead of taking these assertions' word for it.
-    if (process.env['AGENT_DECK_CENSUS_DEBUG'] !== undefined) {
-      process.stdout.write(`\n${JSON.stringify(report, null, 2)}\n`);
-    }
-  }, 120_000);
-
-  /** Handles whose underlying libuv handle is a TCP socket — the only kind that can leave the box. */
-  function tcpHandles(phase: string): HandleRecord[] {
-    return (report.phases[phase] ?? []).filter((h) => h.handle === 'TCP');
+    if (attempts >= MAX_BIND_ATTEMPTS) break;
   }
+  if (attempts > 1) {
+    // Never silent: a retried census is a fact a reviewer should see even on a
+    // green run, because a rising count means the band is getting crowded.
+    process.stderr.write(`[census] the child needed ${String(attempts)} bind attempt(s)\n`);
+  }
+  expect(
+    parsed,
+    `census child produced no report after ${String(attempts)} attempt(s).\nstdout:\n${lastStdout}\nstderr:\n${stderr}`,
+  ).toBeDefined();
+  const report = parsed as CensusReport;
+
+  // The census is evidence, and evidence nobody can print is hard to audit.
+  // `AGENT_DECK_CENSUS_DEBUG=1 npx vitest run src/hooks/egress.test.ts` dumps
+  // every raw report so a reviewer can read the handle lists themselves
+  // instead of taking these assertions' word for it.
+  if (process.env['AGENT_DECK_CENSUS_DEBUG'] !== undefined) {
+    process.stdout.write(`\n${JSON.stringify(report, null, 2)}\n`);
+  }
+  return { report, port, stderr, attempts };
+}
+
+// ---------------------------------------------------------------------------
+// (B.2) reading a report: ONE set of predicates, shared by every scenario
+// ---------------------------------------------------------------------------
+
+/** Every handle at a phase. An unknown phase is an empty list, never a throw. */
+function handlesAt(report: CensusReport, phase: string): HandleRecord[] {
+  return report.phases[phase] ?? [];
+}
+
+/**
+ * Is this handle the child's own stdio?
+ *
+ * A libuv `Pipe` under a `Socket` is this process talking to `spawnSync`
+ * through stdout or stderr. It cannot reach a peer and it cannot become a
+ * socket that can. Whether it is PRESENT is not deterministic — the handle
+ * materialises when the stream is first written, so the same phase carries one
+ * on a run that logged and none on a run that did not — which is why it is
+ * classified rather than counted.
+ */
+function isStdio(handle: HandleRecord): boolean {
+  return handle.ctor === 'Socket' && handle.handle === 'Pipe';
+}
+
+/** The harness's own POST client. See {@link HandleRecord.harness}. */
+function isHarness(handle: HandleRecord): boolean {
+  return handle.harness === true;
+}
+
+/**
+ * Everything at a phase that is neither this child's stdio nor the harness's
+ * own client: the handles the EXTENSION is responsible for.
+ */
+function extensionHandles(report: CensusReport, phase: string): HandleRecord[] {
+  return handlesAt(report, phase).filter((h) => !isStdio(h) && !isHarness(h));
+}
+
+/**
+ * The `ctor/handle` kinds the extension holds at a phase, deduplicated and
+ * sorted.
+ *
+ * Pinned as an EXACT SET by every scenario below, and that is what makes the
+ * narrower socket assertions honest rather than selective: `networkHandles`
+ * keeps only `Server`/`Socket`, so if a handle ever showed up wearing a kind
+ * this list does not name — a `UDP`, a `ChildProcess`, an `Agent` — the kind
+ * set goes red before anything gets filtered out.
+ *
+ * Two classes are excluded, both by an explicit predicate, and both pinned by
+ * their own assertions rather than trusted: stdio ({@link isStdio}) and the
+ * harness's client ({@link isHarness}). Rule 18 — a check that skips an input
+ * says so — so `stdioAndHarness` below is asserted to contain nothing else.
+ *
+ * COUNTS are deliberately not pinned here: the `FSWatcher/FSEvent` count is
+ * the number of directories the Claude Code watcher opened on the committed
+ * corpus, and a fixture-set size hard-coded into a test breaks on the next
+ * harvest and reads as a regression. The counts that DO matter — the sockets —
+ * are pinned exactly, beside their set, by {@link networkDescriptors}.
+ */
+function handleKinds(report: CensusReport, phase: string): string[] {
+  return [...new Set(extensionHandles(report, phase).map((h) => `${h.ctor}/${h.handle}`))].sort();
+}
+
+/**
+ * The extension's handles that could carry a byte to a peer.
+ *
+ * `Server` and `Socket`, after stdio and the harness's client are taken out.
+ * Everything else that survives is reported, INCLUDING a socket whose
+ * `_handle` has already been released (`handle: 'none'`) — the previous
+ * version of this census filtered on `handle === 'TCP'` and therefore could
+ * not see a released one at all, while the test that did the filtering was
+ * named "including the served connection".
+ */
+function networkHandles(report: CensusReport, phase: string): HandleRecord[] {
+  return extensionHandles(report, phase).filter(
+    (h) => h.ctor === 'Server' || h.ctor === 'Socket',
+  );
+}
+
+/** Every handle, at every phase, that the two exclusions above removed. */
+function stdioAndHarness(report: CensusReport): HandleRecord[] {
+  return Object.keys(report.phases).flatMap((phase) =>
+    handlesAt(report, phase).filter((h) => isStdio(h) || isHarness(h)),
+  );
+}
+
+/**
+ * One line per network handle, sorted — the form the exact-set assertions use.
+ *
+ * A listening server is named by the address and port it is BOUND to; a
+ * connection is named by its peer. Sorted rather than left in
+ * `_getActiveHandles` order, because that order is libuv's business and an
+ * assertion that depended on it would be pinning the wrong thing.
+ */
+function networkDescriptors(report: CensusReport, phase: string): string[] {
+  return networkHandles(report, phase)
+    .map((h) => {
+      if (h.listening === true) {
+        return `listener ${h.address ?? '?'}:${String(h.port ?? 0)}`;
+      }
+      return `connection remote=${h.remote ?? h.address ?? '?'}`;
+    })
+    .sort();
+}
+
+/** The engine tags that announced a session on the diagnostics channel. */
+function enginesAnnouncedIn(lines: readonly string[]): string[] {
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const match = / session discovered (\S+) /.exec(line);
+    if (match?.[1] !== undefined) seen.add(match[1]);
+  }
+  return [...seen].sort();
+}
+
+// ---------------------------------------------------------------------------
+// (B.3) fixture derivations — every root and every workspace read off disk
+// ---------------------------------------------------------------------------
+
+/**
+ * The workspace a committed Codex run was recorded in (`session_meta.cwd`).
+ *
+ * Read from the transcript, never written down: it is what
+ * `codexWorkspaceMatcher` compares an open folder against, so a hard-coded
+ * copy here would be a second opinion about the same fact, and this file
+ * already records what two agreeing literals cost.
+ */
+async function codexWorkspacePath(root: string): Promise<string> {
+  const files: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.name.endsWith('.jsonl')) files.push(full);
+    }
+  };
+  await walk(join(root, 'sessions'));
+  files.sort();
+  for (const file of files) {
+    const first = (await readFile(file, 'utf8')).split('\n')[0] ?? '';
+    const record = JSON.parse(first) as { payload?: { cwd?: unknown } };
+    const cwd = record.payload?.cwd;
+    if (typeof cwd === 'string' && cwd !== '') return cwd;
+  }
+  throw new Error(`no session_meta cwd under ${root}`);
+}
+
+/**
+ * The smallest committed OpenCode corpus holding a session for `workspacePath`.
+ *
+ * The predicate is PRODUCTION'S: `src/opencode/index.ts` matches a project by
+ * `slugFromWorktree(folder).toLowerCase()`, and this uses the same function
+ * rather than a lookalike, so a corpus selected here is a corpus the engine
+ * will really match. Smallest first because the census child reads it for
+ * real and this is the only place in the file that pays for its size.
+ */
+function opencodeCorpusDir(workspacePath: string): string {
+  const wanted = slugFromWorktree(workspacePath).toLowerCase();
+  const fixtures = join(REPO_ROOT, 'fixtures');
+  const candidates = readdirSync(fixtures, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith('opencode-'))
+    .map((e) => join(fixtures, e.name))
+    .filter((dir) => existsSync(join(dir, 'opencode.db')) && existsSync(join(dir, 'golden.json')))
+    .filter((dir) => {
+      const golden = JSON.parse(readFileSync(join(dir, 'golden.json'), 'utf8')) as {
+        sessions?: { projectSlug?: string }[];
+      };
+      return (golden.sessions ?? []).some(
+        (s) => (s.projectSlug ?? '').toLowerCase() === wanted,
+      );
+    })
+    .sort((a, b) => statSync(join(a, 'opencode.db')).size - statSync(join(b, 'opencode.db')).size);
+  const [smallest] = candidates;
+  if (smallest === undefined) {
+    throw new Error(`no fixtures/opencode-* corpus holds a session for ${wanted}`);
+  }
+  return smallest;
+}
+
+// ---------------------------------------------------------------------------
+// (B.4) DoD 4.3 — the census with THREE engines live
+// ---------------------------------------------------------------------------
+
+/**
+ * v0.6.0 DoD 4.3: "Runtime socket census re-run with three engines: one
+ * listener, zero others."
+ *
+ * The census this describe drives is the same one Phase 5 wrote, pointed at
+ * three live engines instead of one: Claude Code on the committed transcripts,
+ * OpenCode on a committed SQLite corpus, and Codex on a committed rollout
+ * root. All three announce sessions on the diagnostics channel before the last
+ * census is taken, so "one listener, zero others" is a statement about a host
+ * with three engines RUNNING rather than about three environment variables.
+ *
+ * WHY THE ENGINE EVIDENCE IS PART OF THE SOCKET CLAIM. Since 2026-09-04 the
+ * hook socket binds when a Claude Code project correlates OR a Codex data root
+ * exists, and not otherwise. A census child with neither would therefore find
+ * ZERO listeners — correct behaviour, and indistinguishable from a passing
+ * "no unexpected socket" test. So this describe pins the listener's presence
+ * as an exact set, not merely the absence of extras, and the scenario below it
+ * pins the same socket appearing for Codex ALONE.
+ */
+describe('G5 runtime socket census: three engines, one loopback listener (DoD 4.3)', () => {
+  let report: CensusReport;
+  let port = 0;
+  let stderr = '';
+  let ccWorkspace = '';
+  let codexWorkspace = '';
+  let opencodeRoot = '';
+  let codexRoot = '';
+
+  // 120 s for the reason every hook in this file carries one: the body builds
+  // the bundle in an esbuild subprocess and then spawns a child that reads
+  // three real corpora, and vitest's DEFAULT hookTimeout is 10 s. A hook that
+  // loses that race reports the whole describe as SKIPS with a clean-looking
+  // tests line and no failed count — which is how six G5 assertions ran zero
+  // times in Phase 3.
+  beforeAll(async () => {
+    ccWorkspace = await capturedWorkspacePath();
+    codexRoot = codexRunRoot();
+    codexWorkspace = await codexWorkspacePath(codexRoot);
+    opencodeRoot = opencodeCorpusDir(ccWorkspace);
+
+    const run = await runCensus({
+      // Two folders, deliberately: the Claude Code half reads the FIRST one
+      // and the OpenCode and Codex halves read every one, so a single-folder
+      // workspace can mount at most two of the three engines. The OpenCode
+      // corpus was captured in the same project as the Claude Code corpus, so
+      // one folder serves both.
+      workspaces: [ccWorkspace, codexWorkspace],
+      claudeProjectsRoot: CAPTURED_ROOT,
+      opencodeRoot,
+      codexHome: codexRoot,
+      waitForEngines: ['cc', 'opencode', 'codex'],
+      expectBind: true,
+    });
+    report = run.report;
+    port = run.port;
+    stderr = run.stderr;
+  }, 120_000);
 
   it('the census child ran the real bundle to completion', () => {
     expect(report.error ?? '', stderr).toBe('');
@@ -727,27 +1152,165 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
     expect(report.requiredIds).toContain('vscode');
   });
 
-  it('opens exactly one TCP handle, and it is the loopback listener on the configured port', () => {
-    const listening = tcpHandles('activated');
+  it('all THREE engines mounted and put sessions on the deck', () => {
+    /*
+     * THE VACUITY CONTROL FOR THE WHOLE DESCRIBE, and the reason it is a test
+     * rather than a comment. Every socket assertion below is a claim about a
+     * host running three engines; an engine that silently failed to mount
+     * opens no socket either, and would make every one of them pass for the
+     * wrong reason.
+     *
+     * `session discovered <engine> <id>` is written from the EMISSION — the
+     * sessions the renderer is being handed — so an engine named here read its
+     * corpus, matched a workspace folder and reached the deck. Exact set, and
+     * the count beside it, because "the lines include cc" is satisfied by a
+     * run where the other two never started.
+     */
+    const engines = enginesAnnouncedIn(report.diagnosticsLines);
+    expect(engines, report.diagnosticsLines.join('\n')).toStrictEqual([
+      'cc',
+      'codex',
+      'opencode',
+    ]);
+    expect(engines.length).toBe(3);
+  });
+
+  it('opens exactly one socket with three engines live: the loopback listener', () => {
+    // THE DoD ITEM. An exact set and its count, at the phase where all three
+    // engines have read their corpora and announced and nothing has yet
+    // connected — never a containment, which would pass with three other
+    // sockets open beside it.
+    const expected = [`listener ${HOOK_LISTENER_HOST}:${String(port)}`];
+    expect(networkDescriptors(report, 'engines')).toStrictEqual(expected);
+    expect(networkHandles(report, 'engines').length).toBe(1);
+    expect(networkHandles(report, 'engines')[0]?.listening).toBe(true);
+    // ...and the same at activation, before the engines had finished reading.
+    expect(networkDescriptors(report, 'activated')).toStrictEqual(expected);
+    expect(networkHandles(report, 'activated').length).toBe(1);
+  });
+
+  it('the whole handle enumeration is accounted for at every phase', () => {
+    /*
+     * The exact set of handle KINDS, phase by phase — the assertion that keeps
+     * `networkHandles`'s exclusion of libuv `Pipe` honest. A new kind of
+     * handle appearing anywhere in the lifecycle fails here first, before the
+     * socket predicate gets a chance to filter it out.
+     *
+     * Kinds, not counts: the `FSWatcher/FSEvent` count is the number of
+     * directories the Claude Code watcher opened on the committed corpus, and
+     * pinning a fixture-set size breaks on the next harvest. The counts that
+     * carry the G5 claim are the socket ones, pinned exactly above.
+     */
+    expect(handleKinds(report, 'loaded')).toStrictEqual([]);
+    expect(handleKinds(report, 'activated')).toStrictEqual([
+      'FSWatcher/FSEvent',
+      'Server/TCP',
+    ]);
+    expect(handleKinds(report, 'engines')).toStrictEqual([
+      'FSWatcher/FSEvent',
+      'Server/TCP',
+    ]);
+    // One kind more while serving, and it is the accepted connection: a
+    // `Socket` whose libuv handle has already been released.
+    expect(handleKinds(report, 'serving')).toStrictEqual([
+      'FSWatcher/FSEvent',
+      'Server/TCP',
+      'Socket/none',
+    ]);
+    expect(handleKinds(report, 'disposed')).toStrictEqual([]);
+    // The FS watchers are the Claude Code engine's, and there is at least one:
+    // an empty enumeration would satisfy every "no extra socket" claim above.
     expect(
-      listening.map((h) => `${h.ctor}/${h.address ?? '?'}:${String(h.port ?? 0)}`),
-    ).toStrictEqual([`Server/${HOOK_LISTENER_HOST}:${String(port)}`]);
-    expect(listening[0]?.listening).toBe(true);
+      handlesAt(report, 'engines').filter((h) => h.handle === 'FSEvent').length,
+    ).toBeGreaterThan(0);
   });
 
-  it('has no TCP handle before activation and none after disposal', () => {
-    expect(tcpHandles('loaded')).toStrictEqual([]);
-    expect(tcpHandles('disposed')).toStrictEqual([]);
+  it('everything the socket predicate excluded is stdio or the harness itself', () => {
+    /*
+     * RULE 18, applied to a filter. `handleKinds` and `networkHandles` skip
+     * two classes of handle, and a skip nobody states is the fail-open shape
+     * this repository has been bitten by three times. So the excluded set is
+     * enumerated and characterised here: every member is either this child's
+     * own stdout/stderr, or the socket the harness itself opened to POST a
+     * hook event — which the census tags at the source rather than inferring.
+     *
+     * Non-vacuous in both directions: the harness socket must actually have
+     * been seen (an exclusion that never matches anything is an exclusion
+     * hiding nothing, and would mean the tag had stopped working and the
+     * client was being counted as the extension's), and nothing else may be
+     * in the list.
+     */
+    const excluded = stdioAndHarness(report);
+    for (const handle of excluded) {
+      if (isStdio(handle)) {
+        expect(handle.address, JSON.stringify(handle)).toBeUndefined();
+        expect(handle.remote, JSON.stringify(handle)).toBeUndefined();
+        continue;
+      }
+      expect(handle.ctor, JSON.stringify(handle)).toBe('Socket');
+      expect(handle.listening, JSON.stringify(handle)).toBeUndefined();
+      if (handle.remote !== undefined) expect(handle.remote).toBe(HOOK_LISTENER_HOST);
+    }
+    /*
+     * MEASURED, and it is the reverse of what writing the tag assumed: on a
+     * run where the POST SUCCEEDS the harness's own client is gone from the
+     * enumeration by the next census, and the socket that lingers is the
+     * EXTENSION's accepted connection (untagged, `remote` loopback,
+     * `_handle` already released). So nothing here is excluded by the harness
+     * tag at all, and saying so is the point — the tag is what proves that,
+     * rather than the two sockets being told apart by a guess about which one
+     * a `Socket/none` is. The tag is shown to still match a real handle by
+     * the no-engine scenario below, where the client that failed to connect
+     * IS the lingering socket.
+     */
+    expect(excluded.every(isStdio), JSON.stringify(excluded)).toBe(true);
   });
 
-  it('every TCP handle at every phase is loopback, including the served connection', () => {
+  it('has no socket before activation and none after disposal', () => {
+    expect(networkDescriptors(report, 'loaded')).toStrictEqual([]);
+    expect(networkDescriptors(report, 'disposed')).toStrictEqual([]);
+  });
+
+  it('serves a real hook POST over loopback: the listener plus its connection', () => {
+    // 200 is the listener answering a real request over a real TCP
+    // connection, so the "one socket" above is a socket that WORKS rather
+    // than one that merely exists.
     expect(report.postStatus).toBe(200);
+    /*
+     * Serving costs exactly one more socket, and the extra one is the
+     * EXTENSION's — the connection the listener accepted, still enumerated
+     * with its `_handle` already released after the `Connection: close`
+     * response. The harness's own client is not in this list: it is tagged at
+     * the source and excluded, which is what lets these two sockets be told
+     * apart rather than guessed at.
+     *
+     * This is also the assertion the old census could not make. It filtered
+     * on `handle === 'TCP'`, so a released handle was invisible to it, and the
+     * test that did the filtering was named "including the served connection".
+     */
+    expect(networkDescriptors(report, 'serving')).toStrictEqual([
+      `connection remote=${HOOK_LISTENER_HOST}`,
+      `listener ${HOOK_LISTENER_HOST}:${String(port)}`,
+    ]);
+    expect(networkHandles(report, 'serving').length).toBe(2);
+    // And it goes away: disposal returns the process to zero sockets.
+    expect(networkDescriptors(report, 'disposed')).toStrictEqual([]);
+  });
+
+  it('every socket at every phase is loopback, the served connection included', () => {
     for (const phase of Object.keys(report.phases)) {
-      for (const handle of tcpHandles(phase)) {
+      // The harness's own client is INCLUDED here and excluded everywhere
+      // else: this is the one question it is evidence for — the connection
+      // that actually carried a hook event was a loopback one.
+      const sockets = [
+        ...networkHandles(report, phase),
+        ...handlesAt(report, phase).filter((h) => isHarness(h) && h.remote !== undefined),
+      ];
+      for (const handle of sockets) {
         const seen = [handle.address, handle.remote].filter(
           (v): v is string => typeof v === 'string' && v.length > 0,
         );
-        expect(seen.length, `${phase}: a TCP handle with no address at all`).toBeGreaterThan(0);
+        expect(seen.length, `${phase}: a socket with no address at all`).toBeGreaterThan(0);
         for (const addr of seen) {
           expect(addr, `${phase}: ${JSON.stringify(handle)}`).toMatch(
             /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/,
@@ -789,7 +1352,8 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
     // one, and a document that claims more than its test asserts is how a
     // measured finding turns into a comfortable story. One bind, one lookup:
     // a second call would mean something else in the run resolved something,
-    // and that is the event worth failing on.
+    // and that is the event worth failing on. THREE engines and still one:
+    // neither the OpenCode nor the Codex engine resolves anything.
     expect(
       report.dnsFinal.length,
       `expected exactly one DNS call (the inbound bind); saw ${JSON.stringify(
@@ -814,6 +1378,241 @@ describe('G5 runtime socket census: only the loopback listener opens', () => {
     expect(external, `unexpected runtime require(s): ${external.join(', ')}`).toStrictEqual(
       [],
     );
+    // The three engines' own doors, so this run is not a Claude-Code-only one
+    // wearing three environment variables: `node:sqlite` is the OpenCode
+    // accessor's and `node:http` is the shared listener's.
+    expect(report.requiredIds).toContain('node:sqlite');
+    expect(report.requiredIds).toContain('node:http');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (B.5) the same census, one engine at a time — the three control scenarios
+// ---------------------------------------------------------------------------
+
+/**
+ * The socket binds for CODEX ALONE, and it is still exactly one socket.
+ *
+ * The user's ruling of 2026-09-04: the hook listener binds when a Claude Code
+ * project correlates OR a Codex data root exists. Before it, a Codex-only
+ * workspace bound nothing and Codex liveness never saw a hook — and the gap
+ * was gated TWICE, in `activate()` and again in `AgentDeckDataPath.start()`,
+ * so closing either alone changed nothing for the user it was for.
+ *
+ * This scenario is that path measured end to end: no CC project, no OpenCode
+ * store, a Codex root — one listener, which really serves a POST, and no other
+ * socket anywhere in the lifecycle.
+ */
+describe('G5 runtime socket census: Codex alone still binds exactly one socket', () => {
+  let report: CensusReport;
+  let port = 0;
+  let stderr = '';
+
+  beforeAll(async () => {
+    const codexRoot = codexRunRoot();
+    const run = await runCensus({
+      workspaces: [await codexWorkspacePath(codexRoot)],
+      // No Claude Code project can correlate against an empty projects root,
+      // so `activate()` sets `ccEnabled: false` — the ordinary state for
+      // someone running Codex where Claude Code has never run.
+      claudeProjectsRoot: await stagedEmptyDir('no-claude'),
+      opencodeRoot: await stagedEmptyDir('no-opencode'),
+      codexHome: codexRoot,
+      waitForEngines: ['codex'],
+      expectBind: true,
+    });
+    report = run.report;
+    port = run.port;
+    stderr = run.stderr;
+  }, 120_000);
+
+  it('the census child ran the real bundle to completion', () => {
+    expect(report.error ?? '', stderr).toBe('');
+    expect(report.ok).toBe(true);
+    expect(report.activated).toBe(true);
+  });
+
+  it('mounts CODEX and nothing else', () => {
+    // Exact set: `['codex']`. A run that also mounted Claude Code would bind
+    // the socket for a reason this scenario is not about, and the assertion
+    // below would then prove nothing about the 2026-09-04 rule.
+    expect(
+      enginesAnnouncedIn(report.diagnosticsLines),
+      report.diagnosticsLines.join('\n'),
+    ).toStrictEqual(['codex']);
+  });
+
+  it('binds exactly one loopback listener, and it serves', () => {
+    const expected = [`listener ${HOOK_LISTENER_HOST}:${String(port)}`];
+    expect(networkDescriptors(report, 'activated')).toStrictEqual(expected);
+    expect(networkHandles(report, 'activated').length).toBe(1);
+    expect(networkDescriptors(report, 'engines')).toStrictEqual(expected);
+    expect(networkHandles(report, 'engines').length).toBe(1);
+    // The socket is not merely present, it answers — which is what a Codex
+    // hook event arriving at it would find.
+    expect(report.postStatus).toBe(200);
+    expect(networkDescriptors(report, 'loaded')).toStrictEqual([]);
+    expect(networkDescriptors(report, 'disposed')).toStrictEqual([]);
+  });
+
+  it('allocates no Claude Code watcher, which is what ccEnabled: false buys', () => {
+    // The exact kind set, and it is SHORTER than the three-engine one by
+    // exactly the FS watchers. The correlation gate's original point — a
+    // non-matching workspace allocates no watcher and no CC timer — survives
+    // the socket no longer being behind it.
+    expect(handleKinds(report, 'activated')).toStrictEqual(['Server/TCP']);
+    expect(handleKinds(report, 'engines')).toStrictEqual(['Server/TCP']);
+    expect(handleKinds(report, 'disposed')).toStrictEqual([]);
+  });
+
+  it('attempts zero outbound connections and resolves no name', () => {
+    expect(report.outboundFinal).toStrictEqual([]);
+    expect(report.dnsFinal.length).toBe(1);
+  });
+});
+
+/**
+ * Neither hook-driven engine observable: NOTHING binds, and the census says so.
+ *
+ * The other half of the 2026-09-04 rule, and the control that makes "zero
+ * others" mean something in the two scenarios above. A census that reported no
+ * socket because the child never bound one would look exactly like a census
+ * that reported no EXTRA socket — so this run proves the environment really
+ * decides, and that a bound socket in the other scenarios is a product fact
+ * rather than a harness artefact.
+ */
+describe('G5 runtime socket census: no observable engine binds nothing at all', () => {
+  let report: CensusReport;
+  let stderr = '';
+
+  beforeAll(async () => {
+    const run = await runCensus({
+      workspaces: [await stagedEmptyDir('nowhere')],
+      claudeProjectsRoot: await stagedEmptyDir('no-claude'),
+      opencodeRoot: await stagedEmptyDir('no-opencode'),
+      // `codexRootExists` is `statSync(root).isDirectory()`, so a path that
+      // does not exist is the only honest way to say "no Codex here". An
+      // EMPTY DIRECTORY is a root that exists — the harness default that
+      // `src/extension.test.ts`'s own comment once got wrong.
+      codexHome: await stagedAbsentPath('no-codex-root'),
+      expectBind: false,
+    });
+    report = run.report;
+    stderr = run.stderr;
+  }, 120_000);
+
+  it('the census child ran the real bundle to completion', () => {
+    expect(report.error ?? '', stderr).toBe('');
+    expect(report.ok).toBe(true);
+    expect(report.activated).toBe(true);
+  });
+
+  it('opens no socket at any phase, and nothing answers on the port', () => {
+    for (const phase of Object.keys(report.phases)) {
+      expect(networkDescriptors(report, phase), phase).toStrictEqual([]);
+    }
+    // `null` is the harness's own client failing to connect: there is nothing
+    // listening. It is the measurement that makes `postStatus === 200` in the
+    // scenarios above evidence rather than decoration.
+    expect(report.postStatus).toBeNull();
+  });
+
+  it('the socket the census DOES see here is the harness\'s own, tagged', () => {
+    /*
+     * The non-vacuity control for the harness tag, and the only scenario that
+     * can carry it. With nothing listening, the harness's client never
+     * connects — and THAT socket is what lingers in the enumeration, with no
+     * `remote` because there is no peer. Every other scenario's lingering
+     * socket is the extension's accepted connection instead.
+     *
+     * So: the tag still matches a real handle (an exclusion that never
+     * matched anything would be an exclusion hiding nothing), and it is the
+     * only thing excluded here besides stdio.
+     */
+    const excluded = stdioAndHarness(report);
+    const harness = excluded.filter(isHarness);
+    expect(
+      harness.length,
+      'the harness tag matched nothing: it has stopped reaching the socket',
+    ).toBeGreaterThan(0);
+    for (const handle of harness) {
+      expect(handle.ctor).toBe('Socket');
+      expect(handle.remote, JSON.stringify(handle)).toBeUndefined();
+    }
+    expect(excluded.every((h) => isStdio(h) || isHarness(h))).toBe(true);
+  });
+
+  it('announces no engine and resolves no name', () => {
+    expect(enginesAnnouncedIn(report.diagnosticsLines)).toStrictEqual([]);
+    // No bind, so not even the inbound bind's own lookup happens. The one DNS
+    // call the other scenarios measure is `Server.listen`'s, and there is no
+    // `Server.listen`.
+    expect(report.dnsFinal).toStrictEqual([]);
+    expect(report.outboundFinal).toStrictEqual([]);
+  });
+});
+
+/**
+ * THE VACUITY CONTROL: the census can see a second socket.
+ *
+ * Every assertion above is of the form "the enumeration is exactly this", and
+ * an enumeration that could never grow would satisfy all of them. So this
+ * scenario runs the identical child with `CENSUS_DECOY=1`, which opens a
+ * second loopback listener in the child after activation, and asserts that the
+ * SAME predicate the scenarios above use reports two sockets and rejects the
+ * one-socket expectation.
+ *
+ * Run against the Codex-alone environment rather than the three-engine one
+ * because the property under test is the census's own eyesight, and that is
+ * the cheaper of the two to spawn.
+ */
+describe('G5 runtime socket census: a second socket is CAUGHT (vacuity control)', () => {
+  let report: CensusReport;
+  let port = 0;
+  let stderr = '';
+
+  beforeAll(async () => {
+    const codexRoot = codexRunRoot();
+    const run = await runCensus({
+      workspaces: [await codexWorkspacePath(codexRoot)],
+      claudeProjectsRoot: await stagedEmptyDir('no-claude'),
+      opencodeRoot: await stagedEmptyDir('no-opencode'),
+      codexHome: codexRoot,
+      decoy: true,
+      expectBind: true,
+    });
+    report = run.report;
+    port = run.port;
+    stderr = run.stderr;
+  }, 120_000);
+
+  it('the decoy really opened, on a port of its own', () => {
+    expect(report.error ?? '', stderr).toBe('');
+    expect(report.ok).toBe(true);
+    expect(report.decoyPort).toBeTypeOf('number');
+    expect(report.decoyPort).not.toBe(port);
+  });
+
+  it('reports TWO listeners, and the one-socket expectation goes red', () => {
+    const decoyPort = report.decoyPort ?? 0;
+    const oneSocket = [`listener ${HOOK_LISTENER_HOST}:${String(port)}`];
+    // The exact-set assertion every scenario above makes, made here against a
+    // child with one extra socket. If this passed, those assertions would be
+    // measuring nothing.
+    expect(networkDescriptors(report, 'activated')).not.toStrictEqual(oneSocket);
+    expect(networkDescriptors(report, 'activated')).toStrictEqual(
+      [
+        `listener ${HOOK_LISTENER_HOST}:${String(port)}`,
+        `listener ${HOOK_LISTENER_HOST}:${String(decoyPort)}`,
+      ].sort(),
+    );
+    expect(networkHandles(report, 'activated').length).toBe(2);
+  });
+
+  it('and the extra socket is gone once the decoy is closed', () => {
+    // Closed before `deactivate()`, so the disposal census is clean and this
+    // control cannot leave the file's last measurement in a mutated state.
+    expect(networkDescriptors(report, 'disposed')).toStrictEqual([]);
   });
 });
 
@@ -1043,5 +1842,198 @@ describe('G5 — the OpenCode engine (DoD 4.7)', () => {
       (fn as (p: string) => unknown)(corpus);
     }
     expect(createHash('sha256').update(readFileSync(corpus)).digest('hex')).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (D) helpers - the Codex engine bundle and its corpus
+// ---------------------------------------------------------------------------
+
+/**
+ * Bundle `src/codex/index.ts` as its own entry point.
+ *
+ * Built here rather than read from `dist/`, for the reason stated at the top of
+ * this file: `npm run package` does not rebuild `dist/`, so trusting an on-disk
+ * artifact silently measures an old one. `esbuild.config.mjs` has no Codex
+ * target because the engine is not wired into the host yet (DoD 3.x), so this
+ * mirrors `buildOpencodeBundle` rather than invoking the config.
+ */
+function buildCodexBundle(): string {
+  const result = buildSync({
+    entryPoints: [join(REPO_ROOT, 'src', 'codex', 'index.ts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node20',
+    write: false,
+    logLevel: 'silent',
+  });
+  const [out] = result.outputFiles;
+  if (out === undefined) throw new Error('the Codex engine bundle produced no output');
+  const text = out.text;
+  if (text.length < 5_000) {
+    throw new Error(`the Codex engine bundle is implausibly small (${text.length} bytes)`);
+  }
+  return text;
+}
+
+/**
+ * The Codex data root of one committed run, derived from disk.
+ *
+ * Sizes are not asserted and no corpus name is written down: the corpus and its
+ * runs are enumerated, and the first is used. A hard-coded fixture name breaks
+ * on the next harvest and reads as a regression.
+ */
+function codexRunRoot(): string {
+  const fixtures = join(REPO_ROOT, 'fixtures');
+  const corpora = readdirSync(fixtures, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith('codex-'))
+    .map((e) => e.name)
+    .filter((name) => existsSync(join(fixtures, name, 'golden.json')))
+    .sort();
+  const [corpus] = corpora;
+  if (corpus === undefined) throw new Error('no fixtures/codex- corpus with a golden.json found');
+  const runs = readdirSync(join(fixtures, corpus), { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .filter((name) => existsSync(join(fixtures, corpus, name, 'home', '.codex')))
+    .sort();
+  const [run] = runs;
+  if (run === undefined) throw new Error(`${corpus} has no run with a home/.codex root`);
+  return join(fixtures, corpus, run, 'home', '.codex');
+}
+
+// ---------------------------------------------------------------------------
+// (D) the Codex engine - PLAN.md v0.6.0 DoD 2.8
+// ---------------------------------------------------------------------------
+
+/**
+ * DoD 2.8: "the Codex engine opens zero sockets."
+ *
+ * Two properties have to hold at `src/codex/index.ts` rather than merely being
+ * true today, and both are asserted against the BUNDLE, because only a bundle
+ * knows what an import graph actually pulled in:
+ *
+ *   - it imports no network-capable module, directly or transitively;
+ *   - the bundled graph rooted at that file opens zero sockets.
+ *
+ * `node:http` is DENIED here, exactly as it is for the OpenCode engine and
+ * unlike in the host bundle. G5 is absolute: there is ONE socket in this
+ * product, the loopback hook listener. The Codex engine has no listener, no
+ * client, no App Server connection and no socket to Codex - spec C1 and C6 put
+ * every fact it reads in a FILE, and `never-open.ts` is the list of the files it
+ * must not even open. So this engine reaching any socket module at all is a G5
+ * review, and failing here is that review.
+ *
+ * Scanning the engine ALONE is what makes the claim about the engine rather
+ * than about whatever bundle it eventually travels in: once DoD 3.x wires it
+ * into the host, the host bundle's `node:http` allowance would hide a Codex
+ * HTTP client behind the listener's exemption.
+ */
+describe('G5 - the Codex engine (DoD 2.8)', () => {
+  let bundle = '';
+
+  // 120 s for the reason both sibling hooks carry one: this body is a
+  // synchronous esbuild subprocess and vitest's DEFAULT hookTimeout is 10 s. A
+  // hook that loses that race reports the whole describe as SKIPS with a
+  // clean-looking tests line and no failed count - which is how six G5
+  // assertions ran zero times in Phase 3.
+  beforeAll(() => {
+    bundle = buildCodexBundle();
+  }, 120_000);
+
+  it('reaches no network-capable module at all - not even node:http', () => {
+    const ids = bundleModuleIds(bundle);
+    expect(ids.size, 'a bundle that names no module has not been built').toBeGreaterThan(0);
+    const denied = [...DENIED_MODULE_IDS, 'http'];
+    const found: string[] = [];
+    for (const id of denied) {
+      if (ids.has(id)) found.push(id);
+      if (ids.has(`node:${id}`)) found.push(`node:${id}`);
+    }
+    expect(
+      found.sort(),
+      `the Codex engine reaches network-capable module(s): ${found.join(', ')}`,
+    ).toStrictEqual([]);
+  });
+
+  it('names only node builtins - no third-party module survives bundling', () => {
+    for (const id of bundleModuleIds(bundle)) {
+      expect(id, `${id} is not a node: builtin`).toMatch(/^node:/);
+    }
+  });
+
+  it('contains no outbound request API and no server', () => {
+    expect(bundle).not.toMatch(/\bhttps?\.request\s*\(/);
+    expect(bundle).not.toMatch(/\bimport_node_http\d*\.request\s*\(/);
+    expect(bundle).not.toMatch(/\bfetch\s*\(/);
+    expect(bundle).not.toContain('XMLHttpRequest');
+    expect(bundle).not.toContain('new WebSocket(');
+    expect(bundle).not.toContain('createServer');
+    expect(bundle).not.toContain('createConnection');
+    expect(bundle).not.toContain('navigator.sendBeacon');
+    // Codex ships an App Server with an HTTP surface. Nothing in this engine
+    // may name it: the tap is the rollout files and the hook listener the host
+    // already owns, and a URL literal here would be the first step to a second
+    // socket. `localhost` is checked as well as the loopback literal because a
+    // client would plausibly be written either way.
+    expect(bundle).not.toContain('127.0.0.1');
+    expect(bundle).not.toContain('localhost');
+    expect(bundle).not.toContain('http://');
+  });
+
+  it('the scan sees a dynamic import(), proven by injecting one', () => {
+    // Not asserted, INJECTED - the same guard parts (A) and (C) carry. A
+    // require-only scan once reported a clean bundle while three denied modules
+    // sat one dynamic import away.
+    for (const denied of ['net', 'dns', 'http']) {
+      const injected = `${bundle}\nglobalThis.__leak = () => import("node:${denied}");\n`;
+      expect(
+        bundleModuleIds(injected),
+        `a dynamic import of node:${denied} slipped past the scan`,
+      ).toContain(`node:${denied}`);
+    }
+  });
+
+  it('opens every file read-only and writes nothing (G1)', () => {
+    /*
+     * The engine's reads all go through `FileTail`, which opens with the read
+     * flag and nothing else. What is asserted here is the SURFACE: no writing
+     * API survives bundling at all. `src/codex/never-open.ts` is on this path
+     * deliberately - it is the G10 list - so its NAMES appear in the bundle as
+     * strings; that is the list of things not to open, not an open.
+     */
+    expect(bundle).not.toMatch(/\bwriteFileSync\b/);
+    expect(bundle).not.toMatch(/\bappendFileSync\b/);
+    expect(bundle).not.toMatch(/\bmkdtempSync\b/);
+    expect(bundle).not.toMatch(/\bcopyFileSync\b/);
+    expect(bundle).not.toMatch(/\brmSync\b/);
+    expect(bundle).not.toMatch(/\bunlinkSync\b/);
+    // `node:sqlite` is the OpenCode engine's door and has no business here.
+    expect(bundleModuleIds(bundle).has('node:sqlite')).toBe(false);
+  });
+
+  it('the scanned entry point is the one that really reads a corpus', async () => {
+    /*
+     * THE VACUITY CONTROL FOR EVERY SCAN ABOVE. A bundle that reaches no socket
+     * because it reaches nothing at all would pass all of them. So the same
+     * entry point is imported and RUN against a committed Codex root here, in
+     * this process, and must produce real sessions.
+     *
+     * And the bundle is pinned to that same engine by two literals only the
+     * real discovery path carries - the rollout filename prefix and the writer
+     * lock directory - so a future refactor cannot leave this file scanning a
+     * stub while the engine lives somewhere else.
+     */
+    expect(bundle).toContain('rollout-');
+    expect(bundle).toContain('thread-writer-locks');
+
+    const { readCodexEngine } = await import('../codex/index.js');
+    const outcome = await readCodexEngine({ root: codexRunRoot() });
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    expect(outcome.result.sessions.length).toBeGreaterThan(0);
+    expect(outcome.result.threads.length).toBeGreaterThan(0);
+    for (const session of outcome.result.sessions) expect(session.engine).toBe('codex');
   });
 });

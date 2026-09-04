@@ -207,6 +207,14 @@ export interface BridgeDegradedState {
   reason?: DegradedMessage['reason'];
 }
 
+/**
+ * Which tap a {@link BridgeDegradedState} is about (DoD 5.0b).
+ *
+ * `'cc' | 'codex'` and never `'opencode'`: OpenCode has no hook tap, so it has
+ * no health to report here. See {@link DegradedMessage}.
+ */
+export type DegradedEngine = DegradedMessage['engine'];
+
 /** Diagnostics. Counters, never thrown exceptions — the G3 habit. */
 export interface SessionBridgeCounters {
   snapshotsSent: number;
@@ -279,7 +287,16 @@ export class SessionBridge {
    * has never been told", which is the state after construction and after
    * {@link reset}.
    */
-  private lastDegraded?: BridgeDegradedState;
+  /**
+   * Last degraded state acknowledged by a send, PER TAP (DoD 5.0b).
+   *
+   * One field per engine rather than one field: the no-nagging rule is about
+   * a tap's transitions, and with a single field a Codex send would have
+   * suppressed the next Claude Code send that happened to carry the same
+   * boolean - two taps sharing one memory, which is the same collapse the
+   * `engine` field exists to undo.
+   */
+  private lastDegraded = new Map<DegradedEngine, BridgeDegradedState>();
 
   private readonly counts: SessionBridgeCounters = zeroCounters();
 
@@ -309,7 +326,7 @@ export class SessionBridge {
   reset(): void {
     this.sent.clear();
     this.snapshotSent = false;
-    this.lastDegraded = undefined;
+    this.lastDegraded.clear();
   }
 
   /**
@@ -399,8 +416,8 @@ export class SessionBridge {
    * G2 in message form: this says nothing about any session's content, and a
    * content failure never reaches it.
    */
-  publishDegraded(state: BridgeDegradedState): void {
-    const previous = this.lastDegraded;
+  publishDegraded(engine: DegradedEngine, state: BridgeDegradedState): void {
+    const previous = this.lastDegraded.get(engine);
     if (
       previous !== undefined &&
       previous.degraded === state.degraded &&
@@ -411,6 +428,7 @@ export class SessionBridge {
 
     const message: DegradedMessage = {
       type: 'degraded',
+      engine,
       degraded: state.degraded,
     };
     // `reason` is documented as absent when not degraded; carrying a stale one
@@ -421,10 +439,12 @@ export class SessionBridge {
 
     if (!this.post(message)) return;
     this.counts.degradedSent += 1;
-    this.lastDegraded =
+    this.lastDegraded.set(
+      engine,
       message.reason === undefined
         ? { degraded: message.degraded }
-        : { degraded: message.degraded, reason: message.reason };
+        : { degraded: message.degraded, reason: message.reason },
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -472,7 +492,7 @@ export class SessionBridge {
       this.counts.postFailures += 1;
       this.snapshotSent = false;
       this.sent.clear();
-      this.lastDegraded = undefined;
+      this.lastDegraded.clear();
       return false;
     }
   }

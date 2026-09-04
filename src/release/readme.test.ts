@@ -73,6 +73,13 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  CODEX_VERSION_WINDOW,
+  PINNED_CODEX_VERSION,
+  codexVersionWindow,
+  isCodexVersionAccepted,
+} from '../codex/fingerprint.js';
+import { CODEX_NEVER_OPEN } from '../codex/never-open.js';
 import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
 import {
   OC_VERSION_WINDOW,
@@ -101,10 +108,18 @@ function readText(relative: string): string {
   return readFileSync(join(ROOT, relative), 'utf8').replace(/\r\n/g, '\n');
 }
 
-/** One entry of a Claude Code hook group: the command and how long it may run. */
+/**
+ * One entry of a hook group: the command and how long it may run.
+ *
+ * `commandWindows` is Codex's second key. The Claude Code block does not carry
+ * it and the Codex block carries it on every entry, which is why it is optional
+ * here and asserted PRESENT, per entry, in the Codex block's own test rather
+ * than by this type.
+ */
 interface HookCommand {
   type: string;
   command: string;
+  commandWindows?: string;
   timeout?: number;
 }
 
@@ -141,10 +156,49 @@ function commandsOf(settings: HookSettings): Map<string, string[]> {
   return out;
 }
 
+/**
+ * EVERY command string, `commandWindows` included, in event order.
+ *
+ * {@link commandsOf} reads `command` alone, which is the whole block for Claude
+ * Code and HALF of it for Codex. A `curl`, a wrong port or a non-loopback host
+ * in the Windows half of a Codex entry would be invisible to the older helper —
+ * and the Windows half is the one that runs on the platform this was captured
+ * on.
+ */
+function commandStringsOf(settings: HookSettings): string[] {
+  return Object.values(settings.hooks).flatMap((groups) =>
+    groups.flatMap((group) =>
+      group.hooks.flatMap((hook) =>
+        hook.commandWindows === undefined ? [hook.command] : [hook.command, hook.commandWindows],
+      ),
+    ),
+  );
+}
+
 const README = readText('README.md');
 
+
 /**
- * The four release images, in the order the page reads in.
+ * The five release assets, in the order the page reads in.
+ *
+ * FIVE SINCE v0.6.0 (DoD 5.8/5.8.1), AND THE NEW ONE IS THE ANIMATION THIS
+ * LIST'S OWN COMMENT SAYS WAS DROPPED. Both things are true and the history
+ * matters, so it is written down rather than tidied away: `media/demo.gif` was
+ * a reference to a file nobody ever supplied and it was deleted at v0.5.0 with
+ * no replacement. `media/agent-deck-hero.gif` is a different asset with a
+ * different name - it exists, it is tracked, and it is the page's hero. The
+ * v0.5.0 name stays on the RETIRED list below, so re-linking the file that was
+ * never delivered is still red.
+ *
+ * IT IS DENIED IN `.vscodeignore` AND THAT IS DELIBERATE, not an oversight this
+ * test should be widened to cover. 4.6 MB of animation inside every install
+ * buys a user nothing: the Marketplace listing does not render images out of
+ * the VSIX at all - vsce rewrites the link into an absolute
+ * `<repository.url>/raw/HEAD/media/agent-deck-hero.gif` and the page fetches it
+ * from github.com. So the GIF has to be REFERENCED and TRACKED, which is what
+ * the tests below assert, and it does not have to ship. `.vscodeignore` is not
+ * this file's to assert about; `src/release/vsix.test.ts` owns the packaged
+ * set.
  *
  * THESE WERE PLACEHOLDERS UNTIL 2026-08-30 and are not any more, which is why
  * this list reads differently from the one it replaced. Phase 8 shipped four
@@ -172,8 +226,9 @@ const README = readText('README.md');
  * they passed.
  */
 const RELEASE_IMAGES: readonly string[] = [
+  'media/agent-deck-hero.gif',
   'media/Session_Deck.png',
-  'media/hero_16_agent_session.png',
+  'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
 ];
@@ -204,11 +259,26 @@ const RELEASE_IMAGES: readonly string[] = [
  * ------------------------------------------------------------------------- */
 const OC_REGION_RE = /<!-- engine:opencode -->([\s\S]*?)<!-- \/engine:opencode -->/g;
 
-/** The README with every OpenCode region removed: the Claude Code document. */
-const README_CC = README.replace(OC_REGION_RE, '\n');
+/**
+ * THE SAME MECHANISM, A THIRD TIME, FOR CODEX (v0.6.0 DoD 5.1).
+ *
+ * Codex's anchor is `0.151.0-alpha.7.2`. Unregioned it would reach the CC
+ * guards as a version literal, and `0.150.x` to `0.152.x` would reach
+ * `CORNERS_RE`, which asserts every stated corner equals the CLAUDE CODE
+ * window's - so a correct README would go red and the cheap way back to green
+ * would be loosening the guard that caught the blackout twice. Exactly the
+ * hazard the OpenCode marker comment describes, arriving on schedule.
+ */
+const CODEX_REGION_RE = /<!-- engine:codex -->([\s\S]*?)<!-- \/engine:codex -->/g;
+
+/** The README with every OpenCode AND Codex region removed: the CC document. */
+const README_CC = README.replace(OC_REGION_RE, '\n').replace(CODEX_REGION_RE, '\n');
 
 /** Only the OpenCode regions, joined: the OpenCode document. */
 const README_OC = [...README.matchAll(OC_REGION_RE)].map((m) => m[1] ?? '').join('\n');
+
+/** Only the Codex regions, joined: the Codex document. */
+const README_CODEX = [...README.matchAll(CODEX_REGION_RE)].map((m) => m[1] ?? '').join('\n');
 
 /**
  * THE SPEC IS NO LONGER IN THIS REPOSITORY, and the guards below are gated on
@@ -234,6 +304,54 @@ const SPEC: string | null = existsSync(join(ROOT, 'agent-deck-spec.md'))
 /** Every ```json fence in the README, as raw text. */
 const JSON_FENCES: string[] = [...README.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => m[1] ?? '');
 
+/**
+ * THERE ARE TWO HOOK BLOCKS NOW, AND AN INDEX IS THE WRONG WAY TO TELL THEM
+ * APART.
+ *
+ * Until v0.6.0 every assertion below read `JSON_FENCES[0]`, which was exact
+ * while there was one fence and becomes a silent hazard the moment there are
+ * two: reordering the document, or adding a third fence above them, would make
+ * the Claude Code assertions run against the Codex block and stay green on the
+ * parts the two have in common.
+ *
+ * So a block is identified by the SECTION IT IS PRINTED UNDER, which is what a
+ * user goes by. That is deliberately independent of its content: identifying it
+ * by "the fence that matches the frozen copy" would make the byte-identity
+ * assertion below a tautology - it would be asserting that the block equal to
+ * the frozen copy is equal to the frozen copy.
+ */
+const CC_HOOK_HEADING = '## Install the hook (one manual paste)';
+const CODEX_HOOK_HEADING = '## Install the Codex hook (one manual paste)';
+
+/**
+ * One `## ` section's body: the heading through the next `## `.
+ *
+ * Throws on a heading that is absent or repeated rather than returning an empty
+ * string, because both of those would make every assertion over the result pass
+ * vacuously - which is this repository's most-recorded defect class and is
+ * exactly what a section-scoped guard is exposed to.
+ */
+function sectionText(heading: string): string {
+  const start = README.indexOf(heading);
+  if (start < 0) throw new Error(`README has no section: ${heading}`);
+  if (README.indexOf(heading, start + 1) >= 0) {
+    throw new Error(`README repeats the section heading: ${heading}`);
+  }
+  const rest = README.slice(start + heading.length);
+  const end = rest.indexOf('\n## ');
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+/** The ```json fences printed under one `## ` heading, to the next `## `. */
+function jsonFencesUnder(heading: string): string[] {
+  return [...sectionText(heading).matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => m[1] ?? '');
+}
+
+/** The Claude Code paste block, as printed. */
+const CC_FENCE = jsonFencesUnder(CC_HOOK_HEADING)[0] ?? '';
+/** The Codex paste block, as printed. */
+const CODEX_FENCE = jsonFencesUnder(CODEX_HOOK_HEADING)[0] ?? '';
+
 interface Manifest {
   contributes: {
     configuration: {
@@ -248,6 +366,12 @@ interface Manifest {
    * requires it rather than by a literal written down twice.
    */
   icon: string;
+  /**
+   * The product's name. Read by the shipped-documents guard so the CHANGELOG
+   * is bound to it rather than repeating it - a second copy is what went
+   * stale, twice, in the release that changed the name.
+   */
+  displayName?: string;
   /**
    * What vsce rewrites the README's relative image links against when it
    * packages. See 'keeps the three preconditions the Marketplace render
@@ -298,6 +422,30 @@ const DEFAULT_PORT = MANIFEST.contributes.configuration.properties['agentDeck.po
  * for everyone else, which is the same shape as the CRLF shebang trap.
  */
 const FROZEN_SETTINGS = JSON.parse(readText('fixtures/hooks/hook-block.json')) as HookSettings;
+
+/**
+ * The FROZEN copy of the Codex block (v0.6.0 DoD 5.1).
+ *
+ * Byte-identical to the block installed at `~/.codex/hooks.json` on the machine
+ * that captured this project's Codex hook corpus - so, exactly like the Claude
+ * Code copy, it is a block with evidence behind it rather than one that was
+ * typed out to look right. There is no live-file cross-check for it here: the
+ * Codex file lives outside the repository, unlike `.claude/settings.local.json`,
+ * so the frozen copy is the whole of what CI can hold.
+ */
+const FROZEN_CODEX_SETTINGS = JSON.parse(
+  readText('fixtures/hooks/codex-hook-block.json'),
+) as HookSettings;
+
+/**
+ * The six Codex events, IN ORDER, taken from the frozen copy rather than
+ * written down again.
+ *
+ * Order is asserted because six is a decision, not an accident: each event is a
+ * separate trust prompt for the user, so a seventh appearing silently costs
+ * them a click and costs this document its claim.
+ */
+const CODEX_EVENTS: readonly string[] = Object.keys(FROZEN_CODEX_SETTINGS.hooks);
 
 /** The live block, when it is present. `null` on any clone that lacks it. */
 const LIVE_PATH = join(ROOT, '.claude/settings.local.json');
@@ -357,6 +505,38 @@ describe('README exists and ships clean', () => {
     }
     expect(MOVED.some((re) => re.test('see [the plan](PLAN.md) for detail'))).toBe(true);
     expect(MOVED.some((re) => re.test('see [evidence](docs/evidence/x.md)'))).toBe(true);
+  });
+
+  it('shows no control-surface drift: `control` still occurs on exactly three lines', () => {
+    // v0.6.0 DoD 5.1's last clause, verbatim: "`grep -c "control" README.md`
+    // unchanged from v0.5.0 (no control-surface drift)". MEASURED at the
+    // `v0.5.0` tag and at the phase head before this section was written: 3.
+    //
+    // WHY A WORD COUNT IS THE RIGHT SHAPE HERE, since it looks like the crudest
+    // possible assertion. A third engine is the moment a read-only observer is
+    // most likely to grow a verb: the Codex section had to describe hooks, a
+    // trust step and a restart, and every one of those is a sentence away from
+    // telling a user what Agent Deck can do TO Codex. `grep -c` cannot read
+    // meaning, but this document's three occurrences are a fixed, known set -
+    // a paste block you control, OpenCode's `control_account` table, and the
+    // "No control surface" exclusion - so a fourth is a new claim about acting
+    // on something, and a reviewer is cheaper than a released one.
+    //
+    // Line granularity, not occurrence granularity, because that is what
+    // `grep -c` counts and the DoD names the command.
+    const lines = README.split('\n')
+      .map((line, i) => ({ n: i + 1, line }))
+      .filter((row) => row.line.includes('control'));
+    expect(
+      lines.map((h) => `${String(h.n)}: ${h.line.trim()}`),
+      'the README grew or lost a `control` line - see DoD 5.1',
+    ).toHaveLength(3);
+
+    // The count alone could stay at 3 while the EXCLUSION was deleted and a
+    // control-surface claim took its place, so the promise itself is pinned.
+    expect(README).toContain('**No control surface.**');
+    // Vacuity control: the counter can see a fourth one.
+    expect('a\ncontrol\nb'.split('\n').filter((l) => l.includes('control'))).toHaveLength(1);
   });
 
   /**
@@ -459,7 +639,7 @@ describe('README exists and ships clean', () => {
     }
   });
 
-  it('carries the four release images, in order, and no demo GIF', () => {
+  it('carries the five release assets, in order', () => {
     // WHAT THIS ASSERTED BEFORE 2026-08-30, because the change is the point:
     // it asserted the four references were present and in order WHETHER OR NOT
     // THE FILES EXISTED, and it carried the exemption that let them not exist.
@@ -486,14 +666,21 @@ describe('README exists and ships clean', () => {
     ]);
   });
 
-  it('links no demo GIF, and no image this release retired', () => {
-    // THE GIF IS DROPPED, and with no placeholder standing in for it. It was
-    // one of the four Phase 8 slots and the only one that is not a still; the
-    // media gate can measure a PNG's chunks, read its pixels and sweep its
-    // bytes, and an animation is the asset none of that reaches in the same
-    // way. A reference to a file nobody is going to supply is a broken image
-    // on the Marketplace listing page, which is what this release exists to
-    // stop happening.
+  it('links no image this release retired, and exactly one GIF: the hero', () => {
+    // THE v0.5.0 GIF WAS DROPPED, and with no placeholder standing in for it.
+    // It was one of the four Phase 8 slots and the only one that is not a
+    // still; the media gate can measure a PNG's chunks, read its pixels and
+    // sweep its bytes, and an animation is the asset none of that reaches in
+    // the same way. A reference to a file nobody is going to supply is a broken
+    // image on the Marketplace listing page, which is what that release existed
+    // to stop happening.
+    //
+    // v0.6.0 SUPPLIES ONE. `media/agent-deck-hero.gif` is on disk, tracked, and
+    // linked - so the blanket `not.toContain('.gif')` that used to close this
+    // test would now be forbidding the asset rather than the absence. It is
+    // replaced by the assertion that was always the real one: the page links
+    // EXACTLY ONE `.gif`, and it is that file. A second animation appearing, or
+    // the retired name coming back, is still red.
     //
     // The three `screenshot-*.png` names are here for the same reason from the
     // other direction: they were `0.1.x` captures of a renderer that no longer
@@ -517,7 +704,19 @@ describe('README exists and ships clean', () => {
         `${retired} is retired but still on disk`,
       ).toBe(false);
     }
-    expect(README.toLowerCase()).not.toContain('.gif');
+
+    // Exactly one animation on the page, and it is the hero. Both halves
+    // matter: the count stops a second GIF arriving unnoticed, and naming the
+    // file stops the count being satisfied by the wrong one.
+    const gifs = [...README.matchAll(/!\[[^\]]*\]\(([^)]+\.gif)\)/gi)].map((m) => m[1] ?? '');
+    expect(gifs).toStrictEqual(['media/agent-deck-hero.gif']);
+    // Not merely linked: TRACKED, so the absolute URL vsce rewrites the link
+    // into resolves on the listing page. The GIF does not ship inside the VSIX
+    // - see the note on RELEASE_IMAGES - so tracking is the only thing that
+    // puts those bytes where the Marketplace looks for them.
+    expect(TRACKED_MEDIA).toContain('media/agent-deck-hero.gif');
+    // Vacuity control: the link pattern really does find a `.gif` reference.
+    expect([...'![x](media/a.gif)'.matchAll(/!\[[^\]]*\]\(([^)]+\.gif)\)/gi)]).toHaveLength(1);
   });
 
   it('keeps the three preconditions the Marketplace render depends on', () => {
@@ -588,20 +787,37 @@ describe('README exists and ships clean', () => {
     // Pinned BESIDE the set, not instead of it: a set comparison written
     // against an empty listing passes vacuously, and a count is the cheapest
     // thing that goes red when it does.
-    expect(tracked).toHaveLength(5);
+    //
+    // SIX SINCE v0.6.0 (DoD 5.8.1): the icon, the four stills and the hero GIF.
+    // Amended, never relaxed - this is still equality both ways with the count
+    // beside it, and the reason is unchanged from the v0.5.0 comment above.
+    expect(tracked).toHaveLength(6);
   }, 20_000);
 });
 
 describe('the hook paste block', () => {
-  it('has exactly one JSON fence carrying a `hooks` key, and every fence parses', () => {
+  it('has exactly two JSON fences carrying a `hooks` key, one per engine section', () => {
+    // AMENDED AT v0.6.0, NOT RELAXED. This said `toHaveLength(1)` while there
+    // was one hook block, which was exact. With two, a count alone stops being
+    // enough - it would pass over two copies of the same block, or over the
+    // Codex block printed twice - so the count is kept AND every hook-carrying
+    // fence is required to be one of the two named sections' blocks.
     expect(JSON_FENCES.length).toBeGreaterThan(0);
     const parsed = JSON_FENCES.map((text) => JSON.parse(text) as unknown);
     const hookBlocks = parsed.filter(isHookSettings);
-    expect(hookBlocks).toHaveLength(1);
+    expect(hookBlocks).toHaveLength(2);
+
+    // Each section prints exactly one, and the two are not the same text: an
+    // unaccounted-for third fence, or a section that lost its block, fails here
+    // rather than silently shifting which block the assertions below read.
+    expect(jsonFencesUnder(CC_HOOK_HEADING)).toHaveLength(1);
+    expect(jsonFencesUnder(CODEX_HOOK_HEADING)).toHaveLength(1);
+    expect([...JSON_FENCES].filter((f) => f === CC_FENCE || f === CODEX_FENCE)).toHaveLength(2);
+    expect(CC_FENCE).not.toBe(CODEX_FENCE);
   });
 
   it('is byte-identical to the frozen copy in fixtures/hooks/hook-block.json', () => {
-    const block = JSON.parse(JSON_FENCES[0] ?? '') as unknown;
+    const block = JSON.parse(CC_FENCE) as unknown;
     expect(isHookSettings(block)).toBe(true);
     if (!isHookSettings(block)) return;
 
@@ -624,14 +840,14 @@ describe('the hook paste block', () => {
   it.skipIf(LIVE_SETTINGS === null)(
     'still matches the live block in .claude/settings.local.json, where present',
     () => {
-      const block = JSON.parse(JSON_FENCES[0] ?? '') as HookSettings;
+      const block = JSON.parse(CC_FENCE) as HookSettings;
       expect(block.hooks).toStrictEqual(LIVE_SETTINGS?.hooks);
       expect(FROZEN_SETTINGS.hooks).toStrictEqual(LIVE_SETTINGS?.hooks);
     },
   );
 
   it('registers the six events the liveness engine is fed by', () => {
-    const block = JSON.parse(JSON_FENCES[0] ?? '') as HookSettings;
+    const block = JSON.parse(CC_FENCE) as HookSettings;
     // Asserted against the live file, not a hard-coded list, and additionally
     // spelled out: a block that silently lost SubagentStart still "matches the
     // file" if the file lost it too.
@@ -640,22 +856,33 @@ describe('the hook paste block', () => {
     );
   });
 
-  it('uses `node -e` and never curl', () => {
-    const fence = JSON_FENCES[0] ?? '';
-    expect(fence.toLowerCase()).not.toContain('curl');
-    const block = JSON.parse(fence) as HookSettings;
-    const all = [...commandsOf(block).values()].flat();
-    expect(all.length).toBeGreaterThan(0);
-    for (const command of all) {
-      expect(command.startsWith('node -e ')).toBe(true);
+  it('uses `node -e` and never curl, in BOTH blocks', () => {
+    // Both, and every command string in each: `commandStringsOf` reads
+    // `commandWindows` too, so a `curl` smuggled into the Windows half of a
+    // Codex entry is caught. `commandsOf` alone would not see it.
+    for (const [name, fence] of [
+      ['Claude Code', CC_FENCE],
+      ['Codex', CODEX_FENCE],
+    ] as const) {
+      expect(fence.toLowerCase(), `${name}: curl in the paste block`).not.toContain('curl');
+      const block = JSON.parse(fence) as HookSettings;
+      const all = commandStringsOf(block);
+      expect(all.length, `${name}: no commands at all`).toBeGreaterThan(0);
+      for (const command of all) {
+        expect(command.startsWith('node -e '), `${name}: not a node -e command`).toBe(true);
+      }
     }
   });
 
   it('names the manifest default port, and no other port, in every command', () => {
     expect(typeof DEFAULT_PORT).toBe('number');
-    const fence = JSON_FENCES[0] ?? '';
-    const block = JSON.parse(fence) as HookSettings;
-    const commandCount = [...commandsOf(block).values()].flat().length;
+    // BOTH fences, because both blocks POST to the one listener. A Codex block
+    // naming a different port would be a user whose Codex liveness is silent
+    // for a reason no message on screen could explain.
+    const fence = `${CC_FENCE}\n${CODEX_FENCE}`;
+    const commandCount =
+      commandStringsOf(JSON.parse(CC_FENCE) as HookSettings).length +
+      commandStringsOf(JSON.parse(CODEX_FENCE) as HookSettings).length;
 
     const ports = [...fence.matchAll(/\bport\b\s*[:=]\s*(\d+)/gi)].map((m) => Number(m[1]));
     // One per command: a block that lost its port literal would otherwise pass
@@ -674,9 +901,9 @@ describe('the hook paste block', () => {
     // the closure to transitivity, which holds only while both edges are
     // green in the same run. Collapsing all three sources to one set says the
     // thing directly, and a failure prints which source dissents.
-    const fence = JSON_FENCES[0] ?? '';
+    const fence = `${CC_FENCE}\n${CODEX_FENCE}`;
     const ports = [...fence.matchAll(/\bport\b\s*[:=]\s*(\d+)/gi)].map((m) => Number(m[1]));
-    expect(ports.length, 'the pasted block names no port at all').toBeGreaterThan(0);
+    expect(ports.length, 'the pasted blocks name no port at all').toBeGreaterThan(0);
 
     const sources = new Set<number>([
       ...ports,
@@ -690,10 +917,88 @@ describe('the hook paste block', () => {
     ).toStrictEqual([DEFAULT_HOOK_PORT]);
   });
 
-  it('binds only loopback', () => {
-    const fence = JSON_FENCES[0] ?? '';
-    expect(fence).toContain("host:'127.0.0.1'");
-    expect(fence).not.toContain('0.0.0.0');
+  it('binds only loopback, in both blocks', () => {
+    for (const [name, fence] of [
+      ['Claude Code', CC_FENCE],
+      ['Codex', CODEX_FENCE],
+    ] as const) {
+      expect(fence, `${name}: not loopback`).toContain("host:'127.0.0.1'");
+      expect(fence, `${name}: names 0.0.0.0`).not.toContain('0.0.0.0');
+    }
+  });
+
+  /* ----------------------------------------------------------------------- *
+   * THE CODEX BLOCK — v0.6.0 DoD 5.1
+   *
+   * Same treatment as the Claude Code block above and for the same reason: the
+   * frozen copy is byte-identical to the block installed at
+   * `~/.codex/hooks.json` on the machine whose Codex hook corpus this project
+   * captured, so retyping or "simplifying" a one-liner that is known to fire is
+   * what these assertions cost.
+   *
+   * TWO THINGS ARE DIFFERENT AND BOTH ARE ASSERTED. Every Codex entry carries
+   * `commandWindows` as well as `command`, and the six events are asserted IN
+   * ORDER as well as by name - the count is a decision (six events, six trust
+   * prompts) and a seventh arriving quietly is exactly what a frozen copy is
+   * for.
+   * ----------------------------------------------------------------------- */
+
+  it('the Codex block is byte-identical to fixtures/hooks/codex-hook-block.json', () => {
+    const block = JSON.parse(CODEX_FENCE) as unknown;
+    expect(isHookSettings(block)).toBe(true);
+    if (!isHookSettings(block)) return;
+
+    expect(block.hooks).toStrictEqual(FROZEN_CODEX_SETTINGS.hooks);
+
+    // Per-event, so a failure names the event that drifted rather than printing
+    // two 7 KB objects side by side.
+    const readmeCommands = commandsOf(block);
+    const frozenCommands = commandsOf(FROZEN_CODEX_SETTINGS);
+    expect([...readmeCommands.keys()]).toStrictEqual([...frozenCommands.keys()]);
+    for (const [event, commands] of frozenCommands) {
+      expect(readmeCommands.get(event), `command drift on ${event}`).toStrictEqual(commands);
+    }
+
+    // And it is NOT the Claude Code block: they are different files with
+    // different shapes, and a copy-paste of the wrong one would satisfy a
+    // "parses and has six events" check.
+    expect(block.hooks).not.toStrictEqual(FROZEN_SETTINGS.hooks);
+  });
+
+  it('the Codex block registers exactly six events, in the frozen order', () => {
+    const block = JSON.parse(CODEX_FENCE) as HookSettings;
+    expect(Object.keys(block.hooks)).toStrictEqual([...CODEX_EVENTS]);
+    // Spelled out as well as derived, for the reason the Claude Code sibling
+    // gives: a block that silently lost SubagentStart still "matches the frozen
+    // copy" if the frozen copy lost it too.
+    expect(CODEX_EVENTS).toStrictEqual([
+      'SessionStart',
+      'PreToolUse',
+      'PostToolUse',
+      'SubagentStart',
+      'SubagentStop',
+      'Stop',
+    ]);
+    // The README's prose names the same six, so a reader counting trust prompts
+    // is counting the right thing.
+    for (const event of CODEX_EVENTS) {
+      expect(README_CODEX, `the Codex section does not name ${event}`).toContain(`\`${event}\``);
+    }
+  });
+
+  it('every Codex entry carries BOTH `command` and `commandWindows`', () => {
+    const block = JSON.parse(CODEX_FENCE) as HookSettings;
+    const entries = Object.values(block.hooks).flatMap((groups) =>
+      groups.flatMap((group) => group.hooks),
+    );
+    expect(entries).toHaveLength(CODEX_EVENTS.length);
+    for (const entry of entries) {
+      expect(typeof entry.command).toBe('string');
+      expect(typeof entry.commandWindows, 'a Codex entry has no commandWindows').toBe('string');
+    }
+    // Two strings per entry, which is what makes `commandStringsOf` twice the
+    // size of `commandsOf` here - the property the port test leans on.
+    expect(commandStringsOf(block)).toHaveLength(entries.length * 2);
   });
 });
 
@@ -743,6 +1048,27 @@ describe('the version badge is accurate against the shipped constants', () => {
     expect(README_CC).not.toContain(PINNED_OPENCODE_VERSION);
     expect(README_OC).toContain(PINNED_OPENCODE_VERSION);
     expect(README_OC).not.toContain(PINNED_CC_VERSION);
+  });
+
+  it('regions the Codex document too, on the same mechanism', () => {
+    // The third engine, added at v0.6.0. Without this the Codex anchor and its
+    // corners reach the CC guards, which assert every stated corner equals the
+    // CLAUDE CODE window's - a correct README, red.
+    const opens = [...README.matchAll(/<!-- engine:codex -->/g)].length;
+    const closes = [...README.matchAll(/<!-- \/engine:codex -->/g)].length;
+    expect(opens, 'unbalanced engine:codex markers in README.md').toBe(closes);
+    expect(opens).toBeGreaterThan(0);
+    expect(README_CODEX.length, 'the Codex region is empty').toBeGreaterThan(0);
+    expect(README_CC.length, 'the Codex region swallowed the document').toBeGreaterThan(
+      README_CODEX.length,
+    );
+
+    // Three anchors, three regions, no leakage in any direction.
+    expect(README_CODEX).toContain(PINNED_CODEX_VERSION);
+    expect(README_CC).not.toContain(PINNED_CODEX_VERSION);
+    expect(README_OC).not.toContain(PINNED_CODEX_VERSION);
+    expect(README_CODEX).not.toContain(PINNED_CC_VERSION);
+    expect(README_CODEX).not.toContain(PINNED_OPENCODE_VERSION);
   });
 
   it('states the anchor version the fingerprint actually uses', () => {
@@ -1057,6 +1383,254 @@ describe('the OpenCode compatibility claims are accurate against the shipped con
   });
 });
 
+/* -------------------------------------------------------------------------- *
+ * v0.6.0 DoD 5.1 — "Also observes Codex"
+ *
+ * The item, verbatim: an "Also observes Codex" section in the OpenCode
+ * section's shape; the paste block asserted by CI against a frozen copy; the
+ * version window stated per G9; "no App Server, no socket to Codex" stated;
+ * `grep -c "control" README.md` unchanged from v0.5.0.
+ *
+ * The paste block half is in `the hook paste block` above, beside the Claude
+ * Code one. The `control` count is in `README exists and ships clean`, beside
+ * the other whole-document guards. What is here is the section itself.
+ * -------------------------------------------------------------------------- */
+
+/** Everything after the heading, whitespace-flattened: markdown wraps. */
+const CODEX_SECTION = sectionText('## Also observes Codex');
+const CODEX_FLAT = CODEX_SECTION.replace(/\s+/g, ' ');
+const OC_SECTION = sectionText('## Also observes OpenCode');
+const CODEX_HOOK_SECTION = sectionText(CODEX_HOOK_HEADING);
+const CC_HOOK_SECTION = sectionText(CC_HOOK_HEADING);
+
+describe('the README carries an "Also observes Codex" section in the OpenCode section\'s shape', () => {
+  it('is written to the same six-part shape, and the shape is read off the OpenCode section', () => {
+    // NOT a list of sentences somebody thought a Codex section should have.
+    // Each probe is asserted against the OPENCODE section first, which is what
+    // "in the OpenCode section's shape" means and what makes the probe itself
+    // non-vacuous: a pattern that stopped matching anything would fail on the
+    // section it was derived from before it ever reached the new one.
+    const SHAPE: readonly (readonly [string, RegExp])[] = [
+      ['says which engine wrote a cell', /\bglyph\b/i],
+      ['names the engine chips', /\bchips\b/i],
+      ['says nothing has to be configured', /Nothing is configured/],
+      ['enumerates what is never read, by name rather than by filter', /by name rather than by filter/],
+      ['states an anchor', /\banchor\b/i],
+      ['says what refuses, and that a refusal is not a half-built tree', /renders `unsupported`/],
+    ];
+    for (const [what, re] of SHAPE) {
+      expect(re.test(OC_SECTION), `the OpenCode section no longer: ${what}`).toBe(true);
+      expect(re.test(CODEX_SECTION), `the Codex section does not: ${what}`).toBe(true);
+    }
+  });
+
+  it('sits beside the OpenCode section rather than somewhere else in the page', () => {
+    // Adjacency, asserted because the two sections answer the same question
+    // about different engines and a reader who found one should not have to
+    // hunt for the other. Nothing between them but the region markers.
+    const between = README.slice(
+      README.indexOf('## Also observes OpenCode'),
+      README.indexOf('## Also observes Codex'),
+    );
+    expect(between.length).toBeGreaterThan(0);
+    expect(between.match(/\n## /g) ?? [], 'another section came between them').toHaveLength(0);
+  });
+
+  it('names the five things under the Codex root that are never opened', () => {
+    // The OpenCode mirror of this names four tables. Codex's list is the G10
+    // exclusion list, and `auth.json` is the entry whose absence would matter
+    // most - so it is enumerated in the document, not summarised.
+    for (const name of [
+      'auth.json',
+      '.sandbox-secrets/',
+      'installation_id',
+      'cap_sid',
+      'models_cache.json',
+    ]) {
+      expect(CODEX_SECTION, `the Codex section does not name ${name}`).toContain(name);
+    }
+    // ...and the section points at where the list is enumerated in full, the
+    // same way the Trust section points at SECURITY.md rather than restating a
+    // mechanism.
+    expect(CODEX_SECTION).toContain('[`SECURITY.md`](SECURITY.md)');
+  });
+
+  it('states the product boundary DoD 5.1 names: no App Server, no socket to Codex', () => {
+    // Codex ships an App Server. This product will never connect to it, and
+    // that is a boundary rather than an omission - the sentence has to say so,
+    // because a reader cannot tell the two apart from silence.
+    expect(CODEX_FLAT).toContain('No socket to Codex.');
+    expect(CODEX_FLAT).toContain('No App Server');
+    expect(CODEX_FLAT).toMatch(/no second port/i);
+    expect(CODEX_FLAT).toMatch(/app-server proxy/i);
+    // The positive half: one listener, shared, which is why there is no second
+    // port to talk about.
+    expect(CODEX_FLAT).toMatch(/same\*? loopback listener/i);
+    // And the whole-document claim stays consistent with it: the Trust section
+    // still promises exactly one socket.
+    expect(README).toContain('The only socket it opens is an HTTP listener');
+  });
+
+  it('states that neither of Codex\'s own config files is read or written', () => {
+    // G1 for a third engine, and the half a user is most likely to doubt: the
+    // extension tells them to edit `hooks.json`, so it has to be explicit that
+    // it does not go near it afterwards.
+    expect(CODEX_FLAT).toMatch(/Neither `hooks\.json` nor `config\.toml` is opened/);
+  });
+});
+
+describe('the Codex compatibility claims are accurate against the shipped constants', () => {
+  const cxWindow = codexVersionWindow();
+  const cxCorners = (): { min: string; max: string } => {
+    if (cxWindow === undefined) throw new Error('PINNED_CODEX_VERSION does not parse');
+    return {
+      min: `${String(cxWindow.major)}.${String(cxWindow.minMinor)}.x`,
+      max: `${String(cxWindow.major)}.${String(cxWindow.maxMinor)}.x`,
+    };
+  };
+
+  /**
+   * A Codex version literal. The CC and OpenCode patterns are `x.y.z` and would
+   * match NOTHING here: the anchor carries a prerelease tag, so the character
+   * after `0.151.0` is a `-` rather than the closing backtick. A guard that
+   * silently matched nothing would be the vacuous-assertion class in its purest
+   * form, so the tail is part of the pattern and the count is asserted below.
+   */
+  const CODEX_LITERAL_RE = /`(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)`/g;
+
+  it('states the anchor the Codex fingerprint actually uses', () => {
+    const stated = [
+      ...README_CODEX.matchAll(/\banchor(?:ed on)?:?\s+`([0-9A-Za-z.-]+)`/gi),
+    ].map((m) => m[1]);
+    expect(stated.length, 'the Codex region states no anchor').toBeGreaterThan(0);
+    for (const version of stated) expect(version).toBe(PINNED_CODEX_VERSION);
+  });
+
+  it('states window corners derived from the shipped tolerance', () => {
+    const { min, max } = cxCorners();
+    const stated = [...README_CODEX.matchAll(/`(\d+\.\d+\.x)` to `(\d+\.\d+\.x)`/g)];
+    expect(stated.length, 'the Codex region states no window corners').toBeGreaterThan(0);
+    for (const match of stated) {
+      expect(match[1]).toBe(min);
+      expect(match[2]).toBe(max);
+    }
+    // Derived, never written down twice: the corners come from the shipped
+    // minor tolerance, so moving it moves what the README is required to say.
+    expect(cxWindow?.maxMinor).toBe((cxWindow?.minMinor ?? 0) + 2 * CODEX_VERSION_WINDOW.minor);
+  });
+
+  it('names no Codex version the shipped predicate would refuse', () => {
+    const literals = [...README_CODEX.matchAll(CODEX_LITERAL_RE)].map((m) => m[1] ?? '');
+    expect(literals.length, 'the Codex region names no version at all').toBeGreaterThan(0);
+    for (const literal of literals) {
+      expect(
+        isCodexVersionAccepted(literal),
+        `README names refused Codex version ${literal}`,
+      ).toBe(true);
+    }
+    expect(literals).toContain(PINNED_CODEX_VERSION);
+    // Vacuity controls, both directions. The pattern must reach a prerelease
+    // literal at all - the CC pattern does not - and the predicate must refuse
+    // something, on the major as well as the minor.
+    expect([...'`0.151.0-alpha.7.2`'.matchAll(CODEX_LITERAL_RE)].map((m) => m[1])).toStrictEqual([
+      PINNED_CODEX_VERSION,
+    ]);
+    expect(isCodexVersionAccepted('4.4.0')).toBe(false);
+  });
+
+  it('states the G9 posture in words: patch AND prerelease uncompared, structure refuses', () => {
+    // G9, verbatim: "Major exact, minor +/-1, patch and prerelease tags not
+    // compared. Structure refuses, not the number. The anchor moves only by
+    // harvesting a new corpus." All four clauses, because the prerelease half
+    // is new with this engine and is the half a reader would otherwise assume
+    // works like the other two.
+    expect(CODEX_FLAT).toMatch(/Major must match/i);
+    expect(CODEX_FLAT).toMatch(/minor may be one step either way/i);
+    expect(CODEX_FLAT).toMatch(/neither the patch component nor the prerelease tag is compared/i);
+    expect(CODEX_FLAT).toMatch(/What refuses a session is the \*\*structure\*\*/);
+    expect(CODEX_FLAT).toMatch(/anchor moves one way only/i);
+    expect(CODEX_FLAT).toMatch(/harvesting a corpus/i);
+    // No patch tolerance is CLAIMED anywhere in the region, on the CC pattern,
+    // because there is no patch tolerance to claim.
+    expect(CODEX_VERSION_WINDOW).not.toHaveProperty('patch');
+    expect([...README_CODEX.matchAll(/\bpatch \+\/-(\d+)/g)].map((m) => m[0])).toEqual([]);
+  });
+
+  it('states the minor tolerance the Codex fingerprint actually uses', () => {
+    const minors = [...README_CODEX.matchAll(/one step either way/g)];
+    expect(minors.length).toBeGreaterThan(0);
+    // "one step" is the prose form of the constant, so the constant is what it
+    // is checked against rather than the other way round.
+    expect(CODEX_VERSION_WINDOW.minor).toBe(1);
+  });
+
+  it('states the anchor is read from the corpus, never from what a binary reports', () => {
+    // The recorded trap this sentence exists for: OpenCode self-updated
+    // `1.18.22` -> `1.18.23` mid-measurement while its store still held rows
+    // written by two other versions. Spec C9 states the rule for Codex before
+    // it could be re-learned, and the README states it for the reader.
+    expect(CODEX_FLAT).toContain('session_meta.payload.cli_version');
+    expect(CODEX_FLAT).toMatch(/never from what a binary reports/i);
+  });
+});
+
+describe('the README tells a Codex user how to install the hook, and what will go wrong', () => {
+  it('offers ~/.codex/hooks.json and nothing else', () => {
+    // One location, deliberately. Repo-local hook discovery has been reported
+    // broken on some Codex releases, so offering it would be offering a paste
+    // that looks installed and never fires.
+    expect(CODEX_HOOK_SECTION).toContain('`~/.codex/hooks.json`');
+    expect(
+      /project'?s own/i.test(CODEX_HOOK_SECTION),
+      'the Codex section offers a repo-local hook file',
+    ).toBe(false);
+    // Vacuity control: the phrase is real, and the Claude Code section - which
+    // DOES offer a repo-local file - is where it lives.
+    expect(/project'?s own/i.test(CC_HOOK_SECTION)).toBe(true);
+  });
+
+  it('says a restart is needed, and says it is different from Claude Code', () => {
+    // MEASURED, and the opposite of the Claude Code note two sections up, which
+    // says settings are re-read per invocation. Getting this wrong costs a user
+    // a silent deck and no way to tell why.
+    const flat = CODEX_HOOK_SECTION.replace(/\s+/g, ' ');
+    expect(flat).toMatch(/\*\*Restart Codex\.\*\*/);
+    expect(flat).toMatch(/opposite of Claude Code/i);
+    // The Claude Code section still says the other thing, so the contrast the
+    // Codex text draws is a real one rather than a stale memory.
+    expect(CC_HOOK_SECTION).toMatch(/No Claude Code restart is needed/);
+  });
+
+  it('makes the trust step a numbered instruction, and says there are six of them', () => {
+    // Codex will not run a hook command until a human trusts it, and editing
+    // `hooks.json` invalidates the entries for the events touched - after which
+    // the hook stops firing SILENTLY. A user who sees nothing happen has to be
+    // able to find out why from this page.
+    const steps = [...CODEX_HOOK_SECTION.matchAll(/^(\d)\. /gm)].map((m) => m[1]);
+    expect(steps, 'the trust step is not a numbered instruction').toStrictEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+    ]);
+    const flat = CODEX_HOOK_SECTION.replace(/\s+/g, ' ');
+    expect(flat).toMatch(/Trust the hook when Codex asks/i);
+    // SIX trust entries from ONE command, which is the part nobody would guess.
+    expect(flat).toMatch(/six[^.]{0,60}trust entries/i);
+    expect(String(CODEX_EVENTS.length)).toBe('6');
+    // ...and the silent-failure consequence, in the same list.
+    expect(flat).toMatch(/invalidates the trust entry/i);
+    expect(flat).toMatch(/stop firing \*\*silently\*\*/i);
+  });
+
+  it('says both command keys are given, and why the block is a frozen copy', () => {
+    const flat = CODEX_HOOK_SECTION.replace(/\s+/g, ' ');
+    expect(flat).toContain('`command`');
+    expect(flat).toContain('`commandWindows`');
+    expect(flat).toMatch(/byte-for-byte copy/i);
+  });
+});
+
 /**
  * The two sentences the superseded posture was actually written in, lowercased.
  * Absolute: forbidden ANYWHERE in the document, with no exemption, including
@@ -1350,6 +1924,70 @@ function currentChangelogEntry(text: string): string {
 
 const CHANGELOG_TEXT = readText('CHANGELOG.md');
 
+/**
+ * THE SHIPPED DOCUMENTS CALL THE PRODUCT WHAT THE MANIFEST CALLS IT.
+ *
+ * Both of these were found by a `phase-verifier` round at the 0.6.0 gate, in a
+ * release whose whole point was the rename, and neither had a test:
+ *
+ *   1. `CHANGELOG.md`'s masthead read "All notable changes to Agent Deck for
+ *      Claude Code are documented here" - the OLD `displayName`, used as the
+ *      current product name, in the release that replaced it.
+ *   2. The 0.6.0 entry QUOTED the new name with an ASCII hyphen while
+ *      `package.json` carries U+2014. `manifest.test.ts` asserts that dash by
+ *      code point precisely because "a hyphen here would be a different name
+ *      that looks the same in a diff" - and the changelog printed the hyphen.
+ *
+ * This file ships: `extension/changelog.md` inside the VSIX, and a tab on the
+ * Marketplace listing. A shipped document naming a product that no longer
+ * exists is the 'documents describing a state the same release changed' class,
+ * which this repository has now hit in the README (three deleted features),
+ * in the CHANGELOG (a feature the same entry removed) and here.
+ *
+ * Bound to the manifest rather than written down a second time, which is the
+ * only shape that cannot go stale: the README went stale in exactly this way
+ * before it was bound.
+ */
+describe('the shipped documents name the shipped product', () => {
+  it('the CHANGELOG masthead does not carry a superseded product name', () => {
+    const masthead = CHANGELOG_TEXT.split('\n').slice(0, 6).join(' ');
+    expect(masthead, 'the masthead must name the product').toContain('Agent Deck');
+    expect(
+      masthead,
+      'the CHANGELOG masthead still carries the pre-0.6.0 display name',
+    ).not.toContain('Agent Deck for Claude Code');
+  });
+
+  it('every quoted display name in the current entry matches the manifest exactly', () => {
+    // Quoted names only - prose that merely mentions Claude Code is fine and
+    // must stay fine, since the product still observes it. What is pinned is a
+    // string presented AS the product's name.
+    const entry = currentChangelogEntry(CHANGELOG_TEXT);
+    const quoted = [...entry.matchAll(/"(Agent Deck[^"]*)"/g)].map((m) => m[1] ?? '');
+    expect(
+      quoted.length,
+      'the entry quotes no display name - this check would be vacuous',
+    ).toBeGreaterThan(0);
+
+    const displayName = String(MANIFEST.displayName);
+    for (const name of quoted) {
+      // The OLD name is allowed to appear, but only as history - i.e. only
+      // when the entry also carries the new one. Asserted as membership in the
+      // pair rather than equality, because a rename entry legitimately names
+      // both.
+      expect(
+        [displayName, 'Agent Deck for Claude Code'],
+        `${name} is neither the manifest's display name nor the one it replaced`,
+      ).toContain(name);
+    }
+    expect(
+      quoted,
+      'the rename entry must quote the name the manifest actually carries',
+    ).toContain(displayName);
+  });
+});
+
+
 /** The documents a user actually reads. Both are shipped in the VSIX. */
 const USER_FACING: { readonly name: string; readonly text: string }[] = [
   { name: 'README.md', text: paragraphs(README) },
@@ -1462,5 +2100,101 @@ describe('the shipped documents describe the shipped UI', () => {
       );
       expect(exempted.length, `${name} exempts ${exempted.length} sentences`).toBeLessThanOrEqual(8);
     }
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * DoD 4.4 — SECURITY.md's Codex claims are BOUND to the code, not restated
+ * -------------------------------------------------------------------------- */
+
+/*
+ * WHY THIS EXISTS.
+ *
+ * `SECURITY.md` now states what the Codex engine reads and what it never opens.
+ * The never-opened list is the half that will decay: it is a promise about
+ * SECURITY, it is spelled out in prose, and the code's copy lives somewhere
+ * else entirely (`src/codex/never-open.ts`). This repository has already
+ * shipped a release whose README advertised three DELETED features, covered by
+ * nothing — a grep for the relevant words across this file returned zero. The
+ * fix then was to bind the prose to the components' own labels, and this is the
+ * same move for a security claim.
+ *
+ * EXACT SET, BOTH WAYS, COUNT PINNED BESIDE IT (rule 19). A containment would
+ * pass while the document quietly dropped `auth.json`, which is the one entry
+ * whose absence would matter most.
+ */
+describe("DoD 4.4 — SECURITY.md states the Codex engine's reads and its never-opened list", () => {
+  const SECURITY = readText('SECURITY.md');
+
+  /** The never-opened entries SECURITY.md spells, taken from its own table. */
+  function documentedNeverOpen(): string[] {
+    const start = SECURITY.indexOf('#### G10');
+    expect(start, 'SECURITY.md must carry a G10 never-opened section').toBeGreaterThan(-1);
+    // To the NEXT heading, not to the next blank line: the section opens with
+    // a paragraph, so a blank-line boundary ends it before the table it is
+    // here to read. The vacuity control below caught exactly that.
+    const after = SECURITY.slice(start + 1);
+    const end = after.search(/\r?\n#{2,4} /);
+    const section = end === -1 ? after : after.slice(0, end);
+    // Every backticked token inside the section's table rows.
+    return [...section.matchAll(/`([^`]+)`/g)]
+      .map((m) => m[1] as string)
+      .filter((name) => /^[.*A-Za-z0-9_/-]+$/.test(name) && name !== 'src/codex/never-open.ts');
+  }
+
+  it('spells EXACTLY the list the code enforces — both ways, count pinned', () => {
+    const documented = [...new Set(documentedNeverOpen())].sort();
+    const enforced = [...CODEX_NEVER_OPEN].sort();
+
+    expect(documented).toStrictEqual(enforced);
+    // Beside the set, never instead of it: a set comparison written against an
+    // accidentally-empty extraction passes vacuously, and this goes red first.
+    expect(documented).toHaveLength(enforced.length);
+    expect(enforced.length).toBeGreaterThan(0);
+  });
+
+  it('vacuity control: the extractor really does find the entries', () => {
+    // Without this, the test above would pass on a SECURITY.md whose G10
+    // section had been emptied — [] === [] is not the claim being made.
+    const documented = documentedNeverOpen();
+    expect(documented.length).toBeGreaterThanOrEqual(CODEX_NEVER_OPEN.length);
+    expect(documented).toContain('auth.json');
+  });
+
+  it('states the four things DoD 4.4 names, each by a phrase that is checkable', () => {
+    // Deliberately NOT a word count and NOT a "mentions Codex" grep: each row
+    // is a claim a reader could act on, and a document that lost one should go
+    // red rather than stay green on having the right topic.
+    const claims: readonly [string, RegExp][] = [
+      ['what the engine reads', /rollout-\*\.jsonl/],
+      ['the sessions walk is discovered, not composed', /never composes a path from a clock/i],
+      ['the lock files are not opened', /never opened/i],
+      ['it does not read Codex config', /Neither `hooks\.json` nor `config\.toml` is opened/],
+      ['no second socket', /no second port/i],
+      ['the manual trust step', /trust/i],
+      // NOT the literal `89 ms`, which is what this row asserted first. A
+      // verifier pointed out the trap and it is a good one: pinning the digits
+      // of a measurement means the next honest re-measure turns this red, and
+      // the cheapest way back to green is to keep quoting a number nobody
+      // re-took. The claim is that a hook cost is STATED, not what it was.
+      ['the hook cost against a closed port', /closed loopback port/i],
+      ['the curl comparison', /curl\.exe/],
+    ];
+    for (const [what, re] of claims) {
+      expect(re.test(SECURITY), `SECURITY.md no longer states: ${what}`).toBe(true);
+    }
+  });
+
+  it('the hook-cost figures are a measurement, not an adjective', () => {
+    // DoD 4.4's own words: "numbers, not adjectives". The timings are NOT
+    // re-measured here — a wall-clock assertion in a suite is a test that
+    // passes or fails by CPU load, which this repository has already paid for
+    // twice. What is pinned is that numbers with units are present on both
+    // sides of the comparison.
+    const section = SECURITY.slice(SECURITY.indexOf('## 5.'));
+    const timings = [...section.matchAll(/\b([\d,]+) ms\b/g)].map((m) => m[1] as string);
+    expect(timings.length, 'the hook-cost table lost its numbers').toBeGreaterThanOrEqual(6);
+    // Both engines' costs are stated, and they are not the same number.
+    expect(new Set(timings).size).toBeGreaterThan(1);
   });
 });

@@ -220,7 +220,7 @@ describe('the message survives the structured-clone hop', () => {
   it('and nothing the host sends is mistaken for it', () => {
     const outbound: HostToWebviewMessage[] = [
       { type: 'snapshot', sessions: [] },
-      { type: 'degraded', degraded: false },
+      { type: 'degraded', engine: 'cc', degraded: false },
       { type: 'schemaMismatch', sessionId: 's' },
     ];
     for (const message of outbound) expect(isWebviewToHostMessage(message)).toBe(false);

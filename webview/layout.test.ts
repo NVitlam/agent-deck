@@ -52,6 +52,7 @@ import {
   countNodes,
   deckColumns,
   deckEngine,
+  deckLaneEngines,
   deckLaneX,
   deckLanesDegrade,
   deckLayout,
@@ -67,7 +68,9 @@ import {
   visibleNodeCount,
 } from './layout.js';
 import type {
+  DeckEngine,
   DeckLayoutMode,
+  DeckPlacement,
   DeckSession,
   DeckSortMode,
   TreePlacement,
@@ -77,6 +80,13 @@ import { DEFAULT_ENGINE_FILTER } from './canvas-contract.js';
 const REPO_ROOT = resolve('.');
 const WEBVIEW_DIR = join(REPO_ROOT, 'webview');
 const GOLDEN_FILE = join(WEBVIEW_DIR, 'goldens', 'layout', 'design-tables.json');
+/** DoD 5.0c's golden: lane coordinates for all seven engine subsets. */
+const LANE_SUBSET_GOLDEN_FILE = join(
+  WEBVIEW_DIR,
+  'goldens',
+  'layout',
+  'lane-subsets.json',
+);
 /**
  * The frozen reference, as a path this file can hand to `node`.
  *
@@ -575,8 +585,15 @@ describe('the deck', () => {
     expect(DECK_GRID_MARGIN).toBe(24);
     expect(DECK_LANE_GAP).toBe(40);
     expect(DECK_LANE_HEADER_Y).toBe(-28);
-    expect(deckLaneX('cc')).toBe(0);
-    expect(deckLaneX('oc')).toBe(DECK_CARD_W + 40);
+    // Lane slots, against the FULL visible set. DoD 5.0c made `deckLaneX` a
+    // function of the visible set rather than of the absolute rank, and at
+    // {cc, oc, cx} compaction is the identity, so these three numbers are the
+    // same as they were — which is the point: the fix moves the two-of-three
+    // shapes and nothing else. The subsets are pinned as a golden below.
+    const all: DeckEngine[] = ['cc', 'oc', 'cx'];
+    expect(deckLaneX('cc', all)).toBe(0);
+    expect(deckLaneX('oc', all)).toBe(DECK_CARD_W + 40);
+    expect(deckLaneX('cx', all)).toBe(2 * (DECK_CARD_W + 40));
   });
 
   it('defaults to grid · live first · all', () => {
@@ -656,6 +673,19 @@ describe('the deck', () => {
     }
   });
 
+  it('ranks engine cc < oc < cx under the engine sort', () => {
+    const rows: DeckSession[] = [
+      { id: 'cx-1', engine: 'cx', status: 'live', last: -1 },
+      { id: 'oc-1', engine: 'oc', status: 'live', last: -1 },
+      { id: 'cc-1', engine: 'cc', status: 'live', last: -1 },
+    ];
+    expect(sortDeckSessions(rows, 'engine').map((s) => s.engine)).toEqual([
+      'cc',
+      'oc',
+      'cx',
+    ]);
+  });
+
   it('ranks status live < idle < degraded < unsupported < ended', () => {
     const rows: DeckSession[] = (
       ['ended', 'unsupported', 'degraded', 'idle', 'live'] as const
@@ -679,8 +709,25 @@ describe('the deck', () => {
     expect(deckLayout([], 'lanes', 'live', 800)).toEqual([]);
   });
 
+  it('places a third (Codex) lane at slot 2, and all three lanes together do not degrade', () => {
+    const three: DeckSession[] = [
+      { id: 'cc-1', engine: 'cc', status: 'live', last: -1 },
+      { id: 'oc-1', engine: 'oc', status: 'live', last: -1 },
+      { id: 'cx-1', engine: 'cx', status: 'live', last: -1 },
+    ];
+    expect(deckLanesDegrade(three)).toBe(false);
+    const placed = deckLayout(three, 'lanes', 'live', 800);
+    // Literal coordinates, not `deckLaneX(...)` on both sides. Comparing the
+    // placement to the same function that produced it passes for any
+    // definition of that function, including one that returns a constant.
+    expect(placed.find((p) => p.id === 'cc-1')?.x).toBe(0);
+    expect(placed.find((p) => p.id === 'oc-1')?.x).toBe(260);
+    expect(placed.find((p) => p.id === 'cx-1')?.x).toBe(520);
+  });
+
   it('maps SessionState.engine onto the deck vocabulary, absence reading as cc', () => {
     expect(deckEngine('opencode')).toBe('oc');
+    expect(deckEngine('codex')).toBe('cx');
     expect(deckEngine('cc')).toBe('cc');
     expect(deckEngine(undefined)).toBe('cc');
   });
@@ -693,6 +740,13 @@ describe('the deck', () => {
       status: 'live',
       last: -42,
     });
+    // The third leg, minimal per the same helper.
+    expect(toDeckSession({ ...state, engine: 'codex' }, -7)).toEqual({
+      id: 'mock',
+      engine: 'cx',
+      status: 'live',
+      last: -7,
+    });
   });
 
   it('counts every node in a tree, agents and tools alike', () => {
@@ -704,6 +758,204 @@ describe('the deck', () => {
   it('rounds to three decimals and never emits negative zero', () => {
     expect(roundCoord(1 / 3)).toBe(0.333);
     expect(Object.is(roundCoord(-0.0001), 0)).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 5.0c — deck lanes compact to the visible engine set
+ * ------------------------------------------------------------------------ */
+
+/** The shape of `webview/goldens/layout/lane-subsets.json`. */
+interface LaneSubsetRow {
+  engines: DeckEngine[];
+  mode: 'list' | 'lanes';
+  laneX: Partial<Record<DeckEngine, number>>;
+  placements: DeckPlacement[];
+}
+interface LaneSubsetGolden {
+  geometry: {
+    cardW: number;
+    cardH: number;
+    laneGap: number;
+    gapY: number;
+    lanePitch: number;
+    rowPitch: number;
+  };
+  laneOrder: DeckEngine[];
+  sessions: { sort: DeckSortMode; viewportW: number };
+  subsets: LaneSubsetRow[];
+}
+
+/** Every engine the deck knows, in rank order. Not read from the golden. */
+const ALL_DECK_ENGINES: readonly DeckEngine[] = ['cc', 'oc', 'cx'];
+
+/**
+ * Two cards per present engine, ids `<engine>-1` and `<engine>-2`.
+ *
+ * Two rather than one so a lane pins its row stacking as well as its x — a
+ * one-card lane cannot tell a correct `y` from a constant `0`. All live and
+ * all on the same last-event time, so every sort resolves on the id and the
+ * expected order is readable from the ids alone.
+ */
+function subsetSessions(engines: readonly DeckEngine[]): DeckSession[] {
+  return engines.flatMap((engine): DeckSession[] => [
+    { id: `${engine}-1`, engine, status: 'live', last: -1 },
+    { id: `${engine}-2`, engine, status: 'live', last: -1 },
+  ]);
+}
+
+describe('DoD 5.0c — lanes compact to the visible engine set', () => {
+  let laneGolden: LaneSubsetGolden;
+
+  beforeAll(async () => {
+    laneGolden = JSON.parse(
+      await readFile(LANE_SUBSET_GOLDEN_FILE, 'utf8'),
+    ) as LaneSubsetGolden;
+  }, 30_000);
+
+  it('the golden covers all seven non-empty subsets, exactly once each', () => {
+    // Coverage is a claim in its own right and nothing below can make it.
+    // Every per-row assertion in this describe passes over a golden holding
+    // only the four rows that were already correct — which is exactly the
+    // golden a fix restating itself would produce.
+    expect(laneGolden.subsets).toHaveLength(7);
+    const keys = laneGolden.subsets.map((s) => s.engines.join('+'));
+    expect([...keys].sort()).toStrictEqual([
+      'cc',
+      'cc+cx',
+      'cc+oc',
+      'cc+oc+cx',
+      'cx',
+      'oc',
+      'oc+cx',
+    ]);
+    // Each row is a genuine subset, listed in rank order, with no repeats.
+    for (const row of laneGolden.subsets) {
+      expect({ key: row.engines.join('+'), distinct: new Set(row.engines).size }).toStrictEqual(
+        { key: row.engines.join('+'), distinct: row.engines.length },
+      );
+      expect(row.engines).toStrictEqual(
+        ALL_DECK_ENGINES.filter((e) => row.engines.includes(e)),
+      );
+      // `laneX` answers for every engine in the row and for no other.
+      expect(Object.keys(row.laneX).sort()).toStrictEqual([...row.engines].sort());
+      // Two cards per present engine.
+      expect(row.placements).toHaveLength(row.engines.length * 2);
+    }
+    // Three rows degrade to a list, four draw lanes.
+    expect(
+      laneGolden.subsets.filter((s) => s.mode === 'list').map((s) => s.engines.join('+')),
+    ).toStrictEqual(['cc', 'oc', 'cx']);
+    expect(laneGolden.subsets.filter((s) => s.mode === 'lanes')).toHaveLength(4);
+  });
+
+  it('the golden geometry is production geometry, not a second set of numbers', () => {
+    expect(laneGolden.geometry).toStrictEqual({
+      cardW: DECK_CARD_W,
+      cardH: DECK_CARD_H,
+      laneGap: DECK_LANE_GAP,
+      gapY: DECK_GAP_Y,
+      lanePitch: DECK_CARD_W + DECK_LANE_GAP,
+      rowPitch: DECK_CARD_H + DECK_GAP_Y,
+    });
+    expect(laneGolden.laneOrder).toStrictEqual([...ALL_DECK_ENGINES]);
+    // Lane ORDER is still the rank, which DoD 5.0c did not change. Derived
+    // from `deckLaneEngines`, so a rank table edited the wrong way is red here
+    // as well as in the sort test.
+    expect(deckLaneEngines(subsetSessions(['cx', 'cc', 'oc']))).toStrictEqual([
+      ...ALL_DECK_ENGINES,
+    ]);
+  });
+
+  it('production reproduces every coordinate of all seven subsets', () => {
+    let rowsChecked = 0;
+    let coordsChecked = 0;
+    for (const row of laneGolden.subsets) {
+      const key = row.engines.join('+');
+      const sessions = subsetSessions(row.engines);
+
+      // The MODE is part of the coordinate answer: for a one-engine set,
+      // "where do the lanes go" is answered by "there are no lanes".
+      expect({ key, mode: deckLanesDegrade(sessions) ? 'list' : 'lanes' }).toStrictEqual({
+        key,
+        mode: row.mode,
+      });
+      expect({ key, present: deckLaneEngines(sessions) }).toStrictEqual({
+        key,
+        present: row.engines,
+      });
+
+      // `deckLaneX` directly...
+      for (const engine of row.engines) {
+        expect({ key, engine, x: deckLaneX(engine, row.engines) }).toStrictEqual({
+          key,
+          engine,
+          x: row.laneX[engine],
+        });
+        coordsChecked += 1;
+      }
+
+      // ...and END TO END through `deckLayout`, which is the leg a lane that
+      // was computed and then discarded could not satisfy: these are the
+      // coordinates the renderer receives, ids and all.
+      const placed = deckLayout(
+        sessions,
+        'lanes',
+        laneGolden.sessions.sort,
+        laneGolden.sessions.viewportW,
+      );
+      expect({ key, placed }).toStrictEqual({ key, placed: row.placements });
+      coordsChecked += placed.length;
+      rowsChecked += 1;
+    }
+    // The converse control: a loop over an empty golden also reports no
+    // failures. Pinned exactly — 7 rows, 12 `deckLaneX` answers and 24
+    // placements.
+    expect({ rowsChecked, coordsChecked }).toStrictEqual({ rowsChecked: 7, coordsChecked: 36 });
+  });
+
+  it('lanes drawn are 0..n-1 with no hole, for every multi-engine subset', () => {
+    // The defect as a PROPERTY rather than as coordinates, so it survives a
+    // change to DECK_CARD_W: the distinct columns a lanes layout draws are the
+    // first n slots, contiguous, with nothing skipped. Under the old
+    // absolute-rank form `{cc,cx}` drew [0, 520] and `{oc,cx}` drew [260, 520].
+    const multi: DeckEngine[][] = [
+      ['cc', 'oc'],
+      ['cc', 'cx'],
+      ['oc', 'cx'],
+      ['cc', 'oc', 'cx'],
+    ];
+    for (const engines of multi) {
+      const placed = deckLayout(subsetSessions(engines), 'lanes', 'engine', 800);
+      const columns = [...new Set(placed.map((p) => p.x))].sort((a, b) => a - b);
+      expect({ engines, columns }).toStrictEqual({
+        engines,
+        columns: engines.map((_, i) => i * (DECK_CARD_W + DECK_LANE_GAP)),
+      });
+    }
+  });
+
+  it('deckLaneX reads the DISTINCT visible set, and is total and pure', () => {
+    // Duplicates are counted once. A `filter(...).length` over the raw
+    // iterable would put oc at 780 here, and every assertion above would still
+    // pass because `deckLaneEngines` hands `deckLayout` a deduped list.
+    expect(deckLaneX('oc', ['cc', 'cc', 'cc'])).toBe(DECK_CARD_W + DECK_LANE_GAP);
+    // Order of the visible set is irrelevant.
+    expect(deckLaneX('cx', ['cx', 'cc', 'oc'])).toBe(deckLaneX('cx', ['cc', 'oc', 'cx']));
+    // Total: an empty set, and an engine the set does not contain (which gets
+    // the slot it WOULD occupy). Neither is a production call; a lane function
+    // that can throw or return NaN is one that can place a card at x = NaN.
+    expect(deckLaneX('cx', [])).toBe(0);
+    expect(deckLaneX('cc', ['oc', 'cx'])).toBe(0);
+    expect(deckLaneX('oc', ['cc', 'cx'])).toBe(DECK_CARD_W + DECK_LANE_GAP);
+    // Pure: the argument is not mutated and the answer does not drift.
+    const visible: DeckEngine[] = ['cc', 'cx'];
+    const first = deckLaneX('cx', visible);
+    expect(deckLaneX('cx', visible)).toBe(first);
+    expect(visible).toStrictEqual(['cc', 'cx']);
+    // A Set is as good as an array — `deckLayout` passes an array today, and
+    // a renderer holding the visible set as a Set must not have to convert.
+    expect(deckLaneX('cx', new Set<DeckEngine>(['cc', 'cx']))).toBe(first);
   });
 });
 

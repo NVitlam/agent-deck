@@ -6,6 +6,7 @@
     LIVENESS_INFERRED_TITLE,
     formatCost,
     formatTokens,
+    formatWindowTokens,
     livenessLabel,
     livenessTitle,
   } from './format.js';
@@ -57,6 +58,15 @@
     <div class="total">
       <dt>burn</dt>
       <dd data-testid="header-burn">{formatTokens(session.burn?.prompt)}</dd>
+    </div>
+    <!-- Same row as context and burn, per D0.2 (spec C8, v0.6.0 Phase 3
+         Codex widening): a third figure, never a gauge and never a
+         percentage — two of the three engines cannot report one. CC and
+         OpenCode leave `windowTokens` unset, so the em-dash is the correct,
+         permanent render for them, and there is no per-engine branch here. -->
+    <div class="total">
+      <dt>window</dt>
+      <dd data-testid="header-window">{formatWindowTokens(session.windowTokens)}</dd>
     </div>
     <div class="total">
       <dt>cost</dt>

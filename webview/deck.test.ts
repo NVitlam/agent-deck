@@ -357,32 +357,66 @@ function key(name: string): void {
  * ------------------------------------------------------------------------ */
 
 describe('the empty deck', () => {
-  it('says it is waiting for the ONE engine this install observes, by default', () => {
+  it('says ONE line, and it names no engine (D4)', () => {
     const container = render({ sessions: [] });
     const deck = one(container, TESTID.deck);
     expect(deck.dataset['sessions']).toBe('0');
     const lines = all(container, 'deck-waiting').map((p) => p.textContent);
-    expect(lines).toStrictEqual(['Waiting for a Claude Code session…']);
+    expect(lines).toStrictEqual(['Waiting for a session to start.']);
     expect(cells(container)).toHaveLength(0);
     expect(container.querySelector('svg')).toBeNull();
   });
 
-  it('says one line per enabled engine when both are enabled', () => {
-    const container = render({ sessions: [], enabledEngines: ['cc', 'oc'] });
-    expect(all(container, 'deck-waiting').map((p) => p.textContent)).toStrictEqual([
-      'Waiting for a Claude Code session…',
-      'Waiting for an OpenCode session…',
-    ]);
+  it('D4: no generic empty state names an engine, in either branch', () => {
+    /*
+     * WHAT THIS REPLACED, because the deleted tests were not wrong — they were
+     * pinning a mechanism that never ran.
+     *
+     * `Deck.svelte` used to take `enabledEngines` and print one waiting line
+     * per engine this installation observes, precisely so a machine with no
+     * OpenCode was never shown a panel waiting for one. **Nothing ever passed
+     * the prop.** `App.svelte` did not, so the `['cc']` default applied on
+     * every install and an empty deck told a Codex-only user that Agent Deck
+     * was "Waiting for a Claude Code session…". Three tests asserted that
+     * behaviour and all three passed, because they supplied the prop the
+     * product never supplied. The user found it by own eyes at DoD 3.5.
+     *
+     * The rule now: a state that is ABOUT THE WHOLE PANEL names no engine.
+     */
+    const engineNames = ['Claude Code', 'Claude', 'OpenCode', 'Codex'];
+
+    // Branch 1: nothing has started.
+    const emptyDeck = one(render({ sessions: [] }), TESTID.deckEmpty).textContent ?? '';
+    expect(emptyDeck.trim()).toBe('Waiting for a session to start.');
+    for (const name of engineNames) expect(emptyDeck).not.toContain(name);
+
+    // Branch 2: something exists and the filter hides it. Already engine-free,
+    // asserted here so both branches are covered by one rule rather than one.
+    const filtered = one(
+      render({ sessions: [summary('s-1')], engineFilter: 'oc' }),
+      TESTID.deckEmpty,
+    ).textContent ?? '';
+    expect(filtered.trim()).toBe('No sessions match this filter.');
+    for (const name of engineNames) expect(filtered).not.toContain(name);
   });
 
-  it('NEGATIVE CONTROL: says NOTHING about an engine that is not enabled', () => {
-    // The row that matters. A line reading "Waiting for an OpenCode session"
-    // on a machine with no OpenCode is the panel waiting for something that
-    // cannot arrive, which reads to a user as a fault in Agent Deck.
-    const container = render({ sessions: [], enabledEngines: ['oc'] });
-    const lines = all(container, 'deck-waiting').map((p) => p.textContent);
-    expect(lines).toStrictEqual(['Waiting for an OpenCode session…']);
-    expect(one(container, TESTID.deckEmpty).textContent).not.toContain('Claude Code');
+  it('D4 boundary: copy that IS about one engine still names it', () => {
+    /*
+     * The other half, and it is what keeps the rule above from being read as
+     * "never write an engine name in the webview". A filter chip and a card's
+     * tag are statements about one engine, so naming it is the whole point;
+     * a rule that stripped them would make the deck unreadable in the name of
+     * making one line correct.
+     *
+     * This also fails if someone "fixes" D4 by deleting the chips.
+     */
+    const container = render({ sessions: [summary('s-1')] });
+    const chips = all(container, 'deck-engine-chip')
+      .map((el) => el.textContent ?? '')
+      .join(' ');
+    for (const name of ['Claude Code', 'OpenCode', 'Codex']) {
+      expect(chips, `the ${name} filter chip must still be named`).toContain(name);
+    }
   });
 
   it('distinguishes "nothing yet" from "nothing matches the filter"', () => {
@@ -501,22 +535,39 @@ describe('placement comes from deckLayout(sessions, layout, sort, viewportW)', (
  * ------------------------------------------------------------------------ */
 
 describe('row 1 — engine glyph and label', () => {
-  it('draws CC for Claude Code and OC for OpenCode', () => {
+  it('draws CC for Claude Code, OC for OpenCode, and CX for Codex', () => {
     const container = render({
-      sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
+      sessions: [
+        summary('s-cc'),
+        summary('s-oc', { engine: 'opencode' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
     });
     expect(figure(cellFor(container, 's-cc'), 'deck-cell-engine')).toBe('CC');
     expect(figure(cellFor(container, 's-oc'), 'deck-cell-engine')).toBe('OC');
+    expect(figure(cellFor(container, 's-cx'), 'deck-cell-engine')).toBe('CX');
   });
 
-  it('NEGATIVE CONTROL: a card never shows the OTHER engine’s glyph', () => {
+  it('NEGATIVE CONTROL: a card never shows another engine’s glyph', () => {
     const container = render({
-      sessions: [summary('s-cc'), summary('s-oc', { engine: 'opencode' })],
+      sessions: [
+        summary('s-cc'),
+        summary('s-oc', { engine: 'opencode' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
     });
     expect(figure(cellFor(container, 's-cc'), 'deck-cell-engine')).not.toBe('OC');
+    expect(figure(cellFor(container, 's-cc'), 'deck-cell-engine')).not.toBe('CX');
     expect(figure(cellFor(container, 's-oc'), 'deck-cell-engine')).not.toBe('CC');
+    expect(figure(cellFor(container, 's-oc'), 'deck-cell-engine')).not.toBe('CX');
+    // The case this control exists for: `'codex'` is neither `'opencode'` nor
+    // `'cc'`, so a ternary that folds anything-not-opencode into `'CC'` would
+    // draw the wrong glyph here and every assertion above would still pass.
+    expect(figure(cellFor(container, 's-cx'), 'deck-cell-engine')).not.toBe('CC');
+    expect(figure(cellFor(container, 's-cx'), 'deck-cell-engine')).not.toBe('OC');
     expect(cellFor(container, 's-cc').dataset['engine']).toBe('cc');
     expect(cellFor(container, 's-oc').dataset['engine']).toBe('opencode');
+    expect(cellFor(container, 's-cx').dataset['engine']).toBe('codex');
   });
 
   it('tags a refused session too: G3 withholds the tree, not who was reading', () => {
@@ -727,15 +778,163 @@ describe('the six card states', () => {
 
   it('names the ENGINE and the reason in a degraded card’s tooltip', () => {
     const container = render({
-      sessions: [summary('s', { engine: 'opencode' })],
+      sessions: [summary('s', { engine: 'cc' })],
       degraded: true,
       degradedReason: 'listenerDown',
     });
     const tooltip = cellFor(container, 's').querySelector('title')?.textContent ?? '';
     // A9.1 leads the tooltip with the LABEL; the status follows it.
-    expect(tooltip).toContain('OpenCode: the hook listener is not running');
+    expect(tooltip).toContain('Claude Code: the hook listener is not running');
   });
 
+  /*
+   * D2 (2026-09-03) — THE DEGRADED CHIP IS THE CLAUDE CODE TAP'S, AND ONLY ITS.
+   *
+   * The test above used to pass `engine: 'opencode'` and assert the card said
+   * "OpenCode: the hook listener is not running". That assertion pinned the
+   * defect: `degraded` is produced by `LivenessEngine.degradedState()`, which
+   * reads `eventsReceived === 0` on the CLAUDE CODE engine alone. OpenCode's
+   * liveness comes from its own SQLite cursor and Codex's from its own hook
+   * reduction, so neither is described by that flag at all.
+   *
+   * Reported by own eyes against the shipped `release/0.6.0` build: Codex cells
+   * reading "hooks silent" while Codex hooks were arriving and being attributed
+   * (`src/hooks/listener.test.ts`'s D2 block proves the host half). It was
+   * invisible before Phase 3's discriminator because every Codex payload was
+   * also dispatched into the CC handler, which kept `eventsReceived` moving.
+   *
+   * The same mislabelling has been shipping for OpenCode since v0.5.0.
+   */
+  it('shows the degraded chip on a Claude Code card and on no other engine', () => {
+    const container = render({
+      sessions: [
+        summary('s-cc', { engine: 'cc' }),
+        summary('s-oc', { engine: 'opencode' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
+      degraded: true,
+      degradedReason: 'noHookEvents',
+    });
+
+    const cc = cellFor(container, 's-cc');
+    const oc = cellFor(container, 's-oc');
+    const cx = cellFor(container, 's-cx');
+
+    // The Claude Code card wears it — the control, so the assertions below
+    // cannot pass because the panel simply is not degraded.
+    expect(cc.dataset['state']).toBe('degraded');
+    expect(cc.querySelector('title')?.textContent).toContain(
+      'Claude Code: no hook events received',
+    );
+
+    // The other two do not, and they still report their own liveness rather
+    // than nothing at all.
+    for (const cell of [oc, cx]) {
+      expect(cell.dataset['state']).not.toBe('degraded');
+      expect(cell.dataset['state']).toBe('live');
+      expect(cell.querySelector('title')?.textContent ?? '').not.toContain('hook');
+    }
+  });
+
+  /*
+   * DoD 5.0b - AND NOW CODEX HAS ONE OF ITS OWN.
+   *
+   * D2's fix, pinned by the test above, stopped the panel LYING about Codex by
+   * giving Codex cards nothing. That was right and it was not the end: a Codex
+   * user whose paste block was missing, or whose six hook commands were never
+   * trusted, saw a deck that simply never went live, with no banner and
+   * nothing to act on. The tap now reports its own health and the card wears
+   * it.
+   *
+   * BOTH DIRECTIONS, because a one-directional test is satisfied by a chip
+   * that is always on - which is exactly what the D2 defect was.
+   */
+  it('shows the degraded chip on a CODEX card when the CODEX tap is silent', () => {
+    const container = render({
+      sessions: [
+        summary('s-cc', { engine: 'cc' }),
+        summary('s-oc', { engine: 'opencode' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
+      degradedByEngine: {
+        cc: { degraded: false },
+        codex: { degraded: true, reason: 'noHookEvents' },
+      },
+    });
+
+    const cx = cellFor(container, 's-cx');
+    expect(cx.dataset['state']).toBe('degraded');
+    expect(cx.querySelector('title')?.textContent).toContain(
+      'Codex: no hook events received',
+    );
+
+    // THE OTHER DIRECTION, in the same mount: the Claude Code card is NOT
+    // degraded, because its own tap is fine. Without this the test would pass
+    // for a renderer that painted the Codex flag onto everything - which is
+    // D2 with the engines swapped.
+    const cc = cellFor(container, 's-cc');
+    expect(cc.dataset['state']).not.toBe('degraded');
+    expect(cc.querySelector('title')?.textContent ?? '').not.toContain('hook');
+
+    // OPENCODE IS EXEMPT BY DESIGN, and this states it rather than leaving it
+    // to be inferred from an absence. OpenCode has NO HOOK TAP at all - its
+    // liveness is a cursor on `event_sequence.seq` - so "hooks silent" is not
+    // false about it, it is meaningless. `WebviewView.degradedByEngine` has no
+    // `oc` member for exactly this reason, which makes an OpenCode card asking
+    // the question a type error rather than a rule someone has to remember.
+    const oc = cellFor(container, 's-oc');
+    expect(oc.dataset['state']).not.toBe('degraded');
+    expect(oc.querySelector('title')?.textContent ?? '').not.toContain('hook');
+  });
+
+  it('shows it on the CLAUDE CODE card when the Claude Code tap is the silent one', () => {
+    // The mirror image of the test above, and together they are what stops a
+    // stuck channel reading as a working one.
+    const container = render({
+      sessions: [
+        summary('s-cc', { engine: 'cc' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
+      degradedByEngine: {
+        cc: { degraded: true, reason: 'listenerDown' },
+        codex: { degraded: false },
+      },
+    });
+
+    const cc = cellFor(container, 's-cc');
+    expect(cc.dataset['state']).toBe('degraded');
+    expect(cc.querySelector('title')?.textContent).toContain('Claude Code:');
+
+    const cx = cellFor(container, 's-cx');
+    expect(cx.dataset['state']).not.toBe('degraded');
+    expect(cx.querySelector('title')?.textContent ?? '').not.toContain('hook');
+  });
+
+  it('reads the reason from the card’s OWN tap, not from the other one', () => {
+    // Both degraded, for DIFFERENT reasons. A renderer that took the engine
+    // from the card and the reason from a single shared value would pass every
+    // assertion above and fail this one - which is the seam D2 lived in.
+    const container = render({
+      sessions: [
+        summary('s-cc', { engine: 'cc' }),
+        summary('s-cx', { engine: 'codex' }),
+      ],
+      degradedByEngine: {
+        cc: { degraded: true, reason: 'noHookEvents' },
+        codex: { degraded: true, reason: 'listenerDown' },
+      },
+    });
+
+    const ccTitle = cellFor(container, 's-cc').querySelector('title')?.textContent ?? '';
+    const cxTitle = cellFor(container, 's-cx').querySelector('title')?.textContent ?? '';
+
+    expect(ccTitle).toContain('Claude Code: no hook events received');
+    expect(cxTitle).toContain('Codex:');
+    // The two reasons are different strings, so a shared value cannot satisfy
+    // both. Asserted as an inequality as well, so the check does not rest on
+    // the exact wording of either message.
+    expect(ccTitle).not.toBe(cxTitle);
+  });
   it('ghosts a foreign session and tags it, in text and in the accessible name', () => {
     const container = render({
       sessions: [summary('s-mine'), summary('s-theirs', { workspaceMatch: false })],
@@ -916,17 +1115,26 @@ describe('the engine filter (DoD 7.7)', () => {
     summary('s-cc-1'),
     summary('s-cc-2'),
     summary('s-oc-1', { engine: 'opencode' }),
+    summary('s-cx-1', { engine: 'codex' }),
   ];
 
   function chips(root: ParentNode): HTMLElement[] {
     return all(root, 'deck-engine-chip');
   }
 
-  it('offers exactly three chips, in the design’s order, with All active', () => {
+  it('offers exactly four chips, in the design’s order, with All active', () => {
+    // Three as of Phase 7, four from v0.6.0 Phase 3's Codex chip — the
+    // widening this describe block records.
     const container = render({ sessions: rows });
-    expect(chips(container).map((c) => c.dataset['engine'])).toStrictEqual(['all', 'cc', 'oc']);
+    expect(chips(container).map((c) => c.dataset['engine'])).toStrictEqual([
+      'all',
+      'cc',
+      'oc',
+      'cx',
+    ]);
     expect(chips(container).map((c) => c.dataset['active'])).toStrictEqual([
       'true',
+      'false',
       'false',
       'false',
     ]);
@@ -935,11 +1143,12 @@ describe('the engine filter (DoD 7.7)', () => {
 
   it('badges each chip with the number of sessions that engine has', () => {
     const container = render({ sessions: rows });
-    expect(chips(container).map((c) => c.dataset['count'])).toStrictEqual(['3', '2', '1']);
+    expect(chips(container).map((c) => c.dataset['count'])).toStrictEqual(['4', '2', '1', '1']);
     expect(chips(container).map((c) => c.textContent)).toStrictEqual([
-      'All3',
+      'All4',
       'Claude Code2',
       'OpenCode1',
+      'Codex1',
     ]);
   });
 
@@ -957,7 +1166,7 @@ describe('the engine filter (DoD 7.7)', () => {
     // it was given. A component holding its own copy would read 'cc' here and
     // would then be a second source of truth for the same value.
     expect(one(container, TESTID.deck).dataset['engineFilter']).toBe('all');
-    expect(cells(container)).toHaveLength(3);
+    expect(cells(container)).toHaveLength(4);
   });
 
   it('is SINGLE-SELECT: the value it is given activates exactly one chip', () => {
@@ -966,12 +1175,23 @@ describe('the engine filter (DoD 7.7)', () => {
       'false',
       'true',
       'false',
+      'false',
     ]);
     expect(chips(container).filter((c) => c.dataset['active'] === 'true')).toHaveLength(1);
     expect(chips(container).map((c) => c.getAttribute('aria-pressed'))).toStrictEqual([
       'false',
       'true',
       'false',
+      'false',
+    ]);
+
+    // The fourth chip activates exactly as the first three do.
+    const cx = render({ sessions: rows, engineFilter: 'cx' });
+    expect(chips(cx).map((c) => c.dataset['active'])).toStrictEqual([
+      'false',
+      'false',
+      'false',
+      'true',
     ]);
   });
 
@@ -980,28 +1200,33 @@ describe('the engine filter (DoD 7.7)', () => {
     expect(cells(cc).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-cc-1', 's-cc-2']);
     const count = one(cc, 'deck-count');
     expect(count.dataset['shown']).toBe('2');
-    expect(count.dataset['total']).toBe('3');
-    expect(count.textContent).toBe('2 of 3');
+    expect(count.dataset['total']).toBe('4');
+    expect(count.textContent).toBe('2 of 4');
 
     const oc = render({ sessions: rows, engineFilter: 'oc' });
     expect(cells(oc).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-oc-1']);
-    expect(one(oc, 'deck-count').textContent).toBe('1 of 3');
+    expect(one(oc, 'deck-count').textContent).toBe('1 of 4');
+
+    const cx = render({ sessions: rows, engineFilter: 'cx' });
+    expect(cells(cx).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-cx-1']);
+    expect(one(cx, 'deck-count').textContent).toBe('1 of 4');
 
     const all_ = render({ sessions: rows, engineFilter: 'all' });
-    expect(cells(all_)).toHaveLength(3);
-    expect(one(all_, 'deck-count').textContent).toBe('3');
+    expect(cells(all_)).toHaveLength(4);
+    expect(one(all_, 'deck-count').textContent).toBe('4');
     // The badges are counted off the FULL list, so every chip still says what
     // it would show even while another chip is the active one.
-    expect(chips(cc).map((c) => c.dataset['count'])).toStrictEqual(['3', '2', '1']);
+    expect(chips(cc).map((c) => c.dataset['count'])).toStrictEqual(['4', '2', '1', '1']);
   });
 
-  it('answers A C O by reporting, and steals nothing else', () => {
+  it('answers A C O X by reporting, and steals nothing else', () => {
     const asked: string[] = [];
     render({ sessions: rows, onenginefilter: (filter: string) => asked.push(filter) });
     key('c');
     key('o');
+    key('x');
     key('a');
-    expect(asked).toStrictEqual(['cc', 'oc', 'all']);
+    expect(asked).toStrictEqual(['cc', 'oc', 'cx', 'all']);
   });
 
   it('sends the host NOTHING and asks for no fit: it is view state only', () => {
@@ -1020,6 +1245,7 @@ describe('the engine filter (DoD 7.7)', () => {
     });
     key('c');
     key('o');
+    key('x');
     key('a');
     expect(fits).toStrictEqual([]);
     expect(zooms).toStrictEqual([]);
@@ -1503,6 +1729,13 @@ describe('driven by a real store', () => {
     expect(view.sessions[0]?.engine).toBe('opencode');
     const container = render({ sessions: view.sessions, now: NOW });
     expect(figure(cellFor(container, 's-oc-real'), 'deck-cell-engine')).toBe('OC');
+  });
+
+  it('renders a codex-stamped state as CX, store to canvas (v0.6.0 Phase 3)', () => {
+    const view = viewOf([liveSession({ sessionId: 's-cx-real', engine: 'codex' })]);
+    expect(view.sessions[0]?.engine).toBe('codex');
+    const container = render({ sessions: view.sessions, now: NOW });
+    expect(figure(cellFor(container, 's-cx-real'), 'deck-cell-engine')).toBe('CX');
   });
 
   it('shows the badge count the store derived, and that count is not zero', () => {

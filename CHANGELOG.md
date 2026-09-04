@@ -1,6 +1,102 @@
 # Changelog
 
-All notable changes to Agent Deck for Claude Code are documented here.
+All notable changes to Agent Deck are documented here.
+
+## 0.6.0 - unreleased - a third engine, Codex
+
+### Added
+
+- **Codex sessions appear in the deck.** Agent Deck reads the rollout
+  transcripts Codex writes under `~/.codex` (or `$CODEX_HOME`) and renders them
+  beside your Claude Code and OpenCode sessions: the session tree, subagents and
+  their spawn edges, tool calls, tokens and the context window. Read-only, like
+  everything else here - no App Server, no socket to Codex, and the files Codex
+  keeps its credentials and sandbox secrets in are named in the source as never
+  opened.
+- **An optional Codex hook block, for live status.** Six events, pasted by you
+  into `~/.codex/hooks.json` and trusted by you in Codex itself. Without it a
+  Codex session still renders in full; what the hooks add is *live* - which
+  agent is running right now and which tool call is in flight. The README
+  carries the block and the trust steps, and a test compares the block in the
+  README byte-for-byte against the one that produced this release's fixtures,
+  so the instructions cannot drift from what was proven to work.
+- **Per-engine "hooks silent" warnings.** A Codex card now reports its OWN hook
+  tap: if the listener is down, or the paste block was never added or never
+  trusted, the card says so and liveness falls back to inference. Previously
+  only Claude Code had this, which meant a Codex user with no hooks saw a deck
+  that simply never went live, with nothing to act on. OpenCode has no hook tap
+  at all and is deliberately never given this warning.
+- **The extension is now named "Agent Deck — Watch Your Agents Work."** It read
+  "Agent Deck for Claude Code", which named one of the three engines it
+  observes. The Marketplace ID is unchanged, so this is a rename on the listing
+  page and nowhere else - your installed extension updates in place.
+- **A project page**, published from `site/` to GitHub Pages.
+
+### Fixed
+
+- **The empty deck no longer names an engine.** With no sessions to show it read
+  "Waiting for a Claude Code session…" — on every install, whichever engines you
+  actually run, because the panel never told the deck which engines it was
+  observing and the deck fell back to naming Claude Code. It now reads "Waiting
+  for a session to start." Copy that really is about one engine is unchanged:
+  the filter chips still say Claude Code, OpenCode and Codex, and a card still
+  carries its own engine's tag.
+- **A session that starts with a slash command is named after the command.** It
+  used to be named after the markup Claude Code writes around it, so a session
+  begun with `/phase` showed
+  `<command-message>phase</command-message> <command-name>/phase</command-name>`
+  on its deck card and at the root of its tree. It now reads `/phase`, with any
+  arguments appended - `/phase 3`, and no `<command-...>` tag survives into a
+  label. A message that merely mentions such a tag is left alone: those are your
+  words, and a label is supposed to show them.
+- **"Hooks silent" is only ever said about Claude Code.** That warning counts
+  Claude Code hook events, and when none had arrived it was written onto every
+  card in the deck, labelled with that card's own engine - so a Codex card said
+  Codex hooks were silent while they were arriving and being read, and an
+  OpenCode card said the hook listener was down when OpenCode never uses it.
+  The per-card warning is now shown on Claude Code cards only.
+
+  Two things it is worth being exact about. A quiet Claude Code tap is still
+  announced in the panel-wide banner - but only while the Claude Code half is
+  actually running; see the next entry. And the hook listener is shared - if it
+  is down, Codex liveness really is affected too.
+
+  An earlier draft of this entry ended "per-engine liveness warnings do not
+  exist yet; the banner is the only channel." That was true when the fix landed
+  and is not true of this release: they exist now, and a Codex card reports its
+  own tap. See **Per-engine "hooks silent" warnings** above. The sentence is
+  corrected here rather than deleted because the two entries are about the same
+  defect - the first stopped the panel saying something false about Codex, and
+  the second gave Codex something true to say.
+- **Codex liveness works in a workspace where Claude Code has never run.** The
+  loopback hook listener is shared by both engines, and it was only ever started
+  when the open folder matched a Claude Code project. Open a folder that Claude
+  Code has never touched and the listener was never started at all: Codex hook
+  events had nowhere to arrive, so Codex sessions showed no live status and no
+  in-flight tool calls, silently. If the folder also had no OpenCode database,
+  the extension did not start at all.
+
+  The listener now starts whenever anything that uses it is present - a Claude
+  Code project for this folder, or a Codex installation on the machine. If
+  neither is there it is deliberately not started, and the Output channel says
+  so once. A port already in use is still reported as an error and the port is
+  never silently changed: the port is a setting, and a listener that quietly
+  moved would be a recorder that quietly recorded nothing.
+- **The Output channel names the right engine when a session goes away.** Every
+  "session removed" line said `cc`, whichever engine the session belonged to,
+  because the engine was discarded before the removal was noticed. Diagnostics
+  only - it never reached the deck - but a log that misreports which engine did
+  what is worse than no log.
+- **No empty column in the deck when you run Claude Code and Codex but not
+  OpenCode.** Lanes were positioned by a fixed slot per engine, so the middle
+  slot stayed empty and the two populated lanes sat either side of a gap. Lanes
+  are now packed against the engines actually present.
+- **The context-window figure survives a turn that recorded no usage.** Codex
+  states the window in two places and Agent Deck read only one of them, so a
+  session whose turn ended before any token usage existed - an interrupted turn,
+  or one that hit an account limit - showed an em dash for a number the
+  transcript states plainly. Context and burn still show an em dash there, which
+  is correct: those figures genuinely do not exist yet.
 
 ## 0.5.0 - 2026-08-30 - a second engine, a real tree, and the numbers that were wrong
 

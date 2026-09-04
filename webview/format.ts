@@ -63,6 +63,31 @@ export function formatTokens(n: number | undefined): string {
 }
 
 /**
+ * `SessionState.windowTokens`: the Codex engine's context-window ceiling, in
+ * tokens (v0.6.0 Phase 3, spec C8, Phase 0 decision D0.2).
+ *
+ * Its own name rather than a bare alias for {@link formatTokens}, because the
+ * call sites want a name that says what field they are rendering — but the
+ * IDIOM is identical and deliberately restated rather than shared: absent or
+ * non-finite yields {@link EM_DASH}, never `0`. `0` would claim a model with
+ * no context window at all, which is a wrong number rather than a missing
+ * one — the same rule `src/model/events.ts`'s `SessionState.contextNow`
+ * states for its own absence.
+ *
+ * The CC and OpenCode engines never set `windowTokens`, so the em-dash is the
+ * correct, permanent render for them — there is no per-engine branch here,
+ * only the one absence rule every caller already gets from `undefined`. Per
+ * D0.2: no engine ever gets a percentage or a gauge beside this figure,
+ * because two of the three engines cannot report one at all.
+ */
+export function formatWindowTokens(n: number | undefined): string {
+  if (n === undefined || !Number.isFinite(n)) return EM_DASH;
+  const sign = n < 0 ? '-' : '';
+  const digits = Math.abs(Math.trunc(n)).toString();
+  return sign + digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/**
  * A duration a human can compare at a glance. Sub-second stays in
  * milliseconds because tool calls routinely finish there.
  */

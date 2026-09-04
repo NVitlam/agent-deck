@@ -133,7 +133,10 @@ interface RecorderModule {
         removedSessionIds: readonly string[];
         schemaMismatchSessionIds: readonly string[];
       }): void;
-      publishDegraded(state: { degraded: boolean; reason?: 'noHookEvents' | 'listenerDown' }): void;
+      publishDegraded(
+        engine: 'cc' | 'codex',
+        state: { degraded: boolean; reason?: 'noHookEvents' | 'listenerDown' },
+      ): void;
     };
     events: WireEvent[];
     steps: { atMs: number; label: string; what: string }[];
@@ -527,7 +530,7 @@ async function generate(recorder: RecorderModule): Promise<Generated> {
     removedSessionIds: [],
     schemaMismatchSessionIds: current.filter((s) => !s.schemaOk).map((s) => s.sessionId),
   });
-  rec.bridge.publishDegraded({ degraded: true, reason: 'noHookEvents' });
+  rec.bridge.publishDegraded('cc', { degraded: true, reason: 'noHookEvents' });
 
   for (let tick = 0; tick < TICKS; tick += 1) {
     rec.step(
@@ -554,7 +557,7 @@ async function generate(recorder: RecorderModule): Promise<Generated> {
       removedSessionIds: [],
       schemaMismatchSessionIds: [],
     });
-    if (tick === TICKS - 1) rec.bridge.publishDegraded({ degraded: false });
+    if (tick === TICKS - 1) rec.bridge.publishDegraded('cc', { degraded: false });
   }
 
   const lastEvent = rec.events[rec.events.length - 1];

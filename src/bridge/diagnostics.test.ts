@@ -126,18 +126,20 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       resyncs: 1,
       ccSessions: 2,
       opencodeSessions: 1,
+      codexSessions: 3,
     };
     const line = formatCounters(counters, '2026-08-27T12:00:00.000Z');
     for (const key of Object.keys(counters)) {
-      // `unknownFields`, `ccSessions` and `opencodeSessions` are rendered under
-      // shorter labels; the rest appear verbatim. Asserted by VALUE so a
-      // renamed label cannot silently drop a counter.
+      // `unknownFields`, `ccSessions`, `opencodeSessions` and `codexSessions`
+      // are rendered under shorter labels; the rest appear verbatim. Asserted
+      // by VALUE so a renamed label cannot silently drop a counter.
       expect(line).toContain(String(counters[key as keyof DiagnosticsCounters]));
     }
     expect(line).toContain('grafts=12');
     expect(line).toContain('resyncs=1');
     expect(line).toContain('cc=2');
     expect(line).toContain('opencode=1');
+    expect(line).toContain('codex=3');
   });
 
   it('creates no sink until the first line', () => {
@@ -175,6 +177,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       resyncs: 0,
       ccSessions: 0,
       opencodeSessions: 0,
+      codexSessions: 0,
     });
     expect(sink.shown).toBe(0);
     channel.show();

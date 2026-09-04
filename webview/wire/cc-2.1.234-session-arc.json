@@ -525,6 +525,7 @@
       "label": "discover",
       "message": {
         "type": "degraded",
+        "engine": "cc",
         "degraded": true,
         "reason": "noHookEvents"
       }
@@ -534,6 +535,7 @@
       "label": "hooks-arrive",
       "message": {
         "type": "degraded",
+        "engine": "cc",
         "degraded": false
       }
     },
@@ -1007,6 +1009,7 @@
       "label": "panel-reload",
       "message": {
         "type": "degraded",
+        "engine": "cc",
         "degraded": false
       }
     },

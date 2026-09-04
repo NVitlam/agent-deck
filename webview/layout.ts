@@ -123,11 +123,12 @@ export const DECK_LANE_HEADER_Y = -28;
 /**
  * The deck's engine tag.
  *
- * Two letters, not `SessionState['engine']`'s `'cc' | 'opencode'`: the deck is
- * the design's vocabulary and the design says `oc`. {@link deckEngine} is the
- * one supported conversion, so the mapping exists once.
+ * Two letters, not `SessionState['engine']`'s `'cc' | 'opencode' | 'codex'`:
+ * the deck is the design's vocabulary and the design says `oc`/`cx`.
+ * {@link deckEngine} is the one supported conversion, so the mapping exists
+ * once. `cx` is the Codex engine (v0.6.0 Phase 3).
  */
-export type DeckEngine = 'cc' | 'oc';
+export type DeckEngine = 'cc' | 'oc' | 'cx';
 
 /**
  * What a card says about itself.
@@ -172,6 +173,7 @@ export const DECK_STATUS_RANK: Readonly<Record<DeckStatus, number>> = {
 export const DECK_ENGINE_RANK: Readonly<Record<DeckEngine, number>> = {
   cc: 0,
   oc: 1,
+  cx: 2,
 };
 
 /**
@@ -199,8 +201,22 @@ export interface DeckPlacement {
 /** The one supported way to put `SessionState.engine` on the deck. */
 export function deckEngine(engine: SessionState['engine']): DeckEngine {
   // Absence reads as `'cc'`; `src/model/events.ts` is the authority for that
-  // rule and this function is the only place the webview restates it.
-  return engine === 'opencode' ? 'oc' : 'cc';
+  // rule and this function is the only place the webview restates it. A
+  // three-way `switch` rather than a chained ternary on purpose: the ternary
+  // this replaced read `engine === 'opencode' ? 'oc' : 'cc'`, so ANY value
+  // that was not `'opencode'` — including `'codex'` — silently fell into
+  // `'cc'`. That is the exact silent-default shape this repository's own
+  // notes warn about; the `default` branch below still exists (absence and
+  // `'cc'` both take it), but `'codex'` now has its own case rather than
+  // sharing the fallback with "nothing was said at all".
+  switch (engine) {
+    case 'opencode':
+      return 'oc';
+    case 'codex':
+      return 'cx';
+    default:
+      return 'cc';
+  }
 }
 
 /** Every node in a session tree — agents and tools, root included. */
@@ -260,9 +276,57 @@ export function deckColumns(viewportW: number): number {
   );
 }
 
-/** Left edge of an engine's lane. */
-export function deckLaneX(engine: DeckEngine): number {
-  return engine === 'cc' ? 0 : DECK_CARD_W + DECK_LANE_GAP;
+/**
+ * The distinct engines a visible set holds, ordered by {@link DECK_ENGINE_RANK}.
+ *
+ * One definition of "the present set", because three things need the same
+ * answer: {@link deckLanesDegrade}, {@link deckLaneX}, and any renderer drawing
+ * lane headers. Two of those agreeing by hand is the two-agreeing-literals
+ * shape this repository has already shipped a silent seam through.
+ */
+export function deckLaneEngines(sessions: readonly DeckSession[]): DeckEngine[] {
+  const engines = new Set<DeckEngine>();
+  for (const s of sessions) engines.add(s.engine);
+  return [...engines].sort((a, b) => cmp(DECK_ENGINE_RANK[a], DECK_ENGINE_RANK[b]));
+}
+
+/**
+ * Left edge of an engine's lane, COMPACTED to the visible set (DoD 5.0c).
+ *
+ * `visible` is every engine the deck is currently drawing — pass
+ * {@link deckLaneEngines}, or any iterable of engine tags; duplicates and
+ * ordering are both irrelevant, since only the distinct set is read. The x is
+ * `(number of visible engines ranking BELOW `engine`) * (DECK_CARD_W +
+ * DECK_LANE_GAP)`: an index within the present set, not an absolute rank.
+ * Lane ORDER is still {@link DECK_ENGINE_RANK} — only the slot arithmetic
+ * changed.
+ *
+ * **What this fixes.** The previous form was
+ * `DECK_ENGINE_RANK[engine] * (DECK_CARD_W + DECK_LANE_GAP)` — a fixed slot per
+ * engine — so a visible set holding the two OUTER engines (`cc` and `cx`) but
+ * not the middle one (`oc`) drew cards at slots 0 and 2 and left an empty
+ * column where `oc` would sit, which the user has to read as meaning
+ * something. `deckLanesDegrade` does not catch it: it collapses to `list` only
+ * when FEWER THAN TWO engines are present, and two of three is not that case.
+ * `{cc, cx}` now draws at 0 and 1.
+ *
+ * **What did NOT move.** For `{cc, oc}` and `{cc, oc, cx}` a compacted index
+ * equals the absolute rank, so both deck-engine golden tables are byte-for-byte
+ * unchanged — that is asserted, not assumed, by `layout.test.ts`'s DoD 7.2
+ * comparison against the frozen reference.
+ *
+ * Total and pure: an `engine` absent from `visible` gets the slot it WOULD
+ * occupy, and an empty `visible` gets 0. No caller depends on that — every
+ * production call passes an engine the set contains — but a lane function that
+ * can return `NaN` or throw is a lane function that can put a card at `x = NaN`.
+ */
+export function deckLaneX(engine: DeckEngine, visible: Iterable<DeckEngine>): number {
+  const rank = DECK_ENGINE_RANK[engine];
+  const below = new Set<DeckEngine>();
+  for (const e of visible) {
+    if (DECK_ENGINE_RANK[e] < rank) below.add(e);
+  }
+  return below.size * (DECK_CARD_W + DECK_LANE_GAP);
 }
 
 /**
@@ -272,11 +336,12 @@ export function deckLaneX(engine: DeckEngine): number {
  * meaning something, so a visible set holding one engine degrades to the list.
  * Stated as its own predicate because the renderer needs the same answer to
  * decide whether to draw lane headers at all.
+ *
+ * It is NOT the whole empty-lane defence, and was never meant to be: an
+ * interior gap inside a two-of-three set is {@link deckLaneX}'s job.
  */
 export function deckLanesDegrade(sessions: readonly DeckSession[]): boolean {
-  const engines = new Set<DeckEngine>();
-  for (const s of sessions) engines.add(s.engine);
-  return engines.size < 2;
+  return deckLaneEngines(sessions).length < 2;
 }
 
 /**
@@ -314,10 +379,14 @@ export function deckLayout(
 
   if (deckLanesDegrade(sorted)) return asList();
 
-  const next: Record<DeckEngine, number> = { cc: 0, oc: 0 };
+  // Computed ONCE from the visible set, so every card in a lane agrees about
+  // where that lane is, and the set that decided not to degrade is the same
+  // set that decides the slots.
+  const visible = deckLaneEngines(sorted);
+  const next: Record<DeckEngine, number> = { cc: 0, oc: 0, cx: 0 };
   return sorted.map((s) => ({
     id: s.id,
-    x: deckLaneX(s.engine),
+    x: deckLaneX(s.engine, visible),
     y: roundCoord(next[s.engine]++ * (DECK_CARD_H + DECK_GAP_Y)),
   }));
 }

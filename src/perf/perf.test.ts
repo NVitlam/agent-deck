@@ -52,6 +52,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,10 +70,12 @@ import type { PerfCorpus } from './corpus.js';
 import {
   CORPUS_GROWTH_FRACTION_LIMIT,
   HEAP_FLOOR_RATIO_LIMIT,
+  CODEX_ENGINE_READ_BUDGET,
   REAL_CORPUS_GRAFT_BUDGET,
   RESCOPED_DOD_TOTAL,
   TIMING_BUDGETS,
 } from './budgets.js';
+import { readCodexEngine } from '../codex/index.js';
 import { graftSession } from '../model/graft.js';
 import { isAgentNode } from '../model/events.js';
 import type { TreeNode } from '../model/events.js';
@@ -695,5 +698,122 @@ describe('DoD 5.5.7 — the real captured corpus', () => {
     // misses, so the incremental re-read was not built, and the whole-session
     // re-read that G3 depends on is still pinned by the test below.
     expect(medianOf(samples)).toBeLessThan(REAL_CORPUS_GRAFT_BUDGET.limitMs);
+  });
+});
+
+/*
+ * DoD 4.2a — the Codex engine, measured. See CODEX_ENGINE_READ_BUDGET for why
+ * the subject is the committed corpus and what that does NOT establish.
+ */
+describe('DoD 4.2a — the Codex engine read', () => {
+  const CODEX_FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'fixtures');
+
+  /**
+   * The anchor corpus, derived rather than named: it is the one carrying a
+   * `golden.json`. Selecting by that file rather than by sort order is the same
+   * rule `golden.test.ts`, `graft.test.ts` and `context-window.test.ts` use —
+   * a witness corpus added later must not silently become the subject.
+   */
+  function anchorRoots(): string[] {
+    const corpus = readdirSync(CODEX_FIXTURES, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && e.name.startsWith('codex-'))
+      .map((e) => e.name)
+      .filter((name) => existsSync(join(CODEX_FIXTURES, name, 'golden.json')))
+      .sort()[0];
+    if (corpus === undefined) throw new Error('no Codex anchor corpus');
+    return readdirSync(join(CODEX_FIXTURES, corpus), { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => join(CODEX_FIXTURES, corpus, e.name, 'home', '.codex'))
+      .filter((p) => existsSync(p))
+      .sort();
+  }
+
+  let samples: number[] = [];
+  let sessionCount = 0;
+  let longestLine = 0;
+
+  beforeAll(async () => {
+    const roots = anchorRoots();
+    if (roots.length === 0) throw new Error('no runs in the Codex anchor corpus');
+
+    // The stress shape this budget is really about, measured off the corpus
+    // rather than written down: Codex stores tool output whole and inline.
+    for (const root of roots) {
+      const walk = (dir: string): void => {
+        for (const e of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, e.name);
+          if (e.isDirectory()) walk(full);
+          else if (e.name.endsWith('.jsonl')) {
+            for (const line of readFileSync(full, 'utf8').split(/\r?\n/)) {
+              longestLine = Math.max(longestLine, Buffer.byteLength(line, 'utf8'));
+            }
+          }
+        }
+      };
+      const sessions = join(root, 'sessions');
+      if (existsSync(sessions)) walk(sessions);
+    }
+
+    const taken: number[] = [];
+    for (let i = 0; i < 9; i += 1) {
+      const t0 = performance.now();
+      let n = 0;
+      for (const root of roots) {
+        const outcome = await readCodexEngine({ root });
+        if (outcome.kind !== 'ok') throw new Error(`engine refused ${root}: ${outcome.kind}`);
+        n += outcome.result.sessions.length;
+      }
+      const dt = performance.now() - t0;
+      if (i >= 2) taken.push(dt);
+      sessionCount = n;
+    }
+    taken.sort((a, b) => a - b);
+    samples = taken;
+  }, 120_000);
+
+  function medianOf(values: readonly number[]): number {
+    const mid = Math.floor(values.length / 2);
+    return values.length % 2 === 1
+      ? (values[mid] ?? 0)
+      : ((values[mid - 1] ?? 0) + (values[mid] ?? 0)) / 2;
+  }
+
+  it('the subject is real, and it carries the long line this budget is about', () => {
+    // Vacuity control. A budget measured over an empty corpus is a fast zero,
+    // and a fast zero passes every limit ever written.
+    expect(samples.length).toBe(7);
+    expect(sessionCount).toBeGreaterThan(0);
+    /*
+     * PINNED EXACTLY, and the reason is that the loose form let a wrong number
+     * ship. `budgets.ts` and `PLAN.md` first carried "554,122 bytes", which is
+     * the CHARACTER count — `line.length` — of the same line whose UTF-8 byte
+     * length is 554,126. `> 500_000` was true of both, so nothing went red, and
+     * `src/perf/EVIDENCE.md` had the right figure the whole time. A verifier
+     * caught it by measuring both.
+     *
+     * The exact form is safe here for the reason a fixture-set SIZE is not: this
+     * is one line of one committed transcript, and a re-harvest that changes it
+     * SHOULD go red — the budget's whole subject is that line.
+     */
+    expect(longestLine).toBe(554_126);
+  });
+
+  it('reads the whole Codex corpus inside its budget', () => {
+    const value = medianOf(samples);
+    process.stdout.write(
+      `[perf] budget ${CODEX_ENGINE_READ_BUDGET.id} (${CODEX_ENGINE_READ_BUDGET.source}, enforced): ` +
+        `${value.toFixed(1)} vs ${String(CODEX_ENGINE_READ_BUDGET.limitMs)} ms -> ` +
+        `${value <= CODEX_ENGINE_READ_BUDGET.limitMs ? 'MET' : 'MISSED'}\n`,
+    );
+    expect(value).toBeLessThanOrEqual(CODEX_ENGINE_READ_BUDGET.limitMs);
+  });
+
+  it('the recorded margin is the recorded numbers, divided', () => {
+    // The same self-consistency check the other budgets carry: a note claiming
+    // a margin the two numbers do not produce is a number written from memory.
+    expect(CODEX_ENGINE_READ_BUDGET.measured.valueMs).toBeGreaterThan(0);
+    expect(
+      CODEX_ENGINE_READ_BUDGET.limitMs / CODEX_ENGINE_READ_BUDGET.measured.valueMs,
+    ).toBeCloseTo(CODEX_ENGINE_READ_BUDGET.measured.marginX, 1);
   });
 });

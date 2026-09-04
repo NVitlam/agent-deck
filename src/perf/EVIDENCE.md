@@ -252,8 +252,9 @@ representative one, so the margins stated there are worst-case rather than flatt
 ### Provenance of those figures, stated because it is uneven
 
 Nine runs are on record. **Only one is committed as machine-readable JSON** — the `FULL=1` run this
-file summarises. Four survive only as medians quoted in `budgets.ts` and in the `8abee37` commit
-message; the four added by Phase 4.5's Wave 0 are transcribed verbatim in this file, which is
+file summarises. Four survive only as medians quoted in `budgets.ts` — the commit message that
+also carried them named a SHA that no longer exists, killed by one of this
+repository's history rewrites, so `budgets.ts` is now their only home; the four added by Phase 4.5's Wave 0 are transcribed verbatim in this file, which is
 weaker than JSON and stronger than a remembered number:
 
 | run | mode | n | median | slowest sample | committed |
@@ -288,3 +289,116 @@ and it did not have to, because `AGENT_DECK_PERF_RECORD` existed the whole time 
 `phase-verifier` audit raised exactly this: the party being judged asked to be taken on faith about
 its worst-case numbers while owning the tool that would have made them checkable. That is why this
 file and its JSON exist. **Record the run when a number is going to be quoted.**
+
+---
+
+## v0.6.0 Phase 2 — the Codex engine lands, and the budgets do not move
+
+**Measured 2026-09-03**, one run, `node node_modules/vitest/vitest.mjs run --project perf`,
+on `phase-2-codex-engine` at `2d02404`. DoD 2.9 asks for "perf budgets met, no RED close".
+
+```
+[perf] postAppend.total: median 353.3 tmean 353.1 p90 370.0 min 341.8 max 370.0 (n=7)
+[perf]   .tailPoll     : median 8.2 tmean 8.3 p90 9.5 min 7.8 max 9.5 (n=7)
+[perf]   .graft        : median 336.4 tmean 337.1 p90 356.2 min 326.1 max 356.2 (n=7)
+[perf]   .apply        : median 7.2 tmean 7.3 p90 8.0 min 6.0 max 8.0 (n=7)
+[perf]   .incremental  : median 15.5 tmean 15.7 p90 17.3 min 13.8 max 17.3 (n=7)
+[perf] patched 7/7 refusals 0 ops {"updateAgent":4,"insertNode":4,"updateTool":3}
+[perf] heap gcForced=true floor 52.41MB -> 52.48MB ratio 1.0013 | trimmed-mean ratio 1.0004
+[perf] budget postAppend.incremental.dod (dod, enforced): 15.5 vs 100 ms -> MET
+[perf] budget postAppend.total.regression (regression, enforced): 353.3 vs 2500 ms -> MET
+[perf] budget postAppend.apply.regression (regression, enforced): 7.2 vs 150 ms -> MET
+[perf] budget postAppend.tailPoll.regression (regression, enforced): 8.2 vs 150 ms -> MET
+[perf] budget realCorpus.graft.dod (dod, enforced): 68.0 vs 400 ms -> MET
+```
+
+| budget | measured | limit | headroom | RED close? |
+|---|---|---|---|---|
+| `postAppend.incremental.dod` | 15.5 ms | 100 | 6.5x | no |
+| `postAppend.total.regression` | 353.3 ms | 2500 | 7.1x | no |
+| `postAppend.apply.regression` | 7.2 ms | 150 | 20.8x | no |
+| `postAppend.tailPoll.regression` | 8.2 ms | 150 | 18.3x | no |
+| `realCorpus.graft.dod` | 68.0 ms | 400 | 5.9x | no |
+
+**5 of 5 MET, nothing within 5x of its limit. `src/perf` files: 2 passed, 27 tests, 40.34 s.**
+
+### What this run does NOT measure, said here so nobody reads it as more than it is
+
+> **SUPERSEDED 2026-09-04 by v0.6.0 Phase 4 (DoD 4.2a), and kept because closed records are not
+> rewritten (`PLAN.md` §0 rule 4).** The three claims below — that no budget touches the Codex
+> engine, that the gap "is not closed by this run", and that Phase 4 DoD 4.2 "is where a Codex
+> perf budget belongs" — were all true when written and the first two are false at HEAD. The
+> budget exists; see the Phase 4 section at the end of this file. The third was right about where
+> it belonged. **The 554,126-byte figure below is correct and is the one to quote** — `budgets.ts`
+> and `PLAN.md` briefly carried 554,122, which is that line's CHARACTER count.
+
+**No budget on this table touches the Codex engine.** `postAppend.*` measures the Claude Code
+tail-and-graft path and `realCorpus.graft` measures the OpenCode one. Phase 2 added nine
+`src/codex/**` modules and not one line of them is on a measured path. So the correct reading of
+"budgets met" here is **the new engine did not slow the existing ones down** — which is worth
+knowing, and is a different claim from "the Codex engine is fast enough".
+
+That gap is real and it is not closed by this run. The Codex corpus contains a **554,126-byte
+single record**, and this repository has already been bitten once by exactly that fixture: a
+scan pattern that was fine on every other corpus went quadratic on it and took the privacy
+sweep from 3 s to 169 s, presenting as 15 SKIPPED tests with a clean-looking summary line.
+**PLAN's Phase 4 DoD 4.2 is where a Codex perf budget belongs** — it already asks for a
+harvested >= 10k-line transcript — and it should be measured against the long-output run
+rather than a synthetic one.
+
+Recorded per this file's own closing rule: **record the run when a number is going to be
+quoted.** The numbers above are transcribed from the harness, in one run, on a named commit.
+They are a single observation and rule 14's three-run standard was not applied to them.
+
+---
+
+## v0.6.0 Phase 4 — the Codex engine gets a budget (DoD 4.2a)
+
+**Taken 2026-09-04 at `c3a653f`**, `npx vitest run --project perf` (the `perf` project runs on
+`pool: 'forks'` — a process boundary, for the reason the Phase 5 correction in this file records).
+
+### The stage
+
+One `readCodexEngine()` per run directory of `fixtures/codex-0.151.0-alpha.7.2` — discovery,
+fingerprint, parse, redaction and graft — which is exactly what the Codex content poll performs.
+5 run directories, 14 transcripts. 7 samples after 2 warmups; the statistic is the median.
+
+### The numbers, and the spread, which matters more
+
+| run | median |
+|---|---|
+| set-point run | **29.1 ms** |
+| second run, unchanged tree | 17.8 ms |
+| gate run 1 | 18.2 ms |
+| gate run 2 | 18.0 ms |
+| verifier's independent run | 18.0 ms |
+
+**A 1.6x spread between the first observation and the four after it, on an unchanged tree.** The
+set point is **29.1**, the slowest — a budget set from the faster of two observations is a budget
+that fails on a normal day. Limit **400 ms**, margin **13.7x**, the same set point
+`realCorpus.graft.dod` uses: this stage is not the one under pressure, and a tight limit here
+would fail on a slower machine while measuring nothing new.
+
+### What this closes, and what it does not
+
+**Closes:** the gap the Phase 2 section above records — "no budget on this table touches the Codex
+engine", carried as an open item since Phase 2 and through three phases.
+
+**Does NOT close:** DoD **4.2b**, a harvested >= 10k-line transcript, which is BLOCKED-QUOTA until
+2026-10-03. The largest committed Codex transcript is **73 lines**. 4.2a is the other half of the
+same DoD sentence and is not a substitute for that half.
+
+**And the scale axis is arguably the wrong one for this engine anyway.** Codex stores tool output
+whole and inline — no offload file, unlike Claude Code — so its stress shape is a single enormous
+LINE rather than many lines. The corpus carries one of **554,126 bytes** (`line.length` is
+554,122; the byte length is the figure to quote), and that is the fixture that already took the
+privacy sweep from 3 s to 169 s. `perf.test.ts` pins that byte count exactly, so a re-harvest
+that changes the subject goes red rather than quietly measuring something else.
+
+### Recorded per this file's own closing rule
+
+The rule is **record the run when a number is going to be quoted**, and this section exists
+because the first draft of DoD 4.2a broke it: the figures went into `budgets.ts`, `PLAN.md` and
+the gate record, and **not** into this file — the one destination the DoD names. A verifier caught
+it. Five runs are listed above rather than one, so rule 14's three-run standard is met for this
+budget, unlike the Phase 2 numbers.

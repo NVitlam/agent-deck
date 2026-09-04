@@ -164,7 +164,8 @@ describe('message contract', () => {
       { type: 'diff', sessionId: 's1', patch: { fields: { liveness: 'idle' } } },
       { type: 'schemaMismatch', sessionId: 's1' },
       // Phase 3: the hook tap's health is global, not a session field.
-      { type: 'degraded', degraded: true, reason: 'noHookEvents' },
+      // DoD 5.0b: and it names which tap, because there are two.
+      { type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' },
     ];
 
     const seen = messages.map((m) => {

@@ -479,7 +479,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
   describe('degraded — the hook tap is silent (G2)', () => {
     it('keeps the content and marks the liveness as inferred', () => {
       const panel = panelWith([liveSession()]);
-      send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
 
       expect(one(panel.container, 'app').dataset['degraded']).toBe('true');
 
@@ -522,7 +522,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
     it('carries both reasons into the DOM', () => {
       const panel = panelWith([liveSession({ liveness: 'idle' })]);
-      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
       expect(one(panel.container, 'degraded-banner').dataset['reason']).toBe('listenerDown');
       expect(one(panel.container, 'degraded-banner').textContent).toContain(
         'the hook listener is not running',
@@ -534,10 +534,10 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
       // number. Phase 3 semantics, unchanged (spec C4: informative, not
       // nagging) — restated here because the router now owns the banner.
       const panel = panelWith([liveSession()]);
-      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
       click(one(panel.container, 'degraded-dismiss'));
       for (let i = 0; i < 10; i += 1) {
-        send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
+        send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
       }
 
       expect(all(panel.container, 'degraded-banner')).toHaveLength(0);
@@ -551,8 +551,8 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
     it('drops the banner and the hollowing when the tap recovers', () => {
       const panel = panelWith([liveSession()]);
-      send({ type: 'degraded', degraded: true, reason: 'listenerDown' });
-      send({ type: 'degraded', degraded: false });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'listenerDown' });
+      send({ type: 'degraded', engine: 'cc', degraded: false });
 
       expect(all(panel.container, 'degraded-banner')).toHaveLength(0);
       expect(one(panel.container, 'app').dataset['degraded']).toBe('false');
@@ -567,7 +567,7 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
 
     it('composes with a refusal: two independent taps, both allowed to fail', () => {
       const panel = panelWith([unsupportedSession()]);
-      send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+      send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
       enter(panel, mode, 'session-unsupported');
 
       expect(all(panel.container, 'degraded-banner')).toHaveLength(1);
@@ -813,6 +813,189 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     }
   });
 
+  // --- the third engine (v0.6.0 Phase 3: Codex) -----------------------------
+
+  /*
+   * D2 (2026-09-03) — THE "HOOKS SILENT" CHIP IS THE CLAUDE CODE TAP'S.
+   *
+   * `degraded` on the wire is produced by `LivenessEngine.degradedState()`,
+   * which reads `eventsReceived === 0` on the CLAUDE CODE engine and nothing
+   * else. It is panel-wide, and `App.svelte` used to hand it to whichever
+   * session was selected — so selecting a Codex session while the CC tap was
+   * quiet said "liveness inferred — hooks silent" about a Codex session whose
+   * hooks were arriving and being attributed. Reported by own eyes against the
+   * shipped `release/0.6.0` build.
+   *
+   * `webview/deck.test.ts` guards the deck CARD. This guards the SELECTED
+   * SESSION surfaces, which is `App.svelte`'s `degradedHere` derivation — and
+   * it exists because a `phase-verifier` mutation showed the App.svelte half of
+   * that fix was completely unguarded: reverting all three of its call sites
+   * left this whole project green.
+   */
+  it('does not say "hooks silent" about a non-Claude-Code session', () => {
+    const panel = render();
+    useView(panel, mode);
+    send({ type: 'snapshot', sessions: [liveSession({ engine: 'codex' })] });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
+    enter(panel, mode, 'session-live');
+
+    if (mode === 'canvas') {
+      // The HUD is still there; the CHIP on it is not.
+      expect(all(panel.container, TESTID.hud)).toHaveLength(1);
+      expect(all(panel.container, TESTID.hudDegradedChip)).toHaveLength(0);
+    } else {
+      expect(one(panel.container, 'session-header').dataset['livenessInferred']).toBe('false');
+    }
+  });
+
+  /*
+   * DoD 5.0b - THE RENDER WIRE, AND IT IS HERE BECAUSE A VERIFIER PROVED IT
+   * WAS MISSING.
+   *
+   * `App.svelte` is the only place production hands `degradedByEngine` to
+   * `<Deck>`. Deleting that one attribute left the ENTIRE webview project
+   * green - 18 files, 703 tests - while a Codex card could never again show a
+   * degraded chip. The three `deck.test.ts` tests that cover the behaviour all
+   * mount `Deck` directly and pass the prop BY HAND, so they prove the
+   * component honours a value nothing was shown to send it.
+   *
+   * That is defect D4 verbatim - "a component test standing in for a wiring
+   * that does not exist" - committed in the same phase whose own store tests
+   * cite D4 by name, one layer further out than the place it was fixed. The
+   * rule it breaks is this repository's own: for any prop that changes
+   * user-visible output, ONE test must reach it the way production does.
+   *
+   * So these send a wire message into the real store and read the real deck.
+   * Nothing is passed by hand.
+   */
+  it('a Codex degraded message reaches a Codex deck card, through the real App', () => {
+    // NO `useView` here, and that is not an omission: the deck sits ABOVE the
+    // session-interior view mode, and one of the two modes this block runs
+    // under enters a session during setup - which leaves no deck to read.
+    const panel = render();
+    send({
+      type: 'snapshot',
+      sessions: [liveSession({ engine: 'codex' }), liveSession({ engine: 'cc', sessionId: 'session-cc' })],
+    });
+    send({ type: 'degraded', engine: 'codex', degraded: true, reason: 'noHookEvents' });
+
+    const cards = all(panel.container, TESTID.deckBlob);
+    const codex = cards.find((c) => c.dataset['engine'] === 'codex');
+    const cc = cards.find((c) => c.dataset['engine'] === 'cc');
+    expect(codex, 'the Codex card must be on the deck').toBeDefined();
+    expect(cc, 'the Claude Code card must be on the deck').toBeDefined();
+
+    expect(codex?.dataset['livenessInferred']).toBe('true');
+    expect(codex?.dataset['state']).toBe('degraded');
+    // BOTH DIRECTIONS IN ONE MOUNT: a Codex message must not touch the Claude
+    // Code card, which is D2 running backwards.
+    expect(cc?.dataset['livenessInferred']).toBe('false');
+    expect(cc?.dataset['state']).not.toBe('degraded');
+  });
+
+  it('control: a Claude Code degraded message leaves the Codex card alone', () => {
+    // Without this the test above passes for a deck that degrades every card
+    // on any message - which is the D2 defect it is meant to prevent.
+    const panel = render();
+    send({
+      type: 'snapshot',
+      sessions: [liveSession({ engine: 'codex' }), liveSession({ engine: 'cc', sessionId: 'session-cc' })],
+    });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
+
+    const cards = all(panel.container, TESTID.deckBlob);
+    const codex = cards.find((c) => c.dataset['engine'] === 'codex');
+    const cc = cards.find((c) => c.dataset['engine'] === 'cc');
+
+    expect(cc?.dataset['livenessInferred']).toBe('true');
+    expect(codex?.dataset['livenessInferred']).toBe('false');
+  });
+
+  it('a Codex degraded message reaches the SELECTED-SESSION surfaces too', () => {
+    // The other half of App.svelte's derivation: `degradedHere` used to be
+    // `view.degraded && selectedIsCc`, so a Codex session could never show it
+    // however silent its own tap was. Same message, different surface.
+    const panel = render();
+    useView(panel, mode);
+    send({ type: 'snapshot', sessions: [liveSession({ engine: 'codex' })] });
+    send({ type: 'degraded', engine: 'codex', degraded: true, reason: 'noHookEvents' });
+    enter(panel, mode, 'session-live');
+
+    if (mode === 'canvas') {
+      expect(one(panel.container, TESTID.hudDegradedChip).textContent).toContain('inferred');
+    } else {
+      expect(one(panel.container, 'session-header').dataset['livenessInferred']).toBe('true');
+    }
+  });
+  it('control: it DOES say it about a Claude Code session, on the same panel state', () => {
+    // Without this the assertion above passes if the degraded message never
+    // arrived, or if the chip were deleted outright.
+    const panel = render();
+    useView(panel, mode);
+    send({ type: 'snapshot', sessions: [liveSession({ engine: 'cc' })] });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
+    enter(panel, mode, 'session-live');
+
+    if (mode === 'canvas') {
+      expect(one(panel.container, TESTID.hudDegradedChip).textContent).toContain('inferred');
+    } else {
+      expect(one(panel.container, 'session-header').dataset['livenessInferred']).toBe('true');
+    }
+  });
+
+  it('reaches this surface tagged codex, with a Window figure beside context and burn', () => {
+    // The state-matrix row this phase adds: `engine: 'codex'` all the way
+    // through the router to whichever surface is showing, PLUS the third
+    // token figure (D0.2, spec C8) that only a Codex session ever carries.
+    const panel = panelWith([liveSession({ engine: 'codex', windowTokens: 200_000 })]);
+
+    if (mode === 'canvas') {
+      const blob = blobFor(panel, 'session-live');
+      expect(blob.dataset['engine']).toBe('codex');
+      enter(panel, mode, 'session-live');
+      const totals = one(panel.container, 'hud-totals');
+      // The two other figures on the row are unchanged; the window figure is
+      // the addition, grouped-thousands, on the same row.
+      expect(totals.textContent).toContain('17,745');
+      expect(totals.textContent).toContain('35,490');
+      expect(totals.textContent).toContain('200,000');
+    } else {
+      // The list view's session header has no engine glyph of its own (only
+      // the canvas card and the drawer do), so this half asserts the OTHER
+      // new fact: the Window figure on the same totals row as context/burn.
+      const header = one(panel.container, 'session-header');
+      expect(one(header, 'header-context').textContent?.trim()).toBe('17,745');
+      expect(one(header, 'header-burn').textContent?.trim()).toBe('35,490');
+      expect(one(header, 'header-window').textContent?.trim()).toBe('200,000');
+    }
+  });
+
+  it('renders EM_DASH for the Window figure on a CC session, in both surfaces', () => {
+    // CC (and OpenCode) sessions never set `windowTokens`; a renderer that
+    // wrote `0` instead of the absence rule would claim a zero-token window.
+    const panel = panelWith([liveSession()]);
+    expect(liveSession().windowTokens).toBeUndefined();
+
+    if (mode === 'canvas') {
+      enter(panel, mode, 'session-live');
+      // `toContain(EM_DASH)` alone would be vacuous here — the row's COST
+      // figure is ALWAYS an em-dash (no price table exists), so it passes
+      // whether or not the window figure rendered correctly. Count instead:
+      // context and burn are real numbers on `liveSession()`, so exactly TWO
+      // dashes (window, cost) is the property that actually distinguishes
+      // "window rendered EM_DASH" from "window rendered something else and
+      // cost's dash was the only one counted".
+      const text = one(panel.container, 'hud-totals').textContent ?? '';
+      const dashCount = text.split(EM_DASH).length - 1;
+      expect(dashCount).toBe(2);
+      expect(text).toContain('17,745');
+      expect(text).toContain('35,490');
+    } else {
+      const header = one(panel.container, 'session-header');
+      expect(one(header, 'header-window').textContent?.trim()).toBe(EM_DASH);
+    }
+  });
+
   // --- patch failure -------------------------------------------------------
 
   it('shows the thin patch-failure notice and clears it on the next snapshot', () => {
@@ -841,22 +1024,27 @@ describe.each(VIEWS)('the state matrix in the %s view', (mode) => {
     const panel = panelWith([]);
     expect(one(panel.container, 'app').dataset['liveness']).toBe('none');
     if (mode === 'canvas') {
-      // ONE LINE PER ENABLED ENGINE, which replaced the single
-      // 'No sessions in this workspace.' this row used to pin. `App.svelte`
-      // passes no `enabledEngines`, so `Deck.svelte`'s default applies and
-      // Claude Code is the only engine named — an installation with no
-      // OpenCode must not be shown a panel waiting for one.
+      // ONE LINE, NAMING NO ENGINE (D4, 2026-09-04). This row has pinned three
+      // different things now: 'No sessions in this workspace.', then one line
+      // per enabled engine, and now this. The middle one is why the rule is
+      // worth stating rather than just satisfying — it was correct in design
+      // and defective in the product, because nothing ever passed
+      // `enabledEngines`, so the panel named Claude Code to every user of
+      // every engine.
       //
-      // Asserted as the whole list, by value: a second line, or a line for an
-      // engine this install is not observing, fails here.
+      // Asserted through the WHOLE PANEL rather than the component, which is
+      // what this file is for: the component test can be handed a prop the
+      // product never passes, and this one cannot.
       const waiting = all(panel.container, 'deck-waiting');
-      expect(waiting.map((p) => p.dataset['engine'])).toStrictEqual(['cc']);
       expect(waiting.map((p) => p.textContent?.trim())).toStrictEqual([
-        'Waiting for a Claude Code session…',
+        'Waiting for a session to start.',
       ]);
       expect(one(panel.container, TESTID.deckEmpty).textContent?.trim()).toBe(
-        'Waiting for a Claude Code session…',
+        'Waiting for a session to start.',
       );
+      for (const name of ['Claude', 'OpenCode', 'Codex']) {
+        expect(one(panel.container, TESTID.deckEmpty).textContent).not.toContain(name);
+      }
       expect(all(panel.container, 'deck-empty-filtered')).toHaveLength(0);
       expect(all(panel.container, TESTID.deckBlob)).toHaveLength(0);
       expect(one(panel.container, TESTID.deck).dataset['sessions']).toBe('0');
@@ -1320,7 +1508,7 @@ describe('C7.3 rows that were unimplemented and now are not', () => {
   it('shows the HUD, and its degraded chip when the hook tap is silent', () => {
     const panel = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
-    send({ type: 'degraded', degraded: true, reason: 'noHookEvents' });
+    send({ type: 'degraded', engine: 'cc', degraded: true, reason: 'noHookEvents' });
     click(blobFor(panel, 'session-live'));
 
     // C7.3: degraded ⇒ a HUD chip saying liveness is being INFERRED, because

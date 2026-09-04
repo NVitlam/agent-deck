@@ -31,9 +31,6 @@ side in one panel. It observes only — it never wraps, launches, proxies or con
 
 <!-- /engine:codex -->
 
-> This badge is text, not a remote image: a project whose selling point is zero egress should not
-> make its own README phone home to a badge service to render.
-
 ---
 
 ## What you see
@@ -48,10 +45,11 @@ first, Recent, Engine), and chips to filter by liveness or by engine. Keyboard: 
 **The tree** — one session's interior. Every agent is a node; children sit under the parent that
 spawned them, in spawn order; a filament runs from each parent to every agent it spawned. A node
 pulses while one of its tool calls is in flight and stops when the call ends, so the picture tells
-you what is happening now, not only what happened. Wide ranks wrap instead of running off the panel,
-and nothing is ever cut short with an ellipsis — a long label wraps and carries its full text on
-hover. Anything that cannot be attached to a parent goes to a parked rail carrying the reason,
-because unplaced data is shown as unplaced and never guessed into position.
+you what is happening now, not only what happened. A parent with many children lays them out in
+rows rather than one line running off the panel, and nothing is ever cut short with an ellipsis — a
+long label wraps and carries its full text on hover. Anything that cannot be attached to a parent
+goes to a parked rail carrying the reason, because unplaced data is shown as unplaced and never
+guessed into position.
 
 ![One session, 26 agents, live tree](media/hero_26_agent_session.png)
 
@@ -107,10 +105,10 @@ All state lives in memory and is discarded when the window closes.
 ## Also observes OpenCode
 
 Since `v0.5.0`, OpenCode sessions appear in the same deck as Claude Code ones. Each cell carries a
-glyph saying which engine wrote it - `OC` or `CC` - and the engine chips, labelled **Claude Code**
-and **OpenCode**, filter to one or show both. Nothing is configured: if OpenCode is
-installed, its sessions are there; if it is not, the deck says nothing about it, because an absent
-data directory is not an error and not a warning.
+glyph saying which engine wrote it - `OC` - and the engine chips filter the deck to one engine or
+show them all. Nothing is configured: if OpenCode is installed, its sessions are there; if it is
+not, the deck says nothing about it, because an absent data directory is not an error and not a
+warning.
 
 **Four tables are never read**, and this is by name rather than by filter: `account`,
 `control_account`, `credential` and `session_share`. Those are the tables whose schema carries
@@ -145,10 +143,8 @@ carries a glyph saying which engine wrote it - `CX` - and the engine chips, labe
 written sessions under its data root, they are there; if it has not, the deck says nothing about it,
 because an absent data root is not an error and not a warning.
 
-**What is read is the transcripts, and nothing beside them.** The data root is `$CODEX_HOME` when
-you set it and `~/.codex` otherwise, resolved every time rather than remembered — that variable
-moves Codex's whole surface, credentials included, so an engine that assumed the home location
-would observe nothing for such a user while reporting a confident absence.
+**What is read is the transcripts, and nothing beside them.** They live in `$CODEX_HOME` if you set
+that variable and in `~/.codex` if you do not, and it is checked each time rather than remembered.
 
 **Five things under that root are never opened**, and this is by name rather than by filter, the
 same treatment the OpenCode tables get: the credential file `auth.json`, the sandbox-secret
@@ -189,8 +185,8 @@ transcript; what degrades is liveness, which falls back to file modification tim
 ## Requirements
 
 - **VS Code** `^1.134.0`
-- **Node** `>=20` on your `PATH` — the hook block below is a `node -e` one-liner, so your Node is
-  what runs it
+- **Node** `>=22.22.2` on your `PATH` — the hook block below is a `node -e` one-liner, so your Node
+  is what runs it
 - **Claude Code** on the `2.x` line, within one minor of the anchor (see below). Patch releases are
   read as they come.
 - **OpenCode** — optional, and there is nothing to install or configure if you do not use it. The
@@ -208,17 +204,22 @@ Install from the VS Code Marketplace - open the **Extensions** view and search f
 code --install-extension nvitlam.agent-deck
 ```
 
-**Then install the hook block below.** It is not optional: without it Agent Deck can still read
-session transcripts, but nothing tells it what is running right now, so liveness is inferred from
-file mtime alone.
+**To open it:** run **Agent Deck: Open Session Deck** from the Command Palette. Your sessions
+appear on their own — there is nothing to point it at and nothing to switch on.
+
+**Then install the hook block below. Optional.** Without it Agent Deck still shows the tree, but it
+cannot tell you what is running right now — liveness is inferred from file times and the panel says
+so.
 
 ## Install the hook (one manual paste)
 
-Content and the tree render from the session files alone. The hook tap is what makes liveness
-*live* — which agent is running right now, which tool call is in flight.
+This block is **Claude Code's**. Codex has its own, further down; OpenCode needs none.
 
-**Agent Deck never installs this for you and never writes either settings file.** Read-only means
-read-only, including your configuration. You paste it; you own it.
+Content and the tree render from the session files alone. The hook is what makes liveness *live* —
+which agent is running right now, which tool call is in flight.
+
+**Agent Deck never installs this for you and never writes either settings file.** Read-only
+includes your configuration: you paste it, you own it.
 
 Paste the `"hooks"` key below into **one** of:
 
@@ -308,11 +309,10 @@ Notes on that block, each of them measured rather than assumed:
 
 - **It is `node -e`, not `curl`, and that is not a style choice.** This command runs inside your real
   Claude Code session on every tool call. Against a closed loopback port — which is what it finds
-  whenever Agent Deck is not running — `node` takes `ECONNREFUSED` and exits `0` in well under a
-  fifth of a second, while `curl.exe` burns its full connect timeout (measured between 1.1 s and
-  2.1 s, exiting non-zero) and stalls your session that long every single time. Simplifying it to
-  `curl` costs you roughly an order of magnitude, forever, on the common path. `SECURITY.md` §5
-  carries the numbers.
+  whenever Agent Deck is not running — `node` takes `ECONNREFUSED` and exits `0` immediately, while
+  `curl.exe` burns its full connect timeout and stalls your session that long every single time.
+  Simplifying it to `curl` costs you roughly an order of magnitude, forever, on the common path.
+  Measured in `SECURITY.md` §5.
 - **The port must match `agentDeck.port`.** The block names `47821` literally, which is that
   setting's default. If you change one, change the other: Agent Deck reports a port collision as an
   error and never silently picks a different port, because the block you pasted has no way of being
@@ -335,10 +335,12 @@ the **same** port: there is no second socket, and nothing else to turn on.
 
 Paste the `"hooks"` key below into `~/.codex/hooks.json` — the user-level file, and the only place
 this is offered. Repo-local hook discovery has been reported broken on some Codex releases, and a
-paste that looks installed and never fires is worse than one you had to put somewhere central.
+paste that looks installed and never fires is worse than one you had to put somewhere central. **If
+you set `$CODEX_HOME`, that is where the file goes instead** — the variable moves every Codex file,
+this one included.
 
 That file is a JSON object. Merge the `"hooks"` key into whatever is already there rather than
-replacing the file.
+replacing the file; if it does not exist yet, create it with exactly what is below.
 
 ```json
 {
@@ -522,8 +524,8 @@ See [`LICENSE`](LICENSE).
 
 ## Status
 
-Released on the VS Code Marketplace as `nvitlam.agent-deck`. All three engines' parsers, the
-grafter, the liveness engines and the renderer are covered by an automated suite that runs against
-transcripts captured from real Claude Code sessions, a database captured from a real OpenCode one,
-and transcripts and hook payloads captured from real Codex ones. No live data directory of any of
-the three is ever read by a test.
+Released on the VS Code Marketplace as `nvitlam.agent-deck`. Every part of all three engines — the
+readers, the tree builder, the live-status engines and the panel — is covered by an automated suite
+that runs against transcripts captured from real Claude Code sessions, a database captured from a
+real OpenCode one, and transcripts and hook payloads captured from real Codex ones. No live data
+directory of any of the three is ever read by a test.

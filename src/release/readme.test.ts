@@ -73,6 +73,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { CODEX_NEVER_OPEN } from '../codex/never-open.js';
 import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
 import {
   OC_VERSION_WINDOW,
@@ -142,6 +143,7 @@ function commandsOf(settings: HookSettings): Map<string, string[]> {
 }
 
 const README = readText('README.md');
+
 
 /**
  * The four release images, in the order the page reads in.
@@ -1462,5 +1464,96 @@ describe('the shipped documents describe the shipped UI', () => {
       );
       expect(exempted.length, `${name} exempts ${exempted.length} sentences`).toBeLessThanOrEqual(8);
     }
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * DoD 4.4 — SECURITY.md's Codex claims are BOUND to the code, not restated
+ * -------------------------------------------------------------------------- */
+
+/*
+ * WHY THIS EXISTS.
+ *
+ * `SECURITY.md` now states what the Codex engine reads and what it never opens.
+ * The never-opened list is the half that will decay: it is a promise about
+ * SECURITY, it is spelled out in prose, and the code's copy lives somewhere
+ * else entirely (`src/codex/never-open.ts`). This repository has already
+ * shipped a release whose README advertised three DELETED features, covered by
+ * nothing — a grep for the relevant words across this file returned zero. The
+ * fix then was to bind the prose to the components' own labels, and this is the
+ * same move for a security claim.
+ *
+ * EXACT SET, BOTH WAYS, COUNT PINNED BESIDE IT (rule 19). A containment would
+ * pass while the document quietly dropped `auth.json`, which is the one entry
+ * whose absence would matter most.
+ */
+describe("DoD 4.4 — SECURITY.md states the Codex engine's reads and its never-opened list", () => {
+  const SECURITY = readText('SECURITY.md');
+
+  /** The never-opened entries SECURITY.md spells, taken from its own table. */
+  function documentedNeverOpen(): string[] {
+    const start = SECURITY.indexOf('#### G10');
+    expect(start, 'SECURITY.md must carry a G10 never-opened section').toBeGreaterThan(-1);
+    // To the NEXT heading, not to the next blank line: the section opens with
+    // a paragraph, so a blank-line boundary ends it before the table it is
+    // here to read. The vacuity control below caught exactly that.
+    const after = SECURITY.slice(start + 1);
+    const end = after.search(/\r?\n#{2,4} /);
+    const section = end === -1 ? after : after.slice(0, end);
+    // Every backticked token inside the section's table rows.
+    return [...section.matchAll(/`([^`]+)`/g)]
+      .map((m) => m[1] as string)
+      .filter((name) => /^[.*A-Za-z0-9_/-]+$/.test(name) && name !== 'src/codex/never-open.ts');
+  }
+
+  it('spells EXACTLY the list the code enforces — both ways, count pinned', () => {
+    const documented = [...new Set(documentedNeverOpen())].sort();
+    const enforced = [...CODEX_NEVER_OPEN].sort();
+
+    expect(documented).toStrictEqual(enforced);
+    // Beside the set, never instead of it: a set comparison written against an
+    // accidentally-empty extraction passes vacuously, and this goes red first.
+    expect(documented).toHaveLength(enforced.length);
+    expect(enforced.length).toBeGreaterThan(0);
+  });
+
+  it('vacuity control: the extractor really does find the entries', () => {
+    // Without this, the test above would pass on a SECURITY.md whose G10
+    // section had been emptied — [] === [] is not the claim being made.
+    const documented = documentedNeverOpen();
+    expect(documented.length).toBeGreaterThanOrEqual(CODEX_NEVER_OPEN.length);
+    expect(documented).toContain('auth.json');
+  });
+
+  it('states the four things DoD 4.4 names, each by a phrase that is checkable', () => {
+    // Deliberately NOT a word count and NOT a "mentions Codex" grep: each row
+    // is a claim a reader could act on, and a document that lost one should go
+    // red rather than stay green on having the right topic.
+    const claims: readonly [string, RegExp][] = [
+      ['what the engine reads', /rollout-\*\.jsonl/],
+      ['the sessions walk is discovered, not composed', /never composes a path from a clock/i],
+      ['the lock files are not opened', /never opened/i],
+      ['it does not read Codex config', /Neither `hooks\.json` nor `config\.toml` is opened/],
+      ['no second socket', /no second port/i],
+      ['the manual trust step', /trust/i],
+      ['the hook cost against a closed port', /\b89 ms\b/],
+      ['the curl comparison', /curl\.exe/],
+    ];
+    for (const [what, re] of claims) {
+      expect(re.test(SECURITY), `SECURITY.md no longer states: ${what}`).toBe(true);
+    }
+  });
+
+  it('the hook-cost figures are a measurement, not an adjective', () => {
+    // DoD 4.4's own words: "numbers, not adjectives". The timings are NOT
+    // re-measured here — a wall-clock assertion in a suite is a test that
+    // passes or fails by CPU load, which this repository has already paid for
+    // twice. What is pinned is that numbers with units are present on both
+    // sides of the comparison.
+    const section = SECURITY.slice(SECURITY.indexOf('## 5.'));
+    const timings = [...section.matchAll(/\b([\d,]+) ms\b/g)].map((m) => m[1] as string);
+    expect(timings.length, 'the hook-cost table lost its numbers').toBeGreaterThanOrEqual(6);
+    // Both engines' costs are stated, and they are not the same number.
+    expect(new Set(timings).size).toBeGreaterThan(1);
   });
 });

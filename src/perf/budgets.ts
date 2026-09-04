@@ -286,6 +286,58 @@ export const REAL_CORPUS_GRAFT_BUDGET: TimingBudget = {
   },
 };
 
+/**
+ * DoD 4.2a — ONE WHOLE-CORPUS READ THROUGH THE CODEX ENGINE.
+ *
+ * The stage is `readCodexEngine()` over the committed anchor corpus: discovery,
+ * fingerprint, parse, redaction and graft for every run in it. That is exactly
+ * what the Codex content poll performs, so a regression in any of those five
+ * shows up here rather than in a stage nobody measures.
+ *
+ * WHY THIS EXISTS AT ALL. Until 2026-09-04 **no perf budget touched the Codex
+ * engine** — recorded as an open item since Phase 2 and carried through three
+ * phases. Two engines were measured and the third was not.
+ *
+ * WHY THE CORPUS IS THE RIGHT SUBJECT DESPITE BEING SMALL. DoD 4.2 asks for a
+ * harvested >= 10k-line transcript and the largest committed Codex transcript is
+ * **73 lines**; that half is BLOCKED-QUOTA until 2026-10-03 and is tracked as
+ * 4.2b. But line count is the wrong axis for this engine. Codex stores tool
+ * output **whole and inline** — no offload file — so its stress shape is a
+ * single enormous LINE, and the corpus already carries one of **554,122 bytes**.
+ * That is the shape that turned a plausible scan pattern quadratic and cost the
+ * privacy sweep 62 seconds on 2026-09-03. A 10k-line transcript of ordinary
+ * lines would exercise less of what is actually risky here.
+ *
+ * What this budget therefore does NOT establish: how the engine scales to a
+ * transcript with many thousands of records. 4.2b is the item for that, and it
+ * stays open with its reason on the box.
+ */
+export const CODEX_ENGINE_READ_BUDGET: TimingBudget = {
+  id: 'codex.engineRead.dod',
+  what: 'graft',
+  statistic: 'median',
+  limitMs: 400,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 29.1,
+    on: 'fixtures/codex-0.151.0-alpha.7.2, 5 runs / 14 transcripts / longest line 554,122 bytes, 2026-09-04',
+    marginX: 13.7,
+    note:
+      'One readCodexEngine() per run directory — discovery, fingerprint, parse, ' +
+      'redaction and graft, which is what the content poll performs. 7 samples ' +
+      'after 2 warmups, in the `perf` project (pool: forks). Two consecutive ' +
+      'runs measured medians of 29.1 and 17.8 ms — a 1.6x spread on an ' +
+      'unchanged tree, recorded rather than averaged away, and the reason the ' +
+      'limit is nowhere near either. 29.1 is kept as the set point because a ' +
+      'budget set from the FASTER of two observations is a budget that fails ' +
+      'on a normal day. ' +
+      'The 400 ms limit is the same set point realCorpus.graft.dod uses, chosen ' +
+      'once: this stage is not the one under pressure, and a tight limit here ' +
+      'would fail on a slower machine while measuring nothing new.',
+  },
+};
+
 export const HEAP_FLOOR_RATIO_LIMIT = 1.1;
 
 /**

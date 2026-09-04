@@ -252,8 +252,9 @@ representative one, so the margins stated there are worst-case rather than flatt
 ### Provenance of those figures, stated because it is uneven
 
 Nine runs are on record. **Only one is committed as machine-readable JSON** — the `FULL=1` run this
-file summarises. Four survive only as medians quoted in `budgets.ts` and in the `8abee37` commit
-message; the four added by Phase 4.5's Wave 0 are transcribed verbatim in this file, which is
+file summarises. Four survive only as medians quoted in `budgets.ts` — the commit message that
+also carried them named a SHA that no longer exists, killed by one of this
+repository's history rewrites, so `budgets.ts` is now their only home; the four added by Phase 4.5's Wave 0 are transcribed verbatim in this file, which is
 weaker than JSON and stronger than a remembered number:
 
 | run | mode | n | median | slowest sample | committed |

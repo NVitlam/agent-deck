@@ -98,7 +98,34 @@ interface SweepLeg {
   nulFiles: string[];
   identity: { hits: IdentityHit[]; exemptHits: number };
   secrets: SecretHit[];
+  /** Every value that reached the exemption rules in THIS leg. */
+  foreignCandidates: number;
   foreign: ForeignHit[];
+}
+
+/**
+ * What the run itself measured for one exemption (v0.6.0 DoD 5.0d).
+ *
+ * Working-tree scoped, and the sweep says so in `scope`: the history leg
+ * re-scans older copies of the same corpus once per blob per path, so a census
+ * folding it in would count one corpus several times over and move with the
+ * branch topology rather than with the data.
+ */
+interface Measured {
+  scope: string;
+  occurrences: number;
+  distinctValues: number;
+  fileCount: number;
+  sampleFiles: string[];
+  keys: string[];
+  shapes: Record<string, number>;
+  codexCorpora: {
+    present: string[];
+    filesScanned: number;
+    candidates: number;
+    forgivenHere: number;
+    shapes: Record<string, number>;
+  };
 }
 
 interface SweepReport {
@@ -115,6 +142,8 @@ interface SweepReport {
       exemptPaths: string[];
     };
     ownProject: string;
+    /** Separates a reason's durable prose from the run-derived arithmetic. */
+    measuredMarker: string;
     captureCorpora: string[];
     captureRootFiles: boolean;
     foreignValueExemptions: {
@@ -122,6 +151,8 @@ interface SweepReport {
       paths: string[] | null;
       absolutePathValuesOnly: boolean;
       reason: string;
+      /** What THIS run measured, and what the tail of `reason` is built from. */
+      measured: Measured;
       /** Candidates this rule forgave in the run that produced this report. */
       forgiven: number;
     }[];
@@ -1366,6 +1397,263 @@ describe('untracked mode', () => {
     // reaches it. Both legs see fixtures/tracked.txt; it appears once.
     const dup = withUntracked.workingTree.filesScanned - tracked.workingTree.filesScanned;
     expect(dup).toBe(withUntracked.config.untrackedFilesScanned);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 3. v0.6.0 DoD 5.0d - an exemption's reason describes THIS run
+ *
+ * Five figures used to be frozen into the three Codex exemption reasons: a
+ * corpus total, a rule's share of it twice over, and a two-way split of one of
+ * those shares by value spelling. All five re-derived on the day they were
+ * written. All five would have gone false on the next harvest, silently, in a
+ * file no harvest touches - and this repository has already had the other
+ * version of that accident, a count invalidated by a corpus somebody REMOVED
+ * in an unrelated commit.
+ *
+ * The counts are now composed by the run. What follows is what makes that
+ * checkable rather than merely claimed:
+ *
+ *   - every standalone integer after the marker is one of the numbers the run
+ *     derived, so hard-coding a September literal back into the sentence goes
+ *     red even though the sentence still reads perfectly;
+ *   - the SAME rule reports different numbers over two different trees, which
+ *     no constant can do;
+ *   - one published count is re-derived here from `git ls-files`, by different
+ *     code, so a census that stopped counting would be caught rather than
+ *     believed;
+ *   - and over a tree with no Codex corpus at all the sentence SAYS the corpus
+ *     is absent and prints no number, because rule 18 applies to a census too:
+ *     a zero is evidence only when something says what was looked at.
+ *
+ * None of these asserts a count. A count written here would be the same defect
+ * one file to the left.
+ * ------------------------------------------------------------------ */
+
+const CODEX_RULE_IDS = [
+  'codex-probe-scratch-repo',
+  'codex-probe-scratch-repo-slug',
+  'codex-rollout-transcript-path',
+] as const;
+
+/**
+ * Standalone integers only.
+ *
+ * A corpus directory name is full of digits that are not counts -
+ * `fixtures/codex-0.151.0-alpha.7.2` alone contributes five digit runs - so a
+ * naive `\d+` would let a hard-coded literal hide among them, or fail on a
+ * sentence that is perfectly correct. A count is a digit run touching neither
+ * a word character, a dot nor a hyphen on either side.
+ */
+function standaloneIntegers(text: string): string[] {
+  return [...text.matchAll(/(?<![\w.-])\d+(?![\w.-])/g)].map((m) => m[0]);
+}
+
+/** Every number the run derived for one rule, as the sentence would spell it. */
+function derivedNumbers(m: Measured): Set<string> {
+  const out = new Set<string>();
+  for (const n of [
+    m.occurrences,
+    m.distinctValues,
+    m.fileCount,
+    m.codexCorpora.filesScanned,
+    m.codexCorpora.candidates,
+    m.codexCorpora.forgivenHere,
+  ]) {
+    out.add(String(n));
+  }
+  for (const n of Object.values(m.shapes)) out.add(String(n));
+  for (const n of Object.values(m.codexCorpora.shapes)) out.add(String(n));
+  return out;
+}
+
+function ruleOf(report: SweepReport, id: string): SweepReport['config']['foreignValueExemptions'][number] {
+  const rule = report.config.foreignValueExemptions.find((r) => r.id === id);
+  if (rule === undefined) throw new Error(`no such exemption: ${id}`);
+  return rule;
+}
+
+/** The run-derived tail of a reason: everything after the published marker. */
+function measuredSentence(report: SweepReport, id: string): string {
+  const rule = ruleOf(report, id);
+  const at = rule.reason.indexOf(report.config.measuredMarker);
+  if (at === -1) throw new Error(`exemption ${id} states no measurement`);
+  return rule.reason.slice(at + report.config.measuredMarker.length);
+}
+
+describe('the exemption reasons are composed from the run, not written down', () => {
+  /** This repository, working-tree leg only: the census is working-tree scoped. */
+  let real: SweepReport;
+  /** The planted scratch tree, which carries one file per Codex shape. */
+  let plantedTree: SweepReport;
+  /** A tree with no Codex data in it at all. */
+  let bare: SweepReport;
+  let bareRoot = '';
+  /** Tracked files under a Codex corpus, counted here rather than by the sweep. */
+  let codexCorpusFiles: string[] = [];
+
+  beforeAll(() => {
+    real = sweep({ root: REPO_ROOT, history: false, stamp: '1970-01-01T00:00:00.000Z' });
+    plantedTree = sweep({ root: scratch, stamp: '1970-01-01T00:00:00.000Z' });
+    bareRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-deck-no-codex-'));
+    fs.writeFileSync(path.join(bareRoot, 'README.md'), 'a tree with no capture in it\n');
+    bare = sweep({ root: bareRoot, stamp: '1970-01-01T00:00:00.000Z' });
+
+    codexCorpusFiles = execFileSync('git', ['-C', REPO_ROOT, 'ls-files', '-z'], {
+      encoding: 'utf8',
+      maxBuffer: 1 << 28,
+    })
+      .split('\0')
+      .filter((p) => /^fixtures\/codex-[^/]+\//.test(p));
+  }, 120_000);
+
+  afterAll(() => {
+    if (bareRoot !== '') fs.rmSync(bareRoot, { recursive: true, force: true });
+  });
+
+  it('every exemption states a measurement, after its durable prose', () => {
+    // The marker is published by the sweep, not written down twice: a literal
+    // repeated on both sides of a boundary is the silent-seam class this
+    // repository already shipped once between the host and the webview.
+    expect(real.config.measuredMarker.length).toBeGreaterThan(0);
+    expect(real.config.foreignValueExemptions.length).toBeGreaterThan(0);
+    for (const rule of real.config.foreignValueExemptions) {
+      const at = rule.reason.indexOf(real.config.measuredMarker);
+      expect(at, `${rule.id} states no measurement`).toBeGreaterThan(0);
+      expect(measuredSentence(real, rule.id).length, rule.id).toBeGreaterThan(20);
+    }
+  });
+
+  it('every number a reason states is a number this run derived', () => {
+    // THE ASSERTION THAT CATCHES A LITERAL. A September figure written back
+    // into the prose still reads correctly and still describes the corpus it
+    // was taken over; what it cannot do is be one of the numbers this run just
+    // counted. Note it is a positive check on each printed integer, not a
+    // "nothing unexpected" counter - a counter of what is missing is satisfied
+    // by an empty sentence.
+    for (const rule of real.config.foreignValueExemptions) {
+      const sentence = measuredSentence(real, rule.id);
+      const printed = standaloneIntegers(sentence);
+      const derived = derivedNumbers(rule.measured);
+      expect(printed.length, `${rule.id} prints no count at all`).toBeGreaterThan(0);
+      for (const n of printed) {
+        expect(
+          derived.has(n),
+          `${rule.id} states ${n}, which this run did not derive: ${sentence}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('the run measured a live population for every rule, per rule and positively', () => {
+    // Per-subject and positive: a total over all rules would be satisfied by
+    // one busy rule carrying six dead ones, which is exactly the state the
+    // dead-rule guard exists to find.
+    for (const rule of real.config.foreignValueExemptions) {
+      expect(rule.measured.occurrences, `${rule.id} forgave nothing`).toBeGreaterThan(0);
+      expect(rule.measured.distinctValues, `${rule.id} has no distinct value`).toBeGreaterThan(0);
+      expect(rule.measured.fileCount, `${rule.id} names no file`).toBeGreaterThan(0);
+      expect(rule.measured.scope).toBe('working tree');
+    }
+  });
+
+  it('re-derives the census denominator from git, by different code', () => {
+    // The published `filesScanned` is what the sweep OPENED inside a Codex
+    // corpus. Recomputed here from `git ls-files` so that a census which
+    // stopped counting - or was replaced by a constant - disagrees with a
+    // second reader instead of being taken at its word.
+    expect(codexCorpusFiles.length).toBeGreaterThan(0);
+    // The corpus half of the census is run-wide, so any rule carries it.
+    const corpora = ruleOf(real, 'codex-probe-scratch-repo').measured.codexCorpora;
+    expect(corpora.filesScanned).toBe(codexCorpusFiles.length);
+    expect(corpora.present.length).toBeGreaterThan(0);
+    for (const dir of corpora.present) {
+      expect(fs.existsSync(path.join(REPO_ROOT, dir)), `${dir} does not exist`).toBe(true);
+      expect(codexCorpusFiles.some((p) => p.startsWith(`${dir}/`))).toBe(true);
+    }
+    expect(corpora.candidates).toBeGreaterThan(0);
+  });
+
+  it('the working-tree accounting closes over the census, not just over the run', () => {
+    // `forgiven` in the report spans both legs; `measured.occurrences` is the
+    // working-tree half. This is the conservation law for that half, and the
+    // vacuity control is the assertion above it: candidates are non-zero.
+    const forgiven = real.config.foreignValueExemptions.reduce(
+      (n, r) => n + r.measured.occurrences,
+      0,
+    );
+    expect(real.workingTree.foreignCandidates).toBeGreaterThan(0);
+    expect(forgiven + real.workingTree.foreign.length).toBe(real.workingTree.foreignCandidates);
+  });
+
+  it('the SAME rule reports different numbers over a different tree', () => {
+    // A constant cannot be right in both runs, which is what "computed" means
+    // operationally. The planted tree carries exactly one file per Codex
+    // shape; this repository carries a corpus.
+    for (const id of CODEX_RULE_IDS) {
+      const here = ruleOf(real, id).measured;
+      const there = ruleOf(plantedTree, id).measured;
+      expect(there.occurrences, `${id} found nothing in the planted tree`).toBeGreaterThan(0);
+      expect(here.occurrences, `${id} did not move between two trees`).not.toBe(
+        there.occurrences,
+      );
+      expect(measuredSentence(real, id)).not.toBe(measuredSentence(plantedTree, id));
+      // And each sentence's numbers belong to ITS OWN run.
+      for (const n of standaloneIntegers(measuredSentence(plantedTree, id))) {
+        expect(
+          derivedNumbers(there).has(n),
+          `${id} states ${n} over the planted tree, which that run did not derive`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('names the capture keys a shape arrived under, rather than asserting them', () => {
+    // The rollout reason used to name `transcript_path` and
+    // `agent_transcript_path` as a written claim. The run says which keys it
+    // saw; a harvest that starts reporting a third one changes the sentence.
+    const keys = ruleOf(real, 'codex-rollout-transcript-path').measured.keys;
+    expect(keys.length).toBeGreaterThan(0);
+    const sentence = measuredSentence(real, 'codex-rollout-transcript-path');
+    for (const key of keys) expect(sentence).toContain(key);
+  });
+
+  it('states the ABSENCE of a Codex corpus rather than printing a confident zero', () => {
+    // Rule 18 applied to a census. Over a tree with no Codex data the honest
+    // report is "there is no corpus here", not "0 of 0" - a zero reads as a
+    // measurement, and this repository has had a clean PASS over an absent
+    // corpus for real.
+    for (const id of CODEX_RULE_IDS) {
+      const m = ruleOf(bare, id).measured;
+      expect(m.codexCorpora.present, id).toEqual([]);
+      const sentence = measuredSentence(bare, id);
+      // Lowercased on the way in: the slug rule starts a sentence with this
+      // clause and the other two embed it mid-sentence, so the capital is a
+      // property of the position rather than of the claim.
+      expect(sentence.toLowerCase(), id).toContain(
+        'no codex capture corpus (fixtures/codex-*) is present',
+      );
+      // No number is printed at all, so no zero can be read as evidence.
+      expect(standaloneIntegers(sentence), `${id}: ${sentence}`).toEqual([]);
+      expect(sentence).not.toBe(measuredSentence(real, id));
+    }
+  });
+
+  it('still GATES: deriving a count did not turn an exemption into an advisory', () => {
+    // The point of the whole file. The three near misses share the exempt
+    // shapes' home directory and must still be FOREIGN, and the planted tree
+    // must still fail.
+    expect(plantedTree.verdict.pass).toBe(false);
+    expect(plantedTree.verdict.foreign).toBeGreaterThan(0);
+    for (const shape of CODEX_SHAPES.filter((s) => s.expectFlagged)) {
+      expect(
+        plantedTree.workingTree.foreign.some((h) => h.path === shape.file),
+        `${shape.id} stopped gating`,
+      ).toBe(true);
+    }
+    // And identity stays a hard failure (G8) - the class that never had a
+    // count in it and must not acquire an exemption by proximity.
+    expect(bare.verdict.identityStatus).toBe('SKIPPED');
   });
 });
 

@@ -122,6 +122,8 @@ interface SweepReport {
       paths: string[] | null;
       absolutePathValuesOnly: boolean;
       reason: string;
+      /** Candidates this rule forgave in the run that produced this report. */
+      forgiven: number;
     }[];
     untracked: boolean;
     untrackedScanDirs: string[];
@@ -134,6 +136,8 @@ interface SweepReport {
     identity: number;
     secrets: number;
     foreign: number;
+    /** Every value that reached the exemption rules, across both legs. */
+    foreignCandidates: number;
     pass: boolean;
   };
   timingsMs: { workingTreeMs: number; historyMs?: number };
@@ -623,6 +627,62 @@ describe('privacy sweep against this repository', () => {
   });
 
   /* ---------------------------------------------------------------- *
+   * v0.6.0 Phase 4 (DoD 4.5) - `foreign=0` is only evidence when
+   * something says what was looked at.
+   *
+   * `verdict.foreign === 0` is the gate, and on its own it reads exactly
+   * the same whether the scan examined every capture value in the
+   * repository or never opened a corpus at all. That second case is not
+   * hypothetical here: "a clean PASS over an absent corpus" is the
+   * measured failure that `--untracked` exists for, and the same shape
+   * reached this suite once as a `beforeAll` timeout reporting as
+   * "15 skipped" with a clean-looking tests line.
+   *
+   * So the run publishes what it examined, and these three assertions
+   * close the accounting over it. Note what they deliberately do NOT do:
+   * pin a count. Every count that was ever written into this file's prose
+   * has gone stale - one of them cited a commit the 2026-09-04 history
+   * rewrite destroyed - because a census over a corpus is invalidated by
+   * ADDING data as surely as by removing it. These are conservation laws
+   * and non-emptiness, which survive both.
+   * ---------------------------------------------------------------- */
+  describe('the FOREIGN accounting closes, so the zero is earned', () => {
+    it('examined capture values at all - the zero is not over an empty scan', () => {
+      // The vacuity control for the two assertions below, and the reason it is
+      // first: `forgiven + gated === candidates` holds trivially at 0 + 0 === 0.
+      // A conservation law over an empty population conserves nothing.
+      expect(report.verdict.foreignCandidates).toBeGreaterThan(0);
+    });
+
+    it('every examined value was either forgiven by a named rule or gated', () => {
+      const forgiven = report.config.foreignValueExemptions.reduce(
+        (n, r) => n + r.forgiven,
+        0,
+      );
+      // Nothing is dropped between the two, and no rule can report forgiving
+      // something that never reached it. A value that vanished from both sides
+      // is a foreign capture nobody would ever hear about.
+      expect(forgiven + report.verdict.foreign).toBe(report.verdict.foreignCandidates);
+    });
+
+    it('no enumerated exemption has gone dead, forgiving nothing at all', () => {
+      // A rule at 0 is a rule whose written reason no longer describes any data
+      // in this repository - the exemption equivalent of the completeness
+      // guard's "no enumerated prefix matches nothing" half, and the half that
+      // catches a stale entry rather than a missing one. It matters more for an
+      // exemption than for a corpus prefix: a rule kept past its data is a hole
+      // held open on the strength of a reason that has stopped being checkable,
+      // and it reads as active protection.
+      const dead = report.config.foreignValueExemptions
+        .filter((r) => r.forgiven === 0)
+        .map((r) => r.id);
+      expect(dead, 'these exemptions forgave nothing; is the data still here?').toEqual(
+        [],
+      );
+    });
+  });
+
+  /* ---------------------------------------------------------------- *
    * DoD2 - the completeness guard.
    *
    * The FOREIGN corpora list is an INCLUSION list and stays one; that was
@@ -723,6 +783,220 @@ describe('privacy sweep against this repository', () => {
       const serialised = JSON.stringify(report.config.identity);
       expect(serialised).not.toContain('"match"');
       expect(serialised).not.toContain('"replace"');
+    });
+  });
+
+  /* ---------------------------------------------------------------- *
+   * v0.6.0 Phase 4 (DoD 4.5) - no scan pattern may restart at every
+   * offset.
+   *
+   * THE MEASUREMENT THIS EXISTS FOR. On 2026-09-03, the first time a
+   * Codex corpus was committed, this sweep went from ~3 s to 169 s. The
+   * cause was ONE pattern of the shape `[wide class]* LITERAL ...`: a
+   * starred character class with nothing anchoring it, so the engine
+   * restarts at every offset and re-expands the star. Over the corpus's
+   * defining fixture - a single line of about 554 KB, because Codex
+   * stores tool output whole and inline - that is ~3e11 steps. It cost
+   * 61,962 ms and matched NOTHING. A lookbehind pinning the leading run
+   * boundary took it to 6 ms.
+   *
+   * How it presented is why the check is here rather than in a perf
+   * file: the suite did not report a slow test, it reported "15 skipped"
+   * with a clean-looking tests line, because a `beforeAll` had blown its
+   * budget. Adding DATA silently disabled tests.
+   *
+   * The census over the other patterns found none of this shape, so it
+   * was one pattern and not a systemic flaw - and the recorded
+   * conclusion was that THE CENSUS IS THE THING TO REPEAT, not the
+   * number to remember. This is that census, run against the source
+   * rather than the clock, so it cannot measure the machine and cannot
+   * flake.
+   *
+   * SCOPE, stated because a check that skips an input must say so: this
+   * covers the patterns the sweep OWNS. It cannot cover the identity
+   * tokens, which are compiled from a file in a private repository that
+   * a contributor's checkout does not have - and that is exactly where
+   * the 2026-09-03 pattern lived. The one `new RegExp` site fed from
+   * that file is identified below rather than quietly counted as clean.
+   * ---------------------------------------------------------------- */
+  describe('no scan pattern can restart at every offset (the 2026-09-03 quadratic)', () => {
+    /** The leading fragment of every pattern the script defines. */
+    interface PatternSite {
+      kind: 'new RegExp' | 'literal';
+      /** Where in the file, so a failure names something findable. */
+      line: number;
+      /**
+       * The first string fragment of the pattern source, or `null` when the
+       * argument is not a literal at all - which is the identity-token case.
+       */
+      lead: string | null;
+    }
+
+    let sites: PatternSite[] = [];
+    let source = '';
+
+    beforeAll(() => {
+      source = fs.readFileSync(SCRIPT, 'utf8');
+      const lineAt = (i: number): number => source.slice(0, i).split('\n').length;
+      const found: PatternSite[] = [];
+
+      // (a) `new RegExp(` sites. Only the FIRST fragment of the first argument
+      //     is read, because a pattern's leading element is always in it -
+      //     which is the only position the recorded defect can occupy.
+      const ctor = /new RegExp\(\s*/g;
+      let m: RegExpExecArray | null;
+      while ((m = ctor.exec(source)) !== null) {
+        const at = m.index + m[0].length;
+        const rest = source.slice(at, at + 400);
+        const quote = rest[0];
+        if (quote !== "'" && quote !== '"' && quote !== '`') {
+          found.push({ kind: 'new RegExp', line: lineAt(m.index), lead: null });
+          continue;
+        }
+        let lead = '';
+        for (let i = 1; i < rest.length; i += 1) {
+          const c = rest[i];
+          if (c === '\\') {
+            lead += c + rest[i + 1];
+            i += 1;
+            continue;
+          }
+          if (c === quote) break;
+          lead += c;
+        }
+        found.push({ kind: 'new RegExp', line: lineAt(m.index), lead });
+      }
+
+      // (b) Regex LITERALS, at the two places this file puts them: a top-level
+      //     `const NAME = /.../` and a rule's `re: /.../`.
+      const literal =
+        /(?:^const [A-Z0-9_]+ = |\bre: )\/((?:[^/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+)\/[gimsuy]*/gm;
+      let l: RegExpExecArray | null;
+      while ((l = literal.exec(source)) !== null) {
+        found.push({ kind: 'literal', line: lineAt(l.index), lead: l[1] ?? null });
+      }
+
+      sites = found;
+    });
+
+    /**
+     * True when a pattern source begins with an element that can match the
+     * empty string or an unbounded run WITHOUT a preceding anchor - the shape
+     * that makes the engine restart at every offset.
+     */
+    const restartsAtEveryOffset = (lead: string): boolean => {
+      // A `^` anchor settles it: there is exactly one place to start.
+      if (lead.startsWith('^')) return false;
+      // Otherwise read the first element and the quantifier that follows it.
+      let i = 0;
+      if (lead[0] === '\\') i = 2;
+      else if (lead[0] === '[') {
+        let depth = 0;
+        for (; i < lead.length; i += 1) {
+          if (lead[i] === '\\') i += 1;
+          else if (lead[i] === '[') depth += 1;
+          else if (lead[i] === ']') {
+            depth -= 1;
+            if (depth === 0) {
+              i += 1;
+              break;
+            }
+          }
+        }
+      } else if (lead[0] === '(') {
+        let depth = 0;
+        for (; i < lead.length; i += 1) {
+          if (lead[i] === '\\') i += 1;
+          else if (lead[i] === '(') depth += 1;
+          else if (lead[i] === ')') {
+            depth -= 1;
+            if (depth === 0) {
+              i += 1;
+              break;
+            }
+          }
+        }
+      } else i = 1;
+      const after = lead.slice(i);
+      // `*` and `+` are unbounded; `{n,}` with no upper bound is the same shape
+      // spelled longhand. `?` is bounded and `{n,m}` is bounded, so neither can
+      // produce the blow-up.
+      return /^(?:\*|\+|\{\d+,\})/.test(after);
+    };
+
+    it('found the pattern sites at all, so the census is not over an empty set', () => {
+      // Without this the two assertions below pass vacuously the moment the
+      // extractor stops matching - and a source-scraping extractor is exactly
+      // the kind of thing that silently stops matching after a refactor.
+      expect(sites.length).toBeGreaterThan(10);
+      expect(sites.filter((s) => s.kind === 'new RegExp').length).toBeGreaterThan(5);
+      expect(sites.filter((s) => s.kind === 'literal').length).toBeGreaterThan(2);
+    });
+
+    it('no pattern the sweep OWNS begins with an unanchored open-ended quantifier', () => {
+      const bad = sites
+        .filter((s) => s.lead !== null && restartsAtEveryOffset(s.lead))
+        .map((s) => `${String(s.line)}: ${String(s.lead).slice(0, 60)}`);
+      expect(bad, 'these patterns go quadratic on a long line').toEqual([]);
+    });
+
+    it('is a control, not a tautology: the predicate really does flag the shape', () => {
+      // The 2026-09-03 pattern's shape, and the fix that was applied to it.
+      expect(restartsAtEveryOffset('[A-Za-z0-9_]*foo')).toBe(true);
+      expect(restartsAtEveryOffset('.*foo')).toBe(true);
+      expect(restartsAtEveryOffset('(?:a|b)+foo')).toBe(true);
+      expect(restartsAtEveryOffset('[A-Za-z]{2,}foo')).toBe(true);
+      expect(restartsAtEveryOffset('(?<![A-Za-z0-9_])[A-Za-z0-9_]*foo')).toBe(false);
+      // And the shapes this file really uses, which must NOT be flagged.
+      expect(restartsAtEveryOffset('^(?:[A-Za-z]--|-)')).toBe(false);
+      expect(restartsAtEveryOffset('(?:^|[^A-Za-z0-9_])')).toBe(false);
+      expect(restartsAtEveryOffset('[Aa]uthorization')).toBe(false);
+      expect(restartsAtEveryOffset('\\.claude')).toBe(false);
+    });
+
+    it('names the one pattern the sweep does not own, rather than counting it clean', () => {
+      // Rule 18: a check that skips an input says so. This is the site that
+      // compiles a token from the private identity file - the very place the
+      // 2026-09-03 pattern lived - and no assertion in a public checkout can
+      // reach the pattern it compiles.
+      const unreadable = sites.filter((s) => s.lead === null);
+      expect(unreadable).toHaveLength(1);
+      expect(source.slice(0, source.length)).toContain('new RegExp(t.match');
+    });
+
+    it('the one fragment with a leading optional group is only ever used after ^', () => {
+      // HOME_DIR_PREFIX_SRC opens with `(?:file:/{0,3})?`, which can match the
+      // empty string. Anchored it is harmless and every use is anchored; spliced
+      // into a pattern unanchored it would be this defect exactly. Checked here
+      // because the extractor above only reads a site's FIRST fragment and so
+      // sees `^` rather than what follows it.
+      //
+      // AND THE FILTER BELOW IS WRITTEN THE WAY IT IS BECAUSE THE OBVIOUS ONE
+      // WAS WRONG. The first draft excluded any occurrence on a line beginning
+      // `const `, meaning to skip the definition - which also skipped
+      // `const CODEX_SCRATCH_RE = new RegExp(...)`, one of the two real uses.
+      // Removing that use's `^` left this test GREEN. A filter that names the
+      // one thing it is excluding cannot do that, so it names it.
+      const uses = [...source.matchAll(/HOME_DIR_PREFIX_SRC/g)];
+      const declaration = uses.filter(
+        (u) =>
+          source.slice(source.lastIndexOf('\n', u.index) + 1, u.index) ===
+          'const ',
+      );
+      expect(declaration, 'the fragment is declared exactly once').toHaveLength(1);
+      const spliced = uses.filter((u) => !declaration.includes(u));
+      // The set is pinned by count beside the assertion over it (rule 19): a
+      // splice site that stops being found is a splice site that stops being
+      // checked, and the count is the cheapest thing that goes red for it.
+      expect(spliced, 'HOME_DIR_PREFIX_SRC splice sites').toHaveLength(2);
+      for (const u of spliced) {
+        expect(
+          source.slice(u.index - 3, u.index),
+          `HOME_DIR_PREFIX_SRC spliced without a leading ^ at line ${String(
+            source.slice(0, u.index).split('\n').length,
+          )}`,
+        ).toBe('^${');
+      }
     });
   });
 });

@@ -133,6 +133,83 @@ every session `unsupported`. A graft that cannot place a row surfaces as `graftF
 cost of darkening every OpenCode session over one unplaceable row. That trade is recorded rather
 than presented as a solution.
 
+### The third read-only source, stated in full
+
+Same treatment as OpenCode above, and for the same reason: a scope described only by its complement
+is a scope nobody can check.
+
+**Where.** `$CODEX_HOME` when it is set and non-empty, otherwise `~/.codex` — resolved at read time,
+never captured at module load. That variable relocates Codex's **entire** surface, credentials
+included, so an engine that hard-coded the home location would observe nothing at all for such a
+user while reporting a confident absence. An explicit root passed by the caller outranks both, and
+is how every test reaches a fixture instead of your data (G6).
+
+**What, exactly.** Four operations and no others:
+
+| Path | How it is read |
+|---|---|
+| `<root>/sessions/**/rollout-*.jsonl` | byte-offset tailing through the shared `FileTail` |
+| `<root>/sessions/**` | `readdirSync` to discover those files |
+| `<root>/thread-writer-locks/` | `readdirSync` — **names only** |
+| a transcript | `statSync().mtimeMs`, for the liveness fallback |
+
+The lock files are **never opened**. They are 0 bytes and their whole content is their name, so the
+engine reads the directory listing and stops there. `.coordination.lock` is process-lifetime and is
+not a thread; it is excluded by name.
+
+**Neither `hooks.json` nor `config.toml` is opened by this extension.** They are Codex's own files;
+you edit one and Codex's trust prompt covers the other. Agent Deck never reads them, and G1 already
+forbids writing them.
+
+**Discovery walks the tree; it never composes a path from a clock.** Rollout files are partitioned
+by the day a thread *started*, so a session running past midnight puts a child under a different day
+from its parent, and a reader that built `YYYY/MM/DD` from `Date.now()` would silently miss it.
+
+**No socket to Codex. No App Server, no `app-server proxy`, no second port.** Codex hooks POST to
+the *same* loopback listener Claude Code's do — one socket for the whole extension, which is what §4
+audits.
+
+**Reasoning is dropped at the parse boundary** (G4), and for Codex there are two shapes of it:
+`response_item` records typed `reasoning` including `encrypted_content`, and `event_msg` items typed
+`Reasoning` including `summary_text` and `raw_content`. Both the plaintext summary and the encrypted
+bytes are dropped, never stored, never decoded, never displayed. **A spawned agent's task
+*description* is encrypted in the hook payload and is likewise never decoded** — its task *name*
+arrives in plaintext and is what labels the node, which is a real and deliberate asymmetry rather
+than an oversight.
+
+**Large tool output is stored WHOLE and INLINE by Codex** — no offload file, unlike Claude Code.
+248,000 bytes of stdout have been measured in a single record. The hazard here is therefore a very
+long line rather than missing content, and truncation is applied on our side before anything is
+displayed.
+
+#### G10 — the never-opened list
+
+Named in code as an exclusion list, not filtered after the fact: the name is judged **before** any
+path is joined, stat'ed or descended into, so there is no moment at which one of these exists as a
+string that has been handed to the filesystem. `src/codex/never-open.ts` holds the list, and a test
+greps the engine's source for each name and asserts it appears only there.
+
+| | Never opened |
+|---|---|
+| files | `auth.json`, `installation_id`, `cap_sid`, `models_cache.json` |
+| directories | `.sandbox-secrets/**` — not descended into, not stat'ed inside, not reported |
+| suffixes | `*.sqlite`, `*.sqlite-wal`, `*.sqlite-shm` |
+
+The SQLite exclusion is **by decision, not by difficulty**. Those are live databases Codex is
+writing. The read-only-WAL argument that lets the OpenCode engine open its store does not transfer
+for free, and opening one is a separate question with its own gate.
+
+#### The trust step is yours, and it is manual
+
+Codex requires a hook command to be **trusted** before it will run, and that click happens in the
+Codex extension — not here. Two consequences worth knowing:
+
+- **Editing `hooks.json` invalidates the trust entry**, and the hook then silently stops firing
+  until a human re-trusts it. If liveness goes quiet after you change that file, this is why.
+- Six events sharing one identical command produce **six distinct trust hashes**, one per event.
+  That is measured; the mechanism is not, so do not infer one. A check written expecting a single
+  hash across six events reports a failure that is not there.
+
 ---
 
 ## 3. The listener's trust boundary
@@ -285,12 +362,28 @@ extension host, not the webview.
 Hook installation is a manual paste block; the extension never writes it for you (G1). Two things
 about the command in that block matter for your own safety rather than ours:
 
-- **It must fail fast when nothing is listening**, because it runs inside your real Claude Code
-  session. The block uses `node -e` rather than `curl`: `node` takes `ECONNREFUSED` and exits `0`.
-  Measured once on this machine against a closed loopback port: `node -e` **81 ms, exit 0**;
-  `curl.exe` **2,098 ms, exit 7**. (An earlier measurement on the same machine gives ~1.14 s and
-  exit 28 for `curl.exe` — the exit code differs because that port was filtered rather than refused.
-  The conclusion is the same either way and the ratio is not close.)
+- **It must fail fast when nothing is listening**, because it runs inside your real session — now
+  your Codex sessions as well as your Claude Code ones, since both engines post to this one
+  listener. The block uses `node -e` rather than `curl`: `node` takes `ECONNREFUSED` and exits `0`.
+
+  **Re-measured 2026-09-04** against a closed loopback port, five runs each, timing **the exact
+  one-liner this README pastes** — read out of the README rather than retyped, so the number
+  describes what ships:
+
+  | command | min | median | max | exit |
+  |---|---|---|---|---|
+  | the shipped `node -e` block | 87 ms | **89 ms** | 99 ms | 0 |
+  | `curl.exe` 8.18.0, `-m 5` | 2,154 ms | **2,158 ms** | 2,169 ms | 7 |
+
+  **A ratio of about 24×**, and the number that matters is the median, not the ratio: 89 ms is a
+  cost you would not notice on a tool call and 2.2 s is one you would, on every tool call, in a
+  session you are trying to work in.
+
+  Two earlier measurements on this same machine are kept rather than overwritten, because the
+  spread is the point: `node -e` at **81 ms / exit 0**, and `curl.exe` at both **2,098 ms / exit 7**
+  and **~1,140 ms / exit 28**. The exit code differs with whether the port is refused or filtered
+  and the timing differs with the curl build; **no measurement has ever put them within an order of
+  magnitude of each other**, which is the claim the block rests on.
 - **The POST is unconditional.** With nothing bound, it is refused and nothing happens. Do not read
   a quiet listener as evidence that hooks have stopped firing.
 

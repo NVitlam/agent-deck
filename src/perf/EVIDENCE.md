@@ -252,8 +252,9 @@ representative one, so the margins stated there are worst-case rather than flatt
 ### Provenance of those figures, stated because it is uneven
 
 Nine runs are on record. **Only one is committed as machine-readable JSON** — the `FULL=1` run this
-file summarises. Four survive only as medians quoted in `budgets.ts` and in the `8abee37` commit
-message; the four added by Phase 4.5's Wave 0 are transcribed verbatim in this file, which is
+file summarises. Four survive only as medians quoted in `budgets.ts` — the commit message that
+also carried them named a SHA that no longer exists, killed by one of this
+repository's history rewrites, so `budgets.ts` is now their only home; the four added by Phase 4.5's Wave 0 are transcribed verbatim in this file, which is
 weaker than JSON and stronger than a remembered number:
 
 | run | mode | n | median | slowest sample | committed |
@@ -323,6 +324,14 @@ on `phase-2-codex-engine` at `2d02404`. DoD 2.9 asks for "perf budgets met, no R
 
 ### What this run does NOT measure, said here so nobody reads it as more than it is
 
+> **SUPERSEDED 2026-09-04 by v0.6.0 Phase 4 (DoD 4.2a), and kept because closed records are not
+> rewritten (`PLAN.md` §0 rule 4).** The three claims below — that no budget touches the Codex
+> engine, that the gap "is not closed by this run", and that Phase 4 DoD 4.2 "is where a Codex
+> perf budget belongs" — were all true when written and the first two are false at HEAD. The
+> budget exists; see the Phase 4 section at the end of this file. The third was right about where
+> it belonged. **The 554,126-byte figure below is correct and is the one to quote** — `budgets.ts`
+> and `PLAN.md` briefly carried 554,122, which is that line's CHARACTER count.
+
 **No budget on this table touches the Codex engine.** `postAppend.*` measures the Claude Code
 tail-and-graft path and `realCorpus.graft` measures the OpenCode one. Phase 2 added nine
 `src/codex/**` modules and not one line of them is on a measured path. So the correct reading of
@@ -340,3 +349,56 @@ rather than a synthetic one.
 Recorded per this file's own closing rule: **record the run when a number is going to be
 quoted.** The numbers above are transcribed from the harness, in one run, on a named commit.
 They are a single observation and rule 14's three-run standard was not applied to them.
+
+---
+
+## v0.6.0 Phase 4 — the Codex engine gets a budget (DoD 4.2a)
+
+**Taken 2026-09-04 at `c3a653f`**, `npx vitest run --project perf` (the `perf` project runs on
+`pool: 'forks'` — a process boundary, for the reason the Phase 5 correction in this file records).
+
+### The stage
+
+One `readCodexEngine()` per run directory of `fixtures/codex-0.151.0-alpha.7.2` — discovery,
+fingerprint, parse, redaction and graft — which is exactly what the Codex content poll performs.
+5 run directories, 14 transcripts. 7 samples after 2 warmups; the statistic is the median.
+
+### The numbers, and the spread, which matters more
+
+| run | median |
+|---|---|
+| set-point run | **29.1 ms** |
+| second run, unchanged tree | 17.8 ms |
+| gate run 1 | 18.2 ms |
+| gate run 2 | 18.0 ms |
+| verifier's independent run | 18.0 ms |
+
+**A 1.6x spread between the first observation and the four after it, on an unchanged tree.** The
+set point is **29.1**, the slowest — a budget set from the faster of two observations is a budget
+that fails on a normal day. Limit **400 ms**, margin **13.7x**, the same set point
+`realCorpus.graft.dod` uses: this stage is not the one under pressure, and a tight limit here
+would fail on a slower machine while measuring nothing new.
+
+### What this closes, and what it does not
+
+**Closes:** the gap the Phase 2 section above records — "no budget on this table touches the Codex
+engine", carried as an open item since Phase 2 and through three phases.
+
+**Does NOT close:** DoD **4.2b**, a harvested >= 10k-line transcript, which is BLOCKED-QUOTA until
+2026-10-03. The largest committed Codex transcript is **73 lines**. 4.2a is the other half of the
+same DoD sentence and is not a substitute for that half.
+
+**And the scale axis is arguably the wrong one for this engine anyway.** Codex stores tool output
+whole and inline — no offload file, unlike Claude Code — so its stress shape is a single enormous
+LINE rather than many lines. The corpus carries one of **554,126 bytes** (`line.length` is
+554,122; the byte length is the figure to quote), and that is the fixture that already took the
+privacy sweep from 3 s to 169 s. `perf.test.ts` pins that byte count exactly, so a re-harvest
+that changes the subject goes red rather than quietly measuring something else.
+
+### Recorded per this file's own closing rule
+
+The rule is **record the run when a number is going to be quoted**, and this section exists
+because the first draft of DoD 4.2a broke it: the figures went into `budgets.ts`, `PLAN.md` and
+the gate record, and **not** into this file — the one destination the DoD names. A verifier caught
+it. Five runs are listed above rather than one, so rule 14's three-run standard is met for this
+budget, unlike the Phase 2 numbers.

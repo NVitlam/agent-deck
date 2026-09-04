@@ -57,7 +57,8 @@ counts hard-coded against a capture read as regressions later. Derive from the f
 - **`SubagentStart` is CONFIRMED on pinned CC 2.1.234** — 3/3 well-formed. Every prior document in
   this repo called it "never observed, treat as unconfirmed". That was an artifact of our own
   configuration: it had never been *registered* in the hook block, so it could not have fired. It was
-  registered at `74c5236` and arrived immediately, without a CC restart — settings are re-read per
+  registered in a commit that a later history rewrite renamed (the SHA once cited
+  here no longer resolves) and arrived immediately, without a CC restart — settings are re-read per
   hook invocation.
 - **`SubagentStart` carries no `tool_use_id`** (0/3). It therefore cannot, by itself, tell you which
   parent `tool_use` block spawned the agent. That join still comes from the JSONL sidecar's

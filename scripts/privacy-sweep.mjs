@@ -513,11 +513,28 @@ const CODEX_ROLLOUT_RE = new RegExp(
  * reintroduce one level down. The single entry that IS path-scoped names one
  * exact file and one exact invented value.
  *
- * Baseline for every count below: widening `CAPTURE_CORPORA` to every tracked
- * top-level directory plus the root files, and adding NO exemption, produced
- * `foreign=32` (8 working tree + 24 history) on this repository at
- * b4f6c76. Every one of the 32 fell into the two shapes below; NONE was
- * content captured from another project.
+ * WHAT THE CLAIM IS, AND WHERE THE NUMBER LIVES NOW (corrected 2026-09-04)
+ * -----------------------------------------------------------------------
+ * The durable claim is qualitative: every value that reaches these rules falls
+ * into one of the enumerated shapes, and NONE is content captured from another
+ * project. The sweep re-checks it on every run - that is what `foreign=0` says,
+ * and it is worth more than any frozen figure.
+ *
+ * The figure that used to stand here said the widened corpus produced
+ * `foreign=32` (8 working tree + 24 history) with no exemption, "on this
+ * repository at b4f6c76". BOTH HALVES had rotted by 2026-09-04: the commit no
+ * longer exists (the history rewrite of that day changed every SHA on this
+ * branch), and the count had moved with the corpora - three of the individual
+ * reasons below cited sub-counts of that 32 which no longer re-derived either.
+ * A count over a corpus is invalidated by ADDING data exactly as surely as by
+ * removing it, and neither event need touch this file.
+ *
+ * So the counts are no longer written down. Each rule's report entry carries a
+ * `forgiven` count measured on the run that produced it, `verdict` carries
+ * `foreignCandidates`, and `src/release/privacy.test.ts` asserts the accounting
+ * closes and that no rule has gone dead. Re-derive with
+ * `node scripts/privacy-sweep.mjs --json <path>` and read the report; do not
+ * quote a number from this comment, because there is deliberately none to quote.
  */
 const FOREIGN_VALUE_EXEMPTIONS = [
   {
@@ -525,17 +542,20 @@ const FOREIGN_VALUE_EXEMPTIONS = [
     reason:
       'The captured value is an elision, not a path: only dots, an ellipsis and ' +
       'whitespace. Documentation and code comments elide a path rather than ' +
-      'naming one. Two hits, both surfaced by narrowing ' +
-      'regex-source-not-a-location in Phase 0 Wave 0 - a JSON illustration in ' +
-      'docs/opencode-contract.md and a comment in this script. An elision ' +
-      'cannot name a project, because it names nothing.',
+      'naming one. First surfaced by narrowing regex-source-not-a-location in ' +
+      'Phase 0 Wave 0, at two hits - a JSON illustration in ' +
+      'docs/opencode-contract.md and a comment in this script. That figure has ' +
+      'since moved with the corpora and is no longer stated here; the run\'s own ' +
+      'forgiven count is in this entry. An elision cannot name a project, ' +
+      'because it names nothing.',
     exempt: (value) => isElision(value),
   },
   {
     id: 'regex-source-not-a-location',
     reason:
-      'The captured group is regex SOURCE, not a filesystem location. 29 of the ' +
-      '32 raw hits (7 working tree, 22 history) were the identical source ' +
+      'The captured group is regex SOURCE, not a filesystem location. When this ' +
+      'rule was written it accounted for 29 of the 32 raw hits then in the ' +
+      'repository, all the identical source ' +
       'literal in seven files that parse a hook payload - scripts/capture-states.mjs, ' +
       'scripts/record-wire.mjs, src/perf/corpus.ts, webview/fixture-render.test.ts ' +
       'and three src/**/*.test.ts - each carrying a regex whose own text ' +
@@ -559,9 +579,12 @@ const FOREIGN_VALUE_EXEMPTIONS = [
       'C:\\SYNTHETIC and C--SYNTHETIC-PERF-not-a-harvest come from ' +
       'fixtures/synthetic-perf/build-corpus.mjs, which named them that way so ' +
       'nobody would mistake them for a harvest; webview/wire/synthetic-stress.json ' +
-      'is the same generator\'s output. This rule predates the widening and is ' +
-      'unchanged by it - 0 of the 32 raw hits needed it, because the identifier ' +
-      'inventory reaches those files by another route.',
+      'is the same generator\'s output. This rule predates the widening and its ' +
+      'PREDICATE is unchanged by it. Its recorded count is not: the text here ' +
+      'used to say "0 of the 32 raw hits needed it", and on 2026-09-04 it was ' +
+      'the second-busiest rule in the file. Nothing about it changed - the ' +
+      'synthetic corpora grew - which is the whole reason the counts moved into ' +
+      'the report and out of this prose.',
     exempt: (value) => isSyntheticValue(value),
   },
   {
@@ -616,7 +639,8 @@ const FOREIGN_VALUE_EXEMPTIONS = [
     id: 'planted-negative-control',
     paths: ['src/release/privacy.test.ts'],
     reason:
-      'The remaining 3 raw hits (1 working tree, 2 history) are the SOURCE of ' +
+      'The remaining raw hits - 3 of them, 1 working tree and 2 history, when ' +
+      'this rule was written - are the SOURCE of ' +
       'the negative controls: src/release/privacy.test.ts plants a cwd naming ' +
       'an invented project so that a sweep which cannot fail is not mistaken ' +
       'for a sweep that passed. The value exists nowhere else in the ' +
@@ -628,7 +652,31 @@ const FOREIGN_VALUE_EXEMPTIONS = [
   },
 ];
 
+/**
+ * How many candidates each rule forgave, and how many reached the rules at all,
+ * for the run in progress. Reset by `sweep()`, published in the report.
+ *
+ * WHY THIS IS MEASURED RATHER THAN WRITTEN DOWN. Every reason above used to
+ * carry a frozen count from the run that introduced it, and three of them had
+ * gone false by the time anyone checked: the corpora they were counted over had
+ * grown, and one cited a commit (`b4f6c76`) that the 2026-09-04 history rewrite
+ * destroyed. That is this repository's most-recorded defect - a live number in a
+ * document - and adding a corpus invalidates such a number exactly as surely as
+ * removing one does. A count that the tool recomputes every run cannot go stale,
+ * and `src/release/privacy.test.ts` turns it into a conservation law
+ * (`forgiven + gated === candidates`) plus a dead-rule guard, so an exemption
+ * that has outlived its data goes RED instead of sitting there reading as
+ * evidence.
+ */
+const foreignTally = { candidates: 0, forgiven: new Map() };
+
+function resetForeignTally() {
+  foreignTally.candidates = 0;
+  foreignTally.forgiven = new Map();
+}
+
 function foreignExemption(relPath, value, opts = {}) {
+  foreignTally.candidates += 1;
   for (const rule of FOREIGN_VALUE_EXEMPTIONS) {
     if (rule.absolutePathValuesOnly === true && opts.slug === true) continue;
     if (
@@ -637,7 +685,10 @@ function foreignExemption(relPath, value, opts = {}) {
     ) {
       continue;
     }
-    if (rule.exempt(value)) return rule;
+    if (rule.exempt(value)) {
+      foreignTally.forgiven.set(rule.id, (foreignTally.forgiven.get(rule.id) ?? 0) + 1);
+      return rule;
+    }
   }
   return null;
 }
@@ -998,6 +1049,10 @@ export function sweep(options = {}) {
   const root = path.resolve(options.root ?? process.cwd());
   const wantHistory = options.history !== false;
   const timings = {};
+  // Module-level, so a second call in the same process would otherwise add to
+  // the first one's counts. `src/release/privacy.test.ts` calls sweep() several
+  // times per run, which is exactly how that would have been found late.
+  resetForeignTally();
   const identity = loadIdentity(root, options.identityFile ?? null);
 
   const gitRepo = isGitRepo(root);
@@ -1071,6 +1126,10 @@ export function sweep(options = {}) {
         paths: r.paths ?? null,
         absolutePathValuesOnly: r.absolutePathValuesOnly === true,
         reason: r.reason,
+        // How many candidates this rule forgave in THIS run, across both legs.
+        // A rule at 0 is a rule whose written reason no longer describes any
+        // data in the repository - see the note on `foreignTally`.
+        forgiven: foreignTally.forgiven.get(r.id) ?? 0,
       })),
       secretRules: [...SECRET_RULES.map((r) => r.id), 'generic-high-entropy'],
       // Untracked mode, and WHAT it read - a boolean alone would not say
@@ -1086,6 +1145,13 @@ export function sweep(options = {}) {
       identity: identityHits,
       secrets,
       foreign,
+      // Every value that reached the exemption rules at all, across both legs -
+      // i.e. a foreign-shaped capture key whose value did not name this project
+      // and passed the shape gates. `foreignCandidates` minus the sum of every
+      // rule's `forgiven` is exactly `foreign`, which is the accounting
+      // src/release/privacy.test.ts pins: a rule cannot forgive something that
+      // was never counted, and nothing can be dropped between the two.
+      foreignCandidates: foreignTally.candidates,
       // A SKIPPED identity class does not fail the run and does not pass
       // judgement either: `identityHits` is 0 because nothing was looked for,
       // which is why the status travels beside the count everywhere it is
@@ -1168,7 +1234,19 @@ function main(argv) {
         // rule 18, and the reason this line has two fields where the others
         // have one.
         `identity=${st === 'RUN' ? String(report.verdict.identity) : `SKIPPED(${String(why)})`} ` +
-        `secrets=${report.verdict.secrets} foreign=${report.verdict.foreign}`,
+        `secrets=${report.verdict.secrets} ` +
+        // Same rule, applied to FOREIGN. A bare `foreign=0` reads identical
+        // whether the scan examined a hundred thousand capture values or never
+        // opened a corpus at all - and "a clean PASS over an absent corpus" is
+        // a failure this repository has actually had. The candidate count is
+        // what was LOOKED AT, so the 0 beside it is evidence rather than an
+        // assertion. It is not a gate: only the 0 is.
+        // ... and the count is APPENDED rather than folded into the field, so
+        // `foreign=0` still reads verbatim for anyone - or any grep - looking
+        // for the documented form. The gate is the 0; the parenthesis is the
+        // evidence that the 0 was earned.
+        `foreign=${report.verdict.foreign} ` +
+        `(${report.verdict.foreignCandidates} capture values examined)`,
     );
     say(
       `timings working-tree=${report.timingsMs.workingTreeMs}ms ` +

@@ -174,9 +174,12 @@ describe('a single very long line survives whole', () => {
    * Both move the 554,126-byte line through a real file and compare it byte
    * for byte; measured at ~2.4 s run alone, against vitest's **5 s default**
    * `testTimeout`, which neither of them declared. Adding one fixture corpus
-   * elsewhere in the suite (`fixtures/codex-vscode-*`, 2026-09-03) was enough
-   * extra load to push the second one over, and it reported as a TIMEOUT with
-   * no failing assertion — the shape rule 14 exists to refuse a gate on.
+   * elsewhere in the suite (a Codex witness corpus, 2026-09-03 — since
+   * withdrawn to `lab/`) was enough extra load to push the second one over,
+   * and it reported as a TIMEOUT with no failing assertion — the shape rule 14
+   * exists to refuse a gate on. The trigger has gone; the budget stays,
+   * because what it measured was these bodies against a default, and the next
+   * thing added to the suite will not announce itself either.
    *
    * This is the "a test that passes or fails by CPU load is a defect report
    * about the test" class this repository already records for `vsce ls` and

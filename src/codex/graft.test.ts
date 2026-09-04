@@ -87,11 +87,16 @@ const CORPUS_DIRS = fs
   .filter((name) => name.startsWith('codex-'))
   .filter((name) => fs.statSync(path.join(FIXTURES, name)).isDirectory())
   // THE ANCHOR CORPUS IS THE ONE WITH A `golden.json`, and saying so is what
-  // stops this from depending on sort order. A WITNESS corpus
-  // (`codex-vscode-*`, added 2026-09-03) carries no golden by design; before
-  // this filter it was excluded only because `codex-0…` happens to sort before
-  // `codex-vscode-…`, which a differently-named future witness would break
-  // silently. `golden.test.ts` and `src/hooks/egress.test.ts` already select
+  // stops this from depending on sort order. A WITNESS corpus carries no
+  // golden by design. One was added on 2026-09-03 and WITHDRAWN on 2026-09-04
+  // (it was captured against this repository rather than the `codex-probe`
+  // subject G8 requires, so it lives under `lab/` and never in `fixtures/`) —
+  // while it was here it was excluded only because `codex-0…` happens to sort
+  // before `codex-vscode-…`, which a differently-named witness would have
+  // broken silently. The filter stays now that the corpus is gone: PLAN.md
+  // Phase 4 owes a re-harvest of the same case from the scratch subject, and
+  // the next witness must not need this reasoning done again.
+  // `golden.test.ts` and `src/hooks/egress.test.ts` already select
   // this way and this file now joins them. `fingerprint.test.ts` does NOT
   // select by golden and does not need to: it names the anchor
   // (`codex-${PINNED_CODEX_VERSION}`) and only asserts the directory list

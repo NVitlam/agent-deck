@@ -104,6 +104,12 @@ interface SweepLeg {
   nulFiles: string[];
   identity: { hits: IdentityHit[]; exemptHits: number };
   secrets: SecretHit[];
+  /**
+   * v0.7.0 Phase 0b. Telemetry identity attributes carrying anything but their
+   * redaction placeholder. Same finding shape as a secret - rule id plus a
+   * redacted form - because the value is the thing being protected.
+   */
+  telemetry: SecretHit[];
   /** Every value that reached the exemption rules in THIS leg. */
   foreignCandidates: number;
   foreign: ForeignHit[];
@@ -173,6 +179,8 @@ interface SweepReport {
     untracked: boolean;
     untrackedScanDirs: string[];
     untrackedFilesScanned: number;
+    /** v0.7.0 Phase 0b. The rule ids, in declaration order. */
+    telemetryRules?: string[];
   };
   workingTree: SweepLeg;
   history: SweepLeg | null;
@@ -180,6 +188,8 @@ interface SweepReport {
     identityStatus: 'RUN' | 'SKIPPED';
     identity: number;
     secrets: number;
+    /** v0.7.0 Phase 0b. Non-zero fails the gate, exactly like the other three. */
+    telemetry: number;
     foreign: number;
     /** Every value that reached the exemption rules, across both legs. */
     foreignCandidates: number;
@@ -269,6 +279,59 @@ function inventedIdentityFile(dir: string, exemptPaths: string[] = []): string {
 const PLANTED_SECRET = ['sk', '-ant-', 'api03', '-', 'ZmFrZVBsYW50ZWROb3RSZWFs'].join('');
 /** A marker that only a scanner which read PAST a NUL run can find. */
 const NUL_MARKER = `${NEEDLE}-past-the-nul-bytes`;
+
+/**
+ * v0.7.0 Phase 0b — the five identity attributes Claude Code's OpenTelemetry
+ * exporter puts on every metric point, log record and span.
+ *
+ * `allow` is the redaction placeholder the corpus under
+ * `fixtures/otel-cc-2.1.260/` carries; `plant` is a same-shaped value that is
+ * NOT the placeholder, and every rule must fire on it.
+ *
+ * None of the planted values is real. They are shaped like the real thing
+ * because a rule that only recognises an obviously-fake value is not a control.
+ */
+const OTEL_PII_SHAPES = [
+  { rule: 'otel-user-email', attr: 'user' + '.email', allow: 'redacted@example.invalid', plant: `${NEEDLE}.${SECOND_NEEDLE}@example.com` },
+  { rule: 'otel-user-id', attr: 'user' + '.id', allow: '0'.repeat(64), plant: 'a3'.repeat(32) },
+  { rule: 'otel-user-account-id', attr: 'user' + '.account_id', allow: 'user_' + '0'.repeat(26), plant: 'user_01ZZZZZZZZZZZZZZZZZZZZZZZZZZ' },
+  { rule: 'otel-user-account-uuid', attr: 'user' + '.account_uuid', allow: '00000000-0000-0000-0000-000000000000', plant: 'deadbeef-0000-4000-8000-feedfacecafe' },
+  { rule: 'otel-organization-id', attr: 'organization' + '.id', allow: '00000000-0000-0000-0000-000000000001', plant: 'baddecaf-0000-4000-8000-0badc0ffee00' },
+] as const;
+
+/**
+ * One OTLP record, in the shape the committed corpus actually stores: the body
+ * is a JSON STRING inside an envelope, so its quotes are backslash-escaped.
+ *
+ * That escaping is the whole point of the control. The first draft of these
+ * rules was written against unescaped OTLP JSON and matched NOTHING in the
+ * committed form - silently, with the sweep reporting a clean pass over data
+ * carrying the real account identity. Both shapes are planted below.
+ */
+function otelEnvelopeLine(value: (typeof OTEL_PII_SHAPES)[number], v: string): string {
+  const body = JSON.stringify({
+    resourceMetrics: [
+      {
+        scopeMetrics: [
+          {
+            metrics: [
+              {
+                name: 'claude_code.cost.usage',
+                sum: { dataPoints: [{ attributes: [{ key: value.attr, value: { stringValue: v } }], asDouble: 1 }] },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  return `${JSON.stringify({ receivedAt: '1970-01-01T00:00:00.000Z', signal: 'metrics', redacted: true, raw: body })}\n`;
+}
+
+/** The same attribute as a plain `"key": "value"` pair, unescaped. */
+function otelPlainLine(value: (typeof OTEL_PII_SHAPES)[number], v: string): string {
+  return `{ "${value.attr}": "${v}" }\n`;
+}
 
 /**
  * ONE foreign-content plant, written BYTE-IDENTICALLY to three paths.
@@ -535,6 +598,18 @@ beforeAll(async () => {
   //     nearest near misses, one file each so a single miss cannot hide behind
   //     a neighbour's hit.
   for (const shape of CODEX_SHAPES) writeScratch(shape.file, codexLine(shape.key, shape.value));
+
+  // (h) v0.7.0 Phase 0b: telemetry identity attributes. Each rule gets four
+  //     files - the ESCAPED envelope form the corpus really uses and the plain
+  //     form, each carrying a value that must fire and a placeholder that must
+  //     not. One file per case so a single missed rule cannot hide behind a
+  //     neighbour's hit, which is the same reason (g) is laid out this way.
+  for (const shape of OTEL_PII_SHAPES) {
+    writeScratch(`otel/${shape.rule}-envelope-plant.jsonl`, otelEnvelopeLine(shape, shape.plant));
+    writeScratch(`otel/${shape.rule}-plain-plant.json`, otelPlainLine(shape, shape.plant));
+    writeScratch(`otel/${shape.rule}-envelope-allow.jsonl`, otelEnvelopeLine(shape, shape.allow));
+    writeScratch(`otel/${shape.rule}-plain-allow.json`, otelPlainLine(shape, shape.allow));
+  }
 }, 120_000);
 
 afterAll(() => {
@@ -1059,14 +1134,37 @@ describe('privacy sweep against this repository', () => {
       expect(restartsAtEveryOffset('\\.claude')).toBe(false);
     });
 
-    it('names the one pattern the sweep does not own, rather than counting it clean', () => {
-      // Rule 18: a check that skips an input says so. This is the site that
-      // compiles a token from the private identity file - the very place the
-      // 2026-09-03 pattern lived - and no assertion in a public checkout can
-      // reach the pattern it compiles.
+    it('names every pattern the extractor cannot read, rather than counting them clean', () => {
+      // Rule 18: a check that skips an input says so. TWO sites build their
+      // pattern from values rather than from a readable literal:
+      //
+      //   1. the identity token compiled out of the private identity file -
+      //      the very place the 2026-09-03 quadratic pattern lived, and one no
+      //      assertion in a public checkout can reach at all; and
+      //   2. v0.7.0 Phase 0b's telemetry rules, concatenated from parts on
+      //      purpose so a rule does not match its own source.
+      //
+      // (2) is only unreadable to a STRING SCRAPER. It is perfectly reachable
+      // at runtime, so the very next test checks its compiled source directly
+      // instead of exempting it - a site is exempt here only when nothing in
+      // this repository can see the pattern.
       const unreadable = sites.filter((s) => s.lead === null);
-      expect(unreadable).toHaveLength(1);
+      expect(unreadable).toHaveLength(2);
       expect(source.slice(0, source.length)).toContain('new RegExp(t.match');
+    });
+
+    it('the telemetry rules are checked on their COMPILED pattern, not exempted', async () => {
+      const mod = (await import(/* @vite-ignore */ pathToFileURL(SCRIPT).href)) as {
+        TELEMETRY_PII_RULES?: { id: string; re: RegExp }[];
+      };
+      const rules = mod.TELEMETRY_PII_RULES;
+      // Vacuity control: if the export disappears this must fail, not skip.
+      expect(rules, 'privacy-sweep.mjs must export TELEMETRY_PII_RULES').toBeDefined();
+      expect(rules?.length).toBe(5);
+      const bad = (rules ?? [])
+        .filter((r: { id: string; re: RegExp }) => restartsAtEveryOffset(r.re.source))
+        .map((r) => `${r.id}: ${r.re.source.slice(0, 60)}`);
+      expect(bad, 'these patterns go quadratic on a long line').toEqual([]);
     });
 
     it('the one fragment with a leading optional group is only ever used after ^', () => {
@@ -1474,6 +1572,66 @@ describe('untracked mode', () => {
   });
 });
 
+
+/* ------------------------------------------------------------------ *
+ * 2b. Telemetry identity rules (v0.7.0 Phase 0b)
+ * ------------------------------------------------------------------ */
+
+describe('telemetry identity rules', () => {
+  let planted: SweepReport;
+
+  beforeAll(() => {
+    planted = sweep({
+      root: scratch,
+      stamp: '1970-01-01T00:00:00.000Z',
+      identityFile: inventedIdentityFile(scratch, ['LICENSE']),
+    });
+  }, 120_000);
+
+  it('declares one rule per identity attribute, and exactly these five', () => {
+    expect(planted.config.telemetryRules).toEqual(OTEL_PII_SHAPES.map((s) => s.rule));
+  });
+
+  it.each(OTEL_PII_SHAPES)('$rule fires on a real-shaped value, in BOTH file shapes', (shape) => {
+    const hits = planted.workingTree.telemetry.filter((h) => h.rule === shape.rule);
+    const paths = hits.map((h) => h.path).sort();
+    // The escaped-envelope form is the one the committed corpus uses and the
+    // one a rule written against plain OTLP JSON silently misses.
+    expect(paths).toContain(`otel/${shape.rule}-envelope-plant.jsonl`);
+    expect(paths).toContain(`otel/${shape.rule}-plain-plant.json`);
+  });
+
+  it.each(OTEL_PII_SHAPES)('$rule is silent on its placeholder, in BOTH file shapes', (shape) => {
+    const paths = planted.workingTree.telemetry.map((h) => h.path);
+    expect(paths).not.toContain(`otel/${shape.rule}-envelope-allow.jsonl`);
+    expect(paths).not.toContain(`otel/${shape.rule}-plain-allow.json`);
+  });
+
+  it('fails the gate, and the count is the ten planted files', () => {
+    expect(planted.verdict.telemetry).toBe(OTEL_PII_SHAPES.length * 2);
+    expect(planted.verdict.pass).toBe(false);
+  });
+
+  it('never echoes the value it found', () => {
+    const serialised = JSON.stringify({ telemetry: planted.workingTree.telemetry, verdict: planted.verdict });
+    for (const shape of OTEL_PII_SHAPES) {
+      expect(serialised).not.toContain(shape.plant);
+    }
+  });
+
+  it('the committed OTLP corpus carries the placeholders and no real value', () => {
+    const dir = path.join(REPO_ROOT, 'fixtures', 'otel-cc-2.1.260');
+    // If the corpus is ever removed, this must fail rather than pass vacuously.
+    expect(fs.existsSync(dir)).toBe(true);
+    const text = ['metrics', 'logs', 'traces']
+      .map((s) => fs.readFileSync(path.join(dir, `${s}.jsonl`), 'utf8'))
+      .join('');
+    for (const shape of OTEL_PII_SHAPES) {
+      expect(text).toContain(shape.allow);
+      expect(text).not.toContain(shape.plant);
+    }
+  });
+});
 /* ------------------------------------------------------------------ *
  * 3. v0.6.0 DoD 5.0d - an exemption's reason describes THIS run
  *

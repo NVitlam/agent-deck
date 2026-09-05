@@ -327,6 +327,74 @@ function entropy(s) {
 const GENERIC_SECRET_MIN_ENTROPY = 3.5;
 
 /* ------------------------------------------------------------------ *
+ * Telemetry identity shapes (Phase 0b)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Claude Code's OpenTelemetry exporter attaches FIVE identity attributes to
+ * every metric point, log record and span. They are not credentials, so
+ * SECRET_RULES does not describe them, and they are not this developer's own
+ * paths, so the identity token file does not either - they are the ACCOUNT
+ * behind the session, and a captured OTLP corpus carries one of each on every
+ * single record. Measured on the Phase 0b capture: 850 records, 850 of each.
+ *
+ * The locked plan named FOUR. `account_id` is a fifth, in a different format
+ * from `account_uuid`, so a rule for the uuid does not cover it - corrected
+ * against the raw capture, 2026-09-05, before any of it was committed.
+ *
+ * Each rule allows exactly one value: the redaction placeholder, which has the
+ * same SHAPE as the real thing so a fixture still witnesses what Claude Code
+ * sends. Anything else on that attribute is a finding and fails the gate.
+ *
+ * Attribute names are assembled from parts for the same reason every rule above
+ * is: a pattern written as one literal matches this file, and a scanner that
+ * finds itself is a scanner nobody can read the output of.
+ */
+export const TELEMETRY_PII_RULES = (() => {
+  const U = 'user' + '.';
+  const O = 'organization' + '.';
+  const specs = [
+    { id: 'otel-user-email', attr: U + 'email', allow: 'redacted@example.invalid' },
+    { id: 'otel-user-id', attr: U + 'id', allow: '0'.repeat(64) },
+    { id: 'otel-user-account-id', attr: U + 'account_id', allow: 'user_' + '0'.repeat(26) },
+    { id: 'otel-user-account-uuid', attr: U + 'account_uuid', allow: '00000000-0000-0000-0000-000000000000' },
+    { id: 'otel-organization-id', attr: O + 'id', allow: '00000000-0000-0000-0000-000000000001' },
+  ];
+  return specs.map((s) => {
+    const a = s.attr.split('.').join('\\.');
+    // A quote that may be BACKSLASH-ESCAPED. The captured OTLP body is stored
+    // as a JSON string inside its envelope - the right shape for a fixture,
+    // because it is exactly the body an HTTP receiver is handed - so in the
+    // file the bytes read \"key\":\"user.email\", not "key":"user.email".
+    // A rule written against unescaped JSON matches NOTHING there, and
+    // matches nothing SILENTLY. Measured 2026-09-05 by the negative control,
+    // which is the only reason it was found: all five rules were silent on
+    // raw data carrying the real account identity, and the sweep was green.
+    const q = '\\\\?"';
+    // Stops at the closing quote, escaped or not. It must NOT admit \\. -
+    // that swallows the escaped closing quote and runs on, which made every
+    // captured value differ from its placeholder and fired all five rules on
+    // the redacted fixture. These values are emails, uuids and 64-hex: no
+    // quote, no backslash, ever.
+    const v = '([^"\\\\]*)';
+    return {
+      ...s,
+      // Two shapes: OTLP/JSON's {"key":...,"value":{"stringValue":...}}
+      // envelope, and a plain "attr": "value" pairing, so reshaping a fixture
+      // does not quietly walk out from under the rule.
+      re: new RegExp(
+        q + 'key' + q + '\\s*:\\s*' + q + a + q + '\\s*,\\s*' + q + 'value' + q +
+          '\\s*:\\s*\\{\\s*' + q + 'stringValue' + q + '\\s*:\\s*' + q + v + q +
+          '|' +
+          q + a + q + '\\s*:\\s*' + q + v + q,
+        'g',
+      ),
+    };
+  });
+})();
+
+
+/* ------------------------------------------------------------------ *
  * Foreign-content shapes
  * ------------------------------------------------------------------ */
 
@@ -1118,6 +1186,29 @@ function scanSecrets(text, starts, relPath, sink) {
   }
 }
 
+/**
+ * Telemetry identity attributes carrying anything but their placeholder.
+ *
+ * The VALUE is never echoed - it is the thing being protected - so findings
+ * carry the rule id and a redacted form, the same treatment secrets get.
+ */
+function scanTelemetryPii(text, starts, relPath, sink) {
+  for (const rule of TELEMETRY_PII_RULES) {
+    rule.re.lastIndex = 0;
+    let m;
+    while ((m = rule.re.exec(text)) !== null) {
+      const value = m[1] ?? m[2] ?? '';
+      if (value === '' || value === rule.allow) continue;
+      sink({
+        path: relPath,
+        line: lineOf(starts, m.index),
+        rule: rule.id,
+        redacted: redactSecret(value),
+      });
+    }
+  }
+}
+
 /** Does this captured value name the agent-deck project? */
 function namesOwnProject(value) {
   return normalisePathToken(value).includes(OWN_PROJECT);
@@ -1347,6 +1438,8 @@ function newLeg() {
     nulFiles: [],
     identity: { hits: [], exemptHits: 0 },
     secrets: [],
+    // Phase 0b: telemetry identity attributes with a real value on them.
+    telemetry: [],
     // Every value that reached the exemption rules in THIS leg. The
     // repository-wide total is in `verdict.foreignCandidates`; this is the
     // denominator the working-tree census closes against.
@@ -1379,6 +1472,7 @@ function scanUnit(leg, relPath, body, identity) {
   }
 
   scanSecrets(text, starts, relPath, (hit) => leg.secrets.push(hit));
+  scanTelemetryPii(text, starts, relPath, (hit) => leg.telemetry.push(hit));
 
   if (inCaptureCorpus(relPath)) {
     scanForeign(text, starts, relPath, (hit) => leg.foreign.push(hit));
@@ -1478,6 +1572,7 @@ export function sweep(options = {}) {
   const identityHits = wt.identity.hits.length + (history?.identity.hits.length ?? 0);
   const secrets = wt.secrets.length + (history?.secrets.length ?? 0);
   const foreign = wt.foreign.length + (history?.foreign.length ?? 0);
+  const telemetry = wt.telemetry.length + (history?.telemetry.length ?? 0);
 
   const head = gitRepo
     ? git(root, ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
@@ -1531,6 +1626,7 @@ export function sweep(options = {}) {
         };
       }),
       secretRules: [...SECRET_RULES.map((r) => r.id), 'generic-high-entropy'],
+      telemetryRules: TELEMETRY_PII_RULES.map((r) => r.id),
       // Untracked mode, and WHAT it read - a boolean alone would not say
       // whether the walk found anything, which is the interesting half.
       untracked: wantUntracked,
@@ -1544,6 +1640,7 @@ export function sweep(options = {}) {
       identity: identityHits,
       secrets,
       foreign,
+      telemetry,
       // Every value that reached the exemption rules at all, across both legs -
       // i.e. a foreign-shaped capture key whose value did not name this project
       // and passed the shape gates. `foreignCandidates` minus the sum of every
@@ -1555,7 +1652,7 @@ export function sweep(options = {}) {
       // judgement either: `identityHits` is 0 because nothing was looked for,
       // which is why the status travels beside the count everywhere it is
       // printed. Reading the 0 without the status is the fail-open reading.
-      pass: identityHits === 0 && secrets === 0 && foreign === 0,
+      pass: identityHits === 0 && secrets === 0 && foreign === 0 && telemetry === 0,
     },
     timingsMs: timings,
   };
@@ -1655,6 +1752,7 @@ function main(argv) {
         // have one.
         `identity=${st === 'RUN' ? String(report.verdict.identity) : `SKIPPED(${String(why)})`} ` +
         `secrets=${report.verdict.secrets} ` +
+        `telemetry=${report.verdict.telemetry} ` +
         // Same rule, applied to FOREIGN. A bare `foreign=0` reads identical
         // whether the scan examined a hundred thousand capture values or never
         // opened a corpus at all - and "a clean PASS over an absent corpus" is

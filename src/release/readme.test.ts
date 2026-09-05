@@ -1979,6 +1979,73 @@ const CHANGELOG_TEXT = readText('CHANGELOG.md');
  * only shape that cannot go stale: the README went stale in exactly this way
  * before it was bound.
  */
+/*
+ * THE README'S SETTINGS TABLE IS BOUND TO THE MANIFEST.
+ *
+ * Found by a `phase-verifier` at the 0.6.1 gate, in a hotfix whose DoD said in
+ * so many words that "`readme.test.ts` guards it": deleting the
+ * `agentDeck.codex.maxTranscriptBytes` row from `README.md` left this file
+ * **80/80 green**. Nothing connected the two.
+ *
+ * It is the same class as everything else in this file — the README is the
+ * MARKETPLACE LISTING PAGE, so a setting the extension reads and the page
+ * never mentions is a setting users cannot find, and a row for a setting that
+ * no longer exists is a page describing a product that does not ship.
+ *
+ * Bound BOTH WAYS and derived from the manifest rather than written down a
+ * second time. A third copy of the key list would agree with whichever copy
+ * was edited last, which is exactly how the README went stale before.
+ */
+describe('the README settings table lists exactly the settings the manifest declares', () => {
+  /** Every `| \`agentDeck.x\` | …` row, in order. */
+  function documentedSettings(): string[] {
+    return [...README.matchAll(/^\|\s*`(agentDeck\.[A-Za-z0-9.]+)`\s*\|/gm)].map(
+      (m) => m[1] ?? '',
+    );
+  }
+
+  it('names every declared setting, and no setting that is not declared', () => {
+    const declared = Object.keys(
+      (MANIFEST as { contributes: { configuration: { properties: Record<string, unknown> } } })
+        .contributes.configuration.properties,
+    ).sort();
+    // The control: a table this pattern cannot read would make the comparison
+    // below "empty equals empty" and pass forever.
+    expect(documentedSettings().length, 'the README settings table was not found').toBeGreaterThan(
+      0,
+    );
+    expect(documentedSettings().sort()).toStrictEqual(declared);
+  });
+
+  it('the row for a numeric setting states the default the manifest promises', () => {
+    const properties = (
+      MANIFEST as {
+        contributes: { configuration: { properties: Record<string, { default?: unknown }> } };
+      }
+    ).contributes.configuration.properties;
+    const rows = README.split('\n').filter((line) => /^\|\s*`agentDeck\./.test(line));
+    let checked = 0;
+    for (const row of rows) {
+      const key = /`(agentDeck\.[A-Za-z0-9.]+)`/.exec(row)?.[1];
+      if (key === undefined) continue;
+      const fallback = properties[key]?.default;
+      if (typeof fallback !== 'number') continue;
+      // Only rows that CHOOSE to state a number are held to it. A row is
+      // allowed to describe a setting without quoting its default; what it
+      // may not do is quote a different one.
+      const stated = [...row.matchAll(/\b(\d{4,})\b/g)].map((m) => Number(m[1]));
+      if (stated.length === 0) continue;
+      checked += 1;
+      expect(stated, `${key}'s README row states a number that is not its default`).toContain(
+        fallback,
+      );
+    }
+    // At least one row must actually be exercised, or this is a loop over
+    // nothing wearing an assertion.
+    expect(checked, 'no README settings row states a default').toBeGreaterThan(0);
+  });
+});
+
 describe('the shipped documents name the shipped product', () => {
   it('the CHANGELOG masthead does not carry a superseded product name', () => {
     const masthead = CHANGELOG_TEXT.split('\n').slice(0, 6).join(' ');

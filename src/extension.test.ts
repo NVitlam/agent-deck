@@ -3505,6 +3505,112 @@ async function codexBaselineRoot(root: string): Promise<{ cwd: string; sessionId
   return { cwd: (rootThread as CodexThread).cwd, sessionId: (rootThread as CodexThread).sessionId };
 }
 
+/*
+ * ===========================================================================
+ * HOTFIX 0.6.1 — THE HOST WIRING, DRIVEN THE WAY PRODUCTION DRIVES IT
+ * ===========================================================================
+ *
+ * A `phase-verifier` deleted BOTH `tails: this.#tails` and
+ * `maxTranscriptBytes: this.#maxTranscriptBytes` from the single production
+ * `readCodexEngine(...)` call site in `src/extension.ts` and re-ran the suite:
+ * `extension.test.ts` **90/90 green**, `isolation.test.ts` and
+ * `codex/liveness.test.ts` **60/60 green**. The entire user-facing half of the
+ * hotfix was deletable without a red test, because every H.2-H.5 case
+ * constructs `new CodexTailStore()` BY HAND.
+ *
+ * That is the D4 class, which `CLAUDE.md` records twice and which the same
+ * repository then shipped a third time — a value with exactly one production
+ * assignment site has that site untested until something drives it end to end.
+ *
+ * These two tests drive `CodexEnginePath` itself. Nothing is passed by hand
+ * that production does not pass.
+ */
+describe('hotfix 0.6.1 — CodexEnginePath owns the store and the limit', () => {
+  it('holds tails across polls, so the fix is reachable from production', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd } = await codexBaselineRoot(root);
+    const poll = manualPollTrigger();
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      log: captureLog().log,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+
+    /*
+     * A store that survives a pass is the whole hotfix, and `tailsHeld` is
+     * the only place it is observable from outside. Deleting `tails:` from
+     * the call site in `src/extension.ts` makes this ZERO — verified by
+     * mutation, which is the only way this assertion earns its place.
+     */
+    expect(path.diagnostics.tailsHeld).toBeGreaterThan(0);
+    const afterStart = path.diagnostics.tailsHeld;
+
+    poll.fire();
+    await Promise.resolve();
+    // Still the SAME store, not a fresh one per pass.
+    expect(path.diagnostics.tailsHeld).toBe(afterStart);
+    path.dispose();
+  }, 120_000);
+
+  it('applies the size limit and names the file on the diagnostics channel, ONCE', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd } = await codexBaselineRoot(root);
+    const poll = manualPollTrigger();
+    const events: DiagnosticsEvent[] = [];
+
+    /*
+     * A limit BELOW every transcript in the corpus, so the skip is a fact
+     * about the setting rather than about a file this test had to plant. The
+     * fixture's smallest rollout is ~50 KB.
+     */
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      log: captureLog().log,
+      pollTrigger: poll.trigger,
+      maxTranscriptBytes: 1024,
+      onDiagnostic: (event) => events.push(event),
+    });
+    await path.start();
+
+    // Deleting `maxTranscriptBytes:` from the call site makes this 0.
+    expect(path.diagnostics.skippedTranscripts).toBeGreaterThan(0);
+    expect(path.diagnostics.sessions).toBe(0);
+
+    const skips = events.filter((e) => e.kind === 'transcriptSkipped');
+    expect(skips.length).toBe(path.diagnostics.skippedTranscripts);
+    const first = skips[0];
+    expect(first?.kind).toBe('transcriptSkipped');
+    if (first?.kind !== 'transcriptSkipped') throw new Error('unreachable');
+    expect(first.engine).toBe('codex');
+    // A BASENAME, never a path: this channel is a surface a user is invited
+    // to paste into a bug report, and an absolute path here begins
+    // `C:\\Users\\<user>\\` on Windows.
+    expect(first.file).toMatch(/^rollout-/);
+    expect(first.file).not.toMatch(/[\\/]/);
+    // The size AND the limit: "too big" with no number leaves a user nothing
+    // to set the setting to.
+    expect(first.reason).toMatch(/^oversize:\d+ limit=1024$/);
+
+    // ONCE. A 3 GB transcript skipped every poll would otherwise write a line
+    // a second for as long as the window is open.
+    const afterStart = skips.length;
+    poll.fire();
+    await Promise.resolve();
+    poll.fire();
+    await Promise.resolve();
+    expect(events.filter((e) => e.kind === 'transcriptSkipped')).toHaveLength(afterStart);
+    path.dispose();
+  }, 120_000);
+});
+
 describe('DoD 3.2 — the Codex engine is on when its data root exists, and off when it does not', () => {
   it('is silently OFF with an absent root, and says so exactly ONCE at info level', async () => {
     const dir = await makeTempDir();

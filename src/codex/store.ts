@@ -119,6 +119,34 @@ export interface CodexIngestEntry {
    * `-1` means "no complete parse yet", which no real size can equal.
    */
   completedBytes: number;
+  /**
+   * The size and last-write this entry last OBSERVED, whatever its verdict.
+   *
+   * Distinct from {@link completedBytes}, which only a successful parse sets:
+   * a refused, foreign or oversize entry has no thread and still has to notice
+   * when the file underneath it is replaced. `-1` on both means "never
+   * observed".
+   *
+   * **Why the mtime is here at all.** Size alone cannot see a file REWRITTEN
+   * IN PLACE at the same length — measured, in the test that now covers it: a
+   * transcript refused for `versionOutOfWindow`, replaced by a supported one
+   * of the same size, kept the refusal and would have kept it for the life of
+   * the window. `FileTail`'s own reset (`stats.size < offset`) has the same
+   * blind spot and always has; this is strictly more than the Claude Code
+   * engine detects.
+   *
+   * It is used ONLY as a change signal, never as content — the Phase 3
+   * distinction that matters, since git does not preserve mtimes across a
+   * checkout. The worst a wrong mtime can do here is cost one re-read.
+   *
+   * **What is still not detected**, stated rather than left to be discovered:
+   * a file replaced by a LARGER one reads as an append, and the tail resumes
+   * at an offset naming bytes that are no longer those bytes. That is
+   * `FileTail`'s long-standing semantics for Claude Code as well, and closing
+   * it needs an identity a `stat` does not carry.
+   */
+  sourceBytes: number;
+  sourceMtimeMs: number;
 }
 
 function freshEntry(path: string): CodexIngestEntry {
@@ -133,6 +161,8 @@ function freshEntry(path: string): CodexIngestEntry {
     thread: null,
     counters: null,
     completedBytes: -1,
+    sourceBytes: -1,
+    sourceMtimeMs: -1,
   };
 }
 

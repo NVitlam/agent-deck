@@ -381,13 +381,26 @@ async function readDiscovered(
     let entry = store.entry(ref.path);
 
     /*
-     * The file shrank below where we stopped: it was replaced, not appended
-     * to. `FileTail` resets its own offset for this, but the VERDICT has to go
-     * with it — a replaced file may be a different session, a different
-     * version or a different workspace, and inheriting `foreign` would hide it
-     * for good.
+     * REPLACED, NOT APPENDED TO. `FileTail` resets its own offset when a file
+     * shrinks, but the VERDICT has to go with it: a replaced file may be a
+     * different session, a different version or a different workspace, and
+     * inheriting `refused` or `foreign` would hide a real session for the life
+     * of the window.
+     *
+     * Two detectable shapes, and the second was found by a test rather than by
+     * reasoning — a refused transcript replaced by a supported one OF THE SAME
+     * SIZE kept its refusal, because size alone cannot see a rewrite in place.
+     * See `CodexIngestEntry.sourceMtimeMs`, which also records the shape that
+     * is still not detected.
      */
-    if (entry.tail !== null && ref.bytes < entry.tail.offset) entry = store.reset(ref.path);
+    const shrank = entry.sourceBytes >= 0 && ref.bytes < entry.sourceBytes;
+    const rewritten =
+      entry.sourceBytes >= 0 &&
+      ref.bytes === entry.sourceBytes &&
+      ref.mtimeMs !== entry.sourceMtimeMs;
+    if (shrank || rewritten) entry = store.reset(ref.path);
+    entry.sourceBytes = ref.bytes;
+    entry.sourceMtimeMs = ref.mtimeMs;
 
     /*
      * THE SIZE GATE. Measured from `ref.bytes` — discovery's `statSync().size`

@@ -317,6 +317,12 @@ describe('H.1 — one oversized transcript does not exhaust the host heap', () =
     expect(run.stderr, describeRun(run)).not.toMatch(/heap out of memory/i);
     expect(run.status, describeRun(run)).toBe(0);
     expect(run.stdout, describeRun(run)).toMatch(/^OK /);
+    // SAY WHY IT SURVIVED. 80 MiB is over the shipped 64 MiB default, so this
+    // transcript is measured from `stat` and never opened -- and a green that
+    // did not name its own mechanism would pass just as well if the engine had
+    // read the file and got lucky with GC.
+    expect(run.stdout, describeRun(run)).toMatch(/skipped=1(?![0-9])/);
+    expect(run.stdout, describeRun(run)).toMatch(/threads=0(?![0-9])/);
   }, 300_000);
 });
 

@@ -423,6 +423,37 @@ export interface FileReadResult {
   oversized: number;
 }
 
+/** Per-read options. See {@link FileReadOptions.maxBytes} — the whole point. */
+export interface FileReadOptions {
+  /**
+   * Ceiling on the bytes this ONE call consumes. Absent = everything appended
+   * since the last call, which is what every Claude Code caller wants and what
+   * this class did unconditionally until 2026-09-05.
+   *
+   * -------------------------------------------------------------------------
+   * WHY IT EXISTS: `Buffer.alloc(stats.size - offset)` ON A FRESH TAIL IS THE
+   * WHOLE FILE
+   * -------------------------------------------------------------------------
+   * Hotfix 0.6.1. The Codex engine constructed a new tail per transcript per
+   * poll, so `offset` was always 0 and that subtraction was always the file
+   * size — one allocation per file per second. An external user with a 3.11 GB
+   * `~/.codex/sessions` folder collected seven extension-host OOM dumps.
+   * `lab/docs/evidence/hotfix-0.6.1/RED.md` is the reproduction: 80 MiB in one
+   * transcript kills a 128 MB heap.
+   *
+   * Persistent tails are the primary fix and this is a second one, because
+   * they answer different questions: persistence stops a file being RE-read,
+   * and this stops the FIRST read of a large file being unbounded.
+   *
+   * A read cut short loses nothing. The bytes stay on disk, `offset` advances
+   * by exactly what was consumed, and the next call resumes. A line straddling
+   * the cut is held in `#partial` and completed later — the same mechanism
+   * that already handles a live append landing mid-line, which for Codex is
+   * the ordinary case rather than a corner one.
+   */
+  maxBytes?: number;
+}
+
 export interface FileTailOptions {
   sessionId: string;
   agentId?: string | null;
@@ -504,7 +535,7 @@ export class FileTail {
    * Read everything appended since the previous call. Opens read-only (G1)
    * and never throws (G3) — failures come back as `skipped`.
    */
-  async read(): Promise<FileReadResult> {
+  async read(options: FileReadOptions = {}): Promise<FileReadResult> {
     const empty: FileReadResult = { lines: [], bytesRead: 0, reset: false, oversized: 0 };
 
     let handle;
@@ -544,7 +575,20 @@ export class FileTail {
         return { ...empty, reset };
       }
 
-      const length = stats.size - this.#offset;
+      /*
+       * BOUNDED. `available` is what the file has; `length` is what this call
+       * takes. They were the same expression until hotfix 0.6.1 — see
+       * {@link FileReadOptions.maxBytes}.
+       *
+       * The `length === 0` return is not dead: a caller passing `maxBytes: 0`
+       * would otherwise fall into a `while (total < 0)` that never runs and
+       * then decode an empty buffer, which works by accident rather than by
+       * design.
+       */
+      const available = stats.size - this.#offset;
+      const ceiling = options.maxBytes === undefined ? available : Math.max(0, options.maxBytes);
+      const length = Math.min(available, ceiling);
+      if (length === 0) return { ...empty, reset };
       const buffer = Buffer.alloc(length);
       let total = 0;
       while (total < length) {

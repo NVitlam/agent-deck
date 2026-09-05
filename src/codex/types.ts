@@ -75,7 +75,11 @@
  * thing to every reader downstream.
  */
 
-import type { SessionState, TokenPair } from '../model/events.js';
+import type { SessionState, SkippedFile, TokenPair } from '../model/events.js';
+
+// A CLASS, so `import type` will not do. It is the one behavioural thing this
+// hand-off file names, and `CodexEngineOptions.tails` says why.
+import type { CodexTailStore } from './store.js';
 
 /**
  * An optional field of the rollout, carrying the distinction the golden
@@ -670,6 +674,34 @@ export interface CodexEngineOptions {
   /** Matched against `session_meta.payload.cwd` (C1), as `correlate.ts` does. */
   readonly workspaceFolders?: readonly string[];
   readonly maxPayloadBytes?: number;
+  /**
+   * Byte offsets and per-transcript ingestion state, CARRIED ACROSS PASSES
+   * (hotfix 0.6.1).
+   *
+   * Absent — every golden, every fixture replay, every one-shot read — the
+   * engine builds a throwaway store and drains each transcript to
+   * end-of-file inside the call, which is exactly what it did before this
+   * option existed. Present, the engine takes one bounded batch per file per
+   * pass and resumes on the next, and an unchanged file is not opened at all.
+   *
+   * The type is imported from `./store.js` rather than declared here because
+   * it is a CLASS with behaviour, not a hand-off shape. It is the one member
+   * of this interface that is not plain data, and that is deliberate: a
+   * cursor with no owner is a module-level cache, and two VS Code windows
+   * would share it.
+   */
+  readonly tails?: CodexTailStore;
+  /**
+   * Ceiling on a transcript this engine will OPEN, in bytes. Defaults to
+   * {@link DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES} (64 MiB).
+   *
+   * Compared against discovery's own `statSync().size`
+   * ({@link CodexTranscriptRef.bytes}), so a file over it costs one entry in
+   * {@link CodexEngineResult.skipped} and NOTHING ELSE — no handle, no
+   * buffer, no parse. `agentDeck.codex.maxTranscriptBytes` is the user-facing
+   * name.
+   */
+  readonly maxTranscriptBytes?: number;
 }
 
 /**
@@ -697,6 +729,22 @@ export interface CodexEngineResult {
    * what makes reproducing it possible.
    */
   readonly spawnJoins: readonly { readonly callId: string; readonly childThreadId: string | null; readonly resolvedBy: CodexSpawnResolution }[];
+  /**
+   * Transcripts the engine did not read, and why (hotfix 0.6.1).
+   *
+   * Two reasons reach here. `oversize:<bytes> limit=<limit>` is the size gate
+   * — measured from `stat`, never opened. Anything else is `FileTail`'s own
+   * skip: a file that could not be opened or read at all.
+   *
+   * **This field is new because the skip used to be silent.** `v0.6.0`'s
+   * `readDiscovered` did `if (read.skipped !== undefined) continue`, so an
+   * unreadable transcript contributed no thread, no refusal and no trace of
+   * any kind — a count of zero nobody could tell apart from "nothing was
+   * skipped". Working-method rule 18 is explicit that a reader which skips an
+   * input reports the skip in its verdict, and this repository has shipped
+   * that class through three separate doors already.
+   */
+  readonly skipped: readonly SkippedFile[];
   readonly counters: CodexCounters;
   readonly discovery: CodexDiscovery;
 }

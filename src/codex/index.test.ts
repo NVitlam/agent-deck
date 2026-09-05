@@ -21,7 +21,7 @@
  * bug in the stub.
  */
 
-import { mkdir, mkdtemp, open as realOpen, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open as realOpen, rm, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -179,6 +179,20 @@ async function writeTranscript(
   }
   await writeFile(path, parts.join(''), 'utf8');
   return size;
+}
+
+/** Append `count` more records to an existing transcript. Returns its size. */
+async function appendRecords(path: string, count: number): Promise<number> {
+  const padding = 'x'.repeat(8 * 1024);
+  const handle = await realOpen(path, 'a');
+  try {
+    for (let i = 0; i < count; i += 1) {
+      await handle.write(`${bulk(1000 + i, padding)}\n`);
+    }
+  } finally {
+    await handle.close();
+  }
+  return (await stat(path)).size;
 }
 
 /**
@@ -564,4 +578,125 @@ describe('H.5 — a large transcript arrives over several passes', () => {
     // the one this hotfix fixes.
     expect(during.result.sessions).toHaveLength(1);
   }, 300_000);
+
+  /*
+   * THE TEST THAT WOULD HAVE CAUGHT THE ONE DEFECT THIS HOTFIX SHIPPED, and
+   * the reason it did not is that its predecessor stopped after ONE pass.
+   *
+   * A `phase-verifier` found it by doing what the test above does not: keep
+   * going. The first draft dropped `entry.records` at end-of-file to bound
+   * retention. The consequence took four passes to appear and then never went
+   * away:
+   *
+   *   pass 1  read whole, parsed, records dropped, session shown
+   *   pass 2  the session appends; the tail reads ONLY the appended bytes
+   *   pass 3  at EOF the fingerprint runs over those records ALONE, finds no
+   *           `session_meta` at ordinal 0, and refuses `sessionMetaMissing`
+   *   pass 4+ the refusal is terminal. The card is gone for good.
+   *
+   * Measured through the production entry point, `sessions=1, 1, 1, 0`. A
+   * memory fix that silently deletes every live Codex session is a worse
+   * defect than the crash it was fixing, and nothing in a 13-test file that
+   * asserted bytes, opens, batches and byte-identical results went red.
+   *
+   * So: append repeatedly, drain each time, and assert the session is STILL
+   * THERE - by id, not by count, because a count of one is also what a
+   * different session appearing would produce.
+   */
+  it('survives repeated appends: a live session is not refused into oblivion', async () => {
+    const root = await makeRoot('h5-live');
+    const path = transcriptPath(root, '01a06400-0000-7000-8000-0000000000ab');
+    await writeTranscript(path, 32 * 1024);
+    const store = new CodexTailStore();
+
+    const drain = async (): Promise<Awaited<ReturnType<typeof readCodexEngine>>> => {
+      let last = await readCodexEngine({ root, tails: store });
+      for (let i = 0; i < 20; i += 1) {
+        last = await readCodexEngine({ root, tails: store });
+        if (last.kind === 'ok' && last.result.sessions.length > 0) break;
+      }
+      return last;
+    };
+
+    const first = await drain();
+    if (first.kind !== 'ok') throw new Error('engine did not read the corpus');
+    expect(first.result.sessions).toHaveLength(1);
+    const sessionId = first.result.sessions[0]?.sessionId;
+    expect(sessionId).toBeTruthy();
+
+    // Six appends, each drained. The defect appeared on the FOURTH pass, so a
+    // loop that stops at three proves nothing.
+    for (let round = 0; round < 6; round += 1) {
+      await appendRecords(path, 2);
+      const outcome = await drain();
+      if (outcome.kind !== 'ok') throw new Error('engine did not read the corpus');
+
+      expect(outcome.result.refused, `round ${String(round)} refused the session`).toHaveLength(0);
+      expect(outcome.result.sessions, `round ${String(round)} lost the session`).toHaveLength(1);
+      // BY ID. A count of one is also what a different session would give.
+      expect(outcome.result.sessions[0]?.sessionId, `round ${String(round)}`).toBe(sessionId);
+    }
+
+    // And the appended content actually arrived: the tree grew. Without this
+    // the test passes on an engine that reports a stale cached thread for
+    // ever and never reads another byte.
+    const finalOutcome = await drain();
+    if (finalOutcome.kind !== 'ok') throw new Error('engine did not read the corpus');
+    const finalThread = finalOutcome.result.threads[0];
+    const firstThread = first.result.threads[0];
+    expect(finalThread?.records).toBeGreaterThan(firstThread?.records ?? 0);
+  }, 300_000);
+});
+
+// ===========================================================================
+// The order of the two head checks
+// ===========================================================================
+
+/*
+ * THE FINGERPRINT RUNS BEFORE THE WORKSPACE MATCH, AND NOTHING DEFENDED IT.
+ *
+ * A `phase-verifier` proved the property true and the suite indifferent: it
+ * hoisted the workspace check above `fingerprintThread` in `index.ts` and
+ * `index.test.ts`, `graft.test.ts` and `codex-golden.test.ts` stayed 108/108
+ * green while a refused session silently vanished instead of being refused.
+ *
+ * It matters because `belongsOnDeck` in `src/extension.ts` deliberately keeps
+ * `!schemaOk` sessions - "a refusal that is invisible to the renderer is not a
+ * refusal" - so a Codex version drifting out of the window must produce a
+ * REFUSAL a user can see, not silence. Reversing these two checks would reopen
+ * that hole from a new direction, for exactly the sessions least likely to be
+ * in the current workspace.
+ */
+describe('a refused transcript is refused, not silently dropped as foreign', () => {
+  it('reports versionOutOfWindow even when the workspace does not match either', async () => {
+    const root = await makeRoot('order');
+    const path = transcriptPath(root, '01a06400-0000-7000-8000-0000000000ba');
+    await writeTranscript(path, 32 * 1024, {
+      cliVersion: REFUSED_VERSION_SAME_LENGTH,
+      cwd: resolve(scratch, 'somewhere-else'),
+    });
+
+    const outcome = await readCodexEngine({
+      root,
+      workspaceFolders: [resolve(scratch, 'workspace')],
+    });
+    if (outcome.kind !== 'ok') throw new Error('engine did not read the corpus');
+
+    // BOTH would drop this transcript. Only one of them says why.
+    expect(outcome.result.refused).toHaveLength(1);
+    expect(outcome.result.refused[0]?.mismatch.code).toBe('versionOutOfWindow');
+
+    // The control: the same foreign cwd with a SUPPORTED version is dropped
+    // silently and correctly. Without it this test would pass on an engine
+    // that refused everything foreign.
+    const supported = transcriptPath(root, '01a06400-0000-7000-8000-0000000000bb');
+    await writeTranscript(supported, 32 * 1024, { cwd: resolve(scratch, 'somewhere-else') });
+    const second = await readCodexEngine({
+      root,
+      workspaceFolders: [resolve(scratch, 'workspace')],
+    });
+    if (second.kind !== 'ok') throw new Error('engine did not read the corpus');
+    expect(second.result.refused).toHaveLength(1);
+    expect(second.result.sessions).toHaveLength(0);
+  }, 120_000);
 });

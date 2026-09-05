@@ -582,16 +582,42 @@ async function readDiscovered(
     });
 
     /*
-     * THE RECORDS ARE DROPPED HERE, AND THAT IS THE RETENTION CONTRACT.
+     * THE RECORDS ARE KEPT, AND THE FIRST DRAFT OF THIS HOTFIX DROPPED THEM.
      *
-     * `parsed.thread` carries payloads `parse.ts` has already truncated; the
-     * raw records are the large thing, and holding them between passes would
-     * make this hotfix a memory regression rather than a memory fix. The cost
-     * is that a later append re-reads the file from zero — bounded by the size
-     * gate and spread over passes by the batch ceiling — which is the trade
-     * `store.ts`'s header states.
+     * Dropping them here was a SHIPPING DEFECT and it is worth writing down in
+     * full, because it was introduced by a memory fix and it destroyed every
+     * live session:
+     *
+     *   pass 1  the file is read whole, parsed, records dropped, session shown
+     *   pass 2  the session appends; the tail reads ONLY the new bytes
+     *   pass 3  at EOF `fingerprintThread` runs over those new records alone —
+     *           which contain no `session_meta` at ordinal 0 — and refuses
+     *           `sessionMetaMissing`, TERMINALLY. The card vanishes and never
+     *           comes back.
+     *
+     * Measured through the production entry point: `sessions=1, 1, 1, 0` with
+     * `refused=[sessionMetaMissing]` from pass 4 onward. The comment that used
+     * to sit here claimed "a later append re-reads the file from zero", and
+     * nothing did: only a SHRINK or a same-size rewrite resets a tail, and an
+     * append is neither. A comment and the code disagreeing, in the same file.
+     *
+     * So the records stay, and the retention that buys is stated rather than
+     * hidden:
+     *
+     *   - **Bounded by the size gate**, which is what the gate is for: no
+     *     entry can hold more than `maxTranscriptBytes` of source.
+     *   - **Bounded by the workspace**, because the head decision drops a
+     *     foreign transcript before a single record of it is kept. `v0.6.0`
+     *     had no such bound — it read every transcript on the machine, once a
+     *     second, and retained a `CodexThread` for each.
+     *   - **Zero for refused, foreign and oversize entries**, which is where
+     *     the drops that remain are.
+     *
+     * The alternative — drop them and re-read from zero on every append — was
+     * rejected after the defect was found: it is correct, and it re-reads an
+     * entire live transcript every time it grows, which for a long session is
+     * the I/O this hotfix exists to remove.
      */
-    entry.records = [];
     entry.thread = parsed.thread;
     entry.counters = parsed.counters;
     entry.completedBytes = ref.bytes;

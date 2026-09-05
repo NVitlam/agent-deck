@@ -36,10 +36,18 @@
  * An OOM hotfix that retains more than the code it replaces has fixed nothing,
  * so retention is the property this file is designed around:
  *
- *   - {@link CodexIngestEntry.records} accumulates ONLY while a transcript is
- *     being caught up, and is dropped the instant the file is fully read or
- *     terminally judged. In the steady state — every file read, nothing
- *     appended — this store holds no records at all.
+ *   - {@link CodexIngestEntry.records} is kept for an ACCEPTED transcript and
+ *     dropped the instant one is terminally judged — refused, foreign or
+ *     oversize. **An earlier draft dropped them at end-of-file too, and that
+ *     was a shipping defect**: the next append re-fingerprinted the appended
+ *     records ALONE, found no `session_meta` at ordinal 0, and refused the
+ *     session terminally. `index.ts` carries the measurement.
+ *
+ *     What bounds the retention is the size gate and the workspace decision,
+ *     not a drop: no entry can hold more than `maxTranscriptBytes` of source,
+ *     and a transcript belonging to another workspace never keeps a record at
+ *     all. `v0.6.0` had neither bound — it read every transcript on the
+ *     machine once a second and retained a `CodexThread` for each.
  *   - {@link CodexIngestEntry.thread} is the parsed result, whose payloads are
  *     already truncated by `parse.ts`. It is what `v0.6.0` retained too, via
  *     the engine's return value.
@@ -96,8 +104,13 @@ export interface CodexIngestEntry {
   tail: CodexFileTail | null;
   verdict: CodexIngestVerdict;
   /**
-   * Records read so far and not yet folded into {@link thread}. **Emptied at
-   * end-of-file and on every terminal verdict** — see the header.
+   * Every record read from this transcript so far.
+   *
+   * **Emptied on a terminal verdict only** — refused, foreign, oversize. NOT
+   * at end-of-file: the fingerprint and the parse both need the whole thread,
+   * and an append that arrives after a drop leaves them holding the appended
+   * records alone. See `index.ts`, where that shipped for an hour and is
+   * written up.
    */
   records: CodexRecord[];
   /** Malformed lines across every read of this file, for the counters. */

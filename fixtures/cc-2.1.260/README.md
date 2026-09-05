@@ -76,8 +76,26 @@ Two redactors, in this order. Both are the existing route; neither is new for th
 
 Before either, the repository path and the project slug were rewritten to the same scrubbed form
 every other committed CC corpus already carries — slug `c--Users-dev-projects-agent-deck`, `cwd`
-`C:\Users\dev\projects\agent-deck` — in all four spellings that occur (JSON-escaped, Windows,
+`C:\Users\dev\projects\agent-deck` — in the four spellings the harvest reached (JSON-escaped, Windows,
 forward-slash, MSYS). 2,671 replacements.
+
+**A FIFTH SPELLING SURVIVED THE FIRST PASS AND WAS REPAIRED.** The composition of three correct
+steps produced one incorrect result: occurrences the repo-path rewrite did not reach (a different
+escaping depth) were caught piecemeal by the two redactors instead — the identity redactor mapped
+the home-folder name, and the path redactor replaced the drive-and-user prefix — leaving
+**371 occurrences of `<HOME>\Documents\projects\agent-deck`, 123 of them as `cwd` values**. Same
+directory, spelled a fourth way, in a corpus whose slug says otherwise.
+
+It was **privacy-safe** — over-redaction, never under — and it was still wrong: `projectSlug` is
+derived from the slug directory and correlated against `cwd`, so 123 lines would have correlated
+against nothing, and a future test joining the two would have reported a defect that was really a
+fixture artefact. Every other captured CC corpus carries exactly **one** distinct `cwd`.
+
+Repaired by rewriting that spelling to the first. The corpus now carries **three** `cwd` values,
+all consistent: the root (1,015), `root\lab` (789) and `root\lab\docs` (3). The 358 remaining
+`<HOME>` placeholders are OTHER directories and are correctly redacted — `<HOME>` in a `cwd` is an
+established form here (`synthetic-dropped-actions` uses it); what was not established is one corpus
+using two spellings of one root. Found by `phase-verifier`, 2026-09-05.
 
 **The slug needs its own step because the redactor deliberately will not touch it**: the slug uses
 `-` as its separator so no absolute-path pattern matches it, and it is a **join key**

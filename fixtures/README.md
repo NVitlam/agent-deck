@@ -50,6 +50,14 @@ codex-0.151.0-alpha.7.2/               THE CODEX ANCHOR (2026-09-02/03). See its
   <run>/hook-stream.jsonl              that run's hook records, FILTERED at this boundary
   baseline/ dup-names/ long-output/    five runs; see the section below for what each proves
   resume-twice-v1/ spawn-shapes/
+otel-cc-2.1.260/                       THE TELEMETRY corpus (2026-09-05, v0.7.0 Phase 0b).
+                                       See its own README.
+  metrics.jsonl logs.jsonl             Claude Code OpenTelemetry exhaust received on a loopback
+  traces.jsonl                         OTLP/http-json endpoint: 850 records over two sessions,
+                                       one terminal and one VS Code panel. NOT a transcript
+                                       corpus - no message text, no tool input, no tool output.
+                                       Five identity attributes redacted in every record; the
+                                       sweep carries one gating rule per attribute.
 phase0-evidence/
   latency-*.log                        measured append→render latency samples
   synthetic-hook-events.jsonl          7 synthetic hook payloads (P0-2 evidence)

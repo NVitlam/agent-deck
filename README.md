@@ -506,6 +506,7 @@ honesty is kept, and they were not loosened alongside it.
 | `agentDeck.port` | The loopback port the hook listener binds on `127.0.0.1`. Must match the port in the block you pasted. |
 | `agentDeck.livenessThresholdMs` | How long a session may go quiet before it stops counting as live. Set it too low and one long tool call makes a healthy session flap. |
 | `agentDeck.previewBytes` | Ceiling on tool-payload bytes kept per node for previews. Nothing is ever sent off the machine either way. |
+| `agentDeck.codex.maxTranscriptBytes` | Largest Codex transcript Agent Deck will open, in bytes. Default 67108864 (64 MiB). A bigger rollout file is measured from its directory entry and never read; the Agent Deck output channel says which file and what the limit is. Codex stores tool output whole and inline, so a long session can reach hundreds of megabytes. |
 
 ## Development
 

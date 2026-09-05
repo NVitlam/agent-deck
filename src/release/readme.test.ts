@@ -1994,10 +1994,29 @@ describe('the shipped documents name the shipped product', () => {
     // must stay fine, since the product still observes it. What is pinned is a
     // string presented AS the product's name.
     const entry = currentChangelogEntry(CHANGELOG_TEXT);
-    const quoted = [...entry.matchAll(/"(Agent Deck[^"]*)"/g)].map((m) => m[1] ?? '');
+    const quotedIn = (text: string): string[] =>
+      [...text.matchAll(/"(Agent Deck[^"]*)"/g)].map((m) => m[1] ?? '');
+    const quoted = quotedIn(entry);
+
+    /*
+     * THE VACUITY CONTROL MOVED, AND WHY IT MOVED IS THE POINT.
+     *
+     * It used to require the CURRENT entry to quote at least one display name,
+     * on the reasoning that an empty loop proves nothing. True, and it made
+     * the guard a rule that every future entry must quote the product's name
+     * - which the 0.6.1 entry, a memory fix, had no reason to do. A guard that
+     * fires on correct prose gets deleted rather than fixed; this file says so
+     * about the version patterns twenty lines down.
+     *
+     * So the control is what a control should be: proof that the pattern and
+     * the corpus can produce a match at all, taken over the WHOLE changelog,
+     * where the 0.6.0 rename entry quotes the name several times. The equality
+     * loop below still runs over the current entry alone, so an entry that
+     * quotes a WRONG name is caught whether or not it quotes a right one.
+     */
     expect(
-      quoted.length,
-      'the entry quotes no display name - this check would be vacuous',
+      quotedIn(CHANGELOG_TEXT).length,
+      'no entry anywhere quotes a display name - the pattern itself is broken',
     ).toBeGreaterThan(0);
 
     const displayName = String(MANIFEST.displayName);
@@ -2011,10 +2030,14 @@ describe('the shipped documents name the shipped product', () => {
         `${name} is neither the manifest's display name nor the one it replaced`,
       ).toContain(name);
     }
-    expect(
-      quoted,
-      'the rename entry must quote the name the manifest actually carries',
-    ).toContain(displayName);
+    // An entry that quotes the SUPERSEDED name and not the current one is the
+    // 0.6.0 defect exactly. An entry that quotes neither is fine.
+    if (quoted.includes('Agent Deck for Claude Code')) {
+      expect(
+        quoted,
+        'an entry naming the old product must also carry the name the manifest carries',
+      ).toContain(displayName);
+    }
   });
 });
 

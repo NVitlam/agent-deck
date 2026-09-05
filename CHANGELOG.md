@@ -2,6 +2,52 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.6.1 - 2026-09-05 - Codex sessions no longer exhaust the extension host
+
+### Fixed
+
+- **A large `~/.codex/sessions` folder could crash the extension host.** Agent
+  Deck re-read *every* Codex transcript on the machine, in full, once a second,
+  and allocated each file in a single buffer as it went. On a machine with a few
+  gigabytes of Codex history that is what it sounds like: an out-of-memory crash
+  of the VS Code extension host, taking every extension in the window with it.
+  Reported by a user with a 3.11 GB sessions folder and seven host dumps.
+
+  Four things changed, and between them a Codex data root now costs about what
+  reading a directory costs:
+
+  - **A transcript is read once.** Byte offsets survive from one poll to the
+    next, so a file nothing has appended to is not opened at all — Agent Deck
+    looks at its size and moves on.
+  - **Very large files are measured, not opened.** A rollout transcript above
+    `agentDeck.codex.maxTranscriptBytes` (new, default 64 MiB) is skipped
+    without being read, and named on the Agent Deck output channel with its size
+    and the limit so you can raise it deliberately if you want to.
+  - **Unsupported and unrelated sessions cost 256 KiB.** The version check and
+    the "is this session from this workspace?" check now run on the first 256
+    KiB of a transcript. A Codex version Agent Deck has not been taught to read,
+    or a session belonging to a different project, is dropped there instead of
+    after being parsed in full.
+  - **Nothing is read in one gulp.** After that first slice, reads are capped at
+    4 MiB at a time, so a long session arrives over a few polls rather than in a
+    single allocation.
+
+  Sessions render exactly as before: the trees, tool calls, tokens and context
+  figures are unchanged, and the pinned Codex fixtures reproduce byte-for-byte.
+
+- **The empty-window message named one engine.** Opening a window with no folder
+  said "open a folder to see its Claude Code sessions", in a release that reads
+  three engines and to users who may have no Claude Code installed. It no longer
+  names an engine, because the thing it describes — no folder open — has nothing
+  to do with which engine you use.
+
+### Added
+
+- **`agentDeck.codex.maxTranscriptBytes`** (default `67108864`, 64 MiB). The
+  largest Codex transcript Agent Deck will open. A session already being
+  followed keeps being followed if it grows past the limit; the limit gates the
+  first read of a file, not a tail already in progress.
+
 ## 0.6.0 - 2026-09-04 - a third engine, Codex
 
 ### Added

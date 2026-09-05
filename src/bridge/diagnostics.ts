@@ -182,6 +182,27 @@ export type DiagnosticsEvent =
       expected?: string;
       actual?: string;
     }
+  /**
+   * A transcript the engine did not read, and why (hotfix 0.6.1).
+   *
+   * **`file` is a BASENAME, never a path**, for the reason
+   * {@link refusalLocation} exists: an absolute transcript path begins
+   * `C:\Users\<user>\` on Windows, and this channel is a surface a user is
+   * invited to copy into a bug report. A Codex rollout basename is generated
+   * by Codex, not by a user.
+   *
+   * `reason` carries the measurement AND the limit — `oversize:<bytes>
+   * limit=<limit>` — because a user reading "too big" with no number has
+   * nothing to set `agentDeck.codex.maxTranscriptBytes` to. It is clipped
+   * like every other free-text field.
+   *
+   * A NEW KIND rather than a reuse of `sessionRefused`, which was the
+   * tempting one: that event's `sessionId` would have had to carry a
+   * filename, and a field holding something other than what its name says is
+   * the defect class this repository keeps recording. A skipped transcript
+   * has no session id — that is the whole point, it was never opened.
+   */
+  | { kind: 'transcriptSkipped'; engine: DiagnosticsEngine; file: string; reason: string }
   | { kind: 'hookListenerError'; detail: string }
   | { kind: 'hookNon2xx'; status: number; detail: string }
   | { kind: 'patchFailure'; sessionId: string; detail: string }
@@ -194,6 +215,7 @@ export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
   'engineDegraded',
   'sessionRefused',
   'graftRefused',
+  'transcriptSkipped',
   'hookListenerError',
   'hookNon2xx',
   'patchFailure',
@@ -326,6 +348,8 @@ export function formatEvent(event: DiagnosticsEvent, isoTime: string): string {
       if (event.actual !== undefined) parts.push(`actual=${clip(event.actual)}`);
       return `${isoTime} graft refused ${parts.join(' ')}`;
     }
+    case 'transcriptSkipped':
+      return `${isoTime} transcript skipped ${event.engine} ${clip(event.file)} ${clip(event.reason)}`;
     case 'hookListenerError':
       return `${isoTime} hook listener error ${clip(event.detail)}`;
     case 'hookNon2xx':

@@ -1153,18 +1153,56 @@ describe('privacy sweep against this repository', () => {
       expect(source.slice(0, source.length)).toContain('new RegExp(t.match');
     });
 
-    it('the telemetry rules are checked on their COMPILED pattern, not exempted', async () => {
+
+    /** The sweep's compiled telemetry rules, imported from the shipped script. */
+    const telemetryRules = async (): Promise<{ id: string; re: RegExp }[] | undefined> => {
       const mod = (await import(/* @vite-ignore */ pathToFileURL(SCRIPT).href)) as {
         TELEMETRY_PII_RULES?: { id: string; re: RegExp }[];
       };
-      const rules = mod.TELEMETRY_PII_RULES;
+      return mod.TELEMETRY_PII_RULES;
+    };
+
+    it('every telemetry rule is ANCHORED on a literal, which is what makes it linear', async () => {
+      const rules = await telemetryRules();
       // Vacuity control: if the export disappears this must fail, not skip.
       expect(rules, 'privacy-sweep.mjs must export TELEMETRY_PII_RULES').toBeDefined();
       expect(rules?.length).toBe(5);
-      const bad = (rules ?? [])
-        .filter((r: { id: string; re: RegExp }) => restartsAtEveryOffset(r.re.source))
-        .map((r) => `${r.id}: ${r.re.source.slice(0, 60)}`);
-      expect(bad, 'these patterns go quadratic on a long line').toEqual([]);
+
+      // Each pattern opens with an optionally-escaped literal quote. That
+      // literal is the anchor: it is why the engine cannot restart the match at
+      // every offset of a long run, which is the whole 2026-09-03 defect.
+      for (const r of rules ?? []) {
+        expect(r.re.source.startsWith('\\\\?"'), `${r.id} must open on the escaped-quote anchor`).toBe(true);
+      }
+
+      // CONTROL, and the reason this test is not the one it replaced:
+      // `restartsAtEveryOffset` reads only a pattern's FIRST element, so with
+      // that anchor in front it returns false for ANY value pattern the factory
+      // could hold - `(.*)` included. Running it over these five sources is a
+      // check on a 3-character constant, not on the rules. Proved here rather
+      // than asserted, so nobody restores the weaker form believing it covered
+      // something.
+      expect(restartsAtEveryOffset('\\\\?"' + '.*foo')).toBe(false);
+      expect(restartsAtEveryOffset('.*foo')).toBe(true);
+    });
+
+    it('the telemetry rules stay linear on a very long line, measured not argued', async () => {
+      const rules = await telemetryRules();
+      // The 2026-09-03 defect was found by TIME on a 554 KB single line, and a
+      // predicate over the pattern's head could not have seen it. This is the
+      // empirical form: a long run of exactly the characters the value class
+      // admits, with no closing quote, so every rule must scan to the end and
+      // fail. Quadratic behaviour here is minutes; linear is milliseconds.
+      const hostile = `{"key":"user.email","value":{"stringValue":"${'a'.repeat(200_000)}`;
+      const started = Date.now();
+      for (const r of rules ?? []) {
+        r.re.lastIndex = 0;
+        expect(r.re.test(hostile)).toBe(false);
+      }
+      const elapsed = Date.now() - started;
+      // Generous by three orders of magnitude against the quadratic case, so
+      // this reports a defect rather than a busy machine.
+      expect(elapsed, `five rules over 200k chars took ${String(elapsed)} ms`).toBeLessThan(5_000);
     });
 
     it('the one fragment with a leading optional group is only ever used after ^', () => {

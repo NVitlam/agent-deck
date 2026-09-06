@@ -144,22 +144,6 @@
                   },
                   "startedAt": 1788386057354,
                   "endedAt": 1788393600000,
-                  "usageSeries": [
-                    {
-                      "ordinal": 0,
-                      "input": 6023,
-                      "cacheCreation": 0,
-                      "cacheRead": 11008,
-                      "output": 107
-                    },
-                    {
-                      "ordinal": 1,
-                      "input": 1047,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 18
-                    }
-                  ],
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -200,22 +184,6 @@
                   },
                   "startedAt": 1788386061217,
                   "endedAt": 1788393600000,
-                  "usageSeries": [
-                    {
-                      "ordinal": 0,
-                      "input": 903,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 119
-                    },
-                    {
-                      "ordinal": 1,
-                      "input": 1059,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 18
-                    }
-                  ],
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -256,22 +224,6 @@
                   },
                   "startedAt": 1788386065184,
                   "endedAt": 1788393600000,
-                  "usageSeries": [
-                    {
-                      "ordinal": 0,
-                      "input": 903,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 121
-                    },
-                    {
-                      "ordinal": 1,
-                      "input": 1061,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 18
-                    }
-                  ],
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -359,22 +311,6 @@
                       },
                       "startedAt": 1788386089509,
                       "endedAt": 1788393600000,
-                      "usageSeries": [
-                        {
-                          "ordinal": 0,
-                          "input": 2965,
-                          "cacheCreation": 0,
-                          "cacheRead": 14080,
-                          "output": 116
-                        },
-                        {
-                          "ordinal": 1,
-                          "input": 1058,
-                          "cacheCreation": 0,
-                          "cacheRead": 16128,
-                          "output": 16
-                        }
-                      ],
                       "model": "gpt-5.6-terra"
                     },
                     {
@@ -398,29 +334,6 @@
                   },
                   "startedAt": 1788386082798,
                   "endedAt": 1788393600000,
-                  "usageSeries": [
-                    {
-                      "ordinal": 0,
-                      "input": 927,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 118
-                    },
-                    {
-                      "ordinal": 1,
-                      "input": 1068,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 21
-                    },
-                    {
-                      "ordinal": 2,
-                      "input": 1157,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 11
-                    }
-                  ],
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -454,78 +367,6 @@
               },
               "startedAt": 1788386050871,
               "endedAt": 1788393600000,
-              "usageSeries": [
-                {
-                  "ordinal": 0,
-                  "input": 4292,
-                  "cacheCreation": 0,
-                  "cacheRead": 11008,
-                  "output": 86
-                },
-                {
-                  "ordinal": 1,
-                  "input": 303,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 61
-                },
-                {
-                  "ordinal": 2,
-                  "input": 385,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 61
-                },
-                {
-                  "ordinal": 3,
-                  "input": 467,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 20
-                },
-                {
-                  "ordinal": 4,
-                  "input": 580,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 21
-                },
-                {
-                  "ordinal": 5,
-                  "input": 674,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 21
-                },
-                {
-                  "ordinal": 6,
-                  "input": 768,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 125
-                },
-                {
-                  "ordinal": 7,
-                  "input": 914,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 21
-                },
-                {
-                  "ordinal": 8,
-                  "input": 960,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 21
-                },
-                {
-                  "ordinal": 9,
-                  "input": 1047,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 62
-                }
-              ],
               "model": "gpt-5.6-terra"
             }
           }
@@ -650,22 +491,6 @@
                   },
                   "startedAt": 1788386057354,
                   "endedAt": 1788393600000,
-                  "usageSeries": [
-                    {
-                      "ordinal": 0,
-                      "input": 6023,
-                      "cacheCreation": 0,
-                      "cacheRead": 11008,
-                      "output": 107
-                    },
-                    {
-                      "ordinal": 1,
-                      "input": 1047,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 18
-                    }
-                  ],
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -706,22 +531,6 @@
                   },
                   "startedAt": 1788386061217,
                   "endedAt": 1788393600000,
-                  "usageSeries": [
-                    {
-                      "ordinal": 0,
-                      "input": 903,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 119
-                    },
-                    {
-                      "ordinal": 1,
-                      "input": 1059,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 18
-                    }
-                  ],
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -762,22 +571,6 @@
                   },
                   "startedAt": 1788386065184,
                   "endedAt": 1788393600000,
-                  "usageSeries": [
-                    {
-                      "ordinal": 0,
-                      "input": 903,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 121
-                    },
-                    {
-                      "ordinal": 1,
-                      "input": 1061,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 18
-                    }
-                  ],
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -865,22 +658,6 @@
                       },
                       "startedAt": 1788386089509,
                       "endedAt": 1788393600000,
-                      "usageSeries": [
-                        {
-                          "ordinal": 0,
-                          "input": 2965,
-                          "cacheCreation": 0,
-                          "cacheRead": 14080,
-                          "output": 116
-                        },
-                        {
-                          "ordinal": 1,
-                          "input": 1058,
-                          "cacheCreation": 0,
-                          "cacheRead": 16128,
-                          "output": 16
-                        }
-                      ],
                       "model": "gpt-5.6-terra"
                     },
                     {
@@ -904,29 +681,6 @@
                   },
                   "startedAt": 1788386082798,
                   "endedAt": 1788393600000,
-                  "usageSeries": [
-                    {
-                      "ordinal": 0,
-                      "input": 927,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 118
-                    },
-                    {
-                      "ordinal": 1,
-                      "input": 1068,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 21
-                    },
-                    {
-                      "ordinal": 2,
-                      "input": 1157,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 11
-                    }
-                  ],
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -960,78 +714,6 @@
               },
               "startedAt": 1788386050871,
               "endedAt": 1788393600000,
-              "usageSeries": [
-                {
-                  "ordinal": 0,
-                  "input": 4292,
-                  "cacheCreation": 0,
-                  "cacheRead": 11008,
-                  "output": 86
-                },
-                {
-                  "ordinal": 1,
-                  "input": 303,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 61
-                },
-                {
-                  "ordinal": 2,
-                  "input": 385,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 61
-                },
-                {
-                  "ordinal": 3,
-                  "input": 467,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 20
-                },
-                {
-                  "ordinal": 4,
-                  "input": 580,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 21
-                },
-                {
-                  "ordinal": 5,
-                  "input": 674,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 21
-                },
-                {
-                  "ordinal": 6,
-                  "input": 768,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 125
-                },
-                {
-                  "ordinal": 7,
-                  "input": 914,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 21
-                },
-                {
-                  "ordinal": 8,
-                  "input": 960,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 21
-                },
-                {
-                  "ordinal": 9,
-                  "input": 1047,
-                  "cacheCreation": 0,
-                  "cacheRead": 15104,
-                  "output": 62
-                }
-              ],
               "model": "gpt-5.6-terra"
             }
           }
@@ -1166,22 +848,6 @@
               },
               "startedAt": 1788386057354,
               "endedAt": 1788393600000,
-              "usageSeries": [
-                {
-                  "ordinal": 0,
-                  "input": 6023,
-                  "cacheCreation": 0,
-                  "cacheRead": 11008,
-                  "output": 107
-                },
-                {
-                  "ordinal": 1,
-                  "input": 1047,
-                  "cacheCreation": 0,
-                  "cacheRead": 16128,
-                  "output": 18
-                }
-              ],
               "model": "gpt-5.6-terra"
             },
             {
@@ -1222,22 +888,6 @@
               },
               "startedAt": 1788386061217,
               "endedAt": 1788393600000,
-              "usageSeries": [
-                {
-                  "ordinal": 0,
-                  "input": 903,
-                  "cacheCreation": 0,
-                  "cacheRead": 16128,
-                  "output": 119
-                },
-                {
-                  "ordinal": 1,
-                  "input": 1059,
-                  "cacheCreation": 0,
-                  "cacheRead": 16128,
-                  "output": 18
-                }
-              ],
               "model": "gpt-5.6-terra"
             },
             {
@@ -1278,22 +928,6 @@
               },
               "startedAt": 1788386065184,
               "endedAt": 1788393600000,
-              "usageSeries": [
-                {
-                  "ordinal": 0,
-                  "input": 903,
-                  "cacheCreation": 0,
-                  "cacheRead": 16128,
-                  "output": 121
-                },
-                {
-                  "ordinal": 1,
-                  "input": 1061,
-                  "cacheCreation": 0,
-                  "cacheRead": 16128,
-                  "output": 18
-                }
-              ],
               "model": "gpt-5.6-terra"
             },
             {
@@ -1381,22 +1015,6 @@
                   },
                   "startedAt": 1788386089509,
                   "endedAt": 1788393600000,
-                  "usageSeries": [
-                    {
-                      "ordinal": 0,
-                      "input": 2965,
-                      "cacheCreation": 0,
-                      "cacheRead": 14080,
-                      "output": 116
-                    },
-                    {
-                      "ordinal": 1,
-                      "input": 1058,
-                      "cacheCreation": 0,
-                      "cacheRead": 16128,
-                      "output": 16
-                    }
-                  ],
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -1420,29 +1038,6 @@
               },
               "startedAt": 1788386082798,
               "endedAt": 1788393600000,
-              "usageSeries": [
-                {
-                  "ordinal": 0,
-                  "input": 927,
-                  "cacheCreation": 0,
-                  "cacheRead": 16128,
-                  "output": 118
-                },
-                {
-                  "ordinal": 1,
-                  "input": 1068,
-                  "cacheCreation": 0,
-                  "cacheRead": 16128,
-                  "output": 21
-                },
-                {
-                  "ordinal": 2,
-                  "input": 1157,
-                  "cacheCreation": 0,
-                  "cacheRead": 16128,
-                  "output": 11
-                }
-              ],
               "model": "gpt-5.6-terra"
             },
             {
@@ -1476,78 +1071,6 @@
           },
           "startedAt": 1788386050871,
           "endedAt": 1788393600000,
-          "usageSeries": [
-            {
-              "ordinal": 0,
-              "input": 4292,
-              "cacheCreation": 0,
-              "cacheRead": 11008,
-              "output": 86
-            },
-            {
-              "ordinal": 1,
-              "input": 303,
-              "cacheCreation": 0,
-              "cacheRead": 15104,
-              "output": 61
-            },
-            {
-              "ordinal": 2,
-              "input": 385,
-              "cacheCreation": 0,
-              "cacheRead": 15104,
-              "output": 61
-            },
-            {
-              "ordinal": 3,
-              "input": 467,
-              "cacheCreation": 0,
-              "cacheRead": 15104,
-              "output": 20
-            },
-            {
-              "ordinal": 4,
-              "input": 580,
-              "cacheCreation": 0,
-              "cacheRead": 15104,
-              "output": 21
-            },
-            {
-              "ordinal": 5,
-              "input": 674,
-              "cacheCreation": 0,
-              "cacheRead": 15104,
-              "output": 21
-            },
-            {
-              "ordinal": 6,
-              "input": 768,
-              "cacheCreation": 0,
-              "cacheRead": 15104,
-              "output": 125
-            },
-            {
-              "ordinal": 7,
-              "input": 914,
-              "cacheCreation": 0,
-              "cacheRead": 15104,
-              "output": 21
-            },
-            {
-              "ordinal": 8,
-              "input": 960,
-              "cacheCreation": 0,
-              "cacheRead": 15104,
-              "output": 21
-            },
-            {
-              "ordinal": 9,
-              "input": 1047,
-              "cacheCreation": 0,
-              "cacheRead": 15104,
-              "output": 62
-            }
-          ],
           "model": "gpt-5.6-terra"
         }
       }

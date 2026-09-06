@@ -86,6 +86,14 @@ const RECENT = NOW - 1_000;
 /** Comfortably outside it. */
 const STALE = NOW - 600_000;
 
+/**
+ * The harvested stall session. Named here rather than discovered, because
+ * unlike the 2.1.234 corpus this state is ABOUT one specific session: the one
+ * the user watched hang on 2026-09-05.
+ */
+const HARVEST_ROOT = fileURLToPath(new URL('../fixtures/cc-2.1.260/projects', import.meta.url));
+const HARVEST_SESSION_ID = '99f96635-2042-41dc-9000-bbc9f9233bc3';
+
 // ---------------------------------------------------------------------------
 // Bundling
 // ---------------------------------------------------------------------------
@@ -287,6 +295,54 @@ async function hostRun(host, dispatch, configure) {
   return { model, engine, slug, sessionIds, states, wire };
 }
 
+/**
+ * A run over the HARVESTED stall session (`fixtures/cc-2.1.260/…/99f96635-…`).
+ *
+ * Separate from {@link hostRun} because that one is bound to the 2.1.234
+ * corpus, in which every tool is `done` -- the single `chip-running` in the
+ * other goldens is the main AGENT, and `AgentNode.status` was deliberately not
+ * widened by Phase 0c. No clock can make those fixtures stall. This session is
+ * the only committed corpus that carries tools which never complete, at two
+ * levels, which is the whole reason it was harvested.
+ */
+async function harvestRun(host, dispatch) {
+  const slug = 'c--Users-dev-projects-agent-deck';
+  const slugDir = join(HARVEST_ROOT, slug);
+  const sessionId = HARVEST_SESSION_ID;
+
+  const engine = new host.LivenessEngine({ now: () => NOW });
+  const model = new host.SessionModel({
+    workspacePath: 'C:\\Users\\dev\\projects\\agent-deck',
+    liveness: engine,
+  });
+  model.ingestGraftResult(
+    sessionId,
+    slug,
+    await host.graftSession(join(slugDir, `${sessionId}.jsonl`)),
+  );
+
+  // The session's last observed activity, STALE by 600 s against a 120 s
+  // threshold -- the same STALE the `idle` recipe uses, so the two states
+  // differ in their FIXTURE rather than in their clock.
+  model.liveness.observeJsonl(sessionId, { mtimeMs: STALE });
+  model.ingestHookEvent(mainEvent(sessionId, 'PreToolUse', STALE, 1));
+
+  const wire = [];
+  const bridge = new host.SessionBridge({
+    postMessage: (message) => {
+      wire.push(message);
+      dispatch(JSON.parse(JSON.stringify(message)));
+    },
+  });
+  const emission = model.emit();
+  bridge.publish(emission);
+  bridge.publishDegraded('cc', engine.degradedState());
+
+  const states = new Map();
+  for (const state of emission.sessions) states.set(state.sessionId, state);
+  return { model, engine, slug, sessionIds: [sessionId], states, wire };
+}
+
 /** Nodes in a `SessionState`, counted from the model rather than the DOM. */
 function countStateNodes(host, state) {
   let n = 0;
@@ -312,10 +368,23 @@ const SKIPPED_ATTRS = new Set(['class', 'id', 'data-testid', 'style']);
  * the truncation fix in flight this phase. `preview-marker` states a
  * character count off that same payload, so its digits are normalised to `N`
  * while its wording — which IS a UI fact worth comparing — is kept.
+ *
+ * `stalled-for` is a WALL-CLOCK DERIVED string and must never be committed
+ * verbatim (v0.7.0 Phase 0c). The webview differences the stall's threshold
+ * crossing against its OWN `Date.now()`, correctly — a user watching a stall
+ * wants it counting up — so the rendered text changes on every capture and a
+ * golden carrying it is stale the moment it is written. The first attempt at
+ * the `stalled` golden failed for exactly this, which is the same rule
+ * `serializeSessionState` already states for the session goldens: no
+ * wall-clock values. The ELEMENT's presence and position are the UI fact and
+ * they are still compared; the duration is asserted for shape and non-
+ * emptiness in `webview/render.test.ts` instead, where a fixed clock can be
+ * injected.
  */
 function normaliseText(testId, text) {
   if (testId === 'preview-body') return '«payload»';
   if (testId === 'preview-marker') return text.replace(/\d+/g, 'N');
+  if (testId === 'stalled-for') return '«elapsed»';
   return text;
 }
 
@@ -652,6 +721,16 @@ function recipes(host) {
             model.liveness.observeJsonl(sessionId, { mtimeMs: RECENT });
           }
         });
+        return selectedMeta(host, run);
+      },
+    },
+    {
+      id: 'stalled',
+      what: 'A tool that is still running while the session has gone silent past the liveness threshold. Amber, with the silence measured, and a count on the agent holding it.',
+      howProduced:
+        'The harvested 99f96635 session -- the only committed corpus with tools that never complete -- with the same STALE mtime and hook event the idle state uses. The two states differ in their FIXTURE, not in their clock: every tool in the 2.1.234 corpus is done, so no clock can stall it.',
+      async drive({ dispatch }) {
+        const run = await harvestRun(host, dispatch);
         return selectedMeta(host, run);
       },
     },

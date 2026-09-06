@@ -210,3 +210,28 @@ G2: the hook tap is silent. The banner appears, the tree keeps rendering, and th
 | selected rail row `data-refused` | `false` | |
 | selected rail row classes | `liveness liveness-live` | |
 
+### stalled
+
+A tool that is still running while the session has gone silent past the liveness threshold. Amber, with the silence measured, and a count on the agent holding it.
+
+*Double produced by:* The harvested 99f96635 session -- the only committed corpus with tools that never complete -- with the same STALE mtime and hook event the idle state uses. The two states differ in their FIXTURE, not in their clock: every tool in the 2.1.234 corpus is done, so no clock can stall it.
+
+| fact | double | real window |
+| --- | --- | --- |
+| panel `data-liveness` | `idle` | |
+| panel `data-refused` | `false` | |
+| panel `data-degraded` | `false` | |
+| tree node elements on screen | `432` | |
+| nodes in the selected session’s model | `432` | |
+| session header present | `true` | |
+| refusal screen present | `false` | |
+| degraded banner present | `false` | |
+| "(inferred)" markers beside liveness | `0` | |
+| header liveness text | `idle` | |
+| header liveness tooltip | `only one of "recently active" and "still running" holds, so neither is claimed` | |
+| header liveness classes | `liveness liveness-idle` | |
+| header cost | `—` | |
+| selected rail row liveness text | `idle` | |
+| selected rail row `data-refused` | `false` | |
+| selected rail row classes | `liveness liveness-idle` | |
+

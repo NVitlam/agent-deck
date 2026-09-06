@@ -146,7 +146,34 @@ export function statusLabel(status: ToolNode['status']): string {
       return 'error';
     case 'stalled':
       return 'stalled';
+    default:
+      // EXHAUSTIVENESS, ENFORCED BY THE COMPILER (user ruling, 2026-09-06).
+      //
+      // A fifth `ToolNode.status` makes this assignment fail — the new member
+      // is not assignable to `never` — so `npm run typecheck` goes red at the
+      // one place that must learn about it, rather than the status arriving
+      // unlabelled at runtime.
+      //
+      // This REPLACES the "untrusted-input guard" DoD 0c.4 originally named.
+      // There is no such guard on the host→webview direction and there will
+      // not be one: `messages.ts` guards INBOUND UI intents, and a `ToolNode`
+      // travels outbound, which is the trusted direction. A type-level check
+      // is the honest control for a trusted channel.
+      return assertNeverStatus(status);
   }
+}
+
+/**
+ * The `never` sink for {@link statusLabel}.
+ *
+ * Separate and named so the failure a new status produces reads as
+ * "unhandled status" rather than as an anonymous assignability error, and so
+ * the runtime arm is deliberate: a value that reached here despite the types
+ * is data the host should never have sent, and it renders as its own string
+ * rather than throwing inside a render.
+ */
+function assertNeverStatus(status: never): string {
+  return String(status);
 }
 
 /**

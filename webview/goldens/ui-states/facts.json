@@ -377,5 +377,59 @@
         ]
       }
     ]
+  },
+  "stalled": {
+    "what": "A tool that is still running while the session has gone silent past the liveness threshold. Amber, with the silence measured, and a count on the agent holding it.",
+    "howProduced": "The harvested 99f96635 session -- the only committed corpus with tools that never complete -- with the same STALE mtime and hook event the idle state uses. The two states differ in their FIXTURE, not in their clock: every tool in the 2.1.234 corpus is done, so no clock can stall it.",
+    "panel": {
+      "dataLiveness": "idle",
+      "dataRefused": "false",
+      "dataDegraded": "false"
+    },
+    "counts": {
+      "treeNodes": 432,
+      "modelNodesInSelectedSession": 432,
+      "sessionHeaders": 1,
+      "refusalScreens": 0,
+      "degradedBanners": 0,
+      "livenessInferredMarkers": 0,
+      "statusChips": 432,
+      "payloadPreviews": 854,
+      "railItems": 1
+    },
+    "header": {
+      "present": true,
+      "livenessText": "idle",
+      "livenessTitle": "only one of \"recently active\" and \"still running\" holds, so neither is claimed",
+      "livenessClasses": [
+        "liveness",
+        "liveness-idle"
+      ],
+      "dataLivenessInferred": "false",
+      "inferredMarkerText": null,
+      "context": "666,911",
+      "burn": "99,707,750",
+      "cost": "—",
+      "costTitle": "cost not computed — no price table"
+    },
+    "banner": {
+      "present": false
+    },
+    "refusalScreen": {
+      "present": false
+    },
+    "rail": [
+      {
+        "selected": "true",
+        "dataLiveness": "idle",
+        "dataRefused": "false",
+        "livenessText": "idle",
+        "livenessTitle": "only one of \"recently active\" and \"still running\" holds, so neither is claimed",
+        "livenessClasses": [
+          "liveness",
+          "liveness-idle"
+        ]
+      }
+    ]
   }
 }

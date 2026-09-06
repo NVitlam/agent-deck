@@ -175,6 +175,13 @@ export async function loadHostModules() {
       'export { readCodexHookStream, DEFAULT_CODEX_LIVENESS_THRESHOLD_MS }',
       "from './src/codex/liveness.js';",
     ].join(' '),
+    // The parse layer and the hook normalizer, for `record-stall-wire.mjs`
+    // (v0.7.0 DoD 0c.7). A stall corpus feeds a session by hand and then moves
+    // only the CLOCK, so it needs the same entry points `SessionModel`'s own
+    // callers use rather than a second reader written for the recorder --
+    // the precedent every export above already sets.
+    "export { parseLines, parseSubagentMeta } from './src/parser/parse.js';",
+    "export { normalizeHookEvent } from './src/hooks/listener.js';",
   ].join('\n');
 
   const result = await build({

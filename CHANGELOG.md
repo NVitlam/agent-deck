@@ -2,6 +2,22 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.7.0 - unreleased
+
+### Added
+
+- **Tools that stop making progress are shown as stalled.** A tool call that is
+  still running while the session has gone quiet for longer than
+  `agentDeck.livenessThresholdMs` (default 120 seconds) is drawn amber, with the
+  length of the silence beside it, and the agent holding it carries a count of
+  how many of its tools are in that state. It clears the moment anything
+  arrives.
+
+  It measures **silence, not duration**: a long tool call that is still
+  reporting activity is not stalled, and a short one that has gone quiet is.
+  The session's own status is unchanged — a stalled tool does not make a
+  session look live.
+
 ## 0.6.1 - 2026-09-05 - Codex sessions no longer exhaust the extension host
 
 ### Fixed

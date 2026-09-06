@@ -39,14 +39,30 @@ import { readOpenCodeEngine } from '../opencode/index.js';
 const FIXTURES = fileURLToPath(new URL('../../fixtures/', import.meta.url));
 
 function corpusDirs(prefix: string, marker: (dir: string) => boolean): string[] {
-  const dirs = fs
+  const named = fs
     .readdirSync(FIXTURES)
     .filter((name) => name.startsWith(prefix))
     .map((name) => path.join(FIXTURES, name))
     .filter((dir) => fs.statSync(dir).isDirectory())
-    .filter(marker)
     .sort();
+  const dirs = named.filter(marker).sort();
   if (dirs.length === 0) throw new Error(`no ${prefix}* corpus found under ${FIXTURES}`);
+  /*
+   * THE GLOBAL GUARD WAS THE WRONG STRENGTH, and `phase-verifier` said so: a
+   * discovery bug that found 1 of 6 corpora satisfied "more than zero" and
+   * every sweep test then passed over a sixth of the data.
+   *
+   * So the shortfall is reported rather than tolerated. `marker` legitimately
+   * excludes directories — a Codex witness corpus carries no golden — so this
+   * is not an equality check; it is a floor that goes red if the marker starts
+   * rejecting nearly everything, which is what a broken predicate looks like.
+   */
+  if (dirs.length * 2 < named.length) {
+    throw new Error(
+      `${prefix}*: only ${String(dirs.length)} of ${String(named.length)} corpora matched the ` +
+        'marker — that is a discovery bug, not a corpus without one',
+    );
+  }
   return dirs;
 }
 

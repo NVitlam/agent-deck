@@ -58,6 +58,7 @@
       }
     ],
     "model": "claude-opus-5",
+    "agentName": null,
     "compactions": null,
     "startedAtOffsetMs": 0,
     "endedAtOffsetMs": null,
@@ -141,6 +142,7 @@
           }
         ],
         "model": "claude-opus-5",
+        "agentName": null,
         "compactions": null,
         "startedAtOffsetMs": 8244,
         "endedAtOffsetMs": 75962,

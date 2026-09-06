@@ -1293,8 +1293,8 @@ function readUsage(kept: readonly CodexRecord[]): Usage {
      *     burn.prompt === Σ (input + cacheCreation + cacheRead)
      *
      * Measured over every `token_count` record of every committed Codex thread
-     * (12 threads with two or more records): the sum of `last_token_usage`
-     * equals the final `total_token_usage` on **11 of 12**, and on
+     * (**14** threads with two or more records): the sum of `last_token_usage`
+     * equals the final `total_token_usage` on **13 of 14**, and on
      * `01a0641e-f36c-7503…` (the `dup-names` run) it EXCEEDS it — 102,882
      * against 86,011. The excess is 16,871, which is exactly that thread's
      * FIRST turn, so its opening figure is counted in the series and not in the

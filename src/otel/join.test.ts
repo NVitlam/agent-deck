@@ -1,9 +1,24 @@
 /**
  * v0.7.0 Phase 1, DoD 1.9d/1.9e/1.9f/1.9g — the telemetry join.
  *
- * The corpus and the transcripts are the SAME sessions read through two
- * different taps, so this file joins real spans onto a real grafted tree rather
- * than onto a constructed one.
+ * ## THE TREES HERE ARE CONSTRUCTED, AND THE FIRST VERSION OF THIS HEADER SAID
+ * ## OTHERWISE
+ *
+ * It claimed this file "joins real spans onto a real grafted tree rather than
+ * onto a constructed one". That was false: every test builds its tree with
+ * {@link stateWith} and takes the tool ids from the telemetry. Caught by
+ * `phase-verifier`.
+ *
+ * The SPANS are real — replayed from the committed capture — and the tool ids
+ * they carry are real. The TREES are minimal stand-ins, and they have to be:
+ * the two sessions this corpus was captured from have no committed transcript
+ * under `fixtures/`, so there is no grafted tree to join onto. That is a real
+ * limit on what this file proves, and it is the reason the rejected-`Bash` case
+ * below is pinned by NAME against the corpus rather than by a tree walk.
+ *
+ * Closing it needs the transcripts of `8c1910bb…` and `f7f0eef9…` committed
+ * beside the telemetry — the same sessions through both taps. Recorded, not
+ * done.
  */
 
 import { readFileSync } from 'node:fs';
@@ -264,9 +279,12 @@ describe('DoD 1.9e — agentName is NOT set, and the reason is a measurement', (
      * not co-occur on any record, so there is no exact key from a name to an
      * `AgentNode`.
      *
-     * Attaching the one observed name to the one subagent of a session would
-     * work on this corpus and be a guess — which "exact or discarded" and G3
-     * both forbid. So the field exists, nothing sets it, and this says so.
+     * Attaching the one observed name to a session's subagents would be a
+     * guess, and on this corpus an obviously wrong one: session `f7f0eef9…`
+     * carries TWO distinct `agent_id`s against ONE distinct `agent.name`, so
+     * even "the session had one subagent, so the name is its" does not hold.
+     * "Exact or discarded" and G3 both forbid it. The field exists, nothing
+     * sets it, and this says so.
      */
     const sessionId = TRACES.toolSpans[0]?.sessionId;
     if (sessionId === undefined) return;
@@ -276,6 +294,56 @@ describe('DoD 1.9e — agentName is NOT set, and the reason is a measurement', (
     if (root === undefined || !isAgentNode(root)) return;
     expect(root.agentName).toBeUndefined();
   });
+});
+
+describe('DoD 1.9g — why no golden and no wire file can move in Phase 1', () => {
+  it('is imported by NO production module, which is the real guarantee', async () => {
+    /*
+     * DoD 1.9g asks that every golden and wire file be byte-identical with the
+     * telemetry channel absent, present-and-empty, and throwing. The
+     * state-level assertions below cover the three shapes on a constructed
+     * state; THIS is what makes the claim true of the committed artefacts, and
+     * it is a different and stronger statement: nothing in production calls
+     * `joinTelemetry` at all, so no golden and no wire recorder can reach it.
+     *
+     * Phase 3 mounts the route and gives it a caller. On that day this test
+     * goes red, and it should — it is the tripwire that says "the sweep 1.9g
+     * describes now has to be written for real".
+     *
+     * Recorded rather than glossed: `phase-verifier` found the original 1.9g
+     * tests asserting on one hand-built state while the DoD's sentence spoke
+     * about every golden and wire file.
+     */
+    const { readdirSync, readFileSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+
+    const roots = ['src', 'webview', 'scripts'].map((d) =>
+      fileURLToPath(new URL(`../../${d}/`, import.meta.url)),
+    );
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (/\.(ts|mjs|svelte)$/.test(entry)) files.push(full);
+      }
+    };
+    for (const root of roots) walk(root);
+    expect(files.length).toBeGreaterThan(100);
+
+    const importers = files.filter((file) => {
+      // The module's own directory and every test are exempt.
+      if (file.includes(`${'src'}${String.fromCharCode(92)}otel`)) return false;
+      if (file.includes('/otel/')) return false;
+      if (file.endsWith('.test.ts') || file.endsWith('.testkit.ts')) return false;
+      return /from '.*otel\/(join|parse)\.js'|require\(.*otel/.test(readFileSync(file, 'utf8'));
+    });
+    expect(importers, `a production module reaches otel: ${importers.join(', ')}`).toEqual([]);
+  }, 60_000);
 });
 
 describe('DoD 1.9g — telemetry absent changes nothing (G2)', () => {

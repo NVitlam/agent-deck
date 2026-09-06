@@ -411,16 +411,25 @@ interface MessageUsage {
    * `cacheCreation` alone, and neither is recoverable from {@link prompt}.
    *
    * **Each is an independent running maximum, exactly like `prompt` and
-   * `output` above, and that is measured rather than assumed.** Across all 26
-   * committed CC transcripts (1,134 message ids, 823 of them spanning more
-   * than one line) the sum of the per-component maxima equals the maximum of
-   * the sums in **every single case**, so carrying these changes `prompt` —
-   * and therefore `burn`, and therefore every golden — not at all.
+   * `output` above, and that is measured rather than assumed.** Across the
+   * **22 transcripts under `fixtures/cc-*` + `/projects/`** — **899** message
+   * ids, **687** of them spanning more than one line — the sum of the
+   * per-component maxima equals the maximum of the sums in **every single
+   * case**, so carrying these changes `prompt`, and therefore `burn`, and
+   * therefore every golden, not at all.
    *
    * The obvious alternative was rejected on the same measurement: letting one
    * winning record supply all four components would have changed `output` on
-   * **140 of 1,134** ids, because the line with the largest prompt is often
-   * not the line with the largest output.
+   * **81 of 899** ids, because the line with the largest prompt is often not
+   * the line with the largest output.
+   *
+   * **THE SCOPE IS THE HALF THAT WAS WRONG.** This block first read "26
+   * transcripts, 1,134 ids, 823 multi-line, 140" — figures that re-derive only
+   * over `fixtures/**` ENTIRE, i.e. every engine's transcripts, not Claude
+   * Code's. Caught by `phase-verifier`. The zero mismatch and the non-zero
+   * winner-differs both survive at the correct scope, which is what the
+   * decision rested on; only the denominators moved. A count is stated with
+   * its scope beside it or it is a defect with a delay on it.
    */
   input: number;
   cacheCreation: number;
@@ -1372,6 +1381,12 @@ function serializeNode(node: TreeNode, anchor: number | undefined): SerializedNo
     // Numbers and an engine-stated model name: machine-independent, so verbatim.
     usageSeries: node.usageSeries === undefined ? null : node.usageSeries.map((t) => ({ ...t })),
     model: node.model ?? null,
+    // v0.7.0 Phase 1. Serialised although NOTHING sets it yet (DoD 1.9e is
+    // PARTIAL: `agent.name` and `agent_id` never co-occur, so no key joins a
+    // name to an agent). It is here so the day that closes, the goldens carry
+    // it and a wrong value goes red — rather than the field arriving with no
+    // golden coverage at all, which is how a new field ships untested.
+    agentName: node.agentName ?? null,
     compactions: node.compactions === undefined ? null : node.compactions.map((c) => ({ ...c })),
     startedAtOffsetMs: anchor === undefined || node.startedAt === 0 ? null : node.startedAt - anchor,
     endedAtOffsetMs: anchor === undefined || node.endedAt === undefined ? null : node.endedAt - anchor,

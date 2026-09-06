@@ -34,6 +34,7 @@
       }
     ],
     "model": "claude-opus-5",
+    "agentName": null,
     "compactions": null,
     "startedAtOffsetMs": 0,
     "endedAtOffsetMs": null,
@@ -82,6 +83,7 @@
           }
         ],
         "model": "claude-opus-5",
+        "agentName": null,
         "compactions": null,
         "startedAtOffsetMs": 12128,
         "endedAtOffsetMs": 23466,
@@ -144,6 +146,7 @@
           }
         ],
         "model": "claude-opus-5",
+        "agentName": null,
         "compactions": null,
         "startedAtOffsetMs": 15127,
         "endedAtOffsetMs": 23842,
@@ -206,6 +209,7 @@
           }
         ],
         "model": "claude-opus-5",
+        "agentName": null,
         "compactions": null,
         "startedAtOffsetMs": 20618,
         "endedAtOffsetMs": 128072,
@@ -296,6 +300,7 @@
               }
             ],
             "model": "claude-opus-5",
+            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 30242,
             "endedAtOffsetMs": 111857,

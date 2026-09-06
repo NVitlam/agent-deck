@@ -266,6 +266,7 @@ function serializeAgent(node: AgentNode, anchor: number): unknown {
     // machine-independent, so verbatim.
     usageSeries: node.usageSeries ?? null,
     model: node.model ?? null,
+    agentName: node.agentName ?? null,
     compactions: node.compactions ?? null,
     startedAtOffsetMs: node.startedAt - anchor,
     endedAtOffsetMs: node.endedAt === undefined ? null : node.endedAt - anchor,

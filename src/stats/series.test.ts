@@ -62,7 +62,7 @@ const ENGINES = [
  * The engines that state a per-turn series at all.
  *
  * Codex is absent BY MEASUREMENT, not by omission: its `last_token_usage` sums
- * to more than its own final `total_token_usage` on 1 of 12 committed threads,
+ * to more than its own final `total_token_usage` on 1 of 14 committed threads,
  * so it cannot be said to state a series that reproduces its burn. The block
  * comment in `src/codex/parse.ts`'s `readUsage` carries the numbers, and the
  * absence is asserted below rather than left untested.
@@ -155,9 +155,16 @@ describe('DoD 1.4/1.5 — Codex states NO usage series, and the absence is the a
     /*
      * NOT an oversight and NOT "not implemented yet". Measured over every
      * `token_count` record of every committed Codex thread: the sum of
-     * `last_token_usage` equals the final `total_token_usage` on 11 of 12
+     * `last_token_usage` equals the final `total_token_usage` on 13 of 14
      * threads and EXCEEDS it on `01a0641e-f36c-7503…` (102,882 against 86,011,
-     * an excess equal to that thread's own first turn).
+     * an excess equal to that thread's own first turn, whose `token_count`
+     * record is emitted TWICE, byte-identical).
+     *
+     * The count read "11 of 12" until `phase-verifier` re-derived it: a glob
+     * that stopped at `2026/09/03` missed the two `baseline` threads dated
+     * `2026/09/02`. The three load-bearing figures were right and the
+     * DENOMINATOR was not — this repository's most-recorded defect wearing a
+     * scope instead of a stale value.
      *
      * DoD 1.4's identity is what `usageSeries` MEANS, so an engine that cannot
      * satisfy it does not have one. The locked answer's `unavailable` branch is

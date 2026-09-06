@@ -40,8 +40,10 @@
  *   - The two NEVER co-occur on any record.
  *
  * So the corpus states a name and states which agent made a call, and offers no
- * key between them. Attaching the one observed name to the one subagent of a
- * session would work here and be a guess — exactly what "exact or discarded"
+ * key between them. Attaching the one observed name to a session's subagents
+ * would be a guess, and demonstrably a wrong one: session `f7f0eef9…` carries
+ * TWO distinct `agent_id`s against ONE distinct `agent.name`, so even "this
+ * session had a single subagent" is false. Exactly what "exact or discarded"
  * and G3 forbid. The field stays on `AgentNode`, nothing sets it, and
  * `join.test.ts` asserts that nothing does, with this measurement as the
  * reason. Closing it needs a capture where the two co-occur, or a decision that

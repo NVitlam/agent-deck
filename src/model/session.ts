@@ -641,6 +641,12 @@ function serializeSessionNode(
     burn: node.burn === undefined ? null : { ...node.burn },
     usageSeries: node.usageSeries === undefined ? null : node.usageSeries.map((t) => ({ ...t })),
     model: node.model ?? null,
+    // v0.7.0 Phase 1. Serialised although NOTHING sets it yet (DoD 1.9e is
+    // PARTIAL: `agent.name` and `agent_id` never co-occur, so no key joins a
+    // name to an agent). It is here so the day that closes, the goldens carry
+    // it and a wrong value goes red — rather than the field arriving with no
+    // golden coverage at all, which is how a new field ships untested.
+    agentName: node.agentName ?? null,
     compactions: node.compactions === undefined ? null : node.compactions.map((c) => ({ ...c })),
     startedAtOffsetMs:
       anchor === undefined || node.startedAt === 0 ? null : node.startedAt - anchor,

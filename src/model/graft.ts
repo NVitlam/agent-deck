@@ -54,6 +54,7 @@ import { basename, dirname, join } from 'node:path';
 
 import type {
   AgentNode,
+  CompactionRecord,
   ParseDiagnostics,
   SessionState,
   SubagentMeta,
@@ -61,8 +62,11 @@ import type {
   ToolNode,
   TranscriptEntry,
   TreeNode,
+  UsageTurn,
 } from './events.js';
 import { isAgentNode } from './events.js';
+import { inputHash } from '../stats/canonical.js';
+import { filePathOf } from '../stats/toolclass.js';
 import type {
   AmbiguousAttribution,
   AttributionReport,
@@ -336,6 +340,10 @@ interface ToolCall {
   /** Order of first appearance within the owning transcript. */
   order: number;
   inputPreview: string;
+  /** DoD 1.2 — over the untruncated structured input; see `stats/canonical.ts`. */
+  inputHash: string;
+  /** DoD 1.3 — from the generated census table, or absent. */
+  filePath?: string;
   startedAt?: number;
   resultPreview?: string;
   endedAt?: number;
@@ -367,6 +375,18 @@ interface AgentAccumulator {
   sessionTitle?: string;
   /** §0's second choice: the first user message's own words. */
   firstUserText?: string;
+  /**
+   * The model, verbatim from the FIRST assistant message that names one —
+   * DoD 1.4b.
+   *
+   * First rather than last, and it matters: a session can span a model change,
+   * and the first is the one the transcript opened with. Phase 0's rule stands
+   * either way — read the model from the record, never from an invocation flag,
+   * because an engine may silently substitute one.
+   */
+  model?: string;
+  /** Compactions seen in this transcript, in file order — DoD 1.4b, F12. */
+  compactions: CompactionRecord[];
 }
 
 /**
@@ -385,6 +405,35 @@ interface MessageUsage {
   prompt: number;
   /** `output_tokens`. */
   output: number;
+  /**
+   * The three prompt components kept apart, for {@link AgentNode.usageSeries}
+   * — v0.7.0 Phase 1, DoD 1.4. F6 needs the cache split and F7 needs
+   * `cacheCreation` alone, and neither is recoverable from {@link prompt}.
+   *
+   * **Each is an independent running maximum, exactly like `prompt` and
+   * `output` above, and that is measured rather than assumed.** Across the
+   * **22 transcripts under `fixtures/cc-*` + `/projects/`** — **899** message
+   * ids, **687** of them spanning more than one line — the sum of the
+   * per-component maxima equals the maximum of the sums in **every single
+   * case**, so carrying these changes `prompt`, and therefore `burn`, and
+   * therefore every golden, not at all.
+   *
+   * The obvious alternative was rejected on the same measurement: letting one
+   * winning record supply all four components would have changed `output` on
+   * **81 of 899** ids, because the line with the largest prompt is often not
+   * the line with the largest output.
+   *
+   * **THE SCOPE IS THE HALF THAT WAS WRONG.** This block first read "26
+   * transcripts, 1,134 ids, 823 multi-line, 140" — figures that re-derive only
+   * over `fixtures/**` ENTIRE, i.e. every engine's transcripts, not Claude
+   * Code's. Caught by `phase-verifier`. The zero mismatch and the non-zero
+   * winner-differs both survive at the correct scope, which is what the
+   * decision rested on; only the denominators moved. A count is stated with
+   * its scope beside it or it is a defect with a delay on it.
+   */
+  input: number;
+  cacheCreation: number;
+  cacheRead: number;
   ordinal: number;
   at?: number;
 }
@@ -577,6 +626,60 @@ function captureSessionLabel(acc: AgentAccumulator, entry: TranscriptEntry): voi
   }
 }
 
+/**
+ * Record a compaction entry — v0.7.0 Phase 1, DoD 1.4b; F12.
+ *
+ * **Keyed on STRUCTURE, and that is load-bearing rather than tidy.** A
+ * compaction is a `type: "system"` entry carrying a top-level `compactMetadata`
+ * object. Measured over every committed CC corpus: **3 such entries** — one
+ * `manual` in `cc-2.1.241`, one `auto` and one `manual` in `cc-2.1.260` —
+ * against **35 further lines that merely contain the string
+ * `compactMetadata`**, all of them this repository's own sessions discussing
+ * this field in prose. A substring search would have reported 38 compactions,
+ * 35 of them written by the operator rather than by Claude Code.
+ *
+ * That is the recorded hazard of a corpus that contains the work which produced
+ * it, and the defence is the recorded one: anchor the predicate to the
+ * structural position the engine writes to, never to text both parties can
+ * utter.
+ *
+ * Phase 0 (DoD 0.3b) measured that the `auto` and `manual` entries have
+ * IDENTICAL key sets, so one reader serves both and `trigger` is read rather
+ * than inferred. An entry whose trigger is neither is NOT recorded: this engine
+ * has only ever written those two, so a third value means the schema moved, and
+ * G3 says refuse rather than guess.
+ */
+function captureCompaction(acc: AgentAccumulator, entry: TranscriptEntry): void {
+  if (entry['type'] !== 'system') return;
+  const meta = entry['compactMetadata'];
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return;
+
+  const m = meta as {
+    trigger?: unknown;
+    preTokens?: unknown;
+    postTokens?: unknown;
+    durationMs?: unknown;
+  };
+  if (m.trigger !== 'auto' && m.trigger !== 'manual') return;
+
+  const record: CompactionRecord = {
+    // Where this landed among the agent's calls, so a reader can say which
+    // tools ran before it and which after.
+    ordinal: acc.calls.length,
+    trigger: m.trigger,
+  };
+  if (typeof m.preTokens === 'number' && Number.isFinite(m.preTokens)) {
+    record.preTokens = m.preTokens;
+  }
+  if (typeof m.postTokens === 'number' && Number.isFinite(m.postTokens)) {
+    record.postTokens = m.postTokens;
+  }
+  if (typeof m.durationMs === 'number' && Number.isFinite(m.durationMs)) {
+    record.durationMs = m.durationMs;
+  }
+  acc.compactions.push(record);
+}
+
 /** One line, bounded for the wire. No ellipsis (A9.1). Never mid-surrogate. */
 function toSessionLabel(text: string): string {
   const oneLine = text.replace(/\s+/gu, ' ').trim();
@@ -595,9 +698,15 @@ function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[],
       if (acc.lastTimestamp === undefined || at > acc.lastTimestamp) acc.lastTimestamp = at;
     }
 
+    captureCompaction(acc, entry);
+
     const message = entry['message'];
     if (typeof message === 'object' && message !== null) {
-      const m = message as { id?: unknown; usage?: unknown };
+      const m = message as { id?: unknown; usage?: unknown; model?: unknown };
+      // First assistant message naming a model wins — see AgentAccumulator.model.
+      if (acc.model === undefined && typeof m.model === 'string' && m.model !== '') {
+        acc.model = m.model;
+      }
       const usage = m.usage;
       if (typeof m.id === 'string' && typeof usage === 'object' && usage !== null) {
         const u = usage as {
@@ -606,15 +715,18 @@ function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[],
           cache_read_input_tokens?: unknown;
           output_tokens?: unknown;
         };
-        const promptTok =
-          countOf(u.input_tokens) +
-          countOf(u.cache_creation_input_tokens) +
-          countOf(u.cache_read_input_tokens);
+        const inTok = countOf(u.input_tokens);
+        const ccTok = countOf(u.cache_creation_input_tokens);
+        const crTok = countOf(u.cache_read_input_tokens);
+        const promptTok = inTok + ccTok + crTok;
         const outTok = countOf(u.output_tokens);
         const prev = acc.usageByMessage.get(m.id);
         const next: MessageUsage = {
           prompt: prev === undefined ? promptTok : Math.max(prev.prompt, promptTok),
           output: prev === undefined ? outTok : Math.max(prev.output, outTok),
+          input: prev === undefined ? inTok : Math.max(prev.input, inTok),
+          cacheCreation: prev === undefined ? ccTok : Math.max(prev.cacheCreation, ccTok),
+          cacheRead: prev === undefined ? crTok : Math.max(prev.cacheRead, crTok),
           // First sighting owns the ordinal. A later line of the same streamed
           // message updates the counters and must NOT move the message.
           ordinal: prev === undefined ? acc.usageOrdinal++ : prev.ordinal,
@@ -643,13 +755,21 @@ function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[],
         // call site is where the tool was invoked, and re-reading the same
         // file must not shuffle the tree.
         if (acc.byId.has(b.id)) continue;
+        const toolName = typeof b.name === 'string' ? b.name : '';
         const call: ToolCall = {
           toolUseId: b.id,
-          toolName: typeof b.name === 'string' ? b.name : '',
+          toolName,
           order: acc.calls.length,
           inputPreview: preview(safeStringify(b.input ?? {}), previewBytes),
+          // DoD 1.2: hashed from `b.input` — the structured input the parser
+          // holds — NOT from `inputPreview` beside it, which has already been
+          // cut at `previewBytes`. Two calls differing only past that cut share
+          // a preview and must not share a hash.
+          inputHash: inputHash(b.input ?? null),
           isError: false,
         };
+        const touched = filePathOf('cc', toolName, b.input);
+        if (touched !== undefined) call.filePath = touched;
         if (at !== undefined) call.startedAt = at;
         acc.calls.push(call);
         acc.byId.set(b.id, call);
@@ -682,6 +802,39 @@ function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[],
  */
 function countOf(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * This agent's per-turn usage, in the order the engine wrote it — DoD 1.4.
+ *
+ * **The same de-duplication as {@link usageBurn}, not a copy of it**: both read
+ * `acc.usageByMessage`, which is populated once, so the series cannot drift
+ * from the total by counting a streamed message twice.
+ *
+ * `burn` is deliberately still summed from `prompt`/`output` rather than from
+ * this series. The two agree — DoD 1.4 asserts
+ * `Σ(input + cacheCreation + cacheRead) === burn.prompt` over every corpus
+ * session — and keeping them computed separately means a corpus that ever
+ * broke the identity turns a TEST red instead of silently changing `burn` and
+ * every golden under it.
+ *
+ * An agent with no assistant message yields an empty array, and the caller
+ * omits the field entirely rather than emitting one: absent means "this engine
+ * states no series", which is not the same claim as "this agent ran no turn".
+ */
+function usageSeries(acc: AgentAccumulator): UsageTurn[] {
+  return [...acc.usageByMessage.values()]
+    .sort((a, b) => a.ordinal - b.ordinal)
+    .map((u, i) => ({
+      // Re-indexed densely from 0. `MessageUsage.ordinal` counts every message
+      // id the accumulator saw; this counts position within the emitted series,
+      // and the two are equal today only because nothing filters between them.
+      ordinal: i,
+      input: u.input,
+      cacheCreation: u.cacheCreation,
+      cacheRead: u.cacheRead,
+      output: u.output,
+    }));
 }
 
 /** Everything this agent spent: summed across distinct `message.id`. */
@@ -935,6 +1088,13 @@ export class TreeGrafter {
         burn: usageBurn(acc),
         startedAt: acc.firstTimestamp ?? 0,
       };
+      // DoD 1.4/1.4b. Each is omitted rather than emitted empty: absent means
+      // "this engine states none", which an empty array would misreport as
+      // "measured, and there were none".
+      const series = usageSeries(acc);
+      if (series.length > 0) node.usageSeries = series;
+      if (acc.model !== undefined) node.model = acc.model;
+      if (acc.compactions.length > 0) node.compactions = acc.compactions;
       if (spawn?.endedAt !== undefined) node.endedAt = spawn.endedAt;
       return node;
     };
@@ -1010,7 +1170,10 @@ export class TreeGrafter {
       // the absence of that statement, not a claim that it is still going.
       status: call.isError ? 'error' : call.resultPreview === undefined ? 'running' : 'done',
       inputPreview: call.inputPreview,
+      inputHash: call.inputHash,
+      ordinal: call.order,
     };
+    if (call.filePath !== undefined) node.filePath = call.filePath;
     if (resultPreview !== undefined) node.resultPreview = resultPreview;
     if (call.startedAt !== undefined && call.endedAt !== undefined) {
       node.durationMs = call.endedAt - call.startedAt;
@@ -1061,6 +1224,7 @@ function newAccumulator(agentId: string): AgentAccumulator {
     usageByMessage: new Map(),
     usageOrdinal: 0,
     entryCount: 0,
+    compactions: [],
   };
 }
 
@@ -1190,6 +1354,18 @@ function serializeNode(node: TreeNode, anchor: number | undefined): SerializedNo
       inputPreview: previewFingerprint(node.inputPreview),
       resultPreview: previewFingerprint(node.resultPreview),
       durationMs: node.durationMs ?? null,
+      // v0.7.0 Phase 1. `filePath` is FINGERPRINTED, never verbatim, and it is
+      // the one new field that had to be: it is a real absolute path out of a
+      // captured tool input, so writing it plainly would put the capturing
+      // machine's home directory into a committed golden — breaking rule 1 of
+      // this serialisation and the privacy sweep in the same stroke.
+      //
+      // `inputHash` is safe verbatim although it is DERIVED from those same
+      // paths: it is a one-way digest, deterministic given the fixture bytes,
+      // and it reveals nothing. `ordinal` is an integer.
+      filePath: previewFingerprint(node.filePath),
+      inputHash: node.inputHash ?? null,
+      ordinal: node.ordinal ?? null,
     };
     return out;
   }
@@ -1202,6 +1378,12 @@ function serializeNode(node: TreeNode, anchor: number | undefined): SerializedNo
     spawnDepth: node.spawnDepth,
     contextNow: node.contextNow === undefined ? null : { ...node.contextNow },
     burn: node.burn === undefined ? null : { ...node.burn },
+    // Numbers and an engine-stated model name: machine-independent, so verbatim.
+    usageSeries: node.usageSeries === undefined ? null : node.usageSeries.map((t) => ({ ...t })),
+    model: node.model ?? null,
+    // NO `agentName` KEY: DoD 1.9e was closed UNAVAILABLE on 2026-09-06 and the
+    // field is gone from `AgentNode`. See the note there.
+    compactions: node.compactions === undefined ? null : node.compactions.map((c) => ({ ...c })),
     startedAtOffsetMs: anchor === undefined || node.startedAt === 0 ? null : node.startedAt - anchor,
     endedAtOffsetMs: anchor === undefined || node.endedAt === undefined ? null : node.endedAt - anchor,
     children: node.children.map((child) => serializeNode(child, anchor)),

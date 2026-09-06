@@ -69,6 +69,7 @@ import {
   codexNodeLabel,
   graftCodexThreads,
 } from './graft.js';
+import { inputHash } from '../stats/canonical.js';
 import { readCodexEngine } from './index.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -227,6 +228,28 @@ function readThread(file: string): CodexThread {
   let payloadsTruncated = 0;
   const toolCalls: CodexToolCall[] = [];
   const spawns: CodexSpawn[] = [];
+  /*
+   * v0.7.0 Phase 1 — the same three-shape rule as `parse.ts`'s
+   * `codexInputHash`, restated here rather than imported.
+   *
+   * Restating it is the point of this whole reader: it exists to disagree with
+   * the engine if the engine is wrong, and a reader that imports the answer it
+   * is checking cannot. The rule itself (which key holds the input, per payload
+   * type) is `docs/evidence/phase-0-stats`'s, not `parse.ts`'s.
+   */
+  const independentInputHash = (kind: string, payload: Record<string, unknown>): string => {
+    if (kind === 'function_call') {
+      const raw = payload['arguments'];
+      if (typeof raw !== 'string') return inputHash(raw ?? null);
+      try {
+        return inputHash(JSON.parse(raw));
+      } catch {
+        return inputHash(raw);
+      }
+    }
+    if (kind === 'custom_tool_call') return inputHash(payload['input'] ?? null);
+    return inputHash(payload['action'] ?? null);
+  };
 
   for (const r of own) {
     if (r.type !== 'response_item') continue;
@@ -259,6 +282,10 @@ function readThread(file: string): CodexThread {
           : itemId === callId
             ? 'item_id_equals_call_id'
             : 'item_id_distinct_from_call_id',
+      // v0.7.0 Phase 1. This reader is deliberately independent of `parse.ts`,
+      // so it re-derives the hash by the same three-shape rule rather than
+      // importing the engine's answer.
+      inputHash: independentInputHash(kind, r.payload),
       ...(preview === undefined ? {} : { outputPreview: preview }),
       ...(raw === undefined ? {} : { outputTruncated: truncated }),
     });
@@ -573,6 +600,10 @@ function makeCall(over: Partial<CodexToolCall> & { threadId: string; callId: str
     itemId: over.callId,
     itemType: 'SubAgentActivity',
     idRelation: 'item_id_equals_call_id',
+    // v0.7.0 Phase 1. A placeholder keyed to the call, not a real digest: these
+    // records exercise the SPAWN JOIN and no test here asserts a hash value.
+    // Keyed rather than constant so two hand-built calls stay distinguishable.
+    inputHash: `hash_${over.callId}`,
     outputPreview: '{"task_name":"/root/x"}',
     outputTruncated: false,
     ...over,

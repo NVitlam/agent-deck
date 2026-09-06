@@ -71,6 +71,26 @@ export interface SessionState {
    */
   totals: { costUsd: number };
   /**
+   * Cost as Claude Code's own telemetry states it — v0.7.0 Phase 1, DoD 1.9f
+   * (Component 12). Summed from the `claude_code.cost.usage` metric.
+   *
+   * **PARSED AND STORED, RENDERED NOWHERE.** Phase 1 wires the parse boundary
+   * and the join and stops there: F9(c) derivation is Phase 2 and the visible
+   * cost-source label is Phase 4. A test asserts no webview surface reads this.
+   *
+   * Deliberately NOT folded into {@link SessionState.totals}, whose `costUsd`
+   * means "the engine reported this" and where 0 means NOT YET COMPUTED.
+   * Merging the two would make an estimate indistinguishable from an
+   * engine-stated figure at exactly the moment Phase 0 found that no engine
+   * states one: F9 is `UNAVAILABLE` on all three, with OpenCode's
+   * `session.cost` measured at 0 across all three stores and 30 sessions.
+   *
+   * Separate field, separate provenance, so the Phase 2 precedence between
+   * engine cost, a user price table and this can be written down and tested
+   * both ways rather than lost in an assignment.
+   */
+  telemetryCostUsd?: number;
+  /**
    * How full the session's context is **right now**: the last assistant
    * message of the main transcript, by ordinal.
    *
@@ -417,6 +437,67 @@ export interface ParkedGraft {
   parentAgentId?: string;
 }
 
+/**
+ * One turn's token usage, as the engine stated it — v0.7.0 Phase 1, DoD 1.4.
+ *
+ * The four components are kept SEPARATE rather than pre-summed into a
+ * {@link TokenPair}, because the facts need them apart: F6 (cache ratio) is
+ * `cacheRead` against the rest, and F7 (context churn) is the turn-over-turn
+ * delta of `cacheCreation` alone. A pair would make both underivable, and
+ * re-deriving them from a sum is impossible rather than merely awkward.
+ *
+ * The relationship to {@link AgentNode.burn} is an identity, not an
+ * approximation, and DoD 1.4 asserts it over every corpus session that has a
+ * series:
+ *
+ *     burn.prompt === Σ (input + cacheCreation + cacheRead)
+ *     burn.output === Σ output
+ *
+ * `ordinal` is position within this agent's series, from 0, in the order the
+ * engine wrote the turns.
+ */
+export interface UsageTurn {
+  ordinal: number;
+  /**
+   * Tokens sent that were NOT served from cache.
+   *
+   * Per engine, and the engines disagree about what their own field means:
+   * Claude Code's `input_tokens` is already exclusive of cache, while Codex's
+   * is cache-INCLUSIVE, so the Codex reader subtracts `cached_input_tokens`
+   * to land on the same quantity. `src/codex/parse.ts` records the
+   * measurement (0 of 116 records satisfy the Claude Code sum).
+   */
+  input: number;
+  /** Tokens written to the cache this turn. The quantity F7 spikes on. */
+  cacheCreation: number;
+  /** Tokens served from cache this turn. */
+  cacheRead: number;
+  /** Tokens generated this turn. */
+  output: number;
+}
+
+/**
+ * A context compaction the engine performed — v0.7.0 Phase 1, DoD 1.4b; F12.
+ *
+ * `trigger` is READ, never inferred. Claude Code writes `auto` or `manual` in
+ * its `compactMetadata`, and Phase 0 measured that the two entries have
+ * IDENTICAL key sets (DoD 0.3b), so one reader handles both and nothing has to
+ * guess which happened. OpenCode has its own `compaction` part carrying no
+ * token figures at all, which is why the token halves are optional and why
+ * `'engine'` exists as a third value: an OpenCode compaction is a real event
+ * that simply does not state what it cost.
+ */
+export interface CompactionRecord {
+  /** Position among this agent's tool calls when the compaction landed. */
+  ordinal: number;
+  trigger: 'auto' | 'manual' | 'engine';
+  /** Prompt tokens immediately before. Absent where the engine states none. */
+  preTokens?: number;
+  /** Prompt tokens immediately after. Absent where the engine states none. */
+  postTokens?: number;
+  durationMs?: number;
+}
+
 export interface AgentNode {
   id: string; // agentId from transcript, or 'root'
   kind: 'main' | 'subagent';
@@ -442,6 +523,55 @@ export interface AgentNode {
    * Optional; see {@link SessionState.burn}.
    */
   burn?: TokenPair;
+  /**
+   * This agent's per-turn usage, in the order the engine wrote it — DoD 1.4.
+   *
+   * **Wired where the engine states a series; absent where it does not, and
+   * NEVER approximated from a total** (the locked answer, 2026-09-05). Codex
+   * is the case that makes the rule concrete: it reports a running
+   * `total_token_usage`, from which a per-turn series cannot be recovered, so
+   * a reader that divided or differenced it would be inventing turns.
+   *
+   * Absent therefore means "this engine states no series", which is a
+   * different claim from an empty array (a session that ran no turn).
+   */
+  usageSeries?: readonly UsageTurn[];
+  /**
+   * The model this agent ran, verbatim from the engine — DoD 1.4b.
+   *
+   * Never normalised, never mapped to a family or a context-window size. G6
+   * forbids a lookup table nobody captured, and Phase 0 recorded the harder
+   * lesson beneath it: one model's behaviour is not the engine's, so the
+   * string is evidence and any tidying of it destroys evidence.
+   */
+  model?: string;
+  /**
+   * Compactions this agent's context went through — DoD 1.4b, F12.
+   *
+   * Absent where the engine writes no compaction entry (Codex: no payload type
+   * carries one). An empty array would claim "measured, none happened".
+   */
+  compactions?: readonly CompactionRecord[];
+  /*
+   * THERE IS DELIBERATELY NO `agentName` HERE, AND IT IS A MEASUREMENT RATHER
+   * THAN AN OMISSION — v0.7.0 DoD 1.9e, closed by the user on 2026-09-06.
+   *
+   * Component 12's draft promised `agentName` on this interface, from the OTel
+   * exporter's `agent.name` attribute. The corpus has no key to hang it on:
+   * across all 850 records of `fixtures/otel-cc-2.1.260/`, `agent.name` appears
+   * on 36 units (6 `api_request` logs + 30 metric points) and `agent_id` on 10
+   * (4 of 40 tool spans + 6 `llm_request`), and the two NEVER co-occur. Session
+   * `f7f0eef9…` carries TWO distinct `agent_id`s against ONE `agent.name`, so
+   * even "this session had a single subagent, so the name is its" is false.
+   * `agent.name` is not in {@link TELEMETRY_KEPT_KEYS} and never crosses the
+   * parse boundary at all.
+   *
+   * The field was REMOVED rather than left unset, because a field nothing can
+   * ever set is a promise the type keeps making. `agent-deck-spec.md` §L
+   * (2026-09-06) is the authority; `src/otel/join.test.ts` asserts the
+   * co-occurrence measurement, so a capture where the two DO co-occur turns it
+   * red — which is the signal to reopen this, not a regression.
+   */
   startedAt: number;
   endedAt?: number;
 }
@@ -476,7 +606,71 @@ export interface ToolNode {
    */
   stalledSinceMs?: number;
   inputPreview: string; // post-redaction, truncated
+  /**
+   * The file this call touches, read from ONE named key of the structured
+   * input — v0.7.0 Phase 1, DoD 1.3. F1 is built on it.
+   *
+   * Which key, per engine and per tool, comes from
+   * `src/stats/toolclass.ts`, which is GENERATED from the Phase 0 census. No
+   * regex, no scan for path-shaped strings: Layer 1 reads structure, never
+   * text. A search tool's `path` is a SCOPE rather than a file touched, and
+   * the census gives it no key for exactly that reason.
+   *
+   * Absent on every Codex call, and that is measured rather than unimplemented:
+   * `exec` is a `custom_tool_call` whose input is a STRING of JavaScript and
+   * can carry no key at all, and Codex touches files through shell commands
+   * whose names live inside command text. Phase 0 records F1 as
+   * `UNAVAILABLE:codex`.
+   */
+  filePath?: string;
+  /**
+   * SHA-256 over canonical JSON of the **untruncated** structured input —
+   * DoD 1.2. `src/stats/canonical.ts` is the definition.
+   *
+   * It exists so two calls can be compared for identity without anyone reading
+   * their arguments: F3 counts repeats of one `toolName + inputHash` within an
+   * agent, and F4 joins churn chains on it.
+   *
+   * **Taken before truncation, which is the whole point.** `inputPreview` is
+   * cut at `agentDeck.previewBytes`; two calls differing only past that cut
+   * have identical previews, and hashing the preview would report them as a
+   * loop. Every producer hashes what the engine parsed.
+   *
+   * OPTIONAL on this interface although spec §E calls it required, and the
+   * reason is B3, the same precedent that keeps `engine` optional: this one
+   * type is both the host's domain model and the wire contract, and two
+   * hand-built wire corpora serialise `ToolNode`s that will never pass through
+   * a production grafter again. Every ENGINE sets it — asserted per engine over
+   * each corpus by DoD 1.5, which is a stronger check than the type could make
+   * — and the Phase 2 deriver requires it, emitting `unavailable` when absent.
+   */
+  inputHash?: string;
+  /**
+   * This call's position within its own agent's transcript, from 0, in order
+   * of first appearance — DoD 1.1.
+   *
+   * First sighting of a `tool_use` id wins its ordinal: a repeated id keeps the
+   * call site where the tool was invoked. Per AGENT, not per session, so two
+   * agents' ordinals are not comparable and nothing should sort across them.
+   *
+   * OPTIONAL for the same B3 reason as {@link ToolNode.inputHash}.
+   */
+  ordinal?: number;
   resultPreview?: string; // post-redaction; sourced from JSONL or tool-results/
+  /**
+   * How long the call took.
+   *
+   * **Two sources, and the precedence is decided rather than incidental**
+   * (v0.7.0 Phase 1). The engines state it themselves — Claude Code from the
+   * transcript's own timestamps, OpenCode from `state.time.start/end` — and
+   * Claude Code telemetry states it again on `claude_code.tool` spans. The
+   * ENGINE wins; telemetry only fills where the engine states none.
+   *
+   * That order is not a preference. The engine-derived value is what every
+   * committed golden already carries, so letting telemetry overwrite it would
+   * move goldens whenever telemetry happened to be on — making a user's
+   * `settings.json` a factor in whether this repository's fixtures reproduce.
+   */
   durationMs?: number;
   /**
    * The observed engine reports that IT already truncated this payload, before
@@ -490,7 +684,7 @@ export interface ToolNode {
    * a payload is retrievable when it is not.
    *
    * OpenCode sets it in `state.metadata.truncated`; **14 tool parts in the
-   * anchor corpus carry it**. `docs/opencode-contract.md` �8.4 calls it "the
+   * anchor corpus carry it**. `docs/opencode-contract.md` §8.4 calls it "the
    * flag to trust". It was dropped silently through Phase 4 —
    * `fixtures/opencode-1.18.22/GOLDEN.md` DEVIATION 5 and
    * `docs/evidence/phase-4/COVERAGE.md` item 22 — recorded there as a known
@@ -622,6 +816,18 @@ export interface AgentNodeFieldPatch {
   contextNow?: TokenPair;
   /** Replaced whole, same rule as {@link AgentNodeFieldPatch.contextNow}. */
   burn?: TokenPair;
+  /**
+   * v0.7.0 Phase 1 — replaced whole, never appended to.
+   *
+   * Unlike most fields here this one genuinely changes mid-session: a series
+   * GROWS as an agent takes turns, so a running panel receives it as a diff.
+   * Whole replacement rather than an append op, because the property that
+   * matters is exactness and an append would additionally have to say where.
+   */
+  usageSeries?: readonly UsageTurn[] | null;
+  model?: string | null;
+  /** Replaced whole, same rule as {@link AgentNodeFieldPatch.usageSeries}. */
+  compactions?: readonly CompactionRecord[] | null;
   startedAt?: number;
   endedAt?: number | null;
 }
@@ -652,6 +858,21 @@ export interface ToolNodeFieldPatch {
    * gate, against a suite of 2,988 green tests.
    */
   stalledSinceMs?: number | null;
+  /**
+   * v0.7.0 Phase 1, and carried for the exactness reason above rather than
+   * because they move.
+   *
+   * These three are written when a call is first seen and never change after —
+   * a hash of an input that is already fixed, its position, and the file it
+   * named. So in practice the patch that carries them is the ADD of a new node,
+   * not an update. They are diffed anyway because `events.ts` states the patch
+   * contract as exact for any two states the model produces, and a field a
+   * patch cannot express breaks that property whether or not today's engines
+   * happen to exercise it.
+   */
+  filePath?: string | null;
+  inputHash?: string | null;
+  ordinal?: number | null;
 }
 
 /**

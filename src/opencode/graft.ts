@@ -47,11 +47,13 @@
 
 import type {
   AgentNode,
+  CompactionRecord,
   ParkedGraft,
   SessionState,
   SpawnEdge,
   ToolNode,
   TreeNode,
+  UsageTurn,
 } from '../model/events.js';
 import type {
   OcCounts,
@@ -304,12 +306,20 @@ export function agentLabel(session: OcSessionRow): string {
  * a field added to `OcToolRecord` must be decided about here, not silently
  * copied into the wire contract.
  */
-export function toToolNode(record: OcToolRecord): ToolNode {
+export function toToolNode(record: OcToolRecord, ordinal: number): ToolNode {
   return {
     id: record.id,
     toolName: record.toolName,
     status: record.status,
     inputPreview: record.inputPreview,
+    // v0.7.0 Phase 1. `ordinal` is a PARAMETER rather than a field of the
+    // record, and that is deliberate: `OcToolRecord.order` is a sort KEY
+    // (`[timeCreated, id]`), so a record does not know its own position until
+    // the caller has sorted the session's tools. Passing it in keeps the one
+    // place that establishes order the one place that numbers it.
+    inputHash: record.inputHash,
+    ordinal,
+    ...(record.filePath === undefined ? {} : { filePath: record.filePath }),
     ...(record.resultPreview === undefined ? {} : { resultPreview: record.resultPreview }),
     ...(record.durationMs === undefined ? {} : { durationMs: record.durationMs }),
     ...(record.truncated === undefined ? {} : { truncated: record.truncated }),
@@ -481,6 +491,9 @@ function joinTasks(
 interface BuildContext {
   readonly childrenOf: ReadonlyMap<string, readonly OcSessionRow[]>;
   readonly toolsBySession: ReadonlyMap<string, readonly OcToolRecord[]>;
+  /** v0.7.0 Phase 1 — `step-finish` usage and `compaction` parts, per session. */
+  readonly usageBySession: ReadonlyMap<string, readonly UsageTurn[]>;
+  readonly compactionsBySession: ReadonlyMap<string, readonly CompactionRecord[]>;
   readonly spawningTask: ReadonlyMap<string, OcToolRecord>;
   readonly parkedBySession: ReadonlyMap<string, readonly ParkedGraft[]>;
   readonly seenSessionRows: Set<string>;
@@ -527,14 +540,16 @@ function buildAgent(session: OcSessionRow, depth: number, ctx: BuildContext): Ag
 
   const nodeId = depth === 0 ? 'root' : session.id;
   const tools = [...(ctx.toolsBySession.get(session.id) ?? [])].sort(compareToolRecords);
+  const usage = ctx.usageBySession.get(session.id);
+  const compactions = ctx.compactionsBySession.get(session.id);
 
   for (const entry of ctx.parkedBySession.get(session.id) ?? []) ctx.parked.push(entry);
 
   const childSessions = ctx.childrenOf.get(session.id) ?? [];
   const children: TreeNode[] = [];
 
-  for (const tool of tools) {
-    children.push(toToolNode(tool));
+  for (const [ordinal, tool] of tools.entries()) {
+    children.push(toToolNode(tool, ordinal));
 
     // A subagent `AgentNode` sits BESIDE the tool call that spawned it, never
     // inside it: `ToolNode` has no `children` field and that stays true
@@ -671,6 +686,26 @@ function buildAgent(session: OcSessionRow, depth: number, ctx: BuildContext): Ag
     ...(status === 'running'
       ? {}
       : { endedAt: session.timeArchived ?? session.timeUpdated }),
+    /*
+     * v0.7.0 Phase 1, DoD 1.4/1.4b.
+     *
+     * `usageSeries` finally reads the `step-finish` rows the comment above
+     * calls "the reader this file still does not have". It does NOT close the
+     * `contextNow` item beside it: a series is a list of per-step DELTAS and a
+     * context level is the last step's own figure, so surfacing that is a
+     * separate decision about which row is authoritative, and this phase does
+     * not take it. The key stays absent.
+     *
+     * `model` is verbatim from the session row. Each is omitted when the engine
+     * states nothing, never emitted empty.
+     */
+    ...(usage === undefined || usage.length === 0
+      ? {}
+      : { usageSeries: usage.map((t) => ({ ...t })) }),
+    ...(session.model === null || session.model === '' ? {} : { model: session.model }),
+    ...(compactions === undefined || compactions.length === 0
+      ? {}
+      : { compactions: compactions.map((c) => ({ ...c })) }),
   };
 }
 
@@ -762,6 +797,8 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
     const rootNode = buildAgent(root, 0, {
       childrenOf,
       toolsBySession: parse.toolsBySession,
+      usageBySession: parse.usageBySession,
+      compactionsBySession: parse.compactionsBySession,
       spawningTask: join.spawningTask,
       parkedBySession: join.parkedBySession,
       seenSessionRows,
@@ -839,6 +876,12 @@ export function graftCorpus(input: OcGraftInput): OcEngineResult {
     taskPartsJoined: join.taskPartsJoined,
     taskPartsParked: join.taskPartsParked,
     previewsTruncated: parse.counts.previewsTruncated,
+    // v0.7.0 Phase 1. Appended AFTER the existing counters rather than placed
+    // beside the other part counters, so the golden's key order changes by
+    // addition alone and a reviewer reading the diff sees two new lines instead
+    // of a reshuffle.
+    stepFinishParts: parse.counts.stepFinishParts,
+    compactionParts: parse.counts.compactionParts,
   };
 
   return {

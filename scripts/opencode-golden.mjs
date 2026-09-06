@@ -273,6 +273,71 @@ export function toolStatus(status) {
  * `callID`), which is why `ToolNode.id` - documented in events.ts as "the graft
  * key" - is the `callID` and not the `prt_*` row id.
  */
+/**
+ * SHA-256 over this file's OWN canonical JSON — v0.7.0 Phase 1, DoD 1.2.
+ *
+ * Deliberately built on {@link canonicalJson} above rather than importing
+ * `src/stats/canonical.ts`. Same reason the canonicaliser was duplicated in the
+ * first place: this script is the independent reader the goldens' value rests
+ * on, and a reader that imports the implementation under test cannot contradict
+ * it. The two are byte-identical by design and the goldens are what prove it.
+ */
+function goldenInputHash(value) {
+  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
+}
+
+/**
+ * The file-argument keys, read from the PHASE 0 CENSUS — DoD 1.3.
+ *
+ * Read rather than written down, because DoD 0.3 says "this table, not memory".
+ * The census is tracked only in the private `lab/` repository and reaches this
+ * checkout through a junction; this script is a hand-run reference generator
+ * that only ever executes on a developer machine, so reading it here is safe in
+ * a way that reading it from a TEST would not be. It REFUSES rather than
+ * falling back to a hard-coded map: a silent fallback would let the golden and
+ * the engine disagree about which tools touch a file, which is the one thing
+ * this file exists to detect.
+ */
+const GOLDEN_FILE_KEYS = readCensusFileKeys();
+
+function readCensusFileKeys() {
+  const census = 'docs/evidence/phase-0-stats/TOOLCLASS.md';
+  let text;
+  try {
+    text = readFileSync(census, 'utf8');
+  } catch {
+    throw new Error(
+      `opencode-golden: cannot read ${census}. It lives in the private lab repository and ` +
+        'reaches this checkout through a junction. Run this on a developer machine with lab/ present.',
+    );
+  }
+  const keys = new Map();
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith('| opencode |')) continue;
+    const cells = line.split('|').slice(1, -1).map((c) => c.trim());
+    if (cells.length < 6) continue;
+    const tool = /^`([^`]+)`/.exec(cells[1]);
+    const key = /^`([^`]+)`/.exec(cells[5]);
+    if (tool !== null && key !== null) keys.set(tool[1], key[1]);
+  }
+  if (keys.size === 0) throw new Error(`opencode-golden: parsed no file keys from ${census}`);
+  return keys;
+}
+
+/** A finite positive number, else 0. */
+function goldenCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/** One named key off the structured input. No regex over any value. */
+function goldenFilePath(tool, input) {
+  const key = GOLDEN_FILE_KEYS.get(tool);
+  if (key === undefined) return undefined;
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return undefined;
+  const value = input[key];
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
 export function toToolNode(part, data) {
   const state = data.state ?? {};
   const status = toolStatus(state.status);
@@ -334,6 +399,12 @@ export function toToolNode(part, data) {
     toolName: data.tool,
     status,
     inputPreview: inputCut.text,
+    // v0.7.0 Phase 1. Derived here rather than imported, exactly like
+    // `canonicalJson` above: this file's whole value is that it is a SECOND
+    // reader, and one that imports the answer it is checking cannot disagree.
+    // The file-argument keys come from the Phase 0 census, not from memory.
+    inputHash: goldenInputHash(stripDroppedFields(state.input ?? null)),
+    filePath: goldenFilePath(data.tool, stripDroppedFields(state.input ?? null)),
     resultPreview: outputCut === undefined ? undefined : outputCut.text,
     durationMs,
     truncated,
@@ -483,9 +554,14 @@ export function buildCorpusGolden({ corpusName, dataVersion, corpus }) {
     taskPartsJoined: 0,
     taskPartsParked: 0,
     previewsTruncated: 0,
+    // v0.7.0 Phase 1, appended so the existing key order is untouched.
+    stepFinishParts: 0,
+    compactionParts: 0,
   };
 
   const toolsBySession = new Map();
+  const usageBySession = new Map();
+  const compactionsBySession = new Map();
   const taskParts = [];
 
   for (const part of parts) {
@@ -510,6 +586,38 @@ export function buildCorpusGolden({ corpusName, dataVersion, corpus }) {
     // IGNORED, not refused - the CC unknown-field rule, OC2. The `compaction`
     // part with `tail_start_id` (contract amendment §E) lands here: its
     // presence must not change the tree and must not refuse the session.
+    // v0.7.0 Phase 1, DoD 1.4/1.4b. Two of the five types the comment above
+    // lists as having no counterpart now have one. The comment stands for the
+    // other three.
+    if (data.type === 'step-finish') {
+      if (data.tokens !== null && typeof data.tokens === 'object') {
+        if (!usageBySession.has(part.sessionId)) usageBySession.set(part.sessionId, []);
+        const series = usageBySession.get(part.sessionId);
+        const cache = data.tokens.cache ?? {};
+        series.push({
+          ordinal: series.length,
+          input: goldenCount(data.tokens.input),
+          cacheCreation: goldenCount(cache.write),
+          cacheRead: goldenCount(cache.read),
+          output: goldenCount(data.tokens.output),
+        });
+        counts.stepFinishParts++;
+        continue;
+      }
+      counts.partsIgnoredNoNode++;
+      continue;
+    }
+    if (data.type === 'compaction') {
+      // OpenCode states that a compaction happened and nothing about what it
+      // cost, so `trigger` is `engine` and both token halves stay absent.
+      if (!compactionsBySession.has(part.sessionId)) compactionsBySession.set(part.sessionId, []);
+      compactionsBySession.get(part.sessionId).push({
+        ordinal: (toolsBySession.get(part.sessionId) ?? []).length,
+        trigger: 'engine',
+      });
+      counts.compactionParts++;
+      continue;
+    }
     if (data.type !== 'tool') {
       counts.partsIgnoredNoNode++;
       continue;
@@ -604,6 +712,8 @@ export function buildCorpusGolden({ corpusName, dataVersion, corpus }) {
         root,
         childrenOf,
         toolsBySession,
+        usageBySession,
+        compactionsBySession,
         spawningTask,
         parkedBySession,
         projects,
@@ -649,6 +759,8 @@ function buildSessionState(ctx) {
     root,
     childrenOf,
     toolsBySession,
+    usageBySession,
+    compactionsBySession,
     spawningTask,
     parkedBySession,
     projects,
@@ -712,6 +824,12 @@ function buildSessionState(ctx) {
     for (const entry of parkedBySession.get(session.id) ?? []) parked.push(entry);
 
     const children = [];
+    // v0.7.0 Phase 1. The ordinal is stamped HERE, after the sort, because that
+    // is where position within the agent first exists — `_order` is a sort key,
+    // not an index. Same placement as the engine's.
+    tools.forEach((tool, ordinal) => {
+      tool._ordinal = ordinal;
+    });
     for (const tool of tools) {
       children.push(tool);
       // A subagent AgentNode sits BESIDE the tool call that spawned it, never
@@ -793,6 +911,16 @@ function buildSessionState(ctx) {
        */
       endedAt:
         status === 'running' ? undefined : (session.timeArchived ?? session.timeUpdated),
+      // v0.7.0 Phase 1, DoD 1.4/1.4b. Each omitted when the engine states
+      // nothing, never emitted empty — absent means "no series exists", an
+      // empty array would mean "measured, and there were none".
+      usageSeries: (usageBySession.get(session.id) ?? []).length === 0
+        ? undefined
+        : usageBySession.get(session.id),
+      model: session.model === null || session.model === '' ? undefined : session.model,
+      compactions: (compactionsBySession.get(session.id) ?? []).length === 0
+        ? undefined
+        : compactionsBySession.get(session.id),
     };
   };
 
@@ -875,6 +1003,13 @@ function serializeAgent(node, anchor, counts) {
     spawnDepth: node.spawnDepth,
     contextNow: node.contextNow ?? null,
     burn: node.burn ?? null,
+    // v0.7.0 Phase 1. Numbers and an engine-stated model name are
+    // machine-independent, so they go in verbatim.
+    usageSeries: node.usageSeries ?? null,
+    model: node.model ?? null,
+    // NO `agentName` KEY: DoD 1.9e was closed UNAVAILABLE on 2026-09-06 and the
+    // field is gone from `AgentNode`. See `src/model/events.ts`.
+    compactions: node.compactions ?? null,
     startedAtOffsetMs: node.startedAt - anchor,
     endedAtOffsetMs: node.endedAt === undefined ? null : node.endedAt - anchor,
     children: node.children.map((child) =>
@@ -903,6 +1038,13 @@ function serializeTool(node, counts) {
     // `?? null` and not `=== undefined`: a claim of `false` must survive, and
     // `??` fires only on null/undefined, so it does.
     truncated: node.truncated ?? null,
+    // v0.7.0 Phase 1. `filePath` is FINGERPRINTED, matching the engine's
+    // serialiser: it is a real absolute path out of a captured tool input, and
+    // a committed golden may not carry the capturing machine's home directory.
+    // `inputHash` is a one-way digest of the same bytes and is safe verbatim.
+    filePath: previewFingerprint(node.filePath),
+    inputHash: node.inputHash ?? null,
+    ordinal: node._ordinal ?? null,
   };
 }
 

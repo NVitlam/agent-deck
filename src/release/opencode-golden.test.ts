@@ -223,6 +223,9 @@ interface GoldenCounts {
   taskPartsJoined: number;
   taskPartsParked: number;
   previewsTruncated: number;
+  /** v0.7.0 Phase 1 — two part types that used to fall into `partsIgnoredNoNode`. */
+  stepFinishParts: number;
+  compactionParts: number;
 }
 
 const COUNT_KEYS: readonly (keyof GoldenCounts)[] = [
@@ -238,6 +241,8 @@ const COUNT_KEYS: readonly (keyof GoldenCounts)[] = [
   'taskPartsJoined',
   'taskPartsParked',
   'previewsTruncated',
+  'stepFinishParts',
+  'compactionParts',
 ];
 
 interface GoldenFile {
@@ -954,7 +959,12 @@ describe.each(CORPUS_NAMES)('%s', (name) => {
         l.golden.counts.reasoningPartsDropped +
           l.golden.counts.partsIgnoredNoNode +
           l.golden.counts.toolParts +
-          l.golden.counts.partsMalformed,
+          l.golden.counts.partsMalformed +
+          // v0.7.0 Phase 1. This equation is the reason the change was safe to
+          // make: the two new buckets came OUT of `partsIgnoredNoNode`, and
+          // leaving them out here turned it red in both corpora immediately.
+          l.golden.counts.stepFinishParts +
+          l.golden.counts.compactionParts,
       ).toBe(l.golden.counts.partRows);
     });
 

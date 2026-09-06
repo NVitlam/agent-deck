@@ -67,6 +67,22 @@ const CORPORA = [
    * instead. The README caveat (F3) is the user-facing half.
    */
   { version: '2.1.251', slugDir: fixture('cc-2.1.251', 'projects', SLUG), sessions: 2 },
+  /*
+   * v0.7.0 Phase 1, DoD 1.6b. ALSO A WITNESS, and the anchor still does not
+   * move — `PINNED_CC_VERSION` is `2.1.246` and the patch component is not
+   * compared at all, so no corpus here is a lever on what is accepted.
+   *
+   * It was OUTSIDE this list until now, and that was a real hole rather than an
+   * omission of tidiness: every G4 and privacy assertion in this file iterates
+   * `CORPORA`, so the newest and largest CC capture — the one carrying the
+   * compaction entries and the `2.1.258` -> `2.1.260` upgrade INSIDE a single
+   * file — was covered by none of them. Found by the Phase 0 verifier, which
+   * called the G4 coverage vacuous on that harvest.
+   *
+   * Two sessions. `75ef0bbf` carries the two compactions (one `auto`, one
+   * `manual`); `99f96635` is the stall harvest from Phase 0c.
+   */
+  { version: '2.1.260', slugDir: fixture('cc-2.1.260', 'projects', SLUG), sessions: 2 },
 ] as const;
 
 const SESSION_246 = '07e6c820-b285-4ea8-8127-98ea762291d9';
@@ -129,13 +145,30 @@ describe('every captured corpus parses through the production path', () => {
             `${session.result.mismatch.code} - ${session.result.mismatch.reason}`,
         );
       }
-      expect(session.result.value.versions, corpus.version).toEqual([corpus.version]);
+      /*
+       * v0.7.0 Phase 1, DoD 1.6b. `versions` is the set of version strings the
+       * SESSION states, and until `cc-2.1.260` every captured session stated
+       * exactly one.
+       *
+       * That corpus spans a Claude Code upgrade INSIDE a single file
+       * (`2.1.258` -> `2.1.260`), which is the case the version window has to
+       * tolerate and which no other fixture reaches. It is accepted because
+       * every version present stays in range; a session that left the range
+       * mid-file is refused as `versionChangedMidFile`, and
+       * `fingerprint.test.ts` owns that half.
+       *
+       * So the assertion is that the corpus's OWN version is among the stated
+       * ones, plus a `versions`-is-non-empty control — not that there is
+       * exactly one.
+       */
+      expect(session.result.value.versions.length, corpus.version).toBeGreaterThan(0);
+      expect(session.result.value.versions, corpus.version).toContain(corpus.version);
       expect(session.result.diagnostics.malformedLines, corpus.version).toBe(0);
       expect(session.result.diagnostics.parsedLines, corpus.version).toBeGreaterThan(0);
     }
   });
 
-  it('spans five CC releases, each of which the previous posture refused at some point', () => {
+  it('spans six CC releases, each of which the previous posture refused at some point', () => {
     // Vacuity control on the list above: a corpus set that all sat inside the
     // OLD patch box would prove nothing about the change. 2.1.241 and 2.1.246
     // were both hard refusals until this phase, and 2.1.251 is five patches
@@ -145,13 +178,14 @@ describe('every captured corpus parses through the production path', () => {
     // The count is pinned BESIDE the set (rule 19's shape, applied to a corpus
     // list): a `CORPORA` accidentally filtered to nothing satisfies both
     // assertions above and neither of these.
-    expect(CORPORA).toHaveLength(5);
+    expect(CORPORA).toHaveLength(6);
     expect(CORPORA.map((c) => c.version)).toEqual([
       '2.1.234',
       '2.1.237',
       '2.1.241',
       '2.1.246',
       '2.1.251',
+      '2.1.260',
     ]);
   });
 
@@ -399,10 +433,20 @@ describe('a session on a local local-model model is read like any other', () => 
     expect(batch.diagnostics.malformedLines).toBe(0);
     expect(batch.value.rejections.filter((r) => r.rejection === 'unknownType')).toHaveLength(0);
 
+    /*
+     * 10 and 111, not 11 and 110, as of v0.7.0 Phase 1.
+     *
+     * ONE `system` line of this corpus moved from ignored to parsed: the
+     * `manual` compaction entry. A compaction is now MODELLED
+     * (`CompactionRecord`, F12), so the entry that carries `compactMetadata` is
+     * recognised rather than ignored — see `isCompactionEntry` in `parse.ts`.
+     * `system` in general is still ignored, which is why exactly one line moved
+     * and the other stayed.
+     */
     const ignored = batch.value.rejections.filter((r) => r.rejection === 'ignoredType');
-    expect(ignored).toHaveLength(11);
-    expect(batch.diagnostics.ignoredLines).toBe(11);
-    expect(batch.diagnostics.parsedLines).toBe(110);
+    expect(ignored).toHaveLength(10);
+    expect(batch.diagnostics.ignoredLines).toBe(10);
+    expect(batch.diagnostics.parsedLines).toBe(111);
     // All THREE buckets sum to the input. A fourth bucket that forgot to be
     // counted would fail here rather than quietly losing lines.
     expect(
@@ -416,7 +460,9 @@ describe('a session on a local local-model model is read like any other', () => 
       const type = r.reason.replace('ignored type: ', '');
       byType.set(type, (byType.get(type) ?? 0) + 1);
     }
-    expect(Object.fromEntries(byType)).toEqual({ 'atis-latch': 9, system: 2 });
+    // `system: 1`, not 2: this corpus's other `system` line IS the compaction,
+    // and it is parsed now. The remaining one carries no `compactMetadata`.
+    expect(Object.fromEntries(byType)).toEqual({ 'atis-latch': 9, system: 1 });
     for (const type of byType.keys()) expect(KNOWN_ENTRY_TYPES.has(type)).toBe(false);
     for (const type of byType.keys()) expect(IGNORED_ENTRY_TYPES.has(type)).toBe(true);
     // The fingerprint tolerates the same two: an unrecognised record kind is

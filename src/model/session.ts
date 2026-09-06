@@ -58,6 +58,7 @@
 import type {
   AgentNode,
   AgentNodeFieldPatch,
+  CompactionRecord,
   NormalizedHookEvent,
   ParkedGraft,
   SchemaMismatch,
@@ -70,6 +71,7 @@ import type {
   ToolNodeFieldPatch,
   TreeNode,
   TreeOp,
+  UsageTurn,
 } from './events.js';
 import { isAgentNode } from './events.js';
 import type { HookEventHandler } from '../hooks/listener.js';
@@ -249,6 +251,24 @@ function agentFieldPatch(prev: AgentNode, next: AgentNode): AgentNodeFieldPatch 
     fields.burn = { ...next.burn };
     changed = true;
   }
+  // v0.7.0 Phase 1. `usageSeries` and `compactions` really do grow mid-session,
+  // so these are the patches a running panel depends on rather than a
+  // formality. Compared by VALUE, not by reference: the grafter rebuilds these
+  // arrays on every scan, so a reference test would report a change on every
+  // tick and put an identical array on the wire forever.
+  if (!sameSeries(prev.usageSeries, next.usageSeries)) {
+    fields.usageSeries = next.usageSeries === undefined ? null : next.usageSeries.map((t) => ({ ...t }));
+    changed = true;
+  }
+  if (prev.model !== next.model) {
+    fields.model = next.model === undefined ? null : next.model;
+    changed = true;
+  }
+  if (!sameCompactions(prev.compactions, next.compactions)) {
+    fields.compactions =
+      next.compactions === undefined ? null : next.compactions.map((c) => ({ ...c }));
+    changed = true;
+  }
   if (prev.startedAt !== next.startedAt) {
     fields.startedAt = next.startedAt;
     changed = true;
@@ -258,6 +278,46 @@ function agentFieldPatch(prev: AgentNode, next: AgentNode): AgentNodeFieldPatch 
     changed = true;
   }
   return changed ? fields : undefined;
+}
+
+/** Value equality for a usage series; absent and empty are different states. */
+function sameSeries(
+  a: readonly UsageTurn[] | undefined,
+  b: readonly UsageTurn[] | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.length !== b.length) return false;
+  return a.every((t, i) => {
+    const o = b[i];
+    return (
+      o !== undefined &&
+      t.ordinal === o.ordinal &&
+      t.input === o.input &&
+      t.cacheCreation === o.cacheCreation &&
+      t.cacheRead === o.cacheRead &&
+      t.output === o.output
+    );
+  });
+}
+
+/** Value equality for compaction records. */
+function sameCompactions(
+  a: readonly CompactionRecord[] | undefined,
+  b: readonly CompactionRecord[] | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.length !== b.length) return false;
+  return a.every((c, i) => {
+    const o = b[i];
+    return (
+      o !== undefined &&
+      c.ordinal === o.ordinal &&
+      c.trigger === o.trigger &&
+      c.preTokens === o.preTokens &&
+      c.postTokens === o.postTokens &&
+      c.durationMs === o.durationMs
+    );
+  });
 }
 
 function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | undefined {
@@ -301,6 +361,22 @@ function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | un
   // beside it — and broke the exactness property in the same breath.
   if (prev.stalledSinceMs !== next.stalledSinceMs) {
     fields.stalledSinceMs = next.stalledSinceMs === undefined ? null : next.stalledSinceMs;
+    changed = true;
+  }
+  // v0.7.0 Phase 1. Same rule again: these are fixed at first sighting and are
+  // expected to travel on the ADD of a new node rather than on an update, but
+  // the exactness property is stated for any two states the model produces, not
+  // for the ones today's engines happen to make.
+  if (prev.filePath !== next.filePath) {
+    fields.filePath = next.filePath === undefined ? null : next.filePath;
+    changed = true;
+  }
+  if (prev.inputHash !== next.inputHash) {
+    fields.inputHash = next.inputHash === undefined ? null : next.inputHash;
+    changed = true;
+  }
+  if (prev.ordinal !== next.ordinal) {
+    fields.ordinal = next.ordinal === undefined ? null : next.ordinal;
     changed = true;
   }
   return changed ? fields : undefined;
@@ -541,6 +617,13 @@ function serializeSessionNode(
       inputPreview: previewFingerprint(node.inputPreview),
       resultPreview: previewFingerprint(node.resultPreview),
       durationMs: node.durationMs ?? null,
+      // v0.7.0 Phase 1 — same treatment, same reasons, as `graft.ts`'s
+      // serializer: `filePath` is a captured absolute path and is fingerprinted
+      // so rule 1 (no filesystem paths) survives; `inputHash` is a one-way
+      // digest and `ordinal` an integer, so both are safe verbatim.
+      filePath: previewFingerprint(node.filePath),
+      inputHash: node.inputHash ?? null,
+      ordinal: node.ordinal ?? null,
     };
   }
   return {
@@ -552,6 +635,11 @@ function serializeSessionNode(
     spawnDepth: node.spawnDepth,
     contextNow: node.contextNow === undefined ? null : { ...node.contextNow },
     burn: node.burn === undefined ? null : { ...node.burn },
+    usageSeries: node.usageSeries === undefined ? null : node.usageSeries.map((t) => ({ ...t })),
+    model: node.model ?? null,
+    // NO `agentName` KEY: DoD 1.9e was closed UNAVAILABLE on 2026-09-06 and the
+    // field is gone from `AgentNode`. See the note there.
+    compactions: node.compactions === undefined ? null : node.compactions.map((c) => ({ ...c })),
     startedAtOffsetMs:
       anchor === undefined || node.startedAt === 0 ? null : node.startedAt - anchor,
     endedAtOffsetMs:

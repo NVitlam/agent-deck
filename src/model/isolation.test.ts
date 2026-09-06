@@ -63,6 +63,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   AgentDeckDataPath,
   DEFAULT_LIVENESS_THRESHOLD_MS,
+  DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
   DEFAULT_PREVIEW_BYTES,
 } from '../extension.js';
 import type { DataPathEmission, DataPathOptions } from '../extension.js';
@@ -417,6 +418,7 @@ function buildDataPath(options: HarnessOptions, port: number): AgentDeckDataPath
       port,
       livenessThresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
       previewBytes: DEFAULT_PREVIEW_BYTES,
+      'codex.maxTranscriptBytes': DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
     },
     projectsRoot: options.cc.projectsRoot,
     now: () => CC_CLOCK,
@@ -913,6 +915,7 @@ describe('the two engines share no state that could carry a failure across', () 
             port,
             livenessThresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
             previewBytes: DEFAULT_PREVIEW_BYTES,
+            'codex.maxTranscriptBytes': DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
           },
           projectsRoot: cc.projectsRoot,
           now: () => CC_CLOCK,

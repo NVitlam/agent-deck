@@ -160,6 +160,100 @@ async function completeLinesOf(file: string): Promise<string[]> {
 // Slug + root resolution
 // ---------------------------------------------------------------------------
 
+/*
+ * `FileTail.read({ maxBytes })` — the bounded read added by hotfix 0.6.1.
+ *
+ * Exercised through the Codex wrapper elsewhere; exercised HERE because this
+ * is the class that owns it, and a public option whose only test lives in
+ * another engine's suite is a public option nobody is holding. A
+ * `phase-verifier` pointed that out and it is right.
+ *
+ * The Claude Code callers pass nothing and are unaffected — the first case
+ * below is the control that says so.
+ */
+describe('FileTail.read — the maxBytes ceiling (hotfix 0.6.1)', () => {
+  const lines = (count: number): string =>
+    Array.from({ length: count }, (_v, i) => `{"n":${String(i)}}`).join('\n') + '\n';
+
+  it('absent maxBytes reads everything appended, exactly as it always did', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'agent-deck-maxbytes-'));
+    const path = join(dir, 'a.jsonl');
+    const text = lines(200);
+    await writeFile(path, text, 'utf8');
+    const tail = new FileTail(path, { sessionId: 's', agentId: null });
+
+    const result = await tail.read();
+    expect(result.bytesRead).toBe(Buffer.byteLength(text, 'utf8'));
+    expect(result.lines).toHaveLength(200);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('caps one call at maxBytes and resumes from the offset on the next', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'agent-deck-maxbytes-'));
+    const path = join(dir, 'b.jsonl');
+    const text = lines(200);
+    const total = Buffer.byteLength(text, 'utf8');
+    await writeFile(path, text, 'utf8');
+    const tail = new FileTail(path, { sessionId: 's', agentId: null });
+
+    const first = await tail.read({ maxBytes: 64 });
+    expect(first.bytesRead).toBe(64);
+    expect(tail.offset).toBe(64);
+
+    let consumed = first.bytesRead;
+    let emitted = first.lines.length;
+    for (let i = 0; i < 100 && tail.offset < total; i += 1) {
+      const next = await tail.read({ maxBytes: 64 });
+      expect(next.bytesRead, 'no read may exceed the ceiling').toBeLessThanOrEqual(64);
+      consumed += next.bytesRead;
+      emitted += next.lines.length;
+    }
+
+    // NOTHING IS LOST AND NOTHING IS DUPLICATED. A ceiling that dropped the
+    // bytes it could not fit would be a much worse bug than an unbounded read.
+    expect(consumed).toBe(total);
+    expect(emitted).toBe(200);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('a line straddling the cut is held back and completed, not emitted broken', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'agent-deck-maxbytes-'));
+    const path = join(dir, 'c.jsonl');
+    const line = `{"v":"${'x'.repeat(500)}"}`;
+    await writeFile(path, `${line}\n`, 'utf8');
+    const tail = new FileTail(path, { sessionId: 's', agentId: null });
+
+    const first = await tail.read({ maxBytes: 100 });
+    // Consumed, but not emitted: the newline has not arrived yet.
+    expect(first.lines).toHaveLength(0);
+    expect(tail.pendingBytes).toBe(100);
+
+    let out: string[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      const next = await tail.read({ maxBytes: 100 });
+      out = out.concat(next.lines.map((l) => l.text));
+      if (out.length > 0) break;
+    }
+    expect(out).toStrictEqual([line]);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('maxBytes 0 reads nothing and advances nothing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'agent-deck-maxbytes-'));
+    const path = join(dir, 'd.jsonl');
+    await writeFile(path, lines(10), 'utf8');
+    const tail = new FileTail(path, { sessionId: 's', agentId: null });
+
+    // The `length === 0` early return exists for this, and its own comment
+    // says so. Nothing reached it until this test did.
+    const result = await tail.read({ maxBytes: 0 });
+    expect(result.bytesRead).toBe(0);
+    expect(result.lines).toHaveLength(0);
+    expect(tail.offset).toBe(0);
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
 describe('slugifyWorkspace', () => {
   it('collapses colon and both separators to dashes', () => {
     expect(slugifyWorkspace('c:\\Users\\X\\Documents\\agent-deck')).toBe(

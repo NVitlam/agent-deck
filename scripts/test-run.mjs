@@ -41,6 +41,22 @@ const LEDGER = path.join(OUT_DIR, 'LEDGER.md');
 /** The reporter's own totals line, whatever reporter is in use. */
 const SUMMARY_RE = /Test Files\s+\d+|Tests\s+\d+\s+passed|no tests/i;
 
+/**
+ * Strips the reporter's ANSI colour so a stored line is greppable.
+ *
+ * BUILT FROM A CHAR CODE, not written as a literal ESC and not as `\u001b`
+ * inside a regex literal. Both of those were tried here, in that order:
+ *
+ *   - the raw 0x1B byte makes git treat this file as binary, so there is never
+ *     a reviewable diff again — the control-byte-in-source defect this
+ *     repository records four times over;
+ *   - the `\u001b` ESCAPE fixes the bytes and still fails eslint's
+ *     `no-control-regex`, which is about the pattern rather than the encoding.
+ *
+ * `String.fromCharCode(27)` has neither problem and says what it means.
+ */
+const ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
 function arg(name, fallback) {
   const at = argv.indexOf(name);
   return at === -1 ? fallback : argv[at + 1];
@@ -91,8 +107,7 @@ function runOnce(index, headSha) {
 
     child.on('close', (code, signal) => {
       const elapsedMs = Number((hrtime.bigint() - started) / 1_000_000n);
-      // Strip ANSI so a stored line is greppable; the reporter colours its own.
-      const plain = stdout.replace(/\[[0-9;]*m/g, '');
+      const plain = stdout.replace(ANSI_RE, '');
       const lines = plain.split(/\r?\n/).filter((l) => l.trim() !== '');
       const summaryLine = [...lines].reverse().find((l) => SUMMARY_RE.test(l)) ?? null;
 

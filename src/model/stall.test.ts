@@ -58,6 +58,10 @@ import { describe, expect, it } from 'vitest';
 import type { AgentNode, ToolNode, TreeNode } from './events.js';
 import { isAgentNode } from './events.js';
 import { TreeGrafter, walk } from './graft.js';
+import { stallOf, stalledForMs, stalledCount } from './stall.js';
+import { LivenessEngine } from './liveness.js';
+import { SessionModel } from './session.js';
+import { normalizeHookEvent } from '../hooks/listener.js';
 import { parseLines, parseSubagentMeta } from '../parser/parse.js';
 
 const CORPUS = fileURLToPath(
@@ -227,5 +231,310 @@ describe('the defect, reproduced on current code (DoD 0c.2 — RED)', () => {
     // The whole vocabulary the product can express today.
     expect([...statuses].sort()).toEqual(['done', 'error', 'running']);
     expect(statuses.has('stalled')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 0c.3 — the pure function, at its boundary
+// ---------------------------------------------------------------------------
+
+describe('stallOf — the pure derivation', () => {
+  const RUNNING = { status: 'running' } as const;
+
+  it('is NOT stalled at exactly the threshold, and IS one millisecond past it', () => {
+    // The comparison is strictly greater than, which keeps this boundary
+    // identical to the liveness engine's own `recent` test rather than off by
+    // one from it. Both arms, because only the pair pins the direction.
+    expect(stallOf(RUNNING, 1_000, THRESHOLD_MS, 1_000 + THRESHOLD_MS).stalled).toBe(false);
+    expect(stallOf(RUNNING, 1_000, THRESHOLD_MS, 1_000 + THRESHOLD_MS + 1).stalled).toBe(true);
+  });
+
+  it('reports the instant the threshold was crossed, not the instant asked', () => {
+    const a = stallOf(RUNNING, 1_000, THRESHOLD_MS, 1_000 + THRESHOLD_MS + 1);
+    const b = stallOf(RUNNING, 1_000, THRESHOLD_MS, 1_000 + THRESHOLD_MS + 9_999_999);
+    expect(a.stalledSinceMs).toBe(1_000 + THRESHOLD_MS);
+    // Two derivations of ONE underlying state agree, however far apart they
+    // are asked. If this used `now`, the elapsed time on screen would jump
+    // with the poll cadence.
+    expect(b.stalledSinceMs).toBe(a.stalledSinceMs);
+  });
+
+  it('only a running tool can stall', () => {
+    for (const status of ['done', 'error'] as const) {
+      expect(stallOf({ status }, 1_000, THRESHOLD_MS, 1e12).stalled).toBe(false);
+    }
+    expect(stallOf(RUNNING, 1_000, THRESHOLD_MS, 1e12).stalled).toBe(true);
+  });
+
+  it('every unusable input returns false, never a stall (G3, safe direction)', () => {
+    const far = 1_000 + THRESHOLD_MS + 1;
+    // Each case is paired against the same inputs made VALID, so a case that
+    // stopped exercising its own guard would show up as both arms agreeing.
+    expect(stallOf(RUNNING, null, THRESHOLD_MS, far).stalled).toBe(false);
+    expect(stallOf(RUNNING, undefined, THRESHOLD_MS, far).stalled).toBe(false);
+    expect(stallOf(RUNNING, Number.NaN, THRESHOLD_MS, far).stalled).toBe(false);
+    expect(stallOf(RUNNING, 1_000, Number.NaN, far).stalled).toBe(false);
+    expect(stallOf(RUNNING, 1_000, THRESHOLD_MS, Number.NaN).stalled).toBe(false);
+    expect(stallOf(RUNNING, 1_000, Number.POSITIVE_INFINITY, far).stalled).toBe(false);
+    expect(stallOf(RUNNING, 1_000, 0, far).stalled).toBe(false);
+    expect(stallOf(RUNNING, 1_000, -1, far).stalled).toBe(false);
+    // A clock behind the last activity is a clock problem, not a stall.
+    expect(stallOf(RUNNING, 1_000, THRESHOLD_MS, 999).stalled).toBe(false);
+    expect(stallOf(RUNNING, 1_000, THRESHOLD_MS, far).stalled).toBe(true);
+  });
+
+  it('stalledForMs is null unless stalled, and counts from the crossing', () => {
+    expect(stalledForMs({ stalled: false }, 1e12)).toBeNull();
+    const v = stallOf(RUNNING, 1_000, THRESHOLD_MS, 1_000 + THRESHOLD_MS + 1);
+    expect(stalledForMs(v, 1_000 + THRESHOLD_MS + 5_000)).toBe(5_000);
+  });
+});
+
+describe('the import guard (DoD 0c.3)', () => {
+  it('stall.ts imports from events.js and nothing else', async () => {
+    const src = await readFile(
+      fileURLToPath(new URL('./stall.ts', import.meta.url)),
+      'utf8',
+    );
+    const specifiers = [...src.matchAll(/^import[^;]*?from\s+'([^']+)'/gmu)].map(
+      (m) => m[1],
+    );
+    // Vacuity control: if the regex stopped matching, an empty list would
+    // satisfy "every specifier is events.js" forever.
+    expect(specifiers.length).toBeGreaterThan(0);
+    expect([...new Set(specifiers)]).toEqual(['./events.js']);
+    // A pure function that reaches for a clock or the filesystem is not pure.
+    //
+    // SCANNED WITH COMMENTS STRIPPED, and the first draft of this test is why:
+    // it matched `Date.now()` inside stall.ts's OWN PROSE — a comment
+    // explaining that an mtime need not agree with `Date.now()` — and reported
+    // a purity violation in a file that calls nothing. A guard that reads
+    // documentation as if it were code is this repository's recorded
+    // "the corpus contains the instructions that produced it" trap, one layer
+    // in. Anchor to code.
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//gu, '')
+      .replace(/^\s*\/\/.*$/gmu, '');
+    // Vacuity control: stripping must not have eaten the file.
+    expect(code).toMatch(/export function stallOf/u);
+    expect(code).not.toMatch(/Date\.now\(\)/u);
+    expect(code).not.toMatch(/require\(|readFileSync/u);
+    // No `node:` check here, and its absence is deliberate: a naive
+    // /node:/ matched the PARAMETER `node: TreeNode`. The specifier
+    // assertion above already forbids every builtin by enumeration, which is
+    // the exact property rather than a proxy for it.
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 0c.4 / 0c.5 — GREEN, through the production assembly path
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything below drives `SessionModel` — the real assembly point — rather
+ * than calling `applyStalls` on a hand-built tree.
+ *
+ * That is not fussiness. This repository's most expensive recorded defect
+ * class is a component test standing in for a wiring that does not exist: a
+ * prop honoured by a component that nothing ever passes, green across eighteen
+ * files while the feature was absent from the product. `stallOf` being correct
+ * says nothing about whether a stall ever reaches a `SessionState`. Only a
+ * test that lets production build the state can say that, and the mutation
+ * that proves these are not vacuous is deleting the `applyStallsToRoot` call
+ * in `stateOf` — which turns this block red and leaves every case above green.
+ */
+
+/** A clock the test moves by hand; the model reads it through the engine. */
+let NOW = 0;
+
+async function modelWithCorpus(): Promise<SessionModel> {
+  const liveness = new LivenessEngine({ now: () => NOW });
+  const model = new SessionModel({
+    workspacePath: 'C:\\Users\\dev\\projects\\agent-deck',
+    liveness,
+  });
+  model.registerSession({ sessionId: SESSION_ID, projectSlug: PROJECT_SLUG });
+
+  const mainPath = `${CORPUS}/${SESSION_ID}.jsonl`;
+  const mainText = await readFile(mainPath, 'utf8');
+  const main = parseLines(mainText.split('\n').filter((l) => l.length > 0));
+  if (!main.ok) throw new Error('main transcript did not parse');
+  model.ingestTranscript(SESSION_ID, PROJECT_SLUG, {
+    kind: 'main',
+    path: mainPath,
+    entries: main.value.entries,
+  });
+
+  for (const agentId of AGENT_IDS) {
+    const dir = `${CORPUS}/${SESSION_ID}/subagents`;
+    const jsonlPath = `${dir}/agent-${agentId}.jsonl`;
+    const metaPath = `${dir}/agent-${agentId}.meta.json`;
+    const text = await readFile(jsonlPath, 'utf8');
+    const parsed = parseLines(text.split('\n').filter((l) => l.length > 0));
+    if (!parsed.ok) throw new Error(`subagent ${agentId} did not parse`);
+    model.ingestTranscript(SESSION_ID, PROJECT_SLUG, {
+      kind: 'subagent',
+      path: jsonlPath,
+      agentId,
+      entries: parsed.value.entries,
+    });
+    const meta = parseSubagentMeta(await readFile(metaPath, 'utf8'), metaPath);
+    model.ingestSidecar(SESSION_ID, PROJECT_SLUG, {
+      agentId,
+      metaPath,
+      ...(meta.ok ? { meta: meta.value } : { metaFailure: 'unparsed' }),
+    });
+  }
+
+  // The session's last observed activity. This is the ONLY input that decides
+  // a stall, and it arrives the way production supplies it: a hook event,
+  // normalized by the listener's own function.
+  model.ingestHookEvent(
+    normalizeHookEvent(
+      {
+        session_id: SESSION_ID,
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+        tool_use_id: INNER_TOOL_ID,
+      },
+      { seq: 1, receivedAt: LAST_ACTIVITY_MS },
+    ),
+  );
+
+  return model;
+}
+
+function agentsOf(root: AgentNode): AgentNode[] {
+  const out: AgentNode[] = [];
+  walk(root, (node: TreeNode) => {
+    if (isAgentNode(node)) out.push(node);
+  });
+  return out;
+}
+
+function toolsAt(model: SessionModel, now: number): Map<string, ToolNode> {
+  NOW = now;
+  const state = model.sessionState(SESSION_ID);
+  if (state === undefined) throw new Error('no state for the harvested session');
+  return toolsOf(state.root);
+}
+
+describe('the fix, through SessionModel (DoD 0c.4 — GREEN)', () => {
+  it('promotes BOTH never-completing calls at the threshold, and neither before it', async () => {
+    const model = await modelWithCorpus();
+
+    // Vacuity control first: the state must actually carry the tree, or every
+    // assertion below is satisfied by an empty map.
+    expect(toolsAt(model, LAST_ACTIVITY_MS).size).toBeGreaterThan(100);
+
+    // At exactly the threshold — not stalled. The boundary holds end to end,
+    // not only inside the pure function.
+    const atEdge = toolsAt(model, LAST_ACTIVITY_MS + THRESHOLD_MS);
+    expect(atEdge.get(OUTER_TOOL_ID)?.status).toBe('running');
+    expect(atEdge.get(INNER_TOOL_ID)?.status).toBe('running');
+
+    // One millisecond past it — BOTH levels. That is the nesting, and it is
+    // not special-cased: `lastActivityAt` is a property of the SESSION, so the
+    // hung child and the parent spawn waiting on it promote in one pass.
+    const past = toolsAt(model, LAST_ACTIVITY_MS + THRESHOLD_MS + 1);
+    expect(past.get(INNER_TOOL_ID)?.status).toBe('stalled');
+    expect(past.get(OUTER_TOOL_ID)?.status).toBe('stalled');
+    expect(past.get(INNER_TOOL_ID)?.stalledSinceMs).toBe(LAST_ACTIVITY_MS + THRESHOLD_MS);
+    expect(past.get(OUTER_TOOL_ID)?.stalledSinceMs).toBe(LAST_ACTIVITY_MS + THRESHOLD_MS);
+  });
+
+  it('leaves every COMPLETED call alone, including the 47-minute one', async () => {
+    const model = await modelWithCorpus();
+    const tools = toolsAt(model, NUDGE_MS);
+
+    // The control that makes the whole design defensible: ordinal 160 ran
+    // 2,846.6 s — far LONGER than the stall — and RECEIVED A RESULT. A rule
+    // keyed on duration would flag it. This one must not.
+    //
+    // Its result is an `error`, not a success, and that is measured rather
+    // than assumed — the first draft of this test asserted `'done'` and the
+    // corpus refused it. The distinction does not weaken the control, it
+    // sharpens it: what matters is that the call reached an OUTCOME, and both
+    // outcome values must be immune to promotion. A tool that failed after 47
+    // minutes is finished, not silent.
+    expect(tools.get('toolu_01TXCoxHQY62PHyVKwFC7XJo')?.status).toBe('error');
+
+    // And nothing that already has an outcome is ever promoted.
+    let promotedWithOutcome = 0;
+    for (const t of tools.values()) {
+      if (t.status === 'stalled' && t.resultPreview !== undefined) promotedWithOutcome += 1;
+    }
+    expect(promotedWithOutcome).toBe(0);
+  });
+
+  it('stalls EXACTLY the two calls the corpus says never completed', async () => {
+    const model = await modelWithCorpus();
+    const stalled = [...toolsAt(model, NUDGE_MS).values()]
+      .filter((t) => t.status === 'stalled')
+      .map((t) => t.id)
+      .sort();
+    // An exact set, not a containment — rule 19's shape. A containment would
+    // pass just as happily if the derivation painted the entire tree amber.
+    expect(stalled).toEqual([OUTER_TOOL_ID, INNER_TOOL_ID].sort());
+  });
+
+  it('clears on activity: a later hook event returns both to `running` (DoD 0c.5)', async () => {
+    const model = await modelWithCorpus();
+    expect(toolsAt(model, NUDGE_MS).get(INNER_TOOL_ID)?.status).toBe('stalled');
+
+    // The resume. No reset path is called and none exists: the derivation
+    // reads `lastActivityAt`, so moving it IS the clearing.
+    model.ingestHookEvent(
+      normalizeHookEvent(
+        { session_id: SESSION_ID, hook_event_name: 'PostToolUse', tool_name: 'Bash' },
+        { seq: 2, receivedAt: NUDGE_MS },
+      ),
+    );
+
+    const after = toolsAt(model, NUDGE_MS + 1);
+    expect(after.get(INNER_TOOL_ID)?.status).toBe('running');
+    expect(after.get(OUTER_TOOL_ID)?.status).toBe('running');
+    expect(after.get(INNER_TOOL_ID)?.stalledSinceMs).toBeUndefined();
+
+    // And it stalls again once the NEW silence passes the threshold, so
+    // "cleared" is not quietly "disabled for the rest of the session".
+    expect(toolsAt(model, NUDGE_MS + THRESHOLD_MS + 1).get(INNER_TOOL_ID)?.status)
+      .toBe('stalled');
+  });
+
+  it('the agent badge counts stalled descendants', async () => {
+    const model = await modelWithCorpus();
+    NOW = NUDGE_MS;
+    const state = model.sessionState(SESSION_ID);
+    if (state === undefined) throw new Error('no state');
+
+    expect(stalledCount(state.root)).toBe(2);
+
+    const stalledAgent = agentsOf(state.root).find((a) => a.id === STALLED_AGENT_ID);
+    expect(stalledAgent).toBeDefined();
+    // The subagent holding the hung Bash carries exactly one of the two; the
+    // other belongs to the main thread, which is what the nesting means.
+    if (stalledAgent !== undefined) expect(stalledCount(stalledAgent)).toBe(1);
+  });
+
+  it('leaves the session liveness matrix untouched (G2, locked)', async () => {
+    const model = await modelWithCorpus();
+    NOW = NUDGE_MS;
+    // running x stale => idle. A stalled tool must NOT make the session
+    // `live`: that is precisely the phase's struck first draft, which would
+    // have forced `live` on the hung case and turned the one correct surface
+    // into a second wrong one.
+    expect(model.sessionState(SESSION_ID)?.liveness).toBe('idle');
+  });
+
+  it('allocates nothing when nothing is stalled: the root is the SAME object', async () => {
+    const model = await modelWithCorpus();
+    NOW = LAST_ACTIVITY_MS;
+    const a = model.sessionState(SESSION_ID);
+    NOW = LAST_ACTIVITY_MS + 1;
+    const b = model.sessionState(SESSION_ID);
+    // Structural sharing: with no stall the differ sees the identical object
+    // graph, so "a spawn adds, it never reflows" survives the assembly layer.
+    expect(a?.root).toBe(b?.root);
   });
 });

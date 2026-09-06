@@ -301,7 +301,16 @@ interface OcPartData {
   };
 }
 
-function toolStatus(status: string | undefined): ToolNode['status'] {
+/**
+ * Deliberately `OcToolRecord['status']` and NOT `ToolNode['status']`.
+ *
+ * `ToolNode.status` gained a fourth value, `'stalled'`, in v0.7.0 Phase 0c.
+ * That value is DERIVED at assembly time from the clock and is never written
+ * by any parser, so a record read out of OpenCode's store can never carry it.
+ * Annotating this reader with the narrow union is what keeps that true: if a
+ * future change tries to map a store status onto `'stalled'`, it stops here.
+ */
+function toolStatus(status: string | undefined): OcToolRecord['status'] {
   if (status === 'running') return 'running';
   if (status === 'completed') return 'done';
   if (status === 'error') return 'error';

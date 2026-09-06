@@ -449,7 +449,32 @@ export interface AgentNode {
 export interface ToolNode {
   id: string; // tool_use id — the graft key
   toolName: string; // 'Agent' nodes are graft points
-  status: 'running' | 'done' | 'error';
+  /**
+   * `'stalled'` is DERIVED, never parsed and never stored (v0.7.0 Phase 0c).
+   *
+   * The grafter only ever writes the other three — its rule is
+   * `resultPreview === undefined ? 'running' : 'done'`, which has no clock in
+   * it. `src/model/stall.ts` promotes `'running'` to `'stalled'` at assembly
+   * time when the SESSION has observed no activity for longer than
+   * `agentDeck.livenessThresholdMs`. It therefore clears by construction: any
+   * hook or transcript write moves `lastActivityAt` and the next derivation
+   * returns `'running'` again, with no reset path to forget.
+   *
+   * It is a statement about SILENCE, not about duration. The corpus that
+   * forced it holds an `Agent` call that ran 47 minutes and completed beside
+   * the reported stall that ran 18 and never did — the stall is the shorter of
+   * the two. See `docs/evidence/phase-0c/ROOTCAUSE.md` §5.
+   */
+  status: 'running' | 'done' | 'error' | 'stalled';
+  /**
+   * The instant the stall threshold was crossed — `lastActivityAt +
+   * thresholdMs`. Present iff `status === 'stalled'`.
+   *
+   * NOT the instant the question was asked, which would make the elapsed time
+   * the user sees jump with the poll cadence and would differ between two
+   * derivations of one underlying state.
+   */
+  stalledSinceMs?: number;
   inputPreview: string; // post-redaction, truncated
   resultPreview?: string; // post-redaction; sourced from JSONL or tool-results/
   durationMs?: number;

@@ -75,7 +75,7 @@
  * thing to every reader downstream.
  */
 
-import type { SessionState, SkippedFile, TokenPair } from '../model/events.js';
+import type { SessionState, SkippedFile, TokenPair, UsageTurn } from '../model/events.js';
 
 // A CLASS, so `import type` will not do. It is the one behavioural thing this
 // hand-off file names, and `CodexEngineOptions.tails` says why.
@@ -356,6 +356,17 @@ export interface CodexToolCall {
   /** Redacted and truncated already. Never raw. */
   readonly outputPreview?: string;
   readonly outputTruncated?: boolean;
+  /**
+   * v0.7.0 Phase 1, DoD 1.2 — SHA-256 over canonical JSON of this call's real
+   * arguments, taken at the parse boundary.
+   *
+   * REQUIRED, so a new construction site cannot forget it. It is the only thing
+   * that can tell two calls to one Codex tool apart: `ToolNode.inputPreview` on
+   * this engine is SYNTHESISED from the tool name (there is no input field to
+   * quote), so hashing the preview would collapse every `wait_agent` in a
+   * thread into one signature and report a loop that is not there.
+   */
+  readonly inputHash: string;
 }
 
 /**
@@ -502,6 +513,22 @@ export interface CodexThread {
   readonly contextNow?: TokenPair;
   /** C8: `total_token_usage` is the running total. */
   readonly burn?: TokenPair;
+  /**
+   * v0.7.0 Phase 1, DoD 1.4b — `turn_context.model`, verbatim.
+   *
+   * Read from the record rather than from any invocation flag: Phase 0 found a
+   * capture whose `--model` flag and transcript disagreed, and the binary can
+   * substitute a model silently.
+   */
+  readonly model?: string;
+  /**
+   * v0.7.0 Phase 1, DoD 1.4 — one entry per `token_count` record that states a
+   * usable `last_token_usage`. Absent when the thread states none.
+   *
+   * There is no `compactions` counterpart and that is measured: Phase 0
+   * records F12 as `UNAVAILABLE:codex`.
+   */
+  readonly usageSeries?: readonly UsageTurn[];
 
   readonly toolCalls: readonly CodexToolCall[];
   readonly spawns: readonly CodexSpawn[];

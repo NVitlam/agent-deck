@@ -32,7 +32,7 @@
  * in §6. There is no second data model and no second wire contract."
  */
 
-import type { SessionState } from '../model/events.js';
+import type { CompactionRecord, SessionState, UsageTurn } from '../model/events.js';
 
 // ---------------------------------------------------------------------------
 // (a) Raw rows — `db.ts` produces, everything downstream consumes
@@ -275,6 +275,17 @@ export interface OcToolRecord {
   readonly status: 'running' | 'done' | 'error';
   /** Canonical JSON of `state.input`, cut ONCE at the `redact.ts` ceiling. */
   readonly inputPreview: string;
+  /**
+   * v0.7.0 Phase 1, DoD 1.2 — SHA-256 over canonical JSON of the G4-stripped
+   * `state.input`, taken BEFORE the ceiling above cuts it.
+   */
+  readonly inputHash: string;
+  /**
+   * v0.7.0 Phase 1, DoD 1.3 — `filePath` for `read`/`write`/`edit`, from the
+   * generated census table. Absent on every other tool, including `grep` and
+   * `glob`, whose `path` is a scope to search rather than a file touched.
+   */
+  readonly filePath?: string;
   /** `state.output`, else `state.error`, else absent. Cut ONCE. */
   readonly resultPreview?: string;
   readonly durationMs?: number;
@@ -349,12 +360,30 @@ export interface OcParseCounts {
    * difference between the engine and its reproduction target.
    */
   previewsTruncated: number;
+  /**
+   * `step-finish` parts turned into a {@link UsageTurn} — v0.7.0 Phase 1.
+   *
+   * These rows were always read off disk and always discarded into
+   * `partsIgnoredNoNode`. The counter is separate so "OpenCode reported no
+   * per-step usage" and "we ignored it" stay distinguishable.
+   */
+  stepFinishParts: number;
+  /** `compaction` parts recorded — v0.7.0 Phase 1, F12. */
+  compactionParts: number;
 }
 
 /** Everything `parse.ts` hands `graft.ts`. */
 export interface OcParseResult {
   /** Session id -> its tool records, unsorted. `graft.ts` orders them. */
   readonly toolsBySession: ReadonlyMap<string, readonly OcToolRecord[]>;
+  /**
+   * Session id -> its per-turn usage, in `step-finish` row order — DoD 1.4.
+   * A session with no `step-finish` part is ABSENT from this map, which is the
+   * "engine states no series" case rather than an empty series.
+   */
+  readonly usageBySession: ReadonlyMap<string, readonly UsageTurn[]>;
+  /** Session id -> its compactions, in row order — DoD 1.4b, F12. */
+  readonly compactionsBySession: ReadonlyMap<string, readonly CompactionRecord[]>;
   readonly counts: OcParseCounts;
 }
 

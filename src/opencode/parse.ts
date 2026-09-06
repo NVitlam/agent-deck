@@ -63,6 +63,9 @@
  */
 
 import { DEFAULT_MAX_PAYLOAD_BYTES, truncateUtf8 } from '../parser/redact.js';
+import type { CompactionRecord, UsageTurn } from '../model/events.js';
+import { inputHash } from '../stats/canonical.js';
+import { filePathOf } from '../stats/toolclass.js';
 
 import type { OcParseCounts, OcParseResult, OcPartRow, OcToolRecord } from './types.js';
 
@@ -263,10 +266,10 @@ function toToolRecord(
   if (id === undefined || toolName === undefined) return 'unusable';
 
   // `state.input` is an object; its preview is canonical JSON, cut ONCE.
-  const inputCut = truncateUtf8(
-    canonicalJson(stripDroppedFields(state['input'] ?? null)),
-    maxPayloadBytes,
-  );
+  // Stripped once here and reused for the preview, the hash and the file path,
+  // so those three can never describe different values.
+  const strippedInput = stripDroppedFields(state['input'] ?? null);
+  const inputCut = truncateUtf8(canonicalJson(strippedInput), maxPayloadBytes);
 
   /*
    * `resultPreview` source, in order:
@@ -357,11 +360,33 @@ function toToolRecord(
   if (inputTruncated) counts.previewsTruncated++;
   if (resultTruncated) counts.previewsTruncated++;
 
+  /*
+   * v0.7.0 Phase 1, DoD 1.2/1.3.
+   *
+   * Hashed from the STRUCTURED input, before `truncateUtf8` above cuts it —
+   * two calls differing only past the ceiling share a preview and must not
+   * share a hash.
+   *
+   * Hashed from the G4-stripped value, the same one the preview is built from,
+   * so the hash describes what this engine actually carries rather than what it
+   * read off disk. (A no-op for every observed tool input: `OC_DROPPED_FIELDS`
+   * targets reasoning, which lives in its own part type, not in a tool input.)
+   *
+   * `inputHash` deliberately goes through `src/stats/canonical.ts` rather than
+   * the `canonicalJson` above, which stays where it is: that one is pinned
+   * byte-identical to `scripts/opencode-golden.mjs`'s, and the goldens' whole
+   * value is that the generator is an INDEPENDENT reader. Same algorithm, two
+   * modules, on purpose.
+   */
+  const touchedFile = filePathOf('opencode', toolName, strippedInput);
+
   return {
     id,
     toolName,
     status,
     inputPreview: inputCut.text,
+    inputHash: inputHash(strippedInput),
+    ...(touchedFile === undefined ? {} : { filePath: touchedFile }),
     ...(outputCut === undefined ? {} : { resultPreview: outputCut.text }),
     ...(durationMs === undefined ? {} : { durationMs }),
     ...(engineTruncated === undefined ? {} : { truncated: engineTruncated }),
@@ -423,9 +448,13 @@ export function parseParts(
     toolParts: 0,
     taskParts: 0,
     previewsTruncated: 0,
+    stepFinishParts: 0,
+    compactionParts: 0,
   };
 
   const toolsBySession = new Map<string, OcToolRecord[]>();
+  const usageBySession = new Map<string, UsageTurn[]>();
+  const compactionsBySession = new Map<string, CompactionRecord[]>();
   let toolPartsUnusable = 0;
   let toolPartsUnknownStatus = 0;
 
@@ -447,6 +476,40 @@ export function parseParts(
       // The bytes are read off disk and thrown away right here. This is a real
       // code path with a counter, not an omission by oversight.
       counts.reasoningPartsDropped++;
+      continue;
+    }
+    // v0.7.0 Phase 1, DoD 1.4/1.4b. These two part types were already being
+    // read off disk and counted as `partsIgnoredNoNode`; they now land
+    // somewhere. Both are appended in row order, which `PART_SQL` already
+    // establishes (`ORDER BY time_created, id`).
+    if (type === 'step-finish') {
+      const turn = toUsageTurn(data, usageBySession.get(row.sessionId)?.length ?? 0);
+      if (turn === undefined) {
+        counts.partsIgnoredNoNode++;
+        continue;
+      }
+      const list = usageBySession.get(row.sessionId);
+      if (list === undefined) usageBySession.set(row.sessionId, [turn]);
+      else list.push(turn);
+      counts.stepFinishParts++;
+      continue;
+    }
+    if (type === 'compaction') {
+      /*
+       * OpenCode states a compaction happened and states NOTHING about what it
+       * cost — no before/after token figures anywhere in the part. So `trigger`
+       * is `'engine'` (a third value beside CC's `auto`/`manual`) and both token
+       * halves stay absent rather than being filled with a plausible zero.
+       * Phase 0 recorded this: F12's token half is CC-only.
+       */
+      const list = compactionsBySession.get(row.sessionId);
+      const record: CompactionRecord = {
+        ordinal: toolsBySession.get(row.sessionId)?.length ?? 0,
+        trigger: 'engine',
+      };
+      if (list === undefined) compactionsBySession.set(row.sessionId, [record]);
+      else list.push(record);
+      counts.compactionParts++;
       continue;
     }
     if (type !== 'tool') {
@@ -472,5 +535,47 @@ export function parseParts(
     else list.push(record);
   }
 
-  return { toolsBySession, counts, toolPartsUnusable, toolPartsUnknownStatus };
+  return {
+    toolsBySession,
+    usageBySession,
+    compactionsBySession,
+    counts,
+    toolPartsUnusable,
+    toolPartsUnknownStatus,
+  };
+}
+
+/**
+ * One `step-finish` part -> one {@link UsageTurn} — v0.7.0 Phase 1, DoD 1.4.
+ *
+ * The four components are read apart and never pre-summed, so F6 (cache ratio)
+ * and F7 (`cacheCreation` deltas) stay derivable.
+ *
+ * **This is what closes the gap `SessionState.burn` documents.** OpenCode's
+ * session row carries genuine cumulative totals, and the identity
+ * `tokens_input + tokens_cache_read + tokens_cache_write == Σ prompt` over a
+ * session's `step-finish` rows was measured on 78 of 78 sessions when the cache
+ * columns were joined. DoD 1.4 asserts that identity from the other direction
+ * — the series this function builds must reproduce `burn` exactly.
+ *
+ * A part with no `tokens` object is not a turn and yields `undefined`; the
+ * caller counts it as ignored rather than pushing a row of zeroes, which would
+ * add a turn that never happened and drag F6 towards 0.
+ */
+function toUsageTurn(data: Record<string, unknown>, ordinal: number): UsageTurn | undefined {
+  const tokens = data['tokens'];
+  if (!isRecord(tokens)) return undefined;
+  const cache = isRecord(tokens['cache']) ? tokens['cache'] : {};
+  return {
+    ordinal,
+    input: count(tokens['input']),
+    cacheCreation: count(cache['write']),
+    cacheRead: count(cache['read']),
+    output: count(tokens['output']),
+  };
+}
+
+/** A non-negative finite number, else 0. */
+function count(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
 }

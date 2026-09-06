@@ -105,6 +105,13 @@ function cloneTool(node: ToolNode): ToolNode {
   // passed through the reducer — the SECOND place the field had to be carried,
   // found by the round-trip test written for the first.
   if (node.stalledSinceMs !== undefined) out.stalledSinceMs = node.stalledSinceMs;
+  // v0.7.0 Phase 1, on exactly the same terms: a clone that dropped these would
+  // strip a tool's hash, ordinal and file the moment it passed through the
+  // reducer, so a node that arrived by SNAPSHOT would carry them and the same
+  // node arriving by DIFF would not.
+  if (node.filePath !== undefined) out.filePath = node.filePath;
+  if (node.inputHash !== undefined) out.inputHash = node.inputHash;
+  if (node.ordinal !== undefined) out.ordinal = node.ordinal;
   return out;
 }
 
@@ -124,6 +131,14 @@ function cloneAgent(node: AgentNode): AgentNode {
     startedAt: node.startedAt,
   };
   if (node.endedAt !== undefined) out.endedAt = node.endedAt;
+  // v0.7.0 Phase 1. Copied by VALUE, not by reference: the reducer's whole
+  // contract is that applying a diff produces a state the caller owns, and
+  // sharing an array with the previous state would let a later patch mutate
+  // history that has already been rendered.
+  if (node.usageSeries !== undefined) out.usageSeries = node.usageSeries.map((t) => ({ ...t }));
+  if (node.model !== undefined) out.model = node.model;
+  if (node.compactions !== undefined) out.compactions = node.compactions.map((c) => ({ ...c }));
+  if (node.agentName !== undefined) out.agentName = node.agentName;
   return out;
 }
 
@@ -356,6 +371,15 @@ export function applySessionPatch(
         if (f.startedAt !== undefined) node.startedAt = f.startedAt;
         if (f.endedAt === null) delete node.endedAt;
         else if (f.endedAt !== undefined) node.endedAt = f.endedAt;
+        // v0.7.0 Phase 1. Copied by value, both directions.
+        if (f.usageSeries === null) delete node.usageSeries;
+        else if (f.usageSeries !== undefined) node.usageSeries = f.usageSeries.map((t) => ({ ...t }));
+        if (f.model === null) delete node.model;
+        else if (f.model !== undefined) node.model = f.model;
+        if (f.compactions === null) delete node.compactions;
+        else if (f.compactions !== undefined) node.compactions = f.compactions.map((c) => ({ ...c }));
+        if (f.agentName === null) delete node.agentName;
+        else if (f.agentName !== undefined) node.agentName = f.agentName;
         break;
       }
       case 'updateTool': {
@@ -391,6 +415,13 @@ export function applySessionPatch(
         // stall it just came out of.
         if (f.stalledSinceMs === null) delete node.stalledSinceMs;
         else if (f.stalledSinceMs !== undefined) node.stalledSinceMs = f.stalledSinceMs;
+        // v0.7.0 Phase 1, both directions for the same reason as above.
+        if (f.filePath === null) delete node.filePath;
+        else if (f.filePath !== undefined) node.filePath = f.filePath;
+        if (f.inputHash === null) delete node.inputHash;
+        else if (f.inputHash !== undefined) node.inputHash = f.inputHash;
+        if (f.ordinal === null) delete node.ordinal;
+        else if (f.ordinal !== undefined) node.ordinal = f.ordinal;
         break;
       }
     }

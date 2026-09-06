@@ -138,7 +138,8 @@ import {
   truncateUtf8,
 } from '../parser/redact.js';
 
-import type { TokenPair } from '../model/events.js';
+import type { TokenPair, UsageTurn } from '../model/events.js';
+import { inputHash } from '../stats/canonical.js';
 import type {
   CodexCounters,
   CodexDialect,
@@ -238,6 +239,46 @@ const TOOL_CALL_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   'custom_tool_call',
   'tool_search_call',
 ]);
+
+/**
+ * `inputHash` for one Codex tool call — v0.7.0 Phase 1, DoD 1.2.
+ *
+ * **Three payload shapes, three places the input lives**, and reading only the
+ * first would silently hash `null` for the other two — making every `exec` in a
+ * thread look like a repeat of every other and reporting a loop that is not
+ * there:
+ *
+ *   - `function_call`   — `arguments`, a JSON STRING. Parsed before hashing, so
+ *                         that key order in Codex's serialisation cannot change
+ *                         the hash. Unparseable arguments hash as the raw
+ *                         string rather than as `null`, which keeps two
+ *                         different malformed calls distinguishable.
+ *   - `custom_tool_call`— `input`, a bare string (`exec` is a string of
+ *                         JavaScript). Hashed as the string it is.
+ *   - anything else     — `action`, which is where a shell call's structure
+ *                         sits.
+ *
+ * The rule is the Phase 0 spike's, which is what `LOOP_MIN = 3` was measured
+ * under.
+ *
+ * A spawn's `message` is CIPHERTEXT (spec C7: 24 of 24) and is inside
+ * `arguments`, so it contributes to the digest. That is safe and is the point:
+ * a digest is one-way, carries no bytes, and is exactly how two spawns can be
+ * told apart without anything reading what they said.
+ */
+function codexInputHash(kind: string, payload: Record<string, unknown>): string {
+  if (kind === 'function_call') {
+    const raw = payload['arguments'];
+    if (typeof raw !== 'string') return inputHash(raw ?? null);
+    try {
+      return inputHash(JSON.parse(raw));
+    } catch {
+      return inputHash(raw);
+    }
+  }
+  if (kind === 'custom_tool_call') return inputHash(payload['input'] ?? null);
+  return inputHash(payload['action'] ?? null);
+}
 
 /** Narrow a checked payload type onto the union, explicitly rather than by cast. */
 function toolCallKind(type: string): CodexToolCall['kind'] {
@@ -613,6 +654,12 @@ interface RawCall {
   readonly namespace: CodexOptional<string>;
   readonly callId: string;
   readonly args: Record<string, unknown> | null;
+  /**
+   * v0.7.0 Phase 1, DoD 1.2 — over this call's REAL arguments, whichever of the
+   * three payload shapes carries them. Never over `inputPreview`, which this
+   * engine synthesises from the tool name.
+   */
+  readonly inputHash: string;
   item: CompletedItem | null;
   relation: CodexIdRelation;
 }
@@ -661,6 +708,7 @@ function pairCalls(kept: readonly CodexRecord[]): { calls: RawCall[]; items: Com
       namespace: optionalString(payload, 'namespace'),
       callId: typeof payload['call_id'] === 'string' ? payload['call_id'] : '',
       args: parseArguments(payload['arguments']),
+      inputHash: codexInputHash(kind, payload),
       item: null,
       relation: 'no_item',
     });
@@ -831,6 +879,9 @@ export function parseCodexThread(
       itemId: call.item === null ? null : call.item.id,
       itemType: call.item === null ? null : call.item.type,
       idRelation: call.relation,
+      // Computed in `pairCalls` from the raw payload, where the three input
+      // shapes are still distinguishable. Carried across, never recomputed.
+      inputHash: call.inputHash,
     };
     if (rendered !== null) {
       const wasMarked = splitTruncationMarker(rendered) !== undefined;
@@ -909,6 +960,12 @@ export function parseCodexThread(
   if (usage.modelContextWindow !== undefined) thread.modelContextWindow = usage.modelContextWindow;
   if (usage.contextNow !== undefined) thread.contextNow = usage.contextNow;
   if (usage.burn !== undefined) thread.burn = usage.burn;
+  // v0.7.0 Phase 1. No `compactions`: Phase 0 measured F12 as
+  // `UNAVAILABLE:codex` — no Codex payload type carries a compaction entry at
+  // all — so the key stays absent rather than being set to an empty array,
+  // which would claim we looked and found none.
+  if (usage.model !== undefined) thread.model = usage.model;
+  if (usage.usageSeries !== undefined) thread.usageSeries = usage.usageSeries;
 
   return { thread, ...base };
 }
@@ -1117,6 +1174,10 @@ interface Usage {
   readonly contextNow?: TokenPair;
   readonly burn?: TokenPair;
   readonly modelContextWindow?: number;
+  /** v0.7.0 Phase 1 — `turn_context.model`, verbatim, first one wins. */
+  readonly model?: string;
+  /** v0.7.0 Phase 1 — one entry per `token_count` stating a usable usage. */
+  readonly usageSeries?: readonly UsageTurn[];
 }
 
 /**
@@ -1179,8 +1240,27 @@ function readUsage(kept: readonly CodexRecord[]): Usage {
   let contextNow: TokenPair | undefined;
   let burn: TokenPair | undefined;
   let window: number | undefined;
+  let model: string | undefined;
+  const series: UsageTurn[] = [];
 
   for (const record of kept) {
+    /*
+     * v0.7.0 Phase 1, DoD 1.4b. The model is stated on `turn_context`, not on
+     * an `event_msg`, so it is read BEFORE the `event_msg` filter below.
+     *
+     * Read from the RECORD, never from an invocation flag: Phase 0 measured a
+     * capture whose `--model` flag and whose transcript disagreed, and the
+     * binary carries a "configured value is disallowed ... falling back to
+     * required value" string. The transcript is what ran.
+     *
+     * First one wins — a thread can span a model change and the first is what
+     * it opened with.
+     */
+    if (record.type === 'turn_context' && model === undefined) {
+      const context = asObject(record.payload);
+      const stated = context === null ? undefined : context['model'];
+      if (typeof stated === 'string' && stated !== '') model = stated;
+    }
     if (record.type !== 'event_msg') continue;
     const payload = asObject(record.payload);
     if (payload === null) continue;
@@ -1204,13 +1284,68 @@ function readUsage(kept: readonly CodexRecord[]): Usage {
     // Source 2. Same key, one level down, and the two never disagree.
     const stated = info['model_context_window'];
     if (typeof stated === 'number' && Number.isFinite(stated) && stated > 0) window = stated;
+
+    /*
+     * v0.7.0 Phase 1, DoD 1.4 — the per-turn series.
+     *
+     * `last_token_usage` is THIS turn's usage; `total_token_usage` beside it is
+     * the running total that `burn` reads. So the series is built from the
+     * per-turn figure and is never differenced out of the total — the locked
+     * answer says a series is wired where the engine states one and is never
+     * approximated, and differencing a cumulative total would be exactly that.
+     *
+     * `input_tokens` here is CACHE-INCLUSIVE, the opposite of Claude Code's, so
+     * the cached part is subtracted to leave the same quantity `UsageTurn.input`
+     * means on every engine. The header records the measurement: across the
+     * committed corpus `total_tokens === input_tokens + output_tokens` and 0 of
+     * 116 records satisfy the Claude Code sum, so adding `cached_input_tokens`
+     * would double-count.
+     */
+    const turn = usageTurn(info['last_token_usage'], series.length);
+    if (turn !== undefined) series.push(turn);
   }
 
-  const usage: { contextNow?: TokenPair; burn?: TokenPair; modelContextWindow?: number } = {};
+  const usage: {
+    contextNow?: TokenPair;
+    burn?: TokenPair;
+    modelContextWindow?: number;
+    model?: string;
+    usageSeries?: UsageTurn[];
+  } = {};
   if (contextNow !== undefined) usage.contextNow = contextNow;
   if (burn !== undefined) usage.burn = burn;
   if (window !== undefined) usage.modelContextWindow = window;
+  if (model !== undefined) usage.model = model;
+  if (series.length > 0) usage.usageSeries = series;
   return usage;
+}
+
+/**
+ * One `last_token_usage` object -> a {@link UsageTurn} — DoD 1.4.
+ *
+ * Returns `undefined` for anything that is not a usage object, so a
+ * `token_count` record with `info: null` — which this engine really does write
+ * when a turn ends before usage exists — adds no turn rather than a row of
+ * zeroes.
+ */
+function usageTurn(value: unknown, ordinal: number): UsageTurn | undefined {
+  const object = asObject(value);
+  if (object === null) return undefined;
+  const total = codexCount(object['input_tokens']);
+  const cached = codexCount(object['cached_input_tokens']);
+  return {
+    ordinal,
+    // Never negative, however the two fields disagree.
+    input: Math.max(0, total - cached),
+    cacheCreation: codexCount(object['cache_write_input_tokens']),
+    cacheRead: cached,
+    output: codexCount(object['output_tokens']),
+  };
+}
+
+/** A finite non-negative number, else 0. */
+function codexCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function tokenPair(value: unknown): TokenPair | null {

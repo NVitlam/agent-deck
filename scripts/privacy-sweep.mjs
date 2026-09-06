@@ -208,7 +208,7 @@ const OWN_PROJECT = 'agent-deck';
  * anywhere else was never scanned for foreign content at all. Measured by the
  * Phase 5 verifier: byte-identical foreign content planted at
  * `src/model/leak.test.ts` and `docs/notes.md` produced ZERO gate hits while the
- * same bytes under `fixtures/hook-events/` produced 3. This repository's own
+ * same bytes under `fixtures/hook-events/` produced 3. This own
  * Phase 1 privacy leak lived largely in DOCUMENTS - exactly the class that was
  * outside the gate.
  *
@@ -907,6 +907,34 @@ function codexSlugPhrase(m) {
  */
 const FOREIGN_VALUE_EXEMPTIONS = [
   {
+    id: 'own-slug-cut-by-our-own-truncation',
+    reason:
+      'A slug fragment that is a STRICT PREFIX of the own-project slug of this ' +
+      'repository, ' +
+      'slug, produced when the preview truncation of Agent Deck cut the slug ' +
+      'mid-name. Found 2026-09-06 at the v0.7.0 Phase 0c gate: ' +
+      'webview/wire/cc-2.1.260-stall-arc.json carried 875 occurrences of the ' +
+      'complete slug (forgiven by namesOwnProject) and 5 of ' +
+      '"c--users-dev-projects-agent-", cut before "deck" by the 512-byte ' +
+      'preview budget and therefore naming no project at all. Every one is ' +
+      'immediately followed by our own marker, "...[agent-deck: truncated, ' +
+      'showing 512 of 666 bytes]". ' +
+      'THIS IS PRIVACY-NEUTRAL BY CONSTRUCTION, which is why it is an ' +
+      'exemption rather than a widening: the bytes on disk are a prefix of ' +
+      'OUR OWN slug, so whatever project the uncut slug named, what is ' +
+      'actually committed discloses nothing beyond the own path of this ' +
+      'repository, ' +
+      'path. A genuinely foreign slug can only reach this rule by sharing our ' +
+      'entire prefix and being cut at exactly that byte - in which case the ' +
+      'visible bytes are still only ours. ' +
+      'It is deliberately NOT a general "forgive any prefix" rule: the value ' +
+      'must be a proper prefix of the full own-project slug and must not ' +
+      'itself name a project, so a foreign slug that merely starts similarly ' +
+      '(c--users-dev-projects-agent-other) still fails, because it is not a ' +
+      'prefix of ours.',
+    exempt: (value) => isOwnSlugPrefix(value),
+  },
+  {
     id: 'elided-not-a-location',
     reason:
       'The captured value is an elision, not a path: only dots, an ellipsis and ' +
@@ -1212,6 +1240,56 @@ function scanTelemetryPii(text, starts, relPath, sink) {
 /** Does this captured value name the agent-deck project? */
 function namesOwnProject(value) {
   return normalisePathToken(value).includes(OWN_PROJECT);
+}
+
+/**
+ * Is `value` a STRICT PREFIX of this own project slug?
+ *
+ * The full own slug is not matched here - `namesOwnProject` already forgives
+ * that, and a value that names the project is not a fragment. This is only for
+ * the case where our own preview truncation cut the slug before the project
+ * name, leaving bytes that name nothing. See the
+ * `own-slug-cut-by-our-own-truncation` exemption for why forgiving it cannot
+ * hide foreign content.
+ */
+function isOwnSlugPrefix(value) {
+  const v = normalisePathToken(value).toLowerCase();
+  if (v.length === 0) return false;
+  if (v.includes(OWN_PROJECT)) return false;
+  for (const slug of ownProjectSlugs()) {
+    if (slug.length > v.length && slug.startsWith(v)) return true;
+  }
+  return false;
+}
+
+/**
+ * Every full project slug this repository legitimately carries, derived from
+ * the committed corpora rather than written down - a literal here would go
+ * stale the next time a corpus is harvested under a different scrubbed root.
+ */
+let ownSlugCache;
+function ownProjectSlugs() {
+  if (ownSlugCache !== undefined) return ownSlugCache;
+  const found = new Set();
+  const root = path.join(process.cwd(), 'fixtures');
+  const walk = (dir, depth) => {
+    if (depth > 4) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const name = e.name.toLowerCase();
+      if (SLUG_SHAPE_RE.test(name) && name.includes(OWN_PROJECT)) found.add(name);
+      else walk(path.join(dir, e.name), depth + 1);
+    }
+  };
+  walk(root, 0);
+  ownSlugCache = [...found];
+  return ownSlugCache;
 }
 
 function scanForeign(text, starts, relPath, sink) {

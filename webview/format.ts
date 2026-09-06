@@ -6,6 +6,8 @@
  * network (G5).
  */
 
+import type { ToolNode } from '../src/model/events.js';
+
 /** U+2014. Used for "we do not have this number", never for zero. */
 export const EM_DASH = '—';
 
@@ -125,8 +127,16 @@ export function formatCost(costUsd: number): string {
 export const COST_NOT_COMPUTED_TITLE =
   'cost not computed — no price table';
 
-/** Human label for a node status chip. */
-export function statusLabel(status: 'running' | 'done' | 'error'): string {
+/**
+ * Human label for a node status chip.
+ *
+ * Typed as `ToolNode['status']` rather than repeating the union by hand, so a
+ * fifth status stops the build here instead of arriving unlabelled. The
+ * previous hand-written copy is exactly why `'stalled'` could be added to the
+ * model in v0.7.0 Phase 0c with the webview typecheck staying green — the same
+ * duplicated-union seam that `OcToolRecord` has, found the same day.
+ */
+export function statusLabel(status: ToolNode['status']): string {
   switch (status) {
     case 'running':
       return 'running';
@@ -134,7 +144,28 @@ export function statusLabel(status: 'running' | 'done' | 'error'): string {
       return 'done';
     case 'error':
       return 'error';
+    case 'stalled':
+      return 'stalled';
   }
+}
+
+/**
+ * How long a stall has been visible, as a short human string.
+ *
+ * Rendered beside the chip so "stalled" carries EVIDENCE rather than being a
+ * bare adjective: the user sees the silence measured. G10 keeps it to the
+ * fact — a duration and nothing about why.
+ */
+export function stalledForLabel(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return EM_DASH;
+  const totalSeconds = Math.floor(ms / 1000);
+  if (totalSeconds < 60) return `${String(totalSeconds)}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) {
+    return `${String(totalMinutes)}m ${String(totalSeconds % 60)}s`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  return `${String(hours)}h ${String(totalMinutes % 60)}m`;
 }
 
 /** Human label for a session's liveness. See {@link Liveness}, declared below. */

@@ -25,7 +25,7 @@
 // `vitest.config.ts`, which this package does not own.
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import type { WebviewToHostMessage } from '../src/model/events.js';
+import type { SessionState, WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
 import { all, loadHarness, one } from './testkit.js';
@@ -494,5 +494,99 @@ describe('auto-start', () => {
       delete withApi.acquireVsCodeApi;
       document.body.innerHTML = '';
     }
+  });
+});
+
+describe('a stalled tool renders amber, with the silence measured (v0.7.0 Phase 0c)', () => {
+  /**
+   * Through the MOUNTED BUNDLE, not by mounting `StatusChip` with a prop.
+   *
+   * This repository shipped a defect (D4) in which a component honoured a
+   * prop that no production parent ever passed: three tests were green
+   * because each supplied by hand the value the product never supplied. The
+   * chain here is App → TreeView → TreeNodeView → StatusChip, and every link
+   * has to carry `stalledSinceMs` and the clock for these to pass. Deleting
+   * the `{stalledForMs}` attribute in `TreeNodeView.svelte`, or the `{now}`
+   * on either recursion site, turns them red.
+   */
+  const SINCE = 1_700_000_000_000;
+
+  /**
+   * Recursive on purpose: `tool-bash` is not a direct child of the root, and
+   * the first draft of this helper mapped only the root's own children and so
+   * changed nothing while looking like it had. The chip stayed `error` and the
+   * test failed honestly rather than passing over an unmodified tree.
+   */
+  function markStalled<T extends SessionState['root'] | SessionState['root']['children'][number]>(
+    node: T,
+  ): T {
+    if ('toolName' in node) {
+      return node.id === 'tool-bash'
+        ? ({ ...node, status: 'stalled', stalledSinceMs: SINCE } as T)
+        : node;
+    }
+    return { ...node, children: node.children.map((c) => markStalled(c)) } as T;
+  }
+
+  function stalledSession(): SessionState {
+    const base = liveSession();
+    const next = { ...base, root: markStalled(base.root) };
+    // Vacuity control on the FIXTURE itself: if the mapper stopped finding the
+    // node, every assertion below would be about an unchanged tree.
+    let found = 0;
+    const count = (n: SessionState['root'] | SessionState['root']['children'][number]): void => {
+      if ('toolName' in n) {
+        if (n.status === 'stalled') found += 1;
+        return;
+      }
+      for (const c of n.children) count(c);
+    };
+    count(next.root);
+    expect(found).toBe(1);
+    return next;
+  }
+
+  it('paints the chip stalled and prints how long it has been silent', () => {
+    const { container } = render();
+    send({ type: 'snapshot', sessions: [stalledSession()] });
+
+    const nodes = all(container, 'tree-node');
+    const bash = nodes.find((n) => n.dataset['nodeId'] === 'tool-bash');
+    expect(bash).toBeDefined();
+
+    const chip = all(bash as HTMLElement, 'status-chip')[0];
+    // The amber state reaches the DOM as its own value, not as `error` — a
+    // stall is not a failure and must not be coloured like one.
+    expect(chip?.dataset['status']).toBe('stalled');
+    expect(chip?.textContent).toContain('stalled');
+
+    // And it carries EVIDENCE. Without the elapsed time "stalled" is an
+    // adjective; with it the user can see the silence measured.
+    const elapsed = all(bash as HTMLElement, 'stalled-for')[0];
+    expect(elapsed).toBeDefined();
+    expect(elapsed?.textContent?.trim().length).toBeGreaterThan(0);
+  });
+
+  it('badges the agent with the count of stalled tools beneath it', () => {
+    const { container } = render();
+    send({ type: 'snapshot', sessions: [stalledSession()] });
+
+    const root = all(container, 'tree-node')[0];
+    const badge = all(root as HTMLElement, 'stalled-badge')[0];
+    expect(badge).toBeDefined();
+    expect(badge?.textContent).toContain('1');
+    expect(badge?.textContent).toContain('stalled');
+  });
+
+  it('shows NO badge and no amber chip when nothing is stalled', () => {
+    // The vacuity control. Without it both cases above would pass just as
+    // happily against a renderer that painted every tree amber.
+    const { container } = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
+
+    expect(all(container, 'stalled-badge')).toHaveLength(0);
+    expect(all(container, 'stalled-for')).toHaveLength(0);
+    const chips = all(container, 'status-chip').map((c) => c.dataset['status']);
+    expect(chips).not.toContain('stalled');
   });
 });

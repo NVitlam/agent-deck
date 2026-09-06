@@ -8,7 +8,14 @@
     session,
     store,
     toggled,
-  }: { session: SessionState; store: Store; toggled: readonly string[] } = $props();
+    now = undefined,
+  }: {
+    session: SessionState;
+    store: Store;
+    toggled: readonly string[];
+    /** The renderer's clock, threaded to a stalled tool's elapsed time. */
+    now?: number | undefined;
+  } = $props();
 
   // The trunk is the main agent; branches are subagents, drawn under the tool
   // call that spawned them by joining `SessionState.spawnEdges` (see tree.ts).
@@ -16,7 +23,7 @@
 </script>
 
 <ul class="tree" data-testid="tree">
-  <TreeNodeView render={root} {store} {toggled} />
+  <TreeNodeView render={root} {store} {toggled} {now} />
 </ul>
 
 <style>

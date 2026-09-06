@@ -1,11 +1,26 @@
 <script lang="ts">
-  import { statusLabel } from './format.js';
+  import type { ToolNode } from '../src/model/events.js';
+  import { statusLabel, stalledForLabel } from './format.js';
 
-  let { status }: { status: 'running' | 'done' | 'error' } = $props();
+  let {
+    status,
+    stalledForMs = undefined,
+  }: {
+    status: ToolNode['status'];
+    /**
+     * How long the stall has been visible. Passed in rather than computed
+     * here: the component owns no clock, so two chips in one render cannot
+     * disagree about now, and a test can drive the elapsed time directly.
+     */
+    stalledForMs?: number | undefined;
+  } = $props();
 </script>
 
 <span class="chip chip-{status}" data-testid="status-chip" data-status={status}>
-  {statusLabel(status)}
+  {statusLabel(status)}{#if status === 'stalled' && stalledForMs !== undefined}<span
+      class="elapsed"
+      data-testid="stalled-for">&nbsp;{stalledForLabel(stalledForMs)}</span
+    >{/if}
 </span>
 
 <style>
@@ -40,5 +55,20 @@
     color: var(--vscode-errorForeground, var(--vscode-badge-foreground));
     border-color: var(--vscode-errorForeground, var(--vscode-panel-border));
     background: transparent;
+  }
+
+  /* Amber, and deliberately NOT the error colour. A stall is not a failure —
+     the tool may still complete, and it did not in the session this was built
+     from only because the user intervened. Painting it red would state an
+     outcome the product does not know. */
+  .chip-stalled {
+    color: var(--vscode-charts-yellow, var(--vscode-badge-foreground));
+    border-color: var(--vscode-charts-yellow, var(--vscode-panel-border));
+    background: transparent;
+  }
+
+  .elapsed {
+    opacity: 0.85;
+    font-variant-numeric: tabular-nums;
   }
 </style>

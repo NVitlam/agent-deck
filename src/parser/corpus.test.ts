@@ -399,10 +399,20 @@ describe('a session on a local local-model model is read like any other', () => 
     expect(batch.diagnostics.malformedLines).toBe(0);
     expect(batch.value.rejections.filter((r) => r.rejection === 'unknownType')).toHaveLength(0);
 
+    /*
+     * 10 and 111, not 11 and 110, as of v0.7.0 Phase 1.
+     *
+     * ONE `system` line of this corpus moved from ignored to parsed: the
+     * `manual` compaction entry. A compaction is now MODELLED
+     * (`CompactionRecord`, F12), so the entry that carries `compactMetadata` is
+     * recognised rather than ignored — see `isCompactionEntry` in `parse.ts`.
+     * `system` in general is still ignored, which is why exactly one line moved
+     * and the other stayed.
+     */
     const ignored = batch.value.rejections.filter((r) => r.rejection === 'ignoredType');
-    expect(ignored).toHaveLength(11);
-    expect(batch.diagnostics.ignoredLines).toBe(11);
-    expect(batch.diagnostics.parsedLines).toBe(110);
+    expect(ignored).toHaveLength(10);
+    expect(batch.diagnostics.ignoredLines).toBe(10);
+    expect(batch.diagnostics.parsedLines).toBe(111);
     // All THREE buckets sum to the input. A fourth bucket that forgot to be
     // counted would fail here rather than quietly losing lines.
     expect(
@@ -416,7 +426,9 @@ describe('a session on a local local-model model is read like any other', () => 
       const type = r.reason.replace('ignored type: ', '');
       byType.set(type, (byType.get(type) ?? 0) + 1);
     }
-    expect(Object.fromEntries(byType)).toEqual({ 'atis-latch': 9, system: 2 });
+    // `system: 1`, not 2: this corpus's other `system` line IS the compaction,
+    // and it is parsed now. The remaining one carries no `compactMetadata`.
+    expect(Object.fromEntries(byType)).toEqual({ 'atis-latch': 9, system: 1 });
     for (const type of byType.keys()) expect(KNOWN_ENTRY_TYPES.has(type)).toBe(false);
     for (const type of byType.keys()) expect(IGNORED_ENTRY_TYPES.has(type)).toBe(true);
     // The fingerprint tolerates the same two: an unrecognised record kind is

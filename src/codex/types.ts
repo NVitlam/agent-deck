@@ -75,7 +75,7 @@
  * thing to every reader downstream.
  */
 
-import type { SessionState, SkippedFile, TokenPair, UsageTurn } from '../model/events.js';
+import type { SessionState, SkippedFile, TokenPair } from '../model/events.js';
 
 // A CLASS, so `import type` will not do. It is the one behavioural thing this
 // hand-off file names, and `CodexEngineOptions.tails` says why.
@@ -521,14 +521,6 @@ export interface CodexThread {
    * substitute a model silently.
    */
   readonly model?: string;
-  /**
-   * v0.7.0 Phase 1, DoD 1.4 — one entry per `token_count` record that states a
-   * usable `last_token_usage`. Absent when the thread states none.
-   *
-   * There is no `compactions` counterpart and that is measured: Phase 0
-   * records F12 as `UNAVAILABLE:codex`.
-   */
-  readonly usageSeries?: readonly UsageTurn[];
 
   readonly toolCalls: readonly CodexToolCall[];
   readonly spawns: readonly CodexSpawn[];

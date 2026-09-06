@@ -138,7 +138,7 @@ import {
   truncateUtf8,
 } from '../parser/redact.js';
 
-import type { TokenPair, UsageTurn } from '../model/events.js';
+import type { TokenPair } from '../model/events.js';
 import { inputHash } from '../stats/canonical.js';
 import type {
   CodexCounters,
@@ -965,7 +965,6 @@ export function parseCodexThread(
   // all — so the key stays absent rather than being set to an empty array,
   // which would claim we looked and found none.
   if (usage.model !== undefined) thread.model = usage.model;
-  if (usage.usageSeries !== undefined) thread.usageSeries = usage.usageSeries;
 
   return { thread, ...base };
 }
@@ -1176,8 +1175,6 @@ interface Usage {
   readonly modelContextWindow?: number;
   /** v0.7.0 Phase 1 — `turn_context.model`, verbatim, first one wins. */
   readonly model?: string;
-  /** v0.7.0 Phase 1 — one entry per `token_count` stating a usable usage. */
-  readonly usageSeries?: readonly UsageTurn[];
 }
 
 /**
@@ -1241,7 +1238,6 @@ function readUsage(kept: readonly CodexRecord[]): Usage {
   let burn: TokenPair | undefined;
   let window: number | undefined;
   let model: string | undefined;
-  const series: UsageTurn[] = [];
 
   for (const record of kept) {
     /*
@@ -1286,23 +1282,38 @@ function readUsage(kept: readonly CodexRecord[]): Usage {
     if (typeof stated === 'number' && Number.isFinite(stated) && stated > 0) window = stated;
 
     /*
-     * v0.7.0 Phase 1, DoD 1.4 — the per-turn series.
+     * ---------------------------------------------------------------------
+     * NO `usageSeries` ON THIS ENGINE — DoD 1.4/1.5, and it is MEASURED
+     * ---------------------------------------------------------------------
      *
-     * `last_token_usage` is THIS turn's usage; `total_token_usage` beside it is
-     * the running total that `burn` reads. So the series is built from the
-     * per-turn figure and is never differenced out of the total — the locked
-     * answer says a series is wired where the engine states one and is never
-     * approximated, and differencing a cumulative total would be exactly that.
+     * `last_token_usage` looks exactly like the per-turn figure a series wants,
+     * and `lab/spike/stats/derive-facts.mjs` built one from it in Phase 0. It
+     * does not survive DoD 1.4's identity, which is what the field MEANS:
      *
-     * `input_tokens` here is CACHE-INCLUSIVE, the opposite of Claude Code's, so
-     * the cached part is subtracted to leave the same quantity `UsageTurn.input`
-     * means on every engine. The header records the measurement: across the
-     * committed corpus `total_tokens === input_tokens + output_tokens` and 0 of
-     * 116 records satisfy the Claude Code sum, so adding `cached_input_tokens`
-     * would double-count.
+     *     burn.prompt === Σ (input + cacheCreation + cacheRead)
+     *
+     * Measured over every `token_count` record of every committed Codex thread
+     * (12 threads with two or more records): the sum of `last_token_usage`
+     * equals the final `total_token_usage` on **11 of 12**, and on
+     * `01a0641e-f36c-7503…` (the `dup-names` run) it EXCEEDS it — 102,882
+     * against 86,011. The excess is 16,871, which is exactly that thread's
+     * FIRST turn, so its opening figure is counted in the series and not in the
+     * engine's own total.
+     *
+     * The cause is not established and is deliberately not guessed at. What is
+     * established is that Codex's own two numbers disagree on one thread, so
+     * this engine cannot be said to state a series that reproduces its burn.
+     *
+     * The locked answer (2026-09-05) provides for exactly this: wired where the
+     * engine states a series, `unavailable` where it does not, and NEVER
+     * approximated. Special-casing the one thread, or differencing
+     * `total_token_usage` into deltas, would both be the approximation the
+     * answer forbids. So the key is absent, and `src/stats/series.test.ts`
+     * asserts its absence rather than leaving it untested.
+     *
+     * `contextNow` still reads `last_token_usage` and is unaffected: as a
+     * LEVEL it is one record's own figure and no summing is involved.
      */
-    const turn = usageTurn(info['last_token_usage'], series.length);
-    if (turn !== undefined) series.push(turn);
   }
 
   const usage: {
@@ -1310,43 +1321,14 @@ function readUsage(kept: readonly CodexRecord[]): Usage {
     burn?: TokenPair;
     modelContextWindow?: number;
     model?: string;
-    usageSeries?: UsageTurn[];
   } = {};
   if (contextNow !== undefined) usage.contextNow = contextNow;
   if (burn !== undefined) usage.burn = burn;
   if (window !== undefined) usage.modelContextWindow = window;
   if (model !== undefined) usage.model = model;
-  if (series.length > 0) usage.usageSeries = series;
   return usage;
 }
 
-/**
- * One `last_token_usage` object -> a {@link UsageTurn} — DoD 1.4.
- *
- * Returns `undefined` for anything that is not a usage object, so a
- * `token_count` record with `info: null` — which this engine really does write
- * when a turn ends before usage exists — adds no turn rather than a row of
- * zeroes.
- */
-function usageTurn(value: unknown, ordinal: number): UsageTurn | undefined {
-  const object = asObject(value);
-  if (object === null) return undefined;
-  const total = codexCount(object['input_tokens']);
-  const cached = codexCount(object['cached_input_tokens']);
-  return {
-    ordinal,
-    // Never negative, however the two fields disagree.
-    input: Math.max(0, total - cached),
-    cacheCreation: codexCount(object['cache_write_input_tokens']),
-    cacheRead: cached,
-    output: codexCount(object['output_tokens']),
-  };
-}
-
-/** A finite non-negative number, else 0. */
-function codexCount(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
-}
 
 function tokenPair(value: unknown): TokenPair | null {
   const object = asObject(value);

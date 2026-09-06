@@ -956,13 +956,12 @@ function buildAgent(thread: CodexThread, walkedDepth: number, build: SessionBuil
     // IS OMITTED rather than set to `undefined`.
     ...(status === 'running' ? {} : { endedAt: thread.mtimeMs }),
     /*
-     * v0.7.0 Phase 1, DoD 1.4/1.4b. No `compactions` on this engine at all:
-     * Phase 0 measured F12 as `UNAVAILABLE:codex` because no Codex payload type
-     * carries a compaction entry, so the key is absent rather than empty.
+     * v0.7.0 Phase 1, DoD 1.4b. NEITHER `usageSeries` NOR `compactions` on this
+     * engine, and both absences are measured rather than unimplemented:
+     * F12 has no Codex payload type at all, and `parse.ts` records the
+     * `token_count` measurement that disqualifies a series (its sum exceeds the
+     * engine's own total on 1 of 12 threads).
      */
-    ...(thread.usageSeries === undefined || thread.usageSeries.length === 0
-      ? {}
-      : { usageSeries: thread.usageSeries.map((t) => ({ ...t })) }),
     ...(thread.model === undefined ? {} : { model: thread.model }),
   };
 }

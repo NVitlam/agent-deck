@@ -517,7 +517,18 @@ describe.each(CORPUS_NAMES)('corpus %s', (corpusName) => {
     // A second haystack of the RAW field values, because JSON.stringify escapes
     // newlines and quotes and a byte search of the escaped form can miss.
     const rawFields = records
-      .flatMap((r) => [r.inputPreview, r.resultPreview ?? '', r.id, r.toolName])
+      .flatMap((r) => [
+        r.inputPreview,
+        r.resultPreview ?? '',
+        r.id,
+        r.toolName,
+        // v0.7.0 Phase 1, DoD 1.7 — the two fields this phase added. `filePath`
+        // is the one that could genuinely carry bytes, being a string lifted
+        // out of the tool input; `inputHash` is here so the haystack is the
+        // whole record rather than the fields somebody remembered.
+        r.filePath ?? '',
+        r.inputHash,
+      ])
       .join('\u0000');
 
     const hits = needles

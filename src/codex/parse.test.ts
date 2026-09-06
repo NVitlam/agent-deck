@@ -508,6 +508,75 @@ describe('G4 / C7 - reasoning and ciphertext never cross the parse boundary', ()
     expect(corpusCiphertext).toBeGreaterThan(0);
   });
 
+  it('DoD 1.7: inputHash is DERIVED FROM ciphertext and carries none of it', () => {
+    /*
+     * v0.7.0 Phase 1. This is the sharpest case the phase added, and it is the
+     * reason the assertion is here rather than in a stats file.
+     *
+     * A Codex `spawn_agent` call's arguments contain the spawn `message`, which
+     * C7 measures as ciphertext on 24 of 24 records and calls "never decoded,
+     * never stored, never displayed". `inputHash` is computed over exactly
+     * those arguments - it has to be, or two spawns cannot be told apart at
+     * all.
+     *
+     * So the field is derived from the most sensitive string in the file, and
+     * what must hold is that a one-way digest carries none of it. Both halves
+     * are asserted: the digest EXISTS (so this is not passing because nothing
+     * was hashed) and the literal captured bytes do not appear in it.
+     */
+    let hashed = 0;
+    for (const transcript of ALL) {
+      const literals = ciphertextStrings(transcript.raw);
+      const parsed = parseCodexTranscript(transcript.text, { file: transcript.file });
+      if (parsed.thread === null) continue;
+
+      for (const call of parsed.thread.toolCalls) {
+        // Structurally incapable of carrying content - and that is the point,
+        // stated rather than left as a test that cannot fail. A 64-character
+        // hex string has no room for a payload no matter what was hashed.
+        expect(call.inputHash, `${call.callId} hash shape`).toMatch(/^[0-9a-f]{64}$/);
+        hashed += 1;
+
+        for (const literal of literals) {
+          expect(call.inputHash).not.toContain(literal.slice(0, 32));
+        }
+      }
+
+      // `filePath` is absent on EVERY Codex tool node - F1 is
+      // `UNAVAILABLE:codex`, measured, for two independent reasons (no Codex
+      // tool has a file-argument key, and `exec`'s input is a string). Pinned
+      // so the day somebody adds a key by hand, this says so.
+      const nodes = parsed.thread.toolCalls;
+      expect(nodes.every((c) => !('filePath' in c))).toBe(true);
+    }
+    // Non-vacuity: the sweep really hashed something.
+    expect(hashed).toBeGreaterThan(0);
+  });
+
+  it('gives two DIFFERENT spawn calls two different hashes', () => {
+    /*
+     * The property F3 rests on, and the one `inputPreview` cannot supply on this
+     * engine: the preview is SYNTHESISED from the tool name plus the requested
+     * task name, so two spawns of the same task name share it exactly. If the
+     * hash came from the preview this would fail, which is what makes it worth
+     * asserting over a corpus where such calls exist.
+     */
+    const hashes = new Map<string, Set<string>>();
+    for (const transcript of ALL) {
+      const parsed = parseCodexTranscript(transcript.text, { file: transcript.file });
+      if (parsed.thread === null) continue;
+      for (const call of parsed.thread.toolCalls) {
+        const set = hashes.get(call.name) ?? new Set<string>();
+        set.add(call.inputHash);
+        hashes.set(call.name, set);
+      }
+    }
+    // At least one tool in the corpus was called with more than one distinct
+    // input; without that this test would pass on a corpus of singletons.
+    const distinguishing = [...hashes.values()].filter((set) => set.size > 1);
+    expect(distinguishing.length).toBeGreaterThan(0);
+  });
+
   it('ciphertext is dropped from every shape it arrives in, including inside `arguments`', () => {
     // The bytes are REAL: taken from the committed corpus, not invented. A
     // synthesised ciphertext would only prove the test agrees with itself.

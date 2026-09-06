@@ -12,12 +12,14 @@
     "partRows": 865,
     "partsMalformed": 0,
     "reasoningPartsDropped": 167,
-    "partsIgnoredNoNode": 452,
+    "partsIgnoredNoNode": 304,
     "toolParts": 246,
     "taskParts": 29,
     "taskPartsJoined": 20,
     "taskPartsParked": 9,
-    "previewsTruncated": 70
+    "previewsTruncated": 70,
+    "stepFinishParts": 147,
+    "compactionParts": 1
   },
   "sessions": [
     {
@@ -246,6 +248,519 @@
           "prompt": 8196904,
           "output": 115555
         },
+        "usageSeries": [
+          {
+            "ordinal": 0,
+            "input": 12081,
+            "cacheCreation": 0,
+            "cacheRead": 0,
+            "output": 84
+          },
+          {
+            "ordinal": 1,
+            "input": 1519,
+            "cacheCreation": 0,
+            "cacheRead": 12165,
+            "output": 125
+          },
+          {
+            "ordinal": 2,
+            "input": 15597,
+            "cacheCreation": 0,
+            "cacheRead": 13810,
+            "output": 81
+          },
+          {
+            "ordinal": 3,
+            "input": 14178,
+            "cacheCreation": 0,
+            "cacheRead": 29489,
+            "output": 503
+          },
+          {
+            "ordinal": 4,
+            "input": 17941,
+            "cacheCreation": 0,
+            "cacheRead": 44170,
+            "output": 1123
+          },
+          {
+            "ordinal": 5,
+            "input": 2390,
+            "cacheCreation": 0,
+            "cacheRead": 62107,
+            "output": 554
+          },
+          {
+            "ordinal": 6,
+            "input": 482,
+            "cacheCreation": 0,
+            "cacheRead": 65051,
+            "output": 1510
+          },
+          {
+            "ordinal": 7,
+            "input": 397,
+            "cacheCreation": 0,
+            "cacheRead": 67043,
+            "output": 1264
+          },
+          {
+            "ordinal": 8,
+            "input": 456,
+            "cacheCreation": 0,
+            "cacheRead": 68705,
+            "output": 5014
+          },
+          {
+            "ordinal": 9,
+            "input": 537,
+            "cacheCreation": 0,
+            "cacheRead": 74176,
+            "output": 8590
+          },
+          {
+            "ordinal": 10,
+            "input": 22460,
+            "cacheCreation": 0,
+            "cacheRead": 74709,
+            "output": 1918
+          },
+          {
+            "ordinal": 11,
+            "input": 6308,
+            "cacheCreation": 0,
+            "cacheRead": 99086,
+            "output": 2083
+          },
+          {
+            "ordinal": 12,
+            "input": 504,
+            "cacheCreation": 0,
+            "cacheRead": 107477,
+            "output": 1243
+          },
+          {
+            "ordinal": 13,
+            "input": 191,
+            "cacheCreation": 0,
+            "cacheRead": 109224,
+            "output": 786
+          },
+          {
+            "ordinal": 14,
+            "input": 13146,
+            "cacheCreation": 0,
+            "cacheRead": 109411,
+            "output": 2334
+          },
+          {
+            "ordinal": 15,
+            "input": 5270,
+            "cacheCreation": 0,
+            "cacheRead": 124890,
+            "output": 1495
+          },
+          {
+            "ordinal": 16,
+            "input": 2604,
+            "cacheCreation": 0,
+            "cacheRead": 131654,
+            "output": 1077
+          },
+          {
+            "ordinal": 17,
+            "input": 7414,
+            "cacheCreation": 0,
+            "cacheRead": 135335,
+            "output": 9756
+          },
+          {
+            "ordinal": 18,
+            "input": 204,
+            "cacheCreation": 0,
+            "cacheRead": 152504,
+            "output": 2097
+          },
+          {
+            "ordinal": 19,
+            "input": 64,
+            "cacheCreation": 0,
+            "cacheRead": 154804,
+            "output": 1700
+          },
+          {
+            "ordinal": 20,
+            "input": 20,
+            "cacheCreation": 0,
+            "cacheRead": 156567,
+            "output": 131
+          },
+          {
+            "ordinal": 21,
+            "input": 225,
+            "cacheCreation": 0,
+            "cacheRead": 156583,
+            "output": 4756
+          },
+          {
+            "ordinal": 22,
+            "input": 1577,
+            "cacheCreation": 0,
+            "cacheRead": 161564,
+            "output": 4775
+          },
+          {
+            "ordinal": 23,
+            "input": 12247,
+            "cacheCreation": 0,
+            "cacheRead": 171600,
+            "output": 157
+          },
+          {
+            "ordinal": 24,
+            "input": 425,
+            "cacheCreation": 0,
+            "cacheRead": 184003,
+            "output": 4028
+          },
+          {
+            "ordinal": 25,
+            "input": 196421,
+            "cacheCreation": 0,
+            "cacheRead": 0,
+            "output": 3649
+          },
+          {
+            "ordinal": 26,
+            "input": 1932,
+            "cacheCreation": 0,
+            "cacheRead": 200071,
+            "output": 963
+          },
+          {
+            "ordinal": 27,
+            "input": 20,
+            "cacheCreation": 0,
+            "cacheRead": 202965,
+            "output": 1403
+          },
+          {
+            "ordinal": 28,
+            "input": 20,
+            "cacheCreation": 0,
+            "cacheRead": 204387,
+            "output": 451
+          },
+          {
+            "ordinal": 29,
+            "input": 18,
+            "cacheCreation": 0,
+            "cacheRead": 204859,
+            "output": 446
+          },
+          {
+            "ordinal": 30,
+            "input": 387,
+            "cacheCreation": 0,
+            "cacheRead": 205324,
+            "output": 1525
+          },
+          {
+            "ordinal": 31,
+            "input": 62,
+            "cacheCreation": 0,
+            "cacheRead": 207236,
+            "output": 578
+          },
+          {
+            "ordinal": 32,
+            "input": 1540,
+            "cacheCreation": 0,
+            "cacheRead": 207294,
+            "output": 1595
+          },
+          {
+            "ordinal": 33,
+            "input": 3269,
+            "cacheCreation": 0,
+            "cacheRead": 210429,
+            "output": 2859
+          },
+          {
+            "ordinal": 34,
+            "input": 2908,
+            "cacheCreation": 0,
+            "cacheRead": 213694,
+            "output": 429
+          },
+          {
+            "ordinal": 35,
+            "input": 467,
+            "cacheCreation": 0,
+            "cacheRead": 216598,
+            "output": 856
+          },
+          {
+            "ordinal": 36,
+            "input": 947,
+            "cacheCreation": 0,
+            "cacheRead": 217061,
+            "output": 309
+          },
+          {
+            "ordinal": 37,
+            "input": 783,
+            "cacheCreation": 0,
+            "cacheRead": 218004,
+            "output": 930
+          },
+          {
+            "ordinal": 38,
+            "input": 979,
+            "cacheCreation": 0,
+            "cacheRead": 218783,
+            "output": 724
+          },
+          {
+            "ordinal": 39,
+            "input": 1188,
+            "cacheCreation": 0,
+            "cacheRead": 219758,
+            "output": 405
+          },
+          {
+            "ordinal": 40,
+            "input": 515,
+            "cacheCreation": 0,
+            "cacheRead": 220942,
+            "output": 418
+          },
+          {
+            "ordinal": 41,
+            "input": 460,
+            "cacheCreation": 0,
+            "cacheRead": 221453,
+            "output": 462
+          },
+          {
+            "ordinal": 42,
+            "input": 524,
+            "cacheCreation": 0,
+            "cacheRead": 221909,
+            "output": 12794
+          },
+          {
+            "ordinal": 43,
+            "input": 125864,
+            "cacheCreation": 0,
+            "cacheRead": 0,
+            "output": 7650
+          },
+          {
+            "ordinal": 44,
+            "input": 36229,
+            "cacheCreation": 0,
+            "cacheRead": 0,
+            "output": 3230
+          },
+          {
+            "ordinal": 45,
+            "input": 41943,
+            "cacheCreation": 0,
+            "cacheRead": 0,
+            "output": 1691
+          },
+          {
+            "ordinal": 46,
+            "input": 20,
+            "cacheCreation": 0,
+            "cacheRead": 43633,
+            "output": 464
+          },
+          {
+            "ordinal": 47,
+            "input": 18,
+            "cacheCreation": 0,
+            "cacheRead": 44118,
+            "output": 1240
+          },
+          {
+            "ordinal": 48,
+            "input": 19,
+            "cacheCreation": 0,
+            "cacheRead": 45376,
+            "output": 522
+          },
+          {
+            "ordinal": 49,
+            "input": 18,
+            "cacheCreation": 0,
+            "cacheRead": 45918,
+            "output": 487
+          },
+          {
+            "ordinal": 50,
+            "input": 1910,
+            "cacheCreation": 0,
+            "cacheRead": 45932,
+            "output": 463
+          },
+          {
+            "ordinal": 51,
+            "input": 20,
+            "cacheCreation": 0,
+            "cacheRead": 48304,
+            "output": 113
+          },
+          {
+            "ordinal": 52,
+            "input": 75,
+            "cacheCreation": 0,
+            "cacheRead": 48436,
+            "output": 107
+          },
+          {
+            "ordinal": 53,
+            "input": 1256,
+            "cacheCreation": 0,
+            "cacheRead": 48617,
+            "output": 256
+          },
+          {
+            "ordinal": 54,
+            "input": 19,
+            "cacheCreation": 0,
+            "cacheRead": 50129,
+            "output": 148
+          },
+          {
+            "ordinal": 55,
+            "input": 261,
+            "cacheCreation": 0,
+            "cacheRead": 50144,
+            "output": 146
+          },
+          {
+            "ordinal": 56,
+            "input": 1005,
+            "cacheCreation": 0,
+            "cacheRead": 50550,
+            "output": 339
+          },
+          {
+            "ordinal": 57,
+            "input": 20,
+            "cacheCreation": 0,
+            "cacheRead": 51893,
+            "output": 387
+          },
+          {
+            "ordinal": 58,
+            "input": 546,
+            "cacheCreation": 0,
+            "cacheRead": 52301,
+            "output": 981
+          },
+          {
+            "ordinal": 59,
+            "input": 1032,
+            "cacheCreation": 0,
+            "cacheRead": 52843,
+            "output": 500
+          },
+          {
+            "ordinal": 60,
+            "input": 12238,
+            "cacheCreation": 0,
+            "cacheRead": 54376,
+            "output": 3647
+          },
+          {
+            "ordinal": 61,
+            "input": 20,
+            "cacheCreation": 0,
+            "cacheRead": 70260,
+            "output": 137
+          },
+          {
+            "ordinal": 62,
+            "input": 639,
+            "cacheCreation": 0,
+            "cacheRead": 70418,
+            "output": 509
+          },
+          {
+            "ordinal": 63,
+            "input": 647,
+            "cacheCreation": 0,
+            "cacheRead": 71053,
+            "output": 1236
+          },
+          {
+            "ordinal": 64,
+            "input": 20,
+            "cacheCreation": 0,
+            "cacheRead": 72935,
+            "output": 379
+          },
+          {
+            "ordinal": 65,
+            "input": 19,
+            "cacheCreation": 0,
+            "cacheRead": 73334,
+            "output": 346
+          },
+          {
+            "ordinal": 66,
+            "input": 19,
+            "cacheCreation": 0,
+            "cacheRead": 73699,
+            "output": 547
+          },
+          {
+            "ordinal": 67,
+            "input": 20,
+            "cacheCreation": 0,
+            "cacheRead": 74264,
+            "output": 955
+          },
+          {
+            "ordinal": 68,
+            "input": 19,
+            "cacheCreation": 0,
+            "cacheRead": 75239,
+            "output": 137
+          },
+          {
+            "ordinal": 69,
+            "input": 1465,
+            "cacheCreation": 0,
+            "cacheRead": 75395,
+            "output": 218
+          },
+          {
+            "ordinal": 70,
+            "input": 356,
+            "cacheCreation": 0,
+            "cacheRead": 76856,
+            "output": 143
+          },
+          {
+            "ordinal": 71,
+            "input": 385,
+            "cacheCreation": 0,
+            "cacheRead": 77208,
+            "output": 597
+          }
+        ],
+        "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
+        "compactions": [
+          {
+            "ordinal": 91,
+            "trigger": "engine"
+          }
+        ],
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 64084877,
         "children": [
@@ -257,7 +772,10 @@
             "inputPreview": "sha256:c6257e5fab56be0d:16",
             "resultPreview": "sha256:d5965b43e137dc1e:6291",
             "durationMs": 133,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "c6257e5fab56be0d4cb7c9907c25450d533ec180b3c529040586c23fbba91205",
+            "ordinal": 0
           },
           {
             "node": "tool",
@@ -267,7 +785,10 @@
             "inputPreview": "sha256:fe25c4ec39cffe81:60",
             "resultPreview": "sha256:5685a3c4af7316a3:8248",
             "durationMs": 128,
-            "truncated": true
+            "truncated": true,
+            "filePath": "sha256:7decf1ea14a027c3:40",
+            "inputHash": "fe25c4ec39cffe8181d80c9319f83fa7e110a4484262af780eaa1e467390d3e9",
+            "ordinal": 1
           },
           {
             "node": "tool",
@@ -277,7 +798,10 @@
             "inputPreview": "sha256:c87dc50d52b187b1:73",
             "resultPreview": "sha256:774e8411efca9380:8248",
             "durationMs": 145,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:7decf1ea14a027c3:40",
+            "inputHash": "c87dc50d52b187b1b2556f6021788e2e0103291ace291ff37e936b16447219c4",
+            "ordinal": 2
           },
           {
             "node": "tool",
@@ -287,7 +811,10 @@
             "inputPreview": "sha256:e61463f588a6ee72:79",
             "resultPreview": "sha256:996aa64d7455425b:8248",
             "durationMs": 61,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:76d2fbf9c11c7b0e:58",
+            "inputHash": "e61463f588a6ee7296aaf8a04ab18beaa1d7f6622c5c82bc84d53152af5268e5",
+            "ordinal": 3
           },
           {
             "node": "tool",
@@ -297,7 +824,10 @@
             "inputPreview": "sha256:a38cf6eb5c5a1478:62",
             "resultPreview": "sha256:26f360a4e28c98ef:8248",
             "durationMs": 112,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:9cf48011f724bed4:42",
+            "inputHash": "a38cf6eb5c5a1478e04b8b63623231621f24c2362afd53ae7085b8ce43b3b89f",
+            "ordinal": 4
           },
           {
             "node": "tool",
@@ -307,7 +837,10 @@
             "inputPreview": "sha256:f3e0f6b6e767d059:83",
             "resultPreview": "sha256:5e3216235e96d1e4:316",
             "durationMs": 765,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "f3e0f6b6e767d05911de88ee277f4a282ef36d987271759ca3d3823b11f2a9da",
+            "ordinal": 5
           },
           {
             "node": "tool",
@@ -317,7 +850,10 @@
             "inputPreview": "sha256:3b18a4beaef64b27:81",
             "resultPreview": "sha256:47c75c6d4bf53424:48",
             "durationMs": 795,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "3b18a4beaef64b27d46afb9778024a55060a6975e3e4897d1a5a5551b57f5fc3",
+            "ordinal": 6
           },
           {
             "node": "tool",
@@ -327,7 +863,10 @@
             "inputPreview": "sha256:1c32c23a3d65b399:110",
             "resultPreview": "sha256:ad04a4f82533cf7f:3415",
             "durationMs": 830,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "1c32c23a3d65b39901ed1eb89c01a1ecf591d466470ba4253598bd568d8bb08c",
+            "ordinal": 7
           },
           {
             "node": "tool",
@@ -337,7 +876,10 @@
             "inputPreview": "sha256:22f2df081697c51a:160",
             "resultPreview": "sha256:4e9412f7594077e8:323",
             "durationMs": 828,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "22f2df081697c51a35b66e7d15b61b073426f3da83f13e552d1063ba8f603746",
+            "ordinal": 8
           },
           {
             "node": "tool",
@@ -347,7 +889,10 @@
             "inputPreview": "sha256:58df91b8590f1ce0:89",
             "resultPreview": "sha256:1da2217782e001e8:860",
             "durationMs": 764,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "58df91b8590f1ce0952b1cc86d760d767a8ae0897f466b8d30a00dbf4f448cd9",
+            "ordinal": 9
           },
           {
             "node": "tool",
@@ -357,7 +902,10 @@
             "inputPreview": "sha256:ac074285f60ef41f:160",
             "resultPreview": "sha256:385c19e94dd73790:297",
             "durationMs": 792,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "ac074285f60ef41f43a16201718b09d33946c2621bced72a7dcdc395b715bf58",
+            "ordinal": 10
           },
           {
             "node": "tool",
@@ -367,7 +915,10 @@
             "inputPreview": "sha256:018ab8b52254e814:350",
             "resultPreview": "sha256:9a88cf5c6c837ccb:376",
             "durationMs": 1231,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "018ab8b52254e8148d904ce40abd33b1ee29d3ccb818ac7e37df0b3033f7e984",
+            "ordinal": 11
           },
           {
             "node": "tool",
@@ -377,7 +928,10 @@
             "inputPreview": "sha256:8c9934e6396984a1:80",
             "resultPreview": "sha256:01e30795aea94560:345",
             "durationMs": 1237,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "8c9934e6396984a118d7bd6067090cfe89171cf2b012234ea7d26fef5a61c8b0",
+            "ordinal": 12
           },
           {
             "node": "tool",
@@ -387,7 +941,10 @@
             "inputPreview": "sha256:6f8960add30f8a2f:389",
             "resultPreview": "sha256:684019395a30f765:548",
             "durationMs": 735,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "6f8960add30f8a2f3c4d7cef0c7694d67fb6849d631dfb5cfb58bb92a544fc4a",
+            "ordinal": 13
           },
           {
             "node": "tool",
@@ -397,7 +954,10 @@
             "inputPreview": "sha256:94001c0908d17921:122",
             "resultPreview": "sha256:0b089ce22bfcbdbc:337",
             "durationMs": 103,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "94001c0908d17921e87eb7bc7505d2491c86795d3aeff6238a2a46bfe78479dd",
+            "ordinal": 14
           },
           {
             "node": "tool",
@@ -407,7 +967,10 @@
             "inputPreview": "sha256:ea251eaff71a60bf:110",
             "resultPreview": "sha256:a01398f1cd3e373e:363",
             "durationMs": 84,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "ea251eaff71a60bf2e2f23b62ca723d5f469586e5772bf1add7ff0b7101ad6ee",
+            "ordinal": 15
           },
           {
             "node": "tool",
@@ -417,7 +980,10 @@
             "inputPreview": "sha256:74e5f81d9422f377:4777",
             "resultPreview": "sha256:f050fe3ad54e7047:2153",
             "durationMs": 105266,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "74e5f81d9422f3774cd2062f19d5d9415850f328617ea5ceb3542bddb57ce624",
+            "ordinal": 16
           },
           {
             "node": "tool",
@@ -427,7 +993,10 @@
             "inputPreview": "sha256:339d2442b48159d8:64",
             "resultPreview": "sha256:befd1fcc70c248c1:8248",
             "durationMs": 360,
-            "truncated": true
+            "truncated": true,
+            "filePath": null,
+            "inputHash": "339d2442b48159d81740db1309fbe4583c9e9d5fd74df6194108c7d3e7bbd2e3",
+            "ordinal": 17
           },
           {
             "node": "tool",
@@ -437,7 +1006,10 @@
             "inputPreview": "sha256:54dcecc59cc97b52:249",
             "resultPreview": "sha256:9efb8ca4e9cd4b63:60",
             "durationMs": 743,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "54dcecc59cc97b52fb8e18033ec5d01ece5af444e94d57ab1be283996434928d",
+            "ordinal": 18
           },
           {
             "node": "tool",
@@ -447,7 +1019,10 @@
             "inputPreview": "sha256:9a9744cce4b2c9b8:218",
             "resultPreview": "sha256:5c23747ac5bcc76c:1044",
             "durationMs": 749,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "9a9744cce4b2c9b8e82d050c0924d4351c67686b2993e7dbae68069b2621b7f5",
+            "ordinal": 19
           },
           {
             "node": "tool",
@@ -457,7 +1032,10 @@
             "inputPreview": "sha256:2359e682a177ed6c:145",
             "resultPreview": "sha256:56b90973cb887532:824",
             "durationMs": 743,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "2359e682a177ed6cfacdf018562f029aa528d8607975a52767a21cf81590e479",
+            "ordinal": 20
           },
           {
             "node": "tool",
@@ -467,7 +1045,10 @@
             "inputPreview": "sha256:dc6820a2128db708:67",
             "resultPreview": "sha256:3e582485e7d6db6b:8248",
             "durationMs": 638,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "dc6820a2128db708cd30fbd0207fa75c8bcfcc91fe4d974118d7775d0de36559",
+            "ordinal": 21
           },
           {
             "node": "tool",
@@ -477,7 +1058,10 @@
             "inputPreview": "sha256:02e5142a5f73ab48:291",
             "resultPreview": "sha256:6a74a0f3f1ab8043:814",
             "durationMs": 722,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "02e5142a5f73ab48ad435e91b82e15c2d142d3e29cac3683d0a65df3c4b1bd49",
+            "ordinal": 22
           },
           {
             "node": "tool",
@@ -487,7 +1071,10 @@
             "inputPreview": "sha256:0876cc652f19eda5:82",
             "resultPreview": "sha256:165b4afd964df1c6:5506",
             "durationMs": 97,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:5db68e83afac0cb0:61",
+            "inputHash": "0876cc652f19eda57d1f6f04449849a6ac3dcc221b390041e51ce4b828680e76",
+            "ordinal": 23
           },
           {
             "node": "tool",
@@ -497,7 +1084,10 @@
             "inputPreview": "sha256:a3fe814a874bec11:180",
             "resultPreview": "sha256:bd0020b688313d25:595",
             "durationMs": 734,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "a3fe814a874bec11830fb254f25796d01feda7afcb447cee4aa674399fd9fc77",
+            "ordinal": 24
           },
           {
             "node": "tool",
@@ -507,7 +1097,10 @@
             "inputPreview": "sha256:221c4b41768333f6:378",
             "resultPreview": "sha256:50638c66cfbd0ffb:491",
             "durationMs": 734,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "221c4b41768333f6774ad8a6b9eb9e739f7c5701fe622a9513384df433d376bd",
+            "ordinal": 25
           },
           {
             "node": "tool",
@@ -517,7 +1110,10 @@
             "inputPreview": "sha256:4a9c864c47ff38ea:374",
             "resultPreview": "sha256:f159225a032f2f49:182",
             "durationMs": 724,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "4a9c864c47ff38eab2e67fd957988c66f560821cd01bfbd50cca324426fa2255",
+            "ordinal": 26
           },
           {
             "node": "tool",
@@ -527,7 +1123,10 @@
             "inputPreview": "sha256:73d0bceb24f7afcf:274",
             "resultPreview": "sha256:267ff89db2619359:281",
             "durationMs": 701,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "73d0bceb24f7afcfdf82d4325ef8e891703bdf539921c1dc6b6b7ab54ac3ed81",
+            "ordinal": 27
           },
           {
             "node": "tool",
@@ -537,7 +1136,10 @@
             "inputPreview": "sha256:0461096f48eb47e8:79",
             "resultPreview": "sha256:4efce5d2b53ddbac:8248",
             "durationMs": 356,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "0461096f48eb47e83c4cf671869531b478f9cefb2a7e9082140280ab054e9e8e",
+            "ordinal": 28
           },
           {
             "node": "tool",
@@ -547,7 +1149,10 @@
             "inputPreview": "sha256:7180813aa8f43c72:214",
             "resultPreview": "sha256:325f07fea50c5bbf:291",
             "durationMs": 730,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "7180813aa8f43c727e415dcbed3457712e631f13290c651c58cde6db455c2613",
+            "ordinal": 29
           },
           {
             "node": "tool",
@@ -557,7 +1162,10 @@
             "inputPreview": "sha256:0db7fe2c2cfa59a1:412",
             "resultPreview": "sha256:8f667685e64a512d:251",
             "durationMs": 948,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "0db7fe2c2cfa59a1a6c0b25faf372149c3e95f99436ad565dd6bb182b102bfb8",
+            "ordinal": 30
           },
           {
             "node": "tool",
@@ -567,7 +1175,10 @@
             "inputPreview": "sha256:f07b075547848451:62",
             "resultPreview": "sha256:c6744de579a57a14:8248",
             "durationMs": 680,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "f07b075547848451e4b40476c1fd305c39dccfc00dc227b89e2dd3a918d1abdc",
+            "ordinal": 31
           },
           {
             "node": "tool",
@@ -577,7 +1188,10 @@
             "inputPreview": "sha256:9065858411e2db7d:96",
             "resultPreview": "sha256:75a5c62ed7757fcc:8248",
             "durationMs": 682,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "9065858411e2db7db859376e0dedae694dfd01fb0f35b7d6acbf971830189680",
+            "ordinal": 32
           },
           {
             "node": "tool",
@@ -587,7 +1201,10 @@
             "inputPreview": "sha256:a14350dee7ea99af:75",
             "resultPreview": "sha256:4749935cdc773bac:8248",
             "durationMs": 957,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "a14350dee7ea99af7005d2ef59d5e9a28917b0dd885576bbb6e8d774bd6961d1",
+            "ordinal": 33
           },
           {
             "node": "tool",
@@ -597,7 +1214,10 @@
             "inputPreview": "sha256:6e6bf6f8dad859ab:363",
             "resultPreview": "sha256:41a47aa12235cd5b:112",
             "durationMs": 734,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "6e6bf6f8dad859abdecf1d0028d5756b197ae23aaf8d99c4f3f24448607b6ba0",
+            "ordinal": 34
           },
           {
             "node": "tool",
@@ -607,7 +1227,10 @@
             "inputPreview": "sha256:23943f89fef870f7:85",
             "resultPreview": "sha256:58ba81e41a86651e:699",
             "durationMs": 728,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "23943f89fef870f7be3f81fa8ee2d6777c6271eead8150e3fb78a4246df469d7",
+            "ordinal": 35
           },
           {
             "node": "tool",
@@ -617,7 +1240,10 @@
             "inputPreview": "sha256:bdd6ea87624f5d45:431",
             "resultPreview": "sha256:8463c144cbb63e2e:150",
             "durationMs": 747,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "bdd6ea87624f5d45520adb5b0fdb4a9cf046f73bd8f2a72e2cf329fe648ac25c",
+            "ordinal": 36
           },
           {
             "node": "tool",
@@ -627,7 +1253,10 @@
             "inputPreview": "sha256:1a085a46e1dc0874:5847",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 8,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:7decf1ea14a027c3:40",
+            "inputHash": "1a085a46e1dc0874e0b7a1e0cb7358d2678c24759d9fc89dd08ab8eeb2d46210",
+            "ordinal": 37
           },
           {
             "node": "tool",
@@ -637,7 +1266,10 @@
             "inputPreview": "sha256:98c362f485cebebd:254",
             "resultPreview": "sha256:eec14c3c89716ab5:240",
             "durationMs": 750,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "98c362f485cebebd0ea355b940628979078cf427203f94c415fee15f89e31b21",
+            "ordinal": 38
           },
           {
             "node": "tool",
@@ -647,7 +1279,10 @@
             "inputPreview": "sha256:f36a2399900bf695:65",
             "resultPreview": "sha256:58dbfd22284ac6b7:4213",
             "durationMs": 33,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:e1d90f183ad1e219:45",
+            "inputHash": "f36a2399900bf69541e62eb0e2993c753e1752de517a6888d7c7d1b21ba28c40",
+            "ordinal": 39
           },
           {
             "node": "tool",
@@ -657,7 +1292,10 @@
             "inputPreview": "sha256:0a436e82bcb97bf8:400",
             "resultPreview": "sha256:89169c6f111e3366:6899",
             "durationMs": 780,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "0a436e82bcb97bf8ae1d45b233cabefddf4889b79947c40a955302dbddc8b208",
+            "ordinal": 40
           },
           {
             "node": "tool",
@@ -667,7 +1305,10 @@
             "inputPreview": "sha256:288449885f276fe6:5737",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 21009624,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "288449885f276fe6643183a183547deee20457eeff1f66f604d811596a527433",
+            "ordinal": 41
           },
           {
             "node": "agent",
@@ -681,6 +1322,38 @@
               "prompt": 160157,
               "output": 757
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11616,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 175
+              },
+              {
+                "ordinal": 1,
+                "input": 27044,
+                "cacheCreation": 0,
+                "cacheRead": 11792,
+                "output": 240
+              },
+              {
+                "ordinal": 2,
+                "input": 15361,
+                "cacheCreation": 0,
+                "cacheRead": 39075,
+                "output": 207
+              },
+              {
+                "ordinal": 3,
+                "input": 626,
+                "cacheCreation": 0,
+                "cacheRead": 54643,
+                "output": 135
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 10967448,
             "endedAtOffsetMs": 11754185,
             "children": [
@@ -692,7 +1365,10 @@
                 "inputPreview": "sha256:848a600c3c55a31e:110",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
                 "durationMs": 1118,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "848a600c3c55a31e3928e9c3e8a3fb02e24c979879e7e34b30835dba9c4a635c",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -702,7 +1378,10 @@
                 "inputPreview": "sha256:b938189206d31fb7:106",
                 "resultPreview": "sha256:05dab1a9c37a0347:8248",
                 "durationMs": 163,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e35060cf40b24522:82",
+                "inputHash": "b938189206d31fb784b9123f742f8f47bef6839711e3b2219a7cf4c45b9b21c3",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -712,7 +1391,10 @@
                 "inputPreview": "sha256:d18f059a1dc1465a:109",
                 "resultPreview": "sha256:076ee2294dc836e2:8248",
                 "durationMs": 111,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:107d506a1437acfc:84",
+                "inputHash": "d18f059a1dc1465a8f2a90b3afbf55ddcc3a83b879566d0cec5ddcb64706e714",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -722,7 +1404,10 @@
                 "inputPreview": "sha256:58592ba2245639fc:114",
                 "resultPreview": "sha256:70f59f3d2e858075:8248",
                 "durationMs": 107,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:9b35af102ee9a628:88",
+                "inputHash": "58592ba2245639fc6647ab323a6e3d40362f7de962fe4361fb9d8a6054dd9c55",
+                "ordinal": 3
               },
               {
                 "node": "tool",
@@ -732,7 +1417,10 @@
                 "inputPreview": "sha256:ba4596a0bed1905c:116",
                 "resultPreview": "sha256:4a25ecadc8968551:763",
                 "durationMs": 1585,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "ba4596a0bed1905cd5b328436689b098ee85aca79a271c5525b8ee6bfbbf9aaf",
+                "ordinal": 4
               },
               {
                 "node": "tool",
@@ -742,7 +1430,10 @@
                 "inputPreview": "sha256:fc460d662bfdd42d:103",
                 "resultPreview": "sha256:762f7b7aa94544f3:982",
                 "durationMs": 127,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "fc460d662bfdd42de6e5208ec9dfdad0f62c5a55889313927e63afd365f29b69",
+                "ordinal": 5
               },
               {
                 "node": "tool",
@@ -752,7 +1443,10 @@
                 "inputPreview": "sha256:389245ecb5bd3123:112",
                 "resultPreview": "sha256:cb1531b8230b74ba:8248",
                 "durationMs": 71,
-                "truncated": true
+                "truncated": true,
+                "filePath": "sha256:946cef8b66d9e16d:64",
+                "inputHash": "389245ecb5bd3123bffb6b22cfb8fc12d1163f913f5c6842b09b4e581bf73c19",
+                "ordinal": 6
               }
             ]
           },
@@ -764,7 +1458,10 @@
             "inputPreview": "sha256:fddb43422bfb1ddf:5830",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 19996333,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "fddb43422bfb1ddff3863bb9da1dbc2a24e3c14023f812fcb5f253f0fb9c8a6d",
+            "ordinal": 42
           },
           {
             "node": "agent",
@@ -778,6 +1475,24 @@
               "prompt": 23464,
               "output": 297
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11655,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 92
+              },
+              {
+                "ordinal": 1,
+                "input": 63,
+                "cacheCreation": 0,
+                "cacheRead": 11746,
+                "output": 205
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 11980743,
             "endedAtOffsetMs": 12185761,
             "children": [
@@ -789,7 +1504,10 @@
                 "inputPreview": "sha256:7e8cb57cb5422221:113",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
                 "durationMs": 1085,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "7e8cb57cb542222168a7a2b6d65dacf7080979e57ddcc26f769396e4ab0afea0",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -799,7 +1517,10 @@
                 "inputPreview": "sha256:da4ba2c9e376ee3d:101",
                 "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
                 "durationMs": 144,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:838a4b5cd97fbe48:78",
+                "inputHash": "da4ba2c9e376ee3df0a5dc8507e143554adc0e475b1d848d13d29e752dde8c7b",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -809,7 +1530,10 @@
                 "inputPreview": "sha256:6828395b09714324:109",
                 "resultPreview": "sha256:48d154b1d6af244d:8248",
                 "durationMs": 106,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:826d6033e0d3879a:85",
+                "inputHash": "6828395b09714324cfd7c83532fe1552209814234ae2471a5b050cae661595a0",
+                "ordinal": 2
               }
             ]
           },
@@ -821,7 +1545,10 @@
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 0,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "ordinal": 43
           },
           {
             "node": "tool",
@@ -831,7 +1558,10 @@
             "inputPreview": "sha256:d37aeac5c9dea775:5682",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 16930863,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "d37aeac5c9dea7756b836a11f996c5c31fdddf6a6144878fc00a04e8d5b0cb1a",
+            "ordinal": 44
           },
           {
             "node": "agent",
@@ -845,6 +1575,24 @@
               "prompt": 23439,
               "output": 266
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11613,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 97
+              },
+              {
+                "ordinal": 1,
+                "input": 117,
+                "cacheCreation": 0,
+                "cacheRead": 11709,
+                "output": 169
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 15046214,
             "endedAtOffsetMs": 15259026,
             "children": [
@@ -856,7 +1604,10 @@
                 "inputPreview": "sha256:85a4b93f5bc6fcc9:132",
                 "resultPreview": "sha256:9fd446160c35555f:351",
                 "durationMs": 1421,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "85a4b93f5bc6fcc9cc1c5f7d74ed3154246145f06be1e7c800c1f81f04f06185",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -866,7 +1617,10 @@
                 "inputPreview": "sha256:b938189206d31fb7:106",
                 "resultPreview": "sha256:05dab1a9c37a0347:8248",
                 "durationMs": 129,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e35060cf40b24522:82",
+                "inputHash": "b938189206d31fb784b9123f742f8f47bef6839711e3b2219a7cf4c45b9b21c3",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -876,7 +1630,10 @@
                 "inputPreview": "sha256:d18f059a1dc1465a:109",
                 "resultPreview": "sha256:076ee2294dc836e2:8248",
                 "durationMs": 93,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:107d506a1437acfc:84",
+                "inputHash": "d18f059a1dc1465a8f2a90b3afbf55ddcc3a83b879566d0cec5ddcb64706e714",
+                "ordinal": 2
               }
             ]
           },
@@ -888,7 +1645,10 @@
             "inputPreview": "sha256:e414563b0ec54b68:7439",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 16043859,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "e414563b0ec54b68a435009061641cd634d87a6cfefdcbc83c80dd62eb5d17fe",
+            "ordinal": 45
           },
           {
             "node": "agent",
@@ -902,6 +1662,24 @@
               "prompt": 24586,
               "output": 763
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 12018,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 479
+              },
+              {
+                "ordinal": 1,
+                "input": 71,
+                "cacheCreation": 0,
+                "cacheRead": 12497,
+                "output": 284
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 15933223,
             "endedAtOffsetMs": 16264960,
             "children": [
@@ -913,7 +1691,10 @@
                 "inputPreview": "sha256:7e8cb57cb5422221:113",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
                 "durationMs": 1090,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "7e8cb57cb542222168a7a2b6d65dacf7080979e57ddcc26f769396e4ab0afea0",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -923,7 +1704,10 @@
                 "inputPreview": "sha256:ad2d6dbce11ba8d4:140",
                 "resultPreview": "sha256:390bc0fb7afc9adc:9",
                 "durationMs": 1127,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "ad2d6dbce11ba8d4455abb8ad9be969c4a0eff4e942fd15a9896a2748d4f82ab",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -933,7 +1717,10 @@
                 "inputPreview": "sha256:da4ba2c9e376ee3d:101",
                 "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
                 "durationMs": 137,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:838a4b5cd97fbe48:78",
+                "inputHash": "da4ba2c9e376ee3df0a5dc8507e143554adc0e475b1d848d13d29e752dde8c7b",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -943,7 +1730,10 @@
                 "inputPreview": "sha256:6828395b09714324:109",
                 "resultPreview": "sha256:48d154b1d6af244d:8248",
                 "durationMs": 112,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:826d6033e0d3879a:85",
+                "inputHash": "6828395b09714324cfd7c83532fe1552209814234ae2471a5b050cae661595a0",
+                "ordinal": 3
               }
             ]
           },
@@ -955,7 +1745,10 @@
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 0,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "ordinal": 46
           },
           {
             "node": "tool",
@@ -965,7 +1758,10 @@
             "inputPreview": "sha256:a33ebfc37009c124:5153",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 12695747,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "a33ebfc37009c124efc32e665ca96aec415d20ca4fa50753112675e7d5f324ab",
+            "ordinal": 47
           },
           {
             "node": "agent",
@@ -979,6 +1775,17 @@
               "prompt": 11436,
               "output": 175
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11436,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 175
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 19281337,
             "endedAtOffsetMs": 19455190,
             "children": [
@@ -990,7 +1797,10 @@
                 "inputPreview": "sha256:d1ee4c287aa68ce3:111",
                 "resultPreview": "sha256:5a9c7ad602148de7:760",
                 "durationMs": 1119,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "d1ee4c287aa68ce3598a36623180b98e3b866046c6ba228fda333d27f9429e36",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1000,7 +1810,10 @@
                 "inputPreview": "sha256:b938189206d31fb7:106",
                 "resultPreview": "sha256:05dab1a9c37a0347:8248",
                 "durationMs": 108,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e35060cf40b24522:82",
+                "inputHash": "b938189206d31fb784b9123f742f8f47bef6839711e3b2219a7cf4c45b9b21c3",
+                "ordinal": 1
               }
             ]
           },
@@ -1012,7 +1825,10 @@
             "inputPreview": "sha256:3e4b2661ebc970a0:6166",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 12020247,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "3e4b2661ebc970a0b6464f56be7f6fc408f0f89b1d70b5da03feea75921b40ef",
+            "ordinal": 48
           },
           {
             "node": "agent",
@@ -1026,6 +1842,24 @@
               "prompt": 23749,
               "output": 421
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11706,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 174
+              },
+              {
+                "ordinal": 1,
+                "input": 163,
+                "cacheCreation": 0,
+                "cacheRead": 11880,
+                "output": 247
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 19956839,
             "endedAtOffsetMs": 20186897,
             "children": [
@@ -1037,7 +1871,10 @@
                 "inputPreview": "sha256:49738be6b138f0c4:164",
                 "resultPreview": "sha256:6ab9fa49509b1988:360",
                 "durationMs": 1192,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "49738be6b138f0c4ab75737c3d154652b085dfcb9abb096411da999b9d4a71c5",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1047,7 +1884,10 @@
                 "inputPreview": "sha256:9bafa85302404ac8:108",
                 "resultPreview": "sha256:838a4b5cd97fbe48:78",
                 "durationMs": 667,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "9bafa85302404ac83d031501b8eceff1a6e2db39ed8d419f5fba52bec4a4e99e",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1057,7 +1897,10 @@
                 "inputPreview": "sha256:da4ba2c9e376ee3d:101",
                 "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
                 "durationMs": 64,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:838a4b5cd97fbe48:78",
+                "inputHash": "da4ba2c9e376ee3df0a5dc8507e143554adc0e475b1d848d13d29e752dde8c7b",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1067,7 +1910,10 @@
                 "inputPreview": "sha256:6828395b09714324:109",
                 "resultPreview": "sha256:48d154b1d6af244d:8248",
                 "durationMs": 64,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:826d6033e0d3879a:85",
+                "inputHash": "6828395b09714324cfd7c83532fe1552209814234ae2471a5b050cae661595a0",
+                "ordinal": 3
               },
               {
                 "node": "tool",
@@ -1077,7 +1923,10 @@
                 "inputPreview": "sha256:c70e53c2e2ad95c2:111",
                 "resultPreview": "sha256:8a70f06a6882ea57:8248",
                 "durationMs": 132,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:89c31dd947ad2a37:86",
+                "inputHash": "c70e53c2e2ad95c2b4100c2a2a231fedfa00ee49b1aee82e6bf90182337c1b4e",
+                "ordinal": 4
               }
             ]
           },
@@ -1089,7 +1938,10 @@
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 0,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "ordinal": 49
           },
           {
             "node": "tool",
@@ -1099,7 +1951,10 @@
             "inputPreview": "sha256:228378c79cd1a63d:5366",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 8585225,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "228378c79cd1a63dd96f5b5e2497f9ddd18f601195ddbf6a135b351517b9865a",
+            "ordinal": 50
           },
           {
             "node": "agent",
@@ -1113,6 +1968,31 @@
               "prompt": 100456,
               "output": 801
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11521,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 265
+              },
+              {
+                "ordinal": 1,
+                "input": 27130,
+                "cacheCreation": 0,
+                "cacheRead": 11787,
+                "output": 267
+              },
+              {
+                "ordinal": 2,
+                "input": 10833,
+                "cacheCreation": 0,
+                "cacheRead": 39185,
+                "output": 269
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 23391859,
             "endedAtOffsetMs": 24052731,
             "children": [
@@ -1124,7 +2004,10 @@
                 "inputPreview": "sha256:13d201a76c44a929:132",
                 "resultPreview": "sha256:34e35940e6bf5779:418",
                 "durationMs": 1417,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "13d201a76c44a9297343d50532b5bc3496f9b32b51a68130431f90272bc1f53f",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1134,7 +2017,10 @@
                 "inputPreview": "sha256:b938189206d31fb7:106",
                 "resultPreview": "sha256:05dab1a9c37a0347:8248",
                 "durationMs": 197,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e35060cf40b24522:82",
+                "inputHash": "b938189206d31fb784b9123f742f8f47bef6839711e3b2219a7cf4c45b9b21c3",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1144,7 +2030,10 @@
                 "inputPreview": "sha256:949c977d88ae3671:161",
                 "resultPreview": "sha256:9369bedffe2701a7:88",
                 "durationMs": 1197,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "949c977d88ae36714ffc12d46baa319e47406745896589476a370a623cbf1d07",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1154,7 +2043,10 @@
                 "inputPreview": "sha256:d18f059a1dc1465a:109",
                 "resultPreview": "sha256:076ee2294dc836e2:8248",
                 "durationMs": 340,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:107d506a1437acfc:84",
+                "inputHash": "d18f059a1dc1465a8f2a90b3afbf55ddcc3a83b879566d0cec5ddcb64706e714",
+                "ordinal": 3
               },
               {
                 "node": "tool",
@@ -1164,7 +2056,10 @@
                 "inputPreview": "sha256:58592ba2245639fc:114",
                 "resultPreview": "sha256:70f59f3d2e858075:8248",
                 "durationMs": 148,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:9b35af102ee9a628:88",
+                "inputHash": "58592ba2245639fc6647ab323a6e3d40362f7de962fe4361fb9d8a6054dd9c55",
+                "ordinal": 4
               },
               {
                 "node": "tool",
@@ -1174,7 +2069,10 @@
                 "inputPreview": "sha256:5d62ccf40c9699ab:458",
                 "resultPreview": "sha256:10067d1c40e8f21b:597",
                 "durationMs": 1282,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "5d62ccf40c9699ab7b3272f0bba4952785fac84223733a242d55a66d40bf8a1a",
+                "ordinal": 5
               }
             ]
           },
@@ -1186,7 +2084,10 @@
             "inputPreview": "sha256:d98a839e02e90b15:5981",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 7701944,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "d98a839e02e90b15492daedd6f700799c0ccef2b480eca2cb28545b5efff7984",
+            "ordinal": 51
           },
           {
             "node": "agent",
@@ -1200,6 +2101,24 @@
               "prompt": 23784,
               "output": 523
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11659,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 334
+              },
+              {
+                "ordinal": 1,
+                "input": 132,
+                "cacheCreation": 0,
+                "cacheRead": 11993,
+                "output": 189
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 24275146,
             "endedAtOffsetMs": 24545655,
             "children": [
@@ -1211,7 +2130,10 @@
                 "inputPreview": "sha256:62a65e750b9f223d:164",
                 "resultPreview": "sha256:cc867f2c6a805e4c:247",
                 "durationMs": 1214,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "62a65e750b9f223de75caa2003a225f6a6ad6ee2524af8e26e860d1068a2aaf0",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1221,7 +2143,10 @@
                 "inputPreview": "sha256:9bafa85302404ac8:108",
                 "resultPreview": "sha256:838a4b5cd97fbe48:78",
                 "durationMs": 616,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "9bafa85302404ac83d031501b8eceff1a6e2db39ed8d419f5fba52bec4a4e99e",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1231,7 +2156,10 @@
                 "inputPreview": "sha256:da4ba2c9e376ee3d:101",
                 "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
                 "durationMs": 156,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:838a4b5cd97fbe48:78",
+                "inputHash": "da4ba2c9e376ee3df0a5dc8507e143554adc0e475b1d848d13d29e752dde8c7b",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1241,7 +2169,10 @@
                 "inputPreview": "sha256:6828395b09714324:109",
                 "resultPreview": "sha256:48d154b1d6af244d:8248",
                 "durationMs": 138,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:826d6033e0d3879a:85",
+                "inputHash": "6828395b09714324cfd7c83532fe1552209814234ae2471a5b050cae661595a0",
+                "ordinal": 3
               }
             ]
           },
@@ -1253,7 +2184,10 @@
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 0,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "ordinal": 52
           },
           {
             "node": "tool",
@@ -1263,7 +2197,10 @@
             "inputPreview": "sha256:640cf844c1069df3:5213",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 4839647,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "640cf844c1069df36191fca117455d5d282946a7a10b17829e990fcf88cadf65",
+            "ordinal": 53
           },
           {
             "node": "agent",
@@ -1277,6 +2214,52 @@
               "prompt": 229370,
               "output": 965
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11455,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 111
+              },
+              {
+                "ordinal": 1,
+                "input": 63,
+                "cacheCreation": 0,
+                "cacheRead": 11565,
+                "output": 190
+              },
+              {
+                "ordinal": 2,
+                "input": 27001,
+                "cacheCreation": 0,
+                "cacheRead": 11819,
+                "output": 177
+              },
+              {
+                "ordinal": 3,
+                "input": 15359,
+                "cacheCreation": 0,
+                "cacheRead": 38998,
+                "output": 263
+              },
+              {
+                "ordinal": 4,
+                "input": 242,
+                "cacheCreation": 0,
+                "cacheRead": 54620,
+                "output": 112
+              },
+              {
+                "ordinal": 5,
+                "input": 3273,
+                "cacheCreation": 0,
+                "cacheRead": 54975,
+                "output": 112
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 27137441,
             "endedAtOffsetMs": 27992115,
             "children": [
@@ -1288,7 +2271,10 @@
                 "inputPreview": "sha256:848a600c3c55a31e:110",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
                 "durationMs": 1337,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "848a600c3c55a31e3928e9c3e8a3fb02e24c979879e7e34b30835dba9c4a635c",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1298,7 +2284,10 @@
                 "inputPreview": "sha256:fc8f6ce5f0ac1dc7:135",
                 "resultPreview": "sha256:83d47ff2ad3c1a31:6",
                 "durationMs": 1231,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "fc8f6ce5f0ac1dc7c96e59839afbda11ec2304a3b374c6b4757f96e7eb83912e",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1308,7 +2297,10 @@
                 "inputPreview": "sha256:b938189206d31fb7:106",
                 "resultPreview": "sha256:05dab1a9c37a0347:8248",
                 "durationMs": 104,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e35060cf40b24522:82",
+                "inputHash": "b938189206d31fb784b9123f742f8f47bef6839711e3b2219a7cf4c45b9b21c3",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1318,7 +2310,10 @@
                 "inputPreview": "sha256:d18f059a1dc1465a:109",
                 "resultPreview": "sha256:076ee2294dc836e2:8248",
                 "durationMs": 136,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:107d506a1437acfc:84",
+                "inputHash": "d18f059a1dc1465a8f2a90b3afbf55ddcc3a83b879566d0cec5ddcb64706e714",
+                "ordinal": 3
               },
               {
                 "node": "tool",
@@ -1328,7 +2323,10 @@
                 "inputPreview": "sha256:58592ba2245639fc:114",
                 "resultPreview": "sha256:70f59f3d2e858075:8248",
                 "durationMs": 95,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:9b35af102ee9a628:88",
+                "inputHash": "58592ba2245639fc6647ab323a6e3d40362f7de962fe4361fb9d8a6054dd9c55",
+                "ordinal": 4
               },
               {
                 "node": "tool",
@@ -1338,7 +2336,10 @@
                 "inputPreview": "sha256:f76e66c2d2fb37f9:156",
                 "resultPreview": "sha256:1a1f87d74baf81ed:407",
                 "durationMs": 382,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "f76e66c2d2fb37f9447d58bd727af1c3473488d85c838f24c592335e2aed8f8d",
+                "ordinal": 5
               },
               {
                 "node": "tool",
@@ -1348,7 +2349,10 @@
                 "inputPreview": "sha256:009e2ab29313d0b2:212",
                 "resultPreview": "sha256:f62aad500b0a5319:215",
                 "durationMs": 1351,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "009e2ab29313d0b2c66d5615abc4262e761773e226a8674f4301af4d56d1e3a6",
+                "ordinal": 6
               },
               {
                 "node": "tool",
@@ -1358,7 +2362,10 @@
                 "inputPreview": "sha256:60132f0265664ca9:112",
                 "resultPreview": "sha256:44eb1b2c985225e5:8248",
                 "durationMs": 90,
-                "truncated": true
+                "truncated": true,
+                "filePath": "sha256:946cef8b66d9e16d:64",
+                "inputHash": "60132f0265664ca9573a0d259cb6a23cc9244edc492463a84a9c2b18eac77140",
+                "ordinal": 7
               },
               {
                 "node": "tool",
@@ -1368,7 +2375,10 @@
                 "inputPreview": "sha256:c39166d728037a7f:112",
                 "resultPreview": "sha256:b0935a3807ed9126:8248",
                 "durationMs": 106,
-                "truncated": true
+                "truncated": true,
+                "filePath": "sha256:946cef8b66d9e16d:64",
+                "inputHash": "c39166d728037a7f513d029a2548aee02424352104bb7f6d7374dca4bc950696",
+                "ordinal": 8
               }
             ]
           },
@@ -1380,7 +2390,10 @@
             "inputPreview": "sha256:b66a1edd3b8810cd:5852",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 3830708,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "b66a1edd3b8810cd9d0ed6ee870e447c1f09669f17706be2d64f705efe1dd6ea",
+            "ordinal": 54
           },
           {
             "node": "agent",
@@ -1394,6 +2407,24 @@
               "prompt": 23798,
               "output": 627
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11591,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 314
+              },
+              {
+                "ordinal": 1,
+                "input": 302,
+                "cacheCreation": 0,
+                "cacheRead": 11905,
+                "output": 313
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 28146385,
             "endedAtOffsetMs": 28413037,
             "children": [
@@ -1405,7 +2436,10 @@
                 "inputPreview": "sha256:a3d959fd521b9525:160",
                 "resultPreview": "sha256:5ccbc85a86f1426a:172",
                 "durationMs": 1189,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "a3d959fd521b95254a95e30ba97fce98d315bf0684dd50a78f72cc87127aceb6",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1415,7 +2449,10 @@
                 "inputPreview": "sha256:63d350a5c891c469:114",
                 "resultPreview": "sha256:5a9c7ad602148de7:760",
                 "durationMs": 1195,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "63d350a5c891c4691b705fb2f7cff565750fadf961562d1100d860c66396a7ae",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1425,7 +2462,10 @@
                 "inputPreview": "sha256:da4ba2c9e376ee3d:101",
                 "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
                 "durationMs": 34,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:838a4b5cd97fbe48:78",
+                "inputHash": "da4ba2c9e376ee3df0a5dc8507e143554adc0e475b1d848d13d29e752dde8c7b",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1435,7 +2475,10 @@
                 "inputPreview": "sha256:6828395b09714324:109",
                 "resultPreview": "sha256:48d154b1d6af244d:8248",
                 "durationMs": 116,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:826d6033e0d3879a:85",
+                "inputHash": "6828395b09714324cfd7c83532fe1552209814234ae2471a5b050cae661595a0",
+                "ordinal": 3
               },
               {
                 "node": "tool",
@@ -1445,7 +2488,10 @@
                 "inputPreview": "sha256:c70e53c2e2ad95c2:111",
                 "resultPreview": "sha256:8a70f06a6882ea57:8248",
                 "durationMs": 84,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:89c31dd947ad2a37:86",
+                "inputHash": "c70e53c2e2ad95c2b4100c2a2a231fedfa00ee49b1aee82e6bf90182337c1b4e",
+                "ordinal": 4
               }
             ]
           },
@@ -1457,7 +2503,10 @@
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 0,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "ordinal": 55
           },
           {
             "node": "tool",
@@ -1467,7 +2516,10 @@
             "inputPreview": "sha256:33d84f022fdcc611:5806",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 1206193,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "33d84f022fdcc61103cee4ec5f6541fa4d5f6fd675c81390a5e0875a82cae482",
+            "ordinal": 56
           },
           {
             "node": "agent",
@@ -1481,6 +2533,31 @@
               "prompt": 73357,
               "output": 705
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11595,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 256
+              },
+              {
+                "ordinal": 1,
+                "input": 70,
+                "cacheCreation": 0,
+                "cacheRead": 11851,
+                "output": 178
+              },
+              {
+                "ordinal": 2,
+                "input": 37742,
+                "cacheCreation": 0,
+                "cacheRead": 12099,
+                "output": 271
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 30770902,
             "endedAtOffsetMs": 31391272,
             "children": [
@@ -1492,7 +2569,10 @@
                 "inputPreview": "sha256:848a600c3c55a31e:110",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
                 "durationMs": 1293,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "848a600c3c55a31e3928e9c3e8a3fb02e24c979879e7e34b30835dba9c4a635c",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1502,7 +2582,10 @@
                 "inputPreview": "sha256:1a8468e4e60e5b8a:108",
                 "resultPreview": "sha256:efefc15c24ee8645:11",
                 "durationMs": 2532,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "1a8468e4e60e5b8aeab5dfa87bda734cb0d7cdd005f78e4b53209579f8728225",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1512,7 +2595,10 @@
                 "inputPreview": "sha256:b938189206d31fb7:106",
                 "resultPreview": "sha256:05dab1a9c37a0347:8248",
                 "durationMs": 95,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e35060cf40b24522:82",
+                "inputHash": "b938189206d31fb784b9123f742f8f47bef6839711e3b2219a7cf4c45b9b21c3",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1522,7 +2608,10 @@
                 "inputPreview": "sha256:d18f059a1dc1465a:109",
                 "resultPreview": "sha256:076ee2294dc836e2:8248",
                 "durationMs": 121,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:107d506a1437acfc:84",
+                "inputHash": "d18f059a1dc1465a8f2a90b3afbf55ddcc3a83b879566d0cec5ddcb64706e714",
+                "ordinal": 3
               },
               {
                 "node": "tool",
@@ -1532,7 +2621,10 @@
                 "inputPreview": "sha256:58592ba2245639fc:114",
                 "resultPreview": "sha256:70f59f3d2e858075:8248",
                 "durationMs": 90,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:9b35af102ee9a628:88",
+                "inputHash": "58592ba2245639fc6647ab323a6e3d40362f7de962fe4361fb9d8a6054dd9c55",
+                "ordinal": 4
               },
               {
                 "node": "tool",
@@ -1542,7 +2634,10 @@
                 "inputPreview": "sha256:41034acdfa39e40e:493",
                 "resultPreview": "sha256:28ca72d0e4791e55:576",
                 "durationMs": 1388,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "41034acdfa39e40e9a7f277677f364e69bc30f7428a99c24f27604ed3be319d5",
+                "ordinal": 5
               }
             ]
           },
@@ -1554,7 +2649,10 @@
             "inputPreview": "sha256:0caaad02f019b3b4:6163",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 366762,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "0caaad02f019b3b4ce4d092567b52ce7263883c0cc32a3bf7a199926e4fd56be",
+            "ordinal": 57
           },
           {
             "node": "agent",
@@ -1568,6 +2666,24 @@
               "prompt": 23525,
               "output": 419
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11644,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 167
+              },
+              {
+                "ordinal": 1,
+                "input": 70,
+                "cacheCreation": 0,
+                "cacheRead": 11811,
+                "output": 252
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 31610345,
             "endedAtOffsetMs": 31840001,
             "children": [
@@ -1579,7 +2695,10 @@
                 "inputPreview": "sha256:7e8cb57cb5422221:113",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
                 "durationMs": 1208,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "7e8cb57cb542222168a7a2b6d65dacf7080979e57ddcc26f769396e4ab0afea0",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1589,7 +2708,10 @@
                 "inputPreview": "sha256:526186b1c8912dc4:111",
                 "resultPreview": "sha256:efefc15c24ee8645:11",
                 "durationMs": 2007,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "526186b1c8912dc428cc4e7ed9a5b70f9771f7c9cf2d05edc114d3d7ae959fc2",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1599,7 +2721,10 @@
                 "inputPreview": "sha256:6828395b09714324:109",
                 "resultPreview": "sha256:b36d162e60fcf1a8:8248",
                 "durationMs": 118,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:826d6033e0d3879a:85",
+                "inputHash": "6828395b09714324cfd7c83532fe1552209814234ae2471a5b050cae661595a0",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1609,7 +2734,10 @@
                 "inputPreview": "sha256:da4ba2c9e376ee3d:101",
                 "resultPreview": "sha256:fc9d2675e40bc1c8:8248",
                 "durationMs": 65,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:838a4b5cd97fbe48:78",
+                "inputHash": "da4ba2c9e376ee3df0a5dc8507e143554adc0e475b1d848d13d29e752dde8c7b",
+                "ordinal": 3
               }
             ]
           },
@@ -1621,7 +2749,10 @@
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 0,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "ordinal": 58
           },
           {
             "node": "tool",
@@ -1631,7 +2762,10 @@
             "inputPreview": "sha256:7c49575872f511ad:5092",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 8672181,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "7c49575872f511adb22ca5bfb965d5b61969e492a90b04e1391de23e5468f6a0",
+            "ordinal": 59
           },
           {
             "node": "agent",
@@ -1645,6 +2779,24 @@
               "prompt": 23019,
               "output": 188
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11430,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 97
+              },
+              {
+                "ordinal": 1,
+                "input": 61,
+                "cacheCreation": 0,
+                "cacheRead": 11528,
+                "output": 91
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 35294448,
             "endedAtOffsetMs": 35471787,
             "children": [
@@ -1656,7 +2808,10 @@
                 "inputPreview": "sha256:b5447ea1b55a2787:132",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
                 "durationMs": 1507,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "b5447ea1b55a27876d7aeae6238b313ef65b25e8fd791045c9aa1c159c004ce4",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1666,7 +2821,10 @@
                 "inputPreview": "sha256:b938189206d31fb7:106",
                 "resultPreview": "sha256:05dab1a9c37a0347:8248",
                 "durationMs": 93,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e35060cf40b24522:82",
+                "inputHash": "b938189206d31fb784b9123f742f8f47bef6839711e3b2219a7cf4c45b9b21c3",
+                "ordinal": 1
               }
             ]
           },
@@ -1678,7 +2836,10 @@
             "inputPreview": "sha256:0224799d749068b7:5553",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 8059599,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "0224799d749068b7c72f8ad37b2563807692abf5c86817073910702e5bacb612",
+            "ordinal": 60
           },
           {
             "node": "agent",
@@ -1692,6 +2853,24 @@
               "prompt": 41822,
               "output": 570
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11536,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 330
+              },
+              {
+                "ordinal": 1,
+                "input": 18420,
+                "cacheCreation": 0,
+                "cacheRead": 11866,
+                "output": 240
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 35907033,
             "endedAtOffsetMs": 36293325,
             "children": [
@@ -1703,7 +2882,10 @@
                 "inputPreview": "sha256:7259ef51d3aa42a3:164",
                 "resultPreview": "sha256:5ccbc85a86f1426a:172",
                 "durationMs": 1288,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "7259ef51d3aa42a305b23bbb7b3b19d1b2396711e157083f6c522bff00b577da",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1713,7 +2895,10 @@
                 "inputPreview": "sha256:da4ba2c9e376ee3d:101",
                 "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
                 "durationMs": 99,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:838a4b5cd97fbe48:78",
+                "inputHash": "da4ba2c9e376ee3df0a5dc8507e143554adc0e475b1d848d13d29e752dde8c7b",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1723,7 +2908,10 @@
                 "inputPreview": "sha256:6828395b09714324:109",
                 "resultPreview": "sha256:48d154b1d6af244d:8248",
                 "durationMs": 86,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:826d6033e0d3879a:85",
+                "inputHash": "6828395b09714324cfd7c83532fe1552209814234ae2471a5b050cae661595a0",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1733,7 +2921,10 @@
                 "inputPreview": "sha256:c70e53c2e2ad95c2:111",
                 "resultPreview": "sha256:8a70f06a6882ea57:8248",
                 "durationMs": 63,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:89c31dd947ad2a37:86",
+                "inputHash": "c70e53c2e2ad95c2b4100c2a2a231fedfa00ee49b1aee82e6bf90182337c1b4e",
+                "ordinal": 3
               }
             ]
           },
@@ -1745,7 +2936,10 @@
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 0,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "ordinal": 61
           },
           {
             "node": "tool",
@@ -1755,7 +2949,10 @@
             "inputPreview": "sha256:8e5332915704dac4:6086",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 7101101,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "8e5332915704dac49e9b341f23a6dc8c690d91b10f79e669c8baeb1c8d0b7fdd",
+            "ordinal": 62
           },
           {
             "node": "agent",
@@ -1769,6 +2966,24 @@
               "prompt": 23505,
               "output": 300
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 1524,
+                "cacheCreation": 0,
+                "cacheRead": 10150,
+                "output": 95
+              },
+              {
+                "ordinal": 1,
+                "input": 63,
+                "cacheCreation": 0,
+                "cacheRead": 11768,
+                "output": 205
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 36865534,
             "endedAtOffsetMs": 36989241,
             "children": [
@@ -1780,7 +2995,10 @@
                 "inputPreview": "sha256:848a600c3c55a31e:110",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
                 "durationMs": 1385,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "848a600c3c55a31e3928e9c3e8a3fb02e24c979879e7e34b30835dba9c4a635c",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1790,7 +3008,10 @@
                 "inputPreview": "sha256:b938189206d31fb7:106",
                 "resultPreview": "sha256:05dab1a9c37a0347:8248",
                 "durationMs": 80,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e35060cf40b24522:82",
+                "inputHash": "b938189206d31fb784b9123f742f8f47bef6839711e3b2219a7cf4c45b9b21c3",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1800,7 +3021,10 @@
                 "inputPreview": "sha256:d18f059a1dc1465a:109",
                 "resultPreview": "sha256:076ee2294dc836e2:8248",
                 "durationMs": 71,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:107d506a1437acfc:84",
+                "inputHash": "d18f059a1dc1465a8f2a90b3afbf55ddcc3a83b879566d0cec5ddcb64706e714",
+                "ordinal": 2
               }
             ]
           },
@@ -1812,7 +3036,10 @@
             "inputPreview": "sha256:354f3c58c00f559b:6389",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 6407409,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "354f3c58c00f559bd5c262ae5ef3914ec4cc1803963d7cafe876d7ea518825eb",
+            "ordinal": 63
           },
           {
             "node": "agent",
@@ -1826,6 +3053,31 @@
               "prompt": 54049,
               "output": 387
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11750,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 93
+              },
+              {
+                "ordinal": 1,
+                "input": 63,
+                "cacheCreation": 0,
+                "cacheRead": 11842,
+                "output": 126
+              },
+              {
+                "ordinal": 2,
+                "input": 18364,
+                "cacheCreation": 0,
+                "cacheRead": 12030,
+                "output": 168
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 37559226,
             "endedAtOffsetMs": 37926044,
             "children": [
@@ -1837,7 +3089,10 @@
                 "inputPreview": "sha256:7e8cb57cb5422221:113",
                 "resultPreview": "sha256:cbb01c9a2209891f:163",
                 "durationMs": 1279,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "7e8cb57cb542222168a7a2b6d65dacf7080979e57ddcc26f769396e4ab0afea0",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1847,7 +3102,10 @@
                 "inputPreview": "sha256:da4ba2c9e376ee3d:101",
                 "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
                 "durationMs": 167,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:838a4b5cd97fbe48:78",
+                "inputHash": "da4ba2c9e376ee3df0a5dc8507e143554adc0e475b1d848d13d29e752dde8c7b",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1857,7 +3115,10 @@
                 "inputPreview": "sha256:6828395b09714324:109",
                 "resultPreview": "sha256:48d154b1d6af244d:8248",
                 "durationMs": 134,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:826d6033e0d3879a:85",
+                "inputHash": "6828395b09714324cfd7c83532fe1552209814234ae2471a5b050cae661595a0",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1867,7 +3128,10 @@
                 "inputPreview": "sha256:c70e53c2e2ad95c2:111",
                 "resultPreview": "sha256:8a70f06a6882ea57:8248",
                 "durationMs": 102,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:89c31dd947ad2a37:86",
+                "inputHash": "c70e53c2e2ad95c2b4100c2a2a231fedfa00ee49b1aee82e6bf90182337c1b4e",
+                "ordinal": 3
               }
             ]
           },
@@ -1879,7 +3143,10 @@
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 0,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "ordinal": 64
           },
           {
             "node": "tool",
@@ -1889,7 +3156,10 @@
             "inputPreview": "sha256:4a6b0bbe60eab1cd:4849",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 3688273,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "4a6b0bbe60eab1cd20ce29e07a4a6ea36945c1c2539587e4cde5432c70bfaf20",
+            "ordinal": 65
           },
           {
             "node": "agent",
@@ -1903,6 +3173,38 @@
               "prompt": 111858,
               "output": 476
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11355,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 103
+              },
+              {
+                "ordinal": 1,
+                "input": 122,
+                "cacheCreation": 0,
+                "cacheRead": 11457,
+                "output": 196
+              },
+              {
+                "ordinal": 2,
+                "input": 27258,
+                "cacheCreation": 0,
+                "cacheRead": 11775,
+                "output": 99
+              },
+              {
+                "ordinal": 3,
+                "input": 10862,
+                "cacheCreation": 0,
+                "cacheRead": 39029,
+                "output": 78
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 40278363,
             "endedAtOffsetMs": 40963543,
             "children": [
@@ -1914,7 +3216,10 @@
                 "inputPreview": "sha256:03e5491aa956f49e:161",
                 "resultPreview": "sha256:70adbe01bf84ff9e:357",
                 "durationMs": 1434,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "03e5491aa956f49e863dbe64807d9bf0835f43003a6945578873e5c970db37e9",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -1924,7 +3229,10 @@
                 "inputPreview": "sha256:e6b0c09511363aca:113",
                 "resultPreview": "sha256:f4856d46ea29defb:989",
                 "durationMs": 1448,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "e6b0c09511363aca9ce16be15b9ad8425e9966bdba320f4474aad6b6e7b1ba22",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -1934,7 +3242,10 @@
                 "inputPreview": "sha256:b938189206d31fb7:106",
                 "resultPreview": "sha256:05dab1a9c37a0347:8248",
                 "durationMs": 154,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e35060cf40b24522:82",
+                "inputHash": "b938189206d31fb784b9123f742f8f47bef6839711e3b2219a7cf4c45b9b21c3",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -1944,7 +3255,10 @@
                 "inputPreview": "sha256:d18f059a1dc1465a:109",
                 "resultPreview": "sha256:076ee2294dc836e2:8248",
                 "durationMs": 70,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:107d506a1437acfc:84",
+                "inputHash": "d18f059a1dc1465a8f2a90b3afbf55ddcc3a83b879566d0cec5ddcb64706e714",
+                "ordinal": 3
               },
               {
                 "node": "tool",
@@ -1954,7 +3268,10 @@
                 "inputPreview": "sha256:58592ba2245639fc:114",
                 "resultPreview": "sha256:70f59f3d2e858075:8248",
                 "durationMs": 183,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:9b35af102ee9a628:88",
+                "inputHash": "58592ba2245639fc6647ab323a6e3d40362f7de962fe4361fb9d8a6054dd9c55",
+                "ordinal": 4
               }
             ]
           },
@@ -1966,7 +3283,10 @@
             "inputPreview": "sha256:dc2003db911087c4:5815",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 2877329,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "dc2003db911087c499b2d5292ac3f68c6c73b334b07a78389505fa693b9ba0a2",
+            "ordinal": 66
           },
           {
             "node": "agent",
@@ -1980,6 +3300,24 @@
               "prompt": 23481,
               "output": 398
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11593,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 170
+              },
+              {
+                "ordinal": 1,
+                "input": 125,
+                "cacheCreation": 0,
+                "cacheRead": 11763,
+                "output": 228
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 41089325,
             "endedAtOffsetMs": 41331195,
             "children": [
@@ -1991,7 +3329,10 @@
                 "inputPreview": "sha256:0842ea8482970d9d:113",
                 "resultPreview": "sha256:9fd446160c35555f:351",
                 "durationMs": 1250,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "0842ea8482970d9d78af6d278b6aa8937929d5e1cb53480214a11eaec6a6bc81",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -2001,7 +3342,10 @@
                 "inputPreview": "sha256:173cb6d4f8760772:118",
                 "resultPreview": "sha256:390bc0fb7afc9adc:9",
                 "durationMs": 1337,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "173cb6d4f8760772d88654625ef758cd11d5979b55cf123323aba71af755ab2a",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -2011,7 +3355,10 @@
                 "inputPreview": "sha256:da4ba2c9e376ee3d:101",
                 "resultPreview": "sha256:0f20b7b1eafd9b13:8248",
                 "durationMs": 85,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:838a4b5cd97fbe48:78",
+                "inputHash": "da4ba2c9e376ee3df0a5dc8507e143554adc0e475b1d848d13d29e752dde8c7b",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -2021,7 +3368,10 @@
                 "inputPreview": "sha256:6828395b09714324:109",
                 "resultPreview": "sha256:48d154b1d6af244d:8248",
                 "durationMs": 74,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:826d6033e0d3879a:85",
+                "inputHash": "6828395b09714324cfd7c83532fe1552209814234ae2471a5b050cae661595a0",
+                "ordinal": 3
               }
             ]
           },
@@ -2033,7 +3383,10 @@
             "inputPreview": "sha256:44136fa355b3678a:2",
             "resultPreview": "sha256:18cc068fbdbecb19:22",
             "durationMs": 0,
-            "truncated": null
+            "truncated": null,
+            "filePath": null,
+            "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+            "ordinal": 67
           },
           {
             "node": "tool",
@@ -2043,7 +3396,10 @@
             "inputPreview": "sha256:5c6fd0a3e159822f:18",
             "resultPreview": "sha256:30dfc94caa70f988:1594",
             "durationMs": 355,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "5c6fd0a3e159822f0d13bd9d06770c0f9cd8515241ca088afeff9492af73af33",
+            "ordinal": 68
           },
           {
             "node": "tool",
@@ -2053,7 +3409,10 @@
             "inputPreview": "sha256:2e7a02dc0364747b:2444",
             "resultPreview": "sha256:5990310efb49ba40:1820",
             "durationMs": 1428516,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "2e7a02dc0364747bf47fc5a4632808622e15977094adc27e1017da39788a92f0",
+            "ordinal": 69
           },
           {
             "node": "agent",
@@ -2067,6 +3426,80 @@
               "prompt": 275872,
               "output": 3612
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 10831,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 499
+              },
+              {
+                "ordinal": 1,
+                "input": 123,
+                "cacheCreation": 0,
+                "cacheRead": 11331,
+                "output": 93
+              },
+              {
+                "ordinal": 2,
+                "input": 131,
+                "cacheCreation": 0,
+                "cacheRead": 11450,
+                "output": 115
+              },
+              {
+                "ordinal": 3,
+                "input": 20135,
+                "cacheCreation": 0,
+                "cacheRead": 11577,
+                "output": 292
+              },
+              {
+                "ordinal": 4,
+                "input": 394,
+                "cacheCreation": 0,
+                "cacheRead": 31708,
+                "output": 118
+              },
+              {
+                "ordinal": 5,
+                "input": 498,
+                "cacheCreation": 0,
+                "cacheRead": 32221,
+                "output": 387
+              },
+              {
+                "ordinal": 6,
+                "input": 1964,
+                "cacheCreation": 0,
+                "cacheRead": 33106,
+                "output": 583
+              },
+              {
+                "ordinal": 7,
+                "input": 723,
+                "cacheCreation": 0,
+                "cacheRead": 35066,
+                "output": 190
+              },
+              {
+                "ordinal": 8,
+                "input": 860,
+                "cacheCreation": 0,
+                "cacheRead": 35785,
+                "output": 166
+              },
+              {
+                "ordinal": 9,
+                "input": 1328,
+                "cacheCreation": 0,
+                "cacheRead": 36641,
+                "output": 1169
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 45335575,
             "endedAtOffsetMs": 46764106,
             "children": [
@@ -2078,7 +3511,10 @@
                 "inputPreview": "sha256:72899a99d09858f5:97",
                 "resultPreview": "sha256:a80728fd9a3112c2:319",
                 "durationMs": 888,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "72899a99d09858f5f6fa83a3edda1eb02a964f7730e835febd1f87863f20ba81",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -2088,7 +3524,10 @@
                 "inputPreview": "sha256:f41134d0bdd2b155:92",
                 "resultPreview": "sha256:a06d58ef20a41c71:61",
                 "durationMs": 24733,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "f41134d0bdd2b1553db7ab356b9a8114eeb3ca2eef42d365ac06dd5099a6c814",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -2098,7 +3537,10 @@
                 "inputPreview": "sha256:2571d125fbc2313a:94",
                 "resultPreview": "sha256:c19dde619de767f1:8248",
                 "durationMs": 968,
-                "truncated": true
+                "truncated": true,
+                "filePath": null,
+                "inputHash": "2571d125fbc2313ae2a57fadfa55803aaafab75457e23ee55de8e7a64285f984",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -2108,7 +3550,10 @@
                 "inputPreview": "sha256:ff83b085d6a5635e:215",
                 "resultPreview": "sha256:cbe4c45e3aa249fb:249",
                 "durationMs": 845,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "ff83b085d6a5635e85346527ff9a1aa78fa9cc6984828e2d2a7a9857c61e2ed6",
+                "ordinal": 3
               },
               {
                 "node": "tool",
@@ -2118,7 +3563,10 @@
                 "inputPreview": "sha256:032915d31b7a1bcd:140",
                 "resultPreview": "sha256:7b686444508ba7aa:821",
                 "durationMs": 257,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "032915d31b7a1bcdaefd6719cb77cd18724aacaecaf31c10a67d898d0e2fec19",
+                "ordinal": 4
               },
               {
                 "node": "tool",
@@ -2128,7 +3576,10 @@
                 "inputPreview": "sha256:a58495b70468b0a7:123",
                 "resultPreview": "sha256:63afdf694c766ca5:4471",
                 "durationMs": 55,
-                "truncated": true
+                "truncated": true,
+                "filePath": "sha256:62992f2ca0349e9e:78",
+                "inputHash": "a58495b70468b0a7298658c093d822c53c8c0432dfea5cbc3d8d73692f0c8072",
+                "ordinal": 5
               },
               {
                 "node": "tool",
@@ -2138,7 +3589,10 @@
                 "inputPreview": "sha256:def93d4ef59bab07:254",
                 "resultPreview": "sha256:fad7314cc1e45817:354",
                 "durationMs": 828,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "def93d4ef59bab07012c6ac60cecfffa219c53a6ac8f2a811f4f2ad68a50895a",
+                "ordinal": 6
               },
               {
                 "node": "tool",
@@ -2148,7 +3602,10 @@
                 "inputPreview": "sha256:bcf99a052522ee5f:264",
                 "resultPreview": "sha256:23907d7eeb86a9dd:1485",
                 "durationMs": 832,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "bcf99a052522ee5fdd2c8454080a3b459dcbfbab686a18d7dd7bc475db6849fb",
+                "ordinal": 7
               },
               {
                 "node": "tool",
@@ -2158,7 +3615,10 @@
                 "inputPreview": "sha256:4fdafc8b5e2d81c3:151",
                 "resultPreview": "sha256:03772912c5e9f7df:3427",
                 "durationMs": 812,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "4fdafc8b5e2d81c3cb88a47504885c826df7aa31fb46fb996b3f858666f81f83",
+                "ordinal": 8
               }
             ]
           },
@@ -2170,7 +3630,10 @@
             "inputPreview": "sha256:89eb200c86601b7a:64",
             "resultPreview": "sha256:29161a479828b371:8248",
             "durationMs": 125,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:93af27f5ccc89d42:44",
+            "inputHash": "89eb200c86601b7ae94237a8dae4d640727974965b593a08526bef740f4d25c3",
+            "ordinal": 70
           },
           {
             "node": "tool",
@@ -2180,7 +3643,10 @@
             "inputPreview": "sha256:8de33efeb2df291b:66",
             "resultPreview": "sha256:f42fc791bd0f0839:6191",
             "durationMs": 78,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:c68bf3c28f35ff06:46",
+            "inputHash": "8de33efeb2df291bd22166b71b93c575c3ad79c1c403d30f5dde12c132c117e3",
+            "ordinal": 71
           },
           {
             "node": "tool",
@@ -2190,7 +3656,10 @@
             "inputPreview": "sha256:6335c9d6ab280ed0:456",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 5,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:c68bf3c28f35ff06:46",
+            "inputHash": "6335c9d6ab280ed03bdb5bff330d7193a4a6be2bedd10ff6a2feaa2b805998d1",
+            "ordinal": 72
           },
           {
             "node": "tool",
@@ -2200,7 +3669,10 @@
             "inputPreview": "sha256:80c66ffa8f8a451f:530",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 10,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:c68bf3c28f35ff06:46",
+            "inputHash": "80c66ffa8f8a451f8009f7545f3d5082735eb8033e3a993658d481c486b264df",
+            "ordinal": 73
           },
           {
             "node": "tool",
@@ -2210,7 +3682,10 @@
             "inputPreview": "sha256:0706d6cdbe5619d1:860",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 9,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:f33dcf9ea7de562d:43",
+            "inputHash": "0706d6cdbe5619d1915c0bdf9cb49513528314b229da3ebb84c1db7604128717",
+            "ordinal": 74
           },
           {
             "node": "tool",
@@ -2220,7 +3695,10 @@
             "inputPreview": "sha256:0281adbe16d90d23:139",
             "resultPreview": "sha256:cd24e52373a16ec5:49",
             "durationMs": 786,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "0281adbe16d90d2320164514a2eaeb9f19fa2444828341be40b5de5bdc727eee",
+            "ordinal": 75
           },
           {
             "node": "tool",
@@ -2230,7 +3708,10 @@
             "inputPreview": "sha256:f19a0a5d2ec9042f:119",
             "resultPreview": "sha256:2c3d93763cdbb6e6:624",
             "durationMs": 1152,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "f19a0a5d2ec9042f06daf4dfa6319c490abbf01eb955ca5b29d714e43d7d92e3",
+            "ordinal": 76
           },
           {
             "node": "tool",
@@ -2240,7 +3721,10 @@
             "inputPreview": "sha256:430d4f5fb84f9f62:721",
             "resultPreview": "sha256:f403d5f85429817d:129",
             "durationMs": 812,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "430d4f5fb84f9f624b42748b817e6413ec3c506ab48ecc4cce879208a6e644a2",
+            "ordinal": 77
           },
           {
             "node": "tool",
@@ -2250,7 +3734,10 @@
             "inputPreview": "sha256:672f2ec07c2fc510:278",
             "resultPreview": "sha256:32c39b8e606a3380:3240",
             "durationMs": 825,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "672f2ec07c2fc5104ca2dc7b4b34dc619aa1ea59240d97e7a90fc7d830f4603d",
+            "ordinal": 78
           },
           {
             "node": "tool",
@@ -2260,7 +3747,10 @@
             "inputPreview": "sha256:e511602d93536b25:267",
             "resultPreview": "sha256:4c37ee451a5ac390:143",
             "durationMs": 803,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "e511602d93536b2508f1258637032ca19a6660aab20435249c2c9daf0a96e357",
+            "ordinal": 79
           },
           {
             "node": "tool",
@@ -2270,7 +3760,10 @@
             "inputPreview": "sha256:26fc5dd4bb03f49e:142",
             "resultPreview": "sha256:a1238e08716b78fd:8248",
             "durationMs": 784,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "26fc5dd4bb03f49e670f7f9d1d12238b0ca8bb7bfdfa84de92468cf46e426672",
+            "ordinal": 80
           },
           {
             "node": "tool",
@@ -2280,7 +3773,10 @@
             "inputPreview": "sha256:3ceaf97c3bb11f23:662",
             "resultPreview": "sha256:ec954224646c6fa9:80",
             "durationMs": 776,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "3ceaf97c3bb11f23644cd95fe726d62ab57d61999c6f277c6a9f0d424fd03885",
+            "ordinal": 81
           },
           {
             "node": "tool",
@@ -2290,7 +3786,10 @@
             "inputPreview": "sha256:a8c9dbe07f168167:585",
             "resultPreview": "sha256:9439d73d3ce2bc32:55",
             "durationMs": 800,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "a8c9dbe07f16816773d518cb4d17687c70149e3df8cb36e02b23fb0a0379cc14",
+            "ordinal": 82
           },
           {
             "node": "tool",
@@ -2300,7 +3799,10 @@
             "inputPreview": "sha256:196dea7a84513477:886",
             "resultPreview": "sha256:f1a54fd01fe1dc56:195",
             "durationMs": 809,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "196dea7a84513477145f8aa02773b9665859e546f5a779b783257fef0c198824",
+            "ordinal": 83
           },
           {
             "node": "tool",
@@ -2310,7 +3812,10 @@
             "inputPreview": "sha256:d74238f12b879ddb:586",
             "resultPreview": "sha256:4ac672baeb00e3b1:1040",
             "durationMs": 1080,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "d74238f12b879ddb5d86f206d1f11bc3a12fc1703266f305d4afaa28dc678a2d",
+            "ordinal": 84
           },
           {
             "node": "tool",
@@ -2320,7 +3825,10 @@
             "inputPreview": "sha256:ac97acdedb0b526f:550",
             "resultPreview": "sha256:3eaee42223af1656:63",
             "durationMs": 771,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "ac97acdedb0b526fd6c0a7f9cfb07b12ea815a9335420c31c0a84a69bd830df0",
+            "ordinal": 85
           },
           {
             "node": "tool",
@@ -2330,7 +3838,10 @@
             "inputPreview": "sha256:f27d70964ffef211:381",
             "resultPreview": "sha256:94a05dadeba1ffaa:1172",
             "durationMs": 801,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "f27d70964ffef2113e218b823ac3bacf39bac054fd03ee1f18fbbd3830397e96",
+            "ordinal": 86
           },
           {
             "node": "tool",
@@ -2340,7 +3851,10 @@
             "inputPreview": "sha256:30b62f5c4c4c8a3a:242",
             "resultPreview": "sha256:25da406406a503a8:138",
             "durationMs": 790,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "30b62f5c4c4c8a3acad5de24ef91dbc23fda669112fc4edc3ace14b1612bdaa4",
+            "ordinal": 87
           },
           {
             "node": "tool",
@@ -2350,7 +3864,10 @@
             "inputPreview": "sha256:c02910284afca11f:671",
             "resultPreview": "sha256:eabc9a27adf0d3f1:64",
             "durationMs": 804,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "c02910284afca11fbef3e5fd216086c2bf663f2ae39528f57e713c5dda3305ef",
+            "ordinal": 88
           },
           {
             "node": "tool",
@@ -2360,7 +3877,10 @@
             "inputPreview": "sha256:5bcaefaac4d333c4:102",
             "resultPreview": "sha256:b91e5931a90990a8:113",
             "durationMs": 889,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "5bcaefaac4d333c4c326fd47b4f7986449058309ec4e8f0c4d8799eaa54bd9e1",
+            "ordinal": 89
           },
           {
             "node": "tool",
@@ -2370,7 +3890,10 @@
             "inputPreview": "sha256:64f261ee6452c03e:8248",
             "resultPreview": "sha256:e3e06ec0f8c95866:24",
             "durationMs": 55,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "06f4373032d2094fee5834a1ef0f00b4bd8be49984be7a097b84e57e55121c26",
+            "ordinal": 90
           },
           {
             "node": "tool",
@@ -2380,7 +3903,10 @@
             "inputPreview": "sha256:8cbfcd67dcf66481:6438",
             "resultPreview": "sha256:9f92fabe7956493e:7025",
             "durationMs": 2314810,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "8cbfcd67dcf66481c61ef2cbe993a3ed4adac83faeb0bf852dc697320fb2b29c",
+            "ordinal": 91
           },
           {
             "node": "agent",
@@ -2394,6 +3920,101 @@
               "prompt": 488066,
               "output": 13019
             },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 11961,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 329
+              },
+              {
+                "ordinal": 1,
+                "input": 9822,
+                "cacheCreation": 0,
+                "cacheRead": 12291,
+                "output": 642
+              },
+              {
+                "ordinal": 2,
+                "input": 443,
+                "cacheCreation": 0,
+                "cacheRead": 22756,
+                "output": 1321
+              },
+              {
+                "ordinal": 3,
+                "input": 5724,
+                "cacheCreation": 0,
+                "cacheRead": 24521,
+                "output": 1587
+              },
+              {
+                "ordinal": 4,
+                "input": 1898,
+                "cacheCreation": 0,
+                "cacheRead": 31832,
+                "output": 486
+              },
+              {
+                "ordinal": 5,
+                "input": 3027,
+                "cacheCreation": 0,
+                "cacheRead": 34216,
+                "output": 477
+              },
+              {
+                "ordinal": 6,
+                "input": 490,
+                "cacheCreation": 0,
+                "cacheRead": 37720,
+                "output": 1006
+              },
+              {
+                "ordinal": 7,
+                "input": 645,
+                "cacheCreation": 0,
+                "cacheRead": 39215,
+                "output": 484
+              },
+              {
+                "ordinal": 8,
+                "input": 4360,
+                "cacheCreation": 0,
+                "cacheRead": 40344,
+                "output": 598
+              },
+              {
+                "ordinal": 9,
+                "input": 2199,
+                "cacheCreation": 0,
+                "cacheRead": 45301,
+                "output": 362
+              },
+              {
+                "ordinal": 10,
+                "input": 993,
+                "cacheCreation": 0,
+                "cacheRead": 47863,
+                "output": 168
+              },
+              {
+                "ordinal": 11,
+                "input": 53788,
+                "cacheCreation": 0,
+                "cacheRead": 0,
+                "output": 1585
+              },
+              {
+                "ordinal": 12,
+                "input": 1283,
+                "cacheCreation": 0,
+                "cacheRead": 55374,
+                "output": 3974
+              }
+            ],
+            "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
+            "compactions": null,
             "startedAtOffsetMs": 58592135,
             "endedAtOffsetMs": 60906969,
             "children": [
@@ -2405,7 +4026,10 @@
                 "inputPreview": "sha256:5bc8387f9b5e2f0f:80",
                 "resultPreview": "sha256:262ce327c4108554:8246",
                 "durationMs": 97,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:b89769bf2aa8589c:58",
+                "inputHash": "5bc8387f9b5e2f0fab509d7fd0849d8530d9fc21a55c46e23df086abb6743f0a",
+                "ordinal": 0
               },
               {
                 "node": "tool",
@@ -2415,7 +4039,10 @@
                 "inputPreview": "sha256:d55570eb2a8560e0:211",
                 "resultPreview": "sha256:f61c63ddf31dd54f:78",
                 "durationMs": 762,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "d55570eb2a8560e01dead4ade0fab4365388890c9c10ede486df4541fa85f2d3",
+                "ordinal": 1
               },
               {
                 "node": "tool",
@@ -2425,7 +4052,10 @@
                 "inputPreview": "sha256:4e1a6f81e8aff223:283",
                 "resultPreview": "sha256:b67f6ab14d8f3967:378",
                 "durationMs": 778,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "4e1a6f81e8aff2233e9fd82e37300a2936a59d63099cacda14be75d598cd09da",
+                "ordinal": 2
               },
               {
                 "node": "tool",
@@ -2435,7 +4065,10 @@
                 "inputPreview": "sha256:e269ea3746dc8de6:153",
                 "resultPreview": "sha256:71000100867a1c28:792",
                 "durationMs": 752,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "e269ea3746dc8de6cc02e8ebe00579f0f7c5cd097b712e3960681931dbba348e",
+                "ordinal": 3
               },
               {
                 "node": "tool",
@@ -2445,7 +4078,10 @@
                 "inputPreview": "sha256:991c6f4eef96ab3f:568",
                 "resultPreview": "sha256:ec0187026b8487fe:1815",
                 "durationMs": 793,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "991c6f4eef96ab3f0e0c5351d384b4f51625e16c73a250eecc061bf551a521b9",
+                "ordinal": 4
               },
               {
                 "node": "tool",
@@ -2455,7 +4091,10 @@
                 "inputPreview": "sha256:def96a84af8d0f73:149",
                 "resultPreview": "sha256:041a1b600d0e0407:154",
                 "durationMs": 1042,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "def96a84af8d0f73a0418207ab3514aadb3ae9f9c9db024e899de36ecf095e21",
+                "ordinal": 5
               },
               {
                 "node": "tool",
@@ -2465,7 +4104,10 @@
                 "inputPreview": "sha256:75f8304c5ae27753:72",
                 "resultPreview": "sha256:dcbfc2d4d10120f8:8248",
                 "durationMs": 704,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "75f8304c5ae27753041f04cba75a29012ec4d8f050dd09a5377d40f8fc1d4a90",
+                "ordinal": 6
               },
               {
                 "node": "tool",
@@ -2475,7 +4117,10 @@
                 "inputPreview": "sha256:f4ad57735c4d4f87:139",
                 "resultPreview": "sha256:1e449c66986f6c0b:99",
                 "durationMs": 846,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "f4ad57735c4d4f87b584bb683a9cd79509f9212478f55dd87eac56b7b5228173",
+                "ordinal": 7
               },
               {
                 "node": "tool",
@@ -2485,7 +4130,10 @@
                 "inputPreview": "sha256:ad4d6598b9598dcc:278",
                 "resultPreview": "sha256:1beba321661f70db:1488",
                 "durationMs": 1321,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "ad4d6598b9598dcca2bff9a322097078ffc9a7ebcf74d7408289e604df9c6baf",
+                "ordinal": 8
               },
               {
                 "node": "tool",
@@ -2495,7 +4143,10 @@
                 "inputPreview": "sha256:580657730840288b:129",
                 "resultPreview": "sha256:8f1807ec146c10ff:3430",
                 "durationMs": 1817,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "580657730840288bfef822e401cd9242c54143d3594f03ce034cab65c16aac7c",
+                "ordinal": 9
               },
               {
                 "node": "tool",
@@ -2505,7 +4156,10 @@
                 "inputPreview": "sha256:da40571b5b48faa5:239",
                 "resultPreview": "sha256:dcbefe4b4c8797a3:30",
                 "durationMs": 763,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "da40571b5b48faa568b8bee9cf9a807f14711de415e0b8bbb898f75ccc43dcdc",
+                "ordinal": 10
               },
               {
                 "node": "tool",
@@ -2515,7 +4169,10 @@
                 "inputPreview": "sha256:2715e4cbdb38b765:161",
                 "resultPreview": "sha256:0276b21ebb7493f8:829",
                 "durationMs": 912,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "2715e4cbdb38b765fac31dc4187d9d19653f7b508d68c2792d788db5da963f52",
+                "ordinal": 11
               },
               {
                 "node": "tool",
@@ -2525,7 +4182,10 @@
                 "inputPreview": "sha256:8de33efeb2df291b:66",
                 "resultPreview": "sha256:ca86651522043bd8:6803",
                 "durationMs": 98,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:c68bf3c28f35ff06:46",
+                "inputHash": "8de33efeb2df291bd22166b71b93c575c3ad79c1c403d30f5dde12c132c117e3",
+                "ordinal": 12
               },
               {
                 "node": "tool",
@@ -2535,7 +4195,10 @@
                 "inputPreview": "sha256:a802dded27047439:63",
                 "resultPreview": "sha256:75e56160169675d3:1235",
                 "durationMs": 31,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:f33dcf9ea7de562d:43",
+                "inputHash": "a802dded2704743926f8aff79ec8bcf494d5e1aab1263ec209e1ee22c09ddf9f",
+                "ordinal": 13
               },
               {
                 "node": "tool",
@@ -2545,7 +4208,10 @@
                 "inputPreview": "sha256:25de9aebaff83b3e:187",
                 "resultPreview": "sha256:5c12960d87a18345:929",
                 "durationMs": 843,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "25de9aebaff83b3e36b4bb88186a0c460fca5afb112bf89ab0032c2108a111b8",
+                "ordinal": 14
               },
               {
                 "node": "tool",
@@ -2555,7 +4221,10 @@
                 "inputPreview": "sha256:c04203258080c858:609",
                 "resultPreview": "sha256:62975b972db3ffa0:561",
                 "durationMs": 769,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "c04203258080c85810e660c0278869c900fc63d1e41b10153db73c2c950a6283",
+                "ordinal": 15
               },
               {
                 "node": "tool",
@@ -2565,7 +4234,10 @@
                 "inputPreview": "sha256:50fdb69fa32fc7c4:283",
                 "resultPreview": "sha256:b1929cfbd66335fb:272",
                 "durationMs": 1633,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "50fdb69fa32fc7c49e8630c2b9c911ce61137da36b9ac9e68d1d2331c9ed3e24",
+                "ordinal": 16
               },
               {
                 "node": "tool",
@@ -2575,7 +4247,10 @@
                 "inputPreview": "sha256:02b3cbd8f884720e:91",
                 "resultPreview": "sha256:be38869a21b219e1:193",
                 "durationMs": 872,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "02b3cbd8f884720e82bafa51060abb1cfe2da68b6875c604eaa05f0cbcbb3e26",
+                "ordinal": 17
               },
               {
                 "node": "tool",
@@ -2585,7 +4260,10 @@
                 "inputPreview": "sha256:bd24ccd6b2649bd6:73",
                 "resultPreview": "sha256:a8c20a69c5d6b8a5:960",
                 "durationMs": 200,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "bd24ccd6b2649bd60907f3e5743cb25b4430ab69db8e64d2d474c872061bf8aa",
+                "ordinal": 18
               },
               {
                 "node": "tool",
@@ -2595,7 +4273,10 @@
                 "inputPreview": "sha256:94a1763d6bf83460:75",
                 "resultPreview": "sha256:964969a0cc153998:112",
                 "durationMs": 71,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "94a1763d6bf8346062e8e384fcd179f641e56a54dd6edb1a6f43acf15d68d44e",
+                "ordinal": 19
               },
               {
                 "node": "tool",
@@ -2605,7 +4286,10 @@
                 "inputPreview": "sha256:4efddf3cff6027bb:104",
                 "resultPreview": "sha256:6e6f3369ac1b0096:8247",
                 "durationMs": 113,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "4efddf3cff6027bb776264919beb8bb8bc99b4f47884bfdce6ce66981fd98519",
+                "ordinal": 20
               },
               {
                 "node": "tool",
@@ -2615,7 +4299,10 @@
                 "inputPreview": "sha256:fb422338ccd90cc6:88",
                 "resultPreview": "sha256:334ae47aa7dd4823:4466",
                 "durationMs": 74,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "fb422338ccd90cc6f7745724264327130c607df57a1f6cae0db7e20fee0bd166",
+                "ordinal": 21
               },
               {
                 "node": "tool",
@@ -2625,7 +4312,10 @@
                 "inputPreview": "sha256:926c797a36a1723e:102",
                 "resultPreview": "sha256:63d823d830374f73:234",
                 "durationMs": 52,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "926c797a36a1723e110632160d375f3e208a0eec8bc893ccfb8125486cd0dd74",
+                "ordinal": 22
               },
               {
                 "node": "tool",
@@ -2635,7 +4325,10 @@
                 "inputPreview": "sha256:f36a2399900bf695:65",
                 "resultPreview": "sha256:58dbfd22284ac6b7:4213",
                 "durationMs": 27,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:e1d90f183ad1e219:45",
+                "inputHash": "f36a2399900bf69541e62eb0e2993c753e1752de517a6888d7c7d1b21ba28c40",
+                "ordinal": 23
               },
               {
                 "node": "tool",
@@ -2645,7 +4338,10 @@
                 "inputPreview": "sha256:d4d5a1e5c3587d41:96",
                 "resultPreview": "sha256:1d644c48048e077b:696",
                 "durationMs": 353,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "d4d5a1e5c3587d41a3c9515be6c8177a4f3250f1712b3691f3e7a4d6429791bc",
+                "ordinal": 24
               },
               {
                 "node": "tool",
@@ -2655,7 +4351,10 @@
                 "inputPreview": "sha256:d899ef96612372d9:101",
                 "resultPreview": "sha256:2728c71a5f78b9dd:1028",
                 "durationMs": 14,
-                "truncated": true
+                "truncated": true,
+                "filePath": "sha256:22175307019d1107:56",
+                "inputHash": "d899ef96612372d9f542e3abd5a6bd6dc15cd64e5025f6688eb2e96b6af4972b",
+                "ordinal": 25
               },
               {
                 "node": "tool",
@@ -2665,7 +4364,10 @@
                 "inputPreview": "sha256:29fce214517c4fc4:81",
                 "resultPreview": "sha256:d6aa15186a17b7ba:1468",
                 "durationMs": 40,
-                "truncated": true
+                "truncated": true,
+                "filePath": "sha256:206b712ff051170a:50",
+                "inputHash": "29fce214517c4fc43bec2f5cbd947b565735bafd9ff40cb52cab82d6c84471e3",
+                "ordinal": 26
               },
               {
                 "node": "tool",
@@ -2675,7 +4377,10 @@
                 "inputPreview": "sha256:3d36f7e800fa6776:76",
                 "resultPreview": "sha256:afe7959ab7732108:926",
                 "durationMs": 423,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "3d36f7e800fa67763a18949895ebdce293f6e2f066427fb2c0904234b81da426",
+                "ordinal": 27
               },
               {
                 "node": "tool",
@@ -2685,7 +4390,10 @@
                 "inputPreview": "sha256:b6884b71c3bbda54:85",
                 "resultPreview": "sha256:0d0d3a2bbdf24a6b:8248",
                 "durationMs": 12,
-                "truncated": false
+                "truncated": false,
+                "filePath": "sha256:7decf1ea14a027c3:40",
+                "inputHash": "b6884b71c3bbda54b013bec890699924e2279cb9c3d6d31cc49508ade3970720",
+                "ordinal": 28
               },
               {
                 "node": "tool",
@@ -2695,7 +4403,10 @@
                 "inputPreview": "sha256:2b5f86665bae5f67:213",
                 "resultPreview": "sha256:57cf75683b9b408e:323",
                 "durationMs": 900,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "2b5f86665bae5f67dd401116a6e382d23511f523f0f4276f69ca897abc3cb82a",
+                "ordinal": 29
               },
               {
                 "node": "tool",
@@ -2705,7 +4416,10 @@
                 "inputPreview": "sha256:9bdee85432cc9db3:93",
                 "resultPreview": "sha256:815d92de3b81dc0a:4252",
                 "durationMs": 138,
-                "truncated": false
+                "truncated": false,
+                "filePath": null,
+                "inputHash": "9bdee85432cc9db3bcd0c200bc7dfd55d597caeee51a73b05b7baf71bd9c142f",
+                "ordinal": 30
               }
             ]
           },
@@ -2717,7 +4431,10 @@
             "inputPreview": "sha256:0900473810c8f158:886",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 8,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "0900473810c8f15862c9ec1beca37cdb5cc02f3f1a667a106e4f76f24516c7b5",
+            "ordinal": 92
           },
           {
             "node": "tool",
@@ -2727,7 +4444,10 @@
             "inputPreview": "sha256:72e9801356949ec6:1334",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 12,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "72e9801356949ec6fd599804acea8293208cc86be2ed5145b1173f85665336a4",
+            "ordinal": 93
           },
           {
             "node": "tool",
@@ -2737,7 +4457,10 @@
             "inputPreview": "sha256:5d9dd00c6848a097:461",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 6,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "5d9dd00c6848a097505bee353eddfb72feefff9549941e4e52f1d04e50be913a",
+            "ordinal": 94
           },
           {
             "node": "tool",
@@ -2747,7 +4470,10 @@
             "inputPreview": "sha256:41b075447e78f516:304",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 9,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "41b075447e78f516c2f9a5d36533dd5b9350fda5b279c873eca5f8686c058eb8",
+            "ordinal": 95
           },
           {
             "node": "tool",
@@ -2757,7 +4483,10 @@
             "inputPreview": "sha256:6e6e7a045e40de4e:185",
             "resultPreview": "sha256:2dec98d47d075972:4126",
             "durationMs": 824,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "6e6e7a045e40de4e83131e03789cfbc44f659bf560f6d91e87675953e07c3ded",
+            "ordinal": 96
           },
           {
             "node": "tool",
@@ -2767,7 +4496,10 @@
             "inputPreview": "sha256:214fbccd3af122f6:788",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 5,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "214fbccd3af122f6b9c0d2aed9dd8a05085450e304aa229fbebd03ca23ffb961",
+            "ordinal": 97
           },
           {
             "node": "tool",
@@ -2777,7 +4509,10 @@
             "inputPreview": "sha256:0a69abe67e280946:172",
             "resultPreview": "sha256:dd67cf15c251a3cb:154",
             "durationMs": 168,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "0a69abe67e2809466f9ba5d73f1c62c7cb85ff17393a08e14b6160e9475efc3d",
+            "ordinal": 98
           },
           {
             "node": "tool",
@@ -2787,7 +4522,10 @@
             "inputPreview": "sha256:5dd6f9eb49d4dfdf:104",
             "resultPreview": "sha256:cddfb1f7639fdf05:3804",
             "durationMs": 40,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "5dd6f9eb49d4dfdf03e98f4e7c832de3070814ed942365ce302605b50714102d",
+            "ordinal": 99
           },
           {
             "node": "tool",
@@ -2797,7 +4535,10 @@
             "inputPreview": "sha256:9d679bcae5a49823:669",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 5,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "9d679bcae5a498239e768165312cd706a0ac56ae93a114825517cf4a781a3c73",
+            "ordinal": 100
           },
           {
             "node": "tool",
@@ -2807,7 +4548,10 @@
             "inputPreview": "sha256:cac371de0b11e2e8:130",
             "resultPreview": "sha256:62f8045ffd03ca67:260",
             "durationMs": 59,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "cac371de0b11e2e83bbcfdab80e82d6db2578694a86e9053efe2daff1ea03b3d",
+            "ordinal": 101
           },
           {
             "node": "tool",
@@ -2817,7 +4561,10 @@
             "inputPreview": "sha256:50cf60123d19d4a4:103",
             "resultPreview": "sha256:2b2b41001ebe9408:2934",
             "durationMs": 27,
-            "truncated": true
+            "truncated": true,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "50cf60123d19d4a48fc7f315b8a05edbb9a466b1ae35fc22034e0287f5a87d0d",
+            "ordinal": 102
           },
           {
             "node": "tool",
@@ -2827,7 +4574,10 @@
             "inputPreview": "sha256:1155c76ed4f183cf:643",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 8,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "1155c76ed4f183cfbbd2afc0ca90ee31415e481bf498e3a3ebe25f60c526fb16",
+            "ordinal": 103
           },
           {
             "node": "tool",
@@ -2837,7 +4587,10 @@
             "inputPreview": "sha256:974627b87396a599:87",
             "resultPreview": "sha256:f79d33e7c944474c:1855",
             "durationMs": 47,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:01807eb8cf07e5db:64",
+            "inputHash": "974627b87396a59971da31f1c0de661502c619e26380c1427961abcc6ce88bbe",
+            "ordinal": 104
           },
           {
             "node": "tool",
@@ -2847,7 +4600,10 @@
             "inputPreview": "sha256:e29a7f91a635d4c4:349",
             "resultPreview": "sha256:d05b1bac36ec2a07:91",
             "durationMs": 893,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "e29a7f91a635d4c49f89ca6420c5e6593cd5955914fc8c6e4cd98842a742304b",
+            "ordinal": 105
           },
           {
             "node": "tool",
@@ -2857,7 +4613,10 @@
             "inputPreview": "sha256:a38cf6eb5c5a1478:62",
             "resultPreview": "sha256:26f360a4e28c98ef:8248",
             "durationMs": 35,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:9cf48011f724bed4:42",
+            "inputHash": "a38cf6eb5c5a1478e04b8b63623231621f24c2362afd53ae7085b8ce43b3b89f",
+            "ordinal": 106
           },
           {
             "node": "tool",
@@ -2867,7 +4626,10 @@
             "inputPreview": "sha256:7a321cb879043e06:1192",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 6,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:b89769bf2aa8589c:58",
+            "inputHash": "7a321cb879043e061fb5ae0f90ae856a3b0eec1298ef86af71baf283ccfad919",
+            "ordinal": 107
           },
           {
             "node": "tool",
@@ -2877,7 +4639,10 @@
             "inputPreview": "sha256:375e1e3c6a8e66cb:75",
             "resultPreview": "sha256:db75074ac319aba7:1935",
             "durationMs": 37,
-            "truncated": true
+            "truncated": true,
+            "filePath": "sha256:93af27f5ccc89d42:44",
+            "inputHash": "375e1e3c6a8e66cb8f77250c7a78bbdee2187a820d509da7dcf2f0fe61d1633e",
+            "ordinal": 108
           },
           {
             "node": "tool",
@@ -2887,7 +4652,10 @@
             "inputPreview": "sha256:b4e549675fc41692:373",
             "resultPreview": "sha256:49fd4a576e2d47c3:132",
             "durationMs": 843,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "b4e549675fc416925819247dba447ae431d27ecc1741f893c4575a65824757b8",
+            "ordinal": 109
           },
           {
             "node": "tool",
@@ -2897,7 +4665,10 @@
             "inputPreview": "sha256:742f18b409361538:3529",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 7,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:9cf48011f724bed4:42",
+            "inputHash": "742f18b40936153827e12f65bf12d755a23444e8f7c078f2c86a693a595f3414",
+            "ordinal": 110
           },
           {
             "node": "tool",
@@ -2907,7 +4678,10 @@
             "inputPreview": "sha256:4ecfe838316673a4:1195",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 6,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:9cf48011f724bed4:42",
+            "inputHash": "4ecfe838316673a4f32579f5d39eb667bca719e04c6f650fc68720549b11ad8d",
+            "ordinal": 111
           },
           {
             "node": "tool",
@@ -2917,7 +4691,10 @@
             "inputPreview": "sha256:8e538f7dbc42a791:1051",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 9,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:9cf48011f724bed4:42",
+            "inputHash": "8e538f7dbc42a791810e8de2384c1b3cb8b70a51132f41063c0f0b9ea5233c06",
+            "ordinal": 112
           },
           {
             "node": "tool",
@@ -2927,7 +4704,10 @@
             "inputPreview": "sha256:d90bc9b01a982a1f:1891",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 8,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:9cf48011f724bed4:42",
+            "inputHash": "d90bc9b01a982a1f7800fea3f2b2f41b977e933fdd1eac71b6bdb6d338345618",
+            "ordinal": 113
           },
           {
             "node": "tool",
@@ -2937,7 +4717,10 @@
             "inputPreview": "sha256:202ce69f69135853:3197",
             "resultPreview": "sha256:8caec1349d76de16:26",
             "durationMs": 6,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:9cf48011f724bed4:42",
+            "inputHash": "202ce69f69135853a32a95f6b5a902bd15a1fa6e0a20f6d4524de69500c184e0",
+            "ordinal": 114
           },
           {
             "node": "tool",
@@ -2947,7 +4730,10 @@
             "inputPreview": "sha256:9d862ac6c2ebc5b0:73",
             "resultPreview": "sha256:5f1b5f88263f0b27:4807",
             "durationMs": 27,
-            "truncated": true
+            "truncated": true,
+            "filePath": "sha256:9cf48011f724bed4:42",
+            "inputHash": "9d862ac6c2ebc5b093645bea61a69ffadf61440057386cf45fdcfbb2e6f31038",
+            "ordinal": 115
           },
           {
             "node": "tool",
@@ -2957,7 +4743,10 @@
             "inputPreview": "sha256:8a64838dedcad425:138",
             "resultPreview": "sha256:64446484b643347c:410",
             "durationMs": 834,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "8a64838dedcad42591ed3554adcac9564f22037e2ab8b56a636f841959893dca",
+            "ordinal": 116
           },
           {
             "node": "tool",
@@ -2967,7 +4756,10 @@
             "inputPreview": "sha256:aa83dd049093bcbc:263",
             "resultPreview": "sha256:4a9794900670162b:672",
             "durationMs": 1099,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "aa83dd049093bcbcc354e2da5da6d22b548ed3b2e7bfa0d5af0246c7f3712051",
+            "ordinal": 117
           }
         ]
       }
@@ -3002,6 +4794,17 @@
           "prompt": 12082,
           "output": 45
         },
+        "usageSeries": [
+          {
+            "ordinal": 0,
+            "input": 12082,
+            "cacheCreation": 0,
+            "cacheRead": 0,
+            "output": 45
+          }
+        ],
+        "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
+        "compactions": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 104559,
         "children": []
@@ -3037,6 +4840,31 @@
           "prompt": 80094,
           "output": 707
         },
+        "usageSeries": [
+          {
+            "ordinal": 0,
+            "input": 12859,
+            "cacheCreation": 0,
+            "cacheRead": 0,
+            "output": 161
+          },
+          {
+            "ordinal": 1,
+            "input": 19396,
+            "cacheCreation": 0,
+            "cacheRead": 13019,
+            "output": 240
+          },
+          {
+            "ordinal": 2,
+            "input": 2164,
+            "cacheCreation": 0,
+            "cacheRead": 32656,
+            "output": 306
+          }
+        ],
+        "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
+        "compactions": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 355977,
         "children": [
@@ -3048,7 +4876,10 @@
             "inputPreview": "sha256:fe25c4ec39cffe81:60",
             "resultPreview": "sha256:916db693399d72d6:8248",
             "durationMs": 92,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:7decf1ea14a027c3:40",
+            "inputHash": "fe25c4ec39cffe8181d80c9319f83fa7e110a4484262af780eaa1e467390d3e9",
+            "ordinal": 0
           },
           {
             "node": "tool",
@@ -3058,7 +4889,10 @@
             "inputPreview": "sha256:89eb200c86601b7a:64",
             "resultPreview": "sha256:d74d88e1e7337312:8248",
             "durationMs": 17,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:93af27f5ccc89d42:44",
+            "inputHash": "89eb200c86601b7ae94237a8dae4d640727974965b593a08526bef740f4d25c3",
+            "ordinal": 1
           },
           {
             "node": "tool",
@@ -3068,7 +4902,10 @@
             "inputPreview": "sha256:5c8c7a8d45562799:86",
             "resultPreview": "sha256:3e6d7d3fbe0c0546:6311",
             "durationMs": 680,
-            "truncated": true
+            "truncated": true,
+            "filePath": null,
+            "inputHash": "5c8c7a8d455627990f21e953cfeaf7383e98ffb1e397427d75dccd1c4b058113",
+            "ordinal": 2
           },
           {
             "node": "tool",
@@ -3078,7 +4915,10 @@
             "inputPreview": "sha256:5613383c947f1ae6:62",
             "resultPreview": "sha256:603b89c0776d4c20:1028",
             "durationMs": 311,
-            "truncated": false
+            "truncated": false,
+            "filePath": null,
+            "inputHash": "5613383c947f1ae68b1e84f3d77190ff5f02e542407f1ce6fb800dd48784014d",
+            "ordinal": 3
           }
         ]
       }
@@ -3113,6 +4953,24 @@
           "prompt": 30450,
           "output": 144
         },
+        "usageSeries": [
+          {
+            "ordinal": 0,
+            "input": 13756,
+            "cacheCreation": 0,
+            "cacheRead": 0,
+            "output": 13
+          },
+          {
+            "ordinal": 1,
+            "input": 16694,
+            "cacheCreation": 0,
+            "cacheRead": 0,
+            "output": 131
+          }
+        ],
+        "model": "{\"id\":\"nemotron-3-ultra-free\",\"providerID\":\"opencode\"}",
+        "compactions": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 88094,
         "children": [
@@ -3124,7 +4982,10 @@
             "inputPreview": "sha256:1a60526d10f05ef3:18",
             "resultPreview": "sha256:e08f397ec9f1824a:5933",
             "durationMs": 497,
-            "truncated": true
+            "truncated": true,
+            "filePath": null,
+            "inputHash": "1a60526d10f05ef34f89dc89a127ffe23877d52fc1676dd52c038a3ba341fab8",
+            "ordinal": 0
           },
           {
             "node": "tool",
@@ -3134,7 +4995,10 @@
             "inputPreview": "sha256:646707ab7c202f34:62",
             "resultPreview": "sha256:7a25553f1fa325d7:8248",
             "durationMs": 8,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:18ebcf399ce6fb77:42",
+            "inputHash": "646707ab7c202f3435a1e07a3d41073066a714615ef70c2b0c83683dc8c8b3c8",
+            "ordinal": 1
           },
           {
             "node": "tool",
@@ -3144,7 +5008,10 @@
             "inputPreview": "sha256:a38cf6eb5c5a1478:62",
             "resultPreview": "sha256:54fd1f8958d35568:8248",
             "durationMs": 6,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:9cf48011f724bed4:42",
+            "inputHash": "a38cf6eb5c5a1478e04b8b63623231621f24c2362afd53ae7085b8ce43b3b89f",
+            "ordinal": 2
           },
           {
             "node": "tool",
@@ -3154,7 +5021,10 @@
             "inputPreview": "sha256:fe25c4ec39cffe81:60",
             "resultPreview": "sha256:916db693399d72d6:8248",
             "durationMs": 7,
-            "truncated": false
+            "truncated": false,
+            "filePath": "sha256:7decf1ea14a027c3:40",
+            "inputHash": "fe25c4ec39cffe8181d80c9319f83fa7e110a4484262af780eaa1e467390d3e9",
+            "ordinal": 3
           }
         ]
       }

@@ -41,6 +41,24 @@
       "prompt": 83299,
       "output": 1998
     },
+    "usageSeries": [
+      {
+        "ordinal": 0,
+        "input": 2,
+        "cacheCreation": 11227,
+        "cacheRead": 28807,
+        "output": 387
+      },
+      {
+        "ordinal": 1,
+        "input": 2,
+        "cacheCreation": 3227,
+        "cacheRead": 40034,
+        "output": 1611
+      }
+    ],
+    "model": "claude-opus-5",
+    "compactions": null,
     "startedAtOffsetMs": 0,
     "endedAtOffsetMs": null,
     "children": [
@@ -51,7 +69,10 @@
         "status": "done",
         "inputPreview": "sha256:49cdfc105b3cdb27:565",
         "resultPreview": "sha256:b54b57ce6609b9a4:566",
-        "durationMs": 69943
+        "durationMs": 69943,
+        "filePath": null,
+        "inputHash": "646ed122accacdf701a69378df65bd5077a962d39c34591eccfb52ff235ab6b8",
+        "ordinal": 0
       },
       {
         "node": "agent",
@@ -68,6 +89,59 @@
           "prompt": 229137,
           "output": 4863
         },
+        "usageSeries": [
+          {
+            "ordinal": 0,
+            "input": 2,
+            "cacheCreation": 14871,
+            "cacheRead": 0,
+            "output": 395
+          },
+          {
+            "ordinal": 1,
+            "input": 2,
+            "cacheCreation": 958,
+            "cacheRead": 14871,
+            "output": 241
+          },
+          {
+            "ordinal": 2,
+            "input": 2,
+            "cacheCreation": 14572,
+            "cacheRead": 15829,
+            "output": 345
+          },
+          {
+            "ordinal": 3,
+            "input": 2,
+            "cacheCreation": 10538,
+            "cacheRead": 30401,
+            "output": 501
+          },
+          {
+            "ordinal": 4,
+            "input": 2,
+            "cacheCreation": 783,
+            "cacheRead": 40939,
+            "output": 241
+          },
+          {
+            "ordinal": 5,
+            "input": 2,
+            "cacheCreation": 467,
+            "cacheRead": 41722,
+            "output": 409
+          },
+          {
+            "ordinal": 6,
+            "input": 2,
+            "cacheCreation": 983,
+            "cacheRead": 42189,
+            "output": 2731
+          }
+        ],
+        "model": "claude-opus-5",
+        "compactions": null,
         "startedAtOffsetMs": 8244,
         "endedAtOffsetMs": 75962,
         "children": [
@@ -78,7 +152,10 @@
             "status": "done",
             "inputPreview": "sha256:0451a4e61fdc61ba:221",
             "resultPreview": "sha256:e469531b700fd40d:272",
-            "durationMs": 3931
+            "durationMs": 3931,
+            "filePath": null,
+            "inputHash": "0451a4e61fdc61ba9f8d20d97a4695a8d8a9a1fc62fc62be3062e52b95a40d17",
+            "ordinal": 0
           },
           {
             "node": "tool",
@@ -87,7 +164,10 @@
             "status": "done",
             "inputPreview": "sha256:8281da175c85a78c:278",
             "resultPreview": "sha256:16908e0d9c6700f2:109",
-            "durationMs": 3663
+            "durationMs": 3663,
+            "filePath": null,
+            "inputHash": "8281da175c85a78c59bdce93efb2fe3debd20209d3043e4e70cc986ed39c6bdf",
+            "ordinal": 1
           },
           {
             "node": "tool",
@@ -96,7 +176,10 @@
             "status": "done",
             "inputPreview": "sha256:ff3839dc10c877ad:62",
             "resultPreview": "sha256:45c3d51089f0efb0:567",
-            "durationMs": 384
+            "durationMs": 384,
+            "filePath": "sha256:98aa129515a3fe95:46",
+            "inputHash": "ff3839dc10c877ad3bd66c03304ae840d31cc1a453b3942362f69fbc7c456bf9",
+            "ordinal": 2
           },
           {
             "node": "tool",
@@ -105,7 +188,10 @@
             "status": "done",
             "inputPreview": "sha256:82e20cabb9f71575:65",
             "resultPreview": "sha256:6c30f24c11c97d9b:567",
-            "durationMs": 338
+            "durationMs": 338,
+            "filePath": "sha256:d3c1d5ecd49a9259:49",
+            "inputHash": "82e20cabb9f71575a3129cc069942e5049c93605f43d642f5cf12cc44f9eee0c",
+            "ordinal": 3
           },
           {
             "node": "tool",
@@ -114,7 +200,10 @@
             "status": "done",
             "inputPreview": "sha256:9fa5893da13b2cd0:74",
             "resultPreview": "sha256:f01a2151aeb92dcf:566",
-            "durationMs": 348
+            "durationMs": 348,
+            "filePath": "sha256:61226175343541a0:47",
+            "inputHash": "9fa5893da13b2cd0cca7cc7695068555e0d376025886344a13911b195c70cd75",
+            "ordinal": 4
           },
           {
             "node": "tool",
@@ -123,7 +212,10 @@
             "status": "done",
             "inputPreview": "sha256:e58028b90463cc7d:76",
             "resultPreview": "sha256:e625b791991d45dd:566",
-            "durationMs": 316
+            "durationMs": 316,
+            "filePath": "sha256:28e4e2bc2a21db2b:49",
+            "inputHash": "e58028b90463cc7dd1e8dc6595dd3eeb4f03d4b1624ec745d88597a4cfb4abc9",
+            "ordinal": 5
           },
           {
             "node": "tool",
@@ -132,7 +224,10 @@
             "status": "done",
             "inputPreview": "sha256:7cab20e0ea072156:63",
             "resultPreview": "sha256:d20a58fae5d00593:567",
-            "durationMs": 305
+            "durationMs": 305,
+            "filePath": "sha256:87946cf39c8ba834:47",
+            "inputHash": "7cab20e0ea072156986a98d911fa672abd274784fd00184d13b8feeac7649cd7",
+            "ordinal": 6
           },
           {
             "node": "tool",
@@ -141,7 +236,10 @@
             "status": "done",
             "inputPreview": "sha256:c82eacf658b0c65e:317",
             "resultPreview": "sha256:f7d3bdc57cc1bd16:241",
-            "durationMs": 838
+            "durationMs": 838,
+            "filePath": null,
+            "inputHash": "c82eacf658b0c65e5a3ba2d591a18057fc853dce5e3c7bddc83b117388cd2003",
+            "ordinal": 7
           },
           {
             "node": "tool",
@@ -150,7 +248,10 @@
             "status": "done",
             "inputPreview": "sha256:7b498b085e01dd02:162",
             "resultPreview": "sha256:74198b9c2dd9ea18:111",
-            "durationMs": 414
+            "durationMs": 414,
+            "filePath": null,
+            "inputHash": "3cd8bc7b1f3f27c1c765932f05a3bf4e3727a168b8fc6e77b9729fd8da42b076",
+            "ordinal": 8
           },
           {
             "node": "tool",
@@ -159,7 +260,10 @@
             "status": "done",
             "inputPreview": "sha256:008dc8f809fefe5f:158",
             "resultPreview": "sha256:09af621043c0737f:266",
-            "durationMs": 519
+            "durationMs": 519,
+            "filePath": null,
+            "inputHash": "008dc8f809fefe5f2357907cbc44650af2cdbcf399c1a4a67a27775f1c30dd9e",
+            "ordinal": 9
           },
           {
             "node": "tool",
@@ -168,7 +272,10 @@
             "status": "done",
             "inputPreview": "sha256:ccf12800f6520c12:565",
             "resultPreview": "sha256:313b67cf85099c16:565",
-            "durationMs": 2579
+            "durationMs": 2579,
+            "filePath": null,
+            "inputHash": "a402f1bcada1b55966102a08c6c7f3e2287637a1a9ea93b78356d7ebbe829e38",
+            "ordinal": 10
           }
         ]
       }

@@ -31,7 +31,14 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { describe, expect, it } from 'vitest';
 
-import type { AgentNode, SessionState, ToolNode, TreeNode } from '../model/events.js';
+import type {
+  AgentNode,
+  CompactionRecord,
+  SessionState,
+  ToolNode,
+  TreeNode,
+  UsageTurn,
+} from '../model/events.js';
 import { isAgentNode } from '../model/events.js';
 import {
   OC_PARK_REASONS,
@@ -234,6 +241,12 @@ function serializeTool(node: ToolNode): unknown {
     // OpenCode's own truncation claim, `null` for "no claim was made". `?? null`
     // rather than a presence check, so an explicit `false` survives.
     truncated: node.truncated ?? null,
+    // v0.7.0 Phase 1. `filePath` is FINGERPRINTED, matching both the engine's
+    // serialiser and the generator's: it is a real absolute path out of a
+    // captured tool input and a committed golden may not carry one verbatim.
+    filePath: previewFingerprint(node.filePath),
+    inputHash: node.inputHash ?? null,
+    ordinal: node.ordinal ?? null,
   };
 }
 
@@ -249,6 +262,11 @@ function serializeAgent(node: AgentNode, anchor: number): unknown {
     // `null` keeps the golden able to tell 'unset' from 'zero'.
     contextNow: node.contextNow ?? null,
     burn: node.burn ?? null,
+    // v0.7.0 Phase 1. Numbers and an engine-stated model name are
+    // machine-independent, so verbatim.
+    usageSeries: node.usageSeries ?? null,
+    model: node.model ?? null,
+    compactions: node.compactions ?? null,
     startedAtOffsetMs: node.startedAt - anchor,
     endedAtOffsetMs: node.endedAt === undefined ? null : node.endedAt - anchor,
     children: node.children.map((child: TreeNode) =>
@@ -399,6 +417,10 @@ function readCorpus(dbPath: string): Corpus {
 function parseParts(parts: readonly RawPart[]): OcParseResult {
   const counts: OcParseCounts = { ...ZERO_PARSE_COUNTS, partRows: parts.length };
   const toolsBySession = new Map<string, OcToolRecord[]>();
+  const usageBySession = new Map<string, UsageTurn[]>();
+  const compactionsBySession = new Map<string, CompactionRecord[]>();
+  const positive = (v: unknown): number =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
 
   for (const part of parts) {
     let data: OcPartData;
@@ -410,6 +432,36 @@ function parseParts(parts: readonly RawPart[]): OcParseResult {
     }
     if (data.type === 'reasoning') {
       counts.reasoningPartsDropped++;
+      continue;
+    }
+    // v0.7.0 Phase 1, DoD 1.4/1.4b — re-derived here, not imported.
+    if (data.type === 'step-finish') {
+      const tokens = (data as { tokens?: Record<string, unknown> }).tokens;
+      if (tokens === undefined || tokens === null || typeof tokens !== 'object') {
+        counts.partsIgnoredNoNode++;
+        continue;
+      }
+      const list = usageBySession.get(part.sessionId) ?? [];
+      const cache = (tokens['cache'] ?? {}) as Record<string, unknown>;
+      list.push({
+        ordinal: list.length,
+        input: positive(tokens['input']),
+        cacheCreation: positive(cache['write']),
+        cacheRead: positive(cache['read']),
+        output: positive(tokens['output']),
+      });
+      usageBySession.set(part.sessionId, list);
+      counts.stepFinishParts++;
+      continue;
+    }
+    if (data.type === 'compaction') {
+      const list = compactionsBySession.get(part.sessionId) ?? [];
+      list.push({
+        ordinal: (toolsBySession.get(part.sessionId) ?? []).length,
+        trigger: 'engine',
+      });
+      compactionsBySession.set(part.sessionId, list);
+      counts.compactionParts++;
       continue;
     }
     if (data.type !== 'tool') {
@@ -475,7 +527,7 @@ function parseParts(parts: readonly RawPart[]): OcParseResult {
 
   // This reader covers the tool join only; the usage and compaction series are
   // `parse.ts`'s and are asserted directly against the corpus elsewhere.
-  return { toolsBySession, usageBySession: new Map(), compactionsBySession: new Map(), counts };
+  return { toolsBySession, usageBySession, compactionsBySession, counts };
 }
 
 interface Golden {
@@ -1420,7 +1472,7 @@ describe('tool ordering', () => {
 });
 
 describe('toToolNode', () => {
-  it('keeps the first six fields and drops the join carriers', () => {
+  it('keeps the ToolNode fields and drops the join carriers', () => {
     const record = tool({
       partId: 'prt_x',
       sessionId: 'ses_x',
@@ -1437,7 +1489,18 @@ describe('toToolNode', () => {
       inputPreview: '{}',
       resultPreview: 'out',
       durationMs: 12,
+      // v0.7.0 Phase 1. `inputHash` and `filePath` come off the RECORD;
+      // `ordinal` is the argument, because a record does not know its own
+      // position until the caller has sorted the session's tools.
+      inputHash: record.inputHash,
+      ordinal: 0,
     });
+    // The join carriers are still dropped: `partId`, `sessionId`, `order`,
+    // `taskChildSessionId`, `taskParentSessionId`, `inputTruncated`,
+    // `resultTruncated` are `OcToolRecord`'s and must not reach the wire.
+    for (const key of ['partId', 'sessionId', 'order', 'taskChildSessionId', 'inputTruncated']) {
+      expect(key in toToolNode(record, 0)).toBe(false);
+    }
   });
 
   it('omits resultPreview, durationMs and truncated rather than setting them undefined', () => {

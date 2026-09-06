@@ -262,6 +262,10 @@ describe.each(CORPUS_NAMES)('corpus %s', (corpusName) => {
       'toolParts',
       'taskParts',
       'previewsTruncated',
+      // v0.7.0 Phase 1 — two part types that used to fall into
+      // `partsIgnoredNoNode` now have their own buckets.
+      'stepFinishParts',
+      'compactionParts',
     ] as const) {
       expect(expected[key], `golden has no counts.${key}`).toBeTypeOf('number');
       expect(result.counts[key], `counts.${key}`).toBe(expected[key]);
@@ -274,6 +278,12 @@ describe.each(CORPUS_NAMES)('corpus %s', (corpusName) => {
         result.counts.reasoningPartsDropped +
         result.counts.partsIgnoredNoNode +
         result.counts.toolParts +
+        // v0.7.0 Phase 1. These two are the reason this assertion is worth
+        // having: `step-finish` and `compaction` moved OUT of
+        // `partsIgnoredNoNode` into buckets of their own, and the equation went
+        // red the moment they did rather than silently under-counting.
+        result.counts.stepFinishParts +
+        result.counts.compactionParts +
         result.toolPartsUnusable +
         result.toolPartsUnknownStatus,
     ).toBe(rows.length);
@@ -296,6 +306,8 @@ describe.each(CORPUS_NAMES)('corpus %s', (corpusName) => {
         'reasoningPartsDropped',
         'taskParts',
         'toolParts',
+        'stepFinishParts',
+        'compactionParts',
       ].sort(),
     );
   });
@@ -734,21 +746,64 @@ describe('synthetic rows', () => {
     expect(JSON.stringify([...result.toolsBySession.values()].flat())).not.toContain(needle);
   });
 
-  it('ignores every non-tool part type, including a compaction with tail_start_id', () => {
+  it('ignores every non-tool part type that still has no counterpart', () => {
+    // v0.7.0 Phase 1 narrowed this list. `step-finish` and `compaction` used to
+    // be here and now land in buckets of their own; the three below still have
+    // no counterpart in `AgentNode`/`ToolNode`, and an unknown type is still
+    // COUNTED and IGNORED rather than refused (OC2).
     const result = parseParts([
       row({ type: 'text', text: 'hello' }),
       row({ type: 'step-start' }),
-      row({ type: 'step-finish', tokens: { input: 1, output: 2 } }),
       row({ type: 'patch', hash: 'abc' }),
-      row({ type: 'compaction', tail_start_id: 'prt_x' }),
-      row({ type: 'compaction' }),
       row({ type: 'a-type-opencode-has-not-shipped-yet' }),
     ]);
-    expect(result.counts.partsIgnoredNoNode).toBe(7);
+    expect(result.counts.partsIgnoredNoNode).toBe(4);
     expect(result.counts.partsMalformed).toBe(0);
     expect(result.counts.toolParts).toBe(0);
     // Ignored, never refused: the session is not affected at all.
     expect(result.toolsBySession.size).toBe(0);
+  });
+
+  it('reads step-finish and compaction WITHOUT giving either a tool node', () => {
+    /*
+     * v0.7.0 Phase 1, DoD 1.4/1.4b. The behaviour that changed is where these
+     * two are COUNTED; the behaviour that must not change is that neither
+     * produces a `ToolNode` and neither refuses the session.
+     *
+     * The `tail_start_id` compaction is kept from the test this replaces
+     * (contract amendment §E): it is the shape whose presence must not change
+     * the tree, and it still does not.
+     */
+    const result = parseParts([
+      row({ type: 'step-finish', tokens: { input: 1, output: 2, cache: { read: 3, write: 4 } } }),
+      row({ type: 'compaction', tail_start_id: 'prt_x' }),
+      row({ type: 'compaction' }),
+    ]);
+    expect(result.counts.stepFinishParts).toBe(1);
+    expect(result.counts.compactionParts).toBe(2);
+    expect(result.counts.partsIgnoredNoNode).toBe(0);
+    expect(result.counts.toolParts).toBe(0);
+    expect(result.toolsBySession.size).toBe(0);
+
+    // The four components are read APART, which is what F6 and F7 need.
+    expect([...result.usageBySession.values()].flat()).toStrictEqual([
+      { ordinal: 0, input: 1, cacheCreation: 4, cacheRead: 3, output: 2 },
+    ]);
+    // Both compactions are `engine`, with no token figures: OpenCode states
+    // that one happened and nothing about what it cost.
+    expect([...result.compactionsBySession.values()].flat()).toStrictEqual([
+      { ordinal: 0, trigger: 'engine' },
+      { ordinal: 0, trigger: 'engine' },
+    ]);
+  });
+
+  it('does not turn a step-finish with no tokens object into a turn of zeroes', () => {
+    // A row of zeroes would add a turn that never happened and drag F6's cache
+    // ratio towards 0. It falls back to the ignored bucket instead.
+    const result = parseParts([row({ type: 'step-finish' })]);
+    expect(result.counts.stepFinishParts).toBe(0);
+    expect(result.counts.partsIgnoredNoNode).toBe(1);
+    expect(result.usageBySession.size).toBe(0);
   });
 
   it('maps a RUNNING tool part (0 in either corpus)', () => {
@@ -1059,6 +1114,13 @@ describe('synthetic rows', () => {
       toolParts: 0,
       taskParts: 0,
       previewsTruncated: 0,
+      stepFinishParts: 0,
+      compactionParts: 0,
     });
+    // v0.7.0 Phase 1. Empty maps, and the DISTINCTION matters downstream: the
+    // grafter reads an absent session as "this engine states no series" and
+    // leaves `usageSeries` off the node entirely.
+    expect(result.usageBySession.size).toBe(0);
+    expect(result.compactionsBySession.size).toBe(0);
   });
 });

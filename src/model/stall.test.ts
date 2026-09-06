@@ -50,17 +50,23 @@
  * the deck for ever, which is the reported defect wearing a smaller hat.
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import type { AgentNode, ToolNode, TreeNode } from './events.js';
+import type {
+  AgentNode,
+  SessionPatch,
+  SessionState,
+  ToolNode,
+  TreeNode,
+} from './events.js';
 import { isAgentNode } from './events.js';
 import { TreeGrafter, walk } from './graft.js';
 import { stallOf, stalledForMs, stalledCount } from './stall.js';
 import { LivenessEngine } from './liveness.js';
-import { SessionModel } from './session.js';
+import { SessionModel, applySessionPatch, diffSessionState } from './session.js';
 import { normalizeHookEvent } from '../hooks/listener.js';
 import { parseLines, parseSubagentMeta } from '../parser/parse.js';
 
@@ -660,6 +666,165 @@ describe('synthetic-liveness (DoD 0c.5)', () => {
       const text = await readFile(`${SYNTH}/${c}/${SYNTH_SLUG}/${id}.jsonl`, 'utf8');
       expect(text).toContain('SYNTHETIC FIXTURE');
       expect(text).toContain('C:\\\\SYNTHETIC');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The DIFF path (found by phase-verifier at the Phase 0c gate)
+// ---------------------------------------------------------------------------
+
+/**
+ * A stall reaches a RUNNING PANEL as a diff, never as a snapshot.
+ *
+ * The host emits on a liveness tick (`extension.ts`, `LIVENESS_TICK_MS`), so
+ * `SessionModel.emit()` diffs against the last emitted state and posts
+ * `type: 'diff'`. The first version of this phase put `stalledSinceMs` on the
+ * `ToolNode` and NOT in `ToolNodeFieldPatch`, so the patch carried
+ * `status: 'stalled'` alone: a user who opened the panel on an
+ * already-stalled tool saw the silence measured, and a user who watched it
+ * stall saw amber with no number beside it.
+ *
+ * It also broke the exactness contract `events.ts` states in so many words,
+ * which the B7 comment in `session.ts` had already recorded as the hazard of
+ * exactly this shape — for `truncated`, one field earlier.
+ *
+ * **The wire corpus cannot catch this and never could**: it is five
+ * `snapshot` messages by construction. Only a diff can.
+ */
+describe('the stall survives the diff path (0c.4, verifier finding)', () => {
+  const SINCE = 1_000 + THRESHOLD_MS;
+
+  function withTool(over: Partial<ToolNode>): SessionState {
+    const tool: ToolNode = {
+      id: 't1',
+      toolName: 'Bash',
+      status: 'running',
+      inputPreview: '{}',
+      ...over,
+    };
+    return {
+      sessionId: 's1',
+      projectSlug: 'p',
+      workspaceMatch: true,
+      liveness: 'idle',
+      schemaOk: true,
+      root: {
+        id: 'root',
+        kind: 'main',
+        label: 'r',
+        status: 'running',
+        spawnDepth: 0,
+        children: [tool],
+        startedAt: 0,
+      },
+      totals: { costUsd: 0 },
+    };
+  }
+
+  it('carries stalledSinceMs in the patch, not just the status', () => {
+    const before = withTool({});
+    const after = withTool({ status: 'stalled', stalledSinceMs: SINCE });
+
+    const patch = diffSessionState(before, after);
+    expect(patch).toBeDefined();
+    const ops = patch?.tree ?? [];
+    const update = ops.find((o) => o.op === 'updateTool');
+    expect(update).toBeDefined();
+    // The assertion that was missing. `status` alone is what shipped.
+    expect(JSON.stringify(update)).toContain('stalledSinceMs');
+  });
+
+  it('round-trips exactly, which is the contract events.ts states', () => {
+    const before = withTool({});
+    const after = withTool({ status: 'stalled', stalledSinceMs: SINCE });
+
+    const patch = diffSessionState(before, after);
+    expect(patch).toBeDefined();
+    const rebuilt = applySessionPatch(before, patch as SessionPatch);
+    // Both sides through the SAME normalisation: `applySessionPatch` fills the
+    // optional fields a hand-built state omits, and the exactness property is
+    // about states the MODEL produces. Normalising `after` the same way is what
+    // keeps this an assertion about the patch rather than about my fixture.
+    expect(rebuilt).toEqual(applySessionPatch(after, {}));
+    expect((rebuilt.root.children[0] as ToolNode).stalledSinceMs).toBe(SINCE);
+  });
+
+  it('CLEARS the elapsed time when the tool stops being stalled', () => {
+    // The other direction, and the one a three-way patch exists for: a chip
+    // back at `running` must not keep the elapsed time from the stall it came
+    // out of. `null` in the patch means DELETE the key.
+    const stalled = withTool({ status: 'stalled', stalledSinceMs: SINCE });
+    const running = withTool({});
+
+    const patch = diffSessionState(stalled, running);
+    expect(patch).toBeDefined();
+    const rebuilt = applySessionPatch(stalled, patch as SessionPatch);
+    expect(rebuilt).toEqual(applySessionPatch(running, {}));
+    expect((rebuilt.root.children[0] as ToolNode).stalledSinceMs).toBeUndefined();
+    expect('stalledSinceMs' in (rebuilt.root.children[0] as ToolNode)).toBe(false);
+  });
+
+  it('emits nothing when neither field moved', () => {
+    // Vacuity control: if the diff reported a change every time, the three
+    // cases above would pass without measuring anything.
+    const a = withTool({ status: 'stalled', stalledSinceMs: SINCE });
+    const b = withTool({ status: 'stalled', stalledSinceMs: SINCE });
+    expect(diffSessionState(a, b)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A tripwire the phase-verifier's questions exposed
+// ---------------------------------------------------------------------------
+
+/**
+ * `ToolNode.status` is now CLOCK-DERIVED, and it is serialised into
+ * `fixtures/golden/session/*.json`. That makes the session goldens a function
+ * of the test clock for the first time.
+ *
+ * They do not move today, and the margin is 60 seconds: `session.test.ts` sets
+ * `CLOCK_BASE = 1_700_000_000_000`, `NOW = CLOCK_BASE + 60_000`, and feeds hook
+ * events at `CLOCK_BASE + i`. So `now - lastActivityAt` is about 60,000 ms
+ * against a 120,000 ms threshold — under it, by a factor of two, entirely by
+ * accident. Nobody chose that margin with stalls in mind, because stalls did
+ * not exist when it was chosen.
+ *
+ * Move `NOW` to `CLOCK_BASE + 180_000` and two committed goldens silently flip
+ * a tool from `running` to `stalled`, and the failure would read as a golden
+ * regression rather than as "the clock crossed a threshold". This asserts the
+ * relationship instead of the number, so the next person to touch that clock
+ * gets told why.
+ */
+describe('the session goldens are still clock-independent', () => {
+  it('session.test.ts keeps its clock inside the stall threshold', async () => {
+    const src = await readFile(
+      fileURLToPath(new URL('./session.test.ts', import.meta.url)),
+      'utf8',
+    );
+    const base = /const CLOCK_BASE = ([0-9_]+);/u.exec(src);
+    const now = /const NOW = CLOCK_BASE \+ ([0-9_]+);/u.exec(src);
+    // Vacuity control: if either declaration is renamed this must fail loudly
+    // rather than skip the check.
+    expect(base, 'CLOCK_BASE not found in session.test.ts').not.toBeNull();
+    expect(now, 'NOW not found in session.test.ts').not.toBeNull();
+
+    const margin = Number((now?.[1] ?? '0').replace(/_/gu, ''));
+    expect(margin).toBeGreaterThan(0);
+    // The relationship, not the literal. If you need a larger margin, the
+    // goldens must be regenerated deliberately and a stalled case recorded --
+    // do not widen this.
+    expect(margin).toBeLessThanOrEqual(THRESHOLD_MS);
+  });
+
+  it('no committed session golden carries a stalled tool', async () => {
+    const dir = fileURLToPath(new URL('../../fixtures/golden/session', import.meta.url));
+    const names = (await readdir(dir)).filter((n) => n.endsWith('.json'));
+    // Vacuity control: an empty directory would satisfy the loop below.
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      const text = await readFile(`${dir}/${name}`, 'utf8');
+      expect(text, `${name} carries a stalled tool`).not.toContain('"stalled"');
     }
   });
 });

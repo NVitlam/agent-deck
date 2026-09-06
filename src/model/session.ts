@@ -295,6 +295,14 @@ function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | un
     fields.truncated = next.truncated === undefined ? null : next.truncated;
     changed = true;
   }
+  // v0.7.0 Phase 0c, and B7's rule applied to the field this phase added. A
+  // stall reaches a running panel as a DIFF (the host emits on a liveness
+  // tick), so leaving this out shipped an amber chip with no elapsed time
+  // beside it — and broke the exactness property in the same breath.
+  if (prev.stalledSinceMs !== next.stalledSinceMs) {
+    fields.stalledSinceMs = next.stalledSinceMs === undefined ? null : next.stalledSinceMs;
+    changed = true;
+  }
   return changed ? fields : undefined;
 }
 

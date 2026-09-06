@@ -161,19 +161,41 @@ async function main() {
   publish();
 
   const finalState = model.sessionState(SESSION_ID);
+
+  // THE SHAPE IS THE SHARED `WireCorpus`, NOT A NEW ONE.
+  //
+  // The first version of this file wrote `describes` and `thresholdMs` and
+  // omitted `title`, `description`, `durationMs` and the declared `final`
+  // shape, while announcing the same `formatVersion` as every other corpus in
+  // the directory. `webview/theater/corpus-types.ts` opens with "One
+  // declaration so the three cannot disagree about a field name" - and they
+  // did: `theater/main.ts` reads `corpus.title`, so the picker printed
+  // `undefined`. Nothing caught it, because every shape assertion in
+  // `wire.test.ts` iterates what `record-wire.mjs` writes and the JSON is
+  // inlined by an esbuild plugin that tsc never sees. Found by
+  // `phase-verifier` at the Phase 0c gate.
   const name = await writeCorpus(outDir, {
     formatVersion: WIRE_FORMAT_VERSION,
     id: 'cc-2.1.260-stall-arc',
     kind: 'recorded',
-    producedBy: 'scripts/record-stall-wire.mjs',
-    describes:
+    title: 'cc-2.1.260 — a tool stalling and clearing, on the clock alone',
+    description:
       'The harvested 99f96635 session at five clock positions. The TREE NEVER CHANGES — '
       + 'no content arrives after the first frame. Only `now` moves, so every difference '
-      + 'between frames is the stall derivation and nothing else.',
-    thresholdMs: THRESHOLD_MS,
+      + 'between frames is the stall derivation and nothing else. Both levels — the inner '
+      + `Bash and the outer Agent spawn waiting on it — turn amber at ${String(THRESHOLD_MS)} ms `
+      + 'of silence and clear together when activity resumes.',
+    producedBy: 'scripts/record-stall-wire.mjs',
+    recordedFrom: 'fixtures/cc-2.1.260/projects',
+    simulatedEpochMs: INNER_START_MS,
+    durationMs: rec.events[rec.events.length - 1]?.atMs ?? 0,
     steps: rec.steps,
     events: rec.events,
-    final: { liveness: finalState?.liveness },
+    final: {
+      sessions: finalState === undefined ? [] : [finalState],
+      degraded: { degraded: false },
+      schemaMismatchSessionIds: [],
+    },
   });
   console.log(`wrote ${name}: ${String(rec.events.length)} events, ${String(rec.steps.length)} steps`);
 }

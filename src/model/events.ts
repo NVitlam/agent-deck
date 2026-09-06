@@ -635,6 +635,23 @@ export interface ToolNodeFieldPatch {
   durationMs?: number | null;
   /** `null` = cleared. See {@link ToolNode.truncated}. */
   truncated?: boolean | null;
+  /**
+   * `null` = cleared. See {@link ToolNode.stalledSinceMs}.
+   *
+   * Carried for the SAME reason as `truncated` above, and the reason is not
+   * bookkeeping: this file states the patch contract as EXACT, so an optional
+   * field a patch cannot express BREAKS that property rather than merely
+   * under-reporting it.
+   *
+   * It is also a live rendering defect without this. In a running panel a
+   * stall arrives as a DIFF, not a snapshot — the host emits on a 5 s liveness
+   * tick — so a patch carrying `status: 'stalled'` and no `stalledSinceMs`
+   * paints the chip amber with no elapsed time beside it. A user who opens the
+   * panel on an already-stalled tool would see the silence measured and a user
+   * who watched it stall would not. Found by `phase-verifier` at the Phase 0c
+   * gate, against a suite of 2,988 green tests.
+   */
+  stalledSinceMs?: number | null;
 }
 
 /**

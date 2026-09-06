@@ -1059,7 +1059,10 @@ describe('the stall arc corpus', () => {
   let corpus: {
     id: string;
     kind: string;
-    thresholdMs: number;
+    title: string;
+    description: string;
+    durationMs: number;
+    final: Record<string, unknown>;
     steps: { atMs: number; label: string }[];
     events: { atMs: number; label: string; message: Record<string, unknown> }[];
   };
@@ -1088,6 +1091,39 @@ describe('the stall arc corpus', () => {
     // ever changed, this corpus would vanish on the next re-record and the
     // staleness test above would report it as merely "missing".
     expect(runA.has(STALL_NAME)).toBe(false);
+  });
+
+  it('obeys the SHARED WireCorpus contract, field for field', () => {
+    // The first version of this corpus invented `describes` and `thresholdMs`,
+    // omitted `title`, `description`, `durationMs` and the declared `final`
+    // shape, and announced the same `formatVersion` as everything else in the
+    // directory — so the theater printed `undefined` for its name. Nothing
+    // caught it: the shape assertions above iterate what `record-wire.mjs`
+    // writes, and an esbuild plugin inlines the JSON where tsc never sees it.
+    //
+    // Compared against a corpus produced by the OTHER recorder, so this cannot
+    // drift into agreeing only with itself.
+    const reference = JSON.parse(
+      committed.get('cc-2.1.234-session-arc.json') ?? '{}',
+    ) as Record<string, unknown>;
+    const optional = new Set(['refusedLayoutCase', 'engine', 'hostDiagnostics']);
+    const required = Object.keys(reference).filter((k) => !optional.has(k));
+    expect(required.length).toBeGreaterThan(5); // vacuity control
+    for (const key of required) {
+      expect(Object.hasOwn(corpus, key), `stall corpus is missing \`${key}\``).toBe(true);
+    }
+    // And no field the shared type does not declare.
+    for (const key of Object.keys(corpus)) {
+      expect(Object.hasOwn(reference, key), `stall corpus invents \`${key}\``).toBe(true);
+    }
+    expect(typeof corpus.title).toBe('string');
+    expect(corpus.title.length).toBeGreaterThan(0);
+    expect(corpus.durationMs).toBe(corpus.events[corpus.events.length - 1]?.atMs);
+    expect(Object.keys(corpus.final).sort()).toEqual([
+      'degraded',
+      'schemaMismatchSessionIds',
+      'sessions',
+    ]);
   });
 
   it('names itself recorded — it is replayed from a real fixture, not invented', () => {
@@ -1134,8 +1170,10 @@ describe('the stall arc corpus', () => {
       'nudged',
       'resumed',
     ]);
-    expect(corpus.steps[1]?.atMs).toBe(corpus.thresholdMs);
-    expect(corpus.steps[2]?.atMs).toBe(corpus.thresholdMs + 1);
+    // 120_000 is `agentDeck.livenessThresholdMs`, quoted from the setting
+    // rather than re-declared on the corpus.
+    expect(corpus.steps[1]?.atMs).toBe(120_000);
+    expect(corpus.steps[2]?.atMs).toBe(120_001);
 
     // Frame by frame, BOTH levels together — the nesting, on the wire.
     for (const id of [OUTER, INNER]) {

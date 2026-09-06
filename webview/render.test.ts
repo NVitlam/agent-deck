@@ -504,10 +504,18 @@ describe('a stalled tool renders amber, with the silence measured (v0.7.0 Phase 
    * This repository shipped a defect (D4) in which a component honoured a
    * prop that no production parent ever passed: three tests were green
    * because each supplied by hand the value the product never supplied. The
-   * chain here is App → TreeView → TreeNodeView → StatusChip, and every link
-   * has to carry `stalledSinceMs` and the clock for these to pass. Deleting
-   * the `{stalledForMs}` attribute in `TreeNodeView.svelte`, or the `{now}`
-   * on either recursion site, turns them red.
+   * chain here is App → TreeView → TreeNodeView → StatusChip, and
+   * `stalledSinceMs` has to survive every link for these to pass. Deleting the
+   * `{stalledForMs}` attribute in `TreeNodeView.svelte` turns one of them red.
+   *
+   * **Deleting `{now}` from the recursion sites does NOT**, and an earlier
+   * version of this comment claimed it did. A phase-verifier checked and found
+   * all 26 still green: `App.svelte` never passes `now` to `<TreeView>`, so the
+   * prop is `undefined` at every level already and each component falls back to
+   * its own `Date.now()`. The fallback IS the production path, which is the
+   * design (a default that is wrong and only correct under test is the D4
+   * defect) — but it means the threading is not what these tests pin, and
+   * saying otherwise overstated them.
    */
   const SINCE = 1_700_000_000_000;
 

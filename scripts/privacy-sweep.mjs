@@ -909,29 +909,31 @@ const FOREIGN_VALUE_EXEMPTIONS = [
   {
     id: 'own-slug-cut-by-our-own-truncation',
     reason:
-      'A slug fragment that is a STRICT PREFIX of the own-project slug of this ' +
-      'repository, ' +
-      'slug, produced when the preview truncation of Agent Deck cut the slug ' +
-      'mid-name. Found 2026-09-06 at the v0.7.0 Phase 0c gate: ' +
-      'webview/wire/cc-2.1.260-stall-arc.json carried 875 occurrences of the ' +
-      'complete slug (forgiven by namesOwnProject) and 5 of ' +
+      'A slug fragment cut part-way through one of the path components of the ' +
+      'own slug of this repository, produced when the preview truncation of ' +
+      'Agent Deck cut the slug mid-name. Found 2026-09-06 at the v0.7.0 Phase ' +
+      '0c gate: webview/wire/cc-2.1.260-stall-arc.json carried 875 occurrences ' +
+      'of the complete slug (forgiven by namesOwnProject) and 5 of ' +
       '"c--users-dev-projects-agent-", cut before "deck" by the 512-byte ' +
       'preview budget and therefore naming no project at all. Every one is ' +
-      'immediately followed by our own marker, "...[agent-deck: truncated, ' +
-      'showing 512 of 666 bytes]". ' +
-      'THIS IS PRIVACY-NEUTRAL BY CONSTRUCTION, which is why it is an ' +
-      'exemption rather than a widening: the bytes on disk are a prefix of ' +
-      'OUR OWN slug, so whatever project the uncut slug named, what is ' +
-      'actually committed discloses nothing beyond the own path of this ' +
-      'repository, ' +
-      'path. A genuinely foreign slug can only reach this rule by sharing our ' +
-      'entire prefix and being cut at exactly that byte - in which case the ' +
-      'visible bytes are still only ours. ' +
-      'It is deliberately NOT a general "forgive any prefix" rule: the value ' +
-      'must be a proper prefix of the full own-project slug and must not ' +
-      'itself name a project, so a foreign slug that merely starts similarly ' +
-      '(c--users-dev-projects-agent-other) still fails, because it is not a ' +
-      'prefix of ours.',
+      'immediately followed by the marker of this tool, "...[agent-deck: ' +
+      'truncated, showing 512 of 666 bytes]". ' +
+      'DISCLOSURE IMPACT IS NIL: the bytes on disk are a proper prefix of a ' +
+      'slug this repository already commits in full, so nothing is revealed ' +
+      'that was not already there. ' +
+      'NARROWED 2026-09-06, the same day, after phase-verifier showed the ' +
+      'first version was far wider than this reason: a bare prefix test also ' +
+      'forgave "c--users-dev-projects", "c--users-dev" and ' +
+      '"c--users-dev-projects-agent" -- the last a COMPLETE slug for a ' +
+      'sibling project named "agent". Each is a prefix of ours and each names ' +
+      'a real, different location, so FOREIGN detection was defeated for a ' +
+      'class nobody had enumerated. The rule now additionally requires that ' +
+      'the own slug continue with a NON-SEPARATOR character, i.e. that the cut ' +
+      'landed inside a path component. A complete slug for anything else ends ' +
+      'at a token boundary and can no longer reach this rule. ' +
+      'scripts/check-slug-exemption.mjs is the over-breadth control and it ' +
+      'plants those three regression values, not only a value the predicate ' +
+      'could never forgive.',
     exempt: (value) => isOwnSlugPrefix(value),
   },
   {
@@ -1257,7 +1259,24 @@ function isOwnSlugPrefix(value) {
   if (v.length === 0) return false;
   if (v.includes(OWN_PROJECT)) return false;
   for (const slug of ownProjectSlugs()) {
-    if (slug.length > v.length && slug.startsWith(v)) return true;
+    if (slug.length <= v.length) continue;
+    if (!slug.startsWith(v)) continue;
+    // THE CUT MUST HAVE LANDED INSIDE A PATH TOKEN.
+    //
+    // A prefix test alone was far wider than its own justification, and the
+    // phase-verifier proved it: it forgave c--users-dev-projects,
+    // c--users-dev, and c--users-dev-projects-agent -- the last a COMPLETE
+    // slug for a sibling project named "agent". Each is a prefix of ours and
+    // each names a real, different location.
+    //
+    // Our slug continuing with a separator means the value ended at a token
+    // boundary, which is exactly what a complete slug for something else looks
+    // like. Requiring a non-separator here admits only a value cut part-way
+    // through one of our own path components -- which is what our own preview
+    // truncation produces and what no complete slug can be.
+    const nextChar = slug.charAt(v.length);
+    if (nextChar === '-') continue;
+    return true;
   }
   return false;
 }

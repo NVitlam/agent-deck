@@ -100,6 +100,11 @@ function cloneTool(node: ToolNode): ToolNode {
   // engine's). A clone that wrote `truncated: undefined` would make
   // apply(prev, diff) stop deep-equalling `next` for every CC session.
   if (node.truncated !== undefined) out.truncated = node.truncated;
+  // v0.7.0 Phase 0c, on the same terms and for the same reason. A clone that
+  // dropped this would make a stalled tool lose its elapsed time the moment it
+  // passed through the reducer — the SECOND place the field had to be carried,
+  // found by the round-trip test written for the first.
+  if (node.stalledSinceMs !== undefined) out.stalledSinceMs = node.stalledSinceMs;
   return out;
 }
 
@@ -380,6 +385,12 @@ export function applySessionPatch(
         // to a renderer as "known whole" instead of "not claimed".
         if (f.truncated === null) delete node.truncated;
         else if (f.truncated !== undefined) node.truncated = f.truncated;
+        // v0.7.0 Phase 0c, both directions for the same reason: `null` is the
+        // tool no longer being stalled and must DELETE the key, so a chip that
+        // has gone back to `running` cannot keep an elapsed time from the
+        // stall it just came out of.
+        if (f.stalledSinceMs === null) delete node.stalledSinceMs;
+        else if (f.stalledSinceMs !== undefined) node.stalledSinceMs = f.stalledSinceMs;
         break;
       }
     }

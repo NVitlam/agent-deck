@@ -358,7 +358,21 @@ export type RelayRole = 'leader' | 'follower' | 'refused' | 'idle';
 export interface RelayCounters {
   /** Followers currently subscribed. Leader only. */
   followers: number;
-  /** Frames written to followers. Leader only. Counts frames, not sockets. */
+  /**
+   * Frames written to followers. Leader only. Counts frames, not sockets.
+   *
+   * **READ OFF THE LISTENER, NEVER ACCUMULATED HERE**, the same way
+   * {@link followers} is. A `phase-verifier` round on 2026-09-06 found this
+   * field declared, zero-initialised and INCREMENTED NOWHERE, while the doc
+   * comment below claimed it moved on a leader — a false sentence about a
+   * field, with nothing able to contradict it because nothing read it. The
+   * user-visible counters line was correct only because the host reached past
+   * this field to `HookListenerCounters.relayFramesSent`.
+   *
+   * A second account of one fact is how two counters describing one thing
+   * begin to disagree, so there is now one: the listener owns the number and
+   * {@link SharedHookListener.relayCounters} fills it in at read time.
+   */
   relayed: number;
   /** Frames received from a leader. Follower only. */
   received: number;

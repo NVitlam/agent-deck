@@ -203,9 +203,19 @@ export class SharedHookListener {
     return this.#role;
   }
 
-  /** Relay accounting. A snapshot; mutating it affects nothing. */
+  /**
+   * Relay accounting. A snapshot; mutating it affects nothing.
+   *
+   * `followers` and `relayed` are read off the listener rather than mirrored:
+   * it owns both numbers, and a copy kept in step by hand is how two accounts
+   * of one fact start to disagree. The rest are this object's own.
+   */
   get relayCounters(): Readonly<RelayCounters> {
-    return { ...this.#relay, followers: this.#listener.followerCount };
+    return {
+      ...this.#relay,
+      followers: this.#listener.followerCount,
+      relayed: this.#listener.counters.relayFramesSent,
+    };
   }
 
   /** The inner listener's counters, unchanged. */

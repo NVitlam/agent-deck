@@ -470,8 +470,9 @@ What happens instead:
 - A later window finds the port taken, **asks what is holding it**, and attaches to the leader's
   event stream when the answer is another Agent Deck. It holds no socket of its own.
 - **Each window still reads its own workspace's transcripts.** Only the hook stream is shared, and
-  each window keeps only the events belonging to a session it is following or to a folder it has
-  open. Your other project's activity does not appear on this project's deck.
+  the windows attached to the leader keep only the events belonging to a session they are following
+  or to a folder they have open. Your other project's activity does not appear on this project's
+  deck: what is on a deck comes from the transcripts that window reads, not from the hook stream.
 - **Close the leader's window and the others race for the port.** Whoever wins serves the rest.
   There is no election, no lock file and no coordinator: the operating system decides, because
   exactly one process can bind a port. The changeover takes a fraction of a second and the events

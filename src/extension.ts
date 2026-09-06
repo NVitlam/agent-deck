@@ -2939,7 +2939,7 @@ export class AgentDeckHost {
       // to disagree.
       relayRole: this.dataPath.relayRole,
       relayFollowers: this.dataPath.relayCounters.followers,
-      relayed: this.dataPath.listener.counters.relayFramesSent,
+      relayed: this.dataPath.relayCounters.relayed,
       relayReceived: this.dataPath.relayCounters.received,
     };
   }

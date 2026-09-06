@@ -25,7 +25,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { AgentNode, SessionState, ToolNode, TreeNode } from '../model/events.js';
+import type { AgentNode, JsonValue, SessionState, ToolNode, TreeNode } from '../model/events.js';
 import type { NormalizedHookEvent } from '../model/events.js';
 import type { CodexHookEvent } from '../codex/liveness.js';
 import { joinTelemetry } from '../otel/join.js';
@@ -39,6 +39,7 @@ import {
   IDENTITY_PATH,
   REBIND_BACKOFF_MAX_MS,
   REBIND_BACKOFF_MIN_MS,
+  REBIND_MAX_ATTEMPTS,
   RELAY_API_VERSION,
   RELAY_ENVELOPE_KINDS,
   RELAY_PRODUCT,
@@ -54,7 +55,7 @@ import { SharedHookListener } from './shared.js';
 
 const REPO_ROOT = join(__dirname, '..', '..');
 const HOOK_FIXTURE = join(REPO_ROOT, 'fixtures', 'hook-events', 'cc-2.1.234-redacted.jsonl');
-const OTEL_TRACES = join(REPO_ROOT, 'fixtures', 'otel-cc-2.1.260', 'traces.jsonl');
+const OTEL_DIR = join(REPO_ROOT, 'fixtures', 'otel-cc-2.1.260');
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -237,6 +238,57 @@ async function until(what: string, predicate: () => boolean, budgetMs = 5_000): 
   }
 }
 
+
+/**
+ * A leader THIS BUILD DOES NOT CONTROL: our identity document, our SSE
+ * framing, and whatever frames the test chooses to push.
+ *
+ * It exists for the version-skew case, which is the realistic producer of an
+ * undecodable frame — one window updated, the other not yet reloaded — and
+ * which cannot be staged from a `HookListener`, because a `HookListener` only
+ * ever writes frames this build can read.
+ */
+async function startFakeLeader(): Promise<{
+  port: number;
+  send: (frame: string) => void;
+}> {
+  const streams: import('node:http').ServerResponse[] = [];
+  const server = createServer((req, res) => {
+    const url = (req.url ?? '').split('?')[0];
+    if (url === IDENTITY_PATH) {
+      const body = JSON.stringify({
+        product: RELAY_PRODUCT,
+        apiVersion: RELAY_API_VERSION,
+        role: 'leader',
+      });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(body);
+      return;
+    }
+    if (url === EVENTS_PATH) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(': agent-deck relay\n\n');
+      streams.push(res);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  openServers.push(server);
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('fake leader has no port');
+  return {
+    port: address.port,
+    send: (frame: string) => {
+      for (const res of streams) res.write(frame);
+    },
+  };
+}
+
 function mainThreadPayload(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     session_id: 'sess-1',
@@ -342,6 +394,46 @@ describe('1b.1 identity route', () => {
     // A refused method is not a probe: nothing was told anything.
     await get(port, IDENTITY_PATH, 'POST');
     expect(leader.counters.identityProbes).toBe(2);
+  });
+
+  it('G5: neither relay route answers a request that is not from loopback', async () => {
+    /*
+     * A 2026-09-06 verifier round found this unpinned, and it is the one gap
+     * that matters most on these two routes: inserting an identity answer
+     * ABOVE the origin check left 164 tests green. Every non-loopback test in
+     * this repository POSTs to the EVENT path; none had ever GET the new ones.
+     *
+     * The identity route is a fingerprinting surface — this module's own
+     * comment says so — and the events stream is the payloads themselves.
+     * `spoofRemoteAddress` forces the perceived origin without ever binding a
+     * non-loopback socket, so the guard is exercised and the trust boundary
+     * is not.
+     */
+    const listener = new HookListener({
+      port: 0,
+      allowEphemeralPort: true,
+      spoofRemoteAddress: '203.0.113.7',
+    });
+    await listener.start();
+    openLeaders.push(listener);
+    const bound = listener.address();
+    if (bound === null) throw new Error('no bound port');
+
+    for (const path of [IDENTITY_PATH, EVENTS_PATH]) {
+      const reply = await get(bound.port, path);
+      expect(reply.status, path).toBe(403);
+      expect(reply.body, path).toBe('');
+    }
+    expect(listener.counters.droppedNonLoopback).toBe(2);
+    // Neither route was reached: no probe was counted and no follower attached.
+    expect(listener.counters.identityProbes).toBe(0);
+    expect(listener.followerCount).toBe(0);
+
+    // THE CONTROL. The same two routes, same build, real loopback origin —
+    // otherwise a 403 on everything would satisfy the assertions above.
+    const real = await startLeader();
+    expect((await get(real.port, IDENTITY_PATH)).status).toBe(200);
+    expect(real.leader.counters.droppedNonLoopback).toBe(0);
   });
 
   it('the events route is 404 when relaying is off, and 200 when it is on', async () => {
@@ -743,13 +835,32 @@ describe('1b.4 ownership filter (fixture-driven)', () => {
 // ---------------------------------------------------------------------------
 
 describe('1b.5 telemetry relay', () => {
-  async function traceSlice(): Promise<TelemetrySlice> {
-    const text = await readFile(OTEL_TRACES, 'utf8');
-    const bodies = text
-      .split('\n')
-      .filter((l) => l.trim() !== '')
-      .map((l) => (JSON.parse(l) as { raw: string }).raw);
-    const slices = bodies.map((b) => parseOtlpBody(b, 'traces'));
+  /**
+   * A slice built from BOTH signals that carry anything.
+   *
+   * It used to read `traces.jsonl` alone, and a `phase-verifier` round on
+   * 2026-09-06 measured what that produced: 40 `toolSpans` and **zero**
+   * `costPoints`. So `expect(received.costPoints).toEqual(slice.costPoints)`
+   * was `toEqual([])` — an assertion that could not fail, on the F9 carrier,
+   * in the test whose whole subject is that a slice survives the wire intact.
+   * Emptying `costPoints` inside the decoder left all 39 tests green.
+   *
+   * `metrics.jsonl` is the only signal that yields cost points, so both are
+   * read and the population is asserted non-empty in the tests below rather
+   * than assumed here.
+   */
+  async function telemetrySlice(): Promise<TelemetrySlice> {
+    const slices: TelemetrySlice[] = [];
+    for (const [file, signal] of [
+      ['traces.jsonl', 'traces'],
+      ['metrics.jsonl', 'metrics'],
+    ] as const) {
+      const text = await readFile(join(OTEL_DIR, file), 'utf8');
+      for (const line of text.split('\n')) {
+        if (line.trim() === '') continue;
+        slices.push(parseOtlpBody((JSON.parse(line) as { raw: string }).raw, signal));
+      }
+    }
     const first = slices[0];
     if (first === undefined) throw new Error('the otel fixture produced no slice');
     return slices.reduce<TelemetrySlice>(
@@ -770,14 +881,22 @@ describe('1b.5 telemetry relay', () => {
     await follower.start();
     await until('subscription', () => follower.listening);
 
-    const slice = await traceSlice();
+    const slice = await telemetrySlice();
+    // BOTH populations non-empty, stated before they are compared: an equality
+    // over two empty arrays is an assertion that cannot fail, and that is
+    // exactly what this test used to carry for `costPoints`.
     expect(slice.toolSpans.length).toBeGreaterThan(0);
+    expect(slice.costPoints.length).toBeGreaterThan(0);
     leader.relayTelemetry('traces', slice);
     await until('the telemetry frame', () => received.length === 1);
 
     expect(received[0]?.signal).toBe('traces');
     expect(received[0]?.slice.toolSpans).toEqual(slice.toolSpans);
     expect(received[0]?.slice.costPoints).toEqual(slice.costPoints);
+    for (const point of received[0]?.slice.costPoints ?? []) {
+      expect(typeof point.usd).toBe('number');
+      expect(typeof point.sessionId).toBe('string');
+    }
     // TYPES, not only values: a JSON wire is exactly where a number becomes a
     // string, and `durationMs` feeds arithmetic downstream.
     for (const span of received[0]?.slice.toolSpans ?? []) {
@@ -794,7 +913,7 @@ describe('1b.5 telemetry relay', () => {
     await follower.start();
     await until('subscription', () => follower.listening);
 
-    const slice = await traceSlice();
+    const slice = await telemetrySlice();
     leader.relayTelemetry('traces', slice);
     await until('the frame', () => received.length === 1);
 
@@ -819,6 +938,24 @@ describe('1b.5 telemetry relay', () => {
     expect(here.report.spansMatched).toBeGreaterThan(0);
   });
 
+  it('every signal relays, and the signal survives the wire', async () => {
+    // "Component 12 bodies relayed identically" is a claim about all three
+    // routes Phase 3 will mount, and until now every test relayed `traces`.
+    const { leader, port } = await startLeader();
+    const received: string[] = [];
+    const follower = followerOwningAll(port);
+    follower.subscribeOtel((signal) => received.push(signal));
+    await follower.start();
+    await until('subscription', () => follower.listening);
+
+    const slice = await telemetrySlice();
+    for (const signal of ['metrics', 'logs', 'traces'] as const) {
+      leader.relayTelemetry(signal, slice);
+    }
+    await until('all three frames', () => received.length === 3);
+    expect(received).toEqual(['metrics', 'logs', 'traces']);
+  });
+
   it('no OTLP body and no identity attribute crosses the wire', async () => {
     // Why the envelope carries a SLICE and not a body: the five identity
     // attributes occur on 850 of 850 records of this corpus, and an attribute
@@ -827,7 +964,7 @@ describe('1b.5 telemetry relay', () => {
     const stream = await rawStream(port);
     await until('the stream head', () => stream.text().includes('agent-deck relay'));
 
-    leader.relayTelemetry('traces', await traceSlice());
+    leader.relayTelemetry('traces', await telemetrySlice());
     await until('a data frame', () => stream.text().includes('data:'));
 
     const wire = stream.text();
@@ -1017,6 +1154,40 @@ describe('1b.6 failover', () => {
     expect(follower.bound).toBe(false);
   });
 
+  it('gives up after the locked number of attempts, and says so', async () => {
+    // The locked block's "≤ 20 tries" ceiling, and the exhaustion transition.
+    // A `phase-verifier` round found both unguarded: raising
+    // REBIND_MAX_ATTEMPTS from 20 to 200 left every test green, so the number
+    // in the plan and the number in the code could part company in silence.
+    const { leader, port } = await startLeader();
+    const time = new ManualTime(0);
+    const follower = failoverFollower(port, time);
+    await follower.start();
+    await until('attached', () => follower.listening);
+
+    await leader.stop();
+    // A STRANGER holds the port for good, so every attempt loses.
+    await until('the first attempt to be armed', () => time.pendingTimers > 0);
+    await startStranger(() => ({ status: 404, body: '{}' }), port);
+
+    for (let i = 0; i < REBIND_MAX_ATTEMPTS + 2; i++) {
+      if (follower.role === 'refused') break;
+      time.advance(REBIND_BACKOFF_MAX_MS);
+      await until(
+        `attempt ${String(i + 1)} to settle`,
+        () => time.pendingTimers > 0 || follower.role === 'refused',
+      );
+    }
+
+    expect(follower.role).toBe('refused');
+    expect(follower.listening).toBe(false);
+    // EXACTLY the locked ceiling — not "some" and not "many".
+    expect(follower.relayCounters.rebindAttempts).toBe(REBIND_MAX_ATTEMPTS);
+    expect(REBIND_MAX_ATTEMPTS).toBe(20);
+    // And it stops: a window that has given up arms nothing further.
+    expect(time.pendingTimers).toBe(0);
+  });
+
   it('the backoff stays inside the locked bounds at both ends of the jitter', () => {
     expect(backoffDelayMs(() => 0)).toBe(REBIND_BACKOFF_MIN_MS);
     expect(backoffDelayMs(() => 1)).toBe(REBIND_BACKOFF_MAX_MS);
@@ -1121,6 +1292,46 @@ describe('relay protocol', () => {
       expect(envelope, `no sample for kind ${kind}`).toBeDefined();
       expect(decodeSseFrame(encodeSseFrame(envelope as never)), kind).toEqual(envelope);
     }
+  });
+
+  it('a frame this build cannot read is counted and dropped, never guessed at', async () => {
+    // A 2026-09-06 verifier round found `undecodable` moving and nothing
+    // reading it. The likeliest producer is not an attacker but an ordinary
+    // version skew, and a frame dropped with no counter is a support call with
+    // no evidence in it.
+    //
+    // Driven from a leader this build does NOT control, because that is what a
+    // newer version is: the identity document is ours, and the stream then
+    // carries a `kind` this build has never heard of.
+    const fake = await startFakeLeader();
+    const seen: NormalizedHookEvent[] = [];
+    const follower = followerOwningAll(fake.port);
+    follower.subscribe((e) => seen.push(e));
+    await follower.start();
+    expect(follower.role).toBe('follower');
+
+    fake.send(encodeSseFrame({ v: RELAY_API_VERSION, kind: 'hook', payload: mainThreadPayload() as JsonValue }));
+    await until('a decodable frame first', () => follower.relayCounters.received === 1);
+    expect(seen).toHaveLength(1);
+
+    fake.send(`data: ${JSON.stringify({ v: RELAY_API_VERSION, kind: 'sparkle', payload: {} })}` + '\n\n');
+    await until('the undecodable frame', () => follower.relayCounters.undecodable === 1);
+    // Counted, and NOT counted as received: the two numbers describe different
+    // things, and a frame that was refused was not consumed.
+    expect(follower.relayCounters.received).toBe(1);
+    expect(seen).toHaveLength(1);
+
+    // ...and the stream is still live: one unreadable frame must not cost the
+    // window the rest of the session (G3).
+    fake.send(
+      encodeSseFrame({
+        v: RELAY_API_VERSION,
+        kind: 'hook',
+        payload: mainThreadPayload({ tool_use_id: 'after_the_bad_frame' }) as JsonValue,
+      }),
+    );
+    await until('the next good event', () => seen.length === 2);
+    expect(seen[1]?.toolUseId).toBe('after_the_bad_frame');
   });
 
   it('the identity guard refuses everything that is not exactly the document', () => {

@@ -2340,6 +2340,15 @@ describe('README: several windows, one port (Phase 1b)', () => {
       ['first window binds and leads', /binds the port/i],
       ['a later window attaches instead of failing', /attaches to the leader/i],
       ['each window still reads its own workspace', /own workspace's transcripts/i],
+      // NARROWED after a 2026-09-06 verifier round. The page said "each window
+      // keeps only the events belonging to a session it is following", which
+      // is false of the LEADER: its own socket ingests every payload that
+      // reaches it, as `shared.ts`'s header states. The deck-visible effect is
+      // nil - cards come from transcript discovery, not from hook events - but
+      // a false sentence on the Marketplace listing page is a false sentence,
+      // and the guard here checked that the sentence EXISTED rather than that
+      // it was true.
+      ['the filter is the attached windows\', not every window', /windows attached to the leader/i],
       ['the changeover has no coordinator', /no election, no lock file/i],
     ];
     for (const [what, re] of claims) {
@@ -2361,6 +2370,13 @@ describe('README: several windows, one port (Phase 1b)', () => {
     // G7. A user reading "the others take over" would reasonably assume the
     // events in between were held for them. They are not, and the page says so.
     expect(SECTION).toMatch(/lost rather than queued/i);
+  });
+
+  it('does not claim the hook stream is what puts sessions on a deck', () => {
+    // The correction's substance: what a window shows comes from the
+    // transcripts it reads. Saying so is what makes the narrowed sentence
+    // above complete rather than merely less wrong.
+    expect(SECTION).toMatch(/from the transcripts that window reads/i);
   });
 
   it('the collision bullet no longer says a busy port is always an error', () => {

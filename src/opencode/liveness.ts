@@ -328,6 +328,16 @@ export interface OcLivenessCounters {
   partRowsUnparseable: number;
   /** The `part` scan threw. Liveness keeps answering from the cursor (G2). */
   partScanFailures: number;
+
+  /**
+   * Passes that read NO `part` row at all — v0.7.0 DoD 1.8b.
+   *
+   * Nothing changed in any session and nothing was running, so the previous
+   * answer stands and no statement was prepared. On an idle machine this is
+   * the overwhelmingly common case, and it is what makes per-pass cost flat in
+   * the size of the store rather than linear in it.
+   */
+  partScansSkipped: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -492,6 +502,29 @@ const SQL_TOOL_PARTS = [
 
 const SQL_UNPARSEABLE_PARTS = 'SELECT count(*) AS n FROM part WHERE json_valid(data) = 0';
 
+/**
+ * The same two scans, restricted to a named set of sessions — v0.7.0 DoD 1.8b.
+ *
+ * `part_session_idx` is an index OpenCode itself creates on `part(session_id)`,
+ * so an `IN (...)` on that column is served by the index and the rows examined
+ * are the named sessions' rather than the table's. The unrestricted forms above
+ * are kept and still used for the FIRST pass, which has no cache to work from.
+ *
+ * We may not create an index of our own: G1 forbids writing to the observed
+ * engine's database, and `CREATE INDEX` is a write. Using one the engine
+ * already maintains is the whole reason this bound is available at all.
+ */
+function sqlToolPartsFor(count: number): string {
+  return `${SQL_TOOL_PARTS} AND session_id IN (${new Array(count).fill('?').join(',')})`;
+}
+
+function sqlUnparseablePartsFor(count: number): string {
+  return (
+    'SELECT count(*) AS n FROM part WHERE json_valid(data) = 0' +
+    ` AND session_id IN (${new Array(count).fill('?').join(',')})`
+  );
+}
+
 /** Cheap proof the handle can actually read the file's header. */
 const SQL_OPEN_PROBE = 'SELECT count(*) AS n FROM sqlite_master';
 
@@ -579,6 +612,18 @@ export class OcLivenessEngine {
 
   private readonly cursors = new Map<string, SessionCursor>();
 
+  /**
+   * Sessions that must be re-read this pass — DoD 1.8b. Cleared at the end of
+   * every part scan, so it only ever describes the pass in progress.
+   */
+  private readonly dirtySessions = new Set<string>();
+
+  /** Last known running tools per session; the fallback for a skipped scan. */
+  private runningCache = new Map<string, OcRunningTool[]>();
+
+  /** False until one COMPLETE scan has happened, which forces a full first pass. */
+  private partsEverScanned = false;
+
   private readonly facts = new Map<string, SessionFacts>();
 
   private healthState: OcEngineHealth = { ok: true };
@@ -621,6 +666,7 @@ export class OcLivenessEngine {
     toolPartsUnknownStatus: 0,
     partRowsUnparseable: 0,
     partScanFailures: 0,
+    partScansSkipped: 0,
   };
 
   constructor(options: OcLivenessEngineOptions) {
@@ -913,11 +959,15 @@ export class OcLivenessEngine {
     if (cursor === undefined) {
       this.counts.sessionsSeeded += 1;
       this.cursors.set(sessionId, { sessionId, lastSeq: observed, seeded: true });
+      // DoD 1.8b: a session first seen must be read once.
+      this.dirtySessions.add(sessionId);
       return;
     }
 
     if (observed > cursor.lastSeq) {
       this.counts.seqAdvances += 1;
+      // DoD 1.8b: something happened here, so its parts are re-read.
+      this.dirtySessions.add(sessionId);
       this.scanEventTypes(db, SQL_EVENTS_SINCE, [sessionId, cursor.lastSeq]);
       cursor.lastSeq = observed;
       cursor.seqAdvancedAt = now;
@@ -932,6 +982,7 @@ export class OcLivenessEngine {
       // against reality rather than against a value that no longer exists.
       this.counts.seqRegressions += 1;
       this.counts.fullRereads += 1;
+      this.dirtySessions.add(sessionId);
       this.scanEventTypes(db, SQL_EVENTS_ALL, [sessionId]);
       cursor.lastSeq = observed;
       // A re-read is not activity. `seqAdvancedAt` is deliberately untouched.
@@ -985,10 +1036,67 @@ export class OcLivenessEngine {
   private scanRunningTools(db: DatabaseSync): Map<string, OcRunningTool[]> {
     const byS = new Map<string, OcRunningTool[]>();
     try {
-      const unparseable = db.prepare(SQL_UNPARSEABLE_PARTS).get() as Row | undefined;
-      this.counts.partRowsUnparseable = asNumber(unparseable?.['n']) ?? 0;
+      /*
+       * ---------------------------------------------------------------
+       * THE BOUND — v0.7.0 DoD 1.8b, carried in from the H.11 audit
+       * ---------------------------------------------------------------
+       *
+       * These two scans were the only ingestion cost in the product that grew
+       * with the SIZE OF THE MACHINE rather than with the session being
+       * watched: both walked every `part` row, every poll, forever, and
+       * neither predicate is indexable (`json_extract` on a text column).
+       *
+       * The bound is a per-session watermark over `part_session_idx` — an
+       * index OpenCode itself maintains on `part(session_id)`. We may not
+       * create one: G1 forbids writing to the observed database and
+       * `CREATE INDEX` is a write.
+       *
+       * A session is re-scanned when EITHER
+       *
+       *   a) its `event_sequence.seq` advanced, was seeded, or regressed this
+       *      pass — i.e. something happened in it; or
+       *   b) it currently holds a running tool.
+       *
+       * (b) is not belt-and-braces. (a) alone would rest on the assumption
+       * that OpenCode writes an event for every part write, which this
+       * repository has NOT measured and which a static corpus cannot show. A
+       * session holding a running tool is re-read every pass regardless, so a
+       * COMPLETION is never missed even if that assumption is false. What (a)
+       * buys is that an idle session with nothing running costs nothing, and
+       * an idle machine is what H.9a measures.
+       *
+       * The first pass has no cache and scans everything, which is correct and
+       * is why the flatness claim is about the STEADY STATE.
+       */
+      const scope = this.partScanScope();
 
-      const rows: Row[] = db.prepare(SQL_TOOL_PARTS).all();
+      if (scope === null) {
+        const unparseable = db.prepare(SQL_UNPARSEABLE_PARTS).get() as Row | undefined;
+        this.counts.partRowsUnparseable = asNumber(unparseable?.['n']) ?? 0;
+      } else if (scope.length === 0) {
+        // Nothing changed and nothing is running: the previous answer stands.
+        // No statement is prepared at all, which is the whole point.
+        this.counts.partScansSkipped += 1;
+        return new Map(this.runningCache);
+      } else {
+        const row = db.prepare(sqlUnparseablePartsFor(scope.length)).get(...scope) as
+          | Row
+          | undefined;
+        /*
+         * SCOPED, and the counter's meaning moves with it: it now counts
+         * unparseable rows AMONG THE ROWS THIS PASS READ, not in the whole
+         * database. Stated rather than left for a reader to infer from a
+         * number that quietly got smaller — the alternative was keeping one
+         * full-table `json_valid` scan per poll, which is the very cost being
+         * removed.
+         */
+        this.counts.partRowsUnparseable = asNumber(row?.['n']) ?? 0;
+      }
+
+      const rows: Row[] =
+        scope === null
+          ? db.prepare(SQL_TOOL_PARTS).all()
+          : db.prepare(sqlToolPartsFor(scope.length)).all(...scope);
       for (const row of rows) {
         this.counts.toolPartsScanned += 1;
         const sessionId = asString(row['sid']);
@@ -1019,12 +1127,56 @@ export class OcLivenessEngine {
       for (const list of byS.values()) {
         list.sort((a, b) => (a.callId < b.callId ? -1 : a.callId > b.callId ? 1 : 0));
       }
+
+      /*
+       * A SCOPED pass only learned about the sessions it read, so a session
+       * outside the scope keeps whatever it had. A session INSIDE the scope
+       * takes its new answer even when that answer is "nothing running" —
+       * which is how a completion clears the cache rather than sticking.
+       */
+      if (scope === null) {
+        this.runningCache = new Map(byS);
+      } else {
+        const scoped = new Set(scope);
+        for (const [sessionId, list] of this.runningCache) {
+          if (scoped.has(sessionId)) continue;
+          if (!byS.has(sessionId)) byS.set(sessionId, list);
+        }
+        for (const sessionId of scoped) {
+          if (byS.has(sessionId)) continue;
+          this.runningCache.delete(sessionId);
+        }
+        this.runningCache = new Map(byS);
+      }
+      this.partsEverScanned = true;
     } catch (error) {
       this.counts.partScanFailures += 1;
       this.lastErrorMessage = errorMessage(error);
       byS.clear();
+      // G2: a failed scan must not leave a stale cache masquerading as fresh.
+      // The next pass rebuilds from scratch.
+      this.runningCache.clear();
+      this.partsEverScanned = false;
+    } finally {
+      this.dirtySessions.clear();
     }
     return byS;
+  }
+
+  /**
+   * Which sessions this pass must re-read, or `null` for "all of them".
+   *
+   * `null` on the first pass — there is nothing cached to fall back on — and
+   * on any pass after a scan failure, so a rebuild is always complete.
+   */
+  private partScanScope(): string[] | null {
+    if (!this.partsEverScanned) return null;
+    const scope = new Set(this.dirtySessions);
+    // Anything currently running is re-read whatever the event cursor says.
+    for (const [sessionId, list] of this.runningCache) {
+      if (list.length > 0) scope.add(sessionId);
+    }
+    return [...scope];
   }
 
   private degrade(code: OcDegradeCode, message: string): void {

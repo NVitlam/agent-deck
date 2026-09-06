@@ -138,7 +138,6 @@ function cloneAgent(node: AgentNode): AgentNode {
   if (node.usageSeries !== undefined) out.usageSeries = node.usageSeries.map((t) => ({ ...t }));
   if (node.model !== undefined) out.model = node.model;
   if (node.compactions !== undefined) out.compactions = node.compactions.map((c) => ({ ...c }));
-  if (node.agentName !== undefined) out.agentName = node.agentName;
   return out;
 }
 
@@ -378,8 +377,6 @@ export function applySessionPatch(
         else if (f.model !== undefined) node.model = f.model;
         if (f.compactions === null) delete node.compactions;
         else if (f.compactions !== undefined) node.compactions = f.compactions.map((c) => ({ ...c }));
-        if (f.agentName === null) delete node.agentName;
-        else if (f.agentName !== undefined) node.agentName = f.agentName;
         break;
       }
       case 'updateTool': {

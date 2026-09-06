@@ -44,10 +44,15 @@
  * would be a guess, and demonstrably a wrong one: session `f7f0eef9…` carries
  * TWO distinct `agent_id`s against ONE distinct `agent.name`, so even "this
  * session had a single subagent" is false. Exactly what "exact or discarded"
- * and G3 forbid. The field stays on `AgentNode`, nothing sets it, and
- * `join.test.ts` asserts that nothing does, with this measurement as the
- * reason. Closing it needs a capture where the two co-occur, or a decision that
- * a session-level name is acceptable.
+ * and G3 forbid.
+ *
+ * **CLOSED UNAVAILABLE by the user on 2026-09-06.** `agentName` is REMOVED from
+ * `AgentNode` and from Component 12 — a field nothing can ever set is a promise
+ * the type keeps making. `agent-deck-spec.md` §L carries the dated line, and
+ * `join.test.ts` now asserts the CO-OCCURRENCE MEASUREMENT rather than the
+ * field's absence: an assertion that a removed field is `undefined` cannot
+ * fail, while the measurement goes red the day a capture states both attributes
+ * on one record — which is the signal to reopen this.
  *
  * **It does not overwrite an engine-derived duration.** See {@link joinTelemetry}.
  *

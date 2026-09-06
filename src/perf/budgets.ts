@@ -338,6 +338,80 @@ export const CODEX_ENGINE_READ_BUDGET: TimingBudget = {
   },
 };
 
+/**
+ * v0.7.0 DoD 1.8b — the OpenCode liveness poll, CLOSED AS MEASURED-AND-REJECTED.
+ *
+ * WHY A BUDGET EXISTS ON A COST WE DECIDED NOT TO FIX. 1.8b asked for the two
+ * unindexable full `part` scans per poll to be bounded. A per-session watermark
+ * over `part_session_idx` was written and reached **1.2 ms at 200 k rows against
+ * 402.8 ms unbounded** — and was REVERTED, because `liveness.test.ts`'s A2
+ * mutation table starts a tool by rewriting one part's `data` IN PLACE, with no
+ * new row, no `event_sequence` move and no `time_updated` bump, and under the
+ * bound that tool became invisible. Four candidates, each failing on its own
+ * terms — session scope depends on OpenCode writing an `event` per part write
+ * (never measured); a `rowid` watermark catches an INSERT and misses the UPDATE
+ * IN PLACE that turns `running` into `completed`; a `time_updated` watermark is
+ * evidence-backed (865 of 865 parts in the anchor) but is still a full scan at
+ * 26.5 ms on 200 k and not flat; an index of our own is a write to the observed
+ * database, which G1 forbids. The user closed it on 2026-09-06 as
+ * measured-and-rejected rather than deferred, and directed that the cost be
+ * PINNED so growth is caught. This is that pin.
+ *
+ * WHAT IT DOES AND DOES NOT CATCH. The row count is FIXED at 20,000, so this is
+ * a guard on the PER-ROW cost of the scan — a regression in the predicate, the
+ * row decoding or the poll's per-row work goes red here. It is NOT a guard on
+ * the unboundedness itself, which is the accepted cost: a user's store growing
+ * to 200 k rows still pays ~400 ms per poll and this budget will not notice,
+ * because its subject is a store of a size we choose. `partscan.test.ts` is the
+ * measurement of that growth and carries the tripwire that goes red the day
+ * anyone bounds the scan.
+ *
+ * WHY A SYNTHETIC STORE RATHER THAN THE COMMITTED CORPUS. The anchor carries
+ * 865 `part` rows and polls in ~1 ms — too small to separate a real regression
+ * from scheduler noise. 20,000 is the same row count `partscan.test.ts` uses for
+ * its small store, so the two instruments are directly comparable, and it is a
+ * plausible size for a real developer's store after a few months.
+ *
+ * WHY NOT MEASURED IN `src/opencode/`. `partscan.test.ts` reports 48.4 ms for
+ * the same scan, in the MAIN vitest project. That number and this one are not
+ * comparable and neither is wrong: this repo has an evidence file about a perf
+ * stage that measured 1050.6 ms in the main project and 12.3 ms in a separate
+ * process, on an unchanged tree, with the mechanism still unidentified. A budget
+ * has to live where the host process state is controlled, which is this project
+ * (`pool: 'forks'`).
+ */
+export const OPENCODE_POLL_BUDGET: TimingBudget = {
+  id: 'opencode.poll.regression',
+  what: 'total',
+  statistic: 'median',
+  limitMs: 950,
+  source: 'regression',
+  enforced: true,
+  measured: {
+    valueMs: 93.8,
+    on: 'synthetic OpenCode store, 20,000 `part` rows across 8 sessions, journal-mode delete, 2026-09-06',
+    marginX: 10.1,
+    note:
+      'One steady-state `OcLivenessEngine.poll()` — both unindexable full `part` ' +
+      'scans, every row decoded. 7 samples after 2 warm-ups in the `perf` project ' +
+      '(pool: forks). Two consecutive runs measured medians of 72.6 and 93.8 ms — ' +
+      'a 1.3x spread on an unchanged tree, recorded rather than averaged away. ' +
+      '93.8 is kept as the set point because a budget set from the FASTER of two ' +
+      'observations is a budget that fails on a normal day — the same rule ' +
+      'codex.engineRead.dod records. NOTE THE INSTRUMENT DIFFERENCE, do not ' +
+      'reconcile it: `src/opencode/partscan.test.ts` reports 48.4 ms for the same ' +
+      'scan at the same row count, in the MAIN vitest project. Neither number is ' +
+      'wrong and they are not comparable; see this budget\'s header. ' +
+      'THE MARGIN IS DELIBERATELY WIDE (10x) AND THAT IS THE POINT OF THIS ' +
+      'PARTICULAR BUDGET: it guards a cost the user ACCEPTED, so it must catch an ' +
+      'order-of-magnitude regression in per-row work without going red on a ' +
+      'slower machine or a loaded runner. A tight limit here would be a flaky ' +
+      'test defending a decision that is already recorded. The FIRST-PASS cost is ' +
+      'deliberately not the subject: the steady state is what is paid forever, ' +
+      'and it is what 1.8b was about.',
+  },
+};
+
 export const HEAP_FLOOR_RATIO_LIMIT = 1.1;
 
 /**

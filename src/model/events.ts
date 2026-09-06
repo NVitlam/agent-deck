@@ -552,17 +552,26 @@ export interface AgentNode {
    * carries one). An empty array would claim "measured, none happened".
    */
   compactions?: readonly CompactionRecord[];
-  /**
-   * The subagent type this agent was spawned as, from Claude Code telemetry —
-   * v0.7.0 Phase 1, DoD 1.9a (Component 12).
+  /*
+   * THERE IS DELIBERATELY NO `agentName` HERE, AND IT IS A MEASUREMENT RATHER
+   * THAN AN OMISSION — v0.7.0 DoD 1.9e, closed by the user on 2026-09-06.
    *
-   * NOT {@link AgentNode.label}, which is built from the sidecar's `agentType`
-   * plus its description and exists for every engine. This is the
-   * `agent.name` attribute the OTel exporter puts on `api_request` and the
-   * cost/token metrics, and it is present only when telemetry is enabled and
-   * only on Claude Code. Absent everywhere else.
+   * Component 12's draft promised `agentName` on this interface, from the OTel
+   * exporter's `agent.name` attribute. The corpus has no key to hang it on:
+   * across all 850 records of `fixtures/otel-cc-2.1.260/`, `agent.name` appears
+   * on 36 units (6 `api_request` logs + 30 metric points) and `agent_id` on 10
+   * (4 of 40 tool spans + 6 `llm_request`), and the two NEVER co-occur. Session
+   * `f7f0eef9…` carries TWO distinct `agent_id`s against ONE `agent.name`, so
+   * even "this session had a single subagent, so the name is its" is false.
+   * `agent.name` is not in {@link TELEMETRY_KEPT_KEYS} and never crosses the
+   * parse boundary at all.
+   *
+   * The field was REMOVED rather than left unset, because a field nothing can
+   * ever set is a promise the type keeps making. `agent-deck-spec.md` §L
+   * (2026-09-06) is the authority; `src/otel/join.test.ts` asserts the
+   * co-occurrence measurement, so a capture where the two DO co-occur turns it
+   * red — which is the signal to reopen this, not a regression.
    */
-  agentName?: string;
   startedAt: number;
   endedAt?: number;
 }
@@ -819,7 +828,6 @@ export interface AgentNodeFieldPatch {
   model?: string | null;
   /** Replaced whole, same rule as {@link AgentNodeFieldPatch.usageSeries}. */
   compactions?: readonly CompactionRecord[] | null;
-  agentName?: string | null;
   startedAt?: number;
   endedAt?: number | null;
 }

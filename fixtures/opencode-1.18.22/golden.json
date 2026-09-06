@@ -755,7 +755,6 @@
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
-        "agentName": null,
         "compactions": [
           {
             "ordinal": 91,
@@ -1354,7 +1353,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 10967448,
             "endedAtOffsetMs": 11754185,
@@ -1494,7 +1492,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 11980743,
             "endedAtOffsetMs": 12185761,
@@ -1595,7 +1592,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 15046214,
             "endedAtOffsetMs": 15259026,
@@ -1683,7 +1679,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 15933223,
             "endedAtOffsetMs": 16264960,
@@ -1790,7 +1785,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 19281337,
             "endedAtOffsetMs": 19455190,
@@ -1865,7 +1859,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 19956839,
             "endedAtOffsetMs": 20186897,
@@ -1999,7 +1992,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 23391859,
             "endedAtOffsetMs": 24052731,
@@ -2126,7 +2118,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 24275146,
             "endedAtOffsetMs": 24545655,
@@ -2268,7 +2259,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 27137441,
             "endedAtOffsetMs": 27992115,
@@ -2434,7 +2424,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 28146385,
             "endedAtOffsetMs": 28413037,
@@ -2568,7 +2557,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 30770902,
             "endedAtOffsetMs": 31391272,
@@ -2695,7 +2683,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 31610345,
             "endedAtOffsetMs": 31840001,
@@ -2809,7 +2796,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 35294448,
             "endedAtOffsetMs": 35471787,
@@ -2884,7 +2870,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 35907033,
             "endedAtOffsetMs": 36293325,
@@ -2998,7 +2983,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 36865534,
             "endedAtOffsetMs": 36989241,
@@ -3093,7 +3077,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 37559226,
             "endedAtOffsetMs": 37926044,
@@ -3221,7 +3204,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 40278363,
             "endedAtOffsetMs": 40963543,
@@ -3335,7 +3317,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 41089325,
             "endedAtOffsetMs": 41331195,
@@ -3518,7 +3499,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 45335575,
             "endedAtOffsetMs": 46764106,
@@ -4034,7 +4014,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 58592135,
             "endedAtOffsetMs": 60906969,
@@ -4825,7 +4804,6 @@
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
-        "agentName": null,
         "compactions": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 104559,
@@ -4886,7 +4864,6 @@
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
-        "agentName": null,
         "compactions": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 355977,
@@ -4993,7 +4970,6 @@
           }
         ],
         "model": "{\"id\":\"nemotron-3-ultra-free\",\"providerID\":\"opencode\"}",
-        "agentName": null,
         "compactions": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 88094,

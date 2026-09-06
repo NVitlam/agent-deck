@@ -27,16 +27,24 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import type { AgentNode, SessionState, ToolNode, TreeNode } from '../model/events.js';
-import { isAgentNode, isToolNode } from '../model/events.js';
+import { isToolNode } from '../model/events.js';
 
 import { joinTelemetry } from './join.js';
 import {
+  TELEMETRY_KEPT_KEYS,
   emptyTelemetryCounts,
   mergeSlices,
   parseOtlpBody,
   type OtelSignal,
   type TelemetrySlice,
 } from './parse.js';
+
+/** An OTLP attribute value (`{ stringValue: … }`), reduced to its string. */
+function stringAttr(value: unknown): string | undefined {
+  if (value === null || typeof value !== 'object') return undefined;
+  const raw = (value as { stringValue?: unknown }).stringValue;
+  return typeof raw === 'string' && raw !== '' ? raw : undefined;
+}
 
 const CORPUS = fileURLToPath(new URL('../../fixtures/otel-cc-2.1.260/', import.meta.url));
 
@@ -270,29 +278,102 @@ describe('DoD 1.9f — Phase 1 RENDERS nothing', () => {
   });
 });
 
-describe('DoD 1.9e — agentName is NOT set, and the reason is a measurement', () => {
-  it('leaves agentName absent on every agent, even with the full corpus joined', () => {
+/**
+ * DoD 1.9e — **CLOSED UNAVAILABLE by the user on 2026-09-06.** `agentName` is
+ * removed from `AgentNode` and from Component 12; `agent-deck-spec.md` §L
+ * carries the dated line.
+ *
+ * WHAT THIS BLOCK ASSERTS, AND WHY IT IS NOT "THE FIELD IS UNDEFINED". The
+ * earlier form checked `root.agentName === undefined` on a joined state. That
+ * assertion cannot fail once the field is gone — it would be a test of the
+ * TypeScript compiler, satisfied by any object in the world, and this
+ * repository has a long ledger of exactly that shape passing while proving
+ * nothing.
+ *
+ * So the subject is the MEASUREMENT the decision rests on, read off the raw
+ * corpus rather than off our own parse boundary: `agent.name` and `agent_id`
+ * never appear on the same record. A capture where they DO co-occur turns this
+ * red, which is precisely the signal to reopen the decision — not a regression
+ * to route around.
+ */
+describe('DoD 1.9e — agentName is UNAVAILABLE, and this is the measurement', () => {
+  /** Every attribute bag in a raw OTLP body, whatever signal it came from. */
+  function attributeBags(): Record<string, unknown>[] {
+    const bags: Record<string, unknown>[] = [];
+    const walk = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        for (const item of value) walk(item);
+        return;
+      }
+      if (value === null || typeof value !== 'object') return;
+      const record = value as Record<string, unknown>;
+      const attrs = record['attributes'];
+      if (Array.isArray(attrs)) {
+        const bag: Record<string, unknown> = {};
+        for (const attr of attrs) {
+          if (attr === null || typeof attr !== 'object') continue;
+          const key = (attr as { key?: unknown }).key;
+          if (typeof key === 'string') bag[key] = (attr as { value?: unknown }).value;
+        }
+        bags.push(bag);
+      }
+      for (const child of Object.values(record)) walk(child);
+    };
+    for (const signal of ['traces', 'metrics', 'logs'] as const) {
+      for (const line of readFileSync(`${CORPUS}${signal}.jsonl`, 'utf8').split('\n')) {
+        if (line.trim() === '') continue;
+        walk(JSON.parse((JSON.parse(line) as { raw: string }).raw));
+      }
+    }
+    return bags;
+  }
+
+  const BAGS = attributeBags();
+
+  it('CONTROL: the corpus really states both attributes, on their own records', () => {
+    // Without this, "they never co-occur" is satisfied by a corpus that
+    // mentions neither — a vacuous zero, which is what this file is for.
+    expect(BAGS.filter((b) => 'agent.name' in b).length).toBe(36);
+    expect(BAGS.filter((b) => 'agent_id' in b).length).toBe(10);
+  });
+
+  it('never states both on one record, so no exact key joins a name to an agent', () => {
+    const both = BAGS.filter((b) => 'agent.name' in b && 'agent_id' in b);
+    expect(
+      both.length,
+      'agent.name and agent_id now co-occur: DoD 1.9e can be reopened',
+    ).toBe(0);
+  });
+
+  it('and the fallback guess is demonstrably wrong on this corpus', () => {
     /*
-     * Over the whole committed corpus, `agent.name` appears on 6 `api_request`
-     * records and 30 metric points and NEVER carries `agent_id`; `agent_id`
-     * appears on 4 of 40 tool spans and NEVER carries `agent.name`. The two do
-     * not co-occur on any record, so there is no exact key from a name to an
-     * `AgentNode`.
-     *
-     * Attaching the one observed name to a session's subagents would be a
-     * guess, and on this corpus an obviously wrong one: session `f7f0eef9…`
-     * carries TWO distinct `agent_id`s against ONE distinct `agent.name`, so
-     * even "the session had one subagent, so the name is its" does not hold.
-     * "Exact or discarded" and G3 both forbid it. The field exists, nothing
-     * sets it, and this says so.
+     * "The session had one subagent, so the one name is its" — the guess that
+     * looks harmless. Session `f7f0eef9…` carries TWO distinct `agent_id`s
+     * against ONE distinct `agent.name`, so the guess is not merely unproven,
+     * it is false here. "Exact or discarded" and G3 both forbid it.
      */
-    const sessionId = TRACES.toolSpans[0]?.sessionId;
-    if (sessionId === undefined) return;
-    const { states } = joinTelemetry([stateWith(sessionId, [])], TRACES);
-    const root = states[0]?.root;
-    expect(root).toBeDefined();
-    if (root === undefined || !isAgentNode(root)) return;
-    expect(root.agentName).toBeUndefined();
+    const bySession = new Map<string, { names: Set<string>; agents: Set<string> }>();
+    for (const bag of BAGS) {
+      const session = stringAttr(bag['session.id']);
+      if (session === undefined) continue;
+      const entry = bySession.get(session) ?? { names: new Set(), agents: new Set() };
+      const name = stringAttr(bag['agent.name']);
+      const agent = stringAttr(bag['agent_id']);
+      if (name !== undefined) entry.names.add(name);
+      if (agent !== undefined) entry.agents.add(agent);
+      bySession.set(session, entry);
+    }
+    const overcommitted = [...bySession.values()].filter(
+      (e) => e.names.size === 1 && e.agents.size > 1,
+    );
+    expect(overcommitted.length).toBeGreaterThan(0);
+  });
+
+  it('agent.name does not cross the parse boundary at all', () => {
+    // The allow-list, not a rule someone has to remember: `agent.name` is not
+    // in TELEMETRY_KEPT_KEYS, so it is dropped by construction.
+    expect(TELEMETRY_KEPT_KEYS.has('agent.name')).toBe(false);
+    expect(TELEMETRY_KEPT_KEYS.has('agent_id')).toBe(true);
   });
 });
 

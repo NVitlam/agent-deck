@@ -1007,9 +1007,8 @@ function serializeAgent(node, anchor, counts) {
     // machine-independent, so they go in verbatim.
     usageSeries: node.usageSeries ?? null,
     model: node.model ?? null,
-    // v0.7.0 Phase 1. Nothing sets it (1.9e is PARTIAL); serialised so the
-    // goldens carry it the day it is set.
-    agentName: node.agentName ?? null,
+    // NO `agentName` KEY: DoD 1.9e was closed UNAVAILABLE on 2026-09-06 and the
+    // field is gone from `AgentNode`. See `src/model/events.ts`.
     compactions: node.compactions ?? null,
     startedAtOffsetMs: node.startedAt - anchor,
     endedAtOffsetMs: node.endedAt === undefined ? null : node.endedAt - anchor,

@@ -52,9 +52,11 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -71,11 +73,13 @@ import {
   CORPUS_GROWTH_FRACTION_LIMIT,
   HEAP_FLOOR_RATIO_LIMIT,
   CODEX_ENGINE_READ_BUDGET,
+  OPENCODE_POLL_BUDGET,
   REAL_CORPUS_GRAFT_BUDGET,
   RESCOPED_DOD_TOTAL,
   TIMING_BUDGETS,
 } from './budgets.js';
 import { readCodexEngine } from '../codex/index.js';
+import { OcLivenessEngine } from '../opencode/liveness.js';
 import { graftSession } from '../model/graft.js';
 import { isAgentNode } from '../model/events.js';
 import type { TreeNode } from '../model/events.js';
@@ -815,5 +819,165 @@ describe('DoD 4.2a — the Codex engine read', () => {
     expect(
       CODEX_ENGINE_READ_BUDGET.limitMs / CODEX_ENGINE_READ_BUDGET.measured.valueMs,
     ).toBeCloseTo(CODEX_ENGINE_READ_BUDGET.measured.marginX, 1);
+  });
+});
+
+/**
+ * v0.7.0 DoD 1.8b — the OpenCode liveness poll, pinned. See
+ * {@link OPENCODE_POLL_BUDGET} for why a cost the user decided NOT to fix gets
+ * a budget, and for what this does and does not catch.
+ */
+describe('DoD 1.8b — the OpenCode liveness poll, pinned at a fixed row count', () => {
+  /**
+   * The same 20,000 as `src/opencode/partscan.test.ts`'s small store, so the two
+   * instruments are directly comparable.
+   */
+  const ROWS = 20_000;
+  const SESSIONS = 8;
+
+  let scratch = '';
+  let samples: number[] = [];
+  let scannedPerPoll = 0;
+
+  /**
+   * OpenCode's own schema, INCLUDING `part_session_idx`. The index is recreated
+   * rather than assumed because the rejected bound depended on it and G1 forbids
+   * us creating one on a real store — so if a future reader revisits the
+   * decision, the instrument already has what they would need.
+   *
+   * Journal mode is `delete`, matching the committed corpora: a read-only open
+   * of a WAL database writes SQLite's own `-shm` sidecar, and this file has no
+   * business creating one.
+   */
+  function buildStore(dbPath: string): void {
+    const db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA journal_mode = delete');
+    db.exec(`
+      CREATE TABLE project (id text PRIMARY KEY, worktree text NOT NULL, vcs text);
+      CREATE TABLE session (
+        id text PRIMARY KEY, project_id text NOT NULL, parent_id text,
+        slug text, directory text, title text NOT NULL, version text NOT NULL,
+        agent text, model text, cost real NOT NULL DEFAULT 0,
+        tokens_input integer NOT NULL DEFAULT 0, tokens_output integer NOT NULL DEFAULT 0,
+        tokens_cache_read integer NOT NULL DEFAULT 0, tokens_cache_write integer NOT NULL DEFAULT 0,
+        time_created integer NOT NULL, time_updated integer NOT NULL, time_archived integer
+      );
+      CREATE TABLE message (
+        id text PRIMARY KEY, session_id text NOT NULL,
+        time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL
+      );
+      CREATE TABLE part (
+        id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL,
+        time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL
+      );
+      CREATE INDEX part_session_idx ON part (session_id);
+      CREATE TABLE event (
+        id text PRIMARY KEY, aggregate_id text NOT NULL, seq integer NOT NULL,
+        type text NOT NULL, data text
+      );
+      CREATE TABLE event_sequence (
+        aggregate_id text PRIMARY KEY, seq integer NOT NULL, owner_id text
+      );
+    `);
+
+    db.exec('BEGIN');
+    db.prepare('INSERT INTO project VALUES (?,?,?)').run('prj', 'C:\\repo', 'git');
+    const session = db.prepare(
+      'INSERT INTO session (id,project_id,parent_id,slug,directory,title,version,agent,model,' +
+        'cost,tokens_input,tokens_output,tokens_cache_read,tokens_cache_write,' +
+        'time_created,time_updated,time_archived) VALUES (?,?,NULL,?,?,?,?,?,?,0,0,0,0,0,?,?,NULL)',
+    );
+    const message = db.prepare('INSERT INTO message VALUES (?,?,?,?,?)');
+    const part = db.prepare('INSERT INTO part VALUES (?,?,?,?,?,?)');
+    const sequence = db.prepare('INSERT INTO event_sequence VALUES (?,?,?)');
+
+    for (let s = 0; s < SESSIONS; s += 1) {
+      const id = `ses_${String(s)}`;
+      session.run(id, 'prj', `slug-${String(s)}`, 'C:\\repo', 't', '1.18.22', 'build', 'gpt', 1, 2);
+      message.run(`msg_${String(s)}`, id, 1, 2, JSON.stringify({ role: 'assistant' }));
+      sequence.run(id, 1, 'owner');
+    }
+    for (let i = 0; i < ROWS; i += 1) {
+      const s = i % SESSIONS;
+      part.run(
+        `prt_${String(i)}`,
+        `msg_${String(s)}`,
+        `ses_${String(s)}`,
+        1,
+        2,
+        // Every row matches the `json_extract` predicate — the worst case, and
+        // the honest one to budget against.
+        JSON.stringify({
+          type: 'tool',
+          callID: `call_${String(i)}`,
+          tool: 'bash',
+          state: { status: 'completed', input: { command: 'x' }, time: { start: 1, end: 2 } },
+        }),
+      );
+    }
+    db.exec('COMMIT');
+    db.close();
+  }
+
+  beforeAll(() => {
+    scratch = mkdtempSync(join(tmpdir(), 'agent-deck-ocpoll-'));
+    const dbPath = join(scratch, 'opencode.db');
+    buildStore(dbPath);
+
+    let clock = 1_000;
+    const engine = new OcLivenessEngine({ dbPath, now: () => (clock += 1_000) });
+
+    const taken: number[] = [];
+    for (let i = 0; i < 9; i += 1) {
+      const before = engine.counters().toolPartsScanned;
+      const t0 = performance.now();
+      engine.poll();
+      const dt = performance.now() - t0;
+      // The FIRST TWO polls are warm-ups and are discarded: poll 1 seeds every
+      // session and is not the steady state. That distinction is not
+      // bookkeeping -- it is exactly what made both of 1.8b's own correctness
+      // tests vacuous, and the reason the bound was reverted.
+      if (i >= 2) taken.push(dt);
+      scannedPerPoll = engine.counters().toolPartsScanned - before;
+    }
+    taken.sort((a, b) => a - b);
+    samples = taken;
+  }, 300_000);
+
+  afterAll(() => {
+    if (scratch !== '') rmSync(scratch, { recursive: true, force: true });
+  });
+
+  function medianOf(values: readonly number[]): number {
+    const mid = Math.floor(values.length / 2);
+    return values.length % 2 === 1
+      ? (values[mid] ?? 0)
+      : ((values[mid - 1] ?? 0) + (values[mid] ?? 0)) / 2;
+  }
+
+  it('the subject is real: every poll really reads every row', () => {
+    // Vacuity control, and the sharpest one available here. A budget over a
+    // store that was never populated is a fast zero, and a fast zero passes
+    // every limit ever written -- this repo's most-recorded defect class.
+    expect(samples.length).toBe(7);
+    expect(scannedPerPoll).toBe(ROWS);
+  });
+
+  it('polls the store inside its budget', () => {
+    const value = medianOf(samples);
+    process.stdout.write(
+      `[perf] budget ${OPENCODE_POLL_BUDGET.id} (${OPENCODE_POLL_BUDGET.source}, enforced): ` +
+        `${value.toFixed(1)} vs ${String(OPENCODE_POLL_BUDGET.limitMs)} ms -> ` +
+        `${value <= OPENCODE_POLL_BUDGET.limitMs ? 'MET' : 'MISSED'}\n`,
+    );
+    expect(value).toBeLessThanOrEqual(OPENCODE_POLL_BUDGET.limitMs);
+  });
+
+  it('the recorded margin is the recorded numbers, divided', () => {
+    expect(OPENCODE_POLL_BUDGET.measured.valueMs).toBeGreaterThan(0);
+    expect(OPENCODE_POLL_BUDGET.limitMs / OPENCODE_POLL_BUDGET.measured.valueMs).toBeCloseTo(
+      OPENCODE_POLL_BUDGET.measured.marginX,
+      1,
+    );
   });
 });

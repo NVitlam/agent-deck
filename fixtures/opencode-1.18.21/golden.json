@@ -62,7 +62,6 @@
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
-        "agentName": null,
         "compactions": [
           {
             "ordinal": 2,
@@ -141,7 +140,6 @@
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
-        "agentName": null,
         "compactions": [
           {
             "ordinal": 4,
@@ -484,7 +482,6 @@
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
-        "agentName": null,
         "compactions": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 7201928,
@@ -1397,7 +1394,6 @@
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
-        "agentName": null,
         "compactions": null,
         "startedAtOffsetMs": 0,
         "endedAtOffsetMs": 11523106,
@@ -1632,7 +1628,6 @@
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
-            "agentName": null,
             "compactions": null,
             "startedAtOffsetMs": 2491331,
             "endedAtOffsetMs": 2575482,

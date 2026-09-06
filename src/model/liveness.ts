@@ -420,6 +420,20 @@ export class LivenessEngine {
   }
 
   /**
+   * This engine's clock, for callers that must derive a clock-dependent value
+   * in the SAME instant a liveness snapshot was taken.
+   *
+   * Added in v0.7.0 Phase 0c so the stall derivation cannot drift from the
+   * `recent` test it is the tool-level counterpart of: reading `Date.now()`
+   * separately would let a session be `idle` and its tools not-yet-stalled
+   * against two different "now"s, and in tests — where `now` is injected — it
+   * would silently reintroduce the real clock.
+   */
+  now(): number {
+    return this.nowFn();
+  }
+
+  /**
    * Degraded exactly when no hook events have ever arrived, or the listener is
    * known to be down. Explicit and truthful; the banner is the UI's problem.
    */

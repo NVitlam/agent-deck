@@ -208,7 +208,7 @@ const OWN_PROJECT = 'agent-deck';
  * anywhere else was never scanned for foreign content at all. Measured by the
  * Phase 5 verifier: byte-identical foreign content planted at
  * `src/model/leak.test.ts` and `docs/notes.md` produced ZERO gate hits while the
- * same bytes under `fixtures/hook-events/` produced 3. This repository's own
+ * same bytes under `fixtures/hook-events/` produced 3. This own
  * Phase 1 privacy leak lived largely in DOCUMENTS - exactly the class that was
  * outside the gate.
  *
@@ -907,6 +907,36 @@ function codexSlugPhrase(m) {
  */
 const FOREIGN_VALUE_EXEMPTIONS = [
   {
+    id: 'own-slug-cut-by-our-own-truncation',
+    reason:
+      'A slug fragment cut part-way through one of the path components of the ' +
+      'own slug of this repository, produced when the preview truncation of ' +
+      'Agent Deck cut the slug mid-name. Found 2026-09-06 at the v0.7.0 Phase ' +
+      '0c gate: webview/wire/cc-2.1.260-stall-arc.json carried 875 occurrences ' +
+      'of the complete slug (forgiven by namesOwnProject) and 5 of ' +
+      '"c--users-dev-projects-agent-", cut before "deck" by the 512-byte ' +
+      'preview budget and therefore naming no project at all. Every one is ' +
+      'immediately followed by the marker of this tool, "...[agent-deck: ' +
+      'truncated, showing 512 of 666 bytes]". ' +
+      'DISCLOSURE IMPACT IS NIL: the bytes on disk are a proper prefix of a ' +
+      'slug this repository already commits in full, so nothing is revealed ' +
+      'that was not already there. ' +
+      'NARROWED 2026-09-06, the same day, after phase-verifier showed the ' +
+      'first version was far wider than this reason: a bare prefix test also ' +
+      'forgave "c--users-dev-projects", "c--users-dev" and ' +
+      '"c--users-dev-projects-agent" -- the last a COMPLETE slug for a ' +
+      'sibling project named "agent". Each is a prefix of ours and each names ' +
+      'a real, different location, so FOREIGN detection was defeated for a ' +
+      'class nobody had enumerated. The rule now additionally requires that ' +
+      'the own slug continue with a NON-SEPARATOR character, i.e. that the cut ' +
+      'landed inside a path component. A complete slug for anything else ends ' +
+      'at a token boundary and can no longer reach this rule. ' +
+      'scripts/check-slug-exemption.mjs is the over-breadth control and it ' +
+      'plants those three regression values, not only a value the predicate ' +
+      'could never forgive.',
+    exempt: (value) => isOwnSlugPrefix(value),
+  },
+  {
     id: 'elided-not-a-location',
     reason:
       'The captured value is an elision, not a path: only dots, an ellipsis and ' +
@@ -1212,6 +1242,73 @@ function scanTelemetryPii(text, starts, relPath, sink) {
 /** Does this captured value name the agent-deck project? */
 function namesOwnProject(value) {
   return normalisePathToken(value).includes(OWN_PROJECT);
+}
+
+/**
+ * Is `value` a STRICT PREFIX of this own project slug?
+ *
+ * The full own slug is not matched here - `namesOwnProject` already forgives
+ * that, and a value that names the project is not a fragment. This is only for
+ * the case where our own preview truncation cut the slug before the project
+ * name, leaving bytes that name nothing. See the
+ * `own-slug-cut-by-our-own-truncation` exemption for why forgiving it cannot
+ * hide foreign content.
+ */
+function isOwnSlugPrefix(value) {
+  const v = normalisePathToken(value).toLowerCase();
+  if (v.length === 0) return false;
+  if (v.includes(OWN_PROJECT)) return false;
+  for (const slug of ownProjectSlugs()) {
+    if (slug.length <= v.length) continue;
+    if (!slug.startsWith(v)) continue;
+    // THE CUT MUST HAVE LANDED INSIDE A PATH TOKEN.
+    //
+    // A prefix test alone was far wider than its own justification, and the
+    // phase-verifier proved it: it forgave c--users-dev-projects,
+    // c--users-dev, and c--users-dev-projects-agent -- the last a COMPLETE
+    // slug for a sibling project named "agent". Each is a prefix of ours and
+    // each names a real, different location.
+    //
+    // Our slug continuing with a separator means the value ended at a token
+    // boundary, which is exactly what a complete slug for something else looks
+    // like. Requiring a non-separator here admits only a value cut part-way
+    // through one of our own path components -- which is what our own preview
+    // truncation produces and what no complete slug can be.
+    const nextChar = slug.charAt(v.length);
+    if (nextChar === '-') continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Every full project slug this repository legitimately carries, derived from
+ * the committed corpora rather than written down - a literal here would go
+ * stale the next time a corpus is harvested under a different scrubbed root.
+ */
+let ownSlugCache;
+function ownProjectSlugs() {
+  if (ownSlugCache !== undefined) return ownSlugCache;
+  const found = new Set();
+  const root = path.join(process.cwd(), 'fixtures');
+  const walk = (dir, depth) => {
+    if (depth > 4) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const name = e.name.toLowerCase();
+      if (SLUG_SHAPE_RE.test(name) && name.includes(OWN_PROJECT)) found.add(name);
+      else walk(path.join(dir, e.name), depth + 1);
+    }
+  };
+  walk(root, 0);
+  ownSlugCache = [...found];
+  return ownSlugCache;
 }
 
 function scanForeign(text, starts, relPath, sink) {

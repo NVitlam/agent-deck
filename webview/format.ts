@@ -6,6 +6,8 @@
  * network (G5).
  */
 
+import type { ToolNode } from '../src/model/events.js';
+
 /** U+2014. Used for "we do not have this number", never for zero. */
 export const EM_DASH = '—';
 
@@ -125,8 +127,16 @@ export function formatCost(costUsd: number): string {
 export const COST_NOT_COMPUTED_TITLE =
   'cost not computed — no price table';
 
-/** Human label for a node status chip. */
-export function statusLabel(status: 'running' | 'done' | 'error'): string {
+/**
+ * Human label for a node status chip.
+ *
+ * Typed as `ToolNode['status']` rather than repeating the union by hand, so a
+ * fifth status stops the build here instead of arriving unlabelled. The
+ * previous hand-written copy is exactly why `'stalled'` could be added to the
+ * model in v0.7.0 Phase 0c with the webview typecheck staying green — the same
+ * duplicated-union seam that `OcToolRecord` has, found the same day.
+ */
+export function statusLabel(status: ToolNode['status']): string {
   switch (status) {
     case 'running':
       return 'running';
@@ -134,7 +144,55 @@ export function statusLabel(status: 'running' | 'done' | 'error'): string {
       return 'done';
     case 'error':
       return 'error';
+    case 'stalled':
+      return 'stalled';
+    default:
+      // EXHAUSTIVENESS, ENFORCED BY THE COMPILER (user ruling, 2026-09-06).
+      //
+      // A fifth `ToolNode.status` makes this assignment fail — the new member
+      // is not assignable to `never` — so `npm run typecheck` goes red at the
+      // one place that must learn about it, rather than the status arriving
+      // unlabelled at runtime.
+      //
+      // This REPLACES the "untrusted-input guard" DoD 0c.4 originally named.
+      // There is no such guard on the host→webview direction and there will
+      // not be one: `messages.ts` guards INBOUND UI intents, and a `ToolNode`
+      // travels outbound, which is the trusted direction. A type-level check
+      // is the honest control for a trusted channel.
+      return assertNeverStatus(status);
   }
+}
+
+/**
+ * The `never` sink for {@link statusLabel}.
+ *
+ * Separate and named so the failure a new status produces reads as
+ * "unhandled status" rather than as an anonymous assignability error, and so
+ * the runtime arm is deliberate: a value that reached here despite the types
+ * is data the host should never have sent, and it renders as its own string
+ * rather than throwing inside a render.
+ */
+function assertNeverStatus(status: never): string {
+  return String(status);
+}
+
+/**
+ * How long a stall has been visible, as a short human string.
+ *
+ * Rendered beside the chip so "stalled" carries EVIDENCE rather than being a
+ * bare adjective: the user sees the silence measured. G10 keeps it to the
+ * fact — a duration and nothing about why.
+ */
+export function stalledForLabel(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return EM_DASH;
+  const totalSeconds = Math.floor(ms / 1000);
+  if (totalSeconds < 60) return `${String(totalSeconds)}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) {
+    return `${String(totalMinutes)}m ${String(totalSeconds % 60)}s`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  return `${String(hours)}h ${String(totalMinutes % 60)}m`;
 }
 
 /** Human label for a session's liveness. See {@link Liveness}, declared below. */

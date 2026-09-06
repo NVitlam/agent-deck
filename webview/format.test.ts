@@ -1,4 +1,8 @@
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
+import type { ToolNode } from '../src/model/events.js';
 import {
   COLLAPSED_PREVIEW_CHARS,
   EM_DASH,
@@ -8,6 +12,7 @@ import {
   formatDuration,
   formatTokens,
   formatWindowTokens,
+  statusLabel,
 } from './format.js';
 import { longPreview } from './testdata.js';
 
@@ -122,5 +127,76 @@ describe('degradedReasonText', () => {
     expect(degradedReasonText('noHookEvents')).toContain('hook events');
     expect(degradedReasonText('listenerDown')).toContain('listener');
     expect(degradedReasonText(undefined)).toContain('hook tap');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Status rendering is exhaustive, and the COMPILER is what enforces it
+// ---------------------------------------------------------------------------
+
+/**
+ * User ruling, 2026-09-06. This REPLACES DoD 0c.4's "untrusted-input guard"
+ * clause, which was struck: there is no guard on the host→webview direction
+ * and there will not be one. `src/bridge/messages.ts` guards INBOUND UI
+ * intents; a `ToolNode` travels outbound, which is the trusted direction. A
+ * type-level check is the honest control for a trusted channel.
+ *
+ * Two assertions, and the first is the load-bearing one because it costs
+ * nothing and cannot be satisfied by accident.
+ */
+
+/**
+ * Every member of `ToolNode['status']` that `statusLabel` does NOT branch on.
+ *
+ * Must be `never`. Add a fifth status without a `case` and this alias becomes
+ * that status, `[X] extends [never]` becomes `false`, and the `= true` below
+ * stops compiling — so `npm run typecheck`, which is a gate, goes red.
+ *
+ * The tuple wrapper is deliberate: a bare `X extends never` distributes over a
+ * union and would be vacuously true for the empty case, which is the exact
+ * shape of vacuity this repository keeps recording.
+ */
+type UncoveredStatus = Exclude<
+  ToolNode['status'],
+  'running' | 'done' | 'error' | 'stalled'
+>;
+const _noUncoveredStatus: [UncoveredStatus] extends [never] ? true : false = true;
+
+describe('statusLabel is exhaustive over ToolNode.status', () => {
+  it('has no uncovered status (checked by tsc, asserted here so it is visible)', () => {
+    // The real check happened at compile time — this line just keeps the
+    // constant referenced and puts the property in the test report.
+    expect(_noUncoveredStatus).toBe(true);
+  });
+
+  it('labels every status distinctly, with no empty label', () => {
+    const STATUSES: ToolNode['status'][] = ['running', 'done', 'error', 'stalled'];
+    const labels = STATUSES.map((s) => statusLabel(s));
+    // Vacuity control: an empty list would satisfy both assertions below.
+    expect(labels).toHaveLength(4);
+    for (const label of labels) expect(label.length).toBeGreaterThan(0);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  /**
+   * MUTATION-PROVED, 2026-09-06. Adding `| 'mutant'` to `ToolNode['status']`
+   * and running `npm run typecheck` produces, verbatim:
+   *
+   *   webview/format.ts(162,32): error TS2345:
+   *     Argument of type '"mutant"' is not assignable to parameter of type 'never'.
+   *
+   * and the build fails. Recorded rather than re-run: spawning `tsc` per test
+   * would cost seconds for a property the gate already checks on every run.
+   */
+  it('the `never` sink is a real parameter, not a comment', async () => {
+    const src = await readFile(
+      fileURLToPath(new URL('./format.ts', import.meta.url)),
+      'utf8',
+    );
+    const code = src.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, '');
+    // Vacuity control: the strip must not have eaten the file.
+    expect(code).toMatch(/export function statusLabel/u);
+    expect(code).toMatch(/status: never/u);
+    expect(code).toMatch(/default:/u);
   });
 });

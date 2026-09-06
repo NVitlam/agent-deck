@@ -85,6 +85,7 @@ import type {
 import { ROOT_NODE_ID, TreeGrafter, previewFingerprint, walk } from './graft.js';
 import type { SessionLivenessSnapshot } from './liveness.js';
 import { LivenessEngine } from './liveness.js';
+import { applyStallsToRoot } from './stall.js';
 import type { WorkspaceCorrelation } from './correlate.js';
 import { isOpenWorkspaceSlug } from './correlate.js';
 import { deepFreeze, edgesOf, parkedOf } from '../bridge/apply.js';
@@ -292,6 +293,14 @@ function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | un
   // claiming the payload was truncated, an absent key means unchanged.
   if (prev.truncated !== next.truncated) {
     fields.truncated = next.truncated === undefined ? null : next.truncated;
+    changed = true;
+  }
+  // v0.7.0 Phase 0c, and B7's rule applied to the field this phase added. A
+  // stall reaches a running panel as a DIFF (the host emits on a liveness
+  // tick), so leaving this out shipped an amber chip with no elapsed time
+  // beside it — and broke the exactness property in the same breath.
+  if (prev.stalledSinceMs !== next.stalledSinceMs) {
+    fields.stalledSinceMs = next.stalledSinceMs === undefined ? null : next.stalledSinceMs;
     changed = true;
   }
   return changed ? fields : undefined;
@@ -982,14 +991,32 @@ export class SessionModel {
 
   private stateOf(record: SessionRecord): SessionState {
     const view = this.contentView(record);
-    const liveness = this.liveness.livenessOf(record.sessionId) ?? 'idle';
+    // ONE snapshot, ONE clock, for both the session enum and the tool-level
+    // stall derived from it. Asking the engine twice — or reading `Date.now()`
+    // here — would let the two disagree about "now".
+    const livenessSnapshot = this.liveness.snapshot(record.sessionId);
+    const liveness = livenessSnapshot?.liveness ?? 'idle';
+    // v0.7.0 Phase 0c. Derived at assembly, never cached with the content view
+    // and never written by the parser: the view is invalidated by content
+    // arrivals, and a stall moves with the CLOCK, so caching it there would
+    // freeze an amber tool until the next unrelated append.
+    //
+    // `applyStallsToRoot` returns `view.root` itself when nothing is stalled,
+    // so the common case allocates nothing and the differ sees the identical
+    // object graph it saw last time.
+    const root = applyStallsToRoot(
+      view.root,
+      livenessSnapshot?.lastActivityAt,
+      this.liveness.mtimeThresholdMs,
+      this.liveness.now(),
+    );
     return deepFreeze<SessionState>({
       sessionId: record.sessionId,
       projectSlug: record.projectSlug,
       workspaceMatch: record.workspaceMatch,
       liveness,
       schemaOk: view.schemaOk,
-      root: view.root,
+      root,
       totals: view.totals,
       contextNow: view.contextNow,
       burn: view.burn,

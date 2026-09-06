@@ -314,9 +314,10 @@ Notes on that block, each of them measured rather than assumed:
   Simplifying it to `curl` costs you roughly an order of magnitude, forever, on the common path.
   Measured in `SECURITY.md` §5.
 - **The port must match `agentDeck.port`.** The block names `47821` literally, which is that
-  setting's default. If you change one, change the other: Agent Deck reports a port collision as an
-  error and never silently picks a different port, because the block you pasted has no way of being
-  told.
+  setting's default. If you change one, change the other: Agent Deck never silently picks a
+  different port, because the block you pasted has no way of being told. A collision with a program
+  that is *not* Agent Deck is reported as an error; a collision with a second Agent Deck window is
+  not a collision at all — see [Several windows, one port](#several-windows-one-port).
 - **No Claude Code restart is needed.** Hook settings are re-read per invocation — registering a new
   event and seeing it arrive without a restart was measured on `2.1.234`.
 - **The POST is unconditional.** With nothing listening it is refused and nothing happens. A quiet
@@ -451,6 +452,39 @@ Notes on that block, each of them measured rather than assumed:
   nothing else.
 
 <!-- /engine:codex -->
+## Several windows, one port
+
+**Open a second VS Code window and both decks stay live.** You do not configure anything, and there
+is still exactly one socket on the machine.
+
+That is worth spelling out because the obvious arrangement does not work. The port is *fixed* —
+the hook block you pasted names `47821` literally, and there is nowhere to publish a different
+number without writing a file into Claude Code's own configuration, which Agent Deck never does. So
+a per-window port is not available, and before v0.7.0 the second window simply failed to bind it and
+showed you a deck with no liveness at all.
+
+What happens instead:
+
+- The first window to start **binds the port** and becomes the *leader*. Nothing about it changes:
+  it serves the hook route exactly as it always has.
+- A later window finds the port taken, **asks what is holding it**, and attaches to the leader's
+  event stream when the answer is another Agent Deck. It holds no socket of its own.
+- **Each window still reads its own workspace's transcripts.** Only the hook stream is shared, and
+  each window keeps only the events belonging to a session it is following or to a folder it has
+  open. Your other project's activity does not appear on this project's deck.
+- **Close the leader's window and the others race for the port.** Whoever wins serves the rest.
+  There is no election, no lock file and no coordinator: the operating system decides, because
+  exactly one process can bind a port. The changeover takes a fraction of a second and the events
+  that arrive during it are lost rather than queued — Agent Deck keeps no history by design.
+- **If the port is held by something that is not Agent Deck**, you get the same error you always
+  did, naming the port. Agent Deck will not pick a different one for you.
+
+**None of this leaves your machine.** The stream is served on `127.0.0.1` and read from
+`127.0.0.1`, on the port you configured, and it carries only what the hooks already POST — after
+the same redaction the panel applies, so no reasoning content and no oversized payload crosses it.
+Loopback means same-user trust here exactly as it does for the hook listener itself: there is no
+token and no authentication, because a process running as you could read the hook payloads anyway.
+
 ## Claude Code version window
 
 - **Anchor `2.1.246`** — the release the committed corpora were captured from. It is a

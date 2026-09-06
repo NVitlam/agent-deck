@@ -150,9 +150,10 @@ import type {
 } from './opencode/liveness.js';
 import {
   DEFAULT_HOOK_PORT,
-  HookListener,
   isHookListenerBindError,
 } from './hooks/listener.js';
+import { SharedHookListener } from './hooks/shared.js';
+import type { RelayCounters, RelayRole } from './hooks/relay.js';
 import { readCodexEngine, resolveCodexRoot } from './codex/index.js';
 import {
   CodexTailStore,
@@ -1697,7 +1698,7 @@ export class AgentDeckDataPath {
   readonly settings: AgentDeckSettings;
   readonly liveness: LivenessEngine;
   readonly model: SessionModel;
-  readonly listener: HookListener;
+  readonly listener: SharedHookListener;
   readonly watcher: ProjectWatcher;
   /** The second engine. Always constructed; enabled by its store's existence. */
   readonly opencode: OpenCodeEnginePath;
@@ -1759,6 +1760,8 @@ export class AgentDeckDataPath {
    */
   #hookBindAttempted = false;
   #bindError?: { code: string; port: number; message: string };
+  /** The shared listener's role, mirrored for the counters line (DoD 1b.7). */
+  #relayRole: RelayRole = 'idle';
 
   constructor(options: DataPathOptions) {
     this.workspacePath = options.workspacePath;
@@ -1795,7 +1798,32 @@ export class AgentDeckDataPath {
       previewBytes: options.settings.previewBytes,
     });
 
-    this.listener = new HookListener({ port: options.settings.port });
+    /*
+     * PHASE 1b — A SHARED LISTENER, NOT A PRIVATE ONE.
+     *
+     * The port is fixed because the pasted hook snippet names it literally, so
+     * a second window could never bind it and lost liveness entirely. This
+     * object binds when it can and attaches to whichever window did when it
+     * cannot; nothing below this line learns which of the two it got.
+     *
+     * `tailsSession` is a THUNK over the live model rather than a snapshot of
+     * its session ids. A follower attaches at activation, when the model has
+     * discovered nothing yet, and a set captured here would be empty forever —
+     * the ownership filter would then rest entirely on `cwd`, and every
+     * subagent event (whose `cwd` is the agent's, not the workspace's) would be
+     * dropped as foreign.
+     */
+    this.listener = new SharedHookListener({
+      port: options.settings.port,
+      previewBytes: options.settings.previewBytes,
+      workspacePaths: this.workspacePaths,
+      tailsSession: (sessionId) => this.model.hasSession(sessionId),
+      ...(options.scheduler !== undefined ? { scheduler: options.scheduler } : {}),
+      onRoleChange: (role) => {
+        this.#relayRole = role;
+        this.#onDiagnostic?.({ kind: 'listenerRole', role, port: options.settings.port });
+      },
+    });
     this.watcher = new ProjectWatcher({
       workspacePath: options.workspacePath,
       onBatch: (batch: TailBatch) => {
@@ -1852,6 +1880,16 @@ export class AgentDeckDataPath {
     let total = 0;
     for (const level of this.#parseLevels.values()) total += level[key];
     return total;
+  }
+
+  /** This window's shared-listener role (Phase 1b). */
+  get relayRole(): RelayRole {
+    return this.#relayRole;
+  }
+
+  /** The shared listener's relay accounting (Phase 1b). */
+  get relayCounters(): Readonly<RelayCounters> {
+    return this.listener.relayCounters;
   }
 
   get diagnostics(): DataPathDiagnostics {
@@ -2895,6 +2933,14 @@ export class AgentDeckHost {
       ccSessions: this.#engineCounts.cc,
       opencodeSessions: this.#engineCounts.opencode,
       codexSessions: this.#engineCounts.codex,
+      // Read off the shared listener at write time, for the reason this
+      // method's own doc comment gives: the listener owns these numbers, and a
+      // second copy kept in step by hand is how two accounts of one fact begin
+      // to disagree.
+      relayRole: this.dataPath.relayRole,
+      relayFollowers: this.dataPath.relayCounters.followers,
+      relayed: this.dataPath.listener.counters.relayFramesSent,
+      relayReceived: this.dataPath.relayCounters.received,
     };
   }
 
@@ -3321,10 +3367,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     onError: (error: unknown) => {
       if (isHookListenerBindError(error)) {
+        /*
+         * DoD 1b.7 — THE MESSAGE NOW SAYS WHAT IT MEANS, WHICH IS NARROWER
+         * THAN WHAT IT USED TO MEAN.
+         *
+         * Before Phase 1b this fired for every busy port, including the common
+         * and entirely benign case of a SECOND AGENT DECK WINDOW — which the
+         * user then read as a defect, because as far as the product was
+         * concerned it was one. That case no longer reaches here at all: the
+         * shared listener probes the port holder, recognises another Agent
+         * Deck leader and attaches to it silently. So an error on this line
+         * now means something specific — the port is held by a process that is
+         * NOT Agent Deck — and the text says so, because a message that names
+         * the wrong cause sends a user hunting for the wrong window.
+         *
+         * The last sentence is unchanged, deliberately. Agent Deck still will
+         * not pick a port: the pasted hook snippet names this number literally
+         * and a listener that quietly moved would be a capture that silently
+         * recorded nothing.
+         */
         void vscode.window.showErrorMessage(
-          `Agent Deck: port ${error.port} is unavailable (${error.code}). ` +
-            `Liveness is unavailable until it is free, or set "${CONFIG_SECTION}.port" ` +
-            'to a different port and reload. Agent Deck will not pick a port for you.',
+          `Agent Deck: port ${error.port} is held by another program (${error.code}), ` +
+            'not by another Agent Deck window — a second window would have joined the ' +
+            `first one automatically. Liveness is unavailable until the port is free, or ` +
+            `set "${CONFIG_SECTION}.port" to a different port and reload. ` +
+            'Agent Deck will not pick a port for you.',
         );
         return;
       }

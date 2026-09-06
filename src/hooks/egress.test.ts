@@ -315,16 +315,81 @@ describe('G5 dependency review: what the shipped bundle can reach', () => {
     ).toContain('node:tls');
   });
 
-  it('contains a server and no client: no outbound request API is compiled in', () => {
+  /*
+   * AMENDED IN v0.7.0 PHASE 1b, AND THE AMENDMENT IS THE POINT OF THE COMMENT.
+   *
+   * This test used to be called "contains a server and no client" and asserted
+   * that no outbound request API was compiled in at all. **That sentence has
+   * stopped being true.** The shared listener (DoD 1b.2) makes exactly one
+   * outbound call: a window that cannot bind the port asks the port's holder
+   * who it is, and subscribes to its relay when the answer is "an Agent Deck
+   * leader". There is no design that shares one fixed port across windows and
+   * contains no client, and the user locked that design on 2026-09-06.
+   *
+   * So the assertion moved from the API's EXISTENCE to its DESTINATION, which
+   * is the property G5 was always about: "no network except the loopback hook
+   * listener". Widening the old matcher, or exempting a file by name, would
+   * have been the fail-open reading rule 18 exists for — a check reporting a
+   * clean result over an input it had quietly stopped covering. What is
+   * asserted now is stronger in the dimension that matters: there is exactly
+   * ONE outbound call site in the whole bundle, and its host is the same
+   * hard-coded loopback constant the server binds.
+   *
+   * **G5's WORDING IS UNCHANGED and was not amended by this phase.** Amending
+   * the Grounding Contract is reserved decision 4. What changed is what this
+   * test measures, because the old measurement had become a measurement of
+   * something the product no longer is.
+   */
+  it('contains a server and exactly one client, whose destination is the loopback literal', () => {
     expect(bundle).toContain('createServer');
-    // `http.request` / `http.get` are how a Node process talks OUT. Matched on
-    // the destructured and member forms esbuild can emit.
-    expect(bundle).not.toMatch(/\bhttps?\.request\s*\(/);
-    expect(bundle).not.toMatch(/\bimport_node_http\d*\.request\s*\(/);
+
+    // The outbound call sites esbuild can emit for `node:http`'s `request`.
+    // COUNTED, not merely detected: "an outbound call exists" is satisfied by
+    // two of them as happily as by one, and the second is the one nobody
+    // reviewed.
+    const outboundSites = bundle.match(/\bimport_node_http\d*\.request\b/g) ?? [];
+    expect(outboundSites).toHaveLength(1);
+
+    // ...and that one site's options name the loopback constant. Matched on a
+    // window after the call, so the assertion is about THIS call's arguments
+    // rather than about the constant appearing somewhere in 2 MB of bundle.
+    const at = bundle.search(/\bimport_node_http\d*\.request\b/);
+    expect(at).toBeGreaterThan(-1);
+    const callSite = bundle.slice(at, at + 400);
+    expect(callSite).toMatch(/host:\s*HOOK_LISTENER_HOST/);
+
+    // A VACUITY CONTROL on the count, because a matcher that can see nothing
+    // also reports "exactly one" for nobody: prove it can see a second site.
+    const mutated = bundle + '\nconst leak = import_node_http9.request({ host: "example.com" });\n';
+    expect(mutated.match(/\bimport_node_http\d*\.request\b/g) ?? []).toHaveLength(2);
+
+    // Everything else a process can talk out with is still absent outright.
+    expect(bundle).not.toMatch(/\bhttps\.request\s*\(/);
+    expect(bundle).not.toMatch(/\bimport_node_https\d*\.request\b/);
     expect(bundle).not.toMatch(/\bfetch\s*\(/);
     expect(bundle).not.toContain('XMLHttpRequest');
     expect(bundle).not.toContain('new WebSocket(');
     expect(bundle).not.toContain('navigator.sendBeacon');
+  });
+
+  it('carries no telemetry parser at all, in the built artifact (DoD 1.9g)', () => {
+    /*
+     * v0.7.0 Phase 1b moved the telemetry TYPES into `src/hooks/` so the relay
+     * can carry a slice between windows, and `join.test.ts`'s source scan was
+     * narrowed to match. This is the half that does not depend on reading
+     * source at all: the shipped bundle contains no telemetry parser, no join,
+     * and no OTLP vocabulary, so nothing in the artefact can reach a recorder
+     * whatever the source text says.
+     *
+     * Phase 3 mounts the `/v1/*` routes and this goes red — which is correct,
+     * and is the signal that 1.9g's sweep has to be written for real.
+     */
+    for (const name of ['parseOtlpBody', 'joinTelemetry', 'TELEMETRY_KEPT_KEYS', 'resourceSpans']) {
+      expect(bundle, `${name} reached the shipped bundle`).not.toContain(name);
+    }
+    // Vacuity control: this IS the host bundle, and it does contain the module
+    // that would have pulled the parser in if the import were a value import.
+    expect(bundle).toContain('relayTelemetry');
   });
 
   it('binds the loopback literal and never a wildcard, in the built artifact', () => {

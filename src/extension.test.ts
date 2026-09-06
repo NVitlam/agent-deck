@@ -71,6 +71,7 @@ import type {
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
+import { formatCounters } from './bridge/diagnostics.js';
 import type { DiagnosticsSink } from './bridge/diagnostics.js';
 import { CODEX_HOME_VAR, readCodexEngine } from './codex/index.js';
 import type { CodexThread } from './codex/index.js';
@@ -1881,6 +1882,31 @@ describe('activate', () => {
     expect(mock.informationMessages).toHaveLength(1);
   });
 
+  it('a window that binds the port reports itself as the leader', async () => {
+    // The control for the collision test below. Without it, `role=refused`
+    // could be the only value this suite ever observes, and a getter wired to
+    // a constant would satisfy every assertion about it.
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    mock.setWorkspaceFolder(await capturedWorkspacePath());
+    await onFreePort({
+      use: async (port) => {
+        mock.setConfig(CONFIG_SECTION, { port });
+        await activate(extensionContext());
+        return currentHost();
+      },
+      collided: (host) => host?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+      discard: async () => {
+        await deactivate();
+      },
+    });
+    const host = currentHost();
+    expect(host?.dataPath.diagnostics.listening).toBe(true);
+    expect(host?.dataPath.relayRole).toBe('leader');
+    expect(mock.errorMessages).toHaveLength(0);
+    const line = host === null ? '' : formatCounters(host.counters(), '2026-09-06T00:00:00.000Z');
+    expect(line).toContain('role=leader');
+  });
+
   it('a port collision surfaces an error message and still renders content', async () => {
     process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
     const { port, release } = await heldPort();
@@ -1895,9 +1921,33 @@ describe('activate', () => {
       // The message must not promise a rebind.
       expect(mock.errorMessages[0]).toContain('will not pick a port for you');
 
+      /*
+       * v0.7.0 DoD 1b.7 — AND IT MUST NAME THE RIGHT CAUSE.
+       *
+       * `heldPort()` holds this port with a bare `createServer()`, which is a
+       * FOREIGN holder, and since Phase 1b that is the only thing that reaches
+       * this message at all: a second Agent Deck window probes, recognises the
+       * leader and attaches without a word. A message that still said "the
+       * port is unavailable" full stop would send a user hunting through their
+       * other VS Code windows for a problem that is not there.
+       */
+      expect(mock.errorMessages[0]).toContain('another program');
+      expect(mock.errorMessages[0]).toContain('not by another Agent Deck window');
+
       const host = currentHost();
       expect(host?.dataPath.diagnostics.listening).toBe(false);
       expect(host?.dataPath.diagnostics.grafts).toBeGreaterThan(0);
+
+      // The role is recorded, and it is 'refused' rather than 'idle': a window
+      // that asked and was turned away is a different state from one that
+      // never had a reason to bind, and the counters line is where a user
+      // reads the difference.
+      expect(host?.dataPath.relayRole).toBe('refused');
+      const line = host === null ? '' : formatCounters(host.counters(), '2026-09-06T00:00:00.000Z');
+      expect(line).toContain('role=refused');
+      expect(line).toContain('followers=0');
+      expect(line).toContain('relayed=0');
+      expect(line).toContain('received=0');
     } finally {
       await release();
     }
@@ -2846,9 +2896,19 @@ describe('G2: a throwing content path refuses one session and leaves the hook ta
       ),
     );
 
-    expect(events).toHaveLength(path.diagnostics.graftRefusals);
-    expect(events.length).toBeGreaterThan(0);
-    const [event] = events as [DiagnosticsEvent];
+    // SCOPED TO REFUSALS (v0.7.0 Phase 1b). The shared listener writes one
+    // `listenerRole` line to this same sink when the window binds, which is
+    // correct — a role change is a diagnostic — and it means an exact count
+    // over EVERY event is no longer a statement about refusals. The equality
+    // that matters is kept, against the population it was always about.
+    const refusals = events.filter((e) => e.kind === 'graftRefused');
+    expect(refusals).toHaveLength(path.diagnostics.graftRefusals);
+    expect(refusals.length).toBeGreaterThan(0);
+    // ...and the role line is asserted rather than tolerated, so this test
+    // still fails if the sink starts carrying something nobody expected.
+    expect(events.filter((e) => e.kind === 'listenerRole')).toHaveLength(1);
+    expect(events).toHaveLength(refusals.length + 1);
+    const [event] = refusals as [DiagnosticsEvent];
     if (event.kind !== 'graftRefused') throw new Error(`unexpected event ${event.kind}`);
     expect(event.code).toBe('unsupportedVersion');
     expect(event.field).toBe('version');

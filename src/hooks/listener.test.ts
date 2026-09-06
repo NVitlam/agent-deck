@@ -48,7 +48,7 @@ import { Buffer } from 'node:buffer';
 import { readdir, readFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { connect as netConnect } from 'node:net';
-import { join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -1945,10 +1945,24 @@ describe('grounding guards, asserted against the source text', () => {
     // knowing where ~/.claude is, let alone opening anything in it.
     expect(source).not.toMatch(/homedir|USERPROFILE|process\.env\.HOME/);
     // Only the modules it actually needs are imported. `../codex/liveness.js`
-    // is a TYPE-ONLY import (`CodexHookEvent`, DoD 3.1) — it names no runtime
-    // value and is erased at build time, so it adds no filesystem API to the
-    // bundle; it is allowed here rather than exempted from the scan, because
-    // the scan is a source-text census and the import really is in the text.
+    // and `../otel/parse.js` are TYPE-ONLY imports (`CodexHookEvent` from DoD
+    // 3.1; `OtelSignal`/`TelemetrySlice` from DoD 1b.5) — they name no runtime
+    // value and are erased at build time, so they add no filesystem API to the
+    // bundle; they are allowed here rather than exempted from the scan,
+    // because the scan is a source-text census and the imports really are in
+    // the text.
+    //
+    // `./relay.js` IS A RUNTIME IMPORT, and it is the one that had to be
+    // EARNED rather than added (v0.7.0 Phase 1b). The listener redacts every
+    // payload before relaying it to another window, so it needs the redaction
+    // walk — and the walk used to live in `parser/redact.ts`, which imports
+    // `node:fs/promises` for the offloaded-tool-result reader. Importing it
+    // would have put a filesystem API in this module's closure while this very
+    // test still said there was none. The walk was therefore SPLIT into
+    // `parser/redact-core.ts`, which opens nothing and names no path, and the
+    // assertion below is checked transitively rather than only on this file:
+    // widening the census without that split would have been the fail-open
+    // reading rule 18 exists for.
     const imports = [...source.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
     expect(new Set(imports)).toEqual(
       new Set([
@@ -1957,8 +1971,40 @@ describe('grounding guards, asserted against the source text', () => {
         'node:net',
         '../model/events.js',
         '../codex/liveness.js',
+        '../otel/parse.js',
+        './relay.js',
       ]),
     );
+
+    // THE TRANSITIVE HALF. A source-text census over one file says nothing
+    // about what that file's runtime imports drag in, and this phase moved the
+    // listener from "imports nothing with a filesystem in it" to "imports one
+    // module that must not have one". Walked rather than asserted about.
+    const seen = new Set<string>();
+    const fsReaching: string[] = [];
+    const walk = async (absolute: string): Promise<void> => {
+      if (seen.has(absolute)) return;
+      seen.add(absolute);
+      const text = await readFile(absolute, 'utf8');
+      for (const match of text.matchAll(/^import[^']*'([^']+)'/gm)) {
+        const spec = match[1] as string;
+        if (/^node:(fs|fs\/promises)$/.test(spec)) {
+          fsReaching.push(`${repoRelative(absolute)} -> ${spec}`);
+          continue;
+        }
+        if (!spec.startsWith('.')) continue;
+        // TYPE-ONLY imports are erased and cannot reach anything at runtime.
+        if (/^import\s+type\b/.test(match[0])) continue;
+        await walk(join(dirname(absolute), spec.replace(/\.js$/, '.ts')));
+      }
+    };
+    await walk(LISTENER_SOURCE_PATH);
+    expect(fsReaching, fsReaching.join('\n')).toEqual([]);
+    // Vacuity control: the walk really did leave this file and reach the
+    // redaction walk, so the empty result above is a finding rather than a
+    // scan that never started.
+    expect(seen.size).toBeGreaterThan(2);
+    expect([...seen].map(repoRelative)).toContain('src/parser/redact-core.ts');
   });
 
   it('G5: the listener binds the literal loopback address and no wildcard', async () => {

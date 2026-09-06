@@ -668,22 +668,52 @@ describe('Codex slug and cwd matching (corpus-driven)', () => {
     const unfiltered = await codexEngineOk({ root });
     expect(unfiltered.sessions.length).toBeGreaterThan(0);
 
-    const flagsFor = async (folder: string): Promise<boolean[]> => {
+    /*
+     * WHAT A NON-MATCHING FOLDER PRODUCES CHANGED IN HOTFIX 0.6.1, AND THIS
+     * TEST IS WHERE THE OLD CONTRACT WAS WRITTEN DOWN.
+     *
+     * It used to read: "a non-matching session is FLAGGED, never dropped: the
+     * count must not move, or this test would be reading a filter as a
+     * mismatch." That was true and it described a mechanism the hotfix
+     * removes. The engine now decides the workspace on a transcript's first
+     * 256 KiB and reads no further when the answer is no, so there is nothing
+     * to build a `SessionState` from and no honest way to emit one — a
+     * fabricated session from a file we declined to read is precisely what G3
+     * forbids.
+     *
+     * Nothing a USER sees changes: `belongsOnDeck` in `src/extension.ts` has
+     * always dropped `workspaceMatch: false` sessions before they reach the
+     * deck. What changes is the cost of reaching that outcome, from "parse
+     * every transcript on the machine" to "read 256 KiB of each".
+     *
+     * The refusal path is unaffected, and the ORDER is why: the fingerprint
+     * runs before the workspace check, so a session whose schema was refused
+     * is still refused rather than silently dropped as foreign. That matters
+     * because `belongsOnDeck` deliberately keeps `!schemaOk` sessions — an
+     * invisible refusal is not a refusal.
+     *
+     * So the property is restated rather than weakened: a matching spelling
+     * claims EVERY session the unfiltered read found, and a non-matching one
+     * claims NONE. Both arms are still here, which is what stops this being
+     * "the filter was deleted".
+     */
+    const claimsFor = async (folder: string): Promise<number> => {
       const result = await codexEngineOk({ root, workspaceFolders: [folder] });
-      // A non-matching session is FLAGGED, never dropped: the count must not
-      // move, or this test would be reading a filter as a mismatch.
-      expect(result.sessions.length, folder).toBe(unfiltered.sessions.length);
-      return result.sessions.map((s) => s.workspaceMatch);
+      // Whatever survives the filter must be flagged as matching: a session
+      // that reached the deck saying `workspaceMatch: false` would be the
+      // filter and the flag disagreeing.
+      for (const session of result.sessions) {
+        expect(session.workspaceMatch, folder).toBe(true);
+      }
+      return result.sessions.length;
     };
 
-    const all = (flags: boolean[]): boolean => flags.length > 0 && flags.every((f) => f);
-    const none = (flags: boolean[]): boolean => flags.length > 0 && flags.every((f) => !f);
-
-    expect(all(await flagsFor(cwd))).toBe(true);
-    expect(all(await flagsFor(driveLower))).toBe(true);
-    expect(all(await flagsFor(forwardSlashes))).toBe(true);
-    expect(none(await flagsFor(wslMount))).toBe(true);
-    expect(none(await flagsFor(foreign))).toBe(true);
+    expect(unfiltered.sessions.length).toBeGreaterThan(0);
+    expect(await claimsFor(cwd), 'the captured spelling').toBe(unfiltered.sessions.length);
+    expect(await claimsFor(driveLower), 'drive letter lowered').toBe(unfiltered.sessions.length);
+    expect(await claimsFor(forwardSlashes), 'forward slashes').toBe(unfiltered.sessions.length);
+    expect(await claimsFor(wslMount), 'the WSL mount form').toBe(0);
+    expect(await claimsFor(foreign), 'an unrelated directory').toBe(0);
 
     // And the boundary itself, stated as the rule rather than as an outcome:
     // the two spellings of one physical directory are not case variants.

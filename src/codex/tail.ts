@@ -62,6 +62,7 @@
 
 import type { SkippedFile } from '../model/events.js';
 import { FileTail } from '../parser/tailer.js';
+import type { FileReadOptions } from '../parser/tailer.js';
 import type { CodexTailState } from './types.js';
 
 // The debounce seam, reused literally rather than restated. One import site for
@@ -81,6 +82,39 @@ export type {
  * and resynchronises at the next newline. See the header for the sizing.
  */
 export const CODEX_MAX_PARTIAL_BYTES = 32 * 1024 * 1024;
+
+/**
+ * The FIRST read of any transcript: 256 KiB (hotfix 0.6.1).
+ *
+ * Enough to decide everything that decides whether the rest is worth reading —
+ * the `session_meta` at ordinal 0, and with it the fingerprint's version
+ * window, the `cwd` the workspace match runs on, and the `thread_spawn` join
+ * key child discovery needs. All four are in the first record.
+ *
+ * **Sized against the corpus, not against a feeling.** The largest ordinal-0
+ * record in `fixtures/codex-0.151.0-alpha.7.2` is **1,113 bytes** across all
+ * 14 committed transcripts (smallest 697), so this is ~236x the largest one
+ * anyone has captured. It is deliberately not sized at "a bit more than 1 KiB":
+ * the head also carries whatever else fits, and a transcript smaller than this
+ * is read whole in one call with no second syscall.
+ *
+ * A head yielding NO complete line is not a refusal. `index.ts` leaves the
+ * decision undecided and keeps reading — a first line longer than this is a
+ * shape nobody has observed, and refusing it would be guessing in the
+ * direction G3 forbids.
+ */
+export const CODEX_HEAD_BYTES = 256 * 1024;
+
+/**
+ * Every read after the head: 4 MiB (hotfix 0.6.1).
+ *
+ * The ceiling on a single allocation once a transcript has been accepted. It
+ * is not a throughput knob — the host reads one batch per file per poll, so a
+ * 20 MiB transcript arrives over five polls — and it is 8x
+ * {@link CODEX_HEAD_BYTES} rather than equal to it because the head is sized
+ * for a decision and this is sized for bulk.
+ */
+export const CODEX_READ_BATCH_BYTES = 4 * 1024 * 1024;
 
 /** One complete line of a rollout transcript, exactly as it sat on disk. */
 export interface CodexTailLine {
@@ -165,11 +199,15 @@ export class CodexFileTail {
   }
 
   /**
-   * Read everything appended since the previous call. Opens read-only (G1) and
-   * never throws (G3) — failures come back as `skipped`.
+   * Read what was appended since the previous call, up to `maxBytes`. Opens
+   * read-only (G1) and never throws (G3) — failures come back as `skipped`.
+   *
+   * `maxBytes` is forwarded verbatim; the wrapper adds no policy of its own.
+   * Which ceiling applies on which pass is `index.ts`'s decision, because it
+   * is the only party that knows whether a transcript has been accepted yet.
    */
-  async read(): Promise<CodexReadResult> {
-    const result = await this.#tail.read();
+  async read(options: FileReadOptions = {}): Promise<CodexReadResult> {
+    const result = await this.#tail.read(options);
     const lines: CodexTailLine[] = result.lines.map((line) => ({
       path: line.path,
       file: this.file,

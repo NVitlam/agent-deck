@@ -85,6 +85,12 @@ const SAMPLES: Record<DiagnosticsEvent['kind'], DiagnosticsEvent> = {
     expected: '2.1.246',
     actual: '1.0',
   },
+  transcriptSkipped: {
+    kind: 'transcriptSkipped',
+    engine: 'codex',
+    file: 'rollout-2026-09-05T00-00-00-01a06400.jsonl',
+    reason: 'oversize:83890435 limit=67108864',
+  },
   hookListenerError: { kind: 'hookListenerError', detail: 'EADDRINUSE 47821' },
   hookNon2xx: { kind: 'hookNon2xx', status: 413, detail: 'payload too large' },
   patchFailure: { kind: 'patchFailure', sessionId: 's1', detail: 'no node with id x' },

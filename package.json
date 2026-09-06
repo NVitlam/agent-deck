@@ -1,7 +1,7 @@
 {
   "name": "agent-deck",
   "displayName": "Agent Deck — Watch Your Agents Work.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "publisher": "nvitlam",
   "description": "Live observability for coding-agent swarms — Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
   "license": "MIT",
@@ -67,6 +67,13 @@
           "minimum": 0,
           "maximum": 1048576,
           "description": "Maximum bytes of tool payload kept per node for previews. This is the single ceiling: the redaction layer is given the same number (never below its own 8 KB default, because the stub that points at an offloaded tool-results file is about 2 KB and cutting it shorter loses the pointer), so raising this genuinely raises the kept payload. Truncated payloads carry a marker stating the kept bytes and the ORIGINAL size in bytes; the marker sits on top of the budget, so a preview is slightly longer than this value. Nothing is ever sent off the machine. Measured on the committed CC 2.1.234 capture, whose largest payload is 63,774 bytes: at 8192 it keeps 8,192 bytes and reports 63,774; at 16384 it keeps 16,384; at 65536 it is kept whole. No payload in that capture exceeds 65,536 bytes, so larger values are unexercised by it."
+        },
+        "agentDeck.codex.maxTranscriptBytes": {
+          "type": "integer",
+          "default": 67108864,
+          "minimum": 1048576,
+          "maximum": 1073741824,
+          "description": "Largest Codex transcript Agent Deck will open, in bytes. Default 67108864 (64 MiB). A rollout file bigger than this is measured from its directory entry and never read: it is reported on the Agent Deck output channel as oversize with its size and this limit, and it contributes no session. Codex stores tool output whole and inline with no offload path, so one long-running session can reach hundreds of megabytes, and reading such a file into the extension host is what this limit exists to prevent. Raising it costs memory in proportion to the file. A session already being followed keeps being followed when it grows past the limit -- the limit gates the first read of a file, never a tail already in progress."
         }
       }
     }

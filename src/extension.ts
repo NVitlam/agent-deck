@@ -132,6 +132,7 @@ import type { SessionDiff, SessionEmission } from './model/session.js';
 import type {
   HostToWebviewMessage,
   SessionState,
+  SkippedFile,
   WebviewToHostMessage,
 } from './model/events.js';
 import { opencodeDataDir, opencodeDbPath, readOpenCodeEngine } from './opencode/index.js';
@@ -153,6 +154,10 @@ import {
   isHookListenerBindError,
 } from './hooks/listener.js';
 import { readCodexEngine, resolveCodexRoot } from './codex/index.js';
+import {
+  CodexTailStore,
+  DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES as CODEX_MAX_TRANSCRIPT_BYTES,
+} from './codex/store.js';
 import type { CodexEngineOptions, CodexEngineOutcome, CodexThread } from './codex/index.js';
 import { CODEX_LOCK_DIR_NAME } from './codex/locate.js';
 import { CodexLivenessEngine, scanCodexWriterLocks } from './codex/liveness.js';
@@ -193,6 +198,18 @@ export const DEFAULT_LIVENESS_THRESHOLD_MS = 120_000;
 export const DEFAULT_PREVIEW_BYTES = 8192;
 
 /**
+ * 64 MiB. The Codex engine will not OPEN a transcript larger than this
+ * (hotfix 0.6.1).
+ *
+ * Re-exported from the engine rather than restated: two literals that must
+ * agree is the defect `bridge/contract.ts` exists to document, and this one
+ * would be three (here, the engine, and `package.json`). The manifest's copy
+ * is the one VS Code's settings UI reads, and `extension.test.ts` asserts the
+ * two are equal.
+ */
+export const DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES = CODEX_MAX_TRANSCRIPT_BYTES;
+
+/**
  * How often liveness is recomputed with no other stimulus. See trigger (c) in
  * the module header. Deliberately NOT a user setting: three settings were
  * decided for this phase and inventing a fourth is scope, not configurability.
@@ -206,6 +223,17 @@ export interface AgentDeckSettings {
   port: number;
   livenessThresholdMs: number;
   previewBytes: number;
+  /**
+   * `agentDeck.codex.maxTranscriptBytes` — a DOTTED key, and the first one.
+   *
+   * The three settings above are flat under `agentDeck.`; this one is
+   * namespaced by engine because it is the first setting that means nothing
+   * to the other two. `vscode.WorkspaceConfiguration.get` takes the dotted
+   * remainder verbatim, so `readSettings` needs no special case, and the
+   * manifest declares `agentDeck.codex.maxTranscriptBytes` the same way it
+   * declares the others: `${CONFIG_SECTION}.${key}`.
+   */
+  'codex.maxTranscriptBytes': number;
 }
 
 /** The narrow slice of `vscode.WorkspaceConfiguration` settings reading needs. */
@@ -254,6 +282,24 @@ export const SETTING_BOUNDS: Readonly<Record<keyof AgentDeckSettings, SettingBou
     maximum: 24 * 60 * 60 * 1_000,
   },
   previewBytes: { default: DEFAULT_PREVIEW_BYTES, minimum: 0, maximum: 1_048_576 },
+  /*
+   * The floor is 1 MiB and the ceiling 1 GiB, and neither is arbitrary.
+   *
+   * Below the floor the setting stops being a size gate and becomes an
+   * engine switch: `CODEX_HEAD_BYTES` is 256 KiB, so a limit near it would
+   * refuse ordinary sessions. The ceiling is where the gate stops protecting
+   * anything — the user who reported this defect has 3.11 GB of transcripts,
+   * and a 1 GiB single file read into an extension host is the crash this
+   * hotfix exists to prevent.
+   *
+   * An out-of-range value falls back to the default, as every setting here
+   * does: it is a number the user typed over a working one.
+   */
+  'codex.maxTranscriptBytes': {
+    default: DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
+    minimum: 1_048_576,
+    maximum: 1_073_741_824,
+  },
 };
 
 function integerInRange(value: unknown, key: keyof AgentDeckSettings): number {
@@ -285,6 +331,10 @@ export function readSettings(reader: SettingsReader | undefined): AgentDeckSetti
     port: integerInRange(get('port'), 'port'),
     livenessThresholdMs: integerInRange(get('livenessThresholdMs'), 'livenessThresholdMs'),
     previewBytes: integerInRange(get('previewBytes'), 'previewBytes'),
+    'codex.maxTranscriptBytes': integerInRange(
+      get('codex.maxTranscriptBytes'),
+      'codex.maxTranscriptBytes',
+    ),
   };
 }
 
@@ -810,6 +860,22 @@ function unsupportedCopy(session: SessionState): SessionState {
 // (b1) The Codex engine path (PLAN.md v0.6.0 DoD 3.2)
 // ---------------------------------------------------------------------------
 
+/**
+ * What a window with no folder open is told (hotfix 0.6.1).
+ *
+ * **It names no engine, and that is the fix.** It read "open a folder to see
+ * its Claude Code sessions" — in a release that observes three engines, shown
+ * to a user who may have no Claude Code installed at all. The gate it explains
+ * has nothing to do with Claude Code: `firstWorkspacePath()` is undefined, so
+ * there is no workspace for ANY engine to correlate against.
+ *
+ * Same defect as `DegradedMessage` before DoD 5.0b — a panel-wide condition
+ * described in one engine's words — and the same fix: say the panel-wide
+ * thing. A constant rather than an inline literal so a test can assert it
+ * names no engine without asserting the whole sentence.
+ */
+export const NO_WORKSPACE_MESSAGE = 'Agent Deck: open a folder to see its sessions.';
+
 /** The message logged, ONCE, when there is no Codex data root to observe. */
 export const CODEX_ABSENT_LOG =
   'Agent Deck: no Codex data root found; the Codex engine is off.';
@@ -873,6 +939,24 @@ export interface CodexPathOptions {
    * below is unreachable from any test. Production never passes this.
    */
   read?: (options: CodexEngineOptions) => Promise<CodexEngineOutcome>;
+  /**
+   * `agentDeck.codex.maxTranscriptBytes`. Defaults to the engine's own 64 MiB.
+   *
+   * Forwarded to every read, so a user who raises it does not have to reload
+   * the window for the NEXT poll to honour it — the value is read at
+   * construction, which is the same lifetime every other setting here has.
+   */
+  maxTranscriptBytes?: number;
+  /**
+   * Where a skipped transcript is reported (hotfix 0.6.1).
+   *
+   * A CALLBACK, for the reason `DataPathOptions.onDiagnostic` is one: this
+   * class must stay constructible with no channel, no `vscode` and no output
+   * sink. Absent, a skip is still counted in
+   * {@link CodexEngineDiagnostics.skippedTranscripts}; it simply produces no
+   * line.
+   */
+  onDiagnostic?: (event: DiagnosticsEvent) => void;
 }
 
 export interface CodexEngineDiagnostics {
@@ -905,6 +989,17 @@ export interface CodexEngineDiagnostics {
    * `noHookEvents` true FOR CODEX rather than borrowed from Claude Code.
    */
   hookEventsIngested: number;
+  /**
+   * Transcripts currently being skipped, and the tails currently held
+   * (hotfix 0.6.1).
+   *
+   * `skippedTranscripts` is a LEVEL, not a running total: it is what the last
+   * read reported, so a file that comes back under the limit lowers it.
+   * `tailsHeld` is the store's size and is the number that would grow without
+   * bound if `CodexTailStore.retain` stopped working.
+   */
+  skippedTranscripts: number;
+  tailsHeld: number;
   lastError?: string;
 }
 
@@ -975,12 +1070,40 @@ export class CodexEnginePath {
   readonly #pollIntervalMs: number;
   readonly #pollTrigger: PollTrigger;
 
+  /**
+   * Byte offsets and per-transcript state, held for the life of this path
+   * (hotfix 0.6.1).
+   *
+   * Constructed HERE and nowhere else. It is what turns `readCodexEngine`
+   * from "read every Codex transcript on the machine, once a second" into
+   * "stat them, and read what changed" — see `src/codex/store.ts`.
+   */
+  readonly #tails = new CodexTailStore();
+  readonly #maxTranscriptBytes: number;
+  readonly #onDiagnostic?: (event: DiagnosticsEvent) => void;
+  /**
+   * Skips already announced, as `<path>|<reason>`.
+   *
+   * The channel says a thing ONCE. A 3 GB transcript that is skipped every
+   * poll would otherwise write a line a second for as long as the window is
+   * open, which is a log nobody can read and a diagnostic that hides the
+   * others. The reason is part of the key so a file that changes size — and
+   * therefore changes its `oversize:<bytes>` — is announced again.
+   *
+   * It is pruned against the current skip set on every read, so a file that
+   * comes back under the limit and later goes over it is announced again
+   * rather than silently suppressed for ever.
+   */
+  #announcedSkips = new Set<string>();
+
   #liveness: CodexLivenessEngine | null = null;
   #contentPollHandle: PollTriggerHandle | undefined;
   #content: readonly SessionState[] = [];
   #threads: readonly CodexThread[] = [];
   /** Hook events this path has been handed. DoD 5.0b. */
   #hookEventsIngested = 0;
+  /** The last read's skip list. A LEVEL — see `CodexEngineDiagnostics`. */
+  #skipped: readonly SkippedFile[] = [];
   /**
    * `<root>/thread-writer-locks`, computed at construction — a deterministic
    * function of `root`, so it is correct even before any content read has
@@ -1020,6 +1143,9 @@ export class CodexEnginePath {
     this.#thresholdMs = options.thresholdMs;
     this.#pollIntervalMs = options.pollIntervalMs ?? DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS;
     this.#pollTrigger = options.pollTrigger ?? systemPollTrigger;
+    this.#maxTranscriptBytes =
+      options.maxTranscriptBytes ?? SETTING_BOUNDS['codex.maxTranscriptBytes'].default;
+    if (options.onDiagnostic !== undefined) this.#onDiagnostic = options.onDiagnostic;
   }
 
   get diagnostics(): CodexEngineDiagnostics {
@@ -1036,6 +1162,8 @@ export class CodexEnginePath {
       emissions: this.#emissions,
       sessions: this.#content.length,
       hookEventsIngested: this.#hookEventsIngested,
+      skippedTranscripts: this.#skipped.length,
+      tailsHeld: this.#tails.size,
       ...(this.#lastError !== undefined ? { lastError: this.#lastError } : {}),
     };
   }
@@ -1211,6 +1339,10 @@ export class CodexEnginePath {
         ...(this.#rootOverride === undefined ? {} : { root: this.#rootOverride }),
         ...(this.#env === undefined ? {} : { env: this.#env }),
         workspaceFolders: this.workspaceFolders,
+        // The two halves of hotfix 0.6.1 that the HOST owns: a store whose
+        // lifetime is this path's, and the user's size limit.
+        tails: this.#tails,
+        maxTranscriptBytes: this.#maxTranscriptBytes,
       });
     } catch (error) {
       // Documented never to happen — the engine returns outcomes rather than
@@ -1227,6 +1359,7 @@ export class CodexEnginePath {
         this.#threads = outcome.result.threads;
         this.#lockDir = outcome.result.discovery.lockDir;
         this.#content = outcome.result.sessions.filter(belongsOnDeck);
+        this.#reportSkips(outcome.result.skipped);
         return outcome;
       case 'unreadable':
         // G3/G2: the engine is unusable right now. The last good content and
@@ -1246,6 +1379,52 @@ export class CodexEnginePath {
         return outcome;
     }
   }
+
+  /**
+   * Announce each skipped transcript ONCE, on the diagnostics channel.
+   *
+   * The engine reports the whole skip set every pass — that is rule 18, and a
+   * verdict that stopped restating a skip would be a count of zero nobody
+   * could tell from "nothing was skipped". The CHANNEL is the other side of
+   * that: a line per poll per file is a log nobody reads.
+   *
+   * The basename, never the path: an absolute transcript path begins
+   * `C:\Users\<user>\` on Windows and this channel is a surface a user is
+   * invited to paste into a bug report. `bridge/diagnostics.ts` makes the same
+   * decision for refusals, for the same reason.
+   */
+  #reportSkips(skipped: readonly SkippedFile[]): void {
+    this.#skipped = skipped;
+    const current = new Set(skipped.map((skip) => `${skip.path}|${skip.reason}`));
+    for (const key of [...this.#announcedSkips]) {
+      if (!current.has(key)) this.#announcedSkips.delete(key);
+    }
+    for (const skip of skipped) {
+      const key = `${skip.path}|${skip.reason}`;
+      if (this.#announcedSkips.has(key)) continue;
+      this.#announcedSkips.add(key);
+      this.#log('info', `Agent Deck: skipping Codex transcript (${skip.reason})`);
+      // A diagnostics sink must never be able to break a read.
+      try {
+        this.#onDiagnostic?.({
+          kind: 'transcriptSkipped',
+          engine: 'codex',
+          file: basenameOfPath(skip.path),
+          reason: skip.reason,
+        });
+      } catch {
+        // Counted nowhere on purpose: this class has no consumer-error
+        // counter, and inventing one to record a throwing logger would be
+        // scope. The skip itself is still in `diagnostics.skippedTranscripts`.
+      }
+    }
+  }
+}
+
+/** Last path segment, on either separator. `bridge/diagnostics.ts` has its own. */
+function basenameOfPath(path: string): string {
+  const at = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return at === -1 ? path : path.slice(at + 1);
 }
 
 /** `CodexAgentLiveness` -> `SessionState.liveness`. See the class doc above. */
@@ -1655,9 +1834,13 @@ export class AgentDeckDataPath {
     this.codex = new CodexEnginePath({
       workspaceFolders: this.workspacePaths,
       thresholdMs: options.settings.livenessThresholdMs,
+      maxTranscriptBytes: options.settings['codex.maxTranscriptBytes'],
       onChange: () => {
         this.#scheduleEmit();
       },
+      // The same sink the CC half writes refusals to, so a skipped Codex
+      // transcript and a refused CC session land in one place.
+      ...(options.onDiagnostic !== undefined ? { onDiagnostic: options.onDiagnostic } : {}),
       ...(options.log !== undefined ? { log: options.log } : {}),
       ...(options.now !== undefined ? { now: options.now } : {}),
       ...options.codex,
@@ -3048,7 +3231,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const workspacePath = firstWorkspacePath();
   if (workspacePath === undefined) {
-    inactiveReason = 'Agent Deck: open a folder to see its Claude Code sessions.';
+    inactiveReason = NO_WORKSPACE_MESSAGE;
     return;
   }
 

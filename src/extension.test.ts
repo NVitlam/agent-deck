@@ -43,6 +43,7 @@ import {
   DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS,
   DEFAULT_LIVENESS_THRESHOLD_MS,
   DEFAULT_PORT,
+  DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
   DEFAULT_PREVIEW_BYTES,
   NO_HOOK_ENGINE_LOG,
   OPENCODE_ABSENT_LOG,
@@ -406,6 +407,7 @@ function settings(overrides: Partial<AgentDeckSettings> = {}): AgentDeckSettings
     port: DEFAULT_PORT,
     livenessThresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
     previewBytes: DEFAULT_PREVIEW_BYTES,
+    'codex.maxTranscriptBytes': DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
     ...overrides,
   };
 }
@@ -722,18 +724,29 @@ describe('readSettings', () => {
       port: 47821,
       livenessThresholdMs: 120000,
       previewBytes: 8192,
+      // 64 MiB. Hotfix 0.6.1's Codex transcript ceiling, written out rather
+      // than computed so this test states the number a user would see.
+      'codex.maxTranscriptBytes': 67108864,
     });
   });
 
   it('honours configured values', () => {
     const read = readSettings({
       get: (key) =>
-        ({ port: 50000, livenessThresholdMs: 90000, previewBytes: 512 })[key],
+        ({
+          port: 50000,
+          livenessThresholdMs: 90000,
+          previewBytes: 512,
+          // The DOTTED key reaches `get` verbatim, which is the whole reason
+          // `readSettings` needs no special case for it.
+          'codex.maxTranscriptBytes': 8 * 1024 * 1024,
+        })[key],
     });
     expect(read).toStrictEqual({
       port: 50000,
       livenessThresholdMs: 90000,
       previewBytes: 512,
+      'codex.maxTranscriptBytes': 8 * 1024 * 1024,
     });
   });
 
@@ -3492,6 +3505,112 @@ async function codexBaselineRoot(root: string): Promise<{ cwd: string; sessionId
   return { cwd: (rootThread as CodexThread).cwd, sessionId: (rootThread as CodexThread).sessionId };
 }
 
+/*
+ * ===========================================================================
+ * HOTFIX 0.6.1 — THE HOST WIRING, DRIVEN THE WAY PRODUCTION DRIVES IT
+ * ===========================================================================
+ *
+ * A `phase-verifier` deleted BOTH `tails: this.#tails` and
+ * `maxTranscriptBytes: this.#maxTranscriptBytes` from the single production
+ * `readCodexEngine(...)` call site in `src/extension.ts` and re-ran the suite:
+ * `extension.test.ts` **90/90 green**, `isolation.test.ts` and
+ * `codex/liveness.test.ts` **60/60 green**. The entire user-facing half of the
+ * hotfix was deletable without a red test, because every H.2-H.5 case
+ * constructs `new CodexTailStore()` BY HAND.
+ *
+ * That is the D4 class, which `CLAUDE.md` records twice and which the same
+ * repository then shipped a third time — a value with exactly one production
+ * assignment site has that site untested until something drives it end to end.
+ *
+ * These two tests drive `CodexEnginePath` itself. Nothing is passed by hand
+ * that production does not pass.
+ */
+describe('hotfix 0.6.1 — CodexEnginePath owns the store and the limit', () => {
+  it('holds tails across polls, so the fix is reachable from production', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd } = await codexBaselineRoot(root);
+    const poll = manualPollTrigger();
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      log: captureLog().log,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+
+    /*
+     * A store that survives a pass is the whole hotfix, and `tailsHeld` is
+     * the only place it is observable from outside. Deleting `tails:` from
+     * the call site in `src/extension.ts` makes this ZERO — verified by
+     * mutation, which is the only way this assertion earns its place.
+     */
+    expect(path.diagnostics.tailsHeld).toBeGreaterThan(0);
+    const afterStart = path.diagnostics.tailsHeld;
+
+    poll.fire();
+    await Promise.resolve();
+    // Still the SAME store, not a fresh one per pass.
+    expect(path.diagnostics.tailsHeld).toBe(afterStart);
+    path.dispose();
+  }, 120_000);
+
+  it('applies the size limit and names the file on the diagnostics channel, ONCE', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd } = await codexBaselineRoot(root);
+    const poll = manualPollTrigger();
+    const events: DiagnosticsEvent[] = [];
+
+    /*
+     * A limit BELOW every transcript in the corpus, so the skip is a fact
+     * about the setting rather than about a file this test had to plant. The
+     * fixture's smallest rollout is ~50 KB.
+     */
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      log: captureLog().log,
+      pollTrigger: poll.trigger,
+      maxTranscriptBytes: 1024,
+      onDiagnostic: (event) => events.push(event),
+    });
+    await path.start();
+
+    // Deleting `maxTranscriptBytes:` from the call site makes this 0.
+    expect(path.diagnostics.skippedTranscripts).toBeGreaterThan(0);
+    expect(path.diagnostics.sessions).toBe(0);
+
+    const skips = events.filter((e) => e.kind === 'transcriptSkipped');
+    expect(skips.length).toBe(path.diagnostics.skippedTranscripts);
+    const first = skips[0];
+    expect(first?.kind).toBe('transcriptSkipped');
+    if (first?.kind !== 'transcriptSkipped') throw new Error('unreachable');
+    expect(first.engine).toBe('codex');
+    // A BASENAME, never a path: this channel is a surface a user is invited
+    // to paste into a bug report, and an absolute path here begins
+    // `C:\\Users\\<user>\\` on Windows.
+    expect(first.file).toMatch(/^rollout-/);
+    expect(first.file).not.toMatch(/[\\/]/);
+    // The size AND the limit: "too big" with no number leaves a user nothing
+    // to set the setting to.
+    expect(first.reason).toMatch(/^oversize:\d+ limit=1024$/);
+
+    // ONCE. A 3 GB transcript skipped every poll would otherwise write a line
+    // a second for as long as the window is open.
+    const afterStart = skips.length;
+    poll.fire();
+    await Promise.resolve();
+    poll.fire();
+    await Promise.resolve();
+    expect(events.filter((e) => e.kind === 'transcriptSkipped')).toHaveLength(afterStart);
+    path.dispose();
+  }, 120_000);
+});
+
 describe('DoD 3.2 — the Codex engine is on when its data root exists, and off when it does not', () => {
   it('is silently OFF with an absent root, and says so exactly ONCE at info level', async () => {
     const dir = await makeTempDir();
@@ -3571,16 +3690,67 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
     await rm(dirname(root), { recursive: true, force: true });
   });
 
-  it('declares no Codex setting: the switch is the data root, and only the data root', async () => {
+  /*
+   * NARROWED BY HOTFIX 0.6.1, AND THE NARROWING IS THE INTERESTING PART.
+   *
+   * This test used to assert that NO manifest key contains the word "codex".
+   * `agentDeck.codex.maxTranscriptBytes` breaks that sentence and does not
+   * break the decision behind it. DoD 3.2's rule is about a SWITCH: the Codex
+   * engine is on when its data root exists, and there is no setting a user has
+   * to find and flip to make their sessions appear — the failure mode being
+   * ruled out is "the extension observes nothing and never says why".
+   *
+   * A size ceiling is not a switch. It cannot turn the engine off (its floor
+   * is 1 MiB, comfortably above any real session's first read), it has a
+   * working default, and every value of it leaves the engine reading.
+   *
+   * So the assertion is re-pointed at the property rather than at the word:
+   * no setting enables, disables or gates the Codex engine, and the engine
+   * still reads with every setting at its default. Weakening it to "keys may
+   * contain codex" and stopping there would have deleted the guard instead of
+   * re-aiming it.
+   */
+  it('declares no Codex ON/OFF setting: the switch is the data root, and only the data root', async () => {
     const manifest = JSON.parse(
       await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
-    ) as { contributes?: { configuration?: { properties?: Record<string, unknown> } } };
-    const keys = Object.keys(manifest.contributes?.configuration?.properties ?? {});
+    ) as {
+      contributes?: {
+        configuration?: { properties?: Record<string, { type?: unknown; default?: unknown }> };
+      };
+    };
+    const properties = manifest.contributes?.configuration?.properties ?? {};
+    const keys = Object.keys(properties);
     expect(keys.length).toBeGreaterThan(0);
-    for (const key of keys) {
-      expect(key.toLowerCase(), `${key} is a Codex setting; DoD 3.2 says there is none`)
-        .not.toContain('codex');
+
+    // No boolean anywhere: a switch is what a boolean IS, and the enable/
+    // disable shape this rules out has no other spelling in a settings UI.
+    for (const [key, property] of Object.entries(properties)) {
+      expect(property.type, `${key} is a boolean; DoD 3.2 forbids an engine switch`)
+        .not.toBe('boolean');
     }
+
+    // And no key names enabling, disabling or a mode.
+    const forbidden = ['enable', 'disable', 'enabled', 'disabled', 'engines', 'mode'];
+    for (const key of keys) {
+      for (const word of forbidden) {
+        expect(key.toLowerCase(), `${key} looks like an engine switch (${word})`)
+          .not.toContain(word);
+      }
+    }
+
+    // THE CONTROL, and it is what makes the two loops above more than a
+    // spelling rule: with every setting at its manifest default, the engine
+    // reads a real corpus and produces sessions. A future setting that turned
+    // the engine off by default would pass both loops and fail here.
+    const staged = await stageCodexRoot(false);
+    const outcome = await readCodexEngine({
+      root: staged,
+      maxTranscriptBytes: readSettings(undefined)['codex.maxTranscriptBytes'],
+    });
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    expect(outcome.result.threads.length).toBeGreaterThan(0);
+    expect(outcome.result.skipped).toHaveLength(0);
   });
 
   it('a Codex hook event moves the root session from idle to live', async () => {
@@ -3810,11 +3980,34 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
   });
 
   it('binds the socket with no Claude Code project, and a real Codex hook is attributed', async () => {
-    process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
-    const lonely = await workspaceWithNoClaudeCode();
+    const staged = await stageCodexRoot(false);
+    process.env[CODEX_HOME_VAR] = staged;
+
+    /*
+     * THE WORKSPACE IS THE CORPUS'S OWN `cwd`, and hotfix 0.6.1 is why.
+     *
+     * It used to be `workspaceWithNoClaudeCode()` — a temp directory unrelated
+     * to the staged transcripts. That worked because the engine parsed EVERY
+     * transcript and left the workspace decision to a `workspaceMatch` flag the
+     * host filtered on afterwards; the threads were there to attribute hooks to
+     * even though none of them would ever reach the deck.
+     *
+     * The engine now stops reading a foreign transcript after its first 256
+     * KiB, so a workspace that matches nothing has no threads at all — and a
+     * test asserting hook attribution against zero threads was asserting
+     * nothing. Pointing the workspace at the corpus is not a workaround: it is
+     * what "a real Codex hook is attributed" was always supposed to mean, and
+     * the sessions being attributed are now sessions that would actually
+     * render.
+     *
+     * `ccEnabled: false` still holds, which is the property this test is
+     * really about: that path is a Codex scratch directory with no Claude Code
+     * project, and it does not exist on this machine at all.
+     */
+    const { cwd } = await codexBaselineRoot(staged);
 
     const port = await activateOnFreePort((freePort) => {
-      mock.setWorkspaceFolder(lonely);
+      mock.setWorkspaceFolder(cwd);
       mock.setConfig(CONFIG_SECTION, { port: freePort });
     });
 

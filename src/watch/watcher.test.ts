@@ -611,7 +611,7 @@ describe('ProjectWatcher — read-only (G1)', () => {
       onBatch: () => undefined,
       projectsRoot: root,
       debounceMs: 10,
-      watchFactory: createChokidarWatchFactory({ usePolling: true, pollIntervalMs: 20 }),
+      watchFactory: createChokidarWatchFactory(),
     });
     await watcher.start();
     const before = await snapshotTree(root);
@@ -718,5 +718,159 @@ describe('ProjectWatcher — real chokidar', () => {
     // If this left a handle open, vitest would hang rather than fail; the
     // assertion below is the cheap half of the check.
     expect(watcher.diagnostics.disposed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.7.0 DoD 1b.10 — the slug directory that does not exist yet
+// ---------------------------------------------------------------------------
+//
+// FOUND BY THE 1b.8 LIVE SMOKE, 2026-09-07, and neither half was visible to
+// any test here because every fixture corpus is a slug directory that already
+// exists.
+//
+// The user opened a second window on a repo Claude Code had never run in.
+// Activation was 13:14:35Z; CC created the project directory at 13:17Z, when
+// /init first ran a Bash tool. The deck showed cc=0 for five minutes and
+// would have shown it forever.
+//
+// TWO INDEPENDENT CAUSES, each fatal on its own:
+//
+//   D1  the watcher watches <projectsRoot>/<slug>, and chokidar given a path
+//       that does not exist reports nothing and does not begin reporting when
+//       it appears. The only other poll trigger is an fs event on that same
+//       absent path, and the host tick calls pump() and never refresh(). So
+//       there is exactly ONE discovery attempt per window, at activation.
+//
+//   D1b the slug encoder replaced the separators and NOT spaces, while CC
+//       replaces spaces too. Measured against the real directory: ours ended
+//       the workspace name with its spaces INTACT, while CC had written
+//       the same name with its spaces as DASHES. No match, exact or
+//       case-insensitive, so that window was watching a path that could
+//       never exist.
+
+describe('1b.10 — a slug directory created AFTER activation', () => {
+  it('discovers the session on the next poll (D1)', async () => {
+    const root = await makeProjectsRoot();
+    // The slug directory is deliberately NOT created. That is the ordinary
+    // state of a repository Claude Code has not run in yet.
+    const slugDir = join(root, SLUG);
+
+    const batches: TailBatch[] = [];
+    const watcher = new ProjectWatcher({
+      workspacePath: WORKSPACE,
+      onBatch: (batch) => {
+        batches.push(batch);
+      },
+      env: { CLAUDE_PROJECTS_ROOT: root },
+      homedir: () => 'c:\\nowhere',
+      watchFactory: createChokidarWatchFactory({ usePolling: true, pollIntervalMs: 20 }),
+      debounceMs: 20,
+    });
+
+    try {
+      await watcher.start();
+      // The activation poll found nothing, which is correct and is not the
+      // defect: there was nothing there to find.
+      const atStart = batches.length;
+      expect(watcher.diagnostics.discoveryFailures).toBeGreaterThan(0);
+
+      // Now Claude Code starts, exactly as it did in the smoke.
+      await mkdir(slugDir, { recursive: true });
+      await writeFile(
+        join(slugDir, SESSION_A + '.jsonl'),
+        jsonl({
+          type: 'user',
+          uuid: '11111111-1111-4111-8111-111111111111',
+          sessionId: SESSION_A,
+          version: '2.1.234',
+          timestamp: '2026-09-07T13:17:00.000Z',
+          cwd: WORKSPACE,
+          message: { role: 'user', content: 'hello' },
+        }),
+        'utf8',
+      );
+
+      // Bounded rather than slept on, and the ceiling is generous: what is
+      // asserted is that discovery happens AT ALL, and on the code this test
+      // was written against it never does.
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        if (batches.slice(atStart).some((x) => x.newFiles.length > 0)) break;
+        if (Date.now() > deadline) {
+          throw new Error(
+            'the slug directory was created after activation and was never discovered: ' +
+              String(batches.length - atStart) + ' batches since, ' +
+              String(watcher.diagnostics.discoveryFailures) + ' discovery failures, ' +
+              String(watcher.diagnostics.fsEvents) + ' fsEvents, ' +
+              String(watcher.diagnostics.lateAttachments) + ' lateAttachments, ' +
+              String(watcher.diagnostics.watchErrors) + ' watchErrors ' +
+              String(watcher.diagnostics.lastWatchError ?? ''),
+          );
+        }
+        await new Promise((r) => setTimeout(r, 25));
+      }
+
+      const discovered = batches.slice(atStart).flatMap((x) => x.newFiles);
+      expect(discovered.some((f) => f.includes(SESSION_A))).toBe(true);
+      // The switch is OBSERVABLE, not merely effective: a window whose deck
+      // filled late says so, and a counter nothing reads is a counter that can
+      // be wrong forever.
+      expect(watcher.diagnostics.lateAttachments).toBe(1);
+    } finally {
+      await watcher.dispose();
+    }
+  }, 30_000);
+});
+
+describe('1b.10 — the slug encoder and a workspace path with spaces (D1b)', () => {
+  /*
+   * THE WITNESS IS A REAL DIRECTORY, AND IT IS NOT THIS PATH.
+   *
+   * Measured on the user's machine 2026-09-07, during the 1b.8 smoke: the
+   * directory Claude Code created for a real workspace path containing two
+   * spaces had written both of them as dashes. **The real pair is not
+   * reproduced here** — it carries developer identity, which the privacy sweep
+   * refuses under `src/` and which no allow rule covers for a project slug —
+   * so it lives in the phase-1b lab evidence and this test carries a synthetic
+   * pair with the identical shape.
+   *
+   * That single real directory is the whole evidence for the space rule, and
+   * it is ONE witness — so the rule asserted here is exactly what it shows (a
+   * space becomes a dash) and nothing wider. A future capture that contradicts
+   * it turns this red, which is the signal to re-measure rather than to widen
+   * the class quietly.
+   *
+   * `fixtures/synthetic-path-matrix/slug-cases.json` carried the opposite
+   * expectation until this date, with a note saying in as many words that it
+   * was NOT witnessed from a CC capture. It was honest and it was wrong; the
+   * smoke supplied the witness it said it lacked.
+   */
+  const SPACED_WORKSPACE = 'C:\\Users\\dev\\Documents\\Two Word Repo';
+  const CC_ACTUAL = 'c--Users-dev-Documents-Two-Word-Repo';
+
+  it('equals the directory Claude Code actually made', () => {
+    // Case-insensitively: the drive letter case varies between CC versions,
+    // and both spellings occur in this repository own history.
+    expect(slugifyWorkspace(SPACED_WORKSPACE).toLowerCase()).toBe(CC_ACTUAL.toLowerCase());
+  });
+
+  it('leaves no space in a slug, and moves no slug that had none', () => {
+    expect(slugifyWorkspace(SPACED_WORKSPACE)).not.toMatch(/ /);
+    // THE CONTROL, and it is the assertion that keeps the change narrow:
+    // every corpus this repository has captured is a spaceless path, and not
+    // one of their slugs may move.
+    expect(slugifyWorkspace('c:\\Users\\dev\\projects\\agent-deck')).toBe(
+      'c--Users-dev-projects-agent-deck',
+    );
+    expect(slugifyWorkspace(WORKSPACE)).toBe(SLUG);
+  });
+
+  it('agrees with CC even where CC own encoding is lossy', () => {
+    // Guards the direction nobody thinks about: two genuinely different
+    // workspaces CAN collide under this encoding, and that is correct
+    // because it is the collision CC itself makes when it picks a project
+    // directory. Agreeing with CC is the behaviour; a wider collapse is not.
+    expect(slugifyWorkspace('c:\\ws\\a b')).toBe(slugifyWorkspace('c:\\ws\\a-b'));
   });
 });

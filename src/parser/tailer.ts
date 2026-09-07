@@ -122,7 +122,32 @@ export function resolveProjectsRoot(options: RootOptions = {}): {
  */
 export function slugifyWorkspace(workspacePath: string): string {
   const trimmed = workspacePath.replace(/[\\/]+$/, '');
-  return trimmed.replace(/[:\\/]/g, '-');
+  // SPACE IS IN THIS CLASS BECAUSE CLAUDE CODE PUTS IT THERE (v0.7.0 DoD
+  // 1b.10, found by the 1b.8 live smoke on 2026-09-07).
+  //
+  // The encoder replaced ':' and both separators and left spaces alone, so a
+  // workspace whose path contains a space produced a slug Claude Code never
+  // writes. Measured against the real directory on the user's machine: for a
+  // workspace whose last segment was two words, this function returned that
+  // segment with its space INTACT while Claude Code had already created the
+  // directory with the space as a DASH. No match, exact or case-insensitive
+  // — so that window watched a path that could not exist and showed an empty
+  // deck for as long as it stayed open. Every corpus this repository has ever
+  // captured is a spaceless path, which is exactly why no test saw it.
+  // The real pair is deliberately NOT written here: an actual workspace path
+  // identifies its owner, `scripts/privacy-sweep.mjs` gates on exactly that
+  // under `src/`, and a project slug has no allow rule at all. It is recorded
+  // in the phase-1b lab evidence. (The sweep caught this comment before it
+  // was committed, which is the only reason no history had to be rebuilt.)
+  //
+  // ONE WITNESS, AND THE CLASS IS KEPT TO WHAT IT SHOWS. A single real
+  // directory is the whole evidence for the space rule; it is not evidence
+  // about any other character CC might also fold. Widening this class on a
+  // guess would silently merge workspaces that are genuinely different, so a
+  // character joins it when a captured directory name shows CC folding it and
+  // not before. `watcher.test.ts`'s 1b.10 block pins the witness and pins the
+  // spaceless slugs as unmoved.
+  return trimmed.replace(/[:\\/ ]/g, '-');
 }
 
 /**

@@ -40,6 +40,7 @@ import {
   CODEX_ABSENT_LOG,
   CONFIG_SECTION,
   CodexEnginePath,
+  ABSENT_ROOT_REPROBE_MS,
   DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS,
   DEFAULT_LIVENESS_THRESHOLD_MS,
   DEFAULT_PORT,
@@ -4862,5 +4863,101 @@ describe('DoD 5.0b - the Codex tap has a health of its own', () => {
     const { codex } = taps(host, seen);
     expect(host.dataPath.codex.diagnostics.enabled, `the control: Codex is off`).toBe(false);
     expect(codex.degraded, `an engine that is not running is not degraded`).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.7.0 DoD 1b.10 — a data root that appears AFTER activation
+// ---------------------------------------------------------------------------
+//
+// The 1b.8 smoke found this in the Claude Code half, where it is the ORDINARY
+// case: Claude Code creates projects/<slug>/ on the first session in a
+// workspace, so a window opened before that ran watched a path that did not
+// exist and never looked again. The user asked whether the other two engines
+// have the same shape. They do, and it was written into the code as a
+// deliberate design: "Read once. Present -> start polling. Absent -> off",
+// with an early return that armed nothing.
+//
+// The remedy differs from the Claude Code one on purpose. There the parent is
+// projects/, which holds nothing but project directories, so a narrow watch is
+// right. Here the parent is the user home directory, and watching a home
+// directory to learn whether one folder appeared is not a proportionate thing
+// for a read-only observer to do — so these two get a cheap existence probe on
+// a slow cadence instead. ABSENT_ROOT_REPROBE_MS carries that reasoning.
+
+describe('1b.10 — an engine root that appears after activation', () => {
+  it('OpenCode: an absent store that appears is picked up without a reload', async () => {
+    const dir = await makeTempDir();
+    const sink = captureLog();
+    const poll = manualPollTrigger();
+    let changes = 0;
+
+    // The store does NOT exist yet. This is a machine where OpenCode has
+    // never run, which is the normal case rather than a fault.
+    const dbPath = join(dir, 'opencode', 'opencode.db');
+    const path = new OpenCodeEnginePath({
+      workspacePaths: ['c:\\ws\\anything'],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {
+        changes += 1;
+      },
+      dbPath,
+      log: sink.log,
+      now: () => 1_000,
+      pollTrigger: poll.trigger,
+      walWatchFactory: () => ({ close: () => {} }),
+    });
+
+    try {
+      path.start();
+      expect(path.diagnostics.enabled).toBe(false);
+      expect(path.diagnostics.absentLogs).toBe(1);
+      expect(path.diagnostics.lateStarts).toBe(0);
+      // The probe IS armed, at the slow cadence and not the poll cadence.
+      expect(poll.registrations).toStrictEqual([ABSENT_ROOT_REPROBE_MS]);
+
+      // A probe while it is still absent changes nothing and says nothing.
+      poll.fire();
+      expect(path.diagnostics.enabled).toBe(false);
+      expect(path.diagnostics.lateStarts).toBe(0);
+      expect(sink.lines).toHaveLength(1);
+
+      // Now OpenCode runs for the first time.
+      const real = copyCorpus(smallestCorpus(), dir);
+      await mkdir(join(dir, 'opencode'), { recursive: true });
+      await copyFile(real, dbPath);
+
+      poll.fire();
+      expect(path.diagnostics.enabled).toBe(true);
+      expect(path.diagnostics.lateStarts).toBe(1);
+      // The deck is told, rather than left stale until something else emits.
+      expect(changes).toBeGreaterThan(0);
+      // STILL ONE LINE: a window that recovers must not also nag.
+      expect(sink.lines).toHaveLength(1);
+    } finally {
+      path.dispose();
+    }
+  });
+
+  it('OpenCode: dispose stops the probe, so a machine without it leaks no timer', async () => {
+    const dir = await makeTempDir();
+    const poll = manualPollTrigger();
+    const path = new OpenCodeEnginePath({
+      workspacePaths: ['c:\\ws\\anything'],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      dbPath: join(dir, 'nothing', 'opencode.db'),
+      log: captureLog().log,
+      now: () => 1_000,
+      pollTrigger: poll.trigger,
+      walWatchFactory: () => ({ close: () => {} }),
+    });
+    path.start();
+    expect(poll.stops()).toBe(0);
+    path.dispose();
+    // The probe is armed on exactly the machines that have no OpenCode, so
+    // leaking it would leave a timer running for the whole session on every
+    // window belonging to a user who does not use this engine at all.
+    expect(poll.stops()).toBe(1);
   });
 });

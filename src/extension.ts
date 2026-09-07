@@ -462,6 +462,11 @@ export interface OpenCodeDiagnostics {
   /** Reads returning `degraded` — the last good content is kept. */
   degradedReads: number;
   /** Liveness polls the engine reports having attempted. */
+  /**
+   * Times an absent Codex root appeared AFTER activation and the engine came
+   * up without a reload (v0.7.0 DoD 1b.10). Normally 0.
+   */
+  lateStarts: number;
   livenessPolls: number;
   livenessDegraded: boolean;
   /** Emissions produced by {@link OpenCodeEnginePath.emit}. */
@@ -561,6 +566,10 @@ export class OpenCodeEnginePath {
   #disposed = false;
 
   #absentLogs = 0;
+  /** The slow re-probe held only while the store is absent (DoD 1b.10). */
+  #absentProbe: PollTriggerHandle | null = null;
+  /** Times an absent store appeared later and this engine came up (DoD 1b.10). */
+  #lateStarts = 0;
   #contentReads = 0;
   #contentFailures = 0;
   #schemaMismatches = 0;
@@ -593,6 +602,7 @@ export class OpenCodeEnginePath {
       disposed: this.#disposed,
       dbPath: this.dbPath,
       absentLogs: this.#absentLogs,
+      lateStarts: this.#lateStarts,
       contentReads: this.#contentReads,
       contentFailures: this.#contentFailures,
       schemaMismatches: this.#schemaMismatches,
@@ -622,12 +632,47 @@ export class OpenCodeEnginePath {
     this.#started = true;
 
     if (!existsSync(this.dbPath)) {
-      // ONCE. The probe is not on a tick, so there is no second call site; the
-      // counter exists so a test can prove that rather than assume it.
+      // ONCE, still: the re-probe below logs nothing, so a machine without
+      // OpenCode says this one line for the life of the window and no more.
       this.#absentLogs += 1;
       this.#log('info', OPENCODE_ABSENT_LOG);
+      this.#armAbsentReprobe();
       return;
     }
+    this.#enable();
+  }
+
+  /**
+   * Look again for a store that was absent at activation (v0.7.0 DoD 1b.10).
+   *
+   * The Claude Code half of this defect is what the 1b.8 smoke found; this is
+   * the same shape in the engine that shares the least code with it. `start()`
+   * returned before arming anything, so a user who first ran OpenCode with VS
+   * Code already open saw an empty deck until they reloaded, with nothing to
+   * tell them that a reload was the remedy.
+   *
+   * See {@link ABSENT_ROOT_REPROBE_MS} for why this is a slow probe rather
+   * than the directory watch the Claude Code half uses.
+   */
+  #armAbsentReprobe(): void {
+    if (this.#disposed || this.#absentProbe !== null) return;
+    this.#absentProbe = this.#pollTrigger(() => {
+      this.#reprobeAbsentStore();
+    }, ABSENT_ROOT_REPROBE_MS);
+  }
+
+  #reprobeAbsentStore(): void {
+    if (this.#disposed || this.#enabled) return;
+    if (!existsSync(this.dbPath)) return;
+    this.#cancelAbsentReprobe();
+    this.#lateStarts += 1;
+    this.#enable();
+    // The deck is stale by up to one probe interval, so say so now.
+    this.#onChange();
+  }
+
+  /** Everything `start()` does once the store is known to be there. */
+  #enable(): void {
     this.#enabled = true;
 
     this.#liveness = new OcLivenessEngine({
@@ -655,8 +700,20 @@ export class OpenCodeEnginePath {
     this.#disposed = true;
     this.#liveness?.dispose();
     this.#liveness = null;
+    // The absent-store re-probe (DoD 1b.10). Stopped here because it is armed
+    // on exactly the machines that have no OpenCode — so leaking it would
+    // leave a timer running for the whole session on every window belonging to
+    // a user who does not use this engine at all, which is the population the
+    // probe is cheapest for and the one that would notice least.
+    this.#cancelAbsentReprobe();
     this.#content = [];
     this.#previous.clear();
+  }
+
+  #cancelAbsentReprobe(): void {
+    const handle = this.#absentProbe;
+    this.#absentProbe = null;
+    handle?.stop();
   }
 
   /** The workspace-matching OpenCode sessions, with liveness overlaid. */
@@ -898,6 +955,29 @@ export const CODEX_ABSENT_LOG =
  */
 export const DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS = 1000;
 
+/**
+ * How often an engine whose data root was ABSENT at activation looks again
+ * (v0.7.0 DoD 1b.10).
+ *
+ * **WHY THIS IS NOT THE CC FIX'S SHAPE, which is the part worth reading.** The
+ * Claude Code half of 1b.10 watches `projects/` for the slug directory
+ * appearing, and that is cheap and precise because `projects/` contains
+ * nothing but project directories. The equivalent for these two engines would
+ * be a watch on the PARENT of `~/.codex` or of OpenCode's data directory —
+ * which is the user's home directory. Watching a home directory to learn
+ * whether one folder appeared is not a proportionate thing for a read-only
+ * observer to do, so the same defect gets a different remedy: a cheap
+ * existence probe on a slow cadence.
+ *
+ * Thirty seconds because the trigger is installing or first running a tool
+ * while VS Code is already open — a human-scale event, not a per-keystroke
+ * one. The probe is a single `statSync`/`existsSync` on a path, so a machine
+ * that will never have either engine pays two of those a minute and nothing
+ * else; the alternative, which is what shipped until now, is that such a user
+ * must reload the window and has no way to know that.
+ */
+export const ABSENT_ROOT_REPROBE_MS = 30_000;
+
 export interface CodexPathOptions {
   /**
    * Matched against `session_meta.payload.cwd` (spec C1), the same way
@@ -976,6 +1056,11 @@ export interface CodexEngineDiagnostics {
   /** Reads returning `unreadable` — the last good content is kept (G3/G2). */
   unreadableReads: number;
   /** Liveness polls the engine reports having attempted. */
+  /**
+   * Times an absent root appeared AFTER activation and the engine came up
+   * without a reload (v0.7.0 DoD 1b.10). Normally 0.
+   */
+  lateStarts: number;
   livenessPolls: number;
   /** Emissions produced by {@link CodexEnginePath.emit}. */
   emissions: number;
@@ -1120,6 +1205,10 @@ export class CodexEnginePath {
   #disposed = false;
 
   #absentLogs = 0;
+  /** The slow re-probe held only while the root is absent (DoD 1b.10). */
+  #absentProbe: PollTriggerHandle | null = null;
+  /** Times an absent root appeared later and this engine came up (DoD 1b.10). */
+  #lateStarts = 0;
   #contentReads = 0;
   #contentFailures = 0;
   #unreadableReads = 0;
@@ -1159,6 +1248,10 @@ export class CodexEnginePath {
       contentReads: this.#contentReads,
       contentFailures: this.#contentFailures,
       unreadableReads: this.#unreadableReads,
+      // On the surface rather than private: it is the one number that says
+      // a deck filled LATE, and a counter nothing reads can be wrong
+      // forever — which this repository shipped once in `relayed`.
+      lateStarts: this.#lateStarts,
       livenessPolls: this.#livenessPolls,
       emissions: this.#emissions,
       sessions: this.#content.length,
@@ -1189,13 +1282,54 @@ export class CodexEnginePath {
     if (this.#disposed) return;
 
     if (outcome.kind === 'rootAbsent') {
-      // ONCE. The probe is not on a tick before this point, so there is no
-      // second call site for the initial absence; the counter exists so a
-      // test can prove that rather than assume it.
+      // ONCE, still: the re-probe below logs nothing, so a machine without
+      // Codex says this one line for the life of the window and no more.
       this.#absentLogs += 1;
       this.#log('info', CODEX_ABSENT_LOG);
+      this.#armAbsentReprobe();
       return;
     }
+    this.#enable();
+  }
+
+  /**
+   * Look again for a root that was absent at activation (v0.7.0 DoD 1b.10).
+   *
+   * Found by the 1b.8 smoke on the Claude Code half: an engine whose data
+   * directory did not exist when the window opened stayed off for the life of
+   * that window, because `start()` returned before arming anything. For Claude
+   * Code that is the ORDINARY case — the slug directory is created by the
+   * first session in a workspace — and for these two it is the narrower one of
+   * installing or first running the tool with VS Code already open. Same
+   * shape, same silence, and the same answer: look again.
+   */
+  #armAbsentReprobe(): void {
+    if (this.#disposed || this.#absentProbe !== null) return;
+    this.#absentProbe = this.#pollTrigger(() => {
+      void this.#reprobeAbsentRoot();
+    }, ABSENT_ROOT_REPROBE_MS);
+  }
+
+  async #reprobeAbsentRoot(): Promise<void> {
+    if (this.#disposed || this.#enabled) return;
+    const outcome = await this.#readAndApply();
+    if (this.#disposed || outcome.kind === 'rootAbsent') return;
+    this.#cancelAbsentReprobe();
+    this.#lateStarts += 1;
+    this.#enable();
+    // The deck is stale by up to one probe interval, so say so now rather
+    // than waiting for whatever would have emitted next.
+    this.#onChange();
+  }
+
+  #cancelAbsentReprobe(): void {
+    const handle = this.#absentProbe;
+    this.#absentProbe = null;
+    handle?.stop();
+  }
+
+  /** Everything `start()` does once the root is known to be there. */
+  #enable(): void {
     this.#enabled = true;
 
     this.#liveness = new CodexLivenessEngine({
@@ -1233,6 +1367,9 @@ export class CodexEnginePath {
     this.#liveness = null;
     this.#contentPollHandle?.stop();
     this.#contentPollHandle = undefined;
+    // The absent-root re-probe (DoD 1b.10), for the reason its OpenCode twin
+    // gives: it is armed precisely on the windows that have no Codex.
+    this.#cancelAbsentReprobe();
     this.#content = [];
     this.#threads = [];
     this.#previous.clear();

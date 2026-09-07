@@ -791,10 +791,25 @@ describe('1b.10 — a slug directory created AFTER activation', () => {
         'utf8',
       );
 
-      // Bounded rather than slept on, and the ceiling is generous: what is
-      // asserted is that discovery happens AT ALL, and on the code this test
-      // was written against it never does.
-      const deadline = Date.now() + 5_000;
+      // Bounded rather than slept on. The ceiling is a LIVENESS bound — "did
+      // it happen at all" — and NOT a performance claim, which is why it is
+      // generous and why raising it is not the forbidden act.
+      //
+      // IT WAS 5 s AND THAT WAS TOO TIGHT, found on the first full-suite run
+      // after this test was written: green alone and in three gate runs, red
+      // under the full suite, at real chokidar readiness plus real fs events on
+      // a loaded machine. That is this repository's recorded "a test that
+      // passes or fails by CPU load" class, and I wrote one — the rule it
+      // records is that such a failure is a defect report about the TEST.
+      //
+      // The distinction from widening a perf budget, because they look alike
+      // and are not: a budget asserts the product is FAST and its number is the
+      // claim, so moving it destroys the claim. This asserts the product WORKS
+      // and the number is only how long the harness is willing to wait. The
+      // mutation sensitivity is untouched by it — the mutations this test
+      // exists for (remove the root watch, remove the onReady re-check) make
+      // discovery never happen, and no deadline rescues never.
+      const deadline = Date.now() + 25_000;
       for (;;) {
         if (batches.slice(atStart).some((x) => x.newFiles.length > 0)) break;
         if (Date.now() > deadline) {

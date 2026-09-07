@@ -35,6 +35,8 @@ import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { argv, exit, hrtime } from 'node:process';
 
+import { classifyExit } from './exit-class.mjs';
+
 const OUT_DIR = 'docs/evidence/runner';
 const LEDGER = path.join(OUT_DIR, 'LEDGER.md');
 
@@ -60,6 +62,20 @@ const ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
 function arg(name, fallback) {
   const at = argv.indexOf(name);
   return at === -1 ? fallback : argv[at + 1];
+}
+
+// `--explain <code>` answers "I saw exit N, what is it?" and writes NOTHING.
+//
+// Phase 1c added it because the answer is not obvious and the obvious answer is
+// wrong: 127 at a Git Bash prompt is not "command not found", it is every
+// Windows abnormal-termination status collapsed into eight bits. A reader who
+// finds a 127 in a scrollback needs this before they need the ledger.
+const explainAt = argv.indexOf('--explain');
+if (explainAt !== -1) {
+  const raw = Number(argv[explainAt + 1]);
+  if (!Number.isFinite(raw)) throw new Error('--explain needs a numeric exit code');
+  console.log(JSON.stringify(classifyExit(raw), null, 2));
+  exit(0);
 }
 
 const runs = Number(arg('--runs', '1'));
@@ -122,6 +138,13 @@ function runOnce(index, headSha) {
         pool: 'suite=threads perf=forks (vitest.config.ts)',
         exit: code,
         signal: signal ?? null,
+        // THE RAW CODE, CLASSIFIED. `cmd.exe` (which `shell: true` uses) hands
+        // a Windows exit status through unchanged; Git Bash does not, and
+        // collapses every abnormal status to 127. A death recorded here is
+        // therefore worth more than the same death read out of a bash
+        // scrollback, and this field is what says so on the record rather than
+        // in a document nobody opens. See `scripts/exit-class.mjs`.
+        exitClass: classifyExit(code, signal ?? null),
         elapsedMs,
         summaryLine,
         lastReporterLine: lines.at(-1) ?? null,
@@ -136,9 +159,16 @@ function runOnce(index, headSha) {
         path.join(OUT_DIR, `${label}-${String(index).padStart(3, '0')}.json`),
         `${JSON.stringify(record, null, 2)}\n`,
       );
+      // An abnormal code is spelled in hex BESIDE its decimal form, because the
+      // decimal form is unreadable and this ledger has already carried the same
+      // status written two different ways (`3221226505` and `-1073740791`).
+      const codeCell =
+        record.exitClass.kind === 'abnormal' || record.exitClass.kind === 'oversized'
+          ? `${String(code)} (${record.exitClass.hex}, bash would say ${String(record.exitClass.posixShellWouldReport)})`
+          : String(code);
       appendFileSync(
         LEDGER,
-        `| ${record.at} | ${label} | ${String(index)} | ${headSha} | ${String(code)} | ` +
+        `| ${record.at} | ${label} | ${String(index)} | ${headSha} | ${codeCell} | ` +
           `${String(elapsedMs)} | ${record.verdict} | ${(summaryLine ?? '(none)').trim()} |\n`,
       );
       resolve(record);

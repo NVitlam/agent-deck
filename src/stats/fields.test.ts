@@ -25,13 +25,25 @@
  * one has a test that names the measurement behind it.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { isToolNode, type SessionState, type ToolNode } from '../model/events.js';
 import { walk } from '../model/graft.js';
 import { classOf, FILE_CLASSES, fileKeyOf, type ToolEngine } from './toolclass.js';
 
-import { readCcSessions, readCodexSessions, readOpenCodeSessions } from './corpus.testkit.js';
+import {
+  CORPUS_READ_BUDGET_MS,
+  readCcSessions,
+  readCodexSessions,
+  readOpenCodeSessions,
+  warmCorpus,
+} from './corpus.testkit.js';
+
+// The ONE cold read of all three corpora, paid here where it has a budget
+// rather than inside whichever test happens to call first. See the hook's
+// header in corpus.testkit.ts: the tests keep vitest's 5 s default and now do
+// only their own work.
+beforeAll(warmCorpus, CORPUS_READ_BUDGET_MS);
 
 function toolsOf(states: readonly SessionState[]): ToolNode[] {
   const out: ToolNode[] = [];

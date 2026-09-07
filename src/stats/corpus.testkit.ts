@@ -235,3 +235,97 @@ export const readOpenCodeSessions = once(readOpenCodeSessionsFresh);
 
 /** Every Codex thread of every committed run, as `SessionState`s. Frozen. */
 export const readCodexSessions = once(readCodexSessionsFresh);
+
+// ---------------------------------------------------------------------------
+// The cold read, hoisted into a hook with a budget of its own
+// ---------------------------------------------------------------------------
+//
+// MEMOISING CONCENTRATED THE COST, IT DID NOT REMOVE IT, and the 20-run block
+// of 2026-09-07 is what showed the difference. Reading once per worker took the
+// three engines from 22.1 s of repeated grafting to 1.13 s — and left ONE cold
+// read, paid by whichever test happens to call first. In the second half of
+// that block the machine ran at roughly half speed and that single read
+// exceeded vitest's 5 s default `testTimeout`, so the run went red at a
+// different test each time: `series.test.ts`'s first assertion twice, and once
+// `corpus.testkit.test.ts`'s "hands back the SAME array object" — a test whose
+// whole body is awaiting an already-memoised promise. A test named for one
+// property failing because of another test's start-up cost is not a signal
+// anybody can read.
+//
+// So the read is hoisted into a `beforeAll` that carries an EXPLICIT budget.
+// That is not a test-timeout bump: the tests keep the 5 s default and now do
+// only their own work, while the hook that does the I/O declares what it needs
+// — which is what `CLAUDE.md` says every hook that shells out or reads a corpus
+// must do, and what `src/hooks/egress.test.ts` already does with `}, 120_000)`.
+
+/**
+ * How long the one cold read of all three corpora may take.
+ *
+ * SET FROM THE SLOW HALF, NOT FROM AN IDLE MACHINE — a budget set from the
+ * faster of two observations is a budget that fails on a normal day, the rule
+ * `src/perf/budgets.ts` applies to every other number here. See
+ * `PHASE_1C_READ_MEASUREMENTS` for the derivation, which is recorded rather
+ * than asserted because the slow half is known by a LOWER BOUND only.
+ */
+export const CORPUS_READ_BUDGET_MS = 30_000;
+
+/**
+ * The measurements this budget rests on, kept beside it.
+ *
+ * `idleMs` is re-derived on every run by {@link warmCorpus}, which prints it.
+ * `slowHalfAtLeastMs` is what the 20-run block established and is deliberately
+ * not a point measurement: four runs went red at the 5 s default, so the read
+ * exceeded 5,000 ms, and nothing recorded how far it went past. The set point
+ * is 3x the conservative reading of that bound, and the printed number is what
+ * lets a later reader replace the estimate with data instead of re-guessing.
+ */
+export const PHASE_1C_READ_MEASUREMENTS = Object.freeze({
+  on: '2026-09-08, main project, 3198 tests, after the TEMP/dist clean-out',
+  /** 362, 358, 381 ms across the three consumer files on a quiet machine. */
+  idleMs: 362,
+  /**
+   * A LOWER BOUND, not a point measurement, and the honest way to say so.
+   *
+   * Four runs of the 2026-09-07 block went red at vitest's 5 s default while
+   * the machine ran at half speed, so the read exceeded 5,000 ms. Nothing
+   * recorded how far past — the timeout fires and the measurement is lost,
+   * which is the whole reason `warmCorpus` prints.
+   */
+  slowHalfAtLeastMs: 5_000,
+  slowHalfAssumedMs: 10_000,
+  budgetMultiple: 3,
+  /**
+   * THE PART WORTH KEEPING. Idle 362 ms against a slow half above 5,000 ms is
+   * a factor of MORE THAN 13, while the suite's wall-clock over the same runs
+   * only doubled (22-26 s to 49-52 s). This read is filesystem-bound and it
+   * degrades far worse than the work around it, so a budget derived by scaling
+   * the idle number by the suite's own slowdown would have been about 800 ms
+   * and would have been wrong by an order of magnitude.
+   */
+  observedDegradationAtLeastX: 13,
+});
+
+/**
+ * Read all three corpora once, print how long it took, and let the caller's
+ * hook budget enforce the ceiling.
+ *
+ * `Promise.all` because the three engines are independent and the point is to
+ * pay the cost once, in one place, where it is visible.
+ */
+export async function warmCorpus(): Promise<void> {
+  const started = performance.now();
+  const [cc, oc, codex] = await Promise.all([
+    readCcSessions(),
+    readOpenCodeSessions(),
+    readCodexSessions(),
+  ]);
+  const ms = performance.now() - started;
+  // Printed, not merely measured: a gate record that carries this number can
+  // tell a slow machine from a regression, which is exactly the distinction
+  // the 20-run block could not make.
+  process.stdout.write(
+    `[corpus] cold read ${ms.toFixed(0)} ms ` +
+      `(cc ${String(cc.length)}, opencode ${String(oc.length)}, codex ${String(codex.length)} sessions; ` +
+      `budget ${String(CORPUS_READ_BUDGET_MS)} ms)\n`,
+  );
+}

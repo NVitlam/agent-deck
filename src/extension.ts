@@ -150,9 +150,10 @@ import type {
 } from './opencode/liveness.js';
 import {
   DEFAULT_HOOK_PORT,
-  HookListener,
   isHookListenerBindError,
 } from './hooks/listener.js';
+import { SharedHookListener } from './hooks/shared.js';
+import type { RelayCounters, RelayRole } from './hooks/relay.js';
 import { readCodexEngine, resolveCodexRoot } from './codex/index.js';
 import {
   CodexTailStore,
@@ -461,6 +462,11 @@ export interface OpenCodeDiagnostics {
   /** Reads returning `degraded` — the last good content is kept. */
   degradedReads: number;
   /** Liveness polls the engine reports having attempted. */
+  /**
+   * Times an absent Codex root appeared AFTER activation and the engine came
+   * up without a reload (v0.7.0 DoD 1b.10). Normally 0.
+   */
+  lateStarts: number;
   livenessPolls: number;
   livenessDegraded: boolean;
   /** Emissions produced by {@link OpenCodeEnginePath.emit}. */
@@ -560,6 +566,10 @@ export class OpenCodeEnginePath {
   #disposed = false;
 
   #absentLogs = 0;
+  /** The slow re-probe held only while the store is absent (DoD 1b.10). */
+  #absentProbe: PollTriggerHandle | null = null;
+  /** Times an absent store appeared later and this engine came up (DoD 1b.10). */
+  #lateStarts = 0;
   #contentReads = 0;
   #contentFailures = 0;
   #schemaMismatches = 0;
@@ -592,6 +602,7 @@ export class OpenCodeEnginePath {
       disposed: this.#disposed,
       dbPath: this.dbPath,
       absentLogs: this.#absentLogs,
+      lateStarts: this.#lateStarts,
       contentReads: this.#contentReads,
       contentFailures: this.#contentFailures,
       schemaMismatches: this.#schemaMismatches,
@@ -621,12 +632,47 @@ export class OpenCodeEnginePath {
     this.#started = true;
 
     if (!existsSync(this.dbPath)) {
-      // ONCE. The probe is not on a tick, so there is no second call site; the
-      // counter exists so a test can prove that rather than assume it.
+      // ONCE, still: the re-probe below logs nothing, so a machine without
+      // OpenCode says this one line for the life of the window and no more.
       this.#absentLogs += 1;
       this.#log('info', OPENCODE_ABSENT_LOG);
+      this.#armAbsentReprobe();
       return;
     }
+    this.#enable();
+  }
+
+  /**
+   * Look again for a store that was absent at activation (v0.7.0 DoD 1b.10).
+   *
+   * The Claude Code half of this defect is what the 1b.8 smoke found; this is
+   * the same shape in the engine that shares the least code with it. `start()`
+   * returned before arming anything, so a user who first ran OpenCode with VS
+   * Code already open saw an empty deck until they reloaded, with nothing to
+   * tell them that a reload was the remedy.
+   *
+   * See {@link ABSENT_ROOT_REPROBE_MS} for why this is a slow probe rather
+   * than the directory watch the Claude Code half uses.
+   */
+  #armAbsentReprobe(): void {
+    if (this.#disposed || this.#absentProbe !== null) return;
+    this.#absentProbe = this.#pollTrigger(() => {
+      this.#reprobeAbsentStore();
+    }, ABSENT_ROOT_REPROBE_MS);
+  }
+
+  #reprobeAbsentStore(): void {
+    if (this.#disposed || this.#enabled) return;
+    if (!existsSync(this.dbPath)) return;
+    this.#cancelAbsentReprobe();
+    this.#lateStarts += 1;
+    this.#enable();
+    // The deck is stale by up to one probe interval, so say so now.
+    this.#onChange();
+  }
+
+  /** Everything `start()` does once the store is known to be there. */
+  #enable(): void {
     this.#enabled = true;
 
     this.#liveness = new OcLivenessEngine({
@@ -654,8 +700,20 @@ export class OpenCodeEnginePath {
     this.#disposed = true;
     this.#liveness?.dispose();
     this.#liveness = null;
+    // The absent-store re-probe (DoD 1b.10). Stopped here because it is armed
+    // on exactly the machines that have no OpenCode — so leaking it would
+    // leave a timer running for the whole session on every window belonging to
+    // a user who does not use this engine at all, which is the population the
+    // probe is cheapest for and the one that would notice least.
+    this.#cancelAbsentReprobe();
     this.#content = [];
     this.#previous.clear();
+  }
+
+  #cancelAbsentReprobe(): void {
+    const handle = this.#absentProbe;
+    this.#absentProbe = null;
+    handle?.stop();
   }
 
   /** The workspace-matching OpenCode sessions, with liveness overlaid. */
@@ -897,6 +955,29 @@ export const CODEX_ABSENT_LOG =
  */
 export const DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS = 1000;
 
+/**
+ * How often an engine whose data root was ABSENT at activation looks again
+ * (v0.7.0 DoD 1b.10).
+ *
+ * **WHY THIS IS NOT THE CC FIX'S SHAPE, which is the part worth reading.** The
+ * Claude Code half of 1b.10 watches `projects/` for the slug directory
+ * appearing, and that is cheap and precise because `projects/` contains
+ * nothing but project directories. The equivalent for these two engines would
+ * be a watch on the PARENT of `~/.codex` or of OpenCode's data directory —
+ * which is the user's home directory. Watching a home directory to learn
+ * whether one folder appeared is not a proportionate thing for a read-only
+ * observer to do, so the same defect gets a different remedy: a cheap
+ * existence probe on a slow cadence.
+ *
+ * Thirty seconds because the trigger is installing or first running a tool
+ * while VS Code is already open — a human-scale event, not a per-keystroke
+ * one. The probe is a single `statSync`/`existsSync` on a path, so a machine
+ * that will never have either engine pays two of those a minute and nothing
+ * else; the alternative, which is what shipped until now, is that such a user
+ * must reload the window and has no way to know that.
+ */
+export const ABSENT_ROOT_REPROBE_MS = 30_000;
+
 export interface CodexPathOptions {
   /**
    * Matched against `session_meta.payload.cwd` (spec C1), the same way
@@ -975,6 +1056,11 @@ export interface CodexEngineDiagnostics {
   /** Reads returning `unreadable` — the last good content is kept (G3/G2). */
   unreadableReads: number;
   /** Liveness polls the engine reports having attempted. */
+  /**
+   * Times an absent root appeared AFTER activation and the engine came up
+   * without a reload (v0.7.0 DoD 1b.10). Normally 0.
+   */
+  lateStarts: number;
   livenessPolls: number;
   /** Emissions produced by {@link CodexEnginePath.emit}. */
   emissions: number;
@@ -1119,6 +1205,10 @@ export class CodexEnginePath {
   #disposed = false;
 
   #absentLogs = 0;
+  /** The slow re-probe held only while the root is absent (DoD 1b.10). */
+  #absentProbe: PollTriggerHandle | null = null;
+  /** Times an absent root appeared later and this engine came up (DoD 1b.10). */
+  #lateStarts = 0;
   #contentReads = 0;
   #contentFailures = 0;
   #unreadableReads = 0;
@@ -1158,6 +1248,10 @@ export class CodexEnginePath {
       contentReads: this.#contentReads,
       contentFailures: this.#contentFailures,
       unreadableReads: this.#unreadableReads,
+      // On the surface rather than private: it is the one number that says
+      // a deck filled LATE, and a counter nothing reads can be wrong
+      // forever — which this repository shipped once in `relayed`.
+      lateStarts: this.#lateStarts,
       livenessPolls: this.#livenessPolls,
       emissions: this.#emissions,
       sessions: this.#content.length,
@@ -1188,13 +1282,54 @@ export class CodexEnginePath {
     if (this.#disposed) return;
 
     if (outcome.kind === 'rootAbsent') {
-      // ONCE. The probe is not on a tick before this point, so there is no
-      // second call site for the initial absence; the counter exists so a
-      // test can prove that rather than assume it.
+      // ONCE, still: the re-probe below logs nothing, so a machine without
+      // Codex says this one line for the life of the window and no more.
       this.#absentLogs += 1;
       this.#log('info', CODEX_ABSENT_LOG);
+      this.#armAbsentReprobe();
       return;
     }
+    this.#enable();
+  }
+
+  /**
+   * Look again for a root that was absent at activation (v0.7.0 DoD 1b.10).
+   *
+   * Found by the 1b.8 smoke on the Claude Code half: an engine whose data
+   * directory did not exist when the window opened stayed off for the life of
+   * that window, because `start()` returned before arming anything. For Claude
+   * Code that is the ORDINARY case — the slug directory is created by the
+   * first session in a workspace — and for these two it is the narrower one of
+   * installing or first running the tool with VS Code already open. Same
+   * shape, same silence, and the same answer: look again.
+   */
+  #armAbsentReprobe(): void {
+    if (this.#disposed || this.#absentProbe !== null) return;
+    this.#absentProbe = this.#pollTrigger(() => {
+      void this.#reprobeAbsentRoot();
+    }, ABSENT_ROOT_REPROBE_MS);
+  }
+
+  async #reprobeAbsentRoot(): Promise<void> {
+    if (this.#disposed || this.#enabled) return;
+    const outcome = await this.#readAndApply();
+    if (this.#disposed || outcome.kind === 'rootAbsent') return;
+    this.#cancelAbsentReprobe();
+    this.#lateStarts += 1;
+    this.#enable();
+    // The deck is stale by up to one probe interval, so say so now rather
+    // than waiting for whatever would have emitted next.
+    this.#onChange();
+  }
+
+  #cancelAbsentReprobe(): void {
+    const handle = this.#absentProbe;
+    this.#absentProbe = null;
+    handle?.stop();
+  }
+
+  /** Everything `start()` does once the root is known to be there. */
+  #enable(): void {
     this.#enabled = true;
 
     this.#liveness = new CodexLivenessEngine({
@@ -1232,6 +1367,9 @@ export class CodexEnginePath {
     this.#liveness = null;
     this.#contentPollHandle?.stop();
     this.#contentPollHandle = undefined;
+    // The absent-root re-probe (DoD 1b.10), for the reason its OpenCode twin
+    // gives: it is armed precisely on the windows that have no Codex.
+    this.#cancelAbsentReprobe();
     this.#content = [];
     this.#threads = [];
     this.#previous.clear();
@@ -1697,7 +1835,7 @@ export class AgentDeckDataPath {
   readonly settings: AgentDeckSettings;
   readonly liveness: LivenessEngine;
   readonly model: SessionModel;
-  readonly listener: HookListener;
+  readonly listener: SharedHookListener;
   readonly watcher: ProjectWatcher;
   /** The second engine. Always constructed; enabled by its store's existence. */
   readonly opencode: OpenCodeEnginePath;
@@ -1759,6 +1897,8 @@ export class AgentDeckDataPath {
    */
   #hookBindAttempted = false;
   #bindError?: { code: string; port: number; message: string };
+  /** The shared listener's role, mirrored for the counters line (DoD 1b.7). */
+  #relayRole: RelayRole = 'idle';
 
   constructor(options: DataPathOptions) {
     this.workspacePath = options.workspacePath;
@@ -1795,7 +1935,32 @@ export class AgentDeckDataPath {
       previewBytes: options.settings.previewBytes,
     });
 
-    this.listener = new HookListener({ port: options.settings.port });
+    /*
+     * PHASE 1b — A SHARED LISTENER, NOT A PRIVATE ONE.
+     *
+     * The port is fixed because the pasted hook snippet names it literally, so
+     * a second window could never bind it and lost liveness entirely. This
+     * object binds when it can and attaches to whichever window did when it
+     * cannot; nothing below this line learns which of the two it got.
+     *
+     * `tailsSession` is a THUNK over the live model rather than a snapshot of
+     * its session ids. A follower attaches at activation, when the model has
+     * discovered nothing yet, and a set captured here would be empty forever —
+     * the ownership filter would then rest entirely on `cwd`, and every
+     * subagent event (whose `cwd` is the agent's, not the workspace's) would be
+     * dropped as foreign.
+     */
+    this.listener = new SharedHookListener({
+      port: options.settings.port,
+      previewBytes: options.settings.previewBytes,
+      workspacePaths: this.workspacePaths,
+      tailsSession: (sessionId) => this.model.hasSession(sessionId),
+      ...(options.scheduler !== undefined ? { scheduler: options.scheduler } : {}),
+      onRoleChange: (role) => {
+        this.#relayRole = role;
+        this.#onDiagnostic?.({ kind: 'listenerRole', role, port: options.settings.port });
+      },
+    });
     this.watcher = new ProjectWatcher({
       workspacePath: options.workspacePath,
       onBatch: (batch: TailBatch) => {
@@ -1852,6 +2017,16 @@ export class AgentDeckDataPath {
     let total = 0;
     for (const level of this.#parseLevels.values()) total += level[key];
     return total;
+  }
+
+  /** This window's shared-listener role (Phase 1b). */
+  get relayRole(): RelayRole {
+    return this.#relayRole;
+  }
+
+  /** The shared listener's relay accounting (Phase 1b). */
+  get relayCounters(): Readonly<RelayCounters> {
+    return this.listener.relayCounters;
   }
 
   get diagnostics(): DataPathDiagnostics {
@@ -2895,6 +3070,14 @@ export class AgentDeckHost {
       ccSessions: this.#engineCounts.cc,
       opencodeSessions: this.#engineCounts.opencode,
       codexSessions: this.#engineCounts.codex,
+      // Read off the shared listener at write time, for the reason this
+      // method's own doc comment gives: the listener owns these numbers, and a
+      // second copy kept in step by hand is how two accounts of one fact begin
+      // to disagree.
+      relayRole: this.dataPath.relayRole,
+      relayFollowers: this.dataPath.relayCounters.followers,
+      relayed: this.dataPath.relayCounters.relayed,
+      relayReceived: this.dataPath.relayCounters.received,
     };
   }
 
@@ -3321,10 +3504,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     onError: (error: unknown) => {
       if (isHookListenerBindError(error)) {
+        /*
+         * DoD 1b.7 — THE MESSAGE NOW SAYS WHAT IT MEANS, WHICH IS NARROWER
+         * THAN WHAT IT USED TO MEAN.
+         *
+         * Before Phase 1b this fired for every busy port, including the common
+         * and entirely benign case of a SECOND AGENT DECK WINDOW — which the
+         * user then read as a defect, because as far as the product was
+         * concerned it was one. That case no longer reaches here at all: the
+         * shared listener probes the port holder, recognises another Agent
+         * Deck leader and attaches to it silently. So an error on this line
+         * now means something specific — the port is held by a process that is
+         * NOT Agent Deck — and the text says so, because a message that names
+         * the wrong cause sends a user hunting for the wrong window.
+         *
+         * The last sentence is unchanged, deliberately. Agent Deck still will
+         * not pick a port: the pasted hook snippet names this number literally
+         * and a listener that quietly moved would be a capture that silently
+         * recorded nothing.
+         */
         void vscode.window.showErrorMessage(
-          `Agent Deck: port ${error.port} is unavailable (${error.code}). ` +
-            `Liveness is unavailable until it is free, or set "${CONFIG_SECTION}.port" ` +
-            'to a different port and reload. Agent Deck will not pick a port for you.',
+          `Agent Deck: port ${error.port} is held by another program (${error.code}), ` +
+            'not by another Agent Deck window — a second window would have joined the ' +
+            `first one automatically. Liveness is unavailable until the port is free, or ` +
+            `set "${CONFIG_SECTION}.port" to a different port and reload. ` +
+            'Agent Deck will not pick a port for you.',
         );
         return;
       }

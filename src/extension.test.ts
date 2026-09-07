@@ -40,6 +40,7 @@ import {
   CODEX_ABSENT_LOG,
   CONFIG_SECTION,
   CodexEnginePath,
+  ABSENT_ROOT_REPROBE_MS,
   DEFAULT_CODEX_ENGINE_POLL_INTERVAL_MS,
   DEFAULT_LIVENESS_THRESHOLD_MS,
   DEFAULT_PORT,
@@ -71,6 +72,10 @@ import type {
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
+import { formatCounters } from './bridge/diagnostics.js';
+import type { DiagnosticsCounters } from './bridge/diagnostics.js';
+import { HookListener } from './hooks/listener.js';
+import { SharedHookListener } from './hooks/shared.js';
 import type { DiagnosticsSink } from './bridge/diagnostics.js';
 import { CODEX_HOME_VAR, readCodexEngine } from './codex/index.js';
 import type { CodexThread } from './codex/index.js';
@@ -246,6 +251,65 @@ async function freePort(): Promise<number> {
  * than letting the run die as a generic timeout or a confusing assertion.
  */
 const PORT_ATTEMPTS = 6;
+
+/**
+ * The status `listener.ts` answers an accepted event with, at module scope.
+ *
+ * A second declaration of a number the G2 block below also names, and that is
+ * the cheaper of two evils here: the alternative is hoisting a helper out of a
+ * describe whose tests this phase does not otherwise touch. Both are pinned by
+ * the same real socket, so they cannot drift apart silently — a wrong value
+ * here fails immediately rather than passing for the wrong reason.
+ */
+const HOOK_OK = 200;
+
+/** POST one hook payload to a bound listener. Resolves with the status. */
+async function postHookEventTo(port: number, payload: unknown): Promise<number> {
+  const body = Buffer.from(JSON.stringify(payload), 'utf8');
+  return new Promise<number>((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port,
+        path: '/event',
+        method: 'POST',
+        agent: false,
+        headers: {
+          'content-type': 'application/json',
+          'content-length': body.length,
+          connection: 'close',
+        },
+      },
+      (res) => {
+        res.resume();
+        res.on('end', () => {
+          resolve(res.statusCode ?? 0);
+        });
+      },
+    );
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+/** A fixed stamp, so a counters line can be compared without a clock. */
+const AT_ISO = '2026-09-06T12:00:00.000Z';
+
+/**
+ * Wait for a condition, or fail naming what was waited for.
+ *
+ * The relay is asynchronous by construction — a frame crosses a real socket —
+ * so the alternative is a fixed sleep, and a fixed sleep is a test that passes
+ * or fails by CPU load.
+ */
+async function waitFor(predicate: () => boolean, what: string, budgetMs = 5_000): Promise<void> {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    if (predicate()) return;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for: ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 
 function isAddrInUse(error: unknown): boolean {
   return (
@@ -1881,6 +1945,205 @@ describe('activate', () => {
     expect(mock.informationMessages).toHaveLength(1);
   });
 
+  it('a window that binds the port reports itself as the leader', async () => {
+    // The control for the collision test below. Without it, `role=refused`
+    // could be the only value this suite ever observes, and a getter wired to
+    // a constant would satisfy every assertion about it.
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    mock.setWorkspaceFolder(await capturedWorkspacePath());
+    await onFreePort({
+      use: async (port) => {
+        mock.setConfig(CONFIG_SECTION, { port });
+        await activate(extensionContext());
+        return currentHost();
+      },
+      collided: (host) => host?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+      discard: async () => {
+        await deactivate();
+      },
+    });
+    const host = currentHost();
+    expect(host?.dataPath.diagnostics.listening).toBe(true);
+    expect(host?.dataPath.relayRole).toBe('leader');
+    expect(mock.errorMessages).toHaveLength(0);
+    const line = host === null ? '' : formatCounters(host.counters(), '2026-09-06T00:00:00.000Z');
+    expect(line).toContain('role=leader');
+  });
+
+  /*
+   * ---------------------------------------------------------------------
+   * v0.7.0 Phase 1b — THE TWO WIRINGS, DRIVEN THE WAY PRODUCTION DRIVES THEM
+   * ---------------------------------------------------------------------
+   *
+   * A `phase-verifier` round on 2026-09-06 found both of these unguarded, and
+   * it is this repository's most-recorded shape arriving for the third time.
+   * `src/extension.ts` is the ONLY production caller of `SharedHookListener`.
+   * Deleting the two lines that pass `workspacePaths` and `tailsSession` left
+   * 118 tests green across every file that touches the host — while the
+   * constructor's defaults (`[]` and `() => false`) make the ownership filter
+   * reject EVERY relayed frame, so a follower window would drop 100 % of its
+   * events and show exactly the dead deck this phase exists to fix. Replacing
+   * the three relay counters with literal `0` was green too, because the only
+   * host-level observation of them was a case where all three are legitimately
+   * zero.
+   *
+   * Every ownership and counter test before these two constructed its input by
+   * hand. That measures the component. These measure the product: production
+   * builds the context, production binds or attaches, and a real payload
+   * crosses a real socket.
+   */
+
+  /** A REAL Agent Deck leader holding a port, so `activate()` meets one of us. */
+  async function leaderOnFreePort(): Promise<{ leader: HookListener; port: number }> {
+    return onFreePort({
+      use: async (port) => {
+        const leader = new HookListener({ port });
+        await leader.start();
+        return { leader, port };
+      },
+    });
+  }
+
+  it('Phase 1b: a window whose port is held by another Agent Deck becomes a follower and is fed', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    const { leader, port } = await leaderOnFreePort();
+    try {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+      await activate(extensionContext());
+
+      const host = currentHost();
+      expect(host).not.toBeNull();
+      const path = host?.dataPath;
+
+      // It attached rather than failing, and it said so ONCE and quietly.
+      expect(path?.relayRole).toBe('follower');
+      expect(mock.errorMessages).toHaveLength(0);
+      expect(path?.diagnostics.bindError).toBeUndefined();
+      // It holds no socket and is nonetheless NOT down — the getter split that
+      // keeps a fed follower from announcing its own hooks silent.
+      expect(path?.listener.bound).toBe(false);
+      expect(path?.diagnostics.listening).toBe(true);
+
+      // ---- arm one: owned by `cwd`, which is `workspacePaths` -------------
+      const bySession = 'phase-1b-unknown-session';
+      expect(path?.model.hasSession(bySession)).toBe(false);
+      expect(
+        await postHookEventTo(port, {
+          session_id: bySession,
+          hook_event_name: 'PreToolUse',
+          tool_use_id: 'toolu_1b_cwd',
+          tool_name: 'Bash',
+          cwd: workspacePath,
+        }),
+      ).toBe(HOOK_OK);
+
+      // ---- arm two: owned by `tailsSession`, with a FOREIGN cwd ------------
+      // The arm that covers a subagent, whose `cwd` is its own worktree. It
+      // can only pass if production really handed the listener a live view of
+      // this window's model.
+      const tailed = path?.model.sessionIds()[0];
+      expect(tailed, 'the captured corpus registered no session').toBeDefined();
+      expect(
+        await postHookEventTo(port, {
+          session_id: tailed,
+          hook_event_name: 'PostToolUse',
+          tool_use_id: 'toolu_1b_tailed',
+          tool_name: 'Bash',
+          cwd: 'D:\\somewhere\\else\\entirely',
+        }),
+      ).toBe(HOOK_OK);
+
+      // ---- and one that belongs to nobody here ----------------------------
+      expect(
+        await postHookEventTo(port, {
+          session_id: 'phase-1b-other-window',
+          hook_event_name: 'PreToolUse',
+          tool_use_id: 'toolu_1b_foreign',
+          tool_name: 'Bash',
+          cwd: 'D:\\another\\workspace',
+        }),
+      ).toBe(HOOK_OK);
+
+      await waitFor(
+        () => (path?.relayCounters.received ?? 0) >= 3,
+        'the three relayed frames to reach the follower',
+      );
+
+      // POSITIVE, PER-SUBJECT. A "dropped" counter at 0 is 0 on an empty map,
+      // and this repository has already shipped a test that rested on one.
+      expect(path?.model.livenessSnapshot(bySession)?.hookEventCount).toBe(1);
+      expect(path?.model.livenessSnapshot(tailed ?? '')?.hookEventCount).toBeGreaterThan(0);
+      // The third was received and thrown away — a different claim from
+      // "never arrived", and the one that proves the FILTER ran.
+      expect(path?.model.livenessSnapshot('phase-1b-other-window')).toBeUndefined();
+      expect(path?.relayCounters.droppedForeign).toBe(1);
+
+      // DoD 1b.7: the counters line, with numbers that are not all zero.
+      const line = formatCounters(host?.counters() as DiagnosticsCounters, AT_ISO);
+      expect(line).toContain('role=follower');
+      expect(line).toContain('followers=0');
+      expect(line).toContain('received=3');
+    } finally {
+      await deactivate();
+      await leader.stop();
+    }
+  });
+
+  it('Phase 1b: a leader window counts the windows attached to it, and the frames it sends', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    mock.setWorkspaceFolder(workspacePath);
+    const port = await onFreePort({
+      use: async (p) => {
+        mock.setConfig(CONFIG_SECTION, { port: p });
+        await activate(extensionContext());
+        return p;
+      },
+      collided: () => currentHost()?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+      discard: async () => {
+        await deactivate();
+      },
+    });
+
+    const follower = new SharedHookListener({ port, tailsSession: () => true });
+    try {
+      const host = currentHost();
+      expect(host?.dataPath.relayRole).toBe('leader');
+      await follower.start();
+      expect(follower.role).toBe('follower');
+
+      await waitFor(
+        () => (host?.dataPath.relayCounters.followers ?? 0) === 1,
+        'the host to register the attached window',
+      );
+      expect(
+        await postHookEventTo(port, {
+          session_id: 'phase-1b-leader-side',
+          hook_event_name: 'PreToolUse',
+          tool_use_id: 'toolu_1b_leader',
+          tool_name: 'Bash',
+          cwd: workspacePath,
+        }),
+      ).toBe(HOOK_OK);
+      await waitFor(
+        () => follower.relayCounters.received >= 1,
+        'the frame to reach the attached window',
+      );
+
+      // The two numbers that were wired to nothing observable until now.
+      const line = formatCounters(host?.counters() as DiagnosticsCounters, AT_ISO);
+      expect(line).toContain('role=leader');
+      expect(line).toContain('followers=1');
+      expect(line).toMatch(/relayed=[1-9]/);
+      expect(line).toContain('received=0');
+    } finally {
+      await follower.stop();
+      await deactivate();
+    }
+  });
+
   it('a port collision surfaces an error message and still renders content', async () => {
     process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
     const { port, release } = await heldPort();
@@ -1895,9 +2158,33 @@ describe('activate', () => {
       // The message must not promise a rebind.
       expect(mock.errorMessages[0]).toContain('will not pick a port for you');
 
+      /*
+       * v0.7.0 DoD 1b.7 — AND IT MUST NAME THE RIGHT CAUSE.
+       *
+       * `heldPort()` holds this port with a bare `createServer()`, which is a
+       * FOREIGN holder, and since Phase 1b that is the only thing that reaches
+       * this message at all: a second Agent Deck window probes, recognises the
+       * leader and attaches without a word. A message that still said "the
+       * port is unavailable" full stop would send a user hunting through their
+       * other VS Code windows for a problem that is not there.
+       */
+      expect(mock.errorMessages[0]).toContain('another program');
+      expect(mock.errorMessages[0]).toContain('not by another Agent Deck window');
+
       const host = currentHost();
       expect(host?.dataPath.diagnostics.listening).toBe(false);
       expect(host?.dataPath.diagnostics.grafts).toBeGreaterThan(0);
+
+      // The role is recorded, and it is 'refused' rather than 'idle': a window
+      // that asked and was turned away is a different state from one that
+      // never had a reason to bind, and the counters line is where a user
+      // reads the difference.
+      expect(host?.dataPath.relayRole).toBe('refused');
+      const line = host === null ? '' : formatCounters(host.counters(), '2026-09-06T00:00:00.000Z');
+      expect(line).toContain('role=refused');
+      expect(line).toContain('followers=0');
+      expect(line).toContain('relayed=0');
+      expect(line).toContain('received=0');
     } finally {
       await release();
     }
@@ -2846,9 +3133,19 @@ describe('G2: a throwing content path refuses one session and leaves the hook ta
       ),
     );
 
-    expect(events).toHaveLength(path.diagnostics.graftRefusals);
-    expect(events.length).toBeGreaterThan(0);
-    const [event] = events as [DiagnosticsEvent];
+    // SCOPED TO REFUSALS (v0.7.0 Phase 1b). The shared listener writes one
+    // `listenerRole` line to this same sink when the window binds, which is
+    // correct — a role change is a diagnostic — and it means an exact count
+    // over EVERY event is no longer a statement about refusals. The equality
+    // that matters is kept, against the population it was always about.
+    const refusals = events.filter((e) => e.kind === 'graftRefused');
+    expect(refusals).toHaveLength(path.diagnostics.graftRefusals);
+    expect(refusals.length).toBeGreaterThan(0);
+    // ...and the role line is asserted rather than tolerated, so this test
+    // still fails if the sink starts carrying something nobody expected.
+    expect(events.filter((e) => e.kind === 'listenerRole')).toHaveLength(1);
+    expect(events).toHaveLength(refusals.length + 1);
+    const [event] = refusals as [DiagnosticsEvent];
     if (event.kind !== 'graftRefused') throw new Error(`unexpected event ${event.kind}`);
     expect(event.code).toBe('unsupportedVersion');
     expect(event.field).toBe('version');
@@ -4566,5 +4863,101 @@ describe('DoD 5.0b - the Codex tap has a health of its own', () => {
     const { codex } = taps(host, seen);
     expect(host.dataPath.codex.diagnostics.enabled, `the control: Codex is off`).toBe(false);
     expect(codex.degraded, `an engine that is not running is not degraded`).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.7.0 DoD 1b.10 — a data root that appears AFTER activation
+// ---------------------------------------------------------------------------
+//
+// The 1b.8 smoke found this in the Claude Code half, where it is the ORDINARY
+// case: Claude Code creates projects/<slug>/ on the first session in a
+// workspace, so a window opened before that ran watched a path that did not
+// exist and never looked again. The user asked whether the other two engines
+// have the same shape. They do, and it was written into the code as a
+// deliberate design: "Read once. Present -> start polling. Absent -> off",
+// with an early return that armed nothing.
+//
+// The remedy differs from the Claude Code one on purpose. There the parent is
+// projects/, which holds nothing but project directories, so a narrow watch is
+// right. Here the parent is the user home directory, and watching a home
+// directory to learn whether one folder appeared is not a proportionate thing
+// for a read-only observer to do — so these two get a cheap existence probe on
+// a slow cadence instead. ABSENT_ROOT_REPROBE_MS carries that reasoning.
+
+describe('1b.10 — an engine root that appears after activation', () => {
+  it('OpenCode: an absent store that appears is picked up without a reload', async () => {
+    const dir = await makeTempDir();
+    const sink = captureLog();
+    const poll = manualPollTrigger();
+    let changes = 0;
+
+    // The store does NOT exist yet. This is a machine where OpenCode has
+    // never run, which is the normal case rather than a fault.
+    const dbPath = join(dir, 'opencode', 'opencode.db');
+    const path = new OpenCodeEnginePath({
+      workspacePaths: ['c:\\ws\\anything'],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {
+        changes += 1;
+      },
+      dbPath,
+      log: sink.log,
+      now: () => 1_000,
+      pollTrigger: poll.trigger,
+      walWatchFactory: () => ({ close: () => {} }),
+    });
+
+    try {
+      path.start();
+      expect(path.diagnostics.enabled).toBe(false);
+      expect(path.diagnostics.absentLogs).toBe(1);
+      expect(path.diagnostics.lateStarts).toBe(0);
+      // The probe IS armed, at the slow cadence and not the poll cadence.
+      expect(poll.registrations).toStrictEqual([ABSENT_ROOT_REPROBE_MS]);
+
+      // A probe while it is still absent changes nothing and says nothing.
+      poll.fire();
+      expect(path.diagnostics.enabled).toBe(false);
+      expect(path.diagnostics.lateStarts).toBe(0);
+      expect(sink.lines).toHaveLength(1);
+
+      // Now OpenCode runs for the first time.
+      const real = copyCorpus(smallestCorpus(), dir);
+      await mkdir(join(dir, 'opencode'), { recursive: true });
+      await copyFile(real, dbPath);
+
+      poll.fire();
+      expect(path.diagnostics.enabled).toBe(true);
+      expect(path.diagnostics.lateStarts).toBe(1);
+      // The deck is told, rather than left stale until something else emits.
+      expect(changes).toBeGreaterThan(0);
+      // STILL ONE LINE: a window that recovers must not also nag.
+      expect(sink.lines).toHaveLength(1);
+    } finally {
+      path.dispose();
+    }
+  });
+
+  it('OpenCode: dispose stops the probe, so a machine without it leaks no timer', async () => {
+    const dir = await makeTempDir();
+    const poll = manualPollTrigger();
+    const path = new OpenCodeEnginePath({
+      workspacePaths: ['c:\\ws\\anything'],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      dbPath: join(dir, 'nothing', 'opencode.db'),
+      log: captureLog().log,
+      now: () => 1_000,
+      pollTrigger: poll.trigger,
+      walWatchFactory: () => ({ close: () => {} }),
+    });
+    path.start();
+    expect(poll.stops()).toBe(0);
+    path.dispose();
+    // The probe is armed on exactly the machines that have no OpenCode, so
+    // leaking it would leave a timer running for the whole session on every
+    // window belonging to a user who does not use this engine at all.
+    expect(poll.stops()).toBe(1);
   });
 });

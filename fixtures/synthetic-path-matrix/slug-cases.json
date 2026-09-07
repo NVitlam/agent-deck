@@ -43,9 +43,9 @@
     "id": "windows-space-in-name",
     "form": "windows",
     "workspacePath": "C:\\Users\\dev\\my ws",
-    "expectedSlug": "C--Users-dev-my ws",
+    "expectedSlug": "C--Users-dev-my-ws",
     "witness": "encoding-rule",
-    "note": "Spaces are preserved by our encoding. NOT witnessed from a CC capture - no observed session lives under a path with a space."
+    "note": "CORRECTED 2026-09-07 (v0.7.0 DoD 1b.10). This row read C--Users-dev-my ws and said in this field that it was NOT witnessed from a CC capture - and it was wrong. The 1b.8 live smoke supplied the witness: Claude Code created a project directory for a real workspace path containing two spaces, and it had written both of them as dashes. The row was a pin on OUR encoding, which is exactly what witness=encoding-rule means, and our encoding did not match CC. It stays encoding-rule because this synthetic path is still not a captured directory name; the captured one carries developer identity and lives in the lab evidence for phase-1b instead."
   },
   {
     "id": "windows-unc-server",

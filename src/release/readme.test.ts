@@ -2319,3 +2319,85 @@ describe("DoD 4.4 — SECURITY.md states the Codex engine's reads and its never-
     expect(new Set(timings).size).toBeGreaterThan(1);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// v0.7.0 Phase 1b — the multi-window paragraph (DoD 1b.7)
+// ---------------------------------------------------------------------------
+//
+// The README IS the Marketplace listing page, and this repository has already
+// shipped that page describing three features it had deleted. The section this
+// guards describes behaviour a user cannot discover by looking — two windows
+// quietly sharing one socket — so a stale sentence here is worse than usual:
+// there is nothing on screen to contradict it.
+
+describe('README: several windows, one port (Phase 1b)', () => {
+  const HEADING = '## Several windows, one port';
+  const SECTION = sectionText(HEADING);
+
+  it('states the four claims the design actually makes', () => {
+    const claims: [string, RegExp][] = [
+      ['first window binds and leads', /binds the port/i],
+      ['a later window attaches instead of failing', /attaches to the leader/i],
+      ['each window still reads its own workspace', /own workspace's transcripts/i],
+      // NARROWED after a 2026-09-06 verifier round. The page said "each window
+      // keeps only the events belonging to a session it is following", which
+      // is false of the LEADER: its own socket ingests every payload that
+      // reaches it, as `shared.ts`'s header states. The deck-visible effect is
+      // nil - cards come from transcript discovery, not from hook events - but
+      // a false sentence on the Marketplace listing page is a false sentence,
+      // and the guard here checked that the sentence EXISTED rather than that
+      // it was true.
+      ['the filter is the attached windows\', not every window', /windows attached to the leader/i],
+      ['the changeover has no coordinator', /no election, no lock file/i],
+    ];
+    for (const [what, re] of claims) {
+      expect(re.test(SECTION), `the multi-window section no longer states: ${what}`).toBe(true);
+    }
+  });
+
+  it('keeps the two promises a user is entitled to read as unchanged', () => {
+    // G5, in the words a user reads rather than the words the contract uses.
+    expect(SECTION).toContain('127.0.0.1');
+    expect(SECTION).toMatch(/does not leave your machine|none of this leaves your machine/i);
+    // The port policy. The whole section would otherwise read as "Agent Deck
+    // sorts the port out for you", which is the one thing it must never do.
+    expect(SECTION).toMatch(/will not pick a different one/i);
+  });
+
+  it('says the stream is redacted, and does not promise a queue it has no store for', () => {
+    expect(SECTION).toMatch(/after the same redaction|no reasoning content/i);
+    // G7. A user reading "the others take over" would reasonably assume the
+    // events in between were held for them. They are not, and the page says so.
+    expect(SECTION).toMatch(/lost rather than queued/i);
+  });
+
+  it('does not claim the hook stream is what puts sessions on a deck', () => {
+    // The correction's substance: what a window shows comes from the
+    // transcripts it reads. Saying so is what makes the narrowed sentence
+    // above complete rather than merely less wrong.
+    expect(SECTION).toMatch(/from the transcripts that window reads/i);
+  });
+
+  it('the collision bullet no longer says a busy port is always an error', () => {
+    // It was true until Phase 1b and is now true only of a FOREIGN holder. The
+    // sentence that changed is in a different section from the one above, which
+    // is exactly how a page goes half-stale, so it is asserted here rather than
+    // left to the section guard.
+    // Whitespace-normalised rather than matched with a regex: markdown wraps
+    // this sentence across two indented lines, and a pattern that has to know
+    // where the wrap falls goes stale the next time the paragraph is reflowed.
+    const hookNotes = sectionText(CC_HOOK_HEADING).replace(/\s+/g, ' ');
+    expect(hookNotes).toContain('second Agent Deck window is not a collision at all');
+    expect(hookNotes).toContain('never silently picks a different port');
+  });
+
+  it('the section is reachable from the anchor the collision bullet links to', () => {
+    // A relative anchor that names no heading is a link to nowhere, and the
+    // Marketplace renders it as one. Derived from the heading rather than
+    // written twice.
+    const anchor = HEADING.replace(/^##\s+/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    expect(anchor).toBe('several-windows-one-port');
+    expect(README).toContain(`(#${anchor})`);
+  });
+});

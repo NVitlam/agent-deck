@@ -91,6 +91,7 @@ const SAMPLES: Record<DiagnosticsEvent['kind'], DiagnosticsEvent> = {
     file: 'rollout-2026-09-05T00-00-00-01a06400.jsonl',
     reason: 'oversize:83890435 limit=67108864',
   },
+  listenerRole: { kind: 'listenerRole', role: 'follower', port: 47821 },
   hookListenerError: { kind: 'hookListenerError', detail: 'EADDRINUSE 47821' },
   hookNon2xx: { kind: 'hookNon2xx', status: 413, detail: 'payload too large' },
   patchFailure: { kind: 'patchFailure', sessionId: 's1', detail: 'no node with id x' },
@@ -133,6 +134,10 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       ccSessions: 2,
       opencodeSessions: 1,
       codexSessions: 3,
+      relayRole: 'leader',
+      relayFollowers: 2,
+      relayed: 17,
+      relayReceived: 0,
     };
     const line = formatCounters(counters, '2026-08-27T12:00:00.000Z');
     for (const key of Object.keys(counters)) {
@@ -146,6 +151,24 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
     expect(line).toContain('cc=2');
     expect(line).toContain('opencode=1');
     expect(line).toContain('codex=3');
+    // Phase 1b — the pinned format for the four relay fields (DoD 1b.7).
+    expect(line).toContain('role=leader');
+    expect(line).toContain('followers=2');
+    expect(line).toContain('relayed=17');
+    expect(line).toContain('received=0');
+
+    // AND THE OTHER ROLE, because `relayed` and `received` are what make a
+    // leader's line distinguishable from a follower's, and one fixture can
+    // only ever show one of them. Same counters, roles swapped.
+    const asFollower = formatCounters(
+      { ...counters, relayRole: 'follower', relayFollowers: 0, relayed: 0, relayReceived: 41 },
+      '2026-08-27T12:00:00.000Z',
+    );
+    expect(asFollower).toContain('role=follower');
+    expect(asFollower).toContain('followers=0');
+    expect(asFollower).toContain('relayed=0');
+    expect(asFollower).toContain('received=41');
+    expect(asFollower).not.toBe(line);
   });
 
   it('creates no sink until the first line', () => {
@@ -182,6 +205,10 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       patchesFailed: 0,
       resyncs: 0,
       ccSessions: 0,
+      relayRole: 'leader',
+      relayFollowers: 0,
+      relayed: 0,
+      relayReceived: 0,
       opencodeSessions: 0,
       codexSessions: 0,
     });

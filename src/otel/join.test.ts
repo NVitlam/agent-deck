@@ -416,14 +416,61 @@ describe('DoD 1.9g — why no golden and no wire file can move in Phase 1', () =
     for (const root of roots) walk(root);
     expect(files.length).toBeGreaterThan(100);
 
+    /*
+     * NARROWED IN v0.7.0 PHASE 1b, AND THE NARROWING IS ITSELF A CLAIM.
+     *
+     * The shared listener relays a telemetry SLICE between windows (DoD 1b.5),
+     * so `TelemetrySlice` and `OtelSignal` — the TYPES — now appear in
+     * `src/hooks/`. A type import is erased at build time: it emits no code,
+     * calls nothing, and cannot reach a recorder. The guarantee 1.9g is about
+     * is that no golden and no wire file can move, and a name that does not
+     * exist at runtime cannot move one.
+     *
+     * So the scan drops TYPE imports and keeps everything else. Two things
+     * stop that being a convenient loophole: the value-import ban below is
+     * unchanged, `joinTelemetry` is banned BY NAME anywhere in production, and
+     * `egress.test.ts` asserts the built artefact contains no telemetry parser
+     * at all — which is the same claim checked on the bytes that ship rather
+     * than on the text that produced them.
+     *
+     * Phase 3 mounts the route and gives it a real caller. On that day this
+     * still goes red, because a route has to import `parseOtlpBody` as a
+     * VALUE.
+     */
+    const withoutTypeImports = (text: string): string =>
+      text.replace(/^\s*import\s+type\s[^;]*;/gm, '');
+
     const importers = files.filter((file) => {
       // The module's own directory and every test are exempt.
       if (file.includes(`${'src'}${String.fromCharCode(92)}otel`)) return false;
       if (file.includes('/otel/')) return false;
       if (file.endsWith('.test.ts') || file.endsWith('.testkit.ts')) return false;
-      return /from '.*otel\/(join|parse)\.js'|require\(.*otel/.test(readFileSync(file, 'utf8'));
+      const text = withoutTypeImports(readFileSync(file, 'utf8'));
+      return /from '.*otel\/(join|parse)\.js'|require\(.*otel/.test(text);
     });
-    expect(importers, `a production module reaches otel: ${importers.join(', ')}`).toEqual([]);
+    expect(importers, `a production module reaches otel at runtime: ${importers.join(', ')}`).toEqual([]);
+
+    // THE NAME BAN, unchanged in strength and not narrowed by anything above:
+    // the function whose CALL would move a golden may not be named in
+    // production at all, type import or no type import.
+    const callers = files.filter((file) => {
+      if (file.includes(`${'src'}${String.fromCharCode(92)}otel`)) return false;
+      if (file.includes('/otel/')) return false;
+      if (file.endsWith('.test.ts') || file.endsWith('.testkit.ts')) return false;
+      return readFileSync(file, 'utf8').includes('joinTelemetry');
+    });
+    expect(callers, `a production module names joinTelemetry: ${callers.join(', ')}`).toEqual([]);
+
+    // VACUITY CONTROLS. A narrowed matcher that can no longer see anything
+    // reports an empty list for the wrong reason, so both halves are shown to
+    // still catch what they are for.
+    expect(withoutTypeImports("import type { X } from '../otel/parse.js';")).not.toMatch(/otel/);
+    expect(withoutTypeImports("import { parseOtlpBody } from '../otel/parse.js';")).toMatch(
+      /from '.*otel\/(join|parse)\.js'/,
+    );
+    expect(withoutTypeImports("import { joinTelemetry } from '../otel/join.js';")).toContain(
+      'joinTelemetry',
+    );
   }, 60_000);
 });
 

@@ -372,13 +372,27 @@ export const CODEX_ENGINE_READ_BUDGET: TimingBudget = {
  * its small store, so the two instruments are directly comparable, and it is a
  * plausible size for a real developer's store after a few months.
  *
- * WHY NOT MEASURED IN `src/opencode/`. `partscan.test.ts` reports 48.4 ms for
- * the same scan, in the MAIN vitest project. That number and this one are not
- * comparable and neither is wrong: this repo has an evidence file about a perf
- * stage that measured 1050.6 ms in the main project and 12.3 ms in a separate
- * process, on an unchanged tree, with the mechanism still unidentified. A budget
- * has to live where the host process state is controlled, which is this project
- * (`pool: 'forks'`).
+ * WHY NOT MEASURED IN THE MAIN PROJECT. A budget has to live where the host
+ * process state is controlled, which is this project (`pool: 'forks'`): this
+ * repo has an evidence file about a perf stage that measured 1050.6 ms in the
+ * main project and 12.3 ms in a separate process, on an unchanged tree, with
+ * the mechanism still unidentified.
+ *
+ * AMENDED 2026-09-07 (Phase 1c). This section used to read "`partscan.test.ts`
+ * reports 48.4 ms for the same scan, in the MAIN vitest project", offered as a
+ * live instrument difference. **`partscan.test.ts` has moved into this project**
+ * — it was failing in the main one for exactly the reason this paragraph gives.
+ *
+ * AND THE INSTRUMENT DIFFERENCE LARGELY WAS NOT ONE. Re-measured here after the
+ * move, with a warm-up poll discarded: **53.0 ms**, against the 48.4 ms recorded
+ * from the main project. Those agree. What the main project was really adding
+ * was START-UP cost landing on whichever store was measured first — the same
+ * store measured 617 ms in a cold process during the Phase 1c blocks, and that
+ * is what made the ratio assertion there a coin toss. So the honest reading of
+ * the old 48.4 is that it was a warm measurement all along, and the gap between
+ * 48.4 and this budget's 93.8 is NOT explained by the project boundary. That
+ * gap is unexplained and is recorded as unexplained; the margin below is wide
+ * enough that it does not need explaining to do its job.
  */
 export const OPENCODE_POLL_BUDGET: TimingBudget = {
   id: 'opencode.poll.regression',
@@ -398,10 +412,12 @@ export const OPENCODE_POLL_BUDGET: TimingBudget = {
       'a 1.3x spread on an unchanged tree, recorded rather than averaged away. ' +
       '93.8 is kept as the set point because a budget set from the FASTER of two ' +
       'observations is a budget that fails on a normal day — the same rule ' +
-      'codex.engineRead.dod records. NOTE THE INSTRUMENT DIFFERENCE, do not ' +
-      'reconcile it: `src/opencode/partscan.test.ts` reports 48.4 ms for the same ' +
-      'scan at the same row count, in the MAIN vitest project. Neither number is ' +
-      'wrong and they are not comparable; see this budget\'s header. ' +
+      'codex.engineRead.dod records. THE SECOND INSTRUMENT IS NOW IN THIS ' +
+      'PROJECT TOO: `partscan.test.ts` reported 48.4 ms for the same scan at the ' +
+      'same row count from the MAIN project, and 53.0 ms here after Phase 1c ' +
+      'moved it on 2026-09-07 and discarded a warm-up poll. Those two agree, so ' +
+      'the project boundary does NOT explain the gap to 93.8 and nothing here ' +
+      'claims it does; see this budget\'s header. ' +
       'THE MARGIN IS DELIBERATELY WIDE (10x) AND THAT IS THE POINT OF THIS ' +
       'PARTICULAR BUDGET: it guards a cost the user ACCEPTED, so it must catch an ' +
       'order-of-magnitude regression in per-row work without going red on a ' +

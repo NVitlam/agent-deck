@@ -829,8 +829,10 @@ describe('DoD 4.2a — the Codex engine read', () => {
  */
 describe('DoD 1.8b — the OpenCode liveness poll, pinned at a fixed row count', () => {
   /**
-   * The same 20,000 as `src/opencode/partscan.test.ts`'s small store, so the two
-   * instruments are directly comparable.
+   * The same 20,000 as `src/perf/partscan.test.ts`'s small store. Phase 1c
+   * moved that file into THIS project on 2026-09-07, so the two instruments now
+   * share a pool and a process boundary as well as a row count — which makes
+   * them more comparable than the sentence originally claimed, not less.
    */
   const ROWS = 20_000;
   const SESSIONS = 8;

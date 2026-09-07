@@ -25,6 +25,35 @@
  * entry points the extension host calls. Nothing here re-implements a parse: a
  * field asserted on these states is a field the product really produces, which
  * is the whole difference between DoD 1.4/1.5 and a component test.
+ *
+ * ## READ ONCE PER ENGINE PER WORKER, AND FROZEN — Phase 1c, 2026-09-07
+ *
+ * These readers used to re-read and re-graft the ENTIRE corpus on every call.
+ * `series.test.ts` alone calls them up to 45 times (15 tests over a
+ * `describe.each` of 3 engines) and `fields.test.ts` 39 more, so the committed
+ * corpora were being parsed through the production path dozens of times per
+ * file to answer questions about bytes that had not changed.
+ *
+ * That was not merely wasteful, it was RED: on a loaded machine a single call
+ * exceeded vitest's 5 s default `testTimeout`, and a test that carries no
+ * explicit budget reports that as a timeout with no failing assertion —
+ * this repository's recorded "reads green in the summary line" class. It cost
+ * two of the thirty runs in the Phase 1c blocks, in two different files.
+ *
+ * **No timeout was raised.** The work was removed instead. Memoising the
+ * PROMISE rather than the value also means two callers that overlap share one
+ * read instead of racing two.
+ *
+ * ## Why the result is DEEP-FROZEN, and it is not belt-and-braces
+ *
+ * A shared array is a correctness hazard the moment any test mutates what it
+ * gets back: the next test in the file would silently receive the damage, and
+ * the failure would surface somewhere else entirely. Freezing makes that
+ * impossible rather than unlikely — ESM is strict mode, so an assignment to a
+ * frozen property THROWS, naming the file and line.
+ *
+ * A test that genuinely needs to mutate takes a `structuredClone` first and
+ * says why. The audit that accompanied this change found none that did.
  */
 
 import fs from 'node:fs';
@@ -37,6 +66,42 @@ import { readCodexEngine } from '../codex/index.js';
 import { readOpenCodeEngine } from '../opencode/index.js';
 
 const FIXTURES = fileURLToPath(new URL('../../fixtures/', import.meta.url));
+
+/**
+ * Freeze a whole object graph.
+ *
+ * `seen` is not defensive decoration: a `SessionState` tree is walked by key
+ * and nothing here guarantees it is acyclic, so a back-reference would
+ * otherwise recurse forever and present as a stack overflow inside a helper
+ * rather than as anything readable.
+ */
+function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
+  if (value === null || typeof value !== 'object') return value;
+  const obj: object = value;
+  if (seen.has(obj)) return value;
+  seen.add(obj);
+  Object.freeze(obj);
+  for (const key of Object.keys(obj)) {
+    deepFreeze((obj as Record<string, unknown>)[key], seen);
+  }
+  return value;
+}
+
+/**
+ * Run `read` at most once, and hand every caller the same frozen result.
+ *
+ * The PROMISE is cached rather than the value, so a second caller arriving
+ * while the first read is still in flight waits for it instead of starting a
+ * second one. Per worker, because vitest gives each worker its own module
+ * registry — there is no cross-worker sharing to reason about.
+ */
+function once(read: () => Promise<SessionState[]>): () => Promise<SessionState[]> {
+  let pending: Promise<SessionState[]> | null = null;
+  return () => {
+    pending ??= read().then((states) => deepFreeze(states));
+    return pending;
+  };
+}
 
 function corpusDirs(prefix: string, marker: (dir: string) => boolean): string[] {
   const named = fs
@@ -90,7 +155,7 @@ function mainTranscripts(corpusDir: string): string[] {
  * may legitimately hold a refusal fixture, and this helper's job is to supply
  * the sessions that render, not to re-assert the version window.
  */
-export async function readCcSessions(): Promise<SessionState[]> {
+async function readCcSessionsFresh(): Promise<SessionState[]> {
   const states: SessionState[] = [];
   for (const dir of corpusDirs('cc-', (d) => fs.existsSync(path.join(d, 'projects')))) {
     for (const transcript of mainTranscripts(dir)) {
@@ -104,7 +169,7 @@ export async function readCcSessions(): Promise<SessionState[]> {
 }
 
 /** Every OpenCode session of every committed store. */
-export async function readOpenCodeSessions(): Promise<SessionState[]> {
+async function readOpenCodeSessionsFresh(): Promise<SessionState[]> {
   const states: SessionState[] = [];
   for (const dir of corpusDirs('opencode-', () => true)) {
     // `opencode-1.18.25` keeps its store a level down, in `moved-project/`. A
@@ -134,7 +199,7 @@ function findStores(dir: string): string[] {
 }
 
 /** Every Codex thread of every committed run, as `SessionState`s. */
-export async function readCodexSessions(): Promise<SessionState[]> {
+async function readCodexSessionsFresh(): Promise<SessionState[]> {
   const states: SessionState[] = [];
   // Selected by the presence of a golden, which is what separates an ANCHOR
   // corpus from a witness — never by sort order, which a differently named
@@ -151,3 +216,22 @@ export async function readCodexSessions(): Promise<SessionState[]> {
   if (states.length === 0) throw new Error('no Codex session read from any codex-* corpus');
   return states;
 }
+
+// ---------------------------------------------------------------------------
+// The exported readers
+// ---------------------------------------------------------------------------
+//
+// One read per engine per worker, deep-frozen. The `*Fresh` functions above are
+// deliberately NOT exported: an unmemoised reader within reach is an invitation
+// to reintroduce the cost this wrapper exists to remove, and a caller that got
+// an unfrozen copy from one and a frozen one from the other would be debugging
+// the difference rather than the product.
+
+/** Every Claude Code session of every `fixtures/cc-*` corpus. Frozen. */
+export const readCcSessions = once(readCcSessionsFresh);
+
+/** Every OpenCode session of every committed store. Frozen. */
+export const readOpenCodeSessions = once(readOpenCodeSessionsFresh);
+
+/** Every Codex thread of every committed run, as `SessionState`s. Frozen. */
+export const readCodexSessions = once(readCodexSessionsFresh);

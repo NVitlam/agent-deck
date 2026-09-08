@@ -1,0 +1,61 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "synthetic-11-user-priced",
+  "engine": "cc",
+  "projectSlug": "synthetic-stats",
+  "startedAt": 1700000000000,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 1000,
+      "output": 100,
+      "cacheRead": 1000000,
+      "cacheRatio": 1000,
+      "toolCalls": 1,
+      "silent": false,
+      "model": "synthetic-model-a"
+    }
+  ],
+  "files": [],
+  "tools": [
+    {
+      "toolName": "Read",
+      "class": "read",
+      "calls": 1,
+      "errors": 0
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [
+    {
+      "agentId": "root",
+      "ordinal": 1,
+      "delta": 1000000
+    }
+  ],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 1000,
+    "output": 100,
+    "cacheRead": 1000000,
+    "costUsd": 22.05,
+    "costSource": "user",
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot"
+  ]
+}

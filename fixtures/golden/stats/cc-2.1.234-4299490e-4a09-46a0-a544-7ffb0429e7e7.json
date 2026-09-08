@@ -1,0 +1,144 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+  "engine": "cc",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787090182855,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 83299,
+      "output": 1998,
+      "cacheRead": 68841,
+      "cacheRatio": 0.8264324901859567,
+      "toolCalls": 1,
+      "silent": false,
+      "model": "claude-opus-5"
+    },
+    {
+      "agentId": "a5e718f3cb731b607",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 229137,
+      "output": 4863,
+      "cacheRead": 185951,
+      "cacheRatio": 0.8115276013913074,
+      "toolCalls": 11,
+      "silent": false,
+      "model": "claude-opus-5"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "c:/Users/dev/projects/agent-deck/spike/HOOKS.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 7,
+      "lastTouchSeq": 7
+    },
+    {
+      "filePath": "c:/Users/dev/projects/agent-deck/spike/listen.mjs",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 4,
+      "lastTouchSeq": 4
+    },
+    {
+      "filePath": "c:/Users/dev/projects/agent-deck/spike/run.mjs",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 3,
+      "lastTouchSeq": 3
+    },
+    {
+      "filePath": "c:/Users/dev/projects/agent-deck/spike/stitch.mjs",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 6,
+      "lastTouchSeq": 6
+    },
+    {
+      "filePath": "c:/Users/dev/projects/agent-deck/spike/tail.mjs",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 5,
+      "lastTouchSeq": 5
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "Agent",
+      "class": "spawn",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 69943,
+      "durationMsMax": 69943
+    },
+    {
+      "toolName": "Bash",
+      "class": "shell",
+      "calls": 5,
+      "errors": 0,
+      "durationMsSum": 11530,
+      "durationMsMax": 3931
+    },
+    {
+      "toolName": "Grep",
+      "class": "search",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 414,
+      "durationMsMax": 414
+    },
+    {
+      "toolName": "Read",
+      "class": "read",
+      "calls": 5,
+      "errors": 0,
+      "durationMsSum": 1691,
+      "durationMsMax": 384
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [
+    {
+      "agentId": "a5e718f3cb731b607",
+      "ordinal": 2,
+      "delta": 13614
+    }
+  ],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 312436,
+    "output": 6861,
+    "cacheRead": 254792,
+    "compactions": 0,
+    "subagents": 1,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

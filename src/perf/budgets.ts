@@ -436,3 +436,87 @@ export const HEAP_FLOOR_RATIO_LIMIT = 1.1;
  * grow; this bounds that confound instead of ignoring it. Measured: 0.120%.
  */
 export const CORPUS_GROWTH_FRACTION_LIMIT = 0.01;
+
+/**
+ * v0.7.0 DoD 2.8 — `deriveStats` per 1,000 tree nodes.
+ *
+ * ## What it measures, and why the unit is NODES rather than a session
+ *
+ * The deriver's cost is a function of how many `ToolNode`s and `AgentNode`s it
+ * walks, not of how long the session lasted or how many bytes its transcripts
+ * held. Committed sessions span 0 to 454 tool calls, so a per-session budget
+ * would be dominated by which corpus happened to be biggest and would move
+ * every time one was added. A fixed 1,000-node subject is comparable across
+ * releases and is the unit DoD 2.8 names.
+ *
+ * The subject exercises every fact that costs anything: eight agents so the
+ * per-agent grouping is real, 40 distinct files across three tool classes so F1
+ * and F4 both have work, 50 distinct input hashes so F3's grouping produces 30
+ * genuine loops, an error every seventeenth call so churn chains actually form,
+ * and a 40-turn usage series per agent for F6 and F7. A subject with one agent
+ * and no repeats would measure the walk and none of the derivation.
+ *
+ * ## The measurement
+ *
+ * Three standalone runs on the Windows 11 development machine, 2026-09-08, 40
+ * samples each with the FIRST FIVE DISCARDED (JIT warm-up: those five ran
+ * 1.634, 1.248, 0.853, 0.932, 0.524 ms in an early run, against a warm median
+ * of 0.540). Medians: **0.566, 0.574, 0.609 ms**. The slowest of the three is
+ * the set point, per this file's rule that a budget set from the faster of two
+ * observations is a budget that fails on a normal day.
+ *
+ * ## THE FIRST SUBJECT WAS MEASURING F7's LOOP WITHOUT ITS WORK
+ *
+ * Recorded because the correction is the useful part, and because a vacuity
+ * control is what found it rather than review. The subject's usage series
+ * first rose by 300 tokens a turn, so every turn-over-turn delta was 300
+ * against a `SPIKE_TOKENS.cc` of 5,000 and **F7 produced zero rows** — the
+ * scan ran and pushed nothing. Medians under that subject were 0.540, 0.503,
+ * 0.498 ms, and a budget set from them would have been a budget on a fact that
+ * was never derived.
+ *
+ * The series now rises by 6,000 a turn, so all 39 deltas per agent clear the
+ * threshold and F7 pushes 312 rows. That is the number above, and the cost of
+ * the fix — roughly 13 % — is the honest size of the work that had been
+ * missing. The test carries the control that caught it: it asserts every
+ * expensive fact produced rows before it times anything.
+ *
+ * ## Why 5 ms and not 1 ms
+ *
+ * An 8.2x margin on a sub-millisecond pure function is not slack for its own
+ * sake. At this scale timer granularity and a single GC pause are a large share
+ * of the sample, and Phase 1c measured this machine running at roughly half
+ * speed for a whole 20-run block — under which the median would be ~1.1 ms and
+ * a 1 ms limit would be red on correct code. What the limit is FOR is an
+ * algorithmic regression: every grouping here is linear or `n log n`, and the
+ * plausible defect is one of them going quadratic, which at 1,000 nodes is two
+ * orders of magnitude and clears 5 ms without ambiguity. A budget that goes red
+ * on a loaded machine teaches people to re-run it, which is worth less than a
+ * budget that only ever goes red for a reason.
+ *
+ * What it does NOT establish: behaviour above 1,000 nodes. `fuzz.test.ts`
+ * covers 5,000 for CORRECTNESS (it must not throw), not for time.
+ */
+export const DERIVE_STATS_BUDGET: TimingBudget = {
+  id: 'stats.derive.dod',
+  what: 'deriveStats per 1,000 nodes',
+  statistic: 'median',
+  limitMs: 5,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 0.609,
+    on: 'synthetic 1,000-tool-node session (8 agents, 40 files, 50 hashes, 40-turn series, 312 F7 rows), 3 runs x 35 warm samples, 2026-09-08',
+    marginX: 8.2,
+    note:
+      'Medians 0.566 / 0.574 / 0.609 ms across three standalone runs; the ' +
+      'SLOWEST is the set point. First five samples of each run discarded as ' +
+      'JIT warm-up and recorded above rather than dropped silently. ' +
+      'SUPERSEDED SET POINT, kept because the reason matters: 0.540 ms, ' +
+      'measured over a subject whose cache-creation rose 300 tokens a turn, ' +
+      'so F7 scanned every turn and reported none. The subject now spikes on ' +
+      'all 39 deltas per agent and the derivation costs ~13% more. Measured ' +
+      'in a plain node process, the closest available analogue of the forked, ' +
+      'single-fork worker the `perf` project runs on.',
+  },
+};

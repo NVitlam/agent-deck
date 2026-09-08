@@ -567,7 +567,40 @@ export interface CodexThread {
    * letting one quietly omit it and fall back to the end time again.
    */
   readonly startedAtMs: number;
-  /** Last write to the owning file. An END. Liveness corroboration only. */
+  /**
+   * When the thread ENDED: the envelope `timestamp` of the LAST record in the
+   * rollout, as epoch milliseconds. Absent when no record carries a parseable
+   * one.
+   *
+   * **`mtimeMs` is NOT an acceptable source and this field exists to say so**
+   * (user ruling, v0.7.0 DoD 2.10, 2026-09-08). The grafter used to read
+   * `endedAt` straight off the file's last-write time, on the reasoning that a
+   * finished thread stops being written when it stops. That is true of the
+   * SESSION and false of the FILE: git does not preserve mtimes, so two
+   * checkouts of byte-identical bytes legitimately disagree about it. Measured
+   * at the Phase 2 gate — every Codex session in the corpus reported
+   * `2026-09-04T11:08:50Z`, which is the mtime of its own rollout file in the
+   * working tree that produced the reading, and nothing about the capture.
+   *
+   * Phase 2 first worked around it by staging the corpus with mtimes pinned.
+   * That made the GOLDEN reproducible and left the PRODUCT deriving a
+   * user-visible timestamp from a filesystem attribute, so the ruling closed it
+   * at the source instead. Content is stable across any clone; metadata is not.
+   *
+   * Optional, unlike {@link CodexThread.startedAtMs}: the fingerprint
+   * guarantees a `session_meta` at ordinal 0 and therefore a start, but nothing
+   * guarantees a last record with a readable timestamp. Absent means
+   * unavailable and the grafter omits `endedAt` entirely rather than
+   * substituting anything.
+   */
+  readonly endedAtMs?: number;
+  /**
+   * Last write to the owning file. An END, but a FILESYSTEM one.
+   *
+   * Liveness corroboration only, and that scope is now enforced rather than
+   * merely stated: `graft.ts` reads {@link CodexThread.endedAtMs} instead, and
+   * `graft.test.ts` asserts no `AgentNode` timestamp equals this value.
+   */
   readonly mtimeMs: number;
 }
 

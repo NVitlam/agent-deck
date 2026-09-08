@@ -1,0 +1,54 @@
+{
+  "id": "11-user-priced",
+  "manufactures": "a CC session whose model id matches a test agentDeck.pricing entry, so F9(b) can be hand-checked",
+  "state": {
+    "sessionId": "synthetic-11-user-priced",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [
+        {
+          "id": "u0",
+          "toolName": "Read",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 0,
+          "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      },
+      "model": "synthetic-model-a",
+      "usageSeries": [
+        {
+          "ordinal": 0,
+          "input": 1000000,
+          "cacheCreation": 0,
+          "cacheRead": 0,
+          "output": 0
+        },
+        {
+          "ordinal": 1,
+          "input": 0,
+          "cacheCreation": 1000000,
+          "cacheRead": 1000000,
+          "output": 1000000
+        }
+      ]
+    },
+    "totals": {
+      "costUsd": 0
+    },
+    "engine": "cc"
+  }
+}

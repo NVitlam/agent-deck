@@ -143,7 +143,7 @@
                     "output": 125
                   },
                   "startedAt": 1788386057354,
-                  "endedAt": 1788393600000,
+                  "endedAt": 1788386068568,
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -183,7 +183,7 @@
                     "output": 137
                   },
                   "startedAt": 1788386061217,
-                  "endedAt": 1788393600000,
+                  "endedAt": 1788386072704,
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -223,7 +223,7 @@
                     "output": 139
                   },
                   "startedAt": 1788386065184,
-                  "endedAt": 1788393600000,
+                  "endedAt": 1788386077659,
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -310,7 +310,7 @@
                         "output": 132
                       },
                       "startedAt": 1788386089509,
-                      "endedAt": 1788393600000,
+                      "endedAt": 1788386100718,
                       "model": "gpt-5.6-terra"
                     },
                     {
@@ -333,7 +333,7 @@
                     "output": 150
                   },
                   "startedAt": 1788386082798,
-                  "endedAt": 1788393600000,
+                  "endedAt": 1788386103616,
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -366,7 +366,7 @@
                 "output": 499
               },
               "startedAt": 1788386050871,
-              "endedAt": 1788393600000,
+              "endedAt": 1788386107429,
               "model": "gpt-5.6-terra"
             }
           }
@@ -490,7 +490,7 @@
                     "output": 125
                   },
                   "startedAt": 1788386057354,
-                  "endedAt": 1788393600000,
+                  "endedAt": 1788386068568,
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -530,7 +530,7 @@
                     "output": 137
                   },
                   "startedAt": 1788386061217,
-                  "endedAt": 1788393600000,
+                  "endedAt": 1788386072704,
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -570,7 +570,7 @@
                     "output": 139
                   },
                   "startedAt": 1788386065184,
-                  "endedAt": 1788393600000,
+                  "endedAt": 1788386077659,
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -657,7 +657,7 @@
                         "output": 132
                       },
                       "startedAt": 1788386089509,
-                      "endedAt": 1788393600000,
+                      "endedAt": 1788386100718,
                       "model": "gpt-5.6-terra"
                     },
                     {
@@ -680,7 +680,7 @@
                     "output": 150
                   },
                   "startedAt": 1788386082798,
-                  "endedAt": 1788393600000,
+                  "endedAt": 1788386103616,
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -713,7 +713,7 @@
                 "output": 499
               },
               "startedAt": 1788386050871,
-              "endedAt": 1788393600000,
+              "endedAt": 1788386107429,
               "model": "gpt-5.6-terra"
             }
           }
@@ -847,7 +847,7 @@
                 "output": 125
               },
               "startedAt": 1788386057354,
-              "endedAt": 1788393600000,
+              "endedAt": 1788386068568,
               "model": "gpt-5.6-terra"
             },
             {
@@ -887,7 +887,7 @@
                 "output": 137
               },
               "startedAt": 1788386061217,
-              "endedAt": 1788393600000,
+              "endedAt": 1788386072704,
               "model": "gpt-5.6-terra"
             },
             {
@@ -927,7 +927,7 @@
                 "output": 139
               },
               "startedAt": 1788386065184,
-              "endedAt": 1788393600000,
+              "endedAt": 1788386077659,
               "model": "gpt-5.6-terra"
             },
             {
@@ -1014,7 +1014,7 @@
                     "output": 132
                   },
                   "startedAt": 1788386089509,
-                  "endedAt": 1788393600000,
+                  "endedAt": 1788386100718,
                   "model": "gpt-5.6-terra"
                 },
                 {
@@ -1037,7 +1037,7 @@
                 "output": 150
               },
               "startedAt": 1788386082798,
-              "endedAt": 1788393600000,
+              "endedAt": 1788386103616,
               "model": "gpt-5.6-terra"
             },
             {
@@ -1070,7 +1070,7 @@
             "output": 499
           },
           "startedAt": 1788386050871,
-          "endedAt": 1788393600000,
+          "endedAt": 1788386107429,
           "model": "gpt-5.6-terra"
         }
       }

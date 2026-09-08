@@ -1,0 +1,76 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+  "engine": "codex",
+  "projectSlug": "C--Users-dev-codex-probe-scratch",
+  "startedAt": 1788381834630,
+  "endedAt": 1788381874925,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 93261,
+      "output": 447,
+      "toolCalls": 5,
+      "silent": false,
+      "model": "gpt-5.6-terra"
+    },
+    {
+      "agentId": "01a063dd-883a-7523-a2da-30b0c7367d66",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 33767,
+      "output": 127,
+      "toolCalls": 1,
+      "silent": false,
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "files": [],
+  "tools": [
+    {
+      "toolName": "exec",
+      "class": "shell",
+      "calls": 4
+    },
+    {
+      "toolName": "spawn_agent",
+      "class": "spawn",
+      "calls": 1
+    },
+    {
+      "toolName": "wait_agent",
+      "class": "spawn",
+      "calls": 1
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 127028,
+    "output": 574,
+    "compactions": 0,
+    "contextFill": 0.061273219814241484,
+    "subagents": 1,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F12:codex",
+    "F13.completed:snapshot",
+    "F1:codex",
+    "F2.errors:codex",
+    "F4:codex",
+    "F6:codex",
+    "F7:codex",
+    "F9:codex"
+  ]
+}

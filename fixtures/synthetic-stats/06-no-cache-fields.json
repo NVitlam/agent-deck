@@ -1,0 +1,37 @@
+{
+  "id": "06-no-cache-fields",
+  "manufactures": "an agent with no usageSeries, so F6 has no numerator and says so",
+  "state": {
+    "sessionId": "synthetic-06-no-cache-fields",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [
+        {
+          "id": "n0",
+          "toolName": "Read",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 0,
+          "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      }
+    },
+    "totals": {
+      "costUsd": 0
+    },
+    "engine": "cc"
+  }
+}

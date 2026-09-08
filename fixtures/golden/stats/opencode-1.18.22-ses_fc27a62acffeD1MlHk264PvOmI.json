@@ -1,0 +1,48 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "ses_fc27a62acffeD1MlHk264PvOmI",
+  "engine": "opencode",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787738561875,
+  "endedAt": 1787738666434,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 12082,
+      "output": 45,
+      "cacheRead": 0,
+      "cacheRatio": 0,
+      "toolCalls": 0,
+      "silent": false,
+      "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}"
+    }
+  ],
+  "files": [],
+  "tools": [],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 12082,
+    "output": 45,
+    "cacheRead": 0,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F10:opencode",
+    "F13.completed:snapshot",
+    "F7:opencode",
+    "F9:opencode"
+  ]
+}

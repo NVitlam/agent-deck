@@ -1,0 +1,92 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "ses_fc0d15641ffevlXKef1jHVzUuN",
+  "engine": "opencode",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787766417854,
+  "endedAt": 1787766773831,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 80094,
+      "output": 707,
+      "cacheRead": 45675,
+      "cacheRatio": 0.5702674357629784,
+      "toolCalls": 4,
+      "silent": false,
+      "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\HANDOVER.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 1,
+      "lastTouchSeq": 1
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\PLAN.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 0,
+      "lastTouchSeq": 0
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "bash",
+      "class": "shell",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 311,
+      "durationMsMax": 311
+    },
+    {
+      "toolName": "grep",
+      "class": "search",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 680,
+      "durationMsMax": 680
+    },
+    {
+      "toolName": "read",
+      "class": "read",
+      "calls": 2,
+      "errors": 0,
+      "durationMsSum": 109,
+      "durationMsMax": 92
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 80094,
+    "output": 707,
+    "cacheRead": 45675,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F10:opencode",
+    "F13.completed:snapshot",
+    "F7:opencode",
+    "F9:opencode"
+  ]
+}

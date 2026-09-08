@@ -81,7 +81,7 @@
   "scripts": {
     "build": "node esbuild.config.mjs",
     "capture:states": "node scripts/capture-states.mjs",
-    "lint": "eslint .",
+    "lint": "eslint . && node scripts/forbidden-words.mjs",
     "package": "vsce package --no-dependencies --out dist/agent-deck.vsix",
     "test": "vitest run",
     "theater": "node esbuild.config.mjs --theater",

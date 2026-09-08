@@ -1,0 +1,56 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "01a0641f-c9c0-7471-821c-946af20ef96e",
+  "engine": "codex",
+  "projectSlug": "C--Users-dev-codex-probe-scratch",
+  "startedAt": 1788386200188,
+  "endedAt": 1788386213700,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 31368,
+      "output": 175,
+      "toolCalls": 1,
+      "silent": false,
+      "model": "gpt-5.4-mini"
+    }
+  ],
+  "files": [],
+  "tools": [
+    {
+      "toolName": "exec_command",
+      "class": "shell",
+      "calls": 1
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 31368,
+    "output": 175,
+    "compactions": 0,
+    "contextFill": 0.07480263157894737,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F12:codex",
+    "F13.completed:snapshot",
+    "F1:codex",
+    "F2.errors:codex",
+    "F4:codex",
+    "F6:codex",
+    "F7:codex",
+    "F9:codex"
+  ]
+}

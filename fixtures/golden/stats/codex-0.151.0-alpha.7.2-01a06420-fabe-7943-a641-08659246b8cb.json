@@ -1,0 +1,85 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "01a06420-fabe-7943-a641-08659246b8cb",
+  "engine": "codex",
+  "projectSlug": "C--Users-dev-codex-probe-scratch",
+  "startedAt": 1788386278254,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 93043,
+      "output": 767,
+      "toolCalls": 5,
+      "silent": false,
+      "model": "gpt-5.4-mini"
+    },
+    {
+      "agentId": "01a06421-20fe-72d2-96da-cfa765ee5fd9",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 75438,
+      "output": 512,
+      "toolCalls": 4,
+      "silent": false,
+      "model": "gpt-5.4-mini"
+    }
+  ],
+  "files": [],
+  "tools": [
+    {
+      "toolName": "",
+      "class": "other",
+      "calls": 1
+    },
+    {
+      "toolName": "exec_command",
+      "class": "shell",
+      "calls": 4
+    },
+    {
+      "toolName": "send_input",
+      "class": "spawn",
+      "calls": 1
+    },
+    {
+      "toolName": "spawn_agent",
+      "class": "spawn",
+      "calls": 1
+    },
+    {
+      "toolName": "wait_agent",
+      "class": "spawn",
+      "calls": 2
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 168481,
+    "output": 1279,
+    "compactions": 0,
+    "contextFill": 0.06445820433436532,
+    "subagents": 1,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F12:codex",
+    "F13.completed:snapshot",
+    "F1:codex",
+    "F2.errors:codex",
+    "F4:codex",
+    "F6:codex",
+    "F7:codex",
+    "F9:codex"
+  ]
+}

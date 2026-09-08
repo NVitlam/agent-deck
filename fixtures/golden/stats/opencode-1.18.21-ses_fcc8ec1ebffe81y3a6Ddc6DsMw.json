@@ -1,0 +1,198 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "ses_fcc8ec1ebffe81y3a6Ddc6DsMw",
+  "engine": "opencode",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787569454612,
+  "endedAt": 1787576656540,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 2255800,
+      "output": 22858,
+      "cacheRead": 2133768,
+      "cacheRatio": 0.9459030055856016,
+      "toolCalls": 53,
+      "silent": false,
+      "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "C:\\Users\\dev\\.local\\share\\opencode\\tool-output\\tool_033775a120016JZuk8aEdDGJhO",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 10,
+      "lastTouchSeq": 10
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\opencode\\oc-inspect.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 27,
+      "lastTouchSeq": 27
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\opencode\\oc-parts.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 31,
+      "lastTouchSeq": 31
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\opencode\\oc-rows.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 29,
+      "lastTouchSeq": 29
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.gitattributes",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 14,
+      "lastTouchSeq": 14
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.github\\workflows\\ci.yml",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 13,
+      "lastTouchSeq": 13
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\AGENTS.md",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 20,
+      "lastTouchSeq": 20
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\HANDOVER.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 16,
+      "lastTouchSeq": 16
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\README.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 3,
+      "lastTouchSeq": 3
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\esbuild.config.mjs",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 17,
+      "lastTouchSeq": 17
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\package.json",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 2,
+      "lastTouchSeq": 2
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\vitest.config.ts",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 7,
+      "lastTouchSeq": 7
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "bash",
+      "class": "shell",
+      "calls": 34,
+      "errors": 1,
+      "durationMsSum": 4030984,
+      "durationMsMax": 4008420
+    },
+    {
+      "toolName": "glob",
+      "class": "search",
+      "calls": 5,
+      "errors": 0,
+      "durationMsSum": 2783,
+      "durationMsMax": 2267
+    },
+    {
+      "toolName": "grep",
+      "class": "search",
+      "calls": 2,
+      "errors": 0,
+      "durationMsSum": 2204,
+      "durationMsMax": 1793
+    },
+    {
+      "toolName": "read",
+      "class": "read",
+      "calls": 8,
+      "errors": 0,
+      "durationMsSum": 698,
+      "durationMsMax": 171
+    },
+    {
+      "toolName": "write",
+      "class": "write",
+      "calls": 4,
+      "errors": 0,
+      "durationMsSum": 168,
+      "durationMsMax": 50
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 2255800,
+    "output": 22858,
+    "cacheRead": 2133768,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F10:opencode",
+    "F13.completed:snapshot",
+    "F7:opencode",
+    "F9:opencode"
+  ]
+}

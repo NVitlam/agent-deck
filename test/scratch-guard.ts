@@ -40,7 +40,7 @@
  * rule 18's requirement — a check that skips an input says so.
  */
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -83,7 +83,7 @@ export function setup(): void {
   before = snapshot();
 
   /*
-   * A TREE THAT IS ALREADY CARRYING LITTER FAILS HERE, BEFORE ANY WORKER RUNS.
+   * A TREE ALREADY CARRYING LITTER IS CLEANED HERE, BEFORE ANY WORKER RUNS.
    *
    * The teardown below is a DELTA — it catches a run that leaks. It cannot
    * catch the state this repository was actually found in on 2026-09-08: 96
@@ -101,17 +101,49 @@ export function setup(): void {
    */
   const carried = [...before.dist].filter((name) => !DIST_KEEP.has(name)).sort();
   if (carried.length > 0) {
-    throw new Error(
-      [
-        `DoD 1c.5: dist/ is already carrying ${String(carried.length)} scratch ` +
-          'director' + (carried.length === 1 ? 'y' : 'ies') + ' before this run started.',
-        '`dist/**` is shipped wholesale with three `!` re-admissions, so these would',
-        'be packaged. They are almost certainly the remains of a run that DIED —',
-        'a process killed by a Windows fail-fast never reaches `afterAll`.',
-        '',
-        ...carried.map((name) => `  dist/${name}`),
-      ].join('\n'),
+    /*
+     * REMOVED AND REPORTED, NOT REFUSED — and the first version refused.
+     *
+     * That version was correct about the property and wrong about the
+     * consequence, which the very next 20-run block demonstrated: run 3 died
+     * with `0xC0000409`, left five directories behind, and runs 4 THROUGH 20
+     * were then refused before a single test ran. **One death cost seventeen
+     * runs**, and a block that cannot complete cannot measure the death rate it
+     * exists to measure.
+     *
+     * Carried litter is the PREVIOUS run's defect. Punishing this one for it
+     * turns a single fault into a cascade and destroys the signal. So it is
+     * cleaned up here, loudly, with the count and the reason — rule 18's
+     * requirement that a check which repairs an input says so, rather than
+     * quietly tidying.
+     *
+     * Nothing is weakened by this. A run that leaks still fails, in `teardown`
+     * below. A tree that is carrying litter still cannot be PACKAGED: the hard
+     * refusal lives in `src/release/vsix.test.ts` behind
+     * `AGENT_DECK_PACKAGE_AUDIT=1`, which is the gate a release actually
+     * passes through and the one place where nothing else is running.
+     */
+    for (const name of carried) {
+      try {
+        rmSync(join(resolve('dist'), name), { recursive: true, force: true });
+      } catch {
+        // A directory that will not delete is reported by the line below
+        // anyway; refusing to start over it is the mistake this block records.
+      }
+    }
+    const remaining = [...dirsIn(resolve('dist'))].filter((name) => !DIST_KEEP.has(name));
+    process.stdout.write(
+      `[scratch-guard] REMOVED ${String(carried.length)} scratch director` +
+        `${carried.length === 1 ? 'y' : 'ies'} that a PREVIOUS run left in dist/ ` +
+        `(${carried.join(', ')}). dist/** ships wholesale, so these would have been ` +
+        'packaged. They are almost certainly the remains of a run that DIED — a ' +
+        'process killed by a Windows fail-fast never reaches `afterAll`.' +
+        (remaining.length > 0 ? ` COULD NOT REMOVE: ${remaining.join(', ')}.` : '') +
+        '\n',
     );
+    // The snapshot must describe the tree this run actually starts from, or the
+    // teardown delta below would report every removed directory as a leak.
+    before = snapshot();
   }
 }
 

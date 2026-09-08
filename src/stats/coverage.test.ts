@@ -100,6 +100,7 @@ describe('DoD 3.0: the testkit hands out states a deriver can actually use', () 
      */
     let full = 0;
     let parked = 0;
+    let total = 0;
     for (const [engine, read] of [
       ['opencode', readOpenCodeSessions],
       ['codex', readCodexSessions],
@@ -107,6 +108,7 @@ describe('DoD 3.0: the testkit hands out states a deriver can actually use', () 
       const states = await read();
       expect(states.length, `no ${engine} session came back`).toBeGreaterThan(0);
       for (const state of states) {
+        total += 1;
         expect(state.schemaOk, `${engine} ${state.sessionId}: schemaOk`).toBe(true);
         const record = deriveStats(state);
         if ((state.parked ?? []).length > 0) {
@@ -125,10 +127,23 @@ describe('DoD 3.0: the testkit hands out states a deriver can actually use', () 
     // The population floor: a reader that returned only parked sessions would
     // satisfy every assertion above.
     expect(full, 'no OpenCode or Codex session derived full coverage').toBeGreaterThan(0);
-    // Recorded rather than asserted as a count — it moves with the next
-    // harvest — but stated so a reader knows the exclusion arm was exercised
-    // by real data on this tree.
-    expect(parked).toBeGreaterThanOrEqual(0);
+
+    /*
+     * AND EVERY SESSION WENT DOWN ONE ARM OR THE OTHER.
+     *
+     * This replaced `expect(parked).toBeGreaterThanOrEqual(0)`, which
+     * `phase-verifier` correctly called vacuous: the counter starts at 0, so
+     * the assertion could not fail, while the comment above it claimed it
+     * showed the exclusion arm had been exercised. It showed nothing.
+     *
+     * A floor of `parked > 0` was the other option and is rejected: whether
+     * the committed corpora contain a parked session is a property of the next
+     * HARVEST, and a test that goes red because a corpus was recaptured is the
+     * "do not assert fixture-set sizes" rule in a different costume. What is
+     * invariant is the PARTITION — coverage is `full` or an exclusion, never
+     * something else and never nothing — and that is what is asserted.
+     */
+    expect(full + parked, 'a session went down neither arm').toBe(total);
   });
 
   it('a state with schemaOk removed IS excluded — the check is not vacuous', async () => {

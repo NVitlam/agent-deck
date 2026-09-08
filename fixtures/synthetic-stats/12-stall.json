@@ -1,0 +1,56 @@
+{
+  "id": "12-stall",
+  "manufactures": "one tool past the stall threshold beside one that ran far longer and completed — the pair spec §L uses to separate silence from duration",
+  "state": {
+    "sessionId": "synthetic-12-stall",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [
+        {
+          "id": "z0",
+          "toolName": "Bash",
+          "status": "stalled",
+          "inputPreview": "",
+          "ordinal": 0,
+          "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "stalledSinceMs": 1700003000000
+        },
+        {
+          "id": "z1",
+          "toolName": "Agent",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 1,
+          "inputHash": "01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "durationMs": 2846600
+        }
+      ],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      },
+      "usageSeries": [
+        {
+          "ordinal": 0,
+          "input": 10,
+          "cacheCreation": 0,
+          "cacheRead": 100,
+          "output": 20
+        }
+      ]
+    },
+    "totals": {
+      "costUsd": 0
+    },
+    "engine": "cc"
+  }
+}

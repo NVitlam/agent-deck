@@ -1,0 +1,127 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+  "engine": "cc",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787730972830,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 109470,
+      "output": 406,
+      "cacheRead": 83897,
+      "cacheRatio": 0.7663926189823695,
+      "toolCalls": 1,
+      "silent": false,
+      "model": "claude-opus-5"
+    },
+    {
+      "agentId": "a676c705dca135e9d",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 304754,
+      "output": 585,
+      "cacheRead": 260418,
+      "cacheRatio": 0.8545187265794707,
+      "toolCalls": 6,
+      "silent": false,
+      "model": "claude-opus-5"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\agent-deck-r1-capture.txt",
+      "reads": 1,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 5,
+      "lastTouch": 6
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\README.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 1,
+      "lastTouch": 1
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "Agent",
+      "class": "spawn",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 16468,
+      "durationMsMax": 16468
+    },
+    {
+      "toolName": "Bash",
+      "class": "shell",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 1839,
+      "durationMsMax": 1839
+    },
+    {
+      "toolName": "Glob",
+      "class": "search",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 755,
+      "durationMsMax": 755
+    },
+    {
+      "toolName": "Grep",
+      "class": "search",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 647,
+      "durationMsMax": 647
+    },
+    {
+      "toolName": "Read",
+      "class": "read",
+      "calls": 2,
+      "errors": 0,
+      "durationMsSum": 627,
+      "durationMsMax": 316
+    },
+    {
+      "toolName": "Write",
+      "class": "write",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 343,
+      "durationMsMax": 343
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 414224,
+    "output": 991,
+    "cacheRead": 344315,
+    "compactions": 0,
+    "subagents": 1,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

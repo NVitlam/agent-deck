@@ -1,0 +1,65 @@
+{
+  "id": "07-oversize-input",
+  "manufactures": "two calls with identical truncated previews and DIFFERENT hashes, so a loop cannot be manufactured by truncation",
+  "state": {
+    "sessionId": "synthetic-07-oversize-input",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [
+        {
+          "id": "o0",
+          "toolName": "Write",
+          "status": "done",
+          "inputPreview": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "ordinal": 0,
+          "filePath": "/synthetic/big.txt",
+          "inputHash": "0affffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "o1",
+          "toolName": "Write",
+          "status": "done",
+          "inputPreview": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "ordinal": 1,
+          "filePath": "/synthetic/big.txt",
+          "inputHash": "0bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "o2",
+          "toolName": "Write",
+          "status": "done",
+          "inputPreview": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "ordinal": 2,
+          "filePath": "/synthetic/big.txt",
+          "inputHash": "0cffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      },
+      "usageSeries": [
+        {
+          "ordinal": 0,
+          "input": 10,
+          "cacheCreation": 0,
+          "cacheRead": 100,
+          "output": 20
+        }
+      ]
+    },
+    "totals": {
+      "costUsd": 0
+    },
+    "engine": "cc"
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+  "engine": "cc",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787596838914,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 700299,
+      "output": 12948,
+      "cacheRead": 595001,
+      "cacheRatio": 0.8496385115500664,
+      "toolCalls": 21,
+      "silent": false,
+      "model": "C:\\AI <LOCAL_MODEL>"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.gitignore",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 19,
+      "lastTouch": 19
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\CHANGELOG.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 18,
+      "lastTouch": 18
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\HANDOVER.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 17,
+      "lastTouch": 17
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\PLAN.md",
+      "reads": 2,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 15,
+      "lastTouch": 16
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\README.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 6,
+      "lastTouch": 6
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\fixtures\\PHASE0-VERDICT.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 8,
+      "lastTouch": 8
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\package.json",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 7,
+      "lastTouch": 7
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\src\\bridge\\contract.ts",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 12,
+      "lastTouch": 12
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\src\\extension.ts",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 14,
+      "lastTouch": 14
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\src\\parser\\attribution.ts",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 13,
+      "lastTouch": 13
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "Bash",
+      "class": "shell",
+      "calls": 6,
+      "errors": 1,
+      "durationMsSum": 101047,
+      "durationMsMax": 60943
+    },
+    {
+      "toolName": "Glob",
+      "class": "search",
+      "calls": 2,
+      "errors": 0,
+      "durationMsSum": 26288,
+      "durationMsMax": 13144
+    },
+    {
+      "toolName": "Grep",
+      "class": "search",
+      "calls": 2,
+      "errors": 0,
+      "durationMsSum": 3241,
+      "durationMsMax": 2708
+    },
+    {
+      "toolName": "Read",
+      "class": "read",
+      "calls": 11,
+      "errors": 0,
+      "durationMsSum": 21291,
+      "durationMsMax": 3584
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [
+    {
+      "agentId": "root",
+      "ordinal": 21,
+      "trigger": "manual",
+      "preTokens": 120392,
+      "postTokens": 15717,
+      "durationMs": 820333
+    }
+  ],
+  "stalls": [],
+  "totals": {
+    "prompt": 700299,
+    "output": 12948,
+    "cacheRead": 595001,
+    "compactions": 1,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

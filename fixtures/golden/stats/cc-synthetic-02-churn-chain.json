@@ -1,0 +1,89 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "synthetic-02-churn-chain",
+  "engine": "cc",
+  "projectSlug": "synthetic-stats",
+  "startedAt": 1700000000000,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 1000,
+      "output": 100,
+      "cacheRead": 100,
+      "cacheRatio": 0.1,
+      "toolCalls": 6,
+      "silent": false
+    }
+  ],
+  "files": [
+    {
+      "filePath": "/synthetic/a.ts",
+      "reads": 0,
+      "edits": 2,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 0,
+      "lastTouch": 2
+    },
+    {
+      "filePath": "/synthetic/b.ts",
+      "reads": 0,
+      "edits": 2,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 3,
+      "lastTouch": 5
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "Bash",
+      "class": "shell",
+      "calls": 2,
+      "errors": 1
+    },
+    {
+      "toolName": "Edit",
+      "class": "edit",
+      "calls": 4,
+      "errors": 0
+    }
+  ],
+  "loops": [],
+  "churn": [
+    {
+      "agentId": "root",
+      "filePath": "/synthetic/a.ts",
+      "fromOrdinal": 0,
+      "toOrdinal": 2,
+      "ordinals": [
+        1
+      ],
+      "errors": 1
+    }
+  ],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 1000,
+    "output": 100,
+    "cacheRead": 100,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

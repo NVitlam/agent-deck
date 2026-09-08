@@ -1,0 +1,485 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "99f96635-2042-41dc-9000-bbc9f9233bc3",
+  "engine": "cc",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1788594801597,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 63786801,
+      "output": 247713,
+      "cacheRead": 62660603,
+      "cacheRatio": 0.9823443411121997,
+      "toolCalls": 191,
+      "silent": false,
+      "model": "claude-opus-5"
+    },
+    {
+      "agentId": "a982bfcc574017a33",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 13898490,
+      "output": 10718,
+      "cacheRead": 13598180,
+      "cacheRatio": 0.9783926167518917,
+      "toolCalls": 88,
+      "silent": false,
+      "model": "claude-opus-5"
+    },
+    {
+      "agentId": "a7d51ba7a0fe16c4b",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 3130564,
+      "output": 3262,
+      "cacheRead": 2983359,
+      "cacheRatio": 0.9529781215142064,
+      "toolCalls": 38,
+      "silent": false,
+      "model": "claude-opus-5"
+    },
+    {
+      "agentId": "a0ed8c3aae39da276",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 18891895,
+      "output": 11610,
+      "cacheRead": 18637555,
+      "cacheRatio": 0.9865370837599934,
+      "toolCalls": 111,
+      "silent": false,
+      "model": "claude-opus-5"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\add-findings.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 177,
+      "lastTouch": 177
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\comp.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 403,
+      "lastTouch": 403
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\cx2.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 401,
+      "lastTouch": 401
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-corpus-cwd.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 166,
+      "lastTouch": 166
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-line4.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 24,
+      "lastTouch": 24
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-nul.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 130,
+      "lastTouch": 130
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-overstatements.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 175,
+      "lastTouch": 175
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\harvest-compaction.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 85,
+      "lastTouch": 85
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\line.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 413,
+      "lastTouch": 413
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\move-plan.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 2,
+      "errors": 0,
+      "firstTouch": 32,
+      "lastTouch": 35
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\msg-01.txt",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 28,
+      "lastTouch": 28
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\msg-02.txt",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 37,
+      "lastTouch": 37
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\msg-03.txt",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 102,
+      "lastTouch": 102
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\p95.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 421,
+      "lastTouch": 421
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\sf.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 419,
+      "lastTouch": 419
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\size.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 411,
+      "lastTouch": 411
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\splice-spec.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 20,
+      "lastTouch": 20
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\tick-dod.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 156,
+      "lastTouch": 156
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\update-claudemd.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 188,
+      "lastTouch": 188
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\MEMORY.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 191,
+      "lastTouch": 191
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\MEMORY.md",
+      "reads": 2,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 279,
+      "lastTouch": 317
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\constraint_cc_2_1_260_not_in_any_test.md",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 426,
+      "lastTouch": 426
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\pattern_percentile_diluted_by_zero_population.md",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 425,
+      "lastTouch": 425
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\reference_phase0_stats_spike_recipes.md",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 424,
+      "lastTouch": 424
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.260\\README.md",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 96,
+      "lastTouch": 96
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\HANDOVER.md",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 186,
+      "lastTouch": 186
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-0-stats\\GATE-2026-09-05.md",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 154,
+      "lastTouch": 154
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-0-stats\\VERDICT.md",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 147,
+      "lastTouch": 147
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\spike\\stats\\derive-facts.mjs",
+      "reads": 0,
+      "edits": 12,
+      "writes": 1,
+      "errors": 1,
+      "firstTouch": 110,
+      "lastTouch": 135
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\spike\\stats\\record-size.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 137,
+      "lastTouch": 137
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\spike\\stats\\toolclass-census.mjs",
+      "reads": 0,
+      "edits": 2,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 169,
+      "lastTouch": 170
+    },
+    {
+      "filePath": "c:\\Users\\dev\\projects\\agent-deck\\spike\\stats\\toolclass-census.mjs",
+      "reads": 0,
+      "edits": 2,
+      "writes": 1,
+      "errors": 0,
+      "firstTouch": 73,
+      "lastTouch": 76
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "Agent",
+      "class": "spawn",
+      "calls": 3,
+      "errors": 1,
+      "durationMsSum": 4266296,
+      "durationMsMax": 2846645
+    },
+    {
+      "toolName": "AskUserQuestion",
+      "class": "other",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 167059,
+      "durationMsMax": 167059
+    },
+    {
+      "toolName": "Bash",
+      "class": "shell",
+      "calls": 373,
+      "errors": 9,
+      "durationMsSum": 1460085,
+      "durationMsMax": 189235
+    },
+    {
+      "toolName": "Edit",
+      "class": "edit",
+      "calls": 16,
+      "errors": 1,
+      "durationMsSum": 21518,
+      "durationMsMax": 3988
+    },
+    {
+      "toolName": "Read",
+      "class": "read",
+      "calls": 3,
+      "errors": 0,
+      "durationMsSum": 519951,
+      "durationMsMax": 519246
+    },
+    {
+      "toolName": "Skill",
+      "class": "other",
+      "calls": 2,
+      "errors": 0,
+      "durationMsSum": 599,
+      "durationMsMax": 326
+    },
+    {
+      "toolName": "Write",
+      "class": "write",
+      "calls": 30,
+      "errors": 0,
+      "durationMsSum": 39327,
+      "durationMsMax": 3311
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [
+    {
+      "agentId": "a0ed8c3aae39da276",
+      "ordinal": 5,
+      "delta": 5808
+    },
+    {
+      "agentId": "a7d51ba7a0fe16c4b",
+      "ordinal": 4,
+      "delta": 6319
+    },
+    {
+      "agentId": "a982bfcc574017a33",
+      "ordinal": 2,
+      "delta": 99859
+    },
+    {
+      "agentId": "a982bfcc574017a33",
+      "ordinal": 10,
+      "delta": 6631
+    },
+    {
+      "agentId": "root",
+      "ordinal": 61,
+      "delta": 5210
+    },
+    {
+      "agentId": "root",
+      "ordinal": 98,
+      "delta": 11992
+    },
+    {
+      "agentId": "root",
+      "ordinal": 111,
+      "delta": 71894
+    },
+    {
+      "agentId": "root",
+      "ordinal": 134,
+      "delta": 6023
+    },
+    {
+      "agentId": "root",
+      "ordinal": 148,
+      "delta": 487446
+    },
+    {
+      "agentId": "root",
+      "ordinal": 161,
+      "delta": 72318
+    },
+    {
+      "agentId": "root",
+      "ordinal": 164,
+      "delta": 5711
+    }
+  ],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 99707750,
+    "output": 273303,
+    "cacheRead": 97879697,
+    "compactions": 0,
+    "subagents": 3,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

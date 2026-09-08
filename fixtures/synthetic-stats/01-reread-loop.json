@@ -1,0 +1,81 @@
+{
+  "id": "01-reread-loop",
+  "manufactures": "three identical Read calls in one agent, beside a two-call pair that is one short of LOOP_MIN",
+  "state": {
+    "sessionId": "synthetic-01-reread-loop",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [
+        {
+          "id": "t0",
+          "toolName": "Read",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 0,
+          "filePath": "/synthetic/a.ts",
+          "inputHash": "aaafffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "t1",
+          "toolName": "Read",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 1,
+          "filePath": "/synthetic/a.ts",
+          "inputHash": "aaafffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "t2",
+          "toolName": "Read",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 2,
+          "filePath": "/synthetic/a.ts",
+          "inputHash": "aaafffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "t3",
+          "toolName": "Grep",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 3,
+          "inputHash": "bbbfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "t4",
+          "toolName": "Grep",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 4,
+          "inputHash": "bbbfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      },
+      "usageSeries": [
+        {
+          "ordinal": 0,
+          "input": 10,
+          "cacheCreation": 0,
+          "cacheRead": 100,
+          "output": 20
+        }
+      ]
+    },
+    "totals": {
+      "costUsd": 0
+    },
+    "engine": "cc"
+  }
+}

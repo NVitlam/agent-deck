@@ -1,0 +1,90 @@
+{
+  "id": "02-churn-chain",
+  "manufactures": "one churn chain (write -> error -> write) beside a write pair with no error between them",
+  "state": {
+    "sessionId": "synthetic-02-churn-chain",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [
+        {
+          "id": "c0",
+          "toolName": "Edit",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 0,
+          "filePath": "/synthetic/a.ts",
+          "inputHash": "c0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "c1",
+          "toolName": "Bash",
+          "status": "error",
+          "inputPreview": "",
+          "ordinal": 1,
+          "inputHash": "c1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "c2",
+          "toolName": "Edit",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 2,
+          "filePath": "/synthetic/a.ts",
+          "inputHash": "c2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "c3",
+          "toolName": "Edit",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 3,
+          "filePath": "/synthetic/b.ts",
+          "inputHash": "c3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "c4",
+          "toolName": "Bash",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 4,
+          "inputHash": "c4ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "c5",
+          "toolName": "Edit",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 5,
+          "filePath": "/synthetic/b.ts",
+          "inputHash": "c5ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      },
+      "usageSeries": [
+        {
+          "ordinal": 0,
+          "input": 10,
+          "cacheCreation": 0,
+          "cacheRead": 100,
+          "output": 20
+        }
+      ]
+    },
+    "totals": {
+      "costUsd": 0
+    },
+    "engine": "cc"
+  }
+}

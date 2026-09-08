@@ -1,0 +1,51 @@
+{
+  "id": "04-context-spike",
+  "manufactures": "one turn whose cache-creation delta clears SPIKE_TOKENS.cc, and one that falls short by a single token",
+  "state": {
+    "sessionId": "synthetic-04-context-spike",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      },
+      "usageSeries": [
+        {
+          "ordinal": 0,
+          "input": 10,
+          "cacheCreation": 0,
+          "cacheRead": 100,
+          "output": 20
+        },
+        {
+          "ordinal": 1,
+          "input": 10,
+          "cacheCreation": 6000,
+          "cacheRead": 100,
+          "output": 20
+        },
+        {
+          "ordinal": 2,
+          "input": 10,
+          "cacheCreation": 10999,
+          "cacheRead": 100,
+          "output": 20
+        }
+      ]
+    },
+    "totals": {
+      "costUsd": 0
+    },
+    "engine": "cc"
+  }
+}

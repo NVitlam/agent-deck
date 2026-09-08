@@ -1,0 +1,47 @@
+{
+  "id": "09-opencode-cost",
+  "manufactures": "an OpenCode session with a NON-ZERO session.cost, which no captured store carries (VERDICT.md 0.4: 0 across 30 sessions)",
+  "state": {
+    "sessionId": "synthetic-09-opencode-cost",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [
+        {
+          "id": "k0",
+          "toolName": "read",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 0,
+          "filePath": "/synthetic/a.ts",
+          "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      },
+      "usageSeries": [
+        {
+          "ordinal": 0,
+          "input": 10,
+          "cacheCreation": 0,
+          "cacheRead": 100,
+          "output": 20
+        }
+      ]
+    },
+    "totals": {
+      "costUsd": 0.4237
+    },
+    "engine": "opencode"
+  }
+}

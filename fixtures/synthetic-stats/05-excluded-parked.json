@@ -1,0 +1,72 @@
+{
+  "id": "05-excluded-parked",
+  "manufactures": "a session with a real parked entry, which G3 excludes in full",
+  "state": {
+    "sessionId": "synthetic-05-excluded-parked",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [
+        {
+          "id": "p0",
+          "toolName": "Read",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 0,
+          "filePath": "/synthetic/a.ts",
+          "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "p1",
+          "toolName": "Read",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 1,
+          "filePath": "/synthetic/a.ts",
+          "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "id": "p2",
+          "toolName": "Read",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 2,
+          "filePath": "/synthetic/a.ts",
+          "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      },
+      "usageSeries": [
+        {
+          "ordinal": 0,
+          "input": 10,
+          "cacheCreation": 0,
+          "cacheRead": 100,
+          "output": 20
+        }
+      ]
+    },
+    "totals": {
+      "costUsd": 0
+    },
+    "parked": [
+      {
+        "agentId": "orphan",
+        "code": "noMatchingToolUse",
+        "reason": "synthetic: manufactured for DoD 2.5"
+      }
+    ],
+    "engine": "cc"
+  }
+}

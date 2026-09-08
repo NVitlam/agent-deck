@@ -1,0 +1,93 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "ses_fc0bab772ffeMg5GAMA0263aZa",
+  "engine": "opencode",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787767900301,
+  "endedAt": 1787767988395,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 30450,
+      "output": 144,
+      "cacheRead": 0,
+      "cacheRatio": 0,
+      "toolCalls": 4,
+      "silent": false,
+      "model": "{\"id\":\"nemotron-3-ultra-free\",\"providerID\":\"opencode\"}"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\CLAUDE.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 2,
+      "lastTouch": 2
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\PLAN.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 3,
+      "lastTouch": 3
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\README.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 1,
+      "lastTouch": 1
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "glob",
+      "class": "search",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 497,
+      "durationMsMax": 497
+    },
+    {
+      "toolName": "read",
+      "class": "read",
+      "calls": 3,
+      "errors": 0,
+      "durationMsSum": 21,
+      "durationMsMax": 8
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 30450,
+    "output": 144,
+    "cacheRead": 0,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F10:opencode",
+    "F13.completed:snapshot",
+    "F7:opencode",
+    "F9:opencode"
+  ]
+}

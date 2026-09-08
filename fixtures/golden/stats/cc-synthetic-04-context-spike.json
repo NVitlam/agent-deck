@@ -1,0 +1,52 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "synthetic-04-context-spike",
+  "engine": "cc",
+  "projectSlug": "synthetic-stats",
+  "startedAt": 1700000000000,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 1000,
+      "output": 100,
+      "cacheRead": 300,
+      "cacheRatio": 0.3,
+      "toolCalls": 0,
+      "silent": false
+    }
+  ],
+  "files": [],
+  "tools": [],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [
+    {
+      "agentId": "root",
+      "ordinal": 1,
+      "delta": 6000
+    }
+  ],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 1000,
+    "output": 100,
+    "cacheRead": 300,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

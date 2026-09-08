@@ -1,0 +1,81 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "ses_fcc9851f1ffewC0k6GRa7WMrfs",
+  "engine": "opencode",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787568827918,
+  "endedAt": 1787569129098,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 20395,
+      "output": 237,
+      "cacheRead": 0,
+      "cacheRatio": 0,
+      "toolCalls": 4,
+      "silent": false,
+      "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\package.json",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouch": 2,
+      "lastTouch": 2
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "glob",
+      "class": "search",
+      "calls": 3,
+      "errors": 0,
+      "durationMsSum": 347,
+      "durationMsMax": 143
+    },
+    {
+      "toolName": "read",
+      "class": "read",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 63,
+      "durationMsMax": 63
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [
+    {
+      "agentId": "root",
+      "ordinal": 4,
+      "trigger": "engine"
+    }
+  ],
+  "stalls": [],
+  "totals": {
+    "prompt": 20395,
+    "output": 237,
+    "cacheRead": 0,
+    "compactions": 1,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F10:opencode",
+    "F13.completed:snapshot",
+    "F7:opencode",
+    "F9:opencode"
+  ]
+}

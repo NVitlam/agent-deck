@@ -219,7 +219,21 @@ function buildContentCorpus(): ContentCorpus {
     });
   }
 
-  const text = parts.join(' ');
+  // Joined on a NEWLINE, written as an ESCAPE rather than as a raw byte.
+  //
+  // Two reasons, and the first is a defect this file committed. The
+  // separator was a raw NUL — invisible in a diff, and it makes git treat
+  // the file as binary, which is the control-byte class `CLAUDE.md` already
+  // records four times. `source-hygiene.test.ts` caught it, but only on the
+  // commit that TRACKED this file: that guard scans `git ls-files`, so a new
+  // file's hygiene is unchecked until it is committed — one run later than
+  // anyone would look.
+  //
+  // A newline is also the right separator on the merits: assertion B proves
+  // no string in any record contains one, so a 12-byte window spanning two
+  // parts can never match a needle. A space could bridge them and
+  // manufacture a match that is in neither part.
+  const text = parts.join('\n');
   return { text, sharp, bytes: Buffer.byteLength(text, 'utf8'), sources };
 }
 

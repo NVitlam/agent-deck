@@ -957,6 +957,10 @@ export function parseCodexThread(
     startedAtMs: startedAtMs(owner),
     mtimeMs: options.mtimeMs ?? 0,
   };
+  // v0.7.0 DoD 2.10. Absent stays absent: an unreadable end is unavailable, and
+  // the grafter omits the key rather than reaching for the file's mtime.
+  const ended = endedAtMs(records);
+  if (ended !== undefined) thread.endedAtMs = ended;
   if (usage.modelContextWindow !== undefined) thread.modelContextWindow = usage.modelContextWindow;
   if (usage.contextNow !== undefined) thread.contextNow = usage.contextNow;
   if (usage.burn !== undefined) thread.burn = usage.burn;
@@ -1005,6 +1009,38 @@ export function parseCodexTranscript(
 function startedAtMs(owner: CodexRecord): number {
   const parsed = Date.parse(owner.timestamp);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * When the thread ENDED: the envelope `timestamp` of the LAST record in the
+ * rollout — v0.7.0 DoD 2.10, user ruling of 2026-09-08.
+ *
+ * **The highest ORDINAL, not the largest timestamp.** A rollout is an append
+ * log, so the two agree, and `parse.test.ts` asserts they agree on every
+ * committed transcript rather than this file assuming it — if a capture ever
+ * arrives out of order that test says so instead of this function silently
+ * picking a clock-skewed outlier as the end.
+ *
+ * Walks BACKWARDS past records whose timestamp will not parse rather than
+ * giving up on the first one, because the alternative is an end that is absent
+ * for a whole thread over one malformed envelope. `undefined` only when NO
+ * record carries a readable timestamp, which the fingerprint already makes
+ * unreachable for an accepted thread — `asCodexRecord` refuses a record
+ * without one.
+ *
+ * **It is emphatically not `mtimeMs`,** which is the file's last write: a
+ * filesystem attribute git does not preserve, so it differs between two
+ * checkouts of identical bytes. See {@link CodexThread.endedAtMs}.
+ */
+function endedAtMs(records: readonly CodexRecord[]): number | undefined {
+  const ordered = [...records].sort((a, b) => a.ordinal - b.ordinal);
+  for (let i = ordered.length - 1; i >= 0; i -= 1) {
+    const record = ordered[i];
+    if (record === undefined) continue;
+    const parsed = Date.parse(record.timestamp);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
 }
 
 /**

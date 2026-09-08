@@ -950,11 +950,29 @@ function buildAgent(thread: CodexThread, walkedDepth: number, build: SessionBuil
     // `session_meta`'s own timestamp at ordinal 0, never `mtimeMs` — see the
     // note beside {@link CodexGraftOptions}.
     startedAt: thread.startedAtMs,
-    // `mtimeMs` is the last write to the transcript, which for a thread that is
-    // not running IS when it stopped changing - the same reasoning the OpenCode
-    // grafter applies to `time_updated`. A running agent has no end and the KEY
-    // IS OMITTED rather than set to `undefined`.
-    ...(status === 'running' ? {} : { endedAt: thread.mtimeMs }),
+    /*
+     * The LAST RECORD's own timestamp, never `mtimeMs` - v0.7.0 DoD 2.10, user
+     * ruling of 2026-09-08.
+     *
+     * This read `thread.mtimeMs` until then, on the reasoning that a thread
+     * which is not running stopped being written when it stopped - the same
+     * reasoning the OpenCode grafter applies to `time_updated`. The reasoning
+     * is sound about the SESSION and wrong about the FILE: `mtimeMs` is a
+     * filesystem attribute and **git does not preserve mtimes**, so two
+     * checkouts of byte-identical bytes disagree about when the session ended.
+     * Measured at the Phase 2 gate: every Codex session reported
+     * `2026-09-04T11:08:50Z`, the mtime of its own rollout file in the working
+     * tree that produced the reading. `time_updated` is not the same case - it
+     * is a COLUMN, content, stable across any clone.
+     *
+     * TWO reasons the key is omitted, and they are different facts. A running
+     * agent has no end. A thread whose last record carries no readable
+     * timestamp has an end nobody can state, which is `unavailable` - and
+     * omitting is what "never a substitute" means here.
+     */
+    ...(status === 'running' || thread.endedAtMs === undefined
+      ? {}
+      : { endedAt: thread.endedAtMs }),
     /*
      * v0.7.0 Phase 1, DoD 1.4b. NEITHER `usageSeries` NOR `compactions` on this
      * engine, and both absences are measured rather than unimplemented:

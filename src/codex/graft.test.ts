@@ -1591,11 +1591,20 @@ describe('the injected seams', () => {
     expect(state.projectSlug).toBe('');
   });
 
-  it('takes startedAt from startedAtMs, never from mtimeMs', () => {
-    // There is no `startedAtFor` seam and there used to be, defaulting to
-    // `mtimeMs` - the last write, i.e. an END used as a START. The two are
-    // deliberately different numbers on every hand-built thread so this cannot
-    // pass by coincidence.
+  it('takes NEITHER timestamp from mtimeMs — DoD 2.10', () => {
+    /*
+     * There is no `startedAtFor` seam and there used to be, defaulting to
+     * `mtimeMs` — the last write, i.e. an END used as a START. The two are
+     * deliberately different numbers on every hand-built thread so this cannot
+     * pass by coincidence.
+     *
+     * `endedAt` USED TO BE `mtimeMs`, and this test asserted it. The user
+     * ruling of 2026-09-08 (DoD 2.10) closed that: an mtime is a filesystem
+     * attribute git does not preserve, so it made a user-visible timestamp
+     * differ between two checkouts of identical bytes. Measured at the Phase 2
+     * gate — all four finished Codex sessions reported the mtime of their own
+     * rollout file in the working tree that read them.
+     */
     const root = makeRoot('r');
     expect(root.startedAtMs).not.toBe(root.mtimeMs);
     const result = graftCodexThreads({ threads: [root] });
@@ -1603,9 +1612,23 @@ describe('the injected seams', () => {
     if (state === undefined) throw new Error('no session');
     expect(state.root.startedAt).toBe(root.startedAtMs);
     expect(state.root.startedAt).not.toBe(root.mtimeMs);
-    // `endedAt` IS the mtime: for a thread that is not running, the last write
-    // is when it stopped changing.
-    expect(state.root.endedAt).toBe(root.mtimeMs);
+    // A thread stating no `endedAtMs` states no end. `unavailable`, not a
+    // substitute — and emphatically not the mtime that is sitting right there.
+    expect(root.endedAtMs).toBeUndefined();
+    expect(state.root.endedAt).toBeUndefined();
+  });
+
+  it('takes endedAt from endedAtMs when the thread states one', () => {
+    // The positive arm, so the assertion above is not satisfied merely by a
+    // grafter that never sets `endedAt` at all.
+    const base = makeRoot('r');
+    const root = { ...base, endedAtMs: base.startedAtMs + 61_000 };
+    expect(root.endedAtMs).not.toBe(root.mtimeMs);
+    const result = graftCodexThreads({ threads: [root] });
+    const state = result.sessions[0];
+    if (state === undefined) throw new Error('no session');
+    expect(state.root.endedAt).toBe(root.endedAtMs);
+    expect(state.root.endedAt).not.toBe(root.mtimeMs);
   });
 
   it('reads every corpus thread"s start from its session_meta, before its mtime', () => {

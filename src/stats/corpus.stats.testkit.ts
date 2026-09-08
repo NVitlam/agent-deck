@@ -30,24 +30,25 @@
  * the only place a `SessionState` is built from CC's two taps, so this reader
  * drives it. Nothing is re-implemented and `corpus.testkit.ts` is untouched.
  *
- * ## 2. Codex is read from a STAGED root with pinned mtimes
+ * ## 2. Codex needs NO staging any more, and that is the point
  *
- * `AgentNode.endedAt` for a finished Codex thread is `thread.mtimeMs` —
- * `src/codex/graft.ts`'s own deliberate choice — and **git does not preserve
- * mtimes across a checkout.** Measured here, this phase: every Codex session in
- * the corpus reports `endedAt` = `2026-09-04T11:08:50Z`, which is exactly the
- * mtime of its own rollout file in this working tree, and would be a different
- * instant in a fresh clone. A `StatsRecord` carries `endedAt`, so a Codex
- * golden would go red on every machine but this one.
+ * Phase 2 first read the Codex corpus from a temp copy with every file's mtime
+ * pinned, because `AgentNode.endedAt` was `thread.mtimeMs` and **git does not
+ * preserve mtimes**: every Codex session reported `2026-09-04T11:08:50Z`, the
+ * mtime of its own rollout file in the working tree that produced the reading,
+ * so a Codex golden would have been red on any other machine.
  *
- * `scripts/record-wire.mjs` met the identical problem in v0.6.0 Phase 3 and
- * solved it the same way: copy the root, pin every file's mtime to a fixed
- * instant, read THAT. The engine's choice of source is left alone —
- * this is a property of the FIXTURE's delivery, not of the reader.
+ * **v0.7.0 DoD 2.10 (user ruling, 2026-09-08) closed that at the source
+ * instead:** the Codex engine derives `endedAt` from the LAST RECORD's own
+ * timestamp, and never from a filesystem attribute. The staging is therefore
+ * DELETED rather than left in place — and deleting it is what makes the
+ * determinism proof mean anything. A reader that pinned mtimes would satisfy
+ * "generate twice from different trees and diff" whether or not the engine had
+ * been fixed, which is a check whose subject never happens.
  *
- * The staged copy is removed before this function returns. A leaked temp
- * directory is not a cosmetic problem here: `test/scratch-guard.ts` fails the
- * whole run over one, after 765 of them accumulated in `%TEMP%`.
+ * `codex-determinism.test.ts` is the proof: it copies the corpus, resets the
+ * copy's mtimes to a different instant, reads BOTH through the production
+ * engine, and requires byte-identical records.
  *
  * ## Determinism, in one list
  *
@@ -55,13 +56,10 @@
  *     `LivenessEngine`, so no session is `live` and no tool is `stalled`;
  *   - no hook event is ingested, so `lastActivityAt` is absent and F13 is
  *     empty for every corpus session by construction;
- *   - Codex mtimes are pinned;
  *   - every list is sorted before it is returned.
  */
 
-import { cp, mkdtemp, readdir, rm, utimes } from 'node:fs/promises';
 import fs from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -87,15 +85,6 @@ const FIXTURES = fileURLToPath(new URL('../../fixtures/', import.meta.url));
  * parameter at all: a golden derived against `Date.now()` is not a golden.
  */
 export const FIXED_NOW_MS = 1_700_000_000_000;
-
-/**
- * The instant every staged Codex file's mtime is pinned to.
- *
- * The same value `scripts/record-wire.mjs` uses, so the two pieces of committed
- * evidence that depend on a Codex mtime describe the same instant rather than
- * two arbitrary ones.
- */
-const CODEX_STAGED_MTIME = new Date('2026-09-03T00:00:00.000Z');
 
 /** One committed session, and where it came from. */
 export interface CorpusSession {
@@ -275,16 +264,8 @@ async function readOpenCodeCorpus(): Promise<CorpusSession[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Codex — staged, mtimes pinned, staging removed before returning
+// Codex — read in place; DoD 2.10 removed the reason for staging
 // ---------------------------------------------------------------------------
-
-async function pinMtimes(dir: string): Promise<void> {
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) await pinMtimes(full);
-    else if (entry.isFile()) await utimes(full, CODEX_STAGED_MTIME, CODEX_STAGED_MTIME);
-  }
-}
 
 async function readCodexCorpus(): Promise<CorpusSession[]> {
   const out: CorpusSession[] = [];
@@ -296,22 +277,13 @@ async function readCodexCorpus(): Promise<CorpusSession[]> {
     for (const run of fs.readdirSync(dir).sort()) {
       const root = path.join(dir, run, 'home', '.codex');
       if (!fs.existsSync(root)) continue;
-      const stage = await mkdtemp(path.join(tmpdir(), 'agent-deck-stats-codex-'));
-      try {
-        const stagedRoot = path.join(stage, '.codex');
-        await cp(root, stagedRoot, { recursive: true });
-        await pinMtimes(stagedRoot);
-        const outcome = await readCodexEngine({ root: stagedRoot });
-        if (outcome.kind !== 'ok') continue;
-        for (const state of outcome.result.sessions) {
-          out.push({ engine: 'codex', corpus, version: versionOf(corpus, 'codex'), state });
-        }
-      } finally {
-        // `finally`, not a trailing call: a throw between the copy and the read
-        // would otherwise leave the directory behind and fail the whole run in
-        // `scratch-guard.ts` with a message about litter rather than about the
-        // real failure.
-        await rm(stage, { recursive: true, force: true });
+      // Read IN PLACE. No staging, no temp copy, no mtime pinning — see the
+      // header: the engine no longer reads a filesystem attribute, so there is
+      // nothing left for staging to stabilise.
+      const outcome = await readCodexEngine({ root });
+      if (outcome.kind !== 'ok') continue;
+      for (const state of outcome.result.sessions) {
+        out.push({ engine: 'codex', corpus, version: versionOf(corpus, 'codex'), state });
       }
     }
   }

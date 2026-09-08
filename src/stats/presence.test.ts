@@ -184,19 +184,61 @@ describe('DoD 2.6 — across every committed golden', () => {
     }
   });
 
-  it('compaction lists are empty except where an engine wrote an entry', () => {
-    const withCompaction = entries.filter((e) => e.record.compactions.length > 0);
-    // Real ones from the corpora plus the manufactured one. A floor rather than
-    // an equality: the count moves with the next harvest.
+  it('compaction and stall lists follow the AMENDED 2.6 rule', () => {
+    /*
+     * DoD 2.6 AMENDED 2026-09-08 (user ruling). As written it said
+     * "`10-compaction` yields one CompactionRecord; **all others have an empty
+     * list**", which is false of the tree and could only have been met by
+     * suppressing facts the engines really wrote: four HARVESTED goldens carry
+     * compactions, every one of them tabulated in VERDICT.md 0.3b before this
+     * phase began. The amended rule splits the population:
+     *
+     *   - a SYNTHETIC fixture that manufactures no such event has an empty list
+     *     and a zero total — that set is closed, so it is asserted exactly;
+     *   - a HARVESTED golden carries what the corpus carries.
+     */
+    const synthetic = entries.filter((e) => e.source === 'synthetic');
+    const harvested = entries.filter((e) => e.source === 'corpus');
+    expect(synthetic.length).toBe(13);
+    expect(harvested.length).toBeGreaterThan(15);
+
+    // --- the closed half: exactly one synthetic fixture manufactures each ---
+    expect(synthetic.filter((e) => e.record.compactions.length > 0).map((e) => e.stem)).toEqual([
+      'cc-synthetic-10-compaction',
+    ]);
+    expect(synthetic.filter((e) => e.record.stalls.length > 0).map((e) => e.stem)).toEqual([
+      'cc-synthetic-12-stall',
+    ]);
+    for (const entry of synthetic) {
+      if (entry.stem === 'cc-synthetic-10-compaction') continue;
+      expect(entry.record.compactions, entry.stem).toEqual([]);
+      expect(entry.record.totals.compactions, entry.stem).toBe(0);
+    }
+    for (const entry of synthetic) {
+      if (entry.stem === 'cc-synthetic-12-stall') continue;
+      expect(entry.record.stalls, entry.stem).toEqual([]);
+      expect(entry.record.totals.stalls, entry.stem).toBe(0);
+    }
+
+    // --- the open half: what the corpus carries, with the totals bound ------
+    const withCompaction = harvested.filter((e) => e.record.compactions.length > 0);
+    // A floor, not an equality: the count moves with the next harvest, and the
+    // recorded rule is not to assert fixture-set sizes.
     expect(withCompaction.length).toBeGreaterThan(2);
     for (const entry of withCompaction) {
-      expect(entry.record.totals.compactions).toBe(entry.record.compactions.length);
-      // No Codex payload type carries a compaction entry.
-      expect(entry.record.engine).not.toBe('codex');
+      // No Codex payload type carries a compaction entry at all.
+      expect(entry.record.engine, entry.stem).not.toBe('codex');
     }
+    // Every harvested stall list is empty, and that is a property of HOW the
+    // corpus is read rather than of the sessions: the reader ingests no hook
+    // event, so `lastActivityAt` is absent and nothing can stall. Asserted so
+    // that if a corpus session ever does stall, somebody has to explain it.
+    for (const entry of harvested) expect(entry.record.stalls, entry.stem).toEqual([]);
+
+    // --- and the totals track the lists, in every record of both halves ----
     for (const entry of entries) {
-      if (entry.record.compactions.length > 0) continue;
-      expect(entry.record.totals.compactions).toBe(0);
+      expect(entry.record.totals.compactions, entry.stem).toBe(entry.record.compactions.length);
+      expect(entry.record.totals.stalls, entry.stem).toBe(entry.record.stalls.length);
     }
   });
 

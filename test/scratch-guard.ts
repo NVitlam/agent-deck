@@ -81,6 +81,38 @@ function added(from: Set<string>, to: Set<string>): string[] {
 
 export function setup(): void {
   before = snapshot();
+
+  /*
+   * A TREE THAT IS ALREADY CARRYING LITTER FAILS HERE, BEFORE ANY WORKER RUNS.
+   *
+   * The teardown below is a DELTA — it catches a run that leaks. It cannot
+   * catch the state this repository was actually found in on 2026-09-08: 96
+   * scratch directories in `dist/` left behind by runs that DIED, sitting in a
+   * tree that `npm run package` would have shipped from. A delta of zero over
+   * a dirty tree is a clean report about a dirty tree.
+   *
+   * This is the always-on half of DoD 1c.5, and it is here rather than in
+   * `src/release/vsix.test.ts` because `setup` runs before any worker starts.
+   * The first version of that check ran as an ordinary test, concurrently with
+   * `webview/capture.test.ts` and `webview/wire.test.ts` — which deliberately
+   * `mkdtemp` inside `dist/` — and reported their in-flight scratch as a leak
+   * in 16 of 19 runs. Same property, and the only moment at which it can be
+   * asked without racing.
+   */
+  const carried = [...before.dist].filter((name) => !DIST_KEEP.has(name)).sort();
+  if (carried.length > 0) {
+    throw new Error(
+      [
+        `DoD 1c.5: dist/ is already carrying ${String(carried.length)} scratch ` +
+          'director' + (carried.length === 1 ? 'y' : 'ies') + ' before this run started.',
+        '`dist/**` is shipped wholesale with three `!` re-admissions, so these would',
+        'be packaged. They are almost certainly the remains of a run that DIED —',
+        'a process killed by a Windows fail-fast never reaches `afterAll`.',
+        '',
+        ...carried.map((name) => `  dist/${name}`),
+      ].join('\n'),
+    );
+  }
 }
 
 export function teardown(): void {

@@ -1179,7 +1179,27 @@ describe.skipIf(process.platform !== 'win32')(
  * caught without an edit here. Naming the five would be the fail-open shape
  * rule 18 exists for.
  */
-describe('DoD 1c.5 — dist/ carries no scratch directory', () => {
+/*
+ * GATED ON THE PACKAGE AUDIT, AND THE FIRST VERSION OF THIS WAS RACY.
+ *
+ * Written ungated on 2026-09-08 and it failed 16 of 19 runs immediately —
+ * because `webview/capture.test.ts` and `webview/wire.test.ts` DELIBERATELY
+ * mkdtemp inside `dist/` (they write nothing outside the repo, which is the
+ * whole reason `.vscodeignore` needs its three `!` re-admissions) and they run
+ * concurrently with this file. It was reading a directory other files were
+ * legitimately using, and reporting their in-flight scratch as a leak: this
+ * repository's recorded "a test that passes or fails by CPU load" class,
+ * committed by the party who had just fixed one.
+ *
+ * The property is real; the moment was wrong. It is asserted where nothing
+ * else is running — the package audit, which is what a release actually ships
+ * from — and the ALWAYS-ON half lives in `test/scratch-guard.ts`, which is
+ * race-free by construction: its setup runs before any worker starts and its
+ * teardown after the last one exits.
+ */
+describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
+  'DoD 1c.5 — dist/ carries no scratch directory (AGENT_DECK_PACKAGE_AUDIT=1)',
+  () => {
   /** `mkdtemp`'s signature, whoever called it. */
   const MKDTEMP_SHAPE = /[-_][0-9A-Za-z]{6}$/;
 
@@ -1235,4 +1255,5 @@ describe('DoD 1c.5 — dist/ carries no scratch directory', () => {
       expect(MKDTEMP_SHAPE.test(name), name).toBe(false);
     }
   });
-});
+  },
+);

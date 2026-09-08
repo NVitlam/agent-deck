@@ -1,30 +1,46 @@
 /**
  * Every committed session of every engine, read THROUGH THE PRODUCTION PATH —
- * v0.7.0 Phase 1.
+ * v0.7.0 Phase 1, rebuilt on Phase 2's reader in Phase 3 (DoD 3.0).
  *
  * Test-only. Named `.testkit.ts` rather than `.test.ts` deliberately: vitest
  * collects `src/**\/*.test.ts`, so this file is a helper and never a suite of
  * its own. `webview/testkit.ts` sets the precedent, and the privacy sweep's
  * `tests-and-testdata` rule recognises the suffix.
  *
- * ## Why the sweep is over DIRECTORIES rather than over a list
+ * ## DoD 3.0 — THE CAST WAS NOT TRUE, AND THE TWO READERS ARE NOW ONE
  *
- * A hard-coded corpus list goes stale on the next harvest and reads as a
- * regression — the recorded rule against asserting fixture-set sizes. Every
- * reader below discovers its corpora from disk, so a new capture is picked up
- * with no edit here.
+ * Until Phase 3 this file's Claude Code reader returned
+ * `graftSession(...).snapshot`, cast `as unknown as SessionState`. The two
+ * shapes, measured rather than suspected:
  *
- * The cost is that a discovery bug makes every caller iterate nothing and pass.
- * That is this repository's most-recorded defect class, so each reader THROWS
- * when it finds no corpus rather than returning an empty array, and the callers
- * additionally assert a non-empty population.
+ *     graft snapshot   burn contextNow counts depthMismatches edges parked
+ *                      projectSlug root sessionId totals
+ *     SessionState     burn contextNow engine liveness parked projectSlug root
+ *                      schemaOk sessionId spawnEdges totals workspaceMatch
  *
- * ## Production path, not a shortcut
+ * It carries `edges` where a state carries `spawnEdges`, and it carries no
+ * `engine`, no `liveness`, no `workspaceMatch` and — the one that decides it —
+ * **no `schemaOk`**. `exclude.ts` reads `schemaOk !== true`, so a deriver fed
+ * those states would have marked every Claude Code session in this repository
+ * `excluded:unsupported`.
  *
- * `graftSession`, `readOpenCodeEngine` and `readCodexEngine` are the same
- * entry points the extension host calls. Nothing here re-implements a parse: a
- * field asserted on these states is a field the product really produces, which
- * is the whole difference between DoD 1.4/1.5 and a component test.
+ * That was harmless for Phase 1, whose assertions are all tree-level facts
+ * about `ToolNode` and `AgentNode` where the graft output IS the production
+ * output. It was a live trap for the next consumer, and Phase 2 walked around
+ * it by writing a SECOND reader (`corpus.stats.testkit.ts`) that assembles
+ * Claude Code through `SessionModel`, the engine's only real assembly point.
+ *
+ * Two readers over one corpus is the defect this repository records as "two
+ * agreeing literals is not a contract", one level up: they would agree until
+ * somebody fixed a discovery bug in one of them. **DoD 3.0's ruling is that
+ * they become one.** This file is now a VIEW over that reader — engine-filtered,
+ * cloned, and frozen — and no session assembly happens here at all.
+ *
+ * `corpus.testkit.test.ts` keeps its own contract tests, and
+ * `coverage.test.ts` adds the one DoD 3.0 asks for by name: derive over every
+ * session this file returns and require the Claude Code ones to come back
+ * `coverage: 'full'` with non-empty tables, with the population counted so an
+ * empty sweep cannot pass.
  *
  * ## READ ONCE PER ENGINE PER WORKER, AND FROZEN — Phase 1c, 2026-09-07
  *
@@ -42,9 +58,10 @@
  *
  * **No timeout was raised.** The work was removed instead. Memoising the
  * PROMISE rather than the value also means two callers that overlap share one
- * read instead of racing two.
+ * read instead of racing two. The underlying reader memoises as well, so the
+ * unification below costs one corpus read for both files rather than two.
  *
- * ## Why the result is DEEP-FROZEN, and it is not belt-and-braces
+ * ## Why the result is CLONED and then DEEP-FROZEN
  *
  * A shared array is a correctness hazard the moment any test mutates what it
  * gets back: the next test in the file would silently receive the damage, and
@@ -52,20 +69,22 @@
  * impossible rather than unlikely — ESM is strict mode, so an assignment to a
  * frozen property THROWS, naming the file and line.
  *
+ * The CLONE is what the unification added, and it is not belt-and-braces.
+ * `corpus.stats.testkit.ts` deliberately does not freeze, and its header says
+ * why: the OpenCode and Codex engines hand back states that module does not
+ * own, and freezing them would reach into objects other suites read. Freezing
+ * the shared objects here would impose this file's contract on that one. So
+ * this view takes its own copy first, and the two contracts stay separate —
+ * one frozen view, one unfrozen one, over one read.
+ *
  * A test that genuinely needs to mutate takes a `structuredClone` first and
- * says why. The audit that accompanied this change found none that did.
+ * says why. The audit that accompanied the Phase 1c change found none that did.
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import type { SessionState } from '../model/events.js';
-import { graftSession } from '../model/graft.js';
-import { readCodexEngine } from '../codex/index.js';
-import { readOpenCodeEngine } from '../opencode/index.js';
 
-const FIXTURES = fileURLToPath(new URL('../../fixtures/', import.meta.url));
+import { readCorpusSessions } from './corpus.stats.testkit.js';
+import type { StatsEngine } from './schema.js';
 
 /**
  * Freeze a whole object graph.
@@ -88,153 +107,49 @@ function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
 }
 
 /**
- * Run `read` at most once, and hand every caller the same frozen result.
+ * Every session of one engine, as this file's own frozen copy.
  *
- * The PROMISE is cached rather than the value, so a second caller arriving
- * while the first read is still in flight waits for it instead of starting a
- * second one. Per worker, because vitest gives each worker its own module
- * registry — there is no cross-worker sharing to reason about.
+ * THROWS on an empty result rather than returning one. That is the rule the
+ * previous implementation stated and it survives the unification unchanged: a
+ * discovery bug that finds nothing would otherwise make every caller iterate
+ * nothing and pass, which is this repository's most-recorded defect class.
+ * The underlying reader throws per engine as well, so this is a second gate
+ * over a different question — "did the FILTER find anything" rather than "did
+ * the READ find anything" — and a mis-typed engine tag is exactly what it
+ * catches.
  */
-function once(read: () => Promise<SessionState[]>): () => Promise<SessionState[]> {
+function viewOf(engine: StatsEngine): () => Promise<SessionState[]> {
   let pending: Promise<SessionState[]> | null = null;
   return () => {
-    pending ??= read().then((states) => deepFreeze(states));
+    pending ??= readCorpusSessions().then((all) => {
+      const states = all.filter((entry) => entry.engine === engine).map((entry) => entry.state);
+      if (states.length === 0) {
+        throw new Error(`no ${engine} session in the corpus reader's output`);
+      }
+      // Copy BEFORE freezing — see the header. `structuredClone` is
+      // structural and drops nothing a `SessionState` carries: every value in
+      // one is a string, a number, a boolean, an array or a plain object.
+      return deepFreeze(structuredClone(states));
+    });
     return pending;
   };
-}
-
-function corpusDirs(prefix: string, marker: (dir: string) => boolean): string[] {
-  const named = fs
-    .readdirSync(FIXTURES)
-    .filter((name) => name.startsWith(prefix))
-    .map((name) => path.join(FIXTURES, name))
-    .filter((dir) => fs.statSync(dir).isDirectory())
-    .sort();
-  const dirs = named.filter(marker).sort();
-  if (dirs.length === 0) throw new Error(`no ${prefix}* corpus found under ${FIXTURES}`);
-  /*
-   * THE GLOBAL GUARD WAS THE WRONG STRENGTH, and `phase-verifier` said so: a
-   * discovery bug that found 1 of 6 corpora satisfied "more than zero" and
-   * every sweep test then passed over a sixth of the data.
-   *
-   * So the shortfall is reported rather than tolerated. `marker` legitimately
-   * excludes directories — a Codex witness corpus carries no golden — so this
-   * is not an equality check; it is a floor that goes red if the marker starts
-   * rejecting nearly everything, which is what a broken predicate looks like.
-   */
-  if (dirs.length * 2 < named.length) {
-    throw new Error(
-      `${prefix}*: only ${String(dirs.length)} of ${String(named.length)} corpora matched the ` +
-        'marker — that is a discovery bug, not a corpus without one',
-    );
-  }
-  return dirs;
-}
-
-/** Every `.jsonl` directly under a corpus's slug directory — the MAIN transcripts. */
-function mainTranscripts(corpusDir: string): string[] {
-  const projects = path.join(corpusDir, 'projects');
-  if (!fs.existsSync(projects)) return [];
-  const out: string[] = [];
-  for (const slug of fs.readdirSync(projects)) {
-    const slugDir = path.join(projects, slug);
-    if (!fs.statSync(slugDir).isDirectory()) continue;
-    for (const entry of fs.readdirSync(slugDir)) {
-      // Subagent transcripts live one level down, under `<sessionId>/subagents/`,
-      // and are grafted in by `graftSession` rather than read as sessions.
-      if (entry.endsWith('.jsonl')) out.push(path.join(slugDir, entry));
-    }
-  }
-  return out.sort();
-}
-
-/**
- * Every Claude Code session of every `fixtures/cc-*` corpus.
- *
- * A session the fingerprint REFUSES is skipped rather than thrown on: a corpus
- * may legitimately hold a refusal fixture, and this helper's job is to supply
- * the sessions that render, not to re-assert the version window.
- */
-async function readCcSessionsFresh(): Promise<SessionState[]> {
-  const states: SessionState[] = [];
-  for (const dir of corpusDirs('cc-', (d) => fs.existsSync(path.join(d, 'projects')))) {
-    for (const transcript of mainTranscripts(dir)) {
-      const result = await graftSession(transcript);
-      if (!result.ok) continue;
-      states.push(result.snapshot as unknown as SessionState);
-    }
-  }
-  if (states.length === 0) throw new Error('no CC session grafted from any cc-* corpus');
-  return states;
-}
-
-/** Every OpenCode session of every committed store. */
-async function readOpenCodeSessionsFresh(): Promise<SessionState[]> {
-  const states: SessionState[] = [];
-  for (const dir of corpusDirs('opencode-', () => true)) {
-    // `opencode-1.18.25` keeps its store a level down, in `moved-project/`. A
-    // root-only test silently skipped it once already (Phase 0 records the
-    // fail-open), so the store is searched for rather than assumed.
-    for (const dbPath of findStores(dir)) {
-      const outcome = readOpenCodeEngine({ dbPath, immutable: true });
-      if (outcome.kind !== 'ok') continue;
-      states.push(...outcome.result.sessions);
-    }
-  }
-  if (states.length === 0) throw new Error('no OpenCode session read from any opencode-* corpus');
-  return await Promise.resolve(states);
-}
-
-function findStores(dir: string): string[] {
-  const out: string[] = [];
-  const walk = (current: string): void => {
-    for (const entry of fs.readdirSync(current)) {
-      const full = path.join(current, entry);
-      if (fs.statSync(full).isDirectory()) walk(full);
-      else if (entry === 'opencode.db') out.push(full);
-    }
-  };
-  walk(dir);
-  return out.sort();
-}
-
-/** Every Codex thread of every committed run, as `SessionState`s. */
-async function readCodexSessionsFresh(): Promise<SessionState[]> {
-  const states: SessionState[] = [];
-  // Selected by the presence of a golden, which is what separates an ANCHOR
-  // corpus from a witness — never by sort order, which a differently named
-  // corpus would break silently.
-  for (const dir of corpusDirs('codex-', (d) => fs.existsSync(path.join(d, 'golden.json')))) {
-    for (const run of fs.readdirSync(dir)) {
-      const root = path.join(dir, run, 'home', '.codex');
-      if (!fs.existsSync(root)) continue;
-      const outcome = await readCodexEngine({ root });
-      if (outcome.kind !== 'ok') continue;
-      states.push(...outcome.result.sessions);
-    }
-  }
-  if (states.length === 0) throw new Error('no Codex session read from any codex-* corpus');
-  return states;
 }
 
 // ---------------------------------------------------------------------------
 // The exported readers
 // ---------------------------------------------------------------------------
 //
-// One read per engine per worker, deep-frozen. The `*Fresh` functions above are
-// deliberately NOT exported: an unmemoised reader within reach is an invitation
-// to reintroduce the cost this wrapper exists to remove, and a caller that got
-// an unfrozen copy from one and a frozen one from the other would be debugging
-// the difference rather than the product.
+// One view per engine per worker, cloned and deep-frozen, over ONE underlying
+// corpus read shared with `corpus.stats.testkit.ts`.
 
 /** Every Claude Code session of every `fixtures/cc-*` corpus. Frozen. */
-export const readCcSessions = once(readCcSessionsFresh);
+export const readCcSessions = viewOf('cc');
 
 /** Every OpenCode session of every committed store. Frozen. */
-export const readOpenCodeSessions = once(readOpenCodeSessionsFresh);
+export const readOpenCodeSessions = viewOf('opencode');
 
 /** Every Codex thread of every committed run, as `SessionState`s. Frozen. */
-export const readCodexSessions = once(readCodexSessionsFresh);
+export const readCodexSessions = viewOf('codex');
 
 // ---------------------------------------------------------------------------
 // The cold read, hoisted into a hook with a budget of its own
@@ -280,7 +195,7 @@ export const CORPUS_READ_BUDGET_MS = 30_000;
  * lets a later reader replace the estimate with data instead of re-guessing.
  */
 export const PHASE_1C_READ_MEASUREMENTS = Object.freeze({
-  on: '2026-09-08, main project, 3198 tests, after the TEMP/dist clean-out',
+  on: '2026-09-08, main project, after the TEMP/dist clean-out',
   /** 362, 358, 381 ms across the three consumer files on a quiet machine. */
   idleMs: 362,
   /**
@@ -309,8 +224,10 @@ export const PHASE_1C_READ_MEASUREMENTS = Object.freeze({
  * Read all three corpora once, print how long it took, and let the caller's
  * hook budget enforce the ceiling.
  *
- * `Promise.all` because the three engines are independent and the point is to
- * pay the cost once, in one place, where it is visible.
+ * `Promise.all` because the three views are independent and the point is to
+ * pay the cost once, in one place, where it is visible. Since DoD 3.0 they all
+ * resolve from ONE underlying read, so this is a single corpus pass plus three
+ * clones rather than three passes.
  */
 export async function warmCorpus(): Promise<void> {
   const started = performance.now();

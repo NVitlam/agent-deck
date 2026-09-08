@@ -52,6 +52,7 @@ import {
   OpenCodeEnginePath,
   PanelController,
   SETTING_BOUNDS,
+  SETTING_SHAPES,
   WEBVIEW_SCRIPT_SEGMENTS,
   WEBVIEW_STYLE_SEGMENTS,
   activate,
@@ -61,10 +62,12 @@ import {
   inactiveReasonFor,
   opencodeStoreExists,
   readSettings,
+  statsSettingDefaults,
   workspacePathsOf,
 } from './extension.js';
 import type {
   AgentDeckSettings,
+  NumericSettingKey,
   DataPathEmission,
   HostLogLevel,
   PanelSurface,
@@ -472,6 +475,12 @@ function settings(overrides: Partial<AgentDeckSettings> = {}): AgentDeckSettings
     livenessThresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
     previewBytes: DEFAULT_PREVIEW_BYTES,
     'codex.maxTranscriptBytes': DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
+    // v0.7.0 Phase 3. The SHIPPED defaults, from the one declaration, so a
+    // host built by this helper is the host a user gets: `readSettings(
+    // undefined)` is asserted against the manifest elsewhere in this file, and
+    // a helper that quietly differed would make every test here about a
+    // configuration nobody runs.
+    ...statsSettingDefaults(),
     ...overrides,
   };
 }
@@ -791,6 +800,14 @@ describe('readSettings', () => {
       // 64 MiB. Hotfix 0.6.1's Codex transcript ceiling, written out rather
       // than computed so this test states the number a user would see.
       'codex.maxTranscriptBytes': 67108864,
+      // v0.7.0 Phase 3, and written out for the same reason: these are the
+      // numbers spec section F states and a user reads in the settings UI.
+      // 3600000 is one hour; 90 days is the retention VERDICT.md 0.7
+      // confirmed; the store is ON and no price table ships.
+      'stats.enabled': true,
+      'stats.retentionDays': 90,
+      'stats.idleFlushMs': 3600000,
+      pricing: {},
     });
   });
 
@@ -804,6 +821,13 @@ describe('readSettings', () => {
           // The DOTTED key reaches `get` verbatim, which is the whole reason
           // `readSettings` needs no special case for it.
           'codex.maxTranscriptBytes': 8 * 1024 * 1024,
+          // v0.7.0 Phase 3. All four, and each configured AWAY from its
+          // default: a value equal to the default would pass whether or not
+          // `readSettings` read the key at all.
+          'stats.enabled': false,
+          'stats.retentionDays': 30,
+          'stats.idleFlushMs': 600_000,
+          pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
         })[key],
     });
     expect(read).toStrictEqual({
@@ -811,7 +835,34 @@ describe('readSettings', () => {
       livenessThresholdMs: 90000,
       previewBytes: 512,
       'codex.maxTranscriptBytes': 8 * 1024 * 1024,
+      'stats.enabled': false,
+      'stats.retentionDays': 30,
+      'stats.idleFlushMs': 600_000,
+      pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
     });
+  });
+
+  it('refuses a non-boolean stats.enabled and a non-object pricing, never coerces', () => {
+    // The two non-numeric settings have no `integerInRange` to fall back
+    // through, so their refusal is written by hand and is worth pinning. A
+    // truthiness read would turn the STRING "false" on, which is the shape a
+    // user most plausibly types.
+    for (const bad of ['false', 'true', 0, 1, null, [], {}]) {
+      const read = readSettings({ get: (key) => (key === 'stats.enabled' ? bad : undefined) });
+      expect(read['stats.enabled'], `stats.enabled given ${JSON.stringify(bad)}`).toBe(true);
+    }
+    for (const bad of ['{}', 3, null, [], true]) {
+      const read = readSettings({ get: (key) => (key === 'pricing' ? bad : undefined) });
+      expect(read.pricing, `pricing given ${JSON.stringify(bad)}`).toStrictEqual({});
+    }
+    // And the control: a real boolean and a real object ARE honoured, so the
+    // loops above are a refusal rather than a setting nothing reads.
+    expect(readSettings({ get: (k) => (k === 'stats.enabled' ? false : undefined) })['stats.enabled']).toBe(
+      false,
+    );
+    expect(readSettings({ get: (k) => (k === 'pricing' ? { x: 1 } : undefined) }).pricing).toStrictEqual(
+      { x: 1 },
+    );
   });
 
   it('falls back to the manifest default on an unusable value, never to a guess', () => {
@@ -880,7 +931,12 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
   it('declares exactly the settings the code reads — no more, no fewer', async () => {
     const properties = await manifestProperties();
     const declared = Object.keys(properties).sort();
-    const enforced = Object.keys(SETTING_BOUNDS)
+    // THE UNION OF BOTH TABLES (v0.7.0 Phase 3). `SETTING_BOUNDS` stopped
+    // being the whole set the moment a boolean and an object arrived: a
+    // comparison against the numeric table alone would report the two new
+    // settings as manifest entries the code ignores, i.e. it would go red for
+    // exactly the wrong reason and invite someone to delete them.
+    const enforced = [...Object.keys(SETTING_BOUNDS), ...Object.keys(SETTING_SHAPES)]
       .map((key) => `${CONFIG_SECTION}.${key}`)
       .sort();
     // Both directions: a setting the manifest offers that the code ignores is
@@ -904,10 +960,39 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
     }
   });
 
+  it('declares the type and default of every non-numeric setting', async () => {
+    const properties = await manifestProperties();
+    // The vacuity control: an empty `SETTING_SHAPES` would make the loop below
+    // prove nothing, and this block is the only thing covering the two
+    // settings that carry no minimum and no maximum.
+    expect(Object.keys(SETTING_SHAPES).length).toBeGreaterThan(0);
+    for (const [key, shape] of Object.entries(SETTING_SHAPES)) {
+      const property = properties[`${CONFIG_SECTION}.${key}`];
+      expect(property, `package.json declares no ${CONFIG_SECTION}.${key}`).toBeTypeOf('object');
+      if (property === undefined) continue;
+      expect(property.type, `${key}.type`).toBe(shape.type);
+      expect(property.default, `${key}.default`).toStrictEqual(shape.defaultOf());
+      // A non-numeric setting must NOT advertise numeric bounds: the settings
+      // UI would show a range for a value that has none.
+      expect(property.minimum, `${key}.minimum`).toBeUndefined();
+      expect(property.maximum, `${key}.maximum`).toBeUndefined();
+    }
+  });
+
+  it('the default object is a fresh object per read, never a shared one', () => {
+    // `pricing` defaults to `{}`, and a single frozen-by-convention object
+    // handed to every caller is one mutation away from every window in the
+    // process agreeing on a price table nobody set. Identity, not equality.
+    const first = readSettings(undefined).pricing;
+    const second = readSettings(undefined).pricing;
+    expect(first).toStrictEqual({});
+    expect(second).not.toBe(first);
+  });
+
   it('the manifest default is the value an unconfigured extension actually uses', async () => {
     const properties = await manifestProperties();
     const fromManifest = Object.fromEntries(
-      Object.keys(SETTING_BOUNDS).map((key) => [
+      [...Object.keys(SETTING_BOUNDS), ...Object.keys(SETTING_SHAPES)].map((key) => [
         key,
         (properties[`${CONFIG_SECTION}.${key}`] as ManifestProperty).default,
       ]),
@@ -925,9 +1010,7 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
       const maximum = property.maximum as number;
       const fallback = property.default as number;
       const read = (value: unknown): number =>
-        readSettings({ get: (k) => (k === key ? value : undefined) })[
-          key as keyof AgentDeckSettings
-        ];
+        readSettings({ get: (k) => (k === key ? value : undefined) })[key as NumericSettingKey];
       expect(read(minimum), `${key} at the manifest minimum`).toBe(minimum);
       expect(read(maximum), `${key} at the manifest maximum`).toBe(maximum);
       expect(read(minimum - 1), `${key} one below the manifest minimum`).toBe(fallback);
@@ -2479,13 +2562,79 @@ describe('G1: the extension host writes nothing', () => {
       '.claude',
       'globalState',
       'workspaceState',
-      'globalStorageUri',
+      // `storageUri` is WORKSPACE-scoped storage and stays forbidden. Note it
+      // is not a substring of `globalStorageUri`, which carries a capital S —
+      // so removing that token below does not quietly remove this one.
       'storageUri',
     ];
     for (const needle of forbidden) {
       expect(source, `forbidden token in src/extension.ts: ${needle}`).not.toContain(
         needle,
       );
+    }
+  });
+
+  /*
+   * `globalStorageUri` LEFT THE LIST ABOVE IN v0.7.0 PHASE 3, AND THIS IS THE
+   * COMPENSATING ASSERTION.
+   *
+   * The list was written when G7 read "no `workspaceState`, no `globalState`,
+   * no cache file. Everything dies with the window." G7 is amended (spec
+   * section C; PLAN.md's Grounding Contract) and now permits exactly one
+   * writable location: an append-only, retention-bounded, user-clearable,
+   * setting-disableable history of derived records under
+   * `context.globalStorageUri`. A token ban that forbids the one thing the
+   * contract now allows is a guard that has stopped describing the product,
+   * and this file's sibling test records what to do about that — narrow it to
+   * the property, and say so in a paragraph.
+   *
+   * The property is unchanged and is stronger than the token ever was: **the
+   * host entry point still writes nothing itself.** Every write API stays on
+   * the list above and every one of them is still absent — `mkdir`,
+   * `appendFileSync`, `writeFile` and the rest measure ZERO in this file. The
+   * only module in the repository that writes is `src/stats/store.ts`, and
+   * `src/stats/readback.test.ts` pins who may reach it.
+   *
+   * What replaces the ban is a PINNED COUNT, so a third reader of
+   * `globalStorageUri` has to come here and justify itself rather than being
+   * waved through by a check that stopped applying. Two of the three are the
+   * guarded resolution in `statsDirFor` and one is its own type annotation;
+   * `workspaceState` and `globalState` remain banned outright, because the
+   * amendment permits a DIRECTORY and says nothing about VS Code's key-value
+   * stores.
+   */
+  it('reads globalStorageUri in exactly the places the G7 amendment allows', async () => {
+    const source = stripComments(await readFile(EXTENSION_SOURCE, 'utf8'));
+    expect(source).toContain('createJsonlInferenceSource'); // the strip left code alone
+
+    const occurrences = source.split('globalStorageUri').length - 1;
+    expect(
+      occurrences,
+      'a new reader of globalStorageUri: state why in the block above this test',
+    ).toBe(3);
+
+    // AND THE HOST STILL WRITES NOTHING ITSELF. Restated here rather than left
+    // to the list above, because this is now the load-bearing half: the
+    // amendment permits a directory, not a write from this file.
+    for (const api of [
+      'mkdir',
+      'writeFile',
+      'writeFileSync',
+      'appendFile',
+      'appendFileSync',
+      'createWriteStream',
+      'unlink',
+      'rmSync',
+      // `rm(` IS NOT ON THIS LIST, and the omission is deliberate rather than
+      // a gap. As a substring it matches `#arm(` — the pipeline's idle-timer
+      // method — so it reported a write API that is not there, which is the
+      // false-positive half of the same defect class a missing needle is.
+      // `node:fs/promises`'s `rm` is covered where it can be covered
+      // precisely: the sibling test pins this file's ENTIRE `node:fs` binding
+      // set to `['existsSync', 'statSync']` and its module list forbids
+      // `fs/promises` outright, so there is no import `rm` could arrive on.
+    ]) {
+      expect(source, `src/extension.ts names a write API: ${api}`).not.toContain(api);
     }
   });
 
@@ -4019,19 +4168,74 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
     const keys = Object.keys(properties);
     expect(keys.length).toBeGreaterThan(0);
 
-    // No boolean anywhere: a switch is what a boolean IS, and the enable/
-    // disable shape this rules out has no other spelling in a settings UI.
-    for (const [key, property] of Object.entries(properties)) {
-      expect(property.type, `${key} is a boolean; DoD 3.2 forbids an engine switch`)
-        .not.toBe('boolean');
+    /*
+     * RE-AIMED IN v0.7.0 PHASE 3, NOT WEAKENED, AND THE DISTINCTION IS THE
+     * WHOLE POINT.
+     *
+     * This block used to assert that NO manifest property is a boolean and NO
+     * key contains "enable"/"enabled"/"disable"/"disabled"/"engines"/"mode",
+     * on the reasoning stated above it: a switch is what a boolean IS.
+     *
+     * `agentDeck.stats.enabled` is both of those things and is not an engine
+     * switch. It turns off the LOCAL STORE — G7 as amended requires the
+     * history to be "setting-disableable" in those words — and a window with
+     * it off observes all three engines exactly as before, renders the same
+     * deck, and simply writes no file. The two guards would have gone red for
+     * a setting the Grounding Contract obliges this release to ship.
+     *
+     * Deleting them was the tempting move and would have been the wrong one:
+     * this file's own comment records that weakening the Codex guard to "keys
+     * may contain codex" would have deleted it rather than re-aimed it. So the
+     * rule is narrowed to what it was always FOR, and narrowed in a way that
+     * cannot drift:
+     *
+     *   - a boolean setting is allowed only if it is on a PINNED ALLOW-LIST,
+     *     compared as a SET so a second boolean fails until somebody justifies
+     *     it here in writing;
+     *   - the engine-naming words are still forbidden EVERYWHERE, including on
+     *     the allow-listed key, so `agentDeck.codex.enabled` remains
+     *     impossible however it is spelled;
+     *   - the switch words are still forbidden on every key that is not on the
+     *     allow-list.
+     *
+     * And the control at the bottom of this test is untouched, which is what
+     * makes the whole thing more than a spelling rule.
+     */
+    const BOOLEAN_ALLOW_LIST = ['agentDeck.stats.enabled'];
+    const booleans = Object.entries(properties)
+      .filter(([, property]) => property.type === 'boolean')
+      .map(([key]) => key)
+      .sort();
+    expect(booleans, 'a boolean setting that is not the local store switch').toStrictEqual(
+      BOOLEAN_ALLOW_LIST,
+    );
+
+    /*
+     * NO ALLOW-LISTED BOOLEAN NAMES AN ENGINE.
+     *
+     * This is the narrow half, and it is narrow on purpose:
+     * `agentDeck.codex.maxTranscriptBytes` names an engine and is not a
+     * switch — it is a size gate, and DoD 3.2's rule was never "no key may say
+     * codex". What the rule forbids is a BOOLEAN that names an engine, which
+     * is the only shape an engine on/off toggle can take. Applying the engine
+     * words to every key would fail on a setting this repository shipped
+     * deliberately in 0.6.1.
+     */
+    const engineWords = ['codex', 'opencode', 'claude', 'engine'];
+    for (const key of booleans) {
+      for (const word of engineWords) {
+        expect(key.toLowerCase(), `${key} is a boolean naming an engine (${word})`).not.toContain(
+          word,
+        );
+      }
     }
 
-    // And no key names enabling, disabling or a mode.
-    const forbidden = ['enable', 'disable', 'enabled', 'disabled', 'engines', 'mode'];
+    // And no key outside the allow-list names enabling, disabling or a mode.
+    const switchWords = ['enable', 'disable', 'enabled', 'disabled', 'engines', 'mode'];
     for (const key of keys) {
-      for (const word of forbidden) {
-        expect(key.toLowerCase(), `${key} looks like an engine switch (${word})`)
-          .not.toContain(word);
+      if (BOOLEAN_ALLOW_LIST.includes(key)) continue;
+      for (const word of switchWords) {
+        expect(key.toLowerCase(), `${key} looks like a switch (${word})`).not.toContain(word);
       }
     }
 

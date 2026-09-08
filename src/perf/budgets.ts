@@ -520,3 +520,99 @@ export const DERIVE_STATS_BUDGET: TimingBudget = {
       'single-fork worker the `perf` project runs on.',
   },
 };
+
+/**
+ * The local store's two stages — v0.7.0 DoD 3.9.
+ *
+ * ## THE SUBJECT IS THE STEADY STATE, AND CHOOSING IT MOVED THE NUMBER
+ *
+ * Both budgets are measured against a store already holding a FULL RETENTION
+ * WINDOW: 90 days at 20 sessions a day — 1,800 records across 14 weekly files,
+ * the same projection `docs/evidence/phase-0-stats/VERDICT.md` 0.7 used to
+ * confirm the 90-day default. That is what a user three months in has, and it
+ * is chosen so the plausible regression is visible at the subject's own scale:
+ * an append that starts READING the history it is appending to costs nothing
+ * measurable against an empty store and about 50 ms against this one.
+ *
+ * The first attempt measured append into a FRESH store seeded with one week,
+ * a new `mkdtemp` per sample, and reported a median of 17.5-18.6 ms. That
+ * number was mostly the seeding: re-measured against the steady state it is
+ * **10.0-10.6 ms**. Recorded because the correction is the useful part — a
+ * per-sample setup that dominates the sample is a budget measuring its own
+ * harness, and the only thing that catches it is looking at where the time
+ * went.
+ *
+ * ## WHAT THESE LIMITS ARE AND ARE NOT FOR
+ *
+ * `appendRecord` is FILESYSTEM-BOUND and the wall-clock number is a property
+ * of this machine, not of the code. Measured by syscall on the development
+ * box: `mkdirSync` 0.166 ms, `existsSync` 0.156 ms, `readdirSync` 0.148 ms —
+ * and `appendFileSync` **17.2 ms**. Nearly all of an append is one open-write-
+ * close of a growing file, which on Windows is dominated by whatever scans it.
+ * The retention prune, which runs on every append, is 0.30 ms of the total.
+ *
+ * So these are the `postAppend.tailPoll.regression` kind of budget, not the
+ * `stats.derive` kind, and they carry its kind of margin (12.5x there, 14.1x
+ * and 10.0x here). Phase 1c measured this machine running at roughly half
+ * speed for a whole 20-run block, and the corpus read — also filesystem-bound
+ * — degraded by a factor of MORE THAN 13 while the suite's own wall-clock only
+ * doubled. A limit set for a 2x regression would be red on correct code on an
+ * ordinary bad day, and a budget that goes red on a loaded machine teaches
+ * people to re-run it, which is worth less than a budget that only ever goes
+ * red for a reason.
+ *
+ * **Stated plainly: these catch an ORDER-OF-MAGNITUDE regression — a stage
+ * going quadratic in the number of records or of files — and they do not catch
+ * a doubling.** The append limit would not go red on an append that re-read
+ * the whole store (+50 ms), and that is a known gap rather than an oversight:
+ * closing it would need a limit near 40 ms, which this machine has already
+ * been measured exceeding on identical code.
+ */
+export const STORE_APPEND_BUDGET: TimingBudget = {
+  id: 'stats.store.append.dod',
+  what: 'StatsStore.appendRecord into a full retention window',
+  statistic: 'median',
+  limitMs: 150,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 10.63,
+    on: 'a store holding 1,800 records across 14 weekly files, 3 runs x 45 samples, 2026-09-08',
+    marginX: 14.1,
+    note:
+      'Medians 10.03 / 9.91 / 10.63 ms across three standalone runs; the ' +
+      'SLOWEST is the set point, so the margin stated is the worst case. ' +
+      'Maxima 15.5 / 14.8 / 18.2 ms. Measured in a plain node process, the ' +
+      'closest available analogue of the forked, single-fork worker the ' +
+      '`perf` project runs on. SUPERSEDED SET POINT, kept because the reason ' +
+      'matters: 18.6 ms, measured against a fresh store re-seeded with 140 ' +
+      'records per sample — most of which was the seeding rather than the ' +
+      'append. Nearly all of what remains is `appendFileSync` itself (17.2 ' +
+      'ms by syscall on this machine); the retention prune is 0.30 ms.',
+  },
+};
+
+export const STORE_READ_BUDGET: TimingBudget = {
+  id: 'stats.store.read.dod',
+  what: 'StatsStore.readRecords over a full retention window',
+  statistic: 'median',
+  limitMs: 500,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 49.86,
+    on: '1,800 records across 14 weekly files, all read and reduced, 3 runs x 45 samples, 2026-09-08',
+    marginX: 10.0,
+    note:
+      'Medians 48.92 / 49.86 / 48.74 ms across three standalone runs; the ' +
+      'SLOWEST is the set point. Maxima 60.7 / 63.9 / 61.5 ms. This is the ' +
+      'whole-history read the Trends view and the extension API will make, ' +
+      'not anything on the emission path — a read never happens while a ' +
+      'session is being observed. The cost is 14 file reads plus 1,800 ' +
+      '`JSON.parse` and 1,800 `validateStatsRecord` walks; the reduction to ' +
+      'newest-per-session is a single `Map` pass and is not where the time ' +
+      'goes. The regression this is for is that reduction going quadratic, ' +
+      'which at 1,800 records is 3.2 million comparisons and clears 500 ms ' +
+      'without ambiguity.',
+  },
+};

@@ -96,8 +96,25 @@
  *       never a silent rebind. A malformed webview message is dropped.
  *   G5  Zero egress. The `HookListener` loopback socket is the only socket, and
  *       the webview's CSP (from `html.ts`) forbids the renderer opening one.
- *   G7  Live-only, in memory. No `workspaceState`, no `globalState`, no cache
- *       file. Everything dies with the window.
+ *   G7  Live-only, in memory — AMENDED for v0.7.0 (spec section C; PLAN.md's
+ *       Grounding Contract). The amended text, verbatim:
+ *
+ *         "No persistence under any engine's directory; no session replay. The
+ *         extension MAY keep an append-only, retention-bounded, user-clearable,
+ *         setting-disableable history of derived StatsRecords under
+ *         context.globalStorageUri. The store is never read back into
+ *         SessionState; it feeds the Trends view and the API only."
+ *
+ *       So the sentence this line carried for four phases — "no
+ *       `workspaceState`, no `globalState`, no cache file, everything dies with
+ *       the window" — is no longer true of the extension, and the parts of it
+ *       that remain true are worth stating separately rather than deleting:
+ *       there is still no `workspaceState` and no `globalState`, still no
+ *       cache, and every `SessionState` still dies with the window. What is new
+ *       is exactly one directory, `<globalStorageUri>/stats/`, holding derived
+ *       records and nothing else. {@link StatsPipeline} is the only writer,
+ *       `src/stats/store.ts` the only module that touches it, and
+ *       `src/stats/readback.test.ts` asserts no engine module imports it.
  */
 
 import { existsSync, statSync } from 'node:fs';
@@ -168,6 +185,11 @@ import type {
   CodexLivenessSample,
 } from './codex/liveness.js';
 import type { CodexAgentLiveness, CodexToolCall } from './codex/types.js';
+import { deriveStats } from './stats/derive.js';
+import { parsePricing } from './stats/pricing.js';
+import type { PricingTable } from './stats/pricing.js';
+import { StatsStore, resolveStoreDir } from './stats/store.js';
+import type { StoredStatsRecord } from './stats/store.js';
 import { ProjectWatcher } from './watch/watcher.js';
 import type { WatchFactory } from './watch/watcher.js';
 import { createJsonlInferenceSource } from './watch/inference.js';
@@ -220,6 +242,30 @@ export const LIVENESS_TICK_MS = 5_000;
 /** Quiet period before an emission. Coalesces hook bursts and batch storms. */
 export const EMIT_COALESCE_MS = 100;
 
+/**
+ * 90 days. CONFIRMED rather than chosen, by measurement.
+ *
+ * `docs/evidence/phase-0-stats/VERDICT.md` 0.7 serialised a record per
+ * committed session in the shipped shape: median 1,087 bytes, mean 2,486, max
+ * 18,007. At twenty sessions a day for ninety days that is 1.9 MiB at the
+ * median and 30.9 MiB in the pathological case where EVERY session is as heavy
+ * as the heaviest one in every committed corpus. Nothing in that argues for a
+ * shorter window, so the spec's default stands and the measurement is recorded
+ * beside it rather than the number being restated as a preference.
+ */
+export const DEFAULT_STATS_RETENTION_DAYS = 90;
+
+/**
+ * One hour. The silence after which a session's record is flushed anyway.
+ *
+ * The locked open question (PLAN.md Phase 3, user, 2026-09-05): a record is
+ * appended when the session reaches `ended`, OR when no patch has arrived for
+ * this long. The timer is a STATS-LAYER timer and never touches liveness (G2)
+ * — a session that has been silent for an hour is not thereby declared dead,
+ * it simply has a record written for what it did.
+ */
+export const DEFAULT_STATS_IDLE_FLUSH_MS = 3_600_000;
+
 export interface AgentDeckSettings {
   port: number;
   livenessThresholdMs: number;
@@ -235,7 +281,45 @@ export interface AgentDeckSettings {
    * declares the others: `${CONFIG_SECTION}.${key}`.
    */
   'codex.maxTranscriptBytes': number;
+  /**
+   * v0.7.0 Phase 3 — the four LOCAL STORE settings.
+   *
+   * `stats.enabled` and `pricing` are the first settings here that are not
+   * integers, which is why {@link SETTING_BOUNDS} stopped being the whole
+   * table: a boolean has no minimum and an object has no maximum.
+   * {@link SETTING_SHAPES} carries those two, and the manifest cross-check in
+   * `extension.test.ts` reads the union of the two tables so neither can gain
+   * a setting the other and the manifest never hear about.
+   *
+   * `agentDeck.canvas.autoFit` is deliberately NOT here. Spec section G gives
+   * it a default of `true` and Phase 4's DoD 4.0 owns it, together with the
+   * `fit()` function and the goldens it is asserted against. A setting
+   * declared before anything reads it is the dead knob the manifest
+   * cross-check exists to forbid, so it lands with its behaviour.
+   */
+  'stats.enabled': boolean;
+  'stats.retentionDays': number;
+  'stats.idleFlushMs': number;
+  /**
+   * `agentDeck.pricing` — model id to prices, in USD per million tokens.
+   *
+   * Read as an opaque object here and parsed by `stats/pricing.ts`, which is
+   * total by construction: any shape at all may arrive from a user's
+   * `settings.json`, and a malformed entry is dropped and reported on the
+   * diagnostics channel rather than guessed at (F9's whole point is that no
+   * price table ships).
+   */
+  pricing: Record<string, unknown>;
 }
+
+/** The settings {@link SETTING_BOUNDS} governs — the integer ones. */
+export type NumericSettingKey =
+  | 'port'
+  | 'livenessThresholdMs'
+  | 'previewBytes'
+  | 'codex.maxTranscriptBytes'
+  | 'stats.retentionDays'
+  | 'stats.idleFlushMs';
 
 /** The narrow slice of `vscode.WorkspaceConfiguration` settings reading needs. */
 export interface SettingsReader {
@@ -275,7 +359,7 @@ export interface SettingBounds {
   readonly maximum: number;
 }
 
-export const SETTING_BOUNDS: Readonly<Record<keyof AgentDeckSettings, SettingBounds>> = {
+export const SETTING_BOUNDS: Readonly<Record<NumericSettingKey, SettingBounds>> = {
   port: { default: DEFAULT_PORT, minimum: 1, maximum: 65_535 },
   livenessThresholdMs: {
     default: DEFAULT_LIVENESS_THRESHOLD_MS,
@@ -301,9 +385,95 @@ export const SETTING_BOUNDS: Readonly<Record<keyof AgentDeckSettings, SettingBou
     minimum: 1_048_576,
     maximum: 1_073_741_824,
   },
+  /*
+   * One day to ten years.
+   *
+   * The floor is a day rather than zero because zero is not "keep nothing", it
+   * is "delete on the first append", and a store that erases itself because a
+   * number was mistyped is the one failure here with no undo. A user who wants
+   * nothing kept sets `stats.enabled` to `false`, which is the switch that
+   * actually means it. The ceiling is where retention stops bounding anything:
+   * at the measured pathological rate (VERDICT.md 0.7) ten years is roughly
+   * 1.25 GiB, which is the point at which a bound has stopped being one.
+   */
+  'stats.retentionDays': {
+    default: DEFAULT_STATS_RETENTION_DAYS,
+    minimum: 1,
+    maximum: 3_650,
+  },
+  /*
+   * One minute to seven days.
+   *
+   * Below a minute the flush stops being an idle rule and becomes a write per
+   * emission: the deck pumps on a 5 s liveness tick, so a threshold near it
+   * would append a superseding record every few seconds for every open
+   * session. Seven days is past the point where a session that has been silent
+   * that long is going to produce another patch — the flush is what guarantees
+   * a record EXISTS for a session that never reaches `ended`, and a bound
+   * beyond a week defeats that guarantee without offering anything.
+   */
+  'stats.idleFlushMs': {
+    default: DEFAULT_STATS_IDLE_FLUSH_MS,
+    minimum: 60_000,
+    maximum: 7 * 24 * 60 * 60 * 1_000,
+  },
 };
 
-function integerInRange(value: unknown, key: keyof AgentDeckSettings): number {
+/**
+ * The settings that are NOT integers, with the type and default the manifest
+ * must declare for each.
+ *
+ * A second table rather than a widened {@link SETTING_BOUNDS}, because the
+ * thing `SettingBounds` exists to state — a minimum and a maximum — is
+ * meaningless for both entries, and a table with two fields permanently unset
+ * is a shape that invites someone to fill them in. What the manifest
+ * cross-check needs from a non-numeric setting is its `type` and its `default`,
+ * and that is exactly what this carries.
+ *
+ * `defaultOf` is a FACTORY for `pricing`, not a shared object: the default is a
+ * fresh empty object per read, so a caller that mutates what `readSettings`
+ * handed it cannot change what the next caller gets.
+ */
+export interface SettingShape {
+  /** The `type` string `package.json` must declare. */
+  readonly type: 'boolean' | 'object';
+  /** Produces the default. A factory so no default object is shared. */
+  readonly defaultOf: () => boolean | Record<string, unknown>;
+}
+
+export const SETTING_SHAPES: Readonly<
+  Record<'stats.enabled' | 'pricing', SettingShape>
+> = {
+  'stats.enabled': { type: 'boolean', defaultOf: (): boolean => true },
+  pricing: { type: 'object', defaultOf: (): Record<string, unknown> => ({}) },
+};
+
+/**
+ * The four Phase 3 settings at their shipped defaults, as a fresh object.
+ *
+ * Exported for the test harnesses that build a whole `AgentDeckSettings` by
+ * hand — `extension.test.ts`'s `settings()` and `isolation.test.ts`'s two data
+ * paths. Those harnesses have to name every key or the type rejects them, and
+ * four literals repeated at three sites is the "two agreeing literals is not a
+ * contract" defect waiting for the next default to move.
+ *
+ * A FUNCTION rather than a constant, for the reason {@link SettingShape} gives:
+ * `pricing` is an object, and one shared instance handed to three harnesses is
+ * one mutation away from tests interfering with each other.
+ */
+export function statsSettingDefaults(): Pick<
+  AgentDeckSettings,
+  'stats.enabled' | 'stats.retentionDays' | 'stats.idleFlushMs' | 'pricing'
+> {
+  return {
+    'stats.enabled': SETTING_SHAPES['stats.enabled'].defaultOf() as boolean,
+    'stats.retentionDays': SETTING_BOUNDS['stats.retentionDays'].default,
+    'stats.idleFlushMs': SETTING_BOUNDS['stats.idleFlushMs'].default,
+    pricing: SETTING_SHAPES.pricing.defaultOf() as Record<string, unknown>,
+  };
+}
+
+function integerInRange(value: unknown, key: NumericSettingKey): number {
   const bounds = SETTING_BOUNDS[key];
   if (typeof value !== 'number') return bounds.default;
   if (!Number.isSafeInteger(value)) return bounds.default;
@@ -336,6 +506,22 @@ export function readSettings(reader: SettingsReader | undefined): AgentDeckSetti
       get('codex.maxTranscriptBytes'),
       'codex.maxTranscriptBytes',
     ),
+    'stats.retentionDays': integerInRange(get('stats.retentionDays'), 'stats.retentionDays'),
+    'stats.idleFlushMs': integerInRange(get('stats.idleFlushMs'), 'stats.idleFlushMs'),
+    // Anything that is not a boolean is the default, which for this setting is
+    // `true`: the store is on unless a user has said otherwise IN THE TYPE THE
+    // SETTING DECLARES. A truthiness read would turn the string "false" on.
+    'stats.enabled': typeof get('stats.enabled') === 'boolean'
+      ? (get('stats.enabled') as boolean)
+      : (SETTING_SHAPES['stats.enabled'].defaultOf() as boolean),
+    // Passed through unparsed. `parsePricing` is total and reports what it
+    // refused; validating here would be a second, quieter account of the same
+    // judgment. An array is an object to `typeof`, so it is excluded here as
+    // well as there — one of the two has to be first and this is the cheaper.
+    pricing:
+      typeof get('pricing') === 'object' && get('pricing') !== null && !Array.isArray(get('pricing'))
+        ? (get('pricing') as Record<string, unknown>)
+        : (SETTING_SHAPES.pricing.defaultOf() as Record<string, unknown>),
   };
 }
 
@@ -2846,6 +3032,240 @@ export class PanelController {
 // (d) The host — activation-independent, so it is testable without vscode
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// (d2) The stats pipeline — v0.7.0 Phase 3, DoD 3.2b and 3.7
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive on every patch; append on `ended` or after a long silence.
+ *
+ * ## The two triggers, and why there are two
+ *
+ * PLAN.md Phase 3's open questions are locked (user, 2026-09-05): a record is
+ * appended when a session reaches `ended`, **or** when no patch has arrived for
+ * `agentDeck.stats.idleFlushMs`. The second trigger exists because `ended` is
+ * not guaranteed to arrive — a window closed mid-session, a machine suspended,
+ * an engine whose liveness never resolves — and a history that silently omits
+ * every session that was interrupted would be a history of the sessions that
+ * finished tidily.
+ *
+ * The idle timer is a STATS-LAYER timer. It calls nothing on the liveness
+ * engine and reads nothing from it beyond `state.liveness`, which G2 requires:
+ * a deriver failure, a full disk, or a store that refuses must be invisible to
+ * the deck.
+ *
+ * ## Supersede, and what counts as a patch
+ *
+ * "Reopen = supersede": a session that produces more work after a flush is
+ * recomputed IN FULL and appended as a SECOND line with the same `sessionId`
+ * and a later `derivedAt`. Nothing on disk is rewritten and
+ * `StatsStore.readRecords` keeps the newest per session.
+ *
+ * Which means this class has to answer "did a patch arrive?", and the emission
+ * cannot answer it directly. `SessionEmission.diffs` reports state changes,
+ * but the host also pumps on a 5 s liveness tick with nothing changed, and a
+ * timer rearmed on every tick would never fire. So the test is the DERIVED
+ * RECORD: a session is treated as patched when its record differs from the last
+ * one derived for it, ignoring the stamp. That is the honest question — the
+ * store's subject is the record, so a change that does not reach the record is
+ * not a change this layer has anything to say about — and it makes the append
+ * idempotent for free: twenty pumps over a finished session produce one line.
+ *
+ * ## Failure is counted, never propagated
+ *
+ * `deriveStats` throwing, and the store refusing or failing to write, both land
+ * on {@link StatsPipeline.errors} and are reported to `onError`. Neither
+ * reaches the emission path: {@link AgentDeckHost} calls `observe` inside its
+ * own guard as well, so a defect here cannot stop the panel being published.
+ */
+export interface StatsPipelineOptions {
+  store: StatsStore;
+  /** `agentDeck.pricing`, already parsed. */
+  pricing: PricingTable;
+  /** Model ids whose pricing entry was malformed. Reported once, never fixed. */
+  pricingInvalid: readonly string[];
+  /** `agentDeck.stats.idleFlushMs`. */
+  idleFlushMs: number;
+  /** Injected clock. `derivedAt` comes from here and from nowhere else. */
+  now: () => number;
+  /** Injected timers, so a test can fire the idle flush without waiting. */
+  scheduler: Scheduler;
+  /** Receives a deriver throw, a refused record, and any fs failure. */
+  onError?: (error: unknown) => void;
+}
+
+/** What the pipeline remembers about one session, between emissions. */
+interface TrackedSession {
+  /** The most recent record, without its stamp. The flush's payload. */
+  record: StatsRecordForStore | null;
+  /** `JSON.stringify` of {@link TrackedSession.record}. The change test. */
+  body: string | null;
+  /** The body of the last record actually written. */
+  appendedBody: string | null;
+  /** The pending idle flush, or null. */
+  timer: TimerHandle | null;
+}
+
+/** A derived record before the store's stamp is put on it. */
+type StatsRecordForStore = Omit<StoredStatsRecord, 'derivedAt'>;
+
+export class StatsPipeline {
+  readonly store: StatsStore;
+
+  readonly #pricing: PricingTable;
+  readonly #pricingInvalid: readonly string[];
+  readonly #idleFlushMs: number;
+  readonly #now: () => number;
+  readonly #scheduler: Scheduler;
+  readonly #onError: ((error: unknown) => void) | undefined;
+  readonly #tracked = new Map<string, TrackedSession>();
+  #errors = 0;
+  #flushes = 0;
+  #disposed = false;
+
+  constructor(options: StatsPipelineOptions) {
+    this.store = options.store;
+    this.#pricing = options.pricing;
+    this.#pricingInvalid = options.pricingInvalid;
+    this.#idleFlushMs = options.idleFlushMs;
+    this.#now = options.now;
+    this.#scheduler = options.scheduler;
+    this.#onError = options.onError;
+  }
+
+  /** Deriver throws plus store refusals. Surfaced as `statsErrors`. */
+  get errors(): number {
+    return this.#errors;
+  }
+
+  /** Records appended by the IDLE trigger. Read by tests. */
+  get idleFlushes(): number {
+    return this.#flushes;
+  }
+
+  /** Sessions with a pending idle flush. Must be 0 after `dispose()`. */
+  get armedTimers(): number {
+    let armed = 0;
+    for (const entry of this.#tracked.values()) if (entry.timer !== null) armed += 1;
+    return armed;
+  }
+
+  /**
+   * One emission: derive every session, append the ones that ended, arm the
+   * rest.
+   *
+   * A session that LEFT the emission keeps whatever timer it had. That is
+   * deliberate: a session disappears from the deck when its transcript stops
+   * matching the workspace, which is not the same as it having ended, and
+   * cancelling the flush there would lose the record the flush exists to
+   * guarantee. The timer fires on the record already held.
+   */
+  observe(emission: SessionEmission): void {
+    if (this.#disposed) return;
+    for (const state of emission.sessions) {
+      let record: StatsRecordForStore;
+      try {
+        record = deriveStats(state, {
+          pricing: this.#pricing,
+          pricingInvalid: this.#pricingInvalid,
+          now: this.#now(),
+        });
+      } catch (error) {
+        // G2: the deriver is a third consumer and its failure is skipped.
+        this.#errors += 1;
+        this.#report(error);
+        continue;
+      }
+      const entry = this.#entryFor(state.sessionId);
+      const body = JSON.stringify(record);
+      if (state.liveness === 'ended') {
+        entry.record = record;
+        entry.body = body;
+        this.#clearTimer(entry);
+        if (body !== entry.appendedBody) this.#append(entry);
+        continue;
+      }
+      if (body === entry.body) continue;
+      entry.record = record;
+      entry.body = body;
+      this.#arm(state.sessionId, entry);
+    }
+  }
+
+  /**
+   * Drop every timer. Called from `AgentDeckHost.dispose`, i.e. on panel close
+   * and on `deactivate()`.
+   *
+   * Nothing is flushed here. A window closing is not evidence that a session
+   * ended, and writing a record on teardown would append a line every time a
+   * user closed a window mid-session — the reopened window would then derive
+   * the same session again and supersede it. The idle rule already covers the
+   * case this would be reaching for, and it covers it without guessing.
+   */
+  dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    for (const entry of this.#tracked.values()) this.#clearTimer(entry);
+    this.#tracked.clear();
+  }
+
+  #entryFor(sessionId: string): TrackedSession {
+    const held = this.#tracked.get(sessionId);
+    if (held !== undefined) return held;
+    const fresh: TrackedSession = { record: null, body: null, appendedBody: null, timer: null };
+    this.#tracked.set(sessionId, fresh);
+    return fresh;
+  }
+
+  /** (Re)start the idle countdown. Every patch restarts it; that is the rule. */
+  #arm(sessionId: string, entry: TrackedSession): void {
+    this.#clearTimer(entry);
+    entry.timer = this.#scheduler.setTimer(() => {
+      entry.timer = null;
+      if (this.#disposed) return;
+      if (entry.body === entry.appendedBody) return;
+      this.#flushes += 1;
+      this.#append(entry);
+    }, this.#idleFlushMs);
+  }
+
+  #clearTimer(entry: TrackedSession): void {
+    if (entry.timer === null) return;
+    this.#scheduler.clearTimer(entry.timer);
+    entry.timer = null;
+  }
+
+  /**
+   * Stamp and write.
+   *
+   * The stamp is applied HERE and the store applies none — see
+   * `src/stats/store.ts`'s header on why the store adds no field. The spread
+   * builds a new object rather than mutating the held record, so the body this
+   * class compares against stays the body it derived.
+   */
+  #append(entry: TrackedSession): void {
+    const record = entry.record;
+    if (record === null) return;
+    const before = this.store.appended;
+    this.store.appendRecord({ ...record, derivedAt: this.#now() } as StoredStatsRecord);
+    if (this.store.appended === before) {
+      // The store refused or the write failed; it has already reported why.
+      // Counted here so `statsErrors` covers both halves of this layer.
+      this.#errors += 1;
+      return;
+    }
+    entry.appendedBody = entry.body;
+  }
+
+  #report(error: unknown): void {
+    try {
+      this.#onError?.(error);
+    } catch {
+      // A reporting sink that throws must not break the pipeline reporting on.
+    }
+  }
+}
+
 export interface AgentDeckHostOptions extends DataPathOptions {
   /**
    * Constructs the panel. Called at most once per open panel; a second `open()`
@@ -2863,6 +3283,21 @@ export interface AgentDeckHostOptions extends DataPathOptions {
   createDiagnosticsSink?: DiagnosticsSinkFactory;
   /** Injected clock for the diagnostics timestamps. Defaults to `Date.now`. */
   now?: () => number;
+  /**
+   * `<globalStorageUri>/stats/` — the local store's directory (DoD 3.7).
+   *
+   * OPTIONAL, and a host given none builds no {@link StatsPipeline} at all: it
+   * derives nothing, writes nothing, and creates no directory. Every host test
+   * that predates Phase 3 therefore keeps behaving exactly as it did, which is
+   * the property that makes "the deck renders identically with the deriver
+   * present, absent, or throwing" (G2) something a test can drive rather than
+   * a sentence.
+   *
+   * Only `activate()` supplies it, from `context.globalStorageUri`. The
+   * resolution itself is `resolveStoreDir`'s and is asserted by the path law
+   * (DoD 3.1) rather than restated here.
+   */
+  statsDir?: string;
 }
 
 /**
@@ -2914,6 +3349,16 @@ export class AgentDeckHost {
    */
   readonly diagnostics: DiagnosticsChannel | undefined;
 
+  /**
+   * The local store's pipeline (DoD 3.7), or `undefined` when the caller
+   * supplied no `statsDir`.
+   *
+   * Optional for the reason {@link AgentDeckHost.diagnostics} is: only
+   * `activate()` has a `globalStorageUri`, and a host without one must behave
+   * identically in every other respect.
+   */
+  readonly stats: StatsPipeline | undefined;
+
   readonly #createPanel: () => PanelSurface;
   readonly #nonce?: string;
   readonly #scheduler: Scheduler;
@@ -2942,6 +3387,18 @@ export class AgentDeckHost {
    */
   readonly #announced = new Map<string, { id: string; engine: DiagnosticsEngine }>();
   /**
+   * Model ids whose `agentDeck.pricing` entry was malformed (DoD 3.3b).
+   *
+   * Held rather than logged at construction because the diagnostics channel is
+   * created lazily on its first line, and a line written from inside the
+   * constructor would open the channel — putting an "Agent Deck" entry in every
+   * user's Output dropdown for a setting most of them never touch. It is
+   * written on the first emission instead, once, and then cleared.
+   */
+  #pricingInvalid: string[] | null = null;
+  /** Stats derivations skipped for a reason outside the pipeline's own count. */
+  #statsErrors = 0;
+  /**
    * Sessions per engine, as of the last emission.
    *
    * Taken from the emission rather than from the data path's internals for the
@@ -2958,20 +3415,70 @@ export class AgentDeckHost {
   #disposed = false;
 
   constructor(options: AgentDeckHostOptions) {
-    const { createPanel, nonce, onEmission, createDiagnosticsSink, ...rest } = options;
+    const { createPanel, nonce, onEmission, createDiagnosticsSink, statsDir, ...rest } = options;
     this.#createPanel = createPanel;
     if (nonce !== undefined) this.#nonce = nonce;
     this.#scheduler = options.scheduler ?? systemScheduler;
+    const clock = options.now ?? ((): number => Date.now());
     if (createDiagnosticsSink !== undefined) {
       this.diagnostics = new DiagnosticsChannel({
         createSink: createDiagnosticsSink,
-        now: options.now ?? ((): number => Date.now()),
+        now: clock,
       });
+    }
+    if (statsDir !== undefined) {
+      const parsed = parsePricing(options.settings.pricing);
+      /*
+       * STORE AND PIPELINE FAILURES GO TO THE DIAGNOSTICS CHANNEL, NEVER TO
+       * `onError`, AND THAT IS THE G2 SHAPE RATHER THAN A PREFERENCE.
+       *
+       * `onError` is the USER-VISIBLE path: `activate()` turns it into
+       * `showErrorMessage`, a modal-adjacent notification, and it is reserved
+       * for the two things a user must act on — a port held by another program
+       * and an unexpected throw out of the data path. A history that could not
+       * be written is neither. The deck is unaffected by definition (G2), the
+       * counter says how often it happened, and a line on the channel says
+       * why. Popping a notification for it would train users to dismiss the
+       * notifications that matter.
+       */
+      const toChannel = (error: unknown): void => {
+        this.diagnostics?.record({
+          kind: 'engineDegraded',
+          engine: 'cc',
+          reason: `stats store: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      };
+      this.stats = new StatsPipeline({
+        store: new StatsStore({
+          dir: statsDir,
+          enabled: options.settings['stats.enabled'],
+          retentionDays: options.settings['stats.retentionDays'],
+          onError: toChannel,
+        }),
+        pricing: parsed.table,
+        pricingInvalid: parsed.invalid,
+        idleFlushMs: options.settings['stats.idleFlushMs'],
+        now: clock,
+        scheduler: this.#scheduler,
+        onError: toChannel,
+      });
+      // DoD 3.3b — reported ONCE, at construction, and never per emission. A
+      // malformed price entry is a fact about the settings file, so repeating
+      // it on every patch would be a nag rather than a diagnostic. `pricing`
+      // does not change without a reload for the same reason `port` does not.
+      if (parsed.invalid.length > 0) {
+        this.#pricingInvalid = [...parsed.invalid];
+      }
     }
     this.dataPath = new AgentDeckDataPath({
       ...rest,
       onEmission: (payload: DataPathEmission) => {
         this.#recordEmission(payload);
+        // BEFORE the panel and before the consumer, and inside its own guard:
+        // G2 says the deck renders identically with the deriver present,
+        // absent, or throwing, and the only arrangement that proves it is one
+        // where the stats layer runs first and cannot reach what follows.
+        this.#observeStats(payload.emission);
         this.#panel?.publish(payload);
         onEmission(payload);
       },
@@ -3042,6 +3549,41 @@ export class AgentDeckHost {
   }
 
   /**
+   * Feed one emission to the stats pipeline, behind a guard (G2).
+   *
+   * The pipeline already catches a deriver throw per session. This second
+   * guard covers everything else it might do — a store whose directory has
+   * become unwritable, a `JSON.stringify` on a state carrying a cycle — for the
+   * property the Grounding Contract states in the strongest form available:
+   * *"the deck renders identically with the deriver present, absent, or
+   * throwing"*. A throw here would take out `#panel.publish`, which is the
+   * whole product.
+   */
+  #observeStats(emission: SessionEmission): void {
+    const pipeline = this.stats;
+    if (pipeline === undefined) return;
+    const invalid = this.#pricingInvalid;
+    if (invalid !== null) {
+      this.#pricingInvalid = null;
+      this.diagnostics?.record({
+        kind: 'engineDegraded',
+        engine: 'cc',
+        reason: `agentDeck.pricing: ${String(invalid.length)} malformed entries ignored: ${invalid.join(', ')}`,
+      });
+    }
+    try {
+      pipeline.observe(emission);
+    } catch (error) {
+      this.#statsErrors += 1;
+      this.diagnostics?.record({
+        kind: 'engineDegraded',
+        engine: 'cc',
+        reason: `stats pipeline: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+
+  /**
    * Assemble the counters line from whatever is authoritative right now.
    *
    * Nothing is accumulated in the channel: `DiagnosticsCounters` documents why
@@ -3078,6 +3620,13 @@ export class AgentDeckHost {
       relayFollowers: this.dataPath.relayCounters.followers,
       relayed: this.dataPath.relayCounters.relayed,
       relayReceived: this.dataPath.relayCounters.received,
+      // DoD 3.8. Read off the pipeline and the store at WRITE time, the same
+      // rule as the relay figures above and for the same reason: they own the
+      // numbers, and a second copy kept in step by hand is how two accounts of
+      // one fact begin to disagree. A host with no store reports two zeroes,
+      // which is the truth about a window that is not keeping a history.
+      statsErrors: this.#statsErrors + (this.stats?.errors ?? 0),
+      storeMalformed: this.stats?.store.malformed ?? 0,
     };
   }
 
@@ -3159,6 +3708,10 @@ export class AgentDeckHost {
     }
     this.#panel?.dispose();
     this.#panel = null;
+    // DoD 3.2b — "the idle timer is disposed on `ended` and on deactivate".
+    // `deactivate()` reaches here through `AgentDeckHost.dispose`, and a
+    // surviving timer would be the same defect class as a surviving watcher.
+    this.stats?.dispose();
     this.diagnostics?.dispose();
     await this.dataPath.dispose();
   }
@@ -3171,6 +3724,37 @@ export class AgentDeckHost {
 /** The commands declared in `contributes.commands`. */
 export const OPEN_COMMAND = 'agentDeck.open';
 export const SHOW_DIAGNOSTICS = SHOW_DIAGNOSTICS_COMMAND;
+
+/**
+ * `agentDeck.stats.clearHistory` — DoD 3.5.
+ *
+ * Reachable from the command palette and (in Phase 4) the sidebar menu, and
+ * from nowhere else. The locked open question says so in as many words:
+ * **never a visible button on the deck or the Stats view.** A destructive,
+ * irreversible action one stray click away from a surface a user pans and
+ * zooms around all day is a different product from one behind a palette entry
+ * and a modal.
+ */
+export const CLEAR_STATS_COMMAND = 'agentDeck.stats.clearHistory';
+
+/**
+ * The modal's destructive button, and its prompt.
+ *
+ * Exported so `extension.test.ts` drives the real strings rather than a copy —
+ * two agreeing literals is the defect `bridge/contract.ts` exists to prevent,
+ * and a confirmation dialog is exactly the place where a test that asserts its
+ * own copy of the text proves nothing about what a user is shown.
+ *
+ * The prompt states the two facts a person needs before answering: what is
+ * removed, and that nothing else is. It names no count — reading the store to
+ * put a number in the dialog would mean parsing every line to answer a question
+ * the user did not ask, and a number that is wrong because a second window
+ * wrote in the meantime is worse than no number.
+ */
+export const CLEAR_STATS_CONFIRM = 'Delete history';
+export const CLEAR_STATS_PROMPT =
+  'Delete the local stats history? This removes every derived record Agent Deck ' +
+  'has stored on this machine. Your sessions, transcripts and settings are not touched.';
 
 /** The panel's view type and title. */
 export const PANEL_VIEW_TYPE = 'agentDeck.panel';
@@ -3380,6 +3964,49 @@ export function adaptWebviewPanel(
  * socket and no timer, so the containment the decision was actually about is
  * unaffected.
  */
+/**
+ * The store directory for a context, or `undefined` when the context has none.
+ *
+ * ## Why this is not just `resolveStoreDir(context)`
+ *
+ * `globalStorageUri` has been on `ExtensionContext` since VS Code 1.31 and
+ * this extension's floor is `^1.134.0`, so in the editor it is always there.
+ * That is an argument for expecting it, not for CRASHING without it — and the
+ * first version of this call did crash: `resolveStoreDir` reads
+ * `context.globalStorageUri.fsPath`, which throws `TypeError: Cannot read
+ * properties of undefined` on any context that lacks the field. A throw here
+ * is thrown out of `activate()`, and an extension whose `activate` throws is
+ * INERT — no watcher, no listener, no panel — which is the "manifest and build
+ * disagree" outcome this repository has already shipped once, reached from a
+ * different direction.
+ *
+ * So the history is the one thing that may be missing, and G2 decides what
+ * happens: the stats layer is a third consumer and its absence must be
+ * invisible to the deck. A context with no `globalStorageUri` gets no store,
+ * and everything else runs exactly as before.
+ *
+ * **The skip is REPORTED, never silent** (working-method rule 18). It goes to
+ * the host log rather than to the diagnostics channel because the channel does
+ * not exist yet at this point in activation, and because a window that cannot
+ * keep a history should say so once at startup rather than only when somebody
+ * opens the channel.
+ *
+ * It was found by the suite rather than by review: fifteen tests across
+ * `egress.test.ts` build a context literal with the two fields `activate` used
+ * to need, and every one of them went red at once.
+ */
+function statsDirFor(context: vscode.ExtensionContext): string | undefined {
+  const uri = context.globalStorageUri as { fsPath?: unknown } | undefined;
+  if (uri === undefined || uri === null || typeof uri.fsPath !== 'string' || uri.fsPath === '') {
+    console.info(
+      '[agent-deck] no globalStorageUri on the extension context; ' +
+        'the local stats history is disabled for this window.',
+    );
+    return undefined;
+  }
+  return resolveStoreDir({ globalStorageUri: { fsPath: uri.fsPath } });
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_COMMAND, () => {
@@ -3409,6 +4036,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       host.diagnostics.show();
+    }),
+    /*
+     * DoD 3.5. Registered UNCONDITIONALLY, beside the other two and above the
+     * activation gates, and that placement is the decision.
+     *
+     * A user whose window has no matching project still has a history on disk
+     * from every window that did — the store is per MACHINE, under
+     * `globalStorageUri`, not per workspace. A clear command that existed only
+     * in windows the data path started in would be missing from exactly the
+     * window someone opens to tidy up. So it resolves the directory from the
+     * context rather than from `activeHost`, and works whether or not anything
+     * is being observed.
+     */
+    vscode.commands.registerCommand(CLEAR_STATS_COMMAND, async () => {
+      // Resolved INSIDE the handler, and through the same guarded helper the
+      // host uses: this command is registered above the activation gates, so
+      // there is no computed `statsDir` in scope yet, and a context with no
+      // `globalStorageUri` must produce an explanation rather than a throw.
+      const dir = statsDirFor(context);
+      if (dir === undefined) {
+        void vscode.window.showInformationMessage(
+          'Agent Deck: this window has no storage directory, so there is no stats history to clear.',
+        );
+        return;
+      }
+      const answer = await vscode.window.showWarningMessage(
+        CLEAR_STATS_PROMPT,
+        { modal: true },
+        CLEAR_STATS_CONFIRM,
+      );
+      // ANY answer other than the destructive button leaves everything: the
+      // dismissal of a modal is `undefined`, and treating "not a yes" as a yes
+      // is the one mistake this dialog exists to prevent.
+      if (answer !== CLEAR_STATS_CONFIRM) return;
+      const settings = readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION));
+      new StatsStore({
+        dir,
+        // The CLEAR path ignores `stats.enabled`, deliberately. A user who has
+        // just turned the store off is precisely the user who then wants what
+        // it already wrote removed, and a disabled store that refuses to clear
+        // itself would strand that history with no way to reach it.
+        enabled: true,
+        retentionDays: settings['stats.retentionDays'],
+        onError: (error: unknown) => {
+          void vscode.window.showErrorMessage(
+            `Agent Deck: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        },
+      }).clear();
     }),
   );
 
@@ -3450,6 +4126,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const settings = readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION));
   const extensionUri = context.extensionUri;
+  const statsDir = statsDirFor(context);
 
   const host = new AgentDeckHost({
     workspacePath,
@@ -3480,6 +4157,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * tests.
      */
     createDiagnosticsSink: () => vscode.window.createOutputChannel(DIAGNOSTICS_CHANNEL_NAME),
+    /*
+     * DoD 3.1 and 3.7 — the ONE production call that names the store's
+     * location, and it names it by asking `resolveStoreDir`.
+     *
+     * `context.globalStorageUri` is VS Code's own per-extension directory: it
+     * is outside every workspace folder and outside every observed engine's
+     * directory by construction, which is what makes G1 hold here for free
+     * rather than by inspection. The path law test asserts all of that against
+     * a real context anyway, because "by construction" is a claim.
+     */
+    ...(statsDir === undefined ? {} : { statsDir }),
     settings,
     createPanel: () =>
       adaptWebviewPanel(

@@ -203,6 +203,27 @@ interface MockState {
   panels: MockWebviewPanel[];
   errorMessages: string[];
   informationMessages: string[];
+  /**
+   * Every modal warning shown, with the buttons it offered (v0.7.0 DoD 3.5).
+   *
+   * The OPTIONS are recorded and not just the message, because
+   * `showWarningMessage` is only a confirmation dialog when it is passed
+   * `{ modal: true }`: without it VS Code shows a dismissable notification
+   * toast, which a user can miss entirely and which returns `undefined` the
+   * moment it times out. A test that asserted only the text would pass on a
+   * toast that silently declined to delete anything — and, worse, would pass
+   * identically on one that deleted without asking.
+   */
+  warningMessages: { message: string; modal: boolean; items: string[] }[];
+  /**
+   * What the next `showWarningMessage` returns.
+   *
+   * `undefined` is the DEFAULT and it is the honest one: it is what VS Code
+   * returns when a user dismisses a modal with Escape or Cancel. A mock that
+   * defaulted to the destructive answer would make "cancel leaves everything"
+   * the test nobody remembered to write.
+   */
+  warningAnswer: string | undefined;
   configurationEmitter: Emitter<{ affectsConfiguration(section: string): boolean }>;
 }
 
@@ -213,6 +234,8 @@ const state: MockState = {
   panels: [],
   errorMessages: [],
   informationMessages: [],
+  warningMessages: [],
+  warningAnswer: undefined,
   configurationEmitter: new Emitter(),
 };
 
@@ -224,6 +247,8 @@ export function resetVscodeMock(): void {
   state.panels = [];
   state.errorMessages = [];
   state.informationMessages = [];
+  state.warningMessages = [];
+  state.warningAnswer = undefined;
   state.configurationEmitter = new Emitter();
 }
 
@@ -260,6 +285,13 @@ export const mock = {
   },
   get informationMessages(): string[] {
     return state.informationMessages;
+  },
+  get warningMessages(): { message: string; modal: boolean; items: string[] }[] {
+    return state.warningMessages;
+  },
+  /** What the next modal returns. `undefined` means the user dismissed it. */
+  answerWarningWith(answer: string | undefined): void {
+    state.warningAnswer = answer;
   },
 };
 
@@ -317,12 +349,80 @@ export const window = {
     state.informationMessages.push(message);
     return Promise.resolve(undefined);
   },
+  /**
+   * The modal overload, recorded rather than answered blindly.
+   *
+   * Signature matches the real one this extension calls:
+   * `showWarningMessage(message, options, ...items)`. `options.modal` is read
+   * and RECORDED rather than ignored, because it is the difference between a
+   * confirmation dialog and a toast — see `MockState.warningMessages`.
+   */
+  showWarningMessage(
+    message: string,
+    options?: { modal?: boolean },
+    ...items: string[]
+  ): Promise<string | undefined> {
+    state.warningMessages.push({
+      message,
+      modal: options?.modal === true,
+      items: [...items],
+    });
+    return Promise.resolve(state.warningAnswer);
+  },
 };
 
-/** A stand-in for `vscode.ExtensionContext`, carrying only what activate uses. */
-export function createExtensionContext(extensionPath = '/ext'): {
+/**
+ * A stand-in for `vscode.ExtensionContext`, carrying only what activate uses.
+ *
+ * `globalStorageUri` joined in v0.7.0 Phase 3: `activate()` resolves the local
+ * store from it, and a context without one would make `resolveStoreDir` throw
+ * on a field the real API always supplies.
+ *
+ * THE DEFAULT IS A PATH NOTHING CAN CREATE A DIRECTORY UNDER, and that is
+ * chosen rather than incidental.
+ *
+ * `activate()` now resolves a store directory unconditionally, so every host
+ * test that predates Phase 3 would otherwise start writing real records
+ * somewhere. A plausible-looking placeholder is the worst option available:
+ * `Uri.file('/gs')` is `\gs` on Windows, which `mkdirSync(..., { recursive:
+ * true })` cheerfully creates at the root of the current drive — a test suite
+ * silently writing outside the repository, which is the one thing G1 exists to
+ * prevent. A path that merely does not exist is no better, for the same
+ * reason: `recursive: true` makes it.
+ *
+ * {@link UNWRITABLE_GLOBAL_STORAGE} is therefore a path UNDER AN EXISTING
+ * FILE. `mkdir` under a file is `ENOTDIR` on every platform, so the default
+ * cannot create anything anywhere, and the store's failure path is exercised
+ * for free. A test that WANTS a store passes a real temp directory of its own
+ * and removes it.
+ *
+ * IT IS `process.execPath` — THE RUNNING NODE BINARY — AND NOT A FILE IN THIS
+ * REPOSITORY, which the first draft used and which broke something real.
+ * `fileURLToPath(new URL('../package.json', import.meta.url))` is fine in a
+ * vitest worker and throws `ERR_INVALID_URL` inside `scripts/record-wire.mjs`,
+ * which BUNDLES the host modules and `eval`s them — `import.meta.url` is
+ * undefined there, so a module-level `new URL(..., import.meta.url)` in this
+ * file took down the wire recorder at load time, and with it
+ * `webview/wire.test.ts` and `webview/stress.test.ts`. Nothing about those
+ * suites is related to the store; they simply import this double.
+ *
+ * `process.execPath` needs no URL, no `import.meta`, and no assumption about
+ * where this file sits in a tree. It is guaranteed to exist and guaranteed to
+ * be a file, which is the entire requirement.
+ */
+export const UNWRITABLE_GLOBAL_STORAGE = process.execPath;
+
+export function createExtensionContext(
+  extensionPath = '/ext',
+  globalStoragePath = UNWRITABLE_GLOBAL_STORAGE,
+): {
   subscriptions: MockDisposable[];
   extensionUri: Uri;
+  globalStorageUri: Uri;
 } {
-  return { subscriptions: [], extensionUri: Uri.file(extensionPath) };
+  return {
+    subscriptions: [],
+    extensionUri: Uri.file(extensionPath),
+    globalStorageUri: Uri.file(globalStoragePath),
+  };
 }

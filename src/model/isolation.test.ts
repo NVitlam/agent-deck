@@ -65,6 +65,7 @@ import {
   DEFAULT_LIVENESS_THRESHOLD_MS,
   DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
   DEFAULT_PREVIEW_BYTES,
+  statsSettingDefaults,
 } from '../extension.js';
 import type { DataPathEmission, DataPathOptions } from '../extension.js';
 import type { SessionState } from './events.js';
@@ -419,6 +420,11 @@ function buildDataPath(options: HarnessOptions, port: number): AgentDeckDataPath
       livenessThresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
       previewBytes: DEFAULT_PREVIEW_BYTES,
       'codex.maxTranscriptBytes': DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
+      // v0.7.0 Phase 3. This file drives `AgentDeckDataPath`, which never
+      // reads them — the stats layer hangs off `AgentDeckHost` — but the type
+      // is the whole settings record and stating the shipped defaults keeps
+      // this harness the configuration a user runs.
+      ...statsSettingDefaults(),
     },
     projectsRoot: options.cc.projectsRoot,
     now: () => CC_CLOCK,
@@ -916,6 +922,7 @@ describe('the two engines share no state that could carry a failure across', () 
             livenessThresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
             previewBytes: DEFAULT_PREVIEW_BYTES,
             'codex.maxTranscriptBytes': DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
+            ...statsSettingDefaults(),
           },
           projectsRoot: cc.projectsRoot,
           now: () => CC_CLOCK,

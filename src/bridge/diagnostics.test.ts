@@ -138,6 +138,12 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       relayFollowers: 2,
       relayed: 17,
       relayReceived: 0,
+      // v0.7.0 DoD 3.8. DISTINCT values, and not by accident: the loop below
+      // asserts containment of each counter's value, which a zero satisfies
+      // from any other field on the line. A counter fixture of all zeroes is
+      // the vacuity shape this repository keeps recording.
+      statsErrors: 5,
+      storeMalformed: 9,
     };
     const line = formatCounters(counters, '2026-08-27T12:00:00.000Z');
     for (const key of Object.keys(counters)) {
@@ -156,6 +162,9 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
     expect(line).toContain('followers=2');
     expect(line).toContain('relayed=17');
     expect(line).toContain('received=0');
+    // Phase 3 — the pinned format for the two store fields (DoD 3.8).
+    expect(line).toContain('statsErrors=5');
+    expect(line).toContain('storeMalformed=9');
 
     // AND THE OTHER ROLE, because `relayed` and `received` are what make a
     // leader's line distinguishable from a follower's, and one fixture can
@@ -211,6 +220,8 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       relayReceived: 0,
       opencodeSessions: 0,
       codexSessions: 0,
+      statsErrors: 0,
+      storeMalformed: 0,
     });
     expect(sink.shown).toBe(0);
     channel.show();

@@ -49,6 +49,14 @@ export default defineConfig({
     // `npm test` runs `vitest run` (non-watch) so CI and agents get an exit
     // code. Root-level: `watch` is not a per-project option.
     watch: false,
+    // DoD 1c.5 — a full run leaves no scratch directory behind.
+    //
+    // Root-level and global on purpose: the property is about the WHOLE run,
+    // and the file that leaks is not the file that would notice. Snapshots
+    // %TEMP% and dist/ before any worker starts and compares after the last
+    // one exits. See test/scratch-guard.ts for the 765 leaked directories
+    // that made it necessary.
+    globalSetup: ['./test/scratch-guard.ts'],
     // TWO PROJECTS, AND THE SPLIT IS THE POINT (Phase 5, PLAN.md amendment B8).
     //
     // `src/perf/perf.test.ts` enforces wall-clock budgets on a stage that is

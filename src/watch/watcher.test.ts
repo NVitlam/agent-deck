@@ -750,12 +750,74 @@ describe('ProjectWatcher — real chokidar', () => {
 //       never exist.
 
 describe('1b.10 — a slug directory created AFTER activation', () => {
-  it('discovers the session on the next poll (D1)', async () => {
+  /*
+   * DRIVEN THROUGH THE INJECTION SEAM, NOT THROUGH REAL CHOKIDAR.
+   * Changed 2026-09-07 (Phase 1c) after this test failed in 8 of 30 recorded
+   * runs across two commits.
+   *
+   * It used to arm the REAL watcher — `usePolling: true, pollIntervalMs: 20`,
+   * on a real temp directory — and wait up to 25 s for a real fs event. It was
+   * the ONLY test in this file that did, while `fakeWatchFactory` sits at the
+   * top of the file for exactly this purpose. Every recorded failure reported
+   * `0 fsEvents, 0 lateAttachments`: on a loaded machine chokidar's initial
+   * scan had not completed inside the deadline, so the product was never
+   * reached and the run went red for a reason with no product in it. That is
+   * this repository's recorded "a test that passes or fails by CPU load" class,
+   * and the rule it carries is that such a failure is a defect report about the
+   * TEST.
+   *
+   * THE DEADLINES BELOW ARE UNCHANGED, deliberately. They were never what was
+   * wrong, and raising them would have hidden this instead of fixing it. They
+   * are simply never approached now.
+   *
+   * TWO ARMS, because production says there are exactly two cases and no third.
+   * chokidar runs `ignoreInitial: true`, so a slug directory that already
+   * exists when the root watch becomes ready is absorbed into the initial scan
+   * and NEVER reported — that case is caught only by the `onReady` re-check,
+   * which is the line `#armRootWatch` exists to justify. One created after
+   * ready arrives as an ordinary event. Driving both is strictly more than the
+   * old test did: it could only ever exercise whichever case the machine
+   * happened to produce, and it could not tell you which.
+   *
+   * The mutations this test exists for are untouched and still fatal: removing
+   * the root watch, and removing the `onReady` re-check, each make discovery
+   * never happen in the arm that covers them.
+   */
+  interface Arm {
+    readonly name: string;
+    readonly drive: (rootWatcher: FakeWatcher, createSlug: () => Promise<void>) => Promise<void>;
+  }
+
+  const ARMS: readonly Arm[] = [
+    {
+      name: 'created BEFORE the root watch is ready — the onReady re-check catches it',
+      drive: async (rootWatcher, createSlug) => {
+        await createSlug();
+        rootWatcher.callbacks.onReady();
+      },
+    },
+    {
+      name: 'created AFTER the root watch is ready — the event catches it',
+      drive: async (rootWatcher, createSlug) => {
+        // Ready first, with nothing there. The re-check must find nothing and
+        // must NOT count a late attachment; the assertion below pins that.
+        rootWatcher.callbacks.onReady();
+        await createSlug();
+        // The path is deliberately not the slug directory: `#onRootEvent` asks
+        // the filesystem whether ITS path exists rather than matching the
+        // event's path, because chokidar's paths differ across platforms.
+        rootWatcher.callbacks.onChange('addDir', 'a path this watcher never reads');
+      },
+    },
+  ];
+
+  it.each(ARMS)('discovers the session on the next poll (D1): $name', async ({ drive }) => {
     const root = await makeProjectsRoot();
     // The slug directory is deliberately NOT created. That is the ordinary
     // state of a repository Claude Code has not run in yet.
     const slugDir = join(root, SLUG);
 
+    const fake = fakeWatchFactory();
     const batches: TailBatch[] = [];
     const watcher = new ProjectWatcher({
       workspacePath: WORKSPACE,
@@ -764,7 +826,7 @@ describe('1b.10 — a slug directory created AFTER activation', () => {
       },
       env: { CLAUDE_PROJECTS_ROOT: root },
       homedir: () => 'c:\\nowhere',
-      watchFactory: createChokidarWatchFactory({ usePolling: true, pollIntervalMs: 20 }),
+      watchFactory: fake.factory,
       debounceMs: 20,
     });
 
@@ -775,40 +837,44 @@ describe('1b.10 — a slug directory created AFTER activation', () => {
       const atStart = batches.length;
       expect(watcher.diagnostics.discoveryFailures).toBeGreaterThan(0);
 
+      // What `start()` armed is the ROOT watch, on the projects root — asserted
+      // rather than assumed, because driving the wrong watcher would make every
+      // arm below vacuous while still looking like it drove something.
+      expect(fake.watchers).toHaveLength(1);
+      const rootWatcher = fake.latest();
+      expect(rootWatcher.dir).toBe(root);
+      expect(watcher.diagnostics.lateAttachments).toBe(0);
+
       // Now Claude Code starts, exactly as it did in the smoke.
-      await mkdir(slugDir, { recursive: true });
-      await writeFile(
-        join(slugDir, SESSION_A + '.jsonl'),
-        jsonl({
-          type: 'user',
-          uuid: '11111111-1111-4111-8111-111111111111',
-          sessionId: SESSION_A,
-          version: '2.1.234',
-          timestamp: '2026-09-07T13:17:00.000Z',
-          cwd: WORKSPACE,
-          message: { role: 'user', content: 'hello' },
-        }),
-        'utf8',
-      );
+      await drive(rootWatcher, async () => {
+        await mkdir(slugDir, { recursive: true });
+        await writeFile(
+          join(slugDir, SESSION_A + '.jsonl'),
+          jsonl({
+            type: 'user',
+            uuid: '11111111-1111-4111-8111-111111111111',
+            sessionId: SESSION_A,
+            version: '2.1.234',
+            timestamp: '2026-09-07T13:17:00.000Z',
+            cwd: WORKSPACE,
+            message: { role: 'user', content: 'hello' },
+          }),
+          'utf8',
+        );
+      });
 
       // Bounded rather than slept on. The ceiling is a LIVENESS bound — "did
-      // it happen at all" — and NOT a performance claim, which is why it is
-      // generous and why raising it is not the forbidden act.
+      // it happen at all" — and NOT a performance claim.
       //
-      // IT WAS 5 s AND THAT WAS TOO TIGHT, found on the first full-suite run
-      // after this test was written: green alone and in three gate runs, red
-      // under the full suite, at real chokidar readiness plus real fs events on
-      // a loaded machine. That is this repository's recorded "a test that
-      // passes or fails by CPU load" class, and I wrote one — the rule it
-      // records is that such a failure is a defect report about the TEST.
+      // IT WAS RAISED FROM 5 s TO 25 s ONCE, AND THAT WAS TREATING THE SYMPTOM.
+      // The history is kept because it is the more useful half: the raise was
+      // argued for on the grounds that a liveness ceiling is not a budget,
+      // which is true, and it still did not work — the test went on failing in
+      // 8 of 30 runs because no ceiling rescues a real fs event that never
+      // arrives. Phase 1c removed the race instead and left the number alone.
       //
-      // The distinction from widening a perf budget, because they look alike
-      // and are not: a budget asserts the product is FAST and its number is the
-      // claim, so moving it destroys the claim. This asserts the product WORKS
-      // and the number is only how long the harness is willing to wait. The
-      // mutation sensitivity is untouched by it — the mutations this test
-      // exists for (remove the root watch, remove the onReady re-check) make
-      // discovery never happen, and no deadline rescues never.
+      // All that remains behind this deadline is the debouncer's 20 ms, so if
+      // it is ever approached again something is genuinely wrong.
       const deadline = Date.now() + 25_000;
       for (;;) {
         if (batches.slice(atStart).some((x) => x.newFiles.length > 0)) break;
@@ -832,6 +898,16 @@ describe('1b.10 — a slug directory created AFTER activation', () => {
       // filled late says so, and a counter nothing reads is a counter that can
       // be wrong forever.
       expect(watcher.diagnostics.lateAttachments).toBe(1);
+
+      // AND THE HANDOVER ACTUALLY HAPPENED, which the old test could not see at
+      // all. The root watch is narrow and temporary by design — it is closed
+      // the instant the real one is armed, because the projects root holds a
+      // directory per workspace on the machine and this window has business
+      // with exactly one. A version that discovered the session and left the
+      // root watch open would have passed every assertion above.
+      expect(rootWatcher.closed).toBe(true);
+      expect(fake.watchers).toHaveLength(2);
+      expect(fake.latest().dir).toBe(slugDir);
     } finally {
       await watcher.dispose();
     }

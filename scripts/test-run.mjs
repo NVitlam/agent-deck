@@ -35,6 +35,8 @@ import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { argv, exit, hrtime } from 'node:process';
 
+import { classifyExit } from './exit-class.mjs';
+
 const OUT_DIR = 'docs/evidence/runner';
 const LEDGER = path.join(OUT_DIR, 'LEDGER.md');
 
@@ -60,6 +62,20 @@ const ANSI_RE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
 function arg(name, fallback) {
   const at = argv.indexOf(name);
   return at === -1 ? fallback : argv[at + 1];
+}
+
+// `--explain <code>` answers "I saw exit N, what is it?" and writes NOTHING.
+//
+// Phase 1c added it because the answer is not obvious and the obvious answer is
+// wrong: 127 at a Git Bash prompt is not "command not found", it is every
+// Windows abnormal-termination status collapsed into eight bits. A reader who
+// finds a 127 in a scrollback needs this before they need the ledger.
+const explainAt = argv.indexOf('--explain');
+if (explainAt !== -1) {
+  const raw = Number(argv[explainAt + 1]);
+  if (!Number.isFinite(raw)) throw new Error('--explain needs a numeric exit code');
+  console.log(JSON.stringify(classifyExit(raw), null, 2));
+  exit(0);
 }
 
 const runs = Number(arg('--runs', '1'));
@@ -122,12 +138,43 @@ function runOnce(index, headSha) {
         pool: 'suite=threads perf=forks (vitest.config.ts)',
         exit: code,
         signal: signal ?? null,
+        // THE RAW CODE, CLASSIFIED. `cmd.exe` (which `shell: true` uses) hands
+        // a Windows exit status through unchanged; Git Bash does not, and
+        // collapses every abnormal status to 127. A death recorded here is
+        // therefore worth more than the same death read out of a bash
+        // scrollback, and this field is what says so on the record rather than
+        // in a document nobody opens. See `scripts/exit-class.mjs`.
+        exitClass: classifyExit(code, signal ?? null),
         elapsedMs,
         summaryLine,
         lastReporterLine: lines.at(-1) ?? null,
         stderrTail: stderr.split(/\r?\n/).filter((l) => l.trim() !== '').slice(-20),
-        // See the header: a red suite is not a death.
-        verdict: code === 0 ? 'passed' : summaryLine === null ? 'DEATH' : 'failed',
+        /*
+         * FOUR VERDICTS, NOT THREE — and the fourth was added because this
+         * ledger committed, one level in, the very defect Phase 1c exists to
+         * correct.
+         *
+         * The original rule was `non-zero AND no summary line -> DEATH`, on the
+         * reasoning that a red suite reports itself and anything else is the
+         * process vanishing. That is true of a process that vanishes and false
+         * of a run that never started: a `globalSetup` that throws exits 1 with
+         * no summary, and seventeen such refusals were recorded as DEATHs in
+         * `1c-block3` — sitting in the same column as a Windows fail-fast,
+         * which is exactly the conflation the whole phase is about.
+         *
+         * So a DEATH now requires the code to be ABNORMAL — high-bit, i.e. the
+         * process was terminated rather than exiting. A non-zero code with no
+         * summary and an ordinary code is a `startup-error`: vitest refused to
+         * run, and the reason is in `stderrTail` rather than in the exit code.
+         */
+        verdict:
+          code === 0
+            ? 'passed'
+            : summaryLine !== null
+              ? 'failed'
+              : classifyExit(code, signal ?? null).kind === 'abnormal'
+                ? 'DEATH'
+                : 'startup-error',
         at: new Date().toISOString(),
       };
 
@@ -136,9 +183,16 @@ function runOnce(index, headSha) {
         path.join(OUT_DIR, `${label}-${String(index).padStart(3, '0')}.json`),
         `${JSON.stringify(record, null, 2)}\n`,
       );
+      // An abnormal code is spelled in hex BESIDE its decimal form, because the
+      // decimal form is unreadable and this ledger has already carried the same
+      // status written two different ways (`3221226505` and `-1073740791`).
+      const codeCell =
+        record.exitClass.kind === 'abnormal' || record.exitClass.kind === 'oversized'
+          ? `${String(code)} (${record.exitClass.hex}, bash would say ${String(record.exitClass.posixShellWouldReport)})`
+          : String(code);
       appendFileSync(
         LEDGER,
-        `| ${record.at} | ${label} | ${String(index)} | ${headSha} | ${String(code)} | ` +
+        `| ${record.at} | ${label} | ${String(index)} | ${headSha} | ${codeCell} | ` +
           `${String(elapsedMs)} | ${record.verdict} | ${(summaryLine ?? '(none)').trim()} |\n`,
       );
       resolve(record);
@@ -161,11 +215,22 @@ for (let i = 1; i <= runs; i += 1) {
 
 const deaths = results.filter((r) => r.verdict === 'DEATH');
 const failed = results.filter((r) => r.verdict === 'failed');
+const startupErrors = results.filter((r) => r.verdict === 'startup-error');
+const passed = results.length - deaths.length - failed.length - startupErrors.length;
 console.log(
   `\n${label}: ${String(results.length)} runs, ${String(deaths.length)} deaths, ` +
-    `${String(failed.length)} failed, ${String(results.length - deaths.length - failed.length)} passed`,
+    `${String(failed.length)} failed, ${String(startupErrors.length)} startup-error, ` +
+    `${String(passed)} passed`,
 );
 
-// A death is what this exists to find, so it is the only thing that fails the
-// wrapper. A red suite has already reported itself.
-exit(deaths.length > 0 ? 1 : 0);
+/*
+ * A DEATH fails the wrapper, and so does a run that never started.
+ *
+ * A red suite has already reported itself, so `failed` does not. A
+ * `startup-error` does, and for a different reason than a death: it means the
+ * block measured NOTHING for that run, and a block whose denominator silently
+ * shrinks is worse than one that stops. `1c-block3` is the case — seventeen
+ * refusals that produced no measurement and, before this, were counted as
+ * seventeen deaths.
+ */
+exit(deaths.length > 0 || startupErrors.length > 0 ? 1 : 0);

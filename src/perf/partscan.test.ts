@@ -47,6 +47,35 @@
  * The cost, as a RATIO measured twice in one process. No millisecond budget
  * appears here: this repository has an evidence file about a perf number that
  * moved 100x on process state alone.
+ *
+ * ## Phase 1c, 2026-09-07 — it MOVED here, and a warm-up poll is discarded
+ *
+ * This file lived in `src/opencode/` and therefore in the MAIN vitest project,
+ * where it failed in 2 of 20 recorded runs. Two changes, and the second is the
+ * one that matters:
+ *
+ *   - **It is in the `perf` project now** (`pool: 'forks'`, `singleFork`).
+ *     Wall-clock assertions belong where the host process state is controlled,
+ *     which is the same argument `OPENCODE_POLL_BUDGET`'s header makes; that
+ *     header's "WHY NOT MEASURED IN `src/opencode/`" section is amended rather
+ *     than deleted, because its 48.4 ms figure was taken by this instrument in
+ *     the main project and will not re-derive here.
+ *   - **The first poll of the process is discarded.** See `beforeAll`. The
+ *     failure was never in the large store; it was start-up cost landing on the
+ *     small one.
+ *
+ * ## IF THE RATIO STILL FLAKES, REPLACE IT — user ruling, 2026-09-07
+ *
+ * The fallback is decided in advance so nobody has to decide it in a red run:
+ * **drop the two ratio assertions and put two ABSOLUTE steady-state bounds in
+ * their place**, one per store, generous enough to be about the shape and not
+ * about the machine. Note what that costs, since the ratio was chosen for a
+ * reason recorded above — an absolute bound reintroduces exactly the
+ * millisecond number this file's header refuses, and it must therefore live in
+ * the `perf` project (it now does) and carry its measured set point, its date
+ * and its margin the way `src/perf/budgets.ts` requires of every other number.
+ * The tripwire property is preserved either way: both forms go red the day
+ * somebody bounds the scan, which is the only thing this file exists to defend.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -57,7 +86,7 @@ import { hrtime } from 'node:process';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { OcLivenessEngine } from './liveness.js';
+import { OcLivenessEngine } from '../opencode/liveness.js';
 
 /** An order of magnitude apart — the DoD's 20 k / 200 k. */
 const SMALL_ROWS = 20_000;
@@ -180,8 +209,33 @@ function measure(dbPath: string): Measured {
 let small: Measured;
 let large: Measured;
 
+/**
+ * Rows for the store whose measurement is THROWN AWAY.
+ *
+ * Small enough to cost nothing, large enough that the poll does real work:
+ * loads `node:sqlite`, compiles both statements, warms the JIT on the row
+ * decoder and puts SQLite's page cache in a steady state.
+ */
+const WARMUP_ROWS = 2_000;
+
 beforeAll(() => {
   scratch = mkdtempSync(path.join(tmpdir(), 'agent-deck-partscan-'));
+
+  // THE FIRST POLL OF THE PROCESS IS DISCARDED, AND THIS IS THE WHOLE FIX.
+  //
+  // Without it, `small` was whatever the first measurement in a cold process
+  // costs — module load, JIT, cold page cache — and the ratio below compares
+  // the two stores as if only the row count differed. Measured across the
+  // Phase 1c blocks: the assertion failed as `expected 1174.5 to be greater
+  // than 1851.7`, i.e. `large` at 1174 ms against `small × 3` at 1851, so
+  // `small` had been measured at 617 ms — MORE than half of a store ten times
+  // its size. The large store was never the problem; the small one was
+  // carrying the process's start-up cost and nothing said so.
+  //
+  // Discarded rather than subtracted: a warm-up whose number is kept is a
+  // number somebody eventually treats as a measurement.
+  measure(buildStore('warmup', WARMUP_ROWS));
+
   small = measure(buildStore('small', SMALL_ROWS));
   large = measure(buildStore('large', LARGE_ROWS));
 }, 300_000);

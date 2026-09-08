@@ -1155,3 +1155,105 @@ describe.skipIf(process.platform !== 'win32')(
     );
   },
 );
+
+/*
+ * DoD 1c.5 — `dist/` carries no scratch directory, ever.
+ *
+ * THIS IS A PACKAGING GUARD, NOT HOUSEKEEPING, and the distinction is the
+ * reason it lives in this file rather than beside the runner. `.vscodeignore`
+ * denies `dist/**` and then RE-ADMITS three paths with `!`, so anything else
+ * that appears in `dist/` is shipped by default. `CLAUDE.md` records `vsce ls`
+ * enumerating `dist/wire-test-<random>/**` as packaged content during a real
+ * run — this class has already reached the artifact once.
+ *
+ * Measured 2026-09-08: 96 scratch directories in `dist/`, from five prefixes
+ * (`capture-test-`, `wire-test-`, `ingest-audit-`, `codex-memory-`,
+ * `codex-index-`), accumulated over roughly fifty suite runs. They were left by
+ * runs that DIED rather than by tests that forget: a process killed by a
+ * Windows fail-fast never reaches `afterAll`. `test/scratch-guard.ts` fails a
+ * run that leaks one; this fails a TREE that is carrying one, which is the
+ * state a `npm run package` would actually ship from.
+ *
+ * The rule is SHAPE, not a list of prefixes — `mkdtemp` appends six random
+ * characters to whatever it is given, so a sixth prefix invented tomorrow is
+ * caught without an edit here. Naming the five would be the fail-open shape
+ * rule 18 exists for.
+ */
+/*
+ * GATED ON THE PACKAGE AUDIT, AND THE FIRST VERSION OF THIS WAS RACY.
+ *
+ * Written ungated on 2026-09-08 and it failed 16 of 19 runs immediately —
+ * because `webview/capture.test.ts` and `webview/wire.test.ts` DELIBERATELY
+ * mkdtemp inside `dist/` (they write nothing outside the repo, which is the
+ * whole reason `.vscodeignore` needs its three `!` re-admissions) and they run
+ * concurrently with this file. It was reading a directory other files were
+ * legitimately using, and reporting their in-flight scratch as a leak: this
+ * repository's recorded "a test that passes or fails by CPU load" class,
+ * committed by the party who had just fixed one.
+ *
+ * The property is real; the moment was wrong. It is asserted where nothing
+ * else is running — the package audit, which is what a release actually ships
+ * from — and the ALWAYS-ON half lives in `test/scratch-guard.ts`, which is
+ * race-free by construction: its setup runs before any worker starts and its
+ * teardown after the last one exits.
+ */
+describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
+  'DoD 1c.5 — dist/ carries no scratch directory (AGENT_DECK_PACKAGE_AUDIT=1)',
+  () => {
+  /** `mkdtemp`'s signature, whoever called it. */
+  const MKDTEMP_SHAPE = /[-_][0-9A-Za-z]{6}$/;
+
+  /** What legitimately lives in `dist/`, and it is exactly the build output. */
+  const BUILD_OUTPUT = new Set(['agent-deck', 'webview', 'theater']);
+
+  function distDirs(): string[] {
+    const dist = join(REPO_ROOT, 'dist');
+    if (!existsSync(dist)) return [];
+    return readdirSync(dist, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+  }
+
+  it('holds no mkdtemp-shaped directory', () => {
+    const scratch = distDirs().filter((name) => MKDTEMP_SHAPE.test(name));
+    expect(
+      scratch,
+      `dist/ is shipped wholesale with three ! re-admissions, so these would be ` +
+        `packaged: ${scratch.join(', ')}`,
+    ).toStrictEqual([]);
+  });
+
+  it('holds ONLY build output — the stronger form, which a new shape cannot slip past', () => {
+    // The shape rule above would miss a leaked directory whose name happens not
+    // to end in six alphanumerics. This one cannot: `dist/` is entirely ours
+    // and its directory set is knowable.
+    expect(distDirs().filter((name) => !BUILD_OUTPUT.has(name))).toStrictEqual([]);
+  });
+
+  it("CONTROL: the guard is looking at a dist/ that exists and has content", () => {
+    // Both assertions above are satisfied by an absent or empty `dist/`, which
+    // is this repository's most-recorded defect class. `REQUIRED_ARTIFACTS` is
+    // built by the beforeAll at the top of this file.
+    expect(existsSync(join(REPO_ROOT, 'dist'))).toBe(true);
+    expect(distDirs().length).toBeGreaterThan(0);
+  });
+
+  it('CONTROL: the shape rule really matches what mkdtemp produces', () => {
+    // Pinned against the five prefixes actually observed on 2026-09-08 rather
+    // than against an invented example.
+    for (const name of [
+      'capture-test-1Sh5xY',
+      'wire-test-D3LJXj',
+      'ingest-audit-R8KrM3',
+      'codex-memory-aB3xY9',
+      'codex-index-000000',
+    ]) {
+      expect(MKDTEMP_SHAPE.test(name), name).toBe(true);
+    }
+    for (const name of [...BUILD_OUTPUT]) {
+      expect(MKDTEMP_SHAPE.test(name), name).toBe(false);
+    }
+  });
+  },
+);

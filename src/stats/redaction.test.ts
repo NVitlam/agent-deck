@@ -298,6 +298,39 @@ function matchesIn(haystack: string, needles: ReadonlySet<string>): string[] {
   return [...found];
 }
 
+/**
+ * What a whole-corpus scan in this file is allowed to take.
+ *
+ * ADDED IN v0.7.0 PHASE 3, AND IT IS NOT A TIMEOUT BUMP FOR CONVENIENCE.
+ *
+ * Four of the assertions here scan every committed golden against a
+ * multi-megabyte content corpus — the >=12-byte window scan alone walks every
+ * string of every record against every content body. That is real, deliberate
+ * work and it is the whole reason the G4 proof is not vacuous. It ran under
+ * vitest's **5 s default** from the day it was written, which was fine while
+ * it was fine.
+ *
+ * Phase 3 added five test files, two of which read the corpora, and on the
+ * third run of the Phase 3 gate — a run that took 172 s against the 124 s and
+ * 127 s of the two before it — three of these four bodies timed out. Nothing
+ * about them got slower; the machine did, and a body with no declared budget
+ * reports that as a TIMEOUT with no failing assertion, which rule 14 refuses a
+ * gate on and which reads to whoever hits it as a fresh regression in the
+ * redaction layer.
+ *
+ * This is the class `CLAUDE.md` records twice already — a hook or body that
+ * does heavy work must declare what it needs — and the remedy is the one it
+ * prescribes: the four scans declare a budget, and every other test in this
+ * file keeps the 5 s default and does only its own work.
+ *
+ * 60 s rather than 180 s: the `beforeAll` above carries 180 s because it READS
+ * three corpora off disk, and these bodies read nothing. On an idle machine
+ * each is well under a second. What the budget is for is the loaded machine,
+ * not for admitting an algorithmic regression — `src/perf/` is where wall-clock
+ * is asserted, and nothing here is a perf claim.
+ */
+const CORPUS_SCAN_BUDGET_MS = 60_000;
+
 let entries: GoldenEntry[] = [];
 let corpus: ContentCorpus;
 
@@ -417,7 +450,7 @@ describe('A - every string in a record traces to a named field', () => {
     expect(unexplained).toEqual([]);
     // Vacuity control: an empty walk satisfies the assertion above.
     expect(checked).toBeGreaterThan(500);
-  });
+  }, CORPUS_SCAN_BUDGET_MS);
 
   it('the provenance check can see a string that has no source', () => {
     // A mutation control. If the walk stopped finding strings, or the allowed
@@ -500,7 +533,7 @@ describe('B - no record string has the shape of content', () => {
         }
       }
     }
-  });
+  }, CORPUS_SCAN_BUDGET_MS);
 });
 
 describe('C — the sharpest literals appear nowhere in any golden file', () => {
@@ -524,7 +557,7 @@ describe('C — the sharpest literals appear nowhere in any golden file', () => 
       }
     }
     expect(compared).toBeGreaterThan(0);
-  });
+  }, CORPUS_SCAN_BUDGET_MS);
 
   it('and the same literals really are present on the input side', () => {
     for (const literal of corpus.sharp.slice(0, 25)) {
@@ -605,7 +638,7 @@ describe('C2 - the >=12-byte scan, RUN over the whole content corpus', () => {
       }
     }
     expect(unexplained).toEqual([]);
-  });
+  }, CORPUS_SCAN_BUDGET_MS);
 });
 
 describe('the allow-list and the records agree', () => {

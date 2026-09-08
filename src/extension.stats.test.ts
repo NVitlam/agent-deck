@@ -308,10 +308,25 @@ describe('DoD 3.2b: idle flush, supersede, and timer disposal', () => {
     // arithmetic reason rather than because the timer was being pushed
     // forward, and the test would have gone green on either behaviour.
     const TICK = 5_000;
-    const STEPS = Math.ceil((DEFAULT_STATS_IDLE_FLUSH_MS * 2) / TICK);
-    expect(STEPS * TICK).toBeGreaterThan(DEFAULT_STATS_IDLE_FLUSH_MS);
+    /*
+     * A SHORT WINDOW, PUMPED AT THE HOST'S REAL RATE.
+     *
+     * The property is "an unchanged pump does not restart the countdown", and
+     * nothing about it depends on the window being an hour. Driving the
+     * SHIPPED hour at the real 5 s tick is 1,440 iterations, each one a
+     * `structuredClone` of a real corpus session plus a full `deriveStats`
+     * plus a `JSON.stringify` — seconds of work to prove something the
+     * manifest's own minimum window proves in twenty-four.
+     *
+     * So the window is the minimum the manifest admits and the TICK is the
+     * real one, which keeps the ratio between them realistic — a test that
+     * shrank the tick instead would be pumping at a rate the host never uses.
+     */
+    const WINDOW = 60_000;
+    const STEPS = Math.ceil((WINDOW * 2) / TICK);
+    expect(STEPS * TICK).toBeGreaterThan(WINDOW);
 
-    const h = harness();
+    const h = harness({ idleFlushMs: WINDOW });
     h.pipeline.observe(emissionOf(subject(0, 'live')));
     for (let i = 0; i < STEPS; i += 1) {
       h.time.advance(TICK);
@@ -322,7 +337,7 @@ describe('DoD 3.2b: idle flush, supersede, and timer disposal', () => {
     // The control on the other side: a CHANGED state DOES restart it, so the
     // flush above is the timer surviving unchanged pumps and not the timer
     // simply ignoring `observe`.
-    const g = harness();
+    const g = harness({ idleFlushMs: WINDOW });
     g.pipeline.observe(emissionOf(subject(0, 'live')));
     for (let i = 0; i < STEPS; i += 1) {
       g.time.advance(TICK);

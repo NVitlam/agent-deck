@@ -26,8 +26,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 19,
-      "lastTouch": 19
+      "firstTouchSeq": 19,
+      "lastTouchSeq": 19
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\CHANGELOG.md",
@@ -35,8 +35,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 18,
-      "lastTouch": 18
+      "firstTouchSeq": 18,
+      "lastTouchSeq": 18
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\HANDOVER.md",
@@ -44,8 +44,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 17,
-      "lastTouch": 17
+      "firstTouchSeq": 17,
+      "lastTouchSeq": 17
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\PLAN.md",
@@ -53,8 +53,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 15,
-      "lastTouch": 16
+      "firstTouchSeq": 15,
+      "lastTouchSeq": 16
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\README.md",
@@ -62,8 +62,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 6,
-      "lastTouch": 6
+      "firstTouchSeq": 6,
+      "lastTouchSeq": 6
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\fixtures\\PHASE0-VERDICT.md",
@@ -71,8 +71,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 8,
-      "lastTouch": 8
+      "firstTouchSeq": 8,
+      "lastTouchSeq": 8
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\package.json",
@@ -80,8 +80,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 7,
-      "lastTouch": 7
+      "firstTouchSeq": 7,
+      "lastTouchSeq": 7
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\src\\bridge\\contract.ts",
@@ -89,8 +89,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 12,
-      "lastTouch": 12
+      "firstTouchSeq": 12,
+      "lastTouchSeq": 12
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\src\\extension.ts",
@@ -98,8 +98,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 14,
-      "lastTouch": 14
+      "firstTouchSeq": 14,
+      "lastTouchSeq": 14
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\src\\parser\\attribution.ts",
@@ -107,8 +107,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 13,
-      "lastTouch": 13
+      "firstTouchSeq": 13,
+      "lastTouchSeq": 13
     }
   ],
   "tools": [

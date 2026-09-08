@@ -38,8 +38,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 7,
-      "lastTouch": 7
+      "firstTouchSeq": 7,
+      "lastTouchSeq": 7
     },
     {
       "filePath": "c:/Users/dev/projects/agent-deck/spike/listen.mjs",
@@ -47,8 +47,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 4,
-      "lastTouch": 4
+      "firstTouchSeq": 4,
+      "lastTouchSeq": 4
     },
     {
       "filePath": "c:/Users/dev/projects/agent-deck/spike/run.mjs",
@@ -56,8 +56,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 3,
-      "lastTouch": 3
+      "firstTouchSeq": 3,
+      "lastTouchSeq": 3
     },
     {
       "filePath": "c:/Users/dev/projects/agent-deck/spike/stitch.mjs",
@@ -65,8 +65,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 6,
-      "lastTouch": 6
+      "firstTouchSeq": 6,
+      "lastTouchSeq": 6
     },
     {
       "filePath": "c:/Users/dev/projects/agent-deck/spike/tail.mjs",
@@ -74,8 +74,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 5,
-      "lastTouch": 5
+      "firstTouchSeq": 5,
+      "lastTouchSeq": 5
     }
   ],
   "tools": [

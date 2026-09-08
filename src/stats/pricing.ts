@@ -114,9 +114,26 @@ export function parsePricing(value: unknown): PricingParse {
  *     cacheRead      -> cacheRead   (tokens served FROM it)
  *     output         -> output
  *
- * `undefined` when the agent states no model, or when the user has no entry
- * for that model. Both are ordinary — the default table is empty — and neither
- * is an error.
+ * `undefined` when the agent states no model, when the user has no entry for
+ * that model, or when the arithmetic comes out at ZERO. All three are ordinary
+ * — the default table is empty — and none is an error.
+ *
+ * ## Why zero is `undefined` rather than `0`
+ *
+ * Found by `phase-verifier` at the Phase 2 gate, in the one place F9 exists to
+ * protect. The existing contract says `costUsd: 0` means *NOT COMPUTED* — it is
+ * the reason VERDICT.md 0.4 reads OpenCode's `session.cost` of 0 across 30
+ * sessions as "no engine-reported cost anywhere" rather than as thirty free
+ * sessions. A user-priced total of 0 published as a figure would contradict
+ * that doctrine from inside the layer that states it, and a reader would have
+ * no way to tell the two apart.
+ *
+ * Two inputs produce it: a series with no tokens, and a model the user has
+ * priced at zero. The second is the interesting one, and it is deliberate
+ * rather than collateral — somebody running a local model for free gets an em
+ * dash, which says "this is not a number we can give you", instead of a `$0.00`
+ * that looks like a measurement. Neither engine emits an empty `usageSeries`
+ * today, so the first is unreachable through the product and is covered anyway.
  */
 export function costOfSeries(
   series: readonly UsageTurn[] | undefined,
@@ -133,5 +150,6 @@ export function costOfSeries(
     micro += turn.cacheRead * entry.cacheRead;
     micro += turn.output * entry.output;
   }
+  if (micro <= 0) return undefined;
   return micro / TOKENS_PER_PRICE_UNIT;
 }

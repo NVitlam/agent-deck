@@ -22,10 +22,12 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SCRIPT = fileURLToPath(new URL('../../scripts/forbidden-words.mjs', import.meta.url));
@@ -37,12 +39,48 @@ interface Report {
   violations: { file: string; line: number; word: string; matched: string }[];
 }
 
-function run(): Report {
-  const stdout = execFileSync(process.execPath, [SCRIPT, '--json'], {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-  });
-  return JSON.parse(stdout) as Report;
+function run(args: string[] = []): { report: Report; status: number } {
+  try {
+    const stdout = execFileSync(process.execPath, [SCRIPT, '--json', ...args], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    });
+    return { report: JSON.parse(stdout) as Report, status: 0 };
+  } catch (error) {
+    // A violation makes the script exit 1, which `execFileSync` throws on. The
+    // JSON is still on stdout and the exit code is part of what is asserted:
+    // a check that reports a violation and exits 0 gates nothing.
+    const failure = error as { status?: number; stdout?: string };
+    // A refusal (an empty or missing scope) exits before printing anything, so
+    // stdout is the EMPTY STRING rather than undefined — `?? '{}'` does not
+    // catch that, and the test failed with "Unexpected end of JSON input"
+    // instead of the assertion it was making.
+    const stdout = failure.stdout ?? '';
+    return {
+      report: (stdout.trim() === '' ? {} : JSON.parse(stdout)) as Report,
+      status: failure.status ?? -1,
+    };
+  }
+}
+
+/** Temp directories this file made, removed even if a test throws. */
+const scratch: string[] = [];
+
+afterAll(() => {
+  // `test/scratch-guard.ts` fails the whole run over one leaked directory, and
+  // it is right to: 765 of them accumulated in %TEMP% before it existed.
+  for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
+});
+
+/** A scope directory holding one `.ts` file with the given source. */
+function plant(source: string): string {
+  // `realpathSync.native` for the recorded libuv reason — a runner's
+  // `RUNNER~1` short path is the shape that aborts a process with no failing
+  // assertion. Nothing watches this directory, but the habit is cheap.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'agent-deck-g10-')));
+  scratch.push(dir);
+  writeFileSync(join(dir, 'planted.ts'), source, 'utf8');
+  return dir;
 }
 
 describe('the G10 gate is wired', () => {
@@ -56,7 +94,9 @@ describe('the G10 gate is wired', () => {
 });
 
 describe('the gate is green, and it is looking at something', () => {
-  const report = run();
+  // Spawned once at describe scope and shared by both tests below, rather than
+  // once per test: the same subprocess-cost rule, applied before it bites.
+  const { report } = run();
 
   it('reports no violation across the stats layer', () => {
     expect(report.violations).toEqual([]);
@@ -74,40 +114,85 @@ describe('the gate is green, and it is looking at something', () => {
   });
 });
 
-describe('the gate can still see a violation', () => {
-  it('flags every word on the §G list, and their inflections', () => {
-    // A mutation control that does not write to the tree: the same patterns the
-    // script uses, applied to sentences it must reject. If this ever goes green
-    // for a word, that word has fallen off the list.
-    const forbidden = [
-      'should',
-      'recommend',
-      'consider',
-      'try',
-      'improve',
-      'better',
-      'bad',
-      'good',
-      'waste',
-    ];
-    const script = readFileSync(SCRIPT, 'utf8');
-    for (const word of forbidden) {
-      expect(script).toContain(`'${word}'`);
-    }
-    // And the inflected forms the spec's own vocabulary implies.
-    for (const [word, sentence] of [
-      ['should', 'you should split this file'],
-      ['recommend', 'we recommends nothing'],
-      ['waste', 'this turn was wasted'],
+describe('the gate can still see a violation — the REAL script, on a planted one', () => {
+  /*
+   * `phase-verifier` found the first version of this block grepping the
+   * script's own source for `'should'` and then re-implementing its regex
+   * inline. That proves the word is spelled in the file and that a regex
+   * written in this file works; it proves nothing about the script's
+   * extraction pipeline, and the pipeline is the part that could break.
+   * PLAN's DoD 4.7 names the real control — "plants 'should' in a temp copy
+   * and asserts failure" — and this is it, delivered early with the gate it
+   * belongs to.
+   */
+  it('flags a planted violation in a string literal, and exits non-zero', () => {
+    const dir = plant("export const NOTE = 'you should split this file';\n");
+    const { report, status } = run(['--scope', dir]);
+    expect(status).toBe(1);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]).toMatchObject({ word: 'should', matched: 'should' });
+    expect(report.scanned).toBe(1);
+  }, 30_000);
+
+  it('flags every word on the §G list, through the script, in ONE pass', () => {
+    /*
+     * ONE spawn, not nine, and the reason is a defect this test committed.
+     * The first version planted a file per word and ran the script nine times
+     * inside a single `it`; alone that takes ~2 s, and in the full suite it
+     * blew vitest's 5 s default with `Test timed out in 5000ms`. That is this
+     * repository's recorded class — "an expensive subprocess called once per
+     * test is a test that passes or fails by CPU load" — and the rule it
+     * records is that a failure which disappears on a second run is a defect
+     * report about the test, not noise. It did disappear on the second run.
+     *
+     * One file, nine literals, one pass is also the STRONGER assertion: every
+     * word must be found in a single scan, so a pattern that only matches when
+     * it is the sole candidate cannot hide.
+     */
+    const sentences: [string, string][] = [
+      ['should', 'you should split this'],
+      ['recommend', 'we recommend nothing'],
       ['consider', 'considering the alternative'],
+      ['try', 'try the other branch'],
       ['improve', 'an improved layout'],
-    ] as const) {
-      const re = new RegExp(`\\b${word}\\w*\\b`, 'iu');
-      expect(re.test(sentence)).toBe(true);
-    }
-    // And the negative arm: the trailing-space form in the spec exists so
-    // `retry` and `country` do not match, and the boundary form keeps that.
-    expect(/\btry\w*\b/iu.test('a retry of the request')).toBe(false);
-    expect(/\bbad\w*\b/iu.test('the clipboard')).toBe(false);
-  });
+      ['better', 'a better result'],
+      ['bad', 'a bad outcome'],
+      ['good', 'a good outcome'],
+      ['waste', 'this turn was wasted'],
+    ];
+    const source = sentences
+      .map(([word, sentence], i) => `export const N${String(i)} = '${sentence}'; // ${word}`)
+      .join('\n');
+    const dir = plant(`${source}\n`);
+    const { report, status } = run(['--scope', dir]);
+    expect(status).toBe(1);
+    const found = new Set(report.violations.map((v) => v.word));
+    expect([...found].sort()).toEqual(sentences.map(([w]) => w).sort());
+  }, 30_000);
+
+  it('does NOT flag the same words in a comment, or a near miss in a literal', () => {
+    // The other direction, and it is what keeps the gate usable. G10's subject
+    // is what the PRODUCT says; a file-wide grep would flag this repository's
+    // own reasoning and get suppressed rather than fixed.
+    const dir = plant(
+      '// you should consider whether this is better — prose, not a product string\n' +
+        "export const N = 'a retry in this country';\n",
+    );
+    const { report, status } = run(['--scope', dir]);
+    expect(status).toBe(0);
+    expect(report.violations).toEqual([]);
+    // ...and it really did look: one file, at least one literal.
+    expect(report.scanned).toBe(1);
+    expect(report.literals).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('refuses a scope that holds no TypeScript rather than passing it', () => {
+    // The fail-open shape rule 18 exists for: a gate pointed somewhere empty
+    // reports PASS. Phase 4 adds `webview/stats` to SCOPES, and this is what
+    // stops the day it is added-but-not-yet-created reading as green.
+    const dir = realpathSync.native(mkdtempSync(join(tmpdir(), 'agent-deck-g10-')));
+    scratch.push(dir);
+    const { status } = run(['--scope', dir]);
+    expect(status).toBe(1);
+  }, 30_000);
 });

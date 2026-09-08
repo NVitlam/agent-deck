@@ -31,6 +31,17 @@ import type { CompactionStat, ContextChurnRecord } from './schema.js';
  *
  * `undefined` when the engine states no series (Codex today) or when `prompt`
  * is 0, because a ratio over an empty denominator is not 0, it is nothing.
+ *
+ * ## A §D branch with no implementation, stated rather than left to be found
+ *
+ * Spec §D allows F6 from "per-turn series (§E) **or engine totals where the
+ * split is stated**". Only the series branch exists here. That is not a gap
+ * today: no engine's `SessionState` carries a prompt/cache split at the totals
+ * level — `TokenPair` is `{ prompt, output }` and nothing else — so the second
+ * branch has no field to read and writing it would be code against a shape
+ * nobody has captured, which is G6. Raised by `phase-verifier` at the Phase 2
+ * gate; recorded here so the day a totals split appears, this is the line that
+ * says what to do with it rather than the branch being re-derived from scratch.
  */
 export function cacheRatioOf(agent: AgentNode): { cacheRead?: number; cacheRatio?: number } {
   const series = agent.usageSeries;

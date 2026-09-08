@@ -38,8 +38,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 5,
-      "lastTouch": 6
+      "firstTouchSeq": 5,
+      "lastTouchSeq": 6
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\README.md",
@@ -47,8 +47,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 1,
-      "lastTouch": 1
+      "firstTouchSeq": 1,
+      "lastTouchSeq": 1
     }
   ],
   "tools": [

@@ -483,7 +483,7 @@ export const CORPUS_GROWTH_FRACTION_LIMIT = 0.01;
  *
  * ## Why 5 ms and not 1 ms
  *
- * A 9.3x margin on a sub-millisecond pure function is not slack for its own
+ * An 8.2x margin on a sub-millisecond pure function is not slack for its own
  * sake. At this scale timer granularity and a single GC pause are a large share
  * of the sample, and Phase 1c measured this machine running at roughly half
  * speed for a whole 20-run block — under which the median would be ~1.1 ms and

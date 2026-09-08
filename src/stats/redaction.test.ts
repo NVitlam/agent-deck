@@ -78,6 +78,19 @@ import { STATS_STRING_FIELDS } from './schema.js';
 const FIXTURES = fileURLToPath(new URL('../../fixtures/', import.meta.url));
 const WINDOW = 12;
 
+/**
+ * How long a content string must be before it is compared LITERALLY against a
+ * whole golden file.
+ *
+ * Not a threshold on what counts as content — {@link CONTENT_KEYS} decides
+ * that — but on what can be compared without flagging the fields G4 permits.
+ * Measured over the committed goldens: the longest string any record carries is
+ * **142 bytes and it is a `filePath`**, which by construction is a run of bytes
+ * inside a tool payload. A body of 64 bytes or more is not an identifier, so a
+ * record containing one is carrying content.
+ */
+const SHARP_BODY_MIN = 64;
+
 /** The census file keys. A value under one of these is `filePath`, not content. */
 const FILE_KEYS = new Set(['file_path', 'filePath']);
 
@@ -120,10 +133,22 @@ const CONTENT_KEYS = new Set([
 const PAYLOAD_KEYS = new Set(['input', 'arguments', 'tool_input', 'parameters']);
 
 interface ContentCorpus {
-  /** Everything a record must not contain a 12-byte run of. */
+  /** Every content string, joined — the haystack the >= 12-byte scan walks. */
   text: string;
-  /** The sharpest literals: thinking, signatures, ciphertext, reasoning. */
+  /**
+   * The sharpest literals: thinking, signatures, ciphertext, reasoning.
+   *
+   * Kept SEPARATE from {@link ContentCorpus.bodies}, and the separation is a
+   * correction rather than tidiness. Folding long content bodies in here made
+   * assertion B fail on a true statement: a payload body of >= 64 bytes that
+   * happens to BE a path shares its first 32 bytes with a `filePath`, so "no
+   * filePath contains a sharp literal" flagged the field G4 allow-lists. B is
+   * about a reasoning body arriving in a path; C is about either arriving in a
+   * record. Two questions, two lists.
+   */
   sharp: string[];
+  /** Long content runs — message text and tool payloads. See `SHARP_BODY_MIN`. */
+  bodies: string[];
   bytes: number;
   sources: number;
 }
@@ -143,14 +168,15 @@ function collectContent(
   inPayload: boolean,
   out: string[],
   sharp: string[],
+  bodies: string[],
 ): void {
   if (Array.isArray(value)) {
-    for (const item of value) collectContent(item, key, inPayload, out, sharp);
+    for (const item of value) collectContent(item, key, inPayload, out, sharp, bodies);
     return;
   }
   if (value !== null && typeof value === 'object') {
     for (const [childKey, child] of Object.entries(value)) {
-      collectContent(child, childKey, inPayload || PAYLOAD_KEYS.has(childKey), out, sharp);
+      collectContent(child, childKey, inPayload || PAYLOAD_KEYS.has(childKey), out, sharp, bodies);
     }
     return;
   }
@@ -158,11 +184,20 @@ function collectContent(
   if (FILE_KEYS.has(key)) return;
   if (!CONTENT_KEYS.has(key) && !inPayload) return;
   out.push(value);
-  // The fields this repository has MEASURED as carrying the real bytes — the
-  // ones a leak would actually be made of.
+  // The fields this repository has MEASURED as carrying the real bytes.
   if (['thinking', 'signature', 'encrypted_content', 'summary_text', 'raw_content'].includes(key)) {
     if (value.length >= WINDOW) sharp.push(value);
   }
+  // ...AND every long content BODY, which is what makes the literal comparison
+  // cover "payload, or message text" rather than reasoning alone.
+  //
+  // `phase-verifier` found the first version comparing only the five reasoning
+  // keys above, so §C's "no tool payload, no message text from any fixture
+  // appears in any record" was unmet by the leg that names it. The 64-byte
+  // floor is what separates a BODY from an identifier: no record string is a
+  // 64-byte run of a message, while a `filePath` legitimately is a long run of
+  // a payload, and comparing those would flag the field G4 allow-lists.
+  else if (value.length >= SHARP_BODY_MIN) bodies.push(value);
 }
 
 function walkFiles(dir: string, suffix: string, visit: (path: string) => void): void {
@@ -177,6 +212,7 @@ function walkFiles(dir: string, suffix: string, visit: (path: string) => void): 
 function buildContentCorpus(): ContentCorpus {
   const parts: string[] = [];
   const sharp: string[] = [];
+  const bodies: string[] = [];
   let sources = 0;
 
   // --- Claude Code and Codex: JSONL transcripts -------------------------
@@ -189,7 +225,7 @@ function buildContentCorpus(): ContentCorpus {
       for (const line of readFileSync(path, 'utf8').split('\n')) {
         if (line.trim() === '') continue;
         try {
-          collectContent(JSON.parse(line), '', false, parts, sharp);
+          collectContent(JSON.parse(line), '', false, parts, sharp, bodies);
         } catch {
           // A corpus may hold a deliberately malformed line; it carries no
           // structured content to collect.
@@ -208,9 +244,9 @@ function buildContentCorpus(): ContentCorpus {
         for (const row of db.prepare('SELECT data FROM part').all() as { data: unknown }[]) {
           if (typeof row.data !== 'string') continue;
           try {
-            collectContent(JSON.parse(row.data), '', false, parts, sharp);
+            collectContent(JSON.parse(row.data), '', false, parts, sharp, bodies);
           } catch {
-            collectContent(row.data, 'text', false, parts, sharp);
+            collectContent(row.data, 'text', false, parts, sharp, bodies);
           }
         }
       } finally {
@@ -234,7 +270,7 @@ function buildContentCorpus(): ContentCorpus {
   // parts can never match a needle. A space could bridge them and
   // manufacture a match that is in neither part.
   const text = parts.join('\n');
-  return { text, sharp, bytes: Buffer.byteLength(text, 'utf8'), sources };
+  return { text, sharp, bodies, bytes: Buffer.byteLength(text, 'utf8'), sources };
 }
 
 /**
@@ -270,7 +306,8 @@ beforeAll(async () => {
   corpus = buildContentCorpus();
   process.stdout.write(
     `[G4] content corpus: ${String(corpus.bytes)} bytes from ${String(corpus.sources)} sources, ` +
-      `${String(corpus.sharp.length)} sharp literals\n`,
+      `${String(corpus.sharp.length)} sharp literals, ` +
+      `${String(corpus.bodies.length)} content bodies\n`,
   );
 }, 180_000);
 
@@ -282,6 +319,7 @@ describe('the corpus this test rests on is real', () => {
     expect(corpus.bytes).toBeGreaterThan(1_000_000);
     expect(corpus.sources).toBeGreaterThan(10);
     expect(corpus.sharp.length).toBeGreaterThan(0);
+    expect(corpus.bodies.length).toBeGreaterThan(0);
     expect(entries.length).toBeGreaterThan(20);
   });
 
@@ -296,51 +334,62 @@ describe('the corpus this test rests on is real', () => {
   });
 });
 
+/** Values `schema.ts` declares as closed enums. */
+const ENUM_VALUES: ReadonlySet<string> = new Set([
+  'full',
+  'excluded:parked',
+  'excluded:unsupported',
+  'excluded:deriver-error',
+  'cc',
+  'opencode',
+  'codex',
+  'main',
+  'subagent',
+  'engine',
+  'telemetry',
+  'user',
+  'auto',
+  'manual',
+  'read',
+  'write',
+  'edit',
+  'search',
+  'shell',
+  'spawn',
+  'other',
+]);
+
+/** `F7:opencode`, `F2.errors:codex`, `F13.completed:snapshot`. */
+const UNAVAILABLE_CODE = /^F\d+(?:\.[a-z]+)?:[a-z-]+$/u;
+
+/**
+ * Every string the ENGINE wrote onto a named field of one state.
+ *
+ * Module scope because TWO legs need it — assertion A over the in-memory
+ * record, and C2 over the committed bytes — and two copies of a rule this
+ * strict would be two things that can drift.
+ */
+function engineStringsOf(state: SessionState): Set<string> {
+  const out = new Set<string>([state.sessionId, state.projectSlug]);
+  const walk = (node: AgentNode | ToolNode): void => {
+    if ('children' in node) {
+      out.add(node.id);
+      if (node.model !== undefined) out.add(node.model);
+      for (const child of node.children) walk(child);
+      return;
+    }
+    out.add(node.toolName);
+    if (node.filePath !== undefined) out.add(node.filePath);
+  };
+  walk(state.root);
+  return out;
+}
+
 describe('A - every string in a record traces to a named field', () => {
   /** Values `schema.ts` declares as closed enums. */
-  const ENUMS = new Set([
-    'full',
-    'excluded:parked',
-    'excluded:unsupported',
-    'excluded:deriver-error',
-    'cc',
-    'opencode',
-    'codex',
-    'main',
-    'subagent',
-    'engine',
-    'telemetry',
-    'user',
-    'auto',
-    'manual',
-    'read',
-    'write',
-    'edit',
-    'search',
-    'shell',
-    'spawn',
-    'other',
-  ]);
+  const ENUMS = ENUM_VALUES;
 
-  /** `F7:opencode`, `F2.errors:codex`, `F13.completed:snapshot`. */
-  const UNAVAILABLE_CODE = /^F\d+(?:\.[a-z]+)?:[a-z-]+$/u;
-
-  /** Every string the ENGINE wrote onto a named field of one state. */
-  function engineStrings(state: SessionState): Set<string> {
-    const out = new Set<string>([state.sessionId, state.projectSlug]);
-    const walk = (node: AgentNode | ToolNode): void => {
-      if ('children' in node) {
-        out.add(node.id);
-        if (node.model !== undefined) out.add(node.model);
-        for (const child of node.children) walk(child);
-        return;
-      }
-      out.add(node.toolName);
-      if (node.filePath !== undefined) out.add(node.filePath);
-    };
-    walk(state.root);
-    return out;
-  }
+  const engineStrings = engineStringsOf;
 
   it('no string is synthesised, scraped, or borrowed from another session', () => {
     let checked = 0;
@@ -460,8 +509,13 @@ describe('C — the sharpest literals appear nowhere in any golden file', () => 
     // serialised golden rather than against its string values — so a leak that
     // arrived through a key nobody declared would still be caught.
     let compared = 0;
+    // BOTH lists: the reasoning literals AND every content body of 64 bytes or
+    // more, which is what makes this cover §C's "no tool payload, no message
+    // text from any fixture appears in any record". Comparing only the five
+    // reasoning keys left that half of the sentence unmet, which is what
+    // `phase-verifier` found.
     for (const entry of entries) {
-      for (const literal of corpus.sharp) {
+      for (const literal of [...corpus.sharp, ...corpus.bodies]) {
         // A 32-byte prefix, which is the shape `codex/parse.test.ts` already
         // uses: long enough that a coincidence is not credible, short enough
         // that a partially-truncated leak is still caught.
@@ -476,6 +530,81 @@ describe('C — the sharpest literals appear nowhere in any golden file', () => 
     for (const literal of corpus.sharp.slice(0, 25)) {
       expect(corpus.text).toContain(literal.slice(0, 32));
     }
+  });
+});
+
+describe('C2 - the >=12-byte scan, RUN over the whole content corpus', () => {
+  /*
+   * THE SCANNER EXISTED AND NOTHING CALLED IT. `phase-verifier` found
+   * `matchesIn` with exactly one live call site — inside its own vacuity
+   * control — and a 14.9 MB content corpus that was built on every run and
+   * compared against nothing. A scanner that is never pointed at the subject is
+   * the "check whose subject never happened" class this repository records,
+   * wearing the clothes of a check that looks thorough.
+   *
+   * What it can honestly assert is the shape the header explains: the scan
+   * finds THOUSANDS of matches and must, because `filePath`, `agentId` and
+   * `model` all occur inside payloads and message text legitimately. So the
+   * assertion is not "no match" — it is that **every matched window traces to a
+   * string this layer can account for**, re-derived here from the COMMITTED
+   * BYTES and the source states rather than from assertion A's own result.
+   */
+  it('finds matches, and every one of them traces to a named engine field', () => {
+    const owners = new Map<string, { stem: string; value: string }[]>();
+    let recordStrings = 0;
+    for (const entry of entries) {
+      const walk = (value: unknown): void => {
+        if (Array.isArray(value)) {
+          for (const item of value) walk(item);
+          return;
+        }
+        if (value !== null && typeof value === 'object') {
+          for (const child of Object.values(value)) walk(child);
+          return;
+        }
+        if (typeof value !== 'string' || value.length < WINDOW) return;
+        recordStrings += 1;
+        for (let i = 0; i + WINDOW <= value.length; i += 1) {
+          const key = value.slice(i, i + WINDOW);
+          const list = owners.get(key);
+          if (list === undefined) owners.set(key, [{ stem: entry.stem, value }]);
+          else list.push({ stem: entry.stem, value });
+        }
+      };
+      // Parsed from the committed TEXT, not from the in-memory record.
+      walk(JSON.parse(entry.text));
+    }
+    expect(recordStrings).toBeGreaterThan(50);
+    expect(owners.size).toBeGreaterThan(100);
+
+    const matched = matchesIn(corpus.text, new Set(owners.keys()));
+    process.stdout.write(
+      `[G4] literal scan: ${String(matched.length)} of ${String(owners.size)} ` +
+        `12-byte windows occur in the content corpus\n`,
+    );
+    // The scan is LIVE. Zero here would mean the scanner stopped working, and
+    // every assertion below would then hold for the wrong reason.
+    expect(matched.length).toBeGreaterThan(0);
+
+    // Everything a record may legitimately hold, per entry.
+    const allowedByStem = new Map<string, Set<string>>();
+    for (const entry of entries) allowedByStem.set(entry.stem, engineStringsOf(entry.state));
+
+    const unexplained: { stem: string; window: string; value: string }[] = [];
+    for (const window of matched) {
+      for (const owner of owners.get(window) ?? []) {
+        if (allowedByStem.get(owner.stem)?.has(owner.value) === true) continue;
+        // The SAME three-way explanation assertion A uses. The first version of
+        // this leg carried only the engine-field arm and reported eight
+        // "unexplained" windows that were all the enum `excluded:parked` — a
+        // value this layer declares, which occurs in the corpus because these
+        // captures are recordings of work on this repository.
+        if (ENUM_VALUES.has(owner.value)) continue;
+        if (UNAVAILABLE_CODE.test(owner.value)) continue;
+        unexplained.push({ stem: owner.stem, window, value: owner.value.slice(0, 80) });
+      }
+    }
+    expect(unexplained).toEqual([]);
   });
 });
 

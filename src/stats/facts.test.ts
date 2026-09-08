@@ -51,8 +51,11 @@ describe('F1 — per-file counts and touch ordinals', () => {
       edits: 0,
       writes: 0,
       errors: 0,
-      firstTouch: 0,
-      lastTouch: 2,
+      // SESSION-WIDE sequence positions, not `ToolNode.ordinal`. The suffix on
+      // the field names is what keeps the three scales in this record apart —
+      // see the header on `FileStats`.
+      firstTouchSeq: 0,
+      lastTouchSeq: 2,
     });
   });
 

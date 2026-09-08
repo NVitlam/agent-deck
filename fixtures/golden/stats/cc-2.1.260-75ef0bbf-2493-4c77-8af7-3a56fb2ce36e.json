@@ -62,8 +62,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 385,
-      "lastTouch": 385
+      "firstTouchSeq": 385,
+      "lastTouchSeq": 385
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\claudemd-bullets.md",
@@ -71,8 +71,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 121,
-      "lastTouch": 121
+      "firstTouchSeq": 121,
+      "lastTouchSeq": 121
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\claudemd-p1.md",
@@ -80,8 +80,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 252,
-      "lastTouch": 252
+      "firstTouchSeq": 252,
+      "lastTouchSeq": 252
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\cm3.txt",
@@ -89,8 +89,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 223,
-      "lastTouch": 223
+      "firstTouchSeq": 223,
+      "lastTouchSeq": 223
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\cm4.txt",
@@ -98,8 +98,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 271,
-      "lastTouch": 271
+      "firstTouchSeq": 271,
+      "lastTouchSeq": 271
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\codex-amendment.md",
@@ -107,8 +107,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 218,
-      "lastTouch": 218
+      "firstTouchSeq": 218,
+      "lastTouchSeq": 218
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\commitmsg.txt",
@@ -116,8 +116,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 105,
-      "lastTouch": 105
+      "firstTouchSeq": 105,
+      "lastTouchSeq": 105
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\commitmsg2.txt",
@@ -125,8 +125,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 151,
-      "lastTouch": 151
+      "firstTouchSeq": 151,
+      "lastTouchSeq": 151
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\handoff-draft.md",
@@ -134,8 +134,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 119,
-      "lastTouch": 119
+      "firstTouchSeq": 119,
+      "lastTouchSeq": 119
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\handover-p1.md",
@@ -143,8 +143,8 @@
       "edits": 0,
       "writes": 2,
       "errors": 0,
-      "firstTouch": 257,
-      "lastTouch": 267
+      "firstTouchSeq": 257,
+      "lastTouchSeq": 267
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\handover-v060.md",
@@ -152,8 +152,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 178,
-      "lastTouch": 178
+      "firstTouchSeq": 178,
+      "lastTouchSeq": 178
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r1.mjs",
@@ -161,8 +161,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 323,
-      "lastTouch": 323
+      "firstTouchSeq": 323,
+      "lastTouchSeq": 323
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r2.mjs",
@@ -170,8 +170,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 329,
-      "lastTouch": 329
+      "firstTouchSeq": 329,
+      "lastTouchSeq": 329
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r3.mjs",
@@ -179,8 +179,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 332,
-      "lastTouch": 332
+      "firstTouchSeq": 332,
+      "lastTouchSeq": 332
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r4.mjs",
@@ -188,8 +188,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 334,
-      "lastTouch": 334
+      "firstTouchSeq": 334,
+      "lastTouchSeq": 334
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r5.mjs",
@@ -197,8 +197,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 339,
-      "lastTouch": 339
+      "firstTouchSeq": 339,
+      "lastTouchSeq": 339
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r6.mjs",
@@ -206,8 +206,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 345,
-      "lastTouch": 345
+      "firstTouchSeq": 345,
+      "lastTouchSeq": 345
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\MEMORY.md",
@@ -215,8 +215,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 316,
-      "lastTouch": 384
+      "firstTouchSeq": 316,
+      "lastTouchSeq": 384
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\pattern_byte_count_is_char_count.md",
@@ -224,8 +224,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 375,
-      "lastTouch": 375
+      "firstTouchSeq": 375,
+      "lastTouchSeq": 375
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\pattern_rerun_replaced_capture_not_number.md",
@@ -233,8 +233,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 374,
-      "lastTouch": 374
+      "firstTouchSeq": 374,
+      "lastTouchSeq": 374
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\reference_phase10_codex_recipes.md",
@@ -242,8 +242,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 376,
-      "lastTouch": 376
+      "firstTouchSeq": 376,
+      "lastTouchSeq": 376
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\reference_phase1_codex_harvest_recipes.md",
@@ -251,8 +251,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 452,
-      "lastTouch": 452
+      "firstTouchSeq": 452,
+      "lastTouchSeq": 452
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\README.md",
@@ -260,8 +260,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 277,
-      "lastTouch": 277
+      "firstTouchSeq": 277,
+      "lastTouchSeq": 277
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.237\\README.md",
@@ -269,8 +269,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 278,
-      "lastTouch": 278
+      "firstTouchSeq": 278,
+      "lastTouchSeq": 278
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.241\\README.md",
@@ -278,8 +278,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 279,
-      "lastTouch": 279
+      "firstTouchSeq": 279,
+      "lastTouchSeq": 279
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.246\\README.md",
@@ -287,8 +287,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 280,
-      "lastTouch": 280
+      "firstTouchSeq": 280,
+      "lastTouchSeq": 280
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.251\\README.md",
@@ -296,8 +296,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 281,
-      "lastTouch": 281
+      "firstTouchSeq": 281,
+      "lastTouchSeq": 281
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\codex-0.151.0-alpha.7.2\\README.md",
@@ -305,8 +305,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 282,
-      "lastTouch": 282
+      "firstTouchSeq": 282,
+      "lastTouchSeq": 282
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\golden\\graft\\README.md",
@@ -314,8 +314,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 283,
-      "lastTouch": 283
+      "firstTouchSeq": 283,
+      "lastTouchSeq": 283
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\golden\\session\\README.md",
@@ -323,8 +323,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 284,
-      "lastTouch": 284
+      "firstTouchSeq": 284,
+      "lastTouchSeq": 284
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\hook-events\\README.md",
@@ -332,8 +332,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 285,
-      "lastTouch": 285
+      "firstTouchSeq": 285,
+      "lastTouchSeq": 285
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\opencode-1.18.21\\README.md",
@@ -341,8 +341,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 286,
-      "lastTouch": 286
+      "firstTouchSeq": 286,
+      "lastTouchSeq": 286
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\opencode-1.18.22\\README.md",
@@ -350,8 +350,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 287,
-      "lastTouch": 287
+      "firstTouchSeq": 287,
+      "lastTouchSeq": 287
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\opencode-1.18.25\\moved-project\\README.md",
@@ -359,8 +359,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 288,
-      "lastTouch": 288
+      "firstTouchSeq": 288,
+      "lastTouchSeq": 288
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-codex-structure\\README.md",
@@ -368,8 +368,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 289,
-      "lastTouch": 289
+      "firstTouchSeq": 289,
+      "lastTouchSeq": 289
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-dropped-actions\\README.md",
@@ -377,8 +377,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 290,
-      "lastTouch": 290
+      "firstTouchSeq": 290,
+      "lastTouchSeq": 290
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-graft\\README.md",
@@ -386,8 +386,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 291,
-      "lastTouch": 291
+      "firstTouchSeq": 291,
+      "lastTouchSeq": 291
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-hook-fuzz\\README.md",
@@ -395,8 +395,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 292,
-      "lastTouch": 292
+      "firstTouchSeq": 292,
+      "lastTouchSeq": 292
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-layout\\README.md",
@@ -404,8 +404,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 293,
-      "lastTouch": 293
+      "firstTouchSeq": 293,
+      "lastTouchSeq": 293
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-lines\\README.md",
@@ -413,8 +413,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 294,
-      "lastTouch": 294
+      "firstTouchSeq": 294,
+      "lastTouchSeq": 294
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-path-matrix\\README.md",
@@ -422,8 +422,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 295,
-      "lastTouch": 295
+      "firstTouchSeq": 295,
+      "lastTouchSeq": 295
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-perf\\README.md",
@@ -431,8 +431,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 296,
-      "lastTouch": 296
+      "firstTouchSeq": 296,
+      "lastTouchSeq": 296
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-structure-2.1.246\\README.md",
@@ -440,8 +440,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 297,
-      "lastTouch": 297
+      "firstTouchSeq": 297,
+      "lastTouchSeq": 297
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\.gitattributes",
@@ -449,8 +449,8 @@
       "edits": 2,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 108,
-      "lastTouch": 244
+      "firstTouchSeq": 108,
+      "lastTouchSeq": 244
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\HANDOVER.md",
@@ -458,8 +458,8 @@
       "edits": 2,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 273,
-      "lastTouch": 274
+      "firstTouchSeq": 273,
+      "lastTouchSeq": 274
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\codex-contract.md",
@@ -467,8 +467,8 @@
       "edits": 3,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 56,
-      "lastTouch": 141
+      "firstTouchSeq": 56,
+      "lastTouchSeq": 141
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-10\\KILL-GATE.md",
@@ -476,8 +476,8 @@
       "edits": 2,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 88,
-      "lastTouch": 139
+      "firstTouchSeq": 88,
+      "lastTouchSeq": 139
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-1\\HARVEST-BLOCKED.md",
@@ -485,8 +485,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 241,
-      "lastTouch": 241
+      "firstTouchSeq": 241,
+      "lastTouchSeq": 241
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\add-constraints.mjs",
@@ -494,8 +494,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 149,
-      "lastTouch": 149
+      "firstTouchSeq": 149,
+      "lastTouchSeq": 149
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\add-p1-constraints.mjs",
@@ -503,8 +503,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 261,
-      "lastTouch": 261
+      "firstTouchSeq": 261,
+      "lastTouchSeq": 261
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\build-codex-hooks.mjs",
@@ -512,8 +512,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 194,
-      "lastTouch": 194
+      "firstTouchSeq": 194,
+      "lastTouchSeq": 194
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\codex-analyze.mjs",
@@ -521,8 +521,8 @@
       "edits": 1,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 34,
-      "lastTouch": 41
+      "firstTouchSeq": 34,
+      "lastTouchSeq": 41
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\codex-drive.mjs",
@@ -530,8 +530,8 @@
       "edits": 5,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 20,
-      "lastTouch": 266
+      "firstTouchSeq": 20,
+      "lastTouchSeq": 266
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\codex-hook-listener.mjs",
@@ -539,8 +539,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 206,
-      "lastTouch": 206
+      "firstTouchSeq": 206,
+      "lastTouchSeq": 206
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\fix-verifier-findings.mjs",
@@ -548,8 +548,8 @@
       "edits": 2,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 127,
-      "lastTouch": 132
+      "firstTouchSeq": 127,
+      "lastTouchSeq": 132
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\insert-spec-amendment.mjs",
@@ -557,8 +557,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 219,
-      "lastTouch": 219
+      "firstTouchSeq": 219,
+      "lastTouchSeq": 219
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\patch-contract.mjs",
@@ -566,8 +566,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 84,
-      "lastTouch": 84
+      "firstTouchSeq": 84,
+      "lastTouchSeq": 84
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\patch-driver.mjs",
@@ -575,8 +575,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 208,
-      "lastTouch": 208
+      "firstTouchSeq": 208,
+      "lastTouchSeq": 208
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\patch-plan.mjs",
@@ -584,8 +584,8 @@
       "edits": 1,
       "writes": 2,
       "errors": 1,
-      "firstTouch": 92,
-      "lastTouch": 99
+      "firstTouchSeq": 92,
+      "lastTouchSeq": 99
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\phase-10-amendment.md",
@@ -593,8 +593,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 100,
-      "lastTouch": 100
+      "firstTouchSeq": 100,
+      "lastTouchSeq": 100
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\record-retirement.mjs",
@@ -602,8 +602,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 197,
-      "lastTouch": 197
+      "firstTouchSeq": 197,
+      "lastTouchSeq": 197
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\split-plan.mjs",
@@ -611,8 +611,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 164,
-      "lastTouch": 164
+      "firstTouchSeq": 164,
+      "lastTouchSeq": 164
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\verify-hook-install.mjs",
@@ -620,8 +620,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 200,
-      "lastTouch": 200
+      "firstTouchSeq": 200,
+      "lastTouchSeq": 200
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\write-handoff.mjs",
@@ -629,8 +629,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 144,
-      "lastTouch": 144
+      "firstTouchSeq": 144,
+      "lastTouchSeq": 144
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\scripts\\capture-codex.mjs",
@@ -638,8 +638,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 231,
-      "lastTouch": 231
+      "firstTouchSeq": 231,
+      "lastTouchSeq": 231
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\context-window.test.ts",
@@ -647,8 +647,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 311,
-      "lastTouch": 311
+      "firstTouchSeq": 311,
+      "lastTouchSeq": 311
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\fingerprint.test.ts",
@@ -656,8 +656,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 310,
-      "lastTouch": 310
+      "firstTouchSeq": 310,
+      "lastTouchSeq": 310
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\fingerprint.ts",
@@ -665,8 +665,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 302,
-      "lastTouch": 302
+      "firstTouchSeq": 302,
+      "lastTouchSeq": 302
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\golden.test.ts",
@@ -674,8 +674,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 313,
-      "lastTouch": 314
+      "firstTouchSeq": 313,
+      "lastTouchSeq": 314
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\graft.test.ts",
@@ -683,8 +683,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 315,
-      "lastTouch": 315
+      "firstTouchSeq": 315,
+      "lastTouchSeq": 315
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\graft.ts",
@@ -692,8 +692,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 304,
-      "lastTouch": 304
+      "firstTouchSeq": 304,
+      "lastTouchSeq": 304
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\index.ts",
@@ -701,8 +701,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 306,
-      "lastTouch": 306
+      "firstTouchSeq": 306,
+      "lastTouchSeq": 306
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\liveness.ts",
@@ -710,8 +710,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 305,
-      "lastTouch": 305
+      "firstTouchSeq": 305,
+      "lastTouchSeq": 305
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\locate.test.ts",
@@ -719,8 +719,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 308,
-      "lastTouch": 308
+      "firstTouchSeq": 308,
+      "lastTouchSeq": 308
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\locate.ts",
@@ -728,8 +728,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 300,
-      "lastTouch": 300
+      "firstTouchSeq": 300,
+      "lastTouchSeq": 300
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\never-open.test.ts",
@@ -737,8 +737,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 307,
-      "lastTouch": 307
+      "firstTouchSeq": 307,
+      "lastTouchSeq": 307
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\never-open.ts",
@@ -746,8 +746,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 299,
-      "lastTouch": 299
+      "firstTouchSeq": 299,
+      "lastTouchSeq": 299
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\parse.ts",
@@ -755,8 +755,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 303,
-      "lastTouch": 303
+      "firstTouchSeq": 303,
+      "lastTouchSeq": 303
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\tail.test.ts",
@@ -764,8 +764,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 309,
-      "lastTouch": 309
+      "firstTouchSeq": 309,
+      "lastTouchSeq": 309
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\tail.ts",
@@ -773,8 +773,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 301,
-      "lastTouch": 301
+      "firstTouchSeq": 301,
+      "lastTouchSeq": 301
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\types.ts",
@@ -782,8 +782,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 298,
-      "lastTouch": 298
+      "firstTouchSeq": 298,
+      "lastTouchSeq": 298
     }
   ],
   "tools": [

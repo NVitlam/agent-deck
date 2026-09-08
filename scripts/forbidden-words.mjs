@@ -75,7 +75,33 @@ const PATTERNS = FORBIDDEN.map((word) => ({
 }));
 
 /** Where G10 applies today. Phase 4 adds `webview/stats` and the changelog. */
-const SCOPES = [{ dir: join(REPO_ROOT, 'src', 'stats'), label: 'src/stats' }];
+const DEFAULT_SCOPES = [{ dir: join(REPO_ROOT, 'src', 'stats'), label: 'src/stats' }];
+
+/**
+ * `--scope <dir>` replaces the built-in scopes, and it exists for ONE caller.
+ *
+ * `src/stats/g10.test.ts` plants a violation in a temp directory and runs THIS
+ * script against it, so the control exercises the real extraction pipeline —
+ * TypeScript's parser, the literal walk, the patterns, the exit code — rather
+ * than re-implementing the regex and testing the copy. `phase-verifier` found
+ * the first version doing exactly that: it grepped this file's own source for
+ * the word list and then tested an inline `RegExp`, so nothing ever proved the
+ * script could FAIL.
+ *
+ * A test hook in a production script is a cost, and it is the smaller one. The
+ * alternative was writing a violating `.ts` file into `src/stats/` and deleting
+ * it, which litters the tree the scratch guard watches and leaves a forbidden
+ * word in the working copy if the test dies mid-run.
+ */
+function scopesFromArgv() {
+  const at = process.argv.indexOf('--scope');
+  if (at === -1) return DEFAULT_SCOPES;
+  const dir = process.argv[at + 1];
+  if (dir === undefined) throw new Error('--scope needs a directory');
+  return [{ dir, label: dir }];
+}
+
+const SCOPES = scopesFromArgv();
 
 const SKIP_SUFFIXES = ['.test.ts', '.testkit.ts'];
 

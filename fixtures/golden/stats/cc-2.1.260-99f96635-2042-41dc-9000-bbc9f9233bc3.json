@@ -62,8 +62,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 177,
-      "lastTouch": 177
+      "firstTouchSeq": 177,
+      "lastTouchSeq": 177
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\comp.mjs",
@@ -71,8 +71,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 403,
-      "lastTouch": 403
+      "firstTouchSeq": 403,
+      "lastTouchSeq": 403
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\cx2.mjs",
@@ -80,8 +80,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 401,
-      "lastTouch": 401
+      "firstTouchSeq": 401,
+      "lastTouchSeq": 401
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-corpus-cwd.mjs",
@@ -89,8 +89,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 166,
-      "lastTouch": 166
+      "firstTouchSeq": 166,
+      "lastTouchSeq": 166
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-line4.mjs",
@@ -98,8 +98,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 24,
-      "lastTouch": 24
+      "firstTouchSeq": 24,
+      "lastTouchSeq": 24
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-nul.mjs",
@@ -107,8 +107,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 130,
-      "lastTouch": 130
+      "firstTouchSeq": 130,
+      "lastTouchSeq": 130
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-overstatements.mjs",
@@ -116,8 +116,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 175,
-      "lastTouch": 175
+      "firstTouchSeq": 175,
+      "lastTouchSeq": 175
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\harvest-compaction.mjs",
@@ -125,8 +125,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 85,
-      "lastTouch": 85
+      "firstTouchSeq": 85,
+      "lastTouchSeq": 85
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\line.mjs",
@@ -134,8 +134,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 413,
-      "lastTouch": 413
+      "firstTouchSeq": 413,
+      "lastTouchSeq": 413
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\move-plan.mjs",
@@ -143,8 +143,8 @@
       "edits": 0,
       "writes": 2,
       "errors": 0,
-      "firstTouch": 32,
-      "lastTouch": 35
+      "firstTouchSeq": 32,
+      "lastTouchSeq": 35
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\msg-01.txt",
@@ -152,8 +152,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 28,
-      "lastTouch": 28
+      "firstTouchSeq": 28,
+      "lastTouchSeq": 28
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\msg-02.txt",
@@ -161,8 +161,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 37,
-      "lastTouch": 37
+      "firstTouchSeq": 37,
+      "lastTouchSeq": 37
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\msg-03.txt",
@@ -170,8 +170,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 102,
-      "lastTouch": 102
+      "firstTouchSeq": 102,
+      "lastTouchSeq": 102
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\p95.mjs",
@@ -179,8 +179,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 421,
-      "lastTouch": 421
+      "firstTouchSeq": 421,
+      "lastTouchSeq": 421
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\sf.mjs",
@@ -188,8 +188,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 419,
-      "lastTouch": 419
+      "firstTouchSeq": 419,
+      "lastTouchSeq": 419
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\size.mjs",
@@ -197,8 +197,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 411,
-      "lastTouch": 411
+      "firstTouchSeq": 411,
+      "lastTouchSeq": 411
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\splice-spec.mjs",
@@ -206,8 +206,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 20,
-      "lastTouch": 20
+      "firstTouchSeq": 20,
+      "lastTouchSeq": 20
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\tick-dod.mjs",
@@ -215,8 +215,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 156,
-      "lastTouch": 156
+      "firstTouchSeq": 156,
+      "lastTouchSeq": 156
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\update-claudemd.mjs",
@@ -224,8 +224,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 188,
-      "lastTouch": 188
+      "firstTouchSeq": 188,
+      "lastTouchSeq": 188
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\MEMORY.md",
@@ -233,8 +233,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 191,
-      "lastTouch": 191
+      "firstTouchSeq": 191,
+      "lastTouchSeq": 191
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\MEMORY.md",
@@ -242,8 +242,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 279,
-      "lastTouch": 317
+      "firstTouchSeq": 279,
+      "lastTouchSeq": 317
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\constraint_cc_2_1_260_not_in_any_test.md",
@@ -251,8 +251,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 426,
-      "lastTouch": 426
+      "firstTouchSeq": 426,
+      "lastTouchSeq": 426
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\pattern_percentile_diluted_by_zero_population.md",
@@ -260,8 +260,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 425,
-      "lastTouch": 425
+      "firstTouchSeq": 425,
+      "lastTouchSeq": 425
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\reference_phase0_stats_spike_recipes.md",
@@ -269,8 +269,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 424,
-      "lastTouch": 424
+      "firstTouchSeq": 424,
+      "lastTouchSeq": 424
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.260\\README.md",
@@ -278,8 +278,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 96,
-      "lastTouch": 96
+      "firstTouchSeq": 96,
+      "lastTouchSeq": 96
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\HANDOVER.md",
@@ -287,8 +287,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 186,
-      "lastTouch": 186
+      "firstTouchSeq": 186,
+      "lastTouchSeq": 186
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-0-stats\\GATE-2026-09-05.md",
@@ -296,8 +296,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 154,
-      "lastTouch": 154
+      "firstTouchSeq": 154,
+      "lastTouchSeq": 154
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-0-stats\\VERDICT.md",
@@ -305,8 +305,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 147,
-      "lastTouch": 147
+      "firstTouchSeq": 147,
+      "lastTouchSeq": 147
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\spike\\stats\\derive-facts.mjs",
@@ -314,8 +314,8 @@
       "edits": 12,
       "writes": 1,
       "errors": 1,
-      "firstTouch": 110,
-      "lastTouch": 135
+      "firstTouchSeq": 110,
+      "lastTouchSeq": 135
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\spike\\stats\\record-size.mjs",
@@ -323,8 +323,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 137,
-      "lastTouch": 137
+      "firstTouchSeq": 137,
+      "lastTouchSeq": 137
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\spike\\stats\\toolclass-census.mjs",
@@ -332,8 +332,8 @@
       "edits": 2,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 169,
-      "lastTouch": 170
+      "firstTouchSeq": 169,
+      "lastTouchSeq": 170
     },
     {
       "filePath": "c:\\Users\\dev\\projects\\agent-deck\\spike\\stats\\toolclass-census.mjs",
@@ -341,8 +341,8 @@
       "edits": 2,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 73,
-      "lastTouch": 76
+      "firstTouchSeq": 73,
+      "lastTouchSeq": 76
     }
   ],
   "tools": [

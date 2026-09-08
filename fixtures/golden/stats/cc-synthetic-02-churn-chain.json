@@ -25,8 +25,8 @@
       "edits": 2,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 0,
-      "lastTouch": 2
+      "firstTouchSeq": 0,
+      "lastTouchSeq": 2
     },
     {
       "filePath": "/synthetic/b.ts",
@@ -34,8 +34,8 @@
       "edits": 2,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 3,
-      "lastTouch": 5
+      "firstTouchSeq": 3,
+      "lastTouchSeq": 5
     }
   ],
   "tools": [

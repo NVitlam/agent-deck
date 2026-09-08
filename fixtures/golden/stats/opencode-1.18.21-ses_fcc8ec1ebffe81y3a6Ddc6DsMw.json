@@ -27,8 +27,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 10,
-      "lastTouch": 10
+      "firstTouchSeq": 10,
+      "lastTouchSeq": 10
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\opencode\\oc-inspect.mjs",
@@ -36,8 +36,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 27,
-      "lastTouch": 27
+      "firstTouchSeq": 27,
+      "lastTouchSeq": 27
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\opencode\\oc-parts.mjs",
@@ -45,8 +45,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 31,
-      "lastTouch": 31
+      "firstTouchSeq": 31,
+      "lastTouchSeq": 31
     },
     {
       "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\opencode\\oc-rows.mjs",
@@ -54,8 +54,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 29,
-      "lastTouch": 29
+      "firstTouchSeq": 29,
+      "lastTouchSeq": 29
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.gitattributes",
@@ -63,8 +63,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 14,
-      "lastTouch": 14
+      "firstTouchSeq": 14,
+      "lastTouchSeq": 14
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.github\\workflows\\ci.yml",
@@ -72,8 +72,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 13,
-      "lastTouch": 13
+      "firstTouchSeq": 13,
+      "lastTouchSeq": 13
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\AGENTS.md",
@@ -81,8 +81,8 @@
       "edits": 0,
       "writes": 1,
       "errors": 0,
-      "firstTouch": 20,
-      "lastTouch": 20
+      "firstTouchSeq": 20,
+      "lastTouchSeq": 20
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\HANDOVER.md",
@@ -90,8 +90,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 16,
-      "lastTouch": 16
+      "firstTouchSeq": 16,
+      "lastTouchSeq": 16
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\README.md",
@@ -99,8 +99,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 3,
-      "lastTouch": 3
+      "firstTouchSeq": 3,
+      "lastTouchSeq": 3
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\esbuild.config.mjs",
@@ -108,8 +108,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 17,
-      "lastTouch": 17
+      "firstTouchSeq": 17,
+      "lastTouchSeq": 17
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\package.json",
@@ -117,8 +117,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 2,
-      "lastTouch": 2
+      "firstTouchSeq": 2,
+      "lastTouchSeq": 2
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\vitest.config.ts",
@@ -126,8 +126,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 7,
-      "lastTouch": 7
+      "firstTouchSeq": 7,
+      "lastTouchSeq": 7
     }
   ],
   "tools": [

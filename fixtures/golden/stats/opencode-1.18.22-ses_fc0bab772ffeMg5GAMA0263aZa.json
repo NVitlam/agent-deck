@@ -27,8 +27,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 2,
-      "lastTouch": 2
+      "firstTouchSeq": 2,
+      "lastTouchSeq": 2
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\PLAN.md",
@@ -36,8 +36,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 3,
-      "lastTouch": 3
+      "firstTouchSeq": 3,
+      "lastTouchSeq": 3
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\README.md",
@@ -45,8 +45,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 1,
-      "lastTouch": 1
+      "firstTouchSeq": 1,
+      "lastTouchSeq": 1
     }
   ],
   "tools": [

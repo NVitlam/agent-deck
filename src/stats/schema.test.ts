@@ -72,15 +72,27 @@ describe('the allow-list rejects a string field nobody declared', () => {
   });
 
   it('judges an array element by the ARRAY’s key, not by its index', () => {
-    // `unavailable` is a list of bare strings. A walker that keyed on the index
+    // `unavailable` is a list of bare strings. A walker that keyed on the INDEX
     // would look for an allow-listed field named `0` and reject every valid
-    // record — which is a failure that would have been found immediately, and
-    // is not the interesting half. The interesting half is that it must still
-    // reject a bad element.
+    // record.
+    //
+    // Both directions, and the second is the one that makes this a test rather
+    // than a restatement — `phase-verifier` found the first draft asserting
+    // only that a valid record passes, under a comment claiming it "must still
+    // reject a bad element", which the code could not do. A string under an
+    // allow-listed key passes BY DESIGN; what must be rejected is a list of
+    // strings under a key nobody declared.
     const record = aRecord();
     expect(record.unavailable.length).toBeGreaterThan(0);
     expect(validateStatsRecord(record).ok).toBe(true);
     expect(STATS_STRING_FIELDS.has('unavailable')).toBe(true);
+
+    // The rejection: same shape, undeclared key. This is the realistic leak —
+    // somebody adds a list of notes beside `unavailable`.
+    const verdict = validateStatsRecord({ ...record, notes: ['the agent re-read one file'] });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.errors.join(' ')).toContain("key 'notes'");
+    expect(verdict.errors.join(' ')).toContain('notes[0]');
   });
 
   it('rejects a non-finite number wherever it appears', () => {

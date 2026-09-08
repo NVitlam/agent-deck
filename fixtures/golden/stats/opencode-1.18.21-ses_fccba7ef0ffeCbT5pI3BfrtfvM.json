@@ -27,8 +27,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 0,
-      "lastTouch": 0
+      "firstTouchSeq": 0,
+      "lastTouchSeq": 0
     },
     {
       "filePath": "C:\\Users\\dev\\projects\\agent-deck\\package.json",
@@ -36,8 +36,8 @@
       "edits": 0,
       "writes": 0,
       "errors": 0,
-      "firstTouch": 1,
-      "lastTouch": 1
+      "firstTouchSeq": 1,
+      "lastTouchSeq": 1
     }
   ],
   "tools": [

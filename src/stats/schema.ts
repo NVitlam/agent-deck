@@ -106,7 +106,29 @@ export type CostSource = 'engine' | 'telemetry' | 'user';
 /** What a tool DOES, mirrored from the generated census in `toolclass.ts`. */
 export type StatsToolClass = 'read' | 'write' | 'edit' | 'search' | 'shell' | 'spawn' | 'other';
 
-/** F1 — one file, and every touch of it in this session. */
+/**
+ * F1 — one file, and every touch of it in this session.
+ *
+ * ## `...Seq`, NOT `...Ordinal`, and the suffix is load-bearing
+ *
+ * This record carries THREE different numbering systems, and naming them all
+ * "ordinal" is how a later reader resolves the wrong node:
+ *
+ *   - `LoopRecord.ordinals`, `ChurnRecord.fromOrdinal/toOrdinal/ordinals` and
+ *     `StallRecord.ordinal` are `ToolNode.ordinal` — **per AGENT**, and
+ *     `events.ts` says in as many words that two agents' ordinals "are not
+ *     comparable and nothing should sort across them";
+ *   - `ContextChurnRecord.ordinal` is a position in that agent's `usageSeries`,
+ *     which counts TURNS rather than calls;
+ *   - the two fields below are positions in the SESSION-WIDE call sequence, the
+ *     only ordering that is comparable across agents and the only one F1 can
+ *     use, because a file may be touched by several agents.
+ *
+ * DoD 4.4 makes a churn chain's ordinals clickable. A reader who generalises
+ * from `ChurnRecord` to `FileStats` and looks up `firstTouch` as a per-agent
+ * ordinal gets a real node, the wrong one, with nothing going red. The suffix
+ * is what stops that being a comment somebody has to have read.
+ */
 export interface FileStats {
   filePath: string;
   reads: number;
@@ -114,10 +136,10 @@ export interface FileStats {
   writes: number;
   /** Calls naming this file whose status is `error`. */
   errors: number;
-  /** Ordinal of the first call naming this file, across the whole session. */
-  firstTouch: number;
-  /** Ordinal of the last. Equal to `firstTouch` when touched once. */
-  lastTouch: number;
+  /** Position of the first call naming this file in the SESSION-WIDE sequence. */
+  firstTouchSeq: number;
+  /** Position of the last. Equal to `firstTouchSeq` when touched once. */
+  lastTouchSeq: number;
 }
 
 /** F2 — one tool name, and how this session used it. */

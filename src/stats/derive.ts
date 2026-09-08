@@ -148,8 +148,8 @@ function deriveFiles(
         edits: 0,
         writes: 0,
         errors: 0,
-        firstTouch: index,
-        lastTouch: index,
+        firstTouchSeq: index,
+        lastTouchSeq: index,
       };
       byPath.set(filePath, row);
     }
@@ -157,7 +157,7 @@ function deriveFiles(
     else if (klass === 'edit') row.edits += 1;
     else if (klass === 'write') row.writes += 1;
     if (countErrors && tool.status === 'error') row.errors += 1;
-    row.lastTouch = index;
+    row.lastTouchSeq = index;
   });
   return [...byPath.values()].sort((a, b) =>
     a.filePath < b.filePath ? -1 : a.filePath > b.filePath ? 1 : 0,

@@ -25,8 +25,8 @@
       "edits": 0,
       "writes": 3,
       "errors": 0,
-      "firstTouch": 0,
-      "lastTouch": 2
+      "firstTouchSeq": 0,
+      "lastTouchSeq": 2
     }
   ],
   "tools": [

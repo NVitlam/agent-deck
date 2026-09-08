@@ -203,7 +203,18 @@ describe('DoD 2.6 — across every committed golden', () => {
   it('every full record names its engine’s gaps, and no excluded record names any', () => {
     for (const entry of entries) {
       if (entry.record.coverage === 'full') {
-        expect(entry.record.unavailable.length).toBeGreaterThan(0);
+        // NOT `unavailable.length > 0`, which is what this asserted until
+        // `phase-verifier` pointed out it cannot fail: `derive.ts` adds
+        // `F13.completed:snapshot` to every full record unconditionally, so the
+        // list is non-empty whatever the deriver does with every other fact.
+        // A counter that is satisfied by a constant is the unfalsifiable shape
+        // this repository records more than any other.
+        //
+        // The falsifiable form is a code that depends on THIS record: no engine
+        // states a window except Codex, so a non-Codex full record must name
+        // F10 by engine, and a Codex one must not.
+        const codes = entry.record.unavailable.filter((u) => u !== 'F13.completed:snapshot');
+        expect(codes.length, entry.stem).toBeGreaterThan(0);
         if (entry.record.engine === 'codex') {
           expect(entry.record.unavailable).toEqual(
             expect.arrayContaining(['F1:codex', 'F2.errors:codex', 'F4:codex', 'F12:codex']),

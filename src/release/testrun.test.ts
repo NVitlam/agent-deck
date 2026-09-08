@@ -224,3 +224,45 @@ describe('the RUNNER uses it — a separate claim from the classifier being righ
     expect(source).toMatch(/exitClass:\s*classifyExit\(code, signal \?\? null\)/);
   });
 });
+
+describe('the verdict vocabulary — a run that never started is not a death', () => {
+  /*
+   * ADDED AFTER `phase-verifier` FOUND THE LEDGER COMMITTING THIS PHASE'S OWN
+   * DEFECT ONE LEVEL IN.
+   *
+   * The original rule was `non-zero AND no summary -> DEATH`. A `globalSetup`
+   * that throws exits 1 with no summary, so seventeen guard refusals in
+   * `1c-block3` were recorded as DEATHs — in the same column as a Windows
+   * fail-fast, which is precisely the conflation this file exists to undo.
+   * A DEATH now requires an ABNORMAL code; an ordinary one is a
+   * `startup-error`.
+   *
+   * Asserted against the SOURCE because the alternative is running the real
+   * suite twenty times to produce one of each verdict, and the classifier this
+   * rests on is pinned behaviourally above and through `--explain`.
+   */
+  const source = readFileSync(RUNNER, 'utf8');
+
+  it('a DEATH requires the exit code to be abnormal, not merely non-zero', () => {
+    expect(source).toMatch(/classifyExit\(code, signal \?\? null\)\.kind === 'abnormal'/);
+    expect(source).toContain("'startup-error'");
+  });
+
+  it('names all four verdicts, so none is silently folded into "passed"', () => {
+    for (const verdict of ['passed', 'failed', 'DEATH', 'startup-error']) {
+      expect(source, verdict).toContain(`'${verdict}'`);
+    }
+    // The arithmetic that would otherwise count a startup-error as a pass.
+    expect(source).toMatch(/results\.length - deaths\.length - failed\.length - startupErrors\.length/);
+  });
+
+  it('fails the wrapper on a startup-error too — a block whose denominator shrinks is worse', () => {
+    expect(source).toMatch(/deaths\.length > 0 \|\| startupErrors\.length > 0/);
+  });
+
+  it('CONTROL: the classifier really separates the two codes this rests on', () => {
+    // 1 is what a globalSetup throw exits with; 0xC0000409 is the fail-fast.
+    expect(classifyExit(1).kind).toBe('normal');
+    expect(classifyExit(-1073740791).kind).toBe('abnormal');
+  });
+});

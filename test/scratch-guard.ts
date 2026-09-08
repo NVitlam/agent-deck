@@ -100,6 +100,36 @@ export function setup(): void {
    * asked without racing.
    */
   const carried = [...before.dist].filter((name) => !DIST_KEEP.has(name)).sort();
+
+  /*
+   * THE PACKAGE AUDIT MUST SEE THE TREE AS IT IS, so this cleanup stands down
+   * when the audit is armed.
+   *
+   * Found by `phase-verifier`, 2026-09-08, and it is the sharper half of DoD
+   * 1c.5: cleaning here BEFORE any worker starts made
+   * `src/release/vsix.test.ts`'s refusal unfalsifiable. That test asserts a tree
+   * is not carrying litter; this function had already removed it. Three
+   * documents claimed the pair covered both cases — a run that leaks and a tree
+   * that arrives dirty — and the second was true of neither, because the guard
+   * that was supposed to catch it could never see it. **Two guards that each
+   * look correct, arranged so that one destroys the other's subject.**
+   *
+   * The division that actually holds:
+   *   - ordinary run  -> clean and report, so one death cannot cascade
+   *     (the seventeen refused runs of `1c-block3` are why);
+   *   - package audit -> leave it, so `vsix.test.ts` refuses a tree a release
+   *     would ship from.
+   */
+  if (carried.length > 0 && process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1') {
+    process.stdout.write(
+      `[scratch-guard] AGENT_DECK_PACKAGE_AUDIT=1: leaving ${String(carried.length)} carried ` +
+        `scratch director${carried.length === 1 ? 'y' : 'ies'} in dist/ (${carried.join(', ')}) ` +
+        'for the package audit to refuse. Cleaning them here would make that refusal ' +
+        'unfalsifiable.\n',
+    );
+    return;
+  }
+
   if (carried.length > 0) {
     /*
      * REMOVED AND REPORTED, NOT REFUSED — and the first version refused.

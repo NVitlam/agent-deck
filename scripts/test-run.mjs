@@ -149,8 +149,32 @@ function runOnce(index, headSha) {
         summaryLine,
         lastReporterLine: lines.at(-1) ?? null,
         stderrTail: stderr.split(/\r?\n/).filter((l) => l.trim() !== '').slice(-20),
-        // See the header: a red suite is not a death.
-        verdict: code === 0 ? 'passed' : summaryLine === null ? 'DEATH' : 'failed',
+        /*
+         * FOUR VERDICTS, NOT THREE — and the fourth was added because this
+         * ledger committed, one level in, the very defect Phase 1c exists to
+         * correct.
+         *
+         * The original rule was `non-zero AND no summary line -> DEATH`, on the
+         * reasoning that a red suite reports itself and anything else is the
+         * process vanishing. That is true of a process that vanishes and false
+         * of a run that never started: a `globalSetup` that throws exits 1 with
+         * no summary, and seventeen such refusals were recorded as DEATHs in
+         * `1c-block3` — sitting in the same column as a Windows fail-fast,
+         * which is exactly the conflation the whole phase is about.
+         *
+         * So a DEATH now requires the code to be ABNORMAL — high-bit, i.e. the
+         * process was terminated rather than exiting. A non-zero code with no
+         * summary and an ordinary code is a `startup-error`: vitest refused to
+         * run, and the reason is in `stderrTail` rather than in the exit code.
+         */
+        verdict:
+          code === 0
+            ? 'passed'
+            : summaryLine !== null
+              ? 'failed'
+              : classifyExit(code, signal ?? null).kind === 'abnormal'
+                ? 'DEATH'
+                : 'startup-error',
         at: new Date().toISOString(),
       };
 
@@ -191,11 +215,22 @@ for (let i = 1; i <= runs; i += 1) {
 
 const deaths = results.filter((r) => r.verdict === 'DEATH');
 const failed = results.filter((r) => r.verdict === 'failed');
+const startupErrors = results.filter((r) => r.verdict === 'startup-error');
+const passed = results.length - deaths.length - failed.length - startupErrors.length;
 console.log(
   `\n${label}: ${String(results.length)} runs, ${String(deaths.length)} deaths, ` +
-    `${String(failed.length)} failed, ${String(results.length - deaths.length - failed.length)} passed`,
+    `${String(failed.length)} failed, ${String(startupErrors.length)} startup-error, ` +
+    `${String(passed)} passed`,
 );
 
-// A death is what this exists to find, so it is the only thing that fails the
-// wrapper. A red suite has already reported itself.
-exit(deaths.length > 0 ? 1 : 0);
+/*
+ * A DEATH fails the wrapper, and so does a run that never started.
+ *
+ * A red suite has already reported itself, so `failed` does not. A
+ * `startup-error` does, and for a different reason than a death: it means the
+ * block measured NOTHING for that run, and a block whose denominator silently
+ * shrinks is worse than one that stops. `1c-block3` is the case — seventeen
+ * refusals that produced no measurement and, before this, were counted as
+ * seventeen deaths.
+ */
+exit(deaths.length > 0 || startupErrors.length > 0 ? 1 : 0);

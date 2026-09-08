@@ -23,6 +23,25 @@
  *
  * These tests are what stop either property being removed by someone who reads
  * `once()` as a caching nicety.
+ *
+ * ## THE `cc` ARM PROVES LESS THAN THE OTHER TWO, AND SAYING SO IS THE POINT
+ *
+ * Found by `phase-verifier`, 2026-09-08. Under a mutation that reduces the
+ * testkit's `deepFreeze` to a shallow `Object.freeze`, the `opencode` and
+ * `codex` arms go red and **the `cc` arm stays entirely green** — because
+ * `src/model/graft.ts:1160` already returns `deepFreeze(snapshot)`, so a Claude
+ * Code state is frozen by PRODUCTION before the testkit ever sees it.
+ *
+ * So for `cc` these tests assert the CONTRACT (the caller gets a frozen graph)
+ * and cannot attribute it to this file. That is recorded rather than papered
+ * over: the honest options were to write a stronger `cc` assertion that does
+ * not exist to be written, or to say which arm carries the weight. The deep
+ * freeze is load-bearing for `opencode` and `codex`, whose engines return
+ * ordinary mutable objects, and those two arms are where the mutation bites.
+ *
+ * The `Object.isFrozen(states)` assertion — the ARRAY, not its contents — is
+ * testkit-only for all three, since no engine builds that array. It is the one
+ * assertion here that is attributable in every arm.
  */
 
 import { beforeAll, describe, expect, it } from 'vitest';

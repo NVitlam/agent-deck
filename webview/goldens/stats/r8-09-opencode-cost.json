@@ -79,41 +79,56 @@
         {
           "id": "prompt",
           "label": "prompt tokens",
-          "points": [
+          "lines": [
             {
-              "sessionId": "synthetic-09-opencode-cost",
-              "index": 0,
-              "x": 0,
-              "y": 1000
+              "engine": "opencode",
+              "points": [
+                {
+                  "sessionId": "synthetic-09-opencode-cost",
+                  "index": 0,
+                  "x": 0,
+                  "y": 1000
+                }
+              ],
+              "max": 1000
             }
-          ],
-          "max": 1000
+          ]
         },
         {
           "id": "loops",
           "label": "loops",
-          "points": [
+          "lines": [
             {
-              "sessionId": "synthetic-09-opencode-cost",
-              "index": 0,
-              "x": 0,
-              "y": 0
+              "engine": "opencode",
+              "points": [
+                {
+                  "sessionId": "synthetic-09-opencode-cost",
+                  "index": 0,
+                  "x": 0,
+                  "y": 0
+                }
+              ],
+              "max": 0
             }
-          ],
-          "max": 0
+          ]
         },
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
-          "points": [
+          "lines": [
             {
-              "sessionId": "synthetic-09-opencode-cost",
-              "index": 0,
-              "x": 0,
-              "y": 0.4237
+              "engine": "opencode",
+              "points": [
+                {
+                  "sessionId": "synthetic-09-opencode-cost",
+                  "index": 0,
+                  "x": 0,
+                  "y": 0.4237
+                }
+              ],
+              "max": 0.4237
             }
-          ],
-          "max": 0.4237
+          ]
         }
       ],
       "sessions": [

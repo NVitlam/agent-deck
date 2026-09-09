@@ -99,34 +99,43 @@
         {
           "id": "prompt",
           "label": "prompt tokens",
-          "points": [
+          "lines": [
             {
-              "sessionId": "synthetic-01-reread-loop",
-              "index": 0,
-              "x": 0,
-              "y": 1000
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "synthetic-01-reread-loop",
+                  "index": 0,
+                  "x": 0,
+                  "y": 1000
+                }
+              ],
+              "max": 1000
             }
-          ],
-          "max": 1000
+          ]
         },
         {
           "id": "loops",
           "label": "loops",
-          "points": [
+          "lines": [
             {
-              "sessionId": "synthetic-01-reread-loop",
-              "index": 0,
-              "x": 0,
-              "y": 1
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "synthetic-01-reread-loop",
+                  "index": 0,
+                  "x": 0,
+                  "y": 1
+                }
+              ],
+              "max": 1
             }
-          ],
-          "max": 1
+          ]
         },
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
-          "points": [],
-          "max": 0
+          "lines": []
         }
       ],
       "sessions": [

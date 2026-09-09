@@ -3183,6 +3183,23 @@ export interface StatsPipelineOptions {
   pricingInvalid: readonly string[];
   /** `agentDeck.stats.idleFlushMs`. */
   idleFlushMs: number;
+  /**
+   * This process's activation instant — the PROVENANCE GATE (v0.7.0 DoD 4.11,
+   * user ruling 2026-09-09). Taken ONCE at activation.
+   *
+   * A session whose last activity (`endedAt ?? startedAt`) is before this
+   * instant is HISTORY: this process read it off disk and observed no work in
+   * it, so it never flushes, on idle or on ended. A historical session that
+   * produces a patch after the stamp becomes OBSERVED and flushes normally,
+   * through the supersede path.
+   *
+   * REQUIRED, not optional-with-a-default. A default of "no gate" is the
+   * silent-default shape this repository has already shipped twice (the
+   * `enabledEngines` prop, `DegradedMessage.engine`): a later construction site
+   * that forgets it would re-open the store flood with nothing going red.
+   * Passing `0` opts out, and the one caller that does says why.
+   */
+  processStart: number;
   /** Injected clock. `derivedAt` comes from here and from nowhere else. */
   now: () => number;
   /** Injected timers, so a test can fire the idle flush without waiting. */
@@ -3201,6 +3218,15 @@ interface TrackedSession {
   appendedBody: string | null;
   /** The pending idle flush, or null. */
   timer: TimerHandle | null;
+  /**
+   * Has this process observed WORK in this session? (DoD 4.11.)
+   *
+   * True once its last activity lands at or after `processStart`, or once its
+   * derived record CHANGES during this lifetime — the second is what turns a
+   * historical session that resumes into an observed one. False means history,
+   * and history never flushes.
+   */
+  observed: boolean;
 }
 
 /** A derived record before the store's stamp is put on it. */
@@ -3212,6 +3238,7 @@ export class StatsPipeline {
   readonly #pricing: PricingTable;
   readonly #pricingInvalid: readonly string[];
   readonly #idleFlushMs: number;
+  readonly #processStart: number;
   readonly #now: () => number;
   readonly #scheduler: Scheduler;
   readonly #onError: ((error: unknown) => void) | undefined;
@@ -3225,6 +3252,7 @@ export class StatsPipeline {
     this.#pricing = options.pricing;
     this.#pricingInvalid = options.pricingInvalid;
     this.#idleFlushMs = options.idleFlushMs;
+    this.#processStart = options.processStart;
     this.#now = options.now;
     this.#scheduler = options.scheduler;
     this.#onError = options.onError;
@@ -3292,16 +3320,51 @@ export class StatsPipeline {
       }
       const entry = this.#entryFor(state.sessionId);
       const body = JSON.stringify(record);
+
+      // ---- The provenance gate (DoD 4.11, user ruling 2026-09-09) ----------
+      //
+      // THE DEFECT IT CLOSES, and the number that names it. The 4.9 live smoke
+      // found 564 CC records in one ISO-week file, 12.7 MB in 75 minutes, with
+      // every error counter at 0. Reproduced: 28 sessions doing no work at all
+      // wrote 28 records per PROCESS LIFETIME and 560 across 20 lifetimes.
+      //
+      // The report read as "the idle flush re-fires every interval". It does
+      // not — within one lifetime the timer fires once and stays disarmed, which
+      // is what `#arm` already promised. The driver is REDISCOVERY: every window
+      // reload and every second window re-derived the whole history and wrote it
+      // again, because a session's first sighting satisfied the change test
+      // against a null body and armed a flush.
+      //
+      // So the gate is PROVENANCE, not first-sighting. A session whose last
+      // activity predates this process observed no work here, whether it is
+      // seen once or a thousand times, and whether it is idle or ended. That
+      // distinction is also the only one that leaves DoD 3.2b intact: 3.2b's
+      // locked contract is that a live session's first sighting arms a flush
+      // (`extension.stats.test.ts` asserts `armedTimers` is 1 after one
+      // emission), and a first-sighting gate would have reversed it.
+      const lastActivity = record.endedAt ?? record.startedAt;
+      if (lastActivity >= this.#processStart) entry.observed = true;
+      // ...and a historical session that RESUMES becomes observed: its record
+      // changing during this lifetime is work this process watched, even though
+      // its `startedAt` stays old. This is the supersede path.
+      if (entry.body !== null && body !== entry.body) entry.observed = true;
+
       if (state.liveness === 'ended') {
         entry.record = record;
         entry.body = body;
         this.#clearTimer(entry);
-        if (body !== entry.appendedBody) this.#append(entry);
+        // History never flushes on ended either. That half matters: a history is
+        // usually discovered ALREADY ended, and this path appends with no timer,
+        // so gating only the idle path would leave the flood intact for exactly
+        // the sessions that caused it (measured: 28 appends, 0 idle flushes).
+        if (entry.observed && body !== entry.appendedBody) this.#append(entry);
         continue;
       }
       if (body === entry.body) continue;
       entry.record = record;
       entry.body = body;
+      // History arms nothing, so it cannot flush when the silence elapses.
+      if (!entry.observed) continue;
       this.#arm(state.sessionId, entry);
     }
   }
@@ -3326,7 +3389,13 @@ export class StatsPipeline {
   #entryFor(sessionId: string): TrackedSession {
     const held = this.#tracked.get(sessionId);
     if (held !== undefined) return held;
-    const fresh: TrackedSession = { record: null, body: null, appendedBody: null, timer: null };
+    const fresh: TrackedSession = {
+      record: null,
+      body: null,
+      appendedBody: null,
+      timer: null,
+      observed: false,
+    };
     this.#tracked.set(sessionId, fresh);
     return fresh;
   }
@@ -3585,6 +3654,10 @@ export class AgentDeckHost {
         pricing: parsed.table,
         pricingInvalid: parsed.invalid,
         idleFlushMs: options.settings['stats.idleFlushMs'],
+        // The provenance stamp, taken ONCE here (DoD 4.11). Everything already
+        // on disk when this window activated is history and is never written
+        // again; see `StatsPipelineOptions.processStart`.
+        processStart: clock(),
         now: clock,
         scheduler: this.#scheduler,
         onError: toChannel,

@@ -57,7 +57,7 @@
 
   /** Files, Loops and Tokens read the LIVE records; Trends reads the STORE. */
   let layout = $derived(statsLayout(live, view.statsStoreEnabled));
-  let trends = $derived(trendsLayout(stored, view.statsStoreEnabled));
+  let trends = $derived(trendsLayout(stored, view.statsStoreEnabled, view.statsStoreLoaded));
 
   /** Session labels the deck already carries, for the primary slot (DoD 4.5). */
   let liveLabels = $derived(new Map(view.sessions.map((s) => [s.sessionId, s.label])));

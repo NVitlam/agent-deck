@@ -386,6 +386,8 @@ export const TESTID = {
   statsStallRow: 'stats-stall-row',
   /* Trends */
   statsTrendSeries: 'stats-trend-series',
+  /** One ENGINE's line inside a series (DoD 4.12). Never shared across engines. */
+  statsTrendLine: 'stats-trend-line',
   statsTrendPoint: 'stats-trend-point',
 
   /* The sidebar menu (DoD 4.6b) */

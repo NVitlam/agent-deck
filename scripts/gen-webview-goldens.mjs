@@ -62,7 +62,8 @@ async function loadModules() {
     "export { fit, usableViewport } from './webview/layout/fit.js';",
     "export { treeLayout } from './webview/layout.js';",
     "export { boundsOf } from './webview/viewport.js';",
-    "export { statsLayout } from './webview/stats/layout.js';",
+    "export { statsLayout, trendsLayout } from './webview/stats/layout.js';",
+    "export { inSessionOrder } from './src/stats/wire.js';",
     "export { createStore } from './webview/store.js';",
     "export { statsWireRecords } from './src/stats/wire.js';",
   ].join('\n');
@@ -184,6 +185,47 @@ function layoutThrough(m, records) {
   return m.statsLayout(view.statsLive, view.statsStoreEnabled);
 }
 
+/**
+ * The DoD 4.12 golden: three engines, magnitudes an order apart, through the
+ * real store and the real layout.
+ *
+ * The numbers are the measured ones from the 4.9 smoke's own 102 MB store —
+ * median prompt 106,531,677 on Claude Code against 18,584 on Codex. Under one
+ * shared maximum a Codex point's share of the box was 0.017%, which is the
+ * baseline, and the first report of it read as "Trends shows Codex only". The
+ * golden therefore pins the thing that fixes it: a line per engine, each with
+ * its OWN maximum, plus the `loading` arm that stops a store which has not
+ * been read from rendering as a history with nothing in it.
+ */
+function mixedEngineTrends(m, base) {
+  const as = (engine, sessionId, prompt) => ({
+    ...base,
+    sessionId,
+    engine,
+    totals: { ...base.totals, prompt },
+  });
+  const records = [
+    as('cc', 'mixed-cc-1', 106_531_677),
+    as('cc', 'mixed-cc-2', 576_450_282),
+    as('codex', 'mixed-codex-1', 18_584),
+    as('codex', 'mixed-codex-2', 817_147),
+    as('opencode', 'mixed-oc-1', 86_502),
+    as('opencode', 'mixed-oc-2', 364_414),
+  ];
+  const wire = m.statsWireRecords(records);
+  if (wire.dropped !== 0) throw new Error(`the wire gate refused a mixed-engine record: ${wire.reasons.join('; ')}`);
+  const store = m.createStore();
+  store.handleMessage({ type: 'statsSnapshot', records: wire.records });
+  store.handleMessage({ type: 'statsStore', records: m.inSessionOrder(wire.records), enabled: true });
+  const view = store.getView();
+  return {
+    sessions: records.map((r) => ({ sessionId: r.sessionId, engine: r.engine, prompt: r.totals.prompt })),
+    loaded: m.trendsLayout(view.statsStored, view.statsStoreEnabled, view.statsStoreLoaded),
+    // The same records, before the read resolves. One fact, its own state.
+    loading: m.trendsLayout(view.statsStored, view.statsStoreEnabled, false),
+  };
+}
+
 function text(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -205,6 +247,17 @@ async function planFiles(m) {
       text({ generator: 'scripts/gen-webview-goldens.mjs', records: corpus.slice(0, n).map((e) => e.stem), layout: layoutThrough(m, records) }),
     );
   }
+  const first = corpus[0];
+  if (first === undefined) throw new Error('no corpus golden to build the mixed-engine case from');
+  files.set(
+    join(STATS_GOLDEN_DIR, 'engines-mixed.json'),
+    text({
+      generator: 'scripts/gen-webview-goldens.mjs',
+      from: first.stem,
+      trends: mixedEngineTrends(m, first.record),
+    }),
+  );
+
   for (const entry of all.filter((e) => e.stem.includes('-synthetic-'))) {
     const id = entry.stem.replace(/^[a-z]+-synthetic-/u, '');
     files.set(

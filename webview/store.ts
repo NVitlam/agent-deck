@@ -514,6 +514,18 @@ export interface WebviewView {
   statsStored: readonly StatsRecord[];
   /** `agentDeck.stats.enabled` as the host read it. Trends' empty-state reason. */
   statsStoreEnabled: boolean;
+  /**
+   * Has the stored history been READ yet? (DoD 4.12.)
+   *
+   * False until the first `statsStore` message lands. Before that the empty
+   * `statsStored` is the absence of an answer, not the answer — and the Stats
+   * view used to render it as "fewer than two sessions are recorded", which
+   * over a 102 MB store is a confident wrong statement for several seconds.
+   * The host always sends this message once, even when the store is disabled
+   * (`#storeReadAtFlush` starts at -1 against an `appended` of 0), so nothing
+   * can leave the view loading forever.
+   */
+  statsStoreLoaded: boolean;
 }
 
 export interface Store {
@@ -783,6 +795,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let statsLive: readonly StatsRecord[] = [];
   let statsStored: readonly StatsRecord[] = [];
   let statsStoreEnabled = true;
+  let statsStoreLoaded = false;
   /** Set between asking for a resync and the snapshot that answers it. */
   let resyncPending = false;
   let resyncs = 0;
@@ -1010,6 +1023,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         statsLive,
         statsStored,
         statsStoreEnabled,
+        statsStoreLoaded,
       };
       if (detailActionId !== undefined) view.detailActionId = detailActionId;
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
@@ -1053,6 +1067,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         case 'statsStore':
           statsStored = message.records;
           statsStoreEnabled = message.enabled;
+          statsStoreLoaded = true;
           break;
         case 'settings':
           canvasAutoFit = message.canvasAutoFit;

@@ -21,20 +21,17 @@
         {
           "id": "prompt",
           "label": "prompt tokens",
-          "points": [],
-          "max": 0
+          "lines": []
         },
         {
           "id": "loops",
           "label": "loops",
-          "points": [],
-          "max": 0
+          "lines": []
         },
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
-          "points": [],
-          "max": 0
+          "lines": []
         }
       ],
       "sessions": [],

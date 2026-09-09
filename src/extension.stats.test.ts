@@ -121,6 +121,7 @@ function harness(
     idleFlushMs?: number;
     pricing?: unknown;
     retentionDays?: number;
+    processStart?: number;
   } = {},
 ): Harness {
   const dir = join(tempDir(), STORE_DIR_NAME);
@@ -137,6 +138,14 @@ function harness(
     store,
     pricing: parsed.table,
     pricingInvalid: parsed.invalid,
+    // DoD 4.11's provenance gate, DELIBERATELY OPT-OUT here and the reason is
+    // the fixtures: every committed session started in 2026-08 while this
+    // harness's clock is 2026-09-08, so a real activation stamp would classify
+    // the entire corpus as history and no Phase 3 test could observe a flush at
+    // all. `0` means "gate nothing", which keeps DoD 3.2b and 3.7 measuring
+    // exactly what they were written to measure. The 4.11 suite passes a real
+    // stamp instead, which is what makes it a test of the gate.
+    processStart: overrides.processStart ?? 0,
     idleFlushMs: overrides.idleFlushMs ?? DEFAULT_STATS_IDLE_FLUSH_MS,
     now: () => time.now(),
     scheduler: time,
@@ -549,5 +558,180 @@ describe('DoD 3.5: Clear Stats History is a modal command, and cancel means canc
       expect(after, `answer ${JSON.stringify(answer)} deleted the history`).toStrictEqual(before);
       await deactivate();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 4.11 — discovery is not a patch
+// ---------------------------------------------------------------------------
+
+/**
+ * The store flood the 4.9 live smoke found, and the number that names it.
+ *
+ * ## What the user measured
+ *
+ * 564 Claude Code records in ONE ISO-week file, 12.7 MB in 75 minutes, with
+ * `idleFlushMs` at 60 s and `statsErrors`, `storeMalformed` and
+ * `statsDropped` all 0. Nothing was broken; the pipeline was writing exactly
+ * what it thought it had been asked to write.
+ *
+ * ## What the reproduction showed, which is NOT what the report said
+ *
+ * The report read as "the idle flush re-fires every interval for every silent
+ * session". It does not. Measured on this corpus before the fix:
+ *
+ *   - 28 silent sessions, ONE pipeline lifetime, 20 intervals, 240 pumps
+ *     -> **28 appends**. Within a lifetime the timer fires once and stays
+ *     disarmed, which is what the code already promised.
+ *   - the same 28 sessions across 20 pipeline LIFETIMES -> **560 appends**.
+ *
+ * 28 x 20. The driver is REDISCOVERY: `TrackedSession.body` starts null, so a
+ * session's first sighting satisfied the change test and armed a flush. Every
+ * window reload and every second window re-derived the whole history and wrote
+ * it again. A fix aimed only at "disarm when it fires" would have changed
+ * nothing, because that was never the defect.
+ *
+ * Two arms are pinned below so the distinction cannot rot: the per-lifetime
+ * count AND the multi-lifetime count. A future change that re-arms within a
+ * lifetime turns the first red; one that re-writes on discovery turns the
+ * second red.
+ */
+describe('DoD 4.11: a session with no patch in this process lifetime never flushes', () => {
+  /** 28 sessions that never do any work, each with its own id. */
+  function historical(liveness: SessionState['liveness']): SessionState[] {
+    const out: SessionState[] = [];
+    for (let i = 0; i < 28; i += 1) {
+      const state = subject(i, liveness);
+      (state as unknown as Record<string, unknown>)['sessionId'] = `historical-${String(i)}`;
+      out.push(state);
+    }
+    return out;
+  }
+
+  it('writes nothing across 20 process lifetimes — 560 records before the fix', () => {
+    // The store dir outlives the pipelines, the way globalStorage outlives a
+    // window. Each iteration is one activation.
+    const dir = join(tempDir(), STORE_DIR_NAME);
+    const time = new ManualTime(START);
+    const sessions = historical('idle');
+    const emission = emissionOf(...sessions);
+    const parsed = parsePricing({});
+
+    for (let lifetime = 0; lifetime < 20; lifetime += 1) {
+      const store = new StatsStore({ dir, enabled: true, retentionDays: 90 });
+      const pipeline = new StatsPipeline({
+        store,
+        pricing: parsed.table,
+        pricingInvalid: parsed.invalid,
+        idleFlushMs: 60_000,
+        processStart: START,
+        now: () => time.now(),
+        scheduler: time,
+      });
+      pipeline.observe(emission);
+      time.advance(60_000);
+      pipeline.observe(emission);
+      expect(pipeline.idleFlushes, `lifetime ${String(lifetime)} flushed`).toBe(0);
+      pipeline.dispose();
+    }
+
+    expect(linesOn(dir), 'a session that did no work reached the store').toStrictEqual([]);
+  });
+
+  it('writes nothing in ONE lifetime either, over 20 intervals of pumping', () => {
+    // The arm the report described. It was already 28 rather than 560, and it
+    // is 0 now; both facts are the point.
+    const h = harness({ idleFlushMs: 60_000, processStart: START });
+    const emission = emissionOf(...historical('idle'));
+    h.pipeline.observe(emission);
+    for (let interval = 0; interval < 20; interval += 1) {
+      for (let tick = 0; tick < 12; tick += 1) {
+        h.time.advance(5_000);
+        h.pipeline.observe(emission);
+      }
+    }
+    expect(h.pipeline.idleFlushes).toBe(0);
+    expect(linesOn(h.dir)).toStrictEqual([]);
+  });
+
+  it('gates the ENDED path too, which is how a history is usually discovered', () => {
+    // Measured before the fix: 28 appends, 0 idle flushes. The ended path has
+    // no timer, so gating only the idle path would have left the flood intact
+    // for exactly the sessions that caused it.
+    const h = harness({ processStart: START });
+    h.pipeline.observe(emissionOf(...historical('ended')));
+    expect(linesOn(h.dir)).toStrictEqual([]);
+  });
+
+  it('(c) supersede survives: patch -> flush -> patch -> ended is TWO records', () => {
+    const h = harness({ idleFlushMs: 60_000, processStart: START });
+    const first = subject(0, 'live');
+    const id = first.sessionId;
+
+    h.pipeline.observe(emissionOf(first)); // discovery: writes nothing
+    expect(linesOn(h.dir)).toStrictEqual([]);
+
+    h.pipeline.observe(emissionOf(subject(0, 'live', 0.25))); // a real patch
+    h.time.advance(60_000); // ...falls silent and flushes
+    expect(h.pipeline.idleFlushes).toBe(1);
+    expect(linesOn(h.dir)).toHaveLength(1);
+
+    h.pipeline.observe(emissionOf(subject(0, 'live', 0.5))); // more work
+    h.pipeline.observe(emissionOf(subject(0, 'ended', 0.5))); // then it ends
+    const lines = linesOn(h.dir);
+    expect(lines).toHaveLength(2);
+    const ids = lines.map((line) => (JSON.parse(line) as { sessionId: string }).sessionId);
+    expect(ids, 'both lines are the same session, superseded').toStrictEqual([id, id]);
+  });
+
+  it('a HISTORICAL session that resumes becomes observed, and flushes', () => {
+    /*
+     * The ruling's second sentence (user, 2026-09-09). Provenance is not a
+     * life sentence: a session whose `startedAt` predates activation — so the
+     * timestamp alone says history forever — becomes OBSERVED the moment its
+     * derived record changes while this process is watching, because that
+     * change IS work this process saw. Every subject here is a real corpus
+     * session started in 2026-08 against a `processStart` of 2026-09-08, so
+     * the only thing that can lift the gate is the patch.
+     */
+    const h = harness({ idleFlushMs: 60_000, processStart: START });
+    const state = subject(0, 'live');
+    expect(
+      (state.root.startedAt ?? START) < START,
+      'the subject must be historical for this test to mean anything',
+    ).toBe(true);
+
+    // Discovered as history: nothing armed, nothing written, however long it
+    // sits there.
+    h.pipeline.observe(emissionOf(state));
+    expect(h.pipeline.armedTimers, 'history armed a timer').toBe(0);
+    h.time.advance(60_000 * 10);
+    expect(linesOn(h.dir)).toStrictEqual([]);
+
+    // Then it resumes. THAT is observed work.
+    h.pipeline.observe(emissionOf(subject(0, 'live', 3)));
+    expect(h.pipeline.armedTimers, 'a resumed session did not arm').toBe(1);
+    h.time.advance(60_000);
+    expect(h.pipeline.idleFlushes).toBe(1);
+    expect(linesOn(h.dir)).toHaveLength(1);
+
+    // ...and it supersedes normally from there, exactly like any live session.
+    h.pipeline.observe(emissionOf(subject(0, 'ended', 4)));
+    const lines = linesOn(h.dir);
+    expect(lines).toHaveLength(2);
+    const ids = lines.map((l) => (JSON.parse(l) as { sessionId: string }).sessionId);
+    expect(new Set(ids).size, 'both lines are the same session').toBe(1);
+  });
+
+  it('a genuine patch still flushes exactly once per silence period', () => {
+    const h = harness({ idleFlushMs: 60_000, processStart: START });
+    h.pipeline.observe(emissionOf(subject(0, 'live')));
+    h.pipeline.observe(emissionOf(subject(0, 'live', 0.25)));
+    for (let i = 0; i < 20; i += 1) {
+      h.time.advance(60_000);
+      h.pipeline.observe(emissionOf(subject(0, 'live', 0.25)));
+    }
+    expect(h.pipeline.idleFlushes, 'one flush per silence period').toBe(1);
+    expect(linesOn(h.dir)).toHaveLength(1);
   });
 });

@@ -300,10 +300,55 @@ describe('DoD 4.3 — Tokens (03, 08, 09, 10, 11, 12, 13)', () => {
 });
 
 describe('DoD 4.3 — Trends', () => {
-  it('is empty below two stored records, and says why', () => {
+  it('says LOADING until the store has been read — it does not claim an empty history (DoD 4.12)', () => {
+    /*
+     * THIS TEST USED TO ASSERT `fewer-than-two` HERE, AND THAT WAS THE DEFECT.
+     * `statsPanel` sends a `statsSnapshot` and no `statsStore`, which is exactly
+     * the state the panel is in while the host reads the file — and over the
+     * 4.9 smoke's 102 MB store that lasted long enough to see. The view
+     * answered "fewer than two sessions are recorded", which is a statement
+     * about a history it had not looked at yet.
+     */
     const panel = statsPanel(['01-reread-loop']);
     tab(panel, 'trends');
+    const empty = one(panel.container, TESTID.statsEmpty);
+    expect(empty.dataset['reason']).toBe('loading');
+    expect(empty.textContent).toContain('Reading the stored history');
+  });
+
+  it('is empty below two stored records once the read HAS resolved, and says why', () => {
+    const panel = render();
+    send({ type: 'statsStore', records: [golden('01-reread-loop')], enabled: true });
+    click(one(panel.container, TESTID.statsToggle));
+    tab(panel, 'trends');
     expect(one(panel.container, TESTID.statsEmpty).dataset['reason']).toBe('fewer-than-two');
+  });
+
+  it('a slow store resolves into a history, and never renders a partial one (DoD 4.12)', () => {
+    // The "slow store stub" is the host's own message arriving late, which is
+    // the only way the webview can experience a slow read: one message, whole.
+    const panel = render();
+    send({ type: 'snapshot', sessions: [] });
+    send({ type: 'statsSnapshot', records: [golden('01-reread-loop')] });
+    click(one(panel.container, TESTID.statsToggle));
+    tab(panel, 'trends');
+    expect(one(panel.container, TESTID.statsEmpty).dataset['reason']).toBe('loading');
+    // ...then the read lands, with all three engines in it.
+    send({
+      type: 'statsStore',
+      records: [
+        golden('01-reread-loop'),
+        golden('09-opencode-cost', 'opencode'),
+        golden('08-codex-window', 'codex'),
+      ],
+      enabled: true,
+    });
+    harness.flushSync();
+    expect(all(panel.container, TESTID.statsEmpty)).toHaveLength(0);
+    const lines = all(panel.container, TESTID.statsTrendLine).filter(
+      (l) => l.dataset['series'] === 'prompt',
+    );
+    expect(lines.map((l) => l.dataset['engine'])).toStrictEqual(['cc', 'codex', 'opencode']);
   });
 
   it('is empty when the store is off, and says that instead', () => {
@@ -326,14 +371,26 @@ describe('DoD 4.3 — Trends', () => {
     tab(panel, 'trends');
     const series = all(panel.container, TESTID.statsTrendSeries);
     expect(series.map((s) => s.dataset['series'])).toStrictEqual(['prompt', 'loops', 'cost']);
-    const prompt = all(series[0] as HTMLElement, TESTID.statsTrendPoint);
-    expect(prompt.map((p) => p.dataset['index'])).toStrictEqual(['0', '1', '2']);
-    expect(prompt.map((p) => p.dataset['session'])).toStrictEqual([
+    // ONE LINE PER ENGINE (DoD 4.12), so the points group by engine and keep
+    // their GLOBAL session index — the two Claude Code sessions are 0 and 2 and
+    // the OpenCode one between them is 1. Before the ruling all three shared a
+    // line and a maximum, and the largest silenced the rest.
+    const promptLines = all(series[0] as HTMLElement, TESTID.statsTrendLine);
+    expect(promptLines.map((l) => l.dataset['engine'])).toStrictEqual(['cc', 'opencode']);
+    const ccPoints = all(promptLines[0] as HTMLElement, TESTID.statsTrendPoint);
+    expect(ccPoints.map((p) => p.dataset['index'])).toStrictEqual(['0', '2']);
+    expect(ccPoints.map((p) => p.dataset['session'])).toStrictEqual([
       'synthetic-01-reread-loop',
-      'synthetic-09-opencode-cost',
       'synthetic-02-churn-chain',
     ]);
-    const cost = all(series[2] as HTMLElement, TESTID.statsTrendPoint);
+    const ocPoints = all(promptLines[1] as HTMLElement, TESTID.statsTrendPoint);
+    expect(ocPoints.map((p) => p.dataset['index'])).toStrictEqual(['1']);
+    expect(ocPoints.map((p) => p.dataset['session'])).toStrictEqual(['synthetic-09-opencode-cost']);
+
+    // Cost is reported by ONE engine here, so it draws one line and no other.
+    const costLines = all(series[2] as HTMLElement, TESTID.statsTrendLine);
+    expect(costLines.map((l) => l.dataset['engine'])).toStrictEqual(['opencode']);
+    const cost = all(costLines[0] as HTMLElement, TESTID.statsTrendPoint);
     expect(cost.map((p) => p.dataset['session'])).toStrictEqual(['synthetic-09-opencode-cost']);
     expect(cost[0]?.dataset['y']).toBe('0.4237');
   });

@@ -3168,166 +3168,187 @@
         {
           "id": "prompt",
           "label": "prompt tokens",
-          "points": [
+          "lines": [
             {
-              "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
-              "index": 0,
-              "x": 0,
-              "y": 579333
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+                  "index": 0,
+                  "x": 0,
+                  "y": 579333
+                },
+                {
+                  "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+                  "index": 1,
+                  "x": 24,
+                  "y": 312436
+                },
+                {
+                  "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+                  "index": 2,
+                  "x": 48,
+                  "y": 298091
+                },
+                {
+                  "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+                  "index": 3,
+                  "x": 72,
+                  "y": 700299
+                },
+                {
+                  "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+                  "index": 4,
+                  "x": 96,
+                  "y": 414224
+                },
+                {
+                  "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+                  "index": 5,
+                  "x": 120,
+                  "y": 33441
+                },
+                {
+                  "sessionId": "d16538d5-da75-4d0a-aa99-652916287f7c",
+                  "index": 6,
+                  "x": 144,
+                  "y": 183085
+                },
+                {
+                  "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+                  "index": 7,
+                  "x": 168,
+                  "y": 152542397
+                },
+                {
+                  "sessionId": "99f96635-2042-41dc-9000-bbc9f9233bc3",
+                  "index": 8,
+                  "x": 192,
+                  "y": 99707750
+                }
+              ],
+              "max": 152542397
             },
             {
-              "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
-              "index": 1,
-              "x": 24,
-              "y": 312436
-            },
-            {
-              "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
-              "index": 2,
-              "x": 48,
-              "y": 298091
-            },
-            {
-              "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
-              "index": 3,
-              "x": 72,
-              "y": 700299
-            },
-            {
-              "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
-              "index": 4,
-              "x": 96,
-              "y": 414224
-            },
-            {
-              "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
-              "index": 5,
-              "x": 120,
-              "y": 33441
-            },
-            {
-              "sessionId": "d16538d5-da75-4d0a-aa99-652916287f7c",
-              "index": 6,
-              "x": 144,
-              "y": 183085
-            },
-            {
-              "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
-              "index": 7,
-              "x": 168,
-              "y": 152542397
-            },
-            {
-              "sessionId": "99f96635-2042-41dc-9000-bbc9f9233bc3",
-              "index": 8,
-              "x": 192,
-              "y": 99707750
-            },
-            {
-              "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
-              "index": 9,
-              "x": 216,
-              "y": 127028
-            },
-            {
-              "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
-              "index": 10,
-              "x": 240,
-              "y": 345745
-            },
-            {
-              "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
-              "index": 11,
-              "x": 264,
-              "y": 229897
+              "engine": "codex",
+              "points": [
+                {
+                  "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+                  "index": 9,
+                  "x": 216,
+                  "y": 127028
+                },
+                {
+                  "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+                  "index": 10,
+                  "x": 240,
+                  "y": 345745
+                },
+                {
+                  "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+                  "index": 11,
+                  "x": 264,
+                  "y": 229897
+                }
+              ],
+              "max": 345745
             }
-          ],
-          "max": 152542397
+          ]
         },
         {
           "id": "loops",
           "label": "loops",
-          "points": [
+          "lines": [
             {
-              "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
-              "index": 0,
-              "x": 0,
-              "y": 0
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+                  "index": 0,
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+                  "index": 1,
+                  "x": 24,
+                  "y": 0
+                },
+                {
+                  "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+                  "index": 2,
+                  "x": 48,
+                  "y": 1
+                },
+                {
+                  "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+                  "index": 3,
+                  "x": 72,
+                  "y": 0
+                },
+                {
+                  "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+                  "index": 4,
+                  "x": 96,
+                  "y": 0
+                },
+                {
+                  "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+                  "index": 5,
+                  "x": 120,
+                  "y": 0
+                },
+                {
+                  "sessionId": "d16538d5-da75-4d0a-aa99-652916287f7c",
+                  "index": 6,
+                  "x": 144,
+                  "y": 0
+                },
+                {
+                  "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+                  "index": 7,
+                  "x": 168,
+                  "y": 0
+                },
+                {
+                  "sessionId": "99f96635-2042-41dc-9000-bbc9f9233bc3",
+                  "index": 8,
+                  "x": 192,
+                  "y": 0
+                }
+              ],
+              "max": 1
             },
             {
-              "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
-              "index": 1,
-              "x": 24,
-              "y": 0
-            },
-            {
-              "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
-              "index": 2,
-              "x": 48,
-              "y": 1
-            },
-            {
-              "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
-              "index": 3,
-              "x": 72,
-              "y": 0
-            },
-            {
-              "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
-              "index": 4,
-              "x": 96,
-              "y": 0
-            },
-            {
-              "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
-              "index": 5,
-              "x": 120,
-              "y": 0
-            },
-            {
-              "sessionId": "d16538d5-da75-4d0a-aa99-652916287f7c",
-              "index": 6,
-              "x": 144,
-              "y": 0
-            },
-            {
-              "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
-              "index": 7,
-              "x": 168,
-              "y": 0
-            },
-            {
-              "sessionId": "99f96635-2042-41dc-9000-bbc9f9233bc3",
-              "index": 8,
-              "x": 192,
-              "y": 0
-            },
-            {
-              "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
-              "index": 9,
-              "x": 216,
-              "y": 0
-            },
-            {
-              "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
-              "index": 10,
-              "x": 240,
-              "y": 1
-            },
-            {
-              "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
-              "index": 11,
-              "x": 264,
-              "y": 0
+              "engine": "codex",
+              "points": [
+                {
+                  "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+                  "index": 9,
+                  "x": 216,
+                  "y": 0
+                },
+                {
+                  "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+                  "index": 10,
+                  "x": 240,
+                  "y": 1
+                },
+                {
+                  "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+                  "index": 11,
+                  "x": 264,
+                  "y": 0
+                }
+              ],
+              "max": 1
             }
-          ],
-          "max": 1
+          ]
         },
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
-          "points": [],
-          "max": 0
+          "lines": []
         }
       ],
       "sessions": [

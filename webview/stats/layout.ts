@@ -463,12 +463,40 @@ export interface TrendPoint {
   y: number;
 }
 
+/**
+ * ONE ENGINE'S line within a series — v0.7.0 DoD 4.12, user ruling 2026-09-09.
+ *
+ * **Trends never shares an axis across engines**, and the measurement that
+ * forced the rule is worth keeping: over a real 102 MB store, the median
+ * `totals.prompt` was 106,531,677 for Claude Code against 18,584 for Codex —
+ * a factor of ~5,700. A single shared `max` put every Codex and OpenCode point
+ * on the baseline, present in the DOM and invisible on screen, and the first
+ * report of it read as "Trends shows Codex only".
+ *
+ * The disparity is not a defect to be fixed here: `totals.prompt` is spec §F's
+ * figure and it stays as defined, a SUM over assistant messages that legitimately
+ * includes cache reads — so it grows with session length on Claude Code and does
+ * not on an engine that reports differently. Two engines' prompt totals are not
+ * comparable quantities, so this layout stops pretending they are and normalises
+ * each engine against its own maximum.
+ *
+ * `label` is deliberately ABSENT. The engine is the fact and belongs in the
+ * golden; the words a person reads are `text.ts`'s `ENGINE_NAMES`, applied by
+ * the component. That also keeps this module free of a value import from
+ * `text.ts`, which imports `SessionRef` back from here.
+ */
+export interface TrendLine {
+  engine: SessionRef['engine'];
+  points: TrendPoint[];
+  /** The largest `y` IN THIS LINE. Per-engine, which is the whole point. */
+  max: number;
+}
+
 export interface TrendSeries {
   id: TrendSeriesId;
   label: string;
-  points: TrendPoint[];
-  /** The largest `y`. Moves with the set; the points do not. */
-  max: number;
+  /** One line per engine PRESENT in the records, in `TREND_ENGINE_ORDER`. */
+  lines: TrendLine[];
 }
 
 export interface TrendsLayout {
@@ -477,9 +505,22 @@ export interface TrendsLayout {
   sessions: (SessionRef & { index: number; x: number })[];
   width: number;
   empty: boolean;
-  /** Why the view is empty, when it is. */
-  reason?: 'disabled' | 'fewer-than-two';
+  /**
+   * Why the view is empty, when it is.
+   *
+   * `loading` is DoD 4.12's second half: the stored history has not been read
+   * yet, which is not the same fact as "there is no history". Reading a 102 MB
+   * store takes visible time and the view used to render the pre-message state —
+   * an empty store — as though it were the answer.
+   */
+  reason?: 'disabled' | 'fewer-than-two' | 'loading';
 }
+
+/**
+ * The order lines appear in, for every series. Fixed rather than
+ * first-seen, so a golden does not move when a corpus is reordered.
+ */
+export const TREND_ENGINE_ORDER: readonly SessionRef['engine'][] = ['cc', 'codex', 'opencode'];
 
 export const TREND_LABELS: Readonly<Record<TrendSeriesId, string>> = {
   prompt: 'prompt tokens',
@@ -487,7 +528,11 @@ export const TREND_LABELS: Readonly<Record<TrendSeriesId, string>> = {
   cost: 'engine-reported cost (USD)',
 };
 
-export function trendsLayout(records: readonly StatsRecord[], storeEnabled = true): TrendsLayout {
+export function trendsLayout(
+  records: readonly StatsRecord[],
+  storeEnabled = true,
+  storeLoaded = true,
+): TrendsLayout {
   const covered = coveredRecords(records);
   const sessions = covered.map((record, index) => ({
     ...refOf(record),
@@ -496,15 +541,27 @@ export function trendsLayout(records: readonly StatsRecord[], storeEnabled = tru
   }));
   const series: TrendSeries[] = [];
   const build = (id: TrendSeriesId, valueOf: (r: StatsRecord) => number | undefined): void => {
-    const points: TrendPoint[] = [];
-    let max = 0;
-    covered.forEach((record, index) => {
-      const value = valueOf(record);
-      if (value === undefined) return;
-      points.push({ sessionId: record.sessionId, index, x: index * TREND_STEP, y: value });
-      if (value > max) max = value;
-    });
-    series.push({ id, label: TREND_LABELS[id], points, max });
+    const lines: TrendLine[] = [];
+    for (const engine of TREND_ENGINE_ORDER) {
+      const points: TrendPoint[] = [];
+      let max = 0;
+      // The x positions stay GLOBAL — a point sits above its own session on the
+      // shared axis — while the y scale is this engine's alone. So the axis still
+      // reads as "sessions, in order" and a line still connects that engine's
+      // sessions in that order.
+      covered.forEach((record, index) => {
+        if (record.engine !== engine) return;
+        const value = valueOf(record);
+        if (value === undefined) return;
+        points.push({ sessionId: record.sessionId, index, x: index * TREND_STEP, y: value });
+        if (value > max) max = value;
+      });
+      // An engine with nothing to say gets no line, rather than an empty one:
+      // a flat line at zero is a claim about that engine, and absence is not.
+      if (points.length === 0) continue;
+      lines.push({ engine, points, max });
+    }
+    series.push({ id, label: TREND_LABELS[id], lines });
   };
   build('prompt', (r) => r.totals.prompt);
   build('loops', (r) => r.loops.length);
@@ -513,7 +570,13 @@ export function trendsLayout(records: readonly StatsRecord[], storeEnabled = tru
   build('cost', (r) => (r.totals.costSource === 'engine' ? r.totals.costUsd : undefined));
   const width = sessions.length === 0 ? 0 : (sessions.length - 1) * TREND_STEP;
   const layout: TrendsLayout = { series, sessions, width, empty: false };
-  if (!storeEnabled) {
+  // `loading` outranks everything, including `disabled`: before the store has
+  // been read, "off" and "empty" are both guesses. Never render a partial store
+  // as history (DoD 4.12).
+  if (!storeLoaded) {
+    layout.empty = true;
+    layout.reason = 'loading';
+  } else if (!storeEnabled) {
     layout.empty = true;
     layout.reason = 'disabled';
   } else if (covered.length < TRENDS_MIN_RECORDS) {
@@ -563,7 +626,11 @@ export interface StatsLayout {
   params: { loopMin?: number; spikeTokens?: number };
 }
 
-export function statsLayout(records: readonly StatsRecord[], storeEnabled = true): StatsLayout {
+export function statsLayout(
+  records: readonly StatsRecord[],
+  storeEnabled = true,
+  storeLoaded = true,
+): StatsLayout {
   const first = records[0];
   const params: StatsLayout['params'] = {};
   if (first !== undefined) {
@@ -574,7 +641,7 @@ export function statsLayout(records: readonly StatsRecord[], storeEnabled = true
     files: filesLayout(records),
     loops: loopsLayout(records),
     tokens: tokensLayout(records),
-    trends: trendsLayout(records, storeEnabled),
+    trends: trendsLayout(records, storeEnabled, storeLoaded),
     excluded: excludedSummary(records),
     params,
   };

@@ -612,94 +612,103 @@
         {
           "id": "prompt",
           "label": "prompt tokens",
-          "points": [
+          "lines": [
             {
-              "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
-              "index": 0,
-              "x": 0,
-              "y": 579333
-            },
-            {
-              "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
-              "index": 1,
-              "x": 24,
-              "y": 312436
-            },
-            {
-              "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
-              "index": 2,
-              "x": 48,
-              "y": 298091
-            },
-            {
-              "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
-              "index": 3,
-              "x": 72,
-              "y": 700299
-            },
-            {
-              "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
-              "index": 4,
-              "x": 96,
-              "y": 414224
-            },
-            {
-              "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
-              "index": 5,
-              "x": 120,
-              "y": 33441
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+                  "index": 0,
+                  "x": 0,
+                  "y": 579333
+                },
+                {
+                  "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+                  "index": 1,
+                  "x": 24,
+                  "y": 312436
+                },
+                {
+                  "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+                  "index": 2,
+                  "x": 48,
+                  "y": 298091
+                },
+                {
+                  "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+                  "index": 3,
+                  "x": 72,
+                  "y": 700299
+                },
+                {
+                  "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+                  "index": 4,
+                  "x": 96,
+                  "y": 414224
+                },
+                {
+                  "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+                  "index": 5,
+                  "x": 120,
+                  "y": 33441
+                }
+              ],
+              "max": 700299
             }
-          ],
-          "max": 700299
+          ]
         },
         {
           "id": "loops",
           "label": "loops",
-          "points": [
+          "lines": [
             {
-              "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
-              "index": 0,
-              "x": 0,
-              "y": 0
-            },
-            {
-              "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
-              "index": 1,
-              "x": 24,
-              "y": 0
-            },
-            {
-              "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
-              "index": 2,
-              "x": 48,
-              "y": 1
-            },
-            {
-              "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
-              "index": 3,
-              "x": 72,
-              "y": 0
-            },
-            {
-              "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
-              "index": 4,
-              "x": 96,
-              "y": 0
-            },
-            {
-              "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
-              "index": 5,
-              "x": 120,
-              "y": 0
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+                  "index": 0,
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+                  "index": 1,
+                  "x": 24,
+                  "y": 0
+                },
+                {
+                  "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+                  "index": 2,
+                  "x": 48,
+                  "y": 1
+                },
+                {
+                  "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+                  "index": 3,
+                  "x": 72,
+                  "y": 0
+                },
+                {
+                  "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+                  "index": 4,
+                  "x": 96,
+                  "y": 0
+                },
+                {
+                  "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+                  "index": 5,
+                  "x": 120,
+                  "y": 0
+                }
+              ],
+              "max": 1
             }
-          ],
-          "max": 1
+          ]
         },
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
-          "points": [],
-          "max": 0
+          "lines": []
         }
       ],
       "sessions": [

@@ -78,7 +78,15 @@ describe('the goldens at N = 0/1/2/6/12 corpus records', () => {
     expect(golden.layout.loops.rows.length).toBeGreaterThan(0);
     expect(golden.layout.tokens.sessions).toHaveLength(12);
     expect(golden.layout.trends.empty).toBe(false);
-    expect(golden.layout.trends.series.find((s) => s.id === 'prompt')?.points).toHaveLength(12);
+    // DoD 4.12 made a series one line PER ENGINE, and this corpus carries more
+    // than one engine — so the twelve points are DISTRIBUTED across lines
+    // rather than sitting on one. What must hold is that every record is drawn
+    // exactly once and no engine shares a line with another.
+    const prompt = golden.layout.trends.series.find((s) => s.id === 'prompt');
+    expect(prompt?.lines.length).toBeGreaterThan(0);
+    const engines = prompt?.lines.map((l) => l.engine) ?? [];
+    expect(new Set(engines).size, 'an engine appeared twice').toBe(engines.length);
+    expect(prompt?.lines.reduce((n, l) => n + l.points.length, 0)).toBe(12);
   });
 
   it('there are enough corpus records for the widest case, and they exclude the R8 fixtures', () => {
@@ -158,8 +166,13 @@ describe('the incremental property — adding a record moves no existing Trends 
       for (const series of before.series) {
         const later = after.series.find((s) => s.id === series.id);
         expect(later, series.id).toBeDefined();
-        // Every earlier point is present, unchanged, at the same index.
-        expect(later?.points.slice(0, series.points.length)).toStrictEqual(series.points);
+        // Every earlier point is present, unchanged, at the same index — held
+        // per ENGINE line, which is the shape DoD 4.12 introduced.
+        for (const line of series.lines) {
+          const laterLine = later?.lines.find((l) => l.engine === line.engine);
+          expect(laterLine, `${series.id}/${line.engine}`).toBeDefined();
+          expect(laterLine?.points.slice(0, line.points.length)).toStrictEqual(line.points);
+        }
       }
       expect(after.sessions.slice(0, before.sessions.length)).toStrictEqual(before.sessions);
     }
@@ -171,10 +184,14 @@ describe('the incremental property — adding a record moves no existing Trends 
     const large = trendsLayout(records);
     const promptSmall = small.series.find((s) => s.id === 'prompt');
     const promptLarge = large.series.find((s) => s.id === 'prompt');
-    expect(promptLarge?.max).not.toBe(promptSmall?.max);
+    expect(promptLarge?.lines[0]?.max).not.toBe(promptSmall?.lines[0]?.max);
     const covered = records.filter((r) => r.coverage === 'full');
     expect(covered.length).toBeLessThan(records.length);
-    expect(promptLarge?.points.map((p) => p.x)).toStrictEqual(covered.map((_, i) => i * TREND_STEP));
+    // Across ALL lines the x positions are still exactly the session positions,
+    // each used once: per-engine normalisation changed the y scale and the
+    // grouping, and deliberately not where a point sits on the axis.
+    const xs = (promptLarge?.lines ?? []).flatMap((l) => l.points.map((point) => point.x));
+    expect([...xs].sort((a, b) => a - b)).toStrictEqual(covered.map((_, i) => i * TREND_STEP));
   });
 
   it('a record with a later startedAt appended last keeps every earlier point (the host orders by startedAt)', () => {
@@ -183,10 +200,83 @@ describe('the incremental property — adding a record moves no existing Trends 
     const before = trendsLayout(records);
     const after = trendsLayout([...records, latest]);
     for (const series of before.series) {
-      expect(after.series.find((s) => s.id === series.id)?.points.slice(0, series.points.length)).toStrictEqual(
-        series.points,
-      );
+      const later = after.series.find((s) => s.id === series.id);
+      for (const line of series.lines) {
+        const laterLine = later?.lines.find((l) => l.engine === line.engine);
+        expect(laterLine?.points.slice(0, line.points.length)).toStrictEqual(line.points);
+      }
     }
+  });
+});
+
+describe('DoD 4.12: Trends never shares an axis across engines', () => {
+  const base = CORPUS[0]?.record as StatsRecord;
+
+  /** The same record as another engine, with a prompt total of `prompt`. */
+  function as(engine: StatsRecord['engine'], sessionId: string, prompt: number): StatsRecord {
+    return { ...base, sessionId, engine, totals: { ...base.totals, prompt } };
+  }
+
+  it('gives every engine its OWN line and its OWN maximum', () => {
+    /*
+     * The magnitudes are the measured ones, rounded: over a real 102 MB store
+     * the median prompt total was 106,531,677 on Claude Code against 18,584 on
+     * Codex. Under one shared maximum the Codex point's share of the box was
+     * 0.017%, i.e. the baseline. Here each engine is scaled by its own maximum,
+     * so both lines use the full height of their own box.
+     */
+    const records = [
+      as('cc', 'cc-1', 106_000_000),
+      as('cc', 'cc-2', 576_000_000),
+      as('codex', 'cx-1', 18_584),
+      as('codex', 'cx-2', 817_147),
+      as('opencode', 'oc-1', 86_502),
+    ];
+    const prompt = trendsLayout(records).series.find((s) => s.id === 'prompt');
+    expect(prompt?.lines.map((l) => l.engine)).toStrictEqual(['cc', 'codex', 'opencode']);
+    expect(prompt?.lines.find((l) => l.engine === 'cc')?.max).toBe(576_000_000);
+    expect(prompt?.lines.find((l) => l.engine === 'codex')?.max).toBe(817_147);
+    expect(prompt?.lines.find((l) => l.engine === 'opencode')?.max).toBe(86_502);
+    // THE POINT OF THE RULE: no engine's scale is set by another's.
+    for (const line of prompt?.lines ?? []) {
+      const own = Math.max(...line.points.map((point) => point.y));
+      expect(line.max, line.engine).toBe(own);
+    }
+  });
+
+  it('a line spans only its own engine, at the GLOBAL session positions', () => {
+    const records = [as('cc', 'a', 10), as('codex', 'b', 20), as('cc', 'c', 30)];
+    const prompt = trendsLayout(records).series.find((s) => s.id === 'prompt');
+    const cc = prompt?.lines.find((l) => l.engine === 'cc');
+    const codex = prompt?.lines.find((l) => l.engine === 'codex');
+    // The axis is shared and ordered; a line keeps its sessions' own indices,
+    // so a point still sits above the session it describes.
+    expect(cc?.points.map((point) => point.index)).toStrictEqual([0, 2]);
+    expect(codex?.points.map((point) => point.index)).toStrictEqual([1]);
+    expect(cc?.points.map((point) => point.x)).toStrictEqual([0, 2 * TREND_STEP]);
+  });
+
+  it('an engine with no value in a series gets NO line, not a flat one', () => {
+    // A flat line at zero is a claim about that engine; absence is not.
+    const records = [
+      { ...as('cc', 'a', 10), totals: { ...base.totals, prompt: 10, costUsd: 2, costSource: 'engine' as const } },
+      as('codex', 'b', 20),
+    ];
+    const cost = trendsLayout(records).series.find((s) => s.id === 'cost');
+    expect(cost?.lines.map((l) => l.engine)).toStrictEqual(['cc']);
+  });
+
+  it('the store not being READ yet is its own empty state, outranking the others', () => {
+    const records = [base, { ...base, sessionId: 'b' }];
+    // Not loaded: neither "off" nor "empty" is known yet, so neither is claimed.
+    expect(trendsLayout(records, true, false)).toMatchObject({ empty: true, reason: 'loading' });
+    // ...and it outranks `disabled`, which is also only a guess before the read.
+    expect(trendsLayout(records, false, false)).toMatchObject({ empty: true, reason: 'loading' });
+    // Loaded and off is `disabled`; loaded with too few is `fewer-than-two`.
+    expect(trendsLayout(records, false, true)).toMatchObject({ empty: true, reason: 'disabled' });
+    expect(trendsLayout([base], true, true)).toMatchObject({ empty: true, reason: 'fewer-than-two' });
+    // And loaded with enough records is not empty at all.
+    expect(trendsLayout(records, true, true).empty).toBe(false);
   });
 });
 
@@ -246,8 +336,9 @@ describe('the views, as rules', () => {
     const user = { ...base, sessionId: 'u', totals: { ...base.totals, costUsd: 2.5, costSource: 'user' as const } };
     const telemetry = { ...base, sessionId: 't', totals: { ...base.totals, costUsd: 3.5, costSource: 'telemetry' as const } };
     const cost = trendsLayout([engine, user, telemetry]).series.find((s) => s.id === 'cost');
-    expect(cost?.points.map((p) => p.sessionId)).toStrictEqual(['e']);
-    expect(cost?.points[0]?.y).toBe(1.5);
+    expect(cost?.lines).toHaveLength(1);
+    expect(cost?.lines[0]?.points.map((p) => p.sessionId)).toStrictEqual(['e']);
+    expect(cost?.lines[0]?.points[0]?.y).toBe(1.5);
   });
 
   it('excluded sessions are counted by code and appear in no view', () => {

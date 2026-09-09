@@ -86,34 +86,43 @@
         {
           "id": "prompt",
           "label": "prompt tokens",
-          "points": [
+          "lines": [
             {
-              "sessionId": "synthetic-03-silent-subagent",
-              "index": 0,
-              "x": 0,
-              "y": 1030
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "synthetic-03-silent-subagent",
+                  "index": 0,
+                  "x": 0,
+                  "y": 1030
+                }
+              ],
+              "max": 1030
             }
-          ],
-          "max": 1030
+          ]
         },
         {
           "id": "loops",
           "label": "loops",
-          "points": [
+          "lines": [
             {
-              "sessionId": "synthetic-03-silent-subagent",
-              "index": 0,
-              "x": 0,
-              "y": 0
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "synthetic-03-silent-subagent",
+                  "index": 0,
+                  "x": 0,
+                  "y": 0
+                }
+              ],
+              "max": 0
             }
-          ],
-          "max": 0
+          ]
         },
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
-          "points": [],
-          "max": 0
+          "lines": []
         }
       ],
       "sessions": [

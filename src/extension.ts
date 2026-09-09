@@ -689,6 +689,16 @@ export interface OpenCodeDiagnostics {
   lastError?: string;
 }
 
+/**
+ * The activity map for an emission with nothing in it (DoD 4.11b).
+ *
+ * `ReadonlyMap` is the whole guard and it is a COMPILE-TIME one:
+ * `Object.freeze` seals a Map's own properties and does nothing to its
+ * contents, so a frozen empty Map is still `.set()`-able at runtime. Nothing
+ * mutates an emission's map today; the type is what keeps it that way.
+ */
+const EMPTY_ACTIVITY: ReadonlyMap<string, number> = new Map();
+
 /** An emission with nothing in it. Frozen; never handed out mutable. */
 const EMPTY_EMISSION: SessionEmission = Object.freeze({
   sessions: Object.freeze([]) as readonly SessionState[],
@@ -696,6 +706,7 @@ const EMPTY_EMISSION: SessionEmission = Object.freeze({
   addedSessionIds: Object.freeze([]) as readonly string[],
   removedSessionIds: Object.freeze([]) as readonly string[],
   schemaMismatchSessionIds: Object.freeze([]) as readonly string[],
+  lastActivityAt: EMPTY_ACTIVITY,
 });
 
 /**
@@ -979,6 +990,17 @@ export class OpenCodeEnginePath {
       if (!next.has(sessionId)) removedSessionIds.push(sessionId);
     }
 
+    // Activity, per session, from the OpenCode liveness engine (DoD 4.11b).
+    // `OcSessionLiveness.lastActivityAt` is `max(timeUpdated, seqAdvancedAt)` —
+    // the store's own write instants, which is what makes it activity rather
+    // than content. A session the engine has no fact for contributes nothing:
+    // "no activity known" is not "now" (G3).
+    const lastActivityAt = new Map<string, number>();
+    for (const sessionId of next.keys()) {
+      const at = this.#liveness?.snapshot(sessionId)?.lastActivityAt;
+      if (at !== undefined) lastActivityAt.set(sessionId, at);
+    }
+
     this.#previous = next;
     this.#emissions += 1;
     return {
@@ -987,6 +1009,7 @@ export class OpenCodeEnginePath {
       addedSessionIds,
       removedSessionIds,
       schemaMismatchSessionIds,
+      lastActivityAt,
     };
   }
 
@@ -1647,6 +1670,38 @@ export class CodexEnginePath {
       if (!next.has(sessionId)) removedSessionIds.push(sessionId);
     }
 
+    // Activity, per session, from the Codex liveness report (DoD 4.11b).
+    //
+    // A Codex session is a ROOT THREAD and its subagents, so the instant is the
+    // latest of `lastHookEventMs` and `lastMtimeMs` across every thread of the
+    // session: a subagent writing IS the session working. `CodexLiveness` is
+    // keyed by `threadId` and carries no `sessionId`, so the mapping comes from
+    // `#threads`, which is the same list `#sample()` hands the engine.
+    //
+    // **A session the liveness says nothing about is not recorded at all**, and
+    // that is the dependency rather than a detail: no report (the engine has not
+    // polled), no thread entry, or a thread with neither a hook event nor a
+    // known mtime, all mean no activity is claimed. G3 — the alternative is
+    // stamping "now" onto a session nobody witnessed, which is the flood.
+    const lastActivityAt = new Map<string, number>();
+    const activityReport = this.#liveness?.latest;
+    if (activityReport !== undefined) {
+      const sessionOfThread = new Map(
+        this.#threads.map((thread) => [thread.threadId, thread.sessionId] as const),
+      );
+      for (const thread of activityReport.threads) {
+        const sessionId = sessionOfThread.get(thread.threadId);
+        if (sessionId === undefined || !next.has(sessionId)) continue;
+        const instants: number[] = [];
+        if (thread.lastHookEventMs !== null) instants.push(thread.lastHookEventMs);
+        if (thread.lastMtimeMs !== null) instants.push(thread.lastMtimeMs);
+        if (instants.length === 0) continue;
+        const at = Math.max(...instants);
+        const seen = lastActivityAt.get(sessionId);
+        if (seen === undefined || at > seen) lastActivityAt.set(sessionId, at);
+      }
+    }
+
     this.#previous = next;
     this.#emissions += 1;
     return {
@@ -1655,6 +1710,7 @@ export class CodexEnginePath {
       addedSessionIds,
       removedSessionIds,
       schemaMismatchSessionIds,
+      lastActivityAt,
     };
   }
 
@@ -2844,6 +2900,13 @@ function mergeTwo(a: SessionEmission, b: SessionEmission): SessionEmission {
       ...a.schemaMismatchSessionIds,
       ...b.schemaMismatchSessionIds,
     ],
+    // The UNION, and it is load-bearing: the pipeline only ever sees the merged
+    // emission, so an engine whose map were dropped here would have every one
+    // of its sessions read as history and none of them recorded. Ids come from
+    // three namespaces (a CC uuid, an OpenCode `ses_*`, a Codex thread uuid), so
+    // a collision would be the defect this function's header describes rather
+    // than a case to smooth over.
+    lastActivityAt: new Map([...a.lastActivityAt, ...b.lastActivityAt]),
   };
 }
 
@@ -3214,7 +3277,8 @@ interface TrackedSession {
   record: StatsRecordForStore | null;
   /**
    * {@link TrackedSession.record} with every clock-derived field flattened —
-   * the CHANGE test (verifier defect 6). Never written; see `withoutClock`.
+   * the CHANGE test, i.e. "does this pump re-arm the idle countdown?". Never
+   * written, and since DoD 4.11b never a promoter either; see `withoutClock`.
    */
   patchBody: string | null;
   /** `JSON.stringify` of {@link TrackedSession.record}. The FLUSH comparison. */
@@ -3224,12 +3288,13 @@ interface TrackedSession {
   /** The pending idle flush, or null. */
   timer: TimerHandle | null;
   /**
-   * Has this process observed WORK in this session? (DoD 4.11.)
+   * Has this process observed WORK in this session? (DoD 4.11 / 4.11b.)
    *
-   * True once its last activity lands at or after `processStart`, or once its
-   * derived record CHANGES during this lifetime — the second is what turns a
-   * historical session that resumes into an observed one. False means history,
-   * and history never flushes.
+   * True once LIVENESS reports activity at or after `processStart` — and by
+   * nothing else. A resumed historical session promotes correctly because
+   * resuming moves its liveness instant, which is what the withdrawn
+   * record-changed clause was reaching for and could never measure. False means
+   * history, and history never flushes.
    */
   observed: boolean;
 }
@@ -3238,15 +3303,37 @@ interface TrackedSession {
 type StatsRecordForStore = Omit<StoredStatsRecord, 'derivedAt'>;
 
 /**
- * The record with every clock-derived field flattened, for the change test.
+ * The record with every clock-derived field flattened, for the CHANGE test.
  *
  * One field qualifies today — `StallRecord.stalledMs`, which `stalls.ts` derives
  * as `now - stalledSinceMs`. It is zeroed rather than dropped so the SHAPE of
  * the comparison is unchanged: a stall appearing, disappearing, or moving to a
  * different tool is still a patch, and only its elapsed time is not. Anything
- * added later that reads the clock belongs here too, and the pipeline's own test
- * for it is that two derivations of one unchanged session an hour apart compare
- * equal.
+ * added later that reads the clock belongs here too.
+ *
+ * ## Why this survived DoD 4.11b, which said to retire it — MEASURED, twice
+ *
+ * The 4.11b ruling (user, 2026-09-10) retires it along with the body-change
+ * PROMOTER, and the promoter is indeed gone: nothing in this file lets any field
+ * of the record decide whether a session is `observed`. What this function still
+ * decides is narrower and is not about provenance at all — whether a pump
+ * RE-ARMS the idle countdown — and both ways of retiring it were driven and both
+ * turned a test red:
+ *
+ *   - **Delete it outright.** `stalledMs` grows on every 5 s pump, `#arm`
+ *     restarts the countdown on every patch, so a session holding a stalled tool
+ *     call never flushes: `a stalled session never flushed: expected +0 to be 1`.
+ *     That is verifier defect 2's starvation half, reopened.
+ *   - **Re-arm on new ACTIVITY instead of on a record change**, which would put
+ *     the whole silence question on liveness and need no flattening. It
+ *     contradicts a LOCKED Phase 3 contract: DoD 3.2b's control asserts that a
+ *     session changing on every pump is pushed forward forever
+ *     (`idleFlushes === 0`), and under that design it flushes.
+ *
+ * So the flattening stays exactly where the verifier put it and nowhere else.
+ * **This is a recorded deviation from the 4.11b ruling's third clause** — the
+ * substance of the ruling (liveness is the sole promoter) is unaffected, and the
+ * gate record says so with these two measurements beside it.
  */
 function withoutClock(record: StatsRecordForStore): StatsRecordForStore {
   if (record.stalls.length === 0) return record;
@@ -3346,50 +3433,48 @@ export class StatsPipeline {
       // `StallRecord.stalledMs` is `now - stalledSinceMs`, the one field in the
       // record derived from the clock rather than from the session, so a session
       // holding a stalled tool call produces a DIFFERENT record on every 5 s
-      // pump while nothing about it has changed. Two consequences, in opposite
-      // directions, and the change test has to exclude the field to close both:
-      //
-      //   - STARVATION: `#arm` restarts the countdown on every patch, so such a
-      //     session's idle flush was pushed forward forever and it was never
-      //     written at all until it ended.
-      //   - AND IT DEFEATED THE PROVENANCE GATE: a body change promotes a
-      //     session to `observed`, so a HISTORICAL session with a stalled call
-      //     let itself back in — the gate's own bypass, reached by a number that
-      //     moves on its own.
+      // pump while nothing about it has changed — and `#arm` restarts the
+      // countdown on every patch, so the flush would be pushed forward forever.
       //
       // The question this layer asks is "did a patch arrive?", and the honest
       // answer cannot depend on when it was asked. `body` above stays the FULL
       // record, because that is what is written and what `appendedBody` compares.
       const patchBody = JSON.stringify(withoutClock(record));
 
-      // ---- The provenance gate (DoD 4.11, user ruling 2026-09-09) ----------
+      // ---- The provenance gate (DoD 4.11 / 4.11b) -------------------------
       //
-      // THE DEFECT IT CLOSES, and the number that names it. The 4.9 live smoke
-      // found 564 CC records in one ISO-week file, 12.7 MB in 75 minutes, with
-      // every error counter at 0. Reproduced: 28 sessions doing no work at all
-      // wrote 28 records per PROCESS LIFETIME and 560 across 20 lifetimes.
+      // THE LAW, and it was bought with the same defect twice: **a derived
+      // record is evidence of CONTENT, never of ACTIVITY; activity comes from
+      // liveness only.**
       //
-      // The report read as "the idle flush re-fires every interval". It does
-      // not — within one lifetime the timer fires once and stays disarmed, which
-      // is what `#arm` already promised. The driver is REDISCOVERY: every window
-      // reload and every second window re-derived the whole history and wrote it
-      // again, because a session's first sighting satisfied the change test
-      // against a null body and armed a flush.
+      // 4.11 read the record's own `endedAt ?? startedAt` and promoted a
+      // session whose record CHANGED during this lifetime, on the reasoning
+      // that a change is work. It is not. A historical session's record changes
+      // while the tailer is still READING it, so the 4.9 re-run found 21
+      // sessions that did nothing written in a 1.4 s burst the moment their
+      // initial read completed — every one with a `startedAt` days old and no
+      // `endedAt` at all. Reproduced at 19 of 21: pump one sees a partial tree,
+      // pump two sees the whole one.
       //
-      // So the gate is PROVENANCE, not first-sighting. A session whose last
-      // activity predates this process observed no work here, whether it is
-      // seen once or a thousand times, and whether it is idle or ended. That
-      // distinction is also the only one that leaves DoD 3.2b intact: 3.2b's
-      // locked contract is that a live session's first sighting arms a flush
-      // (`extension.stats.test.ts` asserts `armedTimers` is 1 after one
-      // emission), and a first-sighting gate would have reversed it.
-      const lastActivity = record.endedAt ?? record.startedAt;
-      if (lastActivity >= this.#processStart) entry.observed = true;
-      // ...and a historical session that RESUMES becomes observed: its record
-      // changing during this lifetime is work this process watched, even though
-      // its `startedAt` stays old. This is the supersede path — and it reads
-      // `patchBody`, so a stalled call's rising number cannot buy its way in.
-      if (entry.patchBody !== null && patchBody !== entry.patchBody) entry.observed = true;
+      // So the only promoter is the instant each engine's LIVENESS reports:
+      // the last hook event or transcript write for Claude Code, OpenCode's
+      // `max(timeUpdated, seqAdvancedAt)`, the transcript mtime for Codex.
+      // Nothing about the record can promote anything.
+      //
+      // `withoutClock` SURVIVES, and only below this gate. An earlier draft of
+      // this comment said it was "retired rather than extended" while the call
+      // 20 lines down was still there — a reader of the gate was told the
+      // opposite of the code, which is the disagreeing-comment defect this
+      // repository already records in `graft.ts`. What it decides now is whether
+      // a pump RE-ARMS the countdown, which is not provenance; the ruling that
+      // asked for its retirement, both measurements against retiring it, and the
+      // recorded deviation are on its own header.
+      //
+      // A session liveness says nothing about is NOT promoted (G3: refuse,
+      // don't guess). It keeps deriving and rendering; it is only the STORE
+      // that declines to claim work nobody witnessed.
+      const activityAt = emission.lastActivityAt.get(state.sessionId);
+      if (activityAt !== undefined && activityAt >= this.#processStart) entry.observed = true;
 
       if (state.liveness === 'ended') {
         entry.record = record;

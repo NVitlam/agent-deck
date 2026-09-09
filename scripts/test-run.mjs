@@ -108,6 +108,24 @@ function head() {
   });
 }
 
+/**
+ * `passed` and `skipped` out of a vitest summary line, or nulls.
+ *
+ * Parsed from the line rather than from a reporter API because that line is what
+ * a death leaves behind and what every ledger row already carries.
+ */
+function countsOf(summaryLine) {
+  if (summaryLine === null) return { passed: null, skipped: null };
+  const passed = /(\d+) passed/.exec(summaryLine);
+  const skipped = /(\d+) skipped/.exec(summaryLine);
+  return {
+    passed: passed === null ? null : Number(passed[1]),
+    // No "skipped" in the line means zero skipped, which is not the same as
+    // unknown — a summary with no skips omits the word entirely.
+    skipped: skipped === null ? 0 : Number(skipped[1]),
+  };
+}
+
 function runOnce(index, headSha) {
   return new Promise((resolve) => {
     const started = hrtime.bigint();
@@ -148,6 +166,25 @@ function runOnce(index, headSha) {
         exitClass: classifyExit(code, signal ?? null),
         elapsedMs,
         summaryLine,
+        /*
+         * THE COUNTS AS FIELDS, so a block can compare its own runs.
+         *
+         * A silent subprocess failure inside a `beforeAll` reports as a FAILED
+         * SUITE whose tests are counted as SKIPPED — one gate block of the 4.11b
+         * item read `3683 passed | 8 skipped` against the healthy
+         * `3685 passed | 6 skipped`, and the two extra skips were the whole visible
+         * trace of the cause. This wrapper keys its verdict on the exit code, so
+         * the same failure exiting 0 would still be recorded `passed`.
+         *
+         * What is NOT done here, deliberately: pinning a healthy skip count.
+         * `CLAUDE.md` records that count as a census over environment-conditional
+         * gates that has been re-derived wrong three times, and a wrapper
+         * asserting it would go red on any machine without WSL. What a BLOCK can
+         * say without a constant is that its runs disagree with each other —
+         * which is rule 14's own claim ("three consecutive runs, identical") and
+         * is reported below.
+         */
+        counts: countsOf(summaryLine),
         lastReporterLine: lines.at(-1) ?? null,
         stderrTail: stderr.split(/\r?\n/).filter((l) => l.trim() !== '').slice(-20),
         /*
@@ -217,6 +254,22 @@ for (let i = 1; i <= runs; i += 1) {
   console.log(
     `run ${String(i)}/${String(runs)}  exit=${String(record.exit)}  ` +
       `${String(record.elapsedMs)}ms  ${record.verdict}  ${(record.summaryLine ?? '(no summary)').trim()}`,
+  );
+}
+
+/*
+ * RULE 14 IS A CLAIM ABOUT AGREEMENT, so the block checks it rather than leaving
+ * it to whoever reads three summary lines. Only completed runs can agree about
+ * anything; a death has no counts.
+ */
+const completed = results.filter((r) => r.summaryLine !== null);
+const shapes = new Set(
+  completed.map((r) => `${String(r.counts.passed)}/${String(r.counts.skipped)}`),
+);
+if (shapes.size > 1) {
+  console.log(
+    `\nDISAGREEMENT: the completed runs report ${shapes.size} different passed/skipped shapes ` +
+      `(${[...shapes].join(", ")}). Rule 14 needs them identical; account for every skip by GATE.`,
   );
 }
 

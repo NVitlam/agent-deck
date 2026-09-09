@@ -49,16 +49,73 @@ interface ChildProcessModule {
   ): string;
 }
 
-let cachedCode: string | undefined;
+/** What `execFileSync` attaches to the error it throws. Neither is guaranteed. */
+interface SpawnFailure {
+  status?: number | null;
+  stderr?: string;
+  stdout?: string;
+}
 
-/** Bundle `webview/harness.ts` to an iife string. Cached per test file. */
-export async function bundleHarness(): Promise<string> {
-  if (cachedCode !== undefined) return cachedCode;
+/**
+ * Spawn a bundle build and return its stdout, or throw WITH THE CHILD'S OUTPUT.
+ *
+ * **THE ONE PLACE ANY WEBVIEW SUITE SPAWNS A BUNDLE BUILD** (v0.7.0, the 4.11b
+ * gate, `phase-verifier` round 3). One run of the gate block failed with
+ * `Command failed: node webview/build-harness.mjs` and no cause at all: five
+ * files each spawned their own build with `logLevel: 'silent'` and no
+ * `try`/`catch`, so a spawn that lost under parallel load reported as a failed
+ * SUITE with its tests counted as SKIPPED — the repository's recorded
+ * "reads green" class, arriving through a subprocess. `execFileSync` puts the
+ * child's `stderr` on the error it throws and vitest prints only the message,
+ * so the reason was discarded by the layer best placed to keep it. Fixing one
+ * site of five would have left four able to repeat it, which is why this exists
+ * rather than four copies of a `try`.
+ */
+export async function spawnBundle(args: readonly string[], what: string): Promise<string> {
   const cp = (await import(/* @vite-ignore */ CHILD_PROCESS)) as unknown as ChildProcessModule;
-  cachedCode = cp.execFileSync('node', ['webview/build-harness.mjs'], {
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  try {
+    return cp.execFileSync('node', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  } catch (error) {
+    const failure = error as SpawnFailure;
+    const stderr = (failure.stderr ?? '').trim();
+    const parts = [
+      `${what} failed (exit ${String(failure.status ?? 'unknown')})`,
+      stderr === '' ? 'the child wrote nothing to stderr' : `stderr: ${stderr.slice(-4_000)}`,
+    ];
+    const stdout = (failure.stdout ?? '').trim();
+    if (stdout !== '') parts.push(`stdout: ${stdout.slice(-1_000)}`);
+    throw new Error(parts.join(' — '), { cause: error });
+  }
+}
+
+let cachedCode: string | undefined;
+/** The first failure, re-thrown to every later caller. See `bundleHarness`. */
+let cachedFailure: Error | undefined;
+
+/**
+ * Bundle `webview/harness.ts` to an iife string. Cached per test file.
+ *
+ * THE FAILURE IS RE-THROWN WITH THE CHILD'S OWN OUTPUT ON IT. One run of the
+ * 4.11b gate block failed here with `Command failed: node
+ * webview/build-harness.mjs` and no cause at all: every webview test file spawns
+ * this build, esbuild spawns a child of its own, and a spawn that loses under
+ * parallel load reported as a failed SUITE with its tests counted as skipped.
+ * `execFileSync` puts the child's `stderr` on the error it throws and vitest
+ * prints only the message, so the reason was thrown away by the layer best
+ * placed to keep it. Now it is in the message.
+ */
+export async function bundleHarness(): Promise<string> {
+  if (cachedFailure !== undefined) throw cachedFailure;
+  if (cachedCode !== undefined) return cachedCode;
+  try {
+    cachedCode = await spawnBundle(['webview/build-harness.mjs'], 'the harness bundle');
+  } catch (error) {
+    // THE FAILURE IS CACHED TOO. Without this, one lost spawn makes every
+    // remaining test in the file spawn its own esbuild — a slow cascade that
+    // reads as a hang under exactly the load that caused it.
+    cachedFailure = error instanceof Error ? error : new Error(String(error));
+    throw cachedFailure;
+  }
   return cachedCode;
 }
 

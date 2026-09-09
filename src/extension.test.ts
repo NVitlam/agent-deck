@@ -66,6 +66,7 @@ import {
   OPEN_STATS_COMMAND,
   EVEN_EDITOR_WIDTHS,
   SETTINGS_FILTER,
+  StatsPipeline,
   WORKBENCH_OPEN_SETTINGS,
   statsSettingDefaults,
   workspacePathsOf,
@@ -79,8 +80,10 @@ import type {
   Unsubscribe,
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
+import type { SessionEmission } from './model/session.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
-import { STORE_DIR_NAME, resolveStoreDir } from './stats/store.js';
+import { STORE_DIR_NAME, StatsStore, resolveStoreDir } from './stats/store.js';
+import { parsePricing } from './stats/pricing.js';
 import { formatCounters } from './bridge/diagnostics.js';
 import type { DiagnosticsCounters } from './bridge/diagnostics.js';
 import { HookListener } from './hooks/listener.js';
@@ -105,7 +108,7 @@ import { SIDEBAR_ROOT_ID, WEBVIEW_ROOT_ID } from './bridge/contract.js';
 import { SIDEBAR_MENU, SIDEBAR_VIEW_ID } from './sidebar/menu.js';
 import type { HostToWebviewMessage, SessionState, TreeNode } from './model/events.js';
 import { isAgentNode } from './model/events.js';
-import { slugifyWorkspace, snapshotTree } from './parser/tailer.js';
+import { ManualTime, slugifyWorkspace, snapshotTree } from './parser/tailer.js';
 import type { DiscoveryFailure, DiscoveryFailureKind, TreeSnapshotEntry } from './parser/tailer.js';
 import { correlateWorkspace } from './model/correlate.js';
 import {
@@ -1056,7 +1059,12 @@ describe('PanelController', () => {
    */
   function emission(
     sessions: SessionState[],
-    options: { degraded?: boolean; codexDegraded?: boolean; added?: string[] } = {},
+    options: {
+      degraded?: boolean;
+      codexDegraded?: boolean;
+      added?: string[];
+      activityAt?: number;
+    } = {},
   ): DataPathEmission {
     return {
       emission: {
@@ -1065,6 +1073,12 @@ describe('PanelController', () => {
         addedSessionIds: options.added ?? [],
         removedSessionIds: [],
         schemaMismatchSessionIds: [],
+        // DoD 4.11b: liveness says every one of these is active NOW, so the
+        // panel tests below drive the ordinary case. `activityAt` lets a test
+        // say otherwise; the store tests further down do.
+        lastActivityAt: new Map(
+          sessions.map((s) => [s.sessionId, options.activityAt ?? Date.now()] as const),
+        ),
       },
       degraded:
         options.degraded === true
@@ -5864,5 +5878,499 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
       '2026-09-09T00:00:00.000Z',
     );
     expect(line.endsWith(' statsDropped=7')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 4.11b — every engine supplies its own activity, and the merge keeps it
+// ---------------------------------------------------------------------------
+
+/**
+ * The other two engines' halves of the 4.11b law, driven through their real paths.
+ *
+ * **A derived record is evidence of CONTENT, never of ACTIVITY; activity comes
+ * from liveness only** (user, 2026-09-10). `src/extension.stats.test.ts` pins
+ * what the pipeline does with `SessionEmission.lastActivityAt`; these tests pin
+ * that the values in it are the ENGINES' OWN, and that the merge does not lose
+ * one engine's map on the way to the pipeline.
+ *
+ * Claude Code's half needs no test of its own here: `SessionModel.emit()` reads
+ * `LivenessEngine.snapshot(id)?.lastActivityAt`, and the host store tests above
+ * would write nothing at all if it stopped — *"the provenance stamp is the REAL
+ * clock, and history reaches no store"* drives exactly that path in both
+ * directions.
+ */
+describe('DoD 4.11b — each engine supplies its own activity, and the merge is a union', () => {
+  /** Well clear of the fixture's own capture dates, so nothing here is accidental. */
+  const STAMP = Date.parse('2026-09-10T00:00:00.000Z');
+
+  /**
+   * A poll trigger whose registrations can be fired ONE AT A TIME.
+   *
+   * `manualPollTrigger().fire()` runs every registration, and `CodexEnginePath`
+   * registers two — the liveness poll and the content re-read. Firing them
+   * together cannot tell "the emission read the report" from "the emission read
+   * `#threads`", which is exactly the mutation that got past round 3 (163 tests
+   * green with `CodexLivenessEngine.latest` never consulted). Which index is
+   * which is NOT assumed: the test fires one and asserts the counter that moved.
+   */
+  function splitPollTrigger(): { trigger: PollTrigger; fire: (index: number) => void; count: () => number } {
+    const runs: (() => void)[] = [];
+    const trigger: PollTrigger = (run): PollTriggerHandle => {
+      runs.push(run);
+      return { stop: () => {} };
+    };
+    return {
+      trigger,
+      fire: (index) => {
+        const run = runs[index];
+        expect(run, `no poll registration at index ${String(index)}`).toBeDefined();
+        (run as () => void)();
+      },
+      count: () => runs.length,
+    };
+  }
+
+  /** Every `.jsonl` under a staged root, basename to full path. */
+  async function transcriptsUnder(root: string): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+      out.set(entry.name, join(entry.parentPath, entry.name));
+    }
+    expect(out.size, 'no transcript under the staged root — the layout moved').toBeGreaterThan(0);
+    return out;
+  }
+
+  /** A staged copy of any run's `.codex`, not only `baseline`'s. */
+  async function stageCodexRun(run: string): Promise<string> {
+    const root = join(await makeTempDir(), '.codex');
+    await cp(
+      fileURLToPath(new URL(`../fixtures/codex-0.151.0-alpha.7.2/${run}/home/.codex`, import.meta.url)),
+      root,
+      { recursive: true },
+    );
+    return root;
+  }
+
+  /**
+   * Every transcript in a staged root, moved to one instant.
+   *
+   * EVERY `.jsonl` under the root, not just the root thread's file:
+   * `CodexThread.owningFile` is a NAME rather than a path (it answers "which
+   * file declared this thread", C5), and the activity instant is the max across
+   * a session's threads — so a subagent transcript left at its checkout mtime
+   * would promote the session on its own and the arm below would pass for the
+   * wrong reason. A staged root is a fresh copy, so this touches nothing shared.
+   */
+  async function stampTranscripts(root: string, atMs: number): Promise<CodexThread[]> {
+    const when = new Date(atMs);
+    let stamped = 0;
+    for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+      await utimes(join(entry.parentPath, entry.name), when, when);
+      stamped += 1;
+    }
+    expect(stamped, 'no transcript was stamped — the fixture layout moved').toBeGreaterThan(0);
+
+    // Read AFTER the stamp, so `CodexThread.mtimeMs` is the value being driven.
+    const outcome = await readCodexEngine({ root });
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') throw new Error('unreachable: asserted above');
+    const threads = outcome.result.threads as CodexThread[];
+    expect(threads.length, 'the Codex fixture must carry threads').toBeGreaterThan(0);
+    for (const thread of threads) {
+      expect(thread.mtimeMs, 'a thread kept its checkout mtime').toBe(atMs);
+    }
+    return threads;
+  }
+
+  /**
+   * A real Codex path over a staged root whose every transcript sits at
+   * `mtimeMs`, read against an injected clock. No hook events: the mtime is the
+   * only signal, which is the case that matters — it is what a session nobody
+   * has touched still has.
+   */
+  async function codexPathAt(
+    root: string,
+    mtimeMs: number,
+    clock: number,
+  ): Promise<{ path: CodexEnginePath; rootThread: CodexThread }> {
+    const threads = await stampTranscripts(root, mtimeMs);
+    const rootThread = threads.find((thread) => thread.threadSource === 'user');
+    expect(rootThread, 'the Codex fixture must carry a root thread').toBeDefined();
+    const path = new CodexEnginePath({
+      workspaceFolders: [(rootThread as CodexThread).cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => clock,
+      pollTrigger: manualPollTrigger().trigger,
+    });
+    await path.start();
+    return { path, rootThread: rootThread as CodexThread };
+  }
+
+  /** A real store and a real pipeline over one emission, with a manual clock. */
+  function storeOver(
+    emission: SessionEmission,
+    processStart: number,
+    clockStart: number,
+    dir: string,
+  ): { appended: number; armed: number } {
+    const time = new ManualTime(clockStart);
+    const store = new StatsStore({ dir, enabled: true, retentionDays: 90 });
+    const parsed = parsePricing({});
+    const pipeline = new StatsPipeline({
+      store,
+      pricing: parsed.table,
+      pricingInvalid: parsed.invalid,
+      processStart,
+      idleFlushMs: 60_000,
+      now: () => time.now(),
+      scheduler: time,
+    });
+    pipeline.observe(emission);
+    const armed = pipeline.armedTimers;
+    time.advance(60_000);
+    const appended = store.appended;
+    pipeline.dispose();
+    return { appended, armed };
+  }
+
+  it('a Codex session whose transcripts predate activation is NOT recorded — the instant is known and it is not activity', async () => {
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const { path, rootThread } = await codexPathAt(root, stale, STAMP + 5_000);
+    const emission = path.emit();
+
+    // THE DEPENDENCY, VISIBLE. Every session in the emission has an instant,
+    // because a transcript on disk has an mtime — and the mtime is a day old.
+    expect(emission.sessions.length, 'the fixture must render at least one session').toBeGreaterThan(0);
+    expect(
+      emission.lastActivityAt.size,
+      'every emitted Codex session must carry an instant from the report',
+    ).toBe(emission.sessions.length);
+    const at = emission.lastActivityAt.get(rootThread.sessionId);
+    expect(at, 'the root session carries no instant').toBeTypeOf('number');
+    expect(at as number).toBeLessThan(STAMP);
+
+    // ...so the store declines it. Note what this also says: a Codex session the
+    // last liveness report does NOT cover carries no instant at all, and the
+    // same comparison keeps it out — which is the whole reason the Codex half
+    // reads `#liveness.latest` rather than stamping `now`.
+    const written = storeOver(emission, STAMP, STAMP + 5_000, join(await makeTempDir(), STORE_DIR_NAME));
+    expect(written.armed, 'a day-old transcript armed a flush').toBe(0);
+    expect(written.appended, 'a Codex session nobody witnessed reached the store').toBe(0);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('a Codex session whose transcripts move AFTER activation is recorded', async () => {
+    const root = await stageCodexRoot(false);
+    const fresh = STAMP + 1_000;
+    const { path, rootThread } = await codexPathAt(root, fresh, STAMP + 2_000);
+    const emission = path.emit();
+
+    expect(emission.lastActivityAt.get(rootThread.sessionId)).toBe(fresh);
+    const written = storeOver(emission, STAMP, STAMP + 2_000, join(await makeTempDir(), STORE_DIR_NAME));
+    expect(written.armed, 'a witnessed Codex session armed nothing').toBeGreaterThan(0);
+    expect(written.appended, 'a witnessed Codex session reached no store').toBeGreaterThan(0);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('the instant is what the last liveness POLL saw, not what the last content read saw', async () => {
+    /*
+     * ROUND 3'S FIRST REAL DEFECT, PINNED. The verifier replaced this emitter's
+     * whole `#liveness.latest` block with a loop over `#threads` reading
+     * `thread.mtimeMs` — so the liveness report was never consulted at all — and
+     * **163 tests stayed green**, because `CodexLiveness.lastMtimeMs` IS
+     * `CodexThread.mtimeMs` and the other test stamps every file to one instant.
+     * Two readers of the same number, indistinguishable while they agree.
+     *
+     * They disagree in one measurable window, and it is a real one: a content
+     * re-read discovers a transcript's new mtime immediately, while the report is
+     * whatever the last liveness POLL sampled. The emission must carry the
+     * report's answer — liveness is the authority for activity, and a session
+     * becomes recordable when the tap says so and not a pump earlier.
+     */
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const poll = splitPollTrigger();
+    const threads = await stampTranscripts(root, stale);
+    const rootThread = threads.find((thread) => thread.threadSource === 'user') as CodexThread;
+    const path = new CodexEnginePath({
+      workspaceFolders: [rootThread.cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+    expect(poll.count(), 'the path registers a liveness poll and a content re-read').toBe(2);
+    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBe(stale);
+
+    // The transcripts are written to. Only the CONTENT trigger fires — and which
+    // registration that is, is established rather than assumed.
+    const before = path.diagnostics;
+    const when = new Date(STAMP + 1_000);
+    for (const file of (await transcriptsUnder(root)).values()) await utimes(file, when, when);
+    poll.fire(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const after = path.diagnostics;
+    expect(after.contentReads, 'index 1 is not the content re-read').toBe(before.contentReads + 1);
+    expect(after.livenessPolls, 'index 1 polled liveness too').toBe(before.livenessPolls);
+
+    // The content read KNOWS the new mtime — and the emission does not claim it,
+    // because no liveness poll has seen it yet.
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'the emission took its instant from the content read',
+    ).toBe(stale);
+
+    // The tap polls. NOW it moves.
+    poll.fire(0);
+    expect(path.diagnostics.livenessPolls).toBe(after.livenessPolls + 1);
+    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBe(STAMP + 1_000);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('a HOOK EVENT after the stamp is activity even when every transcript is stale', async () => {
+    /*
+     * The other half of `max(lastHookEventMs, lastMtimeMs)`, and the arm no
+     * mtime-only test can reach. `Math.max` → `Math.min` inside a thread is
+     * invisible while a thread has ONE instant; give it two that disagree and the
+     * wrong one keeps a working session out of the store. This is also the
+     * strongest statement of the dependency: a hook event exists only in the
+     * liveness report, so nothing reading `#threads` can produce this number.
+     *
+     * The payloads are the captured baseline hook stream — the same run as these
+     * transcripts, so the ids attribute without anything being invented here.
+     */
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const poll = splitPollTrigger();
+    const threads = await stampTranscripts(root, stale);
+    const rootThread = threads.find((thread) => thread.threadSource === 'user') as CodexThread;
+
+    const stream = await readFile(
+      fileURLToPath(
+        new URL('../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl', import.meta.url),
+      ),
+      'utf8',
+    );
+    const payloads = stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => (JSON.parse(line) as { raw: Record<string, unknown> }).raw)
+      .filter((raw) => raw['session_id'] === rootThread.sessionId);
+    expect(
+      payloads.length,
+      'no captured hook payload names the staged session — the corpus moved',
+    ).toBeGreaterThan(0);
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [rootThread.cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+    expect(path.emit().lastActivityAt.get(rootThread.sessionId), 'history, before the hook').toBe(
+      stale,
+    );
+
+    // One real hook event, received AFTER the stamp. The transcripts do not move.
+    path.ingestHookEvent({ receivedAtMs: STAMP + 2_000, payload: payloads[0] });
+    poll.fire(0);
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'the hook event did not reach the instant',
+    ).toBe(STAMP + 2_000);
+
+    // ...and that is enough to be recorded, which is the point of the field.
+    const written = storeOver(
+      path.emit(),
+      STAMP,
+      STAMP + 5_000,
+      join(await makeTempDir(), STORE_DIR_NAME),
+    );
+    expect(written.armed + written.appended, 'a hooked session reached no store').toBeGreaterThan(0);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it("a session's instant is the LATEST of its threads — a subagent writing IS the session working", async () => {
+    /*
+     * ROUND 3'S SECOND REAL DEFECT, PINNED. `Math.max` → `Math.min` AND
+     * max-across-threads → first-thread-only both passed with **211 tests
+     * green**: one instant for every file makes every aggregation the same
+     * number. So this test gives the threads DIFFERENT instants, which needs a
+     * run with more than one thread per session — `spawn-shapes`, whose subagents
+     * live in their own transcripts.
+     */
+    const root = await stageCodexRun('spawn-shapes');
+    const stale = STAMP - 86_400_000;
+    const threads = await stampTranscripts(root, stale);
+
+    // A session with at least two threads in DIFFERENT files, found rather than
+    // named: a corpus is not asserted by size here, and if the shape ever moves
+    // this fails saying so.
+    const bySession = new Map<string, CodexThread[]>();
+    for (const thread of threads) {
+      bySession.set(thread.sessionId, [...(bySession.get(thread.sessionId) ?? []), thread]);
+    }
+    const multi = [...bySession.values()].find(
+      (group) => new Set(group.map((thread) => thread.owningFile)).size > 1,
+    );
+    expect(
+      multi,
+      'no Codex session in spawn-shapes spans two transcripts — the corpus shape moved',
+    ).toBeDefined();
+    const group = multi as CodexThread[];
+    const rootThread = group.find((thread) => thread.threadId === thread.sessionId) ?? group[0];
+
+    // ONE of its threads is written to, and it is NOT the root: the root keeps
+    // the day-old instant, so "first thread" and "min" both give the stale one.
+    const subagent = group.find((thread) => thread.owningFile !== (rootThread as CodexThread).owningFile);
+    expect(subagent, 'the group must hold a thread in another file').toBeDefined();
+    const files = await transcriptsUnder(root);
+    const subagentFile = files.get((subagent as CodexThread).owningFile);
+    expect(subagentFile, "the subagent's transcript is not under the root").toBeDefined();
+    const when = new Date(STAMP + 1_000);
+    await utimes(subagentFile as string, when, when);
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [(rootThread as CodexThread).cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: manualPollTrigger().trigger,
+    });
+    await path.start();
+
+    const at = path.emit().lastActivityAt.get((rootThread as CodexThread).sessionId);
+    expect(at, 'the session carries no instant').toBeTypeOf('number');
+    expect(at, "the session took the stale root's instant instead of the latest thread's").toBe(
+      STAMP + 1_000,
+    );
+    expect(at as number).toBeGreaterThan(stale);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it("an OpenCode session's activity is a fact about the STORE, not about when it was asked", async () => {
+    /*
+     * The OpenCode assignment site, driven. `OcSessionLiveness.lastActivityAt` is
+     * `max(timeUpdated, seqAdvancedAt)` — both of them instants the store moved —
+     * so the same emission taken an hour later must carry the same numbers. That
+     * is the whole law in one assertion: a mutation stamping `now()` here (the
+     * cheapest wrong thing to write, and the flood's own shape) moves them.
+     */
+    const dir = await makeTempDir();
+    const dbPath = copyCorpus(smallestCorpus(), dir);
+    const poll = manualPollTrigger();
+    let clock = Date.parse('2026-09-10T00:00:00.000Z');
+
+    const path = new OpenCodeEnginePath({
+      workspacePaths: [worktreeOf(dbPath)],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      dbPath,
+      now: () => clock,
+      pollTrigger: poll.trigger,
+      walWatchFactory: () => ({ close: () => {} }),
+    });
+    path.start();
+
+    const first = path.emit();
+    expect(first.sessions.length, 'the corpus must render sessions').toBeGreaterThan(0);
+    expect(
+      first.lastActivityAt.size,
+      'every emitted OpenCode session must carry an instant',
+    ).toBe(first.sessions.length);
+    for (const [sessionId, at] of first.lastActivityAt) {
+      expect(at, `${sessionId} was stamped with the clock`).not.toBe(clock);
+      expect(at, `${sessionId} claims activity in the future`).toBeLessThan(clock);
+      expect(at).toBeGreaterThan(0);
+    }
+
+    // An hour passes and the store does not move. Neither may the instants.
+    clock += 3_600_000;
+    poll.fire();
+    const second = path.emit();
+    expect([...second.lastActivityAt.entries()].sort()).toStrictEqual(
+      [...first.lastActivityAt.entries()].sort(),
+    );
+
+    path.dispose();
+  });
+
+  it('the MERGED emission carries every engine\'s map, not just the first', async () => {
+    /*
+     * `mergeTwo` short-circuits on `EMPTY_EMISSION`, so in every other test in
+     * this file — one engine live, two absent — its body never runs and the union
+     * is unmeasured. That is the D4 shape: a single production assignment site
+     * nothing drives. This test lights up TWO engines at once, which needs a
+     * multi-root workspace (the Codex scratch repo beside the captured Claude
+     * Code one), and then asserts that ids from both reach the map the pipeline
+     * reads. Replacing the union with either side alone turns it red.
+     */
+    const root = await stageCodexRoot(false);
+    const threads = await stampTranscripts(root, STAMP + 1_000);
+    const codexCwd = (threads.find((thread) => thread.threadSource === 'user') as CodexThread).cwd;
+    const ccWorkspace = await capturedWorkspacePath();
+    const emissions: DataPathEmission[] = [];
+
+    const path = await startDataPathOnFreePort((port) => {
+      emissions.length = 0;
+      return trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: ccWorkspace,
+          // The CC half reads `workspacePath`; the other two read every folder.
+          workspacePaths: [ccWorkspace, codexCwd],
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          tickMs: 0,
+          codex: { root, pollTrigger: manualPollTrigger().trigger },
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      );
+    });
+    path.pump();
+
+    const last = emissions[emissions.length - 1] as DataPathEmission;
+    const byEngine = new Map<string, string[]>();
+    for (const session of last.emission.sessions) {
+      // `engine` is optional on the wire and absent means Claude Code, which is
+      // the same reading `webview/store.ts` applies.
+      const engine = session.engine ?? 'cc';
+      const held = byEngine.get(engine) ?? [];
+      held.push(session.sessionId);
+      byEngine.set(engine, held);
+    }
+    // Two engines really are live, or the union below is untested.
+    expect([...byEngine.keys()].sort(), 'both engines must render for this to mean anything')
+      .toStrictEqual(['cc', 'codex']);
+
+    for (const [engine, ids] of byEngine) {
+      const known = ids.filter((id) => last.emission.lastActivityAt.has(id));
+      expect(known.length, `the merge dropped ${engine}'s activity map`).toBe(ids.length);
+    }
+
+    await rm(dirname(root), { recursive: true, force: true });
   });
 });

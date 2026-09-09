@@ -24,7 +24,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { AgentNode, ToolNode } from '../src/model/events.js';
 import { TESTID } from './canvas-contract.js';
 import { COLLAPSED_PREVIEW_CHARS, EM_DASH } from './format.js';
-import { all, one } from './testkit.js';
+import { all, one, spawnBundle } from './testkit.js';
 import { agent, longPreview, tool } from './testdata.js';
 
 /**
@@ -33,17 +33,8 @@ import { agent, longPreview, tool } from './testdata.js';
  * `node:child_process` specifier would fail the webview typecheck. The
  * specifier is opaque to `tsc` and resolved at runtime by vitest.
  */
-const CHILD_PROCESS = 'node:child_process';
 /** Same trick, same reason — see above. Read by the geometry suite below. */
 const NODE_FS = 'node:fs';
-
-interface ChildProcessModule {
-  execFileSync(
-    file: string,
-    args: readonly string[],
-    options: { encoding: 'utf8'; maxBuffer: number },
-  ): string;
-}
 
 const GLOBAL_NAME = 'AgentDeckInspectorHarness';
 
@@ -80,7 +71,10 @@ const result = await build({
   conditions: ['svelte', 'browser'],
   mainFields: ['svelte', 'browser', 'module', 'main'],
   plugins: [esbuildSvelte({ compilerOptions: { css: 'injected' } })],
-  logLevel: 'silent',
+  // 'error', not 'silent': a child that says nothing turns a lost spawn into a
+  // failed suite with no reason. See spawnBundle in webview/testkit.ts -- and
+  // no backticks in here: this comment lives inside a template literal.
+  logLevel: 'error',
 });
 const js = result.outputFiles[0];
 if (js === undefined) { process.stderr.write('no output\\n'); process.exit(1); }
@@ -100,11 +94,10 @@ interface InspectorHarness {
 let harness: InspectorHarness;
 
 beforeAll(async () => {
-  const cp = (await import(/* @vite-ignore */ CHILD_PROCESS)) as unknown as ChildProcessModule;
-  const code = cp.execFileSync('node', ['--input-type=module', '-e', BUILD_SCRIPT], {
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  const code = await spawnBundle(
+    ['--input-type=module', '-e', BUILD_SCRIPT],
+    'the inspector harness bundle',
+  );
   const factory = new Function(`${code}\nreturn ${GLOBAL_NAME};`) as () => InspectorHarness;
   harness = factory();
 }, 60_000);

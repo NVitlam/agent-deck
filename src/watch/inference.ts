@@ -76,6 +76,8 @@ export interface InferenceStats {
   isFile(): boolean;
   isDirectory(): boolean;
   mtimeMs: number;
+  /** `statSync().size`. DoD 4.11c reads it; nothing here interprets it. */
+  size: number;
 }
 
 /** Structurally satisfied by `fs.Dirent`. */
@@ -313,7 +315,13 @@ export function createJsonlInferenceReader(
 
     diagnostics.hits += 1;
     // `hasStopEntry` is absent on purpose. See the module header.
+    //
+    // The SIZE travels with the mtime and from the SAME `stat` (DoD 4.11c): two
+    // stats could straddle a write, which would pair a pre-write size with a
+    // post-write mtime and read as "moved but did not grow" — the exact wrong
+    // answer, in the direction that loses a real session's records.
     const inference: JsonlInference = { mtimeMs: stats.mtimeMs };
+    if (Number.isFinite(stats.size)) inference.sizeBytes = stats.size;
     return inference;
   };
 

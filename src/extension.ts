@@ -1422,6 +1422,20 @@ export class CodexEnginePath {
   #contentPollHandle: PollTriggerHandle | undefined;
   #content: readonly SessionState[] = [];
   #threads: readonly CodexThread[] = [];
+  /**
+   * Per thread, its transcript's size the FIRST time this process saw it
+   * (v0.7.0 DoD 4.11c, user ruling 2026-09-10).
+   *
+   * The baseline the growth test compares against, latched once per thread and
+   * never moved — re-latching on a later read would make every read its own
+   * baseline and nothing could ever have grown. Keyed by `threadId` rather than
+   * by file, because a file can declare more than one thread (C5) and it is the
+   * THREAD whose activity is in question.
+   *
+   * Cleared on `dispose` with everything else: the baseline is a fact about this
+   * process's lifetime and a new pipeline must start with none.
+   */
+  #firstBytes = new Map<string, number>();
   /** Hook events this path has been handed. DoD 5.0b. */
   #hookEventsIngested = 0;
   /** The last read's skip list. A LEVEL — see `CodexEngineDiagnostics`. */
@@ -1608,6 +1622,7 @@ export class CodexEnginePath {
     this.#cancelAbsentReprobe();
     this.#content = [];
     this.#threads = [];
+    this.#firstBytes.clear();
     this.#previous.clear();
   }
 
@@ -1689,12 +1704,41 @@ export class CodexEnginePath {
       const sessionOfThread = new Map(
         this.#threads.map((thread) => [thread.threadId, thread.sessionId] as const),
       );
+      /*
+       * WHICH THREADS HAVE GAINED BYTES SINCE THIS PROCESS FIRST SAW THEM
+       * (DoD 4.11c, user ruling 2026-09-10).
+       *
+       * The INSTANT still comes from the liveness report and only from there —
+       * that is DoD 4.11b and `phase-verifier` round 3 turned it into two tests.
+       * What comes from the content read is the SIZE, because the report carries
+       * none, and the growth baseline is a per-process latch which a pure render
+       * function has nowhere to keep.
+       *
+       * Mixing the two is safe in one direction and stated rather than assumed:
+       * the report can be up to one poll older than the sizes, so a file that
+       * grew a moment ago may be credited with a slightly earlier instant. That
+       * makes promotion LATER, never earlier — the safe direction for a gate whose
+       * failure mode is writing history.
+       */
+      const grownThreads = new Set<string>();
+      for (const thread of this.#threads) {
+        const first = this.#firstBytes.get(thread.threadId);
+        if (first === undefined) {
+          this.#firstBytes.set(thread.threadId, thread.sizeBytes);
+          continue;
+        }
+        if (thread.sizeBytes > first) grownThreads.add(thread.threadId);
+      }
       for (const thread of activityReport.threads) {
         const sessionId = sessionOfThread.get(thread.threadId);
         if (sessionId === undefined || !next.has(sessionId)) continue;
         const instants: number[] = [];
+        // A HOOK EVENT IS ALWAYS ACTIVITY. The tap fires because a tool ran.
         if (thread.lastHookEventMs !== null) instants.push(thread.lastHookEventMs);
-        if (thread.lastMtimeMs !== null) instants.push(thread.lastMtimeMs);
+        // AN MTIME IS ACTIVITY ONLY WITH BYTES BEHIND IT (DoD 4.11c).
+        if (thread.lastMtimeMs !== null && grownThreads.has(thread.threadId)) {
+          instants.push(thread.lastMtimeMs);
+        }
         if (instants.length === 0) continue;
         const at = Math.max(...instants);
         const seen = lastActivityAt.get(sessionId);
@@ -3474,7 +3518,9 @@ export class StatsPipeline {
       // don't guess). It keeps deriving and rendering; it is only the STORE
       // that declines to claim work nobody witnessed.
       const activityAt = emission.lastActivityAt.get(state.sessionId);
+      const wasObserved = entry.observed;
       if (activityAt !== undefined && activityAt >= this.#processStart) entry.observed = true;
+      const promotedThisPump = !wasObserved && entry.observed;
 
       if (state.liveness === 'ended') {
         entry.record = record;
@@ -3490,7 +3536,30 @@ export class StatsPipeline {
       }
       // The change test is over `patchBody`: a tick that only moved
       // `stalledMs` leaves the countdown alone, so the flush arrives.
-      if (patchBody === entry.patchBody) continue;
+      if (patchBody === entry.patchBody) {
+        /*
+         * ...EXCEPT FOR THE PUMP THAT PROMOTES A SESSION, which owes a record
+         * nothing else will arm (v0.7.0 DoD 4.11c).
+         *
+         * Promotion and the record's last change need not land on the same
+         * pump, and under 4.11c they usually do not: an mtime counts only once
+         * the transcript has GROWN, and the bytes that make it grow need not
+         * move any number the record carries. Without this the session waits for
+         * its NEXT change — which for a session that appends once and goes quiet
+         * never comes, so the idle flush that exists precisely for a session
+         * that never reaches `ended` would never fire for it.
+         *
+         * It cannot re-open the flood: history is never observed, so it never
+         * reaches here, and a session already written is held by
+         * `appendedBody`. Once per promotion, by construction —
+         * `promotedThisPump` is a false-to-true transition and `observed` never
+         * goes back.
+         */
+        if (promotedThisPump && body !== entry.appendedBody) {
+          this.#arm(state.sessionId, entry);
+        }
+        continue;
+      }
       entry.record = record;
       entry.body = body;
       entry.patchBody = patchBody;

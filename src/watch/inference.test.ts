@@ -402,7 +402,13 @@ describe('hasStopEntry — omitted on the fixture evidence (G3/G6)', () => {
     // Not `toBeUndefined()`: the contract distinguishes an absent key
     // ("cannot say") from a present `false` ("looked, none found").
     expect(Object.prototype.hasOwnProperty.call(inference, 'hasStopEntry')).toBe(false);
-    expect(Object.keys(inference)).toEqual(['mtimeMs']);
+    // The EXACT key set, still — the point of this assertion is that a key
+    // nobody meant to report cannot appear. `sizeBytes` joined it deliberately
+    // in v0.7.0 DoD 4.11c: the store may promote a session on a transcript's
+    // mtime only when that file has GAINED BYTES since this process first stat'd
+    // it, so the size has to travel from the same stat as the mtime.
+    expect(Object.keys(inference)).toEqual(['mtimeMs', 'sizeBytes']);
+    expect(inference.sizeBytes, 'a real transcript has a real size').toBeGreaterThan(0);
   });
 
   it('no committed transcript carries an in-transcript stop marker', async () => {
@@ -549,6 +555,10 @@ describe('createJsonlInferenceSource — read-only (G1)', () => {
       isFile: () => true,
       isDirectory: () => true,
       mtimeMs: 42,
+      // DoD 4.11c. This test is about WHICH PATHS are stat'd, so the value is
+      // arbitrary — but it is required, so a future reader cannot mistake its
+      // absence for "the source does not read a size".
+      size: 1_024,
     };
     const dirents: InferenceDirent[] = [{ name: SLUG, isDirectory: () => true }];
     const fs: InferenceFs = {

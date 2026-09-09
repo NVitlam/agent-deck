@@ -1130,7 +1130,14 @@ export class SessionModel {
     // The store's promoter, taken from THIS snapshot (DoD 4.11b). Deleted rather
     // than left stale when the tap has nothing: a session whose instant went
     // away must read as "no activity known", never as the last one it had.
-    const activityAt = livenessSnapshot?.lastActivityAt;
+    //
+    // `witnessedActivityAt`, NOT `lastActivityAt` (DoD 4.11c, user ruling
+    // 2026-09-10): the two differ by exactly one thing, whether a transcript
+    // whose mtime moved has GROWN since this process first stat'd it. The enum
+    // and the stall derivation above keep reading `lastActivityAt`, because for
+    // them a touched file is still "something happened, show it as recent"; a
+    // WRITE to the local store may not rest on that.
+    const activityAt = livenessSnapshot?.witnessedActivityAt;
     if (activityAt === undefined) this.activityAt.delete(record.sessionId);
     else this.activityAt.set(record.sessionId, activityAt);
     // v0.7.0 Phase 0c. Derived at assembly, never cached with the content view

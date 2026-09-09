@@ -168,6 +168,87 @@ async function capturedWorkspacePath(): Promise<string> {
   throw new Error('no cwd found in the captured transcripts');
 }
 
+/**
+ * A WRITABLE copy of the captured projects root.
+ *
+ * DoD 4.11c makes a transcript's mtime count as activity only once the file
+ * has GROWN, so a test that wants a record has to append bytes — and
+ * appending to `fixtures/` would mutate a committed corpus (G1, G6). Every
+ * write below lands in this copy.
+ */
+async function stageCapturedRoot(): Promise<{ root: string; slugDir: string }> {
+  const root = join(await makeTempDir(), 'projects');
+  await cp(CAPTURED_ROOT, root, { recursive: true });
+  const entries = (await readdir(root, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  expect(entries.length, 'the staged root has no slug directory').toBeGreaterThan(0);
+  return { root, slugDir: join(root, entries[0] as string) };
+}
+
+/**
+ * TOUCH every session transcript in a staged slug dir: mtime moves, size does not.
+ *
+ * What a clone, a restore, a sync client, an indexer or a virus scanner does —
+ * and what DoD 4.11c refuses to read as activity. The counterpart of
+ * {@link growSessions}, and the two together are the item.
+ */
+async function touchSessions(slugDir: string, mtimeMs: number): Promise<number> {
+  let touched = 0;
+  const when = new Date(mtimeMs);
+  const before: number[] = [];
+  for (const sessionId of await sessionIdsIn(slugDir)) {
+    const file = join(slugDir, `${sessionId}.jsonl`);
+    before.push(statSync(file).size);
+    await utimes(file, when, when);
+    touched += 1;
+  }
+  expect(touched, 'no transcript was touched — the staged corpus is empty').toBeGreaterThan(0);
+  // The control on the control: a "touch" that changed a size would make the
+  // whole test vacuous in the direction that looks like a pass.
+  const after = (await sessionIdsIn(slugDir)).map((id) => statSync(join(slugDir, `${id}.jsonl`)).size);
+  expect(after, 'the touch changed a size').toStrictEqual(before);
+  return touched;
+}
+
+/**
+ * Append one real entry to every session transcript in a staged slug dir.
+ *
+ * **This is what a live session does, and under DoD 4.11c it is the only
+ * thing that makes an mtime count.** A replayed corpus that nobody appends to
+ * is history by definition — which is the whole point of the item — so the
+ * harness below grows the sessions after the host has taken its baseline,
+ * exactly as a session being worked on would.
+ *
+ * The appended line is the transcript's own LAST line with a fresh `uuid`, so
+ * it parses like every other entry rather than counting as malformed.
+ */
+async function growSessions(slugDir: string): Promise<number> {
+  let grown = 0;
+  for (const sessionId of await sessionIdsIn(slugDir)) {
+    const file = join(slugDir, `${sessionId}.jsonl`);
+    const text = await readFile(file, 'utf8');
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+    const last = lines.at(-1);
+    if (last === undefined) continue;
+    let line = last;
+    try {
+      const entry = JSON.parse(last) as Record<string, unknown>;
+      if (typeof entry['uuid'] === 'string') {
+        entry['uuid'] = `4111c000-0000-4000-8000-${String(grown).padStart(12, '0')}`;
+        line = JSON.stringify(entry);
+      }
+    } catch {
+      // Not JSON: append it back verbatim. The BYTES are the signal.
+    }
+    appendFileSync(file, `${line}\n`, 'utf8');
+    grown += 1;
+  }
+  expect(grown, 'no transcript grew — the staged corpus is empty').toBeGreaterThan(0);
+  return grown;
+}
+
 // ---------------------------------------------------------------------------
 // Temp scaffolding — the only place anything is ever written (OS temp, not the repo)
 // ---------------------------------------------------------------------------
@@ -5304,6 +5385,10 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
   interface StatsHost {
     host: AgentDeckHost;
     statsDir: string;
+    /** The staged, writable projects root these sessions were read from. */
+    projectsRoot: string;
+    /** Its one slug directory. */
+    slugDir: string;
     /** The panel the host will create, so its traffic is readable. */
     panel: FakePanel;
     /** Everything the consumer DOWNSTREAM of the stats layer received. */
@@ -5312,9 +5397,10 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
 
   async function startWithStore(
     overrides: Partial<AgentDeckSettings> = {},
-    options: { realProcessStart?: boolean } = {},
+    options: { realProcessStart?: boolean; grow?: boolean } = {},
   ): Promise<StatsHost> {
     const workspacePath = await capturedWorkspacePath();
+    const { root: projectsRoot, slugDir } = await stageCapturedRoot();
     const statsDir = join(await makeTempDir(), 'globalStorage', STORE_DIR_NAME);
     // A retried bind must not inherit the lost attempt's panel: `onFreePort`
     // can construct the host more than once, and the panel is per attempt.
@@ -5326,7 +5412,7 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
       return trackHost(
         new AgentDeckHost({
           workspacePath,
-          projectsRoot: CAPTURED_ROOT,
+          projectsRoot,
           settings: settings({ port, 'stats.idleFlushMs': 1, ...overrides }),
           statsDir,
           // DoD 4.11's provenance gate, opted out DELIBERATELY: every session
@@ -5344,7 +5430,27 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
       );
     });
     await waitForFlush();
-    return { host, statsDir, panel, emissions };
+
+    /*
+     * THE SESSIONS GROW, AND WITHOUT THIS EVERY TEST BELOW WOULD SEE AN EMPTY
+     * STORE (DoD 4.11c, user ruling 2026-09-10).
+     *
+     * The gate promotes a session on a transcript's mtime only once the file has
+     * gained bytes since this process first stat'd it. The captured corpus is
+     * static, so on its own it is history — correctly, and that is what
+     * `grow: false` below is for. Everything else in this describe is about the
+     * settings, the seam and the counters, so the harness does what a live
+     * session does and appends.
+     *
+     * AFTER the host has started, deliberately: the baseline is the first stat,
+     * so growing before it would leave nothing to have grown.
+     */
+    if (options.grow !== false) {
+      await growSessions(slugDir);
+      host.dataPath.pump();
+      await waitForFlush();
+    }
+    return { host, statsDir, panel, emissions, projectsRoot, slugDir };
   }
 
   /** Every line in every store file, parsed. Reads DISK, not the store object. */
@@ -5542,11 +5648,20 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
      * `degradedByEngine`, the auto-fit attributes), and it is only ever found
      * by mutating the WIRING.
      *
-     * The captured corpus starts in 2026-08, so against a stamp taken now every
-     * session in it is history — which is the whole point: this is the same
-     * situation as the user's 28 rediscovered sessions, on the real path.
+     * The captured corpus is REPLAYED and nobody appends to it, so against a
+     * stamp taken now every session in it is history — the same situation as the
+     * user's 28 rediscovered sessions, on the real path.
+     *
+     * `grow: false` is what makes it history under DoD 4.11c, and it is the
+     * honest arm: the harness's default appends a real entry to every transcript
+     * after start, because a corpus that never grows can never be recorded once
+     * an mtime alone stops counting. History is exactly the corpus nobody wrote
+     * to, so this arm must be the one that does not write.
      */
-    const real = await startWithStore({ 'stats.enabled': true }, { realProcessStart: true });
+    const real = await startWithStore(
+      { 'stats.enabled': true },
+      { realProcessStart: true, grow: false },
+    );
     expect(real.host.stats?.store.enabled).toBe(true);
 
     // THE VACUITY CONTROL, and it is the assertion that makes the next one mean
@@ -5565,6 +5680,65 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
     // records appear. So the empty store above is the GATE and not the wiring.
     const observed = await startWithStore({ 'stats.enabled': true });
     expect(linesOnDisk(observed.statsDir).length).toBeGreaterThan(0);
+
+    // AND THE 4.11c ARM, on the real stamp this time: the same historical corpus
+    // that wrote nothing above writes as soon as somebody APPENDS to it. Without
+    // this pair, "history reaches no store" is satisfied by a gate that refuses
+    // everything, which is the failure mode with no user-visible symptom until
+    // the Stats view is permanently empty.
+    const resumed = await startWithStore(
+      { 'stats.enabled': true },
+      { realProcessStart: true, grow: false },
+    );
+    expect(linesOnDisk(resumed.statsDir), 'history, before the append').toStrictEqual([]);
+    await growSessions(resumed.slugDir);
+    resumed.host.dataPath.pump();
+    await waitForFlush();
+    expect(
+      linesOnDisk(resumed.statsDir).length,
+      'an appended transcript did not reach the store',
+    ).toBeGreaterThan(0);
+  });
+
+  it('Claude Code: touch writes NOTHING, append writes a record', async () => {
+    /*
+     * The real path, the real corpus, the REAL activation stamp — the same
+     * arrangement as the 4.11 provenance test, driven through the one signal
+     * 4.11c is about. `grow: false` because this test does its own writing.
+     */
+    const { host, statsDir, slugDir } = await startWithStore(
+      { 'stats.enabled': true },
+      { realProcessStart: true, grow: false },
+    );
+
+    // The baseline: history, and the pipeline has seen it (the vacuity control
+     // the 4.11 test also carries — an empty store proves nothing about a
+     // pipeline that never ran).
+    expect(
+      host.stats?.liveRecords().length,
+      'the pipeline never saw a session, so the empty store proves nothing',
+    ).toBeGreaterThan(0);
+    expect(linesOnDisk(statsDir)).toStrictEqual([]);
+
+    // A TOUCH: every transcript's mtime moves to now, no byte changes. This is
+    // the arm that was writing 21 sessions in a 1.4 s burst.
+    await touchSessions(slugDir, Date.now());
+    for (let i = 0; i < 5; i += 1) host.dataPath.pump();
+    await waitForFlush();
+    expect(
+      linesOnDisk(statsDir),
+      'a touched transcript reached the store — the mtime door is open',
+    ).toStrictEqual([]);
+    expect(host.stats?.armedTimers, 'a touched transcript armed a flush').toBe(0);
+
+    // AN APPEND: bytes arrive. THAT is activity, and one record per session lands.
+    const grown = await growSessions(slugDir);
+    host.dataPath.pump();
+    await waitForFlush();
+    expect(
+      linesOnDisk(statsDir).length,
+      'an appended transcript reached no store',
+    ).toBe(grown);
   });
 
   it('the counters line reports the store, not two zeroes', async () => {
@@ -5882,6 +6056,274 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
 });
 
 // ---------------------------------------------------------------------------
+// Shared by the 4.11b and 4.11c suites below
+// ---------------------------------------------------------------------------
+
+/** Well clear of the fixture's own capture dates, so nothing here is accidental. */
+const STAMP = Date.parse('2026-09-10T00:00:00.000Z');
+
+interface SplitTrigger {
+  trigger: PollTrigger;
+  fire: (index: number) => void;
+  count: () => number;
+}
+
+/**
+ * A poll trigger whose registrations can be fired ONE AT A TIME.
+ *
+ * `manualPollTrigger().fire()` runs every registration, and `CodexEnginePath`
+ * registers two — the liveness poll and the content re-read. Firing them
+ * together cannot tell "the emission read the report" from "the emission read
+ * `#threads`", which is exactly the mutation that got past round 3 (163 tests
+ * green with `CodexLivenessEngine.latest` never consulted). Which index is
+ * which is NOT assumed: the test fires one and asserts the counter that moved.
+ */
+function splitPollTrigger(): SplitTrigger {
+  const runs: (() => void)[] = [];
+  const trigger: PollTrigger = (run): PollTriggerHandle => {
+    runs.push(run);
+    return { stop: () => {} };
+  };
+  return {
+    trigger,
+    fire: (index) => {
+      const run = runs[index];
+      expect(run, `no poll registration at index ${String(index)}`).toBeDefined();
+      (run as () => void)();
+    },
+    count: () => runs.length,
+  };
+}
+
+/** Every `.jsonl` under a staged root, basename to full path. */
+async function transcriptsUnder(root: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+    out.set(entry.name, join(entry.parentPath, entry.name));
+  }
+  expect(out.size, 'no transcript under the staged root — the layout moved').toBeGreaterThan(0);
+  return out;
+}
+
+/**
+ * Append one real record to a staged transcript and set its mtime.
+ *
+ * DoD 4.11c: a Codex transcript's mtime counts as activity only once the file
+ * has GAINED BYTES since this process first saw it, so every test below that
+ * wants an instant has to append. The appended line is the file's own last
+ * line, so it parses like every other record in it; the mtime is then set
+ * explicitly, because two files touched in the same millisecond cannot show
+ * which is later and this suite compares them.
+ */
+async function growTranscript(file: string, mtimeMs: number): Promise<void> {
+  const text = await readFile(file, 'utf8');
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+  const last = lines.at(-1);
+  expect(last, `${file} is empty`).toBeDefined();
+  appendFileSync(file, `${String(last)}\n`, 'utf8');
+  const when = new Date(mtimeMs);
+  await utimes(file, when, when);
+}
+
+/** A staged copy of any run's `.codex`, not only `baseline`'s. */
+async function stageCodexRun(run: string): Promise<string> {
+  const root = join(await makeTempDir(), '.codex');
+  await cp(
+    fileURLToPath(new URL(`../fixtures/codex-0.151.0-alpha.7.2/${run}/home/.codex`, import.meta.url)),
+    root,
+    { recursive: true },
+  );
+  return root;
+}
+
+/**
+ * Every transcript in a staged root, moved to one instant.
+ *
+ * EVERY `.jsonl` under the root, not just the root thread's file:
+ * `CodexThread.owningFile` is a NAME rather than a path (it answers "which
+ * file declared this thread", C5), and the activity instant is the max across
+ * a session's threads — so a subagent transcript left at its checkout mtime
+ * would promote the session on its own and the arm below would pass for the
+ * wrong reason. A staged root is a fresh copy, so this touches nothing shared.
+ */
+async function stampTranscripts(root: string, atMs: number): Promise<CodexThread[]> {
+  const when = new Date(atMs);
+  let stamped = 0;
+  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+    await utimes(join(entry.parentPath, entry.name), when, when);
+    stamped += 1;
+  }
+  expect(stamped, 'no transcript was stamped — the fixture layout moved').toBeGreaterThan(0);
+
+  // Read AFTER the stamp, so `CodexThread.mtimeMs` is the value being driven.
+  const outcome = await readCodexEngine({ root });
+  expect(outcome.kind).toBe('ok');
+  if (outcome.kind !== 'ok') throw new Error('unreachable: asserted above');
+  const threads = outcome.result.threads as CodexThread[];
+  expect(threads.length, 'the Codex fixture must carry threads').toBeGreaterThan(0);
+  for (const thread of threads) {
+    expect(thread.mtimeMs, 'a thread kept its checkout mtime').toBe(atMs);
+  }
+  return threads;
+}
+
+/**
+ * A real Codex path over a staged root whose every transcript sits at
+ * `mtimeMs`, read against an injected clock. No hook events: the mtime is the
+ * only signal, which is the case that matters — it is what a session nobody
+ * has touched still has.
+ */
+async function codexPathAt(
+  root: string,
+  mtimeMs: number,
+  clock: number,
+): Promise<{ path: CodexEnginePath; rootThread: CodexThread; poll: SplitTrigger }> {
+  const threads = await stampTranscripts(root, mtimeMs);
+  const rootThread = threads.find((thread) => thread.threadSource === 'user');
+  expect(rootThread, 'the Codex fixture must carry a root thread').toBeDefined();
+  const poll = splitPollTrigger();
+  const path = new CodexEnginePath({
+    workspaceFolders: [(rootThread as CodexThread).cwd],
+    thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+    onChange: () => {},
+    root,
+    now: () => clock,
+    pollTrigger: poll.trigger,
+  });
+  await path.start();
+  return { path, rootThread: rootThread as CodexThread, poll };
+}
+
+/** A real store and a real pipeline over one emission, with a manual clock. */
+function storeOver(
+  emission: SessionEmission,
+  processStart: number,
+  clockStart: number,
+  dir: string,
+): { appended: number; armed: number } {
+  const time = new ManualTime(clockStart);
+  const store = new StatsStore({ dir, enabled: true, retentionDays: 90 });
+  const parsed = parsePricing({});
+  const pipeline = new StatsPipeline({
+    store,
+    pricing: parsed.table,
+    pricingInvalid: parsed.invalid,
+    processStart,
+    idleFlushMs: 60_000,
+    now: () => time.now(),
+    scheduler: time,
+  });
+  pipeline.observe(emission);
+  const armed = pipeline.armedTimers;
+  time.advance(60_000);
+  const appended = store.appended;
+  pipeline.dispose();
+  return { appended, armed };
+}
+
+
+// ---------------------------------------------------------------------------
+// DoD 4.11c — an mtime counts only with bytes behind it
+// ---------------------------------------------------------------------------
+
+/**
+ * The third door into the store flood, closed (user ruling, 2026-09-10).
+ *
+ * 4.11b made LIVENESS the sole promoter, and two of the three liveness instants
+ * are FILE MTIMES. So the flood had one door left open, stated on that item and
+ * unguarded: **anything that touches a transcript after activation promotes that
+ * whole history** — a clone, a restore from backup, a sync client, an indexer, a
+ * virus scanner. This repository already records the mechanism from the other
+ * side, because it is what made 4.11's first gate fail three times out of three:
+ * *"git gives every fixture a fresh mtime, so a captured 2026-08 session looks
+ * live"*.
+ *
+ * **THE RULE: an mtime-derived instant counts only if the transcript's SIZE GREW
+ * since this process first stat'd it.** Hook events are untouched — the tap fires
+ * because a tool ran, and no filesystem accident produces one.
+ *
+ * **THE STATED COST, and it is real.** A session that was being worked on right
+ * up to the moment the window opened, and that never appends another byte, is
+ * never recorded on its mtime — its baseline IS its current size. In practice a
+ * live Claude Code or Codex session appends constantly and fires hooks on every
+ * tool call, so this bites the narrow case of a session that stops at exactly the
+ * wrong moment. The alternative is recording every session on a filesystem event
+ * that says nothing about the session, which is the flood.
+ */
+describe('DoD 4.11c — a touched transcript is not activity; an appended one is', () => {
+  it('Codex: touch writes NOTHING, append writes a record', async () => {
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const poll = splitPollTrigger();
+    const threads = await stampTranscripts(root, stale);
+    const rootThread = threads.find((thread) => thread.threadSource === 'user') as CodexThread;
+    const path = new CodexEnginePath({
+      workspaceFolders: [rootThread.cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+    expect(path.emit().lastActivityAt.size, 'the baseline claimed activity').toBe(0);
+
+    // A TOUCH, well after the stamp: every transcript's mtime says "now".
+    const files = await transcriptsUnder(root);
+    const sizesBefore = [...files.values()].map((file) => statSync(file).size);
+    const when = new Date(STAMP + 1_000);
+    for (const file of files.values()) await utimes(file, when, when);
+    expect(
+      [...files.values()].map((file) => statSync(file).size),
+      'the touch changed a size',
+    ).toStrictEqual(sizesBefore);
+    poll.fire(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    poll.fire(0);
+
+    const touched = path.emit();
+    expect(
+      [...touched.lastActivityAt.keys()],
+      'a touched Codex transcript claimed activity',
+    ).toStrictEqual([]);
+    const afterTouch = storeOver(
+      touched,
+      STAMP,
+      STAMP + 5_000,
+      join(await makeTempDir(), STORE_DIR_NAME),
+    );
+    expect(afterTouch.armed + afterTouch.appended, 'a touched Codex session reached the store').toBe(0);
+
+    // AN APPEND: the same file, bytes added, the same mtime it already had.
+    await growTranscript(files.get(rootThread.owningFile) as string, STAMP + 1_000);
+    poll.fire(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    poll.fire(0);
+
+    const grown = path.emit();
+    expect(
+      grown.lastActivityAt.get(rootThread.sessionId),
+      'an appended Codex transcript produced no instant',
+    ).toBe(STAMP + 1_000);
+    const afterAppend = storeOver(
+      grown,
+      STAMP,
+      STAMP + 5_000,
+      join(await makeTempDir(), STORE_DIR_NAME),
+    );
+    expect(
+      afterAppend.armed + afterAppend.appended,
+      'an appended Codex session reached no store',
+    ).toBeGreaterThan(0);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // DoD 4.11b — every engine supplies its own activity, and the merge keeps it
 // ---------------------------------------------------------------------------
 
@@ -5901,163 +6343,28 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
  * directions.
  */
 describe('DoD 4.11b — each engine supplies its own activity, and the merge is a union', () => {
-  /** Well clear of the fixture's own capture dates, so nothing here is accidental. */
-  const STAMP = Date.parse('2026-09-10T00:00:00.000Z');
-
-  /**
-   * A poll trigger whose registrations can be fired ONE AT A TIME.
-   *
-   * `manualPollTrigger().fire()` runs every registration, and `CodexEnginePath`
-   * registers two — the liveness poll and the content re-read. Firing them
-   * together cannot tell "the emission read the report" from "the emission read
-   * `#threads`", which is exactly the mutation that got past round 3 (163 tests
-   * green with `CodexLivenessEngine.latest` never consulted). Which index is
-   * which is NOT assumed: the test fires one and asserts the counter that moved.
-   */
-  function splitPollTrigger(): { trigger: PollTrigger; fire: (index: number) => void; count: () => number } {
-    const runs: (() => void)[] = [];
-    const trigger: PollTrigger = (run): PollTriggerHandle => {
-      runs.push(run);
-      return { stop: () => {} };
-    };
-    return {
-      trigger,
-      fire: (index) => {
-        const run = runs[index];
-        expect(run, `no poll registration at index ${String(index)}`).toBeDefined();
-        (run as () => void)();
-      },
-      count: () => runs.length,
-    };
-  }
-
-  /** Every `.jsonl` under a staged root, basename to full path. */
-  async function transcriptsUnder(root: string): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
-    for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
-      out.set(entry.name, join(entry.parentPath, entry.name));
-    }
-    expect(out.size, 'no transcript under the staged root — the layout moved').toBeGreaterThan(0);
-    return out;
-  }
-
-  /** A staged copy of any run's `.codex`, not only `baseline`'s. */
-  async function stageCodexRun(run: string): Promise<string> {
-    const root = join(await makeTempDir(), '.codex');
-    await cp(
-      fileURLToPath(new URL(`../fixtures/codex-0.151.0-alpha.7.2/${run}/home/.codex`, import.meta.url)),
-      root,
-      { recursive: true },
-    );
-    return root;
-  }
-
-  /**
-   * Every transcript in a staged root, moved to one instant.
-   *
-   * EVERY `.jsonl` under the root, not just the root thread's file:
-   * `CodexThread.owningFile` is a NAME rather than a path (it answers "which
-   * file declared this thread", C5), and the activity instant is the max across
-   * a session's threads — so a subagent transcript left at its checkout mtime
-   * would promote the session on its own and the arm below would pass for the
-   * wrong reason. A staged root is a fresh copy, so this touches nothing shared.
-   */
-  async function stampTranscripts(root: string, atMs: number): Promise<CodexThread[]> {
-    const when = new Date(atMs);
-    let stamped = 0;
-    for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
-      await utimes(join(entry.parentPath, entry.name), when, when);
-      stamped += 1;
-    }
-    expect(stamped, 'no transcript was stamped — the fixture layout moved').toBeGreaterThan(0);
-
-    // Read AFTER the stamp, so `CodexThread.mtimeMs` is the value being driven.
-    const outcome = await readCodexEngine({ root });
-    expect(outcome.kind).toBe('ok');
-    if (outcome.kind !== 'ok') throw new Error('unreachable: asserted above');
-    const threads = outcome.result.threads as CodexThread[];
-    expect(threads.length, 'the Codex fixture must carry threads').toBeGreaterThan(0);
-    for (const thread of threads) {
-      expect(thread.mtimeMs, 'a thread kept its checkout mtime').toBe(atMs);
-    }
-    return threads;
-  }
-
-  /**
-   * A real Codex path over a staged root whose every transcript sits at
-   * `mtimeMs`, read against an injected clock. No hook events: the mtime is the
-   * only signal, which is the case that matters — it is what a session nobody
-   * has touched still has.
-   */
-  async function codexPathAt(
-    root: string,
-    mtimeMs: number,
-    clock: number,
-  ): Promise<{ path: CodexEnginePath; rootThread: CodexThread }> {
-    const threads = await stampTranscripts(root, mtimeMs);
-    const rootThread = threads.find((thread) => thread.threadSource === 'user');
-    expect(rootThread, 'the Codex fixture must carry a root thread').toBeDefined();
-    const path = new CodexEnginePath({
-      workspaceFolders: [(rootThread as CodexThread).cwd],
-      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
-      onChange: () => {},
-      root,
-      now: () => clock,
-      pollTrigger: manualPollTrigger().trigger,
-    });
-    await path.start();
-    return { path, rootThread: rootThread as CodexThread };
-  }
-
-  /** A real store and a real pipeline over one emission, with a manual clock. */
-  function storeOver(
-    emission: SessionEmission,
-    processStart: number,
-    clockStart: number,
-    dir: string,
-  ): { appended: number; armed: number } {
-    const time = new ManualTime(clockStart);
-    const store = new StatsStore({ dir, enabled: true, retentionDays: 90 });
-    const parsed = parsePricing({});
-    const pipeline = new StatsPipeline({
-      store,
-      pricing: parsed.table,
-      pricingInvalid: parsed.invalid,
-      processStart,
-      idleFlushMs: 60_000,
-      now: () => time.now(),
-      scheduler: time,
-    });
-    pipeline.observe(emission);
-    const armed = pipeline.armedTimers;
-    time.advance(60_000);
-    const appended = store.appended;
-    pipeline.dispose();
-    return { appended, armed };
-  }
-
   it('a Codex session whose transcripts predate activation is NOT recorded — the instant is known and it is not activity', async () => {
     const root = await stageCodexRoot(false);
     const stale = STAMP - 86_400_000;
     const { path, rootThread } = await codexPathAt(root, stale, STAMP + 5_000);
     const emission = path.emit();
 
-    // THE DEPENDENCY, VISIBLE. Every session in the emission has an instant,
-    // because a transcript on disk has an mtime — and the mtime is a day old.
+    // THE DEPENDENCY, VISIBLE — and DoD 4.11c makes it sharper than 4.11b did.
+    // Under 4.11b every session carried an instant (its mtime) and the gate
+    // compared it to the stamp. Under 4.11c a transcript nobody appended to
+    // yields NO INSTANT AT ALL: an mtime is a fact about a file having been
+    // written, and a clone, a restore or a scanner writes one with no bytes
+    // behind it.
     expect(emission.sessions.length, 'the fixture must render at least one session').toBeGreaterThan(0);
     expect(
-      emission.lastActivityAt.size,
-      'every emitted Codex session must carry an instant from the report',
-    ).toBe(emission.sessions.length);
-    const at = emission.lastActivityAt.get(rootThread.sessionId);
-    expect(at, 'the root session carries no instant').toBeTypeOf('number');
-    expect(at as number).toBeLessThan(STAMP);
+      [...emission.lastActivityAt.keys()],
+      'a transcript nobody appended to claimed activity',
+    ).toStrictEqual([]);
+    expect(emission.lastActivityAt.get(rootThread.sessionId)).toBeUndefined();
 
     // ...so the store declines it. Note what this also says: a Codex session the
-    // last liveness report does NOT cover carries no instant at all, and the
-    // same comparison keeps it out — which is the whole reason the Codex half
+    // last liveness report does NOT cover carries no instant either, and the
+    // same absence keeps it out — which is the whole reason the Codex half
     // reads `#liveness.latest` rather than stamping `now`.
     const written = storeOver(emission, STAMP, STAMP + 5_000, join(await makeTempDir(), STORE_DIR_NAME));
     expect(written.armed, 'a day-old transcript armed a flush').toBe(0);
@@ -6067,16 +6374,38 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     await rm(dirname(root), { recursive: true, force: true });
   });
 
-  it('a Codex session whose transcripts move AFTER activation is recorded', async () => {
+  it('a Codex session whose transcript GROWS after activation is recorded', async () => {
+    /*
+     * THE OTHER ARM, and under DoD 4.11c it is an APPEND rather than a touch.
+     * Without this pair "history reaches no store" is satisfied by a gate that
+     * refuses everything — a failure with no symptom until the Stats view is
+     * permanently empty.
+     */
     const root = await stageCodexRoot(false);
-    const fresh = STAMP + 1_000;
-    const { path, rootThread } = await codexPathAt(root, fresh, STAMP + 2_000);
-    const emission = path.emit();
+    const stale = STAMP - 86_400_000;
+    const { path, rootThread, poll } = await codexPathAt(root, stale, STAMP + 5_000);
 
-    expect(emission.lastActivityAt.get(rootThread.sessionId)).toBe(fresh);
-    const written = storeOver(emission, STAMP, STAMP + 2_000, join(await makeTempDir(), STORE_DIR_NAME));
-    expect(written.armed, 'a witnessed Codex session armed nothing').toBeGreaterThan(0);
-    expect(written.appended, 'a witnessed Codex session reached no store').toBeGreaterThan(0);
+    // The baseline is this process's first sighting, so nothing has grown yet.
+    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBeUndefined();
+
+    // Somebody works: bytes are appended to the root transcript.
+    const files = await transcriptsUnder(root);
+    const rootFile = files.get(rootThread.owningFile);
+    expect(rootFile, "the root thread's transcript is not under the root").toBeDefined();
+    const grewAt = STAMP + 1_000;
+    await growTranscript(rootFile as string, grewAt);
+    poll.fire(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    poll.fire(0);
+
+    const emission = path.emit();
+    expect(
+      emission.lastActivityAt.get(rootThread.sessionId),
+      'an appended transcript produced no instant',
+    ).toBe(grewAt);
+
+    const written = storeOver(emission, STAMP, STAMP + 5_000, join(await makeTempDir(), STORE_DIR_NAME));
+    expect(written.armed + written.appended, 'a witnessed Codex session reached no store').toBeGreaterThan(0);
 
     path.dispose();
     await rm(dirname(root), { recursive: true, force: true });
@@ -6112,21 +6441,25 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     });
     await path.start();
     expect(poll.count(), 'the path registers a liveness poll and a content re-read').toBe(2);
-    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBe(stale);
+    // Nothing has grown yet, so there is no instant to be wrong about.
+    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBeUndefined();
 
-    // The transcripts are written to. Only the CONTENT trigger fires — and which
-    // registration that is, is established rather than assumed.
+    // The transcripts are APPENDED TO (DoD 4.11c — a touch would leave nothing
+    // to see). Only the CONTENT trigger fires, and which registration that is is
+    // established rather than assumed.
     const before = path.diagnostics;
-    const when = new Date(STAMP + 1_000);
-    for (const file of (await transcriptsUnder(root)).values()) await utimes(file, when, when);
+    const grewAt = STAMP + 1_000;
+    for (const file of (await transcriptsUnder(root)).values()) await growTranscript(file, grewAt);
     poll.fire(1);
     await new Promise((resolve) => setTimeout(resolve, 50));
     const after = path.diagnostics;
     expect(after.contentReads, 'index 1 is not the content re-read').toBe(before.contentReads + 1);
     expect(after.livenessPolls, 'index 1 polled liveness too').toBe(before.livenessPolls);
 
-    // The content read KNOWS the new mtime — and the emission does not claim it,
-    // because no liveness poll has seen it yet.
+    // The content read KNOWS the new size AND the new mtime. The size is what
+    // this half reads — the file has grown — but the INSTANT is still the
+    // report's, and the report predates the write. So the emission says the OLD
+    // mtime, which is a day ago, and the store still declines the session.
     expect(
       path.emit().lastActivityAt.get(rootThread.sessionId),
       'the emission took its instant from the content read',
@@ -6135,7 +6468,7 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     // The tap polls. NOW it moves.
     poll.fire(0);
     expect(path.diagnostics.livenessPolls).toBe(after.livenessPolls + 1);
-    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBe(STAMP + 1_000);
+    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBe(grewAt);
 
     path.dispose();
     await rm(dirname(root), { recursive: true, force: true });
@@ -6184,9 +6517,13 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
       pollTrigger: poll.trigger,
     });
     await path.start();
-    expect(path.emit().lastActivityAt.get(rootThread.sessionId), 'history, before the hook').toBe(
-      stale,
-    );
+    // No append, so the mtime leg contributes nothing at all (DoD 4.11c) — which
+    // makes this the cleanest statement of the hook leg there is: every instant
+    // below came from the tap.
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'history, before the hook',
+    ).toBeUndefined();
 
     // One real hook event, received AFTER the stamp. The transcripts do not move.
     path.ingestHookEvent({ receivedAtMs: STAMP + 2_000, payload: payloads[0] });
@@ -6239,32 +6576,45 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     const group = multi as CodexThread[];
     const rootThread = group.find((thread) => thread.threadId === thread.sessionId) ?? group[0];
 
-    // ONE of its threads is written to, and it is NOT the root: the root keeps
-    // the day-old instant, so "first thread" and "min" both give the stale one.
     const subagent = group.find((thread) => thread.owningFile !== (rootThread as CodexThread).owningFile);
     expect(subagent, 'the group must hold a thread in another file').toBeDefined();
     const files = await transcriptsUnder(root);
+    const rootFile = files.get((rootThread as CodexThread).owningFile);
     const subagentFile = files.get((subagent as CodexThread).owningFile);
+    expect(rootFile, "the root's transcript is not under the root").toBeDefined();
     expect(subagentFile, "the subagent's transcript is not under the root").toBeDefined();
-    const when = new Date(STAMP + 1_000);
-    await utimes(subagentFile as string, when, when);
 
+    const poll = splitPollTrigger();
     const path = new CodexEnginePath({
       workspaceFolders: [(rootThread as CodexThread).cwd],
       thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
       onChange: () => {},
       root,
       now: () => STAMP + 5_000,
-      pollTrigger: manualPollTrigger().trigger,
+      pollTrigger: poll.trigger,
     });
     await path.start();
+    // THE BASELINE IS TAKEN FIRST, and it has to be: growth is measured against
+    // what this process saw when it arrived, so appending before the path starts
+    // leaves nothing to have grown (DoD 4.11c).
+    expect(path.emit().lastActivityAt.size, 'nothing has grown yet').toBe(0);
+
+    // BOTH threads are then appended to, the subagent LATER than the root. Both
+    // therefore carry an instant (a touch would carry none), so "first thread
+    // wins" and "min" each return the ROOT's earlier one and this test can tell
+    // all three answers apart.
+    await growTranscript(rootFile as string, STAMP + 500);
+    await growTranscript(subagentFile as string, STAMP + 1_000);
+    poll.fire(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    poll.fire(0);
 
     const at = path.emit().lastActivityAt.get((rootThread as CodexThread).sessionId);
     expect(at, 'the session carries no instant').toBeTypeOf('number');
-    expect(at, "the session took the stale root's instant instead of the latest thread's").toBe(
+    expect(at, "the session took the root's earlier instant instead of the latest thread's").toBe(
       STAMP + 1_000,
     );
-    expect(at as number).toBeGreaterThan(stale);
+    expect(at as number).toBeGreaterThan(STAMP + 500);
 
     path.dispose();
     await rm(dirname(root), { recursive: true, force: true });
@@ -6328,9 +6678,14 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
      * reads. Replacing the union with either side alone turns it red.
      */
     const root = await stageCodexRoot(false);
-    const threads = await stampTranscripts(root, STAMP + 1_000);
+    const threads = await stampTranscripts(root, STAMP - 86_400_000);
     const codexCwd = (threads.find((thread) => thread.threadSource === 'user') as CodexThread).cwd;
     const ccWorkspace = await capturedWorkspacePath();
+    // Both engines read from STAGED, WRITABLE copies, because under DoD 4.11c an
+    // engine whose files nobody appends to reports no activity at all — so a
+    // union over two engines needs two engines that have each seen a write.
+    const { root: ccRoot, slugDir: ccSlugDir } = await stageCapturedRoot();
+    const codexPoll = splitPollTrigger();
     const emissions: DataPathEmission[] = [];
 
     const path = await startDataPathOnFreePort((port) => {
@@ -6340,16 +6695,28 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
           workspacePath: ccWorkspace,
           // The CC half reads `workspacePath`; the other two read every folder.
           workspacePaths: [ccWorkspace, codexCwd],
-          projectsRoot: CAPTURED_ROOT,
+          projectsRoot: ccRoot,
           settings: settings({ port }),
           tickMs: 0,
-          codex: { root, pollTrigger: manualPollTrigger().trigger },
+          codex: { root, pollTrigger: codexPoll.trigger },
           onEmission: (payload) => {
             emissions.push(payload);
           },
         }),
       );
     });
+    path.pump();
+
+    // Both engines are then WORKED ON: a Claude Code transcript and every Codex
+    // transcript gain bytes after the baseline. Without this the map is empty
+    // for both and the union below would pass over two empty maps.
+    await growSessions(ccSlugDir);
+    for (const file of (await transcriptsUnder(root)).values()) {
+      await growTranscript(file, STAMP + 1_000);
+    }
+    codexPoll.fire(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    codexPoll.fire(0);
     path.pump();
 
     const last = emissions[emissions.length - 1] as DataPathEmission;

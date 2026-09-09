@@ -3212,7 +3212,12 @@ export interface StatsPipelineOptions {
 interface TrackedSession {
   /** The most recent record, without its stamp. The flush's payload. */
   record: StatsRecordForStore | null;
-  /** `JSON.stringify` of {@link TrackedSession.record}. The change test. */
+  /**
+   * {@link TrackedSession.record} with every clock-derived field flattened —
+   * the CHANGE test (verifier defect 6). Never written; see `withoutClock`.
+   */
+  patchBody: string | null;
+  /** `JSON.stringify` of {@link TrackedSession.record}. The FLUSH comparison. */
   body: string | null;
   /** The body of the last record actually written. */
   appendedBody: string | null;
@@ -3231,6 +3236,22 @@ interface TrackedSession {
 
 /** A derived record before the store's stamp is put on it. */
 type StatsRecordForStore = Omit<StoredStatsRecord, 'derivedAt'>;
+
+/**
+ * The record with every clock-derived field flattened, for the change test.
+ *
+ * One field qualifies today — `StallRecord.stalledMs`, which `stalls.ts` derives
+ * as `now - stalledSinceMs`. It is zeroed rather than dropped so the SHAPE of
+ * the comparison is unchanged: a stall appearing, disappearing, or moving to a
+ * different tool is still a patch, and only its elapsed time is not. Anything
+ * added later that reads the clock belongs here too, and the pipeline's own test
+ * for it is that two derivations of one unchanged session an hour apart compare
+ * equal.
+ */
+function withoutClock(record: StatsRecordForStore): StatsRecordForStore {
+  if (record.stalls.length === 0) return record;
+  return { ...record, stalls: record.stalls.map((stall) => ({ ...stall, stalledMs: 0 })) };
+}
 
 export class StatsPipeline {
   readonly store: StatsStore;
@@ -3320,6 +3341,26 @@ export class StatsPipeline {
       }
       const entry = this.#entryFor(state.sessionId);
       const body = JSON.stringify(record);
+      // A CLOCK TICK IS NOT A PATCH (verifier defect 6, 2026-09-09).
+      //
+      // `StallRecord.stalledMs` is `now - stalledSinceMs`, the one field in the
+      // record derived from the clock rather than from the session, so a session
+      // holding a stalled tool call produces a DIFFERENT record on every 5 s
+      // pump while nothing about it has changed. Two consequences, in opposite
+      // directions, and the change test has to exclude the field to close both:
+      //
+      //   - STARVATION: `#arm` restarts the countdown on every patch, so such a
+      //     session's idle flush was pushed forward forever and it was never
+      //     written at all until it ended.
+      //   - AND IT DEFEATED THE PROVENANCE GATE: a body change promotes a
+      //     session to `observed`, so a HISTORICAL session with a stalled call
+      //     let itself back in — the gate's own bypass, reached by a number that
+      //     moves on its own.
+      //
+      // The question this layer asks is "did a patch arrive?", and the honest
+      // answer cannot depend on when it was asked. `body` above stays the FULL
+      // record, because that is what is written and what `appendedBody` compares.
+      const patchBody = JSON.stringify(withoutClock(record));
 
       // ---- The provenance gate (DoD 4.11, user ruling 2026-09-09) ----------
       //
@@ -3346,12 +3387,14 @@ export class StatsPipeline {
       if (lastActivity >= this.#processStart) entry.observed = true;
       // ...and a historical session that RESUMES becomes observed: its record
       // changing during this lifetime is work this process watched, even though
-      // its `startedAt` stays old. This is the supersede path.
-      if (entry.body !== null && body !== entry.body) entry.observed = true;
+      // its `startedAt` stays old. This is the supersede path — and it reads
+      // `patchBody`, so a stalled call's rising number cannot buy its way in.
+      if (entry.patchBody !== null && patchBody !== entry.patchBody) entry.observed = true;
 
       if (state.liveness === 'ended') {
         entry.record = record;
         entry.body = body;
+        entry.patchBody = patchBody;
         this.#clearTimer(entry);
         // History never flushes on ended either. That half matters: a history is
         // usually discovered ALREADY ended, and this path appends with no timer,
@@ -3360,9 +3403,12 @@ export class StatsPipeline {
         if (entry.observed && body !== entry.appendedBody) this.#append(entry);
         continue;
       }
-      if (body === entry.body) continue;
+      // The change test is over `patchBody`: a tick that only moved
+      // `stalledMs` leaves the countdown alone, so the flush arrives.
+      if (patchBody === entry.patchBody) continue;
       entry.record = record;
       entry.body = body;
+      entry.patchBody = patchBody;
       // History arms nothing, so it cannot flush when the silence elapses.
       if (!entry.observed) continue;
       this.#arm(state.sessionId, entry);
@@ -3392,6 +3438,7 @@ export class StatsPipeline {
     const fresh: TrackedSession = {
       record: null,
       body: null,
+      patchBody: null,
       appendedBody: null,
       timer: null,
       observed: false,
@@ -3815,15 +3862,30 @@ export class AgentDeckHost {
    */
   #publishStats(): void {
     const panel = this.#panel;
+    if (panel === null) return;
     const pipeline = this.stats;
-    if (panel === null || pipeline === undefined) return;
+    // NO PIPELINE MEANS NO HISTORY, AND THE VIEW HAS TO BE TOLD (verifier
+    // defect 15). `statsDirFor` returns undefined for a window with no
+    // `globalStorageUri`, so `this.stats` is undefined and nothing here used to
+    // send anything at all — leaving the Stats view on "Reading the stored
+    // history…" forever, which is the very state DoD 4.12 added it to avoid.
+    // An empty, disabled store is the true answer for that window.
+    if (pipeline === undefined) {
+      panel.publishStats([], { records: [], enabled: false });
+      return;
+    }
     try {
       let stored: { records: readonly unknown[]; enabled: boolean } | null = null;
-      if (this.#storeReadAtFlush !== pipeline.store.appended) {
+      const appendedAtRead = pipeline.store.appended;
+      if (this.#storeReadAtFlush !== appendedAtRead) {
         stored = { records: pipeline.store.readRecords({}), enabled: pipeline.store.enabled };
-        this.#storeReadAtFlush = pipeline.store.appended;
       }
       const { dropped, reasons } = panel.publishStats(pipeline.liveRecords(), stored);
+      // The cursor advances only once the message is AWAY. It used to be
+      // assigned beside the read, so a single throw out of the send advanced it
+      // and the stored records were never sent again for that panel — a
+      // permanent loading state from one transient failure (verifier defect 15).
+      if (stored !== null) this.#storeReadAtFlush = appendedAtRead;
       if (dropped > 0) {
         this.#statsDropped += dropped;
         this.diagnostics?.record({

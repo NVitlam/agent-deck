@@ -139,12 +139,12 @@ function harness(
     pricing: parsed.table,
     pricingInvalid: parsed.invalid,
     // DoD 4.11's provenance gate, DELIBERATELY OPT-OUT here and the reason is
-    // the fixtures: every committed session started in 2026-08 while this
-    // harness's clock is 2026-09-08, so a real activation stamp would classify
-    // the entire corpus as history and no Phase 3 test could observe a flush at
-    // all. `0` means "gate nothing", which keeps DoD 3.2b and 3.7 measuring
-    // exactly what they were written to measure. The 4.11 suite passes a real
-    // stamp instead, which is what makes it a test of the gate.
+    // the fixtures: every committed session PREDATES this harness's 2026-09-08
+    // clock (the corpora run 2026-08-18 to 2026-09-05), so a real activation
+    // stamp would classify all of them as history and no Phase 3 test could
+    // observe a flush at all. `0` means "gate nothing", which keeps DoD 3.2b and
+    // 3.7 measuring exactly what they were written to measure. The 4.11 suite
+    // passes a real stamp instead, which is what makes it a test of the gate.
     processStart: overrides.processStart ?? 0,
     idleFlushMs: overrides.idleFlushMs ?? DEFAULT_STATS_IDLE_FLUSH_MS,
     now: () => time.now(),
@@ -721,6 +721,65 @@ describe('DoD 4.11: a session with no patch in this process lifetime never flush
     expect(lines).toHaveLength(2);
     const ids = lines.map((l) => (JSON.parse(l) as { sessionId: string }).sessionId);
     expect(new Set(ids).size, 'both lines are the same session').toBe(1);
+  });
+
+  it('a STALLED tool call does not starve the flush, and does not defeat the gate', () => {
+    /*
+     * `phase-verifier` found both halves of this, 2026-09-09, and they are the
+     * same cause: `StallRecord.stalledMs` is `now - stalledSinceMs`, so a session
+     * holding a stalled tool derives a DIFFERENT record on every pump while
+     * nothing about it has changed.
+     *
+     *   - STARVATION: every pump looked like a patch, `#arm` restarts the
+     *     countdown on every patch, so the idle flush was pushed forward forever.
+     *     Measured before the fix: 25 of 28 such sessions wrote nothing at all.
+     *   - AND THE GATE'S OWN BYPASS: a body change promotes a session to
+     *     `observed`, so a HISTORICAL session with a stalled call let itself
+     *     back in — the flood, through a number that moves on its own.
+     *
+     * The change test now reads the record with clock-derived fields flattened.
+     */
+    const stalled = (liveness: SessionState['liveness'], tweak = 0): SessionState => {
+      const state = subject(0, liveness, tweak);
+      const root = (state as unknown as Record<string, unknown>)['root'] as Record<string, unknown>;
+      const walk = (node: Record<string, unknown>): boolean => {
+        const children = node['children'] as Record<string, unknown>[] | undefined;
+        for (const child of children ?? []) {
+          if (typeof child['toolName'] === 'string') {
+            child['status'] = 'stalled';
+            child['stalledSinceMs'] = START - 600_000;
+            return true;
+          }
+          if (walk(child)) return true;
+        }
+        return false;
+      };
+      expect(walk(root), 'no tool node to stall — the fixture changed').toBe(true);
+      return state;
+    };
+
+    // (1) OBSERVED, so the gate is not the subject: one patch, then twenty
+    // pumps with the clock moving. The record differs every time and the flush
+    // must still arrive, exactly once.
+    const live = harness({ idleFlushMs: 60_000, processStart: 0 });
+    live.pipeline.observe(emissionOf(stalled('live')));
+    live.pipeline.observe(emissionOf(stalled('live', 5)));
+    for (let i = 0; i < 20; i += 1) {
+      live.time.advance(5_000);
+      live.pipeline.observe(emissionOf(stalled('live', 5)));
+    }
+    expect(live.pipeline.idleFlushes, 'a stalled session never flushed').toBe(1);
+    expect(linesOn(live.dir)).toHaveLength(1);
+
+    // (2) HISTORICAL, with the gate live: the rising number must buy nothing.
+    const old = harness({ idleFlushMs: 60_000, processStart: START });
+    old.pipeline.observe(emissionOf(stalled('idle')));
+    for (let i = 0; i < 20; i += 1) {
+      old.time.advance(5_000);
+      old.pipeline.observe(emissionOf(stalled('idle')));
+    }
+    expect(old.pipeline.armedTimers, 'a stalled clock promoted history to observed').toBe(0);
+    expect(linesOn(old.dir), 'history wrote a record on a clock tick').toStrictEqual([]);
   });
 
   it('a genuine patch still flushes exactly once per silence period', () => {

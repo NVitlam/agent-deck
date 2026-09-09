@@ -360,6 +360,55 @@ describe('DoD 4.3 — Trends', () => {
     expect(one(panel.container, TESTID.statsEmpty).textContent).toContain('agentDeck.stats.enabled');
   });
 
+  it("each engine's line is scaled by its OWN maximum, in the DOM (DoD 4.12)", () => {
+    /*
+     * THE MUTATION THIS KILLS, and it is the fourth time this repository has
+     * shipped the shape: `phase-verifier` replaced `Trends.svelte`'s
+     * `scaleOf(line)` with a single shared constant — the exact user-visible
+     * defect 4.12 exists to fix — and 918 tests stayed green. `layout.test.ts`
+     * pins the per-engine `max`, and nothing pinned the COMPONENT'S USE of it:
+     * no test read an SVG `viewBox` or a circle's `cy` anywhere in `webview/`,
+     * and `data-y` is the layout's raw number, which a shared scale does not
+     * touch.
+     *
+     * So this asserts the transform: the box a line is drawn in, and where a
+     * point sits inside it. Magnitudes an order apart, so a shared scale cannot
+     * coincide with a per-engine one.
+     */
+    const panel = render();
+    const cc = golden('01-reread-loop');
+    const codex = golden('08-codex-window', 'codex');
+    send({
+      type: 'statsStore',
+      records: [
+        { ...cc, sessionId: 'big-cc', totals: { ...cc.totals, prompt: 100_000_000 } },
+        { ...codex, sessionId: 'small-codex', totals: { ...codex.totals, prompt: 20_000 } },
+      ],
+      enabled: true,
+    });
+    click(one(panel.container, TESTID.statsToggle));
+    tab(panel, 'trends');
+
+    const lines = all(panel.container, TESTID.statsTrendLine).filter(
+      (l) => l.dataset['series'] === 'prompt',
+    );
+    expect(lines.map((l) => l.dataset['engine'])).toStrictEqual(['cc', 'codex']);
+
+    // The viewBox height IS the line's own maximum...
+    const heightOf = (el: HTMLElement): string =>
+      (el.querySelector('svg')?.getAttribute('viewBox') ?? '').split(' ')[3] ?? '';
+    expect(heightOf(lines[0] as HTMLElement)).toBe('100000000');
+    expect(heightOf(lines[1] as HTMLElement)).toBe('20000');
+
+    // ...and each point sits at the TOP of its own box, because each is its own
+    // maximum. Under one shared scale the Codex point's cy would be 99,980,000
+    // of a 100,000,000 box — the baseline, which is what the user saw.
+    for (const line of lines) {
+      const circle = line.querySelector('circle');
+      expect(circle?.getAttribute('cy'), line.dataset['engine']).toBe('0');
+    }
+  });
+
   it('draws one point per stored session, in order, on each series; cost only where the engine reported it', () => {
     const panel = render();
     send({

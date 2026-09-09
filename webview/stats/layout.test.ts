@@ -31,7 +31,7 @@ import {
   tokensLayout,
   trendsLayout,
 } from './layout.js';
-import type { StatsLayout } from './layout.js';
+import type { StatsLayout, TrendsLayout } from './layout.js';
 
 const RECORDS_DIR = resolve('fixtures/golden/stats');
 const GOLDEN_DIR = resolve('webview/goldens/stats');
@@ -206,6 +206,51 @@ describe('the incremental property — adding a record moves no existing Trends 
         expect(laterLine?.points.slice(0, line.points.length)).toStrictEqual(line.points);
       }
     }
+  });
+});
+
+describe('DoD 4.12: the mixed-engine golden', () => {
+  /*
+   * A GOLDEN NOTHING READS IS NOT A GOLDEN (verifier defect 13). The file was
+   * generated, and `--check` proves it regenerates byte-identical — but no test
+   * opened it, so rewriting the codex and opencode maxima to the cc maximum left
+   * the whole webview project green. `--check` is run by no test and no workflow.
+   */
+  const golden = readJson<{
+    trends: {
+      sessions: { sessionId: string; engine: string; prompt: number }[];
+      loaded: TrendsLayout;
+      loading: TrendsLayout;
+    };
+  }>(resolve(GOLDEN_DIR, 'engines-mixed.json'));
+
+  it('carries three engines, each with its own maximum, and they are its own points', () => {
+    const prompt = golden.trends.loaded.series.find((s) => s.id === 'prompt');
+    expect(prompt?.lines.map((l) => l.engine)).toStrictEqual(['cc', 'codex', 'opencode']);
+    for (const line of prompt?.lines ?? []) {
+      // The recorded maximum is the maximum of the recorded points — which is
+      // what a shared scale would break, and what the mutation rewrote.
+      expect(line.max, line.engine).toBe(Math.max(...line.points.map((p) => p.y)));
+      // ...and it agrees with the input the generator declares.
+      const own = golden.trends.sessions.filter((s) => s.engine === line.engine);
+      expect(line.max, line.engine).toBe(Math.max(...own.map((s) => s.prompt)));
+      expect(line.points).toHaveLength(own.length);
+    }
+  });
+
+  it('is not vacuous: the three maxima are orders apart, as the real store was', () => {
+    const prompt = golden.trends.loaded.series.find((s) => s.id === 'prompt');
+    const maxima = (prompt?.lines ?? []).map((l) => l.max);
+    expect(maxima).toHaveLength(3);
+    // If any two were equal a shared scale would be indistinguishable here.
+    expect(new Set(maxima).size).toBe(3);
+    const [biggest, smallest] = [Math.max(...maxima), Math.min(...maxima)];
+    expect(biggest / smallest).toBeGreaterThan(100);
+  });
+
+  it('carries the loading arm, on the same records', () => {
+    expect(golden.trends.loading).toMatchObject({ empty: true, reason: 'loading' });
+    expect(golden.trends.loaded.empty).toBe(false);
   });
 });
 

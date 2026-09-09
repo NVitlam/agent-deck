@@ -138,7 +138,16 @@
 {/if}
 
 <style>
+  /*
+   * EACH LINE IS A FULL ROW (verifier defect 14). `.series` is a three-column
+   * grid built when a series had exactly three children — label, chart, max.
+   * A line per engine makes the children `label` plus N rows, and without
+   * `grid-column` the second engine's line was placed in the remaining columns
+   * and the third wrapped into the 18ch label column. jsdom computes no grid,
+   * so no test can see this and the 4.9 smoke predates the change.
+   */
   .engine-line {
+    grid-column: 1 / -1;
     display: grid;
     grid-template-columns: 8em 1fr 8em;
     align-items: center;

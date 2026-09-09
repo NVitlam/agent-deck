@@ -517,10 +517,23 @@ export interface TrendsLayout {
 }
 
 /**
- * The order lines appear in, for every series. Fixed rather than
- * first-seen, so a golden does not move when a corpus is reordered.
+ * The order lines appear in, for every series. Fixed rather than first-seen, so
+ * a golden does not move when a corpus is reordered.
+ *
+ * DERIVED FROM A `Record` KEYED ON THE ENGINE UNION, so a fourth engine is a
+ * COMPILE ERROR here rather than a session that appears on the axis and is drawn
+ * on no line (`phase-verifier` risk, 2026-09-09). A hand-written array of the
+ * same three names type-checks forever and says nothing.
  */
-export const TREND_ENGINE_ORDER: readonly SessionRef['engine'][] = ['cc', 'codex', 'opencode'];
+const TREND_ENGINE_RANK: Readonly<Record<SessionRef['engine'], number>> = {
+  cc: 0,
+  codex: 1,
+  opencode: 2,
+};
+
+export const TREND_ENGINE_ORDER: readonly SessionRef['engine'][] = (
+  Object.keys(TREND_ENGINE_RANK) as SessionRef['engine'][]
+).sort((a, b) => TREND_ENGINE_RANK[a] - TREND_ENGINE_RANK[b]);
 
 export const TREND_LABELS: Readonly<Record<TrendSeriesId, string>> = {
   prompt: 'prompt tokens',
@@ -641,6 +654,11 @@ export function statsLayout(
     files: filesLayout(records),
     loops: loopsLayout(records),
     tokens: tokensLayout(records),
+    // The VIEW does not read this one: `StatsView.svelte` calls `trendsLayout`
+    // itself over the STORED records, while everything else here is over the
+    // live ones. It is kept because the goldens and the Phase 5 API read the
+    // whole layout through one call, and `storeLoaded` is threaded so that
+    // caller cannot render an unread store as a history either.
     trends: trendsLayout(records, storeEnabled, storeLoaded),
     excluded: excludedSummary(records),
     params,

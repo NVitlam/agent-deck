@@ -5315,11 +5315,11 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
           projectsRoot: CAPTURED_ROOT,
           settings: settings({ port, 'stats.idleFlushMs': 1, ...overrides }),
           statsDir,
-          // DoD 4.11's provenance gate, opted out DELIBERATELY: the captured
-          // corpus starts in 2026-08, so against a real activation stamp every
-          // session here is history and writes nothing. These tests are about
-          // the settings and the seam, not about the gate — the gate has its
-          // own test below, which drives the real stamp in both directions.
+          // DoD 4.11's provenance gate, opted out DELIBERATELY: every session
+          // in the captured corpus predates any real activation stamp, so under
+          // the gate none of them writes anything. These tests are about the
+          // settings and the seam, not about the gate — the gate has its own
+          // test below, which drives the real stamp in both directions.
           ...(options.realProcessStart === true ? {} : { statsProcessStart: 0 }),
           tickMs: 0,
           createPanel: () => panel.surface,
@@ -5412,8 +5412,11 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
      * Not asserted by reading records: `activate()` reads the REAL settings,
      * so the idle window is the shipped hour and `readSettings` clamps
      * anything under a minute back to it — a floor on what a USER may type,
-     * and this test is a user. An armed timer is the observable that says the
-     * pipeline was handed a live session by the production wiring.
+     * and this test is a user.
+     *
+     * It used to say "an armed timer is the observable"; DoD 4.11's provenance
+     * gate made that wrong and the sentence is replaced rather than left to
+     * contradict the assertion below it.
      */
     /*
      * The observable is what the pipeline DERIVED, not what it armed.
@@ -5469,6 +5472,50 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
     // holding timers for them, so the empty store is a pending flush rather
     // than an emission that never arrived.
     expect(slow.host.stats?.armedTimers).toBeGreaterThan(0);
+  });
+
+  it('a window with NO store still answers the Stats view, rather than leaving it loading', async () => {
+    /*
+     * `phase-verifier` defect 15, 2026-09-09. `statsDirFor` returns undefined for
+     * a window with no `globalStorageUri` — it logs "the local stats history is
+     * disabled for this window" — so `this.stats` is undefined, and
+     * `#publishStats` returned before sending anything. DoD 4.12 then made the
+     * webview wait for a `statsStore` message before it would say anything about
+     * the history, so that window's Stats view sat on "Reading the stored
+     * history…" FOREVER: the exact state the loading flag was added to prevent.
+     *
+     * An empty, disabled store is the true answer for such a window, and it is
+     * now sent.
+     */
+    const workspacePath = await capturedWorkspacePath();
+    let panel = fakePanel();
+    const host = await startHostOnFreePort((port) => {
+      panel = fakePanel();
+      return trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          // No `statsDir`: the window has no globalStorageUri.
+          tickMs: 0,
+          createPanel: () => panel.surface,
+          onEmission: () => {
+            // Nothing: this test reads what the PANEL was sent.
+          },
+        }),
+      );
+    });
+    await waitForFlush();
+    host.open();
+    await waitForFlush();
+
+    expect(host.stats, 'this test is about a host with no pipeline').toBeUndefined();
+    const stored = panel.posted.filter(
+      (m) => (m as { type?: unknown }).type === 'statsStore',
+    ) as { records: unknown[]; enabled: boolean }[];
+    expect(stored.length, 'the Stats view was never told there is no history').toBeGreaterThan(0);
+    expect(stored[0]?.enabled).toBe(false);
+    expect(stored[0]?.records).toStrictEqual([]);
   });
 
   it('the provenance stamp is the REAL clock, and history reaches no store (DoD 4.11)', async () => {

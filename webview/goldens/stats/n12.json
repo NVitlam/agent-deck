@@ -1,0 +1,3443 @@
+{
+  "generator": "scripts/gen-webview-goldens.mjs",
+  "records": [
+    "cc-2.1.234-05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+    "cc-2.1.234-4299490e-4a09-46a0-a544-7ffb0429e7e7",
+    "cc-2.1.237-b6a49a92-ac05-4383-ae9c-68d433845c5f",
+    "cc-2.1.241-6082be25-cfea-49b9-9821-2de9c23cac65",
+    "cc-2.1.246-07e6c820-b285-4ea8-8127-98ea762291d9",
+    "cc-2.1.251-0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+    "cc-2.1.251-d16538d5-da75-4d0a-aa99-652916287f7c",
+    "cc-2.1.260-75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+    "cc-2.1.260-99f96635-2042-41dc-9000-bbc9f9233bc3",
+    "codex-0.151.0-alpha.7.2-01a063dd-2cc6-7940-9df9-57a1e53017b8",
+    "codex-0.151.0-alpha.7.2-01a0641d-8281-7703-97fa-5a829bb77563",
+    "codex-0.151.0-alpha.7.2-01a0641e-d278-7230-a2c7-e5810d6d8327"
+  ],
+  "layout": {
+    "files": {
+      "rows": [
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\spike\\stats\\derive-facts.mjs",
+          "basename": "derive-facts.mjs",
+          "reads": 0,
+          "edits": 12,
+          "writes": 1,
+          "errors": 1,
+          "touches": 13,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\codex-drive.mjs",
+          "basename": "codex-drive.mjs",
+          "reads": 0,
+          "edits": 5,
+          "writes": 1,
+          "errors": 0,
+          "touches": 6,
+          "sessions": 1,
+          "loop": false,
+          "churn": true
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\codex-contract.md",
+          "basename": "codex-contract.md",
+          "reads": 0,
+          "edits": 3,
+          "writes": 1,
+          "errors": 0,
+          "touches": 4,
+          "sessions": 1,
+          "loop": false,
+          "churn": true
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\patch-plan.mjs",
+          "basename": "patch-plan.mjs",
+          "reads": 1,
+          "edits": 1,
+          "writes": 2,
+          "errors": 1,
+          "touches": 4,
+          "sessions": 1,
+          "loop": false,
+          "churn": true
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\MEMORY.md",
+          "basename": "MEMORY.md",
+          "reads": 3,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 3,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-10\\KILL-GATE.md",
+          "basename": "KILL-GATE.md",
+          "reads": 0,
+          "edits": 2,
+          "writes": 1,
+          "errors": 0,
+          "touches": 3,
+          "sessions": 1,
+          "loop": false,
+          "churn": true
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\fix-verifier-findings.mjs",
+          "basename": "fix-verifier-findings.mjs",
+          "reads": 0,
+          "edits": 2,
+          "writes": 1,
+          "errors": 0,
+          "touches": 3,
+          "sessions": 1,
+          "loop": false,
+          "churn": true
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\spike\\stats\\toolclass-census.mjs",
+          "basename": "toolclass-census.mjs",
+          "reads": 0,
+          "edits": 2,
+          "writes": 1,
+          "errors": 0,
+          "touches": 3,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\agent-deck-r1-capture.txt",
+          "basename": "agent-deck-r1-capture.txt",
+          "reads": 1,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\handover-p1.md",
+          "basename": "handover-p1.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\move-plan.mjs",
+          "basename": "move-plan.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\.gitattributes",
+          "basename": ".gitattributes",
+          "reads": 0,
+          "edits": 2,
+          "writes": 0,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": true
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\HANDOVER.md",
+          "basename": "HANDOVER.md",
+          "reads": 0,
+          "edits": 2,
+          "writes": 0,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\codex-analyze.mjs",
+          "basename": "codex-analyze.mjs",
+          "reads": 0,
+          "edits": 1,
+          "writes": 1,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\golden.test.ts",
+          "basename": "golden.test.ts",
+          "reads": 2,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\MEMORY.md",
+          "basename": "MEMORY.md",
+          "reads": 2,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\PLAN.md",
+          "basename": "PLAN.md",
+          "reads": 2,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\spike\\stats\\toolclass-census.mjs",
+          "basename": "toolclass-census.mjs",
+          "reads": 0,
+          "edits": 2,
+          "writes": 0,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:/Users/dev/AppData/Local/Temp/claude/c--Users-dev-projects-agent-deck/75ef0bbf-2493-4c77-8af7-3a56fb2ce36e/scratchpad/handover-p1.md",
+          "basename": "handover-p1.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\claudemd-bullets.md",
+          "basename": "claudemd-bullets.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\claudemd-p1.md",
+          "basename": "claudemd-p1.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\cm3.txt",
+          "basename": "cm3.txt",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\cm4.txt",
+          "basename": "cm4.txt",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\codex-amendment.md",
+          "basename": "codex-amendment.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\commitmsg.txt",
+          "basename": "commitmsg.txt",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\commitmsg2.txt",
+          "basename": "commitmsg2.txt",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\handoff-draft.md",
+          "basename": "handoff-draft.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\handover-v060.md",
+          "basename": "handover-v060.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r1.mjs",
+          "basename": "r1.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r2.mjs",
+          "basename": "r2.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r3.mjs",
+          "basename": "r3.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r4.mjs",
+          "basename": "r4.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r5.mjs",
+          "basename": "r5.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\75ef0bbf-2493-4c77-8af7-3a56fb2ce36e\\scratchpad\\v\\r6.mjs",
+          "basename": "r6.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\add-findings.mjs",
+          "basename": "add-findings.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\comp.mjs",
+          "basename": "comp.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\cx2.mjs",
+          "basename": "cx2.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-corpus-cwd.mjs",
+          "basename": "fix-corpus-cwd.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-line4.mjs",
+          "basename": "fix-line4.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-nul.mjs",
+          "basename": "fix-nul.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\fix-overstatements.mjs",
+          "basename": "fix-overstatements.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\harvest-compaction.mjs",
+          "basename": "harvest-compaction.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\line.mjs",
+          "basename": "line.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\msg-01.txt",
+          "basename": "msg-01.txt",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\msg-02.txt",
+          "basename": "msg-02.txt",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\msg-03.txt",
+          "basename": "msg-03.txt",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\p95.mjs",
+          "basename": "p95.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\sf.mjs",
+          "basename": "sf.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\size.mjs",
+          "basename": "size.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\splice-spec.mjs",
+          "basename": "splice-spec.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\tick-dod.mjs",
+          "basename": "tick-dod.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\claude\\c--Users-dev-projects-agent-deck\\99f96635-2042-41dc-9000-bbc9f9233bc3\\scratchpad\\update-claudemd.mjs",
+          "basename": "update-claudemd.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\pattern_byte_count_is_char_count.md",
+          "basename": "pattern_byte_count_is_char_count.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\pattern_rerun_replaced_capture_not_number.md",
+          "basename": "pattern_rerun_replaced_capture_not_number.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\reference_phase10_codex_recipes.md",
+          "basename": "reference_phase10_codex_recipes.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\reference_phase1_codex_harvest_recipes.md",
+          "basename": "reference_phase1_codex_harvest_recipes.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.237\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.241\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.246\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.251\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\codex-0.151.0-alpha.7.2\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\golden\\graft\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\golden\\session\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\hook-events\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\opencode-1.18.21\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\opencode-1.18.22\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\opencode-1.18.25\\moved-project\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-codex-structure\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-dropped-actions\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-graft\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-hook-fuzz\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-layout\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-lines\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-path-matrix\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-perf\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\fixtures\\synthetic-structure-2.1.246\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-1\\HARVEST-BLOCKED.md",
+          "basename": "HARVEST-BLOCKED.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\add-constraints.mjs",
+          "basename": "add-constraints.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\add-p1-constraints.mjs",
+          "basename": "add-p1-constraints.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\build-codex-hooks.mjs",
+          "basename": "build-codex-hooks.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\codex-hook-listener.mjs",
+          "basename": "codex-hook-listener.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\insert-spec-amendment.mjs",
+          "basename": "insert-spec-amendment.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\patch-contract.mjs",
+          "basename": "patch-contract.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\patch-driver.mjs",
+          "basename": "patch-driver.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\phase-10-amendment.md",
+          "basename": "phase-10-amendment.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\record-retirement.mjs",
+          "basename": "record-retirement.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\split-plan.mjs",
+          "basename": "split-plan.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\verify-hook-install.mjs",
+          "basename": "verify-hook-install.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\write-handoff.mjs",
+          "basename": "write-handoff.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\scripts\\capture-codex.mjs",
+          "basename": "capture-codex.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\context-window.test.ts",
+          "basename": "context-window.test.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\fingerprint.test.ts",
+          "basename": "fingerprint.test.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\fingerprint.ts",
+          "basename": "fingerprint.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\graft.test.ts",
+          "basename": "graft.test.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\graft.ts",
+          "basename": "graft.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\index.ts",
+          "basename": "index.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\liveness.ts",
+          "basename": "liveness.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\locate.test.ts",
+          "basename": "locate.test.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\locate.ts",
+          "basename": "locate.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\never-open.test.ts",
+          "basename": "never-open.test.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\never-open.ts",
+          "basename": "never-open.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\parse.ts",
+          "basename": "parse.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\tail.test.ts",
+          "basename": "tail.test.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\tail.ts",
+          "basename": "tail.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\codex\\types.ts",
+          "basename": "types.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/HOOKS.md",
+          "basename": "HOOKS.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/listen.mjs",
+          "basename": "listen.mjs",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/run.mjs",
+          "basename": "run.mjs",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/stitch.mjs",
+          "basename": "stitch.mjs",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/tail.mjs",
+          "basename": "tail.mjs",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\constraint_cc_2_1_260_not_in_any_test.md",
+          "basename": "constraint_cc_2_1_260_not_in_any_test.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\pattern_percentile_diluted_by_zero_population.md",
+          "basename": "pattern_percentile_diluted_by_zero_population.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.claude\\agent-memory\\phase-verifier\\reference_phase0_stats_spike_recipes.md",
+          "basename": "reference_phase0_stats_spike_recipes.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\.gitignore",
+          "basename": ".gitignore",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\CHANGELOG.md",
+          "basename": "CHANGELOG.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\HANDOVER.md",
+          "basename": "HANDOVER.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\README.md",
+          "basename": "README.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\fixtures\\PHASE0-VERDICT.md",
+          "basename": "PHASE0-VERDICT.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\fixtures\\cc-2.1.260\\README.md",
+          "basename": "README.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\HANDOVER.md",
+          "basename": "HANDOVER.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-0-stats\\GATE-2026-09-05.md",
+          "basename": "GATE-2026-09-05.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-0-stats\\VERDICT.md",
+          "basename": "VERDICT.md",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\lab\\spike\\stats\\record-size.mjs",
+          "basename": "record-size.mjs",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\package.json",
+          "basename": "package.json",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\src\\bridge\\contract.ts",
+          "basename": "contract.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\src\\extension.ts",
+          "basename": "extension.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:\\Users\\dev\\projects\\agent-deck\\src\\parser\\attribution.ts",
+          "basename": "attribution.ts",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        }
+      ],
+      "records": 12
+    },
+    "loops": {
+      "rows": [
+        {
+          "kind": "loop",
+          "key": "b6a49a92-ac05-4383-ae9c-68d433845c5f:root:loop:0",
+          "session": {
+            "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1787245425312
+          },
+          "agentId": "root",
+          "term": "identical-call loop",
+          "toolName": "Bash",
+          "count": 5,
+          "ordinals": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "kind": "churn",
+          "key": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e:root:churn:20",
+          "session": {
+            "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788357778713
+          },
+          "agentId": "root",
+          "term": "churn chain",
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\codex-drive.mjs",
+          "basename": "codex-drive.mjs",
+          "count": 1,
+          "ordinals": [
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29
+          ]
+        },
+        {
+          "kind": "churn",
+          "key": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e:root:churn:73",
+          "session": {
+            "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788357778713
+          },
+          "agentId": "root",
+          "term": "churn chain",
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\codex-drive.mjs",
+          "basename": "codex-drive.mjs",
+          "count": 6,
+          "ordinals": [
+            73,
+            74,
+            75,
+            76,
+            77,
+            78,
+            79,
+            80,
+            81,
+            82,
+            83,
+            84,
+            85,
+            86,
+            87,
+            88,
+            89,
+            90,
+            91,
+            92,
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116,
+            117,
+            118,
+            119,
+            120,
+            121,
+            122,
+            123,
+            124,
+            125,
+            126,
+            127,
+            128,
+            129,
+            130,
+            131,
+            132,
+            133,
+            134,
+            135,
+            136,
+            137,
+            138,
+            139,
+            140,
+            141,
+            142,
+            143,
+            144,
+            145,
+            146,
+            147,
+            148,
+            149,
+            150,
+            151,
+            152,
+            153,
+            154,
+            155,
+            156,
+            157,
+            158,
+            159,
+            160,
+            161,
+            162,
+            163,
+            164,
+            165,
+            166,
+            167,
+            168,
+            169,
+            170,
+            171,
+            172,
+            173,
+            174,
+            175,
+            176,
+            177,
+            178,
+            179,
+            180,
+            181,
+            182,
+            183,
+            184,
+            185,
+            186,
+            187,
+            188,
+            189,
+            190,
+            191,
+            192,
+            193,
+            194,
+            195,
+            196,
+            197,
+            198,
+            199,
+            200,
+            201,
+            202,
+            203,
+            204,
+            205,
+            206,
+            207,
+            208,
+            209,
+            210
+          ]
+        },
+        {
+          "kind": "churn",
+          "key": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e:root:churn:87",
+          "session": {
+            "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788357778713
+          },
+          "agentId": "root",
+          "term": "churn chain",
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\codex-contract.md",
+          "basename": "codex-contract.md",
+          "count": 4,
+          "ordinals": [
+            87,
+            88,
+            89,
+            90,
+            91,
+            92,
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116,
+            117,
+            118,
+            119,
+            120,
+            121,
+            122,
+            123,
+            124,
+            125,
+            126,
+            127,
+            128,
+            129,
+            130,
+            131,
+            132,
+            133,
+            134,
+            135,
+            136,
+            137,
+            138,
+            139,
+            140
+          ]
+        },
+        {
+          "kind": "churn",
+          "key": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e:root:churn:88",
+          "session": {
+            "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788357778713
+          },
+          "agentId": "root",
+          "term": "churn chain",
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\docs\\evidence\\phase-10\\KILL-GATE.md",
+          "basename": "KILL-GATE.md",
+          "count": 4,
+          "ordinals": [
+            88,
+            89,
+            90,
+            91,
+            92,
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116,
+            117,
+            118,
+            119,
+            120,
+            121,
+            122,
+            123,
+            124,
+            125,
+            126,
+            127,
+            128,
+            129,
+            130,
+            131,
+            132,
+            133,
+            134,
+            135,
+            136,
+            137,
+            138
+          ]
+        },
+        {
+          "kind": "churn",
+          "key": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e:root:churn:92",
+          "session": {
+            "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788357778713
+          },
+          "agentId": "root",
+          "term": "churn chain",
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\patch-plan.mjs",
+          "basename": "patch-plan.mjs",
+          "count": 2,
+          "ordinals": [
+            92,
+            93,
+            94,
+            95,
+            96,
+            97,
+            98
+          ]
+        },
+        {
+          "kind": "churn",
+          "key": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e:root:churn:108",
+          "session": {
+            "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788357778713
+          },
+          "agentId": "root",
+          "term": "churn chain",
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\.gitattributes",
+          "basename": ".gitattributes",
+          "count": 3,
+          "ordinals": [
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116,
+            117,
+            118,
+            119,
+            120,
+            121,
+            122,
+            123,
+            124,
+            125,
+            126,
+            127,
+            128,
+            129,
+            130,
+            131,
+            132,
+            133,
+            134,
+            135,
+            136,
+            137,
+            138,
+            139,
+            140,
+            141,
+            142,
+            143,
+            144,
+            145,
+            146,
+            147,
+            148,
+            149,
+            150,
+            151,
+            152,
+            153,
+            154,
+            155,
+            156,
+            157,
+            158,
+            159,
+            160,
+            161,
+            162,
+            163,
+            164,
+            165,
+            166,
+            167,
+            168,
+            169,
+            170,
+            171,
+            172,
+            173,
+            174,
+            175,
+            176,
+            177,
+            178,
+            179,
+            180,
+            181,
+            182,
+            183,
+            184,
+            185,
+            186,
+            187,
+            188,
+            189,
+            190,
+            191,
+            192,
+            193,
+            194,
+            195,
+            196,
+            197,
+            198,
+            199,
+            200,
+            201,
+            202,
+            203,
+            204,
+            205,
+            206,
+            207,
+            208,
+            209,
+            210,
+            211,
+            212,
+            213,
+            214,
+            215,
+            216,
+            217,
+            218,
+            219,
+            220,
+            221,
+            222,
+            223,
+            224,
+            225,
+            226,
+            227,
+            228,
+            229,
+            230,
+            231,
+            232,
+            233,
+            234,
+            235,
+            236,
+            237,
+            238,
+            239,
+            240,
+            241,
+            242,
+            243,
+            244
+          ]
+        },
+        {
+          "kind": "churn",
+          "key": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e:root:churn:127",
+          "session": {
+            "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788357778713
+          },
+          "agentId": "root",
+          "term": "churn chain",
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\lab\\scripts\\fix-verifier-findings.mjs",
+          "basename": "fix-verifier-findings.mjs",
+          "count": 1,
+          "ordinals": [
+            127,
+            128,
+            129,
+            130,
+            131
+          ]
+        },
+        {
+          "kind": "loop",
+          "key": "01a0641d-8281-7703-97fa-5a829bb77563:root:loop:4",
+          "session": {
+            "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+            "engine": "codex",
+            "projectSlug": "C--Users-dev-codex-probe-scratch",
+            "startedAt": 1788386050871
+          },
+          "agentId": "root",
+          "term": "identical-call loop",
+          "toolName": "wait_agent",
+          "count": 4,
+          "ordinals": [
+            4,
+            5,
+            7,
+            8
+          ]
+        }
+      ],
+      "loops": 2,
+      "churn": 7,
+      "records": 12
+    },
+    "tokens": {
+      "sessions": [
+        {
+          "session": {
+            "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1787123110556
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 87572,
+              "output": 2129,
+              "toolCalls": 3,
+              "silent": false,
+              "cacheRatio": 0.8108071072945691,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a69e0f453d5ca5f43",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 55049,
+              "output": 272,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.48326036803574995,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a32b33ebf1b92e214",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 54997,
+              "output": 230,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.8241540447660781,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a1a53f42c5eca8824",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 57526,
+              "output": 1617,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.7902513646003546,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a3ecf86bbfb853726",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 324189,
+              "output": 6052,
+              "toolCalls": 8,
+              "silent": false,
+              "cacheRatio": 0.8114556632088072,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 579333,
+            "output": 10300,
+            "cacheRead": 451458
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 24,
+            "height": 18,
+            "pitch": 6,
+            "markers": [
+              {
+                "kind": "spike",
+                "agentId": "a3ecf86bbfb853726",
+                "ordinal": 3,
+                "x": 18,
+                "delta": 5460
+              }
+            ]
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 4,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1787090182855
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 83299,
+              "output": 1998,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.8264324901859567,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a5e718f3cb731b607",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 229137,
+              "output": 4863,
+              "toolCalls": 11,
+              "silent": false,
+              "cacheRatio": 0.8115276013913074,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 312436,
+            "output": 6861,
+            "cacheRead": 254792
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 18,
+            "height": 18,
+            "pitch": 6,
+            "markers": [
+              {
+                "kind": "spike",
+                "agentId": "a5e718f3cb731b607",
+                "ordinal": 2,
+                "x": 12,
+                "delta": 13614
+              }
+            ]
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 1,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1787245425312
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 298091,
+              "output": 1804,
+              "toolCalls": 5,
+              "silent": false,
+              "cacheRatio": 0.9217520824177852,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 298091,
+            "output": 1804,
+            "cacheRead": 274766
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 0,
+            "height": 18,
+            "pitch": 6,
+            "markers": []
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 0,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1787596838914
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 700299,
+              "output": 12948,
+              "toolCalls": 21,
+              "silent": false,
+              "cacheRatio": 0.8496385115500664,
+              "model": "C:\\AI <LOCAL_MODEL>"
+            }
+          ],
+          "totals": {
+            "prompt": 700299,
+            "output": 12948,
+            "cacheRead": 595001
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "C:\\AI <LOCAL_MODEL>"
+          ],
+          "strip": {
+            "width": 132,
+            "height": 18,
+            "pitch": 6,
+            "markers": [
+              {
+                "kind": "compaction",
+                "agentId": "root",
+                "ordinal": 21,
+                "x": 126,
+                "trigger": "manual",
+                "preTokens": 120392,
+                "postTokens": 15717
+              }
+            ]
+          },
+          "stalls": [],
+          "compactions": 1,
+          "subagents": 0,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1787730972830
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 109470,
+              "output": 406,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.7663926189823695,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a676c705dca135e9d",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 304754,
+              "output": 585,
+              "toolCalls": 6,
+              "silent": false,
+              "cacheRatio": 0.8545187265794707,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 414224,
+            "output": 991,
+            "cacheRead": 344315
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 0,
+            "height": 18,
+            "pitch": 6,
+            "markers": []
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 1,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788126392182
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 33441,
+              "output": 4,
+              "toolCalls": 0,
+              "silent": false,
+              "cacheRatio": 0.7490206632576777,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 33441,
+            "output": 4,
+            "cacheRead": 25048
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 0,
+            "height": 18,
+            "pitch": 6,
+            "markers": []
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 0,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "d16538d5-da75-4d0a-aa99-652916287f7c",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788127001995
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 70167,
+              "output": 619,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.84797696923055,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "ab761d54060e2e548",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 112918,
+              "output": 2304,
+              "toolCalls": 6,
+              "silent": false,
+              "cacheRatio": 0.7811243557271649,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 183085,
+            "output": 2923,
+            "cacheRead": 147703
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 36,
+            "height": 18,
+            "pitch": 6,
+            "markers": [
+              {
+                "kind": "spike",
+                "agentId": "ab761d54060e2e548",
+                "ordinal": 5,
+                "x": 30,
+                "delta": 5451
+              }
+            ]
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 1,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788357778713
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 139202020,
+              "output": 275504,
+              "toolCalls": 316,
+              "silent": false,
+              "cacheRatio": 0.9811363154069173,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a35c07f16192b72a3",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 6979431,
+              "output": 6815,
+              "toolCalls": 62,
+              "silent": false,
+              "cacheRatio": 0.9771323765504667,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "ad0d39a51f7977abf",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 408428,
+              "output": 1131,
+              "toolCalls": 6,
+              "silent": false,
+              "cacheRatio": 0.851763346293594,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "ac429932953f34762",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 5952518,
+              "output": 7401,
+              "toolCalls": 70,
+              "silent": false,
+              "cacheRatio": 0.9728383853690152,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 152542397,
+            "output": 290851,
+            "cacheRead": 149534707
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 1962,
+            "height": 18,
+            "pitch": 6,
+            "markers": [
+              {
+                "kind": "compaction",
+                "agentId": "root",
+                "ordinal": 311,
+                "x": 1866,
+                "trigger": "auto",
+                "preTokens": 967149,
+                "postTokens": 20346
+              },
+              {
+                "kind": "compaction",
+                "agentId": "root",
+                "ordinal": 316,
+                "x": 1896,
+                "trigger": "manual",
+                "preTokens": 276178,
+                "postTokens": 24938
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 32,
+                "x": 192,
+                "delta": 43817
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 57,
+                "x": 342,
+                "delta": 6706
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 90,
+                "x": 540,
+                "delta": 15364
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 124,
+                "x": 744,
+                "delta": 7886
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 157,
+                "x": 942,
+                "delta": 359980
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 160,
+                "x": 960,
+                "delta": 5785
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 205,
+                "x": 1230,
+                "delta": 445971
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 217,
+                "x": 1302,
+                "delta": 46368
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 269,
+                "x": 1614,
+                "delta": 6127
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 277,
+                "x": 1662,
+                "delta": 50288
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 287,
+                "x": 1722,
+                "delta": 710119
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 290,
+                "x": 1740,
+                "delta": 9337
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 299,
+                "x": 1794,
+                "delta": 6189
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 311,
+                "x": 1866,
+                "delta": 13010
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 315,
+                "x": 1890,
+                "delta": 8656
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 316,
+                "x": 1896,
+                "delta": 11662
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 321,
+                "x": 1926,
+                "delta": 6789
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 323,
+                "x": 1938,
+                "delta": 101798
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 326,
+                "x": 1956,
+                "delta": 23016
+              }
+            ]
+          },
+          "stalls": [],
+          "compactions": 2,
+          "subagents": 3,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "99f96635-2042-41dc-9000-bbc9f9233bc3",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1788594801597
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 63786801,
+              "output": 247713,
+              "toolCalls": 191,
+              "silent": false,
+              "cacheRatio": 0.9823443411121997,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a982bfcc574017a33",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 13898490,
+              "output": 10718,
+              "toolCalls": 88,
+              "silent": false,
+              "cacheRatio": 0.9783926167518917,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a7d51ba7a0fe16c4b",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 3130564,
+              "output": 3262,
+              "toolCalls": 38,
+              "silent": false,
+              "cacheRatio": 0.9529781215142064,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a0ed8c3aae39da276",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 18891895,
+              "output": 11610,
+              "toolCalls": 111,
+              "silent": false,
+              "cacheRatio": 0.9865370837599934,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 99707750,
+            "output": 273303,
+            "cacheRead": 97879697
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 990,
+            "height": 18,
+            "pitch": 6,
+            "markers": [
+              {
+                "kind": "spike",
+                "agentId": "a0ed8c3aae39da276",
+                "ordinal": 5,
+                "x": 30,
+                "delta": 5808
+              },
+              {
+                "kind": "spike",
+                "agentId": "a7d51ba7a0fe16c4b",
+                "ordinal": 4,
+                "x": 24,
+                "delta": 6319
+              },
+              {
+                "kind": "spike",
+                "agentId": "a982bfcc574017a33",
+                "ordinal": 2,
+                "x": 12,
+                "delta": 99859
+              },
+              {
+                "kind": "spike",
+                "agentId": "a982bfcc574017a33",
+                "ordinal": 10,
+                "x": 60,
+                "delta": 6631
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 61,
+                "x": 366,
+                "delta": 5210
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 98,
+                "x": 588,
+                "delta": 11992
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 111,
+                "x": 666,
+                "delta": 71894
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 134,
+                "x": 804,
+                "delta": 6023
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 148,
+                "x": 888,
+                "delta": 487446
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 161,
+                "x": 966,
+                "delta": 72318
+              },
+              {
+                "kind": "spike",
+                "agentId": "root",
+                "ordinal": 164,
+                "x": 984,
+                "delta": 5711
+              }
+            ]
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 3,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+            "engine": "codex",
+            "projectSlug": "C--Users-dev-codex-probe-scratch",
+            "startedAt": 1788381834630
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 93261,
+              "output": 447,
+              "toolCalls": 5,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            },
+            {
+              "agentId": "01a063dd-883a-7523-a2da-30b0c7367d66",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 33767,
+              "output": 127,
+              "toolCalls": 1,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            }
+          ],
+          "totals": {
+            "prompt": 127028,
+            "output": 574
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "gpt-5.6-terra"
+          ],
+          "strip": {
+            "width": 0,
+            "height": 18,
+            "pitch": 6,
+            "markers": []
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 1,
+          "silentSubagents": 0,
+          "contextFill": 0.061273219814241484
+        },
+        {
+          "session": {
+            "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+            "engine": "codex",
+            "projectSlug": "C--Users-dev-codex-probe-scratch",
+            "startedAt": 1788386050871
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 157334,
+              "output": 499,
+              "toolCalls": 9,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            },
+            {
+              "agentId": "01a0641d-9c3c-7612-a666-786b575d4194",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 34206,
+              "output": 125,
+              "toolCalls": 1,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            },
+            {
+              "agentId": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 34218,
+              "output": 137,
+              "toolCalls": 1,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            },
+            {
+              "agentId": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 34220,
+              "output": 139,
+              "toolCalls": 1,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            },
+            {
+              "agentId": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 51536,
+              "output": 150,
+              "toolCalls": 2,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            },
+            {
+              "agentId": "01a0641e-19d6-7800-8330-98371a1683a5",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 34231,
+              "output": 132,
+              "toolCalls": 1,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            }
+          ],
+          "totals": {
+            "prompt": 345745,
+            "output": 1182
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "gpt-5.6-terra"
+          ],
+          "strip": {
+            "width": 0,
+            "height": 18,
+            "pitch": 6,
+            "markers": []
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 5,
+          "silentSubagents": 0,
+          "contextFill": 0.06250386996904025
+        },
+        {
+          "session": {
+            "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+            "engine": "codex",
+            "projectSlug": "C--Users-dev-codex-probe-scratch",
+            "startedAt": 1788386136880
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 92869,
+              "output": 450,
+              "toolCalls": 5,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            },
+            {
+              "agentId": "01a0641e-f36c-7503-be16-25989a8aa7b2",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 86011,
+              "output": 360,
+              "toolCalls": 4,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            },
+            {
+              "agentId": "01a0641f-2ad6-7173-831c-bdbc535f874a",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 51017,
+              "output": 183,
+              "toolCalls": 2,
+              "silent": false,
+              "model": "gpt-5.6-terra"
+            }
+          ],
+          "totals": {
+            "prompt": 229897,
+            "output": 993
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "gpt-5.6-terra"
+          ],
+          "strip": {
+            "width": 0,
+            "height": 18,
+            "pitch": 6,
+            "markers": []
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 2,
+          "silentSubagents": 0,
+          "contextFill": 0.061400928792569656
+        }
+      ],
+      "records": 12
+    },
+    "trends": {
+      "series": [
+        {
+          "id": "prompt",
+          "label": "prompt tokens",
+          "points": [
+            {
+              "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+              "index": 0,
+              "x": 0,
+              "y": 579333
+            },
+            {
+              "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+              "index": 1,
+              "x": 24,
+              "y": 312436
+            },
+            {
+              "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+              "index": 2,
+              "x": 48,
+              "y": 298091
+            },
+            {
+              "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+              "index": 3,
+              "x": 72,
+              "y": 700299
+            },
+            {
+              "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+              "index": 4,
+              "x": 96,
+              "y": 414224
+            },
+            {
+              "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+              "index": 5,
+              "x": 120,
+              "y": 33441
+            },
+            {
+              "sessionId": "d16538d5-da75-4d0a-aa99-652916287f7c",
+              "index": 6,
+              "x": 144,
+              "y": 183085
+            },
+            {
+              "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+              "index": 7,
+              "x": 168,
+              "y": 152542397
+            },
+            {
+              "sessionId": "99f96635-2042-41dc-9000-bbc9f9233bc3",
+              "index": 8,
+              "x": 192,
+              "y": 99707750
+            },
+            {
+              "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+              "index": 9,
+              "x": 216,
+              "y": 127028
+            },
+            {
+              "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+              "index": 10,
+              "x": 240,
+              "y": 345745
+            },
+            {
+              "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+              "index": 11,
+              "x": 264,
+              "y": 229897
+            }
+          ],
+          "max": 152542397
+        },
+        {
+          "id": "loops",
+          "label": "loops",
+          "points": [
+            {
+              "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+              "index": 0,
+              "x": 0,
+              "y": 0
+            },
+            {
+              "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+              "index": 1,
+              "x": 24,
+              "y": 0
+            },
+            {
+              "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+              "index": 2,
+              "x": 48,
+              "y": 1
+            },
+            {
+              "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+              "index": 3,
+              "x": 72,
+              "y": 0
+            },
+            {
+              "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+              "index": 4,
+              "x": 96,
+              "y": 0
+            },
+            {
+              "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+              "index": 5,
+              "x": 120,
+              "y": 0
+            },
+            {
+              "sessionId": "d16538d5-da75-4d0a-aa99-652916287f7c",
+              "index": 6,
+              "x": 144,
+              "y": 0
+            },
+            {
+              "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+              "index": 7,
+              "x": 168,
+              "y": 0
+            },
+            {
+              "sessionId": "99f96635-2042-41dc-9000-bbc9f9233bc3",
+              "index": 8,
+              "x": 192,
+              "y": 0
+            },
+            {
+              "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+              "index": 9,
+              "x": 216,
+              "y": 0
+            },
+            {
+              "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+              "index": 10,
+              "x": 240,
+              "y": 1
+            },
+            {
+              "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+              "index": 11,
+              "x": 264,
+              "y": 0
+            }
+          ],
+          "max": 1
+        },
+        {
+          "id": "cost",
+          "label": "engine-reported cost (USD)",
+          "points": [],
+          "max": 0
+        }
+      ],
+      "sessions": [
+        {
+          "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 0,
+          "x": 0
+        },
+        {
+          "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787090182855,
+          "index": 1,
+          "x": 24
+        },
+        {
+          "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787245425312,
+          "index": 2,
+          "x": 48
+        },
+        {
+          "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787596838914,
+          "index": 3,
+          "x": 72
+        },
+        {
+          "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787730972830,
+          "index": 4,
+          "x": 96
+        },
+        {
+          "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1788126392182,
+          "index": 5,
+          "x": 120
+        },
+        {
+          "sessionId": "d16538d5-da75-4d0a-aa99-652916287f7c",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1788127001995,
+          "index": 6,
+          "x": 144
+        },
+        {
+          "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1788357778713,
+          "index": 7,
+          "x": 168
+        },
+        {
+          "sessionId": "99f96635-2042-41dc-9000-bbc9f9233bc3",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1788594801597,
+          "index": 8,
+          "x": 192
+        },
+        {
+          "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
+          "engine": "codex",
+          "projectSlug": "C--Users-dev-codex-probe-scratch",
+          "startedAt": 1788381834630,
+          "index": 9,
+          "x": 216
+        },
+        {
+          "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
+          "engine": "codex",
+          "projectSlug": "C--Users-dev-codex-probe-scratch",
+          "startedAt": 1788386050871,
+          "index": 10,
+          "x": 240
+        },
+        {
+          "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+          "engine": "codex",
+          "projectSlug": "C--Users-dev-codex-probe-scratch",
+          "startedAt": 1788386136880,
+          "index": 11,
+          "x": 264
+        }
+      ],
+      "width": 264,
+      "empty": false
+    },
+    "excluded": {
+      "count": 0,
+      "byCode": {}
+    },
+    "params": {
+      "loopMin": 3,
+      "spikeTokens": 5000
+    }
+  }
+}

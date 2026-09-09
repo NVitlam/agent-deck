@@ -39,8 +39,18 @@
         "category": "Agent Deck"
       },
       {
+        "command": "agentDeck.openStats",
+        "title": "Open Statistics",
+        "category": "Agent Deck"
+      },
+      {
         "command": "agentDeck.showDiagnostics",
         "title": "Show Diagnostics",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.openSettings",
+        "title": "Settings",
         "category": "Agent Deck"
       },
       {
@@ -103,8 +113,31 @@
           "type": "object",
           "default": {},
           "description": "Your own prices per model id, in USD per million tokens, used to state a cost for sessions whose engine reports none. Each key is a model id exactly as the transcript writes it, and each value is an object with prompt, cacheRead, cacheWrite and output, all non-negative numbers. Example: {\"claude-sonnet-4-5\": {\"prompt\": 3, \"cacheRead\": 0.3, \"cacheWrite\": 3.75, \"output\": 15}}. Agent Deck ships no price table and never guesses one: a model with no entry here gets no cost figure, and an entry that does not match this shape is ignored and named on the Agent Deck output channel. Costs computed this way are labelled as estimated from your prices."
+        },
+        "agentDeck.canvas.autoFit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-fit the session canvas to its content on every event that changes its geometry: a node selected (the drawer opens), the drawer expanded, collapsed or resized, an agent grafted, removed or parked, the panel or editor group resized, a session switch, an engine chip toggled, a switch back to the canvas, a label re-wrap that changes a node width. A manual pan or zoom persists only until the next such event. Token counters, liveness colour and the theme never re-fit. Turn this off and the canvas fits once on entry and never again on its own; Reset view and double-click on the empty field still fit on request. Changes take effect without a reload."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentDeck",
+          "title": "Agent Deck",
+          "icon": "media/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentDeck": [
+        {
+          "type": "webview",
+          "id": "agentDeck.sidebar",
+          "name": "Agent Deck"
+        }
+      ]
     }
   },
   "scripts": {

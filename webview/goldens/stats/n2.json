@@ -1,0 +1,323 @@
+{
+  "generator": "scripts/gen-webview-goldens.mjs",
+  "records": [
+    "cc-2.1.234-05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+    "cc-2.1.234-4299490e-4a09-46a0-a544-7ffb0429e7e7"
+  ],
+  "layout": {
+    "files": {
+      "rows": [
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/HOOKS.md",
+          "basename": "HOOKS.md",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/listen.mjs",
+          "basename": "listen.mjs",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/run.mjs",
+          "basename": "run.mjs",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/stitch.mjs",
+          "basename": "stitch.mjs",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "c:/Users/dev/projects/agent-deck/spike/tail.mjs",
+          "basename": "tail.mjs",
+          "reads": 1,
+          "edits": 0,
+          "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        }
+      ],
+      "records": 2
+    },
+    "loops": {
+      "rows": [],
+      "loops": 0,
+      "churn": 0,
+      "records": 2
+    },
+    "tokens": {
+      "sessions": [
+        {
+          "session": {
+            "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1787123110556
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 87572,
+              "output": 2129,
+              "toolCalls": 3,
+              "silent": false,
+              "cacheRatio": 0.8108071072945691,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a69e0f453d5ca5f43",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 55049,
+              "output": 272,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.48326036803574995,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a32b33ebf1b92e214",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 54997,
+              "output": 230,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.8241540447660781,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a1a53f42c5eca8824",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 57526,
+              "output": 1617,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.7902513646003546,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a3ecf86bbfb853726",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 324189,
+              "output": 6052,
+              "toolCalls": 8,
+              "silent": false,
+              "cacheRatio": 0.8114556632088072,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 579333,
+            "output": 10300,
+            "cacheRead": 451458
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 24,
+            "height": 18,
+            "pitch": 6,
+            "markers": [
+              {
+                "kind": "spike",
+                "agentId": "a3ecf86bbfb853726",
+                "ordinal": 3,
+                "x": 18,
+                "delta": 5460
+              }
+            ]
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 4,
+          "silentSubagents": 0
+        },
+        {
+          "session": {
+            "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1787090182855
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 83299,
+              "output": 1998,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.8264324901859567,
+              "model": "claude-opus-5"
+            },
+            {
+              "agentId": "a5e718f3cb731b607",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 229137,
+              "output": 4863,
+              "toolCalls": 11,
+              "silent": false,
+              "cacheRatio": 0.8115276013913074,
+              "model": "claude-opus-5"
+            }
+          ],
+          "totals": {
+            "prompt": 312436,
+            "output": 6861,
+            "cacheRead": 254792
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5"
+          ],
+          "strip": {
+            "width": 18,
+            "height": 18,
+            "pitch": 6,
+            "markers": [
+              {
+                "kind": "spike",
+                "agentId": "a5e718f3cb731b607",
+                "ordinal": 2,
+                "x": 12,
+                "delta": 13614
+              }
+            ]
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 1,
+          "silentSubagents": 0
+        }
+      ],
+      "records": 2
+    },
+    "trends": {
+      "series": [
+        {
+          "id": "prompt",
+          "label": "prompt tokens",
+          "points": [
+            {
+              "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+              "index": 0,
+              "x": 0,
+              "y": 579333
+            },
+            {
+              "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+              "index": 1,
+              "x": 24,
+              "y": 312436
+            }
+          ],
+          "max": 579333
+        },
+        {
+          "id": "loops",
+          "label": "loops",
+          "points": [
+            {
+              "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+              "index": 0,
+              "x": 0,
+              "y": 0
+            },
+            {
+              "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+              "index": 1,
+              "x": 24,
+              "y": 0
+            }
+          ],
+          "max": 0
+        },
+        {
+          "id": "cost",
+          "label": "engine-reported cost (USD)",
+          "points": [],
+          "max": 0
+        }
+      ],
+      "sessions": [
+        {
+          "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 0,
+          "x": 0
+        },
+        {
+          "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787090182855,
+          "index": 1,
+          "x": 24
+        }
+      ],
+      "width": 24,
+      "empty": false
+    },
+    "excluded": {
+      "count": 0,
+      "byCode": {}
+    },
+    "params": {
+      "loopMin": 3,
+      "spikeTokens": 5000
+    }
+  }
+}

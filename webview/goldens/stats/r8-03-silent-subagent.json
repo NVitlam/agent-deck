@@ -1,0 +1,142 @@
+{
+  "generator": "scripts/gen-webview-goldens.mjs",
+  "records": [
+    "cc-synthetic-03-silent-subagent"
+  ],
+  "layout": {
+    "files": {
+      "rows": [],
+      "records": 1
+    },
+    "loops": {
+      "rows": [],
+      "loops": 0,
+      "churn": 0,
+      "records": 1
+    },
+    "tokens": {
+      "sessions": [
+        {
+          "session": {
+            "sessionId": "synthetic-03-silent-subagent",
+            "engine": "cc",
+            "projectSlug": "synthetic-stats",
+            "startedAt": 1700000000000
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 1000,
+              "output": 100,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 0.1
+            },
+            {
+              "agentId": "quiet",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 10,
+              "output": 1,
+              "toolCalls": 0,
+              "silent": true,
+              "cacheRatio": 10
+            },
+            {
+              "agentId": "busy",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 20,
+              "output": 2,
+              "toolCalls": 1,
+              "silent": false,
+              "cacheRatio": 5
+            }
+          ],
+          "totals": {
+            "prompt": 1030,
+            "output": 103,
+            "cacheRead": 300
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [],
+          "strip": {
+            "width": 0,
+            "height": 18,
+            "pitch": 6,
+            "markers": []
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 2,
+          "silentSubagents": 1
+        }
+      ],
+      "records": 1
+    },
+    "trends": {
+      "series": [
+        {
+          "id": "prompt",
+          "label": "prompt tokens",
+          "points": [
+            {
+              "sessionId": "synthetic-03-silent-subagent",
+              "index": 0,
+              "x": 0,
+              "y": 1030
+            }
+          ],
+          "max": 1030
+        },
+        {
+          "id": "loops",
+          "label": "loops",
+          "points": [
+            {
+              "sessionId": "synthetic-03-silent-subagent",
+              "index": 0,
+              "x": 0,
+              "y": 0
+            }
+          ],
+          "max": 0
+        },
+        {
+          "id": "cost",
+          "label": "engine-reported cost (USD)",
+          "points": [],
+          "max": 0
+        }
+      ],
+      "sessions": [
+        {
+          "sessionId": "synthetic-03-silent-subagent",
+          "engine": "cc",
+          "projectSlug": "synthetic-stats",
+          "startedAt": 1700000000000,
+          "index": 0,
+          "x": 0
+        }
+      ],
+      "width": 0,
+      "empty": true,
+      "reason": "fewer-than-two"
+    },
+    "excluded": {
+      "count": 0,
+      "byCode": {}
+    },
+    "params": {
+      "loopMin": 3,
+      "spikeTokens": 5000
+    }
+  }
+}

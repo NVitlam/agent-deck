@@ -170,6 +170,10 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
   // maintainer's private repository. `.gitignore` and `.vscodeignore`
   // carry the same five, by name, in both doors.
   'media/icon.png',
+  // SIX since v0.7.0 Phase 4 (DoD 4.6b): the activity-bar icon the
+  // manifest's viewsContainers names. A manifest reference like the
+  // extension icon, not a screenshot; both ignore files admit it by name.
+  'media/activity-icon.svg',
   'media/Session_Deck.png',
   'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
@@ -191,7 +195,7 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
  * it is derived from nothing: writing `EXPECTED_PACKAGED_FILES.length` here
  * would make it agree with the set by construction and check nothing at all.
  */
-const EXPECTED_PACKAGED_FILE_COUNT = 13;
+const EXPECTED_PACKAGED_FILE_COUNT = 14;
 
 /**
  * The same artifact, AS THE ZIP NAMES IT. Rule 19's second half.
@@ -223,6 +227,7 @@ const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
   'extension/media/Internal_Session_Tool_popup.png',
   'extension/media/Internal_Session_Tool_popup2.png',
   'extension/media/Session_Deck.png',
+  'extension/media/activity-icon.svg',
   'extension/media/hero_26_agent_session.png',
   'extension/media/icon.png',
   'extension/package.json',
@@ -230,7 +235,7 @@ const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
 ];
 
 /** Same reasoning as `EXPECTED_PACKAGED_FILE_COUNT`, on the other naming. */
-const EXPECTED_ARTIFACT_ENTRY_COUNT = 15;
+const EXPECTED_ARTIFACT_ENTRY_COUNT = 16;
 
 /**
  * The four release images as the packaged README must reference them, WITHOUT

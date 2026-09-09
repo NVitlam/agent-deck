@@ -1,0 +1,58 @@
+{
+  "generator": "scripts/gen-webview-goldens.mjs",
+  "records": [
+    "cc-synthetic-05-excluded-parked"
+  ],
+  "layout": {
+    "files": {
+      "rows": [],
+      "records": 0
+    },
+    "loops": {
+      "rows": [],
+      "loops": 0,
+      "churn": 0,
+      "records": 0
+    },
+    "tokens": {
+      "sessions": [],
+      "records": 0
+    },
+    "trends": {
+      "series": [
+        {
+          "id": "prompt",
+          "label": "prompt tokens",
+          "points": [],
+          "max": 0
+        },
+        {
+          "id": "loops",
+          "label": "loops",
+          "points": [],
+          "max": 0
+        },
+        {
+          "id": "cost",
+          "label": "engine-reported cost (USD)",
+          "points": [],
+          "max": 0
+        }
+      ],
+      "sessions": [],
+      "width": 0,
+      "empty": true,
+      "reason": "fewer-than-two"
+    },
+    "excluded": {
+      "count": 1,
+      "byCode": {
+        "parked": 1
+      }
+    },
+    "params": {
+      "loopMin": 3,
+      "spikeTokens": 5000
+    }
+  }
+}

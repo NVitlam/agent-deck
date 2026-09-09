@@ -7,6 +7,14 @@
  * (G7); nothing here describes persisted state.
  */
 
+// TYPE-ONLY, and the only import this file has ever carried (v0.7.0 Phase 4,
+// DoD 4.1). `stats/schema.ts` imports `CompactionRecord` from here the same
+// way, so the two files form a cycle in the TYPE graph and nothing in the
+// value graph: both erase to nothing at runtime, and `apply.ts`'s "imports
+// only events.ts" guard is about what a CSP-strict bundle can reach, which
+// this does not change.
+import type { StatsRecord } from '../stats/schema.js';
+
 // ---------------------------------------------------------------------------
 // (a) Domain model — session tree held in the extension host
 // ---------------------------------------------------------------------------
@@ -986,11 +994,70 @@ export interface DegradedMessage {
   reason?: 'noHookEvents' | 'listenerDown';
 }
 
+/**
+ * The LIVE Layer 1 facts: one `StatsRecord` per session the host currently
+ * observes, as the stats pipeline last derived them (v0.7.0 Phase 4, DoD 4.1).
+ *
+ * Every record has already passed `validateStatsRecord` ON THE HOST. There is
+ * no untrusted-input guard on the host→webview direction and there must not
+ * be one — the webview is a pure renderer of what a trusted host sends, and a
+ * second validator on the receiving side would be a second account of one
+ * rule. A record the host could not validate never reaches the wire; it is
+ * dropped and counted (`statsDropped` on the diagnostics counters line).
+ */
+export interface StatsSnapshotMessage {
+  type: 'statsSnapshot';
+  records: StatsRecord[];
+}
+
+/**
+ * The STORED history: the newest record per session from the local store, in
+ * session order (`startedAt` ascending, then `sessionId`), for the Trends
+ * view. Same host-side validation as {@link StatsSnapshotMessage}.
+ *
+ * `enabled` is `agentDeck.stats.enabled` as the host read it: the Trends view
+ * shows an empty state when the store is off, and "the store is off" is not
+ * the same statement as "the store is empty".
+ */
+export interface StatsStoreMessage {
+  type: 'statsStore';
+  records: StatsRecord[];
+  enabled: boolean;
+}
+
+/**
+ * Host settings the RENDERER reads (v0.7.0 Phase 4, DoD 4.0).
+ *
+ * One today: `agentDeck.canvas.autoFit`. Sent when the panel is created, again
+ * on every reload (the new document knows nothing), and on every configuration
+ * change. The webview's default while no message has arrived is the manifest
+ * default, `true`, so a panel never waits on this to behave.
+ */
+export interface SettingsMessage {
+  type: 'settings';
+  canvasAutoFit: boolean;
+}
+
+/**
+ * The host asks the panel to show one of its view modes (v0.7.0 Phase 4,
+ * DoD 4.6b). `agentDeck.openStats` opens the panel and sends `stats`; nothing
+ * else sends this. View mode stays webview-local UI state — this is a
+ * REQUEST from the host, not a value the host owns.
+ */
+export interface ShowViewMessage {
+  type: 'showView';
+  mode: 'canvas' | 'list' | 'stats';
+}
+
 export type HostToWebviewMessage =
   | SnapshotMessage
   | DiffMessage
   | SchemaMismatchMessage
-  | DegradedMessage;
+  | DegradedMessage
+  | StatsSnapshotMessage
+  | StatsStoreMessage
+  | SettingsMessage
+  | ShowViewMessage;
 
 export interface ExpandNodeMessage {
   type: 'expandNode';
@@ -1032,10 +1099,26 @@ export interface ResyncRequestMessage {
   sessionId?: string;
 }
 
+/**
+ * The SIDEBAR asking the host to run one of its menu commands (v0.7.0 Phase 4,
+ * DoD 4.6b).
+ *
+ * `command` is a member of `src/sidebar/menu.ts`'s list and nothing else: the
+ * guard in `bridge/messages.ts` refuses any other string, so the sidebar
+ * cannot be turned into a way of running arbitrary commands by a message that
+ * merely looks like one of its own. The PANEL ignores this message entirely;
+ * only the sidebar's controller executes it.
+ */
+export interface RunCommandMessage {
+  type: 'runCommand';
+  command: string;
+}
+
 export type WebviewToHostMessage =
   | ExpandNodeMessage
   | SelectSessionMessage
-  | ResyncRequestMessage;
+  | ResyncRequestMessage
+  | RunCommandMessage;
 
 /**
  * One tree op that could not be applied, reported instead of thrown.

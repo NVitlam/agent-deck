@@ -30,6 +30,7 @@ import type {
   WebviewToHostMessage,
 } from '../model/events.js';
 import type { SessionEmission } from '../model/session.js';
+import { isSidebarCommand } from '../sidebar/menu.js';
 import { applySessionPatch } from './apply.js';
 
 // ---------------------------------------------------------------------------
@@ -74,6 +75,11 @@ export const WEBVIEW_TO_HOST_TYPES = [
   // through it; `sessionId` is optional because a diff for an unknown session
   // has no session state to name.
   'resyncRequest',
+  // v0.7.0 Phase 4, DoD 4.6b. The SIDEBAR's one message: run a menu command.
+  // `command` must be a member of `src/sidebar/menu.ts`'s list — validated
+  // HERE, at the boundary, so a message that merely looks like a menu entry
+  // cannot make the host execute an arbitrary command id.
+  'runCommand',
 ] as const;
 
 /**
@@ -175,6 +181,10 @@ export function isWebviewToHostMessage(
           if (typeof sessionId !== 'string' || sessionId.length === 0) return false;
         }
         return true;
+      }
+      case 'runCommand': {
+        const command = ownNonEmptyString(value, 'command');
+        return command !== undefined && isSidebarCommand(command);
       }
       default:
         return false;

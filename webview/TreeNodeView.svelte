@@ -149,7 +149,7 @@
         onclick={toggle}
       >{expanded ? '▾' : '▸'}</button>
       <span class="label" data-testid="node-label">{render.node.toolName}</span>
-      <StatusChip status={render.node.status} {stalledForMs} />
+      <StatusChip status={render.node.status} {stalledForMs} toolName={render.node.toolName} />
       <span class="meta" data-testid="node-duration"
         >{formatDuration(render.node.durationMs)}</span
       >

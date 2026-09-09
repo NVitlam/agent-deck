@@ -1,0 +1,25 @@
+{
+  "what": "webview/drawer.ts:followTarget — DoD 4.9b. The scrollTop to assign, or null to leave the list alone. Hand-written from the user's rule (2026-09-05): follow the latest call in whichever direction the list grows; an expanded entry pins; closing it resumes. NOT a second implementation — a table written down outside the code so a change to the rule has to move a committed number.",
+  "cases": [
+    { "name": "oldest, unpinned, following: the bottom", "input": { "order": "oldest", "pinned": false, "following": true, "scrollHeight": 900, "clientHeight": 100 }, "target": 800 },
+    { "name": "newest, unpinned, following: the top", "input": { "order": "newest", "pinned": false, "following": true, "scrollHeight": 900, "clientHeight": 100 }, "target": 0 },
+    { "name": "oldest, PINNED: hold", "input": { "order": "oldest", "pinned": true, "following": true, "scrollHeight": 900, "clientHeight": 100 }, "target": null },
+    { "name": "newest, PINNED: hold", "input": { "order": "newest", "pinned": true, "following": true, "scrollHeight": 900, "clientHeight": 100 }, "target": null },
+    { "name": "oldest, the user scrolled away: hold", "input": { "order": "oldest", "pinned": false, "following": false, "scrollHeight": 900, "clientHeight": 100 }, "target": null },
+    { "name": "newest, the user scrolled away: hold", "input": { "order": "newest", "pinned": false, "following": false, "scrollHeight": 900, "clientHeight": 100 }, "target": null },
+    { "name": "oldest, pin lifted (resume on close): the bottom again", "input": { "order": "oldest", "pinned": false, "following": true, "scrollHeight": 1200, "clientHeight": 100 }, "target": 1100 },
+    { "name": "oldest, list shorter than the viewport: zero, never negative", "input": { "order": "oldest", "pinned": false, "following": true, "scrollHeight": 40, "clientHeight": 100 }, "target": 0 },
+    { "name": "oldest, jsdom's zero metrics: zero", "input": { "order": "oldest", "pinned": false, "following": true, "scrollHeight": 0, "clientHeight": 0 }, "target": 0 },
+    { "name": "non-finite metrics: hold", "input": { "order": "oldest", "pinned": false, "following": true, "scrollHeight": null, "clientHeight": 100 }, "target": null }
+  ],
+  "atGrowingEnd": [
+    { "order": "oldest", "scrollTop": 800, "scrollHeight": 900, "clientHeight": 100, "expected": true },
+    { "order": "oldest", "scrollTop": 797, "scrollHeight": 900, "clientHeight": 100, "expected": true },
+    { "order": "oldest", "scrollTop": 795, "scrollHeight": 900, "clientHeight": 100, "expected": false },
+    { "order": "oldest", "scrollTop": 200, "scrollHeight": 900, "clientHeight": 100, "expected": false },
+    { "order": "newest", "scrollTop": 0, "scrollHeight": 900, "clientHeight": 100, "expected": true },
+    { "order": "newest", "scrollTop": 4, "scrollHeight": 900, "clientHeight": 100, "expected": true },
+    { "order": "newest", "scrollTop": 5, "scrollHeight": 900, "clientHeight": 100, "expected": false },
+    { "order": "newest", "scrollTop": 800, "scrollHeight": 900, "clientHeight": 100, "expected": false }
+  ]
+}

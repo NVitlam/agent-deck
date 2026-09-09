@@ -31,11 +31,12 @@
 // Nothing outside it is touched.
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { argv, exit, hrtime } from 'node:process';
 
 import { classifyExit } from './exit-class.mjs';
+import { uniqueRecordName } from './runner-paths.mjs';
 
 const OUT_DIR = 'docs/evidence/runner';
 const LEDGER = path.join(OUT_DIR, 'LEDGER.md');
@@ -179,10 +180,16 @@ function runOnce(index, headSha) {
       };
 
       mkdirSync(OUT_DIR, { recursive: true });
-      writeFileSync(
-        path.join(OUT_DIR, `${label}-${String(index).padStart(3, '0')}.json`),
-        `${JSON.stringify(record, null, 2)}\n`,
+      // NEVER OVERWRITTEN (v0.7.0 DoD 4.0a). Every ad-hoc run is `adhoc` at
+      // index 1, and the four ad-hoc runs after Phase 3's two mid-run deaths
+      // overwrote both deaths' records — the stderr tail and last reporter line
+      // that make a death "captured". A record that exists keeps its name and
+      // the new one takes `-r2`, `-r3`, ...; see `scripts/runner-paths.mjs`.
+      const recordName = uniqueRecordName(label, index, (name) =>
+        existsSync(path.join(OUT_DIR, name)),
       );
+      record.file = recordName;
+      writeFileSync(path.join(OUT_DIR, recordName), `${JSON.stringify(record, null, 2)}\n`);
       // An abnormal code is spelled in hex BESIDE its decimal form, because the
       // decimal form is unreadable and this ledger has already carried the same
       // status written two different ways (`3221226505` and `-1073740791`).

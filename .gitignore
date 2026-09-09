@@ -27,6 +27,9 @@ spike/hook-events-r3.jsonl
 # file that is not there and `vsce package` fails. It stays.
 media/*
 !media/icon.png
+# The activity-bar icon (v0.7.0 Phase 4, DoD 4.6b): a manifest reference, like
+# `icon.png`, and admitted in `.vscodeignore` too - different doors.
+!media/activity-icon.svg
 !media/Session_Deck.png
 !media/hero_26_agent_session.png
 !media/Internal_Session_Tool_popup.png

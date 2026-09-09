@@ -69,8 +69,11 @@
 // G1: writes only into the corpus directory (inside the repo). G5: no network.
 //
 // USAGE
-//   node scripts/record-wire.mjs             write both corpora into WIRE_CORPUS_DIR
+//   node scripts/record-wire.mjs             write the three engine corpora into WIRE_CORPUS_DIR
 //   node scripts/record-wire.mjs --out <dir> write them somewhere else (tests)
+//   node scripts/record-wire.mjs --stats     write the R8 stats corpora (v0.7.0 DoD 4.8),
+//                                            one `synthetic-stats-<id>.json` per committed
+//                                            fixture under fixtures/synthetic-stats/
 //
 // BUILDING A SYNTHETIC CORPUS ON TOP OF THIS
 // ------------------------------------------
@@ -182,6 +185,11 @@ export async function loadHostModules() {
     // the precedent every export above already sets.
     "export { parseLines, parseSubagentMeta } from './src/parser/parse.js';",
     "export { normalizeHookEvent } from './src/hooks/listener.js';",
+    // The host-side stats gate (v0.7.0 DoD 4.1 / 4.8): the R8 corpora carry a
+    // `statsSnapshot` whose records went through the SAME validator the
+    // shipped `PanelController.publishStats` runs, so a replayed record is a
+    // record the host would actually have sent.
+    "export { statsWireRecords } from './src/stats/wire.js';",
   ].join('\n');
 
   const result = await build({
@@ -256,6 +264,15 @@ export function createRecorder(host) {
     bridge,
     events,
     steps,
+    /**
+     * Record a message the host sends OUTSIDE the session bridge — the
+     * `statsSnapshot` / `statsStore` / `settings` / `showView` messages
+     * `PanelController` posts directly (v0.7.0 Phase 4). Same clone, same
+     * clock, same log; only the producer differs.
+     */
+    post(message) {
+      events.push({ atMs, label, message: JSON.parse(JSON.stringify(message)) });
+    },
     /** Move the simulated clock and name what happens next. */
     step(nextAtMs, nextLabel, what) {
       if (!Number.isInteger(nextAtMs) || nextAtMs < atMs) {
@@ -1486,6 +1503,95 @@ async function buildTimedCorpus(host, sourceDir, options = {}) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// The R8 stats corpora (v0.7.0 Phase 4, DoD 4.8)
+// ---------------------------------------------------------------------------
+
+const STATS_FIXTURE_ROOT = join(REPO_ROOT, 'fixtures', 'synthetic-stats');
+const STATS_GOLDEN_ROOT = join(REPO_ROOT, 'fixtures', 'golden', 'stats');
+
+/** The `statsSnapshot` lands this long after the snapshot, in simulated time. */
+const STATS_ARRIVE_MS = 1000;
+
+const STATS_DESCRIPTION = [
+  'One R8 fixture (fixtures/synthetic-stats/<id>.json) as the host would put it on the wire:',
+  'its SessionState as a snapshot through a real SessionBridge, then its committed golden',
+  'StatsRecord (fixtures/golden/stats/<engine>-synthetic-<id>.json) as a statsSnapshot,',
+  'passed through the same host-side validator PanelController.publishStats runs. The',
+  'theater replays it through the real store so the Stats view is reviewed over exactly',
+  'the shape the fixture manufactures. Synthetic: the state was built, not captured.',
+].join(' ');
+
+/**
+ * One corpus per committed R8 fixture, ALL of them — `01` through `13`.
+ *
+ * DoD 4.8 names "the twelve R8 fixtures"; the thirteenth (`13-telemetry-cost`)
+ * is Phase 2's addition to R8 for F9(c) and is included rather than left out,
+ * because the theater's Stats view would otherwise never show a telemetry
+ * cost with its "estimated by Claude Code" label — the one Component 12
+ * rendering this release makes.
+ *
+ * Read from the COMMITTED files rather than re-derived here: the fixture is
+ * the state `gen-stats-goldens.mjs` wrote and the golden is what
+ * `deriveStats` produced from it, byte-compared by `goldens.test.ts`. Deriving
+ * again would be a second path to the same bytes; reading them is what makes
+ * "the record the fixture manufactures" literally true of the corpus.
+ */
+async function buildSyntheticStatsCorpora(host) {
+  const names = (await readdir(STATS_FIXTURE_ROOT)).filter((n) => n.endsWith('.json')).sort();
+  const corpora = [];
+  for (const name of names) {
+    const fixture = JSON.parse(await readFile(join(STATS_FIXTURE_ROOT, name), 'utf8'));
+    const state = fixture.state;
+    const engine = state.engine ?? 'cc';
+    const goldenName = `${engine}-synthetic-${fixture.id}.json`;
+    const golden = JSON.parse(await readFile(join(STATS_GOLDEN_ROOT, goldenName), 'utf8'));
+
+    const recorder = createRecorder(host);
+    recorder.step(0, 'snapshot', `the ${fixture.id} state, as the host's first snapshot`);
+    const refused = state.schemaOk === false;
+    recorder.bridge.publish({
+      sessions: [state],
+      diffs: [],
+      addedSessionIds: [state.sessionId],
+      removedSessionIds: [],
+      schemaMismatchSessionIds: refused ? [state.sessionId] : [],
+    });
+    recorder.bridge.publishDegraded('cc', { degraded: false });
+    recorder.bridge.publishDegraded('codex', { degraded: false });
+
+    recorder.step(STATS_ARRIVE_MS, 'stats', 'the derived record, host-validated, as a statsSnapshot');
+    const wire = host.statsWireRecords([golden]);
+    if (wire.dropped !== 0) {
+      throw new Error(`${goldenName}: the host validator refused the committed golden: ${wire.reasons.join('; ')}`);
+    }
+    recorder.post({ type: 'statsSnapshot', records: wire.records });
+    // The store half: empty, enabled. A synthetic fixture has no history and
+    // an honest corpus says so rather than inventing one.
+    recorder.post({ type: 'statsStore', records: [], enabled: true });
+
+    corpora.push({
+      formatVersion: WIRE_FORMAT_VERSION,
+      id: `synthetic-stats-${fixture.id}`,
+      kind: 'synthetic',
+      title: `R8 ${fixture.id} — ${fixture.manufactures}`,
+      description: STATS_DESCRIPTION,
+      producedBy: 'scripts/record-wire.mjs --stats',
+      engine,
+      simulatedEpochMs: SIMULATED_EPOCH_MS,
+      durationMs: STATS_ARRIVE_MS,
+      steps: recorder.steps,
+      events: recorder.events,
+      final: {
+        sessions: [JSON.parse(JSON.stringify(state))],
+        degraded: { degraded: false },
+        schemaMismatchSessionIds: refused ? [state.sessionId] : [],
+      },
+    });
+  }
+  return corpora;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const outAt = argv.indexOf('--out');
@@ -1522,6 +1628,25 @@ async function main() {
       `recorded ${await corpusFileName(corpus)}: ${corpus.events.length} events over ` +
         `${corpus.steps.length} steps and ${corpus.durationMs} ms of transcript time\n`,
     );
+    return;
+  }
+
+  // v0.7.0 DoD 4.8: `--stats` records the R8 corpora, one per committed
+  // fixture. A separate mode, like `--timed`, because these are SYNTHETIC
+  // (`synthetic-` prefixed, `kind: 'synthetic'`) and the default run's rule is
+  // that it never touches a synthetic corpus — `wire.test.ts` asserts that a
+  // re-record leaves them alone, and a mode that wrote them by default would
+  // make that assertion false of its own output.
+  if (argv.includes('--stats')) {
+    const corpora = await buildSyntheticStatsCorpora(host);
+    await mkdir(outDir, { recursive: true });
+    for (const corpus of corpora) await writeCorpus(outDir, corpus);
+    for (const corpus of corpora) {
+      process.stdout.write(
+        `recorded ${await corpusFileName(corpus)}: ${corpus.events.length} events over ` +
+          `${corpus.durationMs} ms of simulated time\n`,
+      );
+    }
     return;
   }
 

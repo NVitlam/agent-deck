@@ -1,14 +1,16 @@
 // G10 — facts only. No interpretive language in the stats layer.
 //
-//     node scripts/forbidden-words.mjs [--json]
+//     node scripts/forbidden-words.mjs [--json] [--scope <dir>]
 //
 // Wired into `npm run lint`, so it gates every phase from now on.
 //
-// v0.7.0 Phase 2 builds the MINIMAL version: the word list from
-// `agent-deck-spec.md` §G, applied to `src/stats/**`. Phase 4 extends the SCOPE
-// to `webview/stats/**` and the `0.7.0` CHANGELOG block when those exist — the
-// list does not change, only what it is pointed at. `SCOPES` below is the one
-// place that grows.
+// v0.7.0 Phase 2 built the MINIMAL version: the word list from
+// `agent-deck-spec.md` §G, applied to `src/stats/**`. Phase 4 (DoD 4.7) extends
+// the SCOPE — `webview/stats/**`, the sidebar under `webview/sidebar/**`, and
+// the `0.7.0` CHANGELOG block — and teaches the scanner `.svelte`, because the
+// stats UI is Svelte and a gate that only read `.ts` would have read none of
+// what the product says on that surface. The list does not change; `SCOPES`
+// and the file kinds are the two places that grow.
 //
 // WHY STRING LITERALS AND NOT THE WHOLE FILE
 // ------------------------------------------
@@ -24,6 +26,18 @@
 // the same reason `bridge/apply.test.ts` uses `preProcessFile` for imports: a
 // regex cannot tell a string from a comment that contains a quotation mark, and
 // this repository has already been bitten by a scanner reading prose as code.
+//
+// A `.svelte` FILE IS TWO THINGS, and both are what the product says. Its
+// `<script>` block is TypeScript and goes through the same parser as a `.ts`
+// file. Its MARKUP is the product's prose directly — text nodes, attribute
+// values such as `title="..."`, and `{'...'}` expressions — so the markup is
+// scanned as text, with `<!-- -->` comments and the `<style>` block removed
+// first: a comment is this repository's reasoning, and a stylesheet names
+// colours. Each markup match is reported with its line, like a literal.
+//
+// THE CHANGELOG BLOCK is the `## 0.7.0` section of `CHANGELOG.md`, from its
+// heading to the next `## ` heading, scanned as text. Earlier versions'
+// entries are history and are not G10's subject.
 //
 // WHAT IS DELIBERATELY NOT SCANNED
 // --------------------------------
@@ -74,8 +88,23 @@ const PATTERNS = FORBIDDEN.map((word) => ({
   re: new RegExp(`\\b${word}\\w*\\b`, 'iu'),
 }));
 
-/** Where G10 applies today. Phase 4 adds `webview/stats` and the changelog. */
-const DEFAULT_SCOPES = [{ dir: join(REPO_ROOT, 'src', 'stats'), label: 'src/stats' }];
+/**
+ * Where G10 applies. Three directories and one document block (DoD 4.7).
+ *
+ * A directory scope is scanned recursively for `.ts` and `.svelte`; a `block`
+ * scope is one section of one file, scanned as text.
+ */
+const DEFAULT_SCOPES = [
+  { kind: 'dir', dir: join(REPO_ROOT, 'src', 'stats'), label: 'src/stats' },
+  { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'stats'), label: 'webview/stats' },
+  { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'sidebar'), label: 'webview/sidebar' },
+  {
+    kind: 'block',
+    file: join(REPO_ROOT, 'CHANGELOG.md'),
+    heading: '## 0.7.0',
+    label: 'CHANGELOG.md (0.7.0 block)',
+  },
+];
 
 /**
  * `--scope <dir>` replaces the built-in scopes, and it exists for ONE caller.
@@ -98,7 +127,7 @@ function scopesFromArgv() {
   if (at === -1) return DEFAULT_SCOPES;
   const dir = process.argv[at + 1];
   if (dir === undefined) throw new Error('--scope needs a directory');
-  return [{ dir, label: dir }];
+  return [{ kind: 'dir', dir, label: dir }];
 }
 
 const SCOPES = scopesFromArgv();
@@ -110,14 +139,13 @@ function sourceFiles(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) out.push(...sourceFiles(full));
-    else if (entry.name.endsWith('.ts')) out.push(full);
+    else if (entry.name.endsWith('.ts') || entry.name.endsWith('.svelte')) out.push(full);
   }
   return out.sort();
 }
 
-/** Every string literal in a source file, with its line. */
-function literalsOf(file) {
-  const text = readFileSync(file, 'utf8');
+/** Every string literal in TypeScript source, with its line (1-based, offset by `lineBase`). */
+function literalsOfSource(file, text, lineBase = 0) {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const out = [];
   const visit = (node) => {
@@ -135,12 +163,72 @@ function literalsOf(file) {
         (ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent));
       if (!isSpecifier && typeof node.text === 'string' && node.text.length > 0) {
         const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
-        out.push({ text: node.text, line: line + 1 });
+        out.push({ text: node.text, line: line + 1 + lineBase });
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
+  return out;
+}
+
+/** Every string literal in a `.ts` file. */
+function literalsOfTs(file) {
+  return literalsOfSource(file, readFileSync(file, 'utf8'));
+}
+
+/**
+ * A `.svelte` file: its `<script>` block's literals, plus every non-empty line
+ * of its markup as one "literal" each — comments and the style block removed.
+ *
+ * Line-per-unit rather than text-node-per-unit because a Svelte template is
+ * not HTML enough for a DOM parser and not TypeScript enough for `ts`; a line
+ * is the unit a person locates a violation by, and a violation is reported
+ * with the word matched, so the coarser unit costs nothing in precision.
+ */
+function literalsOfSvelte(file) {
+  const text = readFileSync(file, 'utf8');
+  const out = [];
+  const lineOf = (offset) => text.slice(0, offset).split('\n').length - 1;
+
+  const scriptRe = /<script\b[^>]*>([\s\S]*?)<\/script>/giu;
+  let markup = text;
+  for (const match of text.matchAll(scriptRe)) {
+    const body = match[1] ?? '';
+    const start = match.index ?? 0;
+    const bodyOffset = start + match[0].indexOf(body);
+    out.push(...literalsOfSource(file, body, lineOf(bodyOffset)));
+    // Blank the script out of the markup copy, keeping line numbers intact.
+    markup = markup.slice(0, start) + match[0].replace(/[^\n]/gu, ' ') + markup.slice(start + match[0].length);
+  }
+  markup = markup.replace(/<style\b[^>]*>[\s\S]*?<\/style>/giu, (m) => m.replace(/[^\n]/gu, ' '));
+  markup = markup.replace(/<!--[\s\S]*?-->/gu, (m) => m.replace(/[^\n]/gu, ' '));
+
+  markup.split('\n').forEach((line, index) => {
+    // A line that is only tags and braces says nothing; keep the ones with
+    // a letter in them, which is where prose can be.
+    if (!/[A-Za-z]/u.test(line)) return;
+    out.push({ text: line, line: index + 1 });
+  });
+  return out;
+}
+
+function literalsOf(file) {
+  return file.endsWith('.svelte') ? literalsOfSvelte(file) : literalsOfTs(file);
+}
+
+/** The lines of one `## ` section of a markdown file, from its heading to the next. */
+function blockLines(file, heading) {
+  const text = readFileSync(file, 'utf8');
+  const lines = text.split(/\r?\n/u);
+  const start = lines.findIndex((l) => l.startsWith(heading));
+  if (start === -1) return null;
+  const out = [];
+  for (let i = start; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (i > start && line.startsWith('## ')) break;
+    if (/[A-Za-z]/u.test(line)) out.push({ text: line, line: i + 1 });
+  }
   return out;
 }
 
@@ -151,19 +239,49 @@ function main() {
   let skipped = 0;
   let literals = 0;
 
+  const scanUnits = (file, units) => {
+    for (const literal of units) {
+      literals += 1;
+      for (const { word, re } of PATTERNS) {
+        const match = re.exec(literal.text);
+        if (match === null) continue;
+        violations.push({
+          file: relative(REPO_ROOT, file).split(sep).join('/'),
+          line: literal.line,
+          word,
+          matched: match[0],
+          literal: literal.text.length > 120 ? `${literal.text.slice(0, 117)}...` : literal.text,
+        });
+      }
+    }
+  };
+
   for (const scope of SCOPES) {
+    if (scope.kind === 'block') {
+      const units = blockLines(scope.file, scope.heading);
+      if (units === null) {
+        // The block is a real scope; a changelog without it is a gate that
+        // scans nothing for that scope, which is the fail-open shape.
+        console.error(`forbidden-words: scope ${scope.label} does not exist`);
+        process.exitCode = 1;
+        return;
+      }
+      scanned += 1;
+      scanUnits(scope.file, units);
+      continue;
+    }
     let files;
     try {
       files = statSync(scope.dir).isDirectory() ? sourceFiles(scope.dir) : [];
     } catch {
-      // A scope that does not exist yet is not a pass. Phase 4 adds
+      // A scope that does not exist yet is not a pass. Phase 4 added
       // `webview/stats`, and until then this would silently scan nothing.
       console.error(`forbidden-words: scope ${scope.label} does not exist`);
       process.exitCode = 1;
       return;
     }
     if (files.length === 0) {
-      console.error(`forbidden-words: scope ${scope.label} contains no .ts file`);
+      console.error(`forbidden-words: scope ${scope.label} contains no .ts or .svelte file`);
       process.exitCode = 1;
       return;
     }
@@ -173,20 +291,7 @@ function main() {
         continue;
       }
       scanned += 1;
-      for (const literal of literalsOf(file)) {
-        literals += 1;
-        for (const { word, re } of PATTERNS) {
-          const match = re.exec(literal.text);
-          if (match === null) continue;
-          violations.push({
-            file: relative(REPO_ROOT, file).split(sep).join('/'),
-            line: literal.line,
-            word,
-            matched: match[0],
-            literal: literal.text.length > 120 ? `${literal.text.slice(0, 117)}...` : literal.text,
-          });
-        }
-      }
+      scanUnits(file, literalsOf(file));
     }
   }
 

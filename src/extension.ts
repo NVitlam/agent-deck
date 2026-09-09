@@ -125,7 +125,13 @@ import * as vscode from 'vscode';
 import { SessionBridge, isWebviewToHostMessage } from './bridge/messages.js';
 import type { BridgeDegradedState } from './bridge/messages.js';
 import { createNonce, webviewHtml } from './bridge/html.js';
+import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
+import { SIDEBAR_VIEW_ID } from './sidebar/menu.js';
+import { SidebarController } from './sidebar/provider.js';
+import type { SidebarSurface } from './sidebar/provider.js';
+import { inSessionOrder, statsWireRecords } from './stats/wire.js';
+import type { StatsRecord } from './stats/schema.js';
 import {
   COUNTERS_INTERVAL_MS,
   DIAGNOSTICS_CHANNEL_NAME,
@@ -149,6 +155,8 @@ import type { SessionDiff, SessionEmission } from './model/session.js';
 import type {
   HostToWebviewMessage,
   SessionState,
+  SettingsMessage,
+  ShowViewMessage,
   SkippedFile,
   WebviewToHostMessage,
 } from './model/events.js';
@@ -301,6 +309,15 @@ export interface AgentDeckSettings {
   'stats.retentionDays': number;
   'stats.idleFlushMs': number;
   /**
+   * `agentDeck.canvas.autoFit` — v0.7.0 Phase 4, DoD 4.0. The FIFTH setting the
+   * Phase 3 module list named, landing with its behaviour: the canvas re-fits
+   * on every geometry-changing event (the trigger table in `webview/store.ts`)
+   * while this is `true`, and never after the initial render while it is
+   * `false`. The renderer hears it through a `settings` message; a change
+   * takes effect without a reload.
+   */
+  'canvas.autoFit': boolean;
+  /**
    * `agentDeck.pricing` — model id to prices, in USD per million tokens.
    *
    * Read as an opaque object here and parsed by `stats/pricing.ts`, which is
@@ -442,10 +459,12 @@ export interface SettingShape {
 }
 
 export const SETTING_SHAPES: Readonly<
-  Record<'stats.enabled' | 'pricing', SettingShape>
+  Record<'stats.enabled' | 'pricing' | 'canvas.autoFit', SettingShape>
 > = {
   'stats.enabled': { type: 'boolean', defaultOf: (): boolean => true },
   pricing: { type: 'object', defaultOf: (): Record<string, unknown> => ({}) },
+  // Spec section G: default `true`. Phase 4, with the behaviour it governs.
+  'canvas.autoFit': { type: 'boolean', defaultOf: (): boolean => true },
 };
 
 /**
@@ -463,9 +482,13 @@ export const SETTING_SHAPES: Readonly<
  */
 export function statsSettingDefaults(): Pick<
   AgentDeckSettings,
-  'stats.enabled' | 'stats.retentionDays' | 'stats.idleFlushMs' | 'pricing'
+  'stats.enabled' | 'stats.retentionDays' | 'stats.idleFlushMs' | 'pricing' | 'canvas.autoFit'
 > {
   return {
+    // Phase 4's `canvas.autoFit` rides along: the harnesses that spread this
+    // into a whole `AgentDeckSettings` would otherwise each need a sixth
+    // literal, which is the same defect the function exists to remove.
+    'canvas.autoFit': SETTING_SHAPES['canvas.autoFit'].defaultOf() as boolean,
     'stats.enabled': SETTING_SHAPES['stats.enabled'].defaultOf() as boolean,
     'stats.retentionDays': SETTING_BOUNDS['stats.retentionDays'].default,
     'stats.idleFlushMs': SETTING_BOUNDS['stats.idleFlushMs'].default,
@@ -514,6 +537,10 @@ export function readSettings(reader: SettingsReader | undefined): AgentDeckSetti
     'stats.enabled': typeof get('stats.enabled') === 'boolean'
       ? (get('stats.enabled') as boolean)
       : (SETTING_SHAPES['stats.enabled'].defaultOf() as boolean),
+    // Same rule, same reason: a boolean or the default, never a truthiness read.
+    'canvas.autoFit': typeof get('canvas.autoFit') === 'boolean'
+      ? (get('canvas.autoFit') as boolean)
+      : (SETTING_SHAPES['canvas.autoFit'].defaultOf() as boolean),
     // Passed through unparsed. `parsePricing` is total and reports what it
     // refused; validating here would be a second, quieter account of the same
     // judgment. An array is an object to `typeof`, so it is excluded here as
@@ -2881,11 +2908,18 @@ export interface PanelCounters {
    * renderer reporting that a patch did not apply, which is not.
    */
   resyncs: number;
+  /**
+   * Stats records this panel refused to put on the wire (v0.7.0 DoD 4.1):
+   * failed the Phase 2 validator on the host, dropped, counted. The rest of
+   * the message still went out.
+   */
+  statsDropped: number;
 }
 
-/** Where the built webview assets live inside the packaged extension. */
-export const WEBVIEW_SCRIPT_SEGMENTS = ['dist', 'webview', 'main.js'] as const;
-export const WEBVIEW_STYLE_SEGMENTS = ['dist', 'webview', 'main.css'] as const;
+// Where the built webview assets live inside the packaged extension. Declared
+// in `bridge/panel-assets.ts` since v0.7.0 Phase 4 so the sidebar names the
+// SAME two files; re-exported here so every caller keeps its import.
+export { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS };
 
 /**
  * One panel: its document, its bridge, and its inbound guard.
@@ -2908,7 +2942,16 @@ export class PanelController {
     messagesDropped: 0,
     reloads: 0,
     resyncs: 0,
+    statsDropped: 0,
   };
+  /**
+   * The last `settings` message sent, re-sent on every reload (DoD 4.0).
+   *
+   * A reload is a NEW document that knows nothing — the same reason the
+   * bridge re-snapshots — so the renderer's `canvasAutoFit` would otherwise
+   * silently fall back to its default after every hide/restore.
+   */
+  #settings: SettingsMessage | null = null;
 
   constructor(options: PanelControllerOptions) {
     this.#panel = options.panel;
@@ -2942,6 +2985,11 @@ export class PanelController {
         this.#counts.reloads += 1;
         this.bridge.reset();
         this.#onNeedsSnapshot();
+        // Settings AFTER the snapshot the pump supplied: the bridge's first
+        // message to a fresh document is a snapshot, and that invariant is
+        // older than this message. The renderer's default is the manifest
+        // default, so nothing is decided wrongly in the gap.
+        if (this.#settings !== null) this.#panel.postMessage(this.#settings);
       }),
     );
     if (options.onDispose !== undefined) {
@@ -2967,6 +3015,55 @@ export class PanelController {
     // it is two independent no-nagging rules rather than one shared one.
     this.bridge.publishDegraded('cc', payload.degraded);
     this.bridge.publishDegraded('codex', payload.codexDegraded);
+  }
+
+  /**
+   * Tell the renderer the host settings it reads (DoD 4.0). Sent now, and
+   * again on every reload; a change is a fresh send, unconditionally — this
+   * is one boolean, and a no-nagging rule for it would cost more than it
+   * saves.
+   */
+  setSettings(settings: Omit<SettingsMessage, 'type'>): void {
+    if (this.#disposed) return;
+    this.#settings = { type: 'settings', ...settings };
+    this.#panel.postMessage(this.#settings);
+  }
+
+  /** Ask the renderer to show a view mode (DoD 4.6b: `agentDeck.openStats`). */
+  showView(mode: ShowViewMessage['mode']): void {
+    if (this.#disposed) return;
+    this.#panel.postMessage({ type: 'showView', mode });
+  }
+
+  /**
+   * Put the Layer 1 facts on the wire (DoD 4.1): the live records, and — when
+   * the caller has re-read it — the stored history.
+   *
+   * THE VALIDATOR RUNS HERE, on the host, on every record, and a record that
+   * fails is dropped and counted rather than sent (`statsWireRecords`). What
+   * is returned is what was refused, so the host can name it on the
+   * diagnostics channel; the counter on this controller is the running total
+   * the counters line reports.
+   */
+  publishStats(
+    live: readonly StatsRecord[],
+    stored: { records: readonly unknown[]; enabled: boolean } | null,
+  ): { dropped: number; reasons: string[] } {
+    if (this.#disposed) return { dropped: 0, reasons: [] };
+    const liveWire = statsWireRecords(live);
+    const reasons = [...liveWire.reasons];
+    this.#panel.postMessage({ type: 'statsSnapshot', records: liveWire.records });
+    if (stored !== null) {
+      const storedWire = statsWireRecords(stored.records);
+      reasons.push(...storedWire.reasons);
+      this.#panel.postMessage({
+        type: 'statsStore',
+        records: inSessionOrder(storedWire.records),
+        enabled: stored.enabled,
+      });
+    }
+    this.#counts.statsDropped += reasons.length;
+    return { dropped: reasons.length, reasons };
   }
 
   reveal(): void {
@@ -3141,6 +3238,23 @@ export class StatsPipeline {
   /** Records appended by the IDLE trigger. Read by tests. */
   get idleFlushes(): number {
     return this.#flushes;
+  }
+
+  /**
+   * The newest derived record per tracked session, in first-seen order —
+   * the `statsSnapshot` message's payload (v0.7.0 DoD 4.1).
+   *
+   * What the pipeline last derived, not what it last WROTE: the Stats view is
+   * live and updates on every patch, while the store hears only from the two
+   * flush triggers. A session with no record yet (its first derivation threw)
+   * is simply absent, which is the same absence G2 gives the deck.
+   */
+  liveRecords(): StatsRecord[] {
+    const out: StatsRecord[] = [];
+    for (const entry of this.#tracked.values()) {
+      if (entry.record !== null) out.push(entry.record);
+    }
+    return out;
   }
 
   /** Sessions with a pending idle flush. Must be 0 after `dispose()`. */
@@ -3413,10 +3527,23 @@ export class AgentDeckHost {
   #panel: PanelController | null = null;
   #panelsCreated = 0;
   #disposed = false;
+  /** `agentDeck.canvas.autoFit`, as last read. Sent to every panel (DoD 4.0). */
+  #canvasAutoFit: boolean;
+  /**
+   * How many flushes the pipeline had performed when the store was last read
+   * for the wire, or -1 when it has never been read (or a reload made the
+   * last read moot). The store is re-read only when this lags the pipeline:
+   * a read costs a directory walk and the host pumps every 5 s, so reading on
+   * every pump would spend the `stats.store.read.dod` budget on nothing.
+   */
+  #storeReadAtFlush = -1;
+  /** Stats records refused at the wire by panels since activation. */
+  #statsDropped = 0;
 
   constructor(options: AgentDeckHostOptions) {
     const { createPanel, nonce, onEmission, createDiagnosticsSink, statsDir, ...rest } = options;
     this.#createPanel = createPanel;
+    this.#canvasAutoFit = options.settings['canvas.autoFit'];
     if (nonce !== undefined) this.#nonce = nonce;
     this.#scheduler = options.scheduler ?? systemScheduler;
     const clock = options.now ?? ((): number => Date.now());
@@ -3480,6 +3607,10 @@ export class AgentDeckHost {
         // where the stats layer runs first and cannot reach what follows.
         this.#observeStats(payload.emission);
         this.#panel?.publish(payload);
+        // AFTER the session publish and inside its own guard too: the Stats
+        // view is downstream of the deck, and a stats wire failure must not
+        // reach the consumer any more than a deriver throw may (G2).
+        this.#publishStats();
         onEmission(payload);
       },
       // F2. Read through `this.diagnostics` at CALL time rather than captured,
@@ -3584,6 +3715,59 @@ export class AgentDeckHost {
   }
 
   /**
+   * Put the Layer 1 facts on the panel's wire (DoD 4.1), behind a guard.
+   *
+   * The live records go on every publish — they are already derived, so the
+   * only cost is the validator walk. The STORED records are re-read only when
+   * the pipeline has flushed since the last read, or when a reload made the
+   * webview forget them; see `#storeReadAtFlush`.
+   */
+  #publishStats(): void {
+    const panel = this.#panel;
+    const pipeline = this.stats;
+    if (panel === null || pipeline === undefined) return;
+    try {
+      let stored: { records: readonly unknown[]; enabled: boolean } | null = null;
+      if (this.#storeReadAtFlush !== pipeline.store.appended) {
+        stored = { records: pipeline.store.readRecords({}), enabled: pipeline.store.enabled };
+        this.#storeReadAtFlush = pipeline.store.appended;
+      }
+      const { dropped, reasons } = panel.publishStats(pipeline.liveRecords(), stored);
+      if (dropped > 0) {
+        this.#statsDropped += dropped;
+        this.diagnostics?.record({
+          kind: 'engineDegraded',
+          engine: 'cc',
+          reason: `stats wire: ${String(dropped)} record(s) refused by the validator: ${reasons.join('; ')}`,
+        });
+      }
+    } catch (error) {
+      this.#statsErrors += 1;
+      this.diagnostics?.record({
+        kind: 'engineDegraded',
+        engine: 'cc',
+        reason: `stats wire: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+
+  /**
+   * `agentDeck.canvas.autoFit` changed (DoD 4.0). Live, no reload: the value
+   * is one boolean the renderer reads on its next fit decision.
+   */
+  setCanvasAutoFit(value: boolean): void {
+    this.#canvasAutoFit = value;
+    this.#panel?.setSettings({ canvasAutoFit: value });
+  }
+
+  /** `agentDeck.openStats`: the panel, showing the Stats view mode (DoD 4.6b). */
+  openStats(): PanelController | null {
+    const controller = this.open();
+    controller?.showView('stats');
+    return controller;
+  }
+
+  /**
    * Assemble the counters line from whatever is authoritative right now.
    *
    * Nothing is accumulated in the channel: `DiagnosticsCounters` documents why
@@ -3627,6 +3811,10 @@ export class AgentDeckHost {
       // which is the truth about a window that is not keeping a history.
       statsErrors: this.#statsErrors + (this.stats?.errors ?? 0),
       storeMalformed: this.stats?.store.malformed ?? 0,
+      // Accumulated on the HOST rather than read off the panel: a panel that
+      // was closed and reopened would otherwise reset the count to zero, and
+      // the counters line is a running total for the window.
+      statsDropped: this.#statsDropped,
     };
   }
 
@@ -3667,6 +3855,9 @@ export class AgentDeckHost {
       panel: this.#createPanel(),
       ...(this.#nonce !== undefined ? { nonce: this.#nonce } : {}),
       onNeedsSnapshot: () => {
+        // The new document holds no history either: force the next publish
+        // to re-read the store (DoD 4.1), then pump so it happens now.
+        this.#storeReadAtFlush = -1;
         this.dataPath.pump();
       },
       onDispose: () => {
@@ -3695,7 +3886,13 @@ export class AgentDeckHost {
     this.#panel = controller;
     // A brand-new webview knows nothing, so its first message must be a full
     // snapshot. `SessionBridge` guarantees that; pumping supplies the content.
+    // The store is re-read for it too (DoD 4.1).
+    this.#storeReadAtFlush = -1;
     this.dataPath.pump();
+    // Then the settings (DoD 4.0). After, not before: the snapshot-first
+    // invariant is the older contract, and the renderer's default while it
+    // waits is the manifest default.
+    controller.setSettings({ canvasAutoFit: this.#canvasAutoFit });
     return controller;
   }
 
@@ -3724,6 +3921,32 @@ export class AgentDeckHost {
 /** The commands declared in `contributes.commands`. */
 export const OPEN_COMMAND = 'agentDeck.open';
 export const SHOW_DIAGNOSTICS = SHOW_DIAGNOSTICS_COMMAND;
+
+/**
+ * `agentDeck.openStats` — the panel, in its Stats view mode (v0.7.0 Phase 4,
+ * DoD 4.6b). The sidebar's second entry. Opens the same panel `agentDeck.open`
+ * opens and then asks it to show `stats`; there is no second panel (spec §G).
+ */
+export const OPEN_STATS_COMMAND = 'agentDeck.openStats';
+
+/**
+ * `agentDeck.openSettings` — VS Code's own settings UI, filtered to this
+ * extension. A workbench command, no setting written, G1 untouched; it exists
+ * so the sidebar has a "Settings" entry that lands where the knobs are.
+ */
+export const OPEN_SETTINGS_COMMAND = 'agentDeck.openSettings';
+
+/** The workbench command `agentDeck.openSettings` runs, and its argument. */
+export const WORKBENCH_OPEN_SETTINGS = 'workbench.action.openSettings';
+export const SETTINGS_FILTER = '@ext:nvitlam.agent-deck';
+
+/**
+ * Run after the panel is created when MORE THAN ONE editor group exists
+ * (locked open question, 2026-09-05): the deck takes `ViewColumn.One`, and
+ * with a second group beside it the widths are evened so neither is a sliver.
+ * A workbench command; nothing is written.
+ */
+export const EVEN_EDITOR_WIDTHS = 'workbench.action.evenEditorWidths';
 
 /**
  * `agentDeck.stats.clearHistory` — DoD 3.5.
@@ -3945,6 +4168,63 @@ export function adaptWebviewPanel(
 }
 
 /**
+ * Adapt a real `vscode.WebviewView` to {@link SidebarSurface} (DoD 4.6b).
+ *
+ * Same shape as {@link adaptWebviewPanel} and for the same reason: the one
+ * place the editor API and the sidebar controller's vocabulary meet, written
+ * out so a change in either is a compile error here.
+ */
+export function adaptWebviewView(
+  view: vscode.WebviewView,
+  extensionUri: vscode.Uri,
+): SidebarSurface {
+  view.webview.options = {
+    enableScripts: true,
+    // The same two files the panel may read, and nothing else.
+    localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist')],
+  };
+  return {
+    get cspSource(): string {
+      return view.webview.cspSource;
+    },
+    setHtml: (html: string): void => {
+      view.webview.html = html;
+    },
+    asWebviewUri: (...segments: string[]): string =>
+      view.webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, ...segments)).toString(),
+    onDidReceiveMessage: (handler: (raw: unknown) => void): Unsubscribe => {
+      const subscription = view.webview.onDidReceiveMessage((raw: unknown) => {
+        handler(raw);
+      });
+      return () => {
+        subscription.dispose();
+      };
+    },
+    onDidDispose: (handler: () => void): Unsubscribe => {
+      const subscription = view.onDidDispose(() => {
+        handler();
+      });
+      return () => {
+        subscription.dispose();
+      };
+    },
+  };
+}
+
+/**
+ * How many editor groups the window has. `tabGroups` has been on `window`
+ * since VS Code 1.67, below this extension's floor; read defensively anyway,
+ * because a throw here would be a throw out of a command handler.
+ */
+function editorGroupCount(): number {
+  try {
+    return vscode.window.tabGroups.all.length;
+  } catch {
+    return 1;
+  }
+}
+
+/**
  * Activate.
  *
  * Order matters and is the point of the whole function:
@@ -4019,6 +4299,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       host.open();
+    }),
+    /*
+     * v0.7.0 DoD 4.6b. The same panel, asked to show the Stats view mode.
+     * Same inactive message as `agentDeck.open`, because it is the same panel.
+     */
+    vscode.commands.registerCommand(OPEN_STATS_COMMAND, () => {
+      const host = activeHost;
+      if (host === null) {
+        void vscode.window.showInformationMessage(
+          inactiveReason ??
+            'Agent Deck: this workspace has no Claude Code project directory yet.',
+        );
+        return;
+      }
+      host.openStats();
+    }),
+    /*
+     * v0.7.0 DoD 4.6b. VS Code's settings UI, filtered to this extension —
+     * a workbench command with an argument, and nothing written.
+     */
+    vscode.commands.registerCommand(OPEN_SETTINGS_COMMAND, () => {
+      void vscode.commands.executeCommand(WORKBENCH_OPEN_SETTINGS, SETTINGS_FILTER);
+    }),
+    /*
+     * v0.7.0 DoD 4.6b — THE SIDEBAR, registered UNCONDITIONALLY and above the
+     * activation gates, like the clear command and for the same reason: it is
+     * the product's front door, and a front door that only exists in windows
+     * the data path started in is missing from exactly the window someone
+     * opens to find out why nothing is showing. Every entry runs a command
+     * registered in this same function, so each explains itself when there is
+     * nothing to show.
+     */
+    vscode.window.registerWebviewViewProvider(SIDEBAR_VIEW_ID, {
+      resolveWebviewView: (view: vscode.WebviewView): void => {
+        new SidebarController({
+          surface: adaptWebviewView(view, context.extensionUri),
+          executeCommand: (command: string) => vscode.commands.executeCommand(command),
+          onError: (error: unknown) => {
+            void vscode.window.showErrorMessage(
+              `Agent Deck: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          },
+        });
+      },
     }),
     /*
      * DoD 5.5.3. Registered beside `agentDeck.open` and for the same reason
@@ -4169,22 +4493,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     ...(statsDir === undefined ? {} : { statsDir }),
     settings,
-    createPanel: () =>
-      adaptWebviewPanel(
-        vscode.window.createWebviewPanel(
-          PANEL_VIEW_TYPE,
-          PANEL_TITLE,
-          vscode.ViewColumn.Beside,
-          {
-            enableScripts: true,
-            // The webview may read the built bundle and nothing else. Combined
-            // with the CSP in `html.ts`, the renderer's reachable surface is
-            // two files.
-            localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist')],
-          },
-        ),
-        extensionUri,
-      ),
+    createPanel: () => {
+      /*
+       * v0.7.0 DoD 4.6c — THE DECK OPENS LEFT (locked open question,
+       * 2026-09-05). `ViewColumn.One`, not `Beside`: the panel is the room and
+       * it takes the first group. Then, when more than one editor group
+       * exists, the widths are evened so the group it joined and the one
+       * beside it share the window. Both are workbench commands; no setting
+       * is written and G1 is untouched. With ONE group there is nothing to
+       * even and the command is not run.
+       */
+      const panel = vscode.window.createWebviewPanel(
+        PANEL_VIEW_TYPE,
+        PANEL_TITLE,
+        vscode.ViewColumn.One,
+        {
+          enableScripts: true,
+          // The webview may read the built bundle and nothing else. Combined
+          // with the CSP in `html.ts`, the renderer's reachable surface is
+          // two files.
+          localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist')],
+        },
+      );
+      if (editorGroupCount() > 1) {
+        void vscode.commands.executeCommand(EVEN_EDITOR_WIDTHS);
+      }
+      return adaptWebviewPanel(panel, extensionUri);
+    },
     onEmission: () => {
       // The panel is fed by AgentDeckHost itself; nothing else consumes
       // emissions today. Kept as a required option so a future consumer is an
@@ -4241,6 +4576,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // or re-grafting silently under the user is worse than requiring a
       // reload for two settings that change once.
       host.dataPath.setLivenessThresholdMs(next.livenessThresholdMs);
+      // ...and `canvas.autoFit` (DoD 4.0): one boolean the renderer reads on
+      // its next fit decision, so it moves live too.
+      host.setCanvasAutoFit(next['canvas.autoFit']);
     }),
   );
 

@@ -43,6 +43,7 @@ import {
   DEFAULT_VIEW_MODE,
   ENGINE_FILTERS,
   LIVENESS_FILTERS,
+  VIEW_MODES,
 } from './canvas-contract.js';
 import type {
   Altitude,
@@ -51,6 +52,9 @@ import type {
   ViewMode,
 } from './canvas-contract.js';
 import { countNodes } from './layout.js';
+import { fit as fitCanvas } from './layout/fit.js';
+import type { DrawerRect } from './layout/fit.js';
+import type { StatsRecord } from '../src/stats/schema.js';
 import {
   DECK_FIT_PADDING,
   DECK_ZOOM_LIMITS,
@@ -61,6 +65,107 @@ import {
   zoomAbout,
 } from './viewport.js';
 import type { Rect, ViewportSize } from './viewport.js';
+
+/* ------------------------------------------------------------------------ *
+ * Auto-fit — the trigger table (v0.7.0 Phase 4, DoD 4.0)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * What the renderer last measured: the drawn tree's bounds, the field's
+ * client size, and the drawer's rectangle (or `null` when closed). All three
+ * in the field's client coordinates; the store never measures anything.
+ */
+export interface CanvasGeometry {
+  bounds: Rect;
+  viewport: ViewportSize;
+  drawer: DrawerRect;
+}
+
+/**
+ * One row of the trigger table: a store event, and whether it fits.
+ *
+ * THE TABLE IS DATA, and it is the whole of the auto-fit decision. The user's
+ * rule (locked open question, 2026-09-05): the canvas re-fits on every event
+ * that MOVES GEOMETRY, and on nothing that moves only a number. Every row is
+ * driven both ways by `store.test.ts` — a listed trigger must call `fit`, a
+ * listed non-trigger must not — so adding an event to the store without
+ * adding it here is a test failure, not a silent default.
+ *
+ * `event` names the store method or message that produces it; the test's
+ * driver map is keyed on the same strings.
+ */
+export interface FitTrigger {
+  event: string;
+  fits: boolean;
+  why: string;
+}
+
+export const FIT_TRIGGERS: readonly FitTrigger[] = [
+  // Geometry moves: fit.
+  { event: 'selectNode', fits: true, why: 'node selected: the drawer opens' },
+  { event: 'setInspectorOpen', fits: true, why: 'the drawer opened or closed' },
+  { event: 'toggleDrawerExpanded', fits: true, why: 'the drawer expanded or collapsed' },
+  { event: 'escape:inspector', fits: true, why: 'Escape closed the drawer' },
+  { event: 'diff:insertNode', fits: true, why: 'an agent or call was grafted' },
+  { event: 'diff:removeNode', fits: true, why: 'a node was removed' },
+  { event: 'diff:replaceNode', fits: true, why: 'a subtree was replaced' },
+  { event: 'diff:replaceRoot', fits: true, why: 'the tree was replaced' },
+  { event: 'diff:reorderChildren', fits: true, why: 'children were reordered' },
+  { event: 'diff:parked', fits: true, why: 'an agent was parked or unparked' },
+  { event: 'diff:spawnEdges', fits: true, why: 'a spawn edge joined or left' },
+  { event: 'snapshot', fits: true, why: 'a full re-statement of the sessions (R6 replay step, reload)' },
+  { event: 'enterSession', fits: true, why: 'session switch' },
+  { event: 'selectSession', fits: true, why: 'session switch' },
+  { event: 'setEngineFilter', fits: true, why: 'engine chip toggle' },
+  { event: 'setViewMode:canvas', fits: true, why: 'mode switch back to canvas' },
+  { event: 'reportCanvasGeometry:changed', fits: true, why: 'panel or editor-group resize; label re-wrap that changed a node width' },
+  // Numbers move, geometry does not: never fit.
+  { event: 'diff:updateAgent', fits: false, why: 'token counters, status: a number on a box that did not move' },
+  { event: 'diff:updateTool', fits: false, why: 'liveness colour, a status word' },
+  { event: 'diff:fields', fits: false, why: 'session scalars: liveness, totals, context, burn, window' },
+  { event: 'degraded', fits: false, why: 'the hook tap\'s health' },
+  { event: 'schemaMismatch', fits: false, why: 'a refusal replaces the field entirely' },
+  { event: 'statsSnapshot', fits: false, why: 'the Stats view; nothing on the canvas moved' },
+  { event: 'statsStore', fits: false, why: 'the Stats view; nothing on the canvas moved' },
+  { event: 'setLivenessFilter', fits: false, why: 'a deck filter' },
+  { event: 'setViewMode:list', fits: false, why: 'leaving the canvas' },
+  { event: 'setViewMode:stats', fits: false, why: 'leaving the canvas' },
+  { event: 'setDetailAction', fits: false, why: 'the drawer body splits; the drawer does not resize' },
+  { event: 'toggleNode', fits: false, why: 'list-view expansion' },
+  { event: 'dismissDegraded', fits: false, why: 'the banner' },
+  { event: 'panCanvas', fits: false, why: 'the user\'s own pan persists until the next trigger' },
+  { event: 'zoomCanvas', fits: false, why: 'the user\'s own zoom persists until the next trigger' },
+  { event: 'reportCanvasGeometry:unchanged', fits: false, why: 'the renderer re-measured the same numbers' },
+];
+
+/** Tree ops that move geometry. The rest change a field on a box in place. */
+const GEOMETRY_OPS: ReadonlySet<TreeOp['op']> = new Set([
+  'insertNode',
+  'removeNode',
+  'replaceNode',
+  'replaceRoot',
+  'reorderChildren',
+]);
+
+/** What a `createStore` caller may inject. */
+export interface StoreOptions {
+  /**
+   * The fit function. Defaults to the pure `fit` from `layout/fit.ts`;
+   * `store.test.ts` injects a spy to drive the trigger table both ways.
+   */
+  fit?: typeof fitCanvas;
+}
+
+function sameGeometry(a: CanvasGeometry, b: CanvasGeometry): boolean {
+  const sameRect = (p: Rect | null, q: Rect | null): boolean =>
+    p === q || (p !== null && q !== null && p.x === q.x && p.y === q.y && p.w === q.w && p.h === q.h);
+  return (
+    sameRect(a.bounds, b.bounds) &&
+    a.viewport.width === b.viewport.width &&
+    a.viewport.height === b.viewport.height &&
+    sameRect(a.drawer, b.drawer)
+  );
+}
 
 /** One row of the left rail. */
 export interface SessionSummary {
@@ -388,6 +493,27 @@ export interface WebviewView {
   selectedNodeId?: string;
   /** The selected node itself, looked up on demand. Never cached. */
   selectedNode?: TreeNode;
+  /**
+   * `agentDeck.canvas.autoFit`, as the host last said (DoD 4.0). `true`
+   * until a `settings` message arrives, which is the manifest default.
+   */
+  canvasAutoFit: boolean;
+  /**
+   * Incremented every time the store FITS the canvas. The renderer adopts
+   * `canvasView` when this moves and not otherwise, which is what lets a
+   * user's own pan survive a re-render that fitted nothing.
+   */
+  canvasFitEpoch: number;
+  /**
+   * The LIVE Layer 1 facts: one record per observed session, as the host's
+   * pipeline last derived them (DoD 4.1). Replaced whole on every
+   * `statsSnapshot`; never merged, never accumulated.
+   */
+  statsLive: readonly StatsRecord[];
+  /** The stored history, in session order, for Trends (DoD 4.1). */
+  statsStored: readonly StatsRecord[];
+  /** `agentDeck.stats.enabled` as the host read it. Trends' empty-state reason. */
+  statsStoreEnabled: boolean;
 }
 
 export interface Store {
@@ -506,6 +632,22 @@ export interface Store {
   /** True when the user toggled this node away from its default. */
   isToggled(nodeId: string): boolean;
   dismissDegraded(): void;
+  /**
+   * The renderer reports what it measured (DoD 4.0). A CHANGED geometry is a
+   * trigger in its own right — a panel resize, a label that re-wrapped — and
+   * an unchanged one is not; a fit a trigger asked for while the geometry was
+   * stale is completed here, against the fresh numbers.
+   */
+  reportCanvasGeometry(geometry: CanvasGeometry): void;
+  /** Enter or leave the Stats view mode (DoD 4.3): stats <-> canvas. */
+  toggleStats(): void;
+  /**
+   * Link-back (DoD 4.4): select the tool node a chain ordinal names, through
+   * the EXISTING select intent. Resolves `(sessionId, agentId, ordinal)`
+   * against the live session tree; returns `false`, and does nothing, when
+   * the session is gone or refused or the ordinal names no call.
+   */
+  selectToolByOrdinal(sessionId: string, agentId: string, ordinal: number): boolean;
 }
 
 /** Where UI intents go. The host end is the webview panel's `onDidReceiveMessage`. */
@@ -627,8 +769,20 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
   };
 }
 
-export function createStore(postIntent: IntentSink = () => {}): Store {
+export function createStore(postIntent: IntentSink = () => {}, options: StoreOptions = {}): Store {
+  const fitFn = options.fit ?? fitCanvas;
   const sessions = new Map<string, SessionState>();
+  /* ----- auto-fit state (DoD 4.0) ----------------------------------------- */
+  let canvasAutoFit = true;
+  let canvasFitEpoch = 0;
+  /** What the renderer last reported. `null` until it has reported once. */
+  let geometry: CanvasGeometry | null = null;
+  /** A trigger fired and no fit has run against fresh geometry since. */
+  let fitPending = false;
+  /* ----- the Layer 1 facts (DoD 4.1) --------------------------------------- */
+  let statsLive: readonly StatsRecord[] = [];
+  let statsStored: readonly StatsRecord[] = [];
+  let statsStoreEnabled = true;
   /** Set between asking for a resync and the snapshot that answers it. */
   let resyncPending = false;
   let resyncs = 0;
@@ -685,6 +839,38 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
 
   const isRefused = (state: SessionState): boolean =>
     !state.schemaOk || state.liveness === 'unsupported' || mismatched.has(state.sessionId);
+
+  /**
+   * Run the fit, if the setting is on and the renderer has ever measured.
+   *
+   * Writes `canvasView` and bumps the epoch, which is how the renderer knows
+   * this value is a FIT and not the stale prop it deliberately ignores for
+   * its own pan/zoom. Returns whether anything happened, so a caller can
+   * notify only when the view moved.
+   */
+  const applyFit = (): boolean => {
+    if (!canvasAutoFit || geometry === null) return false;
+    canvasView = fitFn(geometry.bounds, geometry.viewport, geometry.drawer);
+    canvasFitEpoch += 1;
+    fitPending = false;
+    return true;
+  };
+
+  /**
+   * A trigger fired (see `FIT_TRIGGERS`). Fit now against the last-known
+   * geometry — so the store's decision is synchronous and testable — and
+   * leave `fitPending` set until the renderer reports again, because a
+   * structural diff changes the bounds AFTER the store has applied it and the
+   * fresh numbers arrive on the next render.
+   */
+  const triggerFit = (): void => {
+    fitPending = true;
+    applyFit();
+    // `applyFit` clears `fitPending`; a trigger wants the NEXT report to fit
+    // too, whatever the geometry, because the bounds it just fitted were
+    // measured before the event that fired it.
+    fitPending = true;
+  };
 
   /**
    * Bring altitude and node selection back into agreement with the session
@@ -819,6 +1005,11 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         deckView: { ...deckView },
         canvasView: { ...canvasView },
         resyncs,
+        canvasAutoFit,
+        canvasFitEpoch,
+        statsLive,
+        statsStored,
+        statsStoreEnabled,
       };
       if (detailActionId !== undefined) view.detailActionId = detailActionId;
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
@@ -849,7 +1040,27 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       switch (message.type) {
         case 'snapshot':
           applySnapshot(message.sessions);
+          // A snapshot is the host's re-statement of everything: a reload, an
+          // added or removed session, a resync, an R6 replay step. Geometry
+          // may have moved and the store cannot cheaply tell, so it fits.
+          triggerFit();
           break;
+        case 'statsSnapshot':
+          // Replaced whole. The host sends every live record every time, so
+          // a session that left is simply absent from the next message.
+          statsLive = message.records;
+          break;
+        case 'statsStore':
+          statsStored = message.records;
+          statsStoreEnabled = message.enabled;
+          break;
+        case 'settings':
+          canvasAutoFit = message.canvasAutoFit;
+          break;
+        case 'showView':
+          this.setViewMode(message.mode);
+          // `setViewMode` has already notified; nothing below must run twice.
+          return;
         case 'diff': {
           const prev = sessions.get(message.sessionId);
           if (prev === undefined) {
@@ -885,6 +1096,17 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
               'patch threw',
             );
             break;
+          }
+          // THE TRIGGER TABLE, applied to a diff: only an op that moves
+          // geometry — and only on the session that is on screen — fits.
+          // `updateAgent`/`updateTool`/`fields` are the token counters and
+          // the liveness colour the locked rule names as non-triggers.
+          if (message.sessionId === selectedSessionId) {
+            const structural =
+              (message.patch.tree ?? []).some((op) => GEOMETRY_OPS.has(op.op)) ||
+              message.patch.parked !== undefined ||
+              message.patch.spawnEdges !== undefined;
+            if (structural) triggerFit();
           }
           if (errors.length === 0) {
             patchFailure = undefined;
@@ -937,6 +1159,8 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       if (sessionId !== selectedSessionId) selectedNodeId = undefined;
       selectedSessionId = sessionId;
       postIntent({ type: 'selectSession', sessionId });
+      // Session switch: a different tree, so a fit (trigger table).
+      triggerFit();
       normalize();
       notify();
     },
@@ -959,6 +1183,10 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       selectedSessionId = sessionId;
       altitude = 'session';
       postIntent({ type: 'selectSession', sessionId });
+      // Session switch (trigger table). The renderer's own entry fit frames
+      // the new tree first; this marks the fit pending so the first geometry
+      // report after entry fits under the store's rule as well.
+      triggerFit();
       normalize();
       notify();
     },
@@ -978,6 +1206,8 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       selectedNodeId = nodeId;
       altitude = 'inspector';
       inspectorOpen = true;
+      // The drawer opens (trigger table): the field just lost a band.
+      triggerFit();
       // No message. The host is not told which node is being inspected, and
       // does not need to be — the payload arrived with the snapshot.
       notify();
@@ -998,6 +1228,8 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         // The height goes with the drawer. Reopening on the next selection at
         // 46vh would be the drawer remembering a state the user left.
         drawerExpanded = false;
+        // The drawer closed (trigger table): the field regained its band.
+        triggerFit();
       } else if (altitude === 'session') {
         altitude = 'deck';
       } else {
@@ -1013,6 +1245,8 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
       // shut drawer is a height change nobody can see.
       if (selectedNodeId === undefined) return;
       drawerExpanded = !drawerExpanded;
+      // The drawer changed height (trigger table).
+      triggerFit();
       notify();
     },
 
@@ -1039,8 +1273,16 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
 
     setViewMode(mode: ViewMode): void {
       if (mode === viewMode) return;
+      if (!VIEW_MODES.includes(mode)) return;
       viewMode = mode;
+      // Mode switch BACK to the canvas (trigger table): the field was
+      // unmounted and its geometry is whatever the window is now.
+      if (mode === 'canvas') triggerFit();
       notify();
+    },
+
+    toggleStats(): void {
+      this.setViewMode(viewMode === 'stats' ? 'canvas' : 'stats');
     },
 
     setLivenessFilter(filter: LivenessFilter): void {
@@ -1052,6 +1294,8 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     setEngineFilter(filter: EngineFilter): void {
       if (!ENGINE_FILTERS.includes(filter) || filter === engineFilter) return;
       engineFilter = filter;
+      // Engine chip toggle (trigger table).
+      triggerFit();
       notify();
     },
 
@@ -1070,6 +1314,8 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
         detailActionId = undefined;
         drawerExpanded = false;
       }
+      // The drawer opened or closed (trigger table).
+      triggerFit();
       notify();
     },
 
@@ -1138,8 +1384,56 @@ export function createStore(postIntent: IntentSink = () => {}): Store {
     },
 
     toggleViewMode(): void {
-      viewMode = viewMode === 'canvas' ? 'list' : 'canvas';
+      // Canvas <-> list, as it always was. From `stats` the toggle goes to
+      // the canvas: the list is one step further from where the user is.
+      this.setViewMode(viewMode === 'canvas' ? 'list' : 'canvas');
+    },
+
+    reportCanvasGeometry(next: CanvasGeometry): void {
+      const finite = [
+        next.bounds.x, next.bounds.y, next.bounds.w, next.bounds.h,
+        next.viewport.width, next.viewport.height,
+      ];
+      if (finite.some((n) => !Number.isFinite(n))) return;
+      const changed = geometry === null || !sameGeometry(geometry, next);
+      geometry = next;
+      // `reportCanvasGeometry:unchanged` with nothing pending: not a trigger.
+      if (!changed && !fitPending) return;
+      if (!canvasAutoFit) {
+        // Setting off: geometry is recorded for the day it is turned on, and
+        // nothing is fitted — `fit` is never called after the initial render.
+        fitPending = false;
+        return;
+      }
+      if (applyFit()) notify();
+    },
+
+    selectToolByOrdinal(sessionId: string, agentId: string, ordinal: number): boolean {
+      const state = sessions.get(sessionId);
+      if (state === undefined || isRefused(state)) return false;
+      const agent = findNode(state.root, agentId);
+      if (agent === undefined || !isAgentNode(agent)) return false;
+      const tool = agent.children.find((child) => !isAgentNode(child) && child.ordinal === ordinal);
+      if (tool === undefined) return false;
+      // The EXISTING select intent, end to end: session, then node, exactly
+      // as a click on a deck card and then on a cell would do it — and the
+      // canvas, because that is where the node is.
+      if (sessionId !== selectedSessionId) {
+        canvasView = { ...IDENTITY_VIEW };
+        selectedSessionId = sessionId;
+      }
+      // Posted whether or not the session changed, exactly as `selectSession`
+      // posts on every call: the intent is the click, not the change.
+      postIntent({ type: 'selectSession', sessionId });
+      viewMode = 'canvas';
+      detailActionId = undefined;
+      selectedNodeId = tool.id;
+      altitude = 'inspector';
+      inspectorOpen = true;
+      triggerFit();
+      normalize();
       notify();
+      return true;
     },
 
     toggleNode(nodeId: string): void {

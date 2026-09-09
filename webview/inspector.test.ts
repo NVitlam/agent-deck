@@ -872,11 +872,17 @@ describe('A9.5 — call order, and following the newest call', () => {
     expect(following(detailed)).toBe('false');
   });
 
-  it('does not follow in newest order, where the newest row is already first', () => {
+  it('follows in newest order too — toward the top, where that list grows (A9.5 amended by DoD 4.9b)', () => {
+    // A9.5 said `newest` had "nothing to follow". v0.7.0 DoD 4.9b (user,
+    // 2026-09-05) says the drawer follows the latest call "in whichever
+    // direction the list grows", and a `newest` list a user has scrolled
+    // down grows out of view ABOVE them. So it follows, to the top.
+    // `webview/drawer.ts:followTarget` is the rule and `drawer.test.ts` pins
+    // it at `0` for this order.
     const container = render({ node, drawerExpanded: true });
     setOrder(container, 'newest');
     const list = one(container, 'inspector').querySelector('.calls');
-    expect(list?.getAttribute('data-following')).toBe('false');
+    expect(list?.getAttribute('data-following')).toBe('true');
     expect(list?.getAttribute('data-order')).toBe('newest');
   });
 

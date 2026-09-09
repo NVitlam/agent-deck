@@ -61,6 +61,14 @@ function describe(message: HostToWebviewMessage): string {
       return `schemaMismatch ${message.sessionId}`;
     case 'degraded':
       return message.degraded ? `degraded (${message.reason ?? 'unknown'})` : 'degraded: no';
+    case 'statsSnapshot':
+      return `statsSnapshot (${message.records.length} records)`;
+    case 'statsStore':
+      return `statsStore (${message.records.length} records, ${message.enabled ? 'enabled' : 'disabled'})`;
+    case 'settings':
+      return `settings (autoFit ${message.canvasAutoFit ? 'on' : 'off'})`;
+    case 'showView':
+      return `showView ${message.mode}`;
   }
 }
 
@@ -141,7 +149,11 @@ function boot(root: HTMLElement): void {
     const started = start(container, {
       postMessage: (message: WebviewToHostMessage) => {
         intentLabel.textContent = `intent: ${message.type} ${
-          'nodeId' in message ? message.nodeId : message.sessionId
+          'nodeId' in message
+            ? message.nodeId
+            : 'command' in message
+              ? message.command
+              : (message.sessionId ?? '')
         }`;
       },
     });

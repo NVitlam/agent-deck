@@ -61,6 +61,58 @@ export const ViewColumn = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Webview view (the sidebar) — v0.7.0 Phase 4, DoD 4.6b
+// ---------------------------------------------------------------------------
+
+/** The slice of `vscode.WebviewView` the sidebar controller reaches for. */
+export class MockWebviewView {
+  readonly viewType: string;
+  readonly webview: MockWebview;
+  disposed = false;
+
+  readonly #inbound = new Emitter<unknown>();
+  readonly #onDispose = new Emitter<void>();
+  readonly #posted: unknown[] = [];
+
+  constructor(viewType: string) {
+    this.viewType = viewType;
+    const posted = this.#posted;
+    const inbound = this.#inbound;
+    this.webview = {
+      html: '',
+      options: undefined,
+      // The same measured desktop value the panel carries — one VS Code, one
+      // `cspSource`. See `MockWebviewPanel`.
+      cspSource: "'self' https://*.vscode-cdn.net",
+      asWebviewUri: (uri: Uri) => uri,
+      postMessage: (message: unknown) => {
+        posted.push(message);
+        return Promise.resolve(true);
+      },
+      onDidReceiveMessage: (listener: (raw: unknown) => void) => inbound.event(listener),
+      posted,
+    };
+  }
+
+  onDidDispose(listener: () => void): MockDisposable {
+    return this.#onDispose.event(() => {
+      listener();
+    });
+  }
+
+  /** Deliver a raw message as if the sidebar had posted it. */
+  fireMessage(raw: unknown): void {
+    this.#inbound.fire(raw);
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.#onDispose.fire(undefined);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Disposables and events
 // ---------------------------------------------------------------------------
 
@@ -201,6 +253,24 @@ interface MockState {
   configuration: Map<string, Map<string, unknown>>;
   commands: Map<string, (...args: unknown[]) => unknown>;
   panels: MockWebviewPanel[];
+  /**
+   * Every `createWebviewPanel` call's `viewColumn`, in order (v0.7.0 DoD
+   * 4.6c). Recorded rather than ignored: "the deck opens in `ViewColumn.One`"
+   * is a claim about this argument and nothing else the panel carries.
+   */
+  panelColumns: number[];
+  /**
+   * Every `commands.executeCommand` call, in order, with its arguments
+   * (v0.7.0 DoD 4.6b/4.6c). The workbench commands this extension runs —
+   * `workbench.action.evenEditorWidths`, `workbench.action.openSettings` —
+   * exist only in the editor, so what a test can assert is that they were
+   * ASKED FOR, which is exactly what the DoD says.
+   */
+  executed: { command: string; args: unknown[] }[];
+  /** The providers `registerWebviewViewProvider` was given, by view id. */
+  viewProviders: Map<string, { resolveWebviewView(view: MockWebviewView): void }>;
+  /** What `window.tabGroups.all.length` reports. Default one group. */
+  editorGroups: number;
   errorMessages: string[];
   informationMessages: string[];
   /**
@@ -232,6 +302,10 @@ const state: MockState = {
   configuration: new Map(),
   commands: new Map(),
   panels: [],
+  panelColumns: [],
+  executed: [],
+  viewProviders: new Map(),
+  editorGroups: 1,
   errorMessages: [],
   informationMessages: [],
   warningMessages: [],
@@ -245,6 +319,10 @@ export function resetVscodeMock(): void {
   state.configuration = new Map();
   state.commands = new Map();
   state.panels = [];
+  state.panelColumns = [];
+  state.executed = [];
+  state.viewProviders = new Map();
+  state.editorGroups = 1;
   state.errorMessages = [];
   state.informationMessages = [];
   state.warningMessages = [];
@@ -279,6 +357,29 @@ export const mock = {
   },
   get panels(): MockWebviewPanel[] {
     return state.panels;
+  },
+  /** The `viewColumn` of every panel created, in order (DoD 4.6c). */
+  get panelColumns(): number[] {
+    return state.panelColumns;
+  },
+  /** Every `executeCommand` call, in order (DoD 4.6b/4.6c). */
+  get executed(): { command: string; args: unknown[] }[] {
+    return state.executed;
+  },
+  /** Pretend the window has this many editor groups. */
+  setEditorGroups(count: number): void {
+    state.editorGroups = count;
+  },
+  /** Resolve a registered webview view, as VS Code does when the user opens it. */
+  resolveView(viewId: string): MockWebviewView {
+    const provider = state.viewProviders.get(viewId);
+    if (provider === undefined) throw new Error(`no webview view provider registered: ${viewId}`);
+    const view = new MockWebviewView(viewId);
+    provider.resolveWebviewView(view);
+    return view;
+  },
+  hasViewProvider(viewId: string): boolean {
+    return state.viewProviders.has(viewId);
   },
   get errorMessages(): string[] {
     return state.errorMessages;
@@ -328,18 +429,48 @@ export const commands = {
       },
     };
   },
+  /**
+   * Recorded, then dispatched to a registered handler when there is one.
+   *
+   * The dispatch half is what lets the sidebar test prove a click reaches
+   * `agentDeck.open`'s REAL handler rather than a stub; the record half is
+   * what lets a workbench command that exists only in the editor be asserted
+   * as asked-for.
+   */
+  executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
+    state.executed.push({ command, args });
+    const handler = state.commands.get(command);
+    if (handler === undefined) return Promise.resolve(undefined);
+    return Promise.resolve(handler(...args));
+  },
 };
 
 export const window = {
   createWebviewPanel(
     viewType: string,
     title: string,
-    _column: number,
+    column: number,
     options: unknown,
   ): MockWebviewPanel {
     const panel = new MockWebviewPanel(viewType, title, options);
     state.panels.push(panel);
+    state.panelColumns.push(column);
     return panel;
+  },
+  registerWebviewViewProvider(
+    viewId: string,
+    provider: { resolveWebviewView(view: MockWebviewView): void },
+  ): MockDisposable {
+    state.viewProviders.set(viewId, provider);
+    return {
+      dispose: () => {
+        state.viewProviders.delete(viewId);
+      },
+    };
+  },
+  /** `vscode.window.tabGroups`: only `all.length` is read, for DoD 4.6c. */
+  get tabGroups(): { all: unknown[] } {
+    return { all: Array.from({ length: state.editorGroups }, () => ({})) };
   },
   showErrorMessage(message: string): Promise<undefined> {
     state.errorMessages.push(message);

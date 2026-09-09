@@ -18,6 +18,48 @@ All notable changes to Agent Deck are documented here.
   The session's own status is unchanged — a stalled tool does not make a
   session look live.
 
+- **A Stats view.** A third view mode beside the canvas and the list, showing
+  the facts Agent Deck derives from each session: files by read, edit, write
+  and error counts; identical-call loops and churn chains, with every call in
+  the chain a link back to the tree; tokens per agent, cache ratio and context
+  fill where the engine states them, context-churn and compaction markers on a
+  per-turn strip, stalls, and cost with its source named beside it — the
+  engine's own figure, Claude Code's telemetry estimate, or your own prices
+  from `agentDeck.pricing`, with the model ids seen listed so they can be
+  copied into that setting; and trends over the stored history, one point per
+  session. Excluded sessions are counted in the footer with their reason code
+  and appear in no table. The engine chips narrow every view exactly as they
+  narrow the deck.
+
+- **An activity-bar entry.** An Agent Deck icon in the activity bar opens a
+  sidebar listing the commands: Open Deck, Open Statistics, Show Diagnostics,
+  Settings, Clear Stats History. The deck now opens in the first editor group,
+  and when more than one group is open the widths are evened.
+
+- **The canvas re-fits itself.** On every event that changes the geometry —
+  a node selected, the drawer opened, expanded or closed, an agent grafted,
+  removed or parked, the panel resized, a session switch, an engine chip, a
+  switch back to the canvas — the tree is fitted to the field again. A manual
+  pan or zoom persists until the next such event. Token counters and status
+  colours never re-fit. `agentDeck.canvas.autoFit` (default on) turns it off,
+  leaving the fit on entry and on Reset view.
+
+- **Stalled `AskUserQuestion` and `ExitPlanMode` calls read "waiting on
+  you".** Same amber, same elapsed time, same count on the agent; only the
+  word changes, and only for those two documented interactive tools.
+
+- **The tool-call drawer follows the latest call** in whichever direction the
+  list grows, and holds still while an entry is expanded.
+
+### Fixed
+
+- **"+N more characters - expand to see all" on a drawer entry did nothing when
+  clicked.** It expands now, and clicking again collapses.
+
+- **The test runner never overwrites a run record.** Repeated ad-hoc runs
+  used to overwrite the previous run's record, which erased the captured
+  detail of two mid-run deaths.
+
 ## 0.6.1 - 2026-09-05 - Codex sessions no longer exhaust the extension host
 
 ### Fixed

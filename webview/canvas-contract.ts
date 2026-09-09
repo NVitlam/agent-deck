@@ -105,7 +105,20 @@
  * job `src/bridge/contract.ts` does for the element id, on the surface where
  * this repo has already paid once for two packages agreeing by hand.
  */
-export const CANVAS_CONTRACT_VERSION = 5;
+/*
+ * **6 is v0.7.0 Phase 4 — the Stats view mode.** Three things moved on the
+ * shared surface, and the version says so rather than the diff:
+ *
+ *  - {@link ViewMode} gains `'stats'`: the third entry in the view-mode switch
+ *    (locked open question, 2026-09-05). `toggleViewMode` still swaps canvas
+ *    and list; `stats` is entered and left by its own control.
+ *  - `TESTID` gains the `stats*` ids the four stats views emit and
+ *    `stats-view.test.ts` selects on, plus the sidebar menu's ids.
+ *  - `SIDEBAR_ROOT_ID` lives in `src/bridge/contract.ts` beside
+ *    `WEBVIEW_ROOT_ID`, not here, because the HOST emits it; the note here is
+ *    so a reader looking for it in this file finds the pointer.
+ */
+export const CANVAS_CONTRACT_VERSION = 6;
 
 /* ------------------------------------------------------------------------ *
  * Layout
@@ -216,8 +229,15 @@ export const DEFAULT_LIVENESS_FILTER: LivenessFilter = 'all';
  * ZOOM_FACTOR, clampScale. Import from there.
  */
 
-/** Which renderer is showing. The list view is kept for one release (C7.2). */
-export type ViewMode = 'canvas' | 'list';
+/**
+ * Which renderer is showing. The list view is kept for one release (C7.2);
+ * `stats` is the third mode (v0.7.0 Phase 4, spec §G): the Layer 1 facts,
+ * rendered from `StatsRecord[]` and never from a session tree.
+ */
+export type ViewMode = 'canvas' | 'list' | 'stats';
+
+/** The three modes, in the order a switch renders them. */
+export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats'];
 
 /** The default at startup and after a reload. Canvas, immediately, no setting. */
 export const DEFAULT_VIEW_MODE: ViewMode = 'canvas';
@@ -319,8 +339,59 @@ export const TESTID = {
 
   /* Chrome */
   viewToggle: 'view-toggle',
+  /** Enters the Stats view mode, and leaves it (v0.7.0 Phase 4). */
+  statsToggle: 'stats-toggle',
   hud: 'hud',
   hudDegradedChip: 'hud-degraded-chip',
+
+  /* The Stats view mode (v0.7.0 Phase 4, DoD 4.3). Every id a stats
+     component emits and `stats-view.test.ts` selects on. */
+  /** The whole surface. Carries data-view (which tab) and data-engine-filter. */
+  statsView: 'stats-view',
+  /** One tab button: Files · Loops & churn · Tokens · Trends. data-view. */
+  statsTab: 'stats-tab',
+  /** One engine chip on the stats surface. data-engine, data-active. */
+  statsEngineChip: 'stats-engine-chip',
+  /** The footer: excluded sessions with reason codes, never in a table. */
+  statsFooter: 'stats-footer',
+  /** The measurement parameters line (`LOOP_MIN`, `SPIKE_TOKENS`). */
+  statsParams: 'stats-params',
+  /** The empty state of a view (no records, or Trends below two). */
+  statsEmpty: 'stats-empty',
+  /* Files */
+  statsFileRow: 'stats-file-row',
+  /** The basename — primary text; the whole path is on `title`. */
+  statsFileName: 'stats-file-name',
+  /* Loops & churn */
+  statsChainRow: 'stats-chain-row',
+  /** One ordinal inside an expanded chain. A button: fires the select intent. */
+  statsChainOrdinal: 'stats-chain-ordinal',
+  /* Tokens */
+  statsSession: 'stats-session',
+  /** A session's primary text. Never an id. */
+  statsSessionPrimary: 'stats-session-primary',
+  statsAgentRow: 'stats-agent-row',
+  /** An agent row's primary text. Never an id. */
+  statsAgentPrimary: 'stats-agent-primary',
+  statsCost: 'stats-cost',
+  /** Which source the cost figure came from, as the user reads it. */
+  statsCostSource: 'stats-cost-source',
+  statsContextFill: 'stats-context-fill',
+  /** One model id, copyable. */
+  statsModelId: 'stats-model-id',
+  statsModelCopy: 'stats-model-copy',
+  /** The per-turn strip; markers carry data-kind (spike | compaction). */
+  statsTurnStrip: 'stats-turn-strip',
+  statsTurnMarker: 'stats-turn-marker',
+  statsStallRow: 'stats-stall-row',
+  /* Trends */
+  statsTrendSeries: 'stats-trend-series',
+  statsTrendPoint: 'stats-trend-point',
+
+  /* The sidebar menu (DoD 4.6b) */
+  sidebarMenu: 'sidebar-menu',
+  /** One menu entry. data-command names the command it runs. */
+  sidebarEntry: 'sidebar-entry',
 } as const;
 
 /* ------------------------------------------------------------------------ *

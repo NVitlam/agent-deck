@@ -68,6 +68,9 @@ const SURFACE_AT_V3: readonly string[] = [
   'REDUCED_MOTION_CLASS',
   'SYNTHETIC_CORPUS_PREFIX',
   'TESTID',
+  // v0.7.0 Phase 4 (version 6): the three view modes, as a list a switch can
+  // iterate.
+  'VIEW_MODES',
   'WIRE_CORPUS_DIR',
 ];
 
@@ -76,7 +79,7 @@ describe('CANVAS_CONTRACT_VERSION', () => {
     // If this fails, someone bumped the constant. That is fine and expected —
     // but SURFACE_AT_V3 and its name are now describing a version that no
     // longer exists, so both move together or neither does.
-    expect(CANVAS_CONTRACT_VERSION).toBe(5);
+    expect(CANVAS_CONTRACT_VERSION).toBe(6);
   });
 
   it('pins the shared runtime surface, so the shape cannot move silently', () => {

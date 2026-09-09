@@ -144,6 +144,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       // the vacuity shape this repository keeps recording.
       statsErrors: 5,
       storeMalformed: 9,
+      statsDropped: 11,
     };
     const line = formatCounters(counters, '2026-08-27T12:00:00.000Z');
     for (const key of Object.keys(counters)) {
@@ -222,6 +223,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       codexSessions: 0,
       statsErrors: 0,
       storeMalformed: 0,
+      statsDropped: 0,
     });
     expect(sink.shown).toBe(0);
     channel.show();

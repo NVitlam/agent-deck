@@ -62,6 +62,11 @@ import {
   inactiveReasonFor,
   opencodeStoreExists,
   readSettings,
+  OPEN_SETTINGS_COMMAND,
+  OPEN_STATS_COMMAND,
+  EVEN_EDITOR_WIDTHS,
+  SETTINGS_FILTER,
+  WORKBENCH_OPEN_SETTINGS,
   statsSettingDefaults,
   workspacePathsOf,
 } from './extension.js';
@@ -96,7 +101,8 @@ import { DEFAULT_PREVIEW_BYTES as GRAFTER_DEFAULT_PREVIEW_BYTES } from './model/
 import type { GraftSessionResult } from './model/graft.js';
 import type { DiagnosticsEvent } from './bridge/diagnostics.js';
 import { TRUNCATION_MARKER_RE, truncationMarker } from './parser/redact.js';
-import { WEBVIEW_ROOT_ID } from './bridge/contract.js';
+import { SIDEBAR_ROOT_ID, WEBVIEW_ROOT_ID } from './bridge/contract.js';
+import { SIDEBAR_MENU, SIDEBAR_VIEW_ID } from './sidebar/menu.js';
 import type { HostToWebviewMessage, SessionState, TreeNode } from './model/events.js';
 import { isAgentNode } from './model/events.js';
 import { slugifyWorkspace, snapshotTree } from './parser/tailer.js';
@@ -104,6 +110,7 @@ import type { DiscoveryFailure, DiscoveryFailureKind, TreeSnapshotEntry } from '
 import { correlateWorkspace } from './model/correlate.js';
 import {
   Uri,
+  ViewColumn,
   createExtensionContext,
   mock,
   resetVscodeMock,
@@ -819,6 +826,8 @@ describe('readSettings', () => {
       'stats.retentionDays': 90,
       'stats.idleFlushMs': 3600000,
       pricing: {},
+      // v0.7.0 Phase 4 (DoD 4.0): spec section G, default on.
+      'canvas.autoFit': true,
     });
   });
 
@@ -839,6 +848,7 @@ describe('readSettings', () => {
           'stats.retentionDays': 30,
           'stats.idleFlushMs': 600_000,
           pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
+          'canvas.autoFit': false,
         })[key],
     });
     expect(read).toStrictEqual({
@@ -850,6 +860,7 @@ describe('readSettings', () => {
       'stats.retentionDays': 30,
       'stats.idleFlushMs': 600_000,
       pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
+      'canvas.autoFit': false,
     });
   });
 
@@ -4229,7 +4240,10 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
      * And the control at the bottom of this test is untouched, which is what
      * makes the whole thing more than a spelling rule.
      */
-    const BOOLEAN_ALLOW_LIST = ['agentDeck.stats.enabled'];
+    // v0.7.0 Phase 4 adds `agentDeck.canvas.autoFit` (DoD 4.0): a boolean, on
+    // the list in writing, and not an engine switch — it governs the canvas's
+    // re-fit rule and nothing about what is observed.
+    const BOOLEAN_ALLOW_LIST = ['agentDeck.canvas.autoFit', 'agentDeck.stats.enabled'];
     const booleans = Object.entries(properties)
       .filter(([, property]) => property.type === 'boolean')
       .map(([key]) => key)
@@ -5524,5 +5538,232 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
     );
     // The failure is COUNTED, which is what G2 extended requires of it.
     expect(host.counters().statsErrors).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (13) v0.7.0 Phase 4 — the sidebar, the left column, the stats wire (DoD 4.1, 4.6b, 4.6c)
+// ---------------------------------------------------------------------------
+
+describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () => {
+  const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
+
+  afterEach(async () => {
+    await deactivate();
+    if (previousRoot === undefined) delete process.env['CLAUDE_PROJECTS_ROOT'];
+    else process.env['CLAUDE_PROJECTS_ROOT'] = previousRoot;
+  });
+
+  /** The CSP `content` of a document, with the per-document nonce blanked. */
+  const policyOf = (html: string): string => {
+    const match = /Content-Security-Policy" content="([^"]+)"/.exec(html);
+    if (match?.[1] === undefined) throw new Error('no CSP meta in the document');
+    return match[1].replace(/'nonce-[^']+'/g, "'nonce-X'");
+  };
+
+  it('registers every sidebar menu command and the sidebar view ABOVE the activation gates', async () => {
+    // No workspace at all: `activate()` returns before building a host, and
+    // the front door must already be there.
+    resetVscodeMock();
+    await activate(extensionContext());
+    expect(currentHost()).toBeNull();
+    for (const entry of SIDEBAR_MENU) {
+      expect(mock.hasCommand(entry.command), entry.command).toBe(true);
+    }
+    expect(mock.hasViewProvider(SIDEBAR_VIEW_ID)).toBe(true);
+  });
+
+  it('the resolved sidebar carries the sidebar root, the same bundle and the same CSP as the panel', async () => {
+    resetVscodeMock();
+    await activate(extensionContext());
+    const view = mock.resolveView(SIDEBAR_VIEW_ID);
+    expect(view.webview.html).toContain(`<div id="${SIDEBAR_ROOT_ID}"></div>`);
+    expect(view.webview.html).not.toContain(`id="${WEBVIEW_ROOT_ID}"`);
+    expect(view.webview.html).toContain(`/${WEBVIEW_SCRIPT_SEGMENTS.join('/')}`);
+    // The panel's document, for the comparison: same policy, byte for byte
+    // once the nonce is blanked.
+    const panelHtml = webviewHtml({
+      scriptUri: 'webview://ext/dist/webview/main.js',
+      styleUri: 'webview://ext/dist/webview/main.css',
+      nonce: 'AAAAAAAA',
+      cspSource: view.webview.cspSource,
+    });
+    expect(policyOf(view.webview.html)).toBe(policyOf(panelHtml));
+    expect(policyOf(view.webview.html)).toContain("default-src 'none'");
+    // The webview may read `dist/` and nothing else — the panel's own rule.
+    expect(view.webview.options).toMatchObject({ enableScripts: true });
+  });
+
+  it('a click in the sidebar runs the registered command; an off-menu id runs nothing', async () => {
+    resetVscodeMock();
+    await activate(extensionContext());
+    const view = mock.resolveView(SIDEBAR_VIEW_ID);
+    view.fireMessage({ type: 'runCommand', command: OPEN_COMMAND });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.executed.map((e) => e.command)).toStrictEqual([OPEN_COMMAND]);
+    // ...and the REAL handler ran: with no host it explains itself.
+    expect(mock.informationMessages).toHaveLength(1);
+
+    view.fireMessage({ type: 'runCommand', command: 'workbench.action.closeWindow' });
+    view.fireMessage({ type: 'selectSession', sessionId: 's1' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.executed.map((e) => e.command)).toStrictEqual([OPEN_COMMAND]);
+  });
+
+  it('agentDeck.openSettings runs the workbench settings command, filtered to this extension', async () => {
+    resetVscodeMock();
+    await activate(extensionContext());
+    await mock.runCommand(OPEN_SETTINGS_COMMAND);
+    expect(mock.executed).toStrictEqual([{ command: WORKBENCH_OPEN_SETTINGS, args: [SETTINGS_FILTER] }]);
+    expect(SETTINGS_FILTER).toBe('@ext:nvitlam.agent-deck');
+  });
+
+  it('DoD 4.6c: the deck opens in ViewColumn.One; even-widths runs once with two groups and not with one', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+
+    // ONE group: the column, and no even-widths call.
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    mock.setEditorGroups(1);
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.panelColumns).toStrictEqual([ViewColumn.One]);
+    expect(mock.executed.filter((e) => e.command === EVEN_EDITOR_WIDTHS)).toHaveLength(0);
+    // A second open reveals; it creates no panel and evens nothing.
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.panelColumns).toHaveLength(1);
+    await deactivate();
+
+    // TWO groups: evened, exactly once, after the panel was created.
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    mock.setEditorGroups(2);
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.panelColumns).toStrictEqual([ViewColumn.One]);
+    expect(mock.executed.filter((e) => e.command === EVEN_EDITOR_WIDTHS)).toHaveLength(1);
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.executed.filter((e) => e.command === EVEN_EDITOR_WIDTHS)).toHaveLength(1);
+  });
+
+  it('DoD 4.0/4.1: the panel hears settings first, then the snapshot, then both stats messages', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    const storage = await makeTempDir();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port, 'canvas.autoFit': false });
+    }, storage);
+    await mock.runCommand(OPEN_COMMAND);
+    const panel = mock.panels[0];
+    const types = (panel?.webview.posted ?? []).map((m) => (m as { type: string }).type);
+    // Snapshot FIRST — the bridge's oldest invariant — then the settings.
+    expect(types[0]).toBe('snapshot');
+    expect(types).toContain('settings');
+    expect(panel?.webview.posted[types.indexOf('settings')]).toStrictEqual({ type: 'settings', canvasAutoFit: false });
+    expect(types.indexOf('settings')).toBeGreaterThan(types.indexOf('snapshot'));
+    expect(types).toContain('statsSnapshot');
+    expect(types).toContain('statsStore');
+    // The stats wire follows the session wire: a record about a session the
+    // webview has not been sent would have nothing to attach to.
+    expect(types.indexOf('statsSnapshot')).toBeGreaterThan(types.indexOf('snapshot'));
+    const stats = panel?.webview.posted.find((m) => (m as { type: string }).type === 'statsSnapshot') as
+      | { records: { sessionId: string; engine: string }[] }
+      | undefined;
+    expect(stats?.records.length).toBeGreaterThan(0);
+    const snapshot = panel?.webview.posted.find((m) => (m as { type: string }).type === 'snapshot') as
+      | { sessions: { sessionId: string }[] }
+      | undefined;
+    // One live record per session on the wire, same ids.
+    expect(stats?.records.map((r) => r.sessionId).sort()).toStrictEqual(
+      snapshot?.sessions.map((s) => s.sessionId).sort(),
+    );
+    const store = panel?.webview.posted.find((m) => (m as { type: string }).type === 'statsStore') as
+      | { records: unknown[]; enabled: boolean }
+      | undefined;
+    expect(store?.enabled).toBe(true);
+
+    // A configuration change reaches the renderer live, as a fresh settings message.
+    mock.setConfig(CONFIG_SECTION, { port: currentHost()?.dataPath.settings.port, 'canvas.autoFit': true });
+    mock.fireConfigurationChange(CONFIG_SECTION);
+    expect(panel?.webview.posted.at(-1)).toStrictEqual({ type: 'settings', canvasAutoFit: true });
+  });
+
+  it('agentDeck.openStats opens the same panel and asks for the stats view', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_STATS_COMMAND);
+    expect(mock.panels).toHaveLength(1);
+    const posted = mock.panels[0]?.webview.posted ?? [];
+    expect(posted).toContainEqual({ type: 'showView', mode: 'stats' });
+    // The same panel: a plain open afterwards reveals rather than creating.
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.panels).toHaveLength(1);
+  });
+
+  it('a reload re-sends the settings, after asking for the snapshot', () => {
+    const panel = fakePanel();
+    let snapshots = 0;
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {
+        snapshots += 1;
+      },
+    });
+    controller.setSettings({ canvasAutoFit: false });
+    expect(panel.posted).toStrictEqual([{ type: 'settings', canvasAutoFit: false }]);
+    panel.fireBecameVisible();
+    // The pump (asked for first) supplies the snapshot; the settings follow.
+    expect(snapshots).toBe(1);
+    expect(panel.posted).toStrictEqual([
+      { type: 'settings', canvasAutoFit: false },
+      { type: 'settings', canvasAutoFit: false },
+    ]);
+    controller.dispose();
+  });
+
+  it('DoD 4.1: a record with an extra string field is dropped and counted; the rest go out', () => {
+    const goldenDir = fileURLToPath(new URL('../fixtures/golden/stats/', import.meta.url));
+    const names = readdirSync(goldenDir).filter((n) => n.endsWith('.json')).sort();
+    const [a, b] = names.map((n) => JSON.parse(readFileSync(join(goldenDir, n), 'utf8')) as Record<string, unknown>);
+    if (a === undefined || b === undefined) throw new Error('need two goldens');
+    const poisoned = { ...b, unavailable: [...(b['unavailable'] as string[])], note: 'a stray sentence' };
+
+    const panel = fakePanel();
+    const controller = new PanelController({ panel: panel.surface, nonce: 'AAAAAAAA' });
+    const verdict = controller.publishStats([a as never, poisoned as never], {
+      records: [{ ...a, derivedAt: 1 }, poisoned],
+      enabled: true,
+    });
+    expect(verdict.dropped).toBe(2);
+    expect(verdict.reasons.every((r) => r.includes("key 'note'"))).toBe(true);
+    const snapshot = panel.posted.find((m) => m.type === 'statsSnapshot') as { records: unknown[] } | undefined;
+    const store = panel.posted.find((m) => m.type === 'statsStore') as { records: unknown[] } | undefined;
+    expect(snapshot?.records).toStrictEqual([a]);
+    expect(store?.records).toStrictEqual([a]);
+    expect(controller.counters.statsDropped).toBe(2);
+    controller.dispose();
+  });
+
+  it('the counters line carries statsDropped, appended', () => {
+    const line = formatCounters(
+      {
+        grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+        patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+        ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+        relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
+        statsErrors: 0, storeMalformed: 0, statsDropped: 7,
+      },
+      '2026-09-09T00:00:00.000Z',
+    );
+    expect(line.endsWith(' statsDropped=7')).toBe(true);
   });
 });

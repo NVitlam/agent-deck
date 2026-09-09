@@ -18,6 +18,11 @@ export interface WebviewHarness {
     target: HTMLElement,
     api: { postMessage(message: WebviewToHostMessage): void },
   ): { store: Store; dispose: () => void };
+  /** The sidebar menu, from the SAME bundle (v0.7.0 DoD 4.6b). */
+  startSidebar(
+    target: HTMLElement,
+    api: { postMessage(message: WebviewToHostMessage): void },
+  ): { dispose: () => void };
   createStore(sink?: (message: WebviewToHostMessage) => void): Store;
   /** Svelte's synchronous flush, so a test can assert on the DOM immediately. */
   flushSync(fn?: () => void): void;

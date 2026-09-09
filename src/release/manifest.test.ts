@@ -67,12 +67,14 @@
  * owns that; an ignore file cannot answer "what does the package contain".
  */
 
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
+import { SIDEBAR_CONTAINER_ID, SIDEBAR_MENU, SIDEBAR_VIEW_ID } from '../sidebar/menu.js';
 
 const REPO_ROOT = new URL('../../', import.meta.url);
 
@@ -364,13 +366,18 @@ describe('the local store settings and command (v0.7.0 Phase 3)', () => {
     }
   });
 
-  it('does NOT yet declare agentDeck.canvas.autoFit — that is Phase 4', async () => {
-    // The other half of the note above, as an assertion rather than as prose:
-    // when Phase 4 adds the setting this goes red, which is the reminder to
-    // delete this test and move the row into the block above rather than to
-    // discover the plan's "five" was quietly satisfied by four.
+  it('declares agentDeck.canvas.autoFit — the FIFTH setting, landed with its behaviour in Phase 4', async () => {
+    // Phase 3 left a guard here that went red the day this setting was
+    // declared; this is that guard, turned round. Spec section G: default
+    // `true`. `extension.test.ts` binds the manifest to `SETTING_SHAPES` and
+    // `store.phase4.test.ts` proves the renderer honours the value.
     const properties = (await readManifest()).contributes?.configuration?.properties ?? {};
-    expect(Object.keys(properties)).not.toContain('agentDeck.canvas.autoFit');
+    const autoFit = properties['agentDeck.canvas.autoFit'];
+    expect(autoFit, 'package.json contributes no agentDeck.canvas.autoFit').toBeDefined();
+    expect(autoFit?.type).toBe('boolean');
+    expect(autoFit?.default).toBe(true);
+    expect(String(autoFit?.description)).toContain('geometry');
+    expect(String(autoFit?.description).length).toBeGreaterThan(80);
   });
 
   it('declares numeric bounds that admit the defaults they advertise', async () => {
@@ -410,23 +417,78 @@ describe('the local store settings and command (v0.7.0 Phase 3)', () => {
     expect(clear?.title).toBe('Clear Stats History');
   });
 
-  it('contributes no VIEW or MENU entry for clearing — palette only', async () => {
+  it('contributes no MENU entry for clearing — the palette and the sidebar list, nowhere else', async () => {
     /*
      * The locked open question, as a guard: clearing is "reachable from the
      * command palette and the sidebar menu (Phase 4) — NEVER a visible button
      * on the deck or the Stats view."
      *
-     * A destructive, irreversible action one stray click away from a surface a
-     * user pans and zooms around all day is a different product from one behind
-     * a palette entry and a modal. `contributes.menus` is the only way a
-     * manifest can put a command anywhere else, so its ABSENCE is the whole
-     * assertion — and when Phase 4 adds the sidebar menu this goes red, which
-     * is the point at which somebody has to state where the entry went.
+     * Phase 3 asserted the absence of BOTH `menus` and `views`. Phase 4 adds
+     * the sidebar, which is a `views` entry — but the sidebar's menu is DATA
+     * (`src/sidebar/menu.ts`), rendered by the webview, and not a
+     * `contributes.menus` contribution. So `menus` stays absent: the manifest
+     * puts the clear command on no toolbar, no context menu and no editor
+     * title, and the one surface that offers it beside the palette is the
+     * list the block below pins.
      */
     const contributes = (await readManifest()).contributes as Record<string, unknown> | undefined;
     expect(contributes).toBeDefined();
     expect(Object.keys(contributes ?? {})).not.toContain('menus');
-    expect(Object.keys(contributes ?? {})).not.toContain('views');
+  });
+});
+
+/**
+ * v0.7.0 Phase 4, DoD 4.6b — the activity-bar sidebar.
+ *
+ * `viewsContainers` + `views` in the manifest; every entry of
+ * `src/sidebar/menu.ts` names a contributed command; and the container's icon
+ * is a file that exists. `extension.test.ts` proves each command is REGISTERED
+ * by `activate()`; this file proves each is CONTRIBUTED, which is what puts it
+ * in the palette.
+ */
+describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
+  interface SidebarManifest {
+    contributes?: {
+      viewsContainers?: { activitybar?: { id?: string; title?: string; icon?: string }[] };
+      views?: Record<string, { type?: string; id?: string; name?: string }[]>;
+      commands?: { command?: unknown }[];
+    };
+  }
+
+  it('declares one activity-bar container with an icon that exists', async () => {
+    const manifest = (await readManifest()) as SidebarManifest;
+    const containers = manifest.contributes?.viewsContainers?.activitybar ?? [];
+    expect(containers).toHaveLength(1);
+    expect(containers[0]?.id).toBe(SIDEBAR_CONTAINER_ID);
+    expect(containers[0]?.title).toBe('Agent Deck');
+    expect(containers[0]?.icon).toBe('media/activity-icon.svg');
+    expect(existsSync(fileURLToPath(new URL(String(containers[0]?.icon), REPO_ROOT)))).toBe(true);
+  });
+
+  it('declares one webview view in that container, with the id the provider registers', async () => {
+    const manifest = (await readManifest()) as SidebarManifest;
+    const views = manifest.contributes?.views?.[SIDEBAR_CONTAINER_ID] ?? [];
+    expect(views).toHaveLength(1);
+    expect(views[0]).toMatchObject({ type: 'webview', id: SIDEBAR_VIEW_ID });
+    expect(Object.keys(manifest.contributes?.views ?? {})).toStrictEqual([SIDEBAR_CONTAINER_ID]);
+  });
+
+  it('every menu entry names a contributed command — and the menu is the locked five, in order', async () => {
+    const manifest = (await readManifest()) as SidebarManifest;
+    const contributed = new Set((manifest.contributes?.commands ?? []).map((c) => String(c.command)));
+    for (const entry of SIDEBAR_MENU) {
+      expect(contributed.has(entry.command), `${entry.command} is not in contributes.commands`).toBe(true);
+    }
+    expect(SIDEBAR_MENU.map((e) => e.label)).toStrictEqual([
+      'Open Deck',
+      'Open Statistics',
+      'Show Diagnostics',
+      'Settings',
+      'Clear Stats History',
+    ]);
+    // Five contributed commands, exactly the five the menu names: no dead
+    // palette entry and no menu entry without one.
+    expect([...contributed].sort()).toStrictEqual(SIDEBAR_MENU.map((e) => e.command).sort());
   });
 });
 

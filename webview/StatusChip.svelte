@@ -5,6 +5,7 @@
   let {
     status,
     stalledForMs = undefined,
+    toolName = undefined,
   }: {
     status: ToolNode['status'];
     /**
@@ -13,11 +14,24 @@
      * disagree about now, and a test can drive the elapsed time directly.
      */
     stalledForMs?: number | undefined;
+    /**
+     * The tool's name, for DoD 4.9d: a stalled DOCUMENTED interactive tool
+     * reads "waiting on you" instead of "stalled". Same status, same colour,
+     * same elapsed time — `format.ts:statusLabel` owns the word and the list.
+     */
+    toolName?: string | undefined;
   } = $props();
+
+  let label = $derived(statusLabel(status, toolName));
 </script>
 
-<span class="chip chip-{status}" data-testid="status-chip" data-status={status}>
-  {statusLabel(status)}{#if status === 'stalled' && stalledForMs !== undefined}<span
+<span
+  class="chip chip-{status}"
+  data-testid="status-chip"
+  data-status={status}
+  data-label={label}
+>
+  {label}{#if status === 'stalled' && stalledForMs !== undefined}<span
       class="elapsed"
       data-testid="stalled-for">&nbsp;{stalledForLabel(stalledForMs)}</span
     >{/if}

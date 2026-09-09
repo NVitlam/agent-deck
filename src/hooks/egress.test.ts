@@ -759,9 +759,13 @@ const api = {
     joinPath: (base, ...parts) => ({ fsPath: [base.fsPath, ...parts].join('/'), scheme: 'file' }),
   },
   ViewColumn: { Beside: 2, One: 1 },
-  commands: { registerCommand: () => noop },
+  // v0.7.0 Phase 4: activate() registers the sidebar view and can run
+  // workbench commands; the census never resolves the view or opens a panel.
+  commands: { registerCommand: () => noop, executeCommand: () => Promise.resolve(undefined) },
   window: {
     createWebviewPanel: () => { throw new Error('the census never opens a panel'); },
+    registerWebviewViewProvider: () => noop,
+    tabGroups: { all: [{}] },
     // A LINE COLLECTOR, and not decoration. DiagnosticsChannel creates its
     // sink lazily inside a try/catch (G2: a channel that cannot be created
     // must not take the data path down), so a stub without this method makes

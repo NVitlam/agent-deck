@@ -783,15 +783,25 @@ describe('README exists and ships clean', () => {
     const tracked = TRACKED_MEDIA;
     const icon = String(MANIFEST.icon);
     expect(tracked).toContain(icon);
-    expect([...tracked].sort()).toStrictEqual([icon, ...RELEASE_IMAGES].sort());
+    // v0.7.0 Phase 4 (DoD 4.6b): the activity-bar icon is the SECOND manifest
+    // reference under `media/`, read off `contributes.viewsContainers` for the
+    // reason `icon` is read off `icon`, and it is not a screenshot either.
+    const activityIcon = String(
+      (MANIFEST as { contributes?: { viewsContainers?: { activitybar?: { icon?: unknown }[] } } })
+        .contributes?.viewsContainers?.activitybar?.[0]?.icon,
+    );
+    expect(activityIcon).toBe('media/activity-icon.svg');
+    expect(tracked).toContain(activityIcon);
+    expect([...tracked].sort()).toStrictEqual([icon, activityIcon, ...RELEASE_IMAGES].sort());
     // Pinned BESIDE the set, not instead of it: a set comparison written
     // against an empty listing passes vacuously, and a count is the cheapest
     // thing that goes red when it does.
     //
     // SIX SINCE v0.6.0 (DoD 5.8.1): the icon, the four stills and the hero GIF.
+    // SEVEN SINCE v0.7.0 (DoD 4.6b): plus the activity-bar icon.
     // Amended, never relaxed - this is still equality both ways with the count
     // beside it, and the reason is unchanged from the v0.5.0 comment above.
-    expect(tracked).toHaveLength(6);
+    expect(tracked).toHaveLength(7);
   }, 20_000);
 });
 

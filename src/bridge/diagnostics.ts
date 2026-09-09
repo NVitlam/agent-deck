@@ -118,6 +118,30 @@ export interface DiagnosticsCounters {
    * exists to make.
    */
   relayReceived: number;
+  /**
+   * Stats derivations that failed and were skipped (v0.7.0 DoD 3.8).
+   *
+   * G2 extended names this counter by name: *"A deriver failure increments
+   * `statsErrors` on the diagnostics channel and is skipped; the deck renders
+   * identically with the deriver present, absent, or throwing."* It therefore
+   * covers both halves of that layer — a `deriveStats` throw, and a record the
+   * store refused or could not write — because both have the same consequence
+   * for a user: a session that happened and is not in the history.
+   *
+   * A window keeping no history reports 0, which is the truth about it.
+   */
+  statsErrors: number;
+  /**
+   * Store lines that could not be read, and were skipped (v0.7.0 DoD 3.8).
+   *
+   * The parser's `malformedLines` posture applied to the store's own output: a
+   * line truncated by a crash mid-append, or one written by a schema version
+   * this build does not know. It is a READ-side count, so it moves when the
+   * history is read rather than when it is written, and a non-zero value on a
+   * window that has never read the store means another window wrote something
+   * this one cannot parse.
+   */
+  storeMalformed: number;
 }
 
 /**
@@ -424,7 +448,13 @@ export function formatCounters(counters: DiagnosticsCounters, isoTime: string): 
     ` role=${counters.relayRole}` +
     ` followers=${String(counters.relayFollowers)}` +
     ` relayed=${String(counters.relayed)}` +
-    ` received=${String(counters.relayReceived)}`
+    ` received=${String(counters.relayReceived)}` +
+    // v0.7.0 DoD 3.8. APPENDED rather than inserted: the counters line is what
+    // a user copies into a report, and existing reports, evidence files and
+    // this repository's own gate records quote the earlier prefix. Adding at
+    // the end keeps every one of them a valid prefix of the current format.
+    ` statsErrors=${String(counters.statsErrors)}` +
+    ` storeMalformed=${String(counters.storeMalformed)}`
   );
 }
 

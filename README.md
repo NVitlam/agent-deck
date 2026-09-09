@@ -542,6 +542,14 @@ honesty is kept, and they were not loosened alongside it.
 | `agentDeck.livenessThresholdMs` | How long a session may go quiet before it stops counting as live. Set it too low and one long tool call makes a healthy session flap. |
 | `agentDeck.previewBytes` | Ceiling on tool-payload bytes kept per node for previews. Nothing is ever sent off the machine either way. |
 | `agentDeck.codex.maxTranscriptBytes` | Largest Codex transcript Agent Deck will open, in bytes. Default 67108864 (64 MiB). A bigger rollout file is measured from its directory entry and never read; the Agent Deck output channel says which file and what the limit is. Codex stores tool output whole and inline, so a long session can reach hundreds of megabytes. |
+| `agentDeck.stats.enabled` | Keep a local history of derived session statistics. Append-only JSON Lines under the extension's own global-storage directory, one file per ISO week — never under `~/.claude`, `~/.codex`, the OpenCode directories, or your workspace. Off means no file and no directory at all. Nothing is ever sent off the machine. |
+| `agentDeck.stats.retentionDays` | How many days of that history to keep. Default 90. Files are pruned when a record is written, and a weekly file goes once the whole week it covers has aged out. To keep nothing, turn `agentDeck.stats.enabled` off — the floor here is one day, not zero. |
+| `agentDeck.stats.idleFlushMs` | How long a session may go unchanged before its record is written anyway, in milliseconds. Default 3600000 (one hour). A record is normally written when the session ends; this covers the session that never does. Later work is recomputed in full and written as a second record; reads keep the newest per session and nothing on disk is rewritten. |
+| `agentDeck.pricing` | Your own prices per model id, in USD per million tokens — `{"<model id>": {"prompt": 3, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15}}`. Used only for sessions whose engine reports no cost. Agent Deck ships no price table and never guesses one: a model with no entry gets no figure, a malformed entry is ignored and named on the output channel, and anything computed this way is labelled as estimated from your prices. |
+
+Clearing the history is a command, not a button: **Agent Deck: Clear Stats History** in the command
+palette, behind a modal confirm. It works whether or not `agentDeck.stats.enabled` is on, so turning
+the store off and then removing what it already wrote is two steps rather than a dead end.
 
 ## Development
 

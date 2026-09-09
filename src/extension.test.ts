@@ -22,7 +22,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
@@ -52,6 +52,7 @@ import {
   OpenCodeEnginePath,
   PanelController,
   SETTING_BOUNDS,
+  SETTING_SHAPES,
   WEBVIEW_SCRIPT_SEGMENTS,
   WEBVIEW_STYLE_SEGMENTS,
   activate,
@@ -61,10 +62,12 @@ import {
   inactiveReasonFor,
   opencodeStoreExists,
   readSettings,
+  statsSettingDefaults,
   workspacePathsOf,
 } from './extension.js';
 import type {
   AgentDeckSettings,
+  NumericSettingKey,
   DataPathEmission,
   HostLogLevel,
   PanelSurface,
@@ -72,6 +75,7 @@ import type {
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
+import { STORE_DIR_NAME, resolveStoreDir } from './stats/store.js';
 import { formatCounters } from './bridge/diagnostics.js';
 import type { DiagnosticsCounters } from './bridge/diagnostics.js';
 import { HookListener } from './hooks/listener.js';
@@ -203,8 +207,17 @@ async function stageFixtureSlug(sourceSlugDir: string): Promise<StagedFixture> {
  * The double supplies the two that are used; this is where that is admitted,
  * once, instead of at five call sites.
  */
-function extensionContext(): Parameters<typeof activate>[0] {
-  return createExtensionContext() as unknown as Parameters<typeof activate>[0];
+function extensionContext(globalStoragePath?: string): Parameters<typeof activate>[0] {
+  // v0.7.0 Phase 3: a THIRD member is used, `globalStorageUri`, and the double
+  // defaults it to a path nothing can create a directory under — see
+  // `test/vscode-mock.ts`. A caller that wants a real store passes a real
+  // directory, which is what makes "activate() is what supplies it" assertable
+  // rather than a claim about a path nobody writes to.
+  return (
+    globalStoragePath === undefined
+      ? createExtensionContext()
+      : createExtensionContext('/ext', globalStoragePath)
+  ) as unknown as Parameters<typeof activate>[0];
 }
 
 /**
@@ -420,12 +433,13 @@ async function startHostOnFreePort(
  */
 async function activateOnFreePort(
   configure: (port: number) => void | Promise<void>,
+  globalStoragePath?: string,
 ): Promise<number> {
   return onFreePort<number>({
     use: async (port) => {
       resetVscodeMock();
       await configure(port);
-      await activate(extensionContext());
+      await activate(extensionContext(globalStoragePath));
       return port;
     },
     collided: () => currentHost()?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
@@ -472,6 +486,12 @@ function settings(overrides: Partial<AgentDeckSettings> = {}): AgentDeckSettings
     livenessThresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
     previewBytes: DEFAULT_PREVIEW_BYTES,
     'codex.maxTranscriptBytes': DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
+    // v0.7.0 Phase 3. The SHIPPED defaults, from the one declaration, so a
+    // host built by this helper is the host a user gets: `readSettings(
+    // undefined)` is asserted against the manifest elsewhere in this file, and
+    // a helper that quietly differed would make every test here about a
+    // configuration nobody runs.
+    ...statsSettingDefaults(),
     ...overrides,
   };
 }
@@ -791,6 +811,14 @@ describe('readSettings', () => {
       // 64 MiB. Hotfix 0.6.1's Codex transcript ceiling, written out rather
       // than computed so this test states the number a user would see.
       'codex.maxTranscriptBytes': 67108864,
+      // v0.7.0 Phase 3, and written out for the same reason: these are the
+      // numbers spec section F states and a user reads in the settings UI.
+      // 3600000 is one hour; 90 days is the retention VERDICT.md 0.7
+      // confirmed; the store is ON and no price table ships.
+      'stats.enabled': true,
+      'stats.retentionDays': 90,
+      'stats.idleFlushMs': 3600000,
+      pricing: {},
     });
   });
 
@@ -804,6 +832,13 @@ describe('readSettings', () => {
           // The DOTTED key reaches `get` verbatim, which is the whole reason
           // `readSettings` needs no special case for it.
           'codex.maxTranscriptBytes': 8 * 1024 * 1024,
+          // v0.7.0 Phase 3. All four, and each configured AWAY from its
+          // default: a value equal to the default would pass whether or not
+          // `readSettings` read the key at all.
+          'stats.enabled': false,
+          'stats.retentionDays': 30,
+          'stats.idleFlushMs': 600_000,
+          pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
         })[key],
     });
     expect(read).toStrictEqual({
@@ -811,7 +846,34 @@ describe('readSettings', () => {
       livenessThresholdMs: 90000,
       previewBytes: 512,
       'codex.maxTranscriptBytes': 8 * 1024 * 1024,
+      'stats.enabled': false,
+      'stats.retentionDays': 30,
+      'stats.idleFlushMs': 600_000,
+      pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
     });
+  });
+
+  it('refuses a non-boolean stats.enabled and a non-object pricing, never coerces', () => {
+    // The two non-numeric settings have no `integerInRange` to fall back
+    // through, so their refusal is written by hand and is worth pinning. A
+    // truthiness read would turn the STRING "false" on, which is the shape a
+    // user most plausibly types.
+    for (const bad of ['false', 'true', 0, 1, null, [], {}]) {
+      const read = readSettings({ get: (key) => (key === 'stats.enabled' ? bad : undefined) });
+      expect(read['stats.enabled'], `stats.enabled given ${JSON.stringify(bad)}`).toBe(true);
+    }
+    for (const bad of ['{}', 3, null, [], true]) {
+      const read = readSettings({ get: (key) => (key === 'pricing' ? bad : undefined) });
+      expect(read.pricing, `pricing given ${JSON.stringify(bad)}`).toStrictEqual({});
+    }
+    // And the control: a real boolean and a real object ARE honoured, so the
+    // loops above are a refusal rather than a setting nothing reads.
+    expect(readSettings({ get: (k) => (k === 'stats.enabled' ? false : undefined) })['stats.enabled']).toBe(
+      false,
+    );
+    expect(readSettings({ get: (k) => (k === 'pricing' ? { x: 1 } : undefined) }).pricing).toStrictEqual(
+      { x: 1 },
+    );
   });
 
   it('falls back to the manifest default on an unusable value, never to a guess', () => {
@@ -880,7 +942,12 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
   it('declares exactly the settings the code reads — no more, no fewer', async () => {
     const properties = await manifestProperties();
     const declared = Object.keys(properties).sort();
-    const enforced = Object.keys(SETTING_BOUNDS)
+    // THE UNION OF BOTH TABLES (v0.7.0 Phase 3). `SETTING_BOUNDS` stopped
+    // being the whole set the moment a boolean and an object arrived: a
+    // comparison against the numeric table alone would report the two new
+    // settings as manifest entries the code ignores, i.e. it would go red for
+    // exactly the wrong reason and invite someone to delete them.
+    const enforced = [...Object.keys(SETTING_BOUNDS), ...Object.keys(SETTING_SHAPES)]
       .map((key) => `${CONFIG_SECTION}.${key}`)
       .sort();
     // Both directions: a setting the manifest offers that the code ignores is
@@ -904,10 +971,39 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
     }
   });
 
+  it('declares the type and default of every non-numeric setting', async () => {
+    const properties = await manifestProperties();
+    // The vacuity control: an empty `SETTING_SHAPES` would make the loop below
+    // prove nothing, and this block is the only thing covering the two
+    // settings that carry no minimum and no maximum.
+    expect(Object.keys(SETTING_SHAPES).length).toBeGreaterThan(0);
+    for (const [key, shape] of Object.entries(SETTING_SHAPES)) {
+      const property = properties[`${CONFIG_SECTION}.${key}`];
+      expect(property, `package.json declares no ${CONFIG_SECTION}.${key}`).toBeTypeOf('object');
+      if (property === undefined) continue;
+      expect(property.type, `${key}.type`).toBe(shape.type);
+      expect(property.default, `${key}.default`).toStrictEqual(shape.defaultOf());
+      // A non-numeric setting must NOT advertise numeric bounds: the settings
+      // UI would show a range for a value that has none.
+      expect(property.minimum, `${key}.minimum`).toBeUndefined();
+      expect(property.maximum, `${key}.maximum`).toBeUndefined();
+    }
+  });
+
+  it('the default object is a fresh object per read, never a shared one', () => {
+    // `pricing` defaults to `{}`, and a single frozen-by-convention object
+    // handed to every caller is one mutation away from every window in the
+    // process agreeing on a price table nobody set. Identity, not equality.
+    const first = readSettings(undefined).pricing;
+    const second = readSettings(undefined).pricing;
+    expect(first).toStrictEqual({});
+    expect(second).not.toBe(first);
+  });
+
   it('the manifest default is the value an unconfigured extension actually uses', async () => {
     const properties = await manifestProperties();
     const fromManifest = Object.fromEntries(
-      Object.keys(SETTING_BOUNDS).map((key) => [
+      [...Object.keys(SETTING_BOUNDS), ...Object.keys(SETTING_SHAPES)].map((key) => [
         key,
         (properties[`${CONFIG_SECTION}.${key}`] as ManifestProperty).default,
       ]),
@@ -925,9 +1021,7 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
       const maximum = property.maximum as number;
       const fallback = property.default as number;
       const read = (value: unknown): number =>
-        readSettings({ get: (k) => (k === key ? value : undefined) })[
-          key as keyof AgentDeckSettings
-        ];
+        readSettings({ get: (k) => (k === key ? value : undefined) })[key as NumericSettingKey];
       expect(read(minimum), `${key} at the manifest minimum`).toBe(minimum);
       expect(read(maximum), `${key} at the manifest maximum`).toBe(maximum);
       expect(read(minimum - 1), `${key} one below the manifest minimum`).toBe(fallback);
@@ -2479,13 +2573,96 @@ describe('G1: the extension host writes nothing', () => {
       '.claude',
       'globalState',
       'workspaceState',
-      'globalStorageUri',
+      // `storageUri` is WORKSPACE-scoped storage and stays forbidden. Note it
+      // is not a substring of `globalStorageUri`, which carries a capital S —
+      // so removing that token below does not quietly remove this one.
       'storageUri',
     ];
     for (const needle of forbidden) {
       expect(source, `forbidden token in src/extension.ts: ${needle}`).not.toContain(
         needle,
       );
+    }
+  });
+
+  /*
+   * `globalStorageUri` LEFT THE LIST ABOVE IN v0.7.0 PHASE 3, AND THIS IS THE
+   * COMPENSATING ASSERTION.
+   *
+   * The list was written when G7 read "no `workspaceState`, no `globalState`,
+   * no cache file. Everything dies with the window." G7 is amended (spec
+   * section C; PLAN.md's Grounding Contract) and now permits exactly one
+   * writable location: an append-only, retention-bounded, user-clearable,
+   * setting-disableable history of derived records under
+   * `context.globalStorageUri`. A token ban that forbids the one thing the
+   * contract now allows is a guard that has stopped describing the product,
+   * and this file's sibling test records what to do about that — narrow it to
+   * the property, and say so in a paragraph.
+   *
+   * The property is unchanged and is stronger than the token ever was: **the
+   * host entry point still writes nothing itself.** Every write API stays on
+   * the list above and every one of them is still absent — `mkdir`,
+   * `appendFileSync`, `writeFile` and the rest measure ZERO in this file. The
+   * only module in the repository that writes is `src/stats/store.ts`, and
+   * `src/stats/readback.test.ts` pins who may reach it.
+   *
+   * What replaces the ban is a PINNED COUNT of the two CODE forms, so a new
+   * reader has to come here and justify itself rather than being waved through
+   * by a check that stopped applying. `workspaceState` and `globalState` remain
+   * banned outright, because the amendment permits a DIRECTORY and says nothing
+   * about VS Code's key-value stores.
+   *
+   * **THE COUNT IS OVER `context.globalStorageUri` AND `globalStorageUri: {`,
+   * NOT OVER THE BARE TOKEN, and `phase-verifier` is why.** The first version
+   * pinned the bare token at 3 and its own paragraph said the three were "the
+   * guarded resolution and its type annotation". Re-derived, the three were the
+   * property read, the object-literal key, and **the word inside the
+   * `console.info` message** — no type annotation among them. That guard was
+   * wrong in both directions: rewording a log line would break it for no
+   * reason, and a fourth genuine reader could be added while deleting the
+   * string and the total would still read 3. Counting the two syntactic forms
+   * a READ can take is immune to both.
+   */
+  it('reads globalStorageUri in exactly the places the G7 amendment allows', async () => {
+    const source = stripComments(await readFile(EXTENSION_SOURCE, 'utf8'));
+    expect(source).toContain('createJsonlInferenceSource'); // the strip left code alone
+
+    // One read off the context, in `statsDirFor`; one re-assembly into the
+    // shape `resolveStoreDir` takes. Any third is a new reader.
+    expect(
+      source.split('context.globalStorageUri').length - 1,
+      'a new read of context.globalStorageUri: state why in the block above',
+    ).toBe(1);
+    expect(
+      source.split('globalStorageUri: {').length - 1,
+      'a new globalStorageUri literal: state why in the block above',
+    ).toBe(1);
+    // The control: the matcher can see the token at all, so the two counts
+    // above are a measurement rather than a pattern that matches nothing.
+    expect(source.split('globalStorageUri').length - 1).toBeGreaterThanOrEqual(2);
+
+    // AND THE HOST STILL WRITES NOTHING ITSELF. Restated here rather than left
+    // to the list above, because this is now the load-bearing half: the
+    // amendment permits a directory, not a write from this file.
+    for (const api of [
+      'mkdir',
+      'writeFile',
+      'writeFileSync',
+      'appendFile',
+      'appendFileSync',
+      'createWriteStream',
+      'unlink',
+      'rmSync',
+      // `rm(` IS NOT ON THIS LIST, and the omission is deliberate rather than
+      // a gap. As a substring it matches `#arm(` — the pipeline's idle-timer
+      // method — so it reported a write API that is not there, which is the
+      // false-positive half of the same defect class a missing needle is.
+      // `node:fs/promises`'s `rm` is covered where it can be covered
+      // precisely: the sibling test pins this file's ENTIRE `node:fs` binding
+      // set to `['existsSync', 'statSync']` and its module list forbids
+      // `fs/promises` outright, so there is no import `rm` could arrive on.
+    ]) {
+      expect(source, `src/extension.ts names a write API: ${api}`).not.toContain(api);
     }
   });
 
@@ -4019,19 +4196,74 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
     const keys = Object.keys(properties);
     expect(keys.length).toBeGreaterThan(0);
 
-    // No boolean anywhere: a switch is what a boolean IS, and the enable/
-    // disable shape this rules out has no other spelling in a settings UI.
-    for (const [key, property] of Object.entries(properties)) {
-      expect(property.type, `${key} is a boolean; DoD 3.2 forbids an engine switch`)
-        .not.toBe('boolean');
+    /*
+     * RE-AIMED IN v0.7.0 PHASE 3, NOT WEAKENED, AND THE DISTINCTION IS THE
+     * WHOLE POINT.
+     *
+     * This block used to assert that NO manifest property is a boolean and NO
+     * key contains "enable"/"enabled"/"disable"/"disabled"/"engines"/"mode",
+     * on the reasoning stated above it: a switch is what a boolean IS.
+     *
+     * `agentDeck.stats.enabled` is both of those things and is not an engine
+     * switch. It turns off the LOCAL STORE — G7 as amended requires the
+     * history to be "setting-disableable" in those words — and a window with
+     * it off observes all three engines exactly as before, renders the same
+     * deck, and simply writes no file. The two guards would have gone red for
+     * a setting the Grounding Contract obliges this release to ship.
+     *
+     * Deleting them was the tempting move and would have been the wrong one:
+     * this file's own comment records that weakening the Codex guard to "keys
+     * may contain codex" would have deleted it rather than re-aimed it. So the
+     * rule is narrowed to what it was always FOR, and narrowed in a way that
+     * cannot drift:
+     *
+     *   - a boolean setting is allowed only if it is on a PINNED ALLOW-LIST,
+     *     compared as a SET so a second boolean fails until somebody justifies
+     *     it here in writing;
+     *   - the engine-naming words are still forbidden EVERYWHERE, including on
+     *     the allow-listed key, so `agentDeck.codex.enabled` remains
+     *     impossible however it is spelled;
+     *   - the switch words are still forbidden on every key that is not on the
+     *     allow-list.
+     *
+     * And the control at the bottom of this test is untouched, which is what
+     * makes the whole thing more than a spelling rule.
+     */
+    const BOOLEAN_ALLOW_LIST = ['agentDeck.stats.enabled'];
+    const booleans = Object.entries(properties)
+      .filter(([, property]) => property.type === 'boolean')
+      .map(([key]) => key)
+      .sort();
+    expect(booleans, 'a boolean setting that is not the local store switch').toStrictEqual(
+      BOOLEAN_ALLOW_LIST,
+    );
+
+    /*
+     * NO ALLOW-LISTED BOOLEAN NAMES AN ENGINE.
+     *
+     * This is the narrow half, and it is narrow on purpose:
+     * `agentDeck.codex.maxTranscriptBytes` names an engine and is not a
+     * switch — it is a size gate, and DoD 3.2's rule was never "no key may say
+     * codex". What the rule forbids is a BOOLEAN that names an engine, which
+     * is the only shape an engine on/off toggle can take. Applying the engine
+     * words to every key would fail on a setting this repository shipped
+     * deliberately in 0.6.1.
+     */
+    const engineWords = ['codex', 'opencode', 'claude', 'engine'];
+    for (const key of booleans) {
+      for (const word of engineWords) {
+        expect(key.toLowerCase(), `${key} is a boolean naming an engine (${word})`).not.toContain(
+          word,
+        );
+      }
     }
 
-    // And no key names enabling, disabling or a mode.
-    const forbidden = ['enable', 'disable', 'enabled', 'disabled', 'engines', 'mode'];
+    // And no key outside the allow-list names enabling, disabling or a mode.
+    const switchWords = ['enable', 'disable', 'enabled', 'disabled', 'engines', 'mode'];
     for (const key of keys) {
-      for (const word of forbidden) {
-        expect(key.toLowerCase(), `${key} looks like an engine switch (${word})`)
-          .not.toContain(word);
+      if (BOOLEAN_ALLOW_LIST.includes(key)) continue;
+      for (const word of switchWords) {
+        expect(key.toLowerCase(), `${key} looks like a switch (${word})`).not.toContain(word);
       }
     }
 
@@ -4959,5 +5191,338 @@ describe('1b.10 — an engine root that appears after activation', () => {
     // leaking it would leave a timer running for the whole session on every
     // window belonging to a user who does not use this engine at all.
     expect(poll.stops()).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (9) The host <-> stats seam — v0.7.0 Phase 3, DoD 3.7
+// ---------------------------------------------------------------------------
+
+/**
+ * THE STATS LAYER, REACHED THE WAY PRODUCTION REACHES IT.
+ *
+ * ## Why this block exists, and it is not because anything was failing
+ *
+ * `phase-verifier` audited Phase 3 at `784aeac` and found the whole
+ * `AgentDeckHost` <-> `StatsPipeline` seam unguarded: **four separate
+ * mutations of the host wiring passed with 131 tests green.** `activate()`
+ * could stop passing `statsDir`; the host could stop calling `#observeStats`;
+ * the two counters could be hard-coded to zero; and every one of the four
+ * settings could be ignored. Each of those is the whole feature, and the suite
+ * had nothing to say about any of them.
+ *
+ * The cause is the recorded D4 shape one layer out: every stats test built a
+ * `StatsPipeline` BY HAND, so all of them proved the pipeline honours values
+ * the product was never shown to send it. CLAUDE.md's own rule, written after
+ * the last time this happened, is *"for any prop that changes user-visible
+ * output, one test must reach it the way production does"* — and a store
+ * nobody writes to is as user-visible as it gets.
+ *
+ * ## So this drives the real thing, end to end
+ *
+ * Real committed corpus -> real `ProjectWatcher` -> real `graftSession` ->
+ * real `SessionModel` -> real emission -> real `StatsPipeline` -> real
+ * `StatsStore` -> **a real file on disk**, which the assertions read back with
+ * `readFileSync`. Nothing in this block constructs a pipeline or a store.
+ *
+ * ## THE TRIGGER IS THE IDLE FLUSH, AND FINDING OUT WHY IS THE POINT
+ *
+ * The first draft of this block set the clock ten days ahead, on the reasoning
+ * that `liveness.ts`'s table reads `not running + stale -> 'ended'` and the
+ * committed transcripts are finished. **Every assertion came back with an empty
+ * store**, and the reason is a fact about the product that the phase's plan
+ * does not state:
+ *
+ *   `LivenessEngine.isRunning` (`src/model/liveness.ts:712`) falls back, for a
+ *   session with ZERO hook events, to `hasStopEntry !== true` — spec C4's
+ *   "absence of a Stop entry means still running, unknown is not an ending".
+ *   And `src/watch/inference.ts` deliberately OMITS `hasStopEntry`, because no
+ *   committed transcript contains an in-transcript Stop marker.
+ *
+ * So `hasStopEntry` is permanently `undefined`, `isRunning` is permanently
+ * `true`, and **a Claude Code session observed without hook events can only
+ * ever be `live` or `idle` — never `ended`.** The existing carry-forward A test
+ * in this file shows the same thing from the other side: 121 s after the last
+ * append, with no hooks, it asserts `idle` rather than `ended`.
+ *
+ * That is not a defect and nothing here works around it. It is exactly why the
+ * emit trigger is `ended` **OR** an idle flush: for a user who has not pasted
+ * the hook block, the flush is the only trigger there will ever be, and without
+ * it that user would have no history at all. A session WITH hook events reaches
+ * `ended` normally, through the `running` branch above.
+ *
+ * These tests therefore drive the flush, which is the production path for the
+ * corpus they use. `agentDeck.stats.idleFlushMs` is set to 1 ms so the real
+ * scheduler fires it immediately — the harness builds `AgentDeckSettings`
+ * directly and so is not bound by `readSettings`'s 60 s floor, which is a
+ * bound on what a USER may type.
+ */
+describe('the host writes stats records through the real data path (DoD 3.7)', () => {
+  const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
+
+  afterEach(() => {
+    if (previousRoot === undefined) delete process.env['CLAUDE_PROJECTS_ROOT'];
+    else process.env['CLAUDE_PROJECTS_ROOT'] = previousRoot;
+  });
+
+  /** Long enough that a flush cannot happen inside a `waitForFlush`. */
+  const NEVER_FLUSH_MS = 3_600_000;
+
+  /** Let the real scheduler fire a 1 ms timer, then let its write land. */
+  async function waitForFlush(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  interface StatsHost {
+    host: AgentDeckHost;
+    statsDir: string;
+    /** The panel the host will create, so its traffic is readable. */
+    panel: FakePanel;
+    /** Everything the consumer DOWNSTREAM of the stats layer received. */
+    emissions: DataPathEmission[];
+  }
+
+  async function startWithStore(
+    overrides: Partial<AgentDeckSettings> = {},
+  ): Promise<StatsHost> {
+    const workspacePath = await capturedWorkspacePath();
+    const statsDir = join(await makeTempDir(), 'globalStorage', STORE_DIR_NAME);
+    // A retried bind must not inherit the lost attempt's panel: `onFreePort`
+    // can construct the host more than once, and the panel is per attempt.
+    let panel = fakePanel();
+    const emissions: DataPathEmission[] = [];
+    const host = await startHostOnFreePort((port) => {
+      panel = fakePanel();
+      emissions.length = 0;
+      return trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port, 'stats.idleFlushMs': 1, ...overrides }),
+          statsDir,
+          tickMs: 0,
+          createPanel: () => panel.surface,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      );
+    });
+    await waitForFlush();
+    return { host, statsDir, panel, emissions };
+  }
+
+  /** Every line in every store file, parsed. Reads DISK, not the store object. */
+  function linesOnDisk(statsDir: string): Record<string, unknown>[] {
+    if (!existsSync(statsDir)) return [];
+    const out: Record<string, unknown>[] = [];
+    for (const name of readdirSync(statsDir).sort()) {
+      for (const line of readFileSync(join(statsDir, name), 'utf8').split('\n')) {
+        if (line.trim() === '') continue;
+        out.push(JSON.parse(line) as Record<string, unknown>);
+      }
+    }
+    return out;
+  }
+
+  it('a real emission puts one record per session on disk', async () => {
+    const { host, statsDir } = await startWithStore();
+
+    // The subject first: this is a test about the corpus reaching the store,
+    // and it means nothing if the corpus never reached the deck.
+    const sessionIds = await sessionIdsIn(await capturedSlugDir());
+    expect(sessionIds.length).toBeGreaterThan(0);
+    expect(host.dataPath.diagnostics.grafts).toBeGreaterThan(0);
+
+    const written = linesOnDisk(statsDir);
+    expect(
+      written.map((r) => r['sessionId']).sort(),
+      'the store does not hold a record for every observed session',
+    ).toStrictEqual(sessionIds);
+
+    // And they are RECORDS, not placeholders: full coverage, the right engine,
+    // and the stamp the host's own injected clock produced.
+    for (const record of written) {
+      expect(record['coverage']).toBe('full');
+      expect(record['engine']).toBe('cc');
+      expect(typeof record['derivedAt']).toBe('number');
+      expect(record['statsSchemaVersion']).toBe(1);
+    }
+    expect(host.stats?.store.appended).toBe(sessionIds.length);
+  });
+
+  it('repeated pumps do not re-append: the emission path is idempotent', async () => {
+    // The deck pumps on a liveness tick whether or not anything changed, so
+    // without this a finished session would gain a record every few seconds
+    // for as long as the window stayed open.
+    const { host, statsDir } = await startWithStore();
+    const first = linesOnDisk(statsDir).length;
+    expect(first).toBeGreaterThan(0);
+    for (let i = 0; i < 10; i += 1) host.dataPath.pump();
+    expect(linesOnDisk(statsDir)).toHaveLength(first);
+  });
+
+  it('activate() is what supplies the directory, and it is under globalStorageUri', async () => {
+    // THE MUTATION THIS KILLS: dropping `statsDir` from `activate()`'s host
+    // options left 131 tests green. Nothing else in the suite reaches that
+    // call, because every other stats test constructs its own store.
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    const globalStorage = await makeTempDir();
+    await activateOnFreePort(
+      (port) => {
+        mock.setWorkspaceFolder(workspacePath);
+        mock.setConfig(CONFIG_SECTION, { port });
+      },
+      globalStorage,
+    );
+
+    const host = currentHost();
+    expect(host, 'activate() installed no host').not.toBeNull();
+    expect(host?.stats, 'activate() built no stats pipeline').toBeDefined();
+    expect(host?.stats?.store.dir).toBe(
+      resolveStoreDir({ globalStorageUri: { fsPath: globalStorage } }),
+    );
+
+    /*
+     * AND THE EMISSION REACHED IT, which is the half that makes the path more
+     * than a string on an object.
+     *
+     * Not asserted by reading records: `activate()` reads the REAL settings,
+     * so the idle window is the shipped hour and `readSettings` clamps
+     * anything under a minute back to it — a floor on what a USER may type,
+     * and this test is a user. An armed timer is the observable that says the
+     * pipeline was handed a live session by the production wiring.
+     */
+    expect(
+      host?.stats?.armedTimers,
+      'activate() wired a store the data path never reaches',
+    ).toBeGreaterThan(0);
+    expect(host?.dataPath.diagnostics.grafts).toBeGreaterThan(0);
+    await deactivate();
+  });
+
+  it('the four settings reach the store, not just readSettings', async () => {
+    // THE MUTATION THIS KILLS: replacing all four `options.settings[...]`
+    // reads with literals (`enabled: true`, `retentionDays: 1`,
+    // `idleFlushMs: 1`, `pricing: new Map()`) left 130 tests green.
+    const disabled = await startWithStore({ 'stats.enabled': false });
+    expect(disabled.host.stats?.store.enabled).toBe(false);
+    // Disabled means NOTHING on disk, reached by a real emission rather than
+    // by calling `appendRecord` and watching it decline.
+    expect(existsSync(disabled.statsDir)).toBe(false);
+    expect(linesOnDisk(disabled.statsDir)).toStrictEqual([]);
+
+    // The control, on the same path: with the setting on, records appear.
+    const enabled = await startWithStore({ 'stats.enabled': true });
+    expect(enabled.host.stats?.store.enabled).toBe(true);
+    expect(linesOnDisk(enabled.statsDir).length).toBeGreaterThan(0);
+
+    /*
+     * AND `idleFlushMs` IS READ RATHER THAN ASSUMED.
+     *
+     * The mutation this half kills replaced the settings reads with literals,
+     * one of which was `idleFlushMs: 1` — which every test above would still
+     * pass, because they all want a fast flush. So this one asks for the
+     * OPPOSITE: an hour, over the same corpus and the same wait, must produce
+     * nothing. A pipeline ignoring the setting writes here; one reading it
+     * does not.
+     */
+    const slow = await startWithStore({ 'stats.idleFlushMs': NEVER_FLUSH_MS });
+    await waitForFlush();
+    expect(
+      linesOnDisk(slow.statsDir),
+      'a one-hour idle window flushed inside 50 ms',
+    ).toStrictEqual([]);
+    // The control on that emptiness: the pipeline DID see the sessions and is
+    // holding timers for them, so the empty store is a pending flush rather
+    // than an emission that never arrived.
+    expect(slow.host.stats?.armedTimers).toBeGreaterThan(0);
+  });
+
+  it('the counters line reports the store, not two zeroes', async () => {
+    // THE MUTATION THIS KILLS: hard-coding `statsErrors: 0, storeMalformed: 0`
+    // in `counters()` left 131 tests green.
+    const { host, statsDir } = await startWithStore();
+    expect(host.counters().storeMalformed).toBe(0);
+
+    // Corrupt one line the way a crash mid-append would, then make the host
+    // read its own store. `storeMalformed` is a READ-side count, so nothing
+    // moves until something reads.
+    const files = readdirSync(statsDir);
+    expect(files.length).toBeGreaterThan(0);
+    appendFileSync(join(statsDir, files[0] as string), 'not a record\n', 'utf8');
+    expect(host.stats?.store.readRecords().length).toBeGreaterThan(0);
+
+    expect(host.stats?.store.malformed).toBe(1);
+    expect(
+      host.counters().storeMalformed,
+      'counters() does not read the store it is reporting on',
+    ).toBe(1);
+    // And the line the user copies carries it.
+    expect(formatCounters(host.counters(), '2026-09-08T12:00:00.000Z')).toContain(
+      'storeMalformed=1',
+    );
+  });
+
+  it('G2: a stats layer that throws does not stop the deck (host level)', async () => {
+    /*
+     * THE MUTATION THIS KILLS: deleting `#observeStats` from the emission
+     * callback left 131 tests green — so nothing distinguished "the stats
+     * layer is isolated" from "the stats layer is not connected".
+     *
+     * Both halves are asserted here, in that order, because either alone is
+     * satisfiable by the wrong product: the pipeline IS reached (its store
+     * filled from a real emission), and a pipeline that throws leaves the
+     * panel still receiving.
+     */
+    const { host, statsDir, panel, emissions } = await startWithStore();
+    // Half one: the layer IS connected. Without this the rest of the test
+    // passes just as well on a host that never calls the pipeline at all,
+    // which is the distinction the audit found nothing was making.
+    expect(linesOnDisk(statsDir).length).toBeGreaterThan(0);
+
+    const pipeline = host.stats;
+    expect(pipeline).toBeDefined();
+    if (pipeline === undefined) return;
+
+    expect(host.open()).not.toBeNull();
+    const postedBefore = panel.posted.length;
+    expect(postedBefore).toBeGreaterThan(0);
+    const emissionsBefore = emissions.length;
+
+    // Make the layer fail as destructively as it can from where it sits.
+    const original = pipeline.observe.bind(pipeline);
+    (pipeline as unknown as { observe: () => void }).observe = (): never => {
+      throw new Error('stats layer exploded');
+    };
+    try {
+      host.dataPath.pump();
+      host.dataPath.pump();
+    } finally {
+      (pipeline as unknown as { observe: typeof original }).observe = original;
+    }
+
+    /*
+     * Half two: EVERYTHING DOWNSTREAM STILL RAN.
+     *
+     * The consumer is asserted rather than the panel's message count, and the
+     * difference matters. `#observeStats` runs BEFORE `#panel.publish` and
+     * before `onEmission`, so a throw that escaped it would take both out —
+     * but a pump over an unchanged session legitimately posts NO message,
+     * because the bridge sends a diff only when something differs. Counting
+     * panel messages would therefore have made this test assert that the deck
+     * keeps talking, which is not true of a quiet deck and not what G2 says.
+     * The consumer callback fires on every emission regardless.
+     */
+    expect(
+      emissions.length,
+      'the emission never reached the consumer past the throwing stats layer',
+    ).toBe(emissionsBefore + 2);
+    expect(panel.posted.length, 'the panel lost messages it already had').toBeGreaterThanOrEqual(
+      postedBefore,
+    );
+    // The failure is COUNTED, which is what G2 extended requires of it.
+    expect(host.counters().statsErrors).toBeGreaterThan(0);
   });
 });

@@ -89,8 +89,12 @@ interface Manifest {
   keywords?: unknown;
   repository?: unknown;
   contributes?: {
+    commands?: { command?: unknown; title?: unknown; category?: unknown }[];
     configuration?: {
-      properties?: Record<string, { default?: unknown; minimum?: unknown; maximum?: unknown } | undefined>;
+      properties?: Record<
+        string,
+        { type?: unknown; default?: unknown; minimum?: unknown; maximum?: unknown; description?: unknown } | undefined
+      >;
     };
   };
 }
@@ -308,6 +312,121 @@ describe('the hook port', () => {
     expect(typeof property?.maximum).toBe('number');
     expect(Number(property?.minimum)).toBeLessThanOrEqual(DEFAULT_HOOK_PORT);
     expect(Number(property?.maximum)).toBeGreaterThanOrEqual(DEFAULT_HOOK_PORT);
+  });
+});
+
+/**
+ * v0.7.0 Phase 3, DoD 3.7 — the local store's settings and its one command.
+ *
+ * ## FOUR SETTINGS, NOT FIVE, AND THE FIFTH IS SAID OUT LOUD
+ *
+ * `PLAN.md`'s Phase 3 module list names "five settings incl.
+ * `agentDeck.canvas.autoFit`". Four land here. **`agentDeck.canvas.autoFit` is
+ * Phase 4's** — spec section G gives it a default of `true` and DoD 4.0 owns
+ * it together with the pure `fit()` function and the goldens it is asserted
+ * against.
+ *
+ * Declaring it now would put a knob in every user's settings UI that nothing
+ * reads, which `extension.test.ts`'s "no more, no fewer" cross-check forbids
+ * for exactly the right reason: a setting the manifest offers and the code
+ * ignores is a promise to a user that nothing keeps. So it lands with its
+ * behaviour, and the shortfall against the plan's own wording is recorded here
+ * rather than left for a reader to notice as an absence.
+ *
+ * ## WHY THE MANIFEST, WHEN `extension.test.ts` ALREADY CROSS-CHECKS IT
+ *
+ * That file binds the manifest to `SETTING_BOUNDS` and `SETTING_SHAPES` — it
+ * proves the two AGREE. It cannot notice that both are wrong together, and it
+ * says nothing about the command, which has no runtime table to disagree with.
+ * What is asserted here is the manifest against the SPEC: the defaults section
+ * F states, and a command whose id, title and category are what the palette
+ * shows.
+ */
+describe('the local store settings and command (v0.7.0 Phase 3)', () => {
+  /** Every default spec section F states, verbatim from it. */
+  const SPEC_DEFAULTS: Record<string, { type: string; default: unknown }> = {
+    'agentDeck.stats.enabled': { type: 'boolean', default: true },
+    'agentDeck.stats.retentionDays': { type: 'integer', default: 90 },
+    'agentDeck.stats.idleFlushMs': { type: 'integer', default: 3_600_000 },
+    'agentDeck.pricing': { type: 'object', default: {} },
+  };
+
+  it('declares the four store settings with the defaults the spec states', async () => {
+    const properties = (await readManifest()).contributes?.configuration?.properties ?? {};
+    for (const [key, expected] of Object.entries(SPEC_DEFAULTS)) {
+      const property = properties[key];
+      expect(property, `package.json contributes no ${key}`).toBeDefined();
+      expect(property?.type, `${key}.type`).toBe(expected.type);
+      expect(property?.default, `${key}.default`).toStrictEqual(expected.default);
+      // A setting with no description is a blank row in the settings UI.
+      expect(typeof property?.description, `${key} has no description`).toBe('string');
+      expect(String(property?.description).length).toBeGreaterThan(40);
+    }
+  });
+
+  it('does NOT yet declare agentDeck.canvas.autoFit — that is Phase 4', async () => {
+    // The other half of the note above, as an assertion rather than as prose:
+    // when Phase 4 adds the setting this goes red, which is the reminder to
+    // delete this test and move the row into the block above rather than to
+    // discover the plan's "five" was quietly satisfied by four.
+    const properties = (await readManifest()).contributes?.configuration?.properties ?? {};
+    expect(Object.keys(properties)).not.toContain('agentDeck.canvas.autoFit');
+  });
+
+  it('declares numeric bounds that admit the defaults they advertise', async () => {
+    // The same rule the hook port carries: a default outside the declared range
+    // is a settings UI that rejects its own initial value.
+    const properties = (await readManifest()).contributes?.configuration?.properties ?? {};
+    let checked = 0;
+    for (const key of ['agentDeck.stats.retentionDays', 'agentDeck.stats.idleFlushMs']) {
+      const property = properties[key];
+      expect(typeof property?.minimum, `${key}.minimum`).toBe('number');
+      expect(typeof property?.maximum, `${key}.maximum`).toBe('number');
+      expect(Number(property?.minimum)).toBeLessThanOrEqual(Number(property?.default));
+      expect(Number(property?.maximum)).toBeGreaterThanOrEqual(Number(property?.default));
+      checked += 1;
+    }
+    expect(checked).toBe(2);
+  });
+
+  it('the retention floor is one day, not zero — the setting is not a delete switch', async () => {
+    // Spelled out because it is a DECISION rather than an arbitrary bound: a
+    // retention of zero means "prune on the first append", and a store that
+    // erased itself because a number was mistyped is the one failure here with
+    // no undo. Turning the history off is `stats.enabled`, which says so.
+    const properties = (await readManifest()).contributes?.configuration?.properties ?? {};
+    expect(properties['agentDeck.stats.retentionDays']?.minimum).toBe(1);
+  });
+
+  it('contributes the clear command, with the title the palette shows', async () => {
+    const commands = (await readManifest()).contributes?.commands ?? [];
+    expect(commands.length, 'package.json contributes no commands').toBeGreaterThan(0);
+    const clear = commands.find((c) => c.command === 'agentDeck.stats.clearHistory');
+    expect(clear, 'package.json contributes no agentDeck.stats.clearHistory').toBeDefined();
+    // Spec section F names the palette entry "Agent Deck: Clear Stats History",
+    // and VS Code composes that from category and title. Both halves asserted,
+    // because either alone leaves the entry wrong in the palette.
+    expect(clear?.category).toBe('Agent Deck');
+    expect(clear?.title).toBe('Clear Stats History');
+  });
+
+  it('contributes no VIEW or MENU entry for clearing — palette only', async () => {
+    /*
+     * The locked open question, as a guard: clearing is "reachable from the
+     * command palette and the sidebar menu (Phase 4) — NEVER a visible button
+     * on the deck or the Stats view."
+     *
+     * A destructive, irreversible action one stray click away from a surface a
+     * user pans and zooms around all day is a different product from one behind
+     * a palette entry and a modal. `contributes.menus` is the only way a
+     * manifest can put a command anywhere else, so its ABSENCE is the whole
+     * assertion — and when Phase 4 adds the sidebar menu this goes red, which
+     * is the point at which somebody has to state where the entry went.
+     */
+    const contributes = (await readManifest()).contributes as Record<string, unknown> | undefined;
+    expect(contributes).toBeDefined();
+    expect(Object.keys(contributes ?? {})).not.toContain('menus');
+    expect(Object.keys(contributes ?? {})).not.toContain('views');
   });
 });
 

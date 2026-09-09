@@ -186,6 +186,63 @@ describe('the gate can still see a violation — the REAL script, on a planted o
     expect(report.literals).toBeGreaterThan(0);
   }, 30_000);
 
+  it('flags a forbidden word in a .svelte file — in its script AND in its markup (DoD 4.7)', () => {
+    /*
+     * Phase 4 taught the scanner `.svelte`, and the first commit of that phase
+     * claimed a "Svelte negative control" that did not exist: `plant()` wrote
+     * only `planted.ts`, and `phase-verifier` found the claim by grepping
+     * this file for "svelte" and getting zero. This is that control, both
+     * halves — a literal inside `<script>` (the TypeScript path) and prose in
+     * the markup (the text path) — in ONE file, so a scanner that read only
+     * one half reports one violation instead of two.
+     */
+    const dir = plant("export const NOTE = 'a plain string';\n");
+    writeFileSync(
+      join(dir, 'Planted.svelte'),
+      [
+        '<script lang="ts">',
+        "  const note = 'a wasted turn';",
+        '</script>',
+        '<!-- you should consider this: a comment, never scanned -->',
+        '<p title="a better one">{note}</p>',
+        '<style>.good { color: red; }</style>',
+      ].join('\n'),
+      'utf8',
+    );
+    const { report, status } = run(['--scope', dir]);
+    expect(status).toBe(1);
+    expect(report.scanned).toBe(2);
+    expect(report.violations.map((v) => v.word).sort()).toEqual(['better', 'waste']);
+    expect(report.violations.every((v) => v.file.endsWith('Planted.svelte'))).toBe(true);
+    // The comment and the stylesheet were stripped: `should`, `consider` and
+    // `good` are in the file and not in the verdict.
+    expect(report.violations.some((v) => ['should', 'consider', 'good'].includes(v.word))).toBe(false);
+  }, 30_000);
+
+  it('flags a forbidden word in a changelog 0.7.0 block, and only in that block (DoD 4.7)', () => {
+    const dir = plant('export const N = 1;\n');
+    const md = join(dir, 'CHANGELOG.md');
+    writeFileSync(
+      md,
+      [
+        '# Changelog',
+        '',
+        '## 0.7.0 - unreleased',
+        '',
+        '- **A thing.** It was improved.',
+        '',
+        '## 0.6.1 - history',
+        '',
+        "- you should not read this: an earlier block is history, not G10's subject.",
+      ].join('\n'),
+      'utf8',
+    );
+    const { report, status } = run(['--block', md]);
+    expect(status).toBe(1);
+    expect(report.violations.map((v) => v.word)).toEqual(['improve']);
+    expect(report.violations[0]?.line).toBe(5);
+  }, 30_000);
+
   it('refuses a scope that holds no TypeScript rather than passing it', () => {
     // The fail-open shape rule 18 exists for: a gate pointed somewhere empty
     // reports PASS. Phase 4 adds `webview/stats` to SCOPES, and this is what

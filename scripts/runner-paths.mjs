@@ -17,8 +17,8 @@
 // block's denominator is as much evidence as its numerator.
 //
 // Pure, and the filesystem is INJECTED: `exists` is a function the caller
-// supplies, so `src/release/testrun.test.ts` can drive the rule against a
-// fake directory and the runner drives it against the real one.
+// supplies, so `src/release/runner-paths.test.ts` can drive the rule against
+// a fake directory and the runner drives it against the real one.
 
 /** `label-001.json`, then `label-001-r2.json`, `label-001-r3.json`, ... */
 export function recordFileName(label, index, attempt) {

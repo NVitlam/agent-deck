@@ -116,9 +116,11 @@ export class SidebarController {
   #receive(raw: unknown): void {
     this.#counts.messagesReceived += 1;
     // The guard first, then the narrower question. `isWebviewToHostMessage`
-    // has already checked that a `runCommand`'s command is on the menu; the
-    // second `isSidebarCommand` call is the belt to that brace, and it is what
-    // a test mutates to prove the sidebar cannot run an off-menu id.
+    // has already checked that a `runCommand`'s command is on the menu, so the
+    // second `isSidebarCommand` call is SHADOWED by the guard and no test can
+    // turn it red on its own — `phase-verifier` measured exactly that
+    // (2026-09-09). It stays as belt to the guard's brace, stated as such: if
+    // the guard ever widens, this line is the one that still refuses.
     if (!isWebviewToHostMessage(raw) || raw.type !== 'runCommand' || !isSidebarCommand(raw.command)) {
       this.#counts.messagesDropped += 1;
       return;

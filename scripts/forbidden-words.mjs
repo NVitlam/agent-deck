@@ -124,6 +124,15 @@ const DEFAULT_SCOPES = [
  */
 function scopesFromArgv() {
   const at = process.argv.indexOf('--scope');
+  // `--block <file>`: the same hook for the CHANGELOG-block reader, and the
+  // same single caller (`g10.test.ts`). It scans that file's `## 0.7.0`
+  // section and nothing else, so the block extraction can be proved to FAIL.
+  const blockAt = process.argv.indexOf('--block');
+  if (blockAt !== -1) {
+    const file = process.argv[blockAt + 1];
+    if (file === undefined) throw new Error('--block needs a markdown file');
+    return [{ kind: 'block', file, heading: '## 0.7.0', label: file }];
+  }
   if (at === -1) return DEFAULT_SCOPES;
   const dir = process.argv[at + 1];
   if (dir === undefined) throw new Error('--scope needs a directory');

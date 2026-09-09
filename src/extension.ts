@@ -3458,6 +3458,24 @@ export interface AgentDeckHostOptions extends DataPathOptions {
   /** Injected so a test can assert the emitted document byte for byte. */
   nonce?: string;
   /**
+   * Overrides the stats provenance stamp (DoD 4.11). Defaults to `now()`.
+   *
+   * EXISTS FOR ONE REASON, and it is a property of the fixtures rather than a
+   * convenience. The gate compares a record's `endedAt ?? startedAt` — which is
+   * TRANSCRIPT CONTENT — against activation, while liveness compares FILE
+   * MTIME. For a real session those agree. For a replayed corpus they cannot:
+   * git gives every fixture a fresh mtime, so a captured 2026-08 session looks
+   * live and reads as history, and every host test that asserts a record on
+   * disk would assert against a gate doing its job.
+   *
+   * So a test that is about something else passes `0` and says so. The
+   * production default is untouched, and `extension.test.ts` carries a test
+   * that drives the REAL stamp in both directions — without it this option
+   * would be the untested single assignment site this repository keeps
+   * shipping.
+   */
+  statsProcessStart?: number;
+  /**
    * Creates the diagnostics output channel (DoD 5.5.3). Omitted by every test
    * that does not assert on diagnostics, and by anything running outside a
    * real editor — `test/vscode-mock.ts` has no `createOutputChannel`, which is
@@ -3657,7 +3675,7 @@ export class AgentDeckHost {
         // The provenance stamp, taken ONCE here (DoD 4.11). Everything already
         // on disk when this window activated is history and is never written
         // again; see `StatsPipelineOptions.processStart`.
-        processStart: clock(),
+        processStart: options.statsProcessStart ?? clock(),
         now: clock,
         scheduler: this.#scheduler,
         onError: toChannel,

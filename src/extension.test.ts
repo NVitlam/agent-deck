@@ -5298,6 +5298,7 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
 
   async function startWithStore(
     overrides: Partial<AgentDeckSettings> = {},
+    options: { realProcessStart?: boolean } = {},
   ): Promise<StatsHost> {
     const workspacePath = await capturedWorkspacePath();
     const statsDir = join(await makeTempDir(), 'globalStorage', STORE_DIR_NAME);
@@ -5314,6 +5315,12 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
           projectsRoot: CAPTURED_ROOT,
           settings: settings({ port, 'stats.idleFlushMs': 1, ...overrides }),
           statsDir,
+          // DoD 4.11's provenance gate, opted out DELIBERATELY: the captured
+          // corpus starts in 2026-08, so against a real activation stamp every
+          // session here is history and writes nothing. These tests are about
+          // the settings and the seam, not about the gate — the gate has its
+          // own test below, which drives the real stamp in both directions.
+          ...(options.realProcessStart === true ? {} : { statsProcessStart: 0 }),
           tickMs: 0,
           createPanel: () => panel.surface,
           onEmission: (payload) => {
@@ -5408,8 +5415,18 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
      * and this test is a user. An armed timer is the observable that says the
      * pipeline was handed a live session by the production wiring.
      */
+    /*
+     * The observable is what the pipeline DERIVED, not what it armed.
+     *
+     * It used to be `armedTimers > 0`, and DoD 4.11's provenance gate made that
+     * the wrong question: this corpus is historical, so a correct host arms
+     * nothing for it. `liveRecords()` is populated on every observe regardless
+     * of flush policy, so it still says "the production wiring handed this
+     * pipeline a session" — which is the claim — and it says it without
+     * depending on whether that session is one the store should keep.
+     */
     expect(
-      host?.stats?.armedTimers,
+      host?.stats?.liveRecords().length,
       'activate() wired a store the data path never reaches',
     ).toBeGreaterThan(0);
     expect(host?.dataPath.diagnostics.grafts).toBeGreaterThan(0);
@@ -5452,6 +5469,41 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
     // holding timers for them, so the empty store is a pending flush rather
     // than an emission that never arrived.
     expect(slow.host.stats?.armedTimers).toBeGreaterThan(0);
+  });
+
+  it('the provenance stamp is the REAL clock, and history reaches no store (DoD 4.11)', async () => {
+    /*
+     * THE MUTATION THIS KILLS: replacing `options.statsProcessStart ?? clock()`
+     * with `0` — i.e. shipping the flood back. Every other stats test passes
+     * `statsProcessStart: 0` on purpose, so without this one the production
+     * default has exactly one assignment site and nothing drives it. That is
+     * the shape this repository has shipped three times (`enabledEngines`,
+     * `degradedByEngine`, the auto-fit attributes), and it is only ever found
+     * by mutating the WIRING.
+     *
+     * The captured corpus starts in 2026-08, so against a stamp taken now every
+     * session in it is history — which is the whole point: this is the same
+     * situation as the user's 28 rediscovered sessions, on the real path.
+     */
+    const real = await startWithStore({ 'stats.enabled': true }, { realProcessStart: true });
+    expect(real.host.stats?.store.enabled).toBe(true);
+
+    // THE VACUITY CONTROL, and it is the assertion that makes the next one mean
+    // something: the emission DID reach the pipeline. Without it an empty store
+    // passes just as well on a host that never wired the pipeline at all — the
+    // counter-polarity lesson this repository has recorded twice.
+    expect(
+      real.host.stats?.liveRecords().length,
+      'the pipeline never saw a session, so the empty store proves nothing',
+    ).toBeGreaterThan(0);
+
+    expect(linesOnDisk(real.statsDir), 'a historical session reached the store').toStrictEqual([]);
+    expect(real.host.stats?.armedTimers, 'history armed a flush').toBe(0);
+
+    // ...and the same path, same corpus, with a stamp the corpus postdates:
+    // records appear. So the empty store above is the GATE and not the wiring.
+    const observed = await startWithStore({ 'stats.enabled': true });
+    expect(linesOnDisk(observed.statsDir).length).toBeGreaterThan(0);
   });
 
   it('the counters line reports the store, not two zeroes', async () => {

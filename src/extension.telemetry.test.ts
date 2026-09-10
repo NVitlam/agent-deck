@@ -816,7 +816,12 @@ describe('DoD 6.3b — Claude Code\'s cost is selected only when its session.cou
      */
     const r = await rig({ stage: ['idle-as-A'], stats: true });
     pumpOnce(r);
-    const onlyB = ENVELOPES.filter((e) => e.raw.includes(OTEL_SESSION_B));
+    // B's METRICS bodies only — a new session's first rows are its count point
+    // and its cost, before any span. With no span in flight the joiner holds
+    // nothing but the pending slot, which is the empty path V1 broke (a span
+    // waiting for its verdict is kept at the judging pump, and would hide it:
+    // measured, M35 went green on 8413729 with spans in this replay).
+    const onlyB = ENVELOPES.filter((e) => e.signal === 'metrics' && e.raw.includes(OTEL_SESSION_B));
     // CONTROLS: B's bodies name no other session, and carry B's count point
     // and cost; A receives nothing at all.
     expect(onlyB.length).toBeGreaterThan(0);

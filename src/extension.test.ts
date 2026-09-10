@@ -3873,7 +3873,12 @@ describe('DoD 5.2 — the OpenCode engine is on when its store exists, and off w
       staged.workspacePath,
       second,
     ]);
-  });
+    // A budget, not vitest's 5 s default: this copies a captured corpus AND
+    // activates a host. Measured 2026-09-11: 352 ms alone, and a failure at
+    // 5,356 ms — past the 5 s default — in a cold fresh clone's full run
+    // (v0.7.1 gate at 7caf42f).
+    // The recorded class: a test that passes or fails by CPU load.
+  }, 60_000);
 
   it('workspacePathsOf answers [] for no folders, so the engine matches nothing', () => {
     expect(workspacePathsOf(undefined)).toStrictEqual([]);

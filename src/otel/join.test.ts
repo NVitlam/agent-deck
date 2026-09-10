@@ -377,28 +377,52 @@ describe('DoD 1.9e — agentName is UNAVAILABLE, and this is the measurement', (
   });
 });
 
-describe('DoD 1.9g — why no golden and no wire file can move in Phase 1', () => {
-  it('is imported by NO production module, which is the real guarantee', async () => {
-    /*
-     * DoD 1.9g asks that every golden and wire file be byte-identical with the
-     * telemetry channel absent, present-and-empty, and throwing. The
-     * state-level assertions below cover the three shapes on a constructed
-     * state; THIS is what makes the claim true of the committed artefacts, and
-     * it is a different and stronger statement: nothing in production calls
-     * `joinTelemetry` at all, so no golden and no wire recorder can reach it.
-     *
-     * Phase 3 mounts the route and gives it a caller. On that day this test
-     * goes red, and it should — it is the tripwire that says "the sweep 1.9g
-     * describes now has to be written for real".
-     *
-     * Recorded rather than glossed: `phase-verifier` found the original 1.9g
-     * tests asserting on one hand-built state while the DoD's sentence spoke
-     * about every golden and wire file.
-     */
+/**
+ * v0.7.1 DoD 6.5 — the modules that reach `otel/` at runtime, by ALLOW-LIST.
+ *
+ * REWRITTEN RED-THEN-GREEN, AND THE HISTORY IS THE POINT OF THE COMMENT.
+ * Until v0.7.1 this test asserted that NO production module imported
+ * `otel/parse.js` or `otel/join.js` as a value, and that nothing in production
+ * named `joinTelemetry` at all. Its own header said the route phase would turn
+ * it red, and that the red was the signal the guarantee had to be written for
+ * real. This is that rewrite. It was committed RED first — before the route or
+ * the host module existed — so the record shows the guard failing for the
+ * reason it now exists for, then passing when the two modules landed.
+ *
+ * What it asserts now, both halves pinned by SET AND COUNT (rule 19):
+ *
+ *   - exactly two production modules value-import `otel/`: the ROUTE
+ *     (`src/hooks/listener.ts`, which calls `parseOtlpBody`) and the HOST
+ *     MODULE (`src/model/telemetry.ts`, which calls `joinTelemetry`). A third
+ *     importer fails; a missing one fails.
+ *   - exactly one production module names `joinTelemetry`: the host module.
+ *     The route parses and publishes; it never joins.
+ *
+ * WHY THE GOLDENS STILL CANNOT MOVE, now that there is a caller. The host
+ * module joins only for the STATS observation — the deck's snapshot and diffs
+ * are published from the engines' own emission, untouched — and with no
+ * telemetry received the join returns the same object (the 1.9g block below,
+ * unchanged). `egress.test.ts` checks the same allow-list's consequence on the
+ * bytes that ship.
+ */
+const TELEMETRY_RUNTIME_IMPORTERS: readonly string[] = [
+  // THE ROUTE (DoD 6.2): an accepted body -> `parseOtlpBody` -> publish.
+  'src/hooks/listener.ts',
+  // THE HOST MODULE (DoD 6.3): `subscribeOtel` -> `joinTelemetry` on the live
+  // session states.
+  'src/model/telemetry.ts',
+];
+
+/** The one production module allowed to NAME `joinTelemetry`. */
+const JOIN_CALLERS: readonly string[] = ['src/model/telemetry.ts'];
+
+describe('DoD 6.5 — exactly two production modules reach otel at runtime', () => {
+  it('value-imports otel/ from the route and the host module, and from nothing else', async () => {
     const { readdirSync, readFileSync, statSync } = await import('node:fs');
-    const { join } = await import('node:path');
+    const { join, relative, sep } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
 
+    const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
     const roots = ['src', 'webview', 'scripts'].map((d) =>
       fileURLToPath(new URL(`../../${d}/`, import.meta.url)),
     );
@@ -416,54 +440,56 @@ describe('DoD 1.9g — why no golden and no wire file can move in Phase 1', () =
     for (const root of roots) walk(root);
     expect(files.length).toBeGreaterThan(100);
 
+    /** Repository-relative, forward slashes — the form the allow-lists use. */
+    const rel = (file: string): string => relative(repoRoot, file).split(sep).join('/');
+
     /*
-     * NARROWED IN v0.7.0 PHASE 1b, AND THE NARROWING IS ITSELF A CLAIM.
-     *
-     * The shared listener relays a telemetry SLICE between windows (DoD 1b.5),
-     * so `TelemetrySlice` and `OtelSignal` — the TYPES — now appear in
-     * `src/hooks/`. A type import is erased at build time: it emits no code,
-     * calls nothing, and cannot reach a recorder. The guarantee 1.9g is about
-     * is that no golden and no wire file can move, and a name that does not
-     * exist at runtime cannot move one.
-     *
-     * So the scan drops TYPE imports and keeps everything else. Two things
-     * stop that being a convenient loophole: the value-import ban below is
-     * unchanged, `joinTelemetry` is banned BY NAME anywhere in production, and
-     * `egress.test.ts` asserts the built artefact contains no telemetry parser
-     * at all — which is the same claim checked on the bytes that ship rather
-     * than on the text that produced them.
-     *
-     * Phase 3 mounts the route and gives it a real caller. On that day this
-     * still goes red, because a route has to import `parseOtlpBody` as a
-     * VALUE.
+     * TYPE imports are dropped before scanning, as they have been since v0.7.0
+     * Phase 1b: `src/hooks/shared.ts` and `relay.ts` name `TelemetrySlice` and
+     * `OtelSignal` for the relay, and a type import emits no code and calls
+     * nothing. The ALLOW-LIST is what stops that being a loophole — a value
+     * import anywhere else is a third entry, and the set comparison fails.
      */
     const withoutTypeImports = (text: string): string =>
       text.replace(/^\s*import\s+type\s[^;]*;/gm, '');
 
-    const importers = files.filter((file) => {
-      // The module's own directory and every test are exempt.
-      if (file.includes(`${'src'}${String.fromCharCode(92)}otel`)) return false;
-      if (file.includes('/otel/')) return false;
-      if (file.endsWith('.test.ts') || file.endsWith('.testkit.ts')) return false;
-      const text = withoutTypeImports(readFileSync(file, 'utf8'));
-      return /from '.*otel\/(join|parse)\.js'|require\(.*otel/.test(text);
+    /** Production files outside `src/otel/` itself. Tests and testkits are exempt. */
+    const production = files.filter((file) => {
+      const path = rel(file);
+      if (path.startsWith('src/otel/')) return false;
+      return !(path.endsWith('.test.ts') || path.endsWith('.testkit.ts'));
     });
-    expect(importers, `a production module reaches otel at runtime: ${importers.join(', ')}`).toEqual([]);
 
-    // THE NAME BAN, unchanged in strength and not narrowed by anything above:
-    // the function whose CALL would move a golden may not be named in
-    // production at all, type import or no type import.
-    const callers = files.filter((file) => {
-      if (file.includes(`${'src'}${String.fromCharCode(92)}otel`)) return false;
-      if (file.includes('/otel/')) return false;
-      if (file.endsWith('.test.ts') || file.endsWith('.testkit.ts')) return false;
-      return readFileSync(file, 'utf8').includes('joinTelemetry');
-    });
-    expect(callers, `a production module names joinTelemetry: ${callers.join(', ')}`).toEqual([]);
+    const importers = production
+      .filter((file) =>
+        /from '.*otel\/(join|parse)\.js'|require\(.*otel/.test(
+          withoutTypeImports(readFileSync(file, 'utf8')),
+        ),
+      )
+      .map(rel)
+      .sort();
+    expect(importers, `the production modules reaching otel at runtime: ${importers.join(', ')}`).toStrictEqual(
+      [...TELEMETRY_RUNTIME_IMPORTERS].sort(),
+    );
+    // The count BESIDE the set: an allow-list compared against a listing that
+    // came back empty for the wrong reason would need both lists to be wrong.
+    expect(importers).toHaveLength(2);
 
-    // VACUITY CONTROLS. A narrowed matcher that can no longer see anything
-    // reports an empty list for the wrong reason, so both halves are shown to
-    // still catch what they are for.
+    // THE NAME BAN, narrowed to one caller and no further: the function whose
+    // call reaches the stats layer is named in production by the host module
+    // alone, type import or not.
+    const callers = production
+      .filter((file) => readFileSync(file, 'utf8').includes('joinTelemetry'))
+      .map(rel)
+      .sort();
+    expect(callers, `the production modules naming joinTelemetry: ${callers.join(', ')}`).toStrictEqual([
+      ...JOIN_CALLERS,
+    ]);
+    expect(callers).toHaveLength(1);
+
+    // VACUITY CONTROLS. A matcher that can no longer see anything reports an
+    // empty list for the wrong reason, so each half is shown to catch what it
+    // is for — and to drop what it must drop.
     expect(withoutTypeImports("import type { X } from '../otel/parse.js';")).not.toMatch(/otel/);
     expect(withoutTypeImports("import { parseOtlpBody } from '../otel/parse.js';")).toMatch(
       /from '.*otel\/(join|parse)\.js'/,

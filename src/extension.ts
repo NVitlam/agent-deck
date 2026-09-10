@@ -4021,14 +4021,6 @@ export class AgentDeckHost {
   }
 
   /**
-   * Put the Layer 1 facts on the panel's wire (DoD 4.1), behind a guard.
-   *
-   * The live records go on every publish — they are already derived, so the
-   * only cost is the validator walk. The STORED records are re-read only when
-   * the pipeline has flushed since the last read, or when a reload made the
-   * webview forget them; see `#storeReadAtFlush`.
-   */
-  /**
    * Clear Stats History ran — v0.7.0 DoD 4.14. The panel forgets the history in
    * the SAME action.
    *
@@ -4054,6 +4046,14 @@ export class AgentDeckHost {
     this.#publishStats();
   }
 
+  /**
+   * Put the Layer 1 facts on the panel's wire (DoD 4.1), behind a guard.
+   *
+   * The live records go on every publish — they are already derived, so the
+   * only cost is the validator walk. The STORED records are re-read only when
+   * the pipeline has flushed since the last read, or when a reload made the
+   * webview forget them; see `#storeReadAtFlush`.
+   */
   #publishStats(): void {
     const panel = this.#panel;
     if (panel === null) return;

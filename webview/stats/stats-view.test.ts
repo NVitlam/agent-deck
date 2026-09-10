@@ -665,7 +665,19 @@ describe('DoD 4.13: a Trends line never draws a picture of its own stand-in scal
     const panel = trendsOver([golden('02-churn-chain'), golden('03-silent-subagent')]);
     const loops = lineOf(panel, 'loops', 'cc');
 
-    expect(one(loops, TESTID.statsTrendBaseline), 'no flat baseline').toBeDefined();
+    const baseline = one(loops, TESTID.statsTrendBaseline);
+    // THE BASELINE IS ITSELF A MARK IN THE STRETCHED BOX, so it needs the same
+    // guard the markers do: without `vector-effect` its stroke is in viewBox
+    // units, and in a box one unit tall a stroke of 1 is the whole chart — a
+    // band 72 px thick, a picture of the stand-in scale on exactly the line
+    // DoD 4.13 exists for. `phase-verifier` round 5 found this unpinned.
+    expect(baseline.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+    // ...and it is the BASELINE: at the bottom of the box, across all of it.
+    const [, , boxWidth, boxHeight] = (loops.querySelector('svg')?.getAttribute('viewBox') ?? '').split(' ');
+    expect(baseline.getAttribute('y1'), 'the baseline is not at the bottom').toBe(boxHeight);
+    expect(baseline.getAttribute('y2'), 'the baseline is not horizontal').toBe(boxHeight);
+    expect(baseline.getAttribute('x1')).toBe('0');
+    expect(baseline.getAttribute('x2'), 'the baseline does not span the box').toBe(boxWidth);
     expect(loops.querySelector('path.line'), 'a zero line drew a path').toBeNull();
     expect(all(loops, TESTID.statsTrendPoint), 'a zero line drew markers').toHaveLength(0);
     expect(loops.querySelector('.max')?.textContent).toBe('max 0');
@@ -703,6 +715,11 @@ describe('DoD 4.13: a Trends line never draws a picture of its own stand-in scal
     for (const chart of charts) {
       expect(chart.querySelectorAll('circle'), 'a marker is sized in viewBox units').toHaveLength(0);
     }
+    // A marker at the top, bottom or either end is a round cap CENTRED ON THE
+    // EDGE, and clipped, half of it is an arc — the defect's other half.
+    const chart = loops.querySelector('svg') as SVGSVGElement;
+    expect(getComputedStyle(chart).overflow, 'edge markers are clipped into arcs').toBe('visible');
+
     const markers = all(loops, TESTID.statsTrendPoint);
     expect(markers).toHaveLength(2);
     for (const marker of markers) {
@@ -715,11 +732,17 @@ describe('DoD 4.13: a Trends line never draws a picture of its own stand-in scal
 
   it('no NaN, no Infinity and no zero-sized viewBox reaches the DOM, over EVERY committed stats golden', () => {
     /*
-     * Every record under fixtures/golden/stats, rendered together and then one
-     * engine at a time — the per-engine arrangement is what produces a line per
-     * engine with its own maximum, and a lone engine is what makes the most
-     * lines flat. Whatever the renderer computes from a record reaches an
-     * attribute here or nowhere.
+     * Every record under fixtures/golden/stats — the 36 RECORD goldens — rendered
+     * together and then one engine at a time: the per-engine arrangement is what
+     * produces a line per engine with its own maximum, and a lone engine is what
+     * makes the most lines flat.
+     *
+     * THE SCOPE, stated because `phase-verifier` round 5 measured it narrower
+     * than the first header claimed: this renders the TRENDS TAB only, so the
+     * Tokens strip's own SVG is not scanned; and it renders records, not the
+     * layout goldens under webview/goldens/stats, whose `n*` and `r8-*` inputs
+     * are subsets of these records but whose `engines-mixed` and `zero-max`
+     * inputs are generator-built arrangements that are never mounted here.
      */
     const records = readdirSync(GOLDEN_DIR)
       .filter((name) => name.endsWith('.json'))
@@ -743,6 +766,7 @@ describe('DoD 4.13: a Trends line never draws a picture of its own stand-in scal
       flat += charts.filter((c) => c.querySelector(`[data-testid="${TESTID.statsTrendBaseline}"]`) !== null).length;
       expect(undrawable(panel.container), `an undrawable attribute over ${String(arrangement.length)} records`).toStrictEqual([]);
       panel.dispose();
+      mounted.splice(mounted.indexOf(panel), 1);
     }
     // The scan saw both kinds of line, or it proved half of what it claims.
     expect(lines).toBeGreaterThan(flat);

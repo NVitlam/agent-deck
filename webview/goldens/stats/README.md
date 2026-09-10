@@ -7,7 +7,7 @@ The Stats view's layout goldens — v0.7.0 Phase 4, DoD 4.2.
 | `n0.json` … `n12.json` | `statsLayout` over the first N harvested `fixtures/golden/stats/*.json` records, N = 0/1/2/6/12 | `webview/stats/layout.test.ts` |
 | `r8-<id>.json` | `statsLayout` over ONE R8 golden (`fixtures/golden/stats/<engine>-synthetic-<id>.json`), each of the thirteen | `webview/stats/layout.test.ts` |
 | `engines-mixed.json` | `trendsLayout` over three engines at the measured magnitudes, loaded and loading (DoD 4.12) | `webview/stats/layout.test.ts` |
-| `zero-max.json` | `trendsLayout` with a FLAT loops line beside a non-flat one — two real loopless Claude Code records and one real Codex record with its own loop (DoD 4.13) | `webview/stats/layout.test.ts` |
+| `zero-max.json` | `trendsLayout` with a FLAT loops line beside a non-flat one — ONE real loopless Claude Code record used twice under new ids, with prompt totals of 1,000 and 2,000 written by the generator, beside one real Codex record with its own loop; no loop count is invented (DoD 4.13) | `webview/stats/layout.test.ts` |
 
 **Written only by `node scripts/gen-webview-goldens.mjs`** (`--check` compares and writes nothing).
 

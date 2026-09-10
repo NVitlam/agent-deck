@@ -231,15 +231,18 @@ function mixedEngineTrends(m, base) {
  *
  * Found by the 4.9 smoke on the `loops` panel, and the corpus says why it is
  * common rather than an edge: 33 of the 36 committed stats records carry no
- * loop at all. Two Claude Code sessions with none, and one Codex session with
+ * loop at all. One real loopless Claude Code record used as TWO sessions (new
+ * ids, prompt totals the generator writes), and one real Codex record with
  * its own one, so the loops series holds a FLAT line and a non-flat one side by side —
  * the golden pins `flat` in both directions. Prompt totals differ per session so
  * the prompt series stays an ordinary, non-flat control.
  */
 function zeroMaxTrends(m, loopless, looped) {
-  // Two Claude Code sessions WITHOUT a loop (a real loopless corpus record,
-  // renamed), and one real Codex corpus record WITH its own loop, unmodified
-  // but for its id. Nothing here invents a loop.
+  // ONE real loopless Claude Code corpus record used as two sessions — new ids
+  // and prompt totals written here, so the prompt series has two distinct
+  // points — and one real Codex corpus record WITH its own loop, unmodified but
+  // for its id. The loops arrays are the records' own: nothing here invents a
+  // loop.
   const as = (base, sessionId, prompt) => ({
     ...base,
     sessionId,

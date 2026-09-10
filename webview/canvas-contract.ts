@@ -386,9 +386,9 @@ export const TESTID = {
   statsStallRow: 'stats-stall-row',
   /* Trends */
   statsTrendSeries: 'stats-trend-series',
-  /** One ENGINE's line inside a series (DoD 4.12). Never shared across engines. */
   /** DoD 4.13: the flat baseline a zero-maximum Trends line draws instead of a path. */
   statsTrendBaseline: 'stats-trend-baseline',
+  /** One ENGINE's line inside a series (DoD 4.12). Never shared across engines. */
   statsTrendLine: 'stats-trend-line',
   statsTrendPoint: 'stats-trend-point',
 

@@ -440,9 +440,13 @@ describe('DoD 4.13: a line whose every value is zero is FLAT, and says so', () =
 
   it('flat is exactly "the maximum is zero", on EVERY line of EVERY committed golden', () => {
     // Over the whole directory, not over one file, because the property is the
-    // rule and every golden is an instance of it. The first run of this found
-    // nineteen flat lines already committed in the pre-4.13 goldens: the defect
-    // was pinned in the outputs, waiting for a renderer to draw it.
+    // rule and every golden is an instance of it. Nineteen flat lines were
+    // already committed in the pre-4.13 goldens — but only FOUR of them sit in a
+    // layout the renderer draws (one in n2, three in engines-mixed's loaded
+    // arm); the other fifteen are in layouts that render the empty state (the
+    // single-record r8 goldens, n1, and engines-mixed's loading arm). A
+    // `phase-verifier` counted that; an earlier version of this comment said all
+    // nineteen were waiting to be drawn.
     let lines = 0;
     let flat = 0;
     for (const name of readdirSync(GOLDEN_DIR).filter((n) => n.endsWith('.json')).sort()) {

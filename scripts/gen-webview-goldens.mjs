@@ -323,6 +323,23 @@ async function planFiles(m) {
   return files;
 }
 
+/**
+ * Is the golden on disk the golden this script would write? Line endings do not count.
+ *
+ * v0.7.0 Phase 5 gate, 2026-09-10: `--check` compared RAW BYTES, and these
+ * files are `text=auto` — stored LF, checked out CRLF under `core.autocrlf`. So
+ * the moment git re-wrote them (the Phase 4 merge did), every one of the 21
+ * read `changed` on content that was byte-identical to its blob, and `--check`
+ * exited 1 on a correct tree. The shebang trap this repository records in
+ * `CLAUDE.md`, through a comparison instead of a parser: correct for whoever
+ * generated the files, wrong for every checkout after. Normalised here, and
+ * `src/release/golden-check.test.ts` pins both directions — a CRLF copy is the
+ * same golden, a changed number is not.
+ */
+export function sameGolden(current, body) {
+  return current !== null && current.replace(/\r\n/g, '\n') === body.replace(/\r\n/g, '\n');
+}
+
 async function main() {
   const check = process.argv.includes('--check');
   const m = await loadModules();
@@ -332,7 +349,9 @@ async function main() {
   const differences = [];
   for (const [path, body] of files) {
     const current = existsSync(path) ? await readFile(path, 'utf8') : null;
-    if (current === body) continue;
+    // Not a rewrite either: re-writing an EOL-only difference would churn 21
+    // files on every checkout for no change in what git stores.
+    if (sameGolden(current, body)) continue;
     differences.push(`${current === null ? 'missing' : 'changed'}: ${path.slice(REPO_ROOT.length)}`);
     if (!check) await writeFile(path, body, 'utf8');
   }

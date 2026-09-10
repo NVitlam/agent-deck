@@ -116,7 +116,25 @@ const SAMPLES: Record<DiagnosticsEvent['kind'], DiagnosticsEvent> = {
   hookNon2xx: { kind: 'hookNon2xx', status: 413, detail: 'payload too large' },
   patchFailure: { kind: 'patchFailure', sessionId: 's1', detail: 'no node with id x' },
   resyncRequest: { kind: 'resyncRequest', sessionId: 's1', reason: 'insertNode failed', failedOp: 'insertNode' },
+  otelSpanUnmatched: { kind: 'otelSpanUnmatched', sessionId: 's1', toolUseId: 'toolu_01x' },
 };
+
+describe('otel span unmatched (v0.7.1, ruling 2026-09-11)', () => {
+  it('writes the two join keys and nothing else, in a fixed format', () => {
+    expect(formatEvent(SAMPLES.otelSpanUnmatched, '2026-08-27T12:00:00.000Z')).toBe(
+      '2026-08-27T12:00:00.000Z otel span unmatched session=s1 tool_use_id=toolu_01x',
+    );
+  });
+
+  it('clips both values: they arrived in an HTTP body', () => {
+    const line = formatEvent(
+      { kind: 'otelSpanUnmatched', sessionId: 'a\nb', toolUseId: 'x'.repeat(10_000) },
+      '2026-08-27T12:00:00.000Z',
+    );
+    expect(line).not.toContain('\n');
+    expect(line.length).toBeLessThan(10_000);
+  });
+});
 
 describe('DiagnosticsChannel (DoD 5.5.3)', () => {
   it('the sample set covers every event kind, so the test below cannot go stale', () => {

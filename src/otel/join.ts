@@ -69,7 +69,7 @@
 import type { SessionState, ToolNode, TreeNode } from '../model/events.js';
 import { isAgentNode } from '../model/events.js';
 
-import type { TelemetrySlice } from './parse.js';
+import type { OtelToolSpan, TelemetrySlice } from './parse.js';
 
 export interface TelemetryJoinReport {
   /** Spans whose `(session.id, tool_use_id)` matched a `ToolNode`. */
@@ -222,6 +222,24 @@ export function joinTelemetry(
   });
 
   return { states: out, report };
+}
+
+/**
+ * The spans that match no `ToolNode` of the given states, by the same exact
+ * `(session.id, tool_use_id)` key {@link joinTelemetry} uses.
+ *
+ * v0.7.1 (user ruling 2026-09-11): the host asks this ONE pump after a span
+ * arrived, so a span that landed before its tool call reached the tree — and
+ * matched on the next pump — is never reported as unmatched. Kept beside the
+ * join so "matches" has one definition.
+ */
+export function unmatchedSpans(
+  states: readonly SessionState[],
+  spans: readonly OtelToolSpan[],
+): OtelToolSpan[] {
+  const bySession = new Map<string, Map<string, ToolNode>>();
+  for (const state of states) bySession.set(state.sessionId, toolNodesOf(state));
+  return spans.filter((span) => bySession.get(span.sessionId)?.has(span.toolUseId) !== true);
 }
 
 function fillDurations<T extends TreeNode>(node: T, fills: ReadonlyMap<string, number>): T {

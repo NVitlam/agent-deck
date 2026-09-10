@@ -512,9 +512,13 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(after.joined.map((s) => s.sessionId)).toStrictEqual([OTEL_SESSION_A]);
     expect(r.host.stats).toBeUndefined();
     const { costPoints } = census();
-    // Every one of B's cost points, B's one session.count point, and every one
-    // of B's spans, placed nowhere.
-    expect(r.host.telemetry.unmatched.metrics).toBe((costPoints.get(OTEL_SESSION_B) ?? Number.NaN) + 1);
+    // B's spans are not kept (B is never held), so the pump counts every one.
+    // B's cost and count points are HELD for B, not counted: they could still
+    // join if B appeared, and are counted only if their slot is evicted
+    // (ruling 2026-09-11).
+    expect(costPoints.get(OTEL_SESSION_B) ?? 0).toBeGreaterThan(0);
+    expect(r.host.telemetry.unmatched.metrics).toBe(0);
+    expect(r.host.telemetry.pendingSessions).toBe(1);
     const unplacedA = r.staged[0]?.unplaced.length ?? Number.NaN;
     expect(r.host.telemetry.unmatched.traces).toBe(spanToolIds(OTEL_SESSION_B).length + unplacedA);
     // CONTROL: A's own rows DID land, so the zero-creation is not a join that
@@ -564,9 +568,10 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     pumpOnce(r);
     await replayCorpus(r.port);
     const { costPoints, costBySession } = census();
-    // At arrival B matched nothing — counted, as every unmatched row is — and
-    // its count point and cost are held for it.
-    expect(r.host.telemetry.unmatched.metrics).toBe((costPoints.get(OTEL_SESSION_B) ?? Number.NaN) + 1);
+    // At arrival B matched nothing; its count point and cost are HELD for it,
+    // and a held row is not unmatched (ruling 2026-09-11) — it joins below.
+    expect(costPoints.get(OTEL_SESSION_B) ?? 0).toBeGreaterThan(0);
+    expect(r.host.telemetry.unmatched.metrics).toBe(0);
     expect(r.host.telemetry.pendingSessions).toBe(1);
 
     const lateB = await stageLate(r);
@@ -807,6 +812,10 @@ describe('DoD 6.3b — Claude Code\'s cost is selected only when its session.cou
     expect(record).toBeDefined();
     expect(record?.totals).not.toHaveProperty('costSource');
     expect(record?.unavailable).toContain('F9:telemetry-partial');
+    // An EVICTED slot's rows can no longer join, and that is where they are
+    // counted: B's count point (pushed out by the flood), then the one flood
+    // row B's cost slot pushed out. Nothing else was evicted.
+    expect(r.host.telemetry.unmatched.metrics).toBe(2);
   }, 120_000);
 });
 
@@ -894,6 +903,8 @@ describe('DoD 6.4 — per-signal accepted, rejected by status, disabled and unma
     const r = await rig({ stage: ['idle-as-A', 'stalled-as-B'] });
     pumpOnce(r);
     await replayCorpus(r.port);
+    // The verdict on every span is the NEXT pump's (ruling 2026-09-11).
+    pumpOnce(r);
 
     const traces = ENVELOPES.find((e) => e.signal === 'traces')?.raw ?? '';
     expect((await postTo(r.port, TELEMETRY_PATHS.metrics, '', { method: 'GET' })).status).toBe(405);
@@ -922,6 +933,16 @@ describe('DoD 6.4 — per-signal accepted, rejected by status, disabled and unma
       traces: { accepted: 43, disabled: 0, unmatched: 40 - placed, rejected: { 400: 1, 405: 0, 413: 1, 415: 0 } },
     };
     expect(r.host.counters().telemetry).toStrictEqual(expected);
+    // One diagnostics line per counted span, each naming a span id the staging
+    // placed on no call.
+    const unmatchedLines = r.lines.filter((l) => / otel span unmatched session=/.test(l));
+    expect(unmatchedLines).toHaveLength(40 - placed);
+    const placedIds = new Set(r.staged.flatMap((s) => [...s.remapped.values()]));
+    for (const line of unmatchedLines) {
+      const id = / tool_use_id=(\S+)$/.exec(line)?.[1] ?? '';
+      expect(id, line).not.toBe('');
+      expect(placedIds.has(id), line).toBe(false);
+    }
 
     // The LISTENER's own counters carry the route's half, with no `unmatched`
     // (the join is per window, not per socket).
@@ -941,6 +962,126 @@ describe('DoD 6.4 — per-signal accepted, rejected by status, disabled and unma
     expect(line).toContain(
       ` otel.traces=accepted:43,disabled:0,unmatched:${String(40 - placed)},400:1,405:0,413:1,415:0`,
     );
+  }, 120_000);
+});
+
+// ---------------------------------------------------------------------------
+// DoD 6.4, amended by the ruling of 2026-09-11 — `unmatched` means STILL
+// unmatched after the join retried on the next pump
+// ---------------------------------------------------------------------------
+
+/** One traces body carrying ONE `claude_code.tool` span, a copy of the corpus's own with three values changed. */
+function oneSpanBody(sessionId: string, toolUseId: string, durationMs: number): string {
+  const source = ENVELOPES.find(
+    (e) => e.signal === 'traces' && e.raw.includes(sessionId) && e.raw.includes('"claude_code.tool"'),
+  );
+  if (source === undefined) throw new Error(`no traces body with a claude_code.tool span for ${sessionId}`);
+  const body = JSON.parse(source.raw) as {
+    resourceSpans: {
+      resource?: unknown;
+      scopeSpans: { scope?: unknown; spans: { name: string; attributes: { key: string; value: unknown }[] }[] }[];
+    }[];
+  };
+  for (const resource of body.resourceSpans) {
+    for (const scope of resource.scopeSpans) {
+      const span = scope.spans.find((s) => s.name === 'claude_code.tool');
+      if (span === undefined) continue;
+      const set: Record<string, unknown> = {
+        'session.id': { stringValue: sessionId },
+        tool_use_id: { stringValue: toolUseId },
+        duration_ms: { intValue: String(durationMs) },
+      };
+      const attributes = span.attributes.map((a) => (a.key in set ? { key: a.key, value: set[a.key] } : a));
+      return JSON.stringify({
+        resourceSpans: [{ resource: resource.resource, scopeSpans: [{ scope: scope.scope, spans: [{ ...span, attributes }] }] }],
+      });
+    }
+  }
+  throw new Error('the traces body holds no claude_code.tool span');
+}
+
+/**
+ * Append one assistant entry to a staged transcript whose only content is a
+ * Bash tool_use with `toolUseId`: the transcript's own last assistant entry,
+ * with a new uuid and message id and that one block. No result follows it.
+ */
+async function appendToolUse(slugDir: string, sessionId: string, toolUseId: string): Promise<void> {
+  const path = join(slugDir, `${sessionId}.jsonl`);
+  const lines = (await readFile(path, 'utf8')).split(/\r?\n/).filter((l) => l.trim() !== '');
+  const entries = lines.map((l) => JSON.parse(l) as Record<string, unknown>);
+  const source = [...entries].reverse().find((e) => e['type'] === 'assistant' && typeof e['message'] === 'object');
+  if (source === undefined) throw new Error('the staged transcript holds no assistant entry to copy');
+  const message = source['message'] as Record<string, unknown>;
+  const entry = {
+    ...source,
+    uuid: '6d0c0000-0000-4000-8000-0000000000e1',
+    parentUuid: entries.at(-1)?.['uuid'] ?? null,
+    message: {
+      ...message,
+      id: 'msg_01EARLYSPANPROBE0000000001',
+      content: [{ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command: 'echo early', description: 'probe' } }],
+    },
+  };
+  await appendFile(path, `${JSON.stringify(entry)}\n`, 'utf8');
+}
+
+describe('DoD 6.4 as amended (2026-09-11) — unmatched counts what the next pump still cannot place', () => {
+  const EARLY = 'toolu_01EarlySpanArrivesFirst000';
+  const NEVER = 'toolu_01NeverInAnyTranscript0000';
+  const UNMATCHED_LINE = / otel span unmatched session=(\S+) tool_use_id=(\S+)$/;
+
+  it('a span that arrives before its tool call reaches the tree, and matches on the next pump, is never counted', async () => {
+    const r = await rig({ stage: ['idle-as-A'] });
+    pumpOnce(r);
+    const slugDir = r.host.dataPath.watcher.lastDiscovery?.slugDir;
+    expect(slugDir).toBeDefined();
+    // CONTROL on the ordering: the tool call is not in the model when the span lands.
+    expect(toolById(r.host.dataPath.model.sessionState(OTEL_SESSION_A), EARLY)).toBeUndefined();
+
+    expect((await postTo(r.port, TELEMETRY_PATHS.traces, oneSpanBody(OTEL_SESSION_A, EARLY, 4321))).status).toBe(200);
+    await waitFor(() => r.host.telemetry.slicesIngested === 1, 'the span to be ingested');
+
+    // The tool call is written AFTER the span arrived, and no pump runs until
+    // the model holds it — so the next pump is the one that judges the span.
+    await appendToolUse(slugDir as string, OTEL_SESSION_A, EARLY);
+    await waitFor(
+      () => toolById(r.host.dataPath.model.sessionState(OTEL_SESSION_A), EARLY) !== undefined,
+      'the late tool call to be grafted into the model',
+      30_000,
+    );
+    const after = pumpOnce(r);
+
+    // VACUITY: the span really joined — the join matched it, and the tool
+    // call, which the engine timed with no result, carries the span's duration.
+    expect(r.host.telemetry.lastReport?.spansMatched ?? 0).toBeGreaterThan(0);
+    const node = toolById(after.joined.find((s) => s.sessionId === OTEL_SESSION_A), EARLY);
+    expect(node !== undefined && !isAgentNode(node) ? node.durationMs : undefined).toBe(4321);
+    // THE RULING: an early arrival that matched later is not counted, and not logged.
+    expect(r.host.telemetry.unmatched.traces).toBe(0);
+    expect(r.lines.filter((l) => UNMATCHED_LINE.test(l))).toStrictEqual([]);
+  }, 120_000);
+
+  it('a span whose id never appears is counted after the pump, and written as one line with the two keys and nothing else', async () => {
+    const r = await rig({ stage: ['idle-as-A'] });
+    pumpOnce(r);
+    expect((await postTo(r.port, TELEMETRY_PATHS.traces, oneSpanBody(OTEL_SESSION_A, NEVER, 777))).status).toBe(200);
+    await waitFor(() => r.host.telemetry.slicesIngested === 1, 'the span to be ingested');
+    // Before the pump nothing is judged.
+    expect(r.host.telemetry.unmatched.traces).toBe(0);
+    pumpOnce(r);
+    expect(r.host.telemetry.unmatched.traces).toBe(1);
+    const lines = r.lines.filter((l) => UNMATCHED_LINE.test(l));
+    expect(lines).toHaveLength(1);
+    const match = UNMATCHED_LINE.exec(lines[0] ?? '');
+    expect(match?.[1]).toBe(OTEL_SESSION_A);
+    expect(match?.[2]).toBe(NEVER);
+    // Nothing else from the span: a timestamp, the words, the two keys.
+    expect(lines[0]).toMatch(new RegExp(`^\\S+ otel span unmatched session=${OTEL_SESSION_A} tool_use_id=${NEVER}$`));
+    expect(lines[0]).not.toContain('777');
+    // Judged once: a second pump does not count it again.
+    pumpOnce(r);
+    expect(r.host.telemetry.unmatched.traces).toBe(1);
+    expect(r.lines.filter((l) => UNMATCHED_LINE.test(l))).toHaveLength(1);
   }, 120_000);
 });
 

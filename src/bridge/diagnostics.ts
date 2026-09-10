@@ -173,7 +173,12 @@ export interface DiagnosticsTelemetrySignal {
   accepted: number;
   /** Requests answered `403` because `agentDeck.telemetry.enabled` is off. */
   disabled: number;
-  /** Rows this window's join placed on no session and no tool call at arrival. */
+  /**
+   * Rows this window's join still could not place after retrying (v0.7.1,
+   * ruling 2026-09-11): a span unmatched at the next pump, or a count or cost
+   * point whose held slot was evicted. An early row that joined later is not
+   * counted.
+   */
   unmatched: number;
   /** Requests refused, by status. */
   rejected: { 400: number; 405: number; 413: number; 415: number };
@@ -318,7 +323,18 @@ export type DiagnosticsEvent =
   | { kind: 'hookListenerError'; detail: string }
   | { kind: 'hookNon2xx'; status: number; detail: string }
   | { kind: 'patchFailure'; sessionId: string; detail: string }
-  | { kind: 'resyncRequest'; sessionId: string; reason: string; failedOp?: string };
+  | { kind: 'resyncRequest'; sessionId: string; reason: string; failedOp?: string }
+  /**
+   * A Claude Code tool span still unmatched after the join retried on the
+   * next pump (v0.7.1, user ruling 2026-09-11). One line per such span.
+   *
+   * THE TWO JOIN KEYS AND NOTHING ELSE FROM THE SPAN: `session.id` and
+   * `tool_use_id` are both opaque ids Claude Code generates, and both are
+   * already on the allow-list the parse boundary keeps. The tool name, the
+   * duration and the agent id are deliberately not written — a line names
+   * which row did not join, and the counters line says how many.
+   */
+  | { kind: 'otelSpanUnmatched'; sessionId: string; toolUseId: string };
 
 /** Every `kind` above, as data, so a test can assert the switch is total. */
 export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
@@ -333,6 +349,7 @@ export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
   'hookNon2xx',
   'patchFailure',
   'resyncRequest',
+  'otelSpanUnmatched',
 ];
 
 /**
@@ -475,6 +492,13 @@ export function formatEvent(event: DiagnosticsEvent, isoTime: string): string {
       return (
         `${isoTime} resync requested ${event.sessionId} ` +
         `${event.failedOp ?? 'no-op'} ${clip(event.reason)}`
+      );
+    case 'otelSpanUnmatched':
+      // Both values arrived in an HTTP body, so both are clipped like any
+      // other field a party across a boundary controls.
+      return (
+        `${isoTime} otel span unmatched session=${clip(event.sessionId)} ` +
+        `tool_use_id=${clip(event.toolUseId)}`
       );
   }
 }

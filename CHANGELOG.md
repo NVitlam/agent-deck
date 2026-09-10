@@ -26,8 +26,12 @@ All notable changes to Agent Deck are documented here.
   Changes apply to the next request, without a reload.
 - **Telemetry figures on the Agent Deck output channel's counters line**, per
   signal: requests accepted, refused by status (`400`, `405`, `413`, `415`),
-  refused because the setting is off, and rows that matched no session this window
-  showed when they arrived, or no tool call in it.
+  refused because the setting is off, and rows still unmatched after the join has
+  retried: a tool span that matches no tool call this window shows at the next
+  pump after it arrived, or a session's start or cost that was held for a session
+  this window never showed and was pushed out. A row that arrives early and joins
+  a moment later is not counted. Each such tool span also writes one line naming
+  its `session.id` and `tool_use_id`, and nothing else from the span.
 
 ### How it behaves
 
@@ -44,7 +48,7 @@ All notable changes to Agent Deck are documented here.
 - **Content, never activity.** Telemetry never touches the liveness or stall
   clock: it does not make a session live, does not clear a stall, never makes a
   session this window has not seen working count as one to record, and never adds
-  a session (a session id that appears only in telemetry is counted as unmatched).
+  a session (a session id that appears only in telemetry adds nothing to the deck).
   For a session already being recorded, a cost change may produce a newer stored
   record and may delay the idle write, like any change to the record.
 - **The cost is shown only for a session whose start the window received.**

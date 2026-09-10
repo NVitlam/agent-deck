@@ -3933,8 +3933,20 @@ export class AgentDeckHost {
    * window receives — by its own route as a leader, by relay as a follower —
    * joined onto the live states the stats layer observes. The deck is not fed
    * from it; `src/model/telemetry.ts` says why.
+   *
+   * A span still unmatched after the next pump writes one diagnostics line
+   * (user ruling 2026-09-11). `this.diagnostics` is read at CALL time, the
+   * data path's `onDiagnostic` pattern: a host with no channel writes nothing.
    */
-  readonly telemetry: TelemetryJoiner = new TelemetryJoiner();
+  readonly telemetry: TelemetryJoiner = new TelemetryJoiner({
+    onUnmatchedSpan: (span) => {
+      this.diagnostics?.record({
+        kind: 'otelSpanUnmatched',
+        sessionId: span.sessionId,
+        toolUseId: span.toolUseId,
+      });
+    },
+  });
 
   /**
    * The emission the stats layer was last HANDED — the telemetry join's
@@ -4381,7 +4393,9 @@ export class AgentDeckHost {
       // and so the leader's — a follower holds no socket and reports zeroes,
       // which is the truth about it. `unmatched` is this WINDOW's join: the
       // same slice can match on one window and not another, so the listener
-      // could not own it without being wrong for every window but one.
+      // could not own it without being wrong for every window but one. It
+      // counts rows still unmatched after the join retried (ruling
+      // 2026-09-11); `src/model/telemetry.ts` says exactly when.
       telemetry: telemetryDiagnostics(this.dataPath.listener.telemetryCounters, this.telemetry.unmatched),
     };
   }

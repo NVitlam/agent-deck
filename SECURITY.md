@@ -20,8 +20,12 @@ Two kinds of source, and neither of them is a network client.
 | **hooks** | a hook snippet you paste yourself POSTs to a loopback HTTP listener — Claude Code's and Codex's both, to the one listener | what is running right now |
 | **session files** | read from local disk: Claude Code's `~/.claude/projects/<slug>/…`, OpenCode's session database, Codex's transcripts under `$CODEX_HOME` or `~/.codex` | what happened |
 
-Everything the extension knows comes from those, all local. The host holds state in memory
-only and discards it when the window closes: no database, no cache file, no persistence.
+Everything the extension knows comes from those, all local. The live deck is held in memory only
+and discarded when the window closes. The one thing written to disk, from 0.7.0, is the stats
+history: derived numbers, never session content, as append-only JSON Lines under VS Code's own
+global-storage directory for the extension — never under any engine's directory or your workspace.
+It is retention-bounded, turned off by `agentDeck.stats.enabled`, emptied by **Clear Stats
+History**, and never read back into a session or a deck.
 
 This matters because "we promise not to send telemetry" is a policy and policies drift. **There is
 no outbound HTTP client compiled into the shipped artifact at all** — see §4. Zero egress here is a
@@ -290,9 +294,8 @@ not a dependency tree that never gets installed on a user's machine. The audit t
 the module ids **the built bundle actually requires** and gates them, rather than auditing a
 lockfile.
 
-**What is asserted, on a bundle built on demand rather than read off disk** (`npm run package` does
-not rebuild `dist/` and there is no `vscode:prepublish`, so trusting the on-disk artifact could
-silently measure an old one):
+**What is asserted, on a bundle built on demand rather than read off disk** (the test builds its own
+rather than trusting whatever `dist/` holds when it runs, which could silently be an old one):
 
 - every module id the bundle names is either a `node:` builtin or `vscode` — nothing third-party
   survives bundling as a separate module. Both spellings of "names" are scanned: `require("x")`
@@ -390,7 +393,8 @@ about the command in that block matter for your own safety rather than ours:
 
 ## 6. Hard exclusions
 
-Not implemented, and not accepted as contributions: writes of any kind · historical replay or
-persistence · wrapping or launching any observed engine · telemetry or any egress. v1's zero write
-capability is the trust anchor, and the point of writing it down is that it is easier to defend a
-boundary than to relocate one.
+Not implemented, and not accepted as contributions: writes to anything an observed engine owns ·
+replay of a session, or persistence of its content · wrapping or launching any observed engine ·
+telemetry or any egress. The stats history in §1 is the one write, and it holds derived numbers
+only, in the extension's own storage. Zero writes to what is observed is the trust anchor, and the
+point of writing it down is that it is easier to defend a boundary than to relocate one.

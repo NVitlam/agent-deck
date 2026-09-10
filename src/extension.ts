@@ -127,6 +127,8 @@ import type { BridgeDegradedState } from './bridge/messages.js';
 import { createNonce, webviewHtml } from './bridge/html.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
+import { StatsUpdateEmitter, createAgentDeckApi } from './api.js';
+import type { AgentDeckApi } from './api.js';
 import { SIDEBAR_VIEW_ID } from './sidebar/menu.js';
 import { SidebarController } from './sidebar/provider.js';
 import type { SidebarSurface } from './sidebar/provider.js';
@@ -3320,6 +3322,21 @@ export interface StatsPipelineOptions {
   scheduler: Scheduler;
   /** Receives a deriver throw, a refused record, and any fs failure. */
   onError?: (error: unknown) => void;
+  /**
+   * The extension API's feed (v0.7.0 DoD 5.2): `'flush'` for every record the
+   * store accepted — on `ended` and on the idle flush — and `'live'` when an
+   * OBSERVED session's record changes. `src/api.ts` throttles the live half; the
+   * pipeline reports every change and decides only WHICH sessions have any.
+   *
+   * Only observed sessions, and that is the store's own provenance rule (DoD
+   * 4.11b) applied to the event: a window reload re-derives a whole history, and
+   * every one of those records changes while its transcript is being read. An
+   * event per such change would be the store flood re-created on the API.
+   *
+   * Called inside the pipeline's own guard; a throw here is counted like a
+   * deriver throw and never reaches the deck (G2).
+   */
+  onUpdate?: (record: StatsRecord, cause: 'live' | 'flush') => void;
 }
 
 /** What the pipeline remembers about one session, between emissions. */
@@ -3336,6 +3353,13 @@ interface TrackedSession {
   body: string | null;
   /** The body of the last record actually written. */
   appendedBody: string | null;
+  /**
+   * {@link TrackedSession.patchBody} as of the last API event for this session
+   * (DoD 5.2). A live event goes out when the two differ — the same
+   * clock-flattened comparison the countdown uses, so a stalled call's ticking
+   * `stalledMs` is not a stream of events either.
+   */
+  liveBody: string | null;
   /** The pending idle flush, or null. */
   timer: TimerHandle | null;
   /**
@@ -3401,6 +3425,7 @@ export class StatsPipeline {
   readonly #now: () => number;
   readonly #scheduler: Scheduler;
   readonly #onError: ((error: unknown) => void) | undefined;
+  readonly #onUpdate: ((record: StatsRecord, cause: 'live' | 'flush') => void) | undefined;
   readonly #tracked = new Map<string, TrackedSession>();
   #errors = 0;
   #flushes = 0;
@@ -3415,6 +3440,7 @@ export class StatsPipeline {
     this.#now = options.now;
     this.#scheduler = options.scheduler;
     this.#onError = options.onError;
+    this.#onUpdate = options.onUpdate;
   }
 
   /** Deriver throws plus store refusals. Surfaced as `statsErrors`. */
@@ -3539,6 +3565,7 @@ export class StatsPipeline {
         // so gating only the idle path would leave the flood intact for exactly
         // the sessions that caused it (measured: 28 appends, 0 idle flushes).
         if (entry.observed && body !== entry.appendedBody) this.#append(entry);
+        this.#announceLive(entry);
         continue;
       }
       // The change test is over `patchBody`: a tick that only moved
@@ -3565,6 +3592,10 @@ export class StatsPipeline {
         if (promotedThisPump && body !== entry.appendedBody) {
           this.#arm(state.sessionId, entry);
         }
+        // A promotion with an unchanged record still owes the API one event:
+        // `liveBody` is null until the first, so this is where a resumed
+        // historical session is first announced.
+        this.#announceLive(entry);
         continue;
       }
       entry.record = record;
@@ -3573,6 +3604,34 @@ export class StatsPipeline {
       // History arms nothing, so it cannot flush when the silence elapses.
       if (!entry.observed) continue;
       this.#arm(state.sessionId, entry);
+      this.#announceLive(entry);
+    }
+  }
+
+  /**
+   * Tell the API an observed session's record changed (DoD 5.2).
+   *
+   * The comparison is `patchBody` against what was last announced, so a clock
+   * tick inside a stalled call is not an event, and a record the store has just
+   * written is not announced twice — `#append` marks it announced as it fires
+   * the flush event. History is never announced: `observed` is the gate, as it
+   * is for the store.
+   */
+  #announceLive(entry: TrackedSession): void {
+    if (this.#onUpdate === undefined) return;
+    if (!entry.observed || entry.record === null) return;
+    if (entry.patchBody === entry.liveBody) return;
+    entry.liveBody = entry.patchBody;
+    this.#fireUpdate(entry.record, 'live');
+  }
+
+  /** One API event, behind the pipeline's guard. A consumer never reaches the deck. */
+  #fireUpdate(record: StatsRecord, cause: 'live' | 'flush'): void {
+    try {
+      this.#onUpdate?.(record, cause);
+    } catch (error) {
+      this.#errors += 1;
+      this.#report(error);
     }
   }
 
@@ -3601,6 +3660,7 @@ export class StatsPipeline {
       body: null,
       patchBody: null,
       appendedBody: null,
+      liveBody: null,
       timer: null,
       observed: false,
     };
@@ -3638,7 +3698,8 @@ export class StatsPipeline {
     const record = entry.record;
     if (record === null) return;
     const before = this.store.appended;
-    this.store.appendRecord({ ...record, derivedAt: this.#now() } as StoredStatsRecord);
+    const stamped = { ...record, derivedAt: this.#now() } as StoredStatsRecord;
+    this.store.appendRecord(stamped);
     if (this.store.appended === before) {
       // The store refused or the write failed; it has already reported why.
       // Counted here so `statsErrors` covers both halves of this layer.
@@ -3646,6 +3707,13 @@ export class StatsPipeline {
       return;
     }
     entry.appendedBody = entry.body;
+    // DoD 5.2 — every flush is an API event, and it is the record AS WRITTEN,
+    // `derivedAt` included, so a consumer holds the same line `getStoredStats`
+    // would return. Only a write that happened is announced: a refused record
+    // or a failed disk is not a flush. Marked announced, so the live check that
+    // follows on the same pump does not repeat it.
+    entry.liveBody = entry.patchBody;
+    this.#fireUpdate(stamped, 'flush');
   }
 
   #report(error: unknown): void {
@@ -3714,6 +3782,12 @@ export interface AgentDeckHostOptions extends DataPathOptions {
    * (DoD 3.1) rather than restated here.
    */
   statsDir?: string;
+  /**
+   * The extension API's feed — see {@link StatsPipelineOptions.onUpdate}.
+   * Only `activate()` supplies it, from the API it returns (DoD 5.1/5.2); a
+   * host with no pipeline never calls it.
+   */
+  onStatsUpdate?: (record: StatsRecord, cause: 'live' | 'flush') => void;
 }
 
 /**
@@ -3843,7 +3917,15 @@ export class AgentDeckHost {
   #statsDropped = 0;
 
   constructor(options: AgentDeckHostOptions) {
-    const { createPanel, nonce, onEmission, createDiagnosticsSink, statsDir, ...rest } = options;
+    const {
+      createPanel,
+      nonce,
+      onEmission,
+      createDiagnosticsSink,
+      statsDir,
+      onStatsUpdate,
+      ...rest
+    } = options;
     this.#createPanel = createPanel;
     this.#canvasAutoFit = options.settings['canvas.autoFit'];
     if (nonce !== undefined) this.#nonce = nonce;
@@ -3894,6 +3976,7 @@ export class AgentDeckHost {
         now: clock,
         scheduler: this.#scheduler,
         onError: toChannel,
+        ...(onStatsUpdate === undefined ? {} : { onUpdate: onStatsUpdate }),
       });
       // DoD 3.3b — reported ONCE, at construction, and never per emission. A
       // malformed price entry is a fact about the settings file, so repeating
@@ -4634,7 +4717,59 @@ function statsDirFor(context: vscode.ExtensionContext): string | undefined {
   return resolveStoreDir({ globalStorageUri: { fsPath: uri.fsPath } });
 }
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(context: vscode.ExtensionContext): Promise<AgentDeckApi> {
+  /*
+   * v0.7.0 DoD 5.1 — THE API, BUILT FIRST AND RETURNED FROM EVERY PATH.
+   *
+   * `activate()`'s return value is what VS Code hands another extension as
+   * `getExtension('nvitlam.agent-deck').exports`, and it has two early returns
+   * below (no folder; a folder with nothing to observe) before a host exists,
+   * plus the final one. The API is built above all three so each returns it,
+   * and each has its own test in `extension.test.ts`: a window observing
+   * nothing still has a stored history (the store is per MACHINE), and a
+   * consumer that got `undefined` from half of all windows would have to guess
+   * why.
+   *
+   * Both getters read through `activeHost` at CALL time rather than capturing
+   * it, so the object is valid before the host exists and after it is gone. In
+   * a window with no host, live stats are empty and the stored history is read
+   * from the context's own directory, honouring `agentDeck.stats.enabled` —
+   * a disabled store answers `[]` here exactly as it does in the panel.
+   */
+  const updates = new StatsUpdateEmitter({
+    now: () => Date.now(),
+    scheduler: systemScheduler,
+    onError: (error: unknown) => {
+      activeHost?.diagnostics?.record({
+        kind: 'engineDegraded',
+        engine: 'cc',
+        reason: `stats api: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    },
+  });
+  context.subscriptions.push({ dispose: () => updates.dispose() });
+  const api = createAgentDeckApi(
+    {
+      liveRecords: () => activeHost?.stats?.liveRecords() ?? [],
+      readStored: (query) => {
+        const pipeline = activeHost?.stats;
+        if (pipeline !== undefined) return pipeline.store.readRecords(query);
+        const dir = statsDirFor(context);
+        if (dir === undefined) return [];
+        const current = readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION));
+        return new StatsStore({
+          dir,
+          enabled: current['stats.enabled'],
+          retentionDays: current['stats.retentionDays'],
+        }).readRecords(query);
+      },
+    },
+    updates,
+    (reason) => {
+      activeHost?.diagnostics?.record({ kind: 'engineDegraded', engine: 'cc', reason });
+    },
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_COMMAND, () => {
       const host = activeHost;
@@ -4766,7 +4901,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const workspacePath = firstWorkspacePath();
   if (workspacePath === undefined) {
     inactiveReason = NO_WORKSPACE_MESSAGE;
-    return;
+    return api;
   }
 
   /*
@@ -4795,7 +4930,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const codexAvailable = codexRootExists();
   if (!correlation.ok && !opencodeAvailable && !codexAvailable) {
     inactiveReason = inactiveReasonFor(correlation.failure);
-    return;
+    return api;
   }
   inactiveReason = null;
 
@@ -4843,6 +4978,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * a real context anyway, because "by construction" is a claim.
      */
     ...(statsDir === undefined ? {} : { statsDir }),
+    /*
+     * DoD 5.2 — THE ONE PRODUCTION ASSIGNMENT OF THE API'S FEED. Every flush and
+     * every live change of an observed session reaches `onDidUpdateStats`
+     * through this line and no other, which is why `extension.test.ts` drives it
+     * through `activate()` rather than by constructing a host by hand.
+     */
+    onStatsUpdate: (record, cause) => {
+      if (cause === 'flush') updates.flushed(record);
+      else updates.live(record);
+    },
     settings,
     createPanel: () => {
       /*
@@ -4934,6 +5079,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   await host.start();
+  return api;
 }
 
 /** Dispose everything. A bound socket or a live watcher after this is a defect. */

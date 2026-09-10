@@ -40,6 +40,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   closeSync,
   existsSync,
@@ -178,6 +179,9 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
   'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
+  // v0.7.0 DoD 5.5b: the sidebar screenshot the README's install section
+  // links. Ships like the other stills; both ignore files admit it by name.
+  'media/sidebar.png',
   'dist/extension.cjs',
   'dist/webview/main.css',
   'dist/webview/main.js',
@@ -195,7 +199,7 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
  * it is derived from nothing: writing `EXPECTED_PACKAGED_FILES.length` here
  * would make it agree with the set by construction and check nothing at all.
  */
-const EXPECTED_PACKAGED_FILE_COUNT = 14;
+const EXPECTED_PACKAGED_FILE_COUNT = 15;
 
 /**
  * The same artifact, AS THE ZIP NAMES IT. Rule 19's second half.
@@ -230,12 +234,23 @@ const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
   'extension/media/activity-icon.svg',
   'extension/media/hero_26_agent_session.png',
   'extension/media/icon.png',
+  'extension/media/sidebar.png',
   'extension/package.json',
   'extension/readme.md',
 ];
 
 /** Same reasoning as `EXPECTED_PACKAGED_FILE_COUNT`, on the other naming. */
-const EXPECTED_ARTIFACT_ENTRY_COUNT = 16;
+const EXPECTED_ARTIFACT_ENTRY_COUNT = 17;
+
+/**
+ * The SHA-256 of the sidebar PLACEHOLDER committed at v0.7.0 DoD 5.5b — a
+ * solid-colour 480x720 PNG standing where the user's capture of the sidebar
+ * goes. The package-audit leg refuses to ship these bytes: the Marketplace
+ * listing would render a grey rectangle captioned as the product's front door.
+ * Replacing `media/sidebar.png` with the real screenshot is a step of the 5.7
+ * checklist, and the audit is what proves it was taken.
+ */
+const SIDEBAR_PLACEHOLDER_SHA256 = 'f42b32e95f57d525b608561be4ba827a2c45c4b7ec037196874bee3a7af844fa';
 
 /**
  * The four release images as the packaged README must reference them, WITHOUT
@@ -252,6 +267,7 @@ const RELEASE_IMAGES_IN_ARTIFACT: readonly string[] = [
   'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
+  'media/sidebar.png',
 ];
 
 /**
@@ -364,6 +380,17 @@ function loadIdentityClass(): IdentityClass {
 /** Directories and shapes whose presence in the artifact is a defect, each
  *  paired with the reason it must not ship. */
 const FORBIDDEN: ReadonlyArray<{ readonly re: RegExp; readonly why: string }> = [
+  // v0.7.0 DoD 5.6 names the two stats corpora on their own, and they come
+  // FIRST so a violation names them rather than the general `fixtures/` rule —
+  // the manufactured R8 sessions and the golden records are the newest things
+  // under `fixtures/`, and "the whole directory is denied" is what a reader
+  // would otherwise have to take on trust for them.
+  { re: /^fixtures\/synthetic-stats\//, why: 'the manufactured R8 stats sessions (DoD 5.6)' },
+  { re: /^fixtures\/golden\/stats\//, why: 'the committed golden StatsRecords (DoD 5.6)' },
+  // DoD 5.6: a test's scratch directory under `dist/` — `wire-test-<random>`
+  // and its siblings, which `vsce ls` once enumerated as packaged content.
+  // `dist/**` is an allow-list, so this is the second witness, by SHAPE.
+  { re: /^dist\/[^/]+-[A-Za-z0-9]{6,}\//, why: 'a test scratch directory under dist/ (the recorded wire-test-<random> case)' },
   { re: /^fixtures\//, why: 'fixtures keep cwd/session_id verbatim — shipping them publishes one developer\u2019s absolute paths' },
   { re: /^src\//, why: 'source is not the product' },
   { re: /^webview\//, why: 'webview source; the built bundle under dist/ is what ships' },
@@ -551,7 +578,7 @@ describe('the packaged artifact', () => {
     expect([...files].sort()).toEqual([...EXPECTED_PACKAGED_FILES].sort());
   });
 
-  it('ships exactly twelve files, counted rather than derived', () => {
+  it('ships exactly the pinned number of files, counted rather than derived', () => {
     // Rule 19. The set assertion above is the real check; this is the one that
     // goes red when the set assertion is comparing two things that are both
     // empty, both filtered, or both named in a way vsce stopped using.
@@ -613,6 +640,19 @@ describe('the packaged artifact', () => {
       return hit ? [`${file} \u2014 ${hit.why}`] : [];
     });
     expect(violations).toEqual([]);
+  });
+
+  it('the DoD 5.6 rules each catch their witness, and the scratch shape spares the real bundles', () => {
+    // A forbidden-shape rule that matches nothing reads exactly like one doing
+    // its job. Each rule added for 5.6 is paired with the path it exists for.
+    const ruleFor = (path: string): string | undefined => FORBIDDEN.find((r) => r.re.test(path))?.why;
+    expect(ruleFor('fixtures/synthetic-stats/01-reread-loop.json')).toContain('R8 stats sessions');
+    expect(ruleFor('fixtures/golden/stats/cc-2.1.234-05c5482d.json')).toContain('golden StatsRecords');
+    expect(ruleFor('dist/wire-test-Ab3xQ9/session.json')).toContain('scratch directory');
+    // ...and the shape is not so wide that it would flag what the product ships.
+    for (const shipped of ['dist/extension.cjs', 'dist/webview/main.js', 'dist/webview/main.css']) {
+      expect(ruleFor(shipped), shipped).toBeUndefined();
+    }
   });
 
   it('ships the three documents a user is entitled to, and the root README rather than docs/README.md', () => {
@@ -867,11 +907,24 @@ describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
               `the packaged README does not link ${image} at its rewritten URL`,
             ).toContain(`${repoUrl}/raw/HEAD/${image}`);
           }
+
           // The other direction. A relative link that survived would render
           // broken on the Marketplace while looking perfect in every local
           // preview, which is the failure mode with no symptom.
           const stillRelative = shippedLinks.filter((link) => !/^https?:\/\//i.test(link));
           expect(stillRelative, 'a relative image link survived into the artifact').toEqual([]);
+
+          // v0.7.0 DoD 5.5b/5.7 — THE SIDEBAR SCREENSHOT IS THE USER'S CAPTURE,
+          // NOT THE PLACEHOLDER. RED BY DESIGN until the capture replaces it:
+          // this is the check that the 5.7 step was taken, and it is the audit
+          // that runs before a publish. LAST in this test on purpose, so while
+          // it is red every assertion above it has still run.
+          const sidebarBytes = readFileSync(join(extracted, 'extension', 'media', 'sidebar.png'));
+          expect(sidebarBytes.length).toBeGreaterThan(0);
+          expect(
+            createHash('sha256').update(sidebarBytes).digest('hex'),
+            'media/sidebar.png is still the placeholder — replace it with a capture of the sidebar',
+          ).not.toBe(SIDEBAR_PLACEHOLDER_SHA256);
         } finally {
           rmSync(staging, { recursive: true, force: true });
         }

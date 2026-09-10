@@ -90,6 +90,9 @@ import type {
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
 import type { SessionEmission } from './model/session.js';
+import type { AgentDeckApi } from './api.js';
+import type { StatsRecord } from './stats/schema.js';
+import { CORPUS_READ_BUDGET_MS, readCcSessions, warmCorpus } from './stats/corpus.testkit.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
 import { STORE_DIR_NAME, StatsStore, resolveStoreDir } from './stats/store.js';
 import { parsePricing } from './stats/pricing.js';
@@ -6916,4 +6919,142 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
 
     await rm(dirname(root), { recursive: true, force: true });
   });
+});
+
+// ---------------------------------------------------------------------------
+// v0.7.0 DoD 5.1 / 5.2 — activate() RETURNS the API, and the host feeds it
+// ---------------------------------------------------------------------------
+
+/**
+ * THE PRODUCTION PATH, and the reason this is not in `api.test.ts`. The API
+ * object is only useful if `activate()` returns it and the host's pipeline
+ * feeds its event, and both of those are single assignment sites in
+ * `activate()` — the recorded D4 shape: a module test that builds the object
+ * by hand proves the module and says nothing about whether anything wires it.
+ * Deleting the `onStatsUpdate` line from `activate()` turns a test here red,
+ * and so does replacing any of its three `return api` statements (no folder,
+ * a folder with nothing to observe, a host) with `undefined` — each has its
+ * own test below. Until the Phase 5 verifier round the second had none, while
+ * this comment said it did.
+ */
+describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () => {
+  const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
+
+  afterEach(async () => {
+    await deactivate();
+    if (previousRoot === undefined) delete process.env['CLAUDE_PROJECTS_ROOT'];
+    else process.env['CLAUDE_PROJECTS_ROOT'] = previousRoot;
+  });
+
+  /** One committed golden record, stamped, seeded into the resolved store. */
+  async function seedGolden(globalStorage: string): Promise<StatsRecord> {
+    const goldens = fileURLToPath(new URL('../fixtures/golden/stats/', import.meta.url));
+    const first = (await readdir(goldens)).filter((n) => n.endsWith('.json')).sort()[0];
+    expect(first, 'no committed stats golden to seed').toBeDefined();
+    const record = JSON.parse(await readFile(join(goldens, first ?? ''), 'utf8')) as StatsRecord;
+    const dir = resolveStoreDir({ globalStorageUri: { fsPath: globalStorage } });
+    const store = new StatsStore({ dir, enabled: true, retentionDays: 3_650 });
+    store.appendRecord({ ...record, derivedAt: Date.now() });
+    expect(store.appended).toBe(1);
+    return record;
+  }
+
+  it('a window with NO folder still returns the API, and it reads the machine history', async () => {
+    resetVscodeMock();
+    mock.setWorkspaceFolder(undefined);
+    const globalStorage = await makeTempDir();
+    const seeded = await seedGolden(globalStorage);
+
+    const api: AgentDeckApi = await activate(extensionContext(globalStorage));
+    expect(currentHost(), 'this path is meant to have no host').toBeNull();
+    expect(api.apiVersion).toBe(1);
+    expect(api.getLiveStats()).toStrictEqual([]);
+    const stored = await api.getStoredStats();
+    expect(stored.map((r) => r.sessionId)).toStrictEqual([seeded.sessionId]);
+  });
+
+  it('a window WITH a folder and nothing to observe still returns the API', async () => {
+    // The second early return. Found by the Phase 5 verifier: replacing this
+    // `return api` with `undefined` left every test green, because the only
+    // no-host test above has no folder and takes the FIRST return. Each engine
+    // is proved absent through the same predicate `activate()` asks, so this
+    // cannot drift onto another path while still passing.
+    resetVscodeMock();
+    process.env['CLAUDE_PROJECTS_ROOT'] = join(await makeTempDir(), 'no-such-projects-root');
+    const workspacePath = join(await makeTempDir(), 'ws');
+    mock.setWorkspaceFolder(workspacePath);
+    expect((await correlateWorkspace(workspacePath)).ok).toBe(false);
+    expect(opencodeStoreExists()).toBe(false);
+    expect(codexRootExists()).toBe(false);
+    const globalStorage = await makeTempDir();
+    const seeded = await seedGolden(globalStorage);
+
+    const api: AgentDeckApi = await activate(extensionContext(globalStorage));
+    expect(currentHost(), 'this path is meant to have no host').toBeNull();
+    expect(api?.apiVersion).toBe(1);
+    expect(api.getLiveStats()).toStrictEqual([]);
+    const stored = await api.getStoredStats();
+    expect(stored.map((r) => r.sessionId)).toStrictEqual([seeded.sessionId]);
+  });
+
+  it('a disabled store answers [] through the API, as it does in the panel', async () => {
+    resetVscodeMock();
+    mock.setWorkspaceFolder(undefined);
+    mock.setConfig(CONFIG_SECTION, { 'stats.enabled': false });
+    const globalStorage = await makeTempDir();
+    await seedGolden(globalStorage);
+    const api = await activate(extensionContext(globalStorage));
+    expect(await api.getStoredStats()).toStrictEqual([]);
+  });
+
+  it('a matching workspace: live stats are the host pipeline, and a flush reaches onDidUpdateStats', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    const globalStorage = await makeTempDir();
+    await warmCorpus();
+    const states = await readCcSessions();
+
+    const api = await onFreePort<AgentDeckApi>({
+      use: async (port) => {
+        resetVscodeMock();
+        mock.setWorkspaceFolder(workspacePath);
+        mock.setConfig(CONFIG_SECTION, { port });
+        return activate(extensionContext(globalStorage));
+      },
+      collided: () => currentHost()?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+      discard: async () => {
+        await deactivate();
+      },
+    });
+
+    const pipeline = currentHost()?.stats;
+    expect(pipeline, 'activate() built no stats pipeline').toBeDefined();
+    const live = api.getLiveStats();
+    expect(live.length, 'the captured workspace derived no records').toBeGreaterThan(0);
+    expect(live.map((r) => r.sessionId).sort()).toStrictEqual(
+      (pipeline?.liveRecords() ?? []).map((r) => r.sessionId).sort(),
+    );
+
+    // The EVENT, through the production wiring: an ended session with liveness
+    // activity after this activation's stamp is written, and the write is an
+    // event on the object activate() returned.
+    const heard: StatsRecord[] = [];
+    api.onDidUpdateStats((record) => heard.push(record));
+    const state = structuredClone(states[0]) as SessionState;
+    (state as unknown as Record<string, unknown>)['liveness'] = 'ended';
+    const emission: SessionEmission = {
+      sessions: [state],
+      diffs: [],
+      addedSessionIds: [],
+      removedSessionIds: [],
+      schemaMismatchSessionIds: [],
+      lastActivityAt: new Map([[state.sessionId, Date.now() + 1]]),
+    };
+    pipeline?.observe(emission);
+    expect(heard.map((r) => r.sessionId)).toStrictEqual([state.sessionId]);
+    expect(typeof (heard[0] as { derivedAt?: unknown } | undefined)?.derivedAt).toBe('number');
+    // ...and the same line is what the stored getter now returns for it.
+    const stored = await api.getStoredStats();
+    expect(stored.map((r) => r.sessionId)).toContain(state.sessionId);
+  }, CORPUS_READ_BUDGET_MS);
 });

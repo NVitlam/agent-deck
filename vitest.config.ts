@@ -133,8 +133,22 @@ export default defineConfig({
           // Forks HERE ONLY, and for the process boundary rather than for the
           // pool semantics - see the block above for the measurement that
           // forced it. The recorded hazard that put the rest of the suite on
-          // threads is a socket-test interaction, and this project contains no
-          // socket tests: neither file here opens a listener or binds a port.
+          // threads is a socket-test interaction, and until v0.7.0 DoD 5.0 this
+          // project contained no socket tests.
+          //
+          // IT CONTAINS ONE NOW, BECAUSE THE DoD NAMES THIS PROJECT: the relay
+          // budget (`src/perf/relay.test.ts`) binds a leader and attaches
+          // followers. On this machine's default Node 24.15.0 that file lost
+          // its forked worker before reporting in 4 of 6 runs, with this
+          // hazard's exact signature (`ERR_IPC_CHANNEL_CLOSED` in the parent).
+          // THE CAUSE WAS THE WORKER DYING, NOT THE POOL: the same workload in
+          // a plain node process exits 0xC0000409 in 14 of 28 runs on 24.15.0
+          // and 0 of 20 on 22.23.2 and on 24.18.1 (DoD 5.0c,
+          // `docs/evidence/v0.7.0/phase-5/NODE-5.0c.md`). So the hazard recorded
+          // above may itself have been that fail-fast seen through tinypool; it
+          // is not re-measured here, and the threads choice stands until it is.
+          // Gate runs use the pinned Node (see `package.json` `devEngines`).
+          //
           // `singleFork` because two workers over two files would reintroduce
           // inside this project exactly the contention it exists to remove.
           pool: 'forks',

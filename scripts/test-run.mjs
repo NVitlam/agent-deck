@@ -6,7 +6,7 @@
 // of those was reconstructed afterwards from a scrollback that had already been
 // overwritten, which is why none of them has a diagnosis.
 //
-//   node scripts/test-run.mjs [--runs N] [--label NAME] [-- <vitest args>]
+//   node scripts/test-run.mjs [--runs N] [--label NAME] [--node DIR] [-- <vitest args>]
 //
 // One JSON record per run under `docs/evidence/runner/`, plus a human-readable
 // ledger line. What it captures per run:
@@ -31,9 +31,9 @@
 // Nothing outside it is touched.
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { argv, exit, hrtime } from 'node:process';
+import process, { argv, exit, hrtime } from 'node:process';
 
 import { classifyExit } from './exit-class.mjs';
 import { uniqueRecordName } from './runner-paths.mjs';
@@ -83,6 +83,37 @@ const runs = Number(arg('--runs', '1'));
 if (!Number.isInteger(runs) || runs < 1) throw new Error('--runs needs a positive integer');
 const label = arg('--label', 'adhoc');
 
+/*
+ * `--node <dir>`: run the suite on the Node in `<dir>` instead of the one on
+ * PATH, by putting that directory FIRST on the child's PATH (v0.7.0 DoD 5.0c).
+ *
+ * Why this exists: the fail-fast this ledger has been counting since Phase 1c is
+ * reproduced by this repository's own relay code on Node 24.15.0 — 14 of 28 runs
+ * — and on no other Node measured (`docs/evidence/v0.7.0/phase-5/NODE-5.0c.md`).
+ * The gate's Node is therefore PINNED (`package.json` `devEngines.runtime`), and
+ * the user rule is that the machine's default Node is not changed to get there.
+ * A PATH prefix for the child is the smallest thing that satisfies both.
+ */
+const nodeDir = arg('--node', undefined);
+if (nodeDir !== undefined && !existsSync(nodeDir)) {
+  throw new Error(`--node ${nodeDir}: no such directory`);
+}
+const childEnv =
+  nodeDir === undefined
+    ? process.env
+    : { ...process.env, PATH: `${nodeDir}${path.delimiter}${process.env.PATH ?? ''}` };
+
+/** The gate Node `package.json` pins, or null when it pins none. */
+function pinnedNode() {
+  try {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+    const version = pkg?.devEngines?.runtime?.version;
+    return typeof version === 'string' ? `v${version.replace(/^v/, '')}` : null;
+  } catch {
+    return null;
+  }
+}
+
 // Everything after a bare `--` goes to vitest untouched.
 const passThroughAt = argv.indexOf('--');
 const extra = passThroughAt === -1 ? [] : argv.slice(passThroughAt + 1);
@@ -100,7 +131,7 @@ const BASE_ARGS = ['vitest', 'run', '--reporter=dot', ...extra];
 
 function run(command) {
   return new Promise((resolve) => {
-    const p = spawn(command, { shell: true });
+    const p = spawn(command, { shell: true, env: childEnv });
     let out = '';
     p.stdout.on('data', (d) => (out += String(d)));
     p.on('close', () => resolve(out));
@@ -156,14 +187,14 @@ function countsOf(lines) {
   };
 }
 
-function runOnce(index, headSha) {
+function runOnce(index, headSha, nodeVersion) {
   return new Promise((resolve) => {
     const started = hrtime.bigint();
     // ONE command string, not (command, args, {shell:true}). Node deprecates
     // the latter (DEP0190) because the args are concatenated unescaped; there
     // is no user input here, but a deprecation warning in every recorded run
     // is noise in exactly the log a death has to be read out of.
-    const child = spawn(`${COMMAND} ${BASE_ARGS.join(' ')}`, { shell: true });
+    const child = spawn(`${COMMAND} ${BASE_ARGS.join(' ')}`, { shell: true, env: childEnv });
 
     let stdout = '';
     let stderr = '';
@@ -180,6 +211,16 @@ function runOnce(index, headSha) {
         label,
         index,
         head: headSha,
+        /*
+         * THE NODE THAT RAN, as the child resolved it (v0.7.0 DoD 5.0c). A
+         * ledger row names its tree; from 2026-09-10 the record names its
+         * runtime too, because the fail-fast this ledger counts is a property
+         * of one Node build and a row that does not say which Node produced it
+         * cannot be read either way. `pinned` compares it to `package.json`'s
+         * `devEngines.runtime.version`; `null` means nothing is pinned.
+         */
+        node: nodeVersion,
+        nodePinned: pinnedNode() === null ? null : nodeVersion === pinnedNode(),
         command: `${COMMAND} ${BASE_ARGS.join(' ')}`,
         // Recorded per run rather than assumed: `vitest.config.ts` runs the
         // `perf` project on `forks` and everything else on threads, and a
@@ -275,11 +316,22 @@ function runOnce(index, headSha) {
 }
 
 const headSha = await head();
+const nodeVersion = (await run('node --version')).trim() || 'unknown';
+const pinned = pinnedNode();
 mkdirSync(OUT_DIR, { recursive: true });
+console.log(`node ${nodeVersion}${pinned === null ? '' : `  (pinned gate Node: ${pinned})`}`);
+if (pinned !== null && nodeVersion !== pinned) {
+  // Said, not refused: an ad-hoc run on the default Node is a legitimate thing
+  // to take. It is not a GATE run, and every record of it says so in `nodePinned`.
+  console.log(
+    `NOT THE PINNED GATE NODE: this block runs on ${nodeVersion}, and package.json pins ` +
+      `${pinned}. A gate block takes --node <dir-of-${pinned}>. See NODE-5.0c.md.`,
+  );
+}
 
 const results = [];
 for (let i = 1; i <= runs; i += 1) {
-  const record = await runOnce(i, headSha);
+  const record = await runOnce(i, headSha, nodeVersion);
   results.push(record);
   console.log(
     `run ${String(i)}/${String(runs)}  exit=${String(record.exit)}  ` +

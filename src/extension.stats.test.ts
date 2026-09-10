@@ -31,6 +31,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { mock, resetVscodeMock } from '../test/vscode-mock.js';
 
 import type { SessionState } from './model/events.js';
+import type { StatsRecord } from './stats/schema.js';
 import { ManualTime } from './parser/tailer.js';
 import type { SessionEmission } from './model/session.js';
 import { CORPUS_READ_BUDGET_MS, readCcSessions, warmCorpus } from './stats/corpus.testkit.js';
@@ -160,6 +161,7 @@ function harness(
     pricing?: unknown;
     retentionDays?: number;
     processStart?: number;
+    onUpdate?: (record: StatsRecord, cause: 'live' | 'flush') => void;
   } = {},
 ): Harness {
   const dir = join(tempDir(), STORE_DIR_NAME);
@@ -188,6 +190,7 @@ function harness(
     now: () => time.now(),
     scheduler: time,
     onError: (error) => errors.push(error),
+    ...(overrides.onUpdate === undefined ? {} : { onUpdate: overrides.onUpdate }),
   });
   return { pipeline, store, dir, time, errors };
 }
@@ -1017,5 +1020,110 @@ describe('DoD 4.11b: liveness is the sole promoter', () => {
     after.time.advance(60_000);
     expect(after.pipeline.idleFlushes).toBe(21);
     expect(linesOn(after.dir)).toHaveLength(21);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 5.2 — the pipeline feeds the extension API: every flush, and live changes
+// of observed sessions only
+// ---------------------------------------------------------------------------
+
+/**
+ * The PIPELINE half of the event. `src/api.ts` owns the throttle and is tested
+ * there on a faked clock; what is asserted here is what the pipeline hands it:
+ * exactly one `flush` per record the store accepted (on `ended` AND on the idle
+ * flush), the record as written, and `live` only for sessions liveness has
+ * promoted — history is silent, as it is for the store.
+ */
+describe('DoD 5.2: every flush reaches the API, and history never does', () => {
+  function recorder(): {
+    events: { record: StatsRecord; cause: 'live' | 'flush' }[];
+    onUpdate: (record: StatsRecord, cause: 'live' | 'flush') => void;
+  } {
+    const events: { record: StatsRecord; cause: 'live' | 'flush' }[] = [];
+    return { events, onUpdate: (record, cause) => events.push({ record, cause }) };
+  }
+
+  it('an ended session: one flush event, carrying the line the store wrote', () => {
+    const r = recorder();
+    const h = harness({ onUpdate: r.onUpdate });
+    h.pipeline.observe(emissionOf(subject(0, 'ended')));
+    const flushes = r.events.filter((e) => e.cause === 'flush');
+    expect(h.store.appended).toBe(1);
+    expect(flushes).toHaveLength(1);
+    // The record AS WRITTEN — `derivedAt` included — so an event and a later
+    // `getStoredStats` describe the same line.
+    expect(flushes[0]?.record).toStrictEqual(JSON.parse(linesOn(h.dir)[0] ?? '{}'));
+    // And not announced twice on the same pump.
+    expect(r.events.filter((e) => e.cause === 'live')).toHaveLength(0);
+    // Twenty more pumps of a finished session: no more events, as no more lines.
+    for (let i = 0; i < 20; i += 1) h.pipeline.observe(emissionOf(subject(0, 'ended')));
+    expect(r.events).toHaveLength(1);
+  });
+
+  it('the idle flush: one flush event when the silence elapses, and live events before it', () => {
+    const r = recorder();
+    const h = harness({ onUpdate: r.onUpdate });
+    h.pipeline.observe(emissionOf(subject(0, 'live')));
+    h.time.advance(1_000);
+    h.pipeline.observe(emissionOf(subject(0, 'live', 1)));
+    const live = r.events.filter((e) => e.cause === 'live');
+    // One per CHANGE: the pipeline reports every change and the API throttles.
+    expect(live).toHaveLength(2);
+    expect(r.events.filter((e) => e.cause === 'flush')).toHaveLength(0);
+
+    h.time.advance(DEFAULT_STATS_IDLE_FLUSH_MS);
+    expect(h.pipeline.idleFlushes).toBe(1);
+    const flushes = r.events.filter((e) => e.cause === 'flush');
+    expect(flushes).toHaveLength(1);
+    expect(typeof (flushes[0]?.record as { derivedAt?: unknown }).derivedAt).toBe('number');
+  });
+
+  it('flush events equal lines written, over a mixed run', () => {
+    const r = recorder();
+    const h = harness({ onUpdate: r.onUpdate, idleFlushMs: 60_000 });
+    h.pipeline.observe(emissionOf(subject(0, 'live'), subject(1, 'ended'), subject(2, 'idle')));
+    h.time.advance(60_000);
+    h.pipeline.observe(emissionOf(subject(0, 'ended', 3), subject(2, 'live', 4)));
+    h.time.advance(60_000);
+    expect(h.store.appended).toBeGreaterThan(2);
+    expect(r.events.filter((e) => e.cause === 'flush')).toHaveLength(h.store.appended);
+  });
+
+  it('HISTORY produces no event at all — not live, not flush', () => {
+    const r = recorder();
+    const h = harness({ onUpdate: r.onUpdate, processStart: START });
+    h.pipeline.observe(historyOf(subject(0, 'live'), subject(1, 'ended')));
+    h.time.advance(1_000);
+    h.pipeline.observe(historyOf(subject(0, 'live', 1), subject(1, 'ended')));
+    h.time.advance(DEFAULT_STATS_IDLE_FLUSH_MS * 2);
+    expect(r.events).toStrictEqual([]);
+    // The control: the same sessions WITH activity after the stamp announce.
+    const g = recorder();
+    const k = harness({ onUpdate: g.onUpdate, processStart: START });
+    const sessions = [subject(0, 'live'), subject(1, 'ended')];
+    k.pipeline.observe(emissionWith(sessions, activityAt(START + 1, sessions)));
+    expect(g.events.map((e) => e.cause).sort()).toStrictEqual(['flush', 'live']);
+  });
+
+  it('a write that did not happen is not a flush: a disabled store fires no flush event', () => {
+    const r = recorder();
+    const h = harness({ onUpdate: r.onUpdate, enabled: false });
+    h.pipeline.observe(emissionOf(subject(0, 'ended')));
+    expect(h.store.appended).toBe(0);
+    expect(r.events.filter((e) => e.cause === 'flush')).toHaveLength(0);
+  });
+
+  it('a consumer that throws is counted and reaches nothing else (G2)', () => {
+    const h = harness({
+      onUpdate: () => {
+        throw new Error('consumer bug');
+      },
+    });
+    h.pipeline.observe(emissionOf(subject(0, 'ended'), subject(1, 'ended')));
+    // Both sessions were still written: the throw on the first did not stop
+    // the second, and it was counted rather than rethrown.
+    expect(h.store.appended).toBe(2);
+    expect(h.pipeline.errors).toBeGreaterThan(0);
   });
 });

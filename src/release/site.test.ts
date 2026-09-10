@@ -282,3 +282,26 @@ describe('the page does not ship inside the extension', () => {
     expect(ignore).toMatch(/^site\/\*\*$/m);
   });
 });
+
+describe('v0.7.0 DoD 5.5 — the page names the Stats view, and no longer says nothing is kept', () => {
+  it('carries ONE Stats line, inside the g10 region the forbidden-word scan reads', () => {
+    const regions = [...PAGE.matchAll(/<!-- g10 -->([\s\S]*?)<!-- \/g10 -->/g)].map((m) => m[1] ?? '');
+    expect(regions).toHaveLength(1);
+    expect(regions[0]).toContain('Stats view');
+    // The region is the scan's subject: `scripts/forbidden-words.mjs` names this
+    // file and these markers, so moving the line out of them unscans it.
+    const scanner = readText('scripts/forbidden-words.mjs');
+    expect(scanner).toContain("join(REPO_ROOT, 'site', 'index.html')");
+    expect(scanner).toContain("start: '<!-- g10 -->'");
+  });
+
+  it('no longer claims the product keeps nothing, which 0.7.0 made false', () => {
+    // The stats history persists, derived numbers only. Two sentences that were
+    // true of 0.6.x said otherwise, on the page a user reads before installing.
+    expect(PAGE).not.toMatch(/disappears when the window closes/i);
+    expect(PAGE).not.toMatch(/Persist history/i);
+    // Vacuity control: the patterns match the sentences that were shipping.
+    expect(/disappears when the window closes/i.test('State stays in memory and disappears when the window closes.')).toBe(true);
+    expect(/Persist history/i.test('<li>Persist history or build cost dashboards.</li>')).toBe(true);
+  });
+});

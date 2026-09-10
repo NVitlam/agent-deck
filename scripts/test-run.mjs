@@ -98,14 +98,37 @@ const extra = passThroughAt === -1 ? [] : argv.slice(passThroughAt + 1);
 const COMMAND = 'npx';
 const BASE_ARGS = ['vitest', 'run', '--reporter=dot', ...extra];
 
-function head() {
+function run(command) {
   return new Promise((resolve) => {
-    const p = spawn('git rev-parse --short HEAD', { shell: true });
+    const p = spawn(command, { shell: true });
     let out = '';
     p.stdout.on('data', (d) => (out += String(d)));
-    p.on('close', () => resolve(out.trim() || 'unknown'));
-    p.on('error', () => resolve('unknown'));
+    p.on('close', () => resolve(out));
+    p.on('error', () => resolve(''));
   });
+}
+
+/**
+ * The HEAD sha, with `-dirty` appended when the worktree does not match it.
+ *
+ * **A LEDGER ROW MUST NAME THE TREE IT TESTED** (user ruling, 2026-09-10), and
+ * for three items running it did not. Twelve rows of the 4.11 blocks name
+ * `948c0db` — a commit whose tree they never ran — and two suite sizes ended up
+ * recorded against one sha, which makes rule 14 unauditable after the fact: a
+ * reader cannot tell which of them the three consecutive greens belong to.
+ *
+ * The gate rule that came out of it (commit first, then take the block) is a
+ * habit, and a habit is not a check. This is the check: a run over an
+ * uncommitted tree is recorded as `<sha>-dirty`, which no commit can be confused
+ * with. It does not stop the run — measuring an uncommitted tree is exactly what
+ * an ad-hoc check is for — it stops the row from claiming a provenance it does
+ * not have.
+ */
+async function head() {
+  const sha = (await run('git rev-parse --short HEAD')).trim();
+  if (sha === '') return 'unknown';
+  const status = (await run('git status --porcelain')).trim();
+  return status === '' ? sha : `${sha}-dirty`;
 }
 
 /**

@@ -256,6 +256,49 @@ describe('what the corpus yields', () => {
     }
     expect([...perSession.values()].some((n) => n > 1)).toBe(true);
   });
+
+  it('reads one claude_code.session.count point per session, by session.id (v0.7.1 DoD 6.3b)', () => {
+    // CONTROL: the raw metrics bodies name the metric exactly twice (the
+    // corpus README: 2 points), so an empty list below would be a defect,
+    // not a corpus without the metric.
+    const raw = captured('metrics').map((line) => line.raw).join('\n');
+    expect(raw.split('"claude_code.session.count"').length - 1).toBe(2);
+
+    const metrics = sliceOf('metrics');
+    const costSessions = [...new Set(metrics.costPoints.map((p) => p.sessionId))].sort();
+    expect(costSessions).toHaveLength(2);
+    // One per session, and they are the sessions the cost points name.
+    expect([...metrics.sessionCounts].sort()).toStrictEqual(costSessions);
+    // Only a metrics body carries one.
+    expect(sliceOf('traces').sessionCounts).toStrictEqual([]);
+    expect(sliceOf('logs').sessionCounts).toStrictEqual([]);
+  });
+
+  it('a session.count point with no session.id is counted as unusable, never recorded', () => {
+    const source = captured('metrics').find((line) => line.raw.includes('"claude_code.session.count"'));
+    expect(source).toBeDefined();
+    const body = JSON.parse(source?.raw ?? '{}') as {
+      resourceMetrics: { scopeMetrics: { metrics: { name: string; sum: { dataPoints: { attributes: { key: string }[] }[] } }[] }[] }[];
+    };
+    let stripped = 0;
+    for (const rm of body.resourceMetrics) {
+      for (const sm of rm.scopeMetrics) {
+        for (const metric of sm.metrics) {
+          if (metric.name !== 'claude_code.session.count') continue;
+          for (const point of metric.sum.dataPoints) {
+            point.attributes = point.attributes.filter((a) => a.key !== 'session.id');
+            stripped += 1;
+          }
+        }
+      }
+    }
+    expect(stripped).toBe(1);
+    const whole = parseOtlpBody(source?.raw ?? '', 'metrics');
+    const without = parseOtlpBody(JSON.stringify(body), 'metrics');
+    expect(whole.sessionCounts).toHaveLength(1);
+    expect(without.sessionCounts).toStrictEqual([]);
+    expect(without.counts.recordsUnusable).toBe(whole.counts.recordsUnusable + 1);
+  });
 });
 
 describe('G3 — nothing here throws, whatever arrives', () => {

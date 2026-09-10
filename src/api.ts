@@ -140,6 +140,7 @@ export const MODEL_ONLY_KEYS = [
   'schemaOk',
   'root',
   'telemetryCostUsd',
+  'telemetrySessionCountSeen',
   'contextNow',
   'burn',
   'spawnEdges',

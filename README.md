@@ -358,7 +358,7 @@ Notes on that block, each of them measured rather than assumed:
 
 ## Claude Code telemetry (optional)
 
-**What it adds:** a cost figure for each Claude Code session, estimated by Claude Code itself, in
+**What it adds:** a cost figure for each Claude Code session this window sees start, estimated by Claude Code itself, in
 the Stats view's Tokens part with the label **estimated by Claude Code**; and the duration of a tool
 call where the session's own records state none, in that session's stats record — the local history
 and the extension API. The Stats view shows no per-tool durations.
@@ -402,24 +402,28 @@ Two steps:
   Deck drops those fields where the body is parsed either way.
 - **The cost is estimated by Claude Code, not an engine report.** It is Claude Code's own cost
   metric, which Claude Code exports as increments, summed per session over the increments this
-  window has received. Agent Deck keeps no running total across windows, so a session already under
-  way when this window opened, when the setting was turned on, or across a window reload, shows only
-  the cost incurred since. Where an engine's session records state a cost, that figure is shown
-  instead; where neither does, a cost from your own prices (`agentDeck.pricing`) is. A figure from
-  telemetry is shown ahead of one from your own prices, whatever part of the session it covers.
+  window has received. It is shown only for a session whose start this window received — the
+  `claude_code.session.count` point Claude Code sends once when a session starts — so for a session
+  already under way when this window opened, when the setting was turned on, or across a window
+  reload, it is not shown and that session's stats record names `F9:telemetry-partial`. Where an
+  engine's session records state a cost, that figure is shown instead; where neither an engine cost
+  nor a telemetry cost from the session's start exists, a cost from your own prices
+  (`agentDeck.pricing`) is.
 - **What is dropped where the body is parsed:** the five account attributes Claude Code attaches to
   every record — `user.email`, `user.id`, `user.account_id`, `user.account_uuid` and
   `organization.id` — and every attribute Agent Deck does not read. What is kept is the session id,
   the tool-call id, the tool name, the duration and the cost.
-- **Telemetry never changes liveness.** It does not make a session live and does not clear a stall.
-  It never makes Agent Deck record a session this window has not seen working; for a session it is
-  already recording, a new cost is part of that session's record like any other change, and a newer
-  record supersedes an older one. A session id that appears only in telemetry adds nothing to the
+- **Telemetry never touches the liveness or stall clock.** It does not make a session live and does
+  not clear a stall, and it never makes Agent Deck record a session this window has not seen
+  working. For a session it is already recording, a cost change may produce a newer stored record
+  and may delay the idle write, like any change to the record: the `agentDeck.stats.idleFlushMs`
+  countdown restarts on each one. A session id that appears only in telemetry adds nothing to the
   deck.
-- **Only sessions this window shows when a row arrives are joined.** The exporter is machine-wide,
-  so rows about other sessions arrive too. Those, rows that arrive before this window has read
-  their session, and spans naming a tool call the session does not show are dropped and counted as
-  `unmatched` on the Agent Deck output channel.
+- **Rows about sessions this window does not show yet.** The exporter is machine-wide, so rows
+  about other sessions arrive too. A session's start and its cost, arriving before this window shows
+  the session, are kept for up to 256 such sessions and joined once it appears; a tool span is joined
+  only for a session shown when the span arrives. A row that matches no session or tool call this
+  window shows when it arrives is counted as `unmatched` on the Agent Deck output channel.
 - **The answers:** `200` accepted · `400` not an OTLP JSON body · `403` the setting is off · `405`
   not a POST · `413` over 512 KiB · `415` not JSON. None of them asks the exporter to retry.
 
@@ -657,8 +661,8 @@ All five are in the [Settings](#settings) table with their defaults.
   statistics setting; it arrived in the same release.
 
 **Your own prices.** Agent Deck ships no price table and never guesses a price. A cost appears only
-where the engine reports one, where Claude Code's own telemetry estimates one (see
-[Claude Code telemetry](#claude-code-telemetry-optional)), or where you have entered prices for the
+where the engine reports one, where Claude Code's own telemetry estimates one from the session's
+start (see [Claude Code telemetry](#claude-code-telemetry-optional)), or where you have entered prices for the
 model a session ran — in that order of precedence. Prices
 are in USD per million tokens, keyed by the model id exactly as the session writes it — the Tokens
 part lists every id it has seen, so you can copy it. The figures below show the shape and are not a
@@ -780,7 +784,7 @@ honesty is kept, and they were not loosened alongside it.
 | `agentDeck.stats.retentionDays` | How many days of that history to keep. Default 90. Files are pruned when a record is written, and a weekly file goes once the whole week it covers has aged out. To keep nothing, turn `agentDeck.stats.enabled` off — the floor here is one day, not zero. |
 | `agentDeck.canvas.autoFit` | Re-fit the session canvas to its content on every event that changes its geometry: a node selected, the drawer opened, expanded or closed, an agent grafted, removed or parked, the panel resized, a session switch, an engine chip, a switch back to the canvas. Default `true`. A manual pan or zoom persists until the next such event; token counters and status colours never re-fit. Off, the canvas fits once on entry and on Reset view. |
 | `agentDeck.stats.idleFlushMs` | How long a session may go unchanged before its record is written anyway, in milliseconds. Default 3600000 (one hour). A record is normally written when the session ends; this covers the session that never does. Later work is recomputed in full and written as a second record; reads keep the newest per session and nothing on disk is rewritten. |
-| `agentDeck.pricing` | Your own prices per model id, in USD per million tokens — `{"<model id>": {"prompt": 3, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15}}`. Used only for sessions for which neither the engine nor Claude Code's telemetry states a cost. Agent Deck ships no price table and never guesses one: a model with no entry gets no figure, a malformed entry is ignored and named on the output channel, and anything computed this way is labelled as estimated from your prices. |
+| `agentDeck.pricing` | Your own prices per model id, in USD per million tokens — `{"<model id>": {"prompt": 3, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15}}`. Used only for sessions for which neither the engine nor Claude Code's telemetry, received from the session's start, states a cost. Agent Deck ships no price table and never guesses one: a model with no entry gets no figure, a malformed entry is ignored and named on the output channel, and anything computed this way is labelled as estimated from your prices. |
 | `agentDeck.telemetry.enabled` | Accept Claude Code's own OpenTelemetry export on the hook listener's `/v1/metrics`, `/v1/logs` and `/v1/traces` paths. Default `false`: off, those paths answer `403` and no body is parsed. Machine-scoped, so every window on the machine reads the same value. See [Claude Code telemetry](#claude-code-telemetry-optional). |
 
 Clearing the history is a command, not a button on the deck: **Agent Deck: Clear Stats History** in

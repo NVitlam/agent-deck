@@ -51,6 +51,7 @@ import { ManualTime, slugifyWorkspace } from './parser/tailer.js';
 import { OPENCODE_DATA_ROOT_ENV } from './opencode/index.js';
 import { CODEX_HOME_VAR } from './codex/index.js';
 import { emptyTelemetryCounts, parseOtlpBody } from './otel/parse.js';
+import { PENDING_SESSIONS_MAX } from './model/telemetry.js';
 import { createExtensionContext, mock, resetVscodeMock } from '../test/vscode-mock.js';
 import {
   CONTENT_KEYS,
@@ -167,6 +168,8 @@ interface RigOptions {
   stats?: boolean;
   /** Clock offset: an hour ahead makes a running call stalled and a session idle. */
   aheadMs?: number;
+  /** `agentDeck.pricing`, for the arm where a user's prices are the fallback. */
+  pricing?: Record<string, unknown>;
 }
 
 /** Stage the chosen sessions into a fresh projects root under a temp workspace's slug. */
@@ -219,7 +222,7 @@ async function rig(options: RigOptions): Promise<Rig> {
     const host = new AgentDeckHost({
       workspacePath: shared.workspacePath,
       projectsRoot: shared.projectsRoot,
-      settings: settings({ port }),
+      settings: settings({ port, ...(options.pricing === undefined ? {} : { pricing: options.pricing }) }),
       onEmission: (payload) => {
         emissions.push(payload);
       },
@@ -295,20 +298,104 @@ function toolById(state: SessionState | undefined, id: string): TreeNode | undef
 }
 
 /** The corpus's per-session census, through the real parse boundary. */
-function census(): { costBySession: Map<string, number>; costPoints: Map<string, number>; spans: number } {
+function census(envelopes: readonly OtelEnvelope[] = ENVELOPES): {
+  costBySession: Map<string, number>;
+  costPoints: Map<string, number>;
+  sessionCounts: string[];
+  spans: number;
+} {
   const counts = emptyTelemetryCounts();
   const costBySession = new Map<string, number>();
   const costPoints = new Map<string, number>();
+  const sessionCounts: string[] = [];
   let spans = 0;
-  for (const e of ENVELOPES) {
+  for (const e of envelopes) {
     const slice = parseOtlpBody(e.raw, e.signal, counts);
     spans += slice.toolSpans.length;
+    sessionCounts.push(...slice.sessionCounts);
     for (const p of slice.costPoints) {
       costBySession.set(p.sessionId, (costBySession.get(p.sessionId) ?? 0) + p.usd);
       costPoints.set(p.sessionId, (costPoints.get(p.sessionId) ?? 0) + 1);
     }
   }
-  return { costBySession, costPoints, spans };
+  return { costBySession, costPoints, sessionCounts, spans };
+}
+
+const SESSION_COUNT = '"claude_code.session.count"';
+
+interface MetricsBody {
+  resourceMetrics: {
+    resource?: unknown;
+    scopeMetrics: {
+      scope?: unknown;
+      metrics: {
+        name: string;
+        sum?: { dataPoints: { attributes: { key: string; value: unknown }[] }[] };
+      }[];
+    }[];
+  }[];
+}
+
+/**
+ * The corpus with every `claude_code.session.count` metric removed from the
+ * bodies that carry one — DoD 6.3b's "same replay, count points stripped".
+ * Every other byte of every body, and every other body, is the capture's.
+ */
+function withoutSessionCounts(envelopes: readonly OtelEnvelope[]): OtelEnvelope[] {
+  return envelopes.map((e) => {
+    if (e.signal !== 'metrics' || !e.raw.includes(SESSION_COUNT)) return e;
+    const body = JSON.parse(e.raw) as MetricsBody;
+    for (const resource of body.resourceMetrics) {
+      for (const scope of resource.scopeMetrics) {
+        scope.metrics = scope.metrics.filter((m) => m.name !== 'claude_code.session.count');
+      }
+    }
+    return { ...e, raw: JSON.stringify(body) };
+  });
+}
+
+/**
+ * One metrics body carrying `ids.length` session-count points, each a copy of
+ * the corpus's own point with only its `session.id` changed.
+ */
+function sessionCountBody(ids: readonly string[]): string {
+  const source = ENVELOPES.find((e) => e.signal === 'metrics' && e.raw.includes(SESSION_COUNT));
+  if (source === undefined) throw new Error('the corpus carries no session.count body');
+  const body = JSON.parse(source.raw) as MetricsBody;
+  for (const resource of body.resourceMetrics) {
+    for (const scope of resource.scopeMetrics) {
+      const metric = scope.metrics.find((m) => m.name === 'claude_code.session.count');
+      const point = metric?.sum?.dataPoints[0];
+      if (metric === undefined || metric.sum === undefined || point === undefined) continue;
+      const points = ids.map((id) => ({
+        ...point,
+        attributes: point.attributes.map((a) => (a.key === 'session.id' ? { key: a.key, value: { stringValue: id } } : a)),
+      }));
+      return JSON.stringify({
+        resourceMetrics: [
+          { resource: resource.resource, scopeMetrics: [{ scope: scope.scope, metrics: [{ ...metric, sum: { ...metric.sum, dataPoints: points } }] }] },
+        ],
+      });
+    }
+  }
+  throw new Error('the session.count body has no data point');
+}
+
+/** Stage session B into a running host's slug dir and wait until it is grafted — a session that starts late. */
+async function stageLate(r: Rig): Promise<void> {
+  const slugDir = r.host.dataPath.watcher.lastDiscovery?.slugDir;
+  expect(slugDir, 'the host has not discovered its slug dir').toBeDefined();
+  const grafts = r.host.dataPath.diagnostics.grafts;
+  await stageSessionAs(slugDir as string, {
+    ...IDLE_SOURCE,
+    asSessionId: OTEL_SESSION_B,
+    spanIds: spanToolIds(OTEL_SESSION_B),
+  });
+  await waitFor(
+    () => r.host.dataPath.diagnostics.grafts > grafts && r.host.dataPath.model.hasSession(OTEL_SESSION_B),
+    'the late session to be discovered and grafted',
+    30_000,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -404,8 +491,9 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(after.joined.map((s) => s.sessionId)).toStrictEqual([OTEL_SESSION_A]);
     expect(r.host.stats).toBeUndefined();
     const { costPoints } = census();
-    // Every one of B's cost points, and every one of B's spans, placed nowhere.
-    expect(r.host.telemetry.unmatched.metrics).toBe(costPoints.get(OTEL_SESSION_B));
+    // Every one of B's cost points, B's one session.count point, and every one
+    // of B's spans, placed nowhere.
+    expect(r.host.telemetry.unmatched.metrics).toBe((costPoints.get(OTEL_SESSION_B) ?? Number.NaN) + 1);
     const unplacedA = r.staged[0]?.unplaced.length ?? Number.NaN;
     expect(r.host.telemetry.unmatched.traces).toBe(spanToolIds(OTEL_SESSION_B).length + unplacedA);
     // CONTROL: A's own rows DID land, so the zero-creation is not a join that
@@ -417,27 +505,13 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
    * A SESSION THAT STARTS AFTER THE WINDOW OPENED — the ordinary case, and the
    * one no test here reached until the phase verifier froze the joiner's live
    * set at the first emission (V5) and dropped its held-sessions filter (V8),
-   * and all eight host tests stayed green. Both arms below stage session B
+   * and all eight host tests stayed green. (6.3b then narrowed that filter to
+   * spans: a count point and cost are held for a session not yet shown.) Both
+   * arms below stage session B
    * into the projects root only AFTER the host is running, so the watcher,
    * tailer and grafter discover it the way a new Claude Code session is
-   * discovered.
+   * discovered ({@link stageLate}).
    */
-  async function stageLate(r: Rig): Promise<void> {
-    const slugDir = r.host.dataPath.watcher.lastDiscovery?.slugDir;
-    expect(slugDir, 'the host has not discovered its slug dir').toBeDefined();
-    const grafts = r.host.dataPath.diagnostics.grafts;
-    await stageSessionAs(slugDir as string, {
-      ...IDLE_SOURCE,
-      asSessionId: OTEL_SESSION_B,
-      spanIds: spanToolIds(OTEL_SESSION_B),
-    });
-    await waitFor(
-      () => r.host.dataPath.diagnostics.grafts > grafts && r.host.dataPath.model.hasSession(OTEL_SESSION_B),
-      'the late session to be discovered and grafted',
-      30_000,
-    );
-  }
-
   it('a session that appears AFTER the first pump is joined once it is held', async () => {
     const r = await rig({ stage: ['idle-as-A'] });
     pumpOnce(r);
@@ -451,23 +525,49 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     const b = after.joined.find((s) => s.sessionId === OTEL_SESSION_B);
     expect(b?.telemetryCostUsd).toBeCloseTo(costBySession.get(OTEL_SESSION_B) ?? Number.NaN, 10);
     expect(r.host.telemetry.unmatched.metrics).toBe(0);
+    // B held when its spans arrived: they join too — the control for the
+    // spans arm of the next test, where the same spans arrive too early.
+    expect(r.host.telemetry.lastReport?.spansMatched).toBeGreaterThan(r.staged[0]?.remapped.size ?? Number.NaN);
   }, 120_000);
 
-  it('a row that arrives BEFORE its session is held is dropped and counted, and stays dropped', async () => {
-    // Pinned as it ships, so a change to it is a decision rather than a drift:
-    // the joiner keeps rows only for sessions the window holds when they ARRIVE
-    // (bounded by what the window reads, against a machine-wide exporter).
-    const r = await rig({ stage: ['idle-as-A'] });
+  it('rows that arrive BEFORE their session is held: the count point and cost are applied once it is, the spans are not (DoD 6.3b)', async () => {
+    /*
+     * The ORDER A REAL SESSION PRODUCES. In both captured sessions the
+     * session.count point arrives before the first prompt, and the transcript
+     * starts at that prompt, so no window can hold the session when its count
+     * point lands. A joiner that kept rows only for sessions held at arrival
+     * (as 6.3 shipped) would leave every such session's cost unselected under
+     * 6.3b. Here every one of B's rows arrives before B's transcript exists.
+     */
+    const r = await rig({ stage: ['idle-as-A'], stats: true });
     pumpOnce(r);
     await replayCorpus(r.port);
-    const { costPoints } = census();
-    expect(r.host.telemetry.unmatched.metrics).toBe(costPoints.get(OTEL_SESSION_B));
+    const { costPoints, costBySession } = census();
+    // At arrival B matched nothing — counted, as every unmatched row is — and
+    // its count point and cost are held for it.
+    expect(r.host.telemetry.unmatched.metrics).toBe((costPoints.get(OTEL_SESSION_B) ?? Number.NaN) + 1);
+    expect(r.host.telemetry.pendingSessions).toBe(1);
 
     await stageLate(r);
     const after = pumpOnce(r);
     const b = after.joined.find((s) => s.sessionId === OTEL_SESSION_B);
+    const bRaw = after.raw.find((s) => s.sessionId === OTEL_SESSION_B);
     expect(b, 'the late session was not emitted').toBeDefined();
-    expect(b?.telemetryCostUsd).toBeUndefined();
+    expect(b?.telemetryCostUsd).toBeCloseTo(costBySession.get(OTEL_SESSION_B) ?? Number.NaN, 10);
+    expect(b?.telemetrySessionCountSeen).toBe(true);
+    expect(r.host.telemetry.pendingSessions).toBe(0);
+    const record = r.host.stats?.liveRecords().find((rec) => rec.sessionId === OTEL_SESSION_B);
+    expect(record?.totals.costSource).toBe('telemetry');
+    expect(record?.unavailable).not.toContain('F9:telemetry-partial');
+
+    // SPANS are kept for held sessions only: B's arrived before B was held, so
+    // the join matched A's placed spans and not one of B's — although the
+    // late staging placed B's span ids on B's calls too.
+    expect(r.staged.length).toBe(1);
+    const placedA = r.staged[0]?.remapped.size ?? Number.NaN;
+    expect(placedA).toBeGreaterThan(0);
+    expect(r.host.telemetry.lastReport?.spansMatched).toBe(placedA);
+    expect(JSON.stringify(b?.root)).toBe(JSON.stringify(bRaw?.root));
     // Control: A, held at arrival, did get its cost.
     expect(after.joined.find((s) => s.sessionId === OTEL_SESSION_A)?.telemetryCostUsd).toBeGreaterThan(0);
   }, 120_000);
@@ -511,6 +611,142 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(store?.appended).toBe(1);
     const written = store?.readRecords({}).find((rec) => rec.sessionId === OTEL_SESSION_A);
     expect(written?.totals.costSource).toBe('telemetry');
+  }, 120_000);
+});
+
+// ---------------------------------------------------------------------------
+// DoD 6.3b — a telemetry cost is the cost source only with the session's start
+// ---------------------------------------------------------------------------
+
+/** The one model id a staged session's transcript names, read off the staged bytes. */
+async function stagedModel(shared: { projectsRoot: string; workspacePath: string }, sessionId: string): Promise<string> {
+  const path = join(shared.projectsRoot, slugifyWorkspace(shared.workspacePath), `${sessionId}.jsonl`);
+  const text = await readFile(path, 'utf8');
+  const models = [...new Set([...text.matchAll(/"model":"([^"]+)"/g)].map((m) => m[1] as string))];
+  expect(models, 'the staged transcript names one model').toHaveLength(1);
+  return models[0] as string;
+}
+
+describe('DoD 6.3b — Claude Code\'s cost is selected only when its session.count point was received', () => {
+  const STRIPPED = withoutSessionCounts(ENVELOPES);
+
+  it('(c) the stripped replay is the same replay: the same cost points, no count point', () => {
+    const full = census(ENVELOPES);
+    const stripped = census(STRIPPED);
+    // VACUITY: cost points are non-empty for both sessions in BOTH replays,
+    // and identical — the strip removed the count points and nothing else.
+    for (const id of [OTEL_SESSION_A, OTEL_SESSION_B]) {
+      expect(full.costPoints.get(id) ?? 0, id).toBeGreaterThan(0);
+      expect(stripped.costPoints.get(id), id).toBe(full.costPoints.get(id));
+      expect(stripped.costBySession.get(id), id).toBe(full.costBySession.get(id));
+    }
+    expect([...full.sessionCounts].sort()).toStrictEqual([OTEL_SESSION_A, OTEL_SESSION_B].sort());
+    expect(stripped.sessionCounts).toStrictEqual([]);
+    expect(STRIPPED.map((e) => e.raw).join('\n')).not.toContain(SESSION_COUNT);
+    expect(STRIPPED).toHaveLength(ENVELOPES.length);
+    expect(STRIPPED.filter((e, i) => e.raw !== ENVELOPES[i]?.raw)).toHaveLength(2);
+  });
+
+  it('(a) the full corpus through the route: telemetry is the cost source, nothing partial', async () => {
+    const r = await rig({ stage: ['idle-as-A', 'stalled-as-B'], stats: true });
+    pumpOnce(r);
+    await replayCorpus(r.port);
+    const after = pumpOnce(r);
+    const { costBySession } = census();
+    for (const id of [OTEL_SESSION_A, OTEL_SESSION_B]) {
+      const joined = after.joined.find((s) => s.sessionId === id);
+      expect(joined?.telemetrySessionCountSeen, id).toBe(true);
+      const record = r.host.stats?.liveRecords().find((rec) => rec.sessionId === id);
+      expect(record?.totals.costSource, id).toBe('telemetry');
+      expect(record?.totals.costUsd, id).toBeCloseTo(costBySession.get(id) ?? Number.NaN, 10);
+      expect(record?.unavailable, id).not.toContain('F9:telemetry-partial');
+    }
+  }, 120_000);
+
+  it('(b) the same replay with the count points stripped: the cost is stored, not selected, and named partial', async () => {
+    const r = await rig({ stage: ['idle-as-A', 'stalled-as-B'], stats: true });
+    pumpOnce(r);
+    await replayCorpus(r.port, STRIPPED);
+    const after = pumpOnce(r);
+    const { costBySession } = census(STRIPPED);
+    for (const id of [OTEL_SESSION_A, OTEL_SESSION_B]) {
+      const joined = after.joined.find((s) => s.sessionId === id);
+      // STORED: the same sum as (a), on the state the stats layer was handed.
+      expect(joined?.telemetryCostUsd ?? 0, id).toBeGreaterThan(0);
+      expect(joined?.telemetryCostUsd, id).toBeCloseTo(costBySession.get(id) ?? Number.NaN, 10);
+      expect(joined, id).not.toHaveProperty('telemetrySessionCountSeen');
+      // NOT SELECTED: no prices configured, so no figure at all.
+      const record = r.host.stats?.liveRecords().find((rec) => rec.sessionId === id);
+      expect(record, id).toBeDefined();
+      expect(record?.totals, id).not.toHaveProperty('costSource');
+      expect(record?.totals, id).not.toHaveProperty('costUsd');
+      expect(record?.unavailable, id).toContain('F9:telemetry-partial');
+      expect(record?.unavailable, id).toContain('F9:cc');
+    }
+  }, 120_000);
+
+  it('(b, priced) with prices for the session\'s model, those are the figure and the telemetry is named partial', async () => {
+    const shared = await stage(['idle-as-A']);
+    const model = await stagedModel(shared, OTEL_SESSION_A);
+    const r = await rig({
+      stage: [],
+      shared,
+      stats: true,
+      pricing: { [model]: { prompt: 3, cacheRead: 0.3, cacheWrite: 3.75, output: 15 } },
+    });
+    pumpOnce(r);
+    await replayCorpus(r.port, STRIPPED);
+    const after = pumpOnce(r);
+    const telemetryCost = after.joined[0]?.telemetryCostUsd ?? 0;
+    expect(telemetryCost).toBeGreaterThan(0);
+    const record = r.host.stats?.liveRecords().find((rec) => rec.sessionId === OTEL_SESSION_A);
+    expect(record?.totals.costSource).toBe('user');
+    expect(record?.totals.costUsd ?? 0).toBeGreaterThan(0);
+    // The figure is the user's, not the telemetry sum under another label.
+    expect(record?.totals.costUsd).not.toBe(telemetryCost);
+    expect(record?.unavailable).toContain('F9:telemetry-partial');
+    expect(record?.unavailable).not.toContain('F9:telemetry-present');
+  }, 120_000);
+
+  it(`the held slots are bounded: a count point pushed out by ${String(PENDING_SESSIONS_MAX)} newer sessions leaves the cost unselected`, async () => {
+    /*
+     * B's count point arrives before B is held; then PENDING_SESSIONS_MAX other
+     * sessions' count points; then B's cost. The bound evicts B's slot, and
+     * B's cost, arriving after, is held in a fresh slot with no count point.
+     * So B's cost is stored and NOT selected — the direction that shows no
+     * figure rather than a short one. The control is the 6.3 test above with
+     * the same ordering and no flood, which selects telemetry.
+     */
+    const r = await rig({ stage: ['idle-as-A'], stats: true });
+    pumpOnce(r);
+    const countAt = ENVELOPES.findIndex(
+      (e) => e.signal === 'metrics' && e.raw.includes(OTEL_SESSION_B) && e.raw.includes(SESSION_COUNT),
+    );
+    expect(countAt).toBeGreaterThanOrEqual(0);
+    const head = ENVELOPES.slice(0, countAt + 1);
+    const tail = ENVELOPES.slice(countAt + 1);
+    // CONTROL on the ordering: B's count point is in the head, B's cost only in the tail.
+    expect(census(head).sessionCounts).toContain(OTEL_SESSION_B);
+    expect(census(head).costPoints.get(OTEL_SESSION_B) ?? 0).toBe(0);
+    expect(census(tail).costPoints.get(OTEL_SESSION_B) ?? 0).toBeGreaterThan(0);
+
+    await replayCorpus(r.port, head);
+    expect(r.host.telemetry.pendingSessions).toBe(1);
+    const flood = Array.from({ length: PENDING_SESSIONS_MAX }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    expect((await postTo(r.port, TELEMETRY_PATHS.metrics, sessionCountBody(flood))).status).toBe(200);
+    expect(r.host.telemetry.pendingSessions).toBe(PENDING_SESSIONS_MAX);
+    await replayCorpus(r.port, tail);
+    expect(r.host.telemetry.pendingSessions).toBe(PENDING_SESSIONS_MAX);
+
+    await stageLate(r);
+    const after = pumpOnce(r);
+    const b = after.joined.find((s) => s.sessionId === OTEL_SESSION_B);
+    expect(b?.telemetryCostUsd).toBeCloseTo(census().costBySession.get(OTEL_SESSION_B) ?? Number.NaN, 10);
+    expect(b).not.toHaveProperty('telemetrySessionCountSeen');
+    const record = r.host.stats?.liveRecords().find((rec) => rec.sessionId === OTEL_SESSION_B);
+    expect(record).toBeDefined();
+    expect(record?.totals).not.toHaveProperty('costSource');
+    expect(record?.unavailable).toContain('F9:telemetry-partial');
   }, 120_000);
 });
 

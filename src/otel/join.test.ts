@@ -246,6 +246,31 @@ describe('DoD 1.9f — cost is parsed and stored, and DELTA points SUM', () => {
   });
 });
 
+describe('v0.7.1 DoD 6.3b — the session.count point is recorded per session, and only that', () => {
+  it('flags exactly the held sessions the slice carries a count point for', () => {
+    const counted = [...METRICS.sessionCounts].sort();
+    // CONTROL: the corpus carries a count point for each of its two sessions.
+    expect(counted).toHaveLength(2);
+    const [a, b] = counted as [string, string];
+    const withoutB: TelemetrySlice = { ...METRICS, sessionCounts: [a] };
+    const { states, report } = joinTelemetry([stateWith(a, []), stateWith(b, [])], withoutB);
+    expect(states[0]?.telemetrySessionCountSeen).toBe(true);
+    // B has cost in the slice and no count point: cost joined, flag absent.
+    expect(states[1]?.telemetryCostUsd).toBeGreaterThan(0);
+    expect(states[1]).not.toHaveProperty('telemetrySessionCountSeen');
+    expect(report.sessionCountsApplied).toBe(1);
+    expect(report.sessionCountsUnmatched).toBe(0);
+  });
+
+  it('counts a count point naming a session this host has not read, and flags nothing', () => {
+    const { states, report } = joinTelemetry([stateWith('unknown-session', [])], METRICS);
+    expect(report.sessionCountsApplied).toBe(0);
+    expect(report.sessionCountsUnmatched).toBe(METRICS.sessionCounts.length);
+    expect(report.sessionCountsUnmatched).toBeGreaterThan(0);
+    expect(states[0]).not.toHaveProperty('telemetrySessionCountSeen');
+  });
+});
+
 describe('DoD 1.9f — Phase 1 RENDERS nothing', () => {
   it('is read by no webview surface', async () => {
     /*
@@ -507,6 +532,7 @@ describe('DoD 1.9g — telemetry absent changes nothing (G2)', () => {
     const empty: TelemetrySlice = {
       toolSpans: [],
       costPoints: [],
+      sessionCounts: [],
       counts: emptyTelemetryCounts(),
     };
     const { states } = joinTelemetry([base], empty);

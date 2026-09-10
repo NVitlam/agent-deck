@@ -118,6 +118,58 @@ describe('F9(c) — Claude Code’s own telemetry estimate', () => {
     // asserts the source and a floor rather than a literal that would have to
     // be re-copied on every re-harvest.
     expect(record.totals.costUsd).toBe(fixture('13-telemetry-cost').state.telemetryCostUsd);
+    // DoD 6.3b: selected because the capture carries this session's
+    // `claude_code.session.count` point, which the join recorded.
+    expect(fixture('13-telemetry-cost').state.telemetrySessionCountSeen).toBe(true);
+    expect(record.unavailable).not.toContain('F9:telemetry-partial');
+  });
+});
+
+describe('F9(c) — a telemetry cost with no session.count point is not selected (DoD 6.3b)', () => {
+  // The product arms of this rule — the real route, the corpus with and
+  // without its count points — are in `src/extension.telemetry.test.ts`. These
+  // pin the deriver's precedence table alone, one row per neighbour.
+  const base = fixture('11-user-priced').state;
+
+  it('with prices: the user figure is shown, the telemetry cost is named partial', () => {
+    const record = deriveStats({ ...base, telemetryCostUsd: 5 }, { pricing: PRICING, now: 1 });
+    expect(record.totals.costSource).toBe('user');
+    expect(record.totals.costUsd).toBeCloseTo(22.05, 10);
+    expect(record.unavailable).toContain('F9:telemetry-partial');
+    expect(record.unavailable).not.toContain('F9:telemetry-present');
+    expect(record.unavailable).not.toContain('F9:user-present');
+  });
+
+  it('without prices: no figure at all, and both gaps named', () => {
+    const record = deriveStats({ ...base, telemetryCostUsd: 5 }, { now: 1 });
+    expect(record.totals).not.toHaveProperty('costUsd');
+    expect(record.totals).not.toHaveProperty('costSource');
+    expect(record.unavailable).toContain('F9:telemetry-partial');
+    expect(record.unavailable).toContain('F9:cc');
+  });
+
+  it('beside an engine cost: the engine wins as always, and the telemetry is named partial, not present', () => {
+    const record = deriveStats({ ...base, totals: { costUsd: 9 }, telemetryCostUsd: 5 }, { now: 1 });
+    expect(record.totals.costSource).toBe('engine');
+    expect(record.unavailable).toContain('F9:telemetry-partial');
+    expect(record.unavailable).not.toContain('F9:telemetry-present');
+  });
+
+  it('CONTROL — the same states with the flag set select telemetry, and name nothing partial', () => {
+    const record = deriveStats(
+      { ...base, telemetryCostUsd: 5, telemetrySessionCountSeen: true },
+      { now: 1 },
+    );
+    expect(record.totals.costSource).toBe('telemetry');
+    expect(record.totals.costUsd).toBe(5);
+    expect(record.unavailable).not.toContain('F9:telemetry-partial');
+  });
+
+  it('no telemetry cost at all names nothing partial, flag or no flag', () => {
+    expect(deriveStats(base, { now: 1 }).unavailable).not.toContain('F9:telemetry-partial');
+    expect(
+      deriveStats({ ...base, telemetrySessionCountSeen: true }, { now: 1 }).unavailable,
+    ).not.toContain('F9:telemetry-partial');
   });
 });
 
@@ -126,7 +178,7 @@ describe('F9 precedence — engine > telemetry > user', () => {
 
   it('engine wins over both, and the losers are recorded', () => {
     const record = deriveStats(
-      { ...base, totals: { costUsd: 9 }, telemetryCostUsd: 5 },
+      { ...base, totals: { costUsd: 9 }, telemetryCostUsd: 5, telemetrySessionCountSeen: true },
       { pricing: PRICING, now: 1 },
     );
     expect(record.totals.costUsd).toBe(9);
@@ -137,7 +189,7 @@ describe('F9 precedence — engine > telemetry > user', () => {
 
   it('telemetry wins over user', () => {
     const record = deriveStats(
-      { ...base, telemetryCostUsd: 5 },
+      { ...base, telemetryCostUsd: 5, telemetrySessionCountSeen: true },
       { pricing: PRICING, now: 1 },
     );
     expect(record.totals.costUsd).toBe(5);

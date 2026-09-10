@@ -867,9 +867,10 @@ describe('1b.5 telemetry relay', () => {
       (acc, s) => ({
         toolSpans: [...acc.toolSpans, ...s.toolSpans],
         costPoints: [...acc.costPoints, ...s.costPoints],
+        sessionCounts: [...acc.sessionCounts, ...s.sessionCounts],
         counts: s.counts,
       }),
-      { toolSpans: [], costPoints: [], counts: first.counts },
+      { toolSpans: [], costPoints: [], sessionCounts: [], counts: first.counts },
     );
   }
 
@@ -1283,7 +1284,7 @@ describe('relay protocol', () => {
         v: RELAY_API_VERSION,
         kind: 'otel',
         signal: 'traces',
-        slice: { toolSpans: [], costPoints: [], counts: {} },
+        slice: { toolSpans: [], costPoints: [], sessionCounts: [], counts: {} },
       },
     };
     expect(Object.keys(built).sort()).toEqual([...RELAY_ENVELOPE_KINDS].sort());

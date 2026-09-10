@@ -58,6 +58,11 @@
  *
  * **It does not render.** `telemetryCostUsd` is stored and read by nothing in
  * this phase: F9(c) is Phase 2 and the cost-source label is Phase 4.
+ *
+ * **It does not decide whether a cost is complete.** It records, per session,
+ * whether the slice carried that session's `claude_code.session.count` point
+ * (`telemetrySessionCountSeen`, v0.7.1 DoD 6.3b); `deriveStats` is what reads
+ * it.
  */
 
 import type { SessionState, ToolNode, TreeNode } from '../model/events.js';
@@ -83,6 +88,10 @@ export interface TelemetryJoinReport {
   costPointsApplied: number;
   /** Cost points naming a session this host has not read. */
   costPointsUnmatched: number;
+  /** `claude_code.session.count` points recorded onto a session (DoD 6.3b). */
+  sessionCountsApplied: number;
+  /** `claude_code.session.count` points naming a session this host has not read. */
+  sessionCountsUnmatched: number;
 }
 
 export function emptyJoinReport(): TelemetryJoinReport {
@@ -93,6 +102,8 @@ export function emptyJoinReport(): TelemetryJoinReport {
     durationsFilled: 0,
     costPointsApplied: 0,
     costPointsUnmatched: 0,
+    sessionCountsApplied: 0,
+    sessionCountsUnmatched: 0,
   };
 }
 
@@ -180,15 +191,31 @@ export function joinTelemetry(
     report.costPointsApplied += 1;
   }
 
+  // ---- the session's start, as the exporter counts it (DoD 6.3b) ----------
+  // Recorded as a flag and nothing else: whether THIS slice carried the
+  // session's `claude_code.session.count` point. The deriver reads it to decide
+  // whether a summed cost covers the session from its start.
+  const counted = new Set<string>();
+  for (const sessionId of slice.sessionCounts) {
+    if (!bySession.has(sessionId)) {
+      report.sessionCountsUnmatched += 1;
+      continue;
+    }
+    counted.add(sessionId);
+    report.sessionCountsApplied += 1;
+  }
+
   const out = states.map((state) => {
     const perSession = fills.get(state.sessionId);
     const cost = costs.get(state.sessionId);
-    if (perSession === undefined && cost === undefined) return state;
+    const seen = counted.has(state.sessionId);
+    if (perSession === undefined && cost === undefined && !seen) return state;
 
     const next: SessionState = {
       ...state,
       ...(perSession === undefined ? {} : { root: fillDurations(state.root, perSession) }),
       ...(cost === undefined ? {} : { telemetryCostUsd: cost }),
+      ...(seen ? { telemetrySessionCountSeen: true as const } : {}),
     };
     return next;
   });

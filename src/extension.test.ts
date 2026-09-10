@@ -22,7 +22,14 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
@@ -6253,6 +6260,77 @@ function storeOver(
  * that says nothing about the session, which is the flood.
  */
 describe('DoD 4.11c — a touched transcript is not activity; an appended one is', () => {
+  it('Codex: a SHRUNK transcript re-baselines, and the next append counts', async () => {
+    /*
+     * User ruling, 2026-09-10, and the Codex half of it. A transcript found
+     * smaller than its baseline was truncated, rotated, or rewritten in place;
+     * measuring growth from the stale high-water mark would leave the session
+     * unpromotable until it passed its ORIGINAL size, which is a window of lost
+     * records rather than one.
+     *
+     * Driven by removing the file's last RECORD and putting it back, so the file
+     * is a valid transcript at every step and the final size is exactly the
+     * original — above the re-baselined mark and NOT above the original one, so a
+     * high-water implementation fails this and only this.
+     */
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const poll = splitPollTrigger();
+    const threads = await stampTranscripts(root, stale);
+    const rootThread = threads.find((thread) => thread.threadSource === 'user') as CodexThread;
+    const files = await transcriptsUnder(root);
+    const rootFile = files.get(rootThread.owningFile) as string;
+    expect(rootFile, "the root thread's transcript is not under the root").toBeDefined();
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [rootThread.cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+    const original = statSync(rootFile).size;
+    expect(path.emit().lastActivityAt.size, 'the baseline claimed activity').toBe(0);
+
+    // THE SHRINK: the last record is removed. Still a valid transcript.
+    const text = await readFile(rootFile, 'utf8');
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+    const last = lines.at(-1) as string;
+    expect(lines.length, 'the transcript must hold more than one record').toBeGreaterThan(1);
+    writeFileSync(rootFile, `${lines.slice(0, -1).join('\n')}\n`, 'utf8');
+    const shrunkTo = statSync(rootFile).size;
+    expect(shrunkTo, 'the file did not shrink').toBeLessThan(original);
+    const shrinkAt = new Date(STAMP + 1_000);
+    await utimes(rootFile, shrinkAt, shrinkAt);
+    poll.fire(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    poll.fire(0);
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'a shrink was read as activity',
+    ).toBeUndefined();
+
+    // THE RE-APPEND: the same record back. The file is exactly its original size
+    // — above the NEW baseline and not above the old one.
+    appendFileSync(rootFile, `${last}\n`, 'utf8');
+    expect(statSync(rootFile).size, 'the re-append did not restore the size').toBe(original);
+    const regrownAt = new Date(STAMP + 2_000);
+    await utimes(rootFile, regrownAt, regrownAt);
+    poll.fire(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    poll.fire(0);
+
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'growth from the re-baselined size was not seen',
+    ).toBe(STAMP + 2_000);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
   it('Codex: touch writes NOTHING, append writes a record', async () => {
     const root = await stageCodexRoot(false);
     const stale = STAMP - 86_400_000;
@@ -6336,11 +6414,11 @@ describe('DoD 4.11c — a touched transcript is not activity; an appended one is
  * that the values in it are the ENGINES' OWN, and that the merge does not lose
  * one engine's map on the way to the pipeline.
  *
- * Claude Code's half needs no test of its own here: `SessionModel.emit()` reads
- * `LivenessEngine.snapshot(id)?.lastActivityAt`, and the host store tests above
- * would write nothing at all if it stopped — *"the provenance stamp is the REAL
- * clock, and history reaches no store"* drives exactly that path in both
- * directions.
+ * Claude Code's half is driven from two directions elsewhere: `SessionModel.emit()`
+ * reads `SessionLivenessSnapshot.witnessedActivityAt` (`lastActivityAt` until DoD
+ * 4.11c narrowed the write side), the host store tests above would write nothing
+ * at all if it stopped, and `src/model/liveness.test.ts`'s 4.11c suite pins the
+ * instant itself — hook, growth, unknown size and shrink, one decision each.
  */
 describe('DoD 4.11b — each engine supplies its own activity, and the merge is a union', () => {
   it('a Codex session whose transcripts predate activation is NOT recorded — the instant is known and it is not activity', async () => {

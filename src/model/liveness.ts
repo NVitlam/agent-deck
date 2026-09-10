@@ -299,13 +299,19 @@ interface SessionRecord {
   pushedInference?: JsonlInference;
   inferenceOk: boolean;
   /**
-   * The transcript's size the FIRST time this process stat'd it (DoD 4.11c).
+   * The size this process measures growth from (DoD 4.11c).
    *
-   * Latched once and never moved: it is the baseline the growth test compares
-   * against, so re-latching it on a later read would make every read its own
-   * baseline and nothing would ever have grown. A session discovered mid-write
-   * therefore has a baseline part-way through its file, which is correct — the
-   * bytes this process did not witness are not this process's evidence.
+   * Latched at the first sighting and moved in ONE direction only: DOWN, when a
+   * transcript is found smaller than its baseline (truncated, rotated, rewritten
+   * in place). Re-latching upward on a later read would make every read its own
+   * baseline and nothing could ever have grown; refusing to re-latch downward
+   * would leave a truncated session unpromotable until it passed its original
+   * size, which is a window of lost records rather than one (user ruling,
+   * 2026-09-10).
+   *
+   * A session discovered mid-write therefore has a baseline part-way through its
+   * file, which is correct: the bytes this process did not witness are not this
+   * process's evidence.
    */
   firstSizeBytes?: number;
 }
@@ -707,9 +713,24 @@ export class LivenessEngine {
     // growth question answered from the pair. Latching here rather than in
     // `observeJsonl` covers both paths into an inference — the pushed one and
     // the pulled `inferenceSource` — because both arrive as `readInference`.
+    //
+    // A SHRINK RE-BASELINES (user ruling, 2026-09-10). A transcript smaller than
+    // the baseline was truncated, rotated, or rewritten in place under this
+    // process's feet, and against a stale high-water mark such a session would be
+    // unpromotable until it grew past its ORIGINAL size — a window of lost
+    // records rather than one. The new size becomes the baseline and growth is
+    // measured from there, so the session is back in the ordinary case on its
+    // next append.
+    //
+    // FAIL CLOSED ON AN UNKNOWN SIZE (user ruling, 2026-09-10): no size means the
+    // growth question cannot be answered, and an unanswerable question is not a
+    // yes. `undefined` — not `true` — so the mtime is not credited.
     const sizeBytes = finiteNumber(inference?.sizeBytes);
-    if (sizeBytes !== undefined && session.firstSizeBytes === undefined) {
-      session.firstSizeBytes = sizeBytes;
+    if (sizeBytes !== undefined) {
+      const baseline = session.firstSizeBytes;
+      if (baseline === undefined || sizeBytes < baseline) {
+        session.firstSizeBytes = sizeBytes;
+      }
     }
     const transcriptGrew =
       sizeBytes === undefined || session.firstSizeBytes === undefined

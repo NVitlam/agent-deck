@@ -1432,8 +1432,10 @@ export class CodexEnginePath {
    * by file, because a file can declare more than one thread (C5) and it is the
    * THREAD whose activity is in question.
    *
-   * Cleared on `dispose` with everything else: the baseline is a fact about this
-   * process's lifetime and a new pipeline must start with none.
+   * Released on `dispose` with everything else. Nothing depends on that clear —
+   * a disposed path never starts again (`#disposed` is terminal), so it is
+   * housekeeping rather than a guard, and it is written down that way because a
+   * `phase-verifier` correctly found no test could distinguish it.
    */
   #firstBytes = new Map<string, number>();
   /** Hook events this path has been handed. DoD 5.0b. */
@@ -1723,7 +1725,12 @@ export class CodexEnginePath {
       const grownThreads = new Set<string>();
       for (const thread of this.#threads) {
         const first = this.#firstBytes.get(thread.threadId);
-        if (first === undefined) {
+        // A SHRINK RE-BASELINES (user ruling, 2026-09-10), the same rule the
+        // Claude Code leg applies: a transcript smaller than its baseline was
+        // truncated or rewritten under this process's feet, and measuring growth
+        // from a stale high-water mark would leave it unpromotable until it
+        // passed its ORIGINAL size — a window of lost records rather than one.
+        if (first === undefined || thread.sizeBytes < first) {
           this.#firstBytes.set(thread.threadId, thread.sizeBytes);
           continue;
         }
@@ -3662,12 +3669,19 @@ export interface AgentDeckHostOptions extends DataPathOptions {
    * Overrides the stats provenance stamp (DoD 4.11). Defaults to `now()`.
    *
    * EXISTS FOR ONE REASON, and it is a property of the fixtures rather than a
-   * convenience. The gate compares a record's `endedAt ?? startedAt` — which is
-   * TRANSCRIPT CONTENT — against activation, while liveness compares FILE
-   * MTIME. For a real session those agree. For a replayed corpus they cannot:
-   * git gives every fixture a fresh mtime, so a captured 2026-08 session looks
-   * live and reads as history, and every host test that asserts a record on
-   * disk would assert against a gate doing its job.
+   * convenience: **a replayed corpus is history, and correctly so.** The gate
+   * compares the instant the engine's LIVENESS reports against this stamp, and a
+   * committed corpus produces none that can pass it — nobody appends to it, so
+   * under DoD 4.11c its mtimes buy nothing, and it fires no hooks. A host test
+   * that is about the settings or the seam would therefore assert against a gate
+   * doing its job.
+   *
+   * **THIS COMMENT USED TO SAY THE GATE COMPARED A RECORD'S `endedAt ?? startedAt`
+   * — transcript CONTENT — against activation, while liveness compared file
+   * mtime.** That was 4.11's design; 4.11b removed the content read and 4.11c
+   * narrowed the mtime, and the sentence stood here through both. It is kept as a
+   * correction rather than deleted because the option it describes is the one the
+   * 4.11c tests drive.
    *
    * So a test that is about something else passes `0` and says so. The
    * production default is untouched, and `extension.test.ts` carries a test

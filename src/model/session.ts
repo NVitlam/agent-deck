@@ -757,10 +757,22 @@ export interface SessionEmission {
    * nineteen appends.
    *
    * So the instant comes from each engine's own liveness, which is the only
-   * component that knows what a WRITE is: `LivenessEngine.lastActivityAt` for
-   * Claude Code (last hook event or transcript write), OpenCode's
-   * `max(timeUpdated, seqAdvancedAt)`, and the transcript mtime the Codex
-   * liveness reads.
+   * component that knows what a WRITE is — and since DoD 4.11c, only when bytes
+   * are behind it:
+   *
+   *   - **Claude Code** — `SessionLivenessSnapshot.witnessedActivityAt`, which is
+   *     the last hook event, or the transcript's mtime **only once the file has
+   *     grown since this process first stat'd it**. NOT `lastActivityAt`: that
+   *     one still decides the `live`/`idle`/`ended` enum and feeds the stall
+   *     derivation, where a touched file legitimately reads as recent.
+   *   - **OpenCode** — `max(timeUpdated, seqAdvancedAt)`, untouched by 4.11c
+   *     because both are STORE CONTENT and no filesystem event moves them.
+   *   - **Codex** — `max(lastHookEventMs, lastMtimeMs)` across a session's
+   *     threads, with the mtime half gated on the same growth test.
+   *
+   * An mtime says a file was written; only a size says a session wrote it. A
+   * clone, a restore, a sync client, an indexer or a scanner produces the first
+   * and never the second.
    *
    * HOST-INTERNAL, and precisely: the emission OBJECT is handed to
    * `SessionBridge.publish`, and this FIELD is serialised by nothing.

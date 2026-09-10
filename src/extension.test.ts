@@ -6931,8 +6931,11 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
  * feeds its event, and both of those are single assignment sites in
  * `activate()` — the recorded D4 shape: a module test that builds the object
  * by hand proves the module and says nothing about whether anything wires it.
- * Deleting the `onStatsUpdate` line from `activate()`, or any `return api`,
- * turns a test here red.
+ * Deleting the `onStatsUpdate` line from `activate()` turns a test here red,
+ * and so does replacing any of its three `return api` statements (no folder,
+ * a folder with nothing to observe, a host) with `undefined` — each has its
+ * own test below. Until the Phase 5 verifier round the second had none, while
+ * this comment said it did.
  */
 describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () => {
   const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
@@ -6965,6 +6968,30 @@ describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () =>
     const api: AgentDeckApi = await activate(extensionContext(globalStorage));
     expect(currentHost(), 'this path is meant to have no host').toBeNull();
     expect(api.apiVersion).toBe(1);
+    expect(api.getLiveStats()).toStrictEqual([]);
+    const stored = await api.getStoredStats();
+    expect(stored.map((r) => r.sessionId)).toStrictEqual([seeded.sessionId]);
+  });
+
+  it('a window WITH a folder and nothing to observe still returns the API', async () => {
+    // The second early return. Found by the Phase 5 verifier: replacing this
+    // `return api` with `undefined` left every test green, because the only
+    // no-host test above has no folder and takes the FIRST return. Each engine
+    // is proved absent through the same predicate `activate()` asks, so this
+    // cannot drift onto another path while still passing.
+    resetVscodeMock();
+    process.env['CLAUDE_PROJECTS_ROOT'] = join(await makeTempDir(), 'no-such-projects-root');
+    const workspacePath = join(await makeTempDir(), 'ws');
+    mock.setWorkspaceFolder(workspacePath);
+    expect((await correlateWorkspace(workspacePath)).ok).toBe(false);
+    expect(opencodeStoreExists()).toBe(false);
+    expect(codexRootExists()).toBe(false);
+    const globalStorage = await makeTempDir();
+    const seeded = await seedGolden(globalStorage);
+
+    const api: AgentDeckApi = await activate(extensionContext(globalStorage));
+    expect(currentHost(), 'this path is meant to have no host').toBeNull();
+    expect(api?.apiVersion).toBe(1);
     expect(api.getLiveStats()).toStrictEqual([]);
     const stored = await api.getStoredStats();
     expect(stored.map((r) => r.sessionId)).toStrictEqual([seeded.sessionId]);

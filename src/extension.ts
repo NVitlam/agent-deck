@@ -4722,9 +4722,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    * v0.7.0 DoD 5.1 — THE API, BUILT FIRST AND RETURNED FROM EVERY PATH.
    *
    * `activate()`'s return value is what VS Code hands another extension as
-   * `getExtension('nvitlam.agent-deck').exports`, and it has three early
-   * returns below (no folder, nothing to observe) before a host exists. The API
-   * is built above all of them so each one returns it: a window observing
+   * `getExtension('nvitlam.agent-deck').exports`, and it has two early returns
+   * below (no folder; a folder with nothing to observe) before a host exists,
+   * plus the final one. The API is built above all three so each returns it,
+   * and each has its own test in `extension.test.ts`: a window observing
    * nothing still has a stored history (the store is per MACHINE), and a
    * consumer that got `undefined` from half of all windows would have to guess
    * why.

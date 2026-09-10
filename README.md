@@ -502,7 +502,7 @@ What happens instead:
 - **Close the leader's window and the others race for the port.** Whoever wins serves the rest.
   There is no election, no lock file and no coordinator: the operating system decides, because
   exactly one process can bind a port. The changeover takes a fraction of a second and the events
-  that arrive during it are lost rather than queued — Agent Deck keeps no history by design.
+  that arrive during it are lost rather than queued — the stream keeps no buffer, by design.
 - **If the port is held by something that is not Agent Deck**, you get the same error you always
   did, naming the port. Agent Deck will not pick a different one for you.
 
@@ -676,9 +676,10 @@ honesty is kept, and they were not loosened alongside it.
 
 ## What it does not do
 
-- **No writes of any kind.** Not to `~/.claude`, not to your Claude Code settings, not to session
-  files, not to OpenCode's database or its config, not to Codex's `hooks.json` or `config.toml`. The
-  one qualification is stated in full under [Trust](#trust) rather than buried here.
+- **No writes to anything it observes.** Not to `~/.claude`, not to your Claude Code settings, not
+  to session files, not to OpenCode's database or its config, not to Codex's `hooks.json` or
+  `config.toml`. The one qualification is stated in full under [Trust](#trust) rather than buried
+  here. Its own stats history is the one file it writes, in its own storage — see [Stats](#stats).
 - **No launching, wrapping or proxying any of the three engines.** It observes what is already there.
 - **No session replay.** Close the window and the live deck is gone. The one thing kept is the stats
   history — derived numbers, which you can turn off and clear — and it is never read back into a deck.

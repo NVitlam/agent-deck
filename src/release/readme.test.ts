@@ -2573,6 +2573,62 @@ describe('DoD 5.3 — the README Stats section', () => {
 });
 
 /* -------------------------------------------------------------------------- *
+ * v0.7.0 DoD 5.3 — no shipped document still says nothing is kept
+ * -------------------------------------------------------------------------- */
+
+/*
+ * Found by the Phase 5 verifier, after 5.3 had been recorded as correcting
+ * the persistence sentences: the README still said "Agent Deck keeps no history
+ * by design", on the same page as the Stats section, and SECURITY.md — which
+ * ships in the VSIX — still said "no persistence" and listed "writes of any
+ * kind" as excluded. Nothing read those files for the claim, which is how the
+ * sentences survived a release that made them false. Each pattern is paired
+ * with the sentence that was really shipping, so the scan cannot pass by
+ * matching nothing.
+ */
+const STALE_PERSISTENCE_CLAIMS: ReadonlyArray<{ readonly re: RegExp; readonly shipped: string }> = [
+  { re: /keeps? no history/i, shipped: 'lost rather than queued — Agent Deck keeps no history by design.' },
+  { re: /\bno persistence\b/i, shipped: 'discards it when the window closes: no database, no cache file, no persistence.' },
+  { re: /writes of any kind/i, shipped: 'Not implemented, and not accepted as contributions: writes of any kind' },
+  { re: /historical replay or\s+persistence/i, shipped: 'writes of any kind · historical replay or\npersistence' },
+];
+
+describe('DoD 5.3 — the shipped documents do not deny the history 0.7.0 keeps', () => {
+  const SHIPPED = ['README.md', 'SECURITY.md', 'site/index.html'] as const;
+
+  it('no stale no-persistence claim in the README, SECURITY.md or the site', () => {
+    for (const file of SHIPPED) {
+      const text = readText(file);
+      for (const { re } of STALE_PERSISTENCE_CLAIMS) {
+        expect(re.test(text), `${file} still matches ${re}`).toBe(false);
+      }
+    }
+  });
+
+  it('every pattern fires on the sentence that was really shipping', () => {
+    for (const { re, shipped } of STALE_PERSISTENCE_CLAIMS) {
+      expect(re.test(shipped), `${re} does not match its own shipped sentence`).toBe(true);
+    }
+  });
+
+  it('SECURITY.md names the one write, where it lives and how it is turned off and cleared', () => {
+    const security = readText('SECURITY.md').replace(/\s+/g, ' ');
+    expect(security).toContain('stats history');
+    expect(security).toContain('`agentDeck.stats.enabled`');
+    expect(security).toContain('**Clear Stats History**');
+    expect(MANIFEST.contributes.configuration.properties['agentDeck.stats.enabled']).toBeDefined();
+  });
+
+  it('no document says there is no vscode:prepublish while the manifest has one', () => {
+    const manifest = JSON.parse(readText('package.json')) as { scripts?: Record<string, string> };
+    expect(manifest.scripts?.['vscode:prepublish'], 'the manifest has no prepublish').toBeDefined();
+    for (const file of SHIPPED) {
+      expect(readText(file), file).not.toMatch(/there is no `?vscode:prepublish/i);
+    }
+  });
+});
+
+/* -------------------------------------------------------------------------- *
  * v0.7.0 DoD 5.3 — the engine table is the goldens' `unavailable`, read back
  * -------------------------------------------------------------------------- */
 

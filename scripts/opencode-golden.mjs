@@ -13,8 +13,11 @@
  * this once (no parser exists yet)" and that "Phase 4 must reproduce it through
  * the production path". `src/opencode/` does not exist while this runs.
  *
- * So this file imports NOTHING from `src/`. Not the parser, not the redactor,
- * not the grafter. Every mapping decision below is derived from
+ * So this file imports no CODE from `src/`. Not the parser, not the redactor,
+ * not the grafter. Its one non-builtin import is `TOOLCLASS_ROWS`, the generated
+ * census table in `src/stats/toolclass.ts` — data, not logic (see
+ * `censusFileKeys`, and why it replaced a read of the private census). Every
+ * mapping decision below is derived from
  * `docs/opencode-contract.md` (sections §1-§10 plus the appended
  * `Amendment 2026-08-26 - Phase 2 kill gate`, cited as "amendment §X") and from
  * `agent-deck-spec.md`'s `Amendment 2026-08-27 - Second observation source:
@@ -57,6 +60,10 @@ import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from '
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+
+// The one import that is not a builtin: the generated census rows (data only).
+// `opencode-golden.test.ts` pins this exact line.
+import { TOOLCLASS_ROWS } from '../src/stats/toolclass.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES_DIR = path.join(REPO_ROOT, 'fixtures');
@@ -287,40 +294,36 @@ function goldenInputHash(value) {
 }
 
 /**
- * The file-argument keys, read from the PHASE 0 CENSUS — DoD 1.3.
+ * The file-argument keys, from the COMMITTED census rows — DoD 1.3.
  *
  * Read rather than written down, because DoD 0.3 says "this table, not memory".
- * The census is tracked only in the private `lab/` repository and reaches this
- * checkout through a junction; this script is a hand-run reference generator
- * that only ever executes on a developer machine, so reading it here is safe in
- * a way that reading it from a TEST would not be. It REFUSES rather than
- * falling back to a hard-coded map: a silent fallback would let the golden and
- * the engine disagree about which tools touch a file, which is the one thing
- * this file exists to detect.
+ * The rows are `TOOLCLASS_ROWS` in `src/stats/toolclass.ts`, which
+ * `scripts/gen-toolclass.mjs` generates from the Phase 0 census and whose digest
+ * `toolclass.test.ts` pins on every machine.
+ *
+ * **This used to read the census itself, at import time, and CI went red on
+ * `main` for it (v0.7.0, 2026-09-10).** The census lives in the private `lab/`
+ * repository; this script's comment said it "only ever executes on a developer
+ * machine", while `opencode-golden.test.ts` imports it on every runner. The
+ * DATA is unchanged — the rows are generated from that census, and the two maps
+ * were measured equal before the switch — and `src/release/lab-boundary.test.ts`
+ * now refuses any code outside `gen-toolclass.mjs` that names the census.
+ *
+ * Independence is kept where it matters: this file imports the ROWS, a
+ * generated data table, and none of the engine's code — not `fileKeyOf`, not
+ * `filePathOf`, nothing from `src/opencode/`. It builds its own map below and
+ * applies it with its own code. It REFUSES an empty map rather than falling
+ * back: a silent fallback would let the golden and the engine disagree about
+ * which tools touch a file, which is the one thing this file exists to detect.
  */
-const GOLDEN_FILE_KEYS = readCensusFileKeys();
+const GOLDEN_FILE_KEYS = censusFileKeys();
 
-function readCensusFileKeys() {
-  const census = 'docs/evidence/phase-0-stats/TOOLCLASS.md';
-  let text;
-  try {
-    text = readFileSync(census, 'utf8');
-  } catch {
-    throw new Error(
-      `opencode-golden: cannot read ${census}. It lives in the private lab repository and ` +
-        'reaches this checkout through a junction. Run this on a developer machine with lab/ present.',
-    );
-  }
+function censusFileKeys() {
   const keys = new Map();
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.startsWith('| opencode |')) continue;
-    const cells = line.split('|').slice(1, -1).map((c) => c.trim());
-    if (cells.length < 6) continue;
-    const tool = /^`([^`]+)`/.exec(cells[1]);
-    const key = /^`([^`]+)`/.exec(cells[5]);
-    if (tool !== null && key !== null) keys.set(tool[1], key[1]);
+  for (const row of TOOLCLASS_ROWS) {
+    if (row.engine === 'opencode' && typeof row.fileKey === 'string') keys.set(row.tool, row.fileKey);
   }
-  if (keys.size === 0) throw new Error(`opencode-golden: parsed no file keys from ${census}`);
+  if (keys.size === 0) throw new Error('opencode-golden: no opencode file keys in TOOLCLASS_ROWS');
   return keys;
 }
 
@@ -774,8 +777,9 @@ function buildSessionState(ctx) {
    * COST, AND SINCE 2026-08-31 `burn`. `contextNow` is still absent.
    *
    * Derived here from the storage format, INDEPENDENTLY of `src/opencode/` -
-   * this file imports only `node:` builtins and that is what makes the goldens
-   * evidence rather than a tautology. The reasoning, worked from the rows:
+   * this file imports no engine code (only builtins and the census rows) and
+   * that is what makes the goldens evidence rather than a tautology. The
+   * reasoning, worked from the rows:
    *
    * The `session` row's `tokens_input` equals the sum of that session's own
    * `step-finish` rows' `tokens.input`, so it IS cumulative - but those rows

@@ -28,7 +28,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -208,12 +208,22 @@ describe('the RUNNER uses it — a separate claim from the classifier being righ
   }, 30_000);
 
   it('writes NOTHING while explaining: the ledger is a record of runs', () => {
-    const before = statSync(LEDGER);
-    const beforeText = readFileSync(LEDGER, 'utf8');
-    explain('3221226505');
-    const after = statSync(LEDGER);
-    expect(after.size).toBe(before.size);
-    expect(readFileSync(LEDGER, 'utf8')).toBe(beforeText);
+    // BOTH STATES, because the ledger lives in the private lab/ repository and a
+    // clone or a CI runner has none. This test used to stat it unconditionally,
+    // and on v0.7.0's first `main` push it failed there with ENOENT. Where it
+    // exists, explaining must leave it byte-identical; where it does not,
+    // explaining must not create it (or its directory).
+    if (existsSync(LEDGER)) {
+      const before = statSync(LEDGER);
+      const beforeText = readFileSync(LEDGER, 'utf8');
+      explain('3221226505');
+      expect(statSync(LEDGER).size).toBe(before.size);
+      expect(readFileSync(LEDGER, 'utf8')).toBe(beforeText);
+    } else {
+      explain('3221226505');
+      expect(existsSync(LEDGER), 'explaining created the ledger').toBe(false);
+      expect(existsSync(dirname(LEDGER)), 'explaining created the ledger directory').toBe(false);
+    }
   }, 30_000);
 
   it('records the class per run, so the next death names its own fault', () => {

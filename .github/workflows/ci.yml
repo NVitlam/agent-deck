@@ -72,7 +72,7 @@ jobs:
         run: git config --global core.longpaths true
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # FULL history, not the default shallow fetch-depth: 1.
           #
@@ -98,15 +98,21 @@ jobs:
           echo "TMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
           echo "TEMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
-      - name: Use Node 24
-        uses: actions/setup-node@v4
+      - name: Use Node 22.23.2 (the pinned gate Node)
+        uses: actions/setup-node@v5
         with:
           # package.json engines.node is '>=22.22.2' - jsdom@30 and its
           # transitive undici@8 set that floor, and the manifest declared
-          # '>=20' for four phases while nothing could run on 20. This
-          # comment said '>=20' until 2026-08-30, quoting the version of the
-          # manifest that was wrong. 24 satisfies the real floor.
-          node-version: '24'
+          # '>=20' for four phases while nothing could run on 20.
+          #
+          # PINNED EXACTLY, to package.json devEngines.runtime.version, since
+          # 2026-09-10. This said '24', which resolves to the newest 24.x on
+          # the runner - and Node 24.15.0 is a measured binary defect that
+          # kills the suite's forked worker with 0xC0000409 (v0.7.0 DoD 5.0c).
+          # A floating major can land on a bad build without a line of this
+          # repository changing. src/release/workflow.test.ts binds this value
+          # to devEngines, so the local gate and CI run the same Node.
+          node-version: '22.23.2'
           cache: npm
 
       # core.autocrlf defaults true on Windows runners. .gitattributes marks

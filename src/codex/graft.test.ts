@@ -69,6 +69,7 @@ import {
   codexNodeLabel,
   graftCodexThreads,
 } from './graft.js';
+import { inputHash } from '../stats/canonical.js';
 import { readCodexEngine } from './index.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -227,6 +228,28 @@ function readThread(file: string): CodexThread {
   let payloadsTruncated = 0;
   const toolCalls: CodexToolCall[] = [];
   const spawns: CodexSpawn[] = [];
+  /*
+   * v0.7.0 Phase 1 — the same three-shape rule as `parse.ts`'s
+   * `codexInputHash`, restated here rather than imported.
+   *
+   * Restating it is the point of this whole reader: it exists to disagree with
+   * the engine if the engine is wrong, and a reader that imports the answer it
+   * is checking cannot. The rule itself (which key holds the input, per payload
+   * type) is `docs/evidence/phase-0-stats`'s, not `parse.ts`'s.
+   */
+  const independentInputHash = (kind: string, payload: Record<string, unknown>): string => {
+    if (kind === 'function_call') {
+      const raw = payload['arguments'];
+      if (typeof raw !== 'string') return inputHash(raw ?? null);
+      try {
+        return inputHash(JSON.parse(raw));
+      } catch {
+        return inputHash(raw);
+      }
+    }
+    if (kind === 'custom_tool_call') return inputHash(payload['input'] ?? null);
+    return inputHash(payload['action'] ?? null);
+  };
 
   for (const r of own) {
     if (r.type !== 'response_item') continue;
@@ -259,6 +282,10 @@ function readThread(file: string): CodexThread {
           : itemId === callId
             ? 'item_id_equals_call_id'
             : 'item_id_distinct_from_call_id',
+      // v0.7.0 Phase 1. This reader is deliberately independent of `parse.ts`,
+      // so it re-derives the hash by the same three-shape rule rather than
+      // importing the engine's answer.
+      inputHash: independentInputHash(kind, r.payload),
       ...(preview === undefined ? {} : { outputPreview: preview }),
       ...(raw === undefined ? {} : { outputTruncated: truncated }),
     });
@@ -435,6 +462,9 @@ function readThread(file: string): CodexThread {
     // is the LAST write - an end, not a start.
     startedAtMs: Date.parse(meta.timestamp),
     mtimeMs: Math.round(fs.statSync(file).mtimeMs),
+    // DoD 4.11c. One stat, both numbers — pairing a size from one stat with an
+    // mtime from another is what the production seam exists to avoid.
+    sizeBytes: fs.statSync(file).size,
   };
 }
 
@@ -532,6 +562,9 @@ function makeThread(over: Partial<CodexThread> & { threadId: string; sessionId: 
     // reads a start and gets an end fails instead of passing on two equal
     // numbers. That equality is what made the old `mtimeMs` default invisible.
     mtimeMs: 1_700_000_555_000,
+    // DoD 4.11c. Arbitrary and non-zero: no test here reads it, and a 0 would
+    // read as "no bytes witnessed" if one ever did.
+    sizeBytes: 4_096,
     ...over,
   };
 }
@@ -573,6 +606,10 @@ function makeCall(over: Partial<CodexToolCall> & { threadId: string; callId: str
     itemId: over.callId,
     itemType: 'SubAgentActivity',
     idRelation: 'item_id_equals_call_id',
+    // v0.7.0 Phase 1. A placeholder keyed to the call, not a real digest: these
+    // records exercise the SPAWN JOIN and no test here asserts a hash value.
+    // Keyed rather than constant so two hand-built calls stay distinguishable.
+    inputHash: `hash_${over.callId}`,
     outputPreview: '{"task_name":"/root/x"}',
     outputTruncated: false,
     ...over,
@@ -1560,11 +1597,20 @@ describe('the injected seams', () => {
     expect(state.projectSlug).toBe('');
   });
 
-  it('takes startedAt from startedAtMs, never from mtimeMs', () => {
-    // There is no `startedAtFor` seam and there used to be, defaulting to
-    // `mtimeMs` - the last write, i.e. an END used as a START. The two are
-    // deliberately different numbers on every hand-built thread so this cannot
-    // pass by coincidence.
+  it('takes NEITHER timestamp from mtimeMs — DoD 2.10', () => {
+    /*
+     * There is no `startedAtFor` seam and there used to be, defaulting to
+     * `mtimeMs` — the last write, i.e. an END used as a START. The two are
+     * deliberately different numbers on every hand-built thread so this cannot
+     * pass by coincidence.
+     *
+     * `endedAt` USED TO BE `mtimeMs`, and this test asserted it. The user
+     * ruling of 2026-09-08 (DoD 2.10) closed that: an mtime is a filesystem
+     * attribute git does not preserve, so it made a user-visible timestamp
+     * differ between two checkouts of identical bytes. Measured at the Phase 2
+     * gate — all four finished Codex sessions reported the mtime of their own
+     * rollout file in the working tree that read them.
+     */
     const root = makeRoot('r');
     expect(root.startedAtMs).not.toBe(root.mtimeMs);
     const result = graftCodexThreads({ threads: [root] });
@@ -1572,9 +1618,23 @@ describe('the injected seams', () => {
     if (state === undefined) throw new Error('no session');
     expect(state.root.startedAt).toBe(root.startedAtMs);
     expect(state.root.startedAt).not.toBe(root.mtimeMs);
-    // `endedAt` IS the mtime: for a thread that is not running, the last write
-    // is when it stopped changing.
-    expect(state.root.endedAt).toBe(root.mtimeMs);
+    // A thread stating no `endedAtMs` states no end. `unavailable`, not a
+    // substitute — and emphatically not the mtime that is sitting right there.
+    expect(root.endedAtMs).toBeUndefined();
+    expect(state.root.endedAt).toBeUndefined();
+  });
+
+  it('takes endedAt from endedAtMs when the thread states one', () => {
+    // The positive arm, so the assertion above is not satisfied merely by a
+    // grafter that never sets `endedAt` at all.
+    const base = makeRoot('r');
+    const root = { ...base, endedAtMs: base.startedAtMs + 61_000 };
+    expect(root.endedAtMs).not.toBe(root.mtimeMs);
+    const result = graftCodexThreads({ threads: [root] });
+    const state = result.sessions[0];
+    if (state === undefined) throw new Error('no session');
+    expect(state.root.endedAt).toBe(root.endedAtMs);
+    expect(state.root.endedAt).not.toBe(root.mtimeMs);
   });
 
   it('reads every corpus thread"s start from its session_meta, before its mtime', () => {

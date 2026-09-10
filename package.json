@@ -1,7 +1,7 @@
 {
   "name": "agent-deck",
   "displayName": "Agent Deck — Watch Your Agents Work.",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "publisher": "nvitlam",
   "description": "Live observability for coding-agent swarms — Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
   "license": "MIT",
@@ -28,6 +28,13 @@
     "node": ">=22.22.2",
     "vscode": "^1.134.0"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "22.23.2",
+      "onFail": "warn"
+    }
+  },
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -39,8 +46,23 @@
         "category": "Agent Deck"
       },
       {
+        "command": "agentDeck.openStats",
+        "title": "Open Statistics",
+        "category": "Agent Deck"
+      },
+      {
         "command": "agentDeck.showDiagnostics",
         "title": "Show Diagnostics",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.openSettings",
+        "title": "Settings",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.clearHistory",
+        "title": "Clear Stats History",
         "category": "Agent Deck"
       }
     ],
@@ -74,14 +96,61 @@
           "minimum": 1048576,
           "maximum": 1073741824,
           "description": "Largest Codex transcript Agent Deck will open, in bytes. Default 67108864 (64 MiB). A rollout file bigger than this is measured from its directory entry and never read: it is reported on the Agent Deck output channel as oversize with its size and this limit, and it contributes no session. Codex stores tool output whole and inline with no offload path, so one long-running session can reach hundreds of megabytes, and reading such a file into the extension host is what this limit exists to prevent. Raising it costs memory in proportion to the file. A session already being followed keeps being followed when it grows past the limit -- the limit gates the first read of a file, never a tail already in progress."
+        },
+        "agentDeck.stats.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep a local history of derived session statistics under the extension global storage directory. Append-only JSON Lines, one file per ISO week, pruned by agentDeck.stats.retentionDays. Nothing is ever sent off the machine and nothing is written under Claude Code, Codex or OpenCode directories. Turn this off and Agent Deck writes no file at all and creates no directory; records already written stay until you run the Agent Deck: Clear Stats History command, which works whether or not this is on."
+        },
+        "agentDeck.stats.retentionDays": {
+          "type": "integer",
+          "default": 90,
+          "minimum": 1,
+          "maximum": 3650,
+          "description": "How many days of stats history to keep, in days. Files are pruned when a record is written, and a weekly file is removed once the whole week it covers is older than this. Measured on this repository's own captured corpora, ninety days of history is about 2 MiB at the median session and under 31 MiB if every session for ninety days were as heavy as the heaviest session ever captured. The floor is one day rather than zero: to keep nothing, set agentDeck.stats.enabled to false."
+        },
+        "agentDeck.stats.idleFlushMs": {
+          "type": "integer",
+          "default": 3600000,
+          "minimum": 60000,
+          "maximum": 604800000,
+          "description": "How long a session may go without a change before its record is written anyway, in milliseconds. A record is normally written when the session ends; this covers the session that never does, because the window closed or the machine slept. If the session produces more work afterwards it is recomputed in full and written again as a second record, and reads keep the newest per session. Nothing already on disk is ever rewritten. This timer belongs to the statistics layer alone and never changes whether a session counts as live."
+        },
+        "agentDeck.pricing": {
+          "type": "object",
+          "default": {},
+          "description": "Your own prices per model id, in USD per million tokens, used to state a cost for sessions whose engine reports none. Each key is a model id exactly as the transcript writes it, and each value is an object with prompt, cacheRead, cacheWrite and output, all non-negative numbers. Example: {\"claude-sonnet-4-5\": {\"prompt\": 3, \"cacheRead\": 0.3, \"cacheWrite\": 3.75, \"output\": 15}}. Agent Deck ships no price table and never guesses one: a model with no entry here gets no cost figure, and an entry that does not match this shape is ignored and named on the Agent Deck output channel. Costs computed this way are labelled as estimated from your prices."
+        },
+        "agentDeck.canvas.autoFit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-fit the session canvas to its content on every event that changes its geometry: a node selected (the drawer opens), the drawer expanded, collapsed or resized, an agent grafted, removed or parked, the panel or editor group resized, a session switch, an engine chip toggled, a switch back to the canvas, a label re-wrap that changes a node width. A manual pan or zoom persists only until the next such event. Token counters, liveness colour and the theme never re-fit. Turn this off and the canvas fits once on entry and never again on its own; Reset view and double-click on the empty field still fit on request. Changes take effect without a reload."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentDeck",
+          "title": "Agent Deck",
+          "icon": "media/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentDeck": [
+        {
+          "type": "webview",
+          "id": "agentDeck.sidebar",
+          "name": "Agent Deck"
+        }
+      ]
     }
   },
   "scripts": {
     "build": "node esbuild.config.mjs",
     "capture:states": "node scripts/capture-states.mjs",
-    "lint": "eslint .",
+    "lint": "eslint . && node scripts/forbidden-words.mjs",
     "package": "vsce package --no-dependencies --out dist/agent-deck.vsix",
     "test": "vitest run",
     "theater": "node esbuild.config.mjs --theater",

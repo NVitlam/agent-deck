@@ -27,10 +27,18 @@ spike/hook-events-r3.jsonl
 # file that is not there and `vsce package` fails. It stays.
 media/*
 !media/icon.png
+# The activity-bar icon (v0.7.0 Phase 4, DoD 4.6b): a manifest reference, like
+# `icon.png`, and admitted in `.vscodeignore` too - different doors.
+!media/activity-icon.svg
 !media/Session_Deck.png
 !media/hero_26_agent_session.png
 !media/Internal_Session_Tool_popup.png
 !media/Internal_Session_Tool_popup2.png
+# The sidebar screenshot (v0.7.0 DoD 5.5b). Admitted in `.vscodeignore` too.
+# Committed as a PLACEHOLDER the user replaces with a real capture before
+# publish; `src/release/vsix.test.ts`'s package-audit leg refuses to package
+# the placeholder's bytes.
+!media/sidebar.png
 # The hero GIF, added for 0.6.0 (DoD 5.8). It is a SIXTH tracked image and
 # not one of the four: 4,658,677 bytes, referenced by README.md, and denied
 # in `.vscodeignore` so it does not ship inside the VSIX - the Marketplace

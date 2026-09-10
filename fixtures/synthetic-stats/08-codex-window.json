@@ -1,0 +1,42 @@
+{
+  "id": "08-codex-window",
+  "manufactures": "a Codex session stating windowTokens, so F10 has both halves",
+  "state": {
+    "sessionId": "synthetic-08-codex-window",
+    "projectSlug": "synthetic-stats",
+    "workspaceMatch": true,
+    "liveness": "ended",
+    "schemaOk": true,
+    "root": {
+      "id": "root",
+      "kind": "main",
+      "label": "synthetic-root",
+      "status": "done",
+      "spawnDepth": 0,
+      "children": [
+        {
+          "id": "w0",
+          "toolName": "exec",
+          "status": "done",
+          "inputPreview": "",
+          "ordinal": 0,
+          "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "startedAt": 1700000000000,
+      "burn": {
+        "prompt": 1000,
+        "output": 100
+      }
+    },
+    "totals": {
+      "costUsd": 0
+    },
+    "contextNow": {
+      "prompt": 64600,
+      "output": 100
+    },
+    "windowTokens": 258400,
+    "engine": "codex"
+  }
+}

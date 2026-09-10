@@ -1,0 +1,387 @@
+// Generate the Phase 4 webview goldens: auto-fit and the Stats layout.
+//
+//     node scripts/gen-webview-goldens.mjs            write
+//     node scripts/gen-webview-goldens.mjs --check    compare, write nothing, exit 1 on any difference
+//
+// v0.7.0 Phase 4, DoD 4.0 and 4.2:
+//
+//   webview/goldens/layout/fit.json    `fit(bounds, viewport, drawerRect)` at three
+//                                      viewports x drawer open/closed x 1/6/40 nodes
+//   webview/goldens/stats/n<N>.json    `statsLayout` over the first N committed
+//                                      corpus goldens, N = 0/1/2/6/12
+//   webview/goldens/stats/r8-<id>.json `statsLayout` over ONE R8 golden, each of them,
+//                                      after the host-side wire gate and the real store
+//
+// WHAT THIS SCRIPT DOES NOT DO
+// ----------------------------
+// It derives nothing of its own. The fit cases go through the production
+// `webview/layout.ts` (for the bounds of a real tidy-tree layout) and the
+// production `webview/layout/fit.ts`; the stats cases go through the production
+// `src/stats/wire.ts` gate, `webview/store.ts` (a real `statsSnapshot` message)
+// and `webview/stats/layout.ts`. The same modules the tests import, bundled the
+// way `gen-stats-goldens.mjs` bundles `src/`, so what is written is what the
+// product computes — and a golden that rewrites itself on a code change is
+// caught by `--check`, which `webview/layout/fit.test.ts` and
+// `webview/stats/layout.test.ts` ALSO enforce by recomputing in-process and
+// comparing to the committed bytes. Two readers of one file, neither of which
+// is this script.
+//
+// THE STATS INPUTS ARE THE COMMITTED `fixtures/golden/stats/*.json` RECORDS,
+// not a fresh derivation: those are `deriveStats`'s output, byte-compared by
+// `goldens.test.ts`, and reading them is what makes "the layout of the record
+// the fixture manufactures" literally true.
+
+import { createRequire } from 'node:module';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
+const FIT_GOLDEN = join(REPO_ROOT, 'webview', 'goldens', 'layout', 'fit.json');
+const STATS_GOLDEN_DIR = join(REPO_ROOT, 'webview', 'goldens', 'stats');
+const STATS_RECORDS_DIR = join(REPO_ROOT, 'fixtures', 'golden', 'stats');
+
+/** The record counts DoD 4.2 names. */
+export const STATS_N = [0, 1, 2, 6, 12];
+
+/** The three viewports DoD 4.0 names, and the drawer heights §8.6 gives. */
+export const FIT_VIEWPORTS = [
+  { width: 480, height: 320 },
+  { width: 960, height: 640 },
+  { width: 1600, height: 900 },
+];
+export const FIT_NODE_COUNTS = [1, 6, 40];
+/** §8.6: collapsed max 190 px; open drawers here are docked at that height. */
+export const FIT_DRAWER_HEIGHT = 190;
+
+async function loadModules() {
+  const require = createRequire(join(REPO_ROOT, 'package.json'));
+  const { build } = await import(pathToFileURL(require.resolve('esbuild')).href);
+  const entry = [
+    "export { fit, usableViewport } from './webview/layout/fit.js';",
+    "export { treeLayout } from './webview/layout.js';",
+    "export { boundsOf } from './webview/viewport.js';",
+    "export { statsLayout, trendsLayout } from './webview/stats/layout.js';",
+    "export { inSessionOrder } from './src/stats/wire.js';",
+    "export { createStore } from './webview/store.js';",
+    "export { statsWireRecords } from './src/stats/wire.js';",
+  ].join('\n');
+  const result = await build({
+    stdin: { contents: entry, resolveDir: REPO_ROOT, sourcefile: 'gen-webview-goldens-entry.ts', loader: 'ts' },
+    bundle: true,
+    write: false,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node20',
+    packages: 'external',
+    logLevel: 'silent',
+  });
+  const js = result.outputFiles[0];
+  if (js === undefined) throw new Error('the webview bundle produced no javascript');
+  const mod = { exports: {} };
+  const factory = new Function('require', 'module', 'exports', js.text);
+  factory(require, mod, mod.exports);
+  return mod.exports;
+}
+
+/** A session with `count` agents: a root and `count - 1` depth-1 children, one call each. */
+export function sessionOf(count) {
+  const children = [];
+  for (let i = 1; i < count; i += 1) {
+    const id = `agent-${String(i)}`;
+    children.push({
+      id: `tool-${String(i)}`,
+      toolName: 'Agent',
+      status: 'done',
+      inputPreview: '{"subagent_type":"worker"}',
+    });
+    children.push({
+      id,
+      kind: 'subagent',
+      label: `worker-${String(i)}`,
+      status: 'done',
+      spawnDepth: 1,
+      children: [{ id: `call-${String(i)}`, toolName: 'Read', status: 'done', inputPreview: '{}' }],
+      contextNow: { prompt: 1000, output: 100 },
+      burn: { prompt: 2000, output: 200 },
+      startedAt: 1000 + i,
+    });
+  }
+  const spawnEdges = [];
+  for (let i = 1; i < count; i += 1) {
+    spawnEdges.push({
+      toolUseId: `tool-${String(i)}`,
+      agentId: `agent-${String(i)}`,
+      parentNodeId: 'root',
+      depth: 1,
+      recordedDepth: 1,
+    });
+  }
+  return {
+    sessionId: `fit-${String(count)}`,
+    projectSlug: 'synthetic-fit',
+    workspaceMatch: true,
+    liveness: 'ended',
+    schemaOk: true,
+    root: {
+      id: 'root',
+      kind: 'main',
+      label: 'fit subject',
+      status: 'done',
+      spawnDepth: 0,
+      children,
+      contextNow: { prompt: 5000, output: 500 },
+      burn: { prompt: 9000, output: 900 },
+      startedAt: 1000,
+    },
+    totals: { costUsd: 0 },
+    spawnEdges,
+  };
+}
+
+function fitCases(m) {
+  const cases = [];
+  for (const nodes of FIT_NODE_COUNTS) {
+    const placements = m.treeLayout(sessionOf(nodes), 'root', { collapseDepth: Number.POSITIVE_INFINITY }).filter((p) => !p.hidden);
+    const bounds = m.boundsOf(placements.map((p) => ({ x: p.x, y: p.y, w: p.w, h: p.h })));
+    for (const viewport of FIT_VIEWPORTS) {
+      for (const drawerOpen of [false, true]) {
+        const drawer = drawerOpen
+          ? { x: 0, y: viewport.height - FIT_DRAWER_HEIGHT, w: viewport.width, h: FIT_DRAWER_HEIGHT }
+          : null;
+        cases.push({
+          nodes,
+          agents: placements.length,
+          viewport,
+          drawer,
+          bounds,
+          usable: m.usableViewport(viewport, drawer),
+          transform: m.fit(bounds, viewport, drawer),
+        });
+      }
+    }
+  }
+  return cases;
+}
+
+async function statsRecords() {
+  const names = (await readdir(STATS_RECORDS_DIR)).filter((n) => n.endsWith('.json')).sort();
+  const out = [];
+  for (const name of names) {
+    out.push({ stem: name.replace(/\.json$/u, ''), record: JSON.parse(await readFile(join(STATS_RECORDS_DIR, name), 'utf8')) });
+  }
+  return out;
+}
+
+/** The production path from records to layout: wire gate -> store -> layout. */
+function layoutThrough(m, records) {
+  const wire = m.statsWireRecords(records);
+  if (wire.dropped !== 0) throw new Error(`the wire gate refused a committed golden: ${wire.reasons.join('; ')}`);
+  const store = m.createStore();
+  store.handleMessage({ type: 'statsSnapshot', records: wire.records });
+  store.handleMessage({ type: 'statsStore', records: wire.records, enabled: true });
+  const view = store.getView();
+  return m.statsLayout(view.statsLive, view.statsStoreEnabled);
+}
+
+/**
+ * The DoD 4.12 golden: three engines, magnitudes an order apart, through the
+ * real store and the real layout.
+ *
+ * The numbers are the measured ones from the 4.9 smoke's own 102 MB store —
+ * median prompt 106,531,677 on Claude Code against 18,584 on Codex. Under one
+ * shared maximum a Codex point's share of the box was 0.017%, which is the
+ * baseline, and the first report of it read as "Trends shows Codex only". The
+ * golden therefore pins the thing that fixes it: a line per engine, each with
+ * its OWN maximum, plus the `loading` arm that stops a store which has not
+ * been read from rendering as a history with nothing in it.
+ */
+function mixedEngineTrends(m, base) {
+  const as = (engine, sessionId, prompt) => ({
+    ...base,
+    sessionId,
+    engine,
+    totals: { ...base.totals, prompt },
+  });
+  const records = [
+    as('cc', 'mixed-cc-1', 106_531_677),
+    as('cc', 'mixed-cc-2', 576_450_282),
+    as('codex', 'mixed-codex-1', 18_584),
+    as('codex', 'mixed-codex-2', 817_147),
+    as('opencode', 'mixed-oc-1', 86_502),
+    as('opencode', 'mixed-oc-2', 364_414),
+  ];
+  const wire = m.statsWireRecords(records);
+  if (wire.dropped !== 0) throw new Error(`the wire gate refused a mixed-engine record: ${wire.reasons.join('; ')}`);
+  const store = m.createStore();
+  store.handleMessage({ type: 'statsSnapshot', records: wire.records });
+  store.handleMessage({ type: 'statsStore', records: m.inSessionOrder(wire.records), enabled: true });
+  const view = store.getView();
+  return {
+    sessions: records.map((r) => ({ sessionId: r.sessionId, engine: r.engine, prompt: r.totals.prompt })),
+    loaded: m.trendsLayout(view.statsStored, view.statsStoreEnabled, view.statsStoreLoaded),
+    // The same records, before the read resolves. One fact, its own state.
+    loading: m.trendsLayout(view.statsStored, view.statsStoreEnabled, false),
+  };
+}
+
+/**
+ * The DoD 4.13 golden: a series whose maximum is ZERO, beside one whose is not.
+ *
+ * Found by the 4.9 smoke on the `loops` panel, and the corpus says why it is
+ * common rather than an edge: 33 of the 36 committed stats records carry no
+ * loop at all. One real loopless Claude Code record used as TWO sessions (new
+ * ids, prompt totals the generator writes), and one real Codex record with
+ * its own one, so the loops series holds a FLAT line and a non-flat one side by side —
+ * the golden pins `flat` in both directions. Prompt totals differ per session so
+ * the prompt series stays an ordinary, non-flat control.
+ */
+function zeroMaxTrends(m, loopless, looped) {
+  // ONE real loopless Claude Code corpus record used as two sessions — new ids
+  // and prompt totals written here, so the prompt series has two distinct
+  // points — and one real Codex corpus record WITH its own loop, unmodified but
+  // for its id. The loops arrays are the records' own: nothing here invents a
+  // loop.
+  const as = (base, sessionId, prompt) => ({
+    ...base,
+    sessionId,
+    totals: { ...base.totals, prompt },
+  });
+  const records = [
+    as(loopless, 'zero-cc-1', 1_000),
+    as(loopless, 'zero-cc-2', 2_000),
+    as(looped, 'zero-codex-looped', looped.totals.prompt),
+  ];
+  const wire = m.statsWireRecords(records);
+  if (wire.dropped !== 0) throw new Error(`the wire gate refused a zero-max record: ${wire.reasons.join('; ')}`);
+  const store = m.createStore();
+  store.handleMessage({ type: 'statsSnapshot', records: wire.records });
+  store.handleMessage({ type: 'statsStore', records: m.inSessionOrder(wire.records), enabled: true });
+  const view = store.getView();
+  return {
+    sessions: records.map((r) => ({ sessionId: r.sessionId, engine: r.engine, loops: r.loops.length })),
+    loaded: m.trendsLayout(view.statsStored, view.statsStoreEnabled, view.statsStoreLoaded),
+  };
+}
+
+function text(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+async function planFiles(m) {
+  const files = new Map();
+  files.set(FIT_GOLDEN, text({ generator: 'scripts/gen-webview-goldens.mjs', drawerHeight: FIT_DRAWER_HEIGHT, cases: fitCases(m) }));
+
+  const all = await statsRecords();
+  // The corpus goldens, in stem order, for the N-record cases: the first N of
+  // the harvested records — synthetic ones excluded, so the twelve R8 cases
+  // and the N cases read different populations.
+  const corpus = all.filter((e) => !e.stem.includes('-synthetic-'));
+  for (const n of STATS_N) {
+    const records = corpus.slice(0, n).map((e) => e.record);
+    if (records.length !== n) throw new Error(`fewer than ${String(n)} corpus goldens on disk`);
+    files.set(
+      join(STATS_GOLDEN_DIR, `n${String(n)}.json`),
+      text({ generator: 'scripts/gen-webview-goldens.mjs', records: corpus.slice(0, n).map((e) => e.stem), layout: layoutThrough(m, records) }),
+    );
+  }
+  const first = corpus[0];
+  if (first === undefined) throw new Error('no corpus golden to build the mixed-engine case from');
+  files.set(
+    join(STATS_GOLDEN_DIR, 'engines-mixed.json'),
+    text({
+      generator: 'scripts/gen-webview-goldens.mjs',
+      from: first.stem,
+      trends: mixedEngineTrends(m, first.record),
+    }),
+  );
+
+  // DoD 4.13. Both bases are real corpus records — one with no loop, one with
+  // its own — so no loop count here is a field this script invented.
+  const loopless = corpus.find((e) => e.record.engine === 'cc' && e.record.loops.length === 0);
+  const looped = corpus.find((e) => e.record.engine === 'codex' && e.record.loops.length > 0);
+  if (loopless === undefined || looped === undefined) {
+    throw new Error('the zero-max case needs a loopless Claude Code golden and a looped Codex one');
+  }
+  files.set(
+    join(STATS_GOLDEN_DIR, 'zero-max.json'),
+    text({
+      generator: 'scripts/gen-webview-goldens.mjs',
+      from: [loopless.stem, looped.stem],
+      trends: zeroMaxTrends(m, loopless.record, looped.record),
+    }),
+  );
+
+  for (const entry of all.filter((e) => e.stem.includes('-synthetic-'))) {
+    const id = entry.stem.replace(/^[a-z]+-synthetic-/u, '');
+    files.set(
+      join(STATS_GOLDEN_DIR, `r8-${id}.json`),
+      text({ generator: 'scripts/gen-webview-goldens.mjs', records: [entry.stem], layout: layoutThrough(m, [entry.record]) }),
+    );
+  }
+  return files;
+}
+
+/**
+ * Is the golden on disk the golden this script would write? Line endings do not count.
+ *
+ * v0.7.0 Phase 5 gate, 2026-09-10: `--check` compared RAW BYTES, and these
+ * files are `text=auto` — stored LF, checked out CRLF under `core.autocrlf`. So
+ * the moment git re-wrote them (the Phase 4 merge did), every one of the 21
+ * read `changed` on content that was byte-identical to its blob, and `--check`
+ * exited 1 on a correct tree. The shebang trap this repository records in
+ * `CLAUDE.md`, through a comparison instead of a parser: correct for whoever
+ * generated the files, wrong for every checkout after. Normalised here, and
+ * `src/release/golden-check.test.ts` pins both directions — a CRLF copy is the
+ * same golden, a changed number is not.
+ */
+export function sameGolden(current, body) {
+  return current !== null && current.replace(/\r\n/g, '\n') === body.replace(/\r\n/g, '\n');
+}
+
+async function main() {
+  const check = process.argv.includes('--check');
+  const m = await loadModules();
+  const files = await planFiles(m);
+  await mkdir(STATS_GOLDEN_DIR, { recursive: true });
+
+  const differences = [];
+  for (const [path, body] of files) {
+    const current = existsSync(path) ? await readFile(path, 'utf8') : null;
+    // Not a rewrite either: re-writing an EOL-only difference would churn 21
+    // files on every checkout for no change in what git stores.
+    if (sameGolden(current, body)) continue;
+    differences.push(`${current === null ? 'missing' : 'changed'}: ${path.slice(REPO_ROOT.length)}`);
+    if (!check) await writeFile(path, body, 'utf8');
+  }
+  // A stale stats golden describes a record that no longer exists; the
+  // directory is OWNED by this script, so anything unaccounted for is stale.
+  for (const name of await readdir(STATS_GOLDEN_DIR)) {
+    if (name === 'README.md') continue;
+    const path = join(STATS_GOLDEN_DIR, name);
+    if (files.has(path)) continue;
+    differences.push(`stale: ${path.slice(REPO_ROOT.length)}`);
+    if (!check) await rm(path);
+  }
+
+  const noun = `${String(files.size)} file${files.size === 1 ? '' : 's'}`;
+  if (check) {
+    if (differences.length === 0) {
+      console.log(`gen-webview-goldens --check: ${noun}, all current`);
+      return;
+    }
+    console.error(`gen-webview-goldens --check: ${String(differences.length)} difference(s)`);
+    for (const line of differences) console.error(`  ${line}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`gen-webview-goldens: ${noun} written`);
+  if (differences.length === 0) console.log('  no change');
+  else for (const line of differences) console.log(`  ${line}`);
+}
+
+const entry = process.argv[1];
+if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+  await main();
+}

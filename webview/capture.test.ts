@@ -53,7 +53,18 @@ const COMMITTED = resolve('webview/goldens/ui-states');
 const CAPTURED_FIXTURES = resolve('fixtures/cc-2.1.234/projects');
 
 /** The five states, plus the variant that carries the G3 row. */
-const STATES = ['live', 'idle', 'ended', 'unsupported', 'unsupported-with-tree', 'degraded'];
+// `stalled` is a TOOL state, not a liveness value, which is why it is in
+// STATES and deliberately NOT in FIVE_STATES below: a stalled tool does not
+// make a session live, idle or ended (G2, and the Phase 0c lock).
+const STATES = [
+  'live',
+  'idle',
+  'ended',
+  'unsupported',
+  'unsupported-with-tree',
+  'degraded',
+  'stalled',
+];
 
 /** The four values `SessionState.liveness` can take, and the fifth state. */
 const FIVE_STATES = ['live', 'idle', 'ended', 'unsupported', 'degraded'];

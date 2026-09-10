@@ -95,6 +95,9 @@
     ondeck,
     size = { width: 960, height: 640 },
     canvasView,
+    fitEpoch = 0,
+    drawerRect = null,
+    onreportgeometry,
     onpan,
     onzoom,
     onreset,
@@ -137,6 +140,32 @@
      * own state, which is what makes it survive a store update.
      */
     canvasView?: { x: number; y: number; k: number } | undefined;
+    /**
+     * AUTO-FIT (v0.7.0 Phase 4, DoD 4.0). The store's `canvasFitEpoch`: it
+     * moves exactly when the store FITTED, and only then does this component
+     * adopt `canvasView` as its rendered transform. That is the one exception
+     * to "the viewport is this component's own state": a fit the trigger
+     * table asked for is authoritative; a stale `canvasView` prop is not.
+     */
+    fitEpoch?: number;
+    /**
+     * The drawer's rectangle in PAGE coordinates, or `null` when closed.
+     * Measured by `App.svelte`, converted to the field's coordinates here, and
+     * reported to the store with the bounds and the field size.
+     */
+    drawerRect?: { x: number; y: number; w: number; h: number } | null;
+    /**
+     * Wired to `Store.reportCanvasGeometry`. Called whenever the drawn tree,
+     * the field size or the drawer rectangle changes; the store decides
+     * whether that is a trigger.
+     */
+    onreportgeometry?:
+      | ((geometry: {
+          bounds: { x: number; y: number; w: number; h: number };
+          viewport: { width: number; height: number };
+          drawer: { x: number; y: number; w: number; h: number } | null;
+        }) => void)
+      | undefined;
     onpan?: ((dx: number, dy: number) => void) | undefined;
     onzoom?: ((factor: number, originX: number, originY: number) => void) | undefined;
     onreset?: (() => void) | undefined;
@@ -445,6 +474,94 @@
     fittedFor = key;
   });
 
+  /* --------------------------------------------------------------------- *
+   * Auto-fit (v0.7.0 Phase 4, DoD 4.0): report geometry, adopt store fits
+   * --------------------------------------------------------------------- */
+
+  /**
+   * Bumped by a `ResizeObserver` on the field, so a panel or editor-group
+   * resize (including the even-widths call) re-reports the geometry. Absent
+   * in jsdom, where the field has no size to observe anyway; guarded so a
+   * missing constructor is "no resizes will be seen" rather than a throw.
+   */
+  let resizeTick = $state.raw(0);
+
+  $effect(() => {
+    const el = fieldEl;
+    if (el === undefined) return;
+    const ctor = (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
+    if (typeof ctor !== 'function') return;
+    const observer = new ctor(() => {
+      resizeTick += 1;
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+    };
+  });
+
+  /**
+   * The drawer in the FIELD's coordinates, or `null`.
+   *
+   * `drawerRect` arrives in page coordinates; the store's `fit` wants the
+   * drawer where the viewport is measured. A field with no rectangle (jsdom)
+   * leaves the drawer where it is, which is the only honest conversion.
+   */
+  function drawerInField(): { x: number; y: number; w: number; h: number } | null {
+    const drawer = drawerRect;
+    if (drawer === null || drawer.h <= 0 || drawer.w <= 0) return null;
+    const rect = fieldEl?.getBoundingClientRect();
+    if (rect === undefined || (rect.width === 0 && rect.height === 0)) return drawer;
+    return { x: drawer.x - rect.left, y: drawer.y - rect.top, w: drawer.w, h: drawer.h };
+  }
+
+  /**
+   * REPORT, never decide. Whenever the drawn placements, the field size or
+   * the drawer change, the store hears the three numbers and applies the
+   * trigger table. A label that re-wrapped changes a placement's `w`, so it
+   * changes `drawn`, so it lands here — which is how "label re-wrap that
+   * changes node width" is a trigger without this file knowing about labels.
+   */
+  $effect(() => {
+    void resizeTick;
+    void drawerRect;
+    if (isRefused || drawn.length === 0) return;
+    const viewport = fieldSize();
+    if (viewport.width <= 0 || viewport.height <= 0) return;
+    onreportgeometry?.({
+      bounds: boundsOf(extentsFor(drawn)),
+      viewport,
+      drawer: drawerInField(),
+    });
+  });
+
+  /**
+   * ADOPT a store fit. `fitEpoch` moves only when the store fitted, so this
+   * is the one path by which the `canvasView` prop reaches the rendered
+   * transform — a user's pan survives every other re-render, as §3.4 requires.
+   * The entry-fit guard is claimed too, or the entry fit would run once more
+   * over a frame the store already framed.
+   */
+  let adoptedEpoch = 0;
+  let fitting = $state.raw(false);
+  $effect(() => {
+    const epoch = fitEpoch;
+    const next = canvasView;
+    if (epoch === adoptedEpoch || next === undefined) return;
+    adoptedEpoch = epoch;
+    view = { x: next.x, y: next.y, k: next.k };
+    fittedFor = `${session.sessionId}:${rootId}`;
+    // §5: a layout move animates over 280 ms — unless the user prefers
+    // reduced motion, in which case it is instant. The class is transient so
+    // a drag afterwards does not lag behind the pointer.
+    if (!reducedMotion) {
+      fitting = true;
+      setTimeout(() => {
+        fitting = false;
+      }, 300);
+    }
+  });
+
   /**
    * Re-root, and fit ONCE.
    *
@@ -673,7 +790,12 @@
       onwheel={onWheel}
       ondblclick={onDoubleClick}
     >
-      <g data-testid={TESTID.canvasStage} {transform}>
+      <g
+        data-testid={TESTID.canvasStage}
+        {transform}
+        class:is-fitting={fitting}
+        data-fit-motion={reducedMotion ? 'instant' : 'animate'}
+      >
         <!-- Filaments FIRST so they paint UNDER every node and dot. They carry
              no focus and no accessible name, so painting order does not become
              reading order (C7.8). -->
@@ -736,6 +858,13 @@
 
   .field.panning {
     cursor: grabbing;
+  }
+
+  /* §5: layout moves translate over 280 ms with the design's curve. Applied
+     only while a store fit is landing (`is-fitting`), never during a drag —
+     and never at all under reduced motion, where the fit is instant. */
+  .is-fitting[data-fit-motion='animate'] {
+    transition: transform 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
   }
 
   .bar {

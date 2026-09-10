@@ -760,6 +760,89 @@ describe('mutated-layout fixtures are refused, each for its own reason', () => {
     expect(isVersionAccepted('4.4.0')).toBe(false);
   });
 
+  it('DoD 1.6b: cc-2.1.260 spans TWO versions in one file and is ACCEPTED', async () => {
+    /*
+     * v0.7.0 Phase 1. The other half of the mid-file rule, and the half no
+     * fixture pinned until now: case 08 above proves a version change that
+     * LEAVES the window is refused. This proves a version change that stays
+     * INSIDE it is accepted.
+     *
+     * `75ef0bbf` was captured across a real Claude Code upgrade — `2.1.258`
+     * becomes `2.1.260` partway through the file — so the two branches are now
+     * pinned by a refusal fixture and a REAL capture rather than by one of
+     * each shape being assumed.
+     *
+     * Both strings are in range because the patch component is not compared at
+     * all. That is the posture `agent-deck-spec.md`'s version amendment sets,
+     * and it is why this corpus does not move `PINNED_CC_VERSION`.
+     */
+    const main = fileURLToPath(
+      new URL(
+        '../../fixtures/cc-2.1.260/projects/c--Users-dev-projects-agent-deck/' +
+          '75ef0bbf-2493-4c77-8af7-3a56fb2ce36e.jsonl',
+        import.meta.url,
+      ),
+    );
+    const result = await fingerprintSession(main);
+    if (!result.ok) {
+      throw new Error(`cc-2.1.260 refused: ${result.mismatch.code} - ${result.mismatch.reason}`);
+    }
+
+    // TWO versions, and the control that they really are two: a corpus that
+    // had been re-recorded to a single version would make this test vacuous
+    // while still passing the acceptance check above.
+    expect(result.value.versions.length).toBeGreaterThan(1);
+    expect(new Set(result.value.versions)).toStrictEqual(new Set(['2.1.258', '2.1.260']));
+    for (const version of result.value.versions) expect(isVersionAccepted(version)).toBe(true);
+  });
+
+  it('DoD 1.6b: the compaction entries of cc-2.1.260 parse rather than being skipped', async () => {
+    /*
+     * A compaction is `type: "system"` carrying `compactMetadata`, and `system`
+     * is in `IGNORED_ENTRY_TYPES`. Until this phase that meant every compaction
+     * was counted as an ignored line and never modelled — so this asserts the
+     * entries survive the parse boundary, which is what F12 rests on.
+     *
+     * Structural, never a substring: 35 lines across the committed corpora
+     * mention `compactMetadata` in PROSE (this repository's own sessions
+     * discussing the field), and a text search would find all of them.
+     */
+    const main = fileURLToPath(
+      new URL(
+        '../../fixtures/cc-2.1.260/projects/c--Users-dev-projects-agent-deck/' +
+          '75ef0bbf-2493-4c77-8af7-3a56fb2ce36e.jsonl',
+        import.meta.url,
+      ),
+    );
+    const text = await readFile(main, 'utf8');
+    const entries = text
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => {
+        const meta = entry['compactMetadata'];
+        return (
+          entry['type'] === 'system' &&
+          typeof meta === 'object' &&
+          meta !== null &&
+          !Array.isArray(meta)
+        );
+      });
+
+    // Phase 0 DoD 0.3b: one `auto` and one `manual`, with IDENTICAL key sets,
+    // which is what lets one reader serve both.
+    expect(entries).toHaveLength(2);
+    const triggers = entries.map(
+      (e) => (e['compactMetadata'] as Record<string, unknown>)['trigger'],
+    );
+    expect(new Set(triggers)).toStrictEqual(new Set(['auto', 'manual']));
+
+    const keySets = entries.map((e) =>
+      Object.keys(e['compactMetadata'] as Record<string, unknown>).sort().join(','),
+    );
+    expect(keySets[0], 'auto and manual must share one shape').toBe(keySets[1]);
+  });
+
   it('08 version changing partway through a file, OUT of the window -> versionChangedMidFile', async () => {
     const mismatch = expectRefusal(
       await fingerprintCase('08-version-changes-midfile'),

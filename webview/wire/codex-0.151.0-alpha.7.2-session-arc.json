@@ -111,6 +111,8 @@
                   "toolName": "spawn_agent",
                   "status": "done",
                   "inputPreview": "collaboration.spawn_agent p1",
+                  "inputHash": "4503e464594922bca079705e59c7efa912a378db406175949fca346e9a201776",
+                  "ordinal": 0,
                   "resultPreview": "{\"task_name\":\"/root/p1\"}",
                   "truncated": false
                 },
@@ -126,6 +128,8 @@
                       "toolName": "exec",
                       "status": "done",
                       "inputPreview": "exec",
+                      "inputHash": "a0131128560d30dc73e49e798ad8676d3734cfdc9c66c63bb9975e8ca4ac941a",
+                      "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 01: scratch fixture row for the Codex kill gate.\r\n",
                       "truncated": false
                     }
@@ -139,13 +143,16 @@
                     "output": 125
                   },
                   "startedAt": 1788386057354,
-                  "endedAt": 1788393600000
+                  "endedAt": 1788386068568,
+                  "model": "gpt-5.6-terra"
                 },
                 {
                   "id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
                   "toolName": "spawn_agent",
                   "status": "done",
                   "inputPreview": "collaboration.spawn_agent p2",
+                  "inputHash": "c9625b805f444257bc5d467dc00f18414361cad01af22689ff8f12b52a453666",
+                  "ordinal": 1,
                   "resultPreview": "{\"task_name\":\"/root/p2\"}",
                   "truncated": false
                 },
@@ -161,6 +168,8 @@
                       "toolName": "exec",
                       "status": "done",
                       "inputPreview": "exec",
+                      "inputHash": "39e13468f17b45e1a5e273631c823dfba5b77d4e33f885acdab9ad2726923a64",
+                      "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 3.0 seconds\nOutput:\n\nLine 02: scratch fixture row for the Codex kill gate.\r\n",
                       "truncated": false
                     }
@@ -174,13 +183,16 @@
                     "output": 137
                   },
                   "startedAt": 1788386061217,
-                  "endedAt": 1788393600000
+                  "endedAt": 1788386072704,
+                  "model": "gpt-5.6-terra"
                 },
                 {
                   "id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
                   "toolName": "spawn_agent",
                   "status": "done",
                   "inputPreview": "collaboration.spawn_agent p3",
+                  "inputHash": "1e7dff8df71793720ed17c40e8ecd2c952c1956ab6c088681ca035b6855fd1b5",
+                  "ordinal": 2,
                   "resultPreview": "{\"task_name\":\"/root/p3\"}",
                   "truncated": false
                 },
@@ -196,6 +208,8 @@
                       "toolName": "exec",
                       "status": "done",
                       "inputPreview": "exec",
+                      "inputHash": "cb91085e00075bb65da1575a1b62fe3c9a484b8606df4241153c945d695f01d0",
+                      "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 03: scratch fixture row for the Codex kill gate.\r\n",
                       "truncated": false
                     }
@@ -209,13 +223,16 @@
                     "output": 139
                   },
                   "startedAt": 1788386065184,
-                  "endedAt": 1788393600000
+                  "endedAt": 1788386077659,
+                  "model": "gpt-5.6-terra"
                 },
                 {
                   "id": "call_tKVRDV43tRvYRodryJdaFXJ6",
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2eafc533edd1cedbf925cfaa58ea93f84b5b2060ca8323f0aa97a082f13ac45e",
+                  "ordinal": 3,
                   "resultPreview": "{\"message\":\"Wait completed.\\n\\nRequested timeout of 600ms was clamped to the minimum of 10000ms.\",\"timed_out\":false}",
                   "truncated": false
                 },
@@ -224,6 +241,8 @@
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+                  "ordinal": 4,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
                   "truncated": false
                 },
@@ -232,6 +251,8 @@
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+                  "ordinal": 5,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
                   "truncated": false
                 },
@@ -240,6 +261,8 @@
                   "toolName": "spawn_agent",
                   "status": "done",
                   "inputPreview": "collaboration.spawn_agent outer",
+                  "inputHash": "35dc134f67355b0bd3e60d3cadd88e2911b04eb89cef221f5151dcbb882c00d5",
+                  "ordinal": 6,
                   "resultPreview": "{\"task_name\":\"/root/outer\"}",
                   "truncated": false
                 },
@@ -255,6 +278,8 @@
                       "toolName": "spawn_agent",
                       "status": "done",
                       "inputPreview": "collaboration.spawn_agent inner",
+                      "inputHash": "b07dd27ef416f378401c4a44860244ffb216ead202d4749e9897e6fd5c58d82c",
+                      "ordinal": 0,
                       "resultPreview": "{\"task_name\":\"/root/outer/inner\"}",
                       "truncated": false
                     },
@@ -270,6 +295,8 @@
                           "toolName": "exec",
                           "status": "done",
                           "inputPreview": "exec",
+                          "inputHash": "33011f85229f8b25f1d37ebe84d70174a3bbcdbbb084f9bbddb238b9ef2b6303",
+                          "ordinal": 0,
                           "resultPreview": "Script completed\nWall time 2.8 seconds\nOutput:\n\n20\r\n",
                           "truncated": false
                         }
@@ -283,13 +310,16 @@
                         "output": 132
                       },
                       "startedAt": 1788386089509,
-                      "endedAt": 1788393600000
+                      "endedAt": 1788386100718,
+                      "model": "gpt-5.6-terra"
                     },
                     {
                       "id": "call_IKWCISCaJiX2efcibFiQcjR5",
                       "toolName": "wait_agent",
                       "status": "done",
                       "inputPreview": "collaboration.wait_agent",
+                      "inputHash": "fb747c43f7528a9d1bdfb27ef09c7534a90287e7fcaced2d76b72184069a0277",
+                      "ordinal": 1,
                       "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
                       "truncated": false
                     }
@@ -303,13 +333,16 @@
                     "output": 150
                   },
                   "startedAt": 1788386082798,
-                  "endedAt": 1788393600000
+                  "endedAt": 1788386103616,
+                  "model": "gpt-5.6-terra"
                 },
                 {
                   "id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+                  "ordinal": 7,
                   "resultPreview": "{\"message\":\"Wait timed out.\",\"timed_out\":true}",
                   "truncated": false
                 },
@@ -318,6 +351,8 @@
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+                  "ordinal": 8,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
                   "truncated": false
                 }
@@ -331,7 +366,8 @@
                 "output": 499
               },
               "startedAt": 1788386050871,
-              "endedAt": 1788393600000
+              "endedAt": 1788386107429,
+              "model": "gpt-5.6-terra"
             }
           }
         ]
@@ -422,6 +458,8 @@
                   "toolName": "spawn_agent",
                   "status": "done",
                   "inputPreview": "collaboration.spawn_agent p1",
+                  "inputHash": "4503e464594922bca079705e59c7efa912a378db406175949fca346e9a201776",
+                  "ordinal": 0,
                   "resultPreview": "{\"task_name\":\"/root/p1\"}",
                   "truncated": false
                 },
@@ -437,6 +475,8 @@
                       "toolName": "exec",
                       "status": "done",
                       "inputPreview": "exec",
+                      "inputHash": "a0131128560d30dc73e49e798ad8676d3734cfdc9c66c63bb9975e8ca4ac941a",
+                      "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 01: scratch fixture row for the Codex kill gate.\r\n",
                       "truncated": false
                     }
@@ -450,13 +490,16 @@
                     "output": 125
                   },
                   "startedAt": 1788386057354,
-                  "endedAt": 1788393600000
+                  "endedAt": 1788386068568,
+                  "model": "gpt-5.6-terra"
                 },
                 {
                   "id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
                   "toolName": "spawn_agent",
                   "status": "done",
                   "inputPreview": "collaboration.spawn_agent p2",
+                  "inputHash": "c9625b805f444257bc5d467dc00f18414361cad01af22689ff8f12b52a453666",
+                  "ordinal": 1,
                   "resultPreview": "{\"task_name\":\"/root/p2\"}",
                   "truncated": false
                 },
@@ -472,6 +515,8 @@
                       "toolName": "exec",
                       "status": "done",
                       "inputPreview": "exec",
+                      "inputHash": "39e13468f17b45e1a5e273631c823dfba5b77d4e33f885acdab9ad2726923a64",
+                      "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 3.0 seconds\nOutput:\n\nLine 02: scratch fixture row for the Codex kill gate.\r\n",
                       "truncated": false
                     }
@@ -485,13 +530,16 @@
                     "output": 137
                   },
                   "startedAt": 1788386061217,
-                  "endedAt": 1788393600000
+                  "endedAt": 1788386072704,
+                  "model": "gpt-5.6-terra"
                 },
                 {
                   "id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
                   "toolName": "spawn_agent",
                   "status": "done",
                   "inputPreview": "collaboration.spawn_agent p3",
+                  "inputHash": "1e7dff8df71793720ed17c40e8ecd2c952c1956ab6c088681ca035b6855fd1b5",
+                  "ordinal": 2,
                   "resultPreview": "{\"task_name\":\"/root/p3\"}",
                   "truncated": false
                 },
@@ -507,6 +555,8 @@
                       "toolName": "exec",
                       "status": "done",
                       "inputPreview": "exec",
+                      "inputHash": "cb91085e00075bb65da1575a1b62fe3c9a484b8606df4241153c945d695f01d0",
+                      "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 03: scratch fixture row for the Codex kill gate.\r\n",
                       "truncated": false
                     }
@@ -520,13 +570,16 @@
                     "output": 139
                   },
                   "startedAt": 1788386065184,
-                  "endedAt": 1788393600000
+                  "endedAt": 1788386077659,
+                  "model": "gpt-5.6-terra"
                 },
                 {
                   "id": "call_tKVRDV43tRvYRodryJdaFXJ6",
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2eafc533edd1cedbf925cfaa58ea93f84b5b2060ca8323f0aa97a082f13ac45e",
+                  "ordinal": 3,
                   "resultPreview": "{\"message\":\"Wait completed.\\n\\nRequested timeout of 600ms was clamped to the minimum of 10000ms.\",\"timed_out\":false}",
                   "truncated": false
                 },
@@ -535,6 +588,8 @@
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+                  "ordinal": 4,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
                   "truncated": false
                 },
@@ -543,6 +598,8 @@
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+                  "ordinal": 5,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
                   "truncated": false
                 },
@@ -551,6 +608,8 @@
                   "toolName": "spawn_agent",
                   "status": "done",
                   "inputPreview": "collaboration.spawn_agent outer",
+                  "inputHash": "35dc134f67355b0bd3e60d3cadd88e2911b04eb89cef221f5151dcbb882c00d5",
+                  "ordinal": 6,
                   "resultPreview": "{\"task_name\":\"/root/outer\"}",
                   "truncated": false
                 },
@@ -566,6 +625,8 @@
                       "toolName": "spawn_agent",
                       "status": "done",
                       "inputPreview": "collaboration.spawn_agent inner",
+                      "inputHash": "b07dd27ef416f378401c4a44860244ffb216ead202d4749e9897e6fd5c58d82c",
+                      "ordinal": 0,
                       "resultPreview": "{\"task_name\":\"/root/outer/inner\"}",
                       "truncated": false
                     },
@@ -581,6 +642,8 @@
                           "toolName": "exec",
                           "status": "done",
                           "inputPreview": "exec",
+                          "inputHash": "33011f85229f8b25f1d37ebe84d70174a3bbcdbbb084f9bbddb238b9ef2b6303",
+                          "ordinal": 0,
                           "resultPreview": "Script completed\nWall time 2.8 seconds\nOutput:\n\n20\r\n",
                           "truncated": false
                         }
@@ -594,13 +657,16 @@
                         "output": 132
                       },
                       "startedAt": 1788386089509,
-                      "endedAt": 1788393600000
+                      "endedAt": 1788386100718,
+                      "model": "gpt-5.6-terra"
                     },
                     {
                       "id": "call_IKWCISCaJiX2efcibFiQcjR5",
                       "toolName": "wait_agent",
                       "status": "done",
                       "inputPreview": "collaboration.wait_agent",
+                      "inputHash": "fb747c43f7528a9d1bdfb27ef09c7534a90287e7fcaced2d76b72184069a0277",
+                      "ordinal": 1,
                       "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
                       "truncated": false
                     }
@@ -614,13 +680,16 @@
                     "output": 150
                   },
                   "startedAt": 1788386082798,
-                  "endedAt": 1788393600000
+                  "endedAt": 1788386103616,
+                  "model": "gpt-5.6-terra"
                 },
                 {
                   "id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+                  "ordinal": 7,
                   "resultPreview": "{\"message\":\"Wait timed out.\",\"timed_out\":true}",
                   "truncated": false
                 },
@@ -629,6 +698,8 @@
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+                  "ordinal": 8,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
                   "truncated": false
                 }
@@ -642,7 +713,8 @@
                 "output": 499
               },
               "startedAt": 1788386050871,
-              "endedAt": 1788393600000
+              "endedAt": 1788386107429,
+              "model": "gpt-5.6-terra"
             }
           }
         ]
@@ -743,6 +815,8 @@
               "toolName": "spawn_agent",
               "status": "done",
               "inputPreview": "collaboration.spawn_agent p1",
+              "inputHash": "4503e464594922bca079705e59c7efa912a378db406175949fca346e9a201776",
+              "ordinal": 0,
               "resultPreview": "{\"task_name\":\"/root/p1\"}",
               "truncated": false
             },
@@ -758,6 +832,8 @@
                   "toolName": "exec",
                   "status": "done",
                   "inputPreview": "exec",
+                  "inputHash": "a0131128560d30dc73e49e798ad8676d3734cfdc9c66c63bb9975e8ca4ac941a",
+                  "ordinal": 0,
                   "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 01: scratch fixture row for the Codex kill gate.\r\n",
                   "truncated": false
                 }
@@ -771,13 +847,16 @@
                 "output": 125
               },
               "startedAt": 1788386057354,
-              "endedAt": 1788393600000
+              "endedAt": 1788386068568,
+              "model": "gpt-5.6-terra"
             },
             {
               "id": "call_ILkRDRlU3ESzjQj6PzZgZlrf",
               "toolName": "spawn_agent",
               "status": "done",
               "inputPreview": "collaboration.spawn_agent p2",
+              "inputHash": "c9625b805f444257bc5d467dc00f18414361cad01af22689ff8f12b52a453666",
+              "ordinal": 1,
               "resultPreview": "{\"task_name\":\"/root/p2\"}",
               "truncated": false
             },
@@ -793,6 +872,8 @@
                   "toolName": "exec",
                   "status": "done",
                   "inputPreview": "exec",
+                  "inputHash": "39e13468f17b45e1a5e273631c823dfba5b77d4e33f885acdab9ad2726923a64",
+                  "ordinal": 0,
                   "resultPreview": "Script completed\nWall time 3.0 seconds\nOutput:\n\nLine 02: scratch fixture row for the Codex kill gate.\r\n",
                   "truncated": false
                 }
@@ -806,13 +887,16 @@
                 "output": 137
               },
               "startedAt": 1788386061217,
-              "endedAt": 1788393600000
+              "endedAt": 1788386072704,
+              "model": "gpt-5.6-terra"
             },
             {
               "id": "call_BYL84JqYUBNO8YQPnZrjnHV6",
               "toolName": "spawn_agent",
               "status": "done",
               "inputPreview": "collaboration.spawn_agent p3",
+              "inputHash": "1e7dff8df71793720ed17c40e8ecd2c952c1956ab6c088681ca035b6855fd1b5",
+              "ordinal": 2,
               "resultPreview": "{\"task_name\":\"/root/p3\"}",
               "truncated": false
             },
@@ -828,6 +912,8 @@
                   "toolName": "exec",
                   "status": "done",
                   "inputPreview": "exec",
+                  "inputHash": "cb91085e00075bb65da1575a1b62fe3c9a484b8606df4241153c945d695f01d0",
+                  "ordinal": 0,
                   "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 03: scratch fixture row for the Codex kill gate.\r\n",
                   "truncated": false
                 }
@@ -841,13 +927,16 @@
                 "output": 139
               },
               "startedAt": 1788386065184,
-              "endedAt": 1788393600000
+              "endedAt": 1788386077659,
+              "model": "gpt-5.6-terra"
             },
             {
               "id": "call_tKVRDV43tRvYRodryJdaFXJ6",
               "toolName": "wait_agent",
               "status": "done",
               "inputPreview": "collaboration.wait_agent",
+              "inputHash": "2eafc533edd1cedbf925cfaa58ea93f84b5b2060ca8323f0aa97a082f13ac45e",
+              "ordinal": 3,
               "resultPreview": "{\"message\":\"Wait completed.\\n\\nRequested timeout of 600ms was clamped to the minimum of 10000ms.\",\"timed_out\":false}",
               "truncated": false
             },
@@ -856,6 +945,8 @@
               "toolName": "wait_agent",
               "status": "done",
               "inputPreview": "collaboration.wait_agent",
+              "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+              "ordinal": 4,
               "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
               "truncated": false
             },
@@ -864,6 +955,8 @@
               "toolName": "wait_agent",
               "status": "done",
               "inputPreview": "collaboration.wait_agent",
+              "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+              "ordinal": 5,
               "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
               "truncated": false
             },
@@ -872,6 +965,8 @@
               "toolName": "spawn_agent",
               "status": "done",
               "inputPreview": "collaboration.spawn_agent outer",
+              "inputHash": "35dc134f67355b0bd3e60d3cadd88e2911b04eb89cef221f5151dcbb882c00d5",
+              "ordinal": 6,
               "resultPreview": "{\"task_name\":\"/root/outer\"}",
               "truncated": false
             },
@@ -887,6 +982,8 @@
                   "toolName": "spawn_agent",
                   "status": "done",
                   "inputPreview": "collaboration.spawn_agent inner",
+                  "inputHash": "b07dd27ef416f378401c4a44860244ffb216ead202d4749e9897e6fd5c58d82c",
+                  "ordinal": 0,
                   "resultPreview": "{\"task_name\":\"/root/outer/inner\"}",
                   "truncated": false
                 },
@@ -902,6 +999,8 @@
                       "toolName": "exec",
                       "status": "done",
                       "inputPreview": "exec",
+                      "inputHash": "33011f85229f8b25f1d37ebe84d70174a3bbcdbbb084f9bbddb238b9ef2b6303",
+                      "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.8 seconds\nOutput:\n\n20\r\n",
                       "truncated": false
                     }
@@ -915,13 +1014,16 @@
                     "output": 132
                   },
                   "startedAt": 1788386089509,
-                  "endedAt": 1788393600000
+                  "endedAt": 1788386100718,
+                  "model": "gpt-5.6-terra"
                 },
                 {
                   "id": "call_IKWCISCaJiX2efcibFiQcjR5",
                   "toolName": "wait_agent",
                   "status": "done",
                   "inputPreview": "collaboration.wait_agent",
+                  "inputHash": "fb747c43f7528a9d1bdfb27ef09c7534a90287e7fcaced2d76b72184069a0277",
+                  "ordinal": 1,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
                   "truncated": false
                 }
@@ -935,13 +1037,16 @@
                 "output": 150
               },
               "startedAt": 1788386082798,
-              "endedAt": 1788393600000
+              "endedAt": 1788386103616,
+              "model": "gpt-5.6-terra"
             },
             {
               "id": "call_h9dtvpRc21VjXvYyM1ORQL1L",
               "toolName": "wait_agent",
               "status": "done",
               "inputPreview": "collaboration.wait_agent",
+              "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+              "ordinal": 7,
               "resultPreview": "{\"message\":\"Wait timed out.\",\"timed_out\":true}",
               "truncated": false
             },
@@ -950,6 +1055,8 @@
               "toolName": "wait_agent",
               "status": "done",
               "inputPreview": "collaboration.wait_agent",
+              "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
+              "ordinal": 8,
               "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
               "truncated": false
             }
@@ -963,7 +1070,8 @@
             "output": 499
           },
           "startedAt": 1788386050871,
-          "endedAt": 1788393600000
+          "endedAt": 1788386107429,
+          "model": "gpt-5.6-terra"
         }
       }
     ],

@@ -1,0 +1,47 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "0bee1577-d74d-4960-8ba4-b9fcfa1a14b9",
+  "engine": "cc",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1788126392182,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 33441,
+      "output": 4,
+      "cacheRead": 25048,
+      "cacheRatio": 0.7490206632576777,
+      "toolCalls": 0,
+      "silent": false,
+      "model": "claude-opus-5"
+    }
+  ],
+  "files": [],
+  "tools": [],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 33441,
+    "output": 4,
+    "cacheRead": 25048,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

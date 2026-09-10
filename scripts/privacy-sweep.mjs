@@ -208,7 +208,7 @@ const OWN_PROJECT = 'agent-deck';
  * anywhere else was never scanned for foreign content at all. Measured by the
  * Phase 5 verifier: byte-identical foreign content planted at
  * `src/model/leak.test.ts` and `docs/notes.md` produced ZERO gate hits while the
- * same bytes under `fixtures/hook-events/` produced 3. This repository's own
+ * same bytes under `fixtures/hook-events/` produced 3. This own
  * Phase 1 privacy leak lived largely in DOCUMENTS - exactly the class that was
  * outside the gate.
  *
@@ -325,6 +325,74 @@ function entropy(s) {
 }
 
 const GENERIC_SECRET_MIN_ENTROPY = 3.5;
+
+/* ------------------------------------------------------------------ *
+ * Telemetry identity shapes (Phase 0b)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Claude Code's OpenTelemetry exporter attaches FIVE identity attributes to
+ * every metric point, log record and span. They are not credentials, so
+ * SECRET_RULES does not describe them, and they are not this developer's own
+ * paths, so the identity token file does not either - they are the ACCOUNT
+ * behind the session, and a captured OTLP corpus carries one of each on every
+ * single record. Measured on the Phase 0b capture: 850 records, 850 of each.
+ *
+ * The locked plan named FOUR. `account_id` is a fifth, in a different format
+ * from `account_uuid`, so a rule for the uuid does not cover it - corrected
+ * against the raw capture, 2026-09-05, before any of it was committed.
+ *
+ * Each rule allows exactly one value: the redaction placeholder, which has the
+ * same SHAPE as the real thing so a fixture still witnesses what Claude Code
+ * sends. Anything else on that attribute is a finding and fails the gate.
+ *
+ * Attribute names are assembled from parts for the same reason every rule above
+ * is: a pattern written as one literal matches this file, and a scanner that
+ * finds itself is a scanner nobody can read the output of.
+ */
+export const TELEMETRY_PII_RULES = (() => {
+  const U = 'user' + '.';
+  const O = 'organization' + '.';
+  const specs = [
+    { id: 'otel-user-email', attr: U + 'email', allow: 'redacted@example.invalid' },
+    { id: 'otel-user-id', attr: U + 'id', allow: '0'.repeat(64) },
+    { id: 'otel-user-account-id', attr: U + 'account_id', allow: 'user_' + '0'.repeat(26) },
+    { id: 'otel-user-account-uuid', attr: U + 'account_uuid', allow: '00000000-0000-0000-0000-000000000000' },
+    { id: 'otel-organization-id', attr: O + 'id', allow: '00000000-0000-0000-0000-000000000001' },
+  ];
+  return specs.map((s) => {
+    const a = s.attr.split('.').join('\\.');
+    // A quote that may be BACKSLASH-ESCAPED. The captured OTLP body is stored
+    // as a JSON string inside its envelope - the right shape for a fixture,
+    // because it is exactly the body an HTTP receiver is handed - so in the
+    // file the bytes read \"key\":\"user.email\", not "key":"user.email".
+    // A rule written against unescaped JSON matches NOTHING there, and
+    // matches nothing SILENTLY. Measured 2026-09-05 by the negative control,
+    // which is the only reason it was found: all five rules were silent on
+    // raw data carrying the real account identity, and the sweep was green.
+    const q = '\\\\?"';
+    // Stops at the closing quote, escaped or not. It must NOT admit \\. -
+    // that swallows the escaped closing quote and runs on, which made every
+    // captured value differ from its placeholder and fired all five rules on
+    // the redacted fixture. These values are emails, uuids and 64-hex: no
+    // quote, no backslash, ever.
+    const v = '([^"\\\\]*)';
+    return {
+      ...s,
+      // Two shapes: OTLP/JSON's {"key":...,"value":{"stringValue":...}}
+      // envelope, and a plain "attr": "value" pairing, so reshaping a fixture
+      // does not quietly walk out from under the rule.
+      re: new RegExp(
+        q + 'key' + q + '\\s*:\\s*' + q + a + q + '\\s*,\\s*' + q + 'value' + q +
+          '\\s*:\\s*\\{\\s*' + q + 'stringValue' + q + '\\s*:\\s*' + q + v + q +
+          '|' +
+          q + a + q + '\\s*:\\s*' + q + v + q,
+        'g',
+      ),
+    };
+  });
+})();
+
 
 /* ------------------------------------------------------------------ *
  * Foreign-content shapes
@@ -839,6 +907,36 @@ function codexSlugPhrase(m) {
  */
 const FOREIGN_VALUE_EXEMPTIONS = [
   {
+    id: 'own-slug-cut-by-our-own-truncation',
+    reason:
+      'A slug fragment cut part-way through one of the path components of the ' +
+      'own slug of this repository, produced when the preview truncation of ' +
+      'Agent Deck cut the slug mid-name. Found 2026-09-06 at the v0.7.0 Phase ' +
+      '0c gate: webview/wire/cc-2.1.260-stall-arc.json carried 875 occurrences ' +
+      'of the complete slug (forgiven by namesOwnProject) and 5 of ' +
+      '"c--users-dev-projects-agent-", cut before "deck" by the 512-byte ' +
+      'preview budget and therefore naming no project at all. Every one is ' +
+      'immediately followed by the marker of this tool, "...[agent-deck: ' +
+      'truncated, showing 512 of 666 bytes]". ' +
+      'DISCLOSURE IMPACT IS NIL: the bytes on disk are a proper prefix of a ' +
+      'slug this repository already commits in full, so nothing is revealed ' +
+      'that was not already there. ' +
+      'NARROWED 2026-09-06, the same day, after phase-verifier showed the ' +
+      'first version was far wider than this reason: a bare prefix test also ' +
+      'forgave "c--users-dev-projects", "c--users-dev" and ' +
+      '"c--users-dev-projects-agent" -- the last a COMPLETE slug for a ' +
+      'sibling project named "agent". Each is a prefix of ours and each names ' +
+      'a real, different location, so FOREIGN detection was defeated for a ' +
+      'class nobody had enumerated. The rule now additionally requires that ' +
+      'the own slug continue with a NON-SEPARATOR character, i.e. that the cut ' +
+      'landed inside a path component. A complete slug for anything else ends ' +
+      'at a token boundary and can no longer reach this rule. ' +
+      'scripts/check-slug-exemption.mjs is the over-breadth control and it ' +
+      'plants those three regression values, not only a value the predicate ' +
+      'could never forgive.',
+    exempt: (value) => isOwnSlugPrefix(value),
+  },
+  {
     id: 'elided-not-a-location',
     reason:
       'The captured value is an elision, not a path: only dots, an ellipsis and ' +
@@ -1118,9 +1216,99 @@ function scanSecrets(text, starts, relPath, sink) {
   }
 }
 
+/**
+ * Telemetry identity attributes carrying anything but their placeholder.
+ *
+ * The VALUE is never echoed - it is the thing being protected - so findings
+ * carry the rule id and a redacted form, the same treatment secrets get.
+ */
+function scanTelemetryPii(text, starts, relPath, sink) {
+  for (const rule of TELEMETRY_PII_RULES) {
+    rule.re.lastIndex = 0;
+    let m;
+    while ((m = rule.re.exec(text)) !== null) {
+      const value = m[1] ?? m[2] ?? '';
+      if (value === '' || value === rule.allow) continue;
+      sink({
+        path: relPath,
+        line: lineOf(starts, m.index),
+        rule: rule.id,
+        redacted: redactSecret(value),
+      });
+    }
+  }
+}
+
 /** Does this captured value name the agent-deck project? */
 function namesOwnProject(value) {
   return normalisePathToken(value).includes(OWN_PROJECT);
+}
+
+/**
+ * Is `value` a STRICT PREFIX of this own project slug?
+ *
+ * The full own slug is not matched here - `namesOwnProject` already forgives
+ * that, and a value that names the project is not a fragment. This is only for
+ * the case where our own preview truncation cut the slug before the project
+ * name, leaving bytes that name nothing. See the
+ * `own-slug-cut-by-our-own-truncation` exemption for why forgiving it cannot
+ * hide foreign content.
+ */
+function isOwnSlugPrefix(value) {
+  const v = normalisePathToken(value).toLowerCase();
+  if (v.length === 0) return false;
+  if (v.includes(OWN_PROJECT)) return false;
+  for (const slug of ownProjectSlugs()) {
+    if (slug.length <= v.length) continue;
+    if (!slug.startsWith(v)) continue;
+    // THE CUT MUST HAVE LANDED INSIDE A PATH TOKEN.
+    //
+    // A prefix test alone was far wider than its own justification, and the
+    // phase-verifier proved it: it forgave c--users-dev-projects,
+    // c--users-dev, and c--users-dev-projects-agent -- the last a COMPLETE
+    // slug for a sibling project named "agent". Each is a prefix of ours and
+    // each names a real, different location.
+    //
+    // Our slug continuing with a separator means the value ended at a token
+    // boundary, which is exactly what a complete slug for something else looks
+    // like. Requiring a non-separator here admits only a value cut part-way
+    // through one of our own path components -- which is what our own preview
+    // truncation produces and what no complete slug can be.
+    const nextChar = slug.charAt(v.length);
+    if (nextChar === '-') continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Every full project slug this repository legitimately carries, derived from
+ * the committed corpora rather than written down - a literal here would go
+ * stale the next time a corpus is harvested under a different scrubbed root.
+ */
+let ownSlugCache;
+function ownProjectSlugs() {
+  if (ownSlugCache !== undefined) return ownSlugCache;
+  const found = new Set();
+  const root = path.join(process.cwd(), 'fixtures');
+  const walk = (dir, depth) => {
+    if (depth > 4) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const name = e.name.toLowerCase();
+      if (SLUG_SHAPE_RE.test(name) && name.includes(OWN_PROJECT)) found.add(name);
+      else walk(path.join(dir, e.name), depth + 1);
+    }
+  };
+  walk(root, 0);
+  ownSlugCache = [...found];
+  return ownSlugCache;
 }
 
 function scanForeign(text, starts, relPath, sink) {
@@ -1347,6 +1535,8 @@ function newLeg() {
     nulFiles: [],
     identity: { hits: [], exemptHits: 0 },
     secrets: [],
+    // Phase 0b: telemetry identity attributes with a real value on them.
+    telemetry: [],
     // Every value that reached the exemption rules in THIS leg. The
     // repository-wide total is in `verdict.foreignCandidates`; this is the
     // denominator the working-tree census closes against.
@@ -1379,6 +1569,7 @@ function scanUnit(leg, relPath, body, identity) {
   }
 
   scanSecrets(text, starts, relPath, (hit) => leg.secrets.push(hit));
+  scanTelemetryPii(text, starts, relPath, (hit) => leg.telemetry.push(hit));
 
   if (inCaptureCorpus(relPath)) {
     scanForeign(text, starts, relPath, (hit) => leg.foreign.push(hit));
@@ -1478,6 +1669,7 @@ export function sweep(options = {}) {
   const identityHits = wt.identity.hits.length + (history?.identity.hits.length ?? 0);
   const secrets = wt.secrets.length + (history?.secrets.length ?? 0);
   const foreign = wt.foreign.length + (history?.foreign.length ?? 0);
+  const telemetry = wt.telemetry.length + (history?.telemetry.length ?? 0);
 
   const head = gitRepo
     ? git(root, ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
@@ -1531,6 +1723,7 @@ export function sweep(options = {}) {
         };
       }),
       secretRules: [...SECRET_RULES.map((r) => r.id), 'generic-high-entropy'],
+      telemetryRules: TELEMETRY_PII_RULES.map((r) => r.id),
       // Untracked mode, and WHAT it read - a boolean alone would not say
       // whether the walk found anything, which is the interesting half.
       untracked: wantUntracked,
@@ -1544,6 +1737,7 @@ export function sweep(options = {}) {
       identity: identityHits,
       secrets,
       foreign,
+      telemetry,
       // Every value that reached the exemption rules at all, across both legs -
       // i.e. a foreign-shaped capture key whose value did not name this project
       // and passed the shape gates. `foreignCandidates` minus the sum of every
@@ -1555,7 +1749,7 @@ export function sweep(options = {}) {
       // judgement either: `identityHits` is 0 because nothing was looked for,
       // which is why the status travels beside the count everywhere it is
       // printed. Reading the 0 without the status is the fail-open reading.
-      pass: identityHits === 0 && secrets === 0 && foreign === 0,
+      pass: identityHits === 0 && secrets === 0 && foreign === 0 && telemetry === 0,
     },
     timingsMs: timings,
   };
@@ -1655,6 +1849,7 @@ function main(argv) {
         // have one.
         `identity=${st === 'RUN' ? String(report.verdict.identity) : `SKIPPED(${String(why)})`} ` +
         `secrets=${report.verdict.secrets} ` +
+        `telemetry=${report.verdict.telemetry} ` +
         // Same rule, applied to FOREIGN. A bare `foreign=0` reads identical
         // whether the scan examined a hundred thousand capture values or never
         // opened a corpus at all - and "a clean PASS over an absent corpus" is

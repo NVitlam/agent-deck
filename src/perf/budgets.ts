@@ -338,6 +338,96 @@ export const CODEX_ENGINE_READ_BUDGET: TimingBudget = {
   },
 };
 
+/**
+ * v0.7.0 DoD 1.8b — the OpenCode liveness poll, CLOSED AS MEASURED-AND-REJECTED.
+ *
+ * WHY A BUDGET EXISTS ON A COST WE DECIDED NOT TO FIX. 1.8b asked for the two
+ * unindexable full `part` scans per poll to be bounded. A per-session watermark
+ * over `part_session_idx` was written and reached **1.2 ms at 200 k rows against
+ * 402.8 ms unbounded** — and was REVERTED, because `liveness.test.ts`'s A2
+ * mutation table starts a tool by rewriting one part's `data` IN PLACE, with no
+ * new row, no `event_sequence` move and no `time_updated` bump, and under the
+ * bound that tool became invisible. Four candidates, each failing on its own
+ * terms — session scope depends on OpenCode writing an `event` per part write
+ * (never measured); a `rowid` watermark catches an INSERT and misses the UPDATE
+ * IN PLACE that turns `running` into `completed`; a `time_updated` watermark is
+ * evidence-backed (865 of 865 parts in the anchor) but is still a full scan at
+ * 26.5 ms on 200 k and not flat; an index of our own is a write to the observed
+ * database, which G1 forbids. The user closed it on 2026-09-06 as
+ * measured-and-rejected rather than deferred, and directed that the cost be
+ * PINNED so growth is caught. This is that pin.
+ *
+ * WHAT IT DOES AND DOES NOT CATCH. The row count is FIXED at 20,000, so this is
+ * a guard on the PER-ROW cost of the scan — a regression in the predicate, the
+ * row decoding or the poll's per-row work goes red here. It is NOT a guard on
+ * the unboundedness itself, which is the accepted cost: a user's store growing
+ * to 200 k rows still pays ~400 ms per poll and this budget will not notice,
+ * because its subject is a store of a size we choose. `partscan.test.ts` is the
+ * measurement of that growth and carries the tripwire that goes red the day
+ * anyone bounds the scan.
+ *
+ * WHY A SYNTHETIC STORE RATHER THAN THE COMMITTED CORPUS. The anchor carries
+ * 865 `part` rows and polls in ~1 ms — too small to separate a real regression
+ * from scheduler noise. 20,000 is the same row count `partscan.test.ts` uses for
+ * its small store, so the two instruments are directly comparable, and it is a
+ * plausible size for a real developer's store after a few months.
+ *
+ * WHY NOT MEASURED IN THE MAIN PROJECT. A budget has to live where the host
+ * process state is controlled, which is this project (`pool: 'forks'`): this
+ * repo has an evidence file about a perf stage that measured 1050.6 ms in the
+ * main project and 12.3 ms in a separate process, on an unchanged tree, with
+ * the mechanism still unidentified.
+ *
+ * AMENDED 2026-09-07 (Phase 1c). This section used to read "`partscan.test.ts`
+ * reports 48.4 ms for the same scan, in the MAIN vitest project", offered as a
+ * live instrument difference. **`partscan.test.ts` has moved into this project**
+ * — it was failing in the main one for exactly the reason this paragraph gives.
+ *
+ * AND THE INSTRUMENT DIFFERENCE LARGELY WAS NOT ONE. Re-measured here after the
+ * move, with a warm-up poll discarded: **53.0 ms**, against the 48.4 ms recorded
+ * from the main project. Those agree. What the main project was really adding
+ * was START-UP cost landing on whichever store was measured first — the same
+ * store measured 617 ms in a cold process during the Phase 1c blocks, and that
+ * is what made the ratio assertion there a coin toss. So the honest reading of
+ * the old 48.4 is that it was a warm measurement all along, and the gap between
+ * 48.4 and this budget's 93.8 is NOT explained by the project boundary. That
+ * gap is unexplained and is recorded as unexplained; the margin below is wide
+ * enough that it does not need explaining to do its job.
+ */
+export const OPENCODE_POLL_BUDGET: TimingBudget = {
+  id: 'opencode.poll.regression',
+  what: 'total',
+  statistic: 'median',
+  limitMs: 950,
+  source: 'regression',
+  enforced: true,
+  measured: {
+    valueMs: 93.8,
+    on: 'synthetic OpenCode store, 20,000 `part` rows across 8 sessions, journal-mode delete, 2026-09-06',
+    marginX: 10.1,
+    note:
+      'One steady-state `OcLivenessEngine.poll()` — both unindexable full `part` ' +
+      'scans, every row decoded. 7 samples after 2 warm-ups in the `perf` project ' +
+      '(pool: forks). Two consecutive runs measured medians of 72.6 and 93.8 ms — ' +
+      'a 1.3x spread on an unchanged tree, recorded rather than averaged away. ' +
+      '93.8 is kept as the set point because a budget set from the FASTER of two ' +
+      'observations is a budget that fails on a normal day — the same rule ' +
+      'codex.engineRead.dod records. THE SECOND INSTRUMENT IS NOW IN THIS ' +
+      'PROJECT TOO: `partscan.test.ts` reported 48.4 ms for the same scan at the ' +
+      'same row count from the MAIN project, and 53.0 ms here after Phase 1c ' +
+      'moved it on 2026-09-07 and discarded a warm-up poll. Those two agree, so ' +
+      'the project boundary does NOT explain the gap to 93.8 and nothing here ' +
+      'claims it does; see this budget\'s header. ' +
+      'THE MARGIN IS DELIBERATELY WIDE (10x) AND THAT IS THE POINT OF THIS ' +
+      'PARTICULAR BUDGET: it guards a cost the user ACCEPTED, so it must catch an ' +
+      'order-of-magnitude regression in per-row work without going red on a ' +
+      'slower machine or a loaded runner. A tight limit here would be a flaky ' +
+      'test defending a decision that is already recorded. The FIRST-PASS cost is ' +
+      'deliberately not the subject: the steady state is what is paid forever, ' +
+      'and it is what 1.8b was about.',
+  },
+};
+
 export const HEAP_FLOOR_RATIO_LIMIT = 1.1;
 
 /**
@@ -346,3 +436,304 @@ export const HEAP_FLOOR_RATIO_LIMIT = 1.1;
  * grow; this bounds that confound instead of ignoring it. Measured: 0.120%.
  */
 export const CORPUS_GROWTH_FRACTION_LIMIT = 0.01;
+
+/**
+ * v0.7.0 DoD 2.8 — `deriveStats` per 1,000 tree nodes.
+ *
+ * ## What it measures, and why the unit is NODES rather than a session
+ *
+ * The deriver's cost is a function of how many `ToolNode`s and `AgentNode`s it
+ * walks, not of how long the session lasted or how many bytes its transcripts
+ * held. Committed sessions span 0 to 454 tool calls, so a per-session budget
+ * would be dominated by which corpus happened to be biggest and would move
+ * every time one was added. A fixed 1,000-node subject is comparable across
+ * releases and is the unit DoD 2.8 names.
+ *
+ * The subject exercises every fact that costs anything: eight agents so the
+ * per-agent grouping is real, 40 distinct files across three tool classes so F1
+ * and F4 both have work, 50 distinct input hashes so F3's grouping produces 30
+ * genuine loops, an error every seventeenth call so churn chains actually form,
+ * and a 40-turn usage series per agent for F6 and F7. A subject with one agent
+ * and no repeats would measure the walk and none of the derivation.
+ *
+ * ## The measurement
+ *
+ * Three standalone runs on the Windows 11 development machine, 2026-09-08, 40
+ * samples each with the FIRST FIVE DISCARDED (JIT warm-up: those five ran
+ * 1.634, 1.248, 0.853, 0.932, 0.524 ms in an early run, against a warm median
+ * of 0.540). Medians: **0.566, 0.574, 0.609 ms**. The slowest of the three is
+ * the set point, per this file's rule that a budget set from the faster of two
+ * observations is a budget that fails on a normal day.
+ *
+ * ## THE FIRST SUBJECT WAS MEASURING F7's LOOP WITHOUT ITS WORK
+ *
+ * Recorded because the correction is the useful part, and because a vacuity
+ * control is what found it rather than review. The subject's usage series
+ * first rose by 300 tokens a turn, so every turn-over-turn delta was 300
+ * against a `SPIKE_TOKENS.cc` of 5,000 and **F7 produced zero rows** — the
+ * scan ran and pushed nothing. Medians under that subject were 0.540, 0.503,
+ * 0.498 ms, and a budget set from them would have been a budget on a fact that
+ * was never derived.
+ *
+ * The series now rises by 6,000 a turn, so all 39 deltas per agent clear the
+ * threshold and F7 pushes 312 rows. That is the number above, and the cost of
+ * the fix — roughly 13 % — is the honest size of the work that had been
+ * missing. The test carries the control that caught it: it asserts every
+ * expensive fact produced rows before it times anything.
+ *
+ * ## Why 5 ms and not 1 ms
+ *
+ * An 8.2x margin on a sub-millisecond pure function is not slack for its own
+ * sake. At this scale timer granularity and a single GC pause are a large share
+ * of the sample, and Phase 1c measured this machine running at roughly half
+ * speed for a whole 20-run block — under which the median would be ~1.1 ms and
+ * a 1 ms limit would be red on correct code. What the limit is FOR is an
+ * algorithmic regression: every grouping here is linear or `n log n`, and the
+ * plausible defect is one of them going quadratic, which at 1,000 nodes is two
+ * orders of magnitude and clears 5 ms without ambiguity. A budget that goes red
+ * on a loaded machine teaches people to re-run it, which is worth less than a
+ * budget that only ever goes red for a reason.
+ *
+ * What it does NOT establish: behaviour above 1,000 nodes. `fuzz.test.ts`
+ * covers 5,000 for CORRECTNESS (it must not throw), not for time.
+ */
+export const DERIVE_STATS_BUDGET: TimingBudget = {
+  id: 'stats.derive.dod',
+  what: 'deriveStats per 1,000 nodes',
+  statistic: 'median',
+  limitMs: 5,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 0.609,
+    on: 'synthetic 1,000-tool-node session (8 agents, 40 files, 50 hashes, 40-turn series, 312 F7 rows), 3 runs x 35 warm samples, 2026-09-08',
+    marginX: 8.2,
+    note:
+      'Medians 0.566 / 0.574 / 0.609 ms across three standalone runs; the ' +
+      'SLOWEST is the set point. First five samples of each run discarded as ' +
+      'JIT warm-up and recorded above rather than dropped silently. ' +
+      'SUPERSEDED SET POINT, kept because the reason matters: 0.540 ms, ' +
+      'measured over a subject whose cache-creation rose 300 tokens a turn, ' +
+      'so F7 scanned every turn and reported none. The subject now spikes on ' +
+      'all 39 deltas per agent and the derivation costs ~13% more. Measured ' +
+      'in a plain node process, the closest available analogue of the forked, ' +
+      'single-fork worker the `perf` project runs on.',
+  },
+};
+
+/**
+ * The local store's two stages — v0.7.0 DoD 3.9.
+ *
+ * ## THE SUBJECT IS THE STEADY STATE, AND CHOOSING IT MOVED THE NUMBER
+ *
+ * Both budgets are measured against a store already holding a FULL RETENTION
+ * WINDOW: 90 days at 20 sessions a day — 1,800 records across 14 weekly files,
+ * the same projection `docs/evidence/phase-0-stats/VERDICT.md` 0.7 used to
+ * confirm the 90-day default. That is what a user three months in has, and it
+ * is chosen so the plausible regression is visible at the subject's own scale:
+ * an append that starts READING the history it is appending to costs nothing
+ * measurable against an empty store and about 50 ms against this one.
+ *
+ * The first attempt measured append into a FRESH store seeded with one week,
+ * a new `mkdtemp` per sample, and reported a median of 17.5-18.6 ms. That
+ * number was mostly the seeding: re-measured against the steady state it is
+ * **10.0-10.6 ms**. Recorded because the correction is the useful part — a
+ * per-sample setup that dominates the sample is a budget measuring its own
+ * harness, and the only thing that catches it is looking at where the time
+ * went.
+ *
+ * ## WHAT THESE LIMITS ARE AND ARE NOT FOR
+ *
+ * `appendRecord` is FILESYSTEM-BOUND and the wall-clock number is a property
+ * of this machine, not of the code. Measured by syscall on the development
+ * box: `mkdirSync` 0.166 ms, `existsSync` 0.156 ms, `readdirSync` 0.148 ms —
+ * and `appendFileSync` **17.2 ms**. Nearly all of an append is one open-write-
+ * close of a growing file, which on Windows is dominated by whatever scans it.
+ * The retention prune, which runs on every append, is 0.30 ms of the total.
+ *
+ * So these are the `postAppend.tailPoll.regression` kind of budget, not the
+ * `stats.derive` kind, and they carry its kind of margin (12.5x there, 14.1x
+ * and 10.0x here). Phase 1c measured this machine running at roughly half
+ * speed for a whole 20-run block, and the corpus read — also filesystem-bound
+ * — degraded by a factor of MORE THAN 13 while the suite's own wall-clock only
+ * doubled. A limit set for a 2x regression would be red on correct code on an
+ * ordinary bad day, and a budget that goes red on a loaded machine teaches
+ * people to re-run it, which is worth less than a budget that only ever goes
+ * red for a reason.
+ *
+ * **Stated plainly: these catch an ORDER-OF-MAGNITUDE regression — a stage
+ * going quadratic in the number of records or of files — and they do not catch
+ * a doubling.** The append limit would not go red on an append that re-read
+ * the whole store (+50 ms), and that is a known gap rather than an oversight:
+ * closing it would need a limit near 40 ms, which this machine has already
+ * been measured exceeding on identical code.
+ */
+export const STORE_APPEND_BUDGET: TimingBudget = {
+  id: 'stats.store.append.dod',
+  what: 'StatsStore.appendRecord into a full retention window',
+  statistic: 'median',
+  limitMs: 150,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 10.63,
+    on: 'a store holding 1,800 records across 14 weekly files, 3 runs x 45 samples, 2026-09-08',
+    marginX: 14.1,
+    note:
+      'Medians 10.03 / 9.91 / 10.63 ms across three standalone runs; the ' +
+      'SLOWEST is the set point, so the margin stated is the worst case. ' +
+      'Maxima 15.5 / 14.8 / 18.2 ms. Measured in a plain node process, the ' +
+      'closest available analogue of the forked, single-fork worker the ' +
+      '`perf` project runs on. SUPERSEDED SET POINT, kept because the reason ' +
+      'matters: 18.6 ms, measured against a fresh store re-seeded with 140 ' +
+      'records per sample — most of which was the seeding rather than the ' +
+      'append. Nearly all of what remains is `appendFileSync` itself (17.2 ' +
+      'ms by syscall on this machine); the retention prune is 0.30 ms.',
+  },
+};
+
+export const STORE_READ_BUDGET: TimingBudget = {
+  id: 'stats.store.read.dod',
+  what: 'StatsStore.readRecords over a full retention window',
+  statistic: 'median',
+  limitMs: 500,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 49.86,
+    on: '1,800 records across 14 weekly files, all read and reduced, 3 runs x 45 samples, 2026-09-08',
+    marginX: 10.0,
+    note:
+      'Medians 48.92 / 49.86 / 48.74 ms across three standalone runs; the ' +
+      'SLOWEST is the set point. Maxima 60.7 / 63.9 / 61.5 ms. This is the ' +
+      'whole-history read the Trends view and the extension API will make, ' +
+      'not anything on the emission path — a read never happens while a ' +
+      'session is being observed. The cost is 14 file reads plus 1,800 ' +
+      '`JSON.parse` and 1,800 `validateStatsRecord` walks; the reduction to ' +
+      'newest-per-session is a single `Map` pass and is not where the time ' +
+      'goes. The regression this is for is that reduction going quadratic, ' +
+      'which at 1,800 records is 3.2 million comparisons and clears 500 ms ' +
+      'without ambiguity.',
+  },
+};
+
+
+/**
+ * The two pure webview computations Phase 4 added — v0.7.0 DoD 4.10.
+ *
+ * Both are functions of their arguments with no I/O, so the number is the
+ * function. `fit` runs on EVERY trigger in the table (`webview/store.ts:
+ * FIT_TRIGGERS`), including every structural diff, so its limit is per
+ * trigger; `statsLayout` runs on every `statsSnapshot` and every engine-chip
+ * toggle, over every live record. Set from the measurements below;
+ * `webview-layout.test.ts` re-measures and prints beside them.
+ */
+export const WEBVIEW_FIT_BUDGET: TimingBudget = {
+  id: 'webview.fit.dod',
+  what: 'boundsOf + fit over the 40-node wrapped tree, with the drawer open',
+  statistic: 'median',
+  limitMs: 1,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 0.008,
+    on: 'the 40-node fit golden subject (sessionOf(40)), 1600x900, drawer 190 px, 3 standalone runs x 40 warm samples, 2026-09-09',
+    marginX: 125,
+    note:
+      'Medians 0.008 / 0.007 / 0.006 ms across three standalone runs; the SLOWEST is ' +
+      'the set point. The subject is boundsOf over 40 placements plus one fitTo, which ' +
+      'is what a trigger pays. Measured in the forked perf worker. The limit is 1 ms ' +
+      'because a trigger can fire on every structural diff and the whole per-diff ' +
+      'incremental budget is 100 ms; this stage must stay invisible inside it.',
+  },
+};
+
+/**
+ * v0.7.0 DoD 5.0 — the shared listener's relay: follower attach plus 1,000
+ * relayed frames, first two samples discarded.
+ *
+ * ## What it measures
+ *
+ * One sample is a FRESH follower attaching to a leader and then receiving
+ * 1,000 hook payloads that were POSTed to the leader the way a hook command
+ * POSTs them — one connection each. So it is the leader's whole per-event cost
+ * with a follower attached (parse, normalize, local dispatch, the G4 redaction
+ * every relayed payload goes through, the SSE write) plus the follower's
+ * (frame split, decode, ownership filter, dispatch). The payloads are the 285
+ * real ones in `fixtures/hook-events/`, cycled. `relay.test.ts` carries the
+ * subject control: every sample received exactly 1,000 frames and every frame
+ * was either dispatched or dropped as another window's.
+ *
+ * **Where the time goes:** attach is ~2 ms of a ~550 ms sample. Nearly all of
+ * it is the thousand loopback connections and the leader's handling of them —
+ * which is the honest cost of the relay to a leader, because a relayed frame
+ * only exists once a hook has POSTed it.
+ *
+ * ## THIS BUDGET DOES NOT RUN ON NODE 24.15.0, AND THAT IS THE 5.0c FINDING
+ *
+ * It was first measured on this machine's default `node.exe`, 24.15.0, and the
+ * forked perf worker died before reporting in **4 of 6** runs
+ * (`ERR_IPC_CHANNEL_CLOSED` in the parent, no test output, no WER record). The
+ * same workload in a plain Node process, no vitest, exits `0xC0000409` in
+ * **14 of 28** runs on 24.15.0 and **0 of 20** on each of 22.23.2 and 24.18.1,
+ * interleaved. It is the fail-fast Phase 1c could not diagnose, reproduced by
+ * this repository's own relay code, and it is why the gate's Node is pinned —
+ * `docs/evidence/v0.7.0/phase-5/NODE-5.0c.md` is the record. The numbers below
+ * are therefore Node 22.23.2 numbers, the pinned gate runtime.
+ *
+ * ## The measurement, and the margin
+ *
+ * Three standalone runs under Node 22.23.2, 2026-09-10, 2 discarded + 7 kept
+ * each. Kept medians **560.95, 545.62, 562.88 ms**; the slowest is the set
+ * point. Discarded (warm-up) samples ran 620–730 ms and are printed by the test
+ * rather than dropped silently — the DoD states the discard so a warm-up
+ * allowance can be told from a quietly widened limit.
+ *
+ * 5,000 ms is 8.9x. The stage is loopback-socket-bound, the kind of stage this
+ * machine has been measured running at half speed for whole blocks, so a limit
+ * set for a doubling would be red on correct code. What it is FOR is a relay
+ * that goes quadratic in frames — a follower buffer re-scanned from the start,
+ * a leader still writing to followers that left — which at 1,000 frames clears
+ * 5 s without ambiguity. It does not catch a doubling, stated rather than
+ * implied.
+ */
+export const RELAY_BUDGET: TimingBudget = {
+  id: 'relay.follower.dod',
+  what: 'follower attach + 1,000 relayed hook frames',
+  statistic: 'median',
+  limitMs: 5_000,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 562.88,
+    on: 'fixtures/hook-events (285 real payloads, cycled) x 1,000 frames per sample, Node 22.23.2, 3 runs x (2 discarded + 7 kept), 2026-09-10',
+    marginX: 8.9,
+    note:
+      'Kept medians 560.95 / 545.62 / 562.88 ms across three standalone runs in the ' +
+      '`perf` project (pool: forks) under Node 22.23.2; the SLOWEST is the set point. ' +
+      'Attach medians 1.7-2.0 ms: nearly all of a sample is the thousand loopback ' +
+      'POSTs and the leader handling them. On Node 24.15.0 the same file lost its ' +
+      'forked worker before reporting in 4 of 6 runs — the 5.0c fail-fast — so this ' +
+      'budget is only meaningful on the pinned gate Node.',
+  },
+};
+
+export const STATS_LAYOUT_BUDGET: TimingBudget = {
+  id: 'webview.statsLayout.dod',
+  what: 'statsLayout over every harvested corpus record',
+  statistic: 'median',
+  limitMs: 20,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 0.129,
+    on: 'the harvested fixtures/golden/stats records (23, one excluded), 3 standalone runs x 40 warm samples, 2026-09-09',
+    marginX: 155,
+    note:
+      'Medians 0.129 / 0.090 / 0.110 ms across three standalone runs; the SLOWEST is ' +
+      'the set point. The subject is every harvested corpus record through all four ' +
+      'views. The limit is 20 ms because the layout re-runs on every statsSnapshot ' +
+      'the host sends, which is every emission while the Stats view is open, and a ' +
+      'layout that took longer than a frame would show up as a stutter on a live deck.',
+  },
+};

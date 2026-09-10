@@ -1033,3 +1033,155 @@ describe('the synthetic/recorded distinction is enforced, not documented', () =>
     ).resolves.toBe(`${SYNTHETIC_CORPUS_PREFIX}stress.json`);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The STALL arc (v0.7.0 DoD 0c.7)
+// ---------------------------------------------------------------------------
+
+/**
+ * `cc-2.1.260-stall-arc.json` is produced by a DIFFERENT recorder
+ * (`scripts/record-stall-wire.mjs`), because `record-wire.mjs` records a
+ * session's ARRIVAL — content lands, the tree grows — and a stall is the
+ * opposite: nothing arrives, and the only thing that moves is the clock.
+ *
+ * It therefore falls outside the staleness loop above, which iterates only
+ * what `record-wire.mjs` writes. Without this block the corpus would be a
+ * committed artifact that nothing regenerates or compares — exactly the shape
+ * this repository has shipped before.
+ */
+describe('the stall arc corpus', () => {
+  const STALL_RECORDER = 'scripts/record-stall-wire.mjs';
+  const STALL_NAME = 'cc-2.1.260-stall-arc.json';
+  const OUTER = 'toolu_01NTu6y7z1wxWDtCDxMCQge4';
+  const INNER = 'toolu_018fuffcyA46w1xfU6Wpcj5z';
+
+  let fresh: string;
+  let corpus: {
+    id: string;
+    kind: string;
+    title: string;
+    description: string;
+    durationMs: number;
+    final: Record<string, unknown>;
+    steps: { atMs: number; label: string }[];
+    events: { atMs: number; label: string; message: Record<string, unknown> }[];
+  };
+
+  beforeAll(async () => {
+    const dir = await mkdtemp(join(tempRoot, 'stall-'));
+    run('node', [STALL_RECORDER, '--out', dir]);
+    fresh = await readFile(join(dir, STALL_NAME), 'latin1');
+    corpus = JSON.parse(await readFile(join(COMMITTED, STALL_NAME), 'utf8')) as typeof corpus;
+  }, 300_000);
+
+  it('is committed, and is not stale', () => {
+    const committedBytes = committed.get(STALL_NAME);
+    expect(
+      committedBytes,
+      `${WIRE_CORPUS_DIR}/${STALL_NAME} is missing — run \`node ${STALL_RECORDER}\``,
+    ).toBeDefined();
+    expect(
+      lf(committedBytes ?? ''),
+      `${WIRE_CORPUS_DIR}/${STALL_NAME} is stale — re-run \`node ${STALL_RECORDER}\``,
+    ).toBe(lf(fresh));
+  });
+
+  it('is survived by a re-record of the OTHER recorder', () => {
+    // `record-wire.mjs` deletes only the files it is about to write. If that
+    // ever changed, this corpus would vanish on the next re-record and the
+    // staleness test above would report it as merely "missing".
+    expect(runA.has(STALL_NAME)).toBe(false);
+  });
+
+  it('obeys the SHARED WireCorpus contract, field for field', () => {
+    // The first version of this corpus invented `describes` and `thresholdMs`,
+    // omitted `title`, `description`, `durationMs` and the declared `final`
+    // shape, and announced the same `formatVersion` as everything else in the
+    // directory — so the theater printed `undefined` for its name. Nothing
+    // caught it: the shape assertions above iterate what `record-wire.mjs`
+    // writes, and an esbuild plugin inlines the JSON where tsc never sees it.
+    //
+    // Compared against a corpus produced by the OTHER recorder, so this cannot
+    // drift into agreeing only with itself.
+    const reference = JSON.parse(
+      committed.get('cc-2.1.234-session-arc.json') ?? '{}',
+    ) as Record<string, unknown>;
+    const optional = new Set(['refusedLayoutCase', 'engine', 'hostDiagnostics']);
+    const required = Object.keys(reference).filter((k) => !optional.has(k));
+    expect(required.length).toBeGreaterThan(5); // vacuity control
+    for (const key of required) {
+      expect(Object.hasOwn(corpus, key), `stall corpus is missing \`${key}\``).toBe(true);
+    }
+    // And no field the shared type does not declare.
+    for (const key of Object.keys(corpus)) {
+      expect(Object.hasOwn(reference, key), `stall corpus invents \`${key}\``).toBe(true);
+    }
+    expect(typeof corpus.title).toBe('string');
+    expect(corpus.title.length).toBeGreaterThan(0);
+    expect(corpus.durationMs).toBe(corpus.events[corpus.events.length - 1]?.atMs);
+    expect(Object.keys(corpus.final).sort()).toEqual([
+      'degraded',
+      'schemaMismatchSessionIds',
+      'sessions',
+    ]);
+  });
+
+  it('names itself recorded — it is replayed from a real fixture, not invented', () => {
+    expect(corpus.id).toBe('cc-2.1.260-stall-arc');
+    expect(corpus.kind).toBe('recorded');
+    expect(corpus.id.startsWith(SYNTHETIC_CORPUS_PREFIX)).toBe(false);
+  });
+
+  it('moves ONLY the clock: the tree is identical in every frame', () => {
+    // The claim the corpus exists to make. If content arrived between frames,
+    // the amber transition below would prove nothing about the derivation.
+    const trees = corpus.events.map((e) => {
+      const sessions = (e.message as { sessions?: unknown[] }).sessions ?? [];
+      const root = (sessions[0] as { root?: unknown } | undefined)?.root;
+      return JSON.stringify(root, (key, value) =>
+        key === 'status' || key === 'stalledSinceMs' ? undefined : (value as unknown),
+      );
+    });
+    expect(trees).toHaveLength(5);
+    for (const t of trees) expect(t).toBe(trees[0]);
+    // Vacuity control: the trees must not all be `undefined`.
+    expect(trees[0]?.length ?? 0).toBeGreaterThan(1000);
+  });
+
+  it('turns both levels amber at the threshold and clears them on activity', () => {
+    const statusAt = (index: number, toolId: string): string | undefined => {
+      const sessions = (corpus.events[index]?.message as { sessions?: unknown[] }).sessions ?? [];
+      const root = (sessions[0] as { root?: unknown } | undefined)?.root;
+      let found: string | undefined;
+      const walk = (node: Record<string, unknown>): void => {
+        if (node['kind'] === undefined && node['id'] === toolId) {
+          found = node['status'] as string;
+        }
+        for (const child of (node['children'] as Record<string, unknown>[]) ?? []) walk(child);
+      };
+      if (root !== undefined) walk(root as Record<string, unknown>);
+      return found;
+    };
+
+    expect(corpus.steps.map((s) => s.label)).toEqual([
+      'in-flight',
+      'at-threshold',
+      'stalled',
+      'nudged',
+      'resumed',
+    ]);
+    // 120_000 is `agentDeck.livenessThresholdMs`, quoted from the setting
+    // rather than re-declared on the corpus.
+    expect(corpus.steps[1]?.atMs).toBe(120_000);
+    expect(corpus.steps[2]?.atMs).toBe(120_001);
+
+    // Frame by frame, BOTH levels together — the nesting, on the wire.
+    for (const id of [OUTER, INNER]) {
+      expect(statusAt(0, id)).toBe('running');
+      expect(statusAt(1, id)).toBe('running'); // exactly at the threshold
+      expect(statusAt(2, id)).toBe('stalled'); // one ms past it
+      expect(statusAt(3, id)).toBe('stalled'); // still, when the user gave up
+      expect(statusAt(4, id)).toBe('running'); // activity clears it
+    }
+  });
+});

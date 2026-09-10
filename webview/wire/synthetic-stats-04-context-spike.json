@@ -1,0 +1,224 @@
+{
+  "formatVersion": 2,
+  "id": "synthetic-stats-04-context-spike",
+  "kind": "synthetic",
+  "title": "R8 04-context-spike — one turn whose cache-creation delta clears SPIKE_TOKENS.cc, and one that falls short by a single token",
+  "description": "One R8 fixture (fixtures/synthetic-stats/<id>.json) as the host would put it on the wire: its SessionState as a snapshot through a real SessionBridge, then its committed golden StatsRecord (fixtures/golden/stats/<engine>-synthetic-<id>.json) as a statsSnapshot, passed through the same host-side validator PanelController.publishStats runs. The theater replays it through the real store so the Stats view is reviewed over exactly the shape the fixture manufactures. Synthetic: the state was built, not captured.",
+  "producedBy": "scripts/record-wire.mjs --stats",
+  "engine": "cc",
+  "simulatedEpochMs": 1700000060000,
+  "durationMs": 1000,
+  "steps": [
+    {
+      "atMs": 0,
+      "label": "snapshot",
+      "what": "the 04-context-spike state, as the host's first snapshot"
+    },
+    {
+      "atMs": 1000,
+      "label": "stats",
+      "what": "the derived record, host-validated, as a statsSnapshot"
+    }
+  ],
+  "events": [
+    {
+      "atMs": 0,
+      "label": "snapshot",
+      "message": {
+        "type": "snapshot",
+        "sessions": [
+          {
+            "sessionId": "synthetic-04-context-spike",
+            "projectSlug": "synthetic-stats",
+            "workspaceMatch": true,
+            "liveness": "ended",
+            "schemaOk": true,
+            "root": {
+              "id": "root",
+              "kind": "main",
+              "label": "synthetic-root",
+              "status": "done",
+              "spawnDepth": 0,
+              "children": [],
+              "startedAt": 1700000000000,
+              "burn": {
+                "prompt": 1000,
+                "output": 100
+              },
+              "usageSeries": [
+                {
+                  "ordinal": 0,
+                  "input": 10,
+                  "cacheCreation": 0,
+                  "cacheRead": 100,
+                  "output": 20
+                },
+                {
+                  "ordinal": 1,
+                  "input": 10,
+                  "cacheCreation": 6000,
+                  "cacheRead": 100,
+                  "output": 20
+                },
+                {
+                  "ordinal": 2,
+                  "input": 10,
+                  "cacheCreation": 10999,
+                  "cacheRead": 100,
+                  "output": 20
+                }
+              ]
+            },
+            "totals": {
+              "costUsd": 0
+            },
+            "engine": "cc"
+          }
+        ]
+      }
+    },
+    {
+      "atMs": 0,
+      "label": "snapshot",
+      "message": {
+        "type": "degraded",
+        "engine": "cc",
+        "degraded": false
+      }
+    },
+    {
+      "atMs": 0,
+      "label": "snapshot",
+      "message": {
+        "type": "degraded",
+        "engine": "codex",
+        "degraded": false
+      }
+    },
+    {
+      "atMs": 1000,
+      "label": "stats",
+      "message": {
+        "type": "statsSnapshot",
+        "records": [
+          {
+            "statsSchemaVersion": 1,
+            "sessionId": "synthetic-04-context-spike",
+            "engine": "cc",
+            "projectSlug": "synthetic-stats",
+            "startedAt": 1700000000000,
+            "coverage": "full",
+            "agents": [
+              {
+                "agentId": "root",
+                "kind": "main",
+                "spawnDepth": 0,
+                "prompt": 1000,
+                "output": 100,
+                "cacheRead": 300,
+                "cacheRatio": 0.3,
+                "toolCalls": 0,
+                "silent": false
+              }
+            ],
+            "files": [],
+            "tools": [],
+            "loops": [],
+            "churn": [],
+            "contextChurn": [
+              {
+                "agentId": "root",
+                "ordinal": 1,
+                "delta": 6000
+              }
+            ],
+            "compactions": [],
+            "stalls": [],
+            "totals": {
+              "prompt": 1000,
+              "output": 100,
+              "cacheRead": 300,
+              "compactions": 0,
+              "subagents": 0,
+              "silentSubagents": 0,
+              "stalls": 0
+            },
+            "params": {
+              "loopMin": 3,
+              "spikeTokens": 5000
+            },
+            "unavailable": [
+              "F10:cc",
+              "F13.completed:snapshot",
+              "F9:cc"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "atMs": 1000,
+      "label": "stats",
+      "message": {
+        "type": "statsStore",
+        "records": [],
+        "enabled": true
+      }
+    }
+  ],
+  "final": {
+    "sessions": [
+      {
+        "sessionId": "synthetic-04-context-spike",
+        "projectSlug": "synthetic-stats",
+        "workspaceMatch": true,
+        "liveness": "ended",
+        "schemaOk": true,
+        "root": {
+          "id": "root",
+          "kind": "main",
+          "label": "synthetic-root",
+          "status": "done",
+          "spawnDepth": 0,
+          "children": [],
+          "startedAt": 1700000000000,
+          "burn": {
+            "prompt": 1000,
+            "output": 100
+          },
+          "usageSeries": [
+            {
+              "ordinal": 0,
+              "input": 10,
+              "cacheCreation": 0,
+              "cacheRead": 100,
+              "output": 20
+            },
+            {
+              "ordinal": 1,
+              "input": 10,
+              "cacheCreation": 6000,
+              "cacheRead": 100,
+              "output": 20
+            },
+            {
+              "ordinal": 2,
+              "input": 10,
+              "cacheCreation": 10999,
+              "cacheRead": 100,
+              "output": 20
+            }
+          ]
+        },
+        "totals": {
+          "costUsd": 0
+        },
+        "engine": "cc"
+      }
+    ],
+    "degraded": {
+      "degraded": false
+    },
+    "schemaMismatchSessionIds": []
+  }
+}

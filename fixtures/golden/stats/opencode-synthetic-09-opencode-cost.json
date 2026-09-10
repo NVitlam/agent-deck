@@ -1,0 +1,64 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "synthetic-09-opencode-cost",
+  "engine": "opencode",
+  "projectSlug": "synthetic-stats",
+  "startedAt": 1700000000000,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 1000,
+      "output": 100,
+      "cacheRead": 100,
+      "cacheRatio": 0.1,
+      "toolCalls": 1,
+      "silent": false
+    }
+  ],
+  "files": [
+    {
+      "filePath": "/synthetic/a.ts",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 0,
+      "lastTouchSeq": 0
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "read",
+      "class": "read",
+      "calls": 1,
+      "errors": 0
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 1000,
+    "output": 100,
+    "cacheRead": 100,
+    "costUsd": 0.4237,
+    "costSource": "engine",
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F10:opencode",
+    "F13.completed:snapshot",
+    "F7:opencode"
+  ]
+}

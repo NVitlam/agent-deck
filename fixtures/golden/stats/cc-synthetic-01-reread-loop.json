@@ -1,0 +1,82 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "synthetic-01-reread-loop",
+  "engine": "cc",
+  "projectSlug": "synthetic-stats",
+  "startedAt": 1700000000000,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 1000,
+      "output": 100,
+      "cacheRead": 100,
+      "cacheRatio": 0.1,
+      "toolCalls": 5,
+      "silent": false
+    }
+  ],
+  "files": [
+    {
+      "filePath": "/synthetic/a.ts",
+      "reads": 3,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 0,
+      "lastTouchSeq": 2
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "Grep",
+      "class": "search",
+      "calls": 2,
+      "errors": 0
+    },
+    {
+      "toolName": "Read",
+      "class": "read",
+      "calls": 3,
+      "errors": 0
+    }
+  ],
+  "loops": [
+    {
+      "agentId": "root",
+      "toolName": "Read",
+      "class": "read",
+      "count": 3,
+      "ordinals": [
+        0,
+        1,
+        2
+      ],
+      "filePath": "/synthetic/a.ts"
+    }
+  ],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 1000,
+    "output": 100,
+    "cacheRead": 100,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

@@ -575,6 +575,10 @@ async function readDiscovered(
     const parsed = parseCodexThread(entry.records, {
       file: ref.file,
       mtimeMs: ref.mtimeMs,
+      // DoD 4.11c: the size from the SAME discovery stat as the mtime above.
+      // `ref.bytes` is already what the tailer's byte offsets rest on, so this
+      // is one number reaching a second consumer rather than a second stat.
+      sizeBytes: ref.bytes,
       malformedLines: entry.malformedLines,
       ...(options.maxPayloadBytes === undefined
         ? {}

@@ -47,6 +47,15 @@ import {
   type RawHookPayload,
 } from '../model/events.js';
 import type { CodexHookEvent } from '../codex/liveness.js';
+import type { OtelSignal, TelemetrySlice } from '../otel/parse.js';
+import {
+  EVENTS_PATH,
+  IDENTITY_PATH,
+  encodeSseFrame,
+  identityBody,
+  redactHookPayload,
+  type RelayEnvelope,
+} from './relay.js';
 
 /**
  * The bind address. Hard-coded and deliberately not configurable (G5).
@@ -108,6 +117,18 @@ export interface HookListenerCounters {
   clientDisconnects: number;
   /** Consumer callbacks that threw. The listener keeps serving regardless. */
   handlerErrors: number;
+  /**
+   * Followers currently attached to {@link EVENTS_PATH} (Phase 1b).
+   *
+   * A GAUGE and not a total: it goes down when a window closes. Every other
+   * number here only ever rises, so the difference is called out rather than
+   * left for a reader to infer from a name.
+   */
+  relayFollowers: number;
+  /** SSE frames written to followers. Frames, not sockets, not bytes. */
+  relayFramesSent: number;
+  /** Requests answered on {@link IDENTITY_PATH}. Each is one window asking who we are. */
+  identityProbes: number;
 }
 
 function zeroCounters(): HookListenerCounters {
@@ -126,6 +147,9 @@ function zeroCounters(): HookListenerCounters {
     socketErrors: 0,
     clientDisconnects: 0,
     handlerErrors: 0,
+    relayFollowers: 0,
+    relayFramesSent: 0,
+    identityProbes: 0,
   };
 }
 
@@ -209,7 +233,32 @@ export interface HookListenerOptions {
    * `src/` names this option.
    */
   allowEphemeralPort?: boolean;
+  /**
+   * Byte ceiling applied to every string of a payload BEFORE it is relayed to
+   * a follower (Phase 1b, DoD 1b.3). Defaults to
+   * {@link DEFAULT_RELAY_PREVIEW_BYTES}; production passes
+   * `agentDeck.previewBytes`, which is the one ceiling.
+   */
+  relayPreviewBytes?: number;
+  /**
+   * Serve {@link EVENTS_PATH} at all. Defaults to `true`.
+   *
+   * It exists so a test can prove the ROUTE is what carries the events rather
+   * than something else in the process, and so the relay can be taken out of a
+   * measurement without taking the listener out with it. Production never sets
+   * it: a leader that refuses to relay is a leader that silently blinds every
+   * other window, which is the defect this phase exists to fix.
+   */
+  enableRelay?: boolean;
 }
+
+/**
+ * Relay redaction ceiling when the caller names none.
+ *
+ * The parse boundary's own default. A relay that defaulted to "no ceiling"
+ * would be a G4 hole opened by an omission rather than by a decision.
+ */
+export const DEFAULT_RELAY_PREVIEW_BYTES = 8 * 1024;
 
 /**
  * True for 127.0.0.0/8, ::1 and IPv4-mapped loopback. False for everything
@@ -329,6 +378,16 @@ export class HookListener {
   #seq = 0;
   #spoofRemoteAddress: string | undefined;
   #allowEphemeralPort: boolean;
+  /**
+   * The attached followers' response streams (Phase 1b).
+   *
+   * A `Set` of live `ServerResponse` objects and no other state: a follower IS
+   * its open socket, so there is nothing to keep in sync and nothing to leak
+   * when a window closes. Removal happens on the response's own `close`.
+   */
+  readonly #followers = new Set<ServerResponse>();
+  readonly #relayPreviewBytes: number;
+  readonly #enableRelay: boolean;
 
   constructor(options: HookListenerOptions = {}) {
     this.port = options.port ?? DEFAULT_HOOK_PORT;
@@ -336,7 +395,79 @@ export class HookListener {
     this.eventPath = options.eventPath ?? DEFAULT_EVENT_PATH;
     this.#spoofRemoteAddress = options.spoofRemoteAddress;
     this.#allowEphemeralPort = options.allowEphemeralPort === true;
+    this.#relayPreviewBytes = options.relayPreviewBytes ?? DEFAULT_RELAY_PREVIEW_BYTES;
+    this.#enableRelay = options.enableRelay !== false;
     if (options.onEvent) this.#handlers.add(options.onEvent);
+  }
+
+  /** Followers attached right now. Zero on a window nobody has joined. */
+  get followerCount(): number {
+    return this.#followers.size;
+  }
+
+  /**
+   * Relay one telemetry slice to every follower (DoD 1b.5).
+   *
+   * The OTLP body never appears here — see {@link RelayOtelEnvelope}. Phase 3
+   * mounts the `/v1/*` routes that produce these slices from live traffic; the
+   * relay is built one phase early because the relay is what the OTHER windows
+   * depend on, and a route added later feeds it without touching this method.
+   */
+  relayTelemetry(signal: OtelSignal, slice: TelemetrySlice): void {
+    this.#broadcast({ v: 1, kind: 'otel', signal, slice });
+  }
+
+  /**
+   * Write one envelope to every follower.
+   *
+   * A follower whose socket has gone away is dropped rather than retried:
+   * there is no queue, no replay and no persistence (G7), because a window
+   * that has closed has no use for the event and a window that reconnects gets
+   * events from the moment it reconnects. The locked block says so — a leader
+   * closing loses at most one backoff window — and a buffer here would be a
+   * promise this design deliberately does not make.
+   */
+  #broadcast(envelope: RelayEnvelope): void {
+    if (!this.#enableRelay || this.#followers.size === 0) return;
+    const frame = encodeSseFrame(envelope);
+    for (const res of this.#followers) {
+      try {
+        res.write(frame);
+        this.#counters.relayFramesSent += 1;
+      } catch {
+        // A dead follower must not be able to stop the next one being served,
+        // and must not be able to stop the listener serving hooks at all (G2).
+        this.#followers.delete(res);
+        this.#counters.socketErrors += 1;
+      }
+    }
+    this.#counters.relayFollowers = this.#followers.size;
+  }
+
+  /** Attach one follower's response stream as an SSE subscriber. */
+  #attachFollower(res: ServerResponse): void {
+    try {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      });
+      // Flush the head immediately: a follower treats the arrival of the
+      // response as the moment it is subscribed, and a head sitting in a write
+      // buffer would make that moment a lie.
+      res.write(': agent-deck relay\n\n');
+    } catch {
+      this.#counters.socketErrors += 1;
+      return;
+    }
+    this.#followers.add(res);
+    this.#counters.relayFollowers = this.#followers.size;
+    const drop = (): void => {
+      this.#followers.delete(res);
+      this.#counters.relayFollowers = this.#followers.size;
+    };
+    res.on('close', drop);
+    res.on('error', drop);
   }
 
   /** Snapshot of the counters. Mutating the result does not affect the listener. */
@@ -468,6 +599,28 @@ export class HookListener {
     const server = this.#server;
     if (server === null) return;
     this.#server = null;
+
+    /*
+     * END EVERY FOLLOWER STREAM FIRST, AND EXPLICITLY.
+     *
+     * `closeAllConnections()` below would drop these sockets too, but this
+     * loop is what makes the failover BOUNDED rather than merely likely: a
+     * follower starts its rebind backoff when its stream ends, so a leader
+     * that closes its sockets before it stops listening hands the port over in
+     * one backoff window. Left to `close()` alone the follower would wait on a
+     * TCP timeout, and "at most one backoff window of events lost" (DoD 1b.6)
+     * would be a hope rather than a measurement.
+     */
+    for (const follower of this.#followers) {
+      try {
+        follower.end();
+      } catch {
+        /* the window is already gone; there is nothing to release */
+      }
+    }
+    this.#followers.clear();
+    this.#counters.relayFollowers = 0;
+
     await new Promise<void>((resolve) => {
       server.close(() => {
         resolve();
@@ -531,6 +684,59 @@ export class HookListener {
     }
 
     const url = (req.url ?? '').split('?')[0] ?? '';
+
+    /*
+     * PHASE 1b — THE TWO RELAY ROUTES, ON THIS SOCKET AND NO OTHER.
+     *
+     * They are served here rather than by a second server because the whole
+     * design rests on there being ONE port: the hook snippet names it, the OS
+     * arbitrates it, and a second socket would reintroduce exactly the
+     * discovery problem the fixed port exists to avoid.
+     *
+     * Placed BELOW the loopback origin check on purpose. A follower is a
+     * process on this machine and nothing else may ask who we are or read the
+     * stream — the identity route in particular is a fingerprinting surface,
+     * and answering it off-loopback would tell a stranger what is running here.
+     *
+     * `404` on any other METHOD of these two paths (DoD 1b.1), not the `405`
+     * the event path answers. That is deliberate and not an inconsistency: a
+     * `405` names a route that exists, which for a probe route is one more
+     * thing said to a caller who has not identified itself.
+     */
+    if (url === IDENTITY_PATH) {
+      if (req.method !== 'GET') {
+        this.#counters.badRoute += 1;
+        req.resume();
+        endWithStatus(res, 404);
+        return;
+      }
+      this.#counters.identityProbes += 1;
+      req.resume();
+      const body = Buffer.from(JSON.stringify(identityBody()), 'utf8');
+      try {
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'content-length': body.length,
+        });
+        res.end(body);
+      } catch {
+        this.#counters.socketErrors += 1;
+      }
+      return;
+    }
+
+    if (url === EVENTS_PATH) {
+      if (req.method !== 'GET' || !this.#enableRelay) {
+        this.#counters.badRoute += 1;
+        req.resume();
+        endWithStatus(res, 404);
+        return;
+      }
+      req.resume();
+      this.#attachFollower(res);
+      return;
+    }
+
     if (url !== this.eventPath) {
       this.#counters.badRoute += 1;
       req.resume(); // drain first so the reply is not truncated
@@ -647,6 +853,11 @@ export class HookListener {
       if (Object.prototype.hasOwnProperty.call(parsed, CODEX_DISCRIMINATOR_KEY)) {
         this.#counters.acceptedCodex += 1;
         this.#dispatchCodex({ receivedAtMs: Date.now(), payload: parsed });
+        // Relayed as the RAW-SHAPED payload, redacted: the follower re-runs
+        // this same discriminator, so a Codex payload reaches a follower's
+        // Codex handlers and never its CC ones, by the identical decision made
+        // on identical bytes rather than by a routing tag we invented here.
+        this.#relayHook(parsed);
         endWithStatus(res, 200);
         return;
       }
@@ -677,7 +888,34 @@ export class HookListener {
       // client observes a 200. Handler exceptions are swallowed and counted, so
       // this cannot delay or break the reply.
       this.#dispatch(event);
+      this.#relayHook(parsed);
       endWithStatus(res, 200);
     });
+  }
+
+  /**
+   * Redact one accepted payload and put it on the relay (DoD 1b.3).
+   *
+   * **REDACTION HAPPENS HERE, AT THE LEADER, BEFORE THE FRAME EXISTS** — not
+   * at the follower, and not as a pass over something already written. The
+   * order is the guarantee: there is no code path on which an unredacted byte
+   * is handed to `write`, so "no thinking or oversized payload bytes cross
+   * `/agent-deck/events`" is a property of the shape of this method rather
+   * than of a filter somebody has to remember to keep complete.
+   *
+   * Called AFTER local dispatch and wrapped, so a relay failure can never
+   * become a liveness failure in the window that received the event (G2).
+   */
+  #relayHook(payload: unknown): void {
+    if (!this.#enableRelay || this.#followers.size === 0) return;
+    try {
+      this.#broadcast({
+        v: 1,
+        kind: 'hook',
+        payload: redactHookPayload(payload, this.#relayPreviewBytes),
+      });
+    } catch {
+      this.#counters.handlerErrors += 1;
+    }
   }
 }

@@ -101,6 +101,33 @@ export const IGNORED_ENTRY_TYPES: ReadonlySet<string> = new Set([
   'system',
 ]);
 
+/**
+ * The ONE `system` entry that is modelled — v0.7.0 Phase 1, DoD 1.4b, F12.
+ *
+ * A context compaction is written as `type: "system"` carrying a top-level
+ * `compactMetadata` object, so it was falling into {@link IGNORED_ENTRY_TYPES}
+ * along with every other `system` line and could never reach the grafter. That
+ * was correct while nothing modelled a compaction. It is not correct now:
+ * `CompactionRecord` models one, so this shape is recognised rather than
+ * ignored.
+ *
+ * **Narrow on purpose.** `system` stays ignored in general — this admits the
+ * entries that carry the key and nothing else, which is 3 lines across every
+ * committed corpus (one `manual` in `cc-2.1.241`, one `auto` and one `manual`
+ * in `cc-2.1.260`). Admitting every `system` line instead would move
+ * `parsedLines`/`ignoredLines` for sessions that have no compaction at all, for
+ * no gain.
+ *
+ * Keyed on the STRUCTURAL key, never on text. 35 further lines in the committed
+ * corpora contain the string `compactMetadata` in prose — this repository's own
+ * sessions discussing the field — and a substring test would admit all of them.
+ */
+function isCompactionEntry(type: string, raw: unknown): boolean {
+  if (type !== 'system') return false;
+  const meta = (raw as { compactMetadata?: unknown }).compactMetadata;
+  return typeof meta === 'object' && meta !== null && !Array.isArray(meta);
+}
+
 // ---------------------------------------------------------------------------
 // Single-line parse
 // ---------------------------------------------------------------------------
@@ -179,7 +206,11 @@ export function parseLine(text: string, options: ParseOptions = {}): LineParseOu
       reason: `missing or non-string "type" (got ${typeof typeValue})`,
     };
   }
-  if (!KNOWN_ENTRY_TYPES.has(typeValue) && options.allowUnknownTypes !== true) {
+  if (
+    !KNOWN_ENTRY_TYPES.has(typeValue) &&
+    options.allowUnknownTypes !== true &&
+    !isCompactionEntry(typeValue, raw)
+  ) {
     // DoD 5.5.6. Recognised-and-ignored is checked BEFORE unknown, so a type
     // this repo has measured lands in its own bucket rather than in the one
     // that means "broken".

@@ -124,6 +124,12 @@ function serializeTool(node: ToolNode): unknown {
      * computes nothing — the value came out of `readOpenCodeEngine()`.
      */
     truncated: node.truncated ?? null,
+    // v0.7.0 Phase 1. `filePath` is FINGERPRINTED, matching both the engine's
+    // serialiser and the generator's: it is a real absolute path out of a
+    // captured tool input and a committed golden may not carry one verbatim.
+    filePath: previewFingerprint(node.filePath),
+    inputHash: node.inputHash ?? null,
+    ordinal: node.ordinal ?? null,
   };
 }
 
@@ -139,6 +145,11 @@ function serializeAgent(node: AgentNode, anchor: number): unknown {
     // 'unset' from 'zero'. Mirrors `scripts/opencode-golden.mjs`.
     contextNow: node.contextNow ?? null,
     burn: node.burn ?? null,
+    // v0.7.0 Phase 1. Numbers and an engine-stated model name are
+    // machine-independent, so verbatim.
+    usageSeries: node.usageSeries ?? null,
+    model: node.model ?? null,
+    compactions: node.compactions ?? null,
     startedAtOffsetMs: node.startedAt - anchor,
     endedAtOffsetMs: node.endedAt === undefined ? null : node.endedAt - anchor,
     children: node.children.map((child: TreeNode) =>

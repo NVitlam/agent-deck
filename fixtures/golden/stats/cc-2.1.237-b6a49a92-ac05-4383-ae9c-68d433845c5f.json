@@ -1,0 +1,70 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+  "engine": "cc",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787245425312,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 298091,
+      "output": 1804,
+      "cacheRead": 274766,
+      "cacheRatio": 0.9217520824177852,
+      "toolCalls": 5,
+      "silent": false,
+      "model": "claude-opus-5"
+    }
+  ],
+  "files": [],
+  "tools": [
+    {
+      "toolName": "Bash",
+      "class": "shell",
+      "calls": 5,
+      "errors": 0,
+      "durationMsSum": 8742,
+      "durationMsMax": 4204
+    }
+  ],
+  "loops": [
+    {
+      "agentId": "root",
+      "toolName": "Bash",
+      "class": "shell",
+      "count": 5,
+      "ordinals": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    }
+  ],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 298091,
+    "output": 1804,
+    "cacheRead": 274766,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

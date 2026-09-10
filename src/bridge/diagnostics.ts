@@ -97,6 +97,62 @@ export interface DiagnosticsCounters {
   ccSessions: number;
   /** Codex sessions currently observed. Widened in v0.6.0 Phase 3, DoD 3.2. */
   codexSessions: number;
+  /**
+   * This window's shared-listener role (v0.7.0 Phase 1b).
+   *
+   * On the COUNTERS line as well as on its own event, because the counters
+   * line is what a user copies into a report and a role that appeared only at
+   * the moment it changed would be scrolled away by then.
+   */
+  relayRole: 'leader' | 'follower' | 'refused' | 'idle';
+  /** Windows currently attached to this one. Leader only; 0 otherwise. */
+  relayFollowers: number;
+  /** SSE frames this window has SENT to followers. Leader only. */
+  relayed: number;
+  /**
+   * SSE frames this window has RECEIVED from a leader. Follower only.
+   *
+   * A fourth number where the locked block names three, and deliberately: with
+   * `relayed` alone a leader with no followers and a follower receiving
+   * nothing print the identical line, which is the one distinction the field
+   * exists to make.
+   */
+  relayReceived: number;
+  /**
+   * Stats derivations that failed and were skipped (v0.7.0 DoD 3.8).
+   *
+   * G2 extended names this counter by name: *"A deriver failure increments
+   * `statsErrors` on the diagnostics channel and is skipped; the deck renders
+   * identically with the deriver present, absent, or throwing."* It therefore
+   * covers both halves of that layer — a `deriveStats` throw, and a record the
+   * store refused or could not write — because both have the same consequence
+   * for a user: a session that happened and is not in the history.
+   *
+   * A window keeping no history reports 0, which is the truth about it.
+   */
+  statsErrors: number;
+  /**
+   * Store lines that could not be read, and were skipped (v0.7.0 DoD 3.8).
+   *
+   * The parser's `malformedLines` posture applied to the store's own output: a
+   * line truncated by a crash mid-append, or one written by a schema version
+   * this build does not know. It is a READ-side count, so it moves when the
+   * history is read rather than when it is written, and a non-zero value on a
+   * window that has never read the store means another window wrote something
+   * this one cannot parse.
+   */
+  storeMalformed: number;
+  /**
+   * Stats records the host REFUSED to put on the wire (v0.7.0 DoD 4.1).
+   *
+   * Every record in a `statsSnapshot` or `statsStore` message has passed the
+   * Phase 2 validator on the host — the allow-list walk that is G4's mechanism
+   * for Layer 1. A record that fails it (a string field nobody declared, a
+   * structural defect in a store line) is dropped and counted here, and the
+   * rest of the message still goes out: one defective session must not blank
+   * the whole Stats view. The `dropped-actions` pattern, applied to records.
+   */
+  statsDropped: number;
 }
 
 /**
@@ -203,6 +259,23 @@ export type DiagnosticsEvent =
    * has no session id — that is the whole point, it was never opened.
    */
   | { kind: 'transcriptSkipped'; engine: DiagnosticsEngine; file: string; reason: string }
+  /**
+   * The shared listener's role changed (v0.7.0 Phase 1b).
+   *
+   * ONE LINE PER CHANGE, NEVER PER EVENT. A window becomes a leader or a
+   * follower a handful of times in its life — at activation, and again if the
+   * leader's window closes — so this is a state transition, not traffic. The
+   * traffic is on the counters line.
+   *
+   * `port` is on the line because "follower" is only meaningful beside the
+   * port it is following on, and because the first question a user asks of a
+   * multi-window report is which port the windows were fighting over.
+   *
+   * The union is spelled out rather than imported for the reason at the top of
+   * {@link DiagnosticsEngine}: this module imports nothing, and that is the
+   * property it is audited for.
+   */
+  | { kind: 'listenerRole'; role: 'leader' | 'follower' | 'refused' | 'idle'; port: number }
   | { kind: 'hookListenerError'; detail: string }
   | { kind: 'hookNon2xx'; status: number; detail: string }
   | { kind: 'patchFailure'; sessionId: string; detail: string }
@@ -216,6 +289,7 @@ export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
   'sessionRefused',
   'graftRefused',
   'transcriptSkipped',
+  'listenerRole',
   'hookListenerError',
   'hookNon2xx',
   'patchFailure',
@@ -350,6 +424,8 @@ export function formatEvent(event: DiagnosticsEvent, isoTime: string): string {
     }
     case 'transcriptSkipped':
       return `${isoTime} transcript skipped ${event.engine} ${clip(event.file)} ${clip(event.reason)}`;
+    case 'listenerRole':
+      return `${isoTime} hook listener role ${event.role} port=${String(event.port)}`;
     case 'hookListenerError':
       return `${isoTime} hook listener error ${clip(event.detail)}`;
     case 'hookNon2xx':
@@ -379,7 +455,19 @@ export function formatCounters(counters: DiagnosticsCounters, isoTime: string): 
     ` resyncs=${String(counters.resyncs)}` +
     ` cc=${String(counters.ccSessions)}` +
     ` opencode=${String(counters.opencodeSessions)}` +
-    ` codex=${String(counters.codexSessions)}`
+    ` codex=${String(counters.codexSessions)}` +
+    ` role=${counters.relayRole}` +
+    ` followers=${String(counters.relayFollowers)}` +
+    ` relayed=${String(counters.relayed)}` +
+    ` received=${String(counters.relayReceived)}` +
+    // v0.7.0 DoD 3.8. APPENDED rather than inserted: the counters line is what
+    // a user copies into a report, and existing reports, evidence files and
+    // this repository's own gate records quote the earlier prefix. Adding at
+    // the end keeps every one of them a valid prefix of the current format.
+    ` statsErrors=${String(counters.statsErrors)}` +
+    ` storeMalformed=${String(counters.storeMalformed)}` +
+    // v0.7.0 DoD 4.1. Appended, for the same reason the two above were.
+    ` statsDropped=${String(counters.statsDropped)}`
   );
 }
 

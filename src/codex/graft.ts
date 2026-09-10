@@ -578,7 +578,11 @@ export function codexInputPreview(call: CodexToolCall, spawn: CodexSpawn | undef
  * absence is evidence of an unfinished call rather than a guess. A refused
  * spawn is `error`, which is DoD 2.4's "rendered as a failed call".
  */
-export function toCodexToolNode(call: CodexToolCall, spawn: CodexSpawn | undefined): ToolNode {
+export function toCodexToolNode(
+  call: CodexToolCall,
+  spawn: CodexSpawn | undefined,
+  ordinal: number,
+): ToolNode {
   const refused = spawn !== undefined && spawn.refused;
   const status: ToolNode['status'] = refused
     ? 'error'
@@ -594,6 +598,26 @@ export function toCodexToolNode(call: CodexToolCall, spawn: CodexSpawn | undefin
     toolName: call.name,
     status,
     inputPreview: codexInputPreview(call, spawn),
+    /*
+     * v0.7.0 Phase 1, DoD 1.2/1.3.
+     *
+     * `inputHash` is hashed at the PARSE boundary from the call's real
+     * arguments (`parse.ts`), not from `inputPreview` beside it — that preview
+     * is SYNTHESISED from the tool name and cannot distinguish two calls to one
+     * tool. Hashing it would make every `wait_agent` call in a thread identical
+     * and turn F3 into a count of how often a tool was used at all. Phase 0
+     * measured one of the three real loops in the whole corpus as
+     * `wait_agent x 4` on this engine, so that distinction is the fact.
+     *
+     * `filePath` is ABSENT on every Codex call, and that is measured rather
+     * than unimplemented: Phase 0 records F1 as `UNAVAILABLE:codex` for two
+     * independent reasons — no Codex tool has a file-argument key at all, and
+     * `exec`'s input is a STRING of JavaScript that can carry no key. Codex
+     * touches files through shell commands, and those names live in command
+     * text, which Layer 1 does not read.
+     */
+    inputHash: call.inputHash,
+    ordinal,
     ...(result === undefined ? {} : { resultPreview: result }),
     // OUR truncation is not the engine's. `outputTruncated` is Codex's own
     // claim about the payload it wrote, which is exactly what `ToolNode.
@@ -861,9 +885,9 @@ function buildAgent(thread: CodexThread, walkedDepth: number, build: SessionBuil
   const placed = new Set<string>();
   const children: TreeNode[] = [];
 
-  for (const call of calls) {
+  for (const [ordinal, call] of calls.entries()) {
     const spawn = build.join.spawnByCallId.get(call.callId);
-    children.push(toCodexToolNode(call, spawn));
+    children.push(toCodexToolNode(call, spawn, ordinal));
     if (spawn === undefined) continue;
 
     const childId = build.join.callToChild.get(call.callId);
@@ -926,11 +950,37 @@ function buildAgent(thread: CodexThread, walkedDepth: number, build: SessionBuil
     // `session_meta`'s own timestamp at ordinal 0, never `mtimeMs` — see the
     // note beside {@link CodexGraftOptions}.
     startedAt: thread.startedAtMs,
-    // `mtimeMs` is the last write to the transcript, which for a thread that is
-    // not running IS when it stopped changing - the same reasoning the OpenCode
-    // grafter applies to `time_updated`. A running agent has no end and the KEY
-    // IS OMITTED rather than set to `undefined`.
-    ...(status === 'running' ? {} : { endedAt: thread.mtimeMs }),
+    /*
+     * The LAST RECORD's own timestamp, never `mtimeMs` - v0.7.0 DoD 2.10, user
+     * ruling of 2026-09-08.
+     *
+     * This read `thread.mtimeMs` until then, on the reasoning that a thread
+     * which is not running stopped being written when it stopped - the same
+     * reasoning the OpenCode grafter applies to `time_updated`. The reasoning
+     * is sound about the SESSION and wrong about the FILE: `mtimeMs` is a
+     * filesystem attribute and **git does not preserve mtimes**, so two
+     * checkouts of byte-identical bytes disagree about when the session ended.
+     * Measured at the Phase 2 gate: every Codex session reported
+     * `2026-09-04T11:08:50Z`, the mtime of its own rollout file in the working
+     * tree that produced the reading. `time_updated` is not the same case - it
+     * is a COLUMN, content, stable across any clone.
+     *
+     * TWO reasons the key is omitted, and they are different facts. A running
+     * agent has no end. A thread whose last record carries no readable
+     * timestamp has an end nobody can state, which is `unavailable` - and
+     * omitting is what "never a substitute" means here.
+     */
+    ...(status === 'running' || thread.endedAtMs === undefined
+      ? {}
+      : { endedAt: thread.endedAtMs }),
+    /*
+     * v0.7.0 Phase 1, DoD 1.4b. NEITHER `usageSeries` NOR `compactions` on this
+     * engine, and both absences are measured rather than unimplemented:
+     * F12 has no Codex payload type at all, and `parse.ts` records the
+     * `token_count` measurement that disqualifies a series (its sum exceeds the
+     * engine's own total on 1 of 12 threads).
+     */
+    ...(thread.model === undefined ? {} : { model: thread.model }),
   };
 }
 

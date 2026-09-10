@@ -356,6 +356,17 @@ export interface CodexToolCall {
   /** Redacted and truncated already. Never raw. */
   readonly outputPreview?: string;
   readonly outputTruncated?: boolean;
+  /**
+   * v0.7.0 Phase 1, DoD 1.2 — SHA-256 over canonical JSON of this call's real
+   * arguments, taken at the parse boundary.
+   *
+   * REQUIRED, so a new construction site cannot forget it. It is the only thing
+   * that can tell two calls to one Codex tool apart: `ToolNode.inputPreview` on
+   * this engine is SYNTHESISED from the tool name (there is no input field to
+   * quote), so hashing the preview would collapse every `wait_agent` in a
+   * thread into one signature and report a loop that is not there.
+   */
+  readonly inputHash: string;
 }
 
 /**
@@ -502,6 +513,14 @@ export interface CodexThread {
   readonly contextNow?: TokenPair;
   /** C8: `total_token_usage` is the running total. */
   readonly burn?: TokenPair;
+  /**
+   * v0.7.0 Phase 1, DoD 1.4b — `turn_context.model`, verbatim.
+   *
+   * Read from the record rather than from any invocation flag: Phase 0 found a
+   * capture whose `--model` flag and transcript disagreed, and the binary can
+   * substitute a model silently.
+   */
+  readonly model?: string;
 
   readonly toolCalls: readonly CodexToolCall[];
   readonly spawns: readonly CodexSpawn[];
@@ -548,8 +567,54 @@ export interface CodexThread {
    * letting one quietly omit it and fall back to the end time again.
    */
   readonly startedAtMs: number;
-  /** Last write to the owning file. An END. Liveness corroboration only. */
+  /**
+   * When the thread ENDED: the envelope `timestamp` of the LAST record in the
+   * rollout, as epoch milliseconds. Absent when no record carries a parseable
+   * one.
+   *
+   * **`mtimeMs` is NOT an acceptable source and this field exists to say so**
+   * (user ruling, v0.7.0 DoD 2.10, 2026-09-08). The grafter used to read
+   * `endedAt` straight off the file's last-write time, on the reasoning that a
+   * finished thread stops being written when it stops. That is true of the
+   * SESSION and false of the FILE: git does not preserve mtimes, so two
+   * checkouts of byte-identical bytes legitimately disagree about it. Measured
+   * at the Phase 2 gate — every Codex session in the corpus reported
+   * `2026-09-04T11:08:50Z`, which is the mtime of its own rollout file in the
+   * working tree that produced the reading, and nothing about the capture.
+   *
+   * Phase 2 first worked around it by staging the corpus with mtimes pinned.
+   * That made the GOLDEN reproducible and left the PRODUCT deriving a
+   * user-visible timestamp from a filesystem attribute, so the ruling closed it
+   * at the source instead. Content is stable across any clone; metadata is not.
+   *
+   * Optional, unlike {@link CodexThread.startedAtMs}: the fingerprint
+   * guarantees a `session_meta` at ordinal 0 and therefore a start, but nothing
+   * guarantees a last record with a readable timestamp. Absent means
+   * unavailable and the grafter omits `endedAt` entirely rather than
+   * substituting anything.
+   */
+  readonly endedAtMs?: number;
+  /**
+   * Last write to the owning file. An END, but a FILESYSTEM one.
+   *
+   * Liveness corroboration only, and that scope is now enforced rather than
+   * merely stated: `graft.ts` reads {@link CodexThread.endedAtMs} instead, and
+   * `graft.test.ts` asserts no `AgentNode` timestamp equals this value.
+   */
   readonly mtimeMs: number;
+  /**
+   * The owning file's size in bytes at the same `stat` as {@link mtimeMs}
+   * (v0.7.0 DoD 4.11c, user ruling 2026-09-10).
+   *
+   * **An mtime says the file was written; only a size says it grew.** The stats
+   * store may promote a session on a transcript's mtime ONLY when that file has
+   * gained bytes since this process first saw it, because a clone, a restore, a
+   * sync client or a scanner moves an mtime with no append behind it. Read by
+   * `CodexEnginePath` and by nothing in the tree, the graft or the wire — this
+   * is discovery's `statSync().size` carried forward, the same number
+   * {@link CodexTranscriptRef.bytes} already gives the tailer.
+   */
+  readonly sizeBytes: number;
 }
 
 // ===========================================================================

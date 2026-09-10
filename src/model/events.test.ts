@@ -196,7 +196,11 @@ describe('message contract', () => {
     ];
 
     const seen = messages.map((m) =>
-      m.type === 'expandNode' ? `${m.type}:${m.nodeId}` : `${m.type}:${m.sessionId}`,
+      m.type === 'expandNode'
+        ? `${m.type}:${m.nodeId}`
+        : m.type === 'selectSession'
+          ? `${m.type}:${m.sessionId}`
+          : m.type,
     );
 
     expect(seen).toEqual(['expandNode:n1', 'selectSession:s2']);

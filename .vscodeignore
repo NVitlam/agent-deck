@@ -237,10 +237,19 @@ dist/**
 # the space-named originals; these are the same bytes.
 media/**
 !media/icon.png
+# The activity-bar icon `package.json`'s `viewsContainers` names (v0.7.0 Phase
+# 4, DoD 4.6b). Like `icon.png`, a manifest reference rather than a screenshot:
+# without it the container has no glyph and `vsce package` fails. SIX lines.
+!media/activity-icon.svg
 !media/Session_Deck.png
 !media/hero_26_agent_session.png
 !media/Internal_Session_Tool_popup.png
 !media/Internal_Session_Tool_popup2.png
+# The sidebar screenshot the README's install section links (v0.7.0 DoD 5.5b).
+# SEVEN lines. It ships like the other stills; `.gitignore` admits it too. It
+# is committed as a placeholder the user replaces with a capture, and the
+# package-audit leg of `src/release/vsix.test.ts` refuses the placeholder bytes.
+!media/sidebar.png
 
 # THE HERO GIF IS TRACKED AND DELIBERATELY NOT RE-ADMITTED HERE (DoD 5.8
 # item 2, which authorises either outcome so long as it is recorded with the

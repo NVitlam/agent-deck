@@ -1,0 +1,90 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "d16538d5-da75-4d0a-aa99-652916287f7c",
+  "engine": "cc",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1788127001995,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 70167,
+      "output": 619,
+      "cacheRead": 59500,
+      "cacheRatio": 0.84797696923055,
+      "toolCalls": 1,
+      "silent": false,
+      "model": "claude-opus-5"
+    },
+    {
+      "agentId": "ab761d54060e2e548",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 112918,
+      "output": 2304,
+      "cacheRead": 88203,
+      "cacheRatio": 0.7811243557271649,
+      "toolCalls": 6,
+      "silent": false,
+      "model": "claude-opus-5"
+    }
+  ],
+  "files": [],
+  "tools": [
+    {
+      "toolName": "Agent",
+      "class": "spawn",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 67192,
+      "durationMsMax": 67192
+    },
+    {
+      "toolName": "Bash",
+      "class": "shell",
+      "calls": 5,
+      "errors": 1,
+      "durationMsSum": 33578,
+      "durationMsMax": 25494
+    },
+    {
+      "toolName": "Glob",
+      "class": "search",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 622,
+      "durationMsMax": 622
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [
+    {
+      "agentId": "ab761d54060e2e548",
+      "ordinal": 5,
+      "delta": 5451
+    }
+  ],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 183085,
+    "output": 2923,
+    "cacheRead": 147703,
+    "compactions": 0,
+    "subagents": 1,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

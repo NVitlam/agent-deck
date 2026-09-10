@@ -26,3 +26,14 @@
  * collides with whatever else ends up in the document.
  */
 export const WEBVIEW_ROOT_ID = 'agent-deck-root';
+
+/**
+ * The element the SIDEBAR menu mounts into (v0.7.0 Phase 4, DoD 4.6b).
+ *
+ * The sidebar `webviewView` and the panel load the SAME bundle — one script,
+ * one stylesheet, one CSP — and the bundle decides which surface to mount by
+ * which root the host's document carries. Two ids, one definition each, for
+ * the reason the constant above exists: the host emits it and the webview
+ * looks for it, and a mismatch is a blank sidebar with no error anywhere.
+ */
+export const SIDEBAR_ROOT_ID = 'agent-deck-sidebar';

@@ -1,0 +1,29 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "ses_fc8d8bb41ffeTH4iLV8HiV1kQJ",
+  "engine": "opencode",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787631715519,
+  "endedAt": 1787695800396,
+  "coverage": "excluded:parked",
+  "agents": [],
+  "files": [],
+  "tools": [],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 0,
+    "output": 0,
+    "compactions": 0,
+    "subagents": 0,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": []
+}

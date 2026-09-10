@@ -12,7 +12,56 @@
     render,
     store,
     toggled,
-  }: { render: RenderNode; store: Store; toggled: readonly string[] } = $props();
+    now = undefined,
+  }: {
+    render: RenderNode;
+    store: Store;
+    toggled: readonly string[];
+    /**
+     * The renderer's clock, for a stalled tool's elapsed time.
+     *
+     * Optional and defaulted to `Date.now()` exactly as `Deck.svelte` does,
+     * so the DEFAULT is the shipping behaviour and a test injects instead of
+     * the other way round. That direction matters: a prop whose default is
+     * wrong and whose only correct value comes from a test is the D4 defect
+     * this repository already shipped once.
+     */
+    now?: number | undefined;
+  } = $props();
+
+  let clock = $derived(now ?? Date.now());
+
+  /**
+   * How long this tool has been stalled, or `undefined`.
+   *
+   * `stalledSinceMs` is the instant the threshold was crossed, computed once
+   * in the host (`src/model/stall.ts`), so every chip in a render differences
+   * against the same crossing rather than each deriving its own.
+   */
+  let stalledForMs = $derived(
+    render.kind !== 'agent'
+      && render.node.status === 'stalled'
+      && render.node.stalledSinceMs !== undefined
+      ? Math.max(0, clock - render.node.stalledSinceMs)
+      : undefined,
+  );
+
+  /**
+   * Stalled tools at or beneath this agent — the badge.
+   *
+   * Counted over the RENDER subtree, not `AgentNode.children`, because a
+   * spawned subagent is joined by a `spawnEdge` and is not a child of the
+   * agent in the model. Counting the model tree would miss every stall that
+   * happened inside a subagent, which is exactly the reported case.
+   */
+  function countStalled(node: RenderNode): number {
+    let n =
+      node.kind !== 'agent' && node.node.status === 'stalled' ? 1 : 0;
+    for (const child of node.children) n += countStalled(child);
+    return n;
+  }
+
+  let stalledBelow = $derived(render.kind === 'agent' ? countStalled(render) : 0);
 
   // Agents default to expanded — a tree whose branches are all shut is not a
   // tree — and tool payloads default to collapsed, because an 8 KB preview
@@ -55,6 +104,14 @@
       <span class="agent-kind" data-testid="agent-kind">{render.node.kind}</span>
       <span class="label" data-testid="node-label">{render.node.label}</span>
       <StatusChip status={render.node.status} />
+      {#if stalledBelow > 0}
+        <!-- The agent's own status is untouched; a stall is a property of its
+             TOOLS, and inventing a fourth agent status would create a value no
+             producer writes. The badge is the agent-level surface. -->
+        <span class="stall-badge" data-testid="stalled-badge" title="tools with no activity past the threshold"
+          >{stalledBelow} stalled</span
+        >
+      {/if}
       <!-- Context level, not spend: see `events.ts`'s TokenPair for why the
            old `tokens.in` reported single digits on real sessions. Burn lives
            in the inspector, where there is room to label it. Optional-chained
@@ -69,7 +126,7 @@
     {#if expanded && render.children.length > 0}
       <ul class="children">
         {#each render.children as child (child.node.id)}
-          <Self render={child} {store} {toggled} />
+          <Self render={child} {store} {toggled} {now} />
         {/each}
       </ul>
     {/if}
@@ -92,7 +149,7 @@
         onclick={toggle}
       >{expanded ? '▾' : '▸'}</button>
       <span class="label" data-testid="node-label">{render.node.toolName}</span>
-      <StatusChip status={render.node.status} />
+      <StatusChip status={render.node.status} {stalledForMs} toolName={render.node.toolName} />
       <span class="meta" data-testid="node-duration"
         >{formatDuration(render.node.durationMs)}</span
       >
@@ -109,7 +166,7 @@
            `children` field — they are siblings joined by the edge. -->
       <ul class="children children-spawned" data-testid="spawned-children">
         {#each render.children as child (child.node.id)}
-          <Self render={child} {store} {toggled} />
+          <Self render={child} {store} {toggled} {now} />
         {/each}
       </ul>
     {/if}
@@ -155,6 +212,15 @@
     font-size: 0.85em;
     opacity: 0.75;
     white-space: nowrap;
+  }
+
+  .stall-badge {
+    font-size: 0.8em;
+    padding: 0 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    color: var(--vscode-charts-yellow, var(--vscode-badge-foreground));
+    border: 1px solid var(--vscode-charts-yellow, var(--vscode-panel-border));
   }
 
   .children {

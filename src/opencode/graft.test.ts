@@ -31,7 +31,14 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { describe, expect, it } from 'vitest';
 
-import type { AgentNode, SessionState, ToolNode, TreeNode } from '../model/events.js';
+import type {
+  AgentNode,
+  CompactionRecord,
+  SessionState,
+  ToolNode,
+  TreeNode,
+  UsageTurn,
+} from '../model/events.js';
 import { isAgentNode } from '../model/events.js';
 import {
   OC_PARK_REASONS,
@@ -43,6 +50,8 @@ import {
   graftCorpus,
   toToolNode,
 } from './graft.js';
+import { inputHash } from '../stats/canonical.js';
+import { filePathOf } from '../stats/toolclass.js';
 import { slugFromWorktree } from './slug.js';
 import { corpusDbPath, corpusGoldenPath, listCorpora } from './synthetic.js';
 import type {
@@ -89,6 +98,11 @@ function tool(over: Partial<OcToolRecord> & { partId: string; sessionId: string 
     toolName: 'bash',
     status: 'done',
     inputPreview: '{}',
+    // v0.7.0 Phase 1. A fixed placeholder, not a real digest: these records are
+    // hand-built to exercise the JOIN, and no test here asserts a hash value.
+    // `inputHash` is required on `OcToolRecord` so the engine cannot forget it,
+    // and that requirement is what put this line here.
+    inputHash: `hash_${over.partId}`,
     order: [1_000_000 + rowSeq, over.partId] as [number, string],
     inputTruncated: false,
     resultTruncated: false,
@@ -115,6 +129,8 @@ const ZERO_PARSE_COUNTS: OcParseCounts = {
   toolParts: 0,
   taskParts: 0,
   previewsTruncated: 0,
+  stepFinishParts: 0,
+  compactionParts: 0,
 };
 
 function parseOf(records: readonly OcToolRecord[]): OcParseResult {
@@ -126,6 +142,11 @@ function parseOf(records: readonly OcToolRecord[]): OcParseResult {
   }
   return {
     toolsBySession: bySession,
+    // v0.7.0 Phase 1. Empty, not absent-by-omission: these tests exercise the
+    // task join, and a session with no `step-finish` part is exactly the "engine
+    // states no series" case the grafter must leave `usageSeries` absent for.
+    usageBySession: new Map(),
+    compactionsBySession: new Map(),
     counts: {
       ...ZERO_PARSE_COUNTS,
       toolParts: records.length,
@@ -220,6 +241,12 @@ function serializeTool(node: ToolNode): unknown {
     // OpenCode's own truncation claim, `null` for "no claim was made". `?? null`
     // rather than a presence check, so an explicit `false` survives.
     truncated: node.truncated ?? null,
+    // v0.7.0 Phase 1. `filePath` is FINGERPRINTED, matching both the engine's
+    // serialiser and the generator's: it is a real absolute path out of a
+    // captured tool input and a committed golden may not carry one verbatim.
+    filePath: previewFingerprint(node.filePath),
+    inputHash: node.inputHash ?? null,
+    ordinal: node.ordinal ?? null,
   };
 }
 
@@ -235,6 +262,11 @@ function serializeAgent(node: AgentNode, anchor: number): unknown {
     // `null` keeps the golden able to tell 'unset' from 'zero'.
     contextNow: node.contextNow ?? null,
     burn: node.burn ?? null,
+    // v0.7.0 Phase 1. Numbers and an engine-stated model name are
+    // machine-independent, so verbatim.
+    usageSeries: node.usageSeries ?? null,
+    model: node.model ?? null,
+    compactions: node.compactions ?? null,
     startedAtOffsetMs: node.startedAt - anchor,
     endedAtOffsetMs: node.endedAt === undefined ? null : node.endedAt - anchor,
     children: node.children.map((child: TreeNode) =>
@@ -301,7 +333,16 @@ interface OcPartData {
   };
 }
 
-function toolStatus(status: string | undefined): ToolNode['status'] {
+/**
+ * Deliberately `OcToolRecord['status']` and NOT `ToolNode['status']`.
+ *
+ * `ToolNode.status` gained a fourth value, `'stalled'`, in v0.7.0 Phase 0c.
+ * That value is DERIVED at assembly time from the clock and is never written
+ * by any parser, so a record read out of OpenCode's store can never carry it.
+ * Annotating this reader with the narrow union is what keeps that true: if a
+ * future change tries to map a store status onto `'stalled'`, it stops here.
+ */
+function toolStatus(status: string | undefined): OcToolRecord['status'] {
   if (status === 'running') return 'running';
   if (status === 'completed') return 'done';
   if (status === 'error') return 'error';
@@ -376,6 +417,10 @@ function readCorpus(dbPath: string): Corpus {
 function parseParts(parts: readonly RawPart[]): OcParseResult {
   const counts: OcParseCounts = { ...ZERO_PARSE_COUNTS, partRows: parts.length };
   const toolsBySession = new Map<string, OcToolRecord[]>();
+  const usageBySession = new Map<string, UsageTurn[]>();
+  const compactionsBySession = new Map<string, CompactionRecord[]>();
+  const positive = (v: unknown): number =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
 
   for (const part of parts) {
     let data: OcPartData;
@@ -387,6 +432,36 @@ function parseParts(parts: readonly RawPart[]): OcParseResult {
     }
     if (data.type === 'reasoning') {
       counts.reasoningPartsDropped++;
+      continue;
+    }
+    // v0.7.0 Phase 1, DoD 1.4/1.4b — re-derived here, not imported.
+    if (data.type === 'step-finish') {
+      const tokens = (data as { tokens?: Record<string, unknown> }).tokens;
+      if (tokens === undefined || tokens === null || typeof tokens !== 'object') {
+        counts.partsIgnoredNoNode++;
+        continue;
+      }
+      const list = usageBySession.get(part.sessionId) ?? [];
+      const cache = (tokens['cache'] ?? {}) as Record<string, unknown>;
+      list.push({
+        ordinal: list.length,
+        input: positive(tokens['input']),
+        cacheCreation: positive(cache['write']),
+        cacheRead: positive(cache['read']),
+        output: positive(tokens['output']),
+      });
+      usageBySession.set(part.sessionId, list);
+      counts.stepFinishParts++;
+      continue;
+    }
+    if (data.type === 'compaction') {
+      const list = compactionsBySession.get(part.sessionId) ?? [];
+      list.push({
+        ordinal: (toolsBySession.get(part.sessionId) ?? []).length,
+        trigger: 'engine',
+      });
+      compactionsBySession.set(part.sessionId, list);
+      counts.compactionParts++;
       continue;
     }
     if (data.type !== 'tool') {
@@ -414,12 +489,20 @@ function parseParts(parts: readonly RawPart[]): OcParseResult {
     // OpenCode's own truncation claim: carried when it IS a boolean (both
     // values are claims), omitted otherwise (no claim was made).
     const engineTruncated = state.metadata?.truncated;
+    const stripped = stripDroppedFields(state.input ?? null);
+    const touched = filePathOf('opencode', data.tool as string, stripped);
 
     const record: OcToolRecord = {
       id: data.callID as string,
       toolName: data.tool as string,
       status: toolStatus(state.status),
       inputPreview: inputCut.text,
+      // v0.7.0 Phase 1. This reader is deliberately INDEPENDENT of `parse.ts`,
+      // so it hashes the same value by the same rule rather than importing the
+      // engine's answer: the whole point of a second reader is that it can
+      // disagree.
+      inputHash: inputHash(stripped),
+      ...(touched === undefined ? {} : { filePath: touched }),
       ...(outputCut === undefined ? {} : { resultPreview: outputCut.text }),
       ...(typeof start === 'number' && typeof end === 'number'
         ? { durationMs: end - start }
@@ -442,7 +525,9 @@ function parseParts(parts: readonly RawPart[]): OcParseResult {
     toolsBySession.set(part.sessionId, list);
   }
 
-  return { toolsBySession, counts };
+  // This reader covers the tool join only; the usage and compaction series are
+  // `parse.ts`'s and are asserted directly against the corpus elsewhere.
+  return { toolsBySession, usageBySession, compactionsBySession, counts };
 }
 
 interface Golden {
@@ -842,7 +927,7 @@ describe('taskWithoutChild', () => {
   });
 
   it('still emits the ToolNode — the call happened and the user saw it', () => {
-    expect(state.root.children).toStrictEqual([toToolNode(orphanTask)]);
+    expect(state.root.children).toStrictEqual([toToolNode(orphanTask, 0)]);
   });
 
   it('emits no spawn edge', () => {
@@ -1387,7 +1472,7 @@ describe('tool ordering', () => {
 });
 
 describe('toToolNode', () => {
-  it('keeps the first six fields and drops the join carriers', () => {
+  it('keeps the ToolNode fields and drops the join carriers', () => {
     const record = tool({
       partId: 'prt_x',
       sessionId: 'ses_x',
@@ -1397,29 +1482,40 @@ describe('toToolNode', () => {
       taskParentSessionId: 'ses_x',
       inputTruncated: true,
     });
-    expect(toToolNode(record)).toStrictEqual({
+    expect(toToolNode(record, 0)).toStrictEqual({
       id: record.id,
       toolName: 'bash',
       status: 'done',
       inputPreview: '{}',
       resultPreview: 'out',
       durationMs: 12,
+      // v0.7.0 Phase 1. `inputHash` and `filePath` come off the RECORD;
+      // `ordinal` is the argument, because a record does not know its own
+      // position until the caller has sorted the session's tools.
+      inputHash: record.inputHash,
+      ordinal: 0,
     });
+    // The join carriers are still dropped: `partId`, `sessionId`, `order`,
+    // `taskChildSessionId`, `taskParentSessionId`, `inputTruncated`,
+    // `resultTruncated` are `OcToolRecord`'s and must not reach the wire.
+    for (const key of ['partId', 'sessionId', 'order', 'taskChildSessionId', 'inputTruncated']) {
+      expect(key in toToolNode(record, 0)).toBe(false);
+    }
   });
 
   it('omits resultPreview, durationMs and truncated rather than setting them undefined', () => {
-    const node = toToolNode(tool({ partId: 'prt_y', sessionId: 'ses_y' }));
+    const node = toToolNode(tool({ partId: 'prt_y', sessionId: 'ses_y' }), 0);
     expect('resultPreview' in node).toBe(false);
     expect('durationMs' in node).toBe(false);
     expect('truncated' in node).toBe(false);
   });
 
   it("carries OpenCode's own truncated claim through, both values (item 22)", () => {
-    const yes = toToolNode(tool({ partId: 'prt_t', sessionId: 'ses_t', truncated: true }));
+    const yes = toToolNode(tool({ partId: 'prt_t', sessionId: 'ses_t', truncated: true }), 0);
     expect(yes.truncated).toBe(true);
 
     // `false` is a claim OpenCode made and it must not be dropped as falsy.
-    const no = toToolNode(tool({ partId: 'prt_f', sessionId: 'ses_f', truncated: false }));
+    const no = toToolNode(tool({ partId: 'prt_f', sessionId: 'ses_f', truncated: false }), 0);
     expect('truncated' in no).toBe(true);
     expect(no.truncated).toBe(false);
   });
@@ -1435,6 +1531,7 @@ describe('toToolNode', () => {
         inputTruncated: true,
         resultTruncated: true,
       }),
+      0,
     );
     expect('truncated' in ours).toBe(false);
   });
@@ -1522,6 +1619,8 @@ describe('counts', () => {
   it('passes the parse counters through untouched, in the goldens key order', () => {
     const parse: OcParseResult = {
       toolsBySession: new Map(),
+      usageBySession: new Map(),
+      compactionsBySession: new Map(),
       counts: {
         partRows: 9,
         partsMalformed: 1,
@@ -1530,6 +1629,8 @@ describe('counts', () => {
         toolParts: 4,
         taskParts: 5,
         previewsTruncated: 6,
+        stepFinishParts: 7,
+        compactionParts: 8,
       },
     };
     const result = graftCorpus({ sessions: [session({ id: 'a' })], projects: [PROJECT], parse });
@@ -1546,9 +1647,15 @@ describe('counts', () => {
       'taskPartsJoined',
       'taskPartsParked',
       'previewsTruncated',
+      // v0.7.0 Phase 1, appended at the end so the existing key order is
+      // untouched and the golden diff reads as two added lines.
+      'stepFinishParts',
+      'compactionParts',
     ]);
     expect(result.counts.partsMalformed).toBe(1);
     expect(result.counts.previewsTruncated).toBe(6);
+    expect(result.counts.stepFinishParts).toBe(7);
+    expect(result.counts.compactionParts).toBe(8);
     expect(result.counts.sessionRows).toBe(1);
     expect(result.counts.rootSessions).toBe(1);
     expect(result.counts.childSessions).toBe(0);

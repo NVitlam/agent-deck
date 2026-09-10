@@ -35,7 +35,18 @@ const result = await build({
   // host links, but a test that evaluates the bundle standalone has nowhere to
   // link one. Styles are not asserted on; structure and text are.
   plugins: [esbuildSvelte({ compilerOptions: { css: 'injected' } })],
-  logLevel: 'silent',
+  // 'error' RATHER THAN 'silent', and it was bought (v0.7.0, the 4.11b gate).
+  //
+  // One gate run of three failed here with `Command failed: node
+  // webview/build-harness.mjs` and NOTHING ELSE — one webview suite reported as
+  // a failed suite, its two tests reported as SKIPPED, and no reason anywhere.
+  // Under 'silent' esbuild writes no diagnostic, so a child that exits non-zero
+  // exits with an empty stderr and `execFileSync` has nothing to quote. This is
+  // the recorded environment-sensitive-subprocess class (see `vsce ls`) with the
+  // recorded silent-skip class on top of it, and the answer to both is the same:
+  // a check that fails must say why. Nothing is written to disk either way
+  // (`write: false`), so this changes no output and no G1 property.
+  logLevel: 'error',
 });
 
 const js = result.outputFiles.find((f) => f.path.endsWith('.js'));

@@ -40,6 +40,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   closeSync,
   existsSync,
@@ -170,10 +171,17 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
   // maintainer's private repository. `.gitignore` and `.vscodeignore`
   // carry the same five, by name, in both doors.
   'media/icon.png',
+  // SIX since v0.7.0 Phase 4 (DoD 4.6b): the activity-bar icon the
+  // manifest's viewsContainers names. A manifest reference like the
+  // extension icon, not a screenshot; both ignore files admit it by name.
+  'media/activity-icon.svg',
   'media/Session_Deck.png',
   'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
+  // v0.7.0 DoD 5.5b: the sidebar screenshot the README's install section
+  // links. Ships like the other stills; both ignore files admit it by name.
+  'media/sidebar.png',
   'dist/extension.cjs',
   'dist/webview/main.css',
   'dist/webview/main.js',
@@ -191,7 +199,7 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
  * it is derived from nothing: writing `EXPECTED_PACKAGED_FILES.length` here
  * would make it agree with the set by construction and check nothing at all.
  */
-const EXPECTED_PACKAGED_FILE_COUNT = 13;
+const EXPECTED_PACKAGED_FILE_COUNT = 15;
 
 /**
  * The same artifact, AS THE ZIP NAMES IT. Rule 19's second half.
@@ -223,14 +231,26 @@ const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
   'extension/media/Internal_Session_Tool_popup.png',
   'extension/media/Internal_Session_Tool_popup2.png',
   'extension/media/Session_Deck.png',
+  'extension/media/activity-icon.svg',
   'extension/media/hero_26_agent_session.png',
   'extension/media/icon.png',
+  'extension/media/sidebar.png',
   'extension/package.json',
   'extension/readme.md',
 ];
 
 /** Same reasoning as `EXPECTED_PACKAGED_FILE_COUNT`, on the other naming. */
-const EXPECTED_ARTIFACT_ENTRY_COUNT = 15;
+const EXPECTED_ARTIFACT_ENTRY_COUNT = 17;
+
+/**
+ * The SHA-256 of the sidebar PLACEHOLDER committed at v0.7.0 DoD 5.5b — a
+ * solid-colour 480x720 PNG standing where the user's capture of the sidebar
+ * goes. The package-audit leg refuses to ship these bytes: the Marketplace
+ * listing would render a grey rectangle captioned as the product's front door.
+ * Replacing `media/sidebar.png` with the real screenshot is a step of the 5.7
+ * checklist, and the audit is what proves it was taken.
+ */
+const SIDEBAR_PLACEHOLDER_SHA256 = 'f42b32e95f57d525b608561be4ba827a2c45c4b7ec037196874bee3a7af844fa';
 
 /**
  * The four release images as the packaged README must reference them, WITHOUT
@@ -247,6 +267,7 @@ const RELEASE_IMAGES_IN_ARTIFACT: readonly string[] = [
   'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
+  'media/sidebar.png',
 ];
 
 /**
@@ -359,6 +380,17 @@ function loadIdentityClass(): IdentityClass {
 /** Directories and shapes whose presence in the artifact is a defect, each
  *  paired with the reason it must not ship. */
 const FORBIDDEN: ReadonlyArray<{ readonly re: RegExp; readonly why: string }> = [
+  // v0.7.0 DoD 5.6 names the two stats corpora on their own, and they come
+  // FIRST so a violation names them rather than the general `fixtures/` rule —
+  // the manufactured R8 sessions and the golden records are the newest things
+  // under `fixtures/`, and "the whole directory is denied" is what a reader
+  // would otherwise have to take on trust for them.
+  { re: /^fixtures\/synthetic-stats\//, why: 'the manufactured R8 stats sessions (DoD 5.6)' },
+  { re: /^fixtures\/golden\/stats\//, why: 'the committed golden StatsRecords (DoD 5.6)' },
+  // DoD 5.6: a test's scratch directory under `dist/` — `wire-test-<random>`
+  // and its siblings, which `vsce ls` once enumerated as packaged content.
+  // `dist/**` is an allow-list, so this is the second witness, by SHAPE.
+  { re: /^dist\/[^/]+-[A-Za-z0-9]{6,}\//, why: 'a test scratch directory under dist/ (the recorded wire-test-<random> case)' },
   { re: /^fixtures\//, why: 'fixtures keep cwd/session_id verbatim — shipping them publishes one developer\u2019s absolute paths' },
   { re: /^src\//, why: 'source is not the product' },
   { re: /^webview\//, why: 'webview source; the built bundle under dist/ is what ships' },
@@ -546,7 +578,7 @@ describe('the packaged artifact', () => {
     expect([...files].sort()).toEqual([...EXPECTED_PACKAGED_FILES].sort());
   });
 
-  it('ships exactly twelve files, counted rather than derived', () => {
+  it('ships exactly the pinned number of files, counted rather than derived', () => {
     // Rule 19. The set assertion above is the real check; this is the one that
     // goes red when the set assertion is comparing two things that are both
     // empty, both filtered, or both named in a way vsce stopped using.
@@ -608,6 +640,19 @@ describe('the packaged artifact', () => {
       return hit ? [`${file} \u2014 ${hit.why}`] : [];
     });
     expect(violations).toEqual([]);
+  });
+
+  it('the DoD 5.6 rules each catch their witness, and the scratch shape spares the real bundles', () => {
+    // A forbidden-shape rule that matches nothing reads exactly like one doing
+    // its job. Each rule added for 5.6 is paired with the path it exists for.
+    const ruleFor = (path: string): string | undefined => FORBIDDEN.find((r) => r.re.test(path))?.why;
+    expect(ruleFor('fixtures/synthetic-stats/01-reread-loop.json')).toContain('R8 stats sessions');
+    expect(ruleFor('fixtures/golden/stats/cc-2.1.234-05c5482d.json')).toContain('golden StatsRecords');
+    expect(ruleFor('dist/wire-test-Ab3xQ9/session.json')).toContain('scratch directory');
+    // ...and the shape is not so wide that it would flag what the product ships.
+    for (const shipped of ['dist/extension.cjs', 'dist/webview/main.js', 'dist/webview/main.css']) {
+      expect(ruleFor(shipped), shipped).toBeUndefined();
+    }
   });
 
   it('ships the three documents a user is entitled to, and the root README rather than docs/README.md', () => {
@@ -862,11 +907,24 @@ describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
               `the packaged README does not link ${image} at its rewritten URL`,
             ).toContain(`${repoUrl}/raw/HEAD/${image}`);
           }
+
           // The other direction. A relative link that survived would render
           // broken on the Marketplace while looking perfect in every local
           // preview, which is the failure mode with no symptom.
           const stillRelative = shippedLinks.filter((link) => !/^https?:\/\//i.test(link));
           expect(stillRelative, 'a relative image link survived into the artifact').toEqual([]);
+
+          // v0.7.0 DoD 5.5b/5.7 — THE SIDEBAR SCREENSHOT IS THE USER'S CAPTURE,
+          // NOT THE PLACEHOLDER. RED BY DESIGN until the capture replaces it:
+          // this is the check that the 5.7 step was taken, and it is the audit
+          // that runs before a publish. LAST in this test on purpose, so while
+          // it is red every assertion above it has still run.
+          const sidebarBytes = readFileSync(join(extracted, 'extension', 'media', 'sidebar.png'));
+          expect(sidebarBytes.length).toBeGreaterThan(0);
+          expect(
+            createHash('sha256').update(sidebarBytes).digest('hex'),
+            'media/sidebar.png is still the placeholder — replace it with a capture of the sidebar',
+          ).not.toBe(SIDEBAR_PLACEHOLDER_SHA256);
         } finally {
           rmSync(staging, { recursive: true, force: true });
         }
@@ -1153,5 +1211,107 @@ describe.skipIf(process.platform !== 'win32')(
       },
       240_000,
     );
+  },
+);
+
+/*
+ * DoD 1c.5 — `dist/` carries no scratch directory, ever.
+ *
+ * THIS IS A PACKAGING GUARD, NOT HOUSEKEEPING, and the distinction is the
+ * reason it lives in this file rather than beside the runner. `.vscodeignore`
+ * denies `dist/**` and then RE-ADMITS three paths with `!`, so anything else
+ * that appears in `dist/` is shipped by default. `CLAUDE.md` records `vsce ls`
+ * enumerating `dist/wire-test-<random>/**` as packaged content during a real
+ * run — this class has already reached the artifact once.
+ *
+ * Measured 2026-09-08: 96 scratch directories in `dist/`, from five prefixes
+ * (`capture-test-`, `wire-test-`, `ingest-audit-`, `codex-memory-`,
+ * `codex-index-`), accumulated over roughly fifty suite runs. They were left by
+ * runs that DIED rather than by tests that forget: a process killed by a
+ * Windows fail-fast never reaches `afterAll`. `test/scratch-guard.ts` fails a
+ * run that leaks one; this fails a TREE that is carrying one, which is the
+ * state a `npm run package` would actually ship from.
+ *
+ * The rule is SHAPE, not a list of prefixes — `mkdtemp` appends six random
+ * characters to whatever it is given, so a sixth prefix invented tomorrow is
+ * caught without an edit here. Naming the five would be the fail-open shape
+ * rule 18 exists for.
+ */
+/*
+ * GATED ON THE PACKAGE AUDIT, AND THE FIRST VERSION OF THIS WAS RACY.
+ *
+ * Written ungated on 2026-09-08 and it failed 16 of 19 runs immediately —
+ * because `webview/capture.test.ts` and `webview/wire.test.ts` DELIBERATELY
+ * mkdtemp inside `dist/` (they write nothing outside the repo, which is the
+ * whole reason `.vscodeignore` needs its three `!` re-admissions) and they run
+ * concurrently with this file. It was reading a directory other files were
+ * legitimately using, and reporting their in-flight scratch as a leak: this
+ * repository's recorded "a test that passes or fails by CPU load" class,
+ * committed by the party who had just fixed one.
+ *
+ * The property is real; the moment was wrong. It is asserted where nothing
+ * else is running — the package audit, which is what a release actually ships
+ * from — and the ALWAYS-ON half lives in `test/scratch-guard.ts`, which is
+ * race-free by construction: its setup runs before any worker starts and its
+ * teardown after the last one exits.
+ */
+describe.runIf(process.env['AGENT_DECK_PACKAGE_AUDIT'] === '1')(
+  'DoD 1c.5 — dist/ carries no scratch directory (AGENT_DECK_PACKAGE_AUDIT=1)',
+  () => {
+  /** `mkdtemp`'s signature, whoever called it. */
+  const MKDTEMP_SHAPE = /[-_][0-9A-Za-z]{6}$/;
+
+  /** What legitimately lives in `dist/`, and it is exactly the build output. */
+  const BUILD_OUTPUT = new Set(['agent-deck', 'webview', 'theater']);
+
+  function distDirs(): string[] {
+    const dist = join(REPO_ROOT, 'dist');
+    if (!existsSync(dist)) return [];
+    return readdirSync(dist, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+  }
+
+  it('holds no mkdtemp-shaped directory', () => {
+    const scratch = distDirs().filter((name) => MKDTEMP_SHAPE.test(name));
+    expect(
+      scratch,
+      `dist/ is shipped wholesale with three ! re-admissions, so these would be ` +
+        `packaged: ${scratch.join(', ')}`,
+    ).toStrictEqual([]);
+  });
+
+  it('holds ONLY build output — the stronger form, which a new shape cannot slip past', () => {
+    // The shape rule above would miss a leaked directory whose name happens not
+    // to end in six alphanumerics. This one cannot: `dist/` is entirely ours
+    // and its directory set is knowable.
+    expect(distDirs().filter((name) => !BUILD_OUTPUT.has(name))).toStrictEqual([]);
+  });
+
+  it("CONTROL: the guard is looking at a dist/ that exists and has content", () => {
+    // Both assertions above are satisfied by an absent or empty `dist/`, which
+    // is this repository's most-recorded defect class. `REQUIRED_ARTIFACTS` is
+    // built by the beforeAll at the top of this file.
+    expect(existsSync(join(REPO_ROOT, 'dist'))).toBe(true);
+    expect(distDirs().length).toBeGreaterThan(0);
+  });
+
+  it('CONTROL: the shape rule really matches what mkdtemp produces', () => {
+    // Pinned against the five prefixes actually observed on 2026-09-08 rather
+    // than against an invented example.
+    for (const name of [
+      'capture-test-1Sh5xY',
+      'wire-test-D3LJXj',
+      'ingest-audit-R8KrM3',
+      'codex-memory-aB3xY9',
+      'codex-index-000000',
+    ]) {
+      expect(MKDTEMP_SHAPE.test(name), name).toBe(true);
+    }
+    for (const name of [...BUILD_OUTPUT]) {
+      expect(MKDTEMP_SHAPE.test(name), name).toBe(false);
+    }
+  });
   },
 );

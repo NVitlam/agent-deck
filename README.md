@@ -8,6 +8,10 @@ on the machine, the tree of agents inside each one, which agent spawned which, w
 right now, and what it has cost. It works with **Claude Code**, **OpenCode** and **Codex**, side by
 side in one panel. It observes only — it never wraps, launches, proxies or configures any of them.
 
+It also keeps the facts: which files a session touched, which calls it repeated, how its tokens
+moved, in a [Stats](#stats) view and a local history on your machine — numbers, never session
+content, and never advice.
+
 ![Agent Deck: one panel, every session on the machine, live](media/agent-deck-hero.gif)
 
 > **Claude Code compatibility** — anchor `2.1.246`, accepts `2.0.x` to `2.2.x`, refuses on
@@ -67,6 +71,10 @@ one or scroll away.
 
 ![Inspector: one call expanded](media/Internal_Session_Tool_popup2.png)
 
+**Stats** — a view mode beside the canvas and the list: files by touch count, identical-call loops
+and churn chains, tokens per agent, and trends across the sessions stored on this machine. Facts
+only; what each term means is in [Stats](#stats).
+
 **Two numbers, and a third where the engine states one.** **Context** is the last message's prompt —
 a level, what is in the window now, which goes up and down. **Burn** is the running total across the
 session — it only goes up. **Window** sits beside them and is read from the session itself: a Codex
@@ -98,7 +106,9 @@ Agent Deck observes. It never acts.
 The single qualification to "read-only" — what a read of OpenCode's store touches beside it — is
 measured in [`SECURITY.md`](SECURITY.md) §2.
 
-All state lives in memory and is discarded when the window closes.
+The live deck lives in memory and is discarded when the window closes. The one thing written to
+disk is the stats history — derived numbers, never session content — kept in VS Code's own storage
+for this extension; [Stats](#stats) says exactly what is in it and how to turn it off.
 
 <!-- engine:opencode -->
 
@@ -204,8 +214,23 @@ Install from the VS Code Marketplace - open the **Extensions** view and search f
 code --install-extension nvitlam.agent-deck
 ```
 
-**To open it:** run **Agent Deck: Open Session Deck** from the Command Palette. Your sessions
-appear on their own — there is nothing to point it at and nothing to switch on.
+**Where to find it: the Agent Deck icon in the activity bar.** It opens a sidebar with one entry
+per command:
+
+- **Open Deck** — the session deck, in the first editor group.
+- **Open Statistics** — the same panel, on its Stats view.
+- **Show Diagnostics** — the Agent Deck output channel.
+- **Settings** — VS Code's settings, filtered to Agent Deck.
+- **Clear Stats History** — removes the local stats history, after a confirmation.
+
+![The Agent Deck sidebar in the activity bar](media/sidebar.png)
+
+Every entry is also in the Command Palette, under **Agent Deck:**. Your sessions appear on their
+own — there is nothing to point it at and nothing to switch on.
+
+**Several VS Code windows work as they are.** Each window's deck stays live, sharing the one hook
+listener on the machine, with nothing to configure — see
+[Several windows, one port](#several-windows-one-port).
 
 **Then install the hook block below. Optional.** Without it Agent Deck still shows the tree, but it
 cannot tell you what is running right now — liveness is inferred from file times and the panel says
@@ -221,11 +246,12 @@ which agent is running right now, which tool call is in flight.
 **Agent Deck never installs this for you and never writes either settings file.** Read-only
 includes your configuration: you paste it, you own it.
 
-Paste the `"hooks"` key below into **one** of:
+Paste the `"hooks"` key below into your **user-level `~/.claude/settings.json`** — one paste, and
+every project on this machine is covered, in every window.
 
-- your project's own `.claude/settings.local.json` — what this repository does, and the choice that
-  keeps `~/.claude` untouched entirely; or
-- your user-level `~/.claude/settings.json`, if you would rather have it everywhere.
+If you would rather scope it to one project, the same block works in that project's own
+`.claude/settings.local.json` instead; that is what this repository does, and it leaves `~/.claude`
+untouched.
 
 Both files are JSON objects. Merge the `"hooks"` key into whatever is already there rather than
 replacing the file.
@@ -314,9 +340,10 @@ Notes on that block, each of them measured rather than assumed:
   Simplifying it to `curl` costs you roughly an order of magnitude, forever, on the common path.
   Measured in `SECURITY.md` §5.
 - **The port must match `agentDeck.port`.** The block names `47821` literally, which is that
-  setting's default. If you change one, change the other: Agent Deck reports a port collision as an
-  error and never silently picks a different port, because the block you pasted has no way of being
-  told.
+  setting's default. If you change one, change the other: Agent Deck never silently picks a
+  different port, because the block you pasted has no way of being told. A collision with a program
+  that is *not* Agent Deck is reported as an error; a collision with a second Agent Deck window is
+  not a collision at all — see [Several windows, one port](#several-windows-one-port).
 - **No Claude Code restart is needed.** Hook settings are re-read per invocation — registering a new
   event and seeing it arrive without a restart was measured on `2.1.234`.
 - **The POST is unconditional.** With nothing listening it is refused and nothing happens. A quiet
@@ -451,6 +478,169 @@ Notes on that block, each of them measured rather than assumed:
   nothing else.
 
 <!-- /engine:codex -->
+## Several windows, one port
+
+**Open a second VS Code window and both decks stay live.** You do not configure anything, and there
+is still exactly one socket on the machine.
+
+That is worth spelling out because the obvious arrangement does not work. The port is *fixed* —
+the hook block you pasted names `47821` literally, and there is nowhere to publish a different
+number without writing a file into Claude Code's own configuration, which Agent Deck never does. So
+a per-window port is not available, and before v0.7.0 the second window simply failed to bind it and
+showed you a deck with no liveness at all.
+
+What happens instead:
+
+- The first window to start **binds the port** and becomes the *leader*. Nothing about it changes:
+  it serves the hook route exactly as it always has.
+- A later window finds the port taken, **asks what is holding it**, and attaches to the leader's
+  event stream when the answer is another Agent Deck. It holds no socket of its own.
+- **Each window still reads its own workspace's transcripts.** Only the hook stream is shared, and
+  the windows attached to the leader keep only the events belonging to a session they are following
+  or to a folder they have open. Your other project's activity does not appear on this project's
+  deck: what is on a deck comes from the transcripts that window reads, not from the hook stream.
+- **Close the leader's window and the others race for the port.** Whoever wins serves the rest.
+  There is no election, no lock file and no coordinator: the operating system decides, because
+  exactly one process can bind a port. The changeover takes a fraction of a second and the events
+  that arrive during it are lost rather than queued — the stream keeps no buffer, by design.
+- **If the port is held by something that is not Agent Deck**, you get the same error you always
+  did, naming the port. Agent Deck will not pick a different one for you.
+
+**None of this leaves your machine.** The stream is served on `127.0.0.1` and read from
+`127.0.0.1`, on the port you configured, and it carries only what the hooks already POST — after
+the same redaction the panel applies, so no reasoning content and no oversized payload crosses it.
+Loopback means same-user trust here exactly as it does for the hook listener itself: there is no
+token and no authentication, because a process running as you could read the hook payloads anyway.
+
+## Stats
+
+**What each session touched, repeated and spent — as numbers.** **Open Statistics** in the sidebar,
+or **Agent Deck: Open Statistics** in the Command Palette, switches the panel to its Stats view, in
+four parts: **Files** (every file a session touched, with its reads, edits, writes and errors),
+**Loops & churn** (every call in a chain is a link back to the tree), **Tokens** (per agent: prompt,
+output, cache ratio and context fill where the engine states them, context-churn and compaction
+markers on a per-turn strip, stalls, and cost with its source beside it) and **Trends** (one point
+per stored session). The engine chips narrow every part exactly as they narrow the deck. A session
+Agent Deck could not read in full is counted in the footer with its reason, and appears in no table.
+
+Everything here is a count, a ratio or a token figure taken from the structure of a session. None of
+it reads message text, tool payloads or reasoning, and none of it says why a number is what it is.
+
+### The vocabulary
+
+Seven things have names. Each is a rule over a session's tool calls and token counts.
+
+- **Re-read loop** — one agent makes the same call, with an identical input, three or more times
+  (the measurement parameter `LOOP_MIN`, 3), and the tool is one that reads a file. The same repeat
+  with any other tool is listed as a loop.
+- **Churn chain** — one agent edits or writes a file, a later call by the same agent ends in an
+  error, and the agent edits or writes that file again. The chain lists every call between the two
+  writes.
+- **Context churn** — a turn in which the tokens written to the prompt cache rose by 5,000 or more
+  over the previous turn (the measurement parameter `SPIKE_TOKENS`). Claude Code only: it is the one
+  engine the threshold was measured on.
+- **Silent subagent** — a subagent that was spawned and made no tool call at all.
+- **Compaction** — the engine's own record that it compacted the conversation, with the prompt size
+  before and after where the engine states them.
+- **Stall** — a tool call still running while the session has been silent for longer than
+  `agentDeck.livenessThresholdMs` (default 120 seconds). It measures silence, not duration: a long
+  call that is still reporting activity is not stalled. It clears the moment anything arrives.
+- **Waiting on you** — a stall on `AskUserQuestion` or `ExitPlanMode`, the two tools that stop to ask
+  you something. Same rule, same amber; only the words change.
+
+### What each engine can supply
+
+The three engines do not write down the same things, so a fact is sometimes not there at all. Where
+it is missing the view shows an em dash — never a zero, and never a figure borrowed from another fact.
+
+| Fact | Claude Code | OpenCode | Codex |
+| --- | --- | --- | --- |
+| Files read, edited and written | yes | yes | no |
+| Tool calls and errors, per tool | yes | yes | calls only, no error status |
+| Loops | yes | yes | yes |
+| Churn chains | yes | yes | no |
+| Prompt and output tokens, per agent | yes | yes | yes |
+| Cache ratio | where the session states a cache split | where the session states a cache split | no |
+| Context churn | yes | no | no |
+| Silent subagents | yes | yes | yes |
+| Cost | from your own prices | where OpenCode reports one, or from your own prices | no |
+| Context fill | no | no | yes |
+| Compactions | yes | yes | no |
+| Stalls | yes | yes | yes |
+
+A **no** means the engine's own records do not carry what the fact is built from. Context fill needs
+the model's context window, which only a Codex transcript states; a cost from your own prices needs a
+per-turn token series, which a Codex transcript does not carry.
+
+### The five settings
+
+All five are in the [Settings](#settings) table with their defaults.
+
+- `agentDeck.stats.enabled` — keep the local history. Off, Agent Deck writes no file and creates no
+  directory; the Files, Loops and Tokens parts still show this window's sessions.
+- `agentDeck.stats.retentionDays` — how many days of history to keep.
+- `agentDeck.stats.idleFlushMs` — how long a session may stay unchanged before its record is written
+  anyway.
+- `agentDeck.pricing` — your own prices, for a cost figure where the engine reports none. Below.
+- `agentDeck.canvas.autoFit` — re-fit the session canvas on every change to its geometry. Not a
+  statistics setting; it arrived in the same release.
+
+**Your own prices.** Agent Deck ships no price table and never guesses a price. A cost appears only
+where the engine reports one, or where you have entered prices for the model a session ran. Prices
+are in USD per million tokens, keyed by the model id exactly as the session writes it — the Tokens
+part lists every id it has seen, so you can copy it. The figures below show the shape and are not a
+price list:
+
+```json
+{
+  "agentDeck.pricing": {
+    "claude-sonnet-4-5": { "prompt": 3, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15 }
+  }
+}
+```
+
+Worked through: a turn of 2 fresh prompt tokens, 13,390 tokens written to the cache, 28,807 read
+from it and 1,000 output tokens costs (2 × 3 + 13,390 × 3.75 + 28,807 × 0.3 + 1,000 × 15) ÷
+1,000,000 = **$0.0739**. A cost worked out this way is labelled as estimated from your prices. An
+entry that is not four non-negative numbers is ignored and named on the Agent Deck output channel.
+
+**A subscription plan yields no per-token cost.** A flat-rate plan has no price per token to enter,
+so there is nothing to put in this setting for it, and its sessions show no cost figure.
+
+### Clearing the history
+
+**Clear Stats History** — in the sidebar, or **Agent Deck: Clear Stats History** in the Command
+Palette — deletes the whole history after a modal confirmation, and works whether or not
+`agentDeck.stats.enabled` is on. There is one history per machine, so it is cleared for every window
+at once; **another window that is already open keeps showing what it had read** until it next writes
+a record or is reloaded. A session still running refills the history as it goes.
+
+### Where it lives, and what leaves the machine
+
+**Nothing leaves the machine.** No upload, no sync, no telemetry. The history is kept in VS Code's
+global storage for this extension, as one JSON Lines file per week — not under `~/.claude`, not
+under `~/.codex`, not in OpenCode's directories, and not in your workspace. A record holds counts,
+token figures and identifiers the engines wrote — session ids, agent ids, tool names, file paths,
+model ids — and never message text, tool payloads or reasoning. Turn it off with
+`agentDeck.stats.enabled`; remove it with **Clear Stats History**.
+
+### Two limits, stated plainly
+
+- **Without the hook block, a Claude Code session's record is written after an hour without
+  change, not when it ends.** The hook stream is how Agent Deck learns that a Claude Code session has
+  ended; without it the idle rule (`agentDeck.stats.idleFlushMs`, one hour by default) is what writes
+  the record.
+- **A session that finishes while no VS Code window is open is not recorded.** Agent Deck records
+  what it observes while a window is running. It never reads old transcripts back into the history.
+
+### For extension authors
+
+`vscode.extensions.getExtension('nvitlam.agent-deck')?.exports` is Agent Deck's extension API,
+`apiVersion` 1: `getLiveStats()`, `getStoredStats({ sinceMs, limit })` and the event
+`onDidUpdateStats`, which fires for every record written and, while a session changes, at most once
+every two seconds for that session. It hands out these records and nothing else — never a session's
+tree and never a preview.
+
 ## Claude Code version window
 
 - **Anchor `2.1.246`** — the release the committed corpora were captured from. It is a
@@ -486,13 +676,16 @@ honesty is kept, and they were not loosened alongside it.
 
 ## What it does not do
 
-- **No writes of any kind.** Not to `~/.claude`, not to your Claude Code settings, not to session
-  files, not to OpenCode's database or its config, not to Codex's `hooks.json` or `config.toml`. The
-  one qualification is stated in full under [Trust](#trust) rather than buried here.
+- **No writes to anything it observes.** Not to `~/.claude`, not to your Claude Code settings, not
+  to session files, not to OpenCode's database or its config, not to Codex's `hooks.json` or
+  `config.toml`. The one qualification is stated in full under [Trust](#trust) rather than buried
+  here. Its own stats history is the one file it writes, in its own storage — see [Stats](#stats).
 - **No launching, wrapping or proxying any of the three engines.** It observes what is already there.
-- **No historical replay and no persistence.** Close the window and the state is gone.
+- **No session replay.** Close the window and the live deck is gone. The one thing kept is the stats
+  history — derived numbers, which you can turn off and clear — and it is never read back into a deck.
 - **No telemetry, no analytics, no network egress.**
-- **No cost dashboards.** Totals are rendered where they belong on the tree, and that is all.
+- **No price table and no cost analytics.** A cost figure appears only where an engine reports one or
+  you have entered your own prices, beside the session it belongs to.
 - **No control surface.** It cannot start, stop, steer or configure an agent, and it is not going to
   grow one by accident.
 - **No settings for the OpenCode or Codex sides.** Each is on when its data directory exists and
@@ -507,6 +700,15 @@ honesty is kept, and they were not loosened alongside it.
 | `agentDeck.livenessThresholdMs` | How long a session may go quiet before it stops counting as live. Set it too low and one long tool call makes a healthy session flap. |
 | `agentDeck.previewBytes` | Ceiling on tool-payload bytes kept per node for previews. Nothing is ever sent off the machine either way. |
 | `agentDeck.codex.maxTranscriptBytes` | Largest Codex transcript Agent Deck will open, in bytes. Default 67108864 (64 MiB). A bigger rollout file is measured from its directory entry and never read; the Agent Deck output channel says which file and what the limit is. Codex stores tool output whole and inline, so a long session can reach hundreds of megabytes. |
+| `agentDeck.stats.enabled` | Keep a local history of derived session statistics. Append-only JSON Lines under the extension's own global-storage directory, one file per ISO week — never under `~/.claude`, `~/.codex`, the OpenCode directories, or your workspace. Off means no file and no directory at all. Nothing is ever sent off the machine. |
+| `agentDeck.stats.retentionDays` | How many days of that history to keep. Default 90. Files are pruned when a record is written, and a weekly file goes once the whole week it covers has aged out. To keep nothing, turn `agentDeck.stats.enabled` off — the floor here is one day, not zero. |
+| `agentDeck.canvas.autoFit` | Re-fit the session canvas to its content on every event that changes its geometry: a node selected, the drawer opened, expanded or closed, an agent grafted, removed or parked, the panel resized, a session switch, an engine chip, a switch back to the canvas. Default `true`. A manual pan or zoom persists until the next such event; token counters and status colours never re-fit. Off, the canvas fits once on entry and on Reset view. |
+| `agentDeck.stats.idleFlushMs` | How long a session may go unchanged before its record is written anyway, in milliseconds. Default 3600000 (one hour). A record is normally written when the session ends; this covers the session that never does. Later work is recomputed in full and written as a second record; reads keep the newest per session and nothing on disk is rewritten. |
+| `agentDeck.pricing` | Your own prices per model id, in USD per million tokens — `{"<model id>": {"prompt": 3, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15}}`. Used only for sessions whose engine reports no cost. Agent Deck ships no price table and never guesses one: a model with no entry gets no figure, a malformed entry is ignored and named on the output channel, and anything computed this way is labelled as estimated from your prices. |
+
+Clearing the history is a command, not a button on the deck: **Agent Deck: Clear Stats History** in
+the command palette or the sidebar, behind a modal confirm. It works whether or not `agentDeck.stats.enabled` is on, so turning
+the store off and then removing what it already wrote is two steps rather than a dead end.
 
 ## Development
 

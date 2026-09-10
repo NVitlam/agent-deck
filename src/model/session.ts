@@ -58,6 +58,7 @@
 import type {
   AgentNode,
   AgentNodeFieldPatch,
+  CompactionRecord,
   NormalizedHookEvent,
   ParkedGraft,
   SchemaMismatch,
@@ -70,6 +71,7 @@ import type {
   ToolNodeFieldPatch,
   TreeNode,
   TreeOp,
+  UsageTurn,
 } from './events.js';
 import { isAgentNode } from './events.js';
 import type { HookEventHandler } from '../hooks/listener.js';
@@ -85,6 +87,7 @@ import type {
 import { ROOT_NODE_ID, TreeGrafter, previewFingerprint, walk } from './graft.js';
 import type { SessionLivenessSnapshot } from './liveness.js';
 import { LivenessEngine } from './liveness.js';
+import { applyStallsToRoot } from './stall.js';
 import type { WorkspaceCorrelation } from './correlate.js';
 import { isOpenWorkspaceSlug } from './correlate.js';
 import { deepFreeze, edgesOf, parkedOf } from '../bridge/apply.js';
@@ -248,6 +251,24 @@ function agentFieldPatch(prev: AgentNode, next: AgentNode): AgentNodeFieldPatch 
     fields.burn = { ...next.burn };
     changed = true;
   }
+  // v0.7.0 Phase 1. `usageSeries` and `compactions` really do grow mid-session,
+  // so these are the patches a running panel depends on rather than a
+  // formality. Compared by VALUE, not by reference: the grafter rebuilds these
+  // arrays on every scan, so a reference test would report a change on every
+  // tick and put an identical array on the wire forever.
+  if (!sameSeries(prev.usageSeries, next.usageSeries)) {
+    fields.usageSeries = next.usageSeries === undefined ? null : next.usageSeries.map((t) => ({ ...t }));
+    changed = true;
+  }
+  if (prev.model !== next.model) {
+    fields.model = next.model === undefined ? null : next.model;
+    changed = true;
+  }
+  if (!sameCompactions(prev.compactions, next.compactions)) {
+    fields.compactions =
+      next.compactions === undefined ? null : next.compactions.map((c) => ({ ...c }));
+    changed = true;
+  }
   if (prev.startedAt !== next.startedAt) {
     fields.startedAt = next.startedAt;
     changed = true;
@@ -257,6 +278,46 @@ function agentFieldPatch(prev: AgentNode, next: AgentNode): AgentNodeFieldPatch 
     changed = true;
   }
   return changed ? fields : undefined;
+}
+
+/** Value equality for a usage series; absent and empty are different states. */
+function sameSeries(
+  a: readonly UsageTurn[] | undefined,
+  b: readonly UsageTurn[] | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.length !== b.length) return false;
+  return a.every((t, i) => {
+    const o = b[i];
+    return (
+      o !== undefined &&
+      t.ordinal === o.ordinal &&
+      t.input === o.input &&
+      t.cacheCreation === o.cacheCreation &&
+      t.cacheRead === o.cacheRead &&
+      t.output === o.output
+    );
+  });
+}
+
+/** Value equality for compaction records. */
+function sameCompactions(
+  a: readonly CompactionRecord[] | undefined,
+  b: readonly CompactionRecord[] | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.length !== b.length) return false;
+  return a.every((c, i) => {
+    const o = b[i];
+    return (
+      o !== undefined &&
+      c.ordinal === o.ordinal &&
+      c.trigger === o.trigger &&
+      c.preTokens === o.preTokens &&
+      c.postTokens === o.postTokens &&
+      c.durationMs === o.durationMs
+    );
+  });
 }
 
 function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | undefined {
@@ -292,6 +353,30 @@ function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | un
   // claiming the payload was truncated, an absent key means unchanged.
   if (prev.truncated !== next.truncated) {
     fields.truncated = next.truncated === undefined ? null : next.truncated;
+    changed = true;
+  }
+  // v0.7.0 Phase 0c, and B7's rule applied to the field this phase added. A
+  // stall reaches a running panel as a DIFF (the host emits on a liveness
+  // tick), so leaving this out shipped an amber chip with no elapsed time
+  // beside it — and broke the exactness property in the same breath.
+  if (prev.stalledSinceMs !== next.stalledSinceMs) {
+    fields.stalledSinceMs = next.stalledSinceMs === undefined ? null : next.stalledSinceMs;
+    changed = true;
+  }
+  // v0.7.0 Phase 1. Same rule again: these are fixed at first sighting and are
+  // expected to travel on the ADD of a new node rather than on an update, but
+  // the exactness property is stated for any two states the model produces, not
+  // for the ones today's engines happen to make.
+  if (prev.filePath !== next.filePath) {
+    fields.filePath = next.filePath === undefined ? null : next.filePath;
+    changed = true;
+  }
+  if (prev.inputHash !== next.inputHash) {
+    fields.inputHash = next.inputHash === undefined ? null : next.inputHash;
+    changed = true;
+  }
+  if (prev.ordinal !== next.ordinal) {
+    fields.ordinal = next.ordinal === undefined ? null : next.ordinal;
     changed = true;
   }
   return changed ? fields : undefined;
@@ -532,6 +617,13 @@ function serializeSessionNode(
       inputPreview: previewFingerprint(node.inputPreview),
       resultPreview: previewFingerprint(node.resultPreview),
       durationMs: node.durationMs ?? null,
+      // v0.7.0 Phase 1 — same treatment, same reasons, as `graft.ts`'s
+      // serializer: `filePath` is a captured absolute path and is fingerprinted
+      // so rule 1 (no filesystem paths) survives; `inputHash` is a one-way
+      // digest and `ordinal` an integer, so both are safe verbatim.
+      filePath: previewFingerprint(node.filePath),
+      inputHash: node.inputHash ?? null,
+      ordinal: node.ordinal ?? null,
     };
   }
   return {
@@ -543,6 +635,11 @@ function serializeSessionNode(
     spawnDepth: node.spawnDepth,
     contextNow: node.contextNow === undefined ? null : { ...node.contextNow },
     burn: node.burn === undefined ? null : { ...node.burn },
+    usageSeries: node.usageSeries === undefined ? null : node.usageSeries.map((t) => ({ ...t })),
+    model: node.model ?? null,
+    // NO `agentName` KEY: DoD 1.9e was closed UNAVAILABLE on 2026-09-06 and the
+    // field is gone from `AgentNode`. See the note there.
+    compactions: node.compactions === undefined ? null : node.compactions.map((c) => ({ ...c })),
     startedAtOffsetMs:
       anchor === undefined || node.startedAt === 0 ? null : node.startedAt - anchor,
     endedAtOffsetMs:
@@ -646,6 +743,49 @@ export interface SessionEmission {
    * `{ type: 'schemaMismatch', sessionId }` message's trigger.
    */
   schemaMismatchSessionIds: readonly string[];
+  /**
+   * Per session, the instant of the last observed ACTIVITY — v0.7.0 DoD 4.11b,
+   * user ruling 2026-09-10.
+   *
+   * **A DERIVED RECORD IS EVIDENCE OF CONTENT, NEVER OF ACTIVITY; ACTIVITY
+   * COMES FROM LIVENESS ONLY.** That law was bought with the store flood twice.
+   * The second time, promotion rested on "the session's derived record changed
+   * during this lifetime" — and a historical session's record CHANGES while the
+   * tailer is still reading the file, so twenty-one sessions that did nothing
+   * were promoted and written the moment their initial read completed.
+   * Reproduced: pump one sees a partial tree, pump two sees the whole one,
+   * nineteen appends.
+   *
+   * So the instant comes from each engine's own liveness, which is the only
+   * component that knows what a WRITE is — and since DoD 4.11c, only when bytes
+   * are behind it:
+   *
+   *   - **Claude Code** — `SessionLivenessSnapshot.witnessedActivityAt`, which is
+   *     the last hook event, or the transcript's mtime **only once the file has
+   *     grown since this process first stat'd it**. NOT `lastActivityAt`: that
+   *     one still decides the `live`/`idle`/`ended` enum and feeds the stall
+   *     derivation, where a touched file legitimately reads as recent.
+   *   - **OpenCode** — `max(timeUpdated, seqAdvancedAt)`, untouched by 4.11c
+   *     because both are STORE CONTENT and no filesystem event moves them.
+   *   - **Codex** — `max(lastHookEventMs, lastMtimeMs)` across a session's
+   *     threads, with the mtime half gated on the same growth test.
+   *
+   * An mtime says a file was written; only a size says a session wrote it. A
+   * clone, a restore, a sync client, an indexer or a scanner produces the first
+   * and never the second.
+   *
+   * HOST-INTERNAL, and precisely: the emission OBJECT is handed to
+   * `SessionBridge.publish`, and this FIELD is serialised by nothing.
+   * `sendSnapshot` posts `{ type: 'snapshot', sessions }` and `sendMismatches`
+   * posts ids, so no map reaches the webview, the wire corpora or the
+   * untrusted-input guard. `SessionState` is the wire and is untouched.
+   *
+   * REQUIRED, and a missing session means "no activity known", never "now": an
+   * engine that cannot say must not have its sessions recorded on a guess (G3).
+   * Required rather than optional so a fourth engine cannot omit it silently —
+   * every emitter breaks at compile time instead.
+   */
+  lastActivityAt: ReadonlyMap<string, number>;
 }
 
 interface ContentView {
@@ -692,6 +832,18 @@ export class SessionModel {
   private readonly graftOptions: GraftOptions;
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly lastEmitted = new Map<string, SessionState>();
+
+  /**
+   * The activity instant per session, as of the most recent assembly.
+   *
+   * Written by {@link SessionModel.stateOf} from the SAME snapshot the liveness
+   * enum and the stall derivation read, and only read by
+   * {@link SessionModel.emit}. `stateOf`'s own comment is the reason it is a
+   * field rather than a second `snapshot()` call: asking the engine twice would
+   * let the store's provenance gate and the stall it is deriving disagree about
+   * "now" (v0.7.0 DoD 4.11b, `phase-verifier` round 3).
+   */
+  private readonly activityAt = new Map<string, number>();
 
   private readonly counts: SessionModelCounters = {
     sessionsRegistered: 0,
@@ -982,14 +1134,45 @@ export class SessionModel {
 
   private stateOf(record: SessionRecord): SessionState {
     const view = this.contentView(record);
-    const liveness = this.liveness.livenessOf(record.sessionId) ?? 'idle';
+    // ONE snapshot, ONE clock, for both the session enum and the tool-level
+    // stall derived from it. Asking the engine twice — or reading `Date.now()`
+    // here — would let the two disagree about "now".
+    const livenessSnapshot = this.liveness.snapshot(record.sessionId);
+    const liveness = livenessSnapshot?.liveness ?? 'idle';
+    // The store's promoter, taken from THIS snapshot (DoD 4.11b). Deleted rather
+    // than left stale when the tap has nothing: a session whose instant went
+    // away must read as "no activity known", never as the last one it had.
+    //
+    // `witnessedActivityAt`, NOT `lastActivityAt` (DoD 4.11c, user ruling
+    // 2026-09-10): the two differ by exactly one thing, whether a transcript
+    // whose mtime moved has GROWN since this process first stat'd it. The enum
+    // and the stall derivation above keep reading `lastActivityAt`, because for
+    // them a touched file is still "something happened, show it as recent"; a
+    // WRITE to the local store may not rest on that.
+    const activityAt = livenessSnapshot?.witnessedActivityAt;
+    if (activityAt === undefined) this.activityAt.delete(record.sessionId);
+    else this.activityAt.set(record.sessionId, activityAt);
+    // v0.7.0 Phase 0c. Derived at assembly, never cached with the content view
+    // and never written by the parser: the view is invalidated by content
+    // arrivals, and a stall moves with the CLOCK, so caching it there would
+    // freeze an amber tool until the next unrelated append.
+    //
+    // `applyStallsToRoot` returns `view.root` itself when nothing is stalled,
+    // so the common case allocates nothing and the differ sees the identical
+    // object graph it saw last time.
+    const root = applyStallsToRoot(
+      view.root,
+      livenessSnapshot?.lastActivityAt,
+      this.liveness.mtimeThresholdMs,
+      this.liveness.now(),
+    );
     return deepFreeze<SessionState>({
       sessionId: record.sessionId,
       projectSlug: record.projectSlug,
       workspaceMatch: record.workspaceMatch,
       liveness,
       schemaOk: view.schemaOk,
-      root: view.root,
+      root,
       totals: view.totals,
       contextNow: view.contextNow,
       burn: view.burn,
@@ -1084,12 +1267,24 @@ export class SessionModel {
     }
     removedSessionIds.sort();
 
+    // The activity instant per session, from the snapshot `stateOf` already
+    // took while assembling these very states — never a second `snapshot()`
+    // call, which would read a later "now" than the stall in the same state.
+    // Absent means the tap has said nothing about that session, and no instant
+    // is claimed for it (G3).
+    const lastActivityAt = new Map<string, number>();
+    for (const session of sessions) {
+      const at = this.activityAt.get(session.sessionId);
+      if (at !== undefined) lastActivityAt.set(session.sessionId, at);
+    }
+
     return {
       sessions,
       diffs,
       addedSessionIds,
       removedSessionIds,
       schemaMismatchSessionIds,
+      lastActivityAt,
     };
   }
 

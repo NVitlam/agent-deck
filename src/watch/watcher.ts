@@ -37,6 +37,7 @@
  * nothing about the library we actually ship.
  */
 
+import { existsSync } from 'node:fs';
 import { join, resolve as resolvePath } from 'node:path';
 
 import { watch as chokidarWatch } from 'chokidar';
@@ -192,6 +193,18 @@ export interface WatcherDiagnostics {
   batches: number;
   /** Polls whose discovery sweep refused. */
   discoveryFailures: number;
+  /**
+   * Times the slug directory appeared AFTER activation and this watcher
+   * switched from the root watch to the real one (v0.7.0 DoD 1b.10).
+   *
+   * On the diagnostics surface rather than private, because it is the one
+   * number that distinguishes "this deck was empty and then filled" from
+   * "this deck was always full" — and a counter nothing reads is a counter
+   * that can be wrong forever, which this repository has already shipped once
+   * in `RelayCounters.relayed`. Normally 0; 1 for a window opened on a
+   * repository before Claude Code ran in it.
+   */
+  lateAttachments: number;
   lastDiscoveryFailure?: DiscoveryFailure;
   /** Watcher-level errors, including a factory that threw on construction. */
   watchErrors: number;
@@ -264,6 +277,13 @@ export class ProjectWatcher {
   readonly #debouncer: Debouncer;
 
   #handle: WatchHandle | null = null;
+  /**
+   * A watch on {@link projectsRoot}, held ONLY while {@link watchDir} does not
+   * exist yet (v0.7.0 DoD 1b.10). Closed the moment the real watch is armed.
+   */
+  #rootHandle: WatchHandle | null = null;
+  /** Times the slug directory appeared after activation and was picked up. */
+  #lateAttachments = 0;
   #started = false;
   #disposed = false;
   #ready = false;
@@ -349,6 +369,7 @@ export class ProjectWatcher {
       polls: this.#polls,
       batches: this.#batches,
       discoveryFailures: this.#discoveryFailures,
+      lateAttachments: this.#lateAttachments,
       watchErrors: this.#watchErrors,
       pollErrors: this.#pollErrors,
       callbackErrors: this.#callbackErrors,
@@ -386,6 +407,44 @@ export class ProjectWatcher {
     if (this.#disposed || this.#started) return;
     this.#started = true;
 
+    this.#armWatch();
+    await this.#runPoll();
+  }
+
+  /**
+   * Arm the transcript watch, or — when the slug directory does not exist yet —
+   * a watch on the projects ROOT that waits for it to appear.
+   *
+   * **WHY THE SECOND HALF EXISTS, and it is a live defect the 1b.8 smoke
+   * found rather than a hardening measure.** chokidar handed a path that does
+   * not exist reports nothing, and does not begin reporting when that path is
+   * later created. Claude Code creates `projects/<slug>/` on the FIRST session
+   * in a workspace — so for the ordinary case of opening a repository in VS
+   * Code *before* running Claude Code in it, the watch was armed on nothing
+   * and stayed armed on nothing.
+   *
+   * Nothing else re-discovered: the only other poll trigger is an fs event on
+   * that same absent path, and the host's tick emits rather than polling. So
+   * there was exactly ONE discovery attempt per window, at activation, and a
+   * window that lost that race showed an empty deck until it was reloaded.
+   * Measured 2026-09-07: activation 13:14:35Z, directory created 13:17Z, deck
+   * empty for five minutes and counting.
+   *
+   * The root watch is deliberately narrow — `depth: 0`, closed the instant the
+   * real watch is armed — because the projects root holds a directory per
+   * workspace on the machine and this window has business with exactly one of
+   * them. It never polls the root's contents; it waits for an event and then
+   * asks the filesystem one question.
+   */
+  #armWatch(): void {
+    if (this.#disposed) return;
+    if (this.#handle !== null) return;
+
+    if (!existsSync(this.watchDir)) {
+      this.#armRootWatch();
+      return;
+    }
+
     try {
       this.#handle = this.#watchFactory(this.watchDir, {
         onChange: (kind, path) => {
@@ -401,8 +460,82 @@ export class ProjectWatcher {
     } catch (error) {
       this.#recordWatchError(error);
     }
+  }
 
-    await this.#runPoll();
+  /**
+   * Watch the projects root, at depth 0, for the slug directory appearing.
+   *
+   * A failure here is counted and swallowed like every other watch failure
+   * (G2): a root that cannot be watched — because Claude Code has never run on
+   * this machine at all, so `projects/` itself does not exist — leaves the
+   * window exactly where it was before this method existed, which is the
+   * honest degradation. It is NOT a chain of parent watches; that case is
+   * recorded in the DoD rather than guessed at.
+   */
+  #armRootWatch(): void {
+    if (this.#rootHandle !== null) return;
+    try {
+      this.#rootHandle = this.#watchFactory(this.projectsRoot, {
+        onChange: () => {
+          this.#onRootEvent();
+        },
+        onError: (error) => {
+          this.#recordWatchError(error);
+        },
+        onReady: () => {
+          // Deliberately NOT `#ready`: this window is not watching its
+          // transcripts yet, and saying otherwise would make `ready` a claim
+          // about a directory that does not exist.
+          //
+          // BUT IT MUST RE-CHECK, and this line is the whole reason the first
+          // draft of this fix did not work. chokidar is configured
+          // `ignoreInitial: true`, so anything that exists by the time its
+          // initial scan completes is absorbed into that scan and NEVER
+          // reported. A directory created between arming the watch and the
+          // watch becoming ready therefore produces no event at all — measured
+          // here, not theorised: the root watch armed on the right path and
+          // fired zero events while the directory sat there.
+          //
+          // That window is small and it is exactly the window this defect
+          // lives in: Claude Code creates the slug directory when its first
+          // session starts, which is often the same moment the user is opening
+          // the workspace. So readiness is a second, deterministic chance —
+          // either the event fires (created after ready) or this catches it
+          // (created before ready), and there is no third case.
+          this.#onRootEvent();
+        },
+      });
+    } catch (error) {
+      this.#recordWatchError(error);
+    }
+  }
+
+  /**
+   * Something changed in the projects root while we were waiting for the slug
+   * directory. Ask once whether it is ours, and if so switch over.
+   *
+   * The check is `existsSync` on our own path rather than a match against the
+   * event's path: chokidar's event paths differ across platforms and watch
+   * modes, and the question being asked is not "was this event about us" but
+   * "is the directory there now" — which has one answer and no spelling.
+   */
+  #onRootEvent(): void {
+    if (this.#disposed || this.#handle !== null) return;
+    if (!existsSync(this.watchDir)) return;
+
+    const root = this.#rootHandle;
+    this.#rootHandle = null;
+    if (root !== null) {
+      void Promise.resolve(root.close()).catch(() => {
+        // A root watch that will not close must not stop the real one arming.
+      });
+    }
+
+    this.#lateAttachments += 1;
+    this.#armWatch();
+    // Poll immediately rather than waiting for the next append: the session
+    // that created the directory has already written its first lines.
+    this.#debouncer.signal();
   }
 
   /**
@@ -438,6 +571,16 @@ export class ProjectWatcher {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#debouncer.cancel();
+    const root = this.#rootHandle;
+    this.#rootHandle = null;
+    if (root !== null) {
+      try {
+        await root.close();
+      } catch {
+        // Counted nowhere on purpose: teardown must not throw, and a root
+        // watch that will not close holds nothing this window still needs.
+      }
+    }
     const handle = this.#handle;
     this.#handle = null;
     if (handle === null) return;

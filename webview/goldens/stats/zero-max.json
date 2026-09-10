@@ -1,0 +1,139 @@
+{
+  "generator": "scripts/gen-webview-goldens.mjs",
+  "from": [
+    "cc-2.1.234-05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+    "codex-0.151.0-alpha.7.2-01a0641d-8281-7703-97fa-5a829bb77563"
+  ],
+  "trends": {
+    "sessions": [
+      {
+        "sessionId": "zero-cc-1",
+        "engine": "cc",
+        "loops": 0
+      },
+      {
+        "sessionId": "zero-cc-2",
+        "engine": "cc",
+        "loops": 0
+      },
+      {
+        "sessionId": "zero-codex-looped",
+        "engine": "codex",
+        "loops": 1
+      }
+    ],
+    "loaded": {
+      "series": [
+        {
+          "id": "prompt",
+          "label": "prompt tokens",
+          "lines": [
+            {
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "zero-cc-1",
+                  "index": 0,
+                  "x": 0,
+                  "y": 1000
+                },
+                {
+                  "sessionId": "zero-cc-2",
+                  "index": 1,
+                  "x": 24,
+                  "y": 2000
+                }
+              ],
+              "max": 2000,
+              "flat": false
+            },
+            {
+              "engine": "codex",
+              "points": [
+                {
+                  "sessionId": "zero-codex-looped",
+                  "index": 2,
+                  "x": 48,
+                  "y": 345745
+                }
+              ],
+              "max": 345745,
+              "flat": false
+            }
+          ]
+        },
+        {
+          "id": "loops",
+          "label": "loops",
+          "lines": [
+            {
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "zero-cc-1",
+                  "index": 0,
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "sessionId": "zero-cc-2",
+                  "index": 1,
+                  "x": 24,
+                  "y": 0
+                }
+              ],
+              "max": 0,
+              "flat": true
+            },
+            {
+              "engine": "codex",
+              "points": [
+                {
+                  "sessionId": "zero-codex-looped",
+                  "index": 2,
+                  "x": 48,
+                  "y": 1
+                }
+              ],
+              "max": 1,
+              "flat": false
+            }
+          ]
+        },
+        {
+          "id": "cost",
+          "label": "engine-reported cost (USD)",
+          "lines": []
+        }
+      ],
+      "sessions": [
+        {
+          "sessionId": "zero-cc-1",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 0,
+          "x": 0
+        },
+        {
+          "sessionId": "zero-cc-2",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 1,
+          "x": 24
+        },
+        {
+          "sessionId": "zero-codex-looped",
+          "engine": "codex",
+          "projectSlug": "C--Users-dev-codex-probe-scratch",
+          "startedAt": 1788386050871,
+          "index": 2,
+          "x": 48
+        }
+      ],
+      "width": 48,
+      "empty": false
+    }
+  }
+}

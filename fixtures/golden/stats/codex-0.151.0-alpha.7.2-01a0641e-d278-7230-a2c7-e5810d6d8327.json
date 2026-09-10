@@ -1,0 +1,96 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+  "engine": "codex",
+  "projectSlug": "C--Users-dev-codex-probe-scratch",
+  "startedAt": 1788386136880,
+  "endedAt": 1788386183200,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 92869,
+      "output": 450,
+      "toolCalls": 5,
+      "silent": false,
+      "model": "gpt-5.6-terra"
+    },
+    {
+      "agentId": "01a0641e-f36c-7503-be16-25989a8aa7b2",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 86011,
+      "output": 360,
+      "toolCalls": 4,
+      "silent": false,
+      "model": "gpt-5.6-terra"
+    },
+    {
+      "agentId": "01a0641f-2ad6-7173-831c-bdbc535f874a",
+      "kind": "subagent",
+      "spawnDepth": 2,
+      "prompt": 51017,
+      "output": 183,
+      "toolCalls": 2,
+      "silent": false,
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "files": [],
+  "tools": [
+    {
+      "toolName": "exec",
+      "class": "shell",
+      "calls": 2
+    },
+    {
+      "toolName": "list_agents",
+      "class": "spawn",
+      "calls": 1
+    },
+    {
+      "toolName": "send_message",
+      "class": "spawn",
+      "calls": 3
+    },
+    {
+      "toolName": "spawn_agent",
+      "class": "spawn",
+      "calls": 3
+    },
+    {
+      "toolName": "wait_agent",
+      "class": "spawn",
+      "calls": 2
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 229897,
+    "output": 993,
+    "compactions": 0,
+    "contextFill": 0.061400928792569656,
+    "subagents": 2,
+    "silentSubagents": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F12:codex",
+    "F13.completed:snapshot",
+    "F1:codex",
+    "F2.errors:codex",
+    "F4:codex",
+    "F6:codex",
+    "F7:codex",
+    "F9:codex"
+  ]
+}

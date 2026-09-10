@@ -1,0 +1,226 @@
+{
+  "statsSchemaVersion": 1,
+  "sessionId": "ses_fcaa0162fffe42IwWMqYlRoprY",
+  "engine": "opencode",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1787601873360,
+  "endedAt": 1787613396466,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 2736068,
+      "output": 62153,
+      "cacheRead": 2518478,
+      "cacheRatio": 0.9204734677646901,
+      "toolCalls": 40,
+      "silent": false,
+      "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}"
+    },
+    {
+      "agentId": "ses_fca7a126cffeynPNEqFteC7Gfl",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 10183,
+      "output": 26,
+      "cacheRead": 930,
+      "cacheRatio": 0.09132868506334087,
+      "toolCalls": 0,
+      "silent": true,
+      "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\opencode\\probe-db.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 11,
+      "lastTouchSeq": 11
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\opencode\\probe-db2.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 13,
+      "lastTouchSeq": 13
+    },
+    {
+      "filePath": "C:\\Users\\dev\\AppData\\Local\\Temp\\opencode\\probe-db3.mjs",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 17,
+      "lastTouchSeq": 17
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\skills\\handoff\\SKILL.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 21,
+      "lastTouchSeq": 21
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\.claude\\skills\\phase\\SKILL.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 20,
+      "lastTouchSeq": 36
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\CLAUDE.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 0,
+      "lastTouchSeq": 0
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\HANDOVER.md",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 1,
+      "lastTouchSeq": 1
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\PLAN.md",
+      "reads": 2,
+      "edits": 1,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 24,
+      "lastTouchSeq": 35
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\docs\\opencode-contract.md",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 34,
+      "lastTouchSeq": 34
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\model\\events.ts",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 5,
+      "lastTouchSeq": 5
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\parser\\fingerprint.ts",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 6,
+      "lastTouchSeq": 6
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\src\\parser\\parse.ts",
+      "reads": 1,
+      "edits": 0,
+      "writes": 0,
+      "errors": 0,
+      "firstTouchSeq": 9,
+      "lastTouchSeq": 9
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "bash",
+      "class": "shell",
+      "calls": 18,
+      "errors": 0,
+      "durationMsSum": 16128,
+      "durationMsMax": 1420
+    },
+    {
+      "toolName": "edit",
+      "class": "edit",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 5,
+      "durationMsMax": 5
+    },
+    {
+      "toolName": "glob",
+      "class": "search",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 144,
+      "durationMsMax": 144
+    },
+    {
+      "toolName": "grep",
+      "class": "search",
+      "calls": 5,
+      "errors": 0,
+      "durationMsSum": 1488,
+      "durationMsMax": 1134
+    },
+    {
+      "toolName": "read",
+      "class": "read",
+      "calls": 9,
+      "errors": 0,
+      "durationMsSum": 765,
+      "durationMsMax": 131
+    },
+    {
+      "toolName": "task",
+      "class": "spawn",
+      "calls": 1,
+      "errors": 0,
+      "durationMsSum": 84142,
+      "durationMsMax": 84142
+    },
+    {
+      "toolName": "write",
+      "class": "write",
+      "calls": 5,
+      "errors": 0,
+      "durationMsSum": 207,
+      "durationMsMax": 53
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "totals": {
+    "prompt": 2746251,
+    "output": 62179,
+    "cacheRead": 2519408,
+    "compactions": 0,
+    "subagents": 1,
+    "silentSubagents": 1,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3
+  },
+  "unavailable": [
+    "F10:opencode",
+    "F13.completed:snapshot",
+    "F7:opencode",
+    "F9:opencode"
+  ]
+}

@@ -67,11 +67,16 @@
 // it is a proxy.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+
+import { SIDEBAR_MENU } from '../sidebar/menu.js';
+import { LOOP_MIN, SPIKE_TOKENS } from '../stats/constants.js';
+import { costOfSeries, parsePricing } from '../stats/pricing.js';
+import type { StatsRecord } from '../stats/schema.js';
 
 import {
   CODEX_VERSION_WINDOW,
@@ -231,6 +236,10 @@ const RELEASE_IMAGES: readonly string[] = [
   'media/hero_26_agent_session.png',
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
+  // SIX SINCE v0.7.0 (DoD 5.5b): the sidebar, linked from the install section.
+  // Committed as a placeholder the user replaces with a capture; the
+  // package-audit leg of `vsix.test.ts` refuses to package the placeholder.
+  'media/sidebar.png',
 ];
 
 /* ------------------------------------------------------------------------- *
@@ -639,7 +648,7 @@ describe('README exists and ships clean', () => {
     }
   });
 
-  it('carries the five release assets, in order', () => {
+  it('carries the six release assets, in order', () => {
     // WHAT THIS ASSERTED BEFORE 2026-08-30, because the change is the point:
     // it asserted the four references were present and in order WHETHER OR NOT
     // THE FILES EXISTED, and it carried the exemption that let them not exist.
@@ -783,15 +792,26 @@ describe('README exists and ships clean', () => {
     const tracked = TRACKED_MEDIA;
     const icon = String(MANIFEST.icon);
     expect(tracked).toContain(icon);
-    expect([...tracked].sort()).toStrictEqual([icon, ...RELEASE_IMAGES].sort());
+    // v0.7.0 Phase 4 (DoD 4.6b): the activity-bar icon is the SECOND manifest
+    // reference under `media/`, read off `contributes.viewsContainers` for the
+    // reason `icon` is read off `icon`, and it is not a screenshot either.
+    const activityIcon = String(
+      (MANIFEST as { contributes?: { viewsContainers?: { activitybar?: { icon?: unknown }[] } } })
+        .contributes?.viewsContainers?.activitybar?.[0]?.icon,
+    );
+    expect(activityIcon).toBe('media/activity-icon.svg');
+    expect(tracked).toContain(activityIcon);
+    expect([...tracked].sort()).toStrictEqual([icon, activityIcon, ...RELEASE_IMAGES].sort());
     // Pinned BESIDE the set, not instead of it: a set comparison written
     // against an empty listing passes vacuously, and a count is the cheapest
     // thing that goes red when it does.
     //
     // SIX SINCE v0.6.0 (DoD 5.8.1): the icon, the four stills and the hero GIF.
+    // SEVEN SINCE v0.7.0 (DoD 4.6b): plus the activity-bar icon.
+    // EIGHT SINCE v0.7.0 DoD 5.5b: plus the sidebar screenshot.
     // Amended, never relaxed - this is still equality both ways with the count
     // beside it, and the reason is unchanged from the v0.5.0 comment above.
-    expect(tracked).toHaveLength(6);
+    expect(tracked).toHaveLength(8);
   }, 20_000);
 });
 
@@ -2317,5 +2337,450 @@ describe("DoD 4.4 — SECURITY.md states the Codex engine's reads and its never-
     expect(timings.length, 'the hook-cost table lost its numbers').toBeGreaterThanOrEqual(6);
     // Both engines' costs are stated, and they are not the same number.
     expect(new Set(timings).size).toBeGreaterThan(1);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// v0.7.0 Phase 1b — the multi-window paragraph (DoD 1b.7)
+// ---------------------------------------------------------------------------
+//
+// The README IS the Marketplace listing page, and this repository has already
+// shipped that page describing three features it had deleted. The section this
+// guards describes behaviour a user cannot discover by looking — two windows
+// quietly sharing one socket — so a stale sentence here is worse than usual:
+// there is nothing on screen to contradict it.
+
+describe('README: several windows, one port (Phase 1b)', () => {
+  const HEADING = '## Several windows, one port';
+  const SECTION = sectionText(HEADING);
+
+  it('states the four claims the design actually makes', () => {
+    const claims: [string, RegExp][] = [
+      ['first window binds and leads', /binds the port/i],
+      ['a later window attaches instead of failing', /attaches to the leader/i],
+      ['each window still reads its own workspace', /own workspace's transcripts/i],
+      // NARROWED after a 2026-09-06 verifier round. The page said "each window
+      // keeps only the events belonging to a session it is following", which
+      // is false of the LEADER: its own socket ingests every payload that
+      // reaches it, as `shared.ts`'s header states. The deck-visible effect is
+      // nil - cards come from transcript discovery, not from hook events - but
+      // a false sentence on the Marketplace listing page is a false sentence,
+      // and the guard here checked that the sentence EXISTED rather than that
+      // it was true.
+      ['the filter is the attached windows\', not every window', /windows attached to the leader/i],
+      ['the changeover has no coordinator', /no election, no lock file/i],
+    ];
+    for (const [what, re] of claims) {
+      expect(re.test(SECTION), `the multi-window section no longer states: ${what}`).toBe(true);
+    }
+  });
+
+  it('keeps the two promises a user is entitled to read as unchanged', () => {
+    // G5, in the words a user reads rather than the words the contract uses.
+    expect(SECTION).toContain('127.0.0.1');
+    expect(SECTION).toMatch(/does not leave your machine|none of this leaves your machine/i);
+    // The port policy. The whole section would otherwise read as "Agent Deck
+    // sorts the port out for you", which is the one thing it must never do.
+    expect(SECTION).toMatch(/will not pick a different one/i);
+  });
+
+  it('says the stream is redacted, and does not promise a queue it has no store for', () => {
+    expect(SECTION).toMatch(/after the same redaction|no reasoning content/i);
+    // G7. A user reading "the others take over" would reasonably assume the
+    // events in between were held for them. They are not, and the page says so.
+    expect(SECTION).toMatch(/lost rather than queued/i);
+  });
+
+  it('does not claim the hook stream is what puts sessions on a deck', () => {
+    // The correction's substance: what a window shows comes from the
+    // transcripts it reads. Saying so is what makes the narrowed sentence
+    // above complete rather than merely less wrong.
+    expect(SECTION).toMatch(/from the transcripts that window reads/i);
+  });
+
+  it('the collision bullet no longer says a busy port is always an error', () => {
+    // It was true until Phase 1b and is now true only of a FOREIGN holder. The
+    // sentence that changed is in a different section from the one above, which
+    // is exactly how a page goes half-stale, so it is asserted here rather than
+    // left to the section guard.
+    // Whitespace-normalised rather than matched with a regex: markdown wraps
+    // this sentence across two indented lines, and a pattern that has to know
+    // where the wrap falls goes stale the next time the paragraph is reflowed.
+    const hookNotes = sectionText(CC_HOOK_HEADING).replace(/\s+/g, ' ');
+    expect(hookNotes).toContain('second Agent Deck window is not a collision at all');
+    expect(hookNotes).toContain('never silently picks a different port');
+  });
+
+  it('the section is reachable from the anchor the collision bullet links to', () => {
+    // A relative anchor that names no heading is a link to nowhere, and the
+    // Marketplace renders it as one. Derived from the heading rather than
+    // written twice.
+    const anchor = HEADING.replace(/^##\s+/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    expect(anchor).toBe('several-windows-one-port');
+    expect(README).toContain(`(#${anchor})`);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * v0.7.0 DoD 5.3 — the README's Stats section is BOUND, not restated
+ * -------------------------------------------------------------------------- */
+
+/*
+ * Every sentence in the Stats section that names a number, a setting, a term or
+ * an engine's capability is held to the code or the goldens that make it true.
+ * The README is the Marketplace listing page, and this repository has shipped a
+ * listing that described three deleted features — covered by nothing. Each
+ * guard below reads its truth from the module that owns it rather than from a
+ * second copy written here.
+ */
+const STATS = sectionText('## Stats');
+
+/** A `### ` subsection of the Stats section, to the next `### ` or the end. */
+function statsSubsection(heading: string): string {
+  const start = STATS.indexOf(`\n${heading}\n`);
+  if (start < 0) throw new Error(`the Stats section has no subsection: ${heading}`);
+  const rest = STATS.slice(start + heading.length + 2);
+  const end = rest.indexOf('\n### ');
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+/** The seven named phenomena, as the view and the spec name them. */
+const VOCABULARY = [
+  'Re-read loop',
+  'Churn chain',
+  'Context churn',
+  'Silent subagent',
+  'Compaction',
+  'Stall',
+  'Waiting on you',
+] as const;
+
+/** The five settings v0.7.0 added (PLAN Phase 3 "five settings incl. `agentDeck.canvas.autoFit`"). */
+const V070_SETTINGS = [
+  'agentDeck.canvas.autoFit',
+  'agentDeck.pricing',
+  'agentDeck.stats.enabled',
+  'agentDeck.stats.idleFlushMs',
+  'agentDeck.stats.retentionDays',
+];
+
+describe('DoD 5.3 — the README Stats section', () => {
+  it('defines the seven vocabulary terms, each in bold, in the Stats section', () => {
+    for (const term of VOCABULARY) {
+      expect(STATS, `the Stats section does not define ${term}`).toContain(`**${term}**`);
+    }
+    // Vacuity control: the section is real and is not the whole document.
+    expect(STATS.length).toBeGreaterThan(1_000);
+    expect(STATS).not.toContain('## Claude Code version window');
+  });
+
+  it('states the measurement parameters the deriver actually uses', () => {
+    const loop = /`LOOP_MIN`, (\d+)\)/.exec(STATS);
+    expect(loop, 'the re-read loop bullet no longer states LOOP_MIN').not.toBeNull();
+    expect(Number(loop?.[1])).toBe(LOOP_MIN);
+    const spike = /rose by ([\d,]+) or more/.exec(STATS);
+    expect(spike, 'the context churn bullet no longer states the threshold').not.toBeNull();
+    expect(Number((spike?.[1] ?? '').replace(/,/g, ''))).toBe(SPIKE_TOKENS.cc);
+    // "Claude Code only" is true because no other engine carries a threshold.
+    // A second engine gaining one turns this red, and the sentence with it.
+    expect(Object.keys(SPIKE_TOKENS)).toStrictEqual(['cc']);
+    expect(STATS).toContain('Claude Code only');
+  });
+
+  it('"waiting on you" names exactly the interactive tools the renderer uses', () => {
+    // Read as TEXT: `webview/format.ts` belongs to the webview project, and the
+    // host typecheck does not cover it. The extraction has its own control.
+    const source = readText('webview/format.ts');
+    const literal = /INTERACTIVE_TOOL_NAMES[^=]*=\s*\[([^\]]*)\]/.exec(source)?.[1] ?? '';
+    const tools = [...literal.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? '');
+    expect(tools.length, 'INTERACTIVE_TOOL_NAMES was not found in webview/format.ts').toBeGreaterThan(0);
+    const bullet = STATS.split('\n- ').find((b) => b.startsWith('**Waiting on you**')) ?? '';
+    const named = [...bullet.matchAll(/`([A-Za-z]+)`/g)].map((m) => m[1] ?? '');
+    expect(named.sort()).toStrictEqual([...tools].sort());
+  });
+
+  it('names exactly the five v0.7.0 settings, and every one is declared', () => {
+    const block = statsSubsection('### The five settings');
+    const named = [...block.matchAll(/^- `(agentDeck\.[A-Za-z0-9.]+)`/gm)].map((m) => m[1] ?? '');
+    expect(named.sort()).toStrictEqual([...V070_SETTINGS].sort());
+    const declared = Object.keys(MANIFEST.contributes.configuration.properties);
+    for (const setting of V070_SETTINGS) expect(declared, setting).toContain(setting);
+  });
+
+  it('every `agentDeck.*` name anywhere in the README is a declared setting', () => {
+    const declared = new Set(Object.keys(MANIFEST.contributes.configuration.properties));
+    const named = [...README.matchAll(/`(agentDeck\.[A-Za-z0-9.]+)`/g)].map((m) => m[1] ?? '');
+    expect(named.length).toBeGreaterThan(10);
+    const undeclared = [...new Set(named)].filter((name) => !declared.has(name));
+    expect(undeclared, 'the README names a setting the manifest does not declare').toStrictEqual([]);
+  });
+
+  it('the pricing example is a table the extension ACCEPTS, and the worked cost is its arithmetic', () => {
+    const fences = [...STATS.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => m[1] ?? '');
+    expect(fences).toHaveLength(1);
+    const example = JSON.parse(fences[0] ?? '{}') as Record<string, unknown>;
+    const parsed = parsePricing(example['agentDeck.pricing']);
+    expect(parsed.invalid, 'the README example is a malformed pricing entry').toStrictEqual([]);
+    expect(parsed.table.size).toBe(1);
+    const [model] = [...parsed.table.keys()];
+
+    // The worked turn, and the figure the README states for it, are recomputed
+    // through the deriver's own function. Edit a price in the example without
+    // the total and this goes red.
+    const turn = { ordinal: 0, input: 2, cacheCreation: 13_390, cacheRead: 28_807, output: 1_000 };
+    const cost = costOfSeries([turn], model, parsed.table);
+    expect(cost).toBeDefined();
+    expect(STATS).toContain(`**$${(cost ?? 0).toFixed(4)}**`);
+    for (const figure of ['2 fresh prompt tokens', '13,390', '28,807', '1,000 output tokens']) {
+      expect(STATS, figure).toContain(figure);
+    }
+    expect(STATS).toContain('A subscription plan yields no per-token cost');
+  });
+
+  it('names the clear command by its manifest title, and states its multi-window limit', () => {
+    const commands = (
+      MANIFEST as unknown as {
+        contributes: { commands: { command: string; title: string; category: string }[] };
+      }
+    ).contributes.commands;
+    const clear = commands.find((c) => c.command === 'agentDeck.stats.clearHistory');
+    expect(clear).toBeDefined();
+    expect(STATS).toContain(`**${String(clear?.category)}: ${String(clear?.title)}**`);
+    expect(STATS).toContain('another window that is already open keeps showing what it had read');
+  });
+
+  it('the privacy paragraph says where the history lives, and where it does not', () => {
+    const block = statsSubsection('### Where it lives, and what leaves the machine');
+    expect(block).toContain('**Nothing leaves the machine.**');
+    expect(block).toContain('global storage');
+    for (const not of ['`~/.claude`', '`~/.codex`', "OpenCode's directories", 'your workspace']) {
+      expect(block, not).toContain(not);
+    }
+    expect(block).toContain('`agentDeck.stats.enabled`');
+    expect(block).toContain('**Clear Stats History**');
+  });
+
+  it('states the two limits, and "an hour" is still the default it names', () => {
+    const block = statsSubsection('### Two limits, stated plainly');
+    expect(block).toContain('an hour without');
+    expect(block).toContain('no VS Code window is open');
+    // "One hour by default" is a claim about the manifest.
+    expect(MANIFEST.contributes.configuration.properties['agentDeck.stats.idleFlushMs']?.default).toBe(
+      3_600_000,
+    );
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * v0.7.0 DoD 5.3 — no shipped document still says nothing is kept
+ * -------------------------------------------------------------------------- */
+
+/*
+ * Found by the Phase 5 verifier, after 5.3 had been recorded as correcting
+ * the persistence sentences: the README still said "Agent Deck keeps no history
+ * by design", on the same page as the Stats section, and SECURITY.md — which
+ * ships in the VSIX — still said "no persistence" and listed "writes of any
+ * kind" as excluded. Nothing read those files for the claim, which is how the
+ * sentences survived a release that made them false. Each pattern is paired
+ * with the sentence that was really shipping, so the scan cannot pass by
+ * matching nothing.
+ */
+const STALE_PERSISTENCE_CLAIMS: ReadonlyArray<{ readonly re: RegExp; readonly shipped: string }> = [
+  { re: /keeps? no history/i, shipped: 'lost rather than queued — Agent Deck keeps no history by design.' },
+  { re: /\bno persistence\b/i, shipped: 'discards it when the window closes: no database, no cache file, no persistence.' },
+  { re: /writes of any kind/i, shipped: 'Not implemented, and not accepted as contributions: writes of any kind' },
+  { re: /historical replay or\s+persistence/i, shipped: 'writes of any kind · historical replay or\npersistence' },
+];
+
+describe('DoD 5.3 — the shipped documents do not deny the history 0.7.0 keeps', () => {
+  const SHIPPED = ['README.md', 'SECURITY.md', 'site/index.html'] as const;
+
+  it('no stale no-persistence claim in the README, SECURITY.md or the site', () => {
+    for (const file of SHIPPED) {
+      const text = readText(file);
+      for (const { re } of STALE_PERSISTENCE_CLAIMS) {
+        expect(re.test(text), `${file} still matches ${re}`).toBe(false);
+      }
+    }
+  });
+
+  it('every pattern fires on the sentence that was really shipping', () => {
+    for (const { re, shipped } of STALE_PERSISTENCE_CLAIMS) {
+      expect(re.test(shipped), `${re} does not match its own shipped sentence`).toBe(true);
+    }
+  });
+
+  it('SECURITY.md names the one write, where it lives and how it is turned off and cleared', () => {
+    const security = readText('SECURITY.md').replace(/\s+/g, ' ');
+    expect(security).toContain('stats history');
+    expect(security).toContain('`agentDeck.stats.enabled`');
+    expect(security).toContain('**Clear Stats History**');
+    expect(MANIFEST.contributes.configuration.properties['agentDeck.stats.enabled']).toBeDefined();
+  });
+
+  it('no document says there is no vscode:prepublish while the manifest has one', () => {
+    const manifest = JSON.parse(readText('package.json')) as { scripts?: Record<string, string> };
+    expect(manifest.scripts?.['vscode:prepublish'], 'the manifest has no prepublish').toBeDefined();
+    for (const file of SHIPPED) {
+      expect(readText(file), file).not.toMatch(/there is no `?vscode:prepublish/i);
+    }
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * v0.7.0 DoD 5.3 — the engine table is the goldens' `unavailable`, read back
+ * -------------------------------------------------------------------------- */
+
+/*
+ * THE RULE, per cell, over every FULL-coverage golden of that engine:
+ *
+ *   - every record lists `F<n>:<engine>`          -> the cell reads `no`
+ *   - no record lists `F<n>` for that engine at all -> the cell reads `yes`
+ *   - anything between (some sessions, or one PART) -> the cell is qualified:
+ *                                                      neither `yes` nor `no`
+ *
+ * A code whose reason is not the engine's name (`F13.completed:snapshot`,
+ * `F9:telemetry-present`) is a fact about a snapshot or a precedence, not an
+ * engine gap, and does not count. Excluded sessions carry no facts and are
+ * left out. So a table cell that claims more than the goldens show goes red,
+ * and so does one that claims less.
+ */
+const ENGINE_TABLE_ROWS: Readonly<Record<string, string>> = {
+  'Files read, edited and written': 'F1',
+  'Tool calls and errors, per tool': 'F2',
+  Loops: 'F3',
+  'Churn chains': 'F4',
+  'Prompt and output tokens, per agent': 'F5',
+  'Cache ratio': 'F6',
+  'Context churn': 'F7',
+  'Silent subagents': 'F8',
+  Cost: 'F9',
+  'Context fill': 'F10',
+  Compactions: 'F12',
+  Stalls: 'F13',
+};
+
+const TABLE_ENGINES = ['cc', 'opencode', 'codex'] as const;
+
+function engineTable(): { label: string; cells: string[] }[] {
+  const block = statsSubsection('### What each engine can supply');
+  const rows = block
+    .split('\n')
+    .filter((line) => line.startsWith('|'))
+    .map((line) =>
+      line
+        .split('|')
+        .slice(1, -1)
+        .map((cell) => cell.trim()),
+    );
+  const [header, rule, ...body] = rows;
+  expect(header).toStrictEqual(['Fact', 'Claude Code', 'OpenCode', 'Codex']);
+  expect(rule?.every((cell) => /^-+$/.test(cell))).toBe(true);
+  return body.map((cells) => ({ label: cells[0] ?? '', cells: cells.slice(1) }));
+}
+
+function fullGoldens(): StatsRecord[] {
+  const dir = join(ROOT, 'fixtures', 'golden', 'stats');
+  return readdirSync(dir)
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => JSON.parse(readText(`fixtures/golden/stats/${name}`)) as StatsRecord)
+    .filter((record) => record.coverage === 'full');
+}
+
+type Verdict = 'yes' | 'no' | 'qualified';
+
+function goldenVerdict(records: readonly StatsRecord[], fact: string, engine: string): Verdict {
+  const whole = `${fact}:${engine}`;
+  const touches = (record: StatsRecord): boolean =>
+    record.unavailable.some(
+      (code) => code === whole || (code.startsWith(`${fact}.`) && code.endsWith(`:${engine}`)),
+    );
+  if (records.every((record) => record.unavailable.includes(whole))) return 'no';
+  if (!records.some(touches)) return 'yes';
+  return 'qualified';
+}
+
+describe('DoD 5.3 — the three-engine table agrees with the goldens', () => {
+  it('lists exactly the facts it is bound to', () => {
+    expect(engineTable().map((row) => row.label).sort()).toStrictEqual(
+      Object.keys(ENGINE_TABLE_ROWS).sort(),
+    );
+  });
+
+  it('every cell says what the goldens say — no more, no less', () => {
+    const goldens = fullGoldens();
+    const seen = new Set<Verdict>();
+    for (const row of engineTable()) {
+      const fact = ENGINE_TABLE_ROWS[row.label] ?? '';
+      TABLE_ENGINES.forEach((engine, i) => {
+        const records = goldens.filter((record) => record.engine === engine);
+        expect(records.length, `no full ${engine} golden`).toBeGreaterThan(0);
+        const verdict = goldenVerdict(records, fact, engine);
+        seen.add(verdict);
+        const cell = row.cells[i] ?? '';
+        const where = `${row.label} / ${engine}: goldens say ${verdict}, README says "${cell}"`;
+        if (verdict === 'yes') expect(cell, where).toBe('yes');
+        else if (verdict === 'no') expect(cell, where).toBe('no');
+        else expect(['yes', 'no', ''], where).not.toContain(cell);
+      });
+    }
+    // Vacuity control: all three verdicts are exercised by the real goldens,
+    // so this is not a table of "yes" checked against a rule that never fires.
+    expect([...seen].sort()).toStrictEqual(['no', 'qualified', 'yes']);
+  });
+
+  it('the verdict rule is not vacuous: it reads a planted gap', () => {
+    const planted = [
+      { unavailable: ['F1:cc'] },
+      { unavailable: ['F1:cc'] },
+    ] as unknown as StatsRecord[];
+    expect(goldenVerdict(planted, 'F1', 'cc')).toBe('no');
+    expect(goldenVerdict([{ unavailable: [] }] as unknown as StatsRecord[], 'F1', 'cc')).toBe('yes');
+    expect(
+      goldenVerdict([{ unavailable: ['F2.errors:codex'] }] as unknown as StatsRecord[], 'F2', 'codex'),
+    ).toBe('qualified');
+    // A snapshot-reason code is not an engine gap.
+    expect(
+      goldenVerdict(
+        [{ unavailable: ['F13.completed:snapshot'] }] as unknown as StatsRecord[],
+        'F13',
+        'cc',
+      ),
+    ).toBe('yes');
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * v0.7.0 DoD 5.5b — the activity-bar sidebar is the documented entry point
+ * -------------------------------------------------------------------------- */
+
+describe('DoD 5.5b — the README install section names the sidebar and its menu', () => {
+  // The EXACT heading, newline included: `## Install` is also a prefix of the
+  // two hook-install headings, and `sectionText` refuses a repeated match.
+  const INSTALL = sectionText('## Install\n');
+
+  it('names the activity-bar icon as the entry point', () => {
+    expect(INSTALL).toContain('the Agent Deck icon in the activity bar');
+  });
+
+  it('lists the menu EXACTLY as src/sidebar/menu.ts declares it, in order', () => {
+    const listed = [...INSTALL.matchAll(/^- \*\*([^*]+)\*\* —/gm)].map((m) => m[1] ?? '');
+    expect(listed).toStrictEqual(SIDEBAR_MENU.map((entry) => entry.label));
+    // Vacuity control: the menu is not empty, so equality is not empty-equals-empty.
+    expect(listed.length).toBeGreaterThan(0);
+  });
+
+  it('shows the sidebar screenshot, and says several windows need nothing', () => {
+    expect(INSTALL).toContain('](media/sidebar.png)');
+    expect(INSTALL).toContain('](#several-windows-one-port)');
+  });
+
+  it('offers the user-level ~/.claude/settings.json FIRST for the Claude Code hook block', () => {
+    const global = CC_HOOK_SECTION.indexOf('`~/.claude/settings.json`');
+    const local = CC_HOOK_SECTION.indexOf('`.claude/settings.local.json`');
+    expect(global).toBeGreaterThanOrEqual(0);
+    expect(local).toBeGreaterThanOrEqual(0);
+    expect(global).toBeLessThan(local);
   });
 });

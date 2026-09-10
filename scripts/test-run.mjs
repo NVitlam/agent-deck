@@ -137,7 +137,14 @@ async function head() {
  * Parsed from the line rather than from a reporter API because that line is what
  * a death leaves behind and what every ledger row already carries.
  */
-function countsOf(summaryLine) {
+function countsOf(lines) {
+  // THE `Tests` LINE SPECIFICALLY, not `summaryLine`. On a RED run vitest's last
+  // matching line is `Test Files  1 failed | 123 passed | 1 skipped (125)` — file
+  // counts, not test counts — so reusing it made a failed run's row disagree with
+  // a green one about units rather than about the suite. Measured on
+  // `gate-411c-close` run 3, by the disagreement check itself.
+  const summaryLine =
+    [...lines].reverse().find((l) => /^\s*Tests\s+\d+/.test(l)) ?? null;
   if (summaryLine === null) return { passed: null, skipped: null };
   const passed = /(\d+) passed/.exec(summaryLine);
   const skipped = /(\d+) skipped/.exec(summaryLine);
@@ -207,7 +214,7 @@ function runOnce(index, headSha) {
          * which is rule 14's own claim ("three consecutive runs, identical") and
          * is reported below.
          */
-        counts: countsOf(summaryLine),
+        counts: countsOf(lines),
         lastReporterLine: lines.at(-1) ?? null,
         stderrTail: stderr.split(/\r?\n/).filter((l) => l.trim() !== '').slice(-20),
         /*

@@ -648,6 +648,76 @@ export const WEBVIEW_FIT_BUDGET: TimingBudget = {
   },
 };
 
+/**
+ * v0.7.0 DoD 5.0 — the shared listener's relay: follower attach plus 1,000
+ * relayed frames, first two samples discarded.
+ *
+ * ## What it measures
+ *
+ * One sample is a FRESH follower attaching to a leader and then receiving
+ * 1,000 hook payloads that were POSTed to the leader the way a hook command
+ * POSTs them — one connection each. So it is the leader's whole per-event cost
+ * with a follower attached (parse, normalize, local dispatch, the G4 redaction
+ * every relayed payload goes through, the SSE write) plus the follower's
+ * (frame split, decode, ownership filter, dispatch). The payloads are the 285
+ * real ones in `fixtures/hook-events/`, cycled. `relay.test.ts` carries the
+ * subject control: every sample received exactly 1,000 frames and every frame
+ * was either dispatched or dropped as another window's.
+ *
+ * **Where the time goes:** attach is ~2 ms of a ~550 ms sample. Nearly all of
+ * it is the thousand loopback connections and the leader's handling of them —
+ * which is the honest cost of the relay to a leader, because a relayed frame
+ * only exists once a hook has POSTed it.
+ *
+ * ## THIS BUDGET DOES NOT RUN ON NODE 24.15.0, AND THAT IS THE 5.0c FINDING
+ *
+ * It was first measured on this machine's default `node.exe`, 24.15.0, and the
+ * forked perf worker died before reporting in **4 of 6** runs
+ * (`ERR_IPC_CHANNEL_CLOSED` in the parent, no test output, no WER record). The
+ * same workload in a plain Node process, no vitest, exits `0xC0000409` in
+ * **14 of 28** runs on 24.15.0 and **0 of 20** on each of 22.23.2 and 24.18.1,
+ * interleaved. It is the fail-fast Phase 1c could not diagnose, reproduced by
+ * this repository's own relay code, and it is why the gate's Node is pinned —
+ * `docs/evidence/v0.7.0/phase-5/NODE-5.0c.md` is the record. The numbers below
+ * are therefore Node 22.23.2 numbers, the pinned gate runtime.
+ *
+ * ## The measurement, and the margin
+ *
+ * Three standalone runs under Node 22.23.2, 2026-09-10, 2 discarded + 7 kept
+ * each. Kept medians **560.95, 545.62, 562.88 ms**; the slowest is the set
+ * point. Discarded (warm-up) samples ran 620–730 ms and are printed by the test
+ * rather than dropped silently — the DoD states the discard so a warm-up
+ * allowance can be told from a quietly widened limit.
+ *
+ * 5,000 ms is 8.9x. The stage is loopback-socket-bound, the kind of stage this
+ * machine has been measured running at half speed for whole blocks, so a limit
+ * set for a doubling would be red on correct code. What it is FOR is a relay
+ * that goes quadratic in frames — a follower buffer re-scanned from the start,
+ * a leader still writing to followers that left — which at 1,000 frames clears
+ * 5 s without ambiguity. It does not catch a doubling, stated rather than
+ * implied.
+ */
+export const RELAY_BUDGET: TimingBudget = {
+  id: 'relay.follower.dod',
+  what: 'follower attach + 1,000 relayed hook frames',
+  statistic: 'median',
+  limitMs: 5_000,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 562.88,
+    on: 'fixtures/hook-events (285 real payloads, cycled) x 1,000 frames per sample, Node 22.23.2, 3 runs x (2 discarded + 7 kept), 2026-09-10',
+    marginX: 8.9,
+    note:
+      'Kept medians 560.95 / 545.62 / 562.88 ms across three standalone runs in the ' +
+      '`perf` project (pool: forks) under Node 22.23.2; the SLOWEST is the set point. ' +
+      'Attach medians 1.7-2.0 ms: nearly all of a sample is the thousand loopback ' +
+      'POSTs and the leader handling them. On Node 24.15.0 the same file lost its ' +
+      'forked worker before reporting in 4 of 6 runs — the 5.0c fail-fast — so this ' +
+      'budget is only meaningful on the pinned gate Node.',
+  },
+};
+
 export const STATS_LAYOUT_BUDGET: TimingBudget = {
   id: 'webview.statsLayout.dod',
   what: 'statsLayout over every harvested corpus record',

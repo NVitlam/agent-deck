@@ -4393,7 +4393,19 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
     // v0.7.0 Phase 4 adds `agentDeck.canvas.autoFit` (DoD 4.0): a boolean, on
     // the list in writing, and not an engine switch — it governs the canvas's
     // re-fit rule and nothing about what is observed.
-    const BOOLEAN_ALLOW_LIST = ['agentDeck.canvas.autoFit', 'agentDeck.stats.enabled'];
+    //
+    // v0.7.1 DoD 6.1 adds `agentDeck.telemetry.enabled`, named by the locked
+    // ruling. Not an engine switch either: with it off, all three engines are
+    // observed exactly as before — transcripts, store, hooks — and the listener
+    // merely answers `403` on the three `/v1/*` paths. It gates whether an
+    // OPTIONAL INPUT Claude Code can be pointed at is accepted, not whether an
+    // engine is read. It names no engine, so the engine-word loop below still
+    // applies to it and still passes.
+    const BOOLEAN_ALLOW_LIST = [
+      'agentDeck.canvas.autoFit',
+      'agentDeck.stats.enabled',
+      'agentDeck.telemetry.enabled',
+    ];
     const booleans = Object.entries(properties)
       .filter(([, property]) => property.type === 'boolean')
       .map(([key]) => key)

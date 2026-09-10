@@ -157,14 +157,19 @@ describe('the lab boundary: tracked code names the private tree only where it is
     const expected = Object.fromEntries(Object.entries(ALLOWED).map(([f, a]) => [f, a.count]));
     expect(actual, `unexpected references:\n${detail.join('\n')}`).toStrictEqual(expected);
     expect(Object.keys(actual)).toHaveLength(Object.keys(ALLOWED).length);
-  });
+    // 60 s, not vitest's 5 s default (v0.7.1 gate, 2026-09-10): this body spawns
+    // git and tokenises every tracked file, and one full-suite run on Node
+    // 24.18.1 timed it out at 5000 ms with no failing assertion — the recorded
+    // "passes or fails by CPU load" class. A budget, never a re-roll.
+  }, 60_000);
 
   it('TOOLCLASS.md is named in code by the generator and by the test that invokes it — nowhere else', () => {
     const named = trackedCode().filter((file) =>
       labReferences(file, readFileSync(join(ROOT, file), 'utf8')).some((h) => h.includes('TOOLCLASS.md')),
     );
     expect(named.sort()).toStrictEqual(['scripts/gen-toolclass.mjs', 'src/stats/toolclass.test.ts']);
-  });
+    // Same walk, same budget, same reason as the test above.
+  }, 60_000);
 
   it('catches a reference in code and ignores the same text in a comment', () => {
     const inCode = "const census = 'docs/evidence/phase-0-stats/TOOLCLASS.md';\n";

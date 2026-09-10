@@ -421,14 +421,14 @@ Two steps:
   deck.
 - **Rows about sessions this window does not show yet.** The exporter is machine-wide, so rows
   about other sessions arrive too. A session's start and its cost, arriving before this window shows
-  the session, are kept for up to 256 such sessions and joined once it appears; a tool span is joined
-  only for a session shown when the span arrives.
+  the session, are kept for up to 256 such sessions and joined once it appears; a tool span waits one
+  update for its session and is joined if that update shows it.
 - **`unmatched` on the Agent Deck output channel counts rows still unmatched after the join has
-  retried.** A tool span is judged at the next update after it arrives: if it names no tool call this
-  window shows by then, it is counted, and one line records its `session.id` and `tool_use_id` —
-  nothing else from the span. A session's start or cost is counted only if it was held for a session
-  this window never showed and 256 newer sessions pushed it out. A row that arrives early and joins
-  a moment later is not counted.
+  retried.** A tool span is judged at the next update after it arrives: if that update shows its
+  session and the tool call it names, it joins and is not counted; otherwise it is counted, and one
+  line records its `session.id` and `tool_use_id` — nothing else from the span. A session's start or
+  cost is counted only if it was held for a session not shown yet when 256 newer sessions pushed its
+  slot out. A row that arrives early and joins a moment later is not counted.
 - **The answers:** `200` accepted · `400` not an OTLP JSON body · `403` the setting is off · `405`
   not a POST · `413` over 512 KiB · `415` not JSON. None of them asks the exporter to retry.
 

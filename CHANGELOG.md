@@ -27,11 +27,11 @@ All notable changes to Agent Deck are documented here.
 - **Telemetry figures on the Agent Deck output channel's counters line**, per
   signal: requests accepted, refused by status (`400`, `405`, `413`, `415`),
   refused because the setting is off, and rows still unmatched after the join has
-  retried: a tool span that matches no tool call this window shows at the next
-  pump after it arrived, or a session's start or cost that was held for a session
-  this window never showed and was pushed out. A row that arrives early and joins
-  a moment later is not counted. Each such tool span also writes one line naming
-  its `session.id` and `tool_use_id`, and nothing else from the span.
+  retried: a tool span whose session or tool call the next update after it arrived
+  does not show, or a session's start or cost held for a session not shown yet
+  when its slot was pushed out. A row that arrives early and joins a moment later
+  is not counted. Each such tool span also writes one line naming its
+  `session.id` and `tool_use_id`, and nothing else from the span.
 
 ### How it behaves
 

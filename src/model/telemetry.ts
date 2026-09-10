@@ -57,8 +57,8 @@
  *     replaces, never adds) and re-joined on every emission, so a span whose
  *     tool the graft had not reached when it arrived fills in once it does.
  *
- * **A session not yet held: its count point and its cost are kept, its spans
- * are not.** From the committed OTel corpus's own timestamps: in both sessions
+ * **A session not yet held: its count point and its cost are kept; its spans
+ * wait one pump.** From the committed OTel corpus's own timestamps: in both sessions
  * the count point arrives BEFORE the first prompt (17.4 s and 0.9 s). And the
  * two sessions' real transcripts were CREATED at that prompt (file creation
  * times, measured read-only by phase-verifier round 2; the committed
@@ -72,7 +72,9 @@
  * emission holds it. A slot evicted to make room loses its count point, which
  * leaves that session's cost unselected — the direction that shows no figure
  * rather than a short one. Spans only fill a duration the engine did not
- * state; they are kept for held sessions only, as before.
+ * state, so they are not held open-ended: a span is kept if its session is
+ * shown when it arrives or at the next pump (ruling 2026-09-11), and dropped
+ * otherwise.
  *
  * `unmatched` counts, per signal, the rows STILL unmatched after the join has
  * retried (user ruling, 2026-09-11). An early arrival that matches later is
@@ -80,18 +82,23 @@
  * its tool call reached the window's tree read as `unmatched:1` although it
  * joined a moment later.
  *
- *   - traces: a span's verdict is taken at the FIRST `apply()` after it
- *     arrived — the next pump — against that pump's states, by the join's own
- *     key ({@link unmatchedSpans}). A span kept for a held session and matching
- *     by then is not counted; one still matching nothing is counted, and so is
- *     a span whose session was not held when it arrived (it is not kept, so it
- *     can never join). Each counted span also produces ONE diagnostics line,
- *     through `onUnmatchedSpan`, naming its `session.id` and `tool_use_id`.
+ *   - traces: every span waits for the FIRST `apply()` after it arrived — the
+ *     next pump — and is judged there, against that pump's states. A span
+ *     whose session that pump shows is kept for the join, whether or not the
+ *     session was shown when the span arrived (a window reloaded during a live
+ *     session receives spans before its first emission), and is judged by the
+ *     join's own key ({@link unmatchedSpans}): matching, it is not counted;
+ *     matching nothing, it is counted. A span whose session that pump does not
+ *     show is dropped and counted — a span waits one pump for its session, no
+ *     longer. A span re-sent before its verdict replaces the earlier copy and
+ *     is judged once. Each counted span produces ONE diagnostics line, through
+ *     `onUnmatchedSpan`, naming its `session.id` and `tool_use_id`.
  *   - metrics: a count point or cost point for a held session joins; one held
  *     pending is retried on every pump while its slot lives, and is counted
- *     only when its slot is EVICTED — the point at which it can no longer join.
- *     A row for a session this window never shows is therefore counted when
- *     256 newer sessions push it out, and not before.
+ *     only when its slot is EVICTED — the point at which it can no longer join
+ *     — with every row the slot held. So a row for a session not shown yet when
+ *     256 newer sessions push its slot out is counted then, and not before.
+ *     (This reading of the ruling for metrics rows is put to the user.)
  *   - logs bodies carry no row the join reads, so their `unmatched` is 0.
  *
  * G7: every map here lives in this instance and dies with the window.
@@ -125,26 +132,25 @@ interface PendingSession {
   rows: number;
 }
 
-/** A span waiting for the verdict of the next pump. */
-interface AwaitingSpan {
-  span: OtelToolSpan;
-  /** Kept for {@link TelemetryJoiner.apply}: its session was held when it arrived. */
-  kept: boolean;
-}
-
 export interface TelemetryJoinerOptions {
   /**
    * Called once per span still unmatched after the next pump. The host writes
-   * one diagnostics line from it. A throw here is swallowed: a diagnostics
-   * consumer must never be able to break the join.
+   * one diagnostics line from it, through `DiagnosticsChannel`, which catches
+   * both a sink that cannot be created and a write that throws — so the one
+   * production callback cannot throw, and this module does not wrap it.
    */
   onUnmatchedSpan?: (span: OtelToolSpan) => void;
 }
 
+/** The key a span is kept and judged by: the join's own pair, structurally (no separator byte). */
+function spanKey(span: OtelToolSpan): string {
+  return JSON.stringify([span.sessionId, span.toolUseId]);
+}
+
 export class TelemetryJoiner {
   readonly #onUnmatchedSpan: ((span: OtelToolSpan) => void) | undefined;
-  /** Spans that arrived since the last pump, awaiting its verdict. */
-  #awaiting: AwaitingSpan[] = [];
+  /** Spans that arrived since the last pump, awaiting its verdict; a re-sent span replaces. */
+  #awaiting = new Map<string, OtelToolSpan>();
   /** The states the join targets: the last emission's, as the engines made them. */
   #live: readonly SessionState[] = [];
   /** Kept spans, per held session, by `tool_use_id`. */
@@ -193,21 +199,18 @@ export class TelemetryJoiner {
   /**
    * One slice from the listener (route on a leader, relay on a follower).
    *
-   * Nothing is counted here: every span waits for the next pump's verdict (see
-   * {@link apply}). A row whose session is held is kept for the join; a count
-   * point or cost point whose session is not held yet is kept pending; a span
-   * whose session is not held is not kept.
+   * No span is counted here: every span waits for the next pump's verdict (see
+   * {@link apply}), and a span whose session is already held is kept for the
+   * join at once. A count point or cost point whose session is held joins; one
+   * whose session is not held yet is kept pending — and the one thing counted
+   * here is the rows of a pending slot this arrival pushes out.
    */
   ingest(_signal: OtelSignal, slice: TelemetrySlice): void {
     this.#slicesIngested += 1;
     const held = new Set(this.#live.map((state) => state.sessionId));
     for (const span of slice.toolSpans) {
-      const kept = held.has(span.sessionId);
-      this.#awaiting.push({ span, kept });
-      if (!kept) continue;
-      const perSession = this.#spans.get(span.sessionId) ?? new Map<string, OtelToolSpan>();
-      perSession.set(span.toolUseId, span);
-      this.#spans.set(span.sessionId, perSession);
+      this.#awaiting.set(spanKey(span), span);
+      if (held.has(span.sessionId)) this.#keep(span);
     }
     for (const sessionId of slice.sessionCounts) {
       if (held.has(sessionId)) {
@@ -248,26 +251,38 @@ export class TelemetryJoiner {
     return fresh;
   }
 
+  /** Keep a span for the join, by `tool_use_id` within its session (a re-sent span replaces). */
+  #keep(span: OtelToolSpan): void {
+    const perSession = this.#spans.get(span.sessionId) ?? new Map<string, OtelToolSpan>();
+    perSession.set(span.toolUseId, span);
+    this.#spans.set(span.sessionId, perSession);
+  }
+
   /**
    * The verdict on every span that arrived since the last pump, against this
-   * pump's states. Counted and reported only if still unmatched now.
+   * pump's states — the join's one retry (ruling 2026-09-11). A span whose
+   * session this pump shows is kept and judged by the join's key; one whose
+   * session it does not show is dropped. Counted and reported only if still
+   * unmatched now.
    */
   #judgeAwaiting(states: readonly SessionState[]): void {
-    if (this.#awaiting.length === 0) return;
-    const awaiting = this.#awaiting;
-    this.#awaiting = [];
-    const kept = awaiting.filter((entry) => entry.kept).map((entry) => entry.span);
-    const stillUnmatched = [
-      ...unmatchedSpans(states, kept),
-      ...awaiting.filter((entry) => !entry.kept).map((entry) => entry.span),
-    ];
-    for (const span of stillUnmatched) {
-      this.#unmatched.traces += 1;
-      try {
-        this.#onUnmatchedSpan?.(span);
-      } catch {
-        // A diagnostics consumer must never break the join.
+    if (this.#awaiting.size === 0) return;
+    const awaiting = [...this.#awaiting.values()];
+    this.#awaiting = new Map();
+    const shown = new Set(states.map((state) => state.sessionId));
+    const candidates: OtelToolSpan[] = [];
+    const dropped: OtelToolSpan[] = [];
+    for (const span of awaiting) {
+      if (shown.has(span.sessionId)) {
+        this.#keep(span);
+        candidates.push(span);
+      } else {
+        dropped.push(span);
       }
+    }
+    for (const span of [...unmatchedSpans(states, candidates), ...dropped]) {
+      this.#unmatched.traces += 1;
+      this.#onUnmatchedSpan?.(span);
     }
   }
 

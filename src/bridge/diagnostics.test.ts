@@ -134,6 +134,18 @@ describe('otel span unmatched (v0.7.1, ruling 2026-09-11)', () => {
     expect(line).not.toContain('\n');
     expect(line.length).toBeLessThan(10_000);
   });
+
+  it('holds each value to one token, so a value cannot forge a second key', () => {
+    const line = formatEvent(
+      { kind: 'otelSpanUnmatched', sessionId: 's1 tool_use_id=forged', toolUseId: 'toolu_01x' },
+      '2026-08-27T12:00:00.000Z',
+    );
+    // Exactly one space-separated `tool_use_id=` key; the forged one is glued to the session value.
+    expect(line.split(' tool_use_id=')).toHaveLength(2);
+    expect(line).toBe(
+      '2026-08-27T12:00:00.000Z otel span unmatched session=s1_tool_use_id=forged tool_use_id=toolu_01x',
+    );
+  });
 });
 
 describe('DiagnosticsChannel (DoD 5.5.3)', () => {

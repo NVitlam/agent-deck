@@ -175,9 +175,9 @@ export interface DiagnosticsTelemetrySignal {
   disabled: number;
   /**
    * Rows this window's join still could not place after retrying (v0.7.1,
-   * ruling 2026-09-11): a span unmatched at the next pump, or a count or cost
-   * point whose held slot was evicted. An early row that joined later is not
-   * counted.
+   * ruling 2026-09-11): a span whose session or tool call the next pump after
+   * its arrival does not show, or each row of a held count-and-cost slot that
+   * was evicted. An early row that joined later is not counted.
    */
   unmatched: number;
   /** Requests refused, by status. */
@@ -369,6 +369,11 @@ function clip(text: string): string {
   return flat.length <= MAX_DETAIL_CHARS ? flat : `${flat.slice(0, MAX_DETAIL_CHARS)}...`;
 }
 
+/** {@link clip}, then every run of whitespace as `_`: a value that must stay one `key=value` token. */
+function oneToken(text: string): string {
+  return clip(text).replace(/\s+/g, '_');
+}
+
 /**
  * The slice of a `FingerprintMismatch` this module reads.
  *
@@ -495,10 +500,11 @@ export function formatEvent(event: DiagnosticsEvent, isoTime: string): string {
       );
     case 'otelSpanUnmatched':
       // Both values arrived in an HTTP body, so both are clipped like any
-      // other field a party across a boundary controls.
+      // other field a party across a boundary controls — and held to ONE token
+      // each, so a value cannot write a second `tool_use_id=` into the line.
       return (
-        `${isoTime} otel span unmatched session=${clip(event.sessionId)} ` +
-        `tool_use_id=${clip(event.toolUseId)}`
+        `${isoTime} otel span unmatched session=${oneToken(event.sessionId)} ` +
+        `tool_use_id=${oneToken(event.toolUseId)}`
       );
   }
 }

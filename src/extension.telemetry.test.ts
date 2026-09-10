@@ -388,8 +388,12 @@ function sessionCountBody(ids: readonly string[]): string {
  * "Grafted" is not enough: the graft that first makes B appear can be of a
  * partial read, with a tree holding no tool node at all (measured, M26 on
  * 1e3abc1). An assertion about B's spans made at that pump compares an empty
- * tree with an empty tree and cannot fail. Pumping here is what production
- * does on its own tick.
+ * tree with an empty tree and cannot fail.
+ *
+ * It waits on the MODEL and does NOT pump (changed 2026-09-11): a span is
+ * judged at the first pump after it arrives, so a helper that pumped would
+ * decide, invisibly, which pump that is. The caller's next pump is the first
+ * to emit B, and B's tree is whole when it does.
  */
 async function stageLate(r: Rig): Promise<StagedSession> {
   const slugDir = r.host.dataPath.watcher.lastDiscovery?.slugDir;
@@ -409,8 +413,7 @@ async function stageLate(r: Rig): Promise<StagedSession> {
   expect(want.length, 'the late staging placed no span id').toBeGreaterThan(0);
   await waitFor(
     () => {
-      r.host.dataPath.pump();
-      const b = r.emissions.at(-1)?.emission.sessions.find((s) => s.sessionId === OTEL_SESSION_B);
+      const b = r.host.dataPath.model.sessionState(OTEL_SESSION_B);
       return want.every((id) => toolById(b, id) !== undefined);
     },
     'every staged call of the late session to be in its tree',
@@ -555,7 +558,7 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(r.host.telemetry.lastReport?.spansMatched).toBeGreaterThan(r.staged[0]?.remapped.size ?? Number.NaN);
   }, 120_000);
 
-  it('rows that arrive BEFORE their session is held: the count point and cost are applied once it is, the spans are not (DoD 6.3b)', async () => {
+  it('rows that arrive BEFORE their session is held: the count point and cost are applied once it is; spans whose session the next pump does not show are dropped and counted (DoD 6.3b, ruling 2026-09-11)', async () => {
     /*
      * The ORDER A REAL SESSION PRODUCES. In both captured sessions the
      * session.count point arrives before the first prompt, and the transcript
@@ -574,8 +577,21 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(r.host.telemetry.unmatched.metrics).toBe(0);
     expect(r.host.telemetry.pendingSessions).toBe(1);
 
+    // THE NEXT PUMP DOES NOT SHOW B, so it is where B's spans are judged: each
+    // is dropped and counted, with one line naming it. A's unplaced spans are
+    // counted at the same pump (A is shown; they name no call of A's).
+    pumpOnce(r);
+    const unplacedA = r.staged[0]?.unplaced.length ?? Number.NaN;
+    const bSpans = spanToolIds(OTEL_SESSION_B);
+    expect(bSpans.length).toBeGreaterThan(0);
+    expect(r.host.telemetry.unmatched.traces).toBe(bSpans.length + unplacedA);
+    const bLines = r.lines.filter((l) => l.includes(` otel span unmatched session=${OTEL_SESSION_B} `));
+    expect(bLines.map((l) => / tool_use_id=(\S+)$/.exec(l)?.[1]).sort()).toStrictEqual([...bSpans].sort());
+
     const lateB = await stageLate(r);
     const after = pumpOnce(r);
+    // Judged once: B appearing later neither re-counts nor revives its spans.
+    expect(r.host.telemetry.unmatched.traces).toBe(bSpans.length + unplacedA);
     const b = after.joined.find((s) => s.sessionId === OTEL_SESSION_B);
     const bRaw = after.raw.find((s) => s.sessionId === OTEL_SESSION_B);
     expect(b, 'the late session was not emitted').toBeDefined();
@@ -590,9 +606,10 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(record?.totals.costSource).toBe('telemetry');
     expect(record?.unavailable).not.toContain('F9:telemetry-partial');
 
-    // SPANS are kept for held sessions only: B's arrived before B was held, so
-    // the join matched A's placed spans and not one of B's — although B's tree
-    // carries every one of B's placed span ids (the control above).
+    // SPANS WAIT ONE PUMP, NO LONGER: B's were dropped at the pump that did not
+    // show B, so the join matched A's placed spans and not one of B's —
+    // although B's tree carries every one of B's placed span ids (the control
+    // above). The next test is the other arm: B shown at that pump.
     expect(r.staged.length).toBe(1);
     const placedA = r.staged[0]?.remapped.size ?? Number.NaN;
     expect(placedA).toBeGreaterThan(0);
@@ -600,6 +617,56 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(JSON.stringify(b?.root)).toBe(JSON.stringify(bRaw?.root));
     // Control: A, held at arrival, did get its cost.
     expect(after.joined.find((s) => s.sessionId === OTEL_SESSION_A)?.telemetryCostUsd).toBeGreaterThan(0);
+  }, 120_000);
+
+  it('spans that arrive BEFORE their session is shown, and whose session and calls the next pump shows, join and are never counted (ruling 2026-09-11)', async () => {
+    /*
+     * phase-verifier round 3's first defect: a window reloaded during a live
+     * session receives that session's spans before its first emission shows
+     * it. Judged against "held when it arrived", every such span read as
+     * unmatched — the first smoke's symptom — although the next pump shows the
+     * session and every call. Only B's bodies are posted, so A has no spans and
+     * any count here is one of B's.
+     */
+    const r = await rig({ stage: ['idle-as-A'] });
+    pumpOnce(r);
+    const onlyB = ENVELOPES.filter((e) => e.raw.includes(OTEL_SESSION_B));
+    await replayCorpus(r.port, onlyB);
+    // CONTROL on the ordering: B is not shown when its spans arrive.
+    expect(r.emissions.at(-1)?.emission.sessions.some((s) => s.sessionId === OTEL_SESSION_B)).toBe(false);
+
+    const lateB = await stageLate(r);
+    pumpOnce(r);
+
+    // VACUITY: B's spans joined — one match per span id the staging placed.
+    expect(lateB.remapped.size).toBeGreaterThan(0);
+    expect(r.host.telemetry.lastReport?.spansMatched).toBe(lateB.remapped.size);
+    // THE RULING: B's placed spans are not counted; the ones the staging placed
+    // on no call are, and they alone have lines.
+    expect(r.host.telemetry.unmatched.traces).toBe(lateB.unplaced.length);
+    const lines = r.lines.filter((l) => / otel span unmatched session=/.test(l));
+    expect(lines.map((l) => / tool_use_id=(\S+)$/.exec(l)?.[1]).sort()).toStrictEqual([...lateB.unplaced].sort());
+  }, 120_000);
+
+  it('an evicted slot counts every row it held — its count point and each cost point (ruling 2026-09-11)', async () => {
+    const r = await rig({ stage: ['idle-as-A'] });
+    pumpOnce(r);
+    const onlyB = ENVELOPES.filter((e) => e.raw.includes(OTEL_SESSION_B));
+    const bCostPoints = census(onlyB).costPoints.get(OTEL_SESSION_B) ?? 0;
+    // CONTROL: the slot holds more than one row, so "one per slot" and "count
+    // points only" both give a different figure from the true one.
+    expect(bCostPoints).toBeGreaterThan(1);
+    expect(census(onlyB).sessionCounts).toStrictEqual([OTEL_SESSION_B]);
+
+    await replayCorpus(r.port, onlyB);
+    expect(r.host.telemetry.pendingSessions).toBe(1);
+    expect(r.host.telemetry.unmatched.metrics).toBe(0);
+
+    const flood = Array.from({ length: PENDING_SESSIONS_MAX }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    expect((await postTo(r.port, TELEMETRY_PATHS.metrics, sessionCountBody(flood))).status).toBe(200);
+    expect(r.host.telemetry.pendingSessions).toBe(PENDING_SESSIONS_MAX);
+    // B's slot, and only B's, was pushed out: its count point plus every cost point.
+    expect(r.host.telemetry.unmatched.metrics).toBe(1 + bCostPoints);
   }, 120_000);
 
   it('never satisfies the provenance gate: a history session with telemetry is not written; the same session is, once it works', async () => {
@@ -1064,8 +1131,11 @@ describe('DoD 6.4 as amended (2026-09-11) — unmatched counts what the next pum
   it('a span whose id never appears is counted after the pump, and written as one line with the two keys and nothing else', async () => {
     const r = await rig({ stage: ['idle-as-A'] });
     pumpOnce(r);
-    expect((await postTo(r.port, TELEMETRY_PATHS.traces, oneSpanBody(OTEL_SESSION_A, NEVER, 777))).status).toBe(200);
-    await waitFor(() => r.host.telemetry.slicesIngested === 1, 'the span to be ingested');
+    // Sent TWICE before the pump: a re-sent span replaces, and is judged once.
+    for (let i = 0; i < 2; i += 1) {
+      expect((await postTo(r.port, TELEMETRY_PATHS.traces, oneSpanBody(OTEL_SESSION_A, NEVER, 777))).status).toBe(200);
+    }
+    await waitFor(() => r.host.telemetry.slicesIngested === 2, 'both copies to be ingested');
     // Before the pump nothing is judged.
     expect(r.host.telemetry.unmatched.traces).toBe(0);
     pumpOnce(r);

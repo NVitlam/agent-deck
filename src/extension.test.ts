@@ -6167,10 +6167,18 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
         ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
         relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
         statsErrors: 0, storeMalformed: 0, statsDropped: 7,
+        telemetry: {
+          metrics: { accepted: 0, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
+          logs: { accepted: 0, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
+          traces: { accepted: 0, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
+        },
       },
       '2026-09-09T00:00:00.000Z',
     );
-    expect(line.endsWith(' statsDropped=7')).toBe(true);
+    // Appended after the two DoD 3.8 fields. It was the LAST field until
+    // v0.7.1 DoD 6.4 appended the telemetry half after it — the same
+    // append-only rule, so the line up to here is unchanged.
+    expect(line).toContain(' storeMalformed=0 statsDropped=7 otel.metrics=');
   });
 });
 

@@ -4,8 +4,8 @@
  * v0.7.0 Phase 1, DoD 1.9. OTLP/HTTP **JSON** bodies in, a small typed slice
  * out. No I/O, no socket: this is a pure function of a request body, which is
  * what lets the tests replay `fixtures/otel-cc-2.1.260/`'s captured bytes
- * exactly as an HTTP receiver would be handed them. The listener ROUTE is
- * Phase 3.
+ * exactly as an HTTP receiver would be handed them. The listener ROUTE that
+ * hands them over is `src/hooks/listener.ts` (v0.7.1 DoD 6.2).
  *
  * ---------------------------------------------------------------------------
  * THIS IS A DROP BOUNDARY, NOT A REDACTION PASS
@@ -147,8 +147,25 @@ export function emptyTelemetryCounts(): TelemetryCounts {
   };
 }
 
-/** Which OTLP signal a body is. The three routes Phase 3 will mount. */
+/** Which OTLP signal a body is. The three routes the listener mounts (v0.7.1 DoD 6.2). */
 export type OtelSignal = 'metrics' | 'logs' | 'traces';
+
+/**
+ * The top-level key an OTLP/HTTP JSON body of each signal carries — the
+ * `Export*ServiceRequest` root. A body whose root key is absent or not an
+ * array is NOT OTLP-shaped, whatever else it holds.
+ *
+ * v0.7.1 DoD 6.2. {@link TelemetryCounts.bodiesUnparseable} has documented
+ * "not OTLP-shaped" since Phase 1 while the code checked only "JSON" and "an
+ * object", so `{}` and a traces body posted to `/v1/metrics` both counted as
+ * parsed. The route answers `400` on exactly this counter, so the document and
+ * the code had to agree before the route could rely on either.
+ */
+export const OTLP_ROOT_KEYS: Readonly<Record<OtelSignal, string>> = {
+  metrics: 'resourceMetrics',
+  logs: 'resourceLogs',
+  traces: 'resourceSpans',
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -242,6 +259,13 @@ export function parseOtlpBody(
     return { toolSpans, costPoints, counts };
   }
   if (!isRecord(parsed)) {
+    counts.bodiesUnparseable += 1;
+    return { toolSpans, costPoints, counts };
+  }
+  // Not OTLP-shaped for THIS signal: the root array is absent or not an array.
+  // Refused whole rather than walked, so a body posted to the wrong path is a
+  // counted refusal rather than an empty success.
+  if (!Array.isArray(parsed[OTLP_ROOT_KEYS[signal]])) {
     counts.bodiesUnparseable += 1;
     return { toolSpans, costPoints, counts };
   }

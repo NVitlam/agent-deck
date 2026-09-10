@@ -59,6 +59,7 @@ import {
   type CodexHookEventHandler,
   type HookEventHandler,
   type HookListenerCounters,
+  type TelemetryRouteCounters,
 } from './listener.js';
 import {
   EVENTS_PATH,
@@ -127,6 +128,14 @@ export interface SharedHookListenerOptions {
   onRoleChange?: (role: RelayRole) => void;
   /** Forwarded to the inner {@link HookListener}. */
   eventPath?: string;
+  /**
+   * `agentDeck.telemetry.enabled`, read at request time by the inner
+   * {@link HookListener} (v0.7.1 DoD 6.2). Only the LEADER's value is ever
+   * read, because only the leader has a socket: a follower's telemetry arrives
+   * already parsed, by relay. The setting is machine-scoped so the two cannot
+   * differ by declaration.
+   */
+  telemetryEnabled?: () => boolean;
 }
 
 /*
@@ -187,6 +196,7 @@ export class SharedHookListener {
       port: this.port,
       ...(options.previewBytes !== undefined ? { relayPreviewBytes: options.previewBytes } : {}),
       ...(options.eventPath !== undefined ? { eventPath: options.eventPath } : {}),
+      ...(options.telemetryEnabled !== undefined ? { telemetryEnabled: options.telemetryEnabled } : {}),
     });
     // Local events reach the SAME handler sets a relayed event reaches, and
     // they reach them WITHOUT the ownership filter — see the module header.
@@ -196,6 +206,17 @@ export class SharedHookListener {
     this.#listener.subscribeCodex((event) => {
       this.#dispatchCodex(event);
     });
+    // v0.7.1 DoD 6.2 — the route's one exit. Every accepted body's slice goes
+    // through `publishTelemetry`, so this window's consumers AND every
+    // follower receive it; there is no second path a later caller could take.
+    this.#listener.subscribeOtel((signal, slice) => {
+      this.publishTelemetry(signal, slice);
+    });
+  }
+
+  /** The telemetry paths' accounting (DoD 6.4). Zero on a follower, which holds no socket. */
+  get telemetryCounters(): TelemetryRouteCounters {
+    return this.#listener.telemetryCounters;
   }
 
   /** The role this window currently holds. */
@@ -283,8 +304,8 @@ export class SharedHookListener {
   /**
    * Publish one telemetry slice: to this window's consumers AND to followers.
    *
-   * The single entry point Phase 3's `/v1/*` routes will call, so a route
-   * added later cannot forget the relay half.
+   * The single entry point the telemetry route calls (v0.7.1 DoD 6.2, wired in
+   * the constructor), so the route cannot forget the relay half.
    */
   publishTelemetry(signal: OtelSignal, slice: TelemetrySlice): void {
     this.#dispatchOtel(signal, slice);

@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import {
   emptyTelemetryCounts,
   mergeSlices,
+  OTLP_ROOT_KEYS,
   parseOtlpBody,
   TELEMETRY_CONTENT_KEYS,
   TELEMETRY_IDENTITY_KEYS,
@@ -268,6 +269,38 @@ describe('G3 — nothing here throws, whatever arrives', () => {
     for (const body of ['[]', '"a string"', '42', 'null']) {
       const slice = parseOtlpBody(body, 'metrics');
       expect(slice.counts.bodiesUnparseable, body).toBe(1);
+    }
+  });
+
+  it('counts a JSON object that is not OTLP-shaped for its signal (v0.7.1 DoD 6.2)', () => {
+    // The route answers 400 on this counter, so `{}` and a body posted to the
+    // wrong signal's path must be refusals rather than empty successes.
+    for (const [body, signal] of [
+      ['{}', 'traces'],
+      ['{"resourceSpans":null}', 'traces'],
+      ['{"resourceSpans":[]}', 'metrics'],
+      ['{"resourceMetrics":{}}', 'metrics'],
+      ['{"resourceLogs":"x"}', 'logs'],
+    ] as const) {
+      const slice = parseOtlpBody(body, signal);
+      expect(slice.counts.bodiesUnparseable, `${signal} ${body}`).toBe(1);
+      expect(slice.toolSpans).toHaveLength(0);
+      expect(slice.costPoints).toHaveLength(0);
+    }
+    // CONTROL, both arms: an empty root array IS OTLP (an exporter with
+    // nothing to say), and every committed fixture body parses clean on the
+    // signal it was captured on.
+    for (const signal of ['metrics', 'logs', 'traces'] as const) {
+      const empty = parseOtlpBody(JSON.stringify({ [OTLP_ROOT_KEYS[signal]]: [] }), signal);
+      expect(empty.counts.bodiesUnparseable, `empty ${signal}`).toBe(0);
+      const counts = emptyTelemetryCounts();
+      const lines = readFileSync(`${CORPUS}${signal}.jsonl`, 'utf8')
+        .split('\n')
+        .filter((line) => line.trim() !== '');
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) parseOtlpBody((JSON.parse(line) as { raw: string }).raw, signal, counts);
+      expect(counts.bodies).toBe(lines.length);
+      expect(counts.bodiesUnparseable, `fixture ${signal}`).toBe(0);
     }
   });
 

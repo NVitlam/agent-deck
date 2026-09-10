@@ -146,6 +146,7 @@ import type {
   DiagnosticsEngine,
   DiagnosticsEvent,
   DiagnosticsSinkFactory,
+  DiagnosticsTelemetry,
 } from './bridge/diagnostics.js';
 import { correlateWorkspace } from './model/correlate.js';
 import { graftSession } from './model/graft.js';
@@ -179,7 +180,10 @@ import {
   DEFAULT_HOOK_PORT,
   isHookListenerBindError,
 } from './hooks/listener.js';
+import type { TelemetryRouteCounters } from './hooks/listener.js';
 import { SharedHookListener } from './hooks/shared.js';
+import { TelemetryJoiner } from './model/telemetry.js';
+import type { TelemetryUnmatched } from './model/telemetry.js';
 import type { RelayCounters, RelayRole } from './hooks/relay.js';
 import { readCodexEngine, resolveCodexRoot } from './codex/index.js';
 import {
@@ -2254,6 +2258,12 @@ export class AgentDeckDataPath {
   #bindError?: { code: string; port: number; message: string };
   /** The shared listener's role, mirrored for the counters line (DoD 1b.7). */
   #relayRole: RelayRole = 'idle';
+  /**
+   * `agentDeck.telemetry.enabled`, as last read (v0.7.1 DoD 6.2). The listener
+   * reads it through a thunk at REQUEST time, so {@link setTelemetryEnabled}
+   * takes effect on the next request with no rebind.
+   */
+  #telemetryEnabled: boolean;
 
   constructor(options: DataPathOptions) {
     this.workspacePath = options.workspacePath;
@@ -2268,6 +2278,7 @@ export class AgentDeckDataPath {
     this.#coalesceMs = options.coalesceMs ?? EMIT_COALESCE_MS;
     this.#tickMs = options.tickMs ?? LIVENESS_TICK_MS;
     this.#graftFn = options.graft ?? graftSession;
+    this.#telemetryEnabled = options.settings['telemetry.enabled'];
 
     // ---- carry-forward A: the connection, made from outside session.ts ----
     const inferenceSource = createJsonlInferenceSource({
@@ -2310,6 +2321,9 @@ export class AgentDeckDataPath {
       previewBytes: options.settings.previewBytes,
       workspacePaths: this.workspacePaths,
       tailsSession: (sessionId) => this.model.hasSession(sessionId),
+      // v0.7.1 DoD 6.2. A thunk over the live field: read per request, so the
+      // setting moves without a reload and without touching the socket.
+      telemetryEnabled: () => this.#telemetryEnabled,
       ...(options.scheduler !== undefined ? { scheduler: options.scheduler } : {}),
       onRoleChange: (role) => {
         this.#relayRole = role;
@@ -2598,6 +2612,20 @@ export class AgentDeckDataPath {
   setLivenessThresholdMs(ms: number): void {
     this.liveness.setMtimeThresholdMs(ms);
     this.#scheduleEmit();
+  }
+
+  /**
+   * `agentDeck.telemetry.enabled` changed (v0.7.1 DoD 6.2). Live: the next
+   * telemetry request is answered by the new value. Schedules nothing — a
+   * setting is not activity, and nothing about the sessions has changed.
+   */
+  setTelemetryEnabled(value: boolean): void {
+    this.#telemetryEnabled = value;
+  }
+
+  /** The value the telemetry route answers by right now. */
+  get telemetryEnabled(): boolean {
+    return this.#telemetryEnabled;
   }
 
   /**
@@ -2950,6 +2978,24 @@ export class AgentDeckDataPath {
     this.#scheduler.clearTimer(this.#tickTimer);
     this.#tickTimer = null;
   }
+}
+
+/**
+ * The counters line's telemetry half (v0.7.1 DoD 6.4): the route's per-signal
+ * accounting beside this window's `unmatched`. A pure reshaping — neither
+ * number is kept here, so neither can drift from the object that owns it.
+ */
+function telemetryDiagnostics(
+  route: TelemetryRouteCounters,
+  unmatched: TelemetryUnmatched,
+): DiagnosticsTelemetry {
+  const one = (signal: keyof DiagnosticsTelemetry): DiagnosticsTelemetry[keyof DiagnosticsTelemetry] => ({
+    accepted: route[signal].accepted,
+    disabled: route[signal].disabled,
+    unmatched: unmatched[signal],
+    rejected: { ...route[signal].rejected },
+  });
+  return { metrics: one('metrics'), logs: one('logs'), traces: one('traces') };
 }
 
 /**
@@ -3882,6 +3928,27 @@ export class AgentDeckHost {
    */
   readonly stats: StatsPipeline | undefined;
 
+  /**
+   * Component 12's host module (v0.7.1 DoD 6.3): the telemetry slices this
+   * window receives — by its own route as a leader, by relay as a follower —
+   * joined onto the live states the stats layer observes. The deck is not fed
+   * from it; `src/model/telemetry.ts` says why.
+   */
+  readonly telemetry: TelemetryJoiner = new TelemetryJoiner();
+
+  /**
+   * The emission the stats layer was last HANDED — the telemetry join's
+   * output, as it left this host, rather than any account the joiner keeps of
+   * it. v0.7.1 DoD 6.3's tests read this, and it exists because they first read
+   * a mirror the joiner kept, which a mutation of the returned value walked
+   * straight past (`docs/evidence/v0.7.1/phase-6/MUTATIONS.md`, M8).
+   */
+  get statsObserved(): SessionEmission | null {
+    return this.#statsObserved;
+  }
+
+  #statsObserved: SessionEmission | null = null;
+
   readonly #createPanel: () => PanelSurface;
   readonly #nonce?: string;
   readonly #scheduler: Scheduler;
@@ -4027,7 +4094,10 @@ export class AgentDeckHost {
         // G2 says the deck renders identically with the deriver present,
         // absent, or throwing, and the only arrangement that proves it is one
         // where the stats layer runs first and cannot reach what follows.
-        this.#observeStats(payload.emission);
+        //
+        // v0.7.1 DoD 6.3: the stats layer observes the emission WITH the kept
+        // telemetry joined on; the panel below is handed `payload`, untouched.
+        this.#observeStats(this.#withTelemetry(payload.emission));
         this.#panel?.publish(payload);
         // AFTER the session publish and inside its own guard too: the Stats
         // view is downstream of the deck, and a stats wire failure must not
@@ -4041,6 +4111,34 @@ export class AgentDeckHost {
       // the property every host test relies on.
       onDiagnostic: (event: DiagnosticsEvent) => this.diagnostics?.record(event),
     });
+    // v0.7.1 DoD 6.3 — THE ONE SUBSCRIPTION. The shared listener hands this the
+    // route's slices on a leader and the relay's on a follower, through the
+    // same dispatch, so a follower's joins are the leader's by construction
+    // (DoD 6.7). A consumer that throws is caught by the listener's dispatch;
+    // the joiner itself is total.
+    this.dataPath.listener.subscribeOtel((signal, slice) => {
+      this.telemetry.ingest(signal, slice);
+    });
+  }
+
+  /**
+   * The emission the stats layer observes (v0.7.1 DoD 6.3), behind a guard.
+   *
+   * On a throw the stats layer gets the engines' emission unchanged: a join
+   * failure costs a telemetry figure, never a record and never the deck (G2).
+   */
+  #withTelemetry(emission: SessionEmission): SessionEmission {
+    try {
+      return this.telemetry.apply(emission);
+    } catch (error) {
+      this.#statsErrors += 1;
+      this.diagnostics?.record({
+        kind: 'engineDegraded',
+        engine: 'cc',
+        reason: `telemetry join: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      return emission;
+    }
   }
 
   /**
@@ -4113,6 +4211,7 @@ export class AgentDeckHost {
    * whole product.
    */
   #observeStats(emission: SessionEmission): void {
+    this.#statsObserved = emission;
     const pipeline = this.stats;
     if (pipeline === undefined) return;
     const invalid = this.#pricingInvalid;
@@ -4278,6 +4377,12 @@ export class AgentDeckHost {
       // was closed and reopened would otherwise reset the count to zero, and
       // the counters line is a running total for the window.
       statsDropped: this.#statsDropped,
+      // v0.7.1 DoD 6.4. `accepted`, `disabled` and `rejected` are the ROUTE's
+      // and so the leader's — a follower holds no socket and reports zeroes,
+      // which is the truth about it. `unmatched` is this WINDOW's join: the
+      // same slice can match on one window and not another, so the listener
+      // could not own it without being wrong for every window but one.
+      telemetry: telemetryDiagnostics(this.dataPath.listener.telemetryCounters, this.telemetry.unmatched),
     };
   }
 
@@ -5108,6 +5213,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       // ...and `canvas.autoFit` (DoD 4.0): one boolean the renderer reads on
       // its next fit decision, so it moves live too.
       host.setCanvasAutoFit(next['canvas.autoFit']);
+      // ...and `telemetry.enabled` (v0.7.1 DoD 6.2): one boolean the route
+      // reads per request, so the next telemetry request is answered by it.
+      host.dataPath.setTelemetryEnabled(next['telemetry.enabled']);
     }),
   );
 

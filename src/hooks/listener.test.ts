@@ -937,6 +937,7 @@ describe('HookListener over a real loopback socket', () => {
 
   it('drops a non-loopback POST with 403 and counts it', async () => {
     await listener.stop();
+    const otel: unknown[] = [];
     listener = new HookListener({
       port,
       maxBodyBytes: 4096,
@@ -944,7 +945,10 @@ describe('HookListener over a real loopback socket', () => {
       // address. No non-loopback socket is ever bound by this suite.
       spoofRemoteAddress: '203.0.113.7',
       onEvent: (event) => received.push(event),
+      // v0.7.1 DoD 6.2: telemetry ON, so a drop below cannot be the setting's.
+      telemetryEnabled: () => true,
     });
+    listener.subscribeOtel((signal, slice) => otel.push({ signal, slice }));
     await listener.start();
 
     // The socket itself is still loopback-only: the drop is a policy decision,
@@ -956,6 +960,28 @@ describe('HookListener over a real loopback socket', () => {
     expect(listener.counters.droppedNonLoopback).toBe(1);
     expect(listener.counters.accepted).toBe(0);
     expect(received).toHaveLength(0);
+
+    // EXTENDED IN v0.7.1 (DoD 6.2): the three telemetry paths get the same
+    // drop, BEFORE routing — so no telemetry counter moves, nothing is
+    // published, and the body is the plain 403's, not the setting's.
+    for (const path of ['/v1/metrics', '/v1/logs', '/v1/traces']) {
+      const telemetryReply = await postRaw(port, {
+        path,
+        body: '{"resourceSpans":[],"resourceMetrics":[],"resourceLogs":[]}',
+        headers: { 'content-type': 'application/json' },
+      });
+      expect(telemetryReply.status, path).toBe(403);
+    }
+    expect(listener.counters.droppedNonLoopback).toBe(4);
+    const t = listener.telemetryCounters;
+    for (const signal of ['metrics', 'logs', 'traces'] as const) {
+      expect(t[signal], signal).toStrictEqual({
+        accepted: 0,
+        disabled: 0,
+        rejected: { 400: 0, 405: 0, 413: 0, 415: 0 },
+      });
+    }
+    expect(otel).toHaveLength(0);
   });
 
   it('does not let proxy headers grant loopback status', async () => {

@@ -31,9 +31,29 @@ import {
   formatCounters,
   formatEvent,
 } from './diagnostics.js';
-import type { DiagnosticsCounters, DiagnosticsEvent, DiagnosticsSink } from './diagnostics.js';
+import type {
+  DiagnosticsCounters,
+  DiagnosticsEvent,
+  DiagnosticsSink,
+  DiagnosticsTelemetry,
+} from './diagnostics.js';
 
 const AT = Date.parse('2026-08-27T12:00:00.000Z');
+
+/**
+ * v0.7.1 DoD 6.4. Every number distinct and non-zero, so the pinned line below
+ * can only match if each figure landed in its own slot.
+ */
+const TELEMETRY_SAMPLE: DiagnosticsTelemetry = {
+  metrics: { accepted: 21, disabled: 22, unmatched: 23, rejected: { 400: 24, 405: 25, 413: 26, 415: 27 } },
+  logs: { accepted: 31, disabled: 32, unmatched: 33, rejected: { 400: 34, 405: 35, 413: 36, 415: 37 } },
+  traces: { accepted: 41, disabled: 42, unmatched: 43, rejected: { 400: 44, 405: 45, 413: 46, 415: 47 } },
+};
+
+const TELEMETRY_SAMPLE_LINE =
+  'otel.metrics=accepted:21,disabled:22,unmatched:23,400:24,405:25,413:26,415:27 ' +
+  'otel.logs=accepted:31,disabled:32,unmatched:33,400:34,405:35,413:36,415:37 ' +
+  'otel.traces=accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47';
 
 /** A spy sink. Records everything and can be made to fail on demand. */
 function spySink(options: { throwOnWrite?: boolean } = {}): DiagnosticsSink & {
@@ -145,14 +165,19 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       statsErrors: 5,
       storeMalformed: 9,
       statsDropped: 11,
+      // v0.7.1 DoD 6.4 — distinct values again, for the same reason.
+      telemetry: TELEMETRY_SAMPLE,
     };
     const line = formatCounters(counters, '2026-08-27T12:00:00.000Z');
     for (const key of Object.keys(counters)) {
       // `unknownFields`, `ccSessions`, `opencodeSessions` and `codexSessions`
       // are rendered under shorter labels; the rest appear verbatim. Asserted
-      // by VALUE so a renamed label cannot silently drop a counter.
+      // by VALUE so a renamed label cannot silently drop a counter. The one
+      // nested field has its own pinned form, below.
+      if (key === 'telemetry') continue;
       expect(line).toContain(String(counters[key as keyof DiagnosticsCounters]));
     }
+    expect(line).toContain(TELEMETRY_SAMPLE_LINE);
     expect(line).toContain('grafts=12');
     expect(line).toContain('resyncs=1');
     expect(line).toContain('cc=2');
@@ -179,6 +204,23 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
     expect(asFollower).toContain('relayed=0');
     expect(asFollower).toContain('received=41');
     expect(asFollower).not.toBe(line);
+  });
+
+  it('appends the three telemetry fields AFTER statsDropped, so every older line is a prefix (DoD 6.4)', () => {
+    const line = formatCounters(
+      {
+        grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+        patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+        ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+        relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
+        statsErrors: 0, storeMalformed: 0, statsDropped: 7,
+        telemetry: TELEMETRY_SAMPLE,
+      },
+      '2026-09-10T00:00:00.000Z',
+    );
+    // The whole tail, byte for byte: order, labels, separators, and the four
+    // statuses by number.
+    expect(line.endsWith(` statsDropped=7 ${TELEMETRY_SAMPLE_LINE}`)).toBe(true);
   });
 
   it('creates no sink until the first line', () => {
@@ -224,6 +266,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       statsErrors: 0,
       storeMalformed: 0,
       statsDropped: 0,
+      telemetry: TELEMETRY_SAMPLE,
     });
     expect(sink.shown).toBe(0);
     channel.show();

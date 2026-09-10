@@ -381,12 +381,21 @@ function sessionCountBody(ids: readonly string[]): string {
   throw new Error('the session.count body has no data point');
 }
 
-/** Stage session B into a running host's slug dir and wait until it is grafted — a session that starts late. */
-async function stageLate(r: Rig): Promise<void> {
+/**
+ * Stage session B into a running host's slug dir and wait until EVERY staged
+ * call is in its emitted tree — a session that starts late.
+ *
+ * "Grafted" is not enough: the graft that first makes B appear can be of a
+ * partial read, with a tree holding no tool node at all (measured, M26 on
+ * 1e3abc1). An assertion about B's spans made at that pump compares an empty
+ * tree with an empty tree and cannot fail. Pumping here is what production
+ * does on its own tick.
+ */
+async function stageLate(r: Rig): Promise<StagedSession> {
   const slugDir = r.host.dataPath.watcher.lastDiscovery?.slugDir;
   expect(slugDir, 'the host has not discovered its slug dir').toBeDefined();
   const grafts = r.host.dataPath.diagnostics.grafts;
-  await stageSessionAs(slugDir as string, {
+  const staged = await stageSessionAs(slugDir as string, {
     ...IDLE_SOURCE,
     asSessionId: OTEL_SESSION_B,
     spanIds: spanToolIds(OTEL_SESSION_B),
@@ -396,6 +405,18 @@ async function stageLate(r: Rig): Promise<void> {
     'the late session to be discovered and grafted',
     30_000,
   );
+  const want = [...staged.remapped.values()];
+  expect(want.length, 'the late staging placed no span id').toBeGreaterThan(0);
+  await waitFor(
+    () => {
+      r.host.dataPath.pump();
+      const b = r.emissions.at(-1)?.emission.sessions.find((s) => s.sessionId === OTEL_SESSION_B);
+      return want.every((id) => toolById(b, id) !== undefined);
+    },
+    'every staged call of the late session to be in its tree',
+    30_000,
+  );
+  return staged;
 }
 
 // ---------------------------------------------------------------------------
@@ -548,11 +569,15 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(r.host.telemetry.unmatched.metrics).toBe((costPoints.get(OTEL_SESSION_B) ?? Number.NaN) + 1);
     expect(r.host.telemetry.pendingSessions).toBe(1);
 
-    await stageLate(r);
+    const lateB = await stageLate(r);
     const after = pumpOnce(r);
     const b = after.joined.find((s) => s.sessionId === OTEL_SESSION_B);
     const bRaw = after.raw.find((s) => s.sessionId === OTEL_SESSION_B);
     expect(b, 'the late session was not emitted').toBeDefined();
+    // CONTROL for the spans arm below: B's tree carries every span id the
+    // staging placed on it, so a span of B that had been kept WOULD match.
+    expect(lateB.remapped.size).toBeGreaterThan(0);
+    for (const id of lateB.remapped.values()) expect(toolById(bRaw, id), id).toBeDefined();
     expect(b?.telemetryCostUsd).toBeCloseTo(costBySession.get(OTEL_SESSION_B) ?? Number.NaN, 10);
     expect(b?.telemetrySessionCountSeen).toBe(true);
     expect(r.host.telemetry.pendingSessions).toBe(0);
@@ -561,8 +586,8 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(record?.unavailable).not.toContain('F9:telemetry-partial');
 
     // SPANS are kept for held sessions only: B's arrived before B was held, so
-    // the join matched A's placed spans and not one of B's — although the
-    // late staging placed B's span ids on B's calls too.
+    // the join matched A's placed spans and not one of B's — although B's tree
+    // carries every one of B's placed span ids (the control above).
     expect(r.staged.length).toBe(1);
     const placedA = r.staged[0]?.remapped.size ?? Number.NaN;
     expect(placedA).toBeGreaterThan(0);

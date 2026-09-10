@@ -924,6 +924,9 @@ describe('readSettings', () => {
       pricing: {},
       // v0.7.0 Phase 4 (DoD 4.0): spec section G, default on.
       'canvas.autoFit': true,
+      // v0.7.1 DoD 6.1: the telemetry route accepts nothing until a user
+      // turns it on.
+      'telemetry.enabled': false,
     });
   });
 
@@ -945,6 +948,7 @@ describe('readSettings', () => {
           'stats.idleFlushMs': 600_000,
           pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
           'canvas.autoFit': false,
+          'telemetry.enabled': true,
         })[key],
     });
     expect(read).toStrictEqual({
@@ -957,7 +961,22 @@ describe('readSettings', () => {
       'stats.idleFlushMs': 600_000,
       pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
       'canvas.autoFit': false,
+      'telemetry.enabled': true,
     });
+  });
+
+  it('refuses a non-boolean telemetry.enabled, never coerces (DoD 6.1)', () => {
+    // The string "true" is the value a user most plausibly types, and a
+    // truthiness read would open a route they did not open.
+    for (const bad of ['true', 'false', 1, 0, null, [], {}]) {
+      const read = readSettings({ get: (key) => (key === 'telemetry.enabled' ? bad : undefined) });
+      expect(read['telemetry.enabled'], `telemetry.enabled given ${JSON.stringify(bad)}`).toBe(false);
+    }
+    // Control: the real boolean IS honoured, so the loop is a refusal rather
+    // than a setting nothing reads.
+    expect(
+      readSettings({ get: (k) => (k === 'telemetry.enabled' ? true : undefined) })['telemetry.enabled'],
+    ).toBe(true);
   });
 
   it('refuses a non-boolean stats.enabled and a non-object pricing, never coerces', () => {
@@ -1030,6 +1049,7 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
     minimum?: unknown;
     maximum?: unknown;
     description?: unknown;
+    scope?: unknown;
   }
 
   async function manifestProperties(): Promise<Record<string, ManifestProperty>> {
@@ -1094,7 +1114,30 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
       // UI would show a range for a value that has none.
       expect(property.minimum, `${key}.minimum`).toBeUndefined();
       expect(property.maximum, `${key}.maximum`).toBeUndefined();
+      // v0.7.1 DoD 6.1 — the SCOPE, both ways: a scope declared on one side
+      // alone is the manifest/code disagreement this block exists for. An
+      // unscoped shape must declare none, so a stray `scope` in the manifest
+      // fails too.
+      expect(property.scope, `${key}.scope`).toBe(shape.scope);
     }
+  });
+
+  it('declares agentDeck.telemetry.enabled default false, scope machine (DoD 6.1)', async () => {
+    const properties = await manifestProperties();
+    const property = properties[`${CONFIG_SECTION}.telemetry.enabled`];
+    expect(property, 'package.json declares no agentDeck.telemetry.enabled').toBeTypeOf('object');
+    expect(property?.type).toBe('boolean');
+    expect(property?.default).toBe(false);
+    expect(property?.scope).toBe('machine');
+    // The value an unconfigured extension actually runs with, not only the
+    // declaration: off.
+    expect(readSettings(undefined)['telemetry.enabled']).toBe(false);
+    // VACUITY CONTROL for the per-shape scope loop above: at least one shape
+    // carries a scope and at least one does not, so `toBe(shape.scope)` was
+    // exercised on both arms rather than compared undefined to undefined.
+    const scopes = Object.values(SETTING_SHAPES).map((shape) => shape.scope);
+    expect(scopes).toContain('machine');
+    expect(scopes).toContain(undefined);
   });
 
   it('the default object is a fresh object per read, never a shared one', () => {

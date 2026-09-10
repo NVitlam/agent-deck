@@ -329,6 +329,18 @@ export interface AgentDeckSettings {
    * price table ships).
    */
   pricing: Record<string, unknown>;
+  /**
+   * `agentDeck.telemetry.enabled` — v0.7.1 Phase 6, DoD 6.1. Default `false`,
+   * `"scope": "machine"` (user ruling, 2026-09-10).
+   *
+   * Whether the hook listener ACCEPTS a Claude Code OpenTelemetry body on
+   * `/v1/metrics`, `/v1/logs` and `/v1/traces`. The paths exist either way;
+   * off, they answer `403`. Machine scope because there is one listener per
+   * machine: the window holding the port (the leader) answers for every
+   * window, so a per-workspace value would let two windows disagree about a
+   * socket only one of them owns.
+   */
+  'telemetry.enabled': boolean;
 }
 
 /** The settings {@link SETTING_BOUNDS} governs — the integer ones. */
@@ -458,15 +470,24 @@ export interface SettingShape {
   readonly type: 'boolean' | 'object';
   /** Produces the default. A factory so no default object is shared. */
   readonly defaultOf: () => boolean | Record<string, unknown>;
+  /**
+   * The `scope` `package.json` must declare, or absent for VS Code's default
+   * (`window`). v0.7.1 DoD 6.1 — the first setting with a scope of its own.
+   * The manifest cross-check reads this for EVERY shape, so a scope added to
+   * the manifest alone fails as loudly as one added here alone.
+   */
+  readonly scope?: 'machine';
 }
 
 export const SETTING_SHAPES: Readonly<
-  Record<'stats.enabled' | 'pricing' | 'canvas.autoFit', SettingShape>
+  Record<'stats.enabled' | 'pricing' | 'canvas.autoFit' | 'telemetry.enabled', SettingShape>
 > = {
   'stats.enabled': { type: 'boolean', defaultOf: (): boolean => true },
   pricing: { type: 'object', defaultOf: (): Record<string, unknown> => ({}) },
   // Spec section G: default `true`. Phase 4, with the behaviour it governs.
   'canvas.autoFit': { type: 'boolean', defaultOf: (): boolean => true },
+  // v0.7.1 DoD 6.1, the locked ruling: boolean, default OFF, machine scope.
+  'telemetry.enabled': { type: 'boolean', defaultOf: (): boolean => false, scope: 'machine' },
 };
 
 /**
@@ -484,13 +505,20 @@ export const SETTING_SHAPES: Readonly<
  */
 export function statsSettingDefaults(): Pick<
   AgentDeckSettings,
-  'stats.enabled' | 'stats.retentionDays' | 'stats.idleFlushMs' | 'pricing' | 'canvas.autoFit'
+  | 'stats.enabled'
+  | 'stats.retentionDays'
+  | 'stats.idleFlushMs'
+  | 'pricing'
+  | 'canvas.autoFit'
+  | 'telemetry.enabled'
 > {
   return {
     // Phase 4's `canvas.autoFit` rides along: the harnesses that spread this
     // into a whole `AgentDeckSettings` would otherwise each need a sixth
     // literal, which is the same defect the function exists to remove.
     'canvas.autoFit': SETTING_SHAPES['canvas.autoFit'].defaultOf() as boolean,
+    // v0.7.1 DoD 6.1 rides along for the same reason. OFF, as shipped.
+    'telemetry.enabled': SETTING_SHAPES['telemetry.enabled'].defaultOf() as boolean,
     'stats.enabled': SETTING_SHAPES['stats.enabled'].defaultOf() as boolean,
     'stats.retentionDays': SETTING_BOUNDS['stats.retentionDays'].default,
     'stats.idleFlushMs': SETTING_BOUNDS['stats.idleFlushMs'].default,
@@ -543,6 +571,11 @@ export function readSettings(reader: SettingsReader | undefined): AgentDeckSetti
     'canvas.autoFit': typeof get('canvas.autoFit') === 'boolean'
       ? (get('canvas.autoFit') as boolean)
       : (SETTING_SHAPES['canvas.autoFit'].defaultOf() as boolean),
+    // v0.7.1 DoD 6.1. A boolean or the default (`false`), never a truthiness
+    // read: the string "true" must not open a route the user did not open.
+    'telemetry.enabled': typeof get('telemetry.enabled') === 'boolean'
+      ? (get('telemetry.enabled') as boolean)
+      : (SETTING_SHAPES['telemetry.enabled'].defaultOf() as boolean),
     // Passed through unparsed. `parsePricing` is total and reports what it
     // refused; validating here would be a second, quieter account of the same
     // judgment. An array is an object to `typeof`, so it is excluded here as

@@ -454,6 +454,41 @@ describe('engines.node tells the truth about what this project can run on', () =
   });
 });
 
+/**
+ * THE CI NODE IS THE GATE NODE, EXACTLY (2026-09-10). Both suite-running
+ * workflows said `node-version: '24'`, which resolves to the newest 24.x on the
+ * runner — and Node 24.15.0 is a measured binary defect that kills the suite's
+ * forked worker (v0.7.0 DoD 5.0c). A floating major can land on a bad build
+ * with no change to this repository. So each workflow must name the exact
+ * version `package.json` pins in `devEngines.runtime`, the one the local gate
+ * runs, and one source decides both.
+ */
+describe('CI runs the pinned gate Node, not a floating major', () => {
+  const pinned = (
+    JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')) as {
+      devEngines?: { runtime?: { version?: string } };
+    }
+  ).devEngines?.runtime?.version;
+
+  it('package.json pins an exact gate Node', () => {
+    expect(pinned).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  for (const name of ['ci.yml', 'release.yml']) {
+    it(`${name} sets node-version to exactly the pinned ${String(pinned)}, once`, () => {
+      const versions = [...byName(name).codeText.matchAll(/node-version:\s*'?([^'\s]+)'?/g)].map((m) => m[1]);
+      expect(versions).toStrictEqual([pinned]);
+    });
+
+    it(`${name} uses actions/checkout@v5 and actions/setup-node@v5`, () => {
+      const text = byName(name).codeText;
+      expect(text).toContain('actions/checkout@v5');
+      expect(text).toContain('actions/setup-node@v5');
+      expect(text).not.toMatch(/actions\/(checkout|setup-node)@v[0-4]\b/);
+    });
+  }
+});
+
 function expectWorkflowNodeSatisfiesEngines(wf: { codeText: string }): void {
   const declared = /node-version:\s*'?(\d+)(?:\.(\d+))?(?:\.(\d+))?'?/.exec(wf.codeText);
   expect(declared, 'workflow must pin a node-version').not.toBeNull();

@@ -454,18 +454,32 @@ describe('0 · the generator is loadable', () => {
 describe('1 · the generator is independent of the code it will check', () => {
   const source = fs.existsSync(SCRIPT) ? fs.readFileSync(SCRIPT, 'utf8') : '';
 
-  it('imports nothing from src/', () => {
+  /*
+   * ONE import from src/ is allowed, and it is DATA: the generated census rows.
+   * Until 2026-09-10 the generator read the census itself — a file in the
+   * private lab/ repository — at import time, and CI went red on `main` because
+   * this test imports it on a runner that has no lab/. The rows are generated
+   * from that census and were measured equal before the switch. Pinned to the
+   * exact binding, so the generator cannot start borrowing the engine's
+   * `fileKeyOf`/`filePathOf` (logic) through the same door.
+   */
+  const ALLOWED_SRC_IMPORT = "import { TOOLCLASS_ROWS } from '../src/stats/toolclass.ts';";
+
+  it('imports no engine code from src/ — the census rows are the one allowed import', () => {
     const imports = [...source.matchAll(/^\s*import[^;]*?from\s+'([^']+)'/gm)].map((m) => m[1]);
     expect(imports.length).toBeGreaterThan(0);
-    for (const spec of imports) {
-      expect(spec, `generator must not import ${spec}`).not.toMatch(/(^|\/)src\//);
-      expect(spec).not.toMatch(/opencode\//);
-    }
+    const fromSrc = imports.filter((spec) => /(^|\/)src\//.test(spec ?? ''));
+    expect(fromSrc).toStrictEqual(['../src/stats/toolclass.ts']);
+    expect(source).toContain(ALLOWED_SRC_IMPORT);
+    for (const spec of imports) expect(spec).not.toMatch(/opencode\//);
   });
 
-  it('imports only node: builtins', () => {
+  it('imports only node: builtins besides the census rows', () => {
     const imports = [...source.matchAll(/^\s*import[^;]*?from\s+'([^']+)'/gm)].map((m) => m[1]);
-    for (const spec of imports) expect(spec).toMatch(/^node:/);
+    for (const spec of imports) {
+      if (spec === '../src/stats/toolclass.ts') continue;
+      expect(spec).toMatch(/^node:/);
+    }
   });
 
   it('opens the corpus read-only (G1)', () => {

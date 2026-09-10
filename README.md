@@ -359,9 +359,9 @@ Notes on that block, each of them measured rather than assumed:
 ## Claude Code telemetry (optional)
 
 **What it adds:** a cost figure for each Claude Code session this window sees start, estimated by Claude Code itself, in
-the Stats view's Tokens part with the label **estimated by Claude Code**; and the duration of a tool
-call where the session's own records state none, in that session's stats record — the local history
-and the extension API. The Stats view shows no per-tool durations.
+the Stats view's Tokens part with the label **estimated by Claude Code**. It also adds the duration
+of a tool call where the session's own records state none, in that session's stats record — the
+local history and the extension API. The Stats view shows no per-tool durations.
 
 Claude Code can export OpenTelemetry — metrics, logs and traces — to an address you give it. Agent
 Deck's hook listener accepts that export on the same port as the hooks: `127.0.0.1` at
@@ -415,9 +415,9 @@ Two steps:
   the tool-call id, the tool name, the duration and the cost.
 - **Telemetry never touches the liveness or stall clock.** It does not make a session live and does
   not clear a stall, and it never makes Agent Deck record a session this window has not seen
-  working. For a session it is already recording, a cost change may produce a newer stored record
-  and may delay the idle write, like any change to the record: the `agentDeck.stats.idleFlushMs`
-  countdown restarts on each one. A session id that appears only in telemetry adds nothing to the
+  working. For a session it is already recording, a cost change — or a tool duration filled from a
+  span — may produce a newer stored record and may delay the idle write, like any change to the
+  record: the `agentDeck.stats.idleFlushMs` countdown restarts on each one. A session id that appears only in telemetry adds nothing to the
   deck.
 - **Rows about sessions this window does not show yet.** The exporter is machine-wide, so rows
   about other sessions arrive too. A session's start and its cost, arriving before this window shows

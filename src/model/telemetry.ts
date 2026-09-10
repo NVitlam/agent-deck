@@ -36,7 +36,9 @@
  * a field no patch knows about would put that copy out of step with the model
  * it must never diverge from. The spec renders telemetry in one place — the
  * Tokens view's cost, labelled "estimated by Claude Code" — and that view reads
- * the stats records. So no golden and no wire file can move, and no webview
+ * the stats records. So nothing here moves a golden or a wire recording of the
+ * deck (the one wire file that carries telemetry, R8 fixture 13's, is a
+ * recording of a committed fixture state, not of this path), and no webview
  * file reads `telemetryCostUsd` (DoD 1.9f, still asserted).
  *
  * ---------------------------------------------------------------------------
@@ -56,10 +58,13 @@
  *     tool the graft had not reached when it arrived fills in once it does.
  *
  * **A session not yet held: its count point and its cost are kept, its spans
- * are not.** Measured on the committed corpus: in both sessions the count
- * point arrives BEFORE the first prompt (17 s and 1 s), and a Claude Code
- * transcript's first line is written at that prompt — so at the moment the
- * point arrives there is no transcript for any window to hold. A joiner that
+ * are not.** From the committed OTel corpus's own timestamps: in both sessions
+ * the count point arrives BEFORE the first prompt (17.4 s and 0.9 s). And the
+ * two sessions' real transcripts were CREATED at that prompt (file creation
+ * times, measured read-only by phase-verifier round 2; the committed
+ * transcript fixtures cannot show it, their first lines carry no timestamp).
+ * So at the moment the point arrives there is no transcript for any window to
+ * hold. A joiner that
  * kept rows only for sessions held at arrival would drop the point on every
  * session that starts while the window is open, and 6.3b's rule would then
  * leave every such cost unselected. So both are held in {@link PENDING_SESSIONS_MAX}

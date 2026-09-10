@@ -2905,4 +2905,38 @@ describe('DoD 6.8 — the README documents the telemetry route, and never sets a
     expect(block).toContain('`agentDeck.telemetry.enabled`');
     expect(block).toContain('estimated by Claude Code');
   });
+
+  /*
+   * No view renders a tool duration: telemetry's durations reach the stats
+   * record (history, extension API) and nothing draws them. Round 1 of the
+   * phase verifier found three shipped sentences saying otherwise; round 2
+   * found the third still shipping, because nothing checked it. A sentence
+   * that names a view may not place durations, "both", or "the figures" in
+   * it, unless it says the view shows no per-tool durations.
+   */
+  it('no sentence in the telemetry section or the 0.7.1 entry places tool durations in a view', () => {
+    const VIEW = /\b(?:Stats view|Tokens view|Tokens part)\b/;
+    const PLACES = [/\bdurations?\b/i, /\bBoth appear\b/, /\bThe figures reach\b/];
+    const DENIES = /\bno per-tool durations\b/;
+    const placing = (text: string): string[] =>
+      sentencesOf(paragraphs(text)).filter(
+        (s) => VIEW.test(s) && !DENIES.test(s) && PLACES.some((re) => re.test(s)),
+      );
+
+    // VACUITY: the three sentences round 1 cited, verbatim as they shipped, are
+    // each caught; the sentence that replaced them is not.
+    expect(placing('the duration of a tool call where the session\'s own records state none. Both appear in the Stats view.')).toHaveLength(1);
+    expect(placing('Tool durations where the session states none, in the Stats view\'s per-tool figures.')).toHaveLength(1);
+    expect(placing('The figures reach the Stats view; the session tree and its wire messages carry none of them.')).toHaveLength(1);
+    expect(placing('The Stats view shows no per-tool durations.')).toStrictEqual([]);
+
+    const block = CHANGELOG_TEXT.split(`\n## ${MANIFEST.version} `)[1]?.split('\n## ')[0] ?? '';
+    expect(block.length).toBeGreaterThan(0);
+    expect(SECTION.length).toBeGreaterThan(0);
+    // Both texts DO name a view, so the rule is not passing over prose that never mentions one.
+    expect(VIEW.test(block)).toBe(true);
+    expect(VIEW.test(SECTION)).toBe(true);
+    expect(placing(SECTION), 'README telemetry section').toStrictEqual([]);
+    expect(placing(block), `CHANGELOG ${MANIFEST.version}`).toStrictEqual([]);
+  });
 });

@@ -56,8 +56,9 @@
  *
  * **It does not overwrite an engine-derived duration.** See {@link joinTelemetry}.
  *
- * **It does not render.** `telemetryCostUsd` is stored and read by nothing in
- * this phase: F9(c) is Phase 2 and the cost-source label is Phase 4.
+ * **It does not render.** `telemetryCostUsd` is stored on the state; the stats
+ * deriver reads it as F9(c) (v0.7.0 Phase 2) and the Tokens view's cost label
+ * shows it (Phase 4). Nothing in the webview reads the field itself.
  *
  * **It does not decide whether a cost is complete.** It records, per session,
  * whether the slice carried that session's `claude_code.session.count` point

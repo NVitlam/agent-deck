@@ -14,9 +14,10 @@ All notable changes to Agent Deck are documented here.
   (optional)" section has the block to paste. Agent Deck writes none of it.
 - **A cost for Claude Code sessions, estimated by Claude Code.** With telemetry on,
   a Claude Code session's cost in the Tokens view is Claude Code's own cost
-  metric, summed per session and labelled "estimated by Claude Code". Where an
-  engine states a cost, that is shown instead; where neither does, a cost from
-  `agentDeck.pricing` is.
+  metric, summed per session and labelled "estimated by Claude Code", for a
+  session whose start the window received (below). Where an engine states a cost,
+  that is shown instead; where neither an engine cost nor such a telemetry cost
+  exists, a cost from `agentDeck.pricing` is.
 - **Tool durations where the session states none**, from Claude Code's tool spans,
   in each session's stats record — the local history and the extension API. The
   Stats view shows no per-tool durations. A duration the session's own records
@@ -53,8 +54,8 @@ All notable changes to Agent Deck are documented here.
   `F9:telemetry-partial` — a session already under way when the window opened or
   the setting was turned on, or across a reload. A session's start and cost that
   arrive before the window shows the session are kept for up to 256 sessions.
-- **The deck is unchanged.** The figures reach the Stats view; the session tree
-  and its wire messages carry none of them.
+- **The deck is unchanged.** The cost reaches the Stats view's Tokens part; the
+  session tree and its wire messages carry no telemetry figure.
 
 ### Changed
 

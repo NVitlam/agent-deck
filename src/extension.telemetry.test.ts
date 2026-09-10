@@ -733,6 +733,41 @@ describe('DoD 6.3b — Claude Code\'s cost is selected only when its session.cou
     expect(record?.unavailable).not.toContain('F9:telemetry-present');
   }, 120_000);
 
+  it('THE SMOKE\'S SHAPE: a window holding only sessions with no telemetry, and one new session whose rows all arrive before it is shown', async () => {
+    /*
+     * Every other 6.3b test holds session A WITH A's own telemetry, so the
+     * joiner always had something to apply. A real window mostly holds
+     * history with no telemetry at all, plus the one session that just
+     * started. phase-verifier round 2 (V1) moved the pending promotion below
+     * the "nothing to apply" early return and every host test stayed green,
+     * while in this shape the new session's cost would never be shown.
+     */
+    const r = await rig({ stage: ['idle-as-A'], stats: true });
+    pumpOnce(r);
+    const onlyB = ENVELOPES.filter((e) => e.raw.includes(OTEL_SESSION_B));
+    // CONTROLS: B's bodies name no other session, and carry B's count point
+    // and cost; A receives nothing at all.
+    expect(onlyB.length).toBeGreaterThan(0);
+    for (const e of onlyB) expect(e.raw.includes(OTEL_SESSION_A), e.receivedAt).toBe(false);
+    expect(census(onlyB).sessionCounts).toStrictEqual([OTEL_SESSION_B]);
+    expect(census(onlyB).costPoints.get(OTEL_SESSION_B) ?? 0).toBeGreaterThan(0);
+
+    await replayCorpus(r.port, onlyB);
+    expect(r.host.telemetry.pendingSessions).toBe(1);
+    await stageLate(r);
+    const after = pumpOnce(r);
+
+    const a = after.joined.find((s) => s.sessionId === OTEL_SESSION_A);
+    expect(a).toBeDefined();
+    expect(a).not.toHaveProperty('telemetryCostUsd');
+    const b = after.joined.find((s) => s.sessionId === OTEL_SESSION_B);
+    expect(b?.telemetryCostUsd).toBeCloseTo(census(onlyB).costBySession.get(OTEL_SESSION_B) ?? Number.NaN, 10);
+    expect(b?.telemetrySessionCountSeen).toBe(true);
+    expect(r.host.telemetry.pendingSessions).toBe(0);
+    const record = r.host.stats?.liveRecords().find((rec) => rec.sessionId === OTEL_SESSION_B);
+    expect(record?.totals.costSource).toBe('telemetry');
+  }, 120_000);
+
   it(`the held slots are bounded: a count point pushed out by ${String(PENDING_SESSIONS_MAX)} newer sessions leaves the cost unselected`, async () => {
     /*
      * B's count point arrives before B is held; then PENDING_SESSIONS_MAX other

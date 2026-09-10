@@ -93,10 +93,11 @@ Agent Deck observes. It never acts.
   that could be configured away.
 - **Zero network egress.** Agent Deck sends no telemetry of its own, no analytics, and loads
   nothing from a CDN. Every asset the panel renders is local, enforced by a strict
-  Content-Security-Policy. The only socket it opens is an HTTP listener bound to `127.0.0.1`, which
-  is how the hooks reach it — and, if you turn it on, Claude Code's own telemetry (see
+  Content-Security-Policy. The only socket it listens on is an HTTP listener bound to `127.0.0.1`,
+  which is how the hooks reach it — and, if you turn it on, Claude Code's own telemetry (see
   [Claude Code telemetry](#claude-code-telemetry-optional)) — and non-loopback requests are
-  dropped. The
+  dropped. The only connection it makes is a second VS Code window reaching that same listener on
+  `127.0.0.1` (see [Several windows, one port](#several-windows-one-port)). The
   OpenCode side opens **no socket at all**, and Codex's hooks arrive on that same one listener —
   there is no second port for a second engine.
 - **Reasoning and thinking content is never displayed.** It is dropped where the data is read, before
@@ -357,9 +358,10 @@ Notes on that block, each of them measured rather than assumed:
 
 ## Claude Code telemetry (optional)
 
-**What it adds:** a cost figure for each Claude Code session, estimated by Claude Code itself, and
-the duration of a tool call where the session's own records state none. Both appear in the Stats
-view, and the cost carries the label **estimated by Claude Code**.
+**What it adds:** a cost figure for each Claude Code session, estimated by Claude Code itself, in
+the Stats view's Tokens part with the label **estimated by Claude Code**; and the duration of a tool
+call where the session's own records state none, in that session's stats record — the local history
+and the extension API. The Stats view shows no per-tool durations.
 
 Claude Code can export OpenTelemetry — metrics, logs and traces — to an address you give it. Agent
 Deck's hook listener accepts that export on the same port as the hooks: `127.0.0.1` at
@@ -399,17 +401,25 @@ Two steps:
   four unset, Claude Code sends the literal `<REDACTED>` in place of prompts and responses, and Agent
   Deck drops those fields where the body is parsed either way.
 - **The cost is estimated by Claude Code, not an engine report.** It is Claude Code's own cost
-  metric, summed per session. Where an engine's session records state a cost, that figure is shown
-  instead; where neither does, a cost from your own prices (`agentDeck.pricing`) is.
+  metric, which Claude Code exports as increments, summed per session over the increments this
+  window has received. Agent Deck keeps no running total across windows, so a session already under
+  way when this window opened, when the setting was turned on, or across a window reload, shows only
+  the cost incurred since. Where an engine's session records state a cost, that figure is shown
+  instead; where neither does, a cost from your own prices (`agentDeck.pricing`) is. A figure from
+  telemetry is shown ahead of one from your own prices, whatever part of the session it covers.
 - **What is dropped where the body is parsed:** the five account attributes Claude Code attaches to
   every record — `user.email`, `user.id`, `user.account_id`, `user.account_uuid` and
   `organization.id` — and every attribute Agent Deck does not read. What is kept is the session id,
   the tool-call id, the tool name, the duration and the cost.
-- **Telemetry never changes liveness.** It does not make a session live, does not clear a stall and
-  does not cause a session's record to be written. A session id that appears only in telemetry adds
-  nothing to the deck.
-- **Only sessions this window shows are joined.** The exporter is machine-wide, so rows about other
-  sessions arrive too; they are counted as `unmatched` on the Agent Deck output channel.
+- **Telemetry never changes liveness.** It does not make a session live and does not clear a stall.
+  It never makes Agent Deck record a session this window has not seen working; for a session it is
+  already recording, a new cost is part of that session's record like any other change, and a newer
+  record supersedes an older one. A session id that appears only in telemetry adds nothing to the
+  deck.
+- **Only sessions this window shows when a row arrives are joined.** The exporter is machine-wide,
+  so rows about other sessions arrive too. Those, rows that arrive before this window has read
+  their session, and spans naming a tool call the session does not show are dropped and counted as
+  `unmatched` on the Agent Deck output channel.
 - **The answers:** `200` accepted · `400` not an OTLP JSON body · `403` the setting is off · `405`
   not a POST · `413` over 512 KiB · `415` not JSON. None of them asks the exporter to retry.
 

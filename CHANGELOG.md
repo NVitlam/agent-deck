@@ -18,14 +18,15 @@ All notable changes to Agent Deck are documented here.
   engine states a cost, that is shown instead; where neither does, a cost from
   `agentDeck.pricing` is.
 - **Tool durations where the session states none**, from Claude Code's tool spans,
-  in the Stats view's per-tool figures. A duration the session's own records state
-  is never replaced.
+  in each session's stats record — the local history and the extension API. The
+  Stats view shows no per-tool durations. A duration the session's own records
+  state is never replaced.
 - **`agentDeck.telemetry.enabled`**, boolean, default `false`, machine-scoped.
   Changes apply to the next request, without a reload.
 - **Telemetry figures on the Agent Deck output channel's counters line**, per
   signal: requests accepted, refused by status (`400`, `405`, `413`, `415`),
   refused because the setting is off, and rows that matched no session this window
-  shows.
+  showed when they arrived, or no tool call in it.
 
 ### How it behaves
 
@@ -40,8 +41,14 @@ All notable changes to Agent Deck are documented here.
   does not read. Other VS Code windows receive the parsed figures by relay, never
   the request body.
 - **Content, never activity.** Telemetry does not make a session live, does not
-  clear a stall, does not cause a session's record to be written, and never adds a
-  session: a session id that appears only in telemetry is counted as unmatched.
+  clear a stall, never makes a session this window has not seen working count as
+  one to record, and never adds a session: a session id that appears only in
+  telemetry is counted as unmatched. For a session already being recorded, a new
+  cost is part of its record like any other change.
+- **The cost covers what this window received.** Claude Code exports cost as
+  increments, and Agent Deck keeps no running total across windows: a session
+  already under way when the window opened or the setting was turned on, or across
+  a reload, shows the cost incurred since.
 - **The deck is unchanged.** The figures reach the Stats view; the session tree
   and its wire messages carry none of them.
 

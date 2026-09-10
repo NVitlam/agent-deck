@@ -1518,8 +1518,17 @@ describe('the README carries an "Also observes Codex" section in the OpenCode se
     // port to talk about.
     expect(CODEX_FLAT).toMatch(/same\*? loopback listener/i);
     // And the whole-document claim stays consistent with it: the Trust section
-    // still promises exactly one socket.
-    expect(README).toContain('The only socket it opens is an HTTP listener');
+    // still promises exactly one LISTENING socket.
+    //
+    // RE-WORDED IN v0.7.1: this pinned "The only socket it opens is an HTTP
+    // listener", which stopped being true in 0.7.0, when a second window began
+    // connecting to the first (the follower relay). The phase verifier found
+    // the sentence re-committed in 0.7.1's rewrite of that paragraph. The pin
+    // now holds the true pair: one socket listened on, one connection made,
+    // both to the loopback address.
+    expect(README).toContain('The only socket it listens on is an HTTP listener');
+    expect(README).toContain('The only connection it makes is a second VS Code window reaching that same listener');
+    expect(README).not.toContain('The only socket it opens is an HTTP listener');
   });
 
   it('states that neither of Codex\'s own config files is read or written', () => {

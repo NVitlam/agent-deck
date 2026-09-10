@@ -413,6 +413,65 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(after.joined[0]?.telemetryCostUsd).toBeGreaterThan(0);
   }, 120_000);
 
+  /*
+   * A SESSION THAT STARTS AFTER THE WINDOW OPENED — the ordinary case, and the
+   * one no test here reached until the phase verifier froze the joiner's live
+   * set at the first emission (V5) and dropped its held-sessions filter (V8),
+   * and all eight host tests stayed green. Both arms below stage session B
+   * into the projects root only AFTER the host is running, so the watcher,
+   * tailer and grafter discover it the way a new Claude Code session is
+   * discovered.
+   */
+  async function stageLate(r: Rig): Promise<void> {
+    const slugDir = r.host.dataPath.watcher.lastDiscovery?.slugDir;
+    expect(slugDir, 'the host has not discovered its slug dir').toBeDefined();
+    const grafts = r.host.dataPath.diagnostics.grafts;
+    await stageSessionAs(slugDir as string, {
+      ...IDLE_SOURCE,
+      asSessionId: OTEL_SESSION_B,
+      spanIds: spanToolIds(OTEL_SESSION_B),
+    });
+    await waitFor(
+      () => r.host.dataPath.diagnostics.grafts > grafts && r.host.dataPath.model.hasSession(OTEL_SESSION_B),
+      'the late session to be discovered and grafted',
+      30_000,
+    );
+  }
+
+  it('a session that appears AFTER the first pump is joined once it is held', async () => {
+    const r = await rig({ stage: ['idle-as-A'] });
+    pumpOnce(r);
+    await stageLate(r);
+    const mid = pumpOnce(r);
+    expect(mid.raw.map((s) => s.sessionId).sort()).toStrictEqual([OTEL_SESSION_A, OTEL_SESSION_B].sort());
+
+    await replayCorpus(r.port);
+    const after = pumpOnce(r);
+    const { costBySession } = census();
+    const b = after.joined.find((s) => s.sessionId === OTEL_SESSION_B);
+    expect(b?.telemetryCostUsd).toBeCloseTo(costBySession.get(OTEL_SESSION_B) ?? Number.NaN, 10);
+    expect(r.host.telemetry.unmatched.metrics).toBe(0);
+  }, 120_000);
+
+  it('a row that arrives BEFORE its session is held is dropped and counted, and stays dropped', async () => {
+    // Pinned as it ships, so a change to it is a decision rather than a drift:
+    // the joiner keeps rows only for sessions the window holds when they ARRIVE
+    // (bounded by what the window reads, against a machine-wide exporter).
+    const r = await rig({ stage: ['idle-as-A'] });
+    pumpOnce(r);
+    await replayCorpus(r.port);
+    const { costPoints } = census();
+    expect(r.host.telemetry.unmatched.metrics).toBe(costPoints.get(OTEL_SESSION_B));
+
+    await stageLate(r);
+    const after = pumpOnce(r);
+    const b = after.joined.find((s) => s.sessionId === OTEL_SESSION_B);
+    expect(b, 'the late session was not emitted').toBeDefined();
+    expect(b?.telemetryCostUsd).toBeUndefined();
+    // Control: A, held at arrival, did get its cost.
+    expect(after.joined.find((s) => s.sessionId === OTEL_SESSION_A)?.telemetryCostUsd).toBeGreaterThan(0);
+  }, 120_000);
+
   it('never satisfies the provenance gate: a history session with telemetry is not written; the same session is, once it works', async () => {
     const r = await rig({ stage: ['idle-as-A'], stats: true, aheadMs: 0 });
     pumpOnce(r);
@@ -685,6 +744,15 @@ describe('DoD 6.6 — no identity attribute and no content field survives the ro
       stats: needleCounts(JSON.stringify(r.host.stats?.liveRecords() ?? []), NEEDLES),
       contentKeys: stringContentKeys([base.raw, r.host.stats?.liveRecords() ?? []]).length,
     };
+    // The baseline is MEASURED ZERO on these staged transcripts (the phase
+    // verifier re-derived it), so it is pinned: every comparison below is then
+    // "free of", literally, and a future staging that brings a needle in fails
+    // here, naming it, instead of quietly raising the bar it is compared with.
+    const zeros = (needles: readonly string[]): Record<string, number> =>
+      Object.fromEntries(needles.map((n) => [n, 0]));
+    expect(baseline.states, 'the staged transcripts carry a needle').toStrictEqual(zeros(NEEDLES));
+    expect(baseline.stats, 'the baseline stats records carry a needle').toStrictEqual(zeros(NEEDLES));
+    expect(baseline.contentKeys).toBe(0);
     const linesAt = r.lines.length;
     const postedAt = r.posted.length;
 

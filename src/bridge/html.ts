@@ -57,12 +57,12 @@ import { randomBytes } from 'node:crypto';
  * knowledge: the renderer needs the same id this document emits, and a
  * mismatch is a blank panel with no error anywhere.
  */
-import { WEBVIEW_ROOT_ID } from './contract.js';
+import { SIDEBAR_ROOT_ID, WEBVIEW_ROOT_ID } from './contract.js';
 
-// Re-exported so the host keeps importing the mount id from the module that
+// Re-exported so the host keeps importing the mount ids from the module that
 // also emits the document. Defined in `contract.js`, which the webview can
 // import and this file can not be.
-export { WEBVIEW_ROOT_ID };
+export { SIDEBAR_ROOT_ID, WEBVIEW_ROOT_ID };
 
 /** Bytes of entropy per nonce. 16 bytes = 128 bits, base64 to 24 chars. */
 const NONCE_BYTES = 16;
@@ -178,7 +178,20 @@ export interface WebviewHtmlOptions {
   cspSource: string;
   /** Document title. Never rendered inside VS Code's panel, but not nothing. */
   title?: string;
+  /**
+   * The id of the one element in the body (v0.7.0 Phase 4, DoD 4.6b).
+   *
+   * Defaults to {@link WEBVIEW_ROOT_ID}, the panel. The sidebar passes
+   * `SIDEBAR_ROOT_ID` and NOTHING ELSE differs: same bundle, same stylesheet,
+   * same policy, byte for byte. The bundle chooses which surface to mount by
+   * which root it finds, so one document function serves both and the CSP
+   * cannot drift between them. A test asserts the two policies are equal.
+   */
+  rootId?: string;
 }
+
+/** The two roots this document may carry. Anything else is refused. */
+const ALLOWED_ROOT_IDS: ReadonlySet<string> = new Set([WEBVIEW_ROOT_ID, SIDEBAR_ROOT_ID]);
 
 /** Thrown when an interpolated value could break out of the policy or an attribute. */
 export class WebviewHtmlError extends Error {
@@ -274,6 +287,13 @@ export function webviewHtml(options: WebviewHtmlOptions): string {
   // renders `'none'` as `&#39;none&#39;`, which makes the one string a
   // reviewer must read by eye unreadable.
   const title = escapeText(options.title ?? 'Agent Deck');
+  const rootId = options.rootId ?? WEBVIEW_ROOT_ID;
+  if (!ALLOWED_ROOT_IDS.has(rootId)) {
+    // A root id is written into an attribute unescaped below, so it is a
+    // closed set rather than an escaped string: there are two surfaces and
+    // there is no third document to emit.
+    throw new WebviewHtmlError('rootId must be the panel root or the sidebar root');
+  }
   const script = escapeAttribute(options.scriptUri);
   const styleLink =
     options.styleUri === undefined
@@ -291,7 +311,7 @@ export function webviewHtml(options: WebviewHtmlOptions): string {
     <title>${title}</title>${styleLink}
   </head>
   <body>
-    <div id="${WEBVIEW_ROOT_ID}"></div>
+    <div id="${rootId}"></div>
     <script nonce="${nonce}" src="${script}"></script>
   </body>
 </html>

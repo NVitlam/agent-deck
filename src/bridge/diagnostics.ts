@@ -142,6 +142,17 @@ export interface DiagnosticsCounters {
    * this one cannot parse.
    */
   storeMalformed: number;
+  /**
+   * Stats records the host REFUSED to put on the wire (v0.7.0 DoD 4.1).
+   *
+   * Every record in a `statsSnapshot` or `statsStore` message has passed the
+   * Phase 2 validator on the host — the allow-list walk that is G4's mechanism
+   * for Layer 1. A record that fails it (a string field nobody declared, a
+   * structural defect in a store line) is dropped and counted here, and the
+   * rest of the message still goes out: one defective session must not blank
+   * the whole Stats view. The `dropped-actions` pattern, applied to records.
+   */
+  statsDropped: number;
 }
 
 /**
@@ -454,7 +465,9 @@ export function formatCounters(counters: DiagnosticsCounters, isoTime: string): 
     // this repository's own gate records quote the earlier prefix. Adding at
     // the end keeps every one of them a valid prefix of the current format.
     ` statsErrors=${String(counters.statsErrors)}` +
-    ` storeMalformed=${String(counters.storeMalformed)}`
+    ` storeMalformed=${String(counters.storeMalformed)}` +
+    // v0.7.0 DoD 4.1. Appended, for the same reason the two above were.
+    ` statsDropped=${String(counters.statsDropped)}`
   );
 }
 

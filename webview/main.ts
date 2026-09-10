@@ -15,14 +15,23 @@
  *
  * G7, live only: no `localStorage`, no `sessionStorage`, no history. A reload
  * starts blank and waits for the host's snapshot.
+ *
+ * TWO SURFACES, ONE BUNDLE (v0.7.0 Phase 4, DoD 4.6b). The activity-bar
+ * sidebar loads this same script. Which surface mounts is decided by which
+ * root the host's document carries: `SIDEBAR_ROOT_ID` mounts the command menu
+ * and `WEBVIEW_ROOT_ID` mounts the app. One bundle means one CSP, one egress
+ * guard and one stylesheet cover both, which is what spec §G2's "same bundle
+ * rules" asks for.
  */
 
-import type { HostToWebviewMessage, WebviewToHostMessage } from '../src/model/events.js';
+import type { WebviewToHostMessage } from '../src/model/events.js';
 import App from './App.svelte';
+import Menu from './sidebar/Menu.svelte';
 import { createStore } from './store.js';
 import type { Store } from './store.js';
 import { mount, unmount } from 'svelte';
-import { WEBVIEW_ROOT_ID } from '../src/bridge/contract.js';
+import { SIDEBAR_ROOT_ID, WEBVIEW_ROOT_ID } from '../src/bridge/contract.js';
+import { SIDEBAR_MENU } from '../src/sidebar/menu.js';
 
 /** The slice of the VS Code webview API this renderer uses. */
 interface VsCodeApi {
@@ -49,14 +58,10 @@ export function acquireApi(): VsCodeApi {
   return { postMessage: () => {} };
 }
 
-/** Type guard for anything arriving on `window.message`. */
-export function isHostMessage(value: unknown): value is HostToWebviewMessage {
-  if (typeof value !== 'object' || value === null) return false;
-  const type = (value as { type?: unknown }).type;
-  return (
-    type === 'snapshot' || type === 'diff' || type === 'schemaMismatch' || type === 'degraded'
-  );
-}
+// The guard lives in `messages.ts` (no Svelte import) so a node test can
+// compare it to the contract; re-exported here for every existing caller.
+import { isHostMessage } from './messages.js';
+export { HOST_MESSAGE_TYPES, isHostMessage } from './messages.js';
 
 /**
  * Start the renderer against a container.
@@ -88,19 +93,52 @@ export function start(target: HTMLElement, api: VsCodeApi = acquireApi()): {
   };
 }
 
+/**
+ * Start the SIDEBAR menu against a container (DoD 4.6b).
+ *
+ * No store and no inbound messages: the menu is a list of buttons, and the
+ * only thing it does is post `runCommand`. Exported for the same reason
+ * {@link start} is — the harness drives exactly what VS Code drives.
+ */
+export function startSidebar(target: HTMLElement, api: VsCodeApi = acquireApi()): {
+  dispose: () => void;
+} {
+  const menu = mount(Menu, {
+    target,
+    props: {
+      entries: SIDEBAR_MENU,
+      onrun: (command: string) => {
+        api.postMessage({ type: 'runCommand', command });
+      },
+    },
+  });
+  return {
+    dispose: () => {
+      void unmount(menu, { outro: false });
+    },
+  };
+}
+
 // Auto-start, but only inside a real VS Code webview.
 //
-// The container is `#${WEBVIEW_ROOT_ID}` when the host's HTML provides one, and
-// `document.body` otherwise. That fallback removes a silent cross-package
-// dependency: the extension host owns the webview HTML, and if this file
-// required an element id the host did not happen to use, the panel would come
-// up blank with no error anywhere.
+// The container is `#${SIDEBAR_ROOT_ID}` for the sidebar, `#${WEBVIEW_ROOT_ID}`
+// for the panel, and `document.body` otherwise. That fallback removes a silent
+// cross-package dependency: the extension host owns the webview HTML, and if
+// this file required an element id the host did not happen to use, the panel
+// would come up blank with no error anywhere. The sidebar has no fallback:
+// mounting a command menu into a stray body is the wrong surface, not a
+// degraded one.
 //
 // Gating on `acquireVsCodeApi` is what keeps this out of the tests: outside a
 // webview the global is absent, so importing this module mounts nothing and
 // `start()` stays explicit.
 if (typeof globalThis.acquireVsCodeApi === 'function' && globalThis.document !== undefined) {
-  const container =
-    globalThis.document.getElementById(WEBVIEW_ROOT_ID) ?? globalThis.document.body;
-  start(container);
+  const sidebar = globalThis.document.getElementById(SIDEBAR_ROOT_ID);
+  if (sidebar !== null) {
+    startSidebar(sidebar);
+  } else {
+    const container =
+      globalThis.document.getElementById(WEBVIEW_ROOT_ID) ?? globalThis.document.body;
+    start(container);
+  }
 }

@@ -66,7 +66,7 @@ import {
 import { EM_DASH, displayLiveness, formatCost, livenessTitle } from './format.js';
 import type { SessionSummary, Store } from './store.js';
 import { createStore } from './store.js';
-import { all, loadHarness, one } from './testkit.js';
+import { all, loadHarness, one, spawnBundle } from './testkit.js';
 import type { WebviewHarness } from './testkit.js';
 import { agent, liveSession, settledSession, tool, unsupportedSession } from './testdata.js';
 
@@ -76,16 +76,7 @@ import { agent, liveSession, settledSession, tool, unsupportedSession } from './
  * node specifier would fail the webview typecheck. Opaque to `tsc`, resolved
  * at runtime by vitest.
  */
-const CHILD_PROCESS = 'node:child_process';
 const FS = 'node:fs';
-
-interface ChildProcessModule {
-  execFileSync(
-    file: string,
-    args: readonly string[],
-    options: { encoding: 'utf8'; maxBuffer: number },
-  ): string;
-}
 
 interface FsModule {
   readFileSync(path: string, encoding: 'utf8'): string;
@@ -126,7 +117,10 @@ const result = await build({
   conditions: ['svelte', 'browser'],
   mainFields: ['svelte', 'browser', 'module', 'main'],
   plugins: [esbuildSvelte({ compilerOptions: { css: 'injected' } })],
-  logLevel: 'silent',
+  // 'error', not 'silent': a child that says nothing turns a lost spawn into a
+  // failed suite with no reason. See spawnBundle in webview/testkit.ts -- and
+  // no backticks in here: this comment lives inside a template literal.
+  logLevel: 'error',
 });
 const js = result.outputFiles[0];
 if (js === undefined) { process.stderr.write('no output\\n'); process.exit(1); }
@@ -152,11 +146,10 @@ let bundle = '';
 let componentSources: { path: string; text: string }[] = [];
 
 beforeAll(async () => {
-  const cp = (await import(/* @vite-ignore */ CHILD_PROCESS)) as unknown as ChildProcessModule;
-  bundle = cp.execFileSync('node', ['--input-type=module', '-e', BUILD_SCRIPT], {
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  bundle = await spawnBundle(
+    ['--input-type=module', '-e', BUILD_SCRIPT],
+    'the deck harness bundle',
+  );
   const factory = new Function(`${bundle}\nreturn ${GLOBAL_NAME};`) as () => DeckHarness;
   harness = factory();
 

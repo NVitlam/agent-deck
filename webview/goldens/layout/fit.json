@@ -1,0 +1,483 @@
+{
+  "generator": "scripts/gen-webview-goldens.mjs",
+  "drawerHeight": 190,
+  "cases": [
+    {
+      "nodes": 1,
+      "agents": 1,
+      "viewport": {
+        "width": 480,
+        "height": 320
+      },
+      "drawer": null,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 168,
+        "h": 52
+      },
+      "usable": {
+        "width": 480,
+        "height": 320
+      },
+      "transform": {
+        "x": 72,
+        "y": 108,
+        "k": 2
+      }
+    },
+    {
+      "nodes": 1,
+      "agents": 1,
+      "viewport": {
+        "width": 480,
+        "height": 320
+      },
+      "drawer": {
+        "x": 0,
+        "y": 130,
+        "w": 480,
+        "h": 190
+      },
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 168,
+        "h": 52
+      },
+      "usable": {
+        "width": 480,
+        "height": 130
+      },
+      "transform": {
+        "x": 133.3846153846154,
+        "y": 32,
+        "k": 1.2692307692307692
+      }
+    },
+    {
+      "nodes": 1,
+      "agents": 1,
+      "viewport": {
+        "width": 960,
+        "height": 640
+      },
+      "drawer": null,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 168,
+        "h": 52
+      },
+      "usable": {
+        "width": 960,
+        "height": 640
+      },
+      "transform": {
+        "x": 312,
+        "y": 268,
+        "k": 2
+      }
+    },
+    {
+      "nodes": 1,
+      "agents": 1,
+      "viewport": {
+        "width": 960,
+        "height": 640
+      },
+      "drawer": {
+        "x": 0,
+        "y": 450,
+        "w": 960,
+        "h": 190
+      },
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 168,
+        "h": 52
+      },
+      "usable": {
+        "width": 960,
+        "height": 450
+      },
+      "transform": {
+        "x": 312,
+        "y": 173,
+        "k": 2
+      }
+    },
+    {
+      "nodes": 1,
+      "agents": 1,
+      "viewport": {
+        "width": 1600,
+        "height": 900
+      },
+      "drawer": null,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 168,
+        "h": 52
+      },
+      "usable": {
+        "width": 1600,
+        "height": 900
+      },
+      "transform": {
+        "x": 632,
+        "y": 398,
+        "k": 2
+      }
+    },
+    {
+      "nodes": 1,
+      "agents": 1,
+      "viewport": {
+        "width": 1600,
+        "height": 900
+      },
+      "drawer": {
+        "x": 0,
+        "y": 710,
+        "w": 1600,
+        "h": 190
+      },
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 168,
+        "h": 52
+      },
+      "usable": {
+        "width": 1600,
+        "height": 710
+      },
+      "transform": {
+        "x": 632,
+        "y": 303,
+        "k": 2
+      }
+    },
+    {
+      "nodes": 6,
+      "agents": 6,
+      "viewport": {
+        "width": 480,
+        "height": 320
+      },
+      "drawer": null,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 936,
+        "h": 216
+      },
+      "usable": {
+        "width": 480,
+        "height": 320
+      },
+      "transform": {
+        "x": 32,
+        "y": 112,
+        "k": 0.4444444444444444
+      }
+    },
+    {
+      "nodes": 6,
+      "agents": 6,
+      "viewport": {
+        "width": 480,
+        "height": 320
+      },
+      "drawer": {
+        "x": 0,
+        "y": 130,
+        "w": 480,
+        "h": 190
+      },
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 936,
+        "h": 216
+      },
+      "usable": {
+        "width": 480,
+        "height": 130
+      },
+      "transform": {
+        "x": 52.79999999999998,
+        "y": 21.799999999999997,
+        "k": 0.4
+      }
+    },
+    {
+      "nodes": 6,
+      "agents": 6,
+      "viewport": {
+        "width": 960,
+        "height": 640
+      },
+      "drawer": null,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 936,
+        "h": 216
+      },
+      "usable": {
+        "width": 960,
+        "height": 640
+      },
+      "transform": {
+        "x": 32,
+        "y": 216.6153846153846,
+        "k": 0.9572649572649573
+      }
+    },
+    {
+      "nodes": 6,
+      "agents": 6,
+      "viewport": {
+        "width": 960,
+        "height": 640
+      },
+      "drawer": {
+        "x": 0,
+        "y": 450,
+        "w": 960,
+        "h": 190
+      },
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 936,
+        "h": 216
+      },
+      "usable": {
+        "width": 960,
+        "height": 450
+      },
+      "transform": {
+        "x": 32,
+        "y": 121.61538461538461,
+        "k": 0.9572649572649573
+      }
+    },
+    {
+      "nodes": 6,
+      "agents": 6,
+      "viewport": {
+        "width": 1600,
+        "height": 900
+      },
+      "drawer": null,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 936,
+        "h": 216
+      },
+      "usable": {
+        "width": 1600,
+        "height": 900
+      },
+      "transform": {
+        "x": 32,
+        "y": 272.7692307692308,
+        "k": 1.641025641025641
+      }
+    },
+    {
+      "nodes": 6,
+      "agents": 6,
+      "viewport": {
+        "width": 1600,
+        "height": 900
+      },
+      "drawer": {
+        "x": 0,
+        "y": 710,
+        "w": 1600,
+        "h": 190
+      },
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 936,
+        "h": 216
+      },
+      "usable": {
+        "width": 1600,
+        "height": 710
+      },
+      "transform": {
+        "x": 32,
+        "y": 177.76923076923077,
+        "k": 1.641025641025641
+      }
+    },
+    {
+      "nodes": 40,
+      "agents": 40,
+      "viewport": {
+        "width": 480,
+        "height": 320
+      },
+      "drawer": null,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1512,
+        "h": 648
+      },
+      "usable": {
+        "width": 480,
+        "height": 320
+      },
+      "transform": {
+        "x": -62.400000000000034,
+        "y": 30.400000000000006,
+        "k": 0.4
+      }
+    },
+    {
+      "nodes": 40,
+      "agents": 40,
+      "viewport": {
+        "width": 480,
+        "height": 320
+      },
+      "drawer": {
+        "x": 0,
+        "y": 130,
+        "w": 480,
+        "h": 190
+      },
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1512,
+        "h": 648
+      },
+      "usable": {
+        "width": 480,
+        "height": 130
+      },
+      "transform": {
+        "x": -62.400000000000034,
+        "y": -64.6,
+        "k": 0.4
+      }
+    },
+    {
+      "nodes": 40,
+      "agents": 40,
+      "viewport": {
+        "width": 960,
+        "height": 640
+      },
+      "drawer": null,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1512,
+        "h": 648
+      },
+      "usable": {
+        "width": 960,
+        "height": 640
+      },
+      "transform": {
+        "x": 32,
+        "y": 128,
+        "k": 0.5925925925925926
+      }
+    },
+    {
+      "nodes": 40,
+      "agents": 40,
+      "viewport": {
+        "width": 960,
+        "height": 640
+      },
+      "drawer": {
+        "x": 0,
+        "y": 450,
+        "w": 960,
+        "h": 190
+      },
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1512,
+        "h": 648
+      },
+      "usable": {
+        "width": 960,
+        "height": 450
+      },
+      "transform": {
+        "x": 32,
+        "y": 33,
+        "k": 0.5925925925925926
+      }
+    },
+    {
+      "nodes": 40,
+      "agents": 40,
+      "viewport": {
+        "width": 1600,
+        "height": 900
+      },
+      "drawer": null,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1512,
+        "h": 648
+      },
+      "usable": {
+        "width": 1600,
+        "height": 900
+      },
+      "transform": {
+        "x": 32,
+        "y": 120.85714285714289,
+        "k": 1.0158730158730158
+      }
+    },
+    {
+      "nodes": 40,
+      "agents": 40,
+      "viewport": {
+        "width": 1600,
+        "height": 900
+      },
+      "drawer": {
+        "x": 0,
+        "y": 710,
+        "w": 1600,
+        "h": 190
+      },
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1512,
+        "h": 648
+      },
+      "usable": {
+        "width": 1600,
+        "height": 710
+      },
+      "transform": {
+        "x": 46.33333333333337,
+        "y": 32,
+        "k": 0.9969135802469136
+      }
+    }
+  ]
+}

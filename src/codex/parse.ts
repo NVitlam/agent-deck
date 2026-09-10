@@ -810,6 +810,12 @@ export interface CodexParseOptions {
    * Defaults to 0.
    */
   readonly mtimeMs?: number;
+  /**
+   * `statSync().size` for the same file at the same stat as {@link mtimeMs}
+   * (v0.7.0 DoD 4.11c). Defaults to 0, which reads as "no bytes witnessed" and
+   * can therefore never make a session look grown.
+   */
+  readonly sizeBytes?: number;
   readonly maxPayloadBytes?: number;
   /** Malformed lines already counted by {@link parseCodexLines}. */
   readonly malformedLines?: number;
@@ -956,6 +962,7 @@ export function parseCodexThread(
     records: records.length,
     startedAtMs: startedAtMs(owner),
     mtimeMs: options.mtimeMs ?? 0,
+    sizeBytes: options.sizeBytes ?? 0,
   };
   // v0.7.0 DoD 2.10. Absent stays absent: an unreadable end is unavailable, and
   // the grafter omits the key rather than reaching for the file's mtime.

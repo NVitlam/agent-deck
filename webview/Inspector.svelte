@@ -43,6 +43,7 @@
   import type { SpawnEdge, ToolNode, TreeNode } from '../src/model/events.js';
   import { isAgentNode } from '../src/model/events.js';
   import { TESTID } from './canvas-contract.js';
+  import { atGrowingEnd, followTarget } from './drawer.js';
   import { formatDuration, formatTokens } from './format.js';
   import PayloadPreview from './PayloadPreview.svelte';
 
@@ -172,17 +173,25 @@
   let callOrder = $state<CallOrder>('oldest');
 
   /**
-   * FOLLOW THE TAIL — A9.5, and only in `oldest` order, where the newest call
-   * is off the bottom.
+   * FOLLOW THE LATEST CALL — A9.5, amended by v0.7.0 DoD 4.9b.
    *
-   * Three things switch it off, and all three are the user saying they are
-   * reading something else:
-   *   - opening a call's detail pane (they are on a specific action);
-   *   - scrolling away from the bottom by hand;
-   *   - `newest` order, where the newest call is already the first row and
-   *     there is nothing to follow.
-   * Scrolling back to the bottom turns it on again, because that gesture means
+   * The drawer tracks the newest call, in WHICHEVER DIRECTION the list grows:
+   * the bottom in `oldest` order, the top in `newest`. A9.5 said `newest` had
+   * "nothing to follow"; that was true while a re-render put the list back at
+   * the top, and false once a user had scrolled down a `newest` list to read
+   * older calls, where a new arrival landed out of view above them.
+   *
+   * Two things switch it off, and both are the user saying they are reading
+   * something else:
+   *   - EXPANDING an entry (its detail pane) PINS the drawer — no auto-scroll,
+   *     and the pinned entry is not re-rendered — until the pane is closed,
+   *     when following resumes;
+   *   - scrolling away from the growing end by hand.
+   * Scrolling back to that end turns it on again, because that gesture means
    * exactly "I want to see what is arriving".
+   *
+   * THE DECISION IS `drawer.ts:followTarget`, a pure function with goldens;
+   * this component measures and assigns, and decides nothing.
    */
   let followTail = $state(true);
   /** The scrolling element, so the effect below can move it. */
@@ -265,10 +274,20 @@
   $effect(() => {
     const arrivals = visibleCalls.length;
     if (arrivals === 0) return;
-    if (callOrder !== 'oldest' || !followTail || detail !== undefined) return;
     const el = listEl;
     if (el === undefined) return;
-    el.scrollTop = el.scrollHeight;
+    // `detail` is read here so the effect re-runs when the pane CLOSES —
+    // that is "resume on close": the pin lifts and the list moves to the
+    // latest call at once rather than on the next arrival.
+    const target = followTarget({
+      order: callOrder,
+      pinned: detail !== undefined,
+      following: followTail,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    });
+    if (target === null) return;
+    el.scrollTop = target;
     autoScrollTop = el.scrollTop;
   });
 
@@ -277,11 +296,14 @@
     const el = event.currentTarget as HTMLElement;
     // Our own scroll, not the user's: the list is exactly where the effect
     // above put it, so there is nothing to take over from.
-    if (el.scrollTop === autoScrollTop) return;
-    // 4 px of slack: a list scrolled to the bottom does not always land on an
-    // exact equality after a re-render.
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 4;
-    followTail = atBottom;
+    // The guard is consumed by the FIRST scroll event after the programmatic
+    // move, whatever its position: a later scroll back to the same number
+    // is the user's, and a list scrolled back to a top the effect once set
+    // must read as "returned to the growing end" rather than be swallowed.
+    const own = el.scrollTop === autoScrollTop;
+    autoScrollTop = -1;
+    if (own) return;
+    followTail = atGrowingEnd(callOrder, el.scrollTop, el.scrollHeight, el.clientHeight);
   }
 
   /* ----- the call-row summary ------------------------------------------- */
@@ -544,7 +566,8 @@
           class="calls"
           aria-label="Calls"
           data-order={callOrder}
-          data-following={String(callOrder === 'oldest' && followTail && detail === undefined)}
+          data-following={String(followTail && detail === undefined)}
+          data-pinned={String(detail !== undefined)}
           bind:this={listEl}
           onscroll={onScroll}
         >

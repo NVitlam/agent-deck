@@ -8,6 +8,7 @@
   import Deck from './Deck.svelte';
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
+  import StatsView from './stats/StatsView.svelte';
   import { displayLiveness, formatTokens, formatWindowTokens } from './format.js';
   import { LIVENESS_FILTERS, TESTID } from './canvas-contract.js';
   import { deckEngine } from './layout.js';
@@ -126,12 +127,50 @@
   let inspectedExpanded = $derived(
     inspected !== undefined && view.toggledNodeIds.includes(inspected.id),
   );
+
+  /**
+   * THE DRAWER'S RECTANGLE, for auto-fit (v0.7.0 Phase 4, DoD 4.0).
+   *
+   * Measured HERE because the drawer is this component's child and the
+   * canvas is its sibling: neither can see the other. Re-measured after every
+   * render that could move the drawer — open, close, expand, collapse, a
+   * detail pane — and handed to the canvas, which converts it into field
+   * coordinates and reports it to the store with the bounds and the field
+   * size. In jsdom every rectangle is zero, which reads as "no drawer".
+   */
+  let appEl = $state.raw<HTMLElement | undefined>(undefined);
+  let drawerRect = $state.raw<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  $effect(() => {
+    // Read so the effect re-runs when any of them moves.
+    void view.inspectorOpen;
+    void view.drawerExpanded;
+    void view.detailActionId;
+    void view.selectedNodeId;
+    void view.altitude;
+    const el = appEl?.querySelector(`[data-testid="${TESTID.inspector}"]`);
+    const rect = el?.getBoundingClientRect();
+    const next =
+      rect !== undefined && rect.width > 0 && rect.height > 0
+        ? { x: rect.left, y: rect.top, w: rect.width, h: rect.height }
+        : null;
+    const same =
+      (next === null && drawerRect === null) ||
+      (next !== null &&
+        drawerRect !== null &&
+        next.x === drawerRect.x &&
+        next.y === drawerRect.y &&
+        next.w === drawerRect.w &&
+        next.h === drawerRect.h);
+    if (!same) drawerRect = next;
+  });
 </script>
 
 <svelte:window on:keydown={onKeyDown} />
 
 <div
   class="app"
+  bind:this={appEl}
   data-testid="app"
   data-liveness={panelLiveness}
   data-refused={String(view.refused)}
@@ -240,19 +279,38 @@
       {/if}
     {/if}
 
+    <!-- THE THIRD MODE (v0.7.0 Phase 4, spec §G): Stats. Its own control
+         beside the canvas/list toggle rather than a third state of it, so the
+         toggle's two-way contract (canvas <-> list) is untouched and "Stats"
+         reads as a place to go rather than as the next notch. -->
     <button
       type="button"
       class="toggle"
-      data-testid={TESTID.viewToggle}
-      data-view-mode={view.viewMode}
-      aria-pressed={view.viewMode === 'canvas'}
-      onclick={() => store.toggleViewMode()}
+      data-testid={TESTID.statsToggle}
+      aria-pressed={view.viewMode === 'stats'}
+      onclick={() => store.toggleStats()}
     >
-      {view.viewMode === 'canvas' ? 'Canvas' : 'List'}
+      Stats
     </button>
+    {#if view.viewMode !== 'stats'}
+      <button
+        type="button"
+        class="toggle"
+        data-testid={TESTID.viewToggle}
+        data-view-mode={view.viewMode}
+        aria-pressed={view.viewMode === 'canvas'}
+        onclick={() => store.toggleViewMode()}
+      >
+        {view.viewMode === 'canvas' ? 'Canvas' : 'List'}
+      </button>
+    {/if}
   </div>
 
-  {#if view.viewMode === 'list'}
+  {#if view.viewMode === 'stats'}
+    <!-- The Layer 1 facts. Full stats live in the panel (locked open
+         question); this is the whole field while the mode is on. -->
+    <StatsView {store} {view} />
+  {:else if view.viewMode === 'list'}
     <!-- Phase 3's renderer, kept for one release behind the toggle (C7.2).
          Both surfaces are projections of the same store, so the state grammar
          holds for both while both exist. -->
@@ -380,6 +438,9 @@
           degraded={degradedHere}
           selectedNodeId={view.selectedNodeId}
           canvasView={view.canvasView}
+          fitEpoch={view.canvasFitEpoch}
+          {drawerRect}
+          onreportgeometry={(geometry) => store.reportCanvasGeometry(geometry)}
           {reducedMotion}
           onselect={(id) => store.selectNode(id)}
           onpan={(dx, dy) => store.panCanvas(dx, dy)}

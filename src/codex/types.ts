@@ -602,6 +602,19 @@ export interface CodexThread {
    * `graft.test.ts` asserts no `AgentNode` timestamp equals this value.
    */
   readonly mtimeMs: number;
+  /**
+   * The owning file's size in bytes at the same `stat` as {@link mtimeMs}
+   * (v0.7.0 DoD 4.11c, user ruling 2026-09-10).
+   *
+   * **An mtime says the file was written; only a size says it grew.** The stats
+   * store may promote a session on a transcript's mtime ONLY when that file has
+   * gained bytes since this process first saw it, because a clone, a restore, a
+   * sync client or a scanner moves an mtime with no append behind it. Read by
+   * `CodexEnginePath` and by nothing in the tree, the graft or the wire — this
+   * is discovery's `statSync().size` carried forward, the same number
+   * {@link CodexTranscriptRef.bytes} already gives the tailer.
+   */
+  readonly sizeBytes: number;
 }
 
 // ===========================================================================

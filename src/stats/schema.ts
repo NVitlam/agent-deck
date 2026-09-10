@@ -163,6 +163,18 @@ export interface LoopRecord {
   count: number;
   /** Every repeat's ordinal, ascending. `count` is its length. */
   ordinals: number[];
+  /**
+   * The file every repeat named, when the looping tool named one — v0.7.0
+   * Phase 4, DoD 4.2. Spec §G asks the Files view to flag a row "when in a
+   * loop or churn chain", and a churn chain already carries its path; a loop
+   * did not, so the flag had nothing to join on. Present iff every call in the
+   * loop carries the same `ToolNode.filePath` (an identical `inputHash` means
+   * an identical input, so a differing path would be a defect, not a case);
+   * absent for a loop of a tool that names no file. G4: the value is the same
+   * engine-written, structurally extracted `filePath` `FileStats` already
+   * carries, on an allow-listed key.
+   */
+  filePath?: string;
 }
 
 /**

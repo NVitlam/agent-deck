@@ -87,13 +87,22 @@ export function deriveLoops(
       const ordered = [...bucket].sort(byOrdinal);
       const first = ordered[0];
       if (first === undefined) continue;
-      loops.push({
+      const loop: LoopRecord = {
         agentId: agent.agentId,
         toolName: first.toolName,
         class: classOf(first.toolName),
         count: ordered.length,
         ordinals: ordered.map((t) => t.ordinal ?? -1),
-      });
+      };
+      // DoD 4.2: the file the loop names, iff every repeat names the same one.
+      // Identical hashes mean identical inputs, so the condition is a guard
+      // against a defect rather than a case the corpus produces; a loop over a
+      // tool that names no file simply carries none.
+      const filePath = first.filePath;
+      if (filePath !== undefined && ordered.every((t) => t.filePath === filePath)) {
+        loop.filePath = filePath;
+      }
+      loops.push(loop);
     }
   }
 

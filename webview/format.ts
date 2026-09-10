@@ -136,7 +136,7 @@ export const COST_NOT_COMPUTED_TITLE =
  * model in v0.7.0 Phase 0c with the webview typecheck staying green — the same
  * duplicated-union seam that `OcToolRecord` has, found the same day.
  */
-export function statusLabel(status: ToolNode['status']): string {
+export function statusLabel(status: ToolNode['status'], toolName?: string): string {
   switch (status) {
     case 'running':
       return 'running';
@@ -145,7 +145,11 @@ export function statusLabel(status: ToolNode['status']): string {
     case 'error':
       return 'error';
     case 'stalled':
-      return 'stalled';
+      // DoD 4.9d: SAME DERIVATION, DIFFERENT LABEL. The status is still
+      // `stalled` — the chip's colour, its elapsed time and the agent's badge
+      // are untouched — and only the word changes, for the tools a person is
+      // expected to answer. See {@link INTERACTIVE_TOOL_NAMES}.
+      return toolName !== undefined && isInteractiveTool(toolName) ? WAITING_ON_YOU_LABEL : 'stalled';
     default:
       // EXHAUSTIVENESS, ENFORCED BY THE COMPILER (user ruling, 2026-09-06).
       //
@@ -161,6 +165,46 @@ export function statusLabel(status: ToolNode['status']): string {
       // is the honest control for a trusted channel.
       return assertNeverStatus(status);
   }
+}
+
+/**
+ * The label a stalled INTERACTIVE tool wears instead of "stalled" (DoD 4.9d).
+ *
+ * "Stalled" tells a user something is wrong; "waiting on you" tells them it is
+ * their turn. Phase 0c measured the case on real captured data: an
+ * `AskUserQuestion` that ran 167.1 s in `fixtures/cc-2.1.260/…/99f96635-…`,
+ * ordinal 24 — a tool waiting on a human is `running`, emits no hooks and
+ * appends nothing, so under the locked rule it goes amber after the threshold
+ * and always will. The user ruled the STATE ships that way and the WORD is
+ * relabelled here.
+ */
+export const WAITING_ON_YOU_LABEL = 'waiting on you';
+
+/**
+ * The DOCUMENTED interactive tools — the list is data, and it is a closed one.
+ *
+ * A tool Agent Deck has not been told is interactive keeps the `stalled` label,
+ * because guessing from a name ("it has Ask in it") is the kind of inference G3
+ * refuses. Two entries, both documented Claude Code tools whose whole purpose
+ * is to wait for the person at the keyboard:
+ *
+ *   - `AskUserQuestion` — asks the user a question and blocks on the answer.
+ *   - `ExitPlanMode` — presents the plan and blocks on the user's approval.
+ *
+ * "The hook-exposed permission prompts" (the DoD's second phrase) are NOT a
+ * tool name: a permission prompt is any tool waiting on the `PermissionRequest`
+ * hook, and nothing on a `ToolNode` says a call is in that state. Nothing is
+ * guessed for them; the phase handoff records the gap rather than a heuristic.
+ *
+ * The test lives at the RENDER boundary, by name, from this list —
+ * `src/model/stall.ts` is untouched and `ToolNode.status` never learns the
+ * word.
+ */
+export const INTERACTIVE_TOOL_NAMES: readonly string[] = ['AskUserQuestion', 'ExitPlanMode'];
+
+/** True iff `toolName` is on {@link INTERACTIVE_TOOL_NAMES}. Exact match only. */
+export function isInteractiveTool(toolName: string): boolean {
+  return INTERACTIVE_TOOL_NAMES.includes(toolName);
 }
 
 /**

@@ -59,6 +59,10 @@ function emission(over: Partial<SessionEmission> = {}): SessionEmission {
     addedSessionIds: over.addedSessionIds ?? [],
     removedSessionIds: over.removedSessionIds ?? [],
     schemaMismatchSessionIds: over.schemaMismatchSessionIds ?? [],
+    // DoD 4.11b. Host-internal and irrelevant to this file, whose subject is
+    // the WIRE: nothing here crosses it, which is the point of the field being
+    // on `SessionEmission` rather than on `SessionState`.
+    lastActivityAt: over.lastActivityAt ?? new Map(),
   };
 }
 

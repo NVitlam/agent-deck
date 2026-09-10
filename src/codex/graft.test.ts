@@ -462,6 +462,9 @@ function readThread(file: string): CodexThread {
     // is the LAST write - an end, not a start.
     startedAtMs: Date.parse(meta.timestamp),
     mtimeMs: Math.round(fs.statSync(file).mtimeMs),
+    // DoD 4.11c. One stat, both numbers — pairing a size from one stat with an
+    // mtime from another is what the production seam exists to avoid.
+    sizeBytes: fs.statSync(file).size,
   };
 }
 
@@ -559,6 +562,9 @@ function makeThread(over: Partial<CodexThread> & { threadId: string; sessionId: 
     // reads a start and gets an end fails instead of passing on two equal
     // numbers. That equality is what made the old `mtimeMs` default invisible.
     mtimeMs: 1_700_000_555_000,
+    // DoD 4.11c. Arbitrary and non-zero: no test here reads it, and a 0 would
+    // read as "no bytes witnessed" if one ever did.
+    sizeBytes: 4_096,
     ...over,
   };
 }

@@ -125,7 +125,13 @@ import * as vscode from 'vscode';
 import { SessionBridge, isWebviewToHostMessage } from './bridge/messages.js';
 import type { BridgeDegradedState } from './bridge/messages.js';
 import { createNonce, webviewHtml } from './bridge/html.js';
+import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
+import { SIDEBAR_VIEW_ID } from './sidebar/menu.js';
+import { SidebarController } from './sidebar/provider.js';
+import type { SidebarSurface } from './sidebar/provider.js';
+import { inSessionOrder, statsWireRecords } from './stats/wire.js';
+import type { StatsRecord } from './stats/schema.js';
 import {
   COUNTERS_INTERVAL_MS,
   DIAGNOSTICS_CHANNEL_NAME,
@@ -149,6 +155,8 @@ import type { SessionDiff, SessionEmission } from './model/session.js';
 import type {
   HostToWebviewMessage,
   SessionState,
+  SettingsMessage,
+  ShowViewMessage,
   SkippedFile,
   WebviewToHostMessage,
 } from './model/events.js';
@@ -301,6 +309,15 @@ export interface AgentDeckSettings {
   'stats.retentionDays': number;
   'stats.idleFlushMs': number;
   /**
+   * `agentDeck.canvas.autoFit` — v0.7.0 Phase 4, DoD 4.0. The FIFTH setting the
+   * Phase 3 module list named, landing with its behaviour: the canvas re-fits
+   * on every geometry-changing event (the trigger table in `webview/store.ts`)
+   * while this is `true`, and never after the initial render while it is
+   * `false`. The renderer hears it through a `settings` message; a change
+   * takes effect without a reload.
+   */
+  'canvas.autoFit': boolean;
+  /**
    * `agentDeck.pricing` — model id to prices, in USD per million tokens.
    *
    * Read as an opaque object here and parsed by `stats/pricing.ts`, which is
@@ -442,10 +459,12 @@ export interface SettingShape {
 }
 
 export const SETTING_SHAPES: Readonly<
-  Record<'stats.enabled' | 'pricing', SettingShape>
+  Record<'stats.enabled' | 'pricing' | 'canvas.autoFit', SettingShape>
 > = {
   'stats.enabled': { type: 'boolean', defaultOf: (): boolean => true },
   pricing: { type: 'object', defaultOf: (): Record<string, unknown> => ({}) },
+  // Spec section G: default `true`. Phase 4, with the behaviour it governs.
+  'canvas.autoFit': { type: 'boolean', defaultOf: (): boolean => true },
 };
 
 /**
@@ -463,9 +482,13 @@ export const SETTING_SHAPES: Readonly<
  */
 export function statsSettingDefaults(): Pick<
   AgentDeckSettings,
-  'stats.enabled' | 'stats.retentionDays' | 'stats.idleFlushMs' | 'pricing'
+  'stats.enabled' | 'stats.retentionDays' | 'stats.idleFlushMs' | 'pricing' | 'canvas.autoFit'
 > {
   return {
+    // Phase 4's `canvas.autoFit` rides along: the harnesses that spread this
+    // into a whole `AgentDeckSettings` would otherwise each need a sixth
+    // literal, which is the same defect the function exists to remove.
+    'canvas.autoFit': SETTING_SHAPES['canvas.autoFit'].defaultOf() as boolean,
     'stats.enabled': SETTING_SHAPES['stats.enabled'].defaultOf() as boolean,
     'stats.retentionDays': SETTING_BOUNDS['stats.retentionDays'].default,
     'stats.idleFlushMs': SETTING_BOUNDS['stats.idleFlushMs'].default,
@@ -514,6 +537,10 @@ export function readSettings(reader: SettingsReader | undefined): AgentDeckSetti
     'stats.enabled': typeof get('stats.enabled') === 'boolean'
       ? (get('stats.enabled') as boolean)
       : (SETTING_SHAPES['stats.enabled'].defaultOf() as boolean),
+    // Same rule, same reason: a boolean or the default, never a truthiness read.
+    'canvas.autoFit': typeof get('canvas.autoFit') === 'boolean'
+      ? (get('canvas.autoFit') as boolean)
+      : (SETTING_SHAPES['canvas.autoFit'].defaultOf() as boolean),
     // Passed through unparsed. `parsePricing` is total and reports what it
     // refused; validating here would be a second, quieter account of the same
     // judgment. An array is an object to `typeof`, so it is excluded here as
@@ -662,6 +689,16 @@ export interface OpenCodeDiagnostics {
   lastError?: string;
 }
 
+/**
+ * The activity map for an emission with nothing in it (DoD 4.11b).
+ *
+ * `ReadonlyMap` is the whole guard and it is a COMPILE-TIME one:
+ * `Object.freeze` seals a Map's own properties and does nothing to its
+ * contents, so a frozen empty Map is still `.set()`-able at runtime. Nothing
+ * mutates an emission's map today; the type is what keeps it that way.
+ */
+const EMPTY_ACTIVITY: ReadonlyMap<string, number> = new Map();
+
 /** An emission with nothing in it. Frozen; never handed out mutable. */
 const EMPTY_EMISSION: SessionEmission = Object.freeze({
   sessions: Object.freeze([]) as readonly SessionState[],
@@ -669,6 +706,7 @@ const EMPTY_EMISSION: SessionEmission = Object.freeze({
   addedSessionIds: Object.freeze([]) as readonly string[],
   removedSessionIds: Object.freeze([]) as readonly string[],
   schemaMismatchSessionIds: Object.freeze([]) as readonly string[],
+  lastActivityAt: EMPTY_ACTIVITY,
 });
 
 /**
@@ -952,6 +990,17 @@ export class OpenCodeEnginePath {
       if (!next.has(sessionId)) removedSessionIds.push(sessionId);
     }
 
+    // Activity, per session, from the OpenCode liveness engine (DoD 4.11b).
+    // `OcSessionLiveness.lastActivityAt` is `max(timeUpdated, seqAdvancedAt)` —
+    // the store's own write instants, which is what makes it activity rather
+    // than content. A session the engine has no fact for contributes nothing:
+    // "no activity known" is not "now" (G3).
+    const lastActivityAt = new Map<string, number>();
+    for (const sessionId of next.keys()) {
+      const at = this.#liveness?.snapshot(sessionId)?.lastActivityAt;
+      if (at !== undefined) lastActivityAt.set(sessionId, at);
+    }
+
     this.#previous = next;
     this.#emissions += 1;
     return {
@@ -960,6 +1009,7 @@ export class OpenCodeEnginePath {
       addedSessionIds,
       removedSessionIds,
       schemaMismatchSessionIds,
+      lastActivityAt,
     };
   }
 
@@ -1372,6 +1422,22 @@ export class CodexEnginePath {
   #contentPollHandle: PollTriggerHandle | undefined;
   #content: readonly SessionState[] = [];
   #threads: readonly CodexThread[] = [];
+  /**
+   * Per thread, its transcript's size the FIRST time this process saw it
+   * (v0.7.0 DoD 4.11c, user ruling 2026-09-10).
+   *
+   * The baseline the growth test compares against, latched once per thread and
+   * never moved — re-latching on a later read would make every read its own
+   * baseline and nothing could ever have grown. Keyed by `threadId` rather than
+   * by file, because a file can declare more than one thread (C5) and it is the
+   * THREAD whose activity is in question.
+   *
+   * Released on `dispose` with everything else. Nothing depends on that clear —
+   * a disposed path never starts again (`#disposed` is terminal), so it is
+   * housekeeping rather than a guard, and it is written down that way because a
+   * `phase-verifier` correctly found no test could distinguish it.
+   */
+  #firstBytes = new Map<string, number>();
   /** Hook events this path has been handed. DoD 5.0b. */
   #hookEventsIngested = 0;
   /** The last read's skip list. A LEVEL — see `CodexEngineDiagnostics`. */
@@ -1558,6 +1624,7 @@ export class CodexEnginePath {
     this.#cancelAbsentReprobe();
     this.#content = [];
     this.#threads = [];
+    this.#firstBytes.clear();
     this.#previous.clear();
   }
 
@@ -1620,6 +1687,72 @@ export class CodexEnginePath {
       if (!next.has(sessionId)) removedSessionIds.push(sessionId);
     }
 
+    // Activity, per session, from the Codex liveness report (DoD 4.11b).
+    //
+    // A Codex session is a ROOT THREAD and its subagents, so the instant is the
+    // latest of `lastHookEventMs` and `lastMtimeMs` across every thread of the
+    // session: a subagent writing IS the session working. `CodexLiveness` is
+    // keyed by `threadId` and carries no `sessionId`, so the mapping comes from
+    // `#threads`, which is the same list `#sample()` hands the engine.
+    //
+    // **A session the liveness says nothing about is not recorded at all**, and
+    // that is the dependency rather than a detail: no report (the engine has not
+    // polled), no thread entry, or a thread with neither a hook event nor a
+    // known mtime, all mean no activity is claimed. G3 — the alternative is
+    // stamping "now" onto a session nobody witnessed, which is the flood.
+    const lastActivityAt = new Map<string, number>();
+    const activityReport = this.#liveness?.latest;
+    if (activityReport !== undefined) {
+      const sessionOfThread = new Map(
+        this.#threads.map((thread) => [thread.threadId, thread.sessionId] as const),
+      );
+      /*
+       * WHICH THREADS HAVE GAINED BYTES SINCE THIS PROCESS FIRST SAW THEM
+       * (DoD 4.11c, user ruling 2026-09-10).
+       *
+       * The INSTANT still comes from the liveness report and only from there —
+       * that is DoD 4.11b and `phase-verifier` round 3 turned it into two tests.
+       * What comes from the content read is the SIZE, because the report carries
+       * none, and the growth baseline is a per-process latch which a pure render
+       * function has nowhere to keep.
+       *
+       * Mixing the two is safe in one direction and stated rather than assumed:
+       * the report can be up to one poll older than the sizes, so a file that
+       * grew a moment ago may be credited with a slightly earlier instant. That
+       * makes promotion LATER, never earlier — the safe direction for a gate whose
+       * failure mode is writing history.
+       */
+      const grownThreads = new Set<string>();
+      for (const thread of this.#threads) {
+        const first = this.#firstBytes.get(thread.threadId);
+        // A SHRINK RE-BASELINES (user ruling, 2026-09-10), the same rule the
+        // Claude Code leg applies: a transcript smaller than its baseline was
+        // truncated or rewritten under this process's feet, and measuring growth
+        // from a stale high-water mark would leave it unpromotable until it
+        // passed its ORIGINAL size — a window of lost records rather than one.
+        if (first === undefined || thread.sizeBytes < first) {
+          this.#firstBytes.set(thread.threadId, thread.sizeBytes);
+          continue;
+        }
+        if (thread.sizeBytes > first) grownThreads.add(thread.threadId);
+      }
+      for (const thread of activityReport.threads) {
+        const sessionId = sessionOfThread.get(thread.threadId);
+        if (sessionId === undefined || !next.has(sessionId)) continue;
+        const instants: number[] = [];
+        // A HOOK EVENT IS ALWAYS ACTIVITY. The tap fires because a tool ran.
+        if (thread.lastHookEventMs !== null) instants.push(thread.lastHookEventMs);
+        // AN MTIME IS ACTIVITY ONLY WITH BYTES BEHIND IT (DoD 4.11c).
+        if (thread.lastMtimeMs !== null && grownThreads.has(thread.threadId)) {
+          instants.push(thread.lastMtimeMs);
+        }
+        if (instants.length === 0) continue;
+        const at = Math.max(...instants);
+        const seen = lastActivityAt.get(sessionId);
+        if (seen === undefined || at > seen) lastActivityAt.set(sessionId, at);
+      }
+    }
+
     this.#previous = next;
     this.#emissions += 1;
     return {
@@ -1628,6 +1761,7 @@ export class CodexEnginePath {
       addedSessionIds,
       removedSessionIds,
       schemaMismatchSessionIds,
+      lastActivityAt,
     };
   }
 
@@ -2817,6 +2951,13 @@ function mergeTwo(a: SessionEmission, b: SessionEmission): SessionEmission {
       ...a.schemaMismatchSessionIds,
       ...b.schemaMismatchSessionIds,
     ],
+    // The UNION, and it is load-bearing: the pipeline only ever sees the merged
+    // emission, so an engine whose map were dropped here would have every one
+    // of its sessions read as history and none of them recorded. Ids come from
+    // three namespaces (a CC uuid, an OpenCode `ses_*`, a Codex thread uuid), so
+    // a collision would be the defect this function's header describes rather
+    // than a case to smooth over.
+    lastActivityAt: new Map([...a.lastActivityAt, ...b.lastActivityAt]),
   };
 }
 
@@ -2881,11 +3022,18 @@ export interface PanelCounters {
    * renderer reporting that a patch did not apply, which is not.
    */
   resyncs: number;
+  /**
+   * Stats records this panel refused to put on the wire (v0.7.0 DoD 4.1):
+   * failed the Phase 2 validator on the host, dropped, counted. The rest of
+   * the message still went out.
+   */
+  statsDropped: number;
 }
 
-/** Where the built webview assets live inside the packaged extension. */
-export const WEBVIEW_SCRIPT_SEGMENTS = ['dist', 'webview', 'main.js'] as const;
-export const WEBVIEW_STYLE_SEGMENTS = ['dist', 'webview', 'main.css'] as const;
+// Where the built webview assets live inside the packaged extension. Declared
+// in `bridge/panel-assets.ts` since v0.7.0 Phase 4 so the sidebar names the
+// SAME two files; re-exported here so every caller keeps its import.
+export { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS };
 
 /**
  * One panel: its document, its bridge, and its inbound guard.
@@ -2908,7 +3056,16 @@ export class PanelController {
     messagesDropped: 0,
     reloads: 0,
     resyncs: 0,
+    statsDropped: 0,
   };
+  /**
+   * The last `settings` message sent, re-sent on every reload (DoD 4.0).
+   *
+   * A reload is a NEW document that knows nothing — the same reason the
+   * bridge re-snapshots — so the renderer's `canvasAutoFit` would otherwise
+   * silently fall back to its default after every hide/restore.
+   */
+  #settings: SettingsMessage | null = null;
 
   constructor(options: PanelControllerOptions) {
     this.#panel = options.panel;
@@ -2942,6 +3099,11 @@ export class PanelController {
         this.#counts.reloads += 1;
         this.bridge.reset();
         this.#onNeedsSnapshot();
+        // Settings AFTER the snapshot the pump supplied: the bridge's first
+        // message to a fresh document is a snapshot, and that invariant is
+        // older than this message. The renderer's default is the manifest
+        // default, so nothing is decided wrongly in the gap.
+        if (this.#settings !== null) this.#panel.postMessage(this.#settings);
       }),
     );
     if (options.onDispose !== undefined) {
@@ -2967,6 +3129,55 @@ export class PanelController {
     // it is two independent no-nagging rules rather than one shared one.
     this.bridge.publishDegraded('cc', payload.degraded);
     this.bridge.publishDegraded('codex', payload.codexDegraded);
+  }
+
+  /**
+   * Tell the renderer the host settings it reads (DoD 4.0). Sent now, and
+   * again on every reload; a change is a fresh send, unconditionally — this
+   * is one boolean, and a no-nagging rule for it would cost more than it
+   * saves.
+   */
+  setSettings(settings: Omit<SettingsMessage, 'type'>): void {
+    if (this.#disposed) return;
+    this.#settings = { type: 'settings', ...settings };
+    this.#panel.postMessage(this.#settings);
+  }
+
+  /** Ask the renderer to show a view mode (DoD 4.6b: `agentDeck.openStats`). */
+  showView(mode: ShowViewMessage['mode']): void {
+    if (this.#disposed) return;
+    this.#panel.postMessage({ type: 'showView', mode });
+  }
+
+  /**
+   * Put the Layer 1 facts on the wire (DoD 4.1): the live records, and — when
+   * the caller has re-read it — the stored history.
+   *
+   * THE VALIDATOR RUNS HERE, on the host, on every record, and a record that
+   * fails is dropped and counted rather than sent (`statsWireRecords`). What
+   * is returned is what was refused, so the host can name it on the
+   * diagnostics channel; the counter on this controller is the running total
+   * the counters line reports.
+   */
+  publishStats(
+    live: readonly StatsRecord[],
+    stored: { records: readonly unknown[]; enabled: boolean } | null,
+  ): { dropped: number; reasons: string[] } {
+    if (this.#disposed) return { dropped: 0, reasons: [] };
+    const liveWire = statsWireRecords(live);
+    const reasons = [...liveWire.reasons];
+    this.#panel.postMessage({ type: 'statsSnapshot', records: liveWire.records });
+    if (stored !== null) {
+      const storedWire = statsWireRecords(stored.records);
+      reasons.push(...storedWire.reasons);
+      this.#panel.postMessage({
+        type: 'statsStore',
+        records: inSessionOrder(storedWire.records),
+        enabled: stored.enabled,
+      });
+    }
+    this.#counts.statsDropped += reasons.length;
+    return { dropped: reasons.length, reasons };
   }
 
   reveal(): void {
@@ -3086,6 +3297,23 @@ export interface StatsPipelineOptions {
   pricingInvalid: readonly string[];
   /** `agentDeck.stats.idleFlushMs`. */
   idleFlushMs: number;
+  /**
+   * This process's activation instant — the PROVENANCE GATE (v0.7.0 DoD 4.11,
+   * user ruling 2026-09-09). Taken ONCE at activation.
+   *
+   * A session whose last activity (`endedAt ?? startedAt`) is before this
+   * instant is HISTORY: this process read it off disk and observed no work in
+   * it, so it never flushes, on idle or on ended. A historical session that
+   * produces a patch after the stamp becomes OBSERVED and flushes normally,
+   * through the supersede path.
+   *
+   * REQUIRED, not optional-with-a-default. A default of "no gate" is the
+   * silent-default shape this repository has already shipped twice (the
+   * `enabledEngines` prop, `DegradedMessage.engine`): a later construction site
+   * that forgets it would re-open the store flood with nothing going red.
+   * Passing `0` opts out, and the one caller that does says why.
+   */
+  processStart: number;
   /** Injected clock. `derivedAt` comes from here and from nowhere else. */
   now: () => number;
   /** Injected timers, so a test can fire the idle flush without waiting. */
@@ -3098,16 +3326,70 @@ export interface StatsPipelineOptions {
 interface TrackedSession {
   /** The most recent record, without its stamp. The flush's payload. */
   record: StatsRecordForStore | null;
-  /** `JSON.stringify` of {@link TrackedSession.record}. The change test. */
+  /**
+   * {@link TrackedSession.record} with every clock-derived field flattened —
+   * the CHANGE test, i.e. "does this pump re-arm the idle countdown?". Never
+   * written, and since DoD 4.11b never a promoter either; see `withoutClock`.
+   */
+  patchBody: string | null;
+  /** `JSON.stringify` of {@link TrackedSession.record}. The FLUSH comparison. */
   body: string | null;
   /** The body of the last record actually written. */
   appendedBody: string | null;
   /** The pending idle flush, or null. */
   timer: TimerHandle | null;
+  /**
+   * Has this process observed WORK in this session? (DoD 4.11 / 4.11b.)
+   *
+   * True once LIVENESS reports activity at or after `processStart` — and by
+   * nothing else. A resumed historical session promotes correctly because
+   * resuming moves its liveness instant, which is what the withdrawn
+   * record-changed clause was reaching for and could never measure. False means
+   * history, and history never flushes.
+   */
+  observed: boolean;
 }
 
 /** A derived record before the store's stamp is put on it. */
 type StatsRecordForStore = Omit<StoredStatsRecord, 'derivedAt'>;
+
+/**
+ * The record with every clock-derived field flattened, for the CHANGE test.
+ *
+ * One field qualifies today — `StallRecord.stalledMs`, which `stalls.ts` derives
+ * as `now - stalledSinceMs`. It is zeroed rather than dropped so the SHAPE of
+ * the comparison is unchanged: a stall appearing, disappearing, or moving to a
+ * different tool is still a patch, and only its elapsed time is not. Anything
+ * added later that reads the clock belongs here too.
+ *
+ * ## Why this survived DoD 4.11b, which said to retire it — MEASURED, twice
+ *
+ * The 4.11b ruling (user, 2026-09-10) retires it along with the body-change
+ * PROMOTER, and the promoter is indeed gone: nothing in this file lets any field
+ * of the record decide whether a session is `observed`. What this function still
+ * decides is narrower and is not about provenance at all — whether a pump
+ * RE-ARMS the idle countdown — and both ways of retiring it were driven and both
+ * turned a test red:
+ *
+ *   - **Delete it outright.** `stalledMs` grows on every 5 s pump, `#arm`
+ *     restarts the countdown on every patch, so a session holding a stalled tool
+ *     call never flushes: `a stalled session never flushed: expected +0 to be 1`.
+ *     That is verifier defect 2's starvation half, reopened.
+ *   - **Re-arm on new ACTIVITY instead of on a record change**, which would put
+ *     the whole silence question on liveness and need no flattening. It
+ *     contradicts a LOCKED Phase 3 contract: DoD 3.2b's control asserts that a
+ *     session changing on every pump is pushed forward forever
+ *     (`idleFlushes === 0`), and under that design it flushes.
+ *
+ * So the flattening stays exactly where the verifier put it and nowhere else.
+ * **This is a recorded deviation from the 4.11b ruling's third clause** — the
+ * substance of the ruling (liveness is the sole promoter) is unaffected, and the
+ * gate record says so with these two measurements beside it.
+ */
+function withoutClock(record: StatsRecordForStore): StatsRecordForStore {
+  if (record.stalls.length === 0) return record;
+  return { ...record, stalls: record.stalls.map((stall) => ({ ...stall, stalledMs: 0 })) };
+}
 
 export class StatsPipeline {
   readonly store: StatsStore;
@@ -3115,6 +3397,7 @@ export class StatsPipeline {
   readonly #pricing: PricingTable;
   readonly #pricingInvalid: readonly string[];
   readonly #idleFlushMs: number;
+  readonly #processStart: number;
   readonly #now: () => number;
   readonly #scheduler: Scheduler;
   readonly #onError: ((error: unknown) => void) | undefined;
@@ -3128,6 +3411,7 @@ export class StatsPipeline {
     this.#pricing = options.pricing;
     this.#pricingInvalid = options.pricingInvalid;
     this.#idleFlushMs = options.idleFlushMs;
+    this.#processStart = options.processStart;
     this.#now = options.now;
     this.#scheduler = options.scheduler;
     this.#onError = options.onError;
@@ -3141,6 +3425,23 @@ export class StatsPipeline {
   /** Records appended by the IDLE trigger. Read by tests. */
   get idleFlushes(): number {
     return this.#flushes;
+  }
+
+  /**
+   * The newest derived record per tracked session, in first-seen order —
+   * the `statsSnapshot` message's payload (v0.7.0 DoD 4.1).
+   *
+   * What the pipeline last derived, not what it last WROTE: the Stats view is
+   * live and updates on every patch, while the store hears only from the two
+   * flush triggers. A session with no record yet (its first derivation threw)
+   * is simply absent, which is the same absence G2 gives the deck.
+   */
+  liveRecords(): StatsRecord[] {
+    const out: StatsRecord[] = [];
+    for (const entry of this.#tracked.values()) {
+      if (entry.record !== null) out.push(entry.record);
+    }
+    return out;
   }
 
   /** Sessions with a pending idle flush. Must be 0 after `dispose()`. */
@@ -3178,16 +3479,99 @@ export class StatsPipeline {
       }
       const entry = this.#entryFor(state.sessionId);
       const body = JSON.stringify(record);
+      // A CLOCK TICK IS NOT A PATCH (verifier defect 6, 2026-09-09).
+      //
+      // `StallRecord.stalledMs` is `now - stalledSinceMs`, the one field in the
+      // record derived from the clock rather than from the session, so a session
+      // holding a stalled tool call produces a DIFFERENT record on every 5 s
+      // pump while nothing about it has changed — and `#arm` restarts the
+      // countdown on every patch, so the flush would be pushed forward forever.
+      //
+      // The question this layer asks is "did a patch arrive?", and the honest
+      // answer cannot depend on when it was asked. `body` above stays the FULL
+      // record, because that is what is written and what `appendedBody` compares.
+      const patchBody = JSON.stringify(withoutClock(record));
+
+      // ---- The provenance gate (DoD 4.11 / 4.11b) -------------------------
+      //
+      // THE LAW, and it was bought with the same defect twice: **a derived
+      // record is evidence of CONTENT, never of ACTIVITY; activity comes from
+      // liveness only.**
+      //
+      // 4.11 read the record's own `endedAt ?? startedAt` and promoted a
+      // session whose record CHANGED during this lifetime, on the reasoning
+      // that a change is work. It is not. A historical session's record changes
+      // while the tailer is still READING it, so the 4.9 re-run found 21
+      // sessions that did nothing written in a 1.4 s burst the moment their
+      // initial read completed — every one with a `startedAt` days old and no
+      // `endedAt` at all. Reproduced at 19 of 21: pump one sees a partial tree,
+      // pump two sees the whole one.
+      //
+      // So the only promoter is the instant each engine's LIVENESS reports:
+      // the last hook event or transcript write for Claude Code, OpenCode's
+      // `max(timeUpdated, seqAdvancedAt)`, the transcript mtime for Codex.
+      // Nothing about the record can promote anything.
+      //
+      // `withoutClock` SURVIVES, and only below this gate. An earlier draft of
+      // this comment said it was "retired rather than extended" while the call
+      // 20 lines down was still there — a reader of the gate was told the
+      // opposite of the code, which is the disagreeing-comment defect this
+      // repository already records in `graft.ts`. What it decides now is whether
+      // a pump RE-ARMS the countdown, which is not provenance; the ruling that
+      // asked for its retirement, both measurements against retiring it, and the
+      // recorded deviation are on its own header.
+      //
+      // A session liveness says nothing about is NOT promoted (G3: refuse,
+      // don't guess). It keeps deriving and rendering; it is only the STORE
+      // that declines to claim work nobody witnessed.
+      const activityAt = emission.lastActivityAt.get(state.sessionId);
+      const wasObserved = entry.observed;
+      if (activityAt !== undefined && activityAt >= this.#processStart) entry.observed = true;
+      const promotedThisPump = !wasObserved && entry.observed;
+
       if (state.liveness === 'ended') {
         entry.record = record;
         entry.body = body;
+        entry.patchBody = patchBody;
         this.#clearTimer(entry);
-        if (body !== entry.appendedBody) this.#append(entry);
+        // History never flushes on ended either. That half matters: a history is
+        // usually discovered ALREADY ended, and this path appends with no timer,
+        // so gating only the idle path would leave the flood intact for exactly
+        // the sessions that caused it (measured: 28 appends, 0 idle flushes).
+        if (entry.observed && body !== entry.appendedBody) this.#append(entry);
         continue;
       }
-      if (body === entry.body) continue;
+      // The change test is over `patchBody`: a tick that only moved
+      // `stalledMs` leaves the countdown alone, so the flush arrives.
+      if (patchBody === entry.patchBody) {
+        /*
+         * ...EXCEPT FOR THE PUMP THAT PROMOTES A SESSION, which owes a record
+         * nothing else will arm (v0.7.0 DoD 4.11c).
+         *
+         * Promotion and the record's last change need not land on the same
+         * pump, and under 4.11c they usually do not: an mtime counts only once
+         * the transcript has GROWN, and the bytes that make it grow need not
+         * move any number the record carries. Without this the session waits for
+         * its NEXT change — which for a session that appends once and goes quiet
+         * never comes, so the idle flush that exists precisely for a session
+         * that never reaches `ended` would never fire for it.
+         *
+         * It cannot re-open the flood: history is never observed, so it never
+         * reaches here, and a session already written is held by
+         * `appendedBody`. Once per promotion, by construction —
+         * `promotedThisPump` is a false-to-true transition and `observed` never
+         * goes back.
+         */
+        if (promotedThisPump && body !== entry.appendedBody) {
+          this.#arm(state.sessionId, entry);
+        }
+        continue;
+      }
       entry.record = record;
       entry.body = body;
+      entry.patchBody = patchBody;
+      // History arms nothing, so it cannot flush when the silence elapses.
+      if (!entry.observed) continue;
       this.#arm(state.sessionId, entry);
     }
   }
@@ -3212,7 +3596,14 @@ export class StatsPipeline {
   #entryFor(sessionId: string): TrackedSession {
     const held = this.#tracked.get(sessionId);
     if (held !== undefined) return held;
-    const fresh: TrackedSession = { record: null, body: null, appendedBody: null, timer: null };
+    const fresh: TrackedSession = {
+      record: null,
+      body: null,
+      patchBody: null,
+      appendedBody: null,
+      timer: null,
+      observed: false,
+    };
     this.#tracked.set(sessionId, fresh);
     return fresh;
   }
@@ -3274,6 +3665,31 @@ export interface AgentDeckHostOptions extends DataPathOptions {
   createPanel: () => PanelSurface;
   /** Injected so a test can assert the emitted document byte for byte. */
   nonce?: string;
+  /**
+   * Overrides the stats provenance stamp (DoD 4.11). Defaults to `now()`.
+   *
+   * EXISTS FOR ONE REASON, and it is a property of the fixtures rather than a
+   * convenience: **a replayed corpus is history, and correctly so.** The gate
+   * compares the instant the engine's LIVENESS reports against this stamp, and a
+   * committed corpus produces none that can pass it — nobody appends to it, so
+   * under DoD 4.11c its mtimes buy nothing, and it fires no hooks. A host test
+   * that is about the settings or the seam would therefore assert against a gate
+   * doing its job.
+   *
+   * **THIS COMMENT USED TO SAY THE GATE COMPARED A RECORD'S `endedAt ?? startedAt`
+   * — transcript CONTENT — against activation, while liveness compared file
+   * mtime.** That was 4.11's design; 4.11b removed the content read and 4.11c
+   * narrowed the mtime, and the sentence stood here through both. It is kept as a
+   * correction rather than deleted because the option it describes is the one the
+   * 4.11c tests drive.
+   *
+   * So a test that is about something else passes `0` and says so. The
+   * production default is untouched, and `extension.test.ts` carries a test
+   * that drives the REAL stamp in both directions — without it this option
+   * would be the untested single assignment site this repository keeps
+   * shipping.
+   */
+  statsProcessStart?: number;
   /**
    * Creates the diagnostics output channel (DoD 5.5.3). Omitted by every test
    * that does not assert on diagnostics, and by anything running outside a
@@ -3413,10 +3829,23 @@ export class AgentDeckHost {
   #panel: PanelController | null = null;
   #panelsCreated = 0;
   #disposed = false;
+  /** `agentDeck.canvas.autoFit`, as last read. Sent to every panel (DoD 4.0). */
+  #canvasAutoFit: boolean;
+  /**
+   * How many flushes the pipeline had performed when the store was last read
+   * for the wire, or -1 when it has never been read (or a reload made the
+   * last read moot). The store is re-read only when this lags the pipeline:
+   * a read costs a directory walk and the host pumps every 5 s, so reading on
+   * every pump would spend the `stats.store.read.dod` budget on nothing.
+   */
+  #storeReadAtFlush = -1;
+  /** Stats records refused at the wire by panels since activation. */
+  #statsDropped = 0;
 
   constructor(options: AgentDeckHostOptions) {
     const { createPanel, nonce, onEmission, createDiagnosticsSink, statsDir, ...rest } = options;
     this.#createPanel = createPanel;
+    this.#canvasAutoFit = options.settings['canvas.autoFit'];
     if (nonce !== undefined) this.#nonce = nonce;
     this.#scheduler = options.scheduler ?? systemScheduler;
     const clock = options.now ?? ((): number => Date.now());
@@ -3458,6 +3887,10 @@ export class AgentDeckHost {
         pricing: parsed.table,
         pricingInvalid: parsed.invalid,
         idleFlushMs: options.settings['stats.idleFlushMs'],
+        // The provenance stamp, taken ONCE here (DoD 4.11). Everything already
+        // on disk when this window activated is history and is never written
+        // again; see `StatsPipelineOptions.processStart`.
+        processStart: options.statsProcessStart ?? clock(),
         now: clock,
         scheduler: this.#scheduler,
         onError: toChannel,
@@ -3480,6 +3913,10 @@ export class AgentDeckHost {
         // where the stats layer runs first and cannot reach what follows.
         this.#observeStats(payload.emission);
         this.#panel?.publish(payload);
+        // AFTER the session publish and inside its own guard too: the Stats
+        // view is downstream of the deck, and a stats wire failure must not
+        // reach the consumer any more than a deriver throw may (G2).
+        this.#publishStats();
         onEmission(payload);
       },
       // F2. Read through `this.diagnostics` at CALL time rather than captured,
@@ -3584,6 +4021,100 @@ export class AgentDeckHost {
   }
 
   /**
+   * Clear Stats History ran — v0.7.0 DoD 4.14. The panel forgets the history in
+   * the SAME action.
+   *
+   * Found by the 4.9 smoke: the command deleted the directory and the Stats view
+   * went on showing every record, so the user cleared twice. The cause is the
+   * re-read cursor, not the webview: `#publishStats` re-reads the store only
+   * when `store.appended` has moved since the last read, and a clear APPENDS
+   * nothing — so the host had no reason to look again until the next flush
+   * happened to arrive. The webview replaces its stored records on every
+   * `statsStore` message, so one message is the whole fix.
+   *
+   * RE-READ, not an empty array written by hand: after a successful clear the
+   * store is empty and the read says so, and after a FAILED one the read sends
+   * what is actually still on disk rather than a view claiming a deletion that
+   * did not happen.
+   *
+   * Only this window is told. Another window's panel over the same per-machine
+   * store learns on its own next flush, which is the cost of there being no
+   * channel between windows (G7: in-memory only).
+   */
+  statsHistoryCleared(): void {
+    this.#storeReadAtFlush = -1;
+    this.#publishStats();
+  }
+
+  /**
+   * Put the Layer 1 facts on the panel's wire (DoD 4.1), behind a guard.
+   *
+   * The live records go on every publish — they are already derived, so the
+   * only cost is the validator walk. The STORED records are re-read only when
+   * the pipeline has flushed since the last read, or when a reload made the
+   * webview forget them; see `#storeReadAtFlush`.
+   */
+  #publishStats(): void {
+    const panel = this.#panel;
+    if (panel === null) return;
+    const pipeline = this.stats;
+    // NO PIPELINE MEANS NO HISTORY, AND THE VIEW HAS TO BE TOLD (verifier
+    // defect 15). `statsDirFor` returns undefined for a window with no
+    // `globalStorageUri`, so `this.stats` is undefined and nothing here used to
+    // send anything at all — leaving the Stats view on "Reading the stored
+    // history…" forever, which is the very state DoD 4.12 added it to avoid.
+    // An empty, disabled store is the true answer for that window.
+    if (pipeline === undefined) {
+      panel.publishStats([], { records: [], enabled: false });
+      return;
+    }
+    try {
+      let stored: { records: readonly unknown[]; enabled: boolean } | null = null;
+      const appendedAtRead = pipeline.store.appended;
+      if (this.#storeReadAtFlush !== appendedAtRead) {
+        stored = { records: pipeline.store.readRecords({}), enabled: pipeline.store.enabled };
+      }
+      const { dropped, reasons } = panel.publishStats(pipeline.liveRecords(), stored);
+      // The cursor advances only once the message is AWAY. It used to be
+      // assigned beside the read, so a single throw out of the send advanced it
+      // and the stored records were never sent again for that panel — a
+      // permanent loading state from one transient failure (verifier defect 15).
+      if (stored !== null) this.#storeReadAtFlush = appendedAtRead;
+      if (dropped > 0) {
+        this.#statsDropped += dropped;
+        this.diagnostics?.record({
+          kind: 'engineDegraded',
+          engine: 'cc',
+          reason: `stats wire: ${String(dropped)} record(s) refused by the validator: ${reasons.join('; ')}`,
+        });
+      }
+    } catch (error) {
+      this.#statsErrors += 1;
+      this.diagnostics?.record({
+        kind: 'engineDegraded',
+        engine: 'cc',
+        reason: `stats wire: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+
+  /**
+   * `agentDeck.canvas.autoFit` changed (DoD 4.0). Live, no reload: the value
+   * is one boolean the renderer reads on its next fit decision.
+   */
+  setCanvasAutoFit(value: boolean): void {
+    this.#canvasAutoFit = value;
+    this.#panel?.setSettings({ canvasAutoFit: value });
+  }
+
+  /** `agentDeck.openStats`: the panel, showing the Stats view mode (DoD 4.6b). */
+  openStats(): PanelController | null {
+    const controller = this.open();
+    controller?.showView('stats');
+    return controller;
+  }
+
+  /**
    * Assemble the counters line from whatever is authoritative right now.
    *
    * Nothing is accumulated in the channel: `DiagnosticsCounters` documents why
@@ -3627,6 +4158,10 @@ export class AgentDeckHost {
       // which is the truth about a window that is not keeping a history.
       statsErrors: this.#statsErrors + (this.stats?.errors ?? 0),
       storeMalformed: this.stats?.store.malformed ?? 0,
+      // Accumulated on the HOST rather than read off the panel: a panel that
+      // was closed and reopened would otherwise reset the count to zero, and
+      // the counters line is a running total for the window.
+      statsDropped: this.#statsDropped,
     };
   }
 
@@ -3667,6 +4202,9 @@ export class AgentDeckHost {
       panel: this.#createPanel(),
       ...(this.#nonce !== undefined ? { nonce: this.#nonce } : {}),
       onNeedsSnapshot: () => {
+        // The new document holds no history either: force the next publish
+        // to re-read the store (DoD 4.1), then pump so it happens now.
+        this.#storeReadAtFlush = -1;
         this.dataPath.pump();
       },
       onDispose: () => {
@@ -3695,7 +4233,13 @@ export class AgentDeckHost {
     this.#panel = controller;
     // A brand-new webview knows nothing, so its first message must be a full
     // snapshot. `SessionBridge` guarantees that; pumping supplies the content.
+    // The store is re-read for it too (DoD 4.1).
+    this.#storeReadAtFlush = -1;
     this.dataPath.pump();
+    // Then the settings (DoD 4.0). After, not before: the snapshot-first
+    // invariant is the older contract, and the renderer's default while it
+    // waits is the manifest default.
+    controller.setSettings({ canvasAutoFit: this.#canvasAutoFit });
     return controller;
   }
 
@@ -3724,6 +4268,32 @@ export class AgentDeckHost {
 /** The commands declared in `contributes.commands`. */
 export const OPEN_COMMAND = 'agentDeck.open';
 export const SHOW_DIAGNOSTICS = SHOW_DIAGNOSTICS_COMMAND;
+
+/**
+ * `agentDeck.openStats` — the panel, in its Stats view mode (v0.7.0 Phase 4,
+ * DoD 4.6b). The sidebar's second entry. Opens the same panel `agentDeck.open`
+ * opens and then asks it to show `stats`; there is no second panel (spec §G).
+ */
+export const OPEN_STATS_COMMAND = 'agentDeck.openStats';
+
+/**
+ * `agentDeck.openSettings` — VS Code's own settings UI, filtered to this
+ * extension. A workbench command, no setting written, G1 untouched; it exists
+ * so the sidebar has a "Settings" entry that lands where the knobs are.
+ */
+export const OPEN_SETTINGS_COMMAND = 'agentDeck.openSettings';
+
+/** The workbench command `agentDeck.openSettings` runs, and its argument. */
+export const WORKBENCH_OPEN_SETTINGS = 'workbench.action.openSettings';
+export const SETTINGS_FILTER = '@ext:nvitlam.agent-deck';
+
+/**
+ * Run after the panel is created when MORE THAN ONE editor group exists
+ * (locked open question, 2026-09-05): the deck takes `ViewColumn.One`, and
+ * with a second group beside it the widths are evened so neither is a sliver.
+ * A workbench command; nothing is written.
+ */
+export const EVEN_EDITOR_WIDTHS = 'workbench.action.evenEditorWidths';
 
 /**
  * `agentDeck.stats.clearHistory` — DoD 3.5.
@@ -3945,6 +4515,63 @@ export function adaptWebviewPanel(
 }
 
 /**
+ * Adapt a real `vscode.WebviewView` to {@link SidebarSurface} (DoD 4.6b).
+ *
+ * Same shape as {@link adaptWebviewPanel} and for the same reason: the one
+ * place the editor API and the sidebar controller's vocabulary meet, written
+ * out so a change in either is a compile error here.
+ */
+export function adaptWebviewView(
+  view: vscode.WebviewView,
+  extensionUri: vscode.Uri,
+): SidebarSurface {
+  view.webview.options = {
+    enableScripts: true,
+    // The same two files the panel may read, and nothing else.
+    localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist')],
+  };
+  return {
+    get cspSource(): string {
+      return view.webview.cspSource;
+    },
+    setHtml: (html: string): void => {
+      view.webview.html = html;
+    },
+    asWebviewUri: (...segments: string[]): string =>
+      view.webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, ...segments)).toString(),
+    onDidReceiveMessage: (handler: (raw: unknown) => void): Unsubscribe => {
+      const subscription = view.webview.onDidReceiveMessage((raw: unknown) => {
+        handler(raw);
+      });
+      return () => {
+        subscription.dispose();
+      };
+    },
+    onDidDispose: (handler: () => void): Unsubscribe => {
+      const subscription = view.onDidDispose(() => {
+        handler();
+      });
+      return () => {
+        subscription.dispose();
+      };
+    },
+  };
+}
+
+/**
+ * How many editor groups the window has. `tabGroups` has been on `window`
+ * since VS Code 1.67, below this extension's floor; read defensively anyway,
+ * because a throw here would be a throw out of a command handler.
+ */
+function editorGroupCount(): number {
+  try {
+    return vscode.window.tabGroups.all.length;
+  } catch {
+    return 1;
+  }
+}
+
+/**
  * Activate.
  *
  * Order matters and is the point of the whole function:
@@ -4021,6 +4648,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       host.open();
     }),
     /*
+     * v0.7.0 DoD 4.6b. The same panel, asked to show the Stats view mode.
+     * Same inactive message as `agentDeck.open`, because it is the same panel.
+     */
+    vscode.commands.registerCommand(OPEN_STATS_COMMAND, () => {
+      const host = activeHost;
+      if (host === null) {
+        void vscode.window.showInformationMessage(
+          inactiveReason ??
+            'Agent Deck: this workspace has no Claude Code project directory yet.',
+        );
+        return;
+      }
+      host.openStats();
+    }),
+    /*
+     * v0.7.0 DoD 4.6b. VS Code's settings UI, filtered to this extension —
+     * a workbench command with an argument, and nothing written.
+     */
+    vscode.commands.registerCommand(OPEN_SETTINGS_COMMAND, () => {
+      void vscode.commands.executeCommand(WORKBENCH_OPEN_SETTINGS, SETTINGS_FILTER);
+    }),
+    /*
+     * v0.7.0 DoD 4.6b — THE SIDEBAR, registered UNCONDITIONALLY and above the
+     * activation gates, like the clear command and for the same reason: it is
+     * the product's front door, and a front door that only exists in windows
+     * the data path started in is missing from exactly the window someone
+     * opens to find out why nothing is showing. Every entry runs a command
+     * registered in this same function, so each explains itself when there is
+     * nothing to show.
+     */
+    vscode.window.registerWebviewViewProvider(SIDEBAR_VIEW_ID, {
+      resolveWebviewView: (view: vscode.WebviewView): void => {
+        new SidebarController({
+          surface: adaptWebviewView(view, context.extensionUri),
+          executeCommand: (command: string) => vscode.commands.executeCommand(command),
+          onError: (error: unknown) => {
+            void vscode.window.showErrorMessage(
+              `Agent Deck: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          },
+        });
+      },
+    }),
+    /*
      * DoD 5.5.3. Registered beside `agentDeck.open` and for the same reason
      * the comment above gives: a palette entry that explains itself beats
      * "command not found". It is the ONLY path that reveals the channel —
@@ -4085,6 +4756,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           );
         },
       }).clear();
+      // DoD 4.14: in the same action, not on the next flush. A no-op in a window
+      // with no host — the no-workspace window this command also exists for —
+      // because that window has no panel holding any records.
+      activeHost?.statsHistoryCleared();
     }),
   );
 
@@ -4169,22 +4844,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     ...(statsDir === undefined ? {} : { statsDir }),
     settings,
-    createPanel: () =>
-      adaptWebviewPanel(
-        vscode.window.createWebviewPanel(
-          PANEL_VIEW_TYPE,
-          PANEL_TITLE,
-          vscode.ViewColumn.Beside,
-          {
-            enableScripts: true,
-            // The webview may read the built bundle and nothing else. Combined
-            // with the CSP in `html.ts`, the renderer's reachable surface is
-            // two files.
-            localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist')],
-          },
-        ),
-        extensionUri,
-      ),
+    createPanel: () => {
+      /*
+       * v0.7.0 DoD 4.6c — THE DECK OPENS LEFT (locked open question,
+       * 2026-09-05). `ViewColumn.One`, not `Beside`: the panel is the room and
+       * it takes the first group. Then, when more than one editor group
+       * exists, the widths are evened so the group it joined and the one
+       * beside it share the window. Both are workbench commands; no setting
+       * is written and G1 is untouched. With ONE group there is nothing to
+       * even and the command is not run.
+       */
+      const panel = vscode.window.createWebviewPanel(
+        PANEL_VIEW_TYPE,
+        PANEL_TITLE,
+        vscode.ViewColumn.One,
+        {
+          enableScripts: true,
+          // The webview may read the built bundle and nothing else. Combined
+          // with the CSP in `html.ts`, the renderer's reachable surface is
+          // two files.
+          localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist')],
+        },
+      );
+      if (editorGroupCount() > 1) {
+        void vscode.commands.executeCommand(EVEN_EDITOR_WIDTHS);
+      }
+      return adaptWebviewPanel(panel, extensionUri);
+    },
     onEmission: () => {
       // The panel is fed by AgentDeckHost itself; nothing else consumes
       // emissions today. Kept as a required option so a future consumer is an
@@ -4241,6 +4927,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // or re-grafting silently under the user is worse than requiring a
       // reload for two settings that change once.
       host.dataPath.setLivenessThresholdMs(next.livenessThresholdMs);
+      // ...and `canvas.autoFit` (DoD 4.0): one boolean the renderer reads on
+      // its next fit decision, so it moves live too.
+      host.setCanvasAutoFit(next['canvas.autoFit']);
     }),
   );
 

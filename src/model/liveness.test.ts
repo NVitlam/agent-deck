@@ -782,3 +782,140 @@ describe('G3 malformed and unknown input', () => {
     expect(engine.livenessOf(SESSION)).toBe('live');
   });
 });
+
+// ---------------------------------------------------------------------------
+// DoD 4.11c — the write-side instant: bytes, not a timestamp
+// ---------------------------------------------------------------------------
+
+/**
+ * `witnessedActivityAt` is what the local stats store may promote a session on,
+ * and it is a NARROWER question than `lastActivityAt` answers.
+ *
+ * The store flooded three times through three readings of one signal. The last
+ * of them: an mtime moves when a clone, a restore, a sync client, an indexer or
+ * a virus scanner touches a transcript, and none of those is a session doing
+ * work. So a mtime counts here only with appended BYTES behind it, while a hook
+ * event always counts — the tap fires because a tool ran, and no filesystem
+ * accident produces one.
+ *
+ * These are unit tests on the engine rather than host tests, deliberately: each
+ * arm below is a single decision, and a `phase-verifier` proved the host tests
+ * could not see three of them (dropping the hook instant left 252 tests green).
+ */
+describe('DoD 4.11c: an mtime is activity only with bytes behind it', () => {
+  const NOW = 5_000_000;
+
+  /** An engine whose transcript reports whatever this test says it does. */
+  function engineOver(reads: { mtimeMs?: number; sizeBytes?: number }[]) {
+    let index = 0;
+    const engine = new LivenessEngine({
+      now: () => NOW,
+      mtimeThresholdMs: 10 * 60_000,
+      inferenceSource: () => {
+        const read = reads[Math.min(index, reads.length - 1)];
+        index += 1;
+        return read;
+      },
+    });
+    // The session has to exist for the engine to have anything to report on,
+    // and `observeJsonl` with no facts is how `SessionModel` announces one.
+    engine.observeJsonl(SESSION, {});
+    return engine;
+  }
+
+  it('the FIRST sighting is a baseline, so an untouched transcript is not activity', () => {
+    const engine = engineOver([{ mtimeMs: NOW - 1_000, sizeBytes: 4_096 }]);
+    const snapshot = engine.snapshot(SESSION);
+
+    // The enum still sees a recent write — that half is untouched, and DoD 3.2b
+    // and 4.9 depend on it.
+    expect(snapshot?.lastActivityAt, 'the enum lost its instant').toBe(NOW - 1_000);
+    expect(snapshot?.liveness).toBe('live');
+
+    // The WRITE side sees nothing yet: the first size is the baseline.
+    expect(snapshot?.sizeBytes).toBe(4_096);
+    expect(snapshot?.transcriptGrew, 'the baseline claimed growth').toBe(false);
+    expect(snapshot?.witnessedActivityAt, 'a baseline was read as activity').toBeUndefined();
+  });
+
+  it('APPENDED BYTES are activity; a touch of the same size is not', () => {
+    // Read 1 latches 4,096. Read 2 is a TOUCH: the mtime jumps, the size does
+    // not. Read 3 is an APPEND: both move.
+    const engine = engineOver([
+      { mtimeMs: NOW - 5_000, sizeBytes: 4_096 },
+      { mtimeMs: NOW - 1_000, sizeBytes: 4_096 },
+      { mtimeMs: NOW - 500, sizeBytes: 5_000 },
+    ]);
+    expect(engine.snapshot(SESSION)?.witnessedActivityAt).toBeUndefined();
+
+    const touched = engine.snapshot(SESSION);
+    expect(touched?.lastActivityAt, 'the touch did move the mtime').toBe(NOW - 1_000);
+    expect(touched?.transcriptGrew).toBe(false);
+    expect(touched?.witnessedActivityAt, 'a touched transcript was read as activity').toBeUndefined();
+
+    const appended = engine.snapshot(SESSION);
+    expect(appended?.transcriptGrew).toBe(true);
+    expect(appended?.witnessedActivityAt, 'appended bytes were not read as activity').toBe(NOW - 500);
+  });
+
+  it('a HOOK EVENT is activity on its own, with no byte ever appended', () => {
+    /*
+     * THE MUTATION THIS KILLS, and a `phase-verifier` found it live: returning
+     * only the growth-gated mtime from `witnessedActivityAt` — i.e. discarding
+     * the hook instant — left **252 tests green**. The ruling's second clause is
+     * "hook events unchanged and unconditional", and it is the clause that keeps
+     * 4.11c's stated cost narrow: a working session fires a hook on every tool
+     * call whether or not its transcript has been flushed to disk yet.
+     */
+    const engine = engineOver([{ mtimeMs: NOW - 90_000, sizeBytes: 4_096 }]);
+    expect(engine.snapshot(SESSION)?.witnessedActivityAt).toBeUndefined();
+
+    engine.ingest(ev(mainPayload('PreToolUse', { tool_use_id: 't1' }), NOW - 1_000));
+
+    const snapshot = engine.snapshot(SESSION);
+    expect(snapshot?.transcriptGrew, 'no byte was appended').toBe(false);
+    expect(
+      snapshot?.witnessedActivityAt,
+      'a hook event was not read as activity',
+    ).toBe(NOW - 1_000);
+  });
+
+  it('an UNKNOWN size fails CLOSED — an unanswerable question is not a yes', () => {
+    // User ruling, 2026-09-10. A source that reports no size (an older reader, a
+    // pushed inference, a stat that gave one number and not the other) leaves the
+    // growth question unanswerable, and `undefined` must not read as `true`.
+    const engine = engineOver([{ mtimeMs: NOW - 1_000 }]);
+    const snapshot = engine.snapshot(SESSION);
+    expect(snapshot?.lastActivityAt, 'the enum still has its instant').toBe(NOW - 1_000);
+    expect(snapshot?.sizeBytes).toBeUndefined();
+    expect(snapshot?.transcriptGrew, 'an unknown size answered the growth question').toBeUndefined();
+    expect(snapshot?.witnessedActivityAt, 'an unknown size failed OPEN').toBeUndefined();
+  });
+
+  it('a SHRINK re-baselines, so a truncated transcript is not lost for a window', () => {
+    /*
+     * User ruling, 2026-09-10. Read 1 latches 40,000. Read 2 finds 1,000 — the
+     * file was truncated, rotated, or rewritten in place. Against a stale
+     * high-water mark the session would then be unpromotable until it passed
+     * 40,000 bytes again, which is a WINDOW of lost records rather than one. The
+     * baseline follows the shrink down, and the very next append counts.
+     */
+    const engine = engineOver([
+      { mtimeMs: NOW - 5_000, sizeBytes: 40_000 },
+      { mtimeMs: NOW - 4_000, sizeBytes: 1_000 },
+      { mtimeMs: NOW - 3_000, sizeBytes: 1_200 },
+    ]);
+    expect(engine.snapshot(SESSION)?.witnessedActivityAt).toBeUndefined();
+
+    const shrunk = engine.snapshot(SESSION);
+    expect(shrunk?.sizeBytes).toBe(1_000);
+    expect(shrunk?.transcriptGrew, 'a shrink was read as growth').toBe(false);
+    expect(shrunk?.witnessedActivityAt).toBeUndefined();
+
+    // 1,200 is far BELOW the original 40,000 and above the new baseline. Under a
+    // high-water mark this assertion fails.
+    const regrown = engine.snapshot(SESSION);
+    expect(regrown?.transcriptGrew, 'growth from the new baseline was not seen').toBe(true);
+    expect(regrown?.witnessedActivityAt).toBe(NOW - 3_000);
+  });
+});

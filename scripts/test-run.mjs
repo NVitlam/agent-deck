@@ -31,11 +31,12 @@
 // Nothing outside it is touched.
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, appendFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { argv, exit, hrtime } from 'node:process';
 
 import { classifyExit } from './exit-class.mjs';
+import { uniqueRecordName } from './runner-paths.mjs';
 
 const OUT_DIR = 'docs/evidence/runner';
 const LEDGER = path.join(OUT_DIR, 'LEDGER.md');
@@ -97,14 +98,62 @@ const extra = passThroughAt === -1 ? [] : argv.slice(passThroughAt + 1);
 const COMMAND = 'npx';
 const BASE_ARGS = ['vitest', 'run', '--reporter=dot', ...extra];
 
-function head() {
+function run(command) {
   return new Promise((resolve) => {
-    const p = spawn('git rev-parse --short HEAD', { shell: true });
+    const p = spawn(command, { shell: true });
     let out = '';
     p.stdout.on('data', (d) => (out += String(d)));
-    p.on('close', () => resolve(out.trim() || 'unknown'));
-    p.on('error', () => resolve('unknown'));
+    p.on('close', () => resolve(out));
+    p.on('error', () => resolve(''));
   });
+}
+
+/**
+ * The HEAD sha, with `-dirty` appended when the worktree does not match it.
+ *
+ * **A LEDGER ROW MUST NAME THE TREE IT TESTED** (user ruling, 2026-09-10), and
+ * for three items running it did not. Twelve rows of the 4.11 blocks name
+ * `948c0db` — a commit whose tree they never ran — and two suite sizes ended up
+ * recorded against one sha, which makes rule 14 unauditable after the fact: a
+ * reader cannot tell which of them the three consecutive greens belong to.
+ *
+ * The gate rule that came out of it (commit first, then take the block) is a
+ * habit, and a habit is not a check. This is the check: a run over an
+ * uncommitted tree is recorded as `<sha>-dirty`, which no commit can be confused
+ * with. It does not stop the run — measuring an uncommitted tree is exactly what
+ * an ad-hoc check is for — it stops the row from claiming a provenance it does
+ * not have.
+ */
+async function head() {
+  const sha = (await run('git rev-parse --short HEAD')).trim();
+  if (sha === '') return 'unknown';
+  const status = (await run('git status --porcelain')).trim();
+  return status === '' ? sha : `${sha}-dirty`;
+}
+
+/**
+ * `passed` and `skipped` out of a vitest summary line, or nulls.
+ *
+ * Parsed from the line rather than from a reporter API because that line is what
+ * a death leaves behind and what every ledger row already carries.
+ */
+function countsOf(lines) {
+  // THE `Tests` LINE SPECIFICALLY, not `summaryLine`. On a RED run vitest's last
+  // matching line is `Test Files  1 failed | 123 passed | 1 skipped (125)` — file
+  // counts, not test counts — so reusing it made a failed run's row disagree with
+  // a green one about units rather than about the suite. Measured on
+  // `gate-411c-close` run 3, by the disagreement check itself.
+  const summaryLine =
+    [...lines].reverse().find((l) => /^\s*Tests\s+\d+/.test(l)) ?? null;
+  if (summaryLine === null) return { passed: null, skipped: null };
+  const passed = /(\d+) passed/.exec(summaryLine);
+  const skipped = /(\d+) skipped/.exec(summaryLine);
+  return {
+    passed: passed === null ? null : Number(passed[1]),
+    // No "skipped" in the line means zero skipped, which is not the same as
+    // unknown — a summary with no skips omits the word entirely.
+    skipped: skipped === null ? 0 : Number(skipped[1]),
+  };
 }
 
 function runOnce(index, headSha) {
@@ -147,6 +196,25 @@ function runOnce(index, headSha) {
         exitClass: classifyExit(code, signal ?? null),
         elapsedMs,
         summaryLine,
+        /*
+         * THE COUNTS AS FIELDS, so a block can compare its own runs.
+         *
+         * A silent subprocess failure inside a `beforeAll` reports as a FAILED
+         * SUITE whose tests are counted as SKIPPED — one gate block of the 4.11b
+         * item read `3683 passed | 8 skipped` against the healthy
+         * `3685 passed | 6 skipped`, and the two extra skips were the whole visible
+         * trace of the cause. This wrapper keys its verdict on the exit code, so
+         * the same failure exiting 0 would still be recorded `passed`.
+         *
+         * What is NOT done here, deliberately: pinning a healthy skip count.
+         * `CLAUDE.md` records that count as a census over environment-conditional
+         * gates that has been re-derived wrong three times, and a wrapper
+         * asserting it would go red on any machine without WSL. What a BLOCK can
+         * say without a constant is that its runs disagree with each other —
+         * which is rule 14's own claim ("three consecutive runs, identical") and
+         * is reported below.
+         */
+        counts: countsOf(lines),
         lastReporterLine: lines.at(-1) ?? null,
         stderrTail: stderr.split(/\r?\n/).filter((l) => l.trim() !== '').slice(-20),
         /*
@@ -179,10 +247,16 @@ function runOnce(index, headSha) {
       };
 
       mkdirSync(OUT_DIR, { recursive: true });
-      writeFileSync(
-        path.join(OUT_DIR, `${label}-${String(index).padStart(3, '0')}.json`),
-        `${JSON.stringify(record, null, 2)}\n`,
+      // NEVER OVERWRITTEN (v0.7.0 DoD 4.0a). Every ad-hoc run is `adhoc` at
+      // index 1, and the four ad-hoc runs after Phase 3's two mid-run deaths
+      // overwrote both deaths' records — the stderr tail and last reporter line
+      // that make a death "captured". A record that exists keeps its name and
+      // the new one takes `-r2`, `-r3`, ...; see `scripts/runner-paths.mjs`.
+      const recordName = uniqueRecordName(label, index, (name) =>
+        existsSync(path.join(OUT_DIR, name)),
       );
+      record.file = recordName;
+      writeFileSync(path.join(OUT_DIR, recordName), `${JSON.stringify(record, null, 2)}\n`);
       // An abnormal code is spelled in hex BESIDE its decimal form, because the
       // decimal form is unreadable and this ledger has already carried the same
       // status written two different ways (`3221226505` and `-1073740791`).
@@ -210,6 +284,22 @@ for (let i = 1; i <= runs; i += 1) {
   console.log(
     `run ${String(i)}/${String(runs)}  exit=${String(record.exit)}  ` +
       `${String(record.elapsedMs)}ms  ${record.verdict}  ${(record.summaryLine ?? '(no summary)').trim()}`,
+  );
+}
+
+/*
+ * RULE 14 IS A CLAIM ABOUT AGREEMENT, so the block checks it rather than leaving
+ * it to whoever reads three summary lines. Only completed runs can agree about
+ * anything; a death has no counts.
+ */
+const completed = results.filter((r) => r.summaryLine !== null);
+const shapes = new Set(
+  completed.map((r) => `${String(r.counts.passed)}/${String(r.counts.skipped)}`),
+);
+if (shapes.size > 1) {
+  console.log(
+    `\nDISAGREEMENT: the completed runs report ${shapes.size} different passed/skipped shapes ` +
+      `(${[...shapes].join(", ")}). Rule 14 needs them identical; account for every skip by GATE.`,
   );
 }
 

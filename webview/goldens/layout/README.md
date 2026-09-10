@@ -7,6 +7,7 @@ Three goldens live here:
 | `design-tables.json` | `node webview/layout.reference.mjs` | the frozen design's deck and tree tables | `webview/layout.test.ts` |
 | `wide-rank.json` | `node scripts/make-wide-rank.mjs` | A8's wide-rank tree placements | `webview/wide-rank.test.ts` |
 | `lane-subsets.json` | hand-written from the design's lane arithmetic | deck lane coordinates for all seven non-empty engine subsets (DoD 5.0c) | `webview/layout.test.ts` |
+| `fit.json` | `node scripts/gen-webview-goldens.mjs` | auto-fit transforms at three viewports x drawer open/closed x 1/6/40 nodes (v0.7.0 DoD 4.0), through the production `treeLayout`, `boundsOf` and `layout/fit.ts` | `webview/layout/fit.test.ts` |
 
 (This file said "one golden lives here" while there were two; `wide-rank.json`
 landed with A8 and the sentence was not updated. Recorded rather than quietly

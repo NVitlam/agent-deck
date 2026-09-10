@@ -1,0 +1,413 @@
+{
+  "generator": "scripts/gen-webview-goldens.mjs",
+  "from": "cc-2.1.234-05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+  "trends": {
+    "sessions": [
+      {
+        "sessionId": "mixed-cc-1",
+        "engine": "cc",
+        "prompt": 106531677
+      },
+      {
+        "sessionId": "mixed-cc-2",
+        "engine": "cc",
+        "prompt": 576450282
+      },
+      {
+        "sessionId": "mixed-codex-1",
+        "engine": "codex",
+        "prompt": 18584
+      },
+      {
+        "sessionId": "mixed-codex-2",
+        "engine": "codex",
+        "prompt": 817147
+      },
+      {
+        "sessionId": "mixed-oc-1",
+        "engine": "opencode",
+        "prompt": 86502
+      },
+      {
+        "sessionId": "mixed-oc-2",
+        "engine": "opencode",
+        "prompt": 364414
+      }
+    ],
+    "loaded": {
+      "series": [
+        {
+          "id": "prompt",
+          "label": "prompt tokens",
+          "lines": [
+            {
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "mixed-cc-1",
+                  "index": 0,
+                  "x": 0,
+                  "y": 106531677
+                },
+                {
+                  "sessionId": "mixed-cc-2",
+                  "index": 1,
+                  "x": 24,
+                  "y": 576450282
+                }
+              ],
+              "max": 576450282,
+              "flat": false
+            },
+            {
+              "engine": "codex",
+              "points": [
+                {
+                  "sessionId": "mixed-codex-1",
+                  "index": 2,
+                  "x": 48,
+                  "y": 18584
+                },
+                {
+                  "sessionId": "mixed-codex-2",
+                  "index": 3,
+                  "x": 72,
+                  "y": 817147
+                }
+              ],
+              "max": 817147,
+              "flat": false
+            },
+            {
+              "engine": "opencode",
+              "points": [
+                {
+                  "sessionId": "mixed-oc-1",
+                  "index": 4,
+                  "x": 96,
+                  "y": 86502
+                },
+                {
+                  "sessionId": "mixed-oc-2",
+                  "index": 5,
+                  "x": 120,
+                  "y": 364414
+                }
+              ],
+              "max": 364414,
+              "flat": false
+            }
+          ]
+        },
+        {
+          "id": "loops",
+          "label": "loops",
+          "lines": [
+            {
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "mixed-cc-1",
+                  "index": 0,
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "sessionId": "mixed-cc-2",
+                  "index": 1,
+                  "x": 24,
+                  "y": 0
+                }
+              ],
+              "max": 0,
+              "flat": true
+            },
+            {
+              "engine": "codex",
+              "points": [
+                {
+                  "sessionId": "mixed-codex-1",
+                  "index": 2,
+                  "x": 48,
+                  "y": 0
+                },
+                {
+                  "sessionId": "mixed-codex-2",
+                  "index": 3,
+                  "x": 72,
+                  "y": 0
+                }
+              ],
+              "max": 0,
+              "flat": true
+            },
+            {
+              "engine": "opencode",
+              "points": [
+                {
+                  "sessionId": "mixed-oc-1",
+                  "index": 4,
+                  "x": 96,
+                  "y": 0
+                },
+                {
+                  "sessionId": "mixed-oc-2",
+                  "index": 5,
+                  "x": 120,
+                  "y": 0
+                }
+              ],
+              "max": 0,
+              "flat": true
+            }
+          ]
+        },
+        {
+          "id": "cost",
+          "label": "engine-reported cost (USD)",
+          "lines": []
+        }
+      ],
+      "sessions": [
+        {
+          "sessionId": "mixed-cc-1",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 0,
+          "x": 0
+        },
+        {
+          "sessionId": "mixed-cc-2",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 1,
+          "x": 24
+        },
+        {
+          "sessionId": "mixed-codex-1",
+          "engine": "codex",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 2,
+          "x": 48
+        },
+        {
+          "sessionId": "mixed-codex-2",
+          "engine": "codex",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 3,
+          "x": 72
+        },
+        {
+          "sessionId": "mixed-oc-1",
+          "engine": "opencode",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 4,
+          "x": 96
+        },
+        {
+          "sessionId": "mixed-oc-2",
+          "engine": "opencode",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 5,
+          "x": 120
+        }
+      ],
+      "width": 120,
+      "empty": false
+    },
+    "loading": {
+      "series": [
+        {
+          "id": "prompt",
+          "label": "prompt tokens",
+          "lines": [
+            {
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "mixed-cc-1",
+                  "index": 0,
+                  "x": 0,
+                  "y": 106531677
+                },
+                {
+                  "sessionId": "mixed-cc-2",
+                  "index": 1,
+                  "x": 24,
+                  "y": 576450282
+                }
+              ],
+              "max": 576450282,
+              "flat": false
+            },
+            {
+              "engine": "codex",
+              "points": [
+                {
+                  "sessionId": "mixed-codex-1",
+                  "index": 2,
+                  "x": 48,
+                  "y": 18584
+                },
+                {
+                  "sessionId": "mixed-codex-2",
+                  "index": 3,
+                  "x": 72,
+                  "y": 817147
+                }
+              ],
+              "max": 817147,
+              "flat": false
+            },
+            {
+              "engine": "opencode",
+              "points": [
+                {
+                  "sessionId": "mixed-oc-1",
+                  "index": 4,
+                  "x": 96,
+                  "y": 86502
+                },
+                {
+                  "sessionId": "mixed-oc-2",
+                  "index": 5,
+                  "x": 120,
+                  "y": 364414
+                }
+              ],
+              "max": 364414,
+              "flat": false
+            }
+          ]
+        },
+        {
+          "id": "loops",
+          "label": "loops",
+          "lines": [
+            {
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "mixed-cc-1",
+                  "index": 0,
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "sessionId": "mixed-cc-2",
+                  "index": 1,
+                  "x": 24,
+                  "y": 0
+                }
+              ],
+              "max": 0,
+              "flat": true
+            },
+            {
+              "engine": "codex",
+              "points": [
+                {
+                  "sessionId": "mixed-codex-1",
+                  "index": 2,
+                  "x": 48,
+                  "y": 0
+                },
+                {
+                  "sessionId": "mixed-codex-2",
+                  "index": 3,
+                  "x": 72,
+                  "y": 0
+                }
+              ],
+              "max": 0,
+              "flat": true
+            },
+            {
+              "engine": "opencode",
+              "points": [
+                {
+                  "sessionId": "mixed-oc-1",
+                  "index": 4,
+                  "x": 96,
+                  "y": 0
+                },
+                {
+                  "sessionId": "mixed-oc-2",
+                  "index": 5,
+                  "x": 120,
+                  "y": 0
+                }
+              ],
+              "max": 0,
+              "flat": true
+            }
+          ]
+        },
+        {
+          "id": "cost",
+          "label": "engine-reported cost (USD)",
+          "lines": []
+        }
+      ],
+      "sessions": [
+        {
+          "sessionId": "mixed-cc-1",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 0,
+          "x": 0
+        },
+        {
+          "sessionId": "mixed-cc-2",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 1,
+          "x": 24
+        },
+        {
+          "sessionId": "mixed-codex-1",
+          "engine": "codex",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 2,
+          "x": 48
+        },
+        {
+          "sessionId": "mixed-codex-2",
+          "engine": "codex",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 3,
+          "x": 72
+        },
+        {
+          "sessionId": "mixed-oc-1",
+          "engine": "opencode",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 4,
+          "x": 96
+        },
+        {
+          "sessionId": "mixed-oc-2",
+          "engine": "opencode",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1787123110556,
+          "index": 5,
+          "x": 120
+        }
+      ],
+      "width": 120,
+      "empty": true,
+      "reason": "loading"
+    }
+  }
+}

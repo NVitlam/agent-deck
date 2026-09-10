@@ -237,6 +237,10 @@ dist/**
 # the space-named originals; these are the same bytes.
 media/**
 !media/icon.png
+# The activity-bar icon `package.json`'s `viewsContainers` names (v0.7.0 Phase
+# 4, DoD 4.6b). Like `icon.png`, a manifest reference rather than a screenshot:
+# without it the container has no glyph and `vsce package` fails. SIX lines.
+!media/activity-icon.svg
 !media/Session_Deck.png
 !media/hero_26_agent_session.png
 !media/Internal_Session_Tool_popup.png

@@ -616,3 +616,54 @@ export const STORE_READ_BUDGET: TimingBudget = {
       'without ambiguity.',
   },
 };
+
+
+/**
+ * The two pure webview computations Phase 4 added — v0.7.0 DoD 4.10.
+ *
+ * Both are functions of their arguments with no I/O, so the number is the
+ * function. `fit` runs on EVERY trigger in the table (`webview/store.ts:
+ * FIT_TRIGGERS`), including every structural diff, so its limit is per
+ * trigger; `statsLayout` runs on every `statsSnapshot` and every engine-chip
+ * toggle, over every live record. Set from the measurements below;
+ * `webview-layout.test.ts` re-measures and prints beside them.
+ */
+export const WEBVIEW_FIT_BUDGET: TimingBudget = {
+  id: 'webview.fit.dod',
+  what: 'boundsOf + fit over the 40-node wrapped tree, with the drawer open',
+  statistic: 'median',
+  limitMs: 1,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 0.008,
+    on: 'the 40-node fit golden subject (sessionOf(40)), 1600x900, drawer 190 px, 3 standalone runs x 40 warm samples, 2026-09-09',
+    marginX: 125,
+    note:
+      'Medians 0.008 / 0.007 / 0.006 ms across three standalone runs; the SLOWEST is ' +
+      'the set point. The subject is boundsOf over 40 placements plus one fitTo, which ' +
+      'is what a trigger pays. Measured in the forked perf worker. The limit is 1 ms ' +
+      'because a trigger can fire on every structural diff and the whole per-diff ' +
+      'incremental budget is 100 ms; this stage must stay invisible inside it.',
+  },
+};
+
+export const STATS_LAYOUT_BUDGET: TimingBudget = {
+  id: 'webview.statsLayout.dod',
+  what: 'statsLayout over every harvested corpus record',
+  statistic: 'median',
+  limitMs: 20,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 0.129,
+    on: 'the harvested fixtures/golden/stats records (23, one excluded), 3 standalone runs x 40 warm samples, 2026-09-09',
+    marginX: 155,
+    note:
+      'Medians 0.129 / 0.090 / 0.110 ms across three standalone runs; the SLOWEST is ' +
+      'the set point. The subject is every harvested corpus record through all four ' +
+      'views. The limit is 20 ms because the layout re-runs on every statsSnapshot ' +
+      'the host sends, which is every emission while the Stats view is open, and a ' +
+      'layout that took longer than a frame would show up as a stutter on a live deck.',
+  },
+};

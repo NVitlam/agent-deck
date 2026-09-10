@@ -743,6 +743,49 @@ export interface SessionEmission {
    * `{ type: 'schemaMismatch', sessionId }` message's trigger.
    */
   schemaMismatchSessionIds: readonly string[];
+  /**
+   * Per session, the instant of the last observed ACTIVITY — v0.7.0 DoD 4.11b,
+   * user ruling 2026-09-10.
+   *
+   * **A DERIVED RECORD IS EVIDENCE OF CONTENT, NEVER OF ACTIVITY; ACTIVITY
+   * COMES FROM LIVENESS ONLY.** That law was bought with the store flood twice.
+   * The second time, promotion rested on "the session's derived record changed
+   * during this lifetime" — and a historical session's record CHANGES while the
+   * tailer is still reading the file, so twenty-one sessions that did nothing
+   * were promoted and written the moment their initial read completed.
+   * Reproduced: pump one sees a partial tree, pump two sees the whole one,
+   * nineteen appends.
+   *
+   * So the instant comes from each engine's own liveness, which is the only
+   * component that knows what a WRITE is — and since DoD 4.11c, only when bytes
+   * are behind it:
+   *
+   *   - **Claude Code** — `SessionLivenessSnapshot.witnessedActivityAt`, which is
+   *     the last hook event, or the transcript's mtime **only once the file has
+   *     grown since this process first stat'd it**. NOT `lastActivityAt`: that
+   *     one still decides the `live`/`idle`/`ended` enum and feeds the stall
+   *     derivation, where a touched file legitimately reads as recent.
+   *   - **OpenCode** — `max(timeUpdated, seqAdvancedAt)`, untouched by 4.11c
+   *     because both are STORE CONTENT and no filesystem event moves them.
+   *   - **Codex** — `max(lastHookEventMs, lastMtimeMs)` across a session's
+   *     threads, with the mtime half gated on the same growth test.
+   *
+   * An mtime says a file was written; only a size says a session wrote it. A
+   * clone, a restore, a sync client, an indexer or a scanner produces the first
+   * and never the second.
+   *
+   * HOST-INTERNAL, and precisely: the emission OBJECT is handed to
+   * `SessionBridge.publish`, and this FIELD is serialised by nothing.
+   * `sendSnapshot` posts `{ type: 'snapshot', sessions }` and `sendMismatches`
+   * posts ids, so no map reaches the webview, the wire corpora or the
+   * untrusted-input guard. `SessionState` is the wire and is untouched.
+   *
+   * REQUIRED, and a missing session means "no activity known", never "now": an
+   * engine that cannot say must not have its sessions recorded on a guess (G3).
+   * Required rather than optional so a fourth engine cannot omit it silently —
+   * every emitter breaks at compile time instead.
+   */
+  lastActivityAt: ReadonlyMap<string, number>;
 }
 
 interface ContentView {
@@ -789,6 +832,18 @@ export class SessionModel {
   private readonly graftOptions: GraftOptions;
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly lastEmitted = new Map<string, SessionState>();
+
+  /**
+   * The activity instant per session, as of the most recent assembly.
+   *
+   * Written by {@link SessionModel.stateOf} from the SAME snapshot the liveness
+   * enum and the stall derivation read, and only read by
+   * {@link SessionModel.emit}. `stateOf`'s own comment is the reason it is a
+   * field rather than a second `snapshot()` call: asking the engine twice would
+   * let the store's provenance gate and the stall it is deriving disagree about
+   * "now" (v0.7.0 DoD 4.11b, `phase-verifier` round 3).
+   */
+  private readonly activityAt = new Map<string, number>();
 
   private readonly counts: SessionModelCounters = {
     sessionsRegistered: 0,
@@ -1084,6 +1139,19 @@ export class SessionModel {
     // here — would let the two disagree about "now".
     const livenessSnapshot = this.liveness.snapshot(record.sessionId);
     const liveness = livenessSnapshot?.liveness ?? 'idle';
+    // The store's promoter, taken from THIS snapshot (DoD 4.11b). Deleted rather
+    // than left stale when the tap has nothing: a session whose instant went
+    // away must read as "no activity known", never as the last one it had.
+    //
+    // `witnessedActivityAt`, NOT `lastActivityAt` (DoD 4.11c, user ruling
+    // 2026-09-10): the two differ by exactly one thing, whether a transcript
+    // whose mtime moved has GROWN since this process first stat'd it. The enum
+    // and the stall derivation above keep reading `lastActivityAt`, because for
+    // them a touched file is still "something happened, show it as recent"; a
+    // WRITE to the local store may not rest on that.
+    const activityAt = livenessSnapshot?.witnessedActivityAt;
+    if (activityAt === undefined) this.activityAt.delete(record.sessionId);
+    else this.activityAt.set(record.sessionId, activityAt);
     // v0.7.0 Phase 0c. Derived at assembly, never cached with the content view
     // and never written by the parser: the view is invalidated by content
     // arrivals, and a stall moves with the CLOCK, so caching it there would
@@ -1199,12 +1267,24 @@ export class SessionModel {
     }
     removedSessionIds.sort();
 
+    // The activity instant per session, from the snapshot `stateOf` already
+    // took while assembling these very states — never a second `snapshot()`
+    // call, which would read a later "now" than the stall in the same state.
+    // Absent means the tap has said nothing about that session, and no instant
+    // is claimed for it (G3).
+    const lastActivityAt = new Map<string, number>();
+    for (const session of sessions) {
+      const at = this.activityAt.get(session.sessionId);
+      if (at !== undefined) lastActivityAt.set(session.sessionId, at);
+    }
+
     return {
       sessions,
       diffs,
       addedSessionIds,
       removedSessionIds,
       schemaMismatchSessionIds,
+      lastActivityAt,
     };
   }
 

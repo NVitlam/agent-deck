@@ -119,6 +119,18 @@ export interface JsonlInference {
   /** Transcript mtime in epoch ms. */
   mtimeMs?: number;
   /**
+   * The transcript's size in bytes at the same `stat` as {@link mtimeMs}
+   * (v0.7.0 DoD 4.11c, user ruling 2026-09-10).
+   *
+   * **An mtime says a file was WRITTEN; only a size says it GREW.** A clone, a
+   * restore, a sync client, an indexer or a scanner moves the mtime of a
+   * transcript nobody has appended to, and 4.11b promoted a session into the
+   * stats store on exactly that signal. Omitted means "cannot say", like every
+   * other member here, and a session whose size is never known can never be
+   * promoted by its mtime.
+   */
+  sizeBytes?: number;
+  /**
    * Whether a Stop entry has been seen in the transcript. `false` means
    * "looked, none found"; omit it entirely for "cannot say".
    */
@@ -215,7 +227,33 @@ export interface SessionLivenessSnapshot {
   lastHookEventAt?: number;
   /** Later of {@link lastHookEventAt} and the inferred mtime. */
   lastActivityAt?: number;
+  /**
+   * The activity instant a WITNESS can stand behind (v0.7.0 DoD 4.11c).
+   *
+   * Later of {@link lastHookEventAt} and the inferred mtime **only when the
+   * transcript has GROWN since this process first stat'd it**. A hook event is
+   * always witnessed activity — the tap fires because a tool ran. An mtime is
+   * witnessed only with appended bytes behind it.
+   *
+   * This is a SECOND field rather than a narrowing of {@link lastActivityAt},
+   * and deliberately: `lastActivityAt` decides the `live`/`idle`/`ended` enum and
+   * feeds the tool-level stall derivation, where a touched file legitimately
+   * counts as "something happened to this session, show it as recent". What may
+   * NOT rest on a touch is a WRITE to the local stats store, which is what
+   * reads this one. DoD 3.2b's and 4.9's contracts about the enum are untouched.
+   */
+  witnessedActivityAt?: number;
   mtimeMs?: number;
+  /** The transcript's size at the last stat, when the source reported one. */
+  sizeBytes?: number;
+  /**
+   * Has the transcript grown since this process first stat'd it? (DoD 4.11c.)
+   *
+   * `undefined` = no size has ever been reported for this session, so the
+   * question cannot be answered. `false` at first sighting is the ordinary
+   * state: the baseline IS the first stat, so nothing has grown yet.
+   */
+  transcriptGrew?: boolean;
   hasStopEntry?: boolean;
   /** False when the most recent inference attempt threw. */
   inferenceOk: boolean;
@@ -260,6 +298,22 @@ interface SessionRecord {
   /** Last value handed to {@link LivenessEngine.observeJsonl}. */
   pushedInference?: JsonlInference;
   inferenceOk: boolean;
+  /**
+   * The size this process measures growth from (DoD 4.11c).
+   *
+   * Latched at the first sighting and moved in ONE direction only: DOWN, when a
+   * transcript is found smaller than its baseline (truncated, rotated, rewritten
+   * in place). Re-latching upward on a later read would make every read its own
+   * baseline and nothing could ever have grown; refusing to re-latch downward
+   * would leave a truncated session unpromotable until it passed its original
+   * size, which is a window of lost records rather than one (user ruling,
+   * 2026-09-10).
+   *
+   * A session discovered mid-write therefore has a baseline part-way through its
+   * file, which is correct: the bytes this process did not witness are not this
+   * process's evidence.
+   */
+  firstSizeBytes?: number;
 }
 
 const KNOWN_NAMES: ReadonlySet<string> = new Set<string>(KNOWN_HOOK_EVENT_NAMES);
@@ -654,6 +708,38 @@ export class LivenessEngine {
     const lastActivityAt = this.lastActivityAt(session, mtimeMs);
     const recent =
       lastActivityAt !== undefined && now - lastActivityAt <= this.thresholdMs;
+
+    // DoD 4.11c: the size beside the mtime, latched on first sighting, and the
+    // growth question answered from the pair. Latching here rather than in
+    // `observeJsonl` covers both paths into an inference — the pushed one and
+    // the pulled `inferenceSource` — because both arrive as `readInference`.
+    //
+    // A SHRINK RE-BASELINES (user ruling, 2026-09-10). A transcript smaller than
+    // the baseline was truncated, rotated, or rewritten in place under this
+    // process's feet, and against a stale high-water mark such a session would be
+    // unpromotable until it grew past its ORIGINAL size — a window of lost
+    // records rather than one. The new size becomes the baseline and growth is
+    // measured from there, so the session is back in the ordinary case on its
+    // next append.
+    //
+    // FAIL CLOSED ON AN UNKNOWN SIZE (user ruling, 2026-09-10): no size means the
+    // growth question cannot be answered, and an unanswerable question is not a
+    // yes. `undefined` — not `true` — so the mtime is not credited.
+    const sizeBytes = finiteNumber(inference?.sizeBytes);
+    if (sizeBytes !== undefined) {
+      const baseline = session.firstSizeBytes;
+      if (baseline === undefined || sizeBytes < baseline) {
+        session.firstSizeBytes = sizeBytes;
+      }
+    }
+    const transcriptGrew =
+      sizeBytes === undefined || session.firstSizeBytes === undefined
+        ? undefined
+        : sizeBytes > session.firstSizeBytes;
+    const witnessedActivityAt = this.witnessedActivityAt(
+      session,
+      transcriptGrew === true ? mtimeMs : undefined,
+    );
     const running = this.isRunning(session, hasStopEntry);
 
     const sessionDegraded =
@@ -691,7 +777,10 @@ export class LivenessEngine {
         ? { lastHookEventAt: session.lastHookEventAt }
         : {}),
       ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
+      ...(witnessedActivityAt !== undefined ? { witnessedActivityAt } : {}),
       ...(mtimeMs !== undefined ? { mtimeMs } : {}),
+      ...(sizeBytes !== undefined ? { sizeBytes } : {}),
+      ...(transcriptGrew !== undefined ? { transcriptGrew } : {}),
       ...(hasStopEntry !== undefined ? { hasStopEntry } : {}),
       ...(session.transcriptPath !== undefined
         ? { transcriptPath: session.transcriptPath }
@@ -707,6 +796,20 @@ export class LivenessEngine {
     if (session.lastHookEventAt === undefined) return mtimeMs;
     if (mtimeMs === undefined) return session.lastHookEventAt;
     return Math.max(session.lastHookEventAt, mtimeMs);
+  }
+
+  /**
+   * The same merge, with the mtime already gated on growth (DoD 4.11c).
+   *
+   * One function rather than an inline `Math.max` so that the two instants stay
+   * two readings of one rule: a hook event counts unconditionally, an mtime only
+   * when its caller decided the file grew.
+   */
+  private witnessedActivityAt(
+    session: SessionRecord,
+    grownMtimeMs: number | undefined,
+  ): number | undefined {
+    return this.lastActivityAt(session, grownMtimeMs);
   }
 
   private isRunning(

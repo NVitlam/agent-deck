@@ -22,7 +22,14 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
@@ -37,6 +44,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AgentDeckDataPath,
   AgentDeckHost,
+  CLEAR_STATS_COMMAND,
+  CLEAR_STATS_CONFIRM,
   CODEX_ABSENT_LOG,
   CONFIG_SECTION,
   CodexEnginePath,
@@ -62,6 +71,12 @@ import {
   inactiveReasonFor,
   opencodeStoreExists,
   readSettings,
+  OPEN_SETTINGS_COMMAND,
+  OPEN_STATS_COMMAND,
+  EVEN_EDITOR_WIDTHS,
+  SETTINGS_FILTER,
+  StatsPipeline,
+  WORKBENCH_OPEN_SETTINGS,
   statsSettingDefaults,
   workspacePathsOf,
 } from './extension.js';
@@ -74,8 +89,10 @@ import type {
   Unsubscribe,
 } from './extension.js';
 import type { WebviewToHostMessage } from './model/events.js';
+import type { SessionEmission } from './model/session.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
-import { STORE_DIR_NAME, resolveStoreDir } from './stats/store.js';
+import { STORE_DIR_NAME, StatsStore, resolveStoreDir } from './stats/store.js';
+import { parsePricing } from './stats/pricing.js';
 import { formatCounters } from './bridge/diagnostics.js';
 import type { DiagnosticsCounters } from './bridge/diagnostics.js';
 import { HookListener } from './hooks/listener.js';
@@ -96,14 +113,16 @@ import { DEFAULT_PREVIEW_BYTES as GRAFTER_DEFAULT_PREVIEW_BYTES } from './model/
 import type { GraftSessionResult } from './model/graft.js';
 import type { DiagnosticsEvent } from './bridge/diagnostics.js';
 import { TRUNCATION_MARKER_RE, truncationMarker } from './parser/redact.js';
-import { WEBVIEW_ROOT_ID } from './bridge/contract.js';
+import { SIDEBAR_ROOT_ID, WEBVIEW_ROOT_ID } from './bridge/contract.js';
+import { SIDEBAR_MENU, SIDEBAR_VIEW_ID } from './sidebar/menu.js';
 import type { HostToWebviewMessage, SessionState, TreeNode } from './model/events.js';
 import { isAgentNode } from './model/events.js';
-import { slugifyWorkspace, snapshotTree } from './parser/tailer.js';
+import { ManualTime, slugifyWorkspace, snapshotTree } from './parser/tailer.js';
 import type { DiscoveryFailure, DiscoveryFailureKind, TreeSnapshotEntry } from './parser/tailer.js';
 import { correlateWorkspace } from './model/correlate.js';
 import {
   Uri,
+  ViewColumn,
   createExtensionContext,
   mock,
   resetVscodeMock,
@@ -156,6 +175,87 @@ async function capturedWorkspacePath(): Promise<string> {
     if (decoded !== '') return decoded;
   }
   throw new Error('no cwd found in the captured transcripts');
+}
+
+/**
+ * A WRITABLE copy of the captured projects root.
+ *
+ * DoD 4.11c makes a transcript's mtime count as activity only once the file
+ * has GROWN, so a test that wants a record has to append bytes — and
+ * appending to `fixtures/` would mutate a committed corpus (G1, G6). Every
+ * write below lands in this copy.
+ */
+async function stageCapturedRoot(): Promise<{ root: string; slugDir: string }> {
+  const root = join(await makeTempDir(), 'projects');
+  await cp(CAPTURED_ROOT, root, { recursive: true });
+  const entries = (await readdir(root, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  expect(entries.length, 'the staged root has no slug directory').toBeGreaterThan(0);
+  return { root, slugDir: join(root, entries[0] as string) };
+}
+
+/**
+ * TOUCH every session transcript in a staged slug dir: mtime moves, size does not.
+ *
+ * What a clone, a restore, a sync client, an indexer or a virus scanner does —
+ * and what DoD 4.11c refuses to read as activity. The counterpart of
+ * {@link growSessions}, and the two together are the item.
+ */
+async function touchSessions(slugDir: string, mtimeMs: number): Promise<number> {
+  let touched = 0;
+  const when = new Date(mtimeMs);
+  const before: number[] = [];
+  for (const sessionId of await sessionIdsIn(slugDir)) {
+    const file = join(slugDir, `${sessionId}.jsonl`);
+    before.push(statSync(file).size);
+    await utimes(file, when, when);
+    touched += 1;
+  }
+  expect(touched, 'no transcript was touched — the staged corpus is empty').toBeGreaterThan(0);
+  // The control on the control: a "touch" that changed a size would make the
+  // whole test vacuous in the direction that looks like a pass.
+  const after = (await sessionIdsIn(slugDir)).map((id) => statSync(join(slugDir, `${id}.jsonl`)).size);
+  expect(after, 'the touch changed a size').toStrictEqual(before);
+  return touched;
+}
+
+/**
+ * Append one real entry to every session transcript in a staged slug dir.
+ *
+ * **This is what a live session does, and under DoD 4.11c it is the only
+ * thing that makes an mtime count.** A replayed corpus that nobody appends to
+ * is history by definition — which is the whole point of the item — so the
+ * harness below grows the sessions after the host has taken its baseline,
+ * exactly as a session being worked on would.
+ *
+ * The appended line is the transcript's own LAST line with a fresh `uuid`, so
+ * it parses like every other entry rather than counting as malformed.
+ */
+async function growSessions(slugDir: string): Promise<number> {
+  let grown = 0;
+  for (const sessionId of await sessionIdsIn(slugDir)) {
+    const file = join(slugDir, `${sessionId}.jsonl`);
+    const text = await readFile(file, 'utf8');
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+    const last = lines.at(-1);
+    if (last === undefined) continue;
+    let line = last;
+    try {
+      const entry = JSON.parse(last) as Record<string, unknown>;
+      if (typeof entry['uuid'] === 'string') {
+        entry['uuid'] = `4111c000-0000-4000-8000-${String(grown).padStart(12, '0')}`;
+        line = JSON.stringify(entry);
+      }
+    } catch {
+      // Not JSON: append it back verbatim. The BYTES are the signal.
+    }
+    appendFileSync(file, `${line}\n`, 'utf8');
+    grown += 1;
+  }
+  expect(grown, 'no transcript grew — the staged corpus is empty').toBeGreaterThan(0);
+  return grown;
 }
 
 // ---------------------------------------------------------------------------
@@ -819,6 +919,8 @@ describe('readSettings', () => {
       'stats.retentionDays': 90,
       'stats.idleFlushMs': 3600000,
       pricing: {},
+      // v0.7.0 Phase 4 (DoD 4.0): spec section G, default on.
+      'canvas.autoFit': true,
     });
   });
 
@@ -839,6 +941,7 @@ describe('readSettings', () => {
           'stats.retentionDays': 30,
           'stats.idleFlushMs': 600_000,
           pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
+          'canvas.autoFit': false,
         })[key],
     });
     expect(read).toStrictEqual({
@@ -850,6 +953,7 @@ describe('readSettings', () => {
       'stats.retentionDays': 30,
       'stats.idleFlushMs': 600_000,
       pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
+      'canvas.autoFit': false,
     });
   });
 
@@ -1045,7 +1149,12 @@ describe('PanelController', () => {
    */
   function emission(
     sessions: SessionState[],
-    options: { degraded?: boolean; codexDegraded?: boolean; added?: string[] } = {},
+    options: {
+      degraded?: boolean;
+      codexDegraded?: boolean;
+      added?: string[];
+      activityAt?: number;
+    } = {},
   ): DataPathEmission {
     return {
       emission: {
@@ -1054,6 +1163,12 @@ describe('PanelController', () => {
         addedSessionIds: options.added ?? [],
         removedSessionIds: [],
         schemaMismatchSessionIds: [],
+        // DoD 4.11b: liveness says every one of these is active NOW, so the
+        // panel tests below drive the ordinary case. `activityAt` lets a test
+        // say otherwise; the store tests further down do.
+        lastActivityAt: new Map(
+          sessions.map((s) => [s.sessionId, options.activityAt ?? Date.now()] as const),
+        ),
       },
       degraded:
         options.degraded === true
@@ -4229,7 +4344,10 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
      * And the control at the bottom of this test is untouched, which is what
      * makes the whole thing more than a spelling rule.
      */
-    const BOOLEAN_ALLOW_LIST = ['agentDeck.stats.enabled'];
+    // v0.7.0 Phase 4 adds `agentDeck.canvas.autoFit` (DoD 4.0): a boolean, on
+    // the list in writing, and not an engine switch — it governs the canvas's
+    // re-fit rule and nothing about what is observed.
+    const BOOLEAN_ALLOW_LIST = ['agentDeck.canvas.autoFit', 'agentDeck.stats.enabled'];
     const booleans = Object.entries(properties)
       .filter(([, property]) => property.type === 'boolean')
       .map(([key]) => key)
@@ -5276,6 +5394,10 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
   interface StatsHost {
     host: AgentDeckHost;
     statsDir: string;
+    /** The staged, writable projects root these sessions were read from. */
+    projectsRoot: string;
+    /** Its one slug directory. */
+    slugDir: string;
     /** The panel the host will create, so its traffic is readable. */
     panel: FakePanel;
     /** Everything the consumer DOWNSTREAM of the stats layer received. */
@@ -5284,8 +5406,10 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
 
   async function startWithStore(
     overrides: Partial<AgentDeckSettings> = {},
+    options: { realProcessStart?: boolean; grow?: boolean } = {},
   ): Promise<StatsHost> {
     const workspacePath = await capturedWorkspacePath();
+    const { root: projectsRoot, slugDir } = await stageCapturedRoot();
     const statsDir = join(await makeTempDir(), 'globalStorage', STORE_DIR_NAME);
     // A retried bind must not inherit the lost attempt's panel: `onFreePort`
     // can construct the host more than once, and the panel is per attempt.
@@ -5297,9 +5421,15 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
       return trackHost(
         new AgentDeckHost({
           workspacePath,
-          projectsRoot: CAPTURED_ROOT,
+          projectsRoot,
           settings: settings({ port, 'stats.idleFlushMs': 1, ...overrides }),
           statsDir,
+          // DoD 4.11's provenance gate, opted out DELIBERATELY: every session
+          // in the captured corpus predates any real activation stamp, so under
+          // the gate none of them writes anything. These tests are about the
+          // settings and the seam, not about the gate — the gate has its own
+          // test below, which drives the real stamp in both directions.
+          ...(options.realProcessStart === true ? {} : { statsProcessStart: 0 }),
           tickMs: 0,
           createPanel: () => panel.surface,
           onEmission: (payload) => {
@@ -5309,7 +5439,27 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
       );
     });
     await waitForFlush();
-    return { host, statsDir, panel, emissions };
+
+    /*
+     * THE SESSIONS GROW, AND WITHOUT THIS EVERY TEST BELOW WOULD SEE AN EMPTY
+     * STORE (DoD 4.11c, user ruling 2026-09-10).
+     *
+     * The gate promotes a session on a transcript's mtime only once the file has
+     * gained bytes since this process first stat'd it. The captured corpus is
+     * static, so on its own it is history — correctly, and that is what
+     * `grow: false` below is for. Everything else in this describe is about the
+     * settings, the seam and the counters, so the harness does what a live
+     * session does and appends.
+     *
+     * AFTER the host has started, deliberately: the baseline is the first stat,
+     * so growing before it would leave nothing to have grown.
+     */
+    if (options.grow !== false) {
+      await growSessions(slugDir);
+      host.dataPath.pump();
+      await waitForFlush();
+    }
+    return { host, statsDir, panel, emissions, projectsRoot, slugDir };
   }
 
   /** Every line in every store file, parsed. Reads DISK, not the store object. */
@@ -5391,14 +5541,91 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
      * Not asserted by reading records: `activate()` reads the REAL settings,
      * so the idle window is the shipped hour and `readSettings` clamps
      * anything under a minute back to it — a floor on what a USER may type,
-     * and this test is a user. An armed timer is the observable that says the
-     * pipeline was handed a live session by the production wiring.
+     * and this test is a user.
+     *
+     * It used to say "an armed timer is the observable"; DoD 4.11's provenance
+     * gate made that wrong and the sentence is replaced rather than left to
+     * contradict the assertion below it.
+     */
+    /*
+     * The observable is what the pipeline DERIVED, not what it armed.
+     *
+     * It used to be `armedTimers > 0`, and DoD 4.11's provenance gate made that
+     * the wrong question: this corpus is historical, so a correct host arms
+     * nothing for it. `liveRecords()` is populated on every observe regardless
+     * of flush policy, so it still says "the production wiring handed this
+     * pipeline a session" — which is the claim — and it says it without
+     * depending on whether that session is one the store should keep.
      */
     expect(
-      host?.stats?.armedTimers,
+      host?.stats?.liveRecords().length,
       'activate() wired a store the data path never reaches',
     ).toBeGreaterThan(0);
     expect(host?.dataPath.diagnostics.grafts).toBeGreaterThan(0);
+    await deactivate();
+  });
+
+  it('Clear Stats History empties the panel in the SAME action — no flush, no pump, no other event (DoD 4.14)', async () => {
+    /*
+     * Found by the 4.9 smoke: the command deleted the directory and the Stats
+     * view kept every record, so the user cleared twice. The cause was the
+     * re-read cursor: the host re-reads the store only when `store.appended`
+     * has moved, and a clear appends nothing. Measured before the fix: the
+     * command posted NO `statsStore` at all.
+     *
+     * Through `activate()`, so the command is the registered one and the host is
+     * the one it reaches — the only production path by which a clear can tell a
+     * panel anything. The webview half (one empty `statsStore` is enough to
+     * show the empty state) is `webview/stats/stats-view.test.ts`'s.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    const globalStorage = await makeTempDir();
+    const dir = resolveStoreDir({ globalStorageUri: { fsPath: globalStorage } });
+
+    // A real history on disk BEFORE activation, from committed goldens, so the
+    // panel's first publish reads it the way it would read a user's.
+    const goldens = fileURLToPath(new URL('../fixtures/golden/stats', import.meta.url));
+    const seeded = new StatsStore({ dir, enabled: true, retentionDays: 90 });
+    const names = readdirSync(goldens).filter((n) => n.includes('-synthetic-0') && n.endsWith('.json')).sort();
+    for (const name of names.slice(0, 2)) {
+      const record = JSON.parse(readFileSync(join(goldens, name), 'utf8')) as Record<string, unknown>;
+      seeded.appendRecord({ ...record, derivedAt: Date.now() } as never);
+    }
+    expect(seeded.readRecords()).toHaveLength(2);
+
+    await activateOnFreePort(
+      (port) => {
+        mock.setWorkspaceFolder(workspacePath);
+        mock.setConfig(CONFIG_SECTION, { port });
+      },
+      globalStorage,
+    );
+    const host = currentHost();
+    expect(host, 'activate() installed no host').not.toBeNull();
+    host?.open();
+    const posted = mock.panels[0]?.webview.posted ?? [];
+    type StoreMessage = { type: 'statsStore'; records: unknown[]; enabled: boolean };
+    const stores = (messages: readonly unknown[]): StoreMessage[] =>
+      messages.filter(
+        (m): m is StoreMessage => (m as { type?: unknown }).type === 'statsStore',
+      );
+    expect(
+      stores(posted).at(-1)?.records,
+      'the panel never received the seeded history, so the clear proves nothing',
+    ).toHaveLength(2);
+
+    // THE ACTION. Nothing between it and the assertion: no pump, no timer, no
+    // second command.
+    const before = posted.length;
+    mock.answerWarningWith(CLEAR_STATS_CONFIRM);
+    await mock.runCommand(CLEAR_STATS_COMMAND);
+    expect(existsSync(dir), 'the clear did not remove the directory').toBe(false);
+
+    const sent = stores(posted.slice(before));
+    expect(sent, 'Clear Stats History told the panel nothing').toStrictEqual([
+      { type: 'statsStore', records: [], enabled: true },
+    ]);
     await deactivate();
   });
 
@@ -5438,6 +5665,153 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
     // holding timers for them, so the empty store is a pending flush rather
     // than an emission that never arrived.
     expect(slow.host.stats?.armedTimers).toBeGreaterThan(0);
+  });
+
+  it('a window with NO store still answers the Stats view, rather than leaving it loading', async () => {
+    /*
+     * `phase-verifier` defect 15, 2026-09-09. `statsDirFor` returns undefined for
+     * a window with no `globalStorageUri` — it logs "the local stats history is
+     * disabled for this window" — so `this.stats` is undefined, and
+     * `#publishStats` returned before sending anything. DoD 4.12 then made the
+     * webview wait for a `statsStore` message before it would say anything about
+     * the history, so that window's Stats view sat on "Reading the stored
+     * history…" FOREVER: the exact state the loading flag was added to prevent.
+     *
+     * An empty, disabled store is the true answer for such a window, and it is
+     * now sent.
+     */
+    const workspacePath = await capturedWorkspacePath();
+    let panel = fakePanel();
+    const host = await startHostOnFreePort((port) => {
+      panel = fakePanel();
+      return trackHost(
+        new AgentDeckHost({
+          workspacePath,
+          projectsRoot: CAPTURED_ROOT,
+          settings: settings({ port }),
+          // No `statsDir`: the window has no globalStorageUri.
+          tickMs: 0,
+          createPanel: () => panel.surface,
+          onEmission: () => {
+            // Nothing: this test reads what the PANEL was sent.
+          },
+        }),
+      );
+    });
+    await waitForFlush();
+    host.open();
+    await waitForFlush();
+
+    expect(host.stats, 'this test is about a host with no pipeline').toBeUndefined();
+    const stored = panel.posted.filter(
+      (m) => (m as { type?: unknown }).type === 'statsStore',
+    ) as { records: unknown[]; enabled: boolean }[];
+    expect(stored.length, 'the Stats view was never told there is no history').toBeGreaterThan(0);
+    expect(stored[0]?.enabled).toBe(false);
+    expect(stored[0]?.records).toStrictEqual([]);
+  });
+
+  it('the provenance stamp is the REAL clock, and history reaches no store (DoD 4.11)', async () => {
+    /*
+     * THE MUTATION THIS KILLS: replacing `options.statsProcessStart ?? clock()`
+     * with `0` — i.e. shipping the flood back. Every other stats test passes
+     * `statsProcessStart: 0` on purpose, so without this one the production
+     * default has exactly one assignment site and nothing drives it. That is
+     * the shape this repository has shipped three times (`enabledEngines`,
+     * `degradedByEngine`, the auto-fit attributes), and it is only ever found
+     * by mutating the WIRING.
+     *
+     * The captured corpus is REPLAYED and nobody appends to it, so against a
+     * stamp taken now every session in it is history — the same situation as the
+     * user's 28 rediscovered sessions, on the real path.
+     *
+     * `grow: false` is what makes it history under DoD 4.11c, and it is the
+     * honest arm: the harness's default appends a real entry to every transcript
+     * after start, because a corpus that never grows can never be recorded once
+     * an mtime alone stops counting. History is exactly the corpus nobody wrote
+     * to, so this arm must be the one that does not write.
+     */
+    const real = await startWithStore(
+      { 'stats.enabled': true },
+      { realProcessStart: true, grow: false },
+    );
+    expect(real.host.stats?.store.enabled).toBe(true);
+
+    // THE VACUITY CONTROL, and it is the assertion that makes the next one mean
+    // something: the emission DID reach the pipeline. Without it an empty store
+    // passes just as well on a host that never wired the pipeline at all — the
+    // counter-polarity lesson this repository has recorded twice.
+    expect(
+      real.host.stats?.liveRecords().length,
+      'the pipeline never saw a session, so the empty store proves nothing',
+    ).toBeGreaterThan(0);
+
+    expect(linesOnDisk(real.statsDir), 'a historical session reached the store').toStrictEqual([]);
+    expect(real.host.stats?.armedTimers, 'history armed a flush').toBe(0);
+
+    // ...and the same path, same corpus, with a stamp the corpus postdates:
+    // records appear. So the empty store above is the GATE and not the wiring.
+    const observed = await startWithStore({ 'stats.enabled': true });
+    expect(linesOnDisk(observed.statsDir).length).toBeGreaterThan(0);
+
+    // AND THE 4.11c ARM, on the real stamp this time: the same historical corpus
+    // that wrote nothing above writes as soon as somebody APPENDS to it. Without
+    // this pair, "history reaches no store" is satisfied by a gate that refuses
+    // everything, which is the failure mode with no user-visible symptom until
+    // the Stats view is permanently empty.
+    const resumed = await startWithStore(
+      { 'stats.enabled': true },
+      { realProcessStart: true, grow: false },
+    );
+    expect(linesOnDisk(resumed.statsDir), 'history, before the append').toStrictEqual([]);
+    await growSessions(resumed.slugDir);
+    resumed.host.dataPath.pump();
+    await waitForFlush();
+    expect(
+      linesOnDisk(resumed.statsDir).length,
+      'an appended transcript did not reach the store',
+    ).toBeGreaterThan(0);
+  });
+
+  it('Claude Code: touch writes NOTHING, append writes a record', async () => {
+    /*
+     * The real path, the real corpus, the REAL activation stamp — the same
+     * arrangement as the 4.11 provenance test, driven through the one signal
+     * 4.11c is about. `grow: false` because this test does its own writing.
+     */
+    const { host, statsDir, slugDir } = await startWithStore(
+      { 'stats.enabled': true },
+      { realProcessStart: true, grow: false },
+    );
+
+    // The baseline: history, and the pipeline has seen it (the vacuity control
+     // the 4.11 test also carries — an empty store proves nothing about a
+     // pipeline that never ran).
+    expect(
+      host.stats?.liveRecords().length,
+      'the pipeline never saw a session, so the empty store proves nothing',
+    ).toBeGreaterThan(0);
+    expect(linesOnDisk(statsDir)).toStrictEqual([]);
+
+    // A TOUCH: every transcript's mtime moves to now, no byte changes. This is
+    // the arm that was writing 21 sessions in a 1.4 s burst.
+    await touchSessions(slugDir, Date.now());
+    for (let i = 0; i < 5; i += 1) host.dataPath.pump();
+    await waitForFlush();
+    expect(
+      linesOnDisk(statsDir),
+      'a touched transcript reached the store — the mtime door is open',
+    ).toStrictEqual([]);
+    expect(host.stats?.armedTimers, 'a touched transcript armed a flush').toBe(0);
+
+    // AN APPEND: bytes arrive. THAT is activity, and one record per session lands.
+    const grown = await growSessions(slugDir);
+    host.dataPath.pump();
+    await waitForFlush();
+    expect(
+      linesOnDisk(statsDir).length,
+      'an appended transcript reached no store',
+    ).toBe(grown);
   });
 
   it('the counters line reports the store, not two zeroes', async () => {
@@ -5524,5 +5898,1022 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
     );
     // The failure is COUNTED, which is what G2 extended requires of it.
     expect(host.counters().statsErrors).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (13) v0.7.0 Phase 4 — the sidebar, the left column, the stats wire (DoD 4.1, 4.6b, 4.6c)
+// ---------------------------------------------------------------------------
+
+describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () => {
+  const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
+
+  afterEach(async () => {
+    await deactivate();
+    if (previousRoot === undefined) delete process.env['CLAUDE_PROJECTS_ROOT'];
+    else process.env['CLAUDE_PROJECTS_ROOT'] = previousRoot;
+  });
+
+  /** The CSP `content` of a document, with the per-document nonce blanked. */
+  const policyOf = (html: string): string => {
+    const match = /Content-Security-Policy" content="([^"]+)"/.exec(html);
+    if (match?.[1] === undefined) throw new Error('no CSP meta in the document');
+    return match[1].replace(/'nonce-[^']+'/g, "'nonce-X'");
+  };
+
+  it('registers every sidebar menu command and the sidebar view ABOVE the activation gates', async () => {
+    // No workspace at all: `activate()` returns before building a host, and
+    // the front door must already be there.
+    resetVscodeMock();
+    await activate(extensionContext());
+    expect(currentHost()).toBeNull();
+    for (const entry of SIDEBAR_MENU) {
+      expect(mock.hasCommand(entry.command), entry.command).toBe(true);
+    }
+    expect(mock.hasViewProvider(SIDEBAR_VIEW_ID)).toBe(true);
+  });
+
+  it('the resolved sidebar carries the sidebar root, the same bundle and the same CSP as the panel', async () => {
+    resetVscodeMock();
+    await activate(extensionContext());
+    const view = mock.resolveView(SIDEBAR_VIEW_ID);
+    expect(view.webview.html).toContain(`<div id="${SIDEBAR_ROOT_ID}"></div>`);
+    expect(view.webview.html).not.toContain(`id="${WEBVIEW_ROOT_ID}"`);
+    expect(view.webview.html).toContain(`/${WEBVIEW_SCRIPT_SEGMENTS.join('/')}`);
+    // The panel's document, for the comparison: same policy, byte for byte
+    // once the nonce is blanked.
+    const panelHtml = webviewHtml({
+      scriptUri: 'webview://ext/dist/webview/main.js',
+      styleUri: 'webview://ext/dist/webview/main.css',
+      nonce: 'AAAAAAAA',
+      cspSource: view.webview.cspSource,
+    });
+    expect(policyOf(view.webview.html)).toBe(policyOf(panelHtml));
+    expect(policyOf(view.webview.html)).toContain("default-src 'none'");
+    // The webview may read `dist/` and nothing else — the panel's own rule.
+    expect(view.webview.options).toMatchObject({ enableScripts: true });
+  });
+
+  it('a click in the sidebar runs the registered command; an off-menu id runs nothing', async () => {
+    resetVscodeMock();
+    await activate(extensionContext());
+    const view = mock.resolveView(SIDEBAR_VIEW_ID);
+    view.fireMessage({ type: 'runCommand', command: OPEN_COMMAND });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.executed.map((e) => e.command)).toStrictEqual([OPEN_COMMAND]);
+    // ...and the REAL handler ran: with no host it explains itself.
+    expect(mock.informationMessages).toHaveLength(1);
+
+    view.fireMessage({ type: 'runCommand', command: 'workbench.action.closeWindow' });
+    view.fireMessage({ type: 'selectSession', sessionId: 's1' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.executed.map((e) => e.command)).toStrictEqual([OPEN_COMMAND]);
+  });
+
+  it('agentDeck.openSettings runs the workbench settings command, filtered to this extension', async () => {
+    resetVscodeMock();
+    await activate(extensionContext());
+    await mock.runCommand(OPEN_SETTINGS_COMMAND);
+    expect(mock.executed).toStrictEqual([{ command: WORKBENCH_OPEN_SETTINGS, args: [SETTINGS_FILTER] }]);
+    expect(SETTINGS_FILTER).toBe('@ext:nvitlam.agent-deck');
+  });
+
+  it('DoD 4.6c: the deck opens in ViewColumn.One; even-widths runs once with two groups and not with one', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+
+    // ONE group: the column, and no even-widths call.
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    mock.setEditorGroups(1);
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.panelColumns).toStrictEqual([ViewColumn.One]);
+    expect(mock.executed.filter((e) => e.command === EVEN_EDITOR_WIDTHS)).toHaveLength(0);
+    // A second open reveals; it creates no panel and evens nothing.
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.panelColumns).toHaveLength(1);
+    await deactivate();
+
+    // TWO groups: evened, exactly once, after the panel was created.
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    mock.setEditorGroups(2);
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.panelColumns).toStrictEqual([ViewColumn.One]);
+    expect(mock.executed.filter((e) => e.command === EVEN_EDITOR_WIDTHS)).toHaveLength(1);
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.executed.filter((e) => e.command === EVEN_EDITOR_WIDTHS)).toHaveLength(1);
+  });
+
+  it('DoD 4.0/4.1: the panel hears settings first, then the snapshot, then both stats messages', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    const storage = await makeTempDir();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port, 'canvas.autoFit': false });
+    }, storage);
+    await mock.runCommand(OPEN_COMMAND);
+    const panel = mock.panels[0];
+    const types = (panel?.webview.posted ?? []).map((m) => (m as { type: string }).type);
+    // Snapshot FIRST — the bridge's oldest invariant — then the settings.
+    expect(types[0]).toBe('snapshot');
+    expect(types).toContain('settings');
+    expect(panel?.webview.posted[types.indexOf('settings')]).toStrictEqual({ type: 'settings', canvasAutoFit: false });
+    expect(types.indexOf('settings')).toBeGreaterThan(types.indexOf('snapshot'));
+    expect(types).toContain('statsSnapshot');
+    expect(types).toContain('statsStore');
+    // The stats wire follows the session wire: a record about a session the
+    // webview has not been sent would have nothing to attach to.
+    expect(types.indexOf('statsSnapshot')).toBeGreaterThan(types.indexOf('snapshot'));
+    const stats = panel?.webview.posted.find((m) => (m as { type: string }).type === 'statsSnapshot') as
+      | { records: { sessionId: string; engine: string }[] }
+      | undefined;
+    expect(stats?.records.length).toBeGreaterThan(0);
+    const snapshot = panel?.webview.posted.find((m) => (m as { type: string }).type === 'snapshot') as
+      | { sessions: { sessionId: string }[] }
+      | undefined;
+    // One live record per session on the wire, same ids.
+    expect(stats?.records.map((r) => r.sessionId).sort()).toStrictEqual(
+      snapshot?.sessions.map((s) => s.sessionId).sort(),
+    );
+    const store = panel?.webview.posted.find((m) => (m as { type: string }).type === 'statsStore') as
+      | { records: unknown[]; enabled: boolean }
+      | undefined;
+    expect(store?.enabled).toBe(true);
+
+    // A configuration change reaches the renderer live, as a fresh settings message.
+    mock.setConfig(CONFIG_SECTION, { port: currentHost()?.dataPath.settings.port, 'canvas.autoFit': true });
+    mock.fireConfigurationChange(CONFIG_SECTION);
+    expect(panel?.webview.posted.at(-1)).toStrictEqual({ type: 'settings', canvasAutoFit: true });
+  });
+
+  it('agentDeck.openStats opens the same panel and asks for the stats view', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_STATS_COMMAND);
+    expect(mock.panels).toHaveLength(1);
+    const posted = mock.panels[0]?.webview.posted ?? [];
+    expect(posted).toContainEqual({ type: 'showView', mode: 'stats' });
+    // The same panel: a plain open afterwards reveals rather than creating.
+    await mock.runCommand(OPEN_COMMAND);
+    expect(mock.panels).toHaveLength(1);
+  });
+
+  it('a reload re-sends the settings, after asking for the snapshot', () => {
+    const panel = fakePanel();
+    let snapshots = 0;
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {
+        snapshots += 1;
+      },
+    });
+    controller.setSettings({ canvasAutoFit: false });
+    expect(panel.posted).toStrictEqual([{ type: 'settings', canvasAutoFit: false }]);
+    panel.fireBecameVisible();
+    // The pump (asked for first) supplies the snapshot; the settings follow.
+    expect(snapshots).toBe(1);
+    expect(panel.posted).toStrictEqual([
+      { type: 'settings', canvasAutoFit: false },
+      { type: 'settings', canvasAutoFit: false },
+    ]);
+    controller.dispose();
+  });
+
+  it('DoD 4.1: a record with an extra string field is dropped and counted; the rest go out', () => {
+    const goldenDir = fileURLToPath(new URL('../fixtures/golden/stats/', import.meta.url));
+    const names = readdirSync(goldenDir).filter((n) => n.endsWith('.json')).sort();
+    const [a, b] = names.map((n) => JSON.parse(readFileSync(join(goldenDir, n), 'utf8')) as Record<string, unknown>);
+    if (a === undefined || b === undefined) throw new Error('need two goldens');
+    const poisoned = { ...b, unavailable: [...(b['unavailable'] as string[])], note: 'a stray sentence' };
+
+    const panel = fakePanel();
+    const controller = new PanelController({ panel: panel.surface, nonce: 'AAAAAAAA' });
+    const verdict = controller.publishStats([a as never, poisoned as never], {
+      records: [{ ...a, derivedAt: 1 }, poisoned],
+      enabled: true,
+    });
+    expect(verdict.dropped).toBe(2);
+    expect(verdict.reasons.every((r) => r.includes("key 'note'"))).toBe(true);
+    const snapshot = panel.posted.find((m) => m.type === 'statsSnapshot') as { records: unknown[] } | undefined;
+    const store = panel.posted.find((m) => m.type === 'statsStore') as { records: unknown[] } | undefined;
+    expect(snapshot?.records).toStrictEqual([a]);
+    expect(store?.records).toStrictEqual([a]);
+    expect(controller.counters.statsDropped).toBe(2);
+    controller.dispose();
+  });
+
+  it('the counters line carries statsDropped, appended', () => {
+    const line = formatCounters(
+      {
+        grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+        patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+        ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+        relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
+        statsErrors: 0, storeMalformed: 0, statsDropped: 7,
+      },
+      '2026-09-09T00:00:00.000Z',
+    );
+    expect(line.endsWith(' statsDropped=7')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shared by the 4.11b and 4.11c suites below
+// ---------------------------------------------------------------------------
+
+/** Well clear of the fixture's own capture dates, so nothing here is accidental. */
+const STAMP = Date.parse('2026-09-10T00:00:00.000Z');
+
+interface SplitTrigger {
+  trigger: PollTrigger;
+  fire: (index: number) => void;
+  count: () => number;
+  /** Pass as the path's `onChange`, so `contentRead` can see a read land. */
+  onChange: () => void;
+  /**
+   * Fire the CONTENT re-read (registration 1) and resolve once it has been
+   * APPLIED — i.e. on the `onChange` `CodexEnginePath.#refresh` calls after its
+   * await.
+   *
+   * This replaced a fixed 50 ms sleep, and the sleep was a defect: run 1 of the
+   * 4.13/4.14 closing block failed `growth from the re-baselined size was not
+   * seen` while runs 2 and 3 were green. Under full-suite load the read had not
+   * landed within 50 ms, so the liveness poll sampled the OLD sizes. A sleep
+   * standing in for "the async work finished" is a test that passes or fails by
+   * CPU load — this file's recorded class — and the runner's disagreement check
+   * is what caught it.
+   */
+  contentRead: () => Promise<void>;
+}
+
+/**
+ * A poll trigger whose registrations can be fired ONE AT A TIME.
+ *
+ * `manualPollTrigger().fire()` runs every registration, and `CodexEnginePath`
+ * registers two — the liveness poll and the content re-read. Firing them
+ * together cannot tell "the emission read the report" from "the emission read
+ * `#threads`", which is exactly the mutation that got past round 3 (163 tests
+ * green with `CodexLivenessEngine.latest` never consulted). Which index is
+ * which is NOT assumed: the test fires one and asserts the counter that moved.
+ */
+function splitPollTrigger(): SplitTrigger {
+  const runs: (() => void)[] = [];
+  const waiting: (() => void)[] = [];
+  const trigger: PollTrigger = (run): PollTriggerHandle => {
+    runs.push(run);
+    return { stop: () => {} };
+  };
+  const fire = (index: number): void => {
+    const run = runs[index];
+    expect(run, `no poll registration at index ${String(index)}`).toBeDefined();
+    (run as () => void)();
+  };
+  return {
+    trigger,
+    fire,
+    count: () => runs.length,
+    onChange: () => {
+      for (const resolve of waiting.splice(0)) resolve();
+    },
+    contentRead: () => {
+      // Armed BEFORE the fire: the only onChange a content fire produces comes
+      // after the read's own await, and no other trigger is fired meanwhile.
+      const applied = new Promise<void>((resolve) => waiting.push(resolve));
+      fire(1);
+      return applied;
+    },
+  };
+}
+
+/** Every `.jsonl` under a staged root, basename to full path. */
+async function transcriptsUnder(root: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+    out.set(entry.name, join(entry.parentPath, entry.name));
+  }
+  expect(out.size, 'no transcript under the staged root — the layout moved').toBeGreaterThan(0);
+  return out;
+}
+
+/**
+ * Append one real record to a staged transcript and set its mtime.
+ *
+ * DoD 4.11c: a Codex transcript's mtime counts as activity only once the file
+ * has GAINED BYTES since this process first saw it, so every test below that
+ * wants an instant has to append. The appended line is the file's own last
+ * line, so it parses like every other record in it; the mtime is then set
+ * explicitly, because two files touched in the same millisecond cannot show
+ * which is later and this suite compares them.
+ */
+async function growTranscript(file: string, mtimeMs: number): Promise<void> {
+  const text = await readFile(file, 'utf8');
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+  const last = lines.at(-1);
+  expect(last, `${file} is empty`).toBeDefined();
+  appendFileSync(file, `${String(last)}\n`, 'utf8');
+  const when = new Date(mtimeMs);
+  await utimes(file, when, when);
+}
+
+/** A staged copy of any run's `.codex`, not only `baseline`'s. */
+async function stageCodexRun(run: string): Promise<string> {
+  const root = join(await makeTempDir(), '.codex');
+  await cp(
+    fileURLToPath(new URL(`../fixtures/codex-0.151.0-alpha.7.2/${run}/home/.codex`, import.meta.url)),
+    root,
+    { recursive: true },
+  );
+  return root;
+}
+
+/**
+ * Every transcript in a staged root, moved to one instant.
+ *
+ * EVERY `.jsonl` under the root, not just the root thread's file:
+ * `CodexThread.owningFile` is a NAME rather than a path (it answers "which
+ * file declared this thread", C5), and the activity instant is the max across
+ * a session's threads — so a subagent transcript left at its checkout mtime
+ * would promote the session on its own and the arm below would pass for the
+ * wrong reason. A staged root is a fresh copy, so this touches nothing shared.
+ */
+async function stampTranscripts(root: string, atMs: number): Promise<CodexThread[]> {
+  const when = new Date(atMs);
+  let stamped = 0;
+  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+    await utimes(join(entry.parentPath, entry.name), when, when);
+    stamped += 1;
+  }
+  expect(stamped, 'no transcript was stamped — the fixture layout moved').toBeGreaterThan(0);
+
+  // Read AFTER the stamp, so `CodexThread.mtimeMs` is the value being driven.
+  const outcome = await readCodexEngine({ root });
+  expect(outcome.kind).toBe('ok');
+  if (outcome.kind !== 'ok') throw new Error('unreachable: asserted above');
+  const threads = outcome.result.threads as CodexThread[];
+  expect(threads.length, 'the Codex fixture must carry threads').toBeGreaterThan(0);
+  for (const thread of threads) {
+    expect(thread.mtimeMs, 'a thread kept its checkout mtime').toBe(atMs);
+  }
+  return threads;
+}
+
+/**
+ * A real Codex path over a staged root whose every transcript sits at
+ * `mtimeMs`, read against an injected clock. No hook events: the mtime is the
+ * only signal, which is the case that matters — it is what a session nobody
+ * has touched still has.
+ */
+async function codexPathAt(
+  root: string,
+  mtimeMs: number,
+  clock: number,
+): Promise<{ path: CodexEnginePath; rootThread: CodexThread; poll: SplitTrigger }> {
+  const threads = await stampTranscripts(root, mtimeMs);
+  const rootThread = threads.find((thread) => thread.threadSource === 'user');
+  expect(rootThread, 'the Codex fixture must carry a root thread').toBeDefined();
+  const poll = splitPollTrigger();
+  const path = new CodexEnginePath({
+    workspaceFolders: [(rootThread as CodexThread).cwd],
+    thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+    onChange: poll.onChange,
+    root,
+    now: () => clock,
+    pollTrigger: poll.trigger,
+  });
+  await path.start();
+  return { path, rootThread: rootThread as CodexThread, poll };
+}
+
+/** A real store and a real pipeline over one emission, with a manual clock. */
+function storeOver(
+  emission: SessionEmission,
+  processStart: number,
+  clockStart: number,
+  dir: string,
+): { appended: number; armed: number } {
+  const time = new ManualTime(clockStart);
+  const store = new StatsStore({ dir, enabled: true, retentionDays: 90 });
+  const parsed = parsePricing({});
+  const pipeline = new StatsPipeline({
+    store,
+    pricing: parsed.table,
+    pricingInvalid: parsed.invalid,
+    processStart,
+    idleFlushMs: 60_000,
+    now: () => time.now(),
+    scheduler: time,
+  });
+  pipeline.observe(emission);
+  const armed = pipeline.armedTimers;
+  time.advance(60_000);
+  const appended = store.appended;
+  pipeline.dispose();
+  return { appended, armed };
+}
+
+
+// ---------------------------------------------------------------------------
+// DoD 4.11c — an mtime counts only with bytes behind it
+// ---------------------------------------------------------------------------
+
+/**
+ * The third door into the store flood, closed (user ruling, 2026-09-10).
+ *
+ * 4.11b made LIVENESS the sole promoter, and two of the three liveness instants
+ * are FILE MTIMES. So the flood had one door left open, stated on that item and
+ * unguarded: **anything that touches a transcript after activation promotes that
+ * whole history** — a clone, a restore from backup, a sync client, an indexer, a
+ * virus scanner. This repository already records the mechanism from the other
+ * side, because it is what made 4.11's first gate fail three times out of three:
+ * *"git gives every fixture a fresh mtime, so a captured 2026-08 session looks
+ * live"*.
+ *
+ * **THE RULE: an mtime-derived instant counts only if the transcript's SIZE GREW
+ * since this process first stat'd it.** Hook events are untouched — the tap fires
+ * because a tool ran, and no filesystem accident produces one.
+ *
+ * **THE STATED COST, and it is real.** A session that was being worked on right
+ * up to the moment the window opened, and that never appends another byte, is
+ * never recorded on its mtime — its baseline IS its current size. In practice a
+ * live Claude Code or Codex session appends constantly and fires hooks on every
+ * tool call, so this bites the narrow case of a session that stops at exactly the
+ * wrong moment. The alternative is recording every session on a filesystem event
+ * that says nothing about the session, which is the flood.
+ */
+describe('DoD 4.11c — a touched transcript is not activity; an appended one is', () => {
+  it('Codex: a SHRUNK transcript re-baselines, and the next append counts', async () => {
+    /*
+     * User ruling, 2026-09-10, and the Codex half of it. A transcript found
+     * smaller than its baseline was truncated, rotated, or rewritten in place;
+     * measuring growth from the stale high-water mark would leave the session
+     * unpromotable until it passed its ORIGINAL size, which is a window of lost
+     * records rather than one.
+     *
+     * Driven by removing the file's last RECORD and putting it back, so the file
+     * is a valid transcript at every step and the final size is exactly the
+     * original — above the re-baselined mark and NOT above the original one, so a
+     * high-water implementation fails this and only this.
+     */
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const poll = splitPollTrigger();
+    const threads = await stampTranscripts(root, stale);
+    const rootThread = threads.find((thread) => thread.threadSource === 'user') as CodexThread;
+    const files = await transcriptsUnder(root);
+    const rootFile = files.get(rootThread.owningFile) as string;
+    expect(rootFile, "the root thread's transcript is not under the root").toBeDefined();
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [rootThread.cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: poll.onChange,
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+    const original = statSync(rootFile).size;
+    expect(path.emit().lastActivityAt.size, 'the baseline claimed activity').toBe(0);
+
+    // THE SHRINK: the last record is removed. Still a valid transcript.
+    const text = await readFile(rootFile, 'utf8');
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+    const last = lines.at(-1) as string;
+    expect(lines.length, 'the transcript must hold more than one record').toBeGreaterThan(1);
+    writeFileSync(rootFile, `${lines.slice(0, -1).join('\n')}\n`, 'utf8');
+    const shrunkTo = statSync(rootFile).size;
+    expect(shrunkTo, 'the file did not shrink').toBeLessThan(original);
+    const shrinkAt = new Date(STAMP + 1_000);
+    await utimes(rootFile, shrinkAt, shrinkAt);
+    await poll.contentRead();
+    poll.fire(0);
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'a shrink was read as activity',
+    ).toBeUndefined();
+
+    // THE RE-APPEND: the same record back. The file is exactly its original size
+    // — above the NEW baseline and not above the old one.
+    appendFileSync(rootFile, `${last}\n`, 'utf8');
+    expect(statSync(rootFile).size, 'the re-append did not restore the size').toBe(original);
+    const regrownAt = new Date(STAMP + 2_000);
+    await utimes(rootFile, regrownAt, regrownAt);
+    await poll.contentRead();
+    poll.fire(0);
+
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'growth from the re-baselined size was not seen',
+    ).toBe(STAMP + 2_000);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('Codex: touch writes NOTHING, append writes a record', async () => {
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const poll = splitPollTrigger();
+    const threads = await stampTranscripts(root, stale);
+    const rootThread = threads.find((thread) => thread.threadSource === 'user') as CodexThread;
+    const path = new CodexEnginePath({
+      workspaceFolders: [rootThread.cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: poll.onChange,
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+    expect(path.emit().lastActivityAt.size, 'the baseline claimed activity').toBe(0);
+
+    // A TOUCH, well after the stamp: every transcript's mtime says "now".
+    const files = await transcriptsUnder(root);
+    const sizesBefore = [...files.values()].map((file) => statSync(file).size);
+    const when = new Date(STAMP + 1_000);
+    for (const file of files.values()) await utimes(file, when, when);
+    expect(
+      [...files.values()].map((file) => statSync(file).size),
+      'the touch changed a size',
+    ).toStrictEqual(sizesBefore);
+    await poll.contentRead();
+    poll.fire(0);
+
+    const touched = path.emit();
+    expect(
+      [...touched.lastActivityAt.keys()],
+      'a touched Codex transcript claimed activity',
+    ).toStrictEqual([]);
+    const afterTouch = storeOver(
+      touched,
+      STAMP,
+      STAMP + 5_000,
+      join(await makeTempDir(), STORE_DIR_NAME),
+    );
+    expect(afterTouch.armed + afterTouch.appended, 'a touched Codex session reached the store').toBe(0);
+
+    // AN APPEND: the same file, bytes added, the same mtime it already had.
+    await growTranscript(files.get(rootThread.owningFile) as string, STAMP + 1_000);
+    await poll.contentRead();
+    poll.fire(0);
+
+    const grown = path.emit();
+    expect(
+      grown.lastActivityAt.get(rootThread.sessionId),
+      'an appended Codex transcript produced no instant',
+    ).toBe(STAMP + 1_000);
+    const afterAppend = storeOver(
+      grown,
+      STAMP,
+      STAMP + 5_000,
+      join(await makeTempDir(), STORE_DIR_NAME),
+    );
+    expect(
+      afterAppend.armed + afterAppend.appended,
+      'an appended Codex session reached no store',
+    ).toBeGreaterThan(0);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoD 4.11b — every engine supplies its own activity, and the merge keeps it
+// ---------------------------------------------------------------------------
+
+/**
+ * The other two engines' halves of the 4.11b law, driven through their real paths.
+ *
+ * **A derived record is evidence of CONTENT, never of ACTIVITY; activity comes
+ * from liveness only** (user, 2026-09-10). `src/extension.stats.test.ts` pins
+ * what the pipeline does with `SessionEmission.lastActivityAt`; these tests pin
+ * that the values in it are the ENGINES' OWN, and that the merge does not lose
+ * one engine's map on the way to the pipeline.
+ *
+ * Claude Code's half is driven from two directions elsewhere: `SessionModel.emit()`
+ * reads `SessionLivenessSnapshot.witnessedActivityAt` (`lastActivityAt` until DoD
+ * 4.11c narrowed the write side), the host store tests above would write nothing
+ * at all if it stopped, and `src/model/liveness.test.ts`'s 4.11c suite pins the
+ * instant itself — hook, growth, unknown size and shrink, one decision each.
+ */
+describe('DoD 4.11b — each engine supplies its own activity, and the merge is a union', () => {
+  it('a Codex session whose transcripts predate activation is NOT recorded — the instant is known and it is not activity', async () => {
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const { path, rootThread } = await codexPathAt(root, stale, STAMP + 5_000);
+    const emission = path.emit();
+
+    // THE DEPENDENCY, VISIBLE — and DoD 4.11c makes it sharper than 4.11b did.
+    // Under 4.11b every session carried an instant (its mtime) and the gate
+    // compared it to the stamp. Under 4.11c a transcript nobody appended to
+    // yields NO INSTANT AT ALL: an mtime is a fact about a file having been
+    // written, and a clone, a restore or a scanner writes one with no bytes
+    // behind it.
+    expect(emission.sessions.length, 'the fixture must render at least one session').toBeGreaterThan(0);
+    expect(
+      [...emission.lastActivityAt.keys()],
+      'a transcript nobody appended to claimed activity',
+    ).toStrictEqual([]);
+    expect(emission.lastActivityAt.get(rootThread.sessionId)).toBeUndefined();
+
+    // ...so the store declines it. Note what this also says: a Codex session the
+    // last liveness report does NOT cover carries no instant either, and the
+    // same absence keeps it out — which is the whole reason the Codex half
+    // reads `#liveness.latest` rather than stamping `now`.
+    const written = storeOver(emission, STAMP, STAMP + 5_000, join(await makeTempDir(), STORE_DIR_NAME));
+    expect(written.armed, 'a day-old transcript armed a flush').toBe(0);
+    expect(written.appended, 'a Codex session nobody witnessed reached the store').toBe(0);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('a Codex session whose transcript GROWS after activation is recorded', async () => {
+    /*
+     * THE OTHER ARM, and under DoD 4.11c it is an APPEND rather than a touch.
+     * Without this pair "history reaches no store" is satisfied by a gate that
+     * refuses everything — a failure with no symptom until the Stats view is
+     * permanently empty.
+     */
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const { path, rootThread, poll } = await codexPathAt(root, stale, STAMP + 5_000);
+
+    // The baseline is this process's first sighting, so nothing has grown yet.
+    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBeUndefined();
+
+    // Somebody works: bytes are appended to the root transcript.
+    const files = await transcriptsUnder(root);
+    const rootFile = files.get(rootThread.owningFile);
+    expect(rootFile, "the root thread's transcript is not under the root").toBeDefined();
+    const grewAt = STAMP + 1_000;
+    await growTranscript(rootFile as string, grewAt);
+    await poll.contentRead();
+    poll.fire(0);
+
+    const emission = path.emit();
+    expect(
+      emission.lastActivityAt.get(rootThread.sessionId),
+      'an appended transcript produced no instant',
+    ).toBe(grewAt);
+
+    const written = storeOver(emission, STAMP, STAMP + 5_000, join(await makeTempDir(), STORE_DIR_NAME));
+    expect(written.armed + written.appended, 'a witnessed Codex session reached no store').toBeGreaterThan(0);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('the instant is what the last liveness POLL saw, not what the last content read saw', async () => {
+    /*
+     * ROUND 3'S FIRST REAL DEFECT, PINNED. The verifier replaced this emitter's
+     * whole `#liveness.latest` block with a loop over `#threads` reading
+     * `thread.mtimeMs` — so the liveness report was never consulted at all — and
+     * **163 tests stayed green**, because `CodexLiveness.lastMtimeMs` IS
+     * `CodexThread.mtimeMs` and the other test stamps every file to one instant.
+     * Two readers of the same number, indistinguishable while they agree.
+     *
+     * They disagree in one measurable window, and it is a real one: a content
+     * re-read discovers a transcript's new mtime immediately, while the report is
+     * whatever the last liveness POLL sampled. The emission must carry the
+     * report's answer — liveness is the authority for activity, and a session
+     * becomes recordable when the tap says so and not a pump earlier.
+     */
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const poll = splitPollTrigger();
+    const threads = await stampTranscripts(root, stale);
+    const rootThread = threads.find((thread) => thread.threadSource === 'user') as CodexThread;
+    const path = new CodexEnginePath({
+      workspaceFolders: [rootThread.cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: poll.onChange,
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+    expect(poll.count(), 'the path registers a liveness poll and a content re-read').toBe(2);
+    // Nothing has grown yet, so there is no instant to be wrong about.
+    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBeUndefined();
+
+    // The transcripts are APPENDED TO (DoD 4.11c — a touch would leave nothing
+    // to see). Only the CONTENT trigger fires, and which registration that is is
+    // established rather than assumed.
+    const before = path.diagnostics;
+    const grewAt = STAMP + 1_000;
+    for (const file of (await transcriptsUnder(root)).values()) await growTranscript(file, grewAt);
+    await poll.contentRead();
+    const after = path.diagnostics;
+    expect(after.contentReads, 'index 1 is not the content re-read').toBe(before.contentReads + 1);
+    expect(after.livenessPolls, 'index 1 polled liveness too').toBe(before.livenessPolls);
+
+    // The content read KNOWS the new size AND the new mtime. The size is what
+    // this half reads — the file has grown — but the INSTANT is still the
+    // report's, and the report predates the write. So the emission says the OLD
+    // mtime, which is a day ago, and the store still declines the session.
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'the emission took its instant from the content read',
+    ).toBe(stale);
+
+    // The tap polls. NOW it moves.
+    poll.fire(0);
+    expect(path.diagnostics.livenessPolls).toBe(after.livenessPolls + 1);
+    expect(path.emit().lastActivityAt.get(rootThread.sessionId)).toBe(grewAt);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it('a HOOK EVENT after the stamp is activity even when every transcript is stale', async () => {
+    /*
+     * The other half of `max(lastHookEventMs, lastMtimeMs)`, and the arm no
+     * mtime-only test can reach. `Math.max` → `Math.min` inside a thread is
+     * invisible while a thread has ONE instant; give it two that disagree and the
+     * wrong one keeps a working session out of the store. This is also the
+     * strongest statement of the dependency: a hook event exists only in the
+     * liveness report, so nothing reading `#threads` can produce this number.
+     *
+     * The payloads are the captured baseline hook stream — the same run as these
+     * transcripts, so the ids attribute without anything being invented here.
+     */
+    const root = await stageCodexRoot(false);
+    const stale = STAMP - 86_400_000;
+    const poll = splitPollTrigger();
+    const threads = await stampTranscripts(root, stale);
+    const rootThread = threads.find((thread) => thread.threadSource === 'user') as CodexThread;
+
+    const stream = await readFile(
+      fileURLToPath(
+        new URL('../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl', import.meta.url),
+      ),
+      'utf8',
+    );
+    const payloads = stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => (JSON.parse(line) as { raw: Record<string, unknown> }).raw)
+      .filter((raw) => raw['session_id'] === rootThread.sessionId);
+    expect(
+      payloads.length,
+      'no captured hook payload names the staged session — the corpus moved',
+    ).toBeGreaterThan(0);
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [rootThread.cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: poll.onChange,
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+    // No append, so the mtime leg contributes nothing at all (DoD 4.11c) — which
+    // makes this the cleanest statement of the hook leg there is: every instant
+    // below came from the tap.
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'history, before the hook',
+    ).toBeUndefined();
+
+    // One real hook event, received AFTER the stamp. The transcripts do not move.
+    path.ingestHookEvent({ receivedAtMs: STAMP + 2_000, payload: payloads[0] });
+    poll.fire(0);
+    expect(
+      path.emit().lastActivityAt.get(rootThread.sessionId),
+      'the hook event did not reach the instant',
+    ).toBe(STAMP + 2_000);
+
+    // ...and that is enough to be recorded, which is the point of the field.
+    const written = storeOver(
+      path.emit(),
+      STAMP,
+      STAMP + 5_000,
+      join(await makeTempDir(), STORE_DIR_NAME),
+    );
+    expect(written.armed + written.appended, 'a hooked session reached no store').toBeGreaterThan(0);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it("a session's instant is the LATEST of its threads — a subagent writing IS the session working", async () => {
+    /*
+     * ROUND 3'S SECOND REAL DEFECT, PINNED. `Math.max` → `Math.min` AND
+     * max-across-threads → first-thread-only both passed with **211 tests
+     * green**: one instant for every file makes every aggregation the same
+     * number. So this test gives the threads DIFFERENT instants, which needs a
+     * run with more than one thread per session — `spawn-shapes`, whose subagents
+     * live in their own transcripts.
+     */
+    const root = await stageCodexRun('spawn-shapes');
+    const stale = STAMP - 86_400_000;
+    const threads = await stampTranscripts(root, stale);
+
+    // A session with at least two threads in DIFFERENT files, found rather than
+    // named: a corpus is not asserted by size here, and if the shape ever moves
+    // this fails saying so.
+    const bySession = new Map<string, CodexThread[]>();
+    for (const thread of threads) {
+      bySession.set(thread.sessionId, [...(bySession.get(thread.sessionId) ?? []), thread]);
+    }
+    const multi = [...bySession.values()].find(
+      (group) => new Set(group.map((thread) => thread.owningFile)).size > 1,
+    );
+    expect(
+      multi,
+      'no Codex session in spawn-shapes spans two transcripts — the corpus shape moved',
+    ).toBeDefined();
+    const group = multi as CodexThread[];
+    const rootThread = group.find((thread) => thread.threadId === thread.sessionId) ?? group[0];
+
+    const subagent = group.find((thread) => thread.owningFile !== (rootThread as CodexThread).owningFile);
+    expect(subagent, 'the group must hold a thread in another file').toBeDefined();
+    const files = await transcriptsUnder(root);
+    const rootFile = files.get((rootThread as CodexThread).owningFile);
+    const subagentFile = files.get((subagent as CodexThread).owningFile);
+    expect(rootFile, "the root's transcript is not under the root").toBeDefined();
+    expect(subagentFile, "the subagent's transcript is not under the root").toBeDefined();
+
+    const poll = splitPollTrigger();
+    const path = new CodexEnginePath({
+      workspaceFolders: [(rootThread as CodexThread).cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: poll.onChange,
+      root,
+      now: () => STAMP + 5_000,
+      pollTrigger: poll.trigger,
+    });
+    await path.start();
+    // THE BASELINE IS TAKEN FIRST, and it has to be: growth is measured against
+    // what this process saw when it arrived, so appending before the path starts
+    // leaves nothing to have grown (DoD 4.11c).
+    expect(path.emit().lastActivityAt.size, 'nothing has grown yet').toBe(0);
+
+    // BOTH threads are then appended to, the subagent LATER than the root. Both
+    // therefore carry an instant (a touch would carry none), so "first thread
+    // wins" and "min" each return the ROOT's earlier one and this test can tell
+    // all three answers apart.
+    await growTranscript(rootFile as string, STAMP + 500);
+    await growTranscript(subagentFile as string, STAMP + 1_000);
+    await poll.contentRead();
+    poll.fire(0);
+
+    const at = path.emit().lastActivityAt.get((rootThread as CodexThread).sessionId);
+    expect(at, 'the session carries no instant').toBeTypeOf('number');
+    expect(at, "the session took the root's earlier instant instead of the latest thread's").toBe(
+      STAMP + 1_000,
+    );
+    expect(at as number).toBeGreaterThan(STAMP + 500);
+
+    path.dispose();
+    await rm(dirname(root), { recursive: true, force: true });
+  });
+
+  it("an OpenCode session's activity is a fact about the STORE, not about when it was asked", async () => {
+    /*
+     * The OpenCode assignment site, driven. `OcSessionLiveness.lastActivityAt` is
+     * `max(timeUpdated, seqAdvancedAt)` — both of them instants the store moved —
+     * so the same emission taken an hour later must carry the same numbers. That
+     * is the whole law in one assertion: a mutation stamping `now()` here (the
+     * cheapest wrong thing to write, and the flood's own shape) moves them.
+     */
+    const dir = await makeTempDir();
+    const dbPath = copyCorpus(smallestCorpus(), dir);
+    const poll = manualPollTrigger();
+    let clock = Date.parse('2026-09-10T00:00:00.000Z');
+
+    const path = new OpenCodeEnginePath({
+      workspacePaths: [worktreeOf(dbPath)],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: () => {},
+      dbPath,
+      now: () => clock,
+      pollTrigger: poll.trigger,
+      walWatchFactory: () => ({ close: () => {} }),
+    });
+    path.start();
+
+    const first = path.emit();
+    expect(first.sessions.length, 'the corpus must render sessions').toBeGreaterThan(0);
+    expect(
+      first.lastActivityAt.size,
+      'every emitted OpenCode session must carry an instant',
+    ).toBe(first.sessions.length);
+    for (const [sessionId, at] of first.lastActivityAt) {
+      expect(at, `${sessionId} was stamped with the clock`).not.toBe(clock);
+      expect(at, `${sessionId} claims activity in the future`).toBeLessThan(clock);
+      expect(at).toBeGreaterThan(0);
+    }
+
+    // An hour passes and the store does not move. Neither may the instants.
+    clock += 3_600_000;
+    poll.fire();
+    const second = path.emit();
+    expect([...second.lastActivityAt.entries()].sort()).toStrictEqual(
+      [...first.lastActivityAt.entries()].sort(),
+    );
+
+    path.dispose();
+  });
+
+  it('the MERGED emission carries every engine\'s map, not just the first', async () => {
+    /*
+     * `mergeTwo` short-circuits on `EMPTY_EMISSION`, so in every other test in
+     * this file — one engine live, two absent — its body never runs and the union
+     * is unmeasured. That is the D4 shape: a single production assignment site
+     * nothing drives. This test lights up TWO engines at once, which needs a
+     * multi-root workspace (the Codex scratch repo beside the captured Claude
+     * Code one), and then asserts that ids from both reach the map the pipeline
+     * reads. Replacing the union with either side alone turns it red.
+     */
+    const root = await stageCodexRoot(false);
+    const threads = await stampTranscripts(root, STAMP - 86_400_000);
+    const codexCwd = (threads.find((thread) => thread.threadSource === 'user') as CodexThread).cwd;
+    const ccWorkspace = await capturedWorkspacePath();
+    // Both engines read from STAGED, WRITABLE copies, because under DoD 4.11c an
+    // engine whose files nobody appends to reports no activity at all — so a
+    // union over two engines needs two engines that have each seen a write.
+    const { root: ccRoot, slugDir: ccSlugDir } = await stageCapturedRoot();
+    const codexPoll = splitPollTrigger();
+    const emissions: DataPathEmission[] = [];
+
+    const path = await startDataPathOnFreePort((port) => {
+      emissions.length = 0;
+      return trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: ccWorkspace,
+          // The CC half reads `workspacePath`; the other two read every folder.
+          workspacePaths: [ccWorkspace, codexCwd],
+          projectsRoot: ccRoot,
+          settings: settings({ port }),
+          tickMs: 0,
+          codex: { root, pollTrigger: codexPoll.trigger },
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      );
+    });
+    path.pump();
+
+    // Both engines are then WORKED ON after the baseline, or the map is empty
+    // for both and the union below passes over two empty maps. Claude Code by an
+    // APPEND (its instant is a synchronous stat on the next pump). Codex by a
+    // real captured HOOK EVENT — unconditional activity that needs no content
+    // read, because this data path owns the Codex half's onChange and a content
+    // read here could only be awaited by a sleep, which is the defect the split
+    // trigger's `contentRead` exists to remove.
+    await growSessions(ccSlugDir);
+    const codexRootId = (threads.find((thread) => thread.threadSource === 'user') as CodexThread).sessionId;
+    const stream = await readFile(
+      fileURLToPath(new URL('../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl', import.meta.url)),
+      'utf8',
+    );
+    const payload = stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => (JSON.parse(line) as { raw: Record<string, unknown> }).raw)
+      .find((raw) => raw['session_id'] === codexRootId);
+    expect(payload, 'no captured hook payload names the staged Codex session').toBeDefined();
+    path.codex.ingestHookEvent({ receivedAtMs: STAMP + 1_000, payload });
+    codexPoll.fire(0);
+    path.pump();
+
+    const last = emissions[emissions.length - 1] as DataPathEmission;
+    const byEngine = new Map<string, string[]>();
+    for (const session of last.emission.sessions) {
+      // `engine` is optional on the wire and absent means Claude Code, which is
+      // the same reading `webview/store.ts` applies.
+      const engine = session.engine ?? 'cc';
+      const held = byEngine.get(engine) ?? [];
+      held.push(session.sessionId);
+      byEngine.set(engine, held);
+    }
+    // Two engines really are live, or the union below is untested.
+    expect([...byEngine.keys()].sort(), 'both engines must render for this to mean anything')
+      .toStrictEqual(['cc', 'codex']);
+
+    for (const [engine, ids] of byEngine) {
+      const known = ids.filter((id) => last.emission.lastActivityAt.has(id));
+      expect(known.length, `the merge dropped ${engine}'s activity map`).toBe(ids.length);
+    }
+
+    await rm(dirname(root), { recursive: true, force: true });
   });
 });

@@ -519,6 +519,14 @@ describe('B - no record string has the shape of content', () => {
         expect(churn.filePath).not.toContain('\n');
         checked += 1;
       }
+      // v0.7.0 Phase 4: a loop carries the file it re-read (`LoopRecord.filePath`),
+      // the same named-field value, so it is enumerated here beside the other two.
+      for (const loop of entry.record.loops) {
+        if (loop.filePath === undefined) continue;
+        expect(loop.filePath).not.toContain('\n');
+        expect(loop.filePath.length).toBeLessThan(1024);
+        checked += 1;
+      }
     }
     expect(checked).toBeGreaterThan(50);
   });

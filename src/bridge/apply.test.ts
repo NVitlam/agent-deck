@@ -37,8 +37,21 @@ const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const APPLY = fileURLToPath(new URL('./apply.ts', import.meta.url));
 const SESSION = fileURLToPath(new URL('../model/session.ts', import.meta.url));
 
-/** Everything `apply.ts` is allowed to reach, transitively. */
-const PURE_TYPES_LAYER = ['src/bridge/apply.ts', 'src/model/events.ts'];
+/**
+ * Everything `apply.ts` is allowed to reach, transitively.
+ *
+ * THREE since v0.7.0 Phase 4, not two. `events.ts` carries the `statsSnapshot`
+ * wire message, whose payload is `StatsRecord`, and imports that ONE type from
+ * `src/stats/schema.ts` (`import type`, erased at runtime). The walk below reads
+ * TypeScript's pre-processor, which reports type imports too, so the layer
+ * grows by the module the type lives in. What the layer is FOR is unchanged and
+ * still asserted by the two tests after this one: nothing in it reaches a
+ * `node:` builtin, a package, `vscode`, `process`, `require` or `import()`.
+ * `schema.ts` imports exactly one thing — `events.ts` — and `derive.test.ts`
+ * pins that; it is a validator over plain objects and is as bundleable as
+ * `apply.ts` itself.
+ */
+const PURE_TYPES_LAYER = ['src/bridge/apply.ts', 'src/model/events.ts', 'src/stats/schema.ts'];
 
 function repoRelative(absolute: string): string {
   return relative(REPO_ROOT, absolute).split(sep).join('/');

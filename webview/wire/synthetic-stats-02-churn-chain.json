@@ -1,0 +1,339 @@
+{
+  "formatVersion": 2,
+  "id": "synthetic-stats-02-churn-chain",
+  "kind": "synthetic",
+  "title": "R8 02-churn-chain — one churn chain (write -> error -> write) beside a write pair with no error between them",
+  "description": "One R8 fixture (fixtures/synthetic-stats/<id>.json) as the host would put it on the wire: its SessionState as a snapshot through a real SessionBridge, then its committed golden StatsRecord (fixtures/golden/stats/<engine>-synthetic-<id>.json) as a statsSnapshot, passed through the same host-side validator PanelController.publishStats runs. The theater replays it through the real store so the Stats view is reviewed over exactly the shape the fixture manufactures. Synthetic: the state was built, not captured.",
+  "producedBy": "scripts/record-wire.mjs --stats",
+  "engine": "cc",
+  "simulatedEpochMs": 1700000060000,
+  "durationMs": 1000,
+  "steps": [
+    {
+      "atMs": 0,
+      "label": "snapshot",
+      "what": "the 02-churn-chain state, as the host's first snapshot"
+    },
+    {
+      "atMs": 1000,
+      "label": "stats",
+      "what": "the derived record, host-validated, as a statsSnapshot"
+    }
+  ],
+  "events": [
+    {
+      "atMs": 0,
+      "label": "snapshot",
+      "message": {
+        "type": "snapshot",
+        "sessions": [
+          {
+            "sessionId": "synthetic-02-churn-chain",
+            "projectSlug": "synthetic-stats",
+            "workspaceMatch": true,
+            "liveness": "ended",
+            "schemaOk": true,
+            "root": {
+              "id": "root",
+              "kind": "main",
+              "label": "synthetic-root",
+              "status": "done",
+              "spawnDepth": 0,
+              "children": [
+                {
+                  "id": "c0",
+                  "toolName": "Edit",
+                  "status": "done",
+                  "inputPreview": "",
+                  "ordinal": 0,
+                  "filePath": "/synthetic/a.ts",
+                  "inputHash": "c0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                },
+                {
+                  "id": "c1",
+                  "toolName": "Bash",
+                  "status": "error",
+                  "inputPreview": "",
+                  "ordinal": 1,
+                  "inputHash": "c1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                },
+                {
+                  "id": "c2",
+                  "toolName": "Edit",
+                  "status": "done",
+                  "inputPreview": "",
+                  "ordinal": 2,
+                  "filePath": "/synthetic/a.ts",
+                  "inputHash": "c2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                },
+                {
+                  "id": "c3",
+                  "toolName": "Edit",
+                  "status": "done",
+                  "inputPreview": "",
+                  "ordinal": 3,
+                  "filePath": "/synthetic/b.ts",
+                  "inputHash": "c3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                },
+                {
+                  "id": "c4",
+                  "toolName": "Bash",
+                  "status": "done",
+                  "inputPreview": "",
+                  "ordinal": 4,
+                  "inputHash": "c4ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                },
+                {
+                  "id": "c5",
+                  "toolName": "Edit",
+                  "status": "done",
+                  "inputPreview": "",
+                  "ordinal": 5,
+                  "filePath": "/synthetic/b.ts",
+                  "inputHash": "c5ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                }
+              ],
+              "startedAt": 1700000000000,
+              "burn": {
+                "prompt": 1000,
+                "output": 100
+              },
+              "usageSeries": [
+                {
+                  "ordinal": 0,
+                  "input": 10,
+                  "cacheCreation": 0,
+                  "cacheRead": 100,
+                  "output": 20
+                }
+              ]
+            },
+            "totals": {
+              "costUsd": 0
+            },
+            "engine": "cc"
+          }
+        ]
+      }
+    },
+    {
+      "atMs": 0,
+      "label": "snapshot",
+      "message": {
+        "type": "degraded",
+        "engine": "cc",
+        "degraded": false
+      }
+    },
+    {
+      "atMs": 0,
+      "label": "snapshot",
+      "message": {
+        "type": "degraded",
+        "engine": "codex",
+        "degraded": false
+      }
+    },
+    {
+      "atMs": 1000,
+      "label": "stats",
+      "message": {
+        "type": "statsSnapshot",
+        "records": [
+          {
+            "statsSchemaVersion": 1,
+            "sessionId": "synthetic-02-churn-chain",
+            "engine": "cc",
+            "projectSlug": "synthetic-stats",
+            "startedAt": 1700000000000,
+            "coverage": "full",
+            "agents": [
+              {
+                "agentId": "root",
+                "kind": "main",
+                "spawnDepth": 0,
+                "prompt": 1000,
+                "output": 100,
+                "cacheRead": 100,
+                "cacheRatio": 0.1,
+                "toolCalls": 6,
+                "silent": false
+              }
+            ],
+            "files": [
+              {
+                "filePath": "/synthetic/a.ts",
+                "reads": 0,
+                "edits": 2,
+                "writes": 0,
+                "errors": 0,
+                "firstTouchSeq": 0,
+                "lastTouchSeq": 2
+              },
+              {
+                "filePath": "/synthetic/b.ts",
+                "reads": 0,
+                "edits": 2,
+                "writes": 0,
+                "errors": 0,
+                "firstTouchSeq": 3,
+                "lastTouchSeq": 5
+              }
+            ],
+            "tools": [
+              {
+                "toolName": "Bash",
+                "class": "shell",
+                "calls": 2,
+                "errors": 1
+              },
+              {
+                "toolName": "Edit",
+                "class": "edit",
+                "calls": 4,
+                "errors": 0
+              }
+            ],
+            "loops": [],
+            "churn": [
+              {
+                "agentId": "root",
+                "filePath": "/synthetic/a.ts",
+                "fromOrdinal": 0,
+                "toOrdinal": 2,
+                "ordinals": [
+                  1
+                ],
+                "errors": 1
+              }
+            ],
+            "contextChurn": [],
+            "compactions": [],
+            "stalls": [],
+            "totals": {
+              "prompt": 1000,
+              "output": 100,
+              "cacheRead": 100,
+              "compactions": 0,
+              "subagents": 0,
+              "silentSubagents": 0,
+              "stalls": 0
+            },
+            "params": {
+              "loopMin": 3,
+              "spikeTokens": 5000
+            },
+            "unavailable": [
+              "F10:cc",
+              "F13.completed:snapshot",
+              "F9:cc"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "atMs": 1000,
+      "label": "stats",
+      "message": {
+        "type": "statsStore",
+        "records": [],
+        "enabled": true
+      }
+    }
+  ],
+  "final": {
+    "sessions": [
+      {
+        "sessionId": "synthetic-02-churn-chain",
+        "projectSlug": "synthetic-stats",
+        "workspaceMatch": true,
+        "liveness": "ended",
+        "schemaOk": true,
+        "root": {
+          "id": "root",
+          "kind": "main",
+          "label": "synthetic-root",
+          "status": "done",
+          "spawnDepth": 0,
+          "children": [
+            {
+              "id": "c0",
+              "toolName": "Edit",
+              "status": "done",
+              "inputPreview": "",
+              "ordinal": 0,
+              "filePath": "/synthetic/a.ts",
+              "inputHash": "c0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+              "id": "c1",
+              "toolName": "Bash",
+              "status": "error",
+              "inputPreview": "",
+              "ordinal": 1,
+              "inputHash": "c1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+              "id": "c2",
+              "toolName": "Edit",
+              "status": "done",
+              "inputPreview": "",
+              "ordinal": 2,
+              "filePath": "/synthetic/a.ts",
+              "inputHash": "c2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+              "id": "c3",
+              "toolName": "Edit",
+              "status": "done",
+              "inputPreview": "",
+              "ordinal": 3,
+              "filePath": "/synthetic/b.ts",
+              "inputHash": "c3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+              "id": "c4",
+              "toolName": "Bash",
+              "status": "done",
+              "inputPreview": "",
+              "ordinal": 4,
+              "inputHash": "c4ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+              "id": "c5",
+              "toolName": "Edit",
+              "status": "done",
+              "inputPreview": "",
+              "ordinal": 5,
+              "filePath": "/synthetic/b.ts",
+              "inputHash": "c5ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            }
+          ],
+          "startedAt": 1700000000000,
+          "burn": {
+            "prompt": 1000,
+            "output": 100
+          },
+          "usageSeries": [
+            {
+              "ordinal": 0,
+              "input": 10,
+              "cacheCreation": 0,
+              "cacheRead": 100,
+              "output": 20
+            }
+          ]
+        },
+        "totals": {
+          "costUsd": 0
+        },
+        "engine": "cc"
+      }
+    ],
+    "degraded": {
+      "degraded": false
+    },
+    "schemaMismatchSessionIds": []
+  }
+}

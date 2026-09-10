@@ -6139,6 +6139,22 @@ interface SplitTrigger {
   trigger: PollTrigger;
   fire: (index: number) => void;
   count: () => number;
+  /** Pass as the path's `onChange`, so `contentRead` can see a read land. */
+  onChange: () => void;
+  /**
+   * Fire the CONTENT re-read (registration 1) and resolve once it has been
+   * APPLIED — i.e. on the `onChange` `CodexEnginePath.#refresh` calls after its
+   * await.
+   *
+   * This replaced a fixed 50 ms sleep, and the sleep was a defect: run 1 of the
+   * 4.13/4.14 closing block failed `growth from the re-baselined size was not
+   * seen` while runs 2 and 3 were green. Under full-suite load the read had not
+   * landed within 50 ms, so the liveness poll sampled the OLD sizes. A sleep
+   * standing in for "the async work finished" is a test that passes or fails by
+   * CPU load — this file's recorded class — and the runner's disagreement check
+   * is what caught it.
+   */
+  contentRead: () => Promise<void>;
 }
 
 /**
@@ -6153,18 +6169,30 @@ interface SplitTrigger {
  */
 function splitPollTrigger(): SplitTrigger {
   const runs: (() => void)[] = [];
+  const waiting: (() => void)[] = [];
   const trigger: PollTrigger = (run): PollTriggerHandle => {
     runs.push(run);
     return { stop: () => {} };
   };
+  const fire = (index: number): void => {
+    const run = runs[index];
+    expect(run, `no poll registration at index ${String(index)}`).toBeDefined();
+    (run as () => void)();
+  };
   return {
     trigger,
-    fire: (index) => {
-      const run = runs[index];
-      expect(run, `no poll registration at index ${String(index)}`).toBeDefined();
-      (run as () => void)();
-    },
+    fire,
     count: () => runs.length,
+    onChange: () => {
+      for (const resolve of waiting.splice(0)) resolve();
+    },
+    contentRead: () => {
+      // Armed BEFORE the fire: the only onChange a content fire produces comes
+      // after the read's own await, and no other trigger is fired meanwhile.
+      const applied = new Promise<void>((resolve) => waiting.push(resolve));
+      fire(1);
+      return applied;
+    },
   };
 }
 
@@ -6260,7 +6288,7 @@ async function codexPathAt(
   const path = new CodexEnginePath({
     workspaceFolders: [(rootThread as CodexThread).cwd],
     thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
-    onChange: () => {},
+    onChange: poll.onChange,
     root,
     now: () => clock,
     pollTrigger: poll.trigger,
@@ -6351,7 +6379,7 @@ describe('DoD 4.11c — a touched transcript is not activity; an appended one is
     const path = new CodexEnginePath({
       workspaceFolders: [rootThread.cwd],
       thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
-      onChange: () => {},
+      onChange: poll.onChange,
       root,
       now: () => STAMP + 5_000,
       pollTrigger: poll.trigger,
@@ -6370,8 +6398,7 @@ describe('DoD 4.11c — a touched transcript is not activity; an appended one is
     expect(shrunkTo, 'the file did not shrink').toBeLessThan(original);
     const shrinkAt = new Date(STAMP + 1_000);
     await utimes(rootFile, shrinkAt, shrinkAt);
-    poll.fire(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await poll.contentRead();
     poll.fire(0);
     expect(
       path.emit().lastActivityAt.get(rootThread.sessionId),
@@ -6384,8 +6411,7 @@ describe('DoD 4.11c — a touched transcript is not activity; an appended one is
     expect(statSync(rootFile).size, 'the re-append did not restore the size').toBe(original);
     const regrownAt = new Date(STAMP + 2_000);
     await utimes(rootFile, regrownAt, regrownAt);
-    poll.fire(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await poll.contentRead();
     poll.fire(0);
 
     expect(
@@ -6406,7 +6432,7 @@ describe('DoD 4.11c — a touched transcript is not activity; an appended one is
     const path = new CodexEnginePath({
       workspaceFolders: [rootThread.cwd],
       thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
-      onChange: () => {},
+      onChange: poll.onChange,
       root,
       now: () => STAMP + 5_000,
       pollTrigger: poll.trigger,
@@ -6423,8 +6449,7 @@ describe('DoD 4.11c — a touched transcript is not activity; an appended one is
       [...files.values()].map((file) => statSync(file).size),
       'the touch changed a size',
     ).toStrictEqual(sizesBefore);
-    poll.fire(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await poll.contentRead();
     poll.fire(0);
 
     const touched = path.emit();
@@ -6442,8 +6467,7 @@ describe('DoD 4.11c — a touched transcript is not activity; an appended one is
 
     // AN APPEND: the same file, bytes added, the same mtime it already had.
     await growTranscript(files.get(rootThread.owningFile) as string, STAMP + 1_000);
-    poll.fire(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await poll.contentRead();
     poll.fire(0);
 
     const grown = path.emit();
@@ -6538,8 +6562,7 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     expect(rootFile, "the root thread's transcript is not under the root").toBeDefined();
     const grewAt = STAMP + 1_000;
     await growTranscript(rootFile as string, grewAt);
-    poll.fire(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await poll.contentRead();
     poll.fire(0);
 
     const emission = path.emit();
@@ -6578,7 +6601,7 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     const path = new CodexEnginePath({
       workspaceFolders: [rootThread.cwd],
       thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
-      onChange: () => {},
+      onChange: poll.onChange,
       root,
       now: () => STAMP + 5_000,
       pollTrigger: poll.trigger,
@@ -6594,8 +6617,7 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     const before = path.diagnostics;
     const grewAt = STAMP + 1_000;
     for (const file of (await transcriptsUnder(root)).values()) await growTranscript(file, grewAt);
-    poll.fire(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await poll.contentRead();
     const after = path.diagnostics;
     expect(after.contentReads, 'index 1 is not the content re-read').toBe(before.contentReads + 1);
     expect(after.livenessPolls, 'index 1 polled liveness too').toBe(before.livenessPolls);
@@ -6655,7 +6677,7 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     const path = new CodexEnginePath({
       workspaceFolders: [rootThread.cwd],
       thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
-      onChange: () => {},
+      onChange: poll.onChange,
       root,
       now: () => STAMP + 5_000,
       pollTrigger: poll.trigger,
@@ -6732,7 +6754,7 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     const path = new CodexEnginePath({
       workspaceFolders: [(rootThread as CodexThread).cwd],
       thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
-      onChange: () => {},
+      onChange: poll.onChange,
       root,
       now: () => STAMP + 5_000,
       pollTrigger: poll.trigger,
@@ -6749,8 +6771,7 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     // all three answers apart.
     await growTranscript(rootFile as string, STAMP + 500);
     await growTranscript(subagentFile as string, STAMP + 1_000);
-    poll.fire(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await poll.contentRead();
     poll.fire(0);
 
     const at = path.emit().lastActivityAt.get((rootThread as CodexThread).sessionId);
@@ -6851,15 +6872,26 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
     });
     path.pump();
 
-    // Both engines are then WORKED ON: a Claude Code transcript and every Codex
-    // transcript gain bytes after the baseline. Without this the map is empty
-    // for both and the union below would pass over two empty maps.
+    // Both engines are then WORKED ON after the baseline, or the map is empty
+    // for both and the union below passes over two empty maps. Claude Code by an
+    // APPEND (its instant is a synchronous stat on the next pump). Codex by a
+    // real captured HOOK EVENT — unconditional activity that needs no content
+    // read, because this data path owns the Codex half's onChange and a content
+    // read here could only be awaited by a sleep, which is the defect the split
+    // trigger's `contentRead` exists to remove.
     await growSessions(ccSlugDir);
-    for (const file of (await transcriptsUnder(root)).values()) {
-      await growTranscript(file, STAMP + 1_000);
-    }
-    codexPoll.fire(1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const codexRootId = (threads.find((thread) => thread.threadSource === 'user') as CodexThread).sessionId;
+    const stream = await readFile(
+      fileURLToPath(new URL('../fixtures/codex-0.151.0-alpha.7.2/baseline/hook-stream.jsonl', import.meta.url)),
+      'utf8',
+    );
+    const payload = stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => (JSON.parse(line) as { raw: Record<string, unknown> }).raw)
+      .find((raw) => raw['session_id'] === codexRootId);
+    expect(payload, 'no captured hook payload names the staged Codex session').toBeDefined();
+    path.codex.ingestHookEvent({ receivedAtMs: STAMP + 1_000, payload });
     codexPoll.fire(0);
     path.pump();
 

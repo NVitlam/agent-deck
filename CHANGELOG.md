@@ -2,6 +2,58 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.7.1 - 2026-09-10 - Claude Code's own telemetry, received on the hook listener
+
+### Added
+
+- **Claude Code's OpenTelemetry export, received — optional, off by default.** The
+  hook listener now answers `POST /v1/metrics`, `/v1/logs` and `/v1/traces` on the
+  same `127.0.0.1` port as the hooks (`agentDeck.port`), OTLP over HTTP in JSON.
+  Nothing is received until `agentDeck.telemetry.enabled` is turned on and Claude
+  Code's own `env` settings name that address; the README's "Claude Code telemetry
+  (optional)" section has the block to paste. Agent Deck writes none of it.
+- **A cost for Claude Code sessions, estimated by Claude Code.** With telemetry on,
+  a Claude Code session's cost in the Tokens view is Claude Code's own cost
+  metric, summed per session and labelled "estimated by Claude Code". Where an
+  engine states a cost, that is shown instead; where neither does, a cost from
+  `agentDeck.pricing` is.
+- **Tool durations where the session states none**, from Claude Code's tool spans,
+  in the Stats view's per-tool figures. A duration the session's own records state
+  is never replaced.
+- **`agentDeck.telemetry.enabled`**, boolean, default `false`, machine-scoped.
+  Changes apply to the next request, without a reload.
+- **Telemetry figures on the Agent Deck output channel's counters line**, per
+  signal: requests accepted, refused by status (`400`, `405`, `413`, `415`),
+  refused because the setting is off, and rows that matched no session this window
+  shows.
+
+### How it behaves
+
+- **Answers:** `200` accepted, `400` not an OTLP JSON body for that path, `403` the
+  setting is off (the body names the setting), `405` not a POST, `413` over the
+  hooks' 512 KiB cap, `415` a content type that is not JSON. No answer is
+  retryable.
+- **Parsed once, where it arrives.** The five account attributes Claude Code
+  attaches to every record (`user.email`, `user.id`, `user.account_id`,
+  `user.account_uuid`, `organization.id`) and the `prompt`, `response` and
+  `user_prompt` fields are dropped there, along with every attribute Agent Deck
+  does not read. Other VS Code windows receive the parsed figures by relay, never
+  the request body.
+- **Content, never activity.** Telemetry does not make a session live, does not
+  clear a stall, does not cause a session's record to be written, and never adds a
+  session: a session id that appears only in telemetry is counted as unmatched.
+- **The deck is unchanged.** The figures reach the Stats view; the session tree
+  and its wire messages carry none of them.
+
+### Changed
+
+- **The gate's Node is `24.18.1`**, for local runs and CI (`devEngines` and both
+  workflows), from `22.23.2`.
+- **`SECURITY.md` lists the listener's six paths and the one outbound call site.**
+  It said the event path was the only route and that no outbound HTTP client was
+  compiled in; both had stopped being true in 0.7.0, when the second-window relay
+  arrived.
+
 ## 0.7.0 - 2026-09-10 - a Stats view, a local history, and every window live
 
 ### Added

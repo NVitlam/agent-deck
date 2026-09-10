@@ -85,7 +85,7 @@ import {
   isCodexVersionAccepted,
 } from '../codex/fingerprint.js';
 import { CODEX_NEVER_OPEN } from '../codex/never-open.js';
-import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
+import { DEFAULT_HOOK_PORT, TELEMETRY_PATHS } from '../hooks/listener.js';
 import {
   OC_VERSION_WINDOW,
   PINNED_OPENCODE_VERSION,
@@ -2782,5 +2782,118 @@ describe('DoD 5.5b — the README install section names the sidebar and its menu
     expect(global).toBeGreaterThanOrEqual(0);
     expect(local).toBeGreaterThanOrEqual(0);
     expect(global).toBeLessThan(local);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.7.1 DoD 6.8 — the Claude Code telemetry section
+// ---------------------------------------------------------------------------
+
+const TELEMETRY_HEADING = '## Claude Code telemetry (optional)';
+
+/**
+ * The four Claude Code content flags. Each puts real text on the wire; the
+ * section says they stay unset, and NO env block in the README may set one.
+ * Spelled out here rather than read from the README, so the check cannot
+ * agree with a typo in the document it checks.
+ */
+const CONTENT_FLAGS = [
+  'OTEL_LOG_USER_PROMPTS',
+  'OTEL_LOG_ASSISTANT_RESPONSES',
+  'OTEL_LOG_TOOL_DETAILS',
+  'OTEL_LOG_RAW_API_BODIES',
+] as const;
+
+/**
+ * The Phase 0b paste block (v0.7.0 PLAN, "Paste block for the user") — the env
+ * that produced `fixtures/otel-cc-2.1.260/` — with ONE key changed, as DoD 6.8
+ * requires: the endpoint moves from the spike's `4318` to the hook listener's
+ * port. A frozen copy, so a hand-trimmed or reordered block is a difference
+ * this test names rather than a block nothing has evidence about.
+ */
+function phase0bEnvAt(port: unknown): Record<string, string> {
+  return {
+    CLAUDE_CODE_ENABLE_TELEMETRY: '1',
+    CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: '1',
+    OTEL_METRICS_EXPORTER: 'otlp',
+    OTEL_LOGS_EXPORTER: 'otlp',
+    OTEL_TRACES_EXPORTER: 'otlp',
+    OTEL_EXPORTER_OTLP_PROTOCOL: 'http/json',
+    OTEL_EXPORTER_OTLP_ENDPOINT: `http://127.0.0.1:${String(port)}`,
+    OTEL_METRICS_INCLUDE_SESSION_ID: 'true',
+    OTEL_METRIC_EXPORT_INTERVAL: '5000',
+    OTEL_LOGS_EXPORT_INTERVAL: '2000',
+  };
+}
+
+/** True when a parsed fence carries an `env` object naming any content flag. */
+function envSetsAContentFlag(fence: unknown): string[] {
+  if (fence === null || typeof fence !== 'object') return [];
+  const env = (fence as { env?: unknown }).env;
+  if (env === null || typeof env !== 'object') return [];
+  return CONTENT_FLAGS.filter((flag) => Object.prototype.hasOwnProperty.call(env, flag));
+}
+
+describe('DoD 6.8 — the README documents the telemetry route, and never sets a content flag', () => {
+  const SECTION = sectionText(TELEMETRY_HEADING);
+  const fences = jsonFencesUnder(TELEMETRY_HEADING);
+
+  it('sits after the Claude Code hook section and before the Codex one', () => {
+    const at = README.indexOf(TELEMETRY_HEADING);
+    expect(at).toBeGreaterThan(README.indexOf(CC_HOOK_HEADING));
+    expect(at).toBeLessThan(README.indexOf(CODEX_HOOK_HEADING));
+  });
+
+  it('prints exactly one block: the Phase 0b env, endpoint on agentDeck.port', () => {
+    expect(fences).toHaveLength(1);
+    const parsed = JSON.parse(fences[0] ?? '') as { env?: unknown };
+    // The port is the MANIFEST's default, not a literal written here twice.
+    expect(DEFAULT_PORT).toBe(DEFAULT_HOOK_PORT);
+    expect(parsed).toStrictEqual({ env: phase0bEnvAt(DEFAULT_PORT) });
+    // Key ORDER too: a paste block is copied as it reads.
+    expect(Object.keys(parsed.env as object)).toStrictEqual(Object.keys(phase0bEnvAt(DEFAULT_PORT)));
+  });
+
+  it('names the setting, its machine scope, the label, and the three paths', () => {
+    expect(SECTION).toContain('`agentDeck.telemetry.enabled`');
+    expect(SECTION).toContain('machine-scoped');
+    expect(SECTION).toContain('estimated by Claude Code');
+    expect(SECTION).toContain('not an engine report');
+    for (const path of Object.values(TELEMETRY_PATHS)) expect(SECTION).toContain(`\`${path}\``);
+    // The setting's default is stated by the manifest; the section says what
+    // off means, and it must be the route's actual answer.
+    expect(SECTION).toContain('`403`');
+  });
+
+  it('says the four content flags stay unset, in prose, naming each', () => {
+    const prose = SECTION.replace(/```json\n[\s\S]*?\n```/g, '');
+    for (const flag of CONTENT_FLAGS) expect(prose, flag).toContain(`\`${flag}\``);
+    expect(prose).toMatch(/content flags stay unset/);
+  });
+
+  it('no env block anywhere in the README sets a content flag', () => {
+    const parsed = JSON_FENCES.map((text) => JSON.parse(text) as unknown);
+    const withEnv = parsed.filter(
+      (fence) => fence !== null && typeof fence === 'object' && 'env' in (fence as object),
+    );
+    // VACUITY CONTROL: there is an env block to check, and the predicate sees
+    // a planted flag in one.
+    expect(withEnv.length).toBeGreaterThan(0);
+    expect(envSetsAContentFlag({ env: { ...phase0bEnvAt(1), OTEL_LOG_USER_PROMPTS: '1' } })).toStrictEqual([
+      'OTEL_LOG_USER_PROMPTS',
+    ]);
+    for (const fence of parsed) expect(envSetsAContentFlag(fence)).toStrictEqual([]);
+    // And not merely as keys: no fence's TEXT names one at all, so a flag
+    // inside a nested object or a comment-like string is caught too.
+    for (const text of JSON_FENCES) {
+      for (const flag of CONTENT_FLAGS) expect(text.includes(flag), flag).toBe(false);
+    }
+  });
+
+  it('the CHANGELOG entry for the shipped version names the setting', () => {
+    const block = CHANGELOG_TEXT.split(`\n## ${MANIFEST.version} `)[1]?.split('\n## ')[0] ?? '';
+    expect(block.length).toBeGreaterThan(0);
+    expect(block).toContain('`agentDeck.telemetry.enabled`');
+    expect(block).toContain('estimated by Claude Code');
   });
 });

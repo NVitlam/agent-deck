@@ -13,12 +13,13 @@ is read, and every one that is deliberately never opened.
 
 ## 1. The architecture is the guarantee
 
-Two kinds of source, and neither of them is a network client.
+Three kinds of source — the third optional — and none of them is a network client.
 
 | source | where it comes from | what it answers |
 | --- | --- | --- |
 | **hooks** | a hook snippet you paste yourself POSTs to a loopback HTTP listener — Claude Code's and Codex's both, to the one listener | what is running right now |
 | **session files** | read from local disk: Claude Code's `~/.claude/projects/<slug>/…`, OpenCode's session database, Codex's transcripts under `$CODEX_HOME` or `~/.codex` | what happened |
+| **Claude Code telemetry** (optional, from 0.7.1) | Claude Code's own OpenTelemetry export, pointed by you at the same loopback listener, and accepted only while `agentDeck.telemetry.enabled` is on | a cost Claude Code estimates, and tool durations |
 
 Everything the extension knows comes from those, all local. The live deck is held in memory only
 and discarded when the window closes. The one thing written to disk, from 0.7.0, is the stats
@@ -27,9 +28,11 @@ global-storage directory for the extension — never under any engine's director
 It is retention-bounded, turned off by `agentDeck.stats.enabled`, emptied by **Clear Stats
 History**, and never read back into a session or a deck.
 
-This matters because "we promise not to send telemetry" is a policy and policies drift. **There is
-no outbound HTTP client compiled into the shipped artifact at all** — see §4. Zero egress here is a
-property of what the build contains, and a test fails if that changes.
+This matters because "we promise not to send telemetry" is a policy and policies drift. **The
+shipped artifact contains exactly one outbound HTTP call site, and its destination is the loopback
+literal**: a second VS Code window asking the first for its event stream, from 0.7.0 — see §4.
+Receiving Claude Code's telemetry, from 0.7.1, added no way to send. Zero egress here is a property
+of what the build contains, and a test fails if that changes.
 
 ---
 
@@ -240,8 +243,17 @@ Codex extension — not here. Two consequences worth knowing:
 - Never throws on input. Every refusal path increments a named counter and answers a status code.
   Consumer callbacks that throw are caught and counted, so a downstream bug cannot take the socket
   down.
-- Serves no files and reads no paths. The only route is the event path; every other path is a `404`,
-  including traversal attempts, which have nothing to traverse to.
+- Serves no files and reads no paths. It answers exactly six paths: the hook event path;
+  `/agent-deck/identity` and `/agent-deck/events`, which only another Agent Deck window on this
+  machine asks for (from 0.7.0); and `/v1/metrics`, `/v1/logs` and `/v1/traces`, Claude Code's
+  telemetry export (from 0.7.1). Every other path is a `404`, including traversal attempts, which
+  have nothing to traverse to.
+- Refuses Claude Code telemetry unless `agentDeck.telemetry.enabled` is on (default off): `403`, and
+  the body is never read. When it is on, a body must say it is JSON (`415` otherwise), be an OTLP
+  body for that path (`400`) and fit the same cap (`413`). It is parsed ONCE, where it arrives, by an
+  allow-list: the five account attributes Claude Code attaches to every record and the
+  prompt and response fields are dropped there, so they never reach the session model, the relay to
+  other windows, the stats history or the diagnostics channel. No answer is retryable.
 
 **Hostile-input testing.** `fixtures/synthetic-hook-fuzz/corpus.jsonl` is a synthetic corpus replayed
 over a real loopback socket against a real listener at the shipped default body cap. It covers
@@ -306,8 +318,10 @@ rather than trusting whatever `dist/` holds when it runs, which could silently b
   form. That is proved by injection rather than asserted: the same check applied to the real bundle
   with one dynamic import appended must report the injected module;
 - `node:http` **is** present, so the check is not vacuous — it is the listener;
-- no outbound client API is compiled in: no `http.request` / `https.request`, no `fetch(`, no
-  `XMLHttpRequest`, no `new WebSocket(`, no `navigator.sendBeacon`;
+- exactly one outbound call site is compiled in — the follower's `http.request`, whose host is the
+  loopback constant the server binds (from 0.7.0) — and no other client API: no `https.request`, no
+  `fetch(`, no `XMLHttpRequest`, no `new WebSocket(`, no `navigator.sendBeacon`. From 0.7.1 the same
+  bundle carries the telemetry parse and join, and the only address literal in it is `127.0.0.1`;
 - the loopback literal appears and `0.0.0.0` does not, asserted against the **built artifact** so
   that a build step rewriting a constant could not slip past the source-level guard.
 
@@ -395,6 +409,6 @@ about the command in that block matter for your own safety rather than ours:
 
 Not implemented, and not accepted as contributions: writes to anything an observed engine owns ·
 replay of a session, or persistence of its content · wrapping or launching any observed engine ·
-telemetry or any egress. The stats history in §1 is the one write, and it holds derived numbers
+sending telemetry, or any egress. The stats history in §1 is the one write, and it holds derived numbers
 only, in the extension's own storage. Zero writes to what is observed is the trust anchor, and the
 point of writing it down is that it is easier to defend a boundary than to relocate one.

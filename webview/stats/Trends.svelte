@@ -50,7 +50,32 @@
       .join(' ');
   }
 
-  /** A zero maximum would divide the viewBox by nothing. */
+  /**
+   * One point's marker: a ZERO-LENGTH segment, drawn by its round cap.
+   *
+   * v0.7.0 DoD 4.13, and the mechanism is not the one reported. The report was a
+   * zero maximum; the cause is that the markers were `<circle r="1">` inside a
+   * viewBox stretched by `preserveAspectRatio="none"`, and a circle's radius is in
+   * VIEWBOX units. In a box one unit tall — which a `max` of 1 produces exactly as
+   * the old stand-in for 0 did — every marker was a full-height ellipse, and the
+   * two at the ends were clipped into the arcs the user saw. A `max` of 2 drew
+   * half-height ones. `vector-effect="non-scaling-stroke"` fixes a STROKE and
+   * never a radius, so the only mark whose size is independent of the box is a
+   * stroke with no length: its round cap is drawn in screen pixels at any scale.
+   *
+   * The coordinates stay the layout's raw numbers flipped into the box, so the
+   * transform — and the per-engine scale DoD 4.12 pins — is exactly what it was.
+   */
+  function markerOf(line: TrendLine, x: number, y: number): string {
+    return `M ${String(x)} ${String(scaleOf(line) - y)} h 0`;
+  }
+
+  /**
+   * The viewBox height. Only a FLAT line can have a zero maximum and a flat line
+   * draws no box-scaled geometry at all (DoD 4.13), so the guard here exists to
+   * keep a zero-height viewBox — which disables rendering outright — from ever
+   * reaching the DOM, not to make a zero line look like something.
+   */
   function scaleOf(line: TrendLine): number {
     return line.max > 0 ? line.max : 1;
   }
@@ -102,26 +127,41 @@
                 role="img"
                 aria-label={`${series.label}, ${ENGINE_NAMES[line.engine]}`}
               >
-                <path class="line" d={pathOf(line)} vector-effect="non-scaling-stroke" />
-                {#each line.points as point (point.sessionId)}
-                  <circle
-                    data-testid={TESTID.statsTrendPoint}
-                    data-series={series.id}
-                    data-engine={line.engine}
-                    data-session={point.sessionId}
-                    data-index={String(point.index)}
-                    data-x={String(point.x)}
-                    data-y={String(point.y)}
-                    cx={point.x}
-                    cy={scaleOf(line) - point.y}
-                    r="1"
+                {#if line.flat}
+                  <!-- DoD 4.13: every value is zero. A flat baseline and nothing else —
+                       no path and no markers, because a shape normalised to a maximum
+                       of zero is a picture of the stand-in scale, not of the data. -->
+                  <line
+                    class="baseline"
+                    data-testid={TESTID.statsTrendBaseline}
+                    x1="0"
+                    y1={scaleOf(line)}
+                    x2={Math.max(trends.width, 1)}
+                    y2={scaleOf(line)}
                     vector-effect="non-scaling-stroke"
-                  >
-                    <title>{sessionPrimary(trends.sessions[point.index] ?? { sessionId: point.sessionId, engine: line.engine, projectSlug: '', startedAt: 0 }, liveLabels)}: {valueText(series, point.y)}</title>
-                  </circle>
-                {/each}
+                  />
+                {:else}
+                  <path class="line" d={pathOf(line)} vector-effect="non-scaling-stroke" />
+                  {#each line.points as point (point.sessionId)}
+                    <path
+                      class="marker"
+                      data-testid={TESTID.statsTrendPoint}
+                      data-series={series.id}
+                      data-engine={line.engine}
+                      data-session={point.sessionId}
+                      data-index={String(point.index)}
+                      data-x={String(point.x)}
+                      data-y={String(point.y)}
+                      d={markerOf(line, point.x, point.y)}
+                      stroke-linecap="round"
+                      vector-effect="non-scaling-stroke"
+                    >
+                      <title>{sessionPrimary(trends.sessions[point.index] ?? { sessionId: point.sessionId, engine: line.engine, projectSlug: '', startedAt: 0 }, liveLabels)}: {valueText(series, point.y)}</title>
+                    </path>
+                  {/each}
+                {/if}
               </svg>
-              <span class="max">max {valueText(series, line.max)}</span>
+              <span class="max">{line.flat ? 'max 0' : `max ${valueText(series, line.max)}`}</span>
             </div>
           {/each}
         {/if}
@@ -187,6 +227,9 @@
     background: var(--bg);
     border: 1px solid var(--line-soft);
     border-radius: 4px;
+    /* A marker at the top or bottom of the box, or at either end, is a round cap
+       centred ON the edge; clipped, half of it is an arc (DoD 4.13). */
+    overflow: visible;
   }
 
   .line {
@@ -195,9 +238,15 @@
     stroke-width: 1.25;
   }
 
-  circle {
-    fill: var(--ink);
-    stroke: none;
+  .marker {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 4;
+  }
+
+  .baseline {
+    stroke: var(--line-soft);
+    stroke-width: 1;
   }
 
   .axis {

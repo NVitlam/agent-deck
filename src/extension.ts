@@ -4028,6 +4028,32 @@ export class AgentDeckHost {
    * the pipeline has flushed since the last read, or when a reload made the
    * webview forget them; see `#storeReadAtFlush`.
    */
+  /**
+   * Clear Stats History ran — v0.7.0 DoD 4.14. The panel forgets the history in
+   * the SAME action.
+   *
+   * Found by the 4.9 smoke: the command deleted the directory and the Stats view
+   * went on showing every record, so the user cleared twice. The cause is the
+   * re-read cursor, not the webview: `#publishStats` re-reads the store only
+   * when `store.appended` has moved since the last read, and a clear APPENDS
+   * nothing — so the host had no reason to look again until the next flush
+   * happened to arrive. The webview replaces its stored records on every
+   * `statsStore` message, so one message is the whole fix.
+   *
+   * RE-READ, not an empty array written by hand: after a successful clear the
+   * store is empty and the read says so, and after a FAILED one the read sends
+   * what is actually still on disk rather than a view claiming a deletion that
+   * did not happen.
+   *
+   * Only this window is told. Another window's panel over the same per-machine
+   * store learns on its own next flush, which is the cost of there being no
+   * channel between windows (G7: in-memory only).
+   */
+  statsHistoryCleared(): void {
+    this.#storeReadAtFlush = -1;
+    this.#publishStats();
+  }
+
   #publishStats(): void {
     const panel = this.#panel;
     if (panel === null) return;
@@ -4730,6 +4756,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           );
         },
       }).clear();
+      // DoD 4.14: in the same action, not on the next flush. A no-op in a window
+      // with no host — the no-workspace window this command also exists for —
+      // because that window has no panel holding any records.
+      activeHost?.statsHistoryCleared();
     }),
   );
 

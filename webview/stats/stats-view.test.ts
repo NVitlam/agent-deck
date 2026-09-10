@@ -9,7 +9,7 @@
 // so every value asserted below is the value the deriver produced for the
 // shape the fixture manufactures — never a number this file made up.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -83,6 +83,47 @@ function tab(panel: Panel, view: string): void {
   const button = all(panel.container, TESTID.statsTab).find((t) => t.dataset['view'] === view);
   if (button === undefined) throw new Error(`no ${view} tab`);
   click(button);
+}
+
+/**
+ * The y a Trends marker is drawn at, read off its path (DoD 4.13).
+ *
+ * A marker is `M <x> <y> h 0` — a zero-length segment drawn by its round cap —
+ * so the second number IS the point's position inside its line's box.
+ */
+function markerY(marker: Element | null): string | undefined {
+  const parts = (marker?.getAttribute('d') ?? '').trim().split(/\s+/);
+  return parts[0] === 'M' ? parts[2] : undefined;
+}
+
+/**
+ * Every SVG attribute under `root`'s charts that could not be drawn (DoD 4.13).
+ *
+ * Two classes: a NaN or an Infinity anywhere in an attribute value, and a
+ * viewBox that is not four finite numbers with a POSITIVE width and height —
+ * a zero-height viewBox disables rendering outright, which is what an
+ * unguarded zero maximum produces rather than a NaN.
+ */
+function undrawable(root: ParentNode): string[] {
+  const out: string[] = [];
+  for (const svg of root.querySelectorAll('svg')) {
+    for (const el of [svg, ...svg.querySelectorAll('*')]) {
+      for (const attr of el.attributes) {
+        if (/NaN|Infinity/.test(attr.value)) out.push(`<${el.tagName} ${attr.name}="${attr.value}">`);
+      }
+    }
+    const box = (svg.getAttribute('viewBox') ?? '').trim().split(/\s+/).map(Number);
+    const [, , width, height] = box;
+    if (
+      box.length !== 4 ||
+      box.some((n) => !Number.isFinite(n)) ||
+      (width ?? 0) <= 0 ||
+      (height ?? 0) <= 0
+    ) {
+      out.push(`<svg viewBox="${String(svg.getAttribute('viewBox'))}">`);
+    }
+  }
+  return out;
 }
 
 /** Mount, feed the states and records, enter the Stats mode. */
@@ -401,11 +442,13 @@ describe('DoD 4.3 — Trends', () => {
     expect(heightOf(lines[1] as HTMLElement)).toBe('20000');
 
     // ...and each point sits at the TOP of its own box, because each is its own
-    // maximum. Under one shared scale the Codex point's cy would be 99,980,000
-    // of a 100,000,000 box — the baseline, which is what the user saw.
+    // maximum. Under one shared scale the Codex point's y would be 99,980,000
+    // of a 100,000,000 box — the baseline, which is what the user saw. (A
+    // marker is a zero-length path since DoD 4.13, so its y is read from `d`;
+    // it was a circle's `cy` until the circles turned out to be the arcs.)
     for (const line of lines) {
-      const circle = line.querySelector('circle');
-      expect(circle?.getAttribute('cy'), line.dataset['engine']).toBe('0');
+      const marker = line.querySelector(`[data-testid="${TESTID.statsTrendPoint}"]`);
+      expect(markerY(marker), line.dataset['engine']).toBe('0');
     }
   });
 
@@ -591,5 +634,161 @@ describe('DoD 4.6 — the engine chips narrow every stats view', () => {
     click(one(panel.container, TESTID.statsToggle));
     const deckChip = all(panel.container, 'deck-engine-chip').find((c) => c.dataset['engine'] === 'oc');
     expect(deckChip?.dataset['active']).toBe('true');
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 4.13 — a zero maximum, and the markers that drew the arcs
+ * ------------------------------------------------------------------------ */
+
+describe('DoD 4.13: a Trends line never draws a picture of its own stand-in scale', () => {
+  /** Open Trends over `records`, through the real app. */
+  function trendsOver(records: StatsRecord[]): Panel {
+    const panel = render();
+    send({ type: 'statsStore', records, enabled: true });
+    click(one(panel.container, TESTID.statsToggle));
+    tab(panel, 'trends');
+    return panel;
+  }
+
+  function lineOf(panel: Panel, series: string, engine: string): HTMLElement {
+    const line = all(panel.container, TESTID.statsTrendLine).find(
+      (l) => l.dataset['series'] === series && l.dataset['engine'] === engine,
+    );
+    if (line === undefined) throw new Error(`no ${series}/${engine} line`);
+    return line;
+  }
+
+  it('a zero-maximum line is a flat baseline labelled "max 0", with no path and no markers', () => {
+    // Two Claude Code sessions with no loop between them — the shape 33 of the
+    // 36 committed stats records have, which is why the smoke found it at once.
+    const panel = trendsOver([golden('02-churn-chain'), golden('03-silent-subagent')]);
+    const loops = lineOf(panel, 'loops', 'cc');
+
+    expect(one(loops, TESTID.statsTrendBaseline), 'no flat baseline').toBeDefined();
+    expect(loops.querySelector('path.line'), 'a zero line drew a path').toBeNull();
+    expect(all(loops, TESTID.statsTrendPoint), 'a zero line drew markers').toHaveLength(0);
+    expect(loops.querySelector('.max')?.textContent).toBe('max 0');
+
+    // The control, over the SAME records: prompt is an ordinary line.
+    const prompt = lineOf(panel, 'prompt', 'cc');
+    expect(prompt.querySelector('path.line'), 'the control drew no path').not.toBeNull();
+    expect(all(prompt, TESTID.statsTrendPoint)).toHaveLength(2);
+    expect(prompt.querySelector(`[data-testid="${TESTID.statsTrendBaseline}"]`)).toBeNull();
+  });
+
+  it('a marker is the same size at ANY maximum — including 1, which the report never named', () => {
+    /*
+     * THE MECHANISM, which is not the one reported. The report was a zero
+     * maximum; the old guard already mapped 0 to a box one unit tall, so no NaN
+     * was involved. What drew the arcs was `<circle r="1">` inside a viewBox
+     * stretched by `preserveAspectRatio="none"`: a radius is in viewBox units,
+     * so in a box one unit tall every marker was a full-height ellipse, and the
+     * ones on the edges were clipped into arcs. A maximum of exactly 1 — one loop
+     * in one session — builds that same box, and would have drawn the same arcs
+     * after a fix aimed only at zero.
+     *
+     * The only mark whose on-screen size does not depend on the box is a stroke
+     * with no length, drawn in screen pixels by `vector-effect`. So that is what
+     * this pins: no circle anywhere, and every marker a zero-length, round-capped,
+     * non-scaling stroke.
+     */
+    const panel = trendsOver([golden('01-reread-loop'), golden('02-churn-chain')]);
+    const loops = lineOf(panel, 'loops', 'cc');
+    const box = (loops.querySelector('svg')?.getAttribute('viewBox') ?? '').split(' ');
+    expect(box[3], 'the case under test is a box ONE unit tall').toBe('1');
+
+    const charts = all(panel.container, TESTID.statsTrendLine);
+    expect(charts.length).toBeGreaterThan(0);
+    for (const chart of charts) {
+      expect(chart.querySelectorAll('circle'), 'a marker is sized in viewBox units').toHaveLength(0);
+    }
+    const markers = all(loops, TESTID.statsTrendPoint);
+    expect(markers).toHaveLength(2);
+    for (const marker of markers) {
+      expect(marker.tagName.toLowerCase()).toBe('path');
+      expect(marker.getAttribute('d'), 'a marker with length').toMatch(/^M -?[\d.]+ -?[\d.]+ h 0$/);
+      expect(marker.getAttribute('stroke-linecap')).toBe('round');
+      expect(marker.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+    }
+  });
+
+  it('no NaN, no Infinity and no zero-sized viewBox reaches the DOM, over EVERY committed stats golden', () => {
+    /*
+     * Every record under fixtures/golden/stats, rendered together and then one
+     * engine at a time — the per-engine arrangement is what produces a line per
+     * engine with its own maximum, and a lone engine is what makes the most
+     * lines flat. Whatever the renderer computes from a record reaches an
+     * attribute here or nowhere.
+     */
+    const records = readdirSync(GOLDEN_DIR)
+      .filter((name) => name.endsWith('.json'))
+      .sort()
+      .map((name) => JSON.parse(readFileSync(resolve(GOLDEN_DIR, name), 'utf8')) as StatsRecord);
+    expect(records.length, 'no stats golden on disk').toBeGreaterThan(2);
+
+    const arrangements: StatsRecord[][] = [records];
+    for (const engine of ['cc', 'codex', 'opencode'] as const) {
+      const own = records.filter((r) => r.engine === engine);
+      if (own.length >= 2) arrangements.push(own);
+    }
+    expect(arrangements.length, 'every engine should be arrangeable on its own').toBe(4);
+
+    let lines = 0;
+    let flat = 0;
+    for (const arrangement of arrangements) {
+      const panel = trendsOver(arrangement);
+      const charts = all(panel.container, TESTID.statsTrendLine);
+      lines += charts.length;
+      flat += charts.filter((c) => c.querySelector(`[data-testid="${TESTID.statsTrendBaseline}"]`) !== null).length;
+      expect(undrawable(panel.container), `an undrawable attribute over ${String(arrangement.length)} records`).toStrictEqual([]);
+      panel.dispose();
+    }
+    // The scan saw both kinds of line, or it proved half of what it claims.
+    expect(lines).toBeGreaterThan(flat);
+    expect(flat, 'no flat line in any arrangement').toBeGreaterThan(0);
+  });
+
+  it('is not vacuous: the scan does see a NaN, an Infinity and a zero-height box', () => {
+    const planted = document.createElement('div');
+    planted.innerHTML = [
+      '<svg viewBox="0 0 10 NaN"><path d="M 0 NaN" /></svg>',
+      '<svg viewBox="0 0 10 0"><line x2="Infinity" /></svg>',
+      '<svg viewBox="0 0 10 5"><path d="M 0 1 h 0" /></svg>',
+    ].join('');
+    expect(undrawable(planted)).toStrictEqual([
+      '<svg viewBox="0 0 10 NaN">',
+      '<path d="M 0 NaN">',
+      '<svg viewBox="0 0 10 NaN">',
+      '<line x2="Infinity">',
+      '<svg viewBox="0 0 10 0">',
+    ]);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 4.14 — a cleared store empties the view in one message
+ * ------------------------------------------------------------------------ */
+
+describe('DoD 4.14: an empty statsStore after a full one empties the view on its own', () => {
+  it('shows the empty state from that one message, with no other event', () => {
+    /*
+     * The webview half of 4.14. The host half — that Clear Stats History sends
+     * this message in the same action — is `extension.test.ts`'s; this is the
+     * proof that the one message is enough, so the pair together is "clear, and
+     * the view is empty", with nothing in between.
+     */
+    const panel = render();
+    send({ type: 'statsStore', records: [golden('01-reread-loop'), golden('02-churn-chain')], enabled: true });
+    click(one(panel.container, TESTID.statsToggle));
+    tab(panel, 'trends');
+    expect(all(panel.container, TESTID.statsTrendSeries).length, 'the history never drew').toBeGreaterThan(0);
+
+    // THE ONE MESSAGE. No click, no tab, no snapshot after it.
+    send({ type: 'statsStore', records: [], enabled: true });
+    const empty = one(panel.container, TESTID.statsEmpty);
+    expect(empty.dataset['view']).toBe('trends');
+    expect(empty.dataset['reason']).toBe('fewer-than-two');
+    expect(all(panel.container, TESTID.statsTrendSeries)).toHaveLength(0);
   });
 });

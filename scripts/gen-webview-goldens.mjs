@@ -226,6 +226,42 @@ function mixedEngineTrends(m, base) {
   };
 }
 
+/**
+ * The DoD 4.13 golden: a series whose maximum is ZERO, beside one whose is not.
+ *
+ * Found by the 4.9 smoke on the `loops` panel, and the corpus says why it is
+ * common rather than an edge: 33 of the 36 committed stats records carry no
+ * loop at all. Two Claude Code sessions with none, and one Codex session with
+ * its own one, so the loops series holds a FLAT line and a non-flat one side by side —
+ * the golden pins `flat` in both directions. Prompt totals differ per session so
+ * the prompt series stays an ordinary, non-flat control.
+ */
+function zeroMaxTrends(m, loopless, looped) {
+  // Two Claude Code sessions WITHOUT a loop (a real loopless corpus record,
+  // renamed), and one real Codex corpus record WITH its own loop, unmodified
+  // but for its id. Nothing here invents a loop.
+  const as = (base, sessionId, prompt) => ({
+    ...base,
+    sessionId,
+    totals: { ...base.totals, prompt },
+  });
+  const records = [
+    as(loopless, 'zero-cc-1', 1_000),
+    as(loopless, 'zero-cc-2', 2_000),
+    as(looped, 'zero-codex-looped', looped.totals.prompt),
+  ];
+  const wire = m.statsWireRecords(records);
+  if (wire.dropped !== 0) throw new Error(`the wire gate refused a zero-max record: ${wire.reasons.join('; ')}`);
+  const store = m.createStore();
+  store.handleMessage({ type: 'statsSnapshot', records: wire.records });
+  store.handleMessage({ type: 'statsStore', records: m.inSessionOrder(wire.records), enabled: true });
+  const view = store.getView();
+  return {
+    sessions: records.map((r) => ({ sessionId: r.sessionId, engine: r.engine, loops: r.loops.length })),
+    loaded: m.trendsLayout(view.statsStored, view.statsStoreEnabled, view.statsStoreLoaded),
+  };
+}
+
 function text(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -255,6 +291,22 @@ async function planFiles(m) {
       generator: 'scripts/gen-webview-goldens.mjs',
       from: first.stem,
       trends: mixedEngineTrends(m, first.record),
+    }),
+  );
+
+  // DoD 4.13. Both bases are real corpus records — one with no loop, one with
+  // its own — so no loop count here is a field this script invented.
+  const loopless = corpus.find((e) => e.record.engine === 'cc' && e.record.loops.length === 0);
+  const looped = corpus.find((e) => e.record.engine === 'codex' && e.record.loops.length > 0);
+  if (loopless === undefined || looped === undefined) {
+    throw new Error('the zero-max case needs a loopless Claude Code golden and a looped Codex one');
+  }
+  files.set(
+    join(STATS_GOLDEN_DIR, 'zero-max.json'),
+    text({
+      generator: 'scripts/gen-webview-goldens.mjs',
+      from: [loopless.stem, looped.stem],
+      trends: zeroMaxTrends(m, loopless.record, looped.record),
     }),
   );
 

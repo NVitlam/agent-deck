@@ -490,6 +490,20 @@ export interface TrendLine {
   points: TrendPoint[];
   /** The largest `y` IN THIS LINE. Per-engine, which is the whole point. */
   max: number;
+  /**
+   * Every point is zero, so there is nothing to scale — v0.7.0 DoD 4.13.
+   *
+   * The renderer draws a flat baseline and the label `max 0`, and no path and no
+   * markers: a line normalised to its own maximum has no shape when that maximum
+   * is zero, and anything drawn in a box scaled to a stand-in height is a picture
+   * of the stand-in. Decided HERE rather than in `Trends.svelte` because that
+   * component's header says it derives nothing, and a decision a golden can see
+   * is one a change has to move.
+   *
+   * Emitted for every line, true or false, so the goldens pin the NEGATIVE too:
+   * a layout that dropped the field would read as "not flat" by accident.
+   */
+  flat: boolean;
 }
 
 export interface TrendSeries {
@@ -572,7 +586,7 @@ export function trendsLayout(
       // An engine with nothing to say gets no line, rather than an empty one:
       // a flat line at zero is a claim about that engine, and absence is not.
       if (points.length === 0) continue;
-      lines.push({ engine, points, max });
+      lines.push({ engine, points, max, flat: max === 0 });
     }
     series.push({ id, label: TREND_LABELS[id], lines });
   };

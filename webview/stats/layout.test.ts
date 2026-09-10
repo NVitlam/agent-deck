@@ -402,3 +402,86 @@ describe('the views, as rules', () => {
     expect(JSON.stringify(input)).toBe(frozen);
   });
 });
+
+describe('DoD 4.13: a line whose every value is zero is FLAT, and says so', () => {
+  /*
+   * The 4.9 smoke drew two full-height arcs across the "loops" panel. A line
+   * normalised to its own maximum has no shape when that maximum is zero, and
+   * the renderer was drawing one anyway, into a box scaled to a stand-in height.
+   * The layout now says so in a field the renderer keys on, and this golden pins
+   * that field in BOTH directions: one flat line and one ordinary line in the
+   * same series.
+   */
+  const golden = readJson<{
+    from: string[];
+    trends: {
+      sessions: { sessionId: string; engine: string; loops: number }[];
+      loaded: TrendsLayout;
+    };
+  }>(resolve(GOLDEN_DIR, 'zero-max.json'));
+
+  it('the golden carries a flat loops line AND a non-flat one, side by side', () => {
+    const loops = golden.trends.loaded.series.find((s) => s.id === 'loops');
+    const byEngine = new Map((loops?.lines ?? []).map((l) => [l.engine, l] as const));
+    expect([...byEngine.keys()]).toStrictEqual(['cc', 'codex']);
+
+    const cc = byEngine.get('cc');
+    expect(cc?.max).toBe(0);
+    expect(cc?.flat, 'an all-zero line was not flagged flat').toBe(true);
+    // ...and every one of its points really is zero, from the declared input.
+    expect(cc?.points.map((p) => p.y)).toStrictEqual([0, 0]);
+    expect(golden.trends.sessions.filter((s) => s.engine === 'cc').map((s) => s.loops)).toStrictEqual([0, 0]);
+
+    // The control, in the same series: a real record with its own loop.
+    const codex = byEngine.get('codex');
+    expect(codex?.max).toBeGreaterThan(0);
+    expect(codex?.flat, 'a line with a non-zero point was flagged flat').toBe(false);
+  });
+
+  it('flat is exactly "the maximum is zero", on EVERY line of EVERY committed golden', () => {
+    // Over the whole directory, not over one file, because the property is the
+    // rule and every golden is an instance of it. The first run of this found
+    // nineteen flat lines already committed in the pre-4.13 goldens: the defect
+    // was pinned in the outputs, waiting for a renderer to draw it.
+    let lines = 0;
+    let flat = 0;
+    for (const name of readdirSync(GOLDEN_DIR).filter((n) => n.endsWith('.json')).sort()) {
+      const walk = (node: unknown): void => {
+        if (Array.isArray(node)) {
+          node.forEach(walk);
+          return;
+        }
+        if (node === null || typeof node !== 'object') return;
+        const record = node as Record<string, unknown>;
+        if (typeof record['max'] === 'number' && Array.isArray(record['points'])) {
+          lines += 1;
+          expect(typeof record['flat'], `${name}: a line with no flat field`).toBe('boolean');
+          expect(record['flat'], `${name}: flat disagrees with max ${String(record['max'])}`).toBe(
+            record['max'] === 0,
+          );
+          if (record['flat'] === true) flat += 1;
+        }
+        Object.values(record).forEach(walk);
+      };
+      walk(readJson<unknown>(resolve(GOLDEN_DIR, name)));
+    }
+    // Both populations exist, or the equality above proved only one direction.
+    expect(lines).toBeGreaterThan(flat);
+    expect(flat).toBeGreaterThan(0);
+  });
+
+  it('a line is flat through the layout itself, not only in the golden', () => {
+    const base = CORPUS.find((e) => e.record.loops.length === 0)?.record as StatsRecord;
+    expect(base, 'no loopless corpus record').toBeDefined();
+    const records = [
+      { ...base, sessionId: 'z1' },
+      { ...base, sessionId: 'z2' },
+    ];
+    const loops = trendsLayout(records).series.find((s) => s.id === 'loops');
+    expect(loops?.lines).toHaveLength(1);
+    expect(loops?.lines[0]).toMatchObject({ max: 0, flat: true });
+    // The prompt series over the same records is the ordinary case.
+    const prompt = trendsLayout(records).series.find((s) => s.id === 'prompt');
+    expect(prompt?.lines[0]?.flat).toBe(false);
+  });
+});

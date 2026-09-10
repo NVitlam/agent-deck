@@ -56,7 +56,8 @@
                   "y": 576450282
                 }
               ],
-              "max": 576450282
+              "max": 576450282,
+              "flat": false
             },
             {
               "engine": "codex",
@@ -74,7 +75,8 @@
                   "y": 817147
                 }
               ],
-              "max": 817147
+              "max": 817147,
+              "flat": false
             },
             {
               "engine": "opencode",
@@ -92,7 +94,8 @@
                   "y": 364414
                 }
               ],
-              "max": 364414
+              "max": 364414,
+              "flat": false
             }
           ]
         },
@@ -116,7 +119,8 @@
                   "y": 0
                 }
               ],
-              "max": 0
+              "max": 0,
+              "flat": true
             },
             {
               "engine": "codex",
@@ -134,7 +138,8 @@
                   "y": 0
                 }
               ],
-              "max": 0
+              "max": 0,
+              "flat": true
             },
             {
               "engine": "opencode",
@@ -152,7 +157,8 @@
                   "y": 0
                 }
               ],
-              "max": 0
+              "max": 0,
+              "flat": true
             }
           ]
         },
@@ -237,7 +243,8 @@
                   "y": 576450282
                 }
               ],
-              "max": 576450282
+              "max": 576450282,
+              "flat": false
             },
             {
               "engine": "codex",
@@ -255,7 +262,8 @@
                   "y": 817147
                 }
               ],
-              "max": 817147
+              "max": 817147,
+              "flat": false
             },
             {
               "engine": "opencode",
@@ -273,7 +281,8 @@
                   "y": 364414
                 }
               ],
-              "max": 364414
+              "max": 364414,
+              "flat": false
             }
           ]
         },
@@ -297,7 +306,8 @@
                   "y": 0
                 }
               ],
-              "max": 0
+              "max": 0,
+              "flat": true
             },
             {
               "engine": "codex",
@@ -315,7 +325,8 @@
                   "y": 0
                 }
               ],
-              "max": 0
+              "max": 0,
+              "flat": true
             },
             {
               "engine": "opencode",
@@ -333,7 +344,8 @@
                   "y": 0
                 }
               ],
-              "max": 0
+              "max": 0,
+              "flat": true
             }
           ]
         },

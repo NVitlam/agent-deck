@@ -44,6 +44,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AgentDeckDataPath,
   AgentDeckHost,
+  CLEAR_STATS_COMMAND,
+  CLEAR_STATS_CONFIRM,
   CODEX_ABSENT_LOG,
   CONFIG_SECTION,
   CodexEnginePath,
@@ -5560,6 +5562,70 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
       'activate() wired a store the data path never reaches',
     ).toBeGreaterThan(0);
     expect(host?.dataPath.diagnostics.grafts).toBeGreaterThan(0);
+    await deactivate();
+  });
+
+  it('Clear Stats History empties the panel in the SAME action — no flush, no pump, no other event (DoD 4.14)', async () => {
+    /*
+     * Found by the 4.9 smoke: the command deleted the directory and the Stats
+     * view kept every record, so the user cleared twice. The cause was the
+     * re-read cursor: the host re-reads the store only when `store.appended`
+     * has moved, and a clear appends nothing. Measured before the fix: the
+     * command posted NO `statsStore` at all.
+     *
+     * Through `activate()`, so the command is the registered one and the host is
+     * the one it reaches — the only production path by which a clear can tell a
+     * panel anything. The webview half (one empty `statsStore` is enough to
+     * show the empty state) is `webview/stats/stats-view.test.ts`'s.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    const globalStorage = await makeTempDir();
+    const dir = resolveStoreDir({ globalStorageUri: { fsPath: globalStorage } });
+
+    // A real history on disk BEFORE activation, from committed goldens, so the
+    // panel's first publish reads it the way it would read a user's.
+    const goldens = fileURLToPath(new URL('../fixtures/golden/stats', import.meta.url));
+    const seeded = new StatsStore({ dir, enabled: true, retentionDays: 90 });
+    const names = readdirSync(goldens).filter((n) => n.includes('-synthetic-0') && n.endsWith('.json')).sort();
+    for (const name of names.slice(0, 2)) {
+      const record = JSON.parse(readFileSync(join(goldens, name), 'utf8')) as Record<string, unknown>;
+      seeded.appendRecord({ ...record, derivedAt: Date.now() } as never);
+    }
+    expect(seeded.readRecords()).toHaveLength(2);
+
+    await activateOnFreePort(
+      (port) => {
+        mock.setWorkspaceFolder(workspacePath);
+        mock.setConfig(CONFIG_SECTION, { port });
+      },
+      globalStorage,
+    );
+    const host = currentHost();
+    expect(host, 'activate() installed no host').not.toBeNull();
+    host?.open();
+    const posted = mock.panels[0]?.webview.posted ?? [];
+    type StoreMessage = { type: 'statsStore'; records: unknown[]; enabled: boolean };
+    const stores = (messages: readonly unknown[]): StoreMessage[] =>
+      messages.filter(
+        (m): m is StoreMessage => (m as { type?: unknown }).type === 'statsStore',
+      );
+    expect(
+      stores(posted).at(-1)?.records,
+      'the panel never received the seeded history, so the clear proves nothing',
+    ).toHaveLength(2);
+
+    // THE ACTION. Nothing between it and the assertion: no pump, no timer, no
+    // second command.
+    const before = posted.length;
+    mock.answerWarningWith(CLEAR_STATS_CONFIRM);
+    await mock.runCommand(CLEAR_STATS_COMMAND);
+    expect(existsSync(dir), 'the clear did not remove the directory').toBe(false);
+
+    const sent = stores(posted.slice(before));
+    expect(sent, 'Clear Stats History told the panel nothing').toStrictEqual([
+      { type: 'statsStore', records: [], enabled: true },
+    ]);
     await deactivate();
   });
 

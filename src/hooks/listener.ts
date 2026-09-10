@@ -1019,7 +1019,7 @@ export class HookListener {
    *   accepted                        -> 200 {}
    *
    * Nothing here is retryable and nothing here throws (G3). The setting is read
-   * BEFORE the body, so a disabled path reads no body at all — it is drained and
+   * BEFORE the body, so a disabled path parses no body at all — it is drained and
    * discarded, never parsed. An accepted body is parsed ONCE, by
    * `parseOtlpBody`, at this boundary: the identity attributes and the content
    * fields are dropped there, so what the consumers and the relay receive is the
@@ -1029,14 +1029,16 @@ export class HookListener {
     const counts = this.#telemetry[signal];
     if (req.method !== 'POST') {
       counts.rejected[405] += 1;
-      req.resume();
-      endWithStatus(res, 405);
+      this.#drainThen(req, () => {
+        endWithStatus(res, 405);
+      });
       return;
     }
     if (!isJsonMediaType(req.headers['content-type'])) {
       counts.rejected[415] += 1;
-      req.resume();
-      endWithStatus(res, 415);
+      this.#drainThen(req, () => {
+        endWithStatus(res, 415);
+      });
       return;
     }
     let enabled = false;
@@ -1048,8 +1050,9 @@ export class HookListener {
     }
     if (!enabled) {
       counts.disabled += 1;
-      req.resume();
-      endWithJson(res, 403, TELEMETRY_DISABLED_BODY);
+      this.#drainThen(req, () => {
+        endWithJson(res, 403, TELEMETRY_DISABLED_BODY);
+      });
       return;
     }
 
@@ -1080,6 +1083,46 @@ export class HookListener {
         endWithJson(res, 200, '{}');
       },
     );
+  }
+
+  /**
+   * Discard a refused request's body, THEN answer (v0.7.1, found by the gate).
+   *
+   * The telemetry refusals first answered straight after `req.resume()`, the
+   * way the event path's 405/415 always have. The 20-run gate block caught the
+   * cost in 2 of 20 runs: a `403` sent while the client was still writing a
+   * 512 KiB body closed the exchange under it, and the client read a
+   * connection reset instead of the `403` — the case this file already names
+   * ("replying before the body has been drained truncates the reply on a peer
+   * that is still writing"). An exporter that reads a reset retries; the
+   * ruling is that no answer here is retryable.
+   *
+   * So the body is DRAINED — every chunk dropped as it arrives, nothing kept,
+   * nothing parsed — and the answer goes on `end`. A body that keeps coming
+   * past the hard multiple of the cap is answered and its socket destroyed, the
+   * same bound {@link #collectBody} applies, so a refusal cannot be made to
+   * hold a socket open indefinitely.
+   */
+  #drainThen(req: IncomingMessage, respond: () => void): void {
+    const hardLimit = this.maxBodyBytes * HARD_ABORT_MULTIPLE;
+    let size = 0;
+    let done = false;
+    req.on('error', () => {
+      this.#counters.socketErrors += 1;
+    });
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > hardLimit && !done) {
+        done = true;
+        respond();
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (done) return;
+      done = true;
+      respond();
+    });
   }
 
   /** Same discipline as {@link #dispatch}, over the telemetry consumers. */

@@ -249,7 +249,7 @@ Codex extension — not here. Two consequences worth knowing:
   telemetry export (from 0.7.1). Every other path is a `404`, including traversal attempts, which
   have nothing to traverse to.
 - Refuses Claude Code telemetry unless `agentDeck.telemetry.enabled` is on (default off): `403`, and
-  the body is never read. When it is on, a body must say it is JSON (`415` otherwise), be an OTLP
+  the body is drained and never parsed. When it is on, a body must say it is JSON (`415` otherwise), be an OTLP
   body for that path (`400`) and fit the same cap (`413`). It is parsed ONCE, where it arrives, by an
   allow-list: the five account attributes Claude Code attaches to every record and the
   prompt and response fields are dropped there, so they never reach the session model, the relay to

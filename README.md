@@ -373,7 +373,7 @@ Two steps:
    has an `"env"` object, add these keys to it rather than replacing it. The endpoint names the port
    in `agentDeck.port`: change one and you change the other.
 2. Turn on `agentDeck.telemetry.enabled`. Until you do, the three paths answer `403` with a body
-   naming that setting, and no body is read.
+   naming that setting, and no body is parsed.
 
 ```json
 {
@@ -771,7 +771,7 @@ honesty is kept, and they were not loosened alongside it.
 | `agentDeck.canvas.autoFit` | Re-fit the session canvas to its content on every event that changes its geometry: a node selected, the drawer opened, expanded or closed, an agent grafted, removed or parked, the panel resized, a session switch, an engine chip, a switch back to the canvas. Default `true`. A manual pan or zoom persists until the next such event; token counters and status colours never re-fit. Off, the canvas fits once on entry and on Reset view. |
 | `agentDeck.stats.idleFlushMs` | How long a session may go unchanged before its record is written anyway, in milliseconds. Default 3600000 (one hour). A record is normally written when the session ends; this covers the session that never does. Later work is recomputed in full and written as a second record; reads keep the newest per session and nothing on disk is rewritten. |
 | `agentDeck.pricing` | Your own prices per model id, in USD per million tokens — `{"<model id>": {"prompt": 3, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15}}`. Used only for sessions for which neither the engine nor Claude Code's telemetry states a cost. Agent Deck ships no price table and never guesses one: a model with no entry gets no figure, a malformed entry is ignored and named on the output channel, and anything computed this way is labelled as estimated from your prices. |
-| `agentDeck.telemetry.enabled` | Accept Claude Code's own OpenTelemetry export on the hook listener's `/v1/metrics`, `/v1/logs` and `/v1/traces` paths. Default `false`: off, those paths answer `403` and no body is read. Machine-scoped, so every window on the machine reads the same value. See [Claude Code telemetry](#claude-code-telemetry-optional). |
+| `agentDeck.telemetry.enabled` | Accept Claude Code's own OpenTelemetry export on the hook listener's `/v1/metrics`, `/v1/logs` and `/v1/traces` paths. Default `false`: off, those paths answer `403` and no body is parsed. Machine-scoped, so every window on the machine reads the same value. See [Claude Code telemetry](#claude-code-telemetry-optional). |
 
 Clearing the history is a command, not a button on the deck: **Agent Deck: Clear Stats History** in
 the command palette or the sidebar, behind a modal confirm. It works whether or not `agentDeck.stats.enabled` is on, so turning

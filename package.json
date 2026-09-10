@@ -130,7 +130,7 @@
           "type": "boolean",
           "default": false,
           "scope": "machine",
-          "description": "Accept Claude Code's own OpenTelemetry export (OTLP over HTTP, JSON only) on the hook listener: POST /v1/metrics, /v1/logs and /v1/traces on 127.0.0.1, at agentDeck.port. Off, those paths answer 403 and no body is read. Claude Code sends there only if its OpenTelemetry environment variables name that address, and Agent Deck never writes Claude Code's settings. Kept: a cost figure Claude Code estimates, and tool durations where the session states none, joined to sessions this window already shows. Identity attributes and prompt or response text are dropped where the body is parsed. Machine-scoped: every window on this machine reads the same value."
+          "description": "Accept Claude Code's own OpenTelemetry export (OTLP over HTTP, JSON only) on the hook listener: POST /v1/metrics, /v1/logs and /v1/traces on 127.0.0.1, at agentDeck.port. Off, those paths answer 403 and no body is parsed. Claude Code sends there only if its OpenTelemetry environment variables name that address, and Agent Deck never writes Claude Code's settings. Kept: a cost figure Claude Code estimates, and tool durations where the session states none, joined to sessions this window already shows. Identity attributes and prompt or response text are dropped where the body is parsed. Machine-scoped: every window on this machine reads the same value."
         }
       }
     },

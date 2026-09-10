@@ -47,6 +47,58 @@ import { join, resolve } from 'node:path';
 /** `mkdtemp`'s own signature: six random alphanumerics at the end. */
 const MKDTEMP_SHAPE = /[-_][0-9A-Za-z]{6}$/;
 
+/**
+ * THE SHAPE RULE HAS ONE MEASURED FALSE POSITIVE, AND IT IS VITEST ITSELF.
+ *
+ * Found by the v0.7.1 gate block (2026-09-10): runs 10 and 19 of 20 were
+ * refused over `YO29-KeKkywXSM-PaJY2D` and `l1lo6NkPoURdW_-sZIuFi`. Neither is
+ * a `mkdtemp` directory. Each is a 21-character nanoid-style name holding ONE
+ * entry, `ssr/`, full of vite-node's transform output of this repository's
+ * own modules (`__vite_ssr_import__("/src/model/events.ts", ...)`) — the test
+ * RUNNER's cache, written during the run and not removed. `%TEMP%` held 36 of
+ * them back to 2026-08-19, before this guard existed; 5 of the 36 happen to
+ * end in a separator plus six alphanumerics, which is all the shape rule asks.
+ *
+ * So the premise "any new directory ending in six alphanumerics after a
+ * separator is a `mkdtemp` directory whoever made it" is false by
+ * measurement, and it is narrowed by STRUCTURE rather than by name: a
+ * directory whose only entry is an `ssr` directory is the runner's cache. It is
+ * REPORTED, by name, on every run it appears (rule 18) — never silently
+ * dropped — and everything else of `mkdtemp`'s shape still fails the run.
+ */
+export function isViteSsrCache(entries: readonly string[], ssrIsDirectory: boolean): boolean {
+  return entries.length === 1 && entries[0] === 'ssr' && ssrIsDirectory;
+}
+
+/** What the teardown does with one new `%TEMP%` directory. Pure, for the test. */
+export function classifyTempDir(
+  name: string,
+  entries: readonly string[],
+  ssrIsDirectory: boolean,
+): 'leak' | 'runner-cache' | 'foreign' {
+  if (!MKDTEMP_SHAPE.test(name)) return 'foreign';
+  return isViteSsrCache(entries, ssrIsDirectory) ? 'runner-cache' : 'leak';
+}
+
+/** Read one `%TEMP%` directory's entries for {@link classifyTempDir}. Total: never throws. */
+function tempEntries(name: string): { entries: string[]; ssrIsDirectory: boolean } {
+  const dir = join(tmpdir(), name);
+  try {
+    const entries = readdirSync(dir);
+    let ssrIsDirectory = false;
+    try {
+      ssrIsDirectory = entries.includes('ssr') && statSync(join(dir, 'ssr')).isDirectory();
+    } catch {
+      ssrIsDirectory = false;
+    }
+    return { entries, ssrIsDirectory };
+  } catch {
+    // Unreadable or gone: treat as a leak candidate with unknown contents,
+    // which is the direction that FAILS rather than the one that forgives.
+    return { entries: [], ssrIsDirectory: false };
+  }
+}
+
 /** Build output that legitimately lives in `dist/` and is not scratch. */
 const DIST_KEEP = new Set(['agent-deck', 'webview', 'theater']);
 
@@ -187,8 +239,24 @@ export function teardown(): void {
   // `dist/` is entirely ours, so ANY new directory there is a leak — the shape
   // rule is not needed and would only weaken it.
   const leakedDist = newDist.filter((name) => !DIST_KEEP.has(name));
-  const leakedTemp = newTemp.filter((name) => MKDTEMP_SHAPE.test(name));
-  const foreignTemp = newTemp.filter((name) => !MKDTEMP_SHAPE.test(name));
+  const classified = newTemp.map((name) => {
+    const { entries, ssrIsDirectory } = tempEntries(name);
+    return { name, kind: classifyTempDir(name, entries, ssrIsDirectory) };
+  });
+  const leakedTemp = classified.filter((c) => c.kind === 'leak').map((c) => c.name);
+  const foreignTemp = classified.filter((c) => c.kind === 'foreign').map((c) => c.name);
+  const runnerCache = classified.filter((c) => c.kind === 'runner-cache').map((c) => c.name);
+
+  if (runnerCache.length > 0) {
+    // Rule 18 again: named, counted, and said to be ungated — see
+    // `isViteSsrCache` for the measurement behind the exception.
+    process.stdout.write(
+      `[scratch-guard] ${String(runnerCache.length)} new %TEMP% director${
+        runnerCache.length === 1 ? 'y has' : 'ies have'
+      } mkdtemp's shape but holds only vitest's ssr/ transform cache, and ` +
+        `${runnerCache.length === 1 ? 'is' : 'are'} NOT gated: ${runnerCache.join(', ')}\n`,
+    );
+  }
 
   if (foreignTemp.length > 0) {
     // Rule 18: a check that does not gate on an input says so, with the count.

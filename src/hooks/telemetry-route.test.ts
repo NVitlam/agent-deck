@@ -222,7 +222,7 @@ describe('DoD 6.2 — 403: the setting is off (the shipped default)', () => {
     expect(received).toHaveLength(0);
   });
 
-  it('reads NO body while off: malformed and oversize bodies are 403, not 400 or 413', async () => {
+  it('parses NO body while off: malformed and oversize bodies are 403, not 400 or 413', async () => {
     const h = await harness({ enabled: false });
     expect((await postTo(h.port, TELEMETRY_PATHS.traces, '{ not json')).status).toBe(403);
     expect((await postTo(h.port, TELEMETRY_PATHS.traces, Buffer.alloc(DEFAULT_MAX_BODY_BYTES + 1, 0x20))).status).toBe(403);
@@ -257,6 +257,81 @@ describe('DoD 6.2 — 403: the setting is off (the shipped default)', () => {
     const r = await postTo(listener.address()?.port ?? 0, TELEMETRY_PATHS.metrics, firstOf('metrics'));
     expect(r.status).toBe(403);
     expect(listener.listening).toBe(true);
+  });
+});
+
+interface SlowReply {
+  status: number;
+  body: string;
+  /** The answer (or a reset) came before the client had written its last byte. */
+  answeredBeforeLastByte: boolean;
+}
+
+/**
+ * POST half a body, pause, then the rest — and record whether the listener
+ * answered before the last byte was written.
+ *
+ * The pause OPENS A WINDOW; it does not wait for anything to finish. A listener
+ * that answers a refusal straight after the headers answers inside it, and this
+ * reports `answeredBeforeLastByte: true` (or a reset). A listener that drains
+ * first cannot answer until `end`, so the green outcome does not depend on the
+ * pause's length at all. Found by the 20-run gate block: 2 of 20 runs read a
+ * connection reset instead of the 403.
+ */
+async function slowPost(
+  port: number,
+  path: string,
+  options: { method?: string; contentType?: string | null; size: number },
+): Promise<SlowReply> {
+  const bytes = Buffer.alloc(options.size, 0x20);
+  const half = Math.floor(options.size / 2);
+  const headers: Record<string, string | number> = { 'content-length': bytes.length, connection: 'close' };
+  const contentType = options.contentType === undefined ? 'application/json' : options.contentType;
+  if (contentType !== null) headers['content-type'] = contentType;
+  const { request } = await import('node:http');
+  return new Promise<SlowReply>((resolve) => {
+    let lastByteWritten = false;
+    const req = request(
+      { host: '127.0.0.1', port, path, method: options.method ?? 'POST', agent: false, headers },
+      (res) => {
+        const early = !lastByteWritten;
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8'), answeredBeforeLastByte: early });
+        });
+      },
+    );
+    req.on('error', () => {
+      resolve({ status: -1, body: '', answeredBeforeLastByte: !lastByteWritten });
+    });
+    req.write(bytes.subarray(0, half));
+    setTimeout(() => {
+      if (req.destroyed) return;
+      lastByteWritten = true;
+      req.end(bytes.subarray(half));
+    }, 250);
+  });
+}
+
+describe('DoD 6.2 — a refusal drains the body first, so the refusal is what arrives', () => {
+  it('403, 415 and 405 all answer only after the last byte, with the refusal intact', async () => {
+    const off = await harness({ enabled: false });
+    const disabled = await slowPost(off.port, TELEMETRY_PATHS.traces, { size: 256 * 1024 });
+    expect(disabled).toStrictEqual({ status: 403, body: TELEMETRY_DISABLED_BODY, answeredBeforeLastByte: false });
+
+    const on = await harness({ enabled: true });
+    const protobuf = await slowPost(on.port, TELEMETRY_PATHS.metrics, {
+      size: 256 * 1024,
+      contentType: 'application/x-protobuf',
+    });
+    expect(protobuf).toStrictEqual({ status: 415, body: '', answeredBeforeLastByte: false });
+    const put = await slowPost(on.port, TELEMETRY_PATHS.logs, { size: 256 * 1024, method: 'PUT' });
+    expect(put).toStrictEqual({ status: 405, body: '', answeredBeforeLastByte: false });
+
+    // Nothing was parsed or published on any of them.
+    expect(off.received).toHaveLength(0);
+    expect(on.received).toHaveLength(0);
   });
 });
 

@@ -243,6 +243,32 @@ describe('the gate can still see a violation — the REAL script, on a planted o
     expect(report.violations[0]?.line).toBe(5);
   }, 30_000);
 
+  it('flags a forbidden word inside a marked HTML region, and only inside it (DoD 5.5)', () => {
+    // The site's Stats line is scanned between `<!-- g10 -->` markers. One
+    // violation inside the region (in TEXT, a tag stripped around it) and two
+    // outside it: a reader that scanned the whole page would report three.
+    const dir = plant('export const N = 1;\n');
+    const html = join(dir, 'index.html');
+    writeFileSync(
+      html,
+      [
+        '<p>A better page, before the region.</p>',
+        '<!-- g10 -->',
+        '<li><b>Stats</b> — a view that is <em>good</em> at nothing.</li>',
+        '<!-- /g10 -->',
+        '<p>You should not read this either.</p>',
+      ].join('\n'),
+      'utf8',
+    );
+    const { report, status } = run(['--region', html]);
+    expect(status).toBe(1);
+    expect(report.violations.map((v) => v.word)).toEqual(['good']);
+    expect(report.violations[0]?.line).toBe(3);
+    // A region that is not there is a refusal, never an empty pass.
+    writeFileSync(html, '<p>No markers at all.</p>\n', 'utf8');
+    expect(run(['--region', html]).status).toBe(1);
+  }, 30_000);
+
   it('refuses a scope that holds no TypeScript rather than passing it', () => {
     // The fail-open shape rule 18 exists for: a gate pointed somewhere empty
     // reports PASS. Phase 4 adds `webview/stats` to SCOPES, and this is what

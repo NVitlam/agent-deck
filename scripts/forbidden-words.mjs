@@ -10,7 +10,9 @@
 // the `0.7.0` CHANGELOG block — and teaches the scanner `.svelte`, because the
 // stats UI is Svelte and a gate that only read `.ts` would have read none of
 // what the product says on that surface. The list does not change; `SCOPES`
-// and the file kinds are the two places that grow.
+// and the file kinds are the two places that grow. Phase 5 (DoD 5.3, 5.5) adds
+// the README's `## Stats` section and the site's `<!-- g10 -->` region — the
+// user-facing prose that release adds about the facts.
 //
 // WHY STRING LITERALS AND NOT THE WHOLE FILE
 // ------------------------------------------
@@ -104,6 +106,27 @@ const DEFAULT_SCOPES = [
     heading: '## 0.7.0',
     label: 'CHANGELOG.md (0.7.0 block)',
   },
+  // v0.7.0 DoD 5.3 — the README's Stats section. Spec §B's non-goal is "no
+  // sentence of advice in the UI, README, CHANGELOG or model"; the section that
+  // documents the facts is the one place in the README that could drift into
+  // saying what a fact means.
+  {
+    kind: 'block',
+    file: join(REPO_ROOT, 'README.md'),
+    heading: '## Stats',
+    label: 'README.md (Stats section)',
+  },
+  // v0.7.0 DoD 5.5 — the site's Stats line, between `<!-- g10 -->` markers.
+  // A REGION rather than the whole page: the page is marketing copy written
+  // before G10 and is not G10's subject, and a scope that flagged it would be
+  // suppressed rather than fixed. What this release ADDS is scanned.
+  {
+    kind: 'region',
+    file: join(REPO_ROOT, 'site', 'index.html'),
+    start: '<!-- g10 -->',
+    end: '<!-- /g10 -->',
+    label: 'site/index.html (g10 region)',
+  },
 ];
 
 /**
@@ -132,6 +155,14 @@ function scopesFromArgv() {
     const file = process.argv[blockAt + 1];
     if (file === undefined) throw new Error('--block needs a markdown file');
     return [{ kind: 'block', file, heading: '## 0.7.0', label: file }];
+  }
+  // `--region <file>`: the same hook for the marked-region reader (DoD 5.5),
+  // with the same single caller, so the region extraction can be proved to FAIL.
+  const regionAt = process.argv.indexOf('--region');
+  if (regionAt !== -1) {
+    const file = process.argv[regionAt + 1];
+    if (file === undefined) throw new Error('--region needs a file');
+    return [{ kind: 'region', file, start: '<!-- g10 -->', end: '<!-- /g10 -->', label: file }];
   }
   if (at === -1) return DEFAULT_SCOPES;
   const dir = process.argv[at + 1];
@@ -241,6 +272,27 @@ function blockLines(file, heading) {
   return out;
 }
 
+/**
+ * The text between `start` and `end` markers, tags removed, one unit per line
+ * that carries a letter. `null` when either marker is missing or they are out of
+ * order — a region that is not there is a refusal, never an empty pass.
+ */
+function regionLines(file, start, end) {
+  const text = readFileSync(file, 'utf8');
+  const from = text.indexOf(start);
+  const to = text.indexOf(end);
+  if (from === -1 || to === -1 || to < from) return null;
+  const before = text.slice(0, from).split('\n').length;
+  const body = text.slice(from + start.length, to);
+  const out = [];
+  body.split(/\r?\n/u).forEach((line, index) => {
+    // Tags are markup, not what the page says; their text content is.
+    const words = line.replace(/<[^>]*>/gu, ' ');
+    if (/[A-Za-z]/u.test(words)) out.push({ text: words.trim(), line: before + index });
+  });
+  return out;
+}
+
 function main() {
   const json = process.argv.includes('--json');
   const violations = [];
@@ -266,6 +318,17 @@ function main() {
   };
 
   for (const scope of SCOPES) {
+    if (scope.kind === 'region') {
+      const units = regionLines(scope.file, scope.start, scope.end);
+      if (units === null) {
+        console.error(`forbidden-words: scope ${scope.label} does not exist`);
+        process.exitCode = 1;
+        return;
+      }
+      scanned += 1;
+      scanUnits(scope.file, units);
+      continue;
+    }
     if (scope.kind === 'block') {
       const units = blockLines(scope.file, scope.heading);
       if (units === null) {

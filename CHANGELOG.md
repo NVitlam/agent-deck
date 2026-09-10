@@ -2,9 +2,16 @@
 
 All notable changes to Agent Deck are documented here.
 
-## 0.7.0 - unreleased
+## 0.7.0 - 2026-09-10 - a Stats view, a local history, and every window live
 
 ### Added
+
+- **A Stats view, and a local history behind it.** Agent Deck now derives facts
+  from each session's structure — which files it touched and how, which calls
+  it repeated, how its tokens moved — and keeps them in a history on your
+  machine. Facts only: counts, ratios and token figures, never message text,
+  tool payloads or reasoning, and nothing that says why a number is what it is.
+  The README's Stats section defines every term the view uses.
 
 - **Tools that stop making progress are shown as stalled.** A tool call that is
   still running while the session has gone quiet for longer than
@@ -18,18 +25,42 @@ All notable changes to Agent Deck are documented here.
   The session's own status is unchanged — a stalled tool does not make a
   session look live.
 
-- **A Stats view.** A third view mode beside the canvas and the list, showing
-  the facts Agent Deck derives from each session: files by read, edit, write
-  and error counts; identical-call loops and churn chains, with every call in
-  the chain a link back to the tree; tokens per agent, cache ratio and context
-  fill where the engine states them, context-churn and compaction markers on a
-  per-turn strip, stalls, and cost with its source named beside it — the
-  engine's own figure, Claude Code's telemetry estimate, or your own prices
-  from `agentDeck.pricing`, with the model ids seen listed so they can be
-  copied into that setting; and trends over the stored history, one point per
+- **The Stats view** is a third view mode beside the canvas and the list:
+  files by read, edit, write and error counts; identical-call loops and churn
+  chains, with every call in a chain a link back to the tree; tokens per agent,
+  cache ratio and context fill where the engine states them, context-churn and
+  compaction markers on a per-turn strip, stalls, and cost with its source
+  named beside it — the engine's own figure, or your own prices from
+  `agentDeck.pricing`, with the model ids seen listed so they can be copied
+  into that setting; and trends over the stored history, one point per
   session. Excluded sessions are counted in the footer with their reason code
   and appear in no table. The engine chips narrow every view exactly as they
-  narrow the deck.
+  narrow the deck. What each engine can and cannot supply is a table in the
+  README.
+
+- **The history stays on your machine.** It is kept in VS Code's own storage
+  for this extension, one JSON Lines file per week — never under `~/.claude`,
+  `~/.codex`, OpenCode's directories or your workspace — and nothing is ever
+  sent anywhere. A record is written when a session ends, or after
+  `agentDeck.stats.idleFlushMs` (default one hour) without a change for a
+  session that never visibly ends; a session that does more work afterwards is
+  written again and the newer record wins. Nothing on disk is ever rewritten.
+  Only a session seen doing work while a window is open is recorded: opening a
+  window does not write the transcripts already on disk into the history.
+  `agentDeck.stats.enabled` turns it off (no file, no directory),
+  `agentDeck.stats.retentionDays` (default 90) bounds it, and **Agent Deck:
+  Clear Stats History** removes it after a confirmation.
+
+- **Your own prices, for a cost the engine does not report.**
+  `agentDeck.pricing` takes USD per million tokens per model id. Agent Deck
+  ships no price table and never guesses one; a model with no entry gets no
+  figure, and a subscription plan yields no per-token cost.
+
+- **An extension API.** Another extension can read the same records through
+  `vscode.extensions.getExtension('nvitlam.agent-deck').exports`: `apiVersion`
+  1, `getLiveStats()`, `getStoredStats()` and `onDidUpdateStats`, which fires
+  for every record written and at most once every two seconds per session while
+  a session changes. It hands out these records and nothing else.
 
 - **An activity-bar entry.** An Agent Deck icon in the activity bar opens a
   sidebar listing the commands: Open Deck, Open Statistics, Show Diagnostics,
@@ -53,12 +84,17 @@ All notable changes to Agent Deck are documented here.
 
 ### Fixed
 
+- **A second VS Code window had no liveness at all.** The hook listener's port
+  is fixed — the block you pasted names it — so the first window bound it and
+  every later window failed to, and showed a deck with nothing running. A later
+  window now finds the first one on that port and follows its event stream,
+  keeping only the events for its own sessions; close the first window and the
+  others take over. Still one socket, still `127.0.0.1` only, and the stream
+  carries only what the hooks already send, after the same redaction the panel
+  applies.
+
 - **"+N more characters - expand to see all" on a drawer entry did nothing when
   clicked.** It expands now, and clicking again collapses.
-
-- **The test runner never overwrites a run record.** Repeated ad-hoc runs
-  used to overwrite the previous run's record, which erased the captured
-  detail of two mid-run deaths.
 
 ## 0.6.1 - 2026-09-05 - Codex sessions no longer exhaust the extension host
 

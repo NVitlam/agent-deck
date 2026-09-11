@@ -924,6 +924,9 @@ describe('readSettings', () => {
       pricing: {},
       // v0.7.0 Phase 4 (DoD 4.0): spec section G, default on.
       'canvas.autoFit': true,
+      // v0.7.1 DoD 6.1: the telemetry route accepts nothing until a user
+      // turns it on.
+      'telemetry.enabled': false,
     });
   });
 
@@ -945,6 +948,7 @@ describe('readSettings', () => {
           'stats.idleFlushMs': 600_000,
           pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
           'canvas.autoFit': false,
+          'telemetry.enabled': true,
         })[key],
     });
     expect(read).toStrictEqual({
@@ -957,7 +961,22 @@ describe('readSettings', () => {
       'stats.idleFlushMs': 600_000,
       pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
       'canvas.autoFit': false,
+      'telemetry.enabled': true,
     });
+  });
+
+  it('refuses a non-boolean telemetry.enabled, never coerces (DoD 6.1)', () => {
+    // The string "true" is the value a user most plausibly types, and a
+    // truthiness read would open a route they did not open.
+    for (const bad of ['true', 'false', 1, 0, null, [], {}]) {
+      const read = readSettings({ get: (key) => (key === 'telemetry.enabled' ? bad : undefined) });
+      expect(read['telemetry.enabled'], `telemetry.enabled given ${JSON.stringify(bad)}`).toBe(false);
+    }
+    // Control: the real boolean IS honoured, so the loop is a refusal rather
+    // than a setting nothing reads.
+    expect(
+      readSettings({ get: (k) => (k === 'telemetry.enabled' ? true : undefined) })['telemetry.enabled'],
+    ).toBe(true);
   });
 
   it('refuses a non-boolean stats.enabled and a non-object pricing, never coerces', () => {
@@ -1030,6 +1049,7 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
     minimum?: unknown;
     maximum?: unknown;
     description?: unknown;
+    scope?: unknown;
   }
 
   async function manifestProperties(): Promise<Record<string, ManifestProperty>> {
@@ -1094,7 +1114,30 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
       // UI would show a range for a value that has none.
       expect(property.minimum, `${key}.minimum`).toBeUndefined();
       expect(property.maximum, `${key}.maximum`).toBeUndefined();
+      // v0.7.1 DoD 6.1 — the SCOPE, both ways: a scope declared on one side
+      // alone is the manifest/code disagreement this block exists for. An
+      // unscoped shape must declare none, so a stray `scope` in the manifest
+      // fails too.
+      expect(property.scope, `${key}.scope`).toBe(shape.scope);
     }
+  });
+
+  it('declares agentDeck.telemetry.enabled default false, scope machine (DoD 6.1)', async () => {
+    const properties = await manifestProperties();
+    const property = properties[`${CONFIG_SECTION}.telemetry.enabled`];
+    expect(property, 'package.json declares no agentDeck.telemetry.enabled').toBeTypeOf('object');
+    expect(property?.type).toBe('boolean');
+    expect(property?.default).toBe(false);
+    expect(property?.scope).toBe('machine');
+    // The value an unconfigured extension actually runs with, not only the
+    // declaration: off.
+    expect(readSettings(undefined)['telemetry.enabled']).toBe(false);
+    // VACUITY CONTROL for the per-shape scope loop above: at least one shape
+    // carries a scope and at least one does not, so `toBe(shape.scope)` was
+    // exercised on both arms rather than compared undefined to undefined.
+    const scopes = Object.values(SETTING_SHAPES).map((shape) => shape.scope);
+    expect(scopes).toContain('machine');
+    expect(scopes).toContain(undefined);
   });
 
   it('the default object is a fresh object per read, never a shared one', () => {
@@ -3830,7 +3873,12 @@ describe('DoD 5.2 — the OpenCode engine is on when its store exists, and off w
       staged.workspacePath,
       second,
     ]);
-  });
+    // A budget, not vitest's 5 s default: this copies a captured corpus AND
+    // activates a host. Measured 2026-09-11: 352 ms alone, and a failure at
+    // 5,356 ms — past the 5 s default — in a cold fresh clone's full run
+    // (v0.7.1 gate at 7caf42f).
+    // The recorded class: a test that passes or fails by CPU load.
+  }, 60_000);
 
   it('workspacePathsOf answers [] for no folders, so the engine matches nothing', () => {
     expect(workspacePathsOf(undefined)).toStrictEqual([]);
@@ -4350,7 +4398,19 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
     // v0.7.0 Phase 4 adds `agentDeck.canvas.autoFit` (DoD 4.0): a boolean, on
     // the list in writing, and not an engine switch — it governs the canvas's
     // re-fit rule and nothing about what is observed.
-    const BOOLEAN_ALLOW_LIST = ['agentDeck.canvas.autoFit', 'agentDeck.stats.enabled'];
+    //
+    // v0.7.1 DoD 6.1 adds `agentDeck.telemetry.enabled`, named by the locked
+    // ruling. Not an engine switch either: with it off, all three engines are
+    // observed exactly as before — transcripts, store, hooks — and the listener
+    // merely answers `403` on the three `/v1/*` paths. It gates whether an
+    // OPTIONAL INPUT Claude Code can be pointed at is accepted, not whether an
+    // engine is read. It names no engine, so the engine-word loop below still
+    // applies to it and still passes.
+    const BOOLEAN_ALLOW_LIST = [
+      'agentDeck.canvas.autoFit',
+      'agentDeck.stats.enabled',
+      'agentDeck.telemetry.enabled',
+    ];
     const booleans = Object.entries(properties)
       .filter(([, property]) => property.type === 'boolean')
       .map(([key]) => key)
@@ -6124,10 +6184,18 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
         ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
         relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
         statsErrors: 0, storeMalformed: 0, statsDropped: 7,
+        telemetry: {
+          metrics: { accepted: 0, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
+          logs: { accepted: 0, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
+          traces: { accepted: 0, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
+        },
       },
       '2026-09-09T00:00:00.000Z',
     );
-    expect(line.endsWith(' statsDropped=7')).toBe(true);
+    // Appended after the two DoD 3.8 fields. It was the LAST field until
+    // v0.7.1 DoD 6.4 appended the telemetry half after it — the same
+    // append-only rule, so the line up to here is unchanged.
+    expect(line).toContain(' storeMalformed=0 statsDropped=7 otel.metrics=');
   });
 });
 

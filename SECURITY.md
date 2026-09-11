@@ -13,12 +13,13 @@ is read, and every one that is deliberately never opened.
 
 ## 1. The architecture is the guarantee
 
-Two kinds of source, and neither of them is a network client.
+Three kinds of source — the third optional — and none of them is a network client.
 
 | source | where it comes from | what it answers |
 | --- | --- | --- |
 | **hooks** | a hook snippet you paste yourself POSTs to a loopback HTTP listener — Claude Code's and Codex's both, to the one listener | what is running right now |
 | **session files** | read from local disk: Claude Code's `~/.claude/projects/<slug>/…`, OpenCode's session database, Codex's transcripts under `$CODEX_HOME` or `~/.codex` | what happened |
+| **Claude Code telemetry** (optional, from 0.7.1) | Claude Code's own OpenTelemetry export, pointed by you at the same loopback listener, and accepted only while `agentDeck.telemetry.enabled` is on | a cost Claude Code estimates, and tool durations |
 
 Everything the extension knows comes from those, all local. The live deck is held in memory only
 and discarded when the window closes. The one thing written to disk, from 0.7.0, is the stats
@@ -27,9 +28,11 @@ global-storage directory for the extension — never under any engine's director
 It is retention-bounded, turned off by `agentDeck.stats.enabled`, emptied by **Clear Stats
 History**, and never read back into a session or a deck.
 
-This matters because "we promise not to send telemetry" is a policy and policies drift. **There is
-no outbound HTTP client compiled into the shipped artifact at all** — see §4. Zero egress here is a
-property of what the build contains, and a test fails if that changes.
+This matters because "we promise not to send telemetry" is a policy and policies drift. **The
+shipped artifact contains exactly one outbound HTTP call site, and its destination is the loopback
+literal**: a second VS Code window asking the first for its event stream, from 0.7.0 — see §4.
+Receiving Claude Code's telemetry, from 0.7.1, added no way to send. Zero egress here is a property
+of what the build contains, and a test fails if that changes.
 
 ---
 
@@ -217,19 +220,28 @@ Codex extension — not here. Two consequences worth knowing:
 
 ## 3. The listener's trust boundary
 
-`src/hooks/listener.ts` is the only inbound surface. Its properties:
+`src/hooks/listener.ts` is the only inbound surface. Its properties, each followed by the test that
+proves it — a file and the exact title of a test in it, which `src/release/surfaces.test.ts` checks
+exist:
 
 - Binds the **literal** `127.0.0.1`, hard-coded, never a hostname and never the wildcard. The bind
   host is a module constant and is not configurable; only the port is.
+  Proof: `src/hooks/listener.test.ts` › "binds to the literal loopback address, never a wildcard";
+  `src/hooks/egress.test.ts` › "binds the loopback literal and never a wildcard, in the built artifact".
 - Validates the **socket's** remote address on every request. Proxy headers — `X-Forwarded-For`,
   `X-Real-IP`, `Forwarded` — are attacker-controlled strings and are never consulted for that
   decision. A non-loopback origin is answered `403` and counted.
+  Proof: `src/hooks/listener.test.ts` › "drops a non-loopback POST with 403 and counts it";
+  `src/hooks/listener.test.ts` › "does not let proxy headers grant loopback status".
 - Refuses an ephemeral port. The pasted hook snippet names a fixed port literally, and there is no
   discovery file to tell it otherwise — writing one would break G1. A port collision surfaces as a
   typed error the user is shown; the listener never silently rebinds somewhere else. The one way to
   bind port 0 is an option marked TEST-ONLY in the source, which exists so the suite can bind a port
   atomically instead of racing for one; a source scan asserts that no production module under `src/`
   names it, and it cannot change the bind address either way.
+  Proof: `src/hooks/listener.test.ts` › "refuses an ephemeral port rather than binding one";
+  `src/hooks/listener.test.ts` › "surfaces a port collision as a typed error and does not rebind elsewhere";
+  `src/hooks/listener.test.ts` › "no production module outside listener.ts names either TEST-ONLY option".
 - Caps request bodies, by **two** guards, because one of them cannot see the other's cases. The cap
   is `DEFAULT_MAX_BODY_BYTES` in `src/hooks/listener.ts`. A body whose declared `Content-Length`
   already exceeds the cap is never buffered at all — that is an allocation guard on the headers
@@ -237,11 +249,55 @@ Codex extension — not here. Two consequences worth knowing:
   as it streams and cut at the same cap. Either way the request is counted and answered `413`. A
   body that keeps arriving past a hard multiple of the cap has its socket destroyed rather than held
   open.
+  Proof: `src/hooks/listener.test.ts` › "a body over the size cap → 413";
+  `src/hooks/listener.test.ts` › "a chunked body with no Content-Length is capped WHILE it streams".
 - Never throws on input. Every refusal path increments a named counter and answers a status code.
   Consumer callbacks that throw are caught and counted, so a downstream bug cannot take the socket
   down.
-- Serves no files and reads no paths. The only route is the event path; every other path is a `404`,
-  including traversal attempts, which have nothing to traverse to.
+  Proof: `src/hooks/listener.test.ts` › "survives the whole malformed battery back to back";
+  `src/hooks/listener.test.ts` › "a consumer that throws is counted and does not break the response".
+- Serves no files and reads no paths. It answers exactly six paths: the hook event path;
+  `/agent-deck/identity` and `/agent-deck/events`, which only another Agent Deck window on this
+  machine asks for (from 0.7.0); and `/v1/metrics`, `/v1/logs` and `/v1/traces`, Claude Code's
+  telemetry export (from 0.7.1). Every other path is a `404`, including traversal attempts, which
+  have nothing to traverse to.
+  Proof: `src/hooks/listener.test.ts` › "G1: the listener imports no filesystem API and writes nothing";
+  `src/hooks/listener.test.ts` › "an unknown path → 404";
+  `src/hooks/telemetry-route.test.ts` › "a neighbouring path is a plain 404 on the event path accounting".
+- Refuses Claude Code telemetry unless `agentDeck.telemetry.enabled` is on (default off): `403`, and
+  the body is drained and never parsed. When it is on, a body must say it is JSON (`415` otherwise), be an OTLP
+  body for that path (`400`) and fit the same cap (`413`). It is parsed ONCE, where it arrives, by an
+  allow-list: the five account attributes Claude Code attaches to every record and the
+  prompt and response fields are dropped there, so they never reach the session model, the relay to
+  other windows, the stats history or the diagnostics channel. No answer is retryable.
+  Proof: `src/hooks/telemetry-route.test.ts` › "parses NO body while off: malformed and oversize bodies are 403, not 400 or 413";
+  `src/otel/parse.test.ts` › "lets no attribute NAME and no placeholder VALUE survive into the slice";
+  `src/otel/parse.test.ts` › "drops prompt, response and user_prompt when they hold actual prose";
+  `src/hooks/shared.test.ts` › "no OTLP body and no identity attribute crosses the wire".
+
+**The three telemetry routes, and every answer they give.** `/v1/metrics`, `/v1/logs` and
+`/v1/traces`, OTLP over HTTP in JSON, on `127.0.0.1` at `agentDeck.port`. A non-loopback origin is
+refused before any route is chosen; the method is checked first and the content type before the
+setting, so a protobuf body sent while the setting is off is a `415`, not a `403`.
+Proof: `src/hooks/telemetry-route.test.ts` › "a non-loopback origin on a telemetry path is the plain 403 drop, counted as such and nowhere else";
+`src/hooks/telemetry-route.test.ts` › "checks the content type BEFORE the setting: protobuf while off is 415, not 403".
+
+| Answer | When | Proof |
+| --- | --- | --- |
+| `200` | Accepted: a POST, a JSON content type, the setting on, an OTLP JSON body for that path, within the cap. Parsed once and published. | `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — 200: every captured body is accepted, parsed once and published" |
+| `400` | JSON, but not an OTLP body for that path: empty, malformed, not an object, or another signal's body. | `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — 400: JSON, but not an OTLP body for this path" |
+| `403` | `agentDeck.telemetry.enabled` is off. The body is drained, never parsed, and the answer names the setting. | `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — 403: the setting is off (the shipped default)" |
+| `405` | Any method but POST, whatever the setting. | `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — 405: any method but POST, whatever the setting" |
+| `413` | Over `DEFAULT_MAX_BODY_BYTES`, 512 KiB — the hooks' cap, declared or streamed. | `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — 413: the hooks cap, unchanged, at limit and limit+1" |
+| `415` | A content type that does not say JSON, or none at all. | `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — 415: a POST that does not say it is JSON" |
+
+No answer asks the exporter to retry: none of the six is one of the statuses OTLP over HTTP
+retries on (`429`, `502`, `503`, `504`).
+Proof: `src/release/surfaces.test.ts` › "no answer in the table is a status OTLP retries on".
+
+A `403`, `405` or `415` is sent after the last byte of the body has arrived, so a large body reads
+the refusal rather than a connection reset.
+Proof: `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — a refusal drains the body first, so the refusal is what arrives".
 
 **Hostile-input testing.** `fixtures/synthetic-hook-fuzz/corpus.jsonl` is a synthetic corpus replayed
 over a real loopback socket against a real listener at the shipped default body cap. It covers
@@ -285,6 +341,8 @@ liveness is a cursor over the `event_sequence` table, not a subscription; the SS
 OpenCode offers is deliberately not used. The same describe asserts the shipped bundle never
 reaches the test-only fixture builder, which is the one module in that tree that opens a database
 for writing.
+Proof: `src/hooks/egress.test.ts` › "reaches no network-capable module at all — not even node:http";
+`src/hooks/egress.test.ts` › "never reaches synthetic.ts, the one module here that can write".
 
 ### 4a. Dependency review — what could open a socket
 
@@ -293,6 +351,7 @@ for writing.
 not a dependency tree that never gets installed on a user's machine. The audit therefore enumerates
 the module ids **the built bundle actually requires** and gates them, rather than auditing a
 lockfile.
+Proof: `src/hooks/egress.test.ts` › "the shipped artifact is the bundle, not a node_modules tree".
 
 **What is asserted, on a bundle built on demand rather than read off disk** (the test builds its own
 rather than trusting whatever `dist/` holds when it runs, which could silently be an old one):
@@ -301,15 +360,24 @@ rather than trusting whatever `dist/` holds when it runs, which could silently b
   survives bundling as a separate module. Both spellings of "names" are scanned: `require("x")`
   **and** dynamic `import("x")`, which esbuild leaves verbatim rather than rewriting, so a
   require-only scan would have been blind to it;
+  Proof: `src/hooks/egress.test.ts` › "names only node builtins and vscode — no third-party module survives bundling".
 - none of `net`, `tls`, `https`, `http2`, `dns`, `dgram`, `child_process`, `worker_threads`,
   `cluster` or `inspector` is reachable, in either the bare or `node:` spelling, through either
   form. That is proved by injection rather than asserted: the same check applied to the real bundle
   with one dynamic import appended must report the injected module;
+  Proof: `src/hooks/egress.test.ts` › "reaches no network-capable module other than the listener";
+  `src/hooks/egress.test.ts` › "the scan sees a dynamic import(), proven by injecting one".
 - `node:http` **is** present, so the check is not vacuous — it is the listener;
-- no outbound client API is compiled in: no `http.request` / `https.request`, no `fetch(`, no
-  `XMLHttpRequest`, no `new WebSocket(`, no `navigator.sendBeacon`;
+  Proof: `src/hooks/egress.test.ts` › "reaches no network-capable module other than the listener".
+- exactly one outbound call site is compiled in — the follower's `http.request`, whose host is the
+  loopback constant the server binds (from 0.7.0) — and no other client API: no `https.request`, no
+  `fetch(`, no `XMLHttpRequest`, no `new WebSocket(`, no `navigator.sendBeacon`. From 0.7.1 the same
+  bundle carries the telemetry parse and join, and the only address literal in it is `127.0.0.1`;
+  Proof: `src/hooks/egress.test.ts` › "contains a server and exactly one client, whose destination is the loopback literal";
+  `src/hooks/egress.test.ts` › "carries the telemetry route and join, and no new way to send (DoD 6.5)".
 - the loopback literal appears and `0.0.0.0` does not, asserted against the **built artifact** so
   that a build step rewriting a constant could not slip past the source-level guard.
+  Proof: `src/hooks/egress.test.ts` › "binds the loopback literal and never a wildcard, in the built artifact".
 
 **Limits, honestly.** Nobody read every dependency's source. This is a reachability argument about
 the shipped bundle plus the runtime measurement below — not a proof that no dependency contains
@@ -343,6 +411,10 @@ proves the connection really happened and the listener really answered.
 
 Outbound connections attempted by the extension: **0 at load, 0 through activation, 0 across the
 entire run.** The file watchers are `FSEvent` handles — local filesystem, not sockets.
+Proof: `src/hooks/egress.test.ts` › "has no socket before activation and none after disposal";
+`src/hooks/egress.test.ts` › "attempts zero outbound connections from load through activation";
+`src/hooks/egress.test.ts` › "attempts zero outbound connections across the entire run";
+`src/hooks/egress.test.ts` › "opens exactly one socket with three engines live: the loopback listener".
 
 **One measured surprise, recorded rather than smoothed over.** The run is *not* DNS-silent. Node's
 own `Server.listen(port, host)` routes through `lookupAndListen` → `dns.lookup(host, { all: true })`
@@ -352,6 +424,7 @@ inbound bind. The test asserts all three: the count is exactly one, the argument
 literal, and the stack names the bind. Asserting the run is DNS-free would be false, and asserting
 merely "at least one lookup, and each looked fine" would be weaker than this paragraph claims —
 which is how a measured finding turns into a comfortable story.
+Proof: `src/hooks/egress.test.ts` › "resolves no hostname: every DNS call is node resolving the loopback literal it was told to BIND".
 
 **Limits, honestly.** This measures one activation cycle on committed fixtures, on one OS and one
 Node version. Code paths that cycle never exercises are not covered by it. It measures the Node
@@ -395,6 +468,6 @@ about the command in that block matter for your own safety rather than ours:
 
 Not implemented, and not accepted as contributions: writes to anything an observed engine owns ·
 replay of a session, or persistence of its content · wrapping or launching any observed engine ·
-telemetry or any egress. The stats history in §1 is the one write, and it holds derived numbers
+sending telemetry, or any egress. The stats history in §1 is the one write, and it holds derived numbers
 only, in the extension's own storage. Zero writes to what is observed is the trust anchor, and the
 point of writing it down is that it is easier to defend a boundary than to relocate one.

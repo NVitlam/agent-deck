@@ -56,14 +56,20 @@
  *
  * **It does not overwrite an engine-derived duration.** See {@link joinTelemetry}.
  *
- * **It does not render.** `telemetryCostUsd` is stored and read by nothing in
- * this phase: F9(c) is Phase 2 and the cost-source label is Phase 4.
+ * **It does not render.** `telemetryCostUsd` is stored on the state; the stats
+ * deriver reads it as F9(c) (v0.7.0 Phase 2) and the Tokens view's cost label
+ * shows it (Phase 4). Nothing in the webview reads the field itself.
+ *
+ * **It does not decide whether a cost is complete.** It records, per session,
+ * whether the slice carried that session's `claude_code.session.count` point
+ * (`telemetrySessionCountSeen`, v0.7.1 DoD 6.3b); `deriveStats` is what reads
+ * it.
  */
 
 import type { SessionState, ToolNode, TreeNode } from '../model/events.js';
 import { isAgentNode } from '../model/events.js';
 
-import type { TelemetrySlice } from './parse.js';
+import type { OtelToolSpan, TelemetrySlice } from './parse.js';
 
 export interface TelemetryJoinReport {
   /** Spans whose `(session.id, tool_use_id)` matched a `ToolNode`. */
@@ -83,6 +89,10 @@ export interface TelemetryJoinReport {
   costPointsApplied: number;
   /** Cost points naming a session this host has not read. */
   costPointsUnmatched: number;
+  /** `claude_code.session.count` points recorded onto a session (DoD 6.3b). */
+  sessionCountsApplied: number;
+  /** `claude_code.session.count` points naming a session this host has not read. */
+  sessionCountsUnmatched: number;
 }
 
 export function emptyJoinReport(): TelemetryJoinReport {
@@ -93,6 +103,8 @@ export function emptyJoinReport(): TelemetryJoinReport {
     durationsFilled: 0,
     costPointsApplied: 0,
     costPointsUnmatched: 0,
+    sessionCountsApplied: 0,
+    sessionCountsUnmatched: 0,
   };
 }
 
@@ -180,20 +192,54 @@ export function joinTelemetry(
     report.costPointsApplied += 1;
   }
 
+  // ---- the session's start, as the exporter counts it (DoD 6.3b) ----------
+  // Recorded as a flag and nothing else: whether THIS slice carried the
+  // session's `claude_code.session.count` point. The deriver reads it to decide
+  // whether a summed cost covers the session from its start.
+  const counted = new Set<string>();
+  for (const sessionId of slice.sessionCounts) {
+    if (!bySession.has(sessionId)) {
+      report.sessionCountsUnmatched += 1;
+      continue;
+    }
+    counted.add(sessionId);
+    report.sessionCountsApplied += 1;
+  }
+
   const out = states.map((state) => {
     const perSession = fills.get(state.sessionId);
     const cost = costs.get(state.sessionId);
-    if (perSession === undefined && cost === undefined) return state;
+    const seen = counted.has(state.sessionId);
+    if (perSession === undefined && cost === undefined && !seen) return state;
 
     const next: SessionState = {
       ...state,
       ...(perSession === undefined ? {} : { root: fillDurations(state.root, perSession) }),
       ...(cost === undefined ? {} : { telemetryCostUsd: cost }),
+      ...(seen ? { telemetrySessionCountSeen: true as const } : {}),
     };
     return next;
   });
 
   return { states: out, report };
+}
+
+/**
+ * The spans that match no `ToolNode` of the given states, by the same exact
+ * `(session.id, tool_use_id)` key {@link joinTelemetry} uses.
+ *
+ * v0.7.1 (user ruling 2026-09-11): the host asks this ONE pump after a span
+ * arrived, so a span that landed before its tool call reached the tree — and
+ * matched on the next pump — is never reported as unmatched. Kept beside the
+ * join so "matches" has one definition.
+ */
+export function unmatchedSpans(
+  states: readonly SessionState[],
+  spans: readonly OtelToolSpan[],
+): OtelToolSpan[] {
+  const bySession = new Map<string, Map<string, ToolNode>>();
+  for (const state of states) bySession.set(state.sessionId, toolNodesOf(state));
+  return spans.filter((span) => bySession.get(span.sessionId)?.has(span.toolUseId) !== true);
 }
 
 function fillDurations<T extends TreeNode>(node: T, fills: ReadonlyMap<string, number>): T {

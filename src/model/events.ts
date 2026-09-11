@@ -99,6 +99,20 @@ export interface SessionState {
    */
   telemetryCostUsd?: number;
   /**
+   * Whether the telemetry this window received includes the session's
+   * `claude_code.session.count` point — v0.7.1 DoD 6.3b (user ruling,
+   * 2026-09-10). Present and `true` only; absent otherwise.
+   *
+   * Claude Code emits that point once, at the session's start, and exports cost
+   * as increments. So {@link SessionState.telemetryCostUsd} covers the session
+   * from its start only when this is set, and `deriveStats` selects telemetry
+   * as the cost source only then; otherwise the cost stays here, unselected,
+   * and the record names `F9:telemetry-partial`. Set by the telemetry join in
+   * `src/otel/join.ts` and nothing else; never on the deck's wire in
+   * production (the panel is sent the engines' own states).
+   */
+  telemetrySessionCountSeen?: true;
+  /**
    * How full the session's context is **right now**: the last assistant
    * message of the main transcript, by ordinal.
    *

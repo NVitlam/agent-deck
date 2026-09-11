@@ -68,7 +68,8 @@
               "costUsd": 0
             },
             "engine": "cc",
-            "telemetryCostUsd": 6.5537265
+            "telemetryCostUsd": 6.5537265,
+            "telemetrySessionCountSeen": true
           }
         ]
       }
@@ -207,7 +208,8 @@
           "costUsd": 0
         },
         "engine": "cc",
-        "telemetryCostUsd": 6.5537265
+        "telemetryCostUsd": 6.5537265,
+        "telemetrySessionCountSeen": true
       }
     ],
     "degraded": {

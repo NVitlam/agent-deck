@@ -1,7 +1,7 @@
 {
   "name": "agent-deck",
   "displayName": "Agent Deck — Watch Your Agents Work.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "publisher": "nvitlam",
   "description": "Live observability for coding-agent swarms — Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
   "license": "MIT",
@@ -31,7 +31,7 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "22.23.2",
+      "version": "24.18.1",
       "onFail": "warn"
     }
   },
@@ -125,6 +125,12 @@
           "type": "boolean",
           "default": true,
           "description": "Re-fit the session canvas to its content on every event that changes its geometry: a node selected (the drawer opens), the drawer expanded, collapsed or resized, an agent grafted, removed or parked, the panel or editor group resized, a session switch, an engine chip toggled, a switch back to the canvas, a label re-wrap that changes a node width. A manual pan or zoom persists only until the next such event. Token counters, liveness colour and the theme never re-fit. Turn this off and the canvas fits once on entry and never again on its own; Reset view and double-click on the empty field still fit on request. Changes take effect without a reload."
+        },
+        "agentDeck.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "description": "Accept Claude Code's own OpenTelemetry export (OTLP over HTTP, JSON only) on the hook listener: POST /v1/metrics, /v1/logs and /v1/traces on 127.0.0.1, at agentDeck.port. Off, those paths answer 403 and no body is parsed. Claude Code sends there only if its OpenTelemetry environment variables name that address, and Agent Deck never writes Claude Code's settings. Kept: a cost figure Claude Code estimates, and tool durations where the session states none, joined to sessions this window already shows. Identity attributes and prompt or response text are dropped where the body is parsed. Machine-scoped: every window on this machine reads the same value."
         }
       }
     },

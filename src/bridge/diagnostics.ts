@@ -153,6 +153,50 @@ export interface DiagnosticsCounters {
    * the whole Stats view. The `dropped-actions` pattern, applied to records.
    */
   statsDropped: number;
+  /**
+   * The Component 12 telemetry paths, per signal (v0.7.1 DoD 6.4).
+   *
+   * REQUIRED, so every place that builds a counters record by hand breaks at
+   * compile time rather than printing a line with the telemetry half missing.
+   */
+  telemetry: DiagnosticsTelemetry;
+}
+
+/**
+ * One telemetry path's figures on the counters line (v0.7.1 DoD 6.4).
+ *
+ * Spelled out rather than imported from `hooks/listener.ts`, for the reason at
+ * the top of {@link DiagnosticsEngine}: this module imports nothing.
+ */
+export interface DiagnosticsTelemetrySignal {
+  /** Bodies the route parsed and published (`200`). The leader's; 0 on a follower. */
+  accepted: number;
+  /** Requests answered `403` because `agentDeck.telemetry.enabled` is off. */
+  disabled: number;
+  /**
+   * Rows this window's join still could not place after retrying (v0.7.1,
+   * ruling 2026-09-11): a span whose session or tool call the next pump after
+   * its arrival does not show, or each row of a held count-and-cost slot that
+   * was evicted. An early row that joined later is not counted.
+   */
+  unmatched: number;
+  /** Requests refused, by status. */
+  rejected: { 400: number; 405: number; 413: number; 415: number };
+}
+
+export type DiagnosticsTelemetry = Record<'metrics' | 'logs' | 'traces', DiagnosticsTelemetrySignal>;
+
+/** One signal's field, `accepted:N,disabled:N,unmatched:N,400:N,405:N,413:N,415:N`. */
+function formatTelemetrySignal(signal: DiagnosticsTelemetrySignal): string {
+  return (
+    `accepted:${String(signal.accepted)}` +
+    `,disabled:${String(signal.disabled)}` +
+    `,unmatched:${String(signal.unmatched)}` +
+    `,400:${String(signal.rejected[400])}` +
+    `,405:${String(signal.rejected[405])}` +
+    `,413:${String(signal.rejected[413])}` +
+    `,415:${String(signal.rejected[415])}`
+  );
 }
 
 /**
@@ -279,7 +323,18 @@ export type DiagnosticsEvent =
   | { kind: 'hookListenerError'; detail: string }
   | { kind: 'hookNon2xx'; status: number; detail: string }
   | { kind: 'patchFailure'; sessionId: string; detail: string }
-  | { kind: 'resyncRequest'; sessionId: string; reason: string; failedOp?: string };
+  | { kind: 'resyncRequest'; sessionId: string; reason: string; failedOp?: string }
+  /**
+   * A Claude Code tool span still unmatched after the join retried on the
+   * next pump (v0.7.1, user ruling 2026-09-11). One line per such span.
+   *
+   * THE TWO JOIN KEYS AND NOTHING ELSE FROM THE SPAN: `session.id` and
+   * `tool_use_id` are both opaque ids Claude Code generates, and both are
+   * already on the allow-list the parse boundary keeps. The tool name, the
+   * duration and the agent id are deliberately not written — a line names
+   * which row did not join, and the counters line says how many.
+   */
+  | { kind: 'otelSpanUnmatched'; sessionId: string; toolUseId: string };
 
 /** Every `kind` above, as data, so a test can assert the switch is total. */
 export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
@@ -294,6 +349,7 @@ export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
   'hookNon2xx',
   'patchFailure',
   'resyncRequest',
+  'otelSpanUnmatched',
 ];
 
 /**
@@ -311,6 +367,11 @@ export const MAX_DETAIL_CHARS = 200;
 function clip(text: string): string {
   const flat = text.replace(/[\r\n]+/g, ' ');
   return flat.length <= MAX_DETAIL_CHARS ? flat : `${flat.slice(0, MAX_DETAIL_CHARS)}...`;
+}
+
+/** {@link clip}, then every run of whitespace as `_`: a value that must stay one `key=value` token. */
+function oneToken(text: string): string {
+  return clip(text).replace(/\s+/g, '_');
 }
 
 /**
@@ -437,6 +498,14 @@ export function formatEvent(event: DiagnosticsEvent, isoTime: string): string {
         `${isoTime} resync requested ${event.sessionId} ` +
         `${event.failedOp ?? 'no-op'} ${clip(event.reason)}`
       );
+    case 'otelSpanUnmatched':
+      // Both values arrived in an HTTP body, so both are clipped like any
+      // other field a party across a boundary controls — and held to ONE token
+      // each, so a value cannot write a second `tool_use_id=` into the line.
+      return (
+        `${isoTime} otel span unmatched session=${oneToken(event.sessionId)} ` +
+        `tool_use_id=${oneToken(event.toolUseId)}`
+      );
   }
 }
 
@@ -467,7 +536,12 @@ export function formatCounters(counters: DiagnosticsCounters, isoTime: string): 
     ` statsErrors=${String(counters.statsErrors)}` +
     ` storeMalformed=${String(counters.storeMalformed)}` +
     // v0.7.0 DoD 4.1. Appended, for the same reason the two above were.
-    ` statsDropped=${String(counters.statsDropped)}`
+    ` statsDropped=${String(counters.statsDropped)}` +
+    // v0.7.1 DoD 6.4. Appended again, so every line quoted before 0.7.1 is
+    // still a prefix of the current format.
+    ` otel.metrics=${formatTelemetrySignal(counters.telemetry.metrics)}` +
+    ` otel.logs=${formatTelemetrySignal(counters.telemetry.logs)}` +
+    ` otel.traces=${formatTelemetrySignal(counters.telemetry.traces)}`
   );
 }
 

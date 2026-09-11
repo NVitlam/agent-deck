@@ -116,6 +116,21 @@ const DEFAULT_SCOPES = [
     heading: '## Stats',
     label: 'README.md (Stats section)',
   },
+  // v0.7.1 DoD 6.8 — what this release adds in prose: its CHANGELOG block and
+  // the README's telemetry section. "No advice words in README/CHANGELOG (G10)"
+  // is only a gate where the scope names the text.
+  {
+    kind: 'block',
+    file: join(REPO_ROOT, 'CHANGELOG.md'),
+    heading: '## 0.7.1',
+    label: 'CHANGELOG.md (0.7.1 block)',
+  },
+  {
+    kind: 'block',
+    file: join(REPO_ROOT, 'README.md'),
+    heading: '## Claude Code telemetry (optional)',
+    label: 'README.md (Claude Code telemetry section)',
+  },
   // v0.7.0 DoD 5.5 — the site's Stats line, between `<!-- g10 -->` markers.
   // A REGION rather than the whole page: the page is marketing copy written
   // before G10 and is not G10's subject, and a scope that flagged it would be

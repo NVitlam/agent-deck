@@ -47,7 +47,7 @@ import {
   type RawHookPayload,
 } from '../model/events.js';
 import type { CodexHookEvent } from '../codex/liveness.js';
-import type { OtelSignal, TelemetrySlice } from '../otel/parse.js';
+import { parseOtlpBody, type OtelSignal, type TelemetrySlice } from '../otel/parse.js';
 import {
   EVENTS_PATH,
   IDENTITY_PATH,
@@ -71,6 +71,73 @@ export const DEFAULT_MAX_BODY_BYTES = 512 * 1024;
 
 /** Default path the hook snippet POSTs to. */
 export const DEFAULT_EVENT_PATH = '/event';
+
+/**
+ * The Component 12 telemetry paths (v0.7.1 DoD 6.2), one per OTLP signal.
+ *
+ * Mounted on THIS socket and no other (locked ruling, 2026-09-10): the port is
+ * `agentDeck.port`, the one the hook snippet already names, and a second
+ * socket would reintroduce the discovery problem the fixed port exists to
+ * avoid. The paths exist whether `agentDeck.telemetry.enabled` is on or off —
+ * off, they answer `403` — so a user who pointed Claude Code here and forgot
+ * the setting gets an answer that names the setting rather than a `404` that
+ * reads like a wrong address.
+ */
+export const TELEMETRY_PATHS: Readonly<Record<OtelSignal, string>> = {
+  metrics: '/v1/metrics',
+  logs: '/v1/logs',
+  traces: '/v1/traces',
+};
+
+/** The body of the `403` the telemetry paths answer while the setting is off. */
+export const TELEMETRY_DISABLED_BODY = '{"error":"agentDeck.telemetry.enabled is false"}';
+
+/**
+ * The statuses a telemetry path refuses with, other than `403` (counted apart
+ * as `disabled`). Every one is non-retryable ON PURPOSE (locked ruling): an
+ * OTLP exporter retries a `429`/`503` with backoff, and a receiver that
+ * answered one would turn a refusal into a standing stream of retries from
+ * every Claude Code session on the machine. `503` is never returned.
+ */
+export type TelemetryRejectStatus = 400 | 405 | 413 | 415;
+
+/** One telemetry path's accounting (v0.7.1 DoD 6.4). */
+export interface TelemetryRouteCounts {
+  /** Bodies parsed and published. The `200` answer. */
+  accepted: number;
+  /** Requests answered `403` because `agentDeck.telemetry.enabled` is off. */
+  disabled: number;
+  /** Requests refused, by status. */
+  rejected: Record<TelemetryRejectStatus, number>;
+}
+
+/** Per signal. A snapshot when read through {@link HookListener.telemetryCounters}. */
+export type TelemetryRouteCounters = Record<OtelSignal, TelemetryRouteCounts>;
+
+function zeroTelemetryCounts(): TelemetryRouteCounts {
+  return { accepted: 0, disabled: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } };
+}
+
+function zeroTelemetryCounters(): TelemetryRouteCounters {
+  return { metrics: zeroTelemetryCounts(), logs: zeroTelemetryCounts(), traces: zeroTelemetryCounts() };
+}
+
+/** Which signal a request path names, or undefined. A switch, not a lookup: no prototype key can match. */
+function telemetrySignalOf(url: string): OtelSignal | undefined {
+  switch (url) {
+    case TELEMETRY_PATHS.metrics:
+      return 'metrics';
+    case TELEMETRY_PATHS.logs:
+      return 'logs';
+    case TELEMETRY_PATHS.traces:
+      return 'traces';
+    default:
+      return undefined;
+  }
+}
+
+/** A telemetry consumer. Registered via {@link HookListener.subscribeOtel}. */
+export type OtelHandler = (signal: OtelSignal, slice: TelemetrySlice) => void;
 
 /**
  * Multiple of the body cap at which a still-streaming request is destroyed
@@ -250,6 +317,15 @@ export interface HookListenerOptions {
    * other window, which is the defect this phase exists to fix.
    */
   enableRelay?: boolean;
+  /**
+   * `agentDeck.telemetry.enabled`, read at REQUEST time (v0.7.1 DoD 6.2).
+   *
+   * A thunk rather than a boolean so a setting change applies to the next
+   * request without rebinding the socket. Defaults to "off": a listener built
+   * without it accepts no telemetry, which is the shipped default and the safe
+   * direction. A thunk that throws reads as off, never as on (G3).
+   */
+  telemetryEnabled?: () => boolean;
 }
 
 /**
@@ -348,6 +424,23 @@ function contentTypeAcceptable(header: string | undefined): boolean {
   return media === 'application/json' || media.endsWith('+json');
 }
 
+/**
+ * The telemetry paths' content-type rule (v0.7.1 DoD 6.2): the media type must
+ * be PRESENT and JSON.
+ *
+ * Stricter than {@link contentTypeAcceptable} on one point, deliberately. The
+ * event path accepts an ABSENT header because a pasted `node -e` hook snippet
+ * is not obliged to send one. An OTLP exporter always states its encoding, and
+ * the only other encoding it has is protobuf — which this receiver does not
+ * decode (OTLP over http/json only, locked ruling). A body that does not say
+ * it is JSON is answered `415` rather than guessed at.
+ */
+function isJsonMediaType(header: string | undefined): boolean {
+  if (header === undefined) return false;
+  const media = header.split(';')[0]?.trim().toLowerCase() ?? '';
+  return media === 'application/json' || media.endsWith('+json');
+}
+
 function endWithStatus(res: ServerResponse, status: number): void {
   try {
     if (!res.headersSent) {
@@ -356,6 +449,21 @@ function endWithStatus(res: ServerResponse, status: number): void {
     res.end();
   } catch {
     /* the client is gone; there is nothing useful to do and nothing to crash for */
+  }
+}
+
+/** Answer with a small JSON body. Same failure posture as {@link endWithStatus}. */
+function endWithJson(res: ServerResponse, status: number, json: string): void {
+  try {
+    if (!res.headersSent) {
+      const body = Buffer.from(json, 'utf8');
+      res.writeHead(status, { 'content-type': 'application/json', 'content-length': body.length });
+      res.end(body);
+      return;
+    }
+    res.end();
+  } catch {
+    /* the client is gone */
   }
 }
 
@@ -388,6 +496,16 @@ export class HookListener {
   readonly #followers = new Set<ServerResponse>();
   readonly #relayPreviewBytes: number;
   readonly #enableRelay: boolean;
+  /** Telemetry consumers (v0.7.1 DoD 6.2). A separate set, like the Codex one. */
+  readonly #otelHandlers = new Set<OtelHandler>();
+  readonly #telemetryEnabled: () => boolean;
+  /**
+   * Per-signal route accounting (DoD 6.4). Deliberately NOT in
+   * {@link HookListenerCounters}: that record is flat numbers, and the fuzz
+   * replay in `listener.test.ts` asserts exact deltas over every key of it —
+   * the event path's contract, which the telemetry route must not perturb.
+   */
+  readonly #telemetry: TelemetryRouteCounters = zeroTelemetryCounters();
 
   constructor(options: HookListenerOptions = {}) {
     this.port = options.port ?? DEFAULT_HOOK_PORT;
@@ -397,7 +515,37 @@ export class HookListener {
     this.#allowEphemeralPort = options.allowEphemeralPort === true;
     this.#relayPreviewBytes = options.relayPreviewBytes ?? DEFAULT_RELAY_PREVIEW_BYTES;
     this.#enableRelay = options.enableRelay !== false;
+    this.#telemetryEnabled = options.telemetryEnabled ?? ((): boolean => false);
     if (options.onEvent) this.#handlers.add(options.onEvent);
+  }
+
+  /**
+   * The telemetry paths' accounting, per signal (v0.7.1 DoD 6.4). A DEEP copy:
+   * mutating the result affects nothing, which a spread of a nested record
+   * would not guarantee.
+   */
+  get telemetryCounters(): TelemetryRouteCounters {
+    const copy = (c: TelemetryRouteCounts): TelemetryRouteCounts => ({
+      accepted: c.accepted,
+      disabled: c.disabled,
+      rejected: { ...c.rejected },
+    });
+    return {
+      metrics: copy(this.#telemetry.metrics),
+      logs: copy(this.#telemetry.logs),
+      traces: copy(this.#telemetry.traces),
+    };
+  }
+
+  /**
+   * Register a telemetry consumer (v0.7.1 DoD 6.2). Each ACCEPTED body is
+   * parsed once and its slice handed to every consumer; nothing else is.
+   */
+  subscribeOtel(handler: OtelHandler): () => void {
+    this.#otelHandlers.add(handler);
+    return () => {
+      this.#otelHandlers.delete(handler);
+    };
   }
 
   /** Followers attached right now. Zero on a window nobody has joined. */
@@ -408,10 +556,11 @@ export class HookListener {
   /**
    * Relay one telemetry slice to every follower (DoD 1b.5).
    *
-   * The OTLP body never appears here — see {@link RelayOtelEnvelope}. Phase 3
-   * mounts the `/v1/*` routes that produce these slices from live traffic; the
-   * relay is built one phase early because the relay is what the OTHER windows
-   * depend on, and a route added later feeds it without touching this method.
+   * The OTLP body never appears here — see {@link RelayOtelEnvelope}. The
+   * telemetry paths on this listener (v0.7.1 DoD 6.2) produce the slices; the
+   * shared listener publishes each one here AND to its own window, through
+   * `SharedHookListener.publishTelemetry`, so the relay half cannot be
+   * forgotten by a caller.
    */
   relayTelemetry(signal: OtelSignal, slice: TelemetrySlice): void {
     this.#broadcast({ v: 1, kind: 'otel', signal, slice });
@@ -737,6 +886,19 @@ export class HookListener {
       return;
     }
 
+    /*
+     * v0.7.1 DoD 6.2 — THE TELEMETRY PATHS, BELOW THE LOOPBACK CHECK.
+     *
+     * A non-loopback request never reaches this branch: it was answered `403`
+     * and counted as `droppedNonLoopback` above, before any path was read. That
+     * drop is untouched by the route and is the same one every other path gets.
+     */
+    const signal = telemetrySignalOf(url);
+    if (signal !== undefined) {
+      this.#handleTelemetry(req, res, signal);
+      return;
+    }
+
     if (url !== this.eventPath) {
       this.#counters.badRoute += 1;
       req.resume(); // drain first so the reply is not truncated
@@ -756,6 +918,34 @@ export class HookListener {
       return;
     }
 
+    this.#collectBody(
+      req,
+      res,
+      () => {
+        this.#counters.oversize += 1;
+      },
+      (raw) => {
+        this.#onEventBody(raw, res);
+      },
+    );
+  }
+
+  /**
+   * Read one request body under the cap, then hand it on — or answer `413`.
+   *
+   * The event path's body reader, factored out UNCHANGED in behaviour in v0.7.1
+   * so the telemetry paths get the same cap by the same code rather than a
+   * second copy that could drift from the first (DoD 6.2: the cap is the hooks
+   * `DEFAULT_MAX_BODY_BYTES`, 512 KiB, no new setting). `onOversize` is called
+   * exactly once per oversize request, which is what each path's own counter
+   * needs.
+   */
+  #collectBody(
+    req: IncomingMessage,
+    res: ServerResponse,
+    onOversize: () => void,
+    onComplete: (raw: Buffer) => void,
+  ): void {
     const chunks: Buffer[] = [];
     let size = 0;
     let overflowed = false;
@@ -776,7 +966,7 @@ export class HookListener {
     const declaredLength = Number(req.headers['content-length']);
     if (Number.isFinite(declaredLength) && declaredLength > this.maxBodyBytes) {
       overflowed = true;
-      this.#counters.oversize += 1;
+      onOversize();
     }
 
     req.on('error', () => {
@@ -798,7 +988,7 @@ export class HookListener {
       size += chunk.length;
       if (size > this.maxBodyBytes) {
         overflowed = true;
-        this.#counters.oversize += 1;
+        onOversize();
         chunks.length = 0;
         return;
       }
@@ -813,84 +1003,216 @@ export class HookListener {
         endWithStatus(res, 413);
         return;
       }
+      onComplete(Buffer.concat(chunks));
+    });
+  }
 
-      const raw = Buffer.concat(chunks);
-      if (raw.length === 0) {
-        this.#counters.emptyBody += 1;
-        endWithStatus(res, 400);
-        return;
+  /**
+   * One telemetry request (v0.7.1 DoD 6.2). The answer table, in the order the
+   * locked ruling gives it:
+   *
+   *   non-POST                        -> 405
+   *   POST, content type not JSON     -> 415
+   *   POST, setting off               -> 403 {"error":"agentDeck.telemetry.enabled is false"}
+   *   body over the cap               -> 413
+   *   empty, not JSON, not OTLP       -> 400
+   *   accepted                        -> 200 {}
+   *
+   * Nothing here is retryable and nothing here throws (G3). The setting is read
+   * BEFORE the body, so a disabled path parses no body at all — it is drained and
+   * discarded, never parsed. An accepted body is parsed ONCE, by
+   * `parseOtlpBody`, at this boundary: the identity attributes and the content
+   * fields are dropped there, so what the consumers and the relay receive is the
+   * slice and never the OTLP bytes.
+   */
+  #handleTelemetry(req: IncomingMessage, res: ServerResponse, signal: OtelSignal): void {
+    const counts = this.#telemetry[signal];
+    if (req.method !== 'POST') {
+      counts.rejected[405] += 1;
+      this.#drainThen(req, () => {
+        endWithStatus(res, 405);
+      });
+      return;
+    }
+    if (!isJsonMediaType(req.headers['content-type'])) {
+      counts.rejected[415] += 1;
+      this.#drainThen(req, () => {
+        endWithStatus(res, 415);
+      });
+      return;
+    }
+    let enabled = false;
+    try {
+      enabled = this.#telemetryEnabled() === true;
+    } catch {
+      // A setting that cannot be read is not a setting that says yes.
+      enabled = false;
+    }
+    if (!enabled) {
+      counts.disabled += 1;
+      this.#drainThen(req, () => {
+        endWithJson(res, 403, TELEMETRY_DISABLED_BODY);
+      });
+      return;
+    }
+
+    this.#collectBody(
+      req,
+      res,
+      () => {
+        counts.rejected[413] += 1;
+      },
+      (raw) => {
+        if (raw.length === 0) {
+          counts.rejected[400] += 1;
+          endWithStatus(res, 400);
+          return;
+        }
+        const slice = parseOtlpBody(raw.toString('utf8'), signal);
+        // Not JSON, not an object, or not OTLP-shaped for this signal: the
+        // parse boundary's own verdict, not a second opinion formed here.
+        if (slice.counts.bodiesUnparseable > 0) {
+          counts.rejected[400] += 1;
+          endWithStatus(res, 400);
+          return;
+        }
+        counts.accepted += 1;
+        // Before the reply, like hook dispatch: a consumer has seen the slice
+        // by the time the exporter observes its 200.
+        this.#dispatchOtel(signal, slice);
+        endWithJson(res, 200, '{}');
+      },
+    );
+  }
+
+  /**
+   * Discard a refused request's body, THEN answer (v0.7.1, found by the gate).
+   *
+   * The telemetry refusals first answered straight after `req.resume()`, the
+   * way the event path's 405/415 always have. The 20-run gate block caught the
+   * cost in 2 of 20 runs: a `403` sent while the client was still writing a
+   * 512 KiB body closed the exchange under it, and the client read a
+   * connection reset instead of the `403` — the case this file already names
+   * ("replying before the body has been drained truncates the reply on a peer
+   * that is still writing"). An exporter that reads a reset retries; the
+   * ruling is that no answer here is retryable.
+   *
+   * So the body is DRAINED — every chunk dropped as it arrives, nothing kept,
+   * nothing parsed — and the answer goes on `end`. A body that keeps coming
+   * past the hard multiple of the cap is answered and its socket destroyed, the
+   * same bound {@link #collectBody} applies, so a refusal cannot be made to
+   * hold a socket open indefinitely.
+   */
+  #drainThen(req: IncomingMessage, respond: () => void): void {
+    const hardLimit = this.maxBodyBytes * HARD_ABORT_MULTIPLE;
+    let size = 0;
+    let done = false;
+    req.on('error', () => {
+      this.#counters.socketErrors += 1;
+    });
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > hardLimit && !done) {
+        done = true;
+        respond();
+        req.destroy();
       }
+    });
+    req.on('end', () => {
+      if (done) return;
+      done = true;
+      respond();
+    });
+  }
 
-      let parsed: unknown;
+  /** Same discipline as {@link #dispatch}, over the telemetry consumers. */
+  #dispatchOtel(signal: OtelSignal, slice: TelemetrySlice): void {
+    for (const handler of this.#otelHandlers) {
       try {
-        parsed = JSON.parse(raw.toString('utf8')) as unknown;
+        handler(signal, slice);
       } catch {
-        this.#counters.malformedJson += 1;
-        endWithStatus(res, 400);
-        return;
+        this.#counters.handlerErrors += 1;
       }
+    }
+  }
 
-      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        this.#counters.notAnObject += 1;
-        endWithStatus(res, 400);
-        return;
-      }
+  /** The event path's completed body: JSON, an object, then CC or Codex. */
+  #onEventBody(raw: Buffer, res: ServerResponse): void {
+    if (raw.length === 0) {
+      this.#counters.emptyBody += 1;
+      endWithStatus(res, 400);
+      return;
+    }
 
-      /*
-       * DoD 3.1 — LISTENER DISCRIMINATION.
-       *
-       * A Codex hook payload reuses `session_id` / `agent_id` / `tool_use_id`,
-       * the same join keys the CC layout uses, so every accepted JSON object
-       * used to be handed to `normalizeHookEvent` and the CC handler set
-       * unconditionally — a real Codex payload was silently misrouted into the
-       * CC pipeline. `model` as a KEY (never its value) is the discriminator,
-       * measured 160/160 Codex against 0/305 CC. The split is total given what
-       * has been measured: A5 found no payload carrying neither shape, so
-       * there is no third "unknown engine" bucket here — a future ambiguous
-       * shape would still need counting and dropping (G3) rather than a guess,
-       * but nothing observed requires that branch today.
-       */
-      if (Object.prototype.hasOwnProperty.call(parsed, CODEX_DISCRIMINATOR_KEY)) {
-        this.#counters.acceptedCodex += 1;
-        this.#dispatchCodex({ receivedAtMs: Date.now(), payload: parsed });
-        // Relayed as the RAW-SHAPED payload, redacted: the follower re-runs
-        // this same discriminator, so a Codex payload reaches a follower's
-        // Codex handlers and never its CC ones, by the identical decision made
-        // on identical bytes rather than by a routing tag we invented here.
-        this.#relayHook(parsed);
-        endWithStatus(res, 200);
-        return;
-      }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw.toString('utf8')) as unknown;
+    } catch {
+      this.#counters.malformedJson += 1;
+      endWithStatus(res, 400);
+      return;
+    }
 
-      const receivedAt = Date.now();
-      this.#seq += 1;
-      this.#counters.accepted += 1;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      this.#counters.notAnObject += 1;
+      endWithStatus(res, 400);
+      return;
+    }
 
-      let event: NormalizedHookEvent;
-      try {
-        event = normalizeHookEvent(parsed as RawHookPayload, {
-          seq: this.#seq,
-          receivedAt,
-        });
-      } catch {
-        // Normalization is total by construction; this branch exists so that a
-        // future change cannot turn a surprising payload into a crash (G3).
-        this.#counters.accepted -= 1;
-        this.#counters.malformedJson += 1;
-        endWithStatus(res, 400);
-        return;
-      }
-
-      if (!event.eventNameConfirmed) this.#counters.unconfirmedEventName += 1;
-
-      // Dispatch is in-memory and cheap, so it happens before the response is
-      // ended: consumers are guaranteed to have seen the event by the time the
-      // client observes a 200. Handler exceptions are swallowed and counted, so
-      // this cannot delay or break the reply.
-      this.#dispatch(event);
+    /*
+     * DoD 3.1 — LISTENER DISCRIMINATION.
+     *
+     * A Codex hook payload reuses `session_id` / `agent_id` / `tool_use_id`,
+     * the same join keys the CC layout uses, so every accepted JSON object
+     * used to be handed to `normalizeHookEvent` and the CC handler set
+     * unconditionally — a real Codex payload was silently misrouted into the
+     * CC pipeline. `model` as a KEY (never its value) is the discriminator,
+     * measured 160/160 Codex against 0/305 CC. The split is total given what
+     * has been measured: A5 found no payload carrying neither shape, so
+     * there is no third "unknown engine" bucket here — a future ambiguous
+     * shape would still need counting and dropping (G3) rather than a guess,
+     * but nothing observed requires that branch today.
+     */
+    if (Object.prototype.hasOwnProperty.call(parsed, CODEX_DISCRIMINATOR_KEY)) {
+      this.#counters.acceptedCodex += 1;
+      this.#dispatchCodex({ receivedAtMs: Date.now(), payload: parsed });
+      // Relayed as the RAW-SHAPED payload, redacted: the follower re-runs
+      // this same discriminator, so a Codex payload reaches a follower's
+      // Codex handlers and never its CC ones, by the identical decision made
+      // on identical bytes rather than by a routing tag we invented here.
       this.#relayHook(parsed);
       endWithStatus(res, 200);
-    });
+      return;
+    }
+
+    const receivedAt = Date.now();
+    this.#seq += 1;
+    this.#counters.accepted += 1;
+
+    let event: NormalizedHookEvent;
+    try {
+      event = normalizeHookEvent(parsed as RawHookPayload, {
+        seq: this.#seq,
+        receivedAt,
+      });
+    } catch {
+      // Normalization is total by construction; this branch exists so that a
+      // future change cannot turn a surprising payload into a crash (G3).
+      this.#counters.accepted -= 1;
+      this.#counters.malformedJson += 1;
+      endWithStatus(res, 400);
+      return;
+    }
+
+    if (!event.eventNameConfirmed) this.#counters.unconfirmedEventName += 1;
+
+    // Dispatch is in-memory and cheap, so it happens before the response is
+    // ended: consumers are guaranteed to have seen the event by the time the
+    // client observes a 200. Handler exceptions are swallowed and counted, so
+    // this cannot delay or break the reply.
+    this.#dispatch(event);
+    this.#relayHook(parsed);
+    endWithStatus(res, 200);
   }
 
   /**

@@ -241,10 +241,12 @@ media/**
 # 4, DoD 4.6b). Like `icon.png`, a manifest reference rather than a screenshot:
 # without it the container has no glyph and `vsce package` fails. SIX lines.
 !media/activity-icon.svg
-!media/Session_Deck.png
-!media/hero_26_agent_session.png
-!media/Internal_Session_Tool_popup.png
-!media/Internal_Session_Tool_popup2.png
+# The Deck, Tree and Inspector stills (v0.7.1 DoD 6.D.1): three captures in
+# place of the four 0.6.x-era stills. SEVEN `!` lines in all after this change;
+# the running counts in the comments beside them were true when each was added.
+!media/deck.png
+!media/tree.png
+!media/inspector.png
 # The sidebar screenshot the README's install section links (v0.7.0 DoD 5.5b).
 # SEVEN lines. It ships like the other stills; `.gitignore` admits it too. It
 # is committed as a placeholder the user replaces with a capture, and the

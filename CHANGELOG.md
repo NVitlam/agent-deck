@@ -73,7 +73,8 @@ All notable changes to Agent Deck are documented here.
   the telemetry routes' answers are a table.
 - **A GitHub Release carries its version's section of this file as its notes**,
   in place of notes generated from commits. The project page describes the
-  Stats view, the local history and the telemetry cost.
+  Stats view, the local history and the telemetry cost, and the README and the
+  page show new captures of the deck, a session's tree and its inspector.
 
 ## 0.7.0 - 2026-09-10 - a Stats view, a local history, and every window live
 

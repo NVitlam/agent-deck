@@ -232,10 +232,13 @@ const README = readText('README.md');
  */
 const RELEASE_IMAGES: readonly string[] = [
   'media/agent-deck-hero.gif',
-  'media/Session_Deck.png',
-  'media/hero_26_agent_session.png',
-  'media/Internal_Session_Tool_popup.png',
-  'media/Internal_Session_Tool_popup2.png',
+  // v0.7.1 DoD 6.D.1 (2026-09-11): the user's captures of session 2ffb0c69 on
+  // build fed3b31 — the deck, its tree, its inspector — in place of the four
+  // 0.6.x-era stills, which are now in the RETIRED list below. The two
+  // inspector stills became one.
+  'media/deck.png',
+  'media/tree.png',
+  'media/inspector.png',
   // SIX SINCE v0.7.0 (DoD 5.5b): the sidebar, linked from the install section.
   // Committed as a placeholder the user replaces with a capture; the
   // package-audit leg of `vsix.test.ts` refuses to package the placeholder.
@@ -652,7 +655,7 @@ describe('README exists and ships clean', () => {
     }
   });
 
-  it('carries the seven release assets, in order', () => {
+  it('carries the six release assets, in order', () => {
     // WHAT THIS ASSERTED BEFORE 2026-08-30, because the change is the point:
     // it asserted the four references were present and in order WHETHER OR NOT
     // THE FILES EXISTED, and it carried the exemption that let them not exist.
@@ -703,12 +706,22 @@ describe('README exists and ships clean', () => {
     // shipped UI' further down this file guards in prose.
     const RETIRED = [
       'media/demo.gif',
-      'media/deck.png',
-      'media/tree.png',
+      // `media/deck.png` and `media/tree.png` WERE here, as names of retired
+      // 0.1.x captures. v0.7.1 DoD 6.D.1 reuses both names, by the user's
+      // instruction, for the current captures of the deck and a session's tree,
+      // so they are linked and on disk again, and the guard cannot hold them.
+      // `RELEASE_IMAGES` names them now, and `site.test.ts` pins their bytes to
+      // the page's copies.
       'media/focus.png',
       'media/screenshot-deck.png',
       'media/screenshot-topology.png',
       'media/screenshot-inspector.png',
+      // Retired by v0.7.1 DoD 6.D.1: the 0.6.x-era stills the three captures
+      // replaced.
+      'media/Session_Deck.png',
+      'media/hero_26_agent_session.png',
+      'media/Internal_Session_Tool_popup.png',
+      'media/Internal_Session_Tool_popup2.png',
     ];
     for (const retired of RETIRED) {
       expect(README, `README still links the retired ${retired}`).not.toContain(retired);
@@ -736,8 +749,8 @@ describe('README exists and ships clean', () => {
     // THE MARKETPLACE DOES NOT RENDER THESE IMAGES OUT OF THE VSIX, and until
     // 2026-08-30 nothing in this repository said so. vsce rewrites every
     // relative link in the packaged README into an absolute GitHub URL -
-    // `media/Session_Deck.png` ships as
-    // `<repository.url>/raw/HEAD/media/Session_Deck.png` - because the listing
+    // `media/deck.png` ships as
+    // `<repository.url>/raw/HEAD/media/deck.png` - because the listing
     // page is served from Microsoft's host, where a relative path means
     // nothing. So the page fetches them from github.com, anonymously, from the
     // DEFAULT BRANCH.
@@ -814,9 +827,10 @@ describe('README exists and ships clean', () => {
     // SEVEN SINCE v0.7.0 (DoD 4.6b): plus the activity-bar icon.
     // EIGHT SINCE v0.7.0 DoD 5.5b: plus the sidebar screenshot.
     // NINE SINCE v0.7.1 DoD 6.D.4: plus the Tokens screenshot.
+    // EIGHT SINCE v0.7.1 DoD 6.D.1: four stills out, three captures in.
     // Amended, never relaxed - this is still equality both ways with the count
     // beside it, and the reason is unchanged from the v0.5.0 comment above.
-    expect(tracked).toHaveLength(9);
+    expect(tracked).toHaveLength(8);
   }, 20_000);
 });
 

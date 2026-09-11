@@ -175,10 +175,11 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
   // manifest's viewsContainers names. A manifest reference like the
   // extension icon, not a screenshot; both ignore files admit it by name.
   'media/activity-icon.svg',
-  'media/Session_Deck.png',
-  'media/hero_26_agent_session.png',
-  'media/Internal_Session_Tool_popup.png',
-  'media/Internal_Session_Tool_popup2.png',
+  // v0.7.1 DoD 6.D.1: the deck, tree and inspector captures, in place of the
+  // four 0.6.x-era stills.
+  'media/deck.png',
+  'media/tree.png',
+  'media/inspector.png',
   // v0.7.0 DoD 5.5b: the sidebar screenshot the README's install section
   // links. Ships like the other stills; both ignore files admit it by name.
   'media/sidebar.png',
@@ -202,7 +203,7 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
  * it is derived from nothing: writing `EXPECTED_PACKAGED_FILES.length` here
  * would make it agree with the set by construction and check nothing at all.
  */
-const EXPECTED_PACKAGED_FILE_COUNT = 16;
+const EXPECTED_PACKAGED_FILE_COUNT = 15;
 
 /**
  * The same artifact, AS THE ZIP NAMES IT. Rule 19's second half.
@@ -231,20 +232,19 @@ const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
   'extension/dist/extension.cjs',
   'extension/dist/webview/main.css',
   'extension/dist/webview/main.js',
-  'extension/media/Internal_Session_Tool_popup.png',
-  'extension/media/Internal_Session_Tool_popup2.png',
-  'extension/media/Session_Deck.png',
   'extension/media/activity-icon.svg',
-  'extension/media/hero_26_agent_session.png',
+  'extension/media/deck.png',
   'extension/media/icon.png',
+  'extension/media/inspector.png',
   'extension/media/sidebar.png',
   'extension/media/stats_tokens.png',
+  'extension/media/tree.png',
   'extension/package.json',
   'extension/readme.md',
 ];
 
 /** Same reasoning as `EXPECTED_PACKAGED_FILE_COUNT`, on the other naming. */
-const EXPECTED_ARTIFACT_ENTRY_COUNT = 18;
+const EXPECTED_ARTIFACT_ENTRY_COUNT = 17;
 
 /**
  * The SHA-256 of the sidebar PLACEHOLDER committed at v0.7.0 DoD 5.5b — a
@@ -267,10 +267,9 @@ const SIDEBAR_PLACEHOLDER_SHA256 = 'f42b32e95f57d525b608561be4ba827a2c45c4b7ec03
  * VSIX rather than fetching from GitHub.
  */
 const RELEASE_IMAGES_IN_ARTIFACT: readonly string[] = [
-  'media/Session_Deck.png',
-  'media/hero_26_agent_session.png',
-  'media/Internal_Session_Tool_popup.png',
-  'media/Internal_Session_Tool_popup2.png',
+  'media/deck.png',
+  'media/tree.png',
+  'media/inspector.png',
   'media/sidebar.png',
   'media/stats_tokens.png',
 ];

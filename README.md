@@ -44,7 +44,7 @@ breathe while their session is working. Three layouts (List, Grid, Lanes), three
 first, Recent, Engine), and chips to filter by liveness or by engine. Keyboard: `A C O X`, `1 2 3`,
 `L R E`.
 
-![The deck: every session on the machine, every engine](media/Session_Deck.png)
+![The deck in Grid layout: one cell per session, each with its engine, agents, calls in flight, tokens and liveness](media/deck.png)
 
 **The tree** — one session's interior. Every agent is a node; children sit under the parent that
 spawned them, in spawn order; a filament runs from each parent to every agent it spawned. A node
@@ -55,7 +55,7 @@ long label wraps and carries its full text on hover. Anything that cannot be att
 goes to a parked rail carrying the reason, because unplaced data is shown as unplaced and never
 guessed into position.
 
-![One session, 26 agents, live tree](media/hero_26_agent_session.png)
+![One session's tree: the root agent and the two subagents it spawned, with tokens and calls per agent](media/tree.png)
 
 **Focus** — click any agent to re-root the tree on it and read one branch of a wide run on its own.
 The breadcrumb walks back out; Reset view returns to the whole session, fitted.
@@ -67,9 +67,7 @@ row to read its payload beside the list. **Show details** / **Hide details** col
 and **close** dismisses a row. An oldest-first list follows new calls as they arrive until you open
 one or scroll away.
 
-![Inspector: tool calls of the selected agent](media/Internal_Session_Tool_popup.png)
-
-![Inspector: one call expanded](media/Internal_Session_Tool_popup2.png)
+![The inspector under the tree: the root agent's four tool calls, one of them expanded to its input and output](media/inspector.png)
 
 **Stats** — a view mode beside the canvas and the list: files by touch count, identical-call loops
 and churn chains, tokens per agent, and trends across the sessions stored on this machine. Facts

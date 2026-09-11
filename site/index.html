@@ -65,6 +65,7 @@
   figure{margin:0}
   figure img{display:block;width:100%;height:auto;border:1px solid var(--bg-card-border-hv);border-radius:var(--radius);background:var(--bg-secondary)}
   figcaption{font-family:var(--font-mono);font-size:.74rem;color:var(--text-muted);margin-top:10px;letter-spacing:.04em}
+  .hero-shot{max-width:640px}
   /* trust strip */
   .trust{border-bottom:1px solid var(--border);background:var(--bg-secondary);padding:32px 0}
   .trust .wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
@@ -132,17 +133,17 @@
       <h1>See the shape of your agent work.</h1>
       <p class="intro">Agent Deck turns a scrolling swarm of coding-agent activity into a live, legible map—sessions, subagents, tool calls, and cost, all inside VS Code. Claude Code, OpenCode and Codex, side by side in one panel.</p>
       <div class="actions"><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install Agent Deck <span>→</span></a><a class="button" href="#see">See how it works</a></div>
-      <figure>
-        <img src="media/hero_26_agent_session.png" alt="Agent Deck showing one session as a live tree of twenty-six agents" width="3712" height="2130">
-        <figcaption>One session, 26 agents, live tree.</figcaption>
+      <figure class="hero-shot">
+        <img src="media/tree.png" alt="Agent Deck showing one session as a live tree: the root agent and the two subagents it spawned" width="1635" height="1804">
+        <figcaption>One session, two subagents, live tree.</figcaption>
       </figure>
     </div>
     <section class="trust" id="trust"><div class="wrap"><article><strong><span class="icon">◉</span>Read-only by design</strong><p>Observes sessions; never launches, wraps, or edits your agents.</p></article><article><strong><span class="icon">⌁</span>Zero network egress</strong><p>Sends no telemetry or analytics and loads nothing from a CDN. Every socket it opens is on 127.0.0.1.</p></article><article><strong><span class="icon">⌂</span>Local, and yours to clear</strong><p>The live deck stays in memory. The one thing kept is a history of numbers, on your machine, which you can turn off or clear.</p></article></div></section>
     <section class="wrap" id="see"><span class="tag">Observe, don’t operate</span><h2>Your terminal has a timeline. Your work has a topology.</h2><p class="lead">The deck makes parallel work understandable without becoming another control surface.</p>
       <div class="cards">
-        <article class="card"><span class="tag">01 · Deck</span><h3>Every session, at a glance</h3><p>Live sessions from every engine in a compact deck, with layout, sort, and engine filters.</p><figure><img src="media/Session_Deck.png" alt="The deck: every session on the machine, every engine" width="3730" height="2094"></figure></article>
-        <article class="card"><span class="tag">02 · Tree</span><h3>See parentage and activity</h3><p>Follow each spawned agent, its tool activity, and any unplaced data without invented connections.</p><figure><img src="media/hero_26_agent_session.png" alt="One session's tree of agents" width="3712" height="2130"></figure></article>
-        <article class="card"><span class="tag">03 · Inspector</span><h3>Read the useful detail</h3><p>Open a node to inspect calls, status, duration, context, burn, and cost where they belong.</p><figure><img src="media/Internal_Session_Tool_popup2.png" alt="The inspector with one tool call expanded" width="3714" height="2133"></figure></article>
+        <article class="card"><span class="tag">01 · Deck</span><h3>Every session, at a glance</h3><p>Live sessions from every engine in a compact deck, with layout, sort, and engine filters.</p><figure><img src="media/deck.png" alt="The deck in Grid layout: one cell per session, each with its engine, agents, calls in flight, tokens and liveness" width="1638" height="1998"></figure></article>
+        <article class="card"><span class="tag">02 · Tree</span><h3>See parentage and activity</h3><p>Follow each spawned agent, its tool activity, and any unplaced data without invented connections.</p><figure><img src="media/tree.png" alt="One session's tree: the root agent and the two subagents it spawned, with tokens and calls per agent" width="1635" height="1804"></figure></article>
+        <article class="card"><span class="tag">03 · Inspector</span><h3>Read the useful detail</h3><p>Open a node to inspect calls, status, duration, context, burn, and cost where they belong.</p><figure><img src="media/inspector.png" alt="The inspector under the tree: the root agent's four tool calls, one of them expanded to its input and output" width="2808" height="2155"></figure></article>
       </div>
     </section>
     <section class="wrap" id="stats"><!-- g10 --><span class="tag">Stats</span><h2>What each session touched, repeated and spent, as numbers.</h2><p class="lead">A Stats view beside the canvas and the list. Its figures are counts, ratios and token figures taken from the structure of each session; none of them reads message text, tool payloads or reasoning, and none says why a number is what it is.</p>

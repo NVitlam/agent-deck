@@ -96,20 +96,19 @@ const MANIFEST = JSON.parse(readText('package.json')) as {
 };
 
 /**
- * The five screenshots the page and the README share.
+ * The four screenshots the page and the README share.
  *
  * Named here rather than derived from `site/media/` so that a file VANISHING is
  * a failure. A list read off the directory it is checking can only ever agree
  * with itself, which is this repository's most-recorded defect class.
  *
- * FIVE SINCE v0.7.1 (DoD 6.D.1): the Stats view's Tokens part, which the page's
- * Stats section and the README's telemetry section both show.
+ * v0.7.1 DoD 6.D.1: the Stats view's Tokens part joined (five), then the user's
+ * deck, tree and inspector captures replaced the four 0.6.x-era stills (four).
  */
 const SITE_IMAGES: readonly string[] = [
-  'Session_Deck.png',
-  'hero_26_agent_session.png',
-  'Internal_Session_Tool_popup.png',
-  'Internal_Session_Tool_popup2.png',
+  'deck.png',
+  'tree.png',
+  'inspector.png',
   'stats_tokens.png',
 ];
 
@@ -132,7 +131,7 @@ describe('the page exists as a publishable tree', () => {
     expect(TRACKED_SITE).toContain('site/.nojekyll');
   });
 
-  it('tracks exactly the five images, both ways, with the count pinned beside the set', () => {
+  it('tracks exactly the four images, both ways, with the count pinned beside the set', () => {
     // RULE 19, applied to `site/media/` rather than to the VSIX. The failure
     // this catches is a file nobody meant to publish - the recorded case is a
     // stray `media/Action Running.png` that shipped past a deny-by-name rule -
@@ -145,7 +144,7 @@ describe('the page exists as a publishable tree', () => {
 
     expect(tracked).toStrictEqual(expected);
     expect(expected).toStrictEqual(tracked);
-    expect(tracked).toHaveLength(5);
+    expect(tracked).toHaveLength(4);
   });
 
   it('every site image is byte-identical to its media/ twin', () => {

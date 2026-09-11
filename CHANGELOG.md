@@ -68,7 +68,11 @@ All notable changes to Agent Deck are documented here.
 - **`SECURITY.md` lists the listener's six paths and the one outbound call site.**
   It said the event path was the only route and that no outbound HTTP client was
   compiled in; both had stopped being true in 0.7.0, when the second-window relay
-  arrived.
+  arrived. Each property it states about the listener and the bundle now names
+  the test that proves it, and the telemetry routes' answers are a table.
+- **A GitHub Release carries its version's section of this file as its notes**,
+  in place of notes generated from commits. The project page describes the
+  Stats view, the local history and the telemetry cost.
 
 ## 0.7.0 - 2026-09-10 - a Stats view, a local history, and every window live
 

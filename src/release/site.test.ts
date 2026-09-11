@@ -96,17 +96,21 @@ const MANIFEST = JSON.parse(readText('package.json')) as {
 };
 
 /**
- * The four screenshots the page and the README share.
+ * The five screenshots the page and the README share.
  *
  * Named here rather than derived from `site/media/` so that a file VANISHING is
  * a failure. A list read off the directory it is checking can only ever agree
  * with itself, which is this repository's most-recorded defect class.
+ *
+ * FIVE SINCE v0.7.1 (DoD 6.D.1): the Stats view's Tokens part, which the page's
+ * Stats section and the README's telemetry section both show.
  */
 const SITE_IMAGES: readonly string[] = [
   'Session_Deck.png',
   'hero_26_agent_session.png',
   'Internal_Session_Tool_popup.png',
   'Internal_Session_Tool_popup2.png',
+  'stats_tokens.png',
 ];
 
 /** The only hosts the page may reach. */
@@ -128,7 +132,7 @@ describe('the page exists as a publishable tree', () => {
     expect(TRACKED_SITE).toContain('site/.nojekyll');
   });
 
-  it('tracks exactly the four images, both ways, with the count pinned beside the set', () => {
+  it('tracks exactly the five images, both ways, with the count pinned beside the set', () => {
     // RULE 19, applied to `site/media/` rather than to the VSIX. The failure
     // this catches is a file nobody meant to publish - the recorded case is a
     // stray `media/Action Running.png` that shipped past a deny-by-name rule -
@@ -141,7 +145,7 @@ describe('the page exists as a publishable tree', () => {
 
     expect(tracked).toStrictEqual(expected);
     expect(expected).toStrictEqual(tracked);
-    expect(tracked).toHaveLength(4);
+    expect(tracked).toHaveLength(5);
   });
 
   it('every site image is byte-identical to its media/ twin', () => {
@@ -284,10 +288,14 @@ describe('the page does not ship inside the extension', () => {
 });
 
 describe('v0.7.0 DoD 5.5 — the page names the Stats view, and no longer says nothing is kept', () => {
-  it('carries ONE Stats line, inside the g10 region the forbidden-word scan reads', () => {
+  it('carries ONE g10 region, the Stats section, which the forbidden-word scan reads', () => {
+    // v0.7.1 DoD 6.D.1 moved the region from one line in "What it does" to the
+    // whole Stats section, which is what 0.7.0 and 0.7.1 add to the page. Still
+    // ONE region: the scanner reads the first pair of markers only.
     const regions = [...PAGE.matchAll(/<!-- g10 -->([\s\S]*?)<!-- \/g10 -->/g)].map((m) => m[1] ?? '');
     expect(regions).toHaveLength(1);
     expect(regions[0]).toContain('Stats view');
+    expect(/<section class="wrap" id="stats"><!-- g10 -->/.test(PAGE)).toBe(true);
     // The region is the scan's subject: `scripts/forbidden-words.mjs` names this
     // file and these markers, so moving the line out of them unscans it.
     const scanner = readText('scripts/forbidden-words.mjs');

@@ -363,6 +363,8 @@ the Stats view's Tokens part with the label **estimated by Claude Code**. It als
 of a tool call where the session's own records state none, in that session's stats record — the
 local history and the extension API. The Stats view shows no per-tool durations.
 
+![The Stats view's Tokens part: one Claude Code session's cost, estimated by Claude Code, and its tokens per agent](media/stats_tokens.png)
+
 Claude Code can export OpenTelemetry — metrics, logs and traces — to an address you give it. Agent
 Deck's hook listener accepts that export on the same port as the hooks: `127.0.0.1` at
 `agentDeck.port`, `47821` by default, on the paths `/v1/metrics`, `/v1/logs` and `/v1/traces`, as OTLP

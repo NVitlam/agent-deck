@@ -250,6 +250,10 @@ media/**
 # is committed as a placeholder the user replaces with a capture, and the
 # package-audit leg of `src/release/vsix.test.ts` refuses the placeholder bytes.
 !media/sidebar.png
+# The Stats view's Tokens part (v0.7.1 DoD 6.D.4), linked from the README's
+# telemetry section. EIGHT lines. Ships like the other stills (92,140 bytes);
+# `.gitignore` admits it too.
+!media/stats_tokens.png
 
 # THE HERO GIF IS TRACKED AND DELIBERATELY NOT RE-ADMITTED HERE (DoD 5.8
 # item 2, which authorises either outcome so long as it is recorded with the

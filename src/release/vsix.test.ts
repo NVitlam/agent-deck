@@ -182,6 +182,9 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
   // v0.7.0 DoD 5.5b: the sidebar screenshot the README's install section
   // links. Ships like the other stills; both ignore files admit it by name.
   'media/sidebar.png',
+  // v0.7.1 DoD 6.D.4: the Stats view's Tokens part the README's telemetry
+  // section links. Ships like the other stills; both ignore files admit it.
+  'media/stats_tokens.png',
   'dist/extension.cjs',
   'dist/webview/main.css',
   'dist/webview/main.js',
@@ -199,7 +202,7 @@ const EXPECTED_PACKAGED_FILES: readonly string[] = [
  * it is derived from nothing: writing `EXPECTED_PACKAGED_FILES.length` here
  * would make it agree with the set by construction and check nothing at all.
  */
-const EXPECTED_PACKAGED_FILE_COUNT = 15;
+const EXPECTED_PACKAGED_FILE_COUNT = 16;
 
 /**
  * The same artifact, AS THE ZIP NAMES IT. Rule 19's second half.
@@ -235,12 +238,13 @@ const EXPECTED_ARTIFACT_ENTRIES: readonly string[] = [
   'extension/media/hero_26_agent_session.png',
   'extension/media/icon.png',
   'extension/media/sidebar.png',
+  'extension/media/stats_tokens.png',
   'extension/package.json',
   'extension/readme.md',
 ];
 
 /** Same reasoning as `EXPECTED_PACKAGED_FILE_COUNT`, on the other naming. */
-const EXPECTED_ARTIFACT_ENTRY_COUNT = 17;
+const EXPECTED_ARTIFACT_ENTRY_COUNT = 18;
 
 /**
  * The SHA-256 of the sidebar PLACEHOLDER committed at v0.7.0 DoD 5.5b — a
@@ -268,6 +272,7 @@ const RELEASE_IMAGES_IN_ARTIFACT: readonly string[] = [
   'media/Internal_Session_Tool_popup.png',
   'media/Internal_Session_Tool_popup2.png',
   'media/sidebar.png',
+  'media/stats_tokens.png',
 ];
 
 /**

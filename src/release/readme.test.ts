@@ -240,6 +240,10 @@ const RELEASE_IMAGES: readonly string[] = [
   // Committed as a placeholder the user replaces with a capture; the
   // package-audit leg of `vsix.test.ts` refuses to package the placeholder.
   'media/sidebar.png',
+  // SEVEN SINCE v0.7.1 (DoD 6.D.4): the Stats view's Tokens part with the
+  // telemetry cost and its label, linked from the telemetry section. Cropped
+  // from the 6.9 smoke capture with the project slug painted out.
+  'media/stats_tokens.png',
 ];
 
 /* ------------------------------------------------------------------------- *
@@ -648,7 +652,7 @@ describe('README exists and ships clean', () => {
     }
   });
 
-  it('carries the six release assets, in order', () => {
+  it('carries the seven release assets, in order', () => {
     // WHAT THIS ASSERTED BEFORE 2026-08-30, because the change is the point:
     // it asserted the four references were present and in order WHETHER OR NOT
     // THE FILES EXISTED, and it carried the exemption that let them not exist.
@@ -809,9 +813,10 @@ describe('README exists and ships clean', () => {
     // SIX SINCE v0.6.0 (DoD 5.8.1): the icon, the four stills and the hero GIF.
     // SEVEN SINCE v0.7.0 (DoD 4.6b): plus the activity-bar icon.
     // EIGHT SINCE v0.7.0 DoD 5.5b: plus the sidebar screenshot.
+    // NINE SINCE v0.7.1 DoD 6.D.4: plus the Tokens screenshot.
     // Amended, never relaxed - this is still equality both ways with the count
     // beside it, and the reason is unchanged from the v0.5.0 comment above.
-    expect(tracked).toHaveLength(8);
+    expect(tracked).toHaveLength(9);
   }, 20_000);
 });
 

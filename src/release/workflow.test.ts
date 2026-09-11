@@ -244,7 +244,11 @@ describe('ci.yml', () => {
      * matching goes red.
      */
     const EXTS = 'mjs|cjs|js|ts|json|yml|yaml|md|vsix';
-    const PATH_RE = new RegExp(`(?<![\\w./-])([\\w.-]+(?:/[\\w.-]+)+\\.(?:${EXTS}))`, 'g');
+    // `$` in the lookbehind (v0.7.1 DoD 6.D.5): `"$RUNNER_TEMP/release-notes.md"`
+    // is a path under a runner variable, written at run time, and the shape
+    // above said runner variables were excluded while the pattern read it as
+    // `RUNNER_TEMP/release-notes.md`, a repository path.
+    const PATH_RE = new RegExp(`(?<![\\w./$-])([\\w.-]+(?:/[\\w.-]+)+\\.(?:${EXTS}))`, 'g');
 
     const executed = executedText();
     const named = [...new Set([...executed.matchAll(PATH_RE)].map((m) => m[1] ?? ''))]
@@ -258,8 +262,21 @@ describe('ci.yml', () => {
      * was already filtered out. The set is asserted whole instead — if the
      * extractor stops matching, or a step starts naming something new, this
      * line is what says so.
+     *
+     * THREE SINCE v0.7.1 (DoD 6.D.5): `scripts/release-notes.mjs`, which
+     * release.yml runs to write the GitHub Release body. It must be in the
+     * checkout, and the existence check below is what says it is.
      */
-    expect(named).toStrictEqual(['dist/agent-deck.vsix', 'src/release/vsix.test.ts']);
+    expect(named).toStrictEqual([
+      'dist/agent-deck.vsix',
+      'scripts/release-notes.mjs',
+      'src/release/vsix.test.ts',
+    ]);
+    // The runner-variable exclusion is not a hole: the same path without the
+    // `$` is still read as a repository path.
+    expect([...'run: node x > "$RUNNER_TEMP/a.md" b/c.md'.matchAll(PATH_RE)].map((m) => m[1])).toStrictEqual([
+      'b/c.md',
+    ]);
 
     const missing = named
       // Written by `npm run package` two steps above the step that reads it, so

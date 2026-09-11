@@ -2,6 +2,80 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.7.1 - 2026-09-11 - Claude Code's own telemetry, received on the hook listener
+
+### Added
+
+- **Claude Code's OpenTelemetry export, received — optional, off by default.** The
+  hook listener now answers `POST /v1/metrics`, `/v1/logs` and `/v1/traces` on the
+  same `127.0.0.1` port as the hooks (`agentDeck.port`), OTLP over HTTP in JSON.
+  Nothing is received until `agentDeck.telemetry.enabled` is turned on and Claude
+  Code's own `env` settings name that address; the README's "Claude Code telemetry
+  (optional)" section has the block to paste. Agent Deck writes none of it.
+- **A cost for Claude Code sessions, estimated by Claude Code.** With telemetry on,
+  a Claude Code session's cost in the Tokens view is Claude Code's own cost
+  metric, summed per session and labelled "estimated by Claude Code", for a
+  session whose start the window received (below). Where an engine states a cost,
+  that is shown instead; where neither an engine cost nor such a telemetry cost
+  exists, a cost from `agentDeck.pricing` is.
+- **Tool durations where the session states none**, from Claude Code's tool spans,
+  in each session's stats record — the local history and the extension API. The
+  Stats view shows no per-tool durations. A duration the session's own records
+  state is never replaced.
+- **`agentDeck.telemetry.enabled`**, boolean, default `false`, machine-scoped.
+  Changes apply to the next request, without a reload.
+- **Telemetry figures on the Agent Deck output channel's counters line**, per
+  signal: requests accepted, refused by status (`400`, `405`, `413`, `415`),
+  refused because the setting is off, and rows still unmatched after the join has
+  retried: a tool span whose session or tool call the next update after it arrived
+  does not show, or a session's start or cost held for a session not shown yet
+  when its slot was pushed out. A row that arrives early and joins a moment later
+  is not counted. Each such tool span also writes one line naming its
+  `session.id` and `tool_use_id`, and nothing else from the span.
+
+### How it behaves
+
+- **Answers:** `200` accepted, `400` not an OTLP JSON body for that path, `403` the
+  setting is off (the body names the setting), `405` not a POST, `413` over the
+  hooks' 512 KiB cap, `415` a content type that is not JSON. No answer is
+  retryable.
+- **Parsed once, where it arrives.** The five account attributes Claude Code
+  attaches to every record (`user.email`, `user.id`, `user.account_id`,
+  `user.account_uuid`, `organization.id`) and the `prompt`, `response` and
+  `user_prompt` fields are dropped there, along with every attribute Agent Deck
+  does not read. Other VS Code windows receive the parsed figures by relay, never
+  the request body.
+- **Content, never activity.** Telemetry never touches the liveness or stall
+  clock: it does not make a session live, does not clear a stall, never makes a
+  session this window has not seen working count as one to record, and never adds
+  a session (a session id that appears only in telemetry adds nothing to the deck).
+  For a session already being recorded, a cost change may produce a newer stored
+  record and may delay the idle write, like any change to the record.
+- **The cost is shown only for a session whose start the window received.**
+  Claude Code exports cost as increments and sends one `claude_code.session.count`
+  point when a session starts; a telemetry cost is the session's cost only when
+  that point arrived, and otherwise it is not shown and the stats record names
+  `F9:telemetry-partial` — a session already under way when the window opened or
+  the setting was turned on, or across a reload. A session's start and cost that
+  arrive before the window shows the session are kept for up to 256 sessions.
+- **The deck is unchanged.** The cost reaches the Stats view's Tokens part; the
+  session tree and its wire messages carry no telemetry figure.
+
+### Changed
+
+- **The gate's Node is `24.18.1`**, for local runs and CI (`devEngines` and both
+  workflows), from `22.23.2`.
+- **`SECURITY.md` lists the listener's six paths and the one outbound call site.**
+  It said the event path was the only route and that no outbound HTTP client was
+  compiled in; both had stopped being true in 0.7.0, when the second-window relay
+  arrived. Each property its section 3 states about the listener, and each its
+  section 4a asserts about the bundle, now names the test that proves it, and
+  the telemetry routes' answers are a table.
+- **A GitHub Release carries its version's section of this file as its notes**,
+  in place of notes generated from commits. The project page describes the
+  Stats view, the local history and the telemetry cost, and the README and the
+  page show new captures of the deck, a session's tree and its inspector.
+
 ## 0.7.0 - 2026-09-10 - a Stats view, a local history, and every window live
 
 ### Added

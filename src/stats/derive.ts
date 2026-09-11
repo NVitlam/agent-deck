@@ -365,10 +365,19 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
     typeof state.telemetryCostUsd === 'number' && state.telemetryCostUsd > 0
       ? state.telemetryCostUsd
       : undefined;
+  // v0.7.1 DoD 6.3b (user ruling, 2026-09-10): a telemetry cost is a SUM OF
+  // INCREMENTS this window received, so it is a candidate only when the window
+  // also received the session's `claude_code.session.count` point, which
+  // Claude Code emits once at the session's start. Without it the sum starts
+  // somewhere later — a reload, a late enable, a window opened mid-session —
+  // and is left out of the precedence and named, never shown as the session's
+  // cost.
+  const telemetryComplete = state.telemetrySessionCountSeen === true;
+  if (telemetryCost !== undefined && !telemetryComplete) unavailable.add('F9:telemetry-partial');
   const priced = userCostSeen ? userCost : undefined;
   const present: CostSource[] = [];
   if (engineCost !== undefined) present.push('engine');
-  if (telemetryCost !== undefined) present.push('telemetry');
+  if (telemetryCost !== undefined && telemetryComplete) present.push('telemetry');
   if (priced !== undefined) present.push('user');
   const costSource = present[0];
   const costUsd =

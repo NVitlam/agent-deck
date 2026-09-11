@@ -297,7 +297,9 @@ export interface StatsRecord {
    *
    * Also carries `F9:<source>-present` for every cost source that WAS available
    * but lost precedence, so a reader can tell "no cost anywhere" from "three
-   * sources agreed to disagree" (DoD 2.6).
+   * sources agreed to disagree" (DoD 2.6), and `F9:telemetry-partial` when a
+   * telemetry cost is held but the session's `claude_code.session.count` point
+   * was not received, so the cost is not selected (v0.7.1 DoD 6.3b).
    */
   unavailable: string[];
 }

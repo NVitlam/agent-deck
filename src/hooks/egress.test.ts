@@ -372,24 +372,53 @@ describe('G5 dependency review: what the shipped bundle can reach', () => {
     expect(bundle).not.toContain('navigator.sendBeacon');
   });
 
-  it('carries no telemetry parser at all, in the built artifact (DoD 1.9g)', () => {
-    /*
-     * v0.7.0 Phase 1b moved the telemetry TYPES into `src/hooks/` so the relay
-     * can carry a slice between windows, and `join.test.ts`'s source scan was
-     * narrowed to match. This is the half that does not depend on reading
-     * source at all: the shipped bundle contains no telemetry parser, no join,
-     * and no OTLP vocabulary, so nothing in the artefact can reach a recorder
-     * whatever the source text says.
-     *
-     * Phase 3 mounts the `/v1/*` routes and this goes red — which is correct,
-     * and is the signal that 1.9g's sweep has to be written for real.
-     */
+  /*
+   * v0.7.1 DoD 6.5 — REWRITTEN RED-THEN-GREEN. Until v0.7.1 this test asserted
+   * the OPPOSITE of its first half: that the shipped bundle carried no
+   * telemetry parser, no join and no OTLP vocabulary, and its own comment said
+   * the route phase would turn it red. It was rewritten to the form below and
+   * committed RED before the route existed, then went green when the route and
+   * the host module landed.
+   *
+   * The two halves are one claim about the artefact. The route RECEIVES —
+   * `parseOtlpBody`, `joinTelemetry`, the allow-list and the OTLP root key are
+   * compiled in — and receiving added no way to SEND: none of the four
+   * outbound spellings is anywhere in the bytes, and the only address literal
+   * is the loopback one the listener binds. The sibling test above still pins
+   * the one sanctioned outbound call site (the follower's loopback client).
+   */
+  it('carries the telemetry route and join, and no new way to send (DoD 6.5)', () => {
     for (const name of ['parseOtlpBody', 'joinTelemetry', 'TELEMETRY_KEPT_KEYS', 'resourceSpans']) {
-      expect(bundle, `${name} reached the shipped bundle`).not.toContain(name);
+      expect(bundle, `${name} is missing from the shipped bundle`).toContain(name);
     }
-    // Vacuity control: this IS the host bundle, and it does contain the module
-    // that would have pulled the parser in if the import were a value import.
-    expect(bundle).toContain('relayTelemetry');
+
+    const OUTBOUND = ['fetch(', 'http.request(', 'https.', 'net.connect('] as const;
+    for (const token of OUTBOUND) {
+      expect(bundle, `${token} reached the shipped bundle`).not.toContain(token);
+    }
+    // VACUITY CONTROL, and it is the planted mutation the DoD names: `fetch(`
+    // added to the route's text is seen. `includes` on a 500 KB string is not
+    // in doubt; what this pins is that the list above is the list checked.
+    const planted = bundle.replace('function parseOtlpBody(', 'function parseOtlpBody(){fetch("x")}\nfunction parseOtlpBody2(');
+    expect(planted).not.toBe(bundle);
+    expect(OUTBOUND.filter((token) => planted.includes(token))).toStrictEqual(['fetch(']);
+
+    // THE ONLY ADDRESS LITERAL IS THE LOOPBACK ONE. Every dotted-quad string
+    // literal in the bundle, either quote style, as a SET — so a second bind
+    // address, or a hard-coded remote, is a second member.
+    const quads = new Set(
+      [...bundle.matchAll(/["'`](\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})["'`]/g)].map((m) => m[1]),
+    );
+    expect([...quads]).toStrictEqual([HOOK_LISTENER_HOST]);
+    // ...and exactly one `.listen(` call site, on the listener's own host.
+    const listens = bundle.match(/\.listen\([^)]*\)/g) ?? [];
+    expect(listens).toStrictEqual(['.listen(this.port, this.host)']);
+    // Control on the set: a planted remote literal is a second member.
+    const withRemote = `${bundle}\nconst r = "10.0.0.1";\n`;
+    expect(
+      new Set([...withRemote.matchAll(/["'`](\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})["'`]/g)].map((m) => m[1]))
+        .size,
+    ).toBe(2);
   });
 
   it('binds the loopback literal and never a wildcard, in the built artifact', () => {

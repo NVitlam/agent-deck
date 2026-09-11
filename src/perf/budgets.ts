@@ -679,7 +679,13 @@ export const WEBVIEW_FIT_BUDGET: TimingBudget = {
  * interleaved. It is the fail-fast Phase 1c could not diagnose, reproduced by
  * this repository's own relay code, and it is why the gate's Node is pinned —
  * `docs/evidence/v0.7.0/phase-5/NODE-5.0c.md` is the record. The numbers below
- * are therefore Node 22.23.2 numbers, the pinned gate runtime.
+ * are therefore Node 22.23.2 numbers, the gate runtime pinned when they were
+ * taken.
+ *
+ * **The gate was re-pinned to 24.18.1 on 2026-09-10 (v0.7.1 DoD 6.0)** — the
+ * other build 5.0c measured clean, and the Node VS Code's Electron runs the
+ * host on. The set point below was NOT re-measured for the move and still names
+ * the Node it came from; the budget runs, and must pass, on the new pin.
  *
  * ## The measurement, and the margin
  *

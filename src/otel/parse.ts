@@ -4,8 +4,8 @@
  * v0.7.0 Phase 1, DoD 1.9. OTLP/HTTP **JSON** bodies in, a small typed slice
  * out. No I/O, no socket: this is a pure function of a request body, which is
  * what lets the tests replay `fixtures/otel-cc-2.1.260/`'s captured bytes
- * exactly as an HTTP receiver would be handed them. The listener ROUTE is
- * Phase 3.
+ * exactly as an HTTP receiver would be handed them. The listener ROUTE that
+ * hands them over is `src/hooks/listener.ts` (v0.7.1 DoD 6.2).
  *
  * ---------------------------------------------------------------------------
  * THIS IS A DROP BOUNDARY, NOT A REDACTION PASS
@@ -121,6 +121,19 @@ export interface OtelCostPoint {
 export interface TelemetrySlice {
   readonly toolSpans: readonly OtelToolSpan[];
   readonly costPoints: readonly OtelCostPoint[];
+  /**
+   * The `session.id` of every `claude_code.session.count` data point — v0.7.1
+   * DoD 6.3b.
+   *
+   * Claude Code emits that metric once per session, at its start: the corpus
+   * carries 2 points, one per session, each in the first metrics body that
+   * names the session and each BEFORE the session's first prompt (17 s before
+   * in session A, 1 s in session B). Cost arrives as increments, so a window
+   * that received a session's count point has received that session's cost
+   * from its start; one that did not holds a sum from some later point. The
+   * stats deriver selects telemetry as the cost source only for the first.
+   */
+  readonly sessionCounts: readonly string[];
   readonly counts: TelemetryCounts;
 }
 
@@ -147,8 +160,25 @@ export function emptyTelemetryCounts(): TelemetryCounts {
   };
 }
 
-/** Which OTLP signal a body is. The three routes Phase 3 will mount. */
+/** Which OTLP signal a body is. The three routes the listener mounts (v0.7.1 DoD 6.2). */
 export type OtelSignal = 'metrics' | 'logs' | 'traces';
+
+/**
+ * The top-level key an OTLP/HTTP JSON body of each signal carries — the
+ * `Export*ServiceRequest` root. A body whose root key is absent or not an
+ * array is NOT OTLP-shaped, whatever else it holds.
+ *
+ * v0.7.1 DoD 6.2. {@link TelemetryCounts.bodiesUnparseable} has documented
+ * "not OTLP-shaped" since Phase 1 while the code checked only "JSON" and "an
+ * object", so `{}` and a traces body posted to `/v1/metrics` both counted as
+ * parsed. The route answers `400` on exactly this counter, so the document and
+ * the code had to agree before the route could rely on either.
+ */
+export const OTLP_ROOT_KEYS: Readonly<Record<OtelSignal, string>> = {
+  metrics: 'resourceMetrics',
+  logs: 'resourceLogs',
+  traces: 'resourceSpans',
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -233,21 +263,29 @@ export function parseOtlpBody(
   counts.bodies += 1;
   const toolSpans: OtelToolSpan[] = [];
   const costPoints: OtelCostPoint[] = [];
+  const sessionCounts: string[] = [];
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
   } catch {
     counts.bodiesUnparseable += 1;
-    return { toolSpans, costPoints, counts };
+    return { toolSpans, costPoints, sessionCounts, counts };
   }
   if (!isRecord(parsed)) {
     counts.bodiesUnparseable += 1;
-    return { toolSpans, costPoints, counts };
+    return { toolSpans, costPoints, sessionCounts, counts };
+  }
+  // Not OTLP-shaped for THIS signal: the root array is absent or not an array.
+  // Refused whole rather than walked, so a body posted to the wrong path is a
+  // counted refusal rather than an empty success.
+  if (!Array.isArray(parsed[OTLP_ROOT_KEYS[signal]])) {
+    counts.bodiesUnparseable += 1;
+    return { toolSpans, costPoints, sessionCounts, counts };
   }
 
   if (signal === 'traces') readSpans(parsed, toolSpans, counts);
-  else if (signal === 'metrics') readMetrics(parsed, costPoints, counts);
+  else if (signal === 'metrics') readMetrics(parsed, costPoints, sessionCounts, counts);
   // `logs` carries the token/cost surface per request and the content fields.
   // Phase 1 reads nothing from it: F9(c) is Phase 2 and the per-request token
   // split is a Phase 2 refinement of F6/F7. The body is still WALKED, so its
@@ -255,7 +293,7 @@ export function parseOtlpBody(
   // quietly ignored.
   else readLogsForCountsOnly(parsed, counts);
 
-  return { toolSpans, costPoints, counts };
+  return { toolSpans, costPoints, sessionCounts, counts };
 }
 
 function readSpans(body: Record<string, unknown>, out: OtelToolSpan[], counts: TelemetryCounts): void {
@@ -302,6 +340,7 @@ function readSpans(body: Record<string, unknown>, out: OtelToolSpan[], counts: T
 function readMetrics(
   body: Record<string, unknown>,
   out: OtelCostPoint[],
+  sessionCounts: string[],
   counts: TelemetryCounts,
 ): void {
   for (const resource of asArray(body['resourceMetrics'])) {
@@ -312,7 +351,9 @@ function readMetrics(
         if (!isRecord(metric)) continue;
         const sum = metric['sum'];
         if (!isRecord(sum)) continue;
-        const isCost = stringOf(metric['name']) === 'claude_code.cost.usage';
+        const name = stringOf(metric['name']);
+        const isCost = name === 'claude_code.cost.usage';
+        const isSessionCount = name === 'claude_code.session.count';
 
         for (const point of asArray(sum['dataPoints'])) {
           if (!isRecord(point)) continue;
@@ -320,6 +361,16 @@ function readMetrics(
           // not read, so the identity drops are COUNTED across the whole body
           // rather than only where a value happened to be wanted.
           const attributes = readAttributes(point['attributes'], counts);
+
+          if (isSessionCount) {
+            // The session id alone. The point's value is 1 on both captured
+            // points and nothing here depends on it: the fact recorded is that
+            // the point ARRIVED (DoD 6.3b).
+            const counted = attributes.get('session.id');
+            if (typeof counted === 'string') sessionCounts.push(counted);
+            else counts.recordsUnusable += 1;
+            continue;
+          }
           if (!isCost) continue;
 
           const sessionId = attributes.get('session.id');
@@ -357,14 +408,16 @@ export function mergeSlices(slices: readonly TelemetrySlice[]): TelemetrySlice {
   const counts = emptyTelemetryCounts();
   const toolSpans: OtelToolSpan[] = [];
   const costPoints: OtelCostPoint[] = [];
+  const sessionCounts: string[] = [];
   for (const slice of slices) {
     toolSpans.push(...slice.toolSpans);
     costPoints.push(...slice.costPoints);
+    sessionCounts.push(...slice.sessionCounts);
     counts.bodies += slice.counts.bodies;
     counts.bodiesUnparseable += slice.counts.bodiesUnparseable;
     counts.identityAttributesDropped += slice.counts.identityAttributesDropped;
     counts.contentFieldsDropped += slice.counts.contentFieldsDropped;
     counts.recordsUnusable += slice.counts.recordsUnusable;
   }
-  return { toolSpans, costPoints, counts };
+  return { toolSpans, costPoints, sessionCounts, counts };
 }

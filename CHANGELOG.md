@@ -2,7 +2,7 @@
 
 All notable changes to Agent Deck are documented here.
 
-## 0.7.1 - 2026-09-10 - Claude Code's own telemetry, received on the hook listener
+## 0.7.1 - 2026-09-11 - Claude Code's own telemetry, received on the hook listener
 
 ### Added
 

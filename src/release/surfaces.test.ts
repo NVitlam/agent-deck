@@ -420,11 +420,24 @@ function unlabelledEstimates(text: string): string[] {
   return out;
 }
 
+/*
+ * THE SCOPE IS THE WORD "estimated", as the DoD quotes it: the adjective a
+ * reader takes for a label. Four sentences say the verb instead ("Claude Code's
+ * telemetry estimates one") without the label — README's pricing paragraph and
+ * its "What it does not do" list, SECURITY.md's source table and the
+ * telemetry setting's description. They describe where a cost comes from and
+ * print no figure; one of them sits in the list DoD 6.D.4 keeps unchanged.
+ * Widening the pattern to `estimat\w*` would turn all four red. Found by the
+ * 6.D verifier round; recorded here rather than widened silently.
+ */
 describe('6.D.2 (e) — no surface says "estimated" about a cost without the exact label', () => {
   const surfaces: Readonly<Record<string, string>> = {
     'README.md': README,
     'SECURITY.md': SECURITY,
     'site/index.html': PAGE_TEXT,
+    // `pageText` drops attributes, and an image's alt text is what a screen
+    // reader says in place of the picture.
+    'site/index.html alt text': [...PAGE.matchAll(/\balt="([^"]*)"/g)].map((m) => m[1] ?? '').join('\n'),
     [`CHANGELOG.md ${MANIFEST.version}`]: mdSection(CHANGELOG, `## ${MANIFEST.version} `),
     'package.json description': MANIFEST.description,
     'package.json settings': Object.values(MANIFEST.contributes.configuration.properties)
@@ -557,6 +570,17 @@ describe('6.D.3 — SECURITY.md §3 and §4 name the test that proves each prope
     const row413 = rows.find((m) => m[1] === '413')?.[2] ?? '';
     expect(row413).toContain('`DEFAULT_MAX_BODY_BYTES`');
     expect(row413).toContain(`${String(DEFAULT_MAX_BODY_BYTES / 1024)} KiB`);
+  });
+
+  it('no answer in the table is a status OTLP retries on', () => {
+    // SECURITY.md §3 says no answer asks the exporter to retry. OTLP over HTTP
+    // retries on 429, 502, 503 and 504; the table is every status the route
+    // gives (pinned above, and each row's proof is the route test for it).
+    const OTLP_RETRYABLE = ['429', '502', '503', '504'];
+    const statuses = [...SECTION_3.matchAll(/^\| `(\d{3})` \|/gm)].map((m) => m[1] ?? '');
+    expect(statuses.length).toBe(6);
+    expect(statuses.filter((status) => OTLP_RETRYABLE.includes(status))).toStrictEqual([]);
+    expect(SECTION_3).toContain('No answer asks the exporter to retry');
   });
 });
 

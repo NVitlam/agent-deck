@@ -271,7 +271,7 @@ exist:
   prompt and response fields are dropped there, so they never reach the session model, the relay to
   other windows, the stats history or the diagnostics channel. No answer is retryable.
   Proof: `src/hooks/telemetry-route.test.ts` › "parses NO body while off: malformed and oversize bodies are 403, not 400 or 413";
-  `src/otel/parse.test.ts` › "drops one of each per record, and COUNTS the drops";
+  `src/otel/parse.test.ts` › "lets no attribute NAME and no placeholder VALUE survive into the slice";
   `src/otel/parse.test.ts` › "drops prompt, response and user_prompt when they hold actual prose";
   `src/hooks/shared.test.ts` › "no OTLP body and no identity attribute crosses the wire".
 
@@ -279,6 +279,8 @@ exist:
 `/v1/traces`, OTLP over HTTP in JSON, on `127.0.0.1` at `agentDeck.port`. A non-loopback origin is
 refused before any route is chosen; the method is checked first and the content type before the
 setting, so a protobuf body sent while the setting is off is a `415`, not a `403`.
+Proof: `src/hooks/telemetry-route.test.ts` › "a non-loopback origin on a telemetry path is the plain 403 drop, counted as such and nowhere else";
+`src/hooks/telemetry-route.test.ts` › "checks the content type BEFORE the setting: protobuf while off is 415, not 403".
 
 | Answer | When | Proof |
 | --- | --- | --- |
@@ -289,8 +291,12 @@ setting, so a protobuf body sent while the setting is off is a `415`, not a `403
 | `413` | Over `DEFAULT_MAX_BODY_BYTES`, 512 KiB — the hooks' cap, declared or streamed. | `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — 413: the hooks cap, unchanged, at limit and limit+1" |
 | `415` | A content type that does not say JSON, or none at all. | `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — 415: a POST that does not say it is JSON" |
 
-No answer asks the exporter to retry. A `403`, `405` or `415` is sent after the last byte of the
-body has arrived, so a large body reads the refusal rather than a connection reset.
+No answer asks the exporter to retry: none of the six is one of the statuses OTLP over HTTP
+retries on (`429`, `502`, `503`, `504`).
+Proof: `src/release/surfaces.test.ts` › "no answer in the table is a status OTLP retries on".
+
+A `403`, `405` or `415` is sent after the last byte of the body has arrived, so a large body reads
+the refusal rather than a connection reset.
 Proof: `src/hooks/telemetry-route.test.ts` › "DoD 6.2 — a refusal drains the body first, so the refusal is what arrives".
 
 **Hostile-input testing.** `fixtures/synthetic-hook-fuzz/corpus.jsonl` is a synthetic corpus replayed

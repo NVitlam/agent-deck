@@ -241,8 +241,8 @@ const RELEASE_IMAGES: readonly string[] = [
   // package-audit leg of `vsix.test.ts` refuses to package the placeholder.
   'media/sidebar.png',
   // SEVEN SINCE v0.7.1 (DoD 6.D.4): the Stats view's Tokens part with the
-  // telemetry cost and its label, linked from the telemetry section. Cropped
-  // from the 6.9 smoke capture with the project slug painted out.
+  // telemetry cost and its label, linked from the telemetry section: the 6.9
+  // smoke capture at its own size, with the project slug painted out.
   'media/stats_tokens.png',
 ];
 

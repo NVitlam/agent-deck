@@ -40,8 +40,8 @@ media/*
 # the placeholder's bytes.
 !media/sidebar.png
 # The Stats view's Tokens part with the telemetry cost and its label (v0.7.1
-# DoD 6.D.4), cropped from the 6.9 smoke capture with the project slug painted
-# out. Linked from README.md's telemetry section and, byte-identical, from
+# DoD 6.D.4): the 6.9 smoke capture at its own size, with the project slug
+# painted out. Linked from README.md's telemetry section and, byte-identical, from
 # `site/`. Admitted in `.vscodeignore` too.
 !media/stats_tokens.png
 # The hero GIF, added for 0.6.0 (DoD 5.8). It is a SIXTH tracked image and

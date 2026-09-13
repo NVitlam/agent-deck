@@ -1,0 +1,25 @@
+{
+  "what": "The same table over the R8 fixture codex-synthetic-08-codex-window. The Codex engine sets no ToolNode.durationMs and states no tool status, so errors, durationMsMax and durationMsSum are all the em dash.",
+  "cases": {
+    "columns": [
+      "tool",
+      "class",
+      "calls",
+      "errors",
+      "longest call",
+      "total duration",
+      "sessions"
+    ],
+    "rows": [
+      [
+        "exec",
+        "shell",
+        "1",
+        "—",
+        "—",
+        "—",
+        "1"
+      ]
+    ]
+  }
+}

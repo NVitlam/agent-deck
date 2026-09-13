@@ -8,6 +8,10 @@
       "rows": [],
       "records": 1
     },
+    "tools": {
+      "rows": [],
+      "records": 1
+    },
     "loops": {
       "rows": [],
       "loops": 0,
@@ -33,6 +37,7 @@
               "output": 100,
               "toolCalls": 0,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.3
             }
           ],
@@ -62,7 +67,8 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 0,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {}
         }
       ],
       "records": 1
@@ -111,6 +117,11 @@
           "id": "cost",
           "label": "engine-reported cost (USD)",
           "lines": []
+        },
+        {
+          "id": "tokensPerMin",
+          "label": "tokens per minute",
+          "lines": []
         }
       ],
       "sessions": [
@@ -125,6 +136,7 @@
       ],
       "width": 0,
       "empty": true,
+      "timeAbsent": 0,
       "reason": "fewer-than-two"
     },
     "excluded": {

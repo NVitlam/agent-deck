@@ -357,6 +357,35 @@ export interface CodexToolCall {
   readonly outputPreview?: string;
   readonly outputTruncated?: boolean;
   /**
+   * v0.8.0 Phase 7, DoD 7.1 (F14) — the envelope `timestamp` of the
+   * `response_item` record that MADE this call, in epoch milliseconds.
+   *
+   * REQUIRED and a plain `number`, because {@link CodexRecord.timestamp} is
+   * required and `asCodexRecord` refuses a record without one: a call exists
+   * only because a record carrying a timestamp was accepted, so there is no
+   * accepted call whose start is unknown. An unparseable string is the one
+   * remaining gap and it is reported as an absence rather than as a number —
+   * see {@link CodexToolCall.endedAtMs} for the shape that is optional.
+   *
+   * **It is NOT {@link startedAtMs}'s thread-level `0` fallback.** That
+   * function renders an unreadable thread start as 1970 deliberately, so a
+   * wrong date is visibly wrong; F14's contract is ABSENT where the engine
+   * states none, and a 0 here would be the engine stating 1970.
+   */
+  readonly startedAtMs?: number;
+  /**
+   * The envelope `timestamp` of the record carrying this call's OUTPUT
+   * (`function_call_output` / `custom_tool_call_output`, joined on `call_id`),
+   * in epoch milliseconds.
+   *
+   * Absent for a call with no output record — which is the running case, and
+   * the same condition that leaves {@link outputPreview} absent and makes the
+   * node `running`. The join is by primary key, never positional: leg 2 of
+   * `pairCalls` pairs an `item_completed` EVENT positionally, and that
+   * heuristic is not used as a time source here.
+   */
+  readonly endedAtMs?: number;
+  /**
    * v0.7.0 Phase 1, DoD 1.2 — SHA-256 over canonical JSON of this call's real
    * arguments, taken at the parse boundary.
    *
@@ -779,6 +808,43 @@ export interface CodexRefusal {
   readonly mismatch: CodexMismatch;
 }
 
+/**
+ * One transcript read as a head plus a tail, with the middle skipped
+ * (v0.8.0 Phase 7, DoD 7.7).
+ *
+ * The counterpart of a {@link CodexEngineResult.skipped} entry, and it exists
+ * BESIDE that list rather than inside it because the two are opposite answers:
+ * a skip says no byte of this file reached a session, and this says some of it
+ * did and here is how much. Folding the second into the first would make
+ * `skipped.length` mean two things, and the host announces the two on
+ * different channel lines.
+ *
+ * `readBytes` and `totalBytes` are the same two numbers `SessionState.partial`
+ * carries, per FILE rather than per session — one session can be several
+ * transcripts (C1: a subagent's transcript is a sibling of its parent's), so
+ * the engine sums them per session and the channel reports them per file.
+ */
+export interface CodexPartialTranscript {
+  /** Absolute path, as discovery reported it. The host reduces it to a basename. */
+  readonly path: string;
+  /** Basename — the key a thread carries, and what the session join uses. */
+  readonly file: string;
+  /** Bytes this engine took from the file: its size less the skipped middle. */
+  readonly readBytes: number;
+  /** `statSync().size` at the pass that established the tail. */
+  readonly totalBytes: number;
+  /**
+   * Leading fragments dropped where the tail landed — 0 or 1 per transcript.
+   *
+   * 1 is the ordinary value: a byte offset chosen without reading the file is
+   * not the start of a line. 0 means either the landing point happened to be
+   * a line start with a newline immediately behind it, or no newline has been
+   * seen since the jump at all — for a transcript whose tail holds no complete
+   * record. G3: the skip is counted rather than guessed at.
+   */
+  readonly boundaryFragments: number;
+}
+
 export interface CodexEngineResult {
   /** One per ROOT thread whose `cwd` matched. Tagged `engine: 'codex'` (C11). */
   readonly sessions: readonly SessionState[];
@@ -797,9 +863,18 @@ export interface CodexEngineResult {
   /**
    * Transcripts the engine did not read, and why (hotfix 0.6.1).
    *
-   * Two reasons reach here. `oversize:<bytes> limit=<limit>` is the size gate
-   * — measured from `stat`, never opened. Anything else is `FileTail`'s own
-   * skip: a file that could not be opened or read at all.
+   * Two reasons reach here. `oversizeHeadUndecided:<bytes> limit=<limit>
+   * head=<head>` is a transcript over the size gate whose head yielded no
+   * record to fingerprint, so no bounded read can decide it — see
+   * `CodexIngestVerdict`. Anything else is `FileTail`'s own skip: a file that
+   * could not be opened or read at all.
+   *
+   * **`oversize:<bytes> limit=<limit>` no longer reaches here** (v0.8.0
+   * DoD 7.7). It was the size gate refusing to open a large transcript at all;
+   * such a transcript is now read as a head plus a tail and is reported in
+   * {@link CodexEngineResult.partialTranscripts} instead. A reader looking for
+   * the old prefix finds nothing, which is the intended answer rather than a
+   * silence: the file is no longer skipped.
    *
    * **This field is new because the skip used to be silent.** `v0.6.0`'s
    * `readDiscovered` did `if (read.skipped !== undefined) continue`, so an
@@ -810,6 +885,20 @@ export interface CodexEngineResult {
    * that class through three separate doors already.
    */
   readonly skipped: readonly SkippedFile[];
+  /**
+   * Transcripts read as a head plus a tail, this pass (v0.8.0 DoD 7.7).
+   *
+   * A CENSUS OF THE CURRENT PASS, not a running total: a transcript that is
+   * partial stays partial for the life of its entry, so a cumulative count
+   * would report the same file once per poll. `codexSessions` on the counters
+   * line is the same kind of number for the same reason.
+   *
+   * Reported every pass, refusals included, for rule 18's reason — a reader
+   * that stops restating a skip is a count of zero nobody can tell apart from
+   * "nothing was skipped". Empty is the honest value for a machine with no
+   * oversize transcript, which is every machine in the committed corpus.
+   */
+  readonly partialTranscripts: readonly CodexPartialTranscript[];
   readonly counters: CodexCounters;
   readonly discovery: CodexDiscovery;
 }

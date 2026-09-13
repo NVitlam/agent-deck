@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
   "engine": "codex",
   "projectSlug": "C--Users-dev-codex-probe-scratch",
@@ -15,6 +15,7 @@
       "output": 450,
       "toolCalls": 5,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.6-terra"
     },
     {
@@ -25,6 +26,7 @@
       "output": 360,
       "toolCalls": 4,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.6-terra"
     },
     {
@@ -35,6 +37,7 @@
       "output": 183,
       "toolCalls": 2,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.6-terra"
     }
   ],
@@ -71,6 +74,13 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {
+    "wallMs": 36280,
+    "timeToFirstToolMs": 0,
+    "longestGapMs": 21713,
+    "tokensPerMin": 381846.7475192944,
+    "callsPerMin": 18.191841234840133
+  },
   "totals": {
     "prompt": 229897,
     "output": 993,
@@ -78,6 +88,7 @@
     "contextFill": 0.061400928792569656,
     "subagents": 2,
     "silentSubagents": 0,
+    "subagentsUnreceived": 0,
     "stalls": 0
   },
   "params": {

@@ -6,7 +6,7 @@
  * what the stats surface needs beyond them.
  */
 
-import { EM_DASH } from '../format.js';
+import { EM_DASH, formatDuration } from '../format.js';
 import type { SessionRef } from './layout.js';
 
 /** The engines, as a person reads them. The deck's chips use the same words. */
@@ -49,6 +49,52 @@ export function formatRatio(value: number | undefined): string {
 export function formatUsd(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) return EM_DASH;
   return `${value.toFixed(4)} USD`;
+}
+
+/**
+ * A span of milliseconds — F14's three durations and F2's two — or the em dash.
+ *
+ * v0.8.0 Phase 7, DoD 7.3 / 7.5. The scaling is `format.ts`'s `formatDuration`,
+ * unchanged, so a duration reads the same here as it does on a tool node in the
+ * inspector. Two cases are handled here instead, because `formatDuration`
+ * answers both with the em dash and only one of them is an absence:
+ *
+ *   - **ABSENT** is the em dash, and that is the whole point of the column. An
+ *     engine that timestamps no call states no duration, and §D forbids a
+ *     substitute; `0ms` would claim a call that took no time.
+ *   - **NEGATIVE** is printed WITH ITS SIGN. `TimingStats.longestGapMs` is
+ *     documented as able to run backwards — the session-wide call order is
+ *     structural, so the pair crossing from one agent to the next can precede
+ *     it in time — and `timing.ts` deliberately does not clamp it. Rendering a
+ *     stated negative as the em dash would report a measured value as a
+ *     missing one, which is the same defect as a zero standing in for an
+ *     absence, in the other direction.
+ *
+ * `0` is a real answer and prints as `0ms`: `timeToFirstToolMs` is 0 whenever
+ * a session's first tool call IS its first stated instant.
+ */
+export function formatSpan(ms: number | undefined): string {
+  if (ms === undefined || !Number.isFinite(ms)) return EM_DASH;
+  return ms < 0 ? `-${formatDuration(-ms)}` : formatDuration(ms);
+}
+
+/**
+ * A rate, or the em dash — F14's `tokensPerMin` and `callsPerMin`.
+ *
+ * The record carries the EXACT IEEE quotient by design (`timing.ts`: "rounding
+ * is presentation and belongs to the renderer"), so the rounding is here and
+ * only here. Two decimals below 10 and one above, with the integer part grouped
+ * in threes: a rate of 0.83 calls a minute and a rate of 5,733,000 tokens a
+ * minute are both real on this corpus, and one rule at one precision makes the
+ * first read as `0.8` or the second as an unreadable run of digits.
+ */
+export function formatRate(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return EM_DASH;
+  const text = Math.abs(value) < 10 ? value.toFixed(2) : value.toFixed(1);
+  const [whole = '', fraction = ''] = text.split('.');
+  const sign = whole.startsWith('-') ? '-' : '';
+  const digits = sign === '' ? whole : whole.slice(1);
+  return `${sign}${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction}`;
 }
 
 /** The first characters of an id, for the secondary slot. */

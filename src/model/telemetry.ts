@@ -82,24 +82,56 @@
  * its tool call reached the window's tree read as `unmatched:1` although it
  * joined a moment later.
  *
+ * ---------------------------------------------------------------------------
+ * `unmatched` IS THIS WINDOW'S; `foreign` IS EVERYTHING ELSE (v0.8.0 DoD 7.8)
+ * ---------------------------------------------------------------------------
+ *
+ * **`unmatched` counts only rows for sessions this window HOLDS. Every other
+ * row increments {@link TelemetryJoiner.foreign}.** The exporter is
+ * machine-wide: on a machine running several windows, most of what arrives is
+ * about somebody else's sessions, and until 0.8.0 all of it landed in one
+ * figure. A user reading `unmatched:40` could not tell "forty rows of mine did
+ * not join" — a defect in this window — from "forty rows named sessions this
+ * window has never shown", which is the ordinary state of a shared exporter
+ * and says nothing at all. Two counters answer the two questions; the
+ * counters line carries both, and carries `(this window)` beside them.
+ *
  *   - traces: every span waits for the FIRST `apply()` after it arrived — the
  *     next pump — and is judged there, against that pump's states. A span
  *     whose session that pump shows is kept for the join, whether or not the
  *     session was shown when the span arrived (a window reloaded during a live
  *     session receives spans before its first emission), and is judged by the
  *     join's own key ({@link unmatchedSpans}): matching, it is not counted;
- *     matching nothing, it is counted. A span whose session that pump does not
- *     show is dropped and counted — a span waits one pump for its session, no
+ *     matching nothing, it counts **unmatched** — this window holds the
+ *     session and could not place the row. A span whose session that pump does
+ *     NOT show counts **foreign**: a span waits one pump for its session, no
  *     longer. A span re-sent before its verdict replaces the earlier copy and
- *     is judged once. Each counted span produces ONE diagnostics line, through
- *     `onUnmatchedSpan`, naming its `session.id` and `tool_use_id`.
+ *     is judged once.
  *   - metrics: a count point or cost point for a held session joins; one held
  *     pending is retried on every pump while its slot lives, and is counted
  *     only when its slot is EVICTED — the point at which it can no longer join
- *     — with every row the slot held. So a row for a session not shown yet when
- *     256 newer sessions push its slot out is counted then, and not before.
- *     (This reading of the ruling for metrics rows is put to the user.)
- *   - logs bodies carry no row the join reads, so their `unmatched` is 0.
+ *     — with every row the slot held. **Every evicted row is `foreign`, and
+ *     that is provable rather than chosen**: {@link TelemetryJoiner.apply}
+ *     runs {@link TelemetryJoiner.#promotePending} over `#live` before
+ *     anything else, and {@link TelemetryJoiner.ingest} opens a slot only for
+ *     a session `#live` does not name, so no pending slot can ever be for a
+ *     session this window holds. The judging moment is therefore EVICTION,
+ *     against the live set as it stood at the last pump — which is the same
+ *     set, since `#live` moves only in `apply`.
+ *   - So `unmatched.metrics` has NO increment site, and that is stated here
+ *     rather than left to be discovered from a counter that is always 0: a
+ *     held session's cost and count points are keyed on the session id alone,
+ *     and the session is in the states the join is run over, so they place by
+ *     construction. A metrics row of this window's that could not be placed
+ *     does not exist to count.
+ *   - logs bodies carry no row the join reads, so both of their figures are 0.
+ *
+ * **A `foreign` span produces no diagnostics line.** `onUnmatchedSpan` fires
+ * for `unmatched` spans only. A line names WHICH row did not join so a reader
+ * can go and look at that call; for a foreign span the answer is the same for
+ * every one of them — this window does not show that session — so a line per
+ * span would be a log of other windows' traffic with no per-span fact in it.
+ * The counter is what says how many.
  *
  * G7: every map here lives in this instance and dies with the window.
  */
@@ -115,8 +147,21 @@ import {
 import type { SessionState } from './events.js';
 import type { SessionEmission } from './session.js';
 
-/** Per-signal accounting of what the join could not place. DoD 6.4. */
+/**
+ * Per-signal accounting of what the join could not place, FOR SESSIONS THIS
+ * WINDOW HOLDS. DoD 6.4, narrowed by v0.8.0 DoD 7.8.
+ */
 export type TelemetryUnmatched = Record<OtelSignal, number>;
+
+/**
+ * Per-signal accounting of rows about sessions this window does NOT hold
+ * (v0.8.0 DoD 7.8).
+ *
+ * A separate NAME for the same shape, so a call site says which of the two
+ * figures it is carrying. The header states when each is incremented and why
+ * a foreign row gets no diagnostics line.
+ */
+export type TelemetryForeign = Record<OtelSignal, number>;
 
 /**
  * Sessions whose count point and cost are held before any emission holds the
@@ -162,6 +207,7 @@ export class TelemetryJoiner {
   /** Count points and cost for sessions not yet held, oldest first. */
   readonly #pending = new Map<string, PendingSession>();
   readonly #unmatched: TelemetryUnmatched = { metrics: 0, logs: 0, traces: 0 };
+  readonly #foreign: TelemetryForeign = { metrics: 0, logs: 0, traces: 0 };
   #slicesIngested = 0;
   #lastReport: TelemetryJoinReport | null = null;
 
@@ -169,9 +215,20 @@ export class TelemetryJoiner {
     this.#onUnmatchedSpan = options.onUnmatchedSpan;
   }
 
-  /** Rows still unmatched after the join retried, per signal (see the header). A copy. */
+  /**
+   * Rows still unmatched after the join retried, per signal, FOR SESSIONS THIS
+   * WINDOW HOLDS (see the header). A copy.
+   */
   get unmatched(): TelemetryUnmatched {
     return { ...this.#unmatched };
+  }
+
+  /**
+   * Rows about sessions this window does not hold, per signal (v0.8.0 DoD 7.8).
+   * A copy.
+   */
+  get foreign(): TelemetryForeign {
+    return { ...this.#foreign };
   }
 
   /** Slices handed to {@link ingest}. */
@@ -235,6 +292,12 @@ export class TelemetryJoiner {
   /**
    * The pending slot for a session, made (and the oldest evicted) if absent.
    * An evicted slot's rows can never join, so that is where they are counted.
+   *
+   * They count `foreign`, never `unmatched` (v0.8.0 DoD 7.8): a pending slot
+   * is by construction for a session `#live` does not name — `#promotePending`
+   * empties every slot the live states hold, and `ingest` opens one only for a
+   * session `held` excludes — so at the judging moment, eviction, this window
+   * does not hold it. The header carries the whole argument.
    */
   #pendingFor(sessionId: string): PendingSession {
     const existing = this.#pending.get(sessionId);
@@ -243,7 +306,7 @@ export class TelemetryJoiner {
       const oldest = this.#pending.entries().next();
       if (oldest.done !== true) {
         this.#pending.delete(oldest.value[0]);
-        this.#unmatched.metrics += oldest.value[1].rows;
+        this.#foreign.metrics += oldest.value[1].rows;
       }
     }
     const fresh: PendingSession = { cost: 0, counted: false, rows: 0 };
@@ -262,8 +325,13 @@ export class TelemetryJoiner {
    * The verdict on every span that arrived since the last pump, against this
    * pump's states — the join's one retry (ruling 2026-09-11). A span whose
    * session this pump shows is kept and judged by the join's key; one whose
-   * session it does not show is dropped. Counted and reported only if still
-   * unmatched now.
+   * session it does not show is dropped.
+   *
+   * The two outcomes go to DIFFERENT counters (v0.8.0 DoD 7.8). A `candidate`
+   * is a span of a session this window holds, so failing the join is a fact
+   * about this window's tree and counts `unmatched`, with one diagnostics line
+   * naming it. A `dropped` span names a session this window does not hold, so
+   * it counts `foreign` and gets no line — see the header.
    */
   #judgeAwaiting(states: readonly SessionState[]): void {
     if (this.#awaiting.size === 0) return;
@@ -271,16 +339,17 @@ export class TelemetryJoiner {
     this.#awaiting = new Map();
     const shown = new Set(states.map((state) => state.sessionId));
     const candidates: OtelToolSpan[] = [];
-    const dropped: OtelToolSpan[] = [];
+    let dropped = 0;
     for (const span of awaiting) {
       if (shown.has(span.sessionId)) {
         this.#keep(span);
         candidates.push(span);
       } else {
-        dropped.push(span);
+        dropped += 1;
       }
     }
-    for (const span of [...unmatchedSpans(states, candidates), ...dropped]) {
+    this.#foreign.traces += dropped;
+    for (const span of unmatchedSpans(states, candidates)) {
       this.#unmatched.traces += 1;
       this.#onUnmatchedSpan?.(span);
     }

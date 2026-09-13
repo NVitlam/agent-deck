@@ -150,7 +150,7 @@
         "type": "statsSnapshot",
         "records": [
           {
-            "statsSchemaVersion": 1,
+            "statsSchemaVersion": 2,
             "sessionId": "synthetic-03-silent-subagent",
             "engine": "cc",
             "projectSlug": "synthetic-stats",
@@ -166,7 +166,8 @@
                 "cacheRead": 100,
                 "cacheRatio": 0.1,
                 "toolCalls": 1,
-                "silent": false
+                "silent": false,
+                "resultUnreceived": false
               },
               {
                 "agentId": "quiet",
@@ -177,7 +178,8 @@
                 "cacheRead": 100,
                 "cacheRatio": 10,
                 "toolCalls": 0,
-                "silent": true
+                "silent": true,
+                "resultUnreceived": false
               },
               {
                 "agentId": "busy",
@@ -188,7 +190,8 @@
                 "cacheRead": 100,
                 "cacheRatio": 5,
                 "toolCalls": 1,
-                "silent": false
+                "silent": false,
+                "resultUnreceived": false
               }
             ],
             "files": [],
@@ -211,6 +214,7 @@
             "contextChurn": [],
             "compactions": [],
             "stalls": [],
+            "timing": {},
             "totals": {
               "prompt": 1030,
               "output": 103,
@@ -227,6 +231,8 @@
             "unavailable": [
               "F10:cc",
               "F13.completed:snapshot",
+              "F14:cc",
+              "F15:cc",
               "F9:cc"
             ]
           }

@@ -261,6 +261,8 @@ export const TESTID = {
   deckBlob: 'deck-blob',
   deckEmpty: 'deck-empty',
   deckErrorBadge: 'deck-error-badge',
+  /** The v0.8.0 DoD 7.7 mark: this session was read from part of its transcript. */
+  deckPartial: 'deck-cell-partial',
 
   /* Session interior */
   canvas: 'session-canvas',
@@ -348,7 +350,7 @@ export const TESTID = {
      component emits and `stats-view.test.ts` selects on. */
   /** The whole surface. Carries data-view (which tab) and data-engine-filter. */
   statsView: 'stats-view',
-  /** One tab button: Files · Loops & churn · Tokens · Trends. data-view. */
+  /** One tab button: Files · Tools · Loops & churn · Tokens · Trends. data-view. */
   statsTab: 'stats-tab',
   /** One engine chip on the stats surface. data-engine, data-active. */
   statsEngineChip: 'stats-engine-chip',
@@ -362,6 +364,12 @@ export const TESTID = {
   statsFileRow: 'stats-file-row',
   /** The basename — primary text; the whole path is on `title`. */
   statsFileName: 'stats-file-name',
+  /* Tools — F2, rendered for the first time in v0.8.0 Phase 7, DoD 7.5.
+     `durationMsMax` and `durationMsSum` are two of its six columns. */
+  /** One tool row. data-tool, data-class, data-calls, data-duration. */
+  statsToolRow: 'stats-tool-row',
+  /** One cell of a tool row. data-column names which of the six it is. */
+  statsToolCell: 'stats-tool-cell',
   /* Loops & churn */
   statsChainRow: 'stats-chain-row',
   /** One ordinal inside an expanded chain. A button: fires the select intent. */
@@ -377,6 +385,12 @@ export const TESTID = {
   /** Which source the cost figure came from, as the user reads it. */
   statsCostSource: 'stats-cost-source',
   statsContextFill: 'stats-context-fill',
+  /** F14 — one timing figure. data-figure names which of the six (DoD 7.3). */
+  statsTiming: 'stats-timing',
+  /** F15 — the per-session subagent figure. data-unreceived (DoD 7.4). */
+  statsSubagents: 'stats-subagents',
+  /** F15 — the chip on an agent row whose spawning call carries no result. */
+  statsUnreceivedFlag: 'stats-unreceived-flag',
   /** One model id, copyable. */
   statsModelId: 'stats-model-id',
   statsModelCopy: 'stats-model-copy',
@@ -396,6 +410,29 @@ export const TESTID = {
   sidebarMenu: 'sidebar-menu',
   /** One menu entry. data-command names the command it runs. */
   sidebarEntry: 'sidebar-entry',
+
+  /* The sidebar's tabs and the Tweaks panel (v0.8.0 Phase 7, DoD 7.6) */
+  sidebarTablist: 'sidebar-tablist',
+  /** One tab button. data-tab names the panel it shows. */
+  sidebarTab: 'sidebar-tab',
+  /** The showing tab's panel. data-tab names which one it is. */
+  sidebarPanel: 'sidebar-panel',
+  /** The Tweaks panel itself. */
+  tweaksPanel: 'tweaks-panel',
+  /**
+   * One setting's row. `data-key` is its `TWEAK_SETTINGS` key, `data-known`
+   * says whether a `settings` message has positioned it, and `data-value` is
+   * the position it is at — empty while unknown, never a guessed default.
+   */
+  tweakRow: 'tweak-row',
+  /** The row's control: a checkbox for `boolean`, a select for `enum`. */
+  tweakControl: 'tweak-control',
+  /** The row's label, as the user reads it. Never a key. */
+  tweakLabel: 'tweak-label',
+  /** The row's one line of fact under the label. */
+  tweakDetail: 'tweak-detail',
+  /** Present only while the row has no value from the host. */
+  tweakUnknown: 'tweak-unknown',
 } as const;
 
 /* ------------------------------------------------------------------------ *

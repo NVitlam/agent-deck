@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "01a06420-fabe-7943-a641-08659246b8cb",
   "engine": "codex",
   "projectSlug": "C--Users-dev-codex-probe-scratch",
@@ -14,6 +14,7 @@
       "output": 767,
       "toolCalls": 5,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.4-mini"
     },
     {
@@ -24,6 +25,7 @@
       "output": 512,
       "toolCalls": 4,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.4-mini"
     }
   ],
@@ -60,6 +62,13 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {
+    "wallMs": 41063,
+    "timeToFirstToolMs": 0,
+    "longestGapMs": 21901,
+    "tokensPerMin": 248048.12117965077,
+    "callsPerMin": 13.15052480335095
+  },
   "totals": {
     "prompt": 168481,
     "output": 1279,
@@ -67,6 +76,7 @@
     "contextFill": 0.06445820433436532,
     "subagents": 1,
     "silentSubagents": 0,
+    "subagentsUnreceived": 0,
     "stalls": 0
   },
   "params": {

@@ -54,6 +54,7 @@ import type {
 } from './schema.js';
 import { STATS_SCHEMA_VERSION } from './schema.js';
 import { deriveStalls } from './stalls.js';
+import { deriveTiming } from './timing.js';
 import { classOf } from './toolclass.js';
 
 /** Everything the deriver needs that is not the session itself. */
@@ -125,6 +126,47 @@ function sessionSequence(slices: readonly AgentSlice[]): ToolNode[] {
         (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     );
     out.push(...ordered);
+  }
+  return out;
+}
+
+/**
+ * F15 — which spawned agents were spawned by a call that carries no result.
+ *
+ * v0.8.0 Phase 7, DoD 7.4; spec `Amendment 2026-09-12`: *"A spawned agent
+ * whose spawning `Agent` call has no `tool_result` in the parent transcript.
+ * Structural; never inferred from message content."*
+ *
+ * The join is `SpawnEdge.toolUseId` -> `ToolNode.id`, and the answer is that
+ * node's STATUS. The grafter's rule is `resultPreview === undefined ?
+ * 'running' : 'done'`, so `done` and `error` both mean a result arrived, and
+ * `running` and `stalled` both mean none has — `stalled` is `running` promoted
+ * by `src/model/stall.ts` and is the same absence with a clock reading on it.
+ * No message, preview or payload is read.
+ *
+ * **Absent, not empty, where the session states no spawn edges.** `undefined`
+ * is what routes the caller to `F15:<engine>` and to an absent
+ * `totals.subagentsUnreceived`; an empty map would read as "every subagent got
+ * its result", which is a zero standing in for an absence.
+ *
+ * An edge naming a `tool_use` id that is in no tool node of this tree yields no
+ * entry, so its agent reads `false`: the spawning call is not in the tree, so
+ * this session states nothing about whether a result arrived, and the fact is
+ * "no result is present" rather than "a result is missing".
+ */
+function resultUnreceivedByAgent(
+  state: SessionState,
+  sequence: readonly ToolNode[],
+): Map<string, boolean> | undefined {
+  const edges = state.spawnEdges;
+  if (edges === undefined) return undefined;
+  const statusById = new Map<string, ToolNode['status']>();
+  for (const tool of sequence) statusById.set(tool.id, tool.status);
+  const out = new Map<string, boolean>();
+  for (const edge of edges) {
+    const status = statusById.get(edge.toolUseId);
+    if (status === undefined) continue;
+    out.set(edge.agentId, status === 'running' || status === 'stalled');
   }
   return out;
 }
@@ -244,6 +286,12 @@ function excludedRecord(
     contextChurn: [],
     compactions: [],
     stalls: [],
+    // The block is present and holds nothing, which is what it holds for any
+    // session stating no instant. An excluded record names no per-fact gap at
+    // all — `coverage` is the single reason, stated once — so `F14:<engine>`
+    // is NOT added here: the session's times were not looked at rather than
+    // not stated.
+    timing: {},
     totals: {
       prompt: 0,
       output: 0,
@@ -308,7 +356,11 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
   if (callsWithoutHash > 0) unavailable.add(`F3:${engine}`);
   const churn = canChurn ? deriveChurn(agentCalls, (name) => classOf(engine, name)) : [];
 
-  // ---- F5, F6, F8, F9(b) per agent ---------------------------------------
+  // ---- F5, F6, F8, F9(b), F15 per agent ----------------------------------
+  // `undefined` where this session states no spawn edges — see the helper. The
+  // decision is taken ONCE, above the loop, so every agent of one session
+  // answers from the same evidence.
+  const unreceivedByAgent = resultUnreceivedByAgent(state, sequence);
   const agents: AgentStats[] = [];
   let anySeries = false;
   let userCost = 0;
@@ -334,6 +386,12 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
       // F8 — "silent subagent" is zero TOOL CALLS, per spec §D's vocabulary
       // note. A main agent is never silent: it is the session.
       silent: node.kind === 'subagent' && slice.tools.length === 0,
+      // F15 — never true of `main`, which has no spawning call, and never true
+      // where the session states no spawn edges. It is a different fact from
+      // `silent` above: a subagent that worked and whose spawning call has no
+      // result yet is `silent: false, resultUnreceived: true`.
+      resultUnreceived:
+        node.kind === 'subagent' && (unreceivedByAgent?.get(node.id) ?? false),
       ...(node.model === undefined ? {} : { model: node.model }),
     });
   }
@@ -401,6 +459,30 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
     undefined,
   );
 
+  // ---- F14 — six figures, all differences or ratios of stated instants ----
+  // Below the totals because two of the rates are functions of them, and below
+  // F9 because the third is a function of a cost that exists only if a source
+  // was selected. `costUsd` is passed rather than re-derived: the cost on the
+  // record and the cost in the rate are the same number by construction.
+  const timing = deriveTiming({
+    sequence,
+    agents: slices.map((s) => s.agent),
+    tokens: totalPrompt + totalOutput,
+    ...(costUsd === undefined || costSource === undefined ? {} : { costUsd }),
+  });
+  // The SESSION states no instant, so no figure can be derived. Named with the
+  // engine, the way `F6`/`F7`/`F10` are named a few lines above, and for the
+  // same reason they are not in `ENGINE_FACT_GAPS`: all three engines state
+  // times on every committed session (`f14-corpus.test.ts` pins the census), so
+  // this is a fact about the session in front of the deriver, and the day an
+  // engine stops stating times it is reported from the data with no edit to
+  // that table.
+  if (Object.keys(timing).length === 0) unavailable.add(`F14:${engine}`);
+  // F15 needs `SessionState.spawnEdges`, which is OPTIONAL. Absent there, the
+  // count is absent too — a 0 would be a zero standing in for an absence, which
+  // §D forbids by name — and the gap is named instead.
+  if (unreceivedByAgent === undefined) unavailable.add(`F15:${engine}`);
+
   return {
     statsSchemaVersion: STATS_SCHEMA_VERSION,
     sessionId: state.sessionId,
@@ -417,6 +499,7 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
     contextChurn: contextChurn ?? [],
     compactions,
     stalls,
+    timing,
     totals: {
       prompt: totalPrompt,
       output: totalOutput,
@@ -426,6 +509,12 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
       ...(contextFill === undefined ? {} : { contextFill }),
       subagents: agents.filter((a) => a.kind === 'subagent').length,
       silentSubagents: agents.filter((a) => a.silent).length,
+      // Present IFF the session states spawn edges. Every subagent's flag is
+      // already `false` when they are absent, so counting it would produce a
+      // confident 0 about a question the session did not answer.
+      ...(unreceivedByAgent === undefined
+        ? {}
+        : { subagentsUnreceived: agents.filter((a) => a.resultUnreceived).length }),
       stalls: stalls.length,
     },
     params: paramsOf(engine, constants),

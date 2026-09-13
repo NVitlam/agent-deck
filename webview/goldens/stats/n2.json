@@ -70,6 +70,56 @@
       ],
       "records": 2
     },
+    "tools": {
+      "rows": [
+        {
+          "toolName": "Bash",
+          "class": "shell",
+          "calls": 14,
+          "sessions": 2,
+          "errors": 0,
+          "durationMsSum": 22613,
+          "durationMsMax": 4048
+        },
+        {
+          "toolName": "Agent",
+          "class": "spawn",
+          "calls": 5,
+          "sessions": 2,
+          "errors": 0,
+          "durationMsSum": 287646,
+          "durationMsMax": 109914
+        },
+        {
+          "toolName": "Read",
+          "class": "read",
+          "calls": 5,
+          "sessions": 1,
+          "errors": 0,
+          "durationMsSum": 1691,
+          "durationMsMax": 384
+        },
+        {
+          "toolName": "Glob",
+          "class": "search",
+          "calls": 1,
+          "sessions": 1,
+          "errors": 0,
+          "durationMsSum": 406,
+          "durationMsMax": 406
+        },
+        {
+          "toolName": "Grep",
+          "class": "search",
+          "calls": 1,
+          "sessions": 1,
+          "errors": 0,
+          "durationMsSum": 414,
+          "durationMsMax": 414
+        }
+      ],
+      "records": 2
+    },
     "loops": {
       "rows": [],
       "loops": 0,
@@ -95,6 +145,7 @@
               "output": 2129,
               "toolCalls": 3,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8108071072945691,
               "model": "claude-opus-5"
             },
@@ -107,6 +158,7 @@
               "output": 272,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.48326036803574995,
               "model": "claude-opus-5"
             },
@@ -119,6 +171,7 @@
               "output": 230,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8241540447660781,
               "model": "claude-opus-5"
             },
@@ -131,6 +184,7 @@
               "output": 1617,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.7902513646003546,
               "model": "claude-opus-5"
             },
@@ -143,6 +197,7 @@
               "output": 6052,
               "toolCalls": 8,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8114556632088072,
               "model": "claude-opus-5"
             }
@@ -175,7 +230,15 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 4,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 122899,
+            "timeToFirstToolMs": 3443,
+            "longestGapMs": 10799,
+            "tokensPerMin": 287862.22833383514,
+            "callsPerMin": 6.834880674374894
+          },
+          "subagentsUnreceived": 0
         },
         {
           "session": {
@@ -194,6 +257,7 @@
               "output": 1998,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8264324901859567,
               "model": "claude-opus-5"
             },
@@ -206,6 +270,7 @@
               "output": 4863,
               "toolCalls": 11,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8115276013913074,
               "model": "claude-opus-5"
             }
@@ -238,7 +303,15 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 1,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 77349,
+            "timeToFirstToolMs": 4388,
+            "longestGapMs": 6699,
+            "tokensPerMin": 247680.25443121436,
+            "callsPerMin": 9.30845906217275
+          },
+          "subagentsUnreceived": 0
         }
       ],
       "records": 2
@@ -299,6 +372,31 @@
           "id": "cost",
           "label": "engine-reported cost (USD)",
           "lines": []
+        },
+        {
+          "id": "tokensPerMin",
+          "label": "tokens per minute",
+          "lines": [
+            {
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+                  "index": 0,
+                  "x": 0,
+                  "y": 287862.22833383514
+                },
+                {
+                  "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+                  "index": 1,
+                  "x": 24,
+                  "y": 247680.25443121436
+                }
+              ],
+              "max": 287862.22833383514,
+              "flat": false
+            }
+          ]
         }
       ],
       "sessions": [
@@ -320,7 +418,8 @@
         }
       ],
       "width": 24,
-      "empty": false
+      "empty": false,
+      "timeAbsent": 0
     },
     "excluded": {
       "count": 0,

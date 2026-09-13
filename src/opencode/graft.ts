@@ -322,6 +322,14 @@ export function toToolNode(record: OcToolRecord, ordinal: number): ToolNode {
     ...(record.filePath === undefined ? {} : { filePath: record.filePath }),
     ...(record.resultPreview === undefined ? {} : { resultPreview: record.resultPreview }),
     ...(record.durationMs === undefined ? {} : { durationMs: record.durationMs }),
+    // v0.8.0 Phase 7, DoD 7.1 (F14) — DECIDED ABOUT here, as this function's
+    // header requires of every field added to `OcToolRecord`, and the decision
+    // is to cross both. They are `state.time.start`/`.end` as OpenCode wrote
+    // them, which is what `ToolNode.startedAtMs`/`endedAtMs` are defined to
+    // carry, and each crosses on its own test so a running part's start is not
+    // withheld for want of an end.
+    ...(record.startedAtMs === undefined ? {} : { startedAtMs: record.startedAtMs }),
+    ...(record.endedAtMs === undefined ? {} : { endedAtMs: record.endedAtMs }),
     ...(record.truncated === undefined ? {} : { truncated: record.truncated }),
   };
 }

@@ -126,6 +126,15 @@
   /** Status dot radius, and its centre offset from the row-3 baseline. */
   const DOT_R = 4;
   const DOT_DY = -4;
+  /**
+   * How far left of the card's right padding the DoD 7.7 mark ends.
+   *
+   * Room for the age at the same baseline, which is right-anchored at
+   * `DECK_CARD_W - PAD_X` and runs to four characters (`365d`). The mark is
+   * right-anchored too, so it grows leftwards into the gap between itself and
+   * the status chip rather than towards the age.
+   */
+  const PARTIAL_GAP = 30;
   /** Error badge, top right. */
   const BADGE_R = 8;
   const BADGE_CX = DECK_CARD_W - PAD_X - BADGE_R;
@@ -288,6 +297,18 @@
   let age = $derived(ageText(summary.lastEventAt, now));
 
   /**
+   * DoD 7.7 — this session was built from part of its transcript.
+   *
+   * A BOOLEAN here, deliberately, though the summary carries both byte
+   * figures: the card states THAT the transcript was read in part and states
+   * no number. `webview/store.ts`'s field doc carries the reason — the pair is
+   * latched by the engine at the read that established the tail, and the file
+   * goes on growing under it, so a rendered figure would go stale on exactly
+   * the sessions this mark exists for.
+   */
+  let readInPart = $derived(summary.partial !== undefined);
+
+  /**
    * The tooltip, which is state-dependent (C7.3, and the deck half of it).
    *
    * `degraded` names the ENGINE and the reason code, because "liveness is
@@ -338,7 +359,7 @@ ${statusTitle}`);
   let ariaLabel = $derived(
     `${summary.label} — ${shown}, ${summary.engine}${
       foreign ? ', other workspace' : ''
-    }${
+    }${readInPart ? ', read in part' : ''}${
       summary.errorCount > 0
         ? `, ${summary.errorCount} tool ${summary.errorCount === 1 ? 'error' : 'errors'}`
         : ''
@@ -367,6 +388,7 @@ ${statusTitle}`);
   data-state={state}
   data-liveness-inferred={String(degraded)}
   data-foreign={String(foreign)}
+  data-partial={String(readInPart)}
   data-refused={String(summary.refused)}
   data-errors={String(summary.errorCount)}
   data-nodes={String(summary.nodeCount)}
@@ -485,7 +507,28 @@ ${statusTitle}`);
     >
   </text>
 
-  <!-- Row 3: status chip left, age right. -->
+  <!-- Row 3: status chip left, the DoD 7.7 mark, age right. -->
+  {#if readInPart}
+    <g>
+      <!-- Its own `title`, rather than a third line on the card's: the card's
+           tooltip is the label and the status, and a test pins it. A browser
+           uses the nearest ancestor's `title`, so hovering the mark shows
+           this one and hovering anywhere else shows the card's.
+
+           THE TESTID IS ON THE `text`, NOT ON THIS `g`, and that is not
+           cosmetic: `textContent` of a group CONCATENATES its `title`, so a
+           test selecting the group would compare the mark against the
+           sentence plus the mark. Measured, in the run that wrote this line. -->
+      <title>This session was built from part of its transcript.</title>
+      <text
+        class="partial"
+        data-testid={TESTID.deckPartial}
+        x={DECK_CARD_W - PAD_X - PARTIAL_GAP}
+        y={ROW3_Y}
+        text-anchor="end">read in part</text
+      >
+    </g>
+  {/if}
   <g data-testid="deck-cell-status" data-liveness={shown}>
     <circle class="dot dot-{shown}" cx={PAD_X + DOT_R} cy={ROW3_Y + DOT_DY} r={DOT_R} />
     <text class="status-text" x={PAD_X + DOT_R * 2 + 6} y={ROW3_Y}>{livenessLabel(shown)}</text>
@@ -504,6 +547,15 @@ ${statusTitle}`);
      dark palette only because it lives outside VS Code (C7.7). */
   .cell {
     cursor: pointer;
+  }
+
+  /* The DoD 7.7 mark. Same treatment as `.foreign` — a small dimmed label
+     stating a fact about the card, not a warning about it: a transcript read
+     in part is a normal state for a very large session. */
+  .partial {
+    fill: var(--vscode-descriptionForeground, currentColor);
+    font-size: 10px;
+    opacity: 0.85;
   }
 
   .cell:focus-visible {

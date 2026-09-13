@@ -31,6 +31,7 @@ import type { CorpusSession } from './corpus.stats.testkit.js';
 import { deriveStats } from './derive.js';
 import { coverageOf } from './exclude.js';
 import type { StatsRecord } from './schema.js';
+import { STATS_SCHEMA_VERSION } from './schema.js';
 import { buildSyntheticStatsFixtures } from './synthetic.testkit.js';
 
 function fixtureRecord(id: string): StatsRecord {
@@ -74,6 +75,11 @@ describe('the manufactured case', () => {
     expect(excluded.contextChurn).toEqual([]);
     expect(excluded.compactions).toEqual([]);
     expect(excluded.stalls).toEqual([]);
+    // F14's block is PRESENT and empty. The key is always there — a missing
+    // one could equally mean "written by an older deriver" — and an excluded
+    // session publishes no figure derived from its instants, the same way it
+    // publishes no row derived from its tree.
+    expect(excluded.timing).toEqual({});
     expect(excluded.totals).toEqual({
       prompt: 0,
       output: 0,
@@ -102,7 +108,7 @@ describe('the manufactured case', () => {
     expect(excluded.sessionId).toBe('synthetic-05-excluded-parked');
     expect(excluded.engine).toBe('cc');
     expect(excluded.projectSlug).toBe('synthetic-stats');
-    expect(excluded.statsSchemaVersion).toBe(1);
+    expect(excluded.statsSchemaVersion).toBe(STATS_SCHEMA_VERSION);
   });
 });
 

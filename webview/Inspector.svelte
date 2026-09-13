@@ -42,6 +42,7 @@
 <script lang="ts">
   import type { SpawnEdge, ToolNode, TreeNode } from '../src/model/events.js';
   import { isAgentNode } from '../src/model/events.js';
+  import { callTimeline, formatOffset } from './call-time.js';
   import { TESTID } from './canvas-contract.js';
   import { atGrowingEnd, followTarget } from './drawer.js';
   import { formatDuration, formatTokens } from './format.js';
@@ -257,6 +258,23 @@
 
   /** 1-based within the agent's own calls — §8.6 names the column, not this. */
   let seqOf = $derived((call: ToolNode) => calls.indexOf(call) + 1);
+
+  /**
+   * F14's instants for this agent's calls, keyed by id — DoD 7.3.
+   *
+   * Built from `calls`, the agent’s own RUN ORDER, never from
+   * `visibleCalls`. A row says the same thing about the session whichever
+   * end of the list it is drawn at and whatever the filter chips are set
+   * to — the same rule `seqOf` above follows, and for the same reason: the
+   * number means the run, not the screen. A gap computed over the filtered
+   * list would change when a user pressed a chip, which would make it a
+   * statement about the control rather than about the calls.
+   *
+   * `call-time.ts` decides all three numbers; this component looks a row up
+   * and prints it.
+   */
+  let callTimes = $derived(new Map(callTimeline(calls).map((row) => [row.id, row])));
+  let timeOf = $derived((call: ToolNode) => callTimes.get(call.id));
 
   let detail = $derived(
     detailActionId === undefined ? undefined : calls.find((c) => c.id === detailActionId),
@@ -593,6 +611,25 @@
                 <span class="seq">{seqOf(call)}</span>
                 <span class="dot" data-status={call.status} data-spawn={String(child !== undefined)}
                 ></span>
+                <!-- DoD 7.3 — F14, as two columns. `at` is when this call
+                     started, as an offset from the run's first stated start;
+                     `gap` is its start minus the previous call’s start, which
+                     is `TimingStats.longestGapMs`'s own subtraction. Both are
+                     an em dash when the instants they need are not stated,
+                     and the first call has no gap because it has no
+                     predecessor. `call-time.ts` carries the reasoning. -->
+                <span
+                  class="at"
+                  data-testid="action-at"
+                  title="start, as an offset from the first stated call start"
+                  >{formatOffset(timeOf(call)?.atMs)}</span
+                >
+                <span
+                  class="gap"
+                  data-testid="action-gap"
+                  title="this call’s start minus the previous call’s start"
+                  >{formatOffset(timeOf(call)?.gapMs)}</span
+                >
                 <span class="name">{call.toolName}</span>
                 <span class="word">{STATUS_WORD[call.status]}</span>
                 <span class="summary" data-testid={TESTID.actionSummary} title={describe(call)}
@@ -618,6 +655,23 @@
               {#if spawnLabels.get(detail.id) !== undefined}
                 <span class="child">→ {spawnLabels.get(detail.id)}</span>
               {/if}
+              <!-- DoD 7.3 — THE CALL’S WINDOW, and the one place
+                   `endedAtMs` is drawn. It is not on the row: the row is a
+                   scannable index held to one line (A9.1), and a third time
+                   value there leaves the summary about twenty pixels at the
+                   list's 340px floor. The detail pane is the surface with
+                   room, and it is already where a call’s particulars are.
+                   The end is an em dash for exactly as long as the engine
+                   states none, which is every running call. -->
+              <span class="d-window" data-testid="drawer-detail-window">
+                <span data-testid="drawer-detail-start"
+                  >{formatOffset(timeOf(detail)?.atMs)}</span
+                >
+                <span class="d-dash" aria-hidden="true">–</span>
+                <span data-testid="drawer-detail-end"
+                  >{formatOffset(timeOf(detail)?.endAtMs)}</span
+                >
+              </span>
               <span class="spacer"></span>
               <button
                 class="head-button"
@@ -795,6 +849,23 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
+    /* DoD 7.9 — the header overlap the user recorded in the v0.7.1 smoke:
+       at the panel width in `media/inspector.png` the SESSION value paints
+       over SPAWN DEPTH. An explicit `min-width` REPLACES a flex item’s
+       automatic content-based minimum, so under the initial
+       `flex-shrink: 1` a field shrank below its own text — and `.field`
+       declares no `overflow`, so a `nowrap` value painted outside its box
+       and onto the next field. At 0 the used width is the larger of the
+       content and the `min-width` below, so a value cannot leave its own
+       box; the group’s `overflow: hidden` then cuts the row at the
+       right-hand edge instead of letting text collide — a field at the
+       edge may be cut part-way and a field past it is not drawn (the
+       1200 px golden shows `burn` cut and `duration` not drawn). A9.1 had
+       already stated the intent for `.f-value` — it "may now push the row
+       wider rather than lose characters" — and the shrink factor was what
+       stopped it from doing so. `webview/inspector-header.ts` models this
+       rule and the goldens under `webview/goldens/drawer` pin the result. */
+    flex-shrink: 0;
   }
 
   /* §8.6's fixed min-widths. They exist so a value changing length never
@@ -1046,6 +1117,27 @@
     background: var(--amber-text);
   }
 
+  /* DoD 7.3 — F14’s two columns. Fixed widths and tabular numerals so the
+     figures form a column a reader can scan down; `flex: 0 0` so neither can
+     shrink below its own text and paint over its neighbour, which is DoD
+     7.9's finding about the header applied one row out. An em dash is a legal
+     value in both, and is what an unstated instant renders as. */
+  .at {
+    flex: 0 0 62px;
+    text-align: right;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .gap {
+    flex: 0 0 58px;
+    text-align: right;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
   .name {
     flex: 0 0 auto;
     min-width: 56px;
@@ -1105,6 +1197,17 @@
 
   .d-name {
     color: var(--ink);
+  }
+
+  /* DoD 7.3 — the selected call’s window, as two offsets. */
+  .d-window {
+    display: inline-flex;
+    gap: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .d-word[data-status='running'] {

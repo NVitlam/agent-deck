@@ -218,6 +218,65 @@
       ],
       "records": 6
     },
+    "tools": {
+      "rows": [
+        {
+          "toolName": "Bash",
+          "class": "shell",
+          "calls": 26,
+          "sessions": 5,
+          "errors": 1,
+          "durationMsSum": 134241,
+          "durationMsMax": 60943
+        },
+        {
+          "toolName": "Read",
+          "class": "read",
+          "calls": 18,
+          "sessions": 3,
+          "errors": 0,
+          "durationMsSum": 23609,
+          "durationMsMax": 3584
+        },
+        {
+          "toolName": "Agent",
+          "class": "spawn",
+          "calls": 6,
+          "sessions": 3,
+          "errors": 0,
+          "durationMsSum": 304114,
+          "durationMsMax": 109914
+        },
+        {
+          "toolName": "Glob",
+          "class": "search",
+          "calls": 4,
+          "sessions": 3,
+          "errors": 0,
+          "durationMsSum": 27449,
+          "durationMsMax": 13144
+        },
+        {
+          "toolName": "Grep",
+          "class": "search",
+          "calls": 4,
+          "sessions": 3,
+          "errors": 0,
+          "durationMsSum": 4302,
+          "durationMsMax": 2708
+        },
+        {
+          "toolName": "Write",
+          "class": "write",
+          "calls": 1,
+          "sessions": 1,
+          "errors": 0,
+          "durationMsSum": 343,
+          "durationMsMax": 343
+        }
+      ],
+      "records": 6
+    },
     "loops": {
       "rows": [
         {
@@ -265,6 +324,7 @@
               "output": 2129,
               "toolCalls": 3,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8108071072945691,
               "model": "claude-opus-5"
             },
@@ -277,6 +337,7 @@
               "output": 272,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.48326036803574995,
               "model": "claude-opus-5"
             },
@@ -289,6 +350,7 @@
               "output": 230,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8241540447660781,
               "model": "claude-opus-5"
             },
@@ -301,6 +363,7 @@
               "output": 1617,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.7902513646003546,
               "model": "claude-opus-5"
             },
@@ -313,6 +376,7 @@
               "output": 6052,
               "toolCalls": 8,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8114556632088072,
               "model": "claude-opus-5"
             }
@@ -345,7 +409,15 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 4,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 122899,
+            "timeToFirstToolMs": 3443,
+            "longestGapMs": 10799,
+            "tokensPerMin": 287862.22833383514,
+            "callsPerMin": 6.834880674374894
+          },
+          "subagentsUnreceived": 0
         },
         {
           "session": {
@@ -364,6 +436,7 @@
               "output": 1998,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8264324901859567,
               "model": "claude-opus-5"
             },
@@ -376,6 +449,7 @@
               "output": 4863,
               "toolCalls": 11,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8115276013913074,
               "model": "claude-opus-5"
             }
@@ -408,7 +482,15 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 1,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 77349,
+            "timeToFirstToolMs": 4388,
+            "longestGapMs": 6699,
+            "tokensPerMin": 247680.25443121436,
+            "callsPerMin": 9.30845906217275
+          },
+          "subagentsUnreceived": 0
         },
         {
           "session": {
@@ -427,6 +509,7 @@
               "output": 1804,
               "toolCalls": 5,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.9217520824177852,
               "model": "claude-opus-5"
             }
@@ -451,7 +534,15 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 0,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 35147,
+            "timeToFirstToolMs": 1082,
+            "longestGapMs": 6963,
+            "tokensPerMin": 511955.50118075515,
+            "callsPerMin": 8.535579139044584
+          },
+          "subagentsUnreceived": 0
         },
         {
           "session": {
@@ -470,6 +561,7 @@
               "output": 12948,
               "toolCalls": 21,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8496385115500664,
               "model": "C:\\AI <LOCAL_MODEL>"
             }
@@ -504,7 +596,15 @@
           "stalls": [],
           "compactions": 1,
           "subagents": 0,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 2439131,
+            "timeToFirstToolMs": 128,
+            "longestGapMs": 501630,
+            "tokensPerMin": 17545.109303272355,
+            "callsPerMin": 0.5165774204009542
+          },
+          "subagentsUnreceived": 0
         },
         {
           "session": {
@@ -523,6 +623,7 @@
               "output": 406,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.7663926189823695,
               "model": "claude-opus-5"
             },
@@ -535,6 +636,7 @@
               "output": 585,
               "toolCalls": 6,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.8545187265794707,
               "model": "claude-opus-5"
             }
@@ -559,7 +661,15 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 1,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 20438,
+            "timeToFirstToolMs": 2880,
+            "longestGapMs": 3687,
+            "tokensPerMin": 1218949.9951071532,
+            "callsPerMin": 20.549955964380075
+          },
+          "subagentsUnreceived": 0
         },
         {
           "session": {
@@ -578,6 +688,7 @@
               "output": 4,
               "toolCalls": 0,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.7490206632576777,
               "model": "claude-opus-5"
             }
@@ -602,7 +713,11 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 0,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 0
+          },
+          "subagentsUnreceived": 0
         }
       ],
       "records": 6
@@ -711,6 +826,49 @@
           "id": "cost",
           "label": "engine-reported cost (USD)",
           "lines": []
+        },
+        {
+          "id": "tokensPerMin",
+          "label": "tokens per minute",
+          "lines": [
+            {
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
+                  "index": 0,
+                  "x": 0,
+                  "y": 287862.22833383514
+                },
+                {
+                  "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
+                  "index": 1,
+                  "x": 24,
+                  "y": 247680.25443121436
+                },
+                {
+                  "sessionId": "b6a49a92-ac05-4383-ae9c-68d433845c5f",
+                  "index": 2,
+                  "x": 48,
+                  "y": 511955.50118075515
+                },
+                {
+                  "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
+                  "index": 3,
+                  "x": 72,
+                  "y": 17545.109303272355
+                },
+                {
+                  "sessionId": "07e6c820-b285-4ea8-8127-98ea762291d9",
+                  "index": 4,
+                  "x": 96,
+                  "y": 1218949.9951071532
+                }
+              ],
+              "max": 1218949.9951071532,
+              "flat": false
+            }
+          ]
         }
       ],
       "sessions": [
@@ -764,7 +922,8 @@
         }
       ],
       "width": 120,
-      "empty": false
+      "empty": false,
+      "timeAbsent": 0
     },
     "excluded": {
       "count": 0,

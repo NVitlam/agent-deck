@@ -29,9 +29,11 @@ import {
   loopsLayout,
   statsLayout,
   tokensLayout,
+  toolsLayout,
   trendsLayout,
 } from './layout.js';
 import type { StatsLayout, TrendsLayout } from './layout.js';
+import { formatRate, formatSpan } from './text.js';
 
 const RECORDS_DIR = resolve('fixtures/golden/stats');
 const GOLDEN_DIR = resolve('webview/goldens/stats');
@@ -98,9 +100,18 @@ describe('the goldens at N = 0/1/2/6/12 corpus records', () => {
 describe('the R8 fixtures, each through hostRun', () => {
   const stems = readdirSync(GOLDEN_DIR).filter((n) => n.startsWith('r8-')).sort();
 
-  it('has one golden per committed R8 record — all thirteen', () => {
+  it('has one golden per committed R8 record — all fourteen', () => {
+    /*
+     * FOURTEEN as of v0.8.0 Phase 7 (DoD 7.4): `14-aborted-spawn` joined
+     * `synthetic.testkit.ts` for F15. Both numbers here are read off DISK, so
+     * this goes red until the phase's single regeneration writes
+     * `fixtures/golden/stats/cc-synthetic-14-aborted-spawn.json` and
+     * `webview/goldens/stats/r8-14-aborted-spawn.json`. It is pinned rather
+     * than derived on purpose: the pair being equal is satisfied by a phase
+     * that forgot both.
+     */
     expect(stems).toHaveLength(R8.length);
-    expect(R8.length).toBe(13);
+    expect(R8.length).toBe(14);
   });
 
   it.each(R8.map((e) => e.stem))('%s reproduces', (stem) => {
@@ -487,5 +498,261 @@ describe('DoD 4.13: a line whose every value is zero is FLAT, and says so', () =
     // The prompt series over the same records is the ordinary case.
     const prompt = trendsLayout(records).series.find((s) => s.id === 'prompt');
     expect(prompt?.lines[0]?.flat).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 7.5 — F2's layout, and the all-or-nothing rule on its optional columns
+ * ------------------------------------------------------------------------ */
+
+describe('DoD 7.5: toolsLayout', () => {
+  /** The committed records, by stem, so nothing below is hand-built. */
+  function record(stem: string): StatsRecord {
+    const entry = ALL.find((e) => e.stem === stem);
+    if (entry === undefined) throw new Error(`no committed record ${stem}`);
+    return entry.record;
+  }
+
+  it('one row per tool name, calls descending then name ascending', () => {
+    const rows = toolsLayout([record('cc-2.1.246-07e6c820-b285-4ea8-8127-98ea762291d9')]).rows;
+    expect(rows.map((r) => [r.toolName, r.calls])).toStrictEqual([
+      ['Read', 2],
+      ['Agent', 1],
+      ['Bash', 1],
+      ['Glob', 1],
+      ['Grep', 1],
+      ['Write', 1],
+    ]);
+    // The sort is not vacuous: the head is a different tool from the
+    // alphabetical head, so a name-only sort fails on the first entry.
+    expect(rows[0]?.toolName).not.toBe('Agent');
+  });
+
+  it('both duration columns travel where the engine stated them', () => {
+    const rows = toolsLayout([record('cc-2.1.246-07e6c820-b285-4ea8-8127-98ea762291d9')]).rows;
+    const read = rows.find((r) => r.toolName === 'Read');
+    expect(read).toMatchObject({ class: 'read', calls: 2, errors: 0, durationMsSum: 627, durationMsMax: 316 });
+    expect(rows.every((r) => r.durationMsSum !== undefined && r.durationMsMax !== undefined)).toBe(true);
+  });
+
+  it('a Codex record states neither duration and no errors, and none of the three is invented', () => {
+    const rows = toolsLayout([record('codex-synthetic-08-codex-window')]).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toStrictEqual({
+      toolName: 'exec',
+      class: 'shell',
+      calls: 1,
+      sessions: 1,
+    });
+    // Stated as absence rather than as a value: no key at all, so no reader
+    // can find a 0 here.
+    expect(Object.keys(rows[0] ?? {})).not.toContain('durationMsSum');
+  });
+
+  it('ONE record can hold both arms: 12 has a tool with durations and a tool without', () => {
+    const rows = toolsLayout([record('cc-synthetic-12-stall')]).rows;
+    expect(rows.map((r) => [r.toolName, r.durationMsSum, r.durationMsMax])).toStrictEqual([
+      ['Agent', 2_846_600, 2_846_600],
+      ['Bash', undefined, undefined],
+    ]);
+  });
+
+  it('a column ONE contributing record leaves unstated makes the aggregate absent', () => {
+    /*
+     * The rule `ToolRow` states, driven over real records rather than a
+     * hand-built pair. `cc-synthetic-12-stall` names `Bash` with no duration
+     * and `cc-2.1.241-…` names `Bash` with one; the aggregate row must carry
+     * the calls of BOTH and the duration of NEITHER, because a sum over one of
+     * two sessions is not a sum over the row's calls.
+     */
+    const a = record('cc-synthetic-12-stall');
+    const b = record('cc-2.1.241-6082be25-cfea-49b9-9821-2de9c23cac65');
+    const solo = toolsLayout([b]).rows.find((r) => r.toolName === 'Bash');
+    expect(solo?.durationMsSum).toBe(101_047);
+    const both = toolsLayout([a, b]).rows.find((r) => r.toolName === 'Bash');
+    expect(both?.calls).toBe(7);
+    expect(both?.sessions).toBe(2);
+    expect(both?.durationMsSum).toBeUndefined();
+    expect(both?.durationMsMax).toBeUndefined();
+    // The OTHER rows of the same table keep theirs: the rule is per row.
+    expect(toolsLayout([a, b]).rows.find((r) => r.toolName === 'Read')?.durationMsSum).toBe(21_291);
+  });
+
+  it('an excluded record contributes no row and is counted in neither total', () => {
+    const excluded = record('cc-synthetic-05-excluded-parked');
+    expect(toolsLayout([excluded])).toStrictEqual({ rows: [], records: 0 });
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 7.3 — F14 reaches the layout whole, and the rate series is per engine
+ * ------------------------------------------------------------------------ */
+
+describe('DoD 7.3: the timing block and the tokens-per-minute series', () => {
+  function record(stem: string): StatsRecord {
+    const entry = ALL.find((e) => e.stem === stem);
+    if (entry === undefined) throw new Error(`no committed record ${stem}`);
+    return entry.record;
+  }
+
+  it('a record with no timing block reaches the layout as an empty one, not as a throw', () => {
+    /*
+     * The webview runs no validator — `store.ts` assigns `message.records`
+     * verbatim — so a record written under schema version 1 arrives here with
+     * no `timing` key at all. Every committed wire corpus is one until they
+     * are regenerated. The layout must degrade to "absent", which renders as
+     * six em dashes, rather than throwing inside a `$derived`.
+     */
+    const v1 = { ...record('cc-synthetic-01-reread-loop') } as Record<string, unknown>;
+    delete v1['timing'];
+    const session = tokensLayout([v1 as unknown as StatsRecord]).sessions[0];
+    expect(session?.timing).toStrictEqual({});
+    expect(session?.subagentsUnreceived).toBeUndefined();
+    expect(session?.agents.every((a) => a.resultUnreceived === false)).toBe(true);
+  });
+
+  it('the rate series is a FOURTH series and its lines are per engine', () => {
+    const layout = trendsLayout([
+      { ...record('cc-synthetic-01-reread-loop'), timing: { wallMs: 60_000, tokensPerMin: 1_100 } },
+      { ...record('cc-synthetic-02-churn-chain'), timing: { wallMs: 60_000, tokensPerMin: 900 } },
+      { ...record('codex-synthetic-08-codex-window'), timing: { wallMs: 60_000, tokensPerMin: 7 } },
+    ]);
+    expect(layout.series.map((s) => s.id)).toStrictEqual(['prompt', 'loops', 'cost', 'tokensPerMin']);
+    const rate = layout.series.find((s) => s.id === 'tokensPerMin');
+    expect(rate?.lines.map((l) => [l.engine, l.max])).toStrictEqual([
+      ['cc', 1_100],
+      ['codex', 7],
+    ]);
+    // Not vacuous: the maxima are orders apart, which is the disparity the
+    // per-engine rule exists for. One shared maximum would put the Codex line
+    // on the baseline.
+    expect((rate?.lines[0]?.max ?? 0) / (rate?.lines[1]?.max ?? 1)).toBeGreaterThan(100);
+  });
+
+  it('a session that states no rate gets no point, rather than a zero', () => {
+    const layout = trendsLayout([
+      { ...record('cc-synthetic-01-reread-loop'), timing: { wallMs: 60_000, tokensPerMin: 1_100 } },
+      { ...record('cc-synthetic-02-churn-chain'), timing: {} },
+    ]);
+    const rate = layout.series.find((s) => s.id === 'tokensPerMin');
+    expect(rate?.lines).toHaveLength(1);
+    expect(rate?.lines[0]?.points.map((p) => p.y)).toStrictEqual([1_100]);
+    // The x stays GLOBAL: the point sits above its own session on the shared
+    // axis even though the second session contributes nothing.
+    expect(rate?.lines[0]?.points[0]?.x).toBe(0);
+    expect(layout.sessions).toHaveLength(2);
+  });
+
+  it('the layout never rounds a rate — the record\'s exact quotient survives', () => {
+    const exact = 5 / 3;
+    const layout = trendsLayout([
+      { ...record('cc-synthetic-01-reread-loop'), timing: { wallMs: 60_000, tokensPerMin: exact } },
+      { ...record('cc-synthetic-02-churn-chain'), timing: { wallMs: 60_000, tokensPerMin: 1 } },
+    ]);
+    const rate = layout.series.find((s) => s.id === 'tokensPerMin');
+    expect(rate?.lines[0]?.points[0]?.y).toBe(exact);
+    expect(rate?.lines[0]?.max).toBe(exact);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 7.4 — F15 through the layout
+ * ------------------------------------------------------------------------ */
+
+describe('DoD 7.4: F15 in the tokens layout', () => {
+  function record(stem: string): StatsRecord {
+    const entry = ALL.find((e) => e.stem === stem);
+    if (entry === undefined) throw new Error(`no committed record ${stem}`);
+    return entry.record;
+  }
+
+  it('an absent count stays absent, and a 0 count stays 0 — they are different facts', () => {
+    const base = record('cc-synthetic-03-silent-subagent');
+    const absent = tokensLayout([base]).sessions[0];
+    expect(absent?.subagentsUnreceived).toBeUndefined();
+
+    const zero = tokensLayout([
+      { ...base, totals: { ...base.totals, subagentsUnreceived: 0 } },
+    ]).sessions[0];
+    expect(zero?.subagentsUnreceived).toBe(0);
+
+    const one = tokensLayout([
+      { ...base, totals: { ...base.totals, subagentsUnreceived: 1 } },
+    ]).sessions[0];
+    expect(one?.subagentsUnreceived).toBe(1);
+  });
+
+  it('the flag travels per agent and is never true of main', () => {
+    const base = record('cc-synthetic-03-silent-subagent');
+    const flagged: StatsRecord = {
+      ...base,
+      agents: base.agents.map((a) => ({ ...a, resultUnreceived: a.kind === 'subagent' })),
+    };
+    const rows = tokensLayout([flagged]).sessions[0]?.agents ?? [];
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows.filter((r) => r.resultUnreceived)).toHaveLength(
+      base.agents.filter((a) => a.kind === 'subagent').length,
+    );
+    expect(rows.find((r) => r.kind === 'main')?.resultUnreceived).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 7.3 / 7.5 — the two formatters the record's numbers pass through
+ * ------------------------------------------------------------------------ */
+
+describe('formatSpan', () => {
+  it('is the em dash for absent, and never for a stated value', () => {
+    expect(formatSpan(undefined)).toBe('—');
+    expect(formatSpan(Number.NaN)).toBe('—');
+    expect(formatSpan(Number.POSITIVE_INFINITY)).toBe('—');
+    // 0 IS A REAL ANSWER. `timeToFirstToolMs` is 0 whenever a session's first
+    // tool call is its first stated instant, and the harvested anchor session
+    // really reports it.
+    expect(formatSpan(0)).toBe('0ms');
+  });
+
+  it('scales the way format.ts scales a tool node\'s duration', () => {
+    expect(formatSpan(316)).toBe('316ms');
+    expect(formatSpan(1_839)).toBe('1.8s');
+    expect(formatSpan(16_468)).toBe('16.5s');
+    expect(formatSpan(2_846_600)).toBe('47m 26s');
+    expect(formatSpan(4_266_296)).toBe('1h 11m');
+  });
+
+  it('prints a STATED NEGATIVE with its sign, rather than as an absence', () => {
+    /*
+     * `TimingStats.longestGapMs` is documented as able to run backwards — the
+     * session-wide call order is structural, so the pair crossing from one
+     * agent to the next can precede it in time — and `timing.ts` deliberately
+     * does not clamp it. `format.ts:formatDuration` answers a negative with the
+     * em dash, which would report a measured value as a missing one. No
+     * committed session produces one today, which is exactly why this is
+     * pinned: the case is unreachable from the corpus and reachable from a
+     * user's session.
+     */
+    expect(formatSpan(-1)).toBe('-1ms');
+    expect(formatSpan(-3_687)).toBe('-3.7s');
+  });
+});
+
+describe('formatRate', () => {
+  it('is the em dash for absent, and rounds a stated rate here and nowhere else', () => {
+    expect(formatRate(undefined)).toBe('—');
+    expect(formatRate(Number.NaN)).toBe('—');
+    // The record carries the exact IEEE quotient (`timing.ts` refuses to
+    // round); these are the two precisions the renderer applies to it.
+    expect(formatRate(1_418_891.673311311)).toBe('1,418,891.7');
+    expect(formatRate(23.92071989976079)).toBe('23.9');
+    expect(formatRate(5 / 6)).toBe('0.83');
+    expect(formatRate(0)).toBe('0.00');
+    expect(formatRate(12)).toBe('12.0');
+  });
+
+  it('a small rate does not round to zero, which a single precision would do', () => {
+    // The vacuity control on the two-precision rule: at one decimal this reads
+    // `0.0`, which is indistinguishable from a session that produced nothing.
+    expect(formatRate(0.04)).toBe('0.04');
+    expect(formatRate(0.04)).not.toBe('0.0');
   });
 });

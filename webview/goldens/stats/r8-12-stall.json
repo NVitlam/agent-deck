@@ -8,6 +8,27 @@
       "rows": [],
       "records": 1
     },
+    "tools": {
+      "rows": [
+        {
+          "toolName": "Agent",
+          "class": "spawn",
+          "calls": 1,
+          "sessions": 1,
+          "errors": 0,
+          "durationMsSum": 2846600,
+          "durationMsMax": 2846600
+        },
+        {
+          "toolName": "Bash",
+          "class": "shell",
+          "calls": 1,
+          "sessions": 1,
+          "errors": 0
+        }
+      ],
+      "records": 1
+    },
     "loops": {
       "rows": [],
       "loops": 0,
@@ -33,6 +54,7 @@
               "output": 100,
               "toolCalls": 2,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.1
             }
           ],
@@ -62,7 +84,8 @@
           ],
           "compactions": 0,
           "subagents": 0,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {}
         }
       ],
       "records": 1
@@ -111,6 +134,11 @@
           "id": "cost",
           "label": "engine-reported cost (USD)",
           "lines": []
+        },
+        {
+          "id": "tokensPerMin",
+          "label": "tokens per minute",
+          "lines": []
         }
       ],
       "sessions": [
@@ -125,6 +153,7 @@
       ],
       "width": 0,
       "empty": true,
+      "timeAbsent": 0,
       "reason": "fewer-than-two"
     },
     "excluded": {

@@ -346,9 +346,23 @@ async function buildCodexCorpus(oversizeEach: number): Promise<number> {
     bytes += Buffer.byteLength(text, 'utf8');
   }
 
-  // The three oversize ones. `truncate` extends without writing, which is what
-  // makes 2 GiB affordable -- and the engine never opens them, which is the
-  // property being measured.
+  /*
+   * The three oversize ones. `truncate` extends without writing, which is what
+   * makes 2 GiB affordable.
+   *
+   * WHAT THE ENGINE DOES WITH THEM CHANGED IN v0.8.0 DoD 7.7, and this comment
+   * said the old thing. It read "the engine never opens them, which is the
+   * property being measured" — true until the oversize gate stopped deciding
+   * whether to open a file and started deciding the SHAPE of the read. Each of
+   * these is now opened and read as 256 KiB of head plus its last 16 MiB, over
+   * several polls, with the middle skipped.
+   *
+   * **The heap and CPU figures below were NOT re-measured for that change.**
+   * This block is opt-in (`AGENT_DECK_IDLE_GATE=1`) and did not run in the
+   * package that made the change; what is corrected here is the sentence, not
+   * the budget. Whoever next runs it is measuring 3 x 16.25 MiB of reads the
+   * recorded numbers never included.
+   */
   for (let i = 0; i < CODEX_OVERSIZE; i += 1) {
     const id = `01a06400-0000-7000-8000-ffffffff${String(i).padStart(4, '0')}`;
     const path = join(dayDir, `rollout-2026-09-05T00-00-00-${id}.jsonl`);

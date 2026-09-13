@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "ses_fc8d8bb41ffeTH4iLV8HiV1kQJ",
   "engine": "opencode",
   "projectSlug": "c--Users-dev-projects-agent-deck",
@@ -14,6 +14,7 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {},
   "totals": {
     "prompt": 0,
     "output": 0,

@@ -45,15 +45,16 @@ const AT = Date.parse('2026-08-27T12:00:00.000Z');
  * can only match if each figure landed in its own slot.
  */
 const TELEMETRY_SAMPLE: DiagnosticsTelemetry = {
-  metrics: { accepted: 21, disabled: 22, unmatched: 23, rejected: { 400: 24, 405: 25, 413: 26, 415: 27 } },
-  logs: { accepted: 31, disabled: 32, unmatched: 33, rejected: { 400: 34, 405: 35, 413: 36, 415: 37 } },
-  traces: { accepted: 41, disabled: 42, unmatched: 43, rejected: { 400: 44, 405: 45, 413: 46, 415: 47 } },
+  metrics: { accepted: 21, disabled: 22, unmatched: 23, foreign: 28, rejected: { 400: 24, 405: 25, 413: 26, 415: 27 } },
+  logs: { accepted: 31, disabled: 32, unmatched: 33, foreign: 38, rejected: { 400: 34, 405: 35, 413: 36, 415: 37 } },
+  traces: { accepted: 41, disabled: 42, unmatched: 43, foreign: 48, rejected: { 400: 44, 405: 45, 413: 46, 415: 47 } },
 };
 
 const TELEMETRY_SAMPLE_LINE =
-  'otel.metrics=accepted:21,disabled:22,unmatched:23,400:24,405:25,413:26,415:27 ' +
-  'otel.logs=accepted:31,disabled:32,unmatched:33,400:34,405:35,413:36,415:37 ' +
-  'otel.traces=accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47';
+  'otel.metrics=accepted:21,disabled:22,unmatched:23,400:24,405:25,413:26,415:27,foreign:28 ' +
+  'otel.logs=accepted:31,disabled:32,unmatched:33,400:34,405:35,413:36,415:37,foreign:38 ' +
+  'otel.traces=accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47,foreign:48 ' +
+  'otel.unmatched-scope=(this window)';
 
 /** A spy sink. Records everything and can be made to fail on demand. */
 function spySink(options: { throwOnWrite?: boolean } = {}): DiagnosticsSink & {
@@ -105,11 +106,33 @@ const SAMPLES: Record<DiagnosticsEvent['kind'], DiagnosticsEvent> = {
     expected: '2.1.246',
     actual: '1.0',
   },
+  /*
+   * A FORMATTER FIXTURE, and its `reason` is a string no path now produces.
+   *
+   * `oversize:<bytes> limit=<limit>` was the size gate refusing to open a large
+   * transcript; v0.8.0 DoD 7.7 reads such a transcript as a head plus a tail
+   * and reports it as `transcriptPartial` instead. It is kept rather than
+   * re-pointed because `reason` is the one FREE-TEXT field on this event and
+   * what these tests pin is the clipping and the line's shape — a reason with
+   * a colon, a number and a space in it exercises that better than a fresh
+   * one would, and swapping it would quietly reduce what the sample covers.
+   * The reasons the engine does produce today are
+   * `oversizeHeadUndecided:<bytes> limit=<limit> head=<head>` and `FileTail`'s
+   * own open/read failures.
+   */
   transcriptSkipped: {
     kind: 'transcriptSkipped',
     engine: 'codex',
     file: 'rollout-2026-09-05T00-00-00-01a06400.jsonl',
     reason: 'oversize:83890435 limit=67108864',
+  },
+  transcriptPartial: {
+    kind: 'transcriptPartial',
+    engine: 'codex',
+    file: 'rollout-2026-09-05T00-00-00-01a06400.jsonl',
+    readBytes: 17039360,
+    totalBytes: 83890435,
+    fragments: 1,
   },
   listenerRole: { kind: 'listenerRole', role: 'follower', port: 47821 },
   hookListenerError: { kind: 'hookListenerError', detail: 'EADDRINUSE 47821' },
@@ -197,6 +220,9 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       statsDropped: 11,
       // v0.7.1 DoD 6.4 — distinct values again, for the same reason.
       telemetry: TELEMETRY_SAMPLE,
+      // v0.8.0 DoD 7.7 — a value nothing else on the line holds, so the
+      // by-value loop below cannot be satisfied by another field.
+      oversizePartial: 13,
     };
     const line = formatCounters(counters, '2026-08-27T12:00:00.000Z');
     for (const key of Object.keys(counters)) {
@@ -245,12 +271,136 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
         relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
         statsErrors: 0, storeMalformed: 0, statsDropped: 7,
         telemetry: TELEMETRY_SAMPLE,
+        oversizePartial: 0,
       },
       '2026-09-10T00:00:00.000Z',
     );
     // The whole tail, byte for byte: order, labels, separators, and the four
-    // statuses by number.
-    expect(line.endsWith(` statsDropped=7 ${TELEMETRY_SAMPLE_LINE}`)).toBe(true);
+    // statuses by number — up to the two fields appended after it in v0.8.0,
+    // which is the prefix rule working rather than an exception to it.
+    expect(line).toContain(` statsDropped=7 ${TELEMETRY_SAMPLE_LINE}`);
+  });
+
+  /*
+   * v0.8.0 DoD 7.8 — the line carries `foreign` beside `unmatched`, and says
+   * that `unmatched` is this window's.
+   *
+   * Pinned here as FORMAT only: what lands in each figure is the joiner's, and
+   * `extension.telemetry.test.ts` drives that through the socket. What this
+   * block can say, and what no host test says as cheaply, is that the two
+   * figures reach the line in their own slots — a formatter that printed
+   * `unmatched` into both would satisfy every host assertion about the
+   * numbers.
+   */
+  it('carries foreign beside unmatched, each in its own slot, and names the scope (DoD 7.8)', () => {
+    const line = formatCounters(
+      {
+        grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+        patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+        ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+        relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
+        statsErrors: 0, storeMalformed: 0, statsDropped: 0,
+        telemetry: TELEMETRY_SAMPLE,
+        oversizePartial: 0,
+      },
+      '2026-09-13T00:00:00.000Z',
+    );
+    // The DoD's literal text, on the line.
+    expect(line).toContain('(this window)');
+    // Each signal's own pair, with both numbers distinct across all six slots
+    // (21..48 in `TELEMETRY_SAMPLE`) so no figure can stand in for another.
+    expect(line).toContain('otel.metrics=accepted:21,disabled:22,unmatched:23,400:24,405:25,413:26,415:27,foreign:28');
+    expect(line).toContain('otel.logs=accepted:31,disabled:32,unmatched:33,400:34,405:35,413:36,415:37,foreign:38');
+    expect(line).toContain('otel.traces=accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47,foreign:48');
+
+    /*
+     * THE VACUITY CONTROL, and it is the one that matters here: the three
+     * assertions above are satisfied by a formatter that reads `foreign` and
+     * one that reads any OTHER field holding the same number. So move one
+     * figure and nothing else, and watch exactly one token move.
+     */
+    const moved = formatCounters(
+      {
+        grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+        patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+        ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+        relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
+        statsErrors: 0, storeMalformed: 0, statsDropped: 0,
+        telemetry: { ...TELEMETRY_SAMPLE, traces: { ...TELEMETRY_SAMPLE.traces, foreign: 99 } },
+        oversizePartial: 0,
+      },
+      '2026-09-13T00:00:00.000Z',
+    );
+    expect(moved).toContain('415:47,foreign:99');
+    expect(moved).not.toContain('415:47,foreign:48');
+    // ...and `unmatched` did NOT move with it, which is what proves the two
+    // are read from two fields rather than from one.
+    expect(moved).toContain('unmatched:43,400:44');
+  });
+
+  it('every 0.7.1 signal figure is still a prefix of the 0.8.0 one (DoD 7.8 appends)', () => {
+    // The append-only rule, applied to the per-signal blob rather than to the
+    // whole line: a figure quoted in a 0.7.1 evidence file or bug report is
+    // still comparable field by field to one read off a 0.8.0 line.
+    const before = 'accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47';
+    expect(TELEMETRY_SAMPLE_LINE).toContain(`otel.traces=${before},foreign:`);
+  });
+
+  /*
+   * v0.8.0 DoD 7.7 — `transcript partial`, the line that replaced
+   * `transcript skipped ... oversize`.
+   */
+  it('writes a partial transcript as one line carrying both byte figures', () => {
+    expect(formatEvent(SAMPLES.transcriptPartial, '2026-09-13T12:00:00.000Z')).toBe(
+      '2026-09-13T12:00:00.000Z transcript partial codex ' +
+        'rollout-2026-09-05T00-00-00-01a06400.jsonl read=17039360 of=83890435 fragments=1',
+    );
+  });
+
+  it('says PARTIAL rather than SKIPPED, which is the opposite claim', () => {
+    const partial = formatEvent(SAMPLES.transcriptPartial, '2026-09-13T12:00:00.000Z');
+    const skipped = formatEvent(SAMPLES.transcriptSkipped, '2026-09-13T12:00:00.000Z');
+    expect(partial).toContain('transcript partial');
+    expect(partial).not.toContain('transcript skipped');
+    // And the other way, so this pair cannot both be satisfied by one string.
+    expect(skipped).toContain('transcript skipped');
+    expect(skipped).not.toContain('transcript partial');
+  });
+
+  it('clips the basename: it came off a filesystem this module does not control', () => {
+    const line = formatEvent(
+      {
+        kind: 'transcriptPartial',
+        engine: 'codex',
+        file: 'r'.repeat(4000),
+        readBytes: 17039360,
+        totalBytes: 83890435,
+        fragments: 1,
+      },
+      '2026-09-13T12:00:00.000Z',
+    );
+    expect(line.length).toBeLessThan(4000);
+    // The clip did not eat the figures: they follow the name on the line.
+    expect(line).toContain('read=17039360');
+  });
+
+  it('prints oversizePartial on the counters line, from its own field', () => {
+    const base = {
+      grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+      patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+      ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+      relayRole: 'idle' as const, relayFollowers: 0, relayed: 0, relayReceived: 0,
+      statsErrors: 0, storeMalformed: 0, statsDropped: 0,
+      telemetry: TELEMETRY_SAMPLE,
+      oversizePartial: 0,
+    };
+    expect(formatCounters(base, '2026-09-13T12:00:00.000Z')).toContain('oversizePartial=0');
+    // Moved alone, so no other field can be standing in for it — the same
+    // control the `foreign` block above uses, for the same reason.
+    const moved = formatCounters({ ...base, oversizePartial: 4 }, '2026-09-13T12:00:00.000Z');
+    expect(moved).toContain('oversizePartial=4');
+    expect(moved).not.toContain('oversizePartial=0');
+    expect(moved).toContain('codex=0');
   });
 
   it('creates no sink until the first line', () => {
@@ -297,6 +447,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       storeMalformed: 0,
       statsDropped: 0,
       telemetry: TELEMETRY_SAMPLE,
+      oversizePartial: 0,
     });
     expect(sink.shown).toBe(0);
     channel.show();

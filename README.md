@@ -12,7 +12,7 @@ It also keeps the facts: which files a session touched, which calls it repeated,
 moved, in a [Stats](#stats) view and a local history on your machine — numbers, never session
 content, and never advice.
 
-![Agent Deck: one panel, every session on the machine, live](media/agent-deck-hero.gif)
+![Agent Deck: one panel, the sessions of the folders this window has open, live](media/agent-deck-hero.gif)
 
 > **Claude Code compatibility** — anchor `2.1.246`, accepts `2.0.x` to `2.2.x`, refuses on
 > structural change, not on patch number. **A session imported from another machine — Claude
@@ -39,8 +39,9 @@ content, and never advice.
 
 ## What you see
 
-**The deck** — every session on the machine, one cell each, from any of the three engines. Cells
-breathe while their session is working. Three layouts (List, Grid, Lanes), three sort orders (Live
+**The deck** — one cell per session, from any of the three engines,
+[scoped to the folders this window has open](#which-sessions-does-a-window-show). Cells breathe
+while their session is working. Three layouts (List, Grid, Lanes), three sort orders (Live
 first, Recent, Engine), and chips to filter by liveness or by engine. Keyboard: `A C O X`, `1 2 3`,
 `L R E`.
 
@@ -62,12 +63,15 @@ The breadcrumb walks back out; Reset view returns to the whole session, fitted.
 
 **The inspector** — a drawer along the bottom, the width of the panel. Its header carries the
 selected node's status, its numbers and its duration; below, every tool call in that agent is listed
-with its status and the child it spawned, oldest-first or newest-first, filterable by tool. Select a
+with its status, the child it spawned, the time since the agent's first call and the gap between calls,
+oldest-first or newest-first, filterable by tool. Select a
 row to read its payload beside the list. **Show details** / **Hide details** collapses the payload
 and **close** dismisses a row. An oldest-first list follows new calls as they arrive until you open
 one or scroll away.
 
 ![The inspector under the tree: the root agent's four tool calls, one of them expanded to its input and output](media/inspector.png)
+
+![The tool-call drawer under a session's tree: each call with its time since the agent's first call and the gap since the call before it](media/drawer-time.png)
 
 **Stats** — a view mode beside the canvas and the list: files by touch count, identical-call loops
 and churn chains, tokens per agent, and trends across the sessions stored on this machine. Facts
@@ -225,7 +229,13 @@ per command:
 - **Settings** — VS Code's settings, filtered to Agent Deck.
 - **Clear Stats History** — removes the local stats history, after a confirmation.
 
+A second tab, **Tweaks**, shows four settings — follow new sessions, open the drawer on entering a
+session, open the drawer expanded, and the deck ordering. Changing one writes that setting; the tab
+keeps no value of its own and shows whatever the settings say.
+
 ![The Agent Deck sidebar in the activity bar](media/sidebar.png)
+
+![The sidebar's Tweaks tab: four settings, three checked, deck ordering live](media/sidebar-tweaks.png)
 
 Every entry is also in the Command Palette, under **Agent Deck:**. Your sessions appear on their
 own — there is nothing to point it at and nothing to switch on.
@@ -359,7 +369,8 @@ Notes on that block, each of them measured rather than assumed:
 **What it adds:** a cost figure for each Claude Code session this window sees start, estimated by Claude Code itself, in
 the Stats view's Tokens part with the label **estimated by Claude Code**. It also adds the duration
 of a tool call where the session's own records state none, in that session's stats record — the
-local history and the extension API. The Stats view shows no per-tool durations.
+local history and the extension API, and in the Stats view's Tools part, as each tool's longest call
+and total duration.
 
 ![The Stats view's Tokens part: one Claude Code session's cost, estimated by Claude Code, and its tokens per agent](media/stats_tokens.png)
 
@@ -423,12 +434,14 @@ Two steps:
   about other sessions arrive too. A session's start and its cost, arriving before this window shows
   the session, are kept for up to 256 such sessions and joined once it appears; a tool span waits one
   update for its session and is joined if that update shows it.
-- **`unmatched` on the Agent Deck output channel counts rows still unmatched after the join has
-  retried.** A tool span is judged at the next update after it arrives: if that update shows its
-  session and the tool call it names, it joins and is not counted; otherwise it is counted, and one
-  line records its `session.id` and `tool_use_id` — nothing else from the span. A session's start or
-  cost is counted only if it was held for a session not shown yet when 256 newer sessions pushed its
-  slot out. A row that arrives early and joins a moment later is not counted.
+- **`unmatched` and `foreign` on the Agent Deck output channel, for this window.** A tool span is
+  judged at the next update after it arrives. If that update shows its session and the tool call it
+  names, it joins and is not counted. If it shows the session and not the call, the span is counted
+  `unmatched`, and one line records its `session.id` and `tool_use_id` — nothing else from the span.
+  If the window does not hold the session at all, the span is counted `foreign` and writes no line. A
+  session's start or cost held for a session not shown yet counts as `foreign` if 256 newer sessions
+  push its slot out. A row that arrives early and joins a moment later is not counted. The line ends
+  its telemetry figures with `otel.unmatched-scope=(this window)`.
 - **The answers:** `200` accepted · `400` not an OTLP JSON body · `403` the setting is off · `405`
   not a POST · `413` over 512 KiB · `415` not JSON. None of them asks the exporter to retry.
 
@@ -592,16 +605,54 @@ the same redaction the panel applies, so no reasoning content and no oversized p
 Loopback means same-user trust here exactly as it does for the hook listener itself: there is no
 token and no authentication, because a process running as you could read the hook payloads anyway.
 
+### Which sessions does a window show?
+
+**The sessions belonging to the folders that window has open.** A window is scoped to its
+workspace, not to the machine. What reaches its deck comes from the transcripts that window
+reads, and it reads only the ones its open folders account for — another project's run belongs
+to that project's window.
+
+The scope is a **project key**: the folder's path with `:`, `\`, `/` and spaces each folded to `-`,
+which is how Claude Code names the directory it keeps a project's transcripts in under
+`~/.claude/projects`. All three engines are matched against that one key, and case is dropped on
+both sides, because a Windows drive letter is spelled both ways in real data: a path beginning
+`c:` and a path beginning `C:` name one project.
+
+- **Claude Code** — the **first** open folder's key. Sessions are discovered under that one
+  project directory and no other is read, so in a multi-root workspace the second folder onward
+  contributes no Claude Code sessions.
+- **OpenCode** — **every** open folder. Each session records the worktree it ran in; that path
+  is folded to a key and compared with the key of each folder.
+- **Codex** — **every** open folder. Each transcript declares the directory it ran in, compared
+  the same way. A transcript that declares no directory matches no folder.
+
+Two answers are neither a match nor an error:
+
+- **No folder open.** Nothing is observed and no panel opens — the command reports
+  `Agent Deck: open a folder to see its sessions.`
+- **A folder Claude Code has never run in.** There is no project directory to read, so the Claude
+  Code half stays off — no watcher and no timer for it — while OpenCode and Codex are read as
+  usual. When none of the three has anything here, the command says so and no panel opens.
+
+**A refused session is shown wherever it ran.** An OpenCode or Codex session whose schema Agent
+Deck refuses appears as an `unsupported` card whatever folder produced it, because a refusal
+nobody can see is not a refusal. Every other session is matched to the folders above.
+
 ## Stats
 
 **What each session touched, repeated and spent — as numbers.** **Open Statistics** in the sidebar,
 or **Agent Deck: Open Statistics** in the Command Palette, switches the panel to its Stats view, in
-four parts: **Files** (every file a session touched, with its reads, edits, writes and errors),
+five parts: **Files** (every file a session touched, with its reads, edits, writes and errors),
+**Tools** (every tool a session called, with its calls, errors, longest call and total duration),
 **Loops & churn** (every call in a chain is a link back to the tree), **Tokens** (per agent: prompt,
 output, cache ratio and context fill where the engine states them, context-churn and compaction
-markers on a per-turn strip, stalls, and cost with its source beside it) and **Trends** (one point
-per stored session). The engine chips narrow every part exactly as they narrow the deck. A session
+markers on a per-turn strip, stalls, and cost with its source beside it, and the session's own
+timings — wall time, time to the first tool call, the longest gap between calls, tokens and calls
+a minute — and, beside the silent subagents, the subagents whose spawning call has no result) and
+**Trends** (one point per stored session, with tokens a minute drawn per engine). The engine chips narrow every part exactly as they narrow the deck. A session
 Agent Deck could not read in full is counted in the footer with its reason, and appears in no table.
+
+![The Stats view's Tokens part for one Claude Code session: wall time, time to the first tool, longest gap, tokens and calls a minute, and cost an hour](media/stats-tokens-timing.png)
 
 Everything here is a count, a ratio or a token figure taken from the structure of a session. None of
 it reads message text, tool payloads or reasoning, and none of it says why a number is what it is.
@@ -699,6 +750,10 @@ a record or is reloaded. A session still running refills the history as it goes.
 
 ### Where it lives, and what leaves the machine
 
+**Records from 0.7.x are read; time facts are absent for them.** Nothing on disk is rewritten. Stored
+history is what Trends draws: such a record is a point in every Trends series except tokens per minute,
+and the footer counts it as `F14:absent`.
+
 **Nothing leaves the machine.** No upload, no sync, and no telemetry sent. The history is kept in VS Code's
 global storage for this extension, as one JSON Lines file per week — not under `~/.claude`, not
 under `~/.codex`, not in OpenCode's directories, and not in your workspace. A record holds counts,
@@ -784,13 +839,17 @@ honesty is kept, and they were not loosened alongside it.
 | `agentDeck.port` | The loopback port the hook listener binds on `127.0.0.1`. Must match the port in the block you pasted. |
 | `agentDeck.livenessThresholdMs` | How long a session may go quiet before it stops counting as live. Set it too low and one long tool call makes a healthy session flap. |
 | `agentDeck.previewBytes` | Ceiling on tool-payload bytes kept per node for previews. Nothing is ever sent off the machine either way. |
-| `agentDeck.codex.maxTranscriptBytes` | Largest Codex transcript Agent Deck will open, in bytes. Default 67108864 (64 MiB). A bigger rollout file is measured from its directory entry and never read; the Agent Deck output channel says which file and what the limit is. Codex stores tool output whole and inline, so a long session can reach hundreds of megabytes. |
+| `agentDeck.codex.maxTranscriptBytes` | Largest Codex transcript Agent Deck will open, in bytes. Default 67108864 (64 MiB). A bigger rollout file is read in part: its first 256 KiB and its last 16 MiB. Its deck card reads "read in part", and the Agent Deck output channel names the file and the bytes read. Codex stores tool output whole and inline, so a long session can reach hundreds of megabytes. |
 | `agentDeck.stats.enabled` | Keep a local history of derived session statistics. Append-only JSON Lines under the extension's own global-storage directory, one file per ISO week — never under `~/.claude`, `~/.codex`, the OpenCode directories, or your workspace. Off means no file and no directory at all. Nothing is ever sent off the machine. |
 | `agentDeck.stats.retentionDays` | How many days of that history to keep. Default 90. Files are pruned when a record is written, and a weekly file goes once the whole week it covers has aged out. To keep nothing, turn `agentDeck.stats.enabled` off — the floor here is one day, not zero. |
 | `agentDeck.canvas.autoFit` | Re-fit the session canvas to its content on every event that changes its geometry: a node selected, the drawer opened, expanded or closed, an agent grafted, removed or parked, the panel resized, a session switch, an engine chip, a switch back to the canvas. Default `true`. A manual pan or zoom persists until the next such event; token counters and status colours never re-fit. Off, the canvas fits once on entry and on Reset view. |
 | `agentDeck.stats.idleFlushMs` | How long a session may go unchanged before its record is written anyway, in milliseconds. Default 3600000 (one hour). A record is normally written when the session ends; this covers the session that never does. Later work is recomputed in full and written as a second record; reads keep the newest per session and nothing on disk is rewritten. |
 | `agentDeck.pricing` | Your own prices per model id, in USD per million tokens — `{"<model id>": {"prompt": 3, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15}}`. Used only for sessions for which neither the engine nor Claude Code's telemetry, received from the session's start, states a cost. Agent Deck ships no price table and never guesses one: a model with no entry gets no figure, a malformed entry is ignored and named on the output channel, and anything computed this way is labelled as estimated from your prices. |
 | `agentDeck.telemetry.enabled` | Accept Claude Code's own OpenTelemetry export on the hook listener's `/v1/metrics`, `/v1/logs` and `/v1/traces` paths. Default `false`: off, those paths answer `403` and no body is parsed. Machine-scoped, so every window on the machine reads the same value. See [Claude Code telemetry](#claude-code-telemetry-optional). |
+| `agentDeck.followNewSessions` | Select a session that appears while the deck is open, so the deck moves to it. Default `false`: the new session is added in its sort position and the current selection is left alone. This changes what the deck shows and never what is observed. Also in the Tweaks tab of the sidebar, which reads and writes this same value. |
+| `agentDeck.openDrawerOnEnter` | Open a session's tool-call drawer when the session is entered from the deck. Default `false`: the drawer opens when a tool call is selected. The drawer holds the same calls either way. Also in the Tweaks tab. |
+| `agentDeck.drawerExpandedByDefault` | Open the tool-call drawer at its expanded height rather than its collapsed one. Default `false`. The drawer can be expanded and collapsed in the panel at either value; this is the height it opens at. Also in the Tweaks tab. |
+| `agentDeck.defaultOrdering` | The order deck cards are placed in when the deck opens. Default `live`, which puts live sessions first, then idle, degraded, unsupported and ended; `recent` puts the most recently active first; `engine` groups the cards by the engine that produced them. The order chosen on the deck itself applies to that deck and leaves this value alone. Also in the Tweaks tab. |
 
 Clearing the history is a command, not a button on the deck: **Agent Deck: Clear Stats History** in
 the command palette or the sidebar, behind a modal confirm. It works whether or not `agentDeck.stats.enabled` is on, so turning

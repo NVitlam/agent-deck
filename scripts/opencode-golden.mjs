@@ -597,12 +597,26 @@ export function buildCorpusGolden({ corpusName, dataVersion, corpus }) {
         if (!usageBySession.has(part.sessionId)) usageBySession.set(part.sessionId, []);
         const series = usageBySession.get(part.sessionId);
         const cache = data.tokens.cache ?? {};
+        // v0.8.0 Phase 7, F14. `atMs` is this part row's own `time_created`,
+        // read by the SQL at the top of this file - not taken from the
+        // product. That is the whole value of this reader: it shares no code
+        // with `src/opencode/`, so the byte compare is two independent
+        // derivations agreeing rather than one restated. Excluding the field
+        // instead would have been the cheaper edit and a weaker golden - it
+        // would stop the compare failing without making it say anything about
+        // `atMs`.
+        //
+        // `time_created`, not `time_updated`: the two differ on all 210 rows
+        // across both stores, and a step's time is when the engine recorded
+        // the step. `src/opencode/parse.ts` chose the same column for the same
+        // reason and neither reads the other.
         series.push({
           ordinal: series.length,
           input: goldenCount(data.tokens.input),
           cacheCreation: goldenCount(cache.write),
           cacheRead: goldenCount(cache.read),
           output: goldenCount(data.tokens.output),
+          atMs: part.timeCreated,
         });
         counts.stepFinishParts++;
         continue;

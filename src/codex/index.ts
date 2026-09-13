@@ -86,20 +86,25 @@
  * the G10 never-open list is applied before anything is opened at all.
  */
 
-import type { SkippedFile } from '../model/events.js';
+import type { SessionState, SkippedFile, TranscriptPartial } from '../model/events.js';
 import { sameWorkspace, workspaceSlug } from '../model/correlate.js';
 import { fingerprintThread } from './fingerprint.js';
 import { graftCodexThreads } from './graft.js';
 import { locateCodex } from './locate.js';
 import { parseCodexLines, parseCodexThread } from './parse.js';
 import { CodexTailStore, DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES } from './store.js';
-import { CODEX_HEAD_BYTES, CODEX_READ_BATCH_BYTES } from './tail.js';
+import {
+  CODEX_HEAD_BYTES,
+  CODEX_OVERSIZE_TAIL_BYTES,
+  CODEX_READ_BATCH_BYTES,
+} from './tail.js';
 import type {
   CodexCounters,
   CodexDiscovery,
   CodexEngineOptions,
   CodexEngineOutcome,
   CodexEngineResult,
+  CodexPartialTranscript,
   CodexRecord,
   CodexRefusal,
   CodexThread,
@@ -315,8 +320,8 @@ export async function readCodexEngine(
  *      gets a throwaway one and behaves exactly as this function always did,
  *      which is what keeps every golden byte-identical (DoD H.7).
  *   2. **A size gate from `stat` alone.** `ref.bytes` is discovery's own
- *      `statSync().size`. A transcript over the limit is `skipped` with
- *      `oversize:<bytes>` and NEVER OPENED — no handle, no buffer, no parse.
+ *      `statSync().size`, so the decision costs no syscall. Until v0.8.0 it
+ *      decided whether the file was opened AT ALL; see change 5.
  *   3. **Head first.** The first read is bounded at {@link CODEX_HEAD_BYTES},
  *      and the fingerprint and the workspace match run on it. A refused
  *      version or a foreign `cwd` is terminal: no further byte of that file is
@@ -324,6 +329,39 @@ export async function readCodexEngine(
  *   4. **Bounded batches.** Every read after the head is capped at
  *      {@link CODEX_READ_BATCH_BYTES}, so no single allocation exceeds it
  *      whatever the file's size.
+ *
+ * ---------------------------------------------------------------------------
+ * 5. HEAD PLUS TAIL FOR AN OVERSIZE TRANSCRIPT (v0.8.0 DoD 7.7)
+ * ---------------------------------------------------------------------------
+ * A transcript over the limit used to be measured and never opened. That was
+ * right about memory and wrong about the user: the largest session on the
+ * machine was the one the deck said nothing about, and the only trace was one
+ * line on a channel nobody had a reason to open. G3 says refuse rather than
+ * guess; it does not say refuse silently.
+ *
+ * Such a transcript is now read TWICE-BOUNDED — the head above, then a jump to
+ * the last {@link CODEX_OVERSIZE_TAIL_BYTES} — and the session it produces
+ * carries `SessionState.partial` saying how many of how many bytes were read.
+ * The peak retention for one of these is `CODEX_HEAD_BYTES +
+ * CODEX_OVERSIZE_TAIL_BYTES` = 16.25 MiB, a QUARTER of what a transcript under
+ * the 64 MiB default may hold, so the shape is tighter than the one the size
+ * gate already permits.
+ *
+ * **The head is not optional and a bare tail cannot work.** `fingerprintThread`
+ * check 2 requires a `session_meta` at ordinal 0 and a tail has none, so a
+ * bare tail refuses `sessionMetaMissing` and renders `unsupported` with no
+ * tree; `declaredCwd` would come back `''` as well, so the session would never
+ * match a workspace and would not reach a deck at all. The ordinals a record
+ * carries are its OWN (`parse.ts` reads `ordinal` off the record rather than
+ * counting positions), so head records and tail records keep their real
+ * numbers with a gap between them, and no check in `fingerprintThread`
+ * requires those numbers to be contiguous.
+ *
+ * **What is lost, stated rather than implied.** A call in the head whose
+ * completion is in the gap never completes; a completion in the tail whose
+ * call is in the gap has nothing to attach to. Both are the ordinary
+ * consequence of not having read the middle, and both are why the session says
+ * `partial` instead of presenting its counts as the session's.
  *
  * ---------------------------------------------------------------------------
  * DRAIN VERSUS BATCH, AND WHY THE STORE'S PRESENCE DECIDES IT
@@ -404,24 +442,24 @@ async function readDiscovered(
 
     /*
      * THE SIZE GATE. Measured from `ref.bytes` — discovery's `statSync().size`
-     * — so nothing is opened and nothing is allocated.
+     * — so the decision itself costs nothing: no open, no allocation.
      *
      * It applies only to a file with no tail, which is what makes the locked
      * decision "the limit gates the first read, not the tail" true: a live
      * session already being followed keeps its tail and its offset when it
      * grows past the limit, because abandoning a session mid-stream is a worse
      * answer than reading the next 4 MiB of it.
+     *
+     * WHAT IT DECIDES CHANGED IN v0.8.0 DoD 7.7. It used to decide whether the
+     * file was opened at all; a transcript over the limit was measured, marked
+     * `oversize` and never read, so the biggest session on the machine was the
+     * one the deck was silent about — one line on a channel the user had no
+     * reason to open. It now decides the SHAPE of the read: over the limit
+     * means head plus the last `CODEX_OVERSIZE_TAIL_BYTES`, with the middle
+     * skipped, and the session says so through `SessionState.partial`.
      */
     if (entry.tail === null) {
-      if (ref.bytes > maxTranscriptBytes) {
-        entry.verdict = 'oversize';
-        entry.skipped = {
-          path: ref.path,
-          reason: `oversize:${String(ref.bytes)} limit=${String(maxTranscriptBytes)}`,
-        };
-        skipped.push(entry.skipped);
-        continue;
-      }
+      entry.oversizeTail = ref.bytes > maxTranscriptBytes;
       store.openTail(ref.path);
     }
     const tail = entry.tail;
@@ -441,6 +479,13 @@ async function readDiscovered(
       continue;
     }
     if (entry.verdict === 'foreign') continue;
+    // Terminal for the same reason and reported on the same rule as `refused`
+    // above: a skip that stops being restated is a count of zero nobody can
+    // tell apart from "nothing was skipped" (rule 18).
+    if (entry.verdict === 'oversize') {
+      if (entry.skipped !== null) skipped.push(entry.skipped);
+      continue;
+    }
 
     /*
      * NOTHING NEW: the cheapest pass there is.
@@ -462,6 +507,7 @@ async function readDiscovered(
     for (;;) {
       const maxBytes = entry.verdict === 'undecided' ? CODEX_HEAD_BYTES : CODEX_READ_BATCH_BYTES;
       const read = await tail.read({ maxBytes });
+      entry.boundaryFragments += read.boundaryFragments;
 
       // G3 / G2. `FileTail` reports an unreadable file as `skipped` rather
       // than throwing, and one bad file must not darken an engine. Unlike
@@ -505,6 +551,63 @@ async function readDiscovered(
           break;
         }
         entry.verdict = 'accepted';
+
+        /*
+         * THE JUMP. Made here and nowhere else: the head has been read and
+         * believed, so everything the fingerprint and the workspace match need
+         * is already in `entry.records`, and the bytes between here and the
+         * last `CODEX_OVERSIZE_TAIL_BYTES` are the ones nobody will read.
+         *
+         * `skipTo` is forward-only and returns where it will read next, so a
+         * file smaller than head + tail lands back on the current offset,
+         * `skippedBytes` stays 0 and the read is a whole read. That is not a
+         * special case handled here — it is the arithmetic, and it is the
+         * reason `oversizeTail` and `partial` are two different fields.
+         */
+        if (entry.oversizeTail) {
+          const before = tail.offset;
+          const landed = tail.skipTo(ref.bytes - CODEX_OVERSIZE_TAIL_BYTES);
+          entry.skippedBytes = landed - before;
+          if (entry.skippedBytes > 0) {
+            entry.partial = {
+              readBytes: ref.bytes - entry.skippedBytes,
+              totalBytes: ref.bytes,
+            };
+          }
+        }
+      }
+
+      /*
+       * THE HEAD BUDGET IS ONE HEAD FOR AN OVERSIZE TRANSCRIPT (DoD 7.7).
+       *
+       * Checked AFTER the head has been read and had its chance to decide, so
+       * the verdict lands in the pass that spent the budget rather than in the
+       * next one — with a store this loop takes one read per pass, and a check
+       * at the top would report a decided-nothing file a poll late.
+       *
+       * For an ordinary file an undecided verdict means "read more": a head
+       * that ends mid-first-line is answered by another head, and the file is
+       * bounded by `maxTranscriptBytes` so that cannot run away. An oversize
+       * file has no such bound — it is the size the gate exists not to
+       * allocate — so a first line longer than `CODEX_HEAD_BYTES` would buy
+       * one head per poll for the life of the window and, in the drained
+       * one-shot path, the whole file in one call.
+       *
+       * So it is terminal, counted and reported rather than retried. The
+       * measurement that makes it near-unreachable is on `CODEX_HEAD_BYTES`
+       * itself: the largest ordinal-0 record across the 14 committed
+       * transcripts is 1,113 bytes, and the head is ~236x that.
+       */
+      if (entry.verdict === 'undecided' && entry.oversizeTail && tail.offset >= CODEX_HEAD_BYTES) {
+        entry.verdict = 'oversize';
+        entry.records = [];
+        entry.skipped = {
+          path: ref.path,
+          reason:
+            `oversizeHeadUndecided:${String(ref.bytes)} ` +
+            `limit=${String(maxTranscriptBytes)} head=${String(CODEX_HEAD_BYTES)}`,
+        };
+        break;
       }
 
       if (tail.offset >= ref.bytes) {
@@ -527,6 +630,10 @@ async function readDiscovered(
       continue;
     }
     if (entry.verdict === 'foreign') continue;
+    if (entry.verdict === 'oversize') {
+      if (entry.skipped !== null) skipped.push(entry.skipped);
+      continue;
+    }
 
     /*
      * INCOMPLETE: keep reporting the last COMPLETE parse and say nothing new.
@@ -647,11 +754,55 @@ async function readDiscovered(
     },
   });
 
+  /*
+   * THE PARTIAL CENSUS, TAKEN FROM THE STORE RATHER THAN ACCUMULATED IN THE
+   * LOOP (DoD 7.7).
+   *
+   * The loop above leaves by six different `continue`s, so a push inside it
+   * would have to be repeated at each one and would be missing from whichever
+   * arm a later edit adds. Every discovered transcript has an entry by the
+   * time this runs — `store.retain` ran before the loop and the loop's first
+   * statement takes one — so this is a read of state the loop already wrote.
+   *
+   * It is a CENSUS OF THE PASS: an entry that is partial is reported every
+   * pass, including the passes where nothing was read because nothing changed.
+   *
+   * **A COMPLETE PARSE IS REQUIRED, and that is not tidiness.** An entry is
+   * counted here from the pass its `thread` first exists, not from the pass
+   * its jump happened, because until then there is no session for the figures
+   * to be about — and, concretely, `boundaryFragments` has not settled: the
+   * fragment at the landing point is dropped when its newline arrives, which
+   * is the tail's first read and not the head's. Reporting at the jump
+   * published a `fragments: 0` that became 1 one pass later, and the host
+   * announces a partial transcript exactly ONCE, so the 0 would have been the
+   * only number a user ever saw.
+   */
+  const partialTranscripts: CodexPartialTranscript[] = [];
+  const partialByFile = new Map<string, TranscriptPartial>();
+  const bytesByFile = new Map<string, number>();
+  for (const ref of discovery.transcripts) {
+    bytesByFile.set(ref.file, ref.bytes);
+    const entry = store.entry(ref.path);
+    if (entry.partial === null || entry.thread === null) continue;
+    partialByFile.set(ref.file, entry.partial);
+    partialTranscripts.push({
+      path: ref.path,
+      file: ref.file,
+      readBytes: entry.partial.readBytes,
+      totalBytes: entry.partial.totalBytes,
+      boundaryFragments: entry.boundaryFragments,
+    });
+  }
+
   return {
-    sessions: grafted.sessions,
+    sessions:
+      partialByFile.size === 0
+        ? grafted.sessions
+        : markPartialSessions(grafted.sessions, threads, partialByFile, bytesByFile),
     threads,
     refused,
     skipped,
+    partialTranscripts,
     // Amendment 2026-09-03: the golden may not exclude topology, and the
     // spawn-to-child join is the topology. graft.ts always computed these;
     // the engine simply did not pass them on.
@@ -659,6 +810,72 @@ async function readDiscovered(
     counters,
     discovery,
   };
+}
+
+/**
+ * Stamp `SessionState.partial` onto every session built from a partial read
+ * (v0.8.0 DoD 7.7).
+ *
+ * ## Why this is per SESSION and the read is per FILE
+ *
+ * A Codex session is a root thread plus its subagents, and each of those is
+ * its own transcript (spec C1). So "how much of this session was read" is a
+ * sum over the FILES its threads came from — and over files, not threads,
+ * because one file can declare several threads (C5: a forked child
+ * re-serialises its parent's `session_meta`) and summing per thread would
+ * count that file twice. `owningFile` is the file whose ordinal-0
+ * `session_meta` declares the thread — the one whose records count — so a
+ * thread re-serialised into a second file does not drag that file in.
+ *
+ * A file that was read whole contributes its own size to both numbers, so a
+ * session with one partial transcript and three whole ones reports the whole
+ * ones honestly instead of hiding them. `readBytes === totalBytes` is
+ * therefore not a possible output here: the function is only reached for
+ * sessions holding at least one partial file, and such a file has
+ * `readBytes < totalBytes` by construction.
+ *
+ * A session none of whose files is partial is returned UNCHANGED, by identity
+ * — no copy, no `partial: undefined` key — because absence is what "read
+ * whole" means on the wire and a key present-and-undefined is a different
+ * claim from a key absent.
+ */
+function markPartialSessions(
+  sessions: readonly SessionState[],
+  threads: readonly CodexThread[],
+  partialByFile: ReadonlyMap<string, TranscriptPartial>,
+  bytesByFile: ReadonlyMap<string, number>,
+): readonly SessionState[] {
+  const filesBySession = new Map<string, Set<string>>();
+  for (const thread of threads) {
+    const files = filesBySession.get(thread.sessionId) ?? new Set<string>();
+    files.add(thread.owningFile);
+    filesBySession.set(thread.sessionId, files);
+  }
+
+  return sessions.map((session) => {
+    const files = filesBySession.get(session.sessionId);
+    if (files === undefined) return session;
+    let readBytes = 0;
+    let totalBytes = 0;
+    let anyPartial = false;
+    for (const file of files) {
+      const partial = partialByFile.get(file);
+      if (partial !== undefined) {
+        anyPartial = true;
+        readBytes += partial.readBytes;
+        totalBytes += partial.totalBytes;
+        continue;
+      }
+      // Read whole: it contributes the same number to both sides. `0` for a
+      // file discovery no longer reports is the honest fallback — a file that
+      // is gone contributed bytes nobody can measure now.
+      const whole = bytesByFile.get(file) ?? 0;
+      readBytes += whole;
+      totalBytes += whole;
+    }
+    if (!anyPartial) return session;
+    return { ...session, partial: { readBytes, totalBytes } };
+  });
 }
 
 /** The message off anything `catch` can hand us, without a stack. */

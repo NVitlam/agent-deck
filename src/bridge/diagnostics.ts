@@ -160,6 +160,19 @@ export interface DiagnosticsCounters {
    * compile time rather than printing a line with the telemetry half missing.
    */
   telemetry: DiagnosticsTelemetry;
+  /**
+   * Transcripts this window is currently reading as a head plus a tail
+   * (v0.8.0 DoD 7.7).
+   *
+   * A LEVEL, not a running total, and the same kind of number as
+   * {@link codexSessions} beside it. A transcript that is partial stays
+   * partial for as long as the window holds it, so a cumulative count would
+   * report one file once per poll and grow without meaning anything.
+   *
+   * Codex only: it is the one engine with a transcript size gate. A window
+   * observing no Codex root reports 0, which is the truth about it.
+   */
+  oversizePartial: number;
 }
 
 /**
@@ -174,19 +187,41 @@ export interface DiagnosticsTelemetrySignal {
   /** Requests answered `403` because `agentDeck.telemetry.enabled` is off. */
   disabled: number;
   /**
-   * Rows this window's join still could not place after retrying (v0.7.1,
-   * ruling 2026-09-11): a span whose session or tool call the next pump after
-   * its arrival does not show, or each row of a held count-and-cost slot that
-   * was evicted. An early row that joined later is not counted.
+   * Rows FOR SESSIONS THIS WINDOW HOLDS that its join still could not place
+   * after retrying (v0.7.1 ruling 2026-09-11, narrowed by v0.8.0 DoD 7.8): a
+   * span whose session the next pump after its arrival shows and whose tool
+   * call it does not. An early row that joined later is not counted.
+   *
+   * A non-zero figure here is a statement about THIS window's tree. A row
+   * about a session this window has never shown is {@link foreign} instead,
+   * which is why the counters line carries `(this window)` beside these.
    */
   unmatched: number;
+  /**
+   * Rows about sessions this window does NOT hold (v0.8.0 DoD 7.8).
+   *
+   * The exporter is machine-wide, so on a machine running several windows this
+   * is the ordinary bulk of what arrives and is never an error. It was folded
+   * into {@link unmatched} until 0.8.0, which made that figure unreadable: a
+   * number that mixes "my rows did not join" with "these rows were never mine"
+   * answers neither question.
+   */
+  foreign: number;
   /** Requests refused, by status. */
   rejected: { 400: number; 405: number; 413: number; 415: number };
 }
 
 export type DiagnosticsTelemetry = Record<'metrics' | 'logs' | 'traces', DiagnosticsTelemetrySignal>;
 
-/** One signal's field, `accepted:N,disabled:N,unmatched:N,400:N,405:N,413:N,415:N`. */
+/**
+ * One signal's field,
+ * `accepted:N,disabled:N,unmatched:N,400:N,405:N,413:N,415:N,foreign:N`.
+ *
+ * `foreign` is APPENDED (v0.8.0 DoD 7.8), for the reason {@link formatCounters}
+ * gives for appending to the line: every 0.7.1 signal figure quoted in an
+ * evidence file or a bug report is still a prefix of the current one, so an
+ * old quotation stays comparable to a new line field by field.
+ */
 function formatTelemetrySignal(signal: DiagnosticsTelemetrySignal): string {
   return (
     `accepted:${String(signal.accepted)}` +
@@ -195,9 +230,22 @@ function formatTelemetrySignal(signal: DiagnosticsTelemetrySignal): string {
     `,400:${String(signal.rejected[400])}` +
     `,405:${String(signal.rejected[405])}` +
     `,413:${String(signal.rejected[413])}` +
-    `,415:${String(signal.rejected[415])}`
+    `,415:${String(signal.rejected[415])}` +
+    `,foreign:${String(signal.foreign)}`
   );
 }
+
+/**
+ * The scope note the counters line ends on (v0.8.0 DoD 7.8).
+ *
+ * `unmatched` is per WINDOW and always was — the same body can match in one
+ * window and not in another — but the line never said so, and the figure reads
+ * as a property of the machine's telemetry. The DoD's wording is the literal
+ * text here. It is ONE token at the end rather than a repetition inside each
+ * of the three signal fields, so each of those stays a comma-separated run of
+ * `key:value` with no spaces in it.
+ */
+export const COUNTERS_WINDOW_SCOPE = 'otel.unmatched-scope=(this window)';
 
 /**
  * The events that each produce exactly one line.
@@ -304,6 +352,40 @@ export type DiagnosticsEvent =
    */
   | { kind: 'transcriptSkipped'; engine: DiagnosticsEngine; file: string; reason: string }
   /**
+   * A transcript read as a head plus a tail, with the middle skipped
+   * (v0.8.0 Phase 7, DoD 7.7).
+   *
+   * THE OPPOSITE CLAIM TO {@link DiagnosticsEvent} `transcriptSkipped`, which
+   * is why it is a second kind and not a third `reason` on that one. A skip
+   * says no byte of this file reached a session; this says some of it did, and
+   * states which bytes. A user who greps the channel for `transcript skipped`
+   * and finds nothing about their largest session is being told something
+   * true.
+   *
+   * `file` is a BASENAME, never a path, for the reason `transcriptSkipped`
+   * gives: an absolute transcript path begins `C:\Users\<user>\` on Windows
+   * and this channel is a surface a user is invited to paste into a bug
+   * report. A Codex rollout basename is generated by Codex.
+   *
+   * Both byte figures are on the line because "partial" with no numbers leaves
+   * a reader unable to tell 16 MiB of 17 from 16 MiB of 3,000, and those are
+   * different sessions. `fragments` is 0 or 1 and says whether a line was
+   * dropped where the tail landed — rule 18: a reader that skips an input
+   * reports the skip rather than leaving a zero nobody can tell from silence.
+   *
+   * NO PERCENTAGE, the same decision `TranscriptPartial` records: a Codex line
+   * runs to hundreds of kilobytes, so a share of bytes is not a share of the
+   * session.
+   */
+  | {
+      kind: 'transcriptPartial';
+      engine: DiagnosticsEngine;
+      file: string;
+      readBytes: number;
+      totalBytes: number;
+      fragments: number;
+    }
+  /**
    * The shared listener's role changed (v0.7.0 Phase 1b).
    *
    * ONE LINE PER CHANGE, NEVER PER EVENT. A window becomes a leader or a
@@ -344,6 +426,7 @@ export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
   'sessionRefused',
   'graftRefused',
   'transcriptSkipped',
+  'transcriptPartial',
   'listenerRole',
   'hookListenerError',
   'hookNon2xx',
@@ -485,6 +568,12 @@ export function formatEvent(event: DiagnosticsEvent, isoTime: string): string {
     }
     case 'transcriptSkipped':
       return `${isoTime} transcript skipped ${event.engine} ${clip(event.file)} ${clip(event.reason)}`;
+    case 'transcriptPartial':
+      return (
+        `${isoTime} transcript partial ${event.engine} ${clip(event.file)} ` +
+        `read=${String(event.readBytes)} of=${String(event.totalBytes)} ` +
+        `fragments=${String(event.fragments)}`
+      );
     case 'listenerRole':
       return `${isoTime} hook listener role ${event.role} port=${String(event.port)}`;
     case 'hookListenerError':
@@ -541,7 +630,13 @@ export function formatCounters(counters: DiagnosticsCounters, isoTime: string): 
     // still a prefix of the current format.
     ` otel.metrics=${formatTelemetrySignal(counters.telemetry.metrics)}` +
     ` otel.logs=${formatTelemetrySignal(counters.telemetry.logs)}` +
-    ` otel.traces=${formatTelemetrySignal(counters.telemetry.traces)}`
+    ` otel.traces=${formatTelemetrySignal(counters.telemetry.traces)}` +
+    // v0.8.0 DoD 7.8. Appended once more, same rule.
+    ` ${COUNTERS_WINDOW_SCOPE}` +
+    // v0.8.0 DoD 7.7. Appended after the scope note rather than before it: the
+    // note is one `key=value` token like every other field, so a line quoted
+    // before this release is still a prefix of this one.
+    ` oversizePartial=${String(counters.oversizePartial)}`
   );
 }
 

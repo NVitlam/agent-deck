@@ -110,6 +110,10 @@ const SITE_IMAGES: readonly string[] = [
   'tree.png',
   'inspector.png',
   'stats_tokens.png',
+  // v0.8.0 DoD 7.D: the 7.12 smoke captures, each byte-identical to its media/ twin.
+  'drawer-time.png',
+  'sidebar-tweaks.png',
+  'stats-tokens-timing.png',
 ];
 
 /** The only hosts the page may reach. */
@@ -131,7 +135,7 @@ describe('the page exists as a publishable tree', () => {
     expect(TRACKED_SITE).toContain('site/.nojekyll');
   });
 
-  it('tracks exactly the four images, both ways, with the count pinned beside the set', () => {
+  it('tracks exactly the seven images, both ways, with the count pinned beside the set', () => {
     // RULE 19, applied to `site/media/` rather than to the VSIX. The failure
     // this catches is a file nobody meant to publish - the recorded case is a
     // stray `media/Action Running.png` that shipped past a deny-by-name rule -
@@ -144,7 +148,8 @@ describe('the page exists as a publishable tree', () => {
 
     expect(tracked).toStrictEqual(expected);
     expect(expected).toStrictEqual(tracked);
-    expect(tracked).toHaveLength(4);
+    // SEVEN SINCE v0.8.0 DoD 7.D: the four 0.7.1 stills plus the three 7.12 captures.
+    expect(tracked).toHaveLength(7);
   });
 
   it('every site image is byte-identical to its media/ twin', () => {

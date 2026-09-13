@@ -251,7 +251,7 @@ describe('DoD 2.6 — across every committed golden', () => {
      */
     const synthetic = entries.filter((e) => e.source === 'synthetic');
     const harvested = entries.filter((e) => e.source === 'corpus');
-    expect(synthetic.length).toBe(13);
+    expect(synthetic.length).toBe(14);
     expect(harvested.length).toBeGreaterThan(15);
 
     // --- the closed half: exactly one synthetic fixture manufactures each ---

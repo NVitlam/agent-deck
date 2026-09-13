@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "ses_fc0bab772ffeMg5GAMA0263aZa",
   "engine": "opencode",
   "projectSlug": "c--Users-dev-projects-agent-deck",
@@ -17,6 +17,7 @@
       "cacheRatio": 0,
       "toolCalls": 4,
       "silent": false,
+      "resultUnreceived": false,
       "model": "{\"id\":\"nemotron-3-ultra-free\",\"providerID\":\"opencode\"}"
     }
   ],
@@ -72,6 +73,13 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {
+    "wallMs": 63119,
+    "timeToFirstToolMs": 0,
+    "longestGapMs": 61783,
+    "tokensPerMin": 29082.20979419826,
+    "callsPerMin": 3.8023416087073625
+  },
   "totals": {
     "prompt": 30450,
     "output": 144,
@@ -79,6 +87,7 @@
     "compactions": 0,
     "subagents": 0,
     "silentSubagents": 0,
+    "subagentsUnreceived": 0,
     "stalls": 0
   },
   "params": {

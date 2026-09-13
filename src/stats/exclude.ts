@@ -47,5 +47,8 @@ export interface CoverageVerdict {
 export function coverageOf(state: SessionState): CoverageVerdict {
   if (state.schemaOk !== true) return { coverage: 'excluded:unsupported', code: 'unsupported' };
   if ((state.parked ?? []).length > 0) return { coverage: 'excluded:parked', code: 'parked' };
+  // v0.8.0: a transcript read in part is a subset of the session with no sign
+  // of it on any count, so it is excluded as totally as a parked tree is.
+  if (state.partial !== undefined) return { coverage: 'excluded:partial', code: 'partial' };
   return { coverage: 'full' };
 }

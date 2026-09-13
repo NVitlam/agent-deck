@@ -345,7 +345,15 @@
          rebuilt on returning. Anything the component held is gone; anything
          the store holds survives. The filter used to be the former and reset
          to `all` on every session visit, beside a liveness filter that did
-         not. Both are now passed in and reported back. -->
+         not. Both are now passed in and reported back.
+
+         `defaultOrdering` IS THE OPPOSITE CASE and is passed in without being
+         reported back (DoD 7.6). It is not the deck's sort — it is what the
+         deck's sort STARTS at, read once when this component is built, so the
+         very re-mount that resets the control bar is the moment it applies.
+         The sort itself stays `Deck.svelte`'s own, by a decision argued in
+         that file and not reopened here; the store carries the setting, and
+         `settings.json` carries the value. -->
     <main class="main" data-testid="main">
       <Deck
         sessions={view.filteredSessions}
@@ -357,6 +365,7 @@
         {reducedMotion}
         engineFilter={view.engineFilter}
         onenginefilter={(filter) => store.setEngineFilter(filter)}
+        defaultOrdering={view.defaultOrdering}
         onenter={(id) => store.enterSession(id)}
         onpan={(dx, dy) => store.panDeck(dx, dy)}
         onzoom={(notches, x, y) => store.zoomDeck(notches, x, y)}

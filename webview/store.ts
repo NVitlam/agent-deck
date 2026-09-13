@@ -31,6 +31,7 @@ import type {
   HostToWebviewMessage,
   SessionState,
   TokenPair,
+  TranscriptPartial,
   TreeNode,
   TreeOp,
   WebviewToHostMessage,
@@ -52,6 +53,7 @@ import type {
   ViewMode,
 } from './canvas-contract.js';
 import { countNodes } from './layout.js';
+import type { DeckSortMode } from './layout.js';
 import { fit as fitCanvas } from './layout/fit.js';
 import type { DrawerRect } from './layout/fit.js';
 import type { StatsRecord } from '../src/stats/schema.js';
@@ -98,6 +100,47 @@ export interface FitTrigger {
   event: string;
   fits: boolean;
   why: string;
+}
+
+/* ------------------------------------------------------------------------ *
+ * The deck's sorts, enumerated (v0.8.0 Phase 7, DoD 7.6)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Every `DeckSortMode`, as an object `tsc` checks for exhaustiveness.
+ *
+ * `layout.ts` declares the union as a TYPE, which has no runtime form, and
+ * `src/sidebar/tweaks.ts` writes the three values out again as its `options`
+ * because that module may not import anything at all — it is read by the host
+ * and by the CSP-strict webview bundle alike. So the values exist in two
+ * places and something has to check that they agree.
+ *
+ * This is that something, and it is not a third hand-written copy: the literal
+ * is typed `Record<DeckSortMode, true>`, so a member added to the union is a
+ * compile error here and a member removed is an excess property. The list
+ * below cannot lag the type, and `webview/sidebar/tweaks.test.ts` compares
+ * `tweaks.ts`'s `options` to it.
+ */
+const EVERY_DECK_SORT: Readonly<Record<DeckSortMode, true>> = {
+  live: true,
+  recent: true,
+  engine: true,
+};
+
+/** Every `DeckSortMode`, in the order the deck's control bar shows them. */
+export const DECK_SORTS: readonly DeckSortMode[] = Object.keys(
+  EVERY_DECK_SORT,
+) as DeckSortMode[];
+
+/**
+ * True iff `value` names a deck sort.
+ *
+ * `Object.hasOwn`, never `in`: `'toString' in EVERY_DECK_SORT` is true, and a
+ * guard that admitted a prototype key would hand the deck a sort with no
+ * comparator behind it.
+ */
+export function isDeckSort(value: unknown): value is DeckSortMode {
+  return typeof value === 'string' && Object.hasOwn(EVERY_DECK_SORT, value);
 }
 
 export const FIT_TRIGGERS: readonly FitTrigger[] = [
@@ -309,6 +352,32 @@ export interface SessionSummary {
    * last under `recent` and renders its age as an em-dash.
    */
   lastEventAt: number;
+  /**
+   * Present when this session was built from PART of its transcript
+   * (v0.8.0 Phase 7, DoD 7.7).
+   *
+   * Carried by reference off `SessionState.partial`, and carried WHOLE rather
+   * than reduced to a boolean, for the reason every other optional field on
+   * this row is carried whole: the summary is the store's view of a session,
+   * and a row that had already thrown the figures away would force any later
+   * reader to go back to `SessionState`.
+   *
+   * **The deck cell renders the MARK and not the figures** (user ruling,
+   * 2026-09-13), and that is not a presentation preference. `SessionPatch` has
+   * no key for `partial`, so the pair is latched by the engine at the read
+   * that established the tail — while the tail goes on following the file and
+   * discovery re-`stat`s it every poll. A card reading `17.0 MB of 1.2 GB`
+   * would therefore be a figure that silently goes stale on exactly the
+   * sessions the feature exists for. The numbers stay where they are dated:
+   * the `transcript partial` diagnostics line, which states them once with the
+   * read that produced them, and `SessionState.partial` for the extension API.
+   *
+   * **Absent for a refused session**, like `nodeCount` and `errorCount` above
+   * and for the same reason (G3): a refusal reads nothing off a tree it
+   * declined to trust, and "part of it was read" is a claim about a read whose
+   * result was thrown away.
+   */
+  partial?: TranscriptPartial;
 }
 
 /** A patch the host sent that could not be applied. */
@@ -498,6 +567,21 @@ export interface WebviewView {
    * until a `settings` message arrives, which is the manifest default.
    */
   canvasAutoFit: boolean;
+  /**
+   * `agentDeck.defaultOrdering`, as the host last said (DoD 7.6).
+   *
+   * ABSENT until a `settings` message states a value this build knows — which
+   * is the absence of an answer, not a default. `Deck.svelte` falls back to
+   * `DEFAULT_DECK_SORT` when it is absent, so the deck has never once waited
+   * on this to draw, and no default is written down twice.
+   *
+   * The deck's sort itself is NOT here. It is `Deck.svelte`'s own state, by a
+   * decision that predates this phase and is argued in that file: the control
+   * bar is re-chosen from in front of you, and the component's lifetime — one
+   * deck visit — is the right lifetime for it. This value only says what it
+   * is re-chosen FROM.
+   */
+  defaultOrdering?: DeckSortMode;
   /**
    * Incremented every time the store FITS the canvas. The renderer adopts
    * `canvasView` when this moves and not otherwise, which is what lets a
@@ -778,12 +862,35 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
     ...(refused || state.contextNow === undefined ? {} : { contextNow: state.contextNow }),
     ...(refused || state.burn === undefined ? {} : { burn: state.burn }),
     ...(refused || state.windowTokens === undefined ? {} : { windowTokens: state.windowTokens }),
+    // v0.8.0 DoD 7.7. Zeroed-out for a refusal the same way `nodeCount` is:
+    // see the field's own doc above. Carried by reference, like the three
+    // pairs above it — `applySessionPatch` deep-freezes the state, so nothing
+    // can mutate it behind a renderer's back.
+    ...(refused || state.partial === undefined ? {} : { partial: state.partial }),
   };
 }
 
 export function createStore(postIntent: IntentSink = () => {}, options: StoreOptions = {}): Store {
   const fitFn = options.fit ?? fitCanvas;
   const sessions = new Map<string, SessionState>();
+  /* ----- the Tweaks settings (v0.8.0 Phase 7, DoD 7.6) --------------------- */
+  //
+  // EVERY ONE STARTS OFF, AND THAT IS THE ABSENCE OF AN ANSWER RATHER THAN A
+  // GUESSED DEFAULT. `src/sidebar/tweaks.ts` carries no default by design —
+  // the amendment makes `settings.json` the source of truth and a second copy
+  // of a default is the stale one — so until the host's `settings` message
+  // arrives this store behaves EXACTLY as it did before DoD 7.6 existed: no
+  // follow, no drawer on entry, a collapsed drawer. The host sends that
+  // message when the surface is created, so the window is one message wide,
+  // and nothing in it is a statement about what the user has configured.
+  //
+  // Read with `=== true` and never for truthiness: the record is typed
+  // `boolean | string`, and a non-empty string must not turn an effect on.
+  let followNewSessions = false;
+  let openDrawerOnEnter = false;
+  let drawerOpensExpanded = false;
+  /** `undefined` until a message states a sort this build knows. */
+  let defaultOrdering: DeckSortMode | undefined;
   /* ----- auto-fit state (DoD 4.0) ----------------------------------------- */
   let canvasAutoFit = true;
   let canvasFitEpoch = 0;
@@ -830,7 +937,14 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let livenessFilter: LivenessFilter = DEFAULT_LIVENESS_FILTER;
   let engineFilter: EngineFilter = DEFAULT_ENGINE_FILTER;
   let inspectorOpen = false;
-  /** §8.6's two drawer heights. Collapsed is the default, on every entry. */
+  /**
+   * §8.6's two drawer heights.
+   *
+   * `false` here rather than `drawerOpensExpanded` because no drawer is open
+   * yet and no `settings` message has arrived: the OPENING height is read at
+   * the moment a drawer opens, which is the only moment it can be read from a
+   * setting the host may not have sent yet (DoD 7.6).
+   */
   let drawerExpanded = false;
   /** Which call row's detail pane is open. One at a time (§8.6). */
   let detailActionId: string | undefined;
@@ -918,9 +1032,44 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     }
   };
 
+  /**
+   * Open the drawer on the session's ROOT node (DoD 7.6, `openDrawerOnEnter`).
+   *
+   * The drawer is a node's panel — `App.svelte` mounts it only while
+   * `inspectorOpen && selectedNode !== undefined` — so "open the drawer on
+   * entering" has to name a node, and the root is the only one entering a
+   * session picks out. Its call rows are the session's own tool calls, which
+   * is what the setting's own sentence describes.
+   *
+   * A REFUSED session opens nothing (G3, C7.4): its interior renders the
+   * refusal card and no tree, so there is nothing to inspect. That is the same
+   * refusal `selectNode` already makes, stated here rather than reached by
+   * calling through it, because this runs mid-entry with the altitude already
+   * moved.
+   */
+  const openDrawerOnRoot = (state: SessionState): void => {
+    if (isRefused(state)) return;
+    selectedNodeId = state.root.id;
+    altitude = 'inspector';
+    inspectorOpen = true;
+    // The drawer is opening, so it takes its opening height (DoD 7.6,
+    // `drawerExpandedByDefault`).
+    drawerExpanded = drawerOpensExpanded;
+    detailActionId = undefined;
+    // The drawer opened: the field just lost a band (trigger table,
+    // `selectNode`'s row — the same geometry change by the same cause).
+    triggerFit();
+  };
+
   const applySnapshot = (incoming: SessionState[]): void => {
     const nextOrder: string[] = [];
     const seen = new Set<string>();
+    // Taken BEFORE the clear: a session is new when this window has never held
+    // it (DoD 7.6, `followNewSessions`). A host snapshot is the only thing that
+    // introduces one — the store's own comment below says a snapshot is the
+    // re-statement that carries an added or removed session — so this is the
+    // one place the question can be asked.
+    const known = new Set(sessions.keys());
     sessions.clear();
     for (const state of incoming) {
       sessions.set(state.sessionId, state);
@@ -967,8 +1116,39 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         // left, and an expanded height would be the only thing on screen still
         // describing it.
         detailActionId = undefined;
-        drawerExpanded = false;
+        drawerExpanded = drawerOpensExpanded;
         altitude = 'deck';
+      }
+    }
+
+    // `followNewSessions` (DoD 7.6): a session that APPEARS while the deck is
+    // open becomes the selected one.
+    //
+    // Three conditions, each of which is the setting read literally rather
+    // than generously:
+    //
+    //  * `known.size > 0` — the FIRST snapshot introduces every session at
+    //    once, and "the new one" is not a thing that set has. That case is
+    //    already decided above (`order[0]`), by a rule this must not reverse.
+    //  * `altitude === 'deck'` — the setting says "while the deck is open".
+    //    Moving the selection out from under someone who is inside another
+    //    session's interior would change what their whole panel is showing.
+    //  * the LAST new id in the host's order, when several appear at once —
+    //    the host appends as it discovers, so the last one is the most
+    //    recently appeared, which is what "a session appears" names.
+    //
+    // Nothing is posted to the host: `selectSession` is a message about the
+    // USER's intent, and this is the host's own news coming back to it.
+    if (followNewSessions && known.size > 0 && altitude === 'deck') {
+      const appeared = nextOrder.filter((id) => !known.has(id));
+      const newest = appeared[appeared.length - 1];
+      if (newest !== undefined && newest !== selectedSessionId) {
+        selectedSessionId = newest;
+        // The node selection belonged to whatever was selected before.
+        selectedNodeId = undefined;
+        inspectorOpen = false;
+        detailActionId = undefined;
+        drawerExpanded = drawerOpensExpanded;
       }
     }
   };
@@ -1025,6 +1205,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         statsStoreEnabled,
         statsStoreLoaded,
       };
+      if (defaultOrdering !== undefined) view.defaultOrdering = defaultOrdering;
       if (detailActionId !== undefined) view.detailActionId = detailActionId;
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
       if (selected !== undefined) view.selected = selected;
@@ -1071,6 +1252,30 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
           break;
         case 'settings':
           canvasAutoFit = message.canvasAutoFit;
+          // DoD 7.6. Three of the four tweaks change what this reducer does;
+          // the fourth (`defaultOrdering`) is the deck's own control bar. The
+          // keys are `TWEAK_SETTINGS`' keys, without the `agentDeck.` prefix.
+          //
+          // READ THROUGH A NULLABLE ALIAS, and the cast is the point rather
+          // than a convenience. `handleMessage` never throws (G3) and the
+          // guard above it — `webview/messages.ts:isHostMessage` — checks the
+          // `type` field and nothing else, so a `settings` message reaching
+          // this port without its record is a shape the renderer has to
+          // survive. The contract says the field is required; the message port
+          // is not the contract.
+          {
+            const tweaks = message.tweaks as Readonly<Record<string, unknown>> | undefined;
+            followNewSessions = tweaks?.['followNewSessions'] === true;
+            openDrawerOnEnter = tweaks?.['openDrawerOnEnter'] === true;
+            drawerOpensExpanded = tweaks?.['drawerExpandedByDefault'] === true;
+            // A sort this build does not know is not a sort. It reads as
+            // ABSENT rather than as `DEFAULT_DECK_SORT`, so a value the host
+            // sent and the renderer could not use is never mistaken for a
+            // value the user chose — and `Deck.svelte`'s fallback is the one
+            // place the design's own default is written.
+            const ordering = tweaks?.['defaultOrdering'];
+            defaultOrdering = isDeckSort(ordering) ? ordering : undefined;
+          }
           break;
         case 'showView':
           this.setViewMode(message.mode);
@@ -1193,7 +1398,8 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       // `SessionCanvas.svelte`'s entry fit, which owns the rendered transform;
       // this value is not read by it.
       canvasView = { ...IDENTITY_VIEW };
-      if (!sessions.has(sessionId)) return;
+      const entering = sessions.get(sessionId);
+      if (entering === undefined) return;
       if (sessionId !== selectedSessionId) selectedNodeId = undefined;
       selectedSessionId = sessionId;
       altitude = 'session';
@@ -1202,6 +1408,11 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       // the new tree first; this marks the fit pending so the first geometry
       // report after entry fits under the store's rule as well.
       triggerFit();
+      // DoD 7.6. AFTER the altitude has moved to `session` and before
+      // `normalize`, so the drawer's altitude is raised from a state that is
+      // already consistent and `normalize` still gets to demote it if the
+      // session cannot hold it.
+      if (openDrawerOnEnter) openDrawerOnRoot(entering);
       normalize();
       notify();
     },
@@ -1218,6 +1429,12 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       // one call belonging to one node; carrying it across a selection change
       // would leave it describing a call the drawer above it no longer lists.
       if (nodeId !== selectedNodeId) detailActionId = undefined;
+      // A drawer that is SHUT is about to open, so it takes its opening height
+      // (DoD 7.6, `drawerExpandedByDefault`). A drawer already open keeps
+      // whatever height the user last put it at: moving a node selection is
+      // not opening a drawer, and resizing the one in front of them would be
+      // a height change nobody asked for.
+      if (!inspectorOpen) drawerExpanded = drawerOpensExpanded;
       selectedNodeId = nodeId;
       altitude = 'inspector';
       inspectorOpen = true;
@@ -1241,8 +1458,10 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         inspectorOpen = false;
         selectedNodeId = undefined;
         // The height goes with the drawer. Reopening on the next selection at
-        // 46vh would be the drawer remembering a state the user left.
-        drawerExpanded = false;
+        // a height the user left it at would be the drawer remembering; it
+        // returns to its OPENING height instead, which is `false` until
+        // `drawerExpandedByDefault` says otherwise (DoD 7.6).
+        drawerExpanded = drawerOpensExpanded;
         // The drawer closed (trigger table): the field regained its band.
         triggerFit();
       } else if (altitude === 'session') {
@@ -1323,11 +1542,13 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       if (open && selectedNodeId !== undefined) altitude = 'inspector';
       if (!open && altitude === 'inspector') altitude = 'session';
       // Shutting the drawer discards both of its own states, so reopening
-      // gives the collapsed, undetailed drawer §8.6 describes rather than
-      // whatever it looked like when it was dismissed.
+      // gives the undetailed drawer §8.6 describes at its OPENING height
+      // rather than whatever it looked like when it was dismissed. That
+      // height is collapsed until `drawerExpandedByDefault` says otherwise
+      // (DoD 7.6).
       if (!open) {
         detailActionId = undefined;
-        drawerExpanded = false;
+        drawerExpanded = drawerOpensExpanded;
       }
       // The drawer opened or closed (trigger table).
       triggerFit();

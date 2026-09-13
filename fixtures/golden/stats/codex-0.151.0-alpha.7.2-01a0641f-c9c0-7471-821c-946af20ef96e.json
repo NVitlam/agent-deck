@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "01a0641f-c9c0-7471-821c-946af20ef96e",
   "engine": "codex",
   "projectSlug": "C--Users-dev-codex-probe-scratch",
@@ -15,6 +15,7 @@
       "output": 175,
       "toolCalls": 1,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.4-mini"
     }
   ],
@@ -31,6 +32,12 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {
+    "wallMs": 3192,
+    "timeToFirstToolMs": 0,
+    "tokensPerMin": 592913.5338345865,
+    "callsPerMin": 18.79699248120301
+  },
   "totals": {
     "prompt": 31368,
     "output": 175,
@@ -38,6 +45,7 @@
     "contextFill": 0.07480263157894737,
     "subagents": 0,
     "silentSubagents": 0,
+    "subagentsUnreceived": 0,
     "stalls": 0
   },
   "params": {

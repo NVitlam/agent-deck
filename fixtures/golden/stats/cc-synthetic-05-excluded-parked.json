@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "synthetic-05-excluded-parked",
   "engine": "cc",
   "projectSlug": "synthetic-stats",
@@ -13,6 +13,7 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {},
   "totals": {
     "prompt": 0,
     "output": 0,

@@ -14,9 +14,11 @@ import { describe, expect, it } from 'vitest';
 import { SIDEBAR_ROOT_ID, WEBVIEW_ROOT_ID } from '../bridge/contract.js';
 import { contentSecurityPolicy, webviewHtml } from '../bridge/html.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from '../bridge/panel-assets.js';
+import type { SettingsMessage } from '../model/events.js';
 import { SIDEBAR_MENU } from './menu.js';
 import { SidebarController } from './provider.js';
 import type { SidebarSurface } from './provider.js';
+import { TWEAK_SETTINGS } from './tweaks.js';
 
 /** VS Code's measured desktop `cspSource` — see `test/vscode-mock.ts`. */
 const CSP_SOURCE = "'self' https://*.vscode-cdn.net";
@@ -24,21 +26,30 @@ const CSP_SOURCE = "'self' https://*.vscode-cdn.net";
 interface FakeView {
   surface: SidebarSurface;
   html: string;
+  /** Every message the controller posted, in order. */
+  posted: SettingsMessage[];
   fire(raw: unknown): void;
+  setVisible(visible: boolean): void;
   dispose(): void;
   subscriptions: number;
 }
 
 function fakeView(): FakeView {
   const messageHandlers = new Set<(raw: unknown) => void>();
+  const visibilityHandlers = new Set<(visible: boolean) => void>();
   const disposeHandlers = new Set<() => void>();
+  const posted: SettingsMessage[] = [];
   const view: FakeView = {
     html: '',
+    posted,
     get subscriptions(): number {
-      return messageHandlers.size + disposeHandlers.size;
+      return messageHandlers.size + visibilityHandlers.size + disposeHandlers.size;
     },
     fire: (raw) => {
       for (const h of [...messageHandlers]) h(raw);
+    },
+    setVisible: (visible) => {
+      for (const h of [...visibilityHandlers]) h(visible);
     },
     dispose: () => {
       for (const h of [...disposeHandlers]) h();
@@ -49,10 +60,19 @@ function fakeView(): FakeView {
         view.html = html;
       },
       asWebviewUri: (...segments) => `webview://ext/${segments.join('/')}`,
+      postMessage: (message) => {
+        posted.push(message);
+      },
       onDidReceiveMessage: (handler) => {
         messageHandlers.add(handler);
         return () => {
           messageHandlers.delete(handler);
+        };
+      },
+      onDidChangeVisibility: (handler) => {
+        visibilityHandlers.add(handler);
+        return () => {
+          visibilityHandlers.delete(handler);
         };
       },
       onDidDispose: (handler) => {
@@ -122,6 +142,9 @@ describe('the sidebar boundary', () => {
       messagesReceived: SIDEBAR_MENU.length,
       messagesDropped: 0,
       commandsExecuted: SIDEBAR_MENU.length,
+      // v0.8.0 DoD 7.6 — a menu click writes no setting and posts nothing.
+      tweakWrites: 0,
+      settingsSent: 0,
     });
   });
 
@@ -141,12 +164,25 @@ describe('the sidebar boundary', () => {
       JSON.parse('{"type":"runCommand","command":"agentDeck.open","__proto__":{"x":1}}'),
       null,
       'agentDeck.open',
+      /*
+       * v0.8.0 DoD 7.6 — an `updateTweak` naming no tweak, or carrying a value
+       * that tweak may not take. `isWebviewToHostMessage` refuses all of these
+       * at the boundary, BEFORE the host would write into `settings.json`;
+       * they are listed here so this file states what this surface drops as
+       * well as what it acts on.
+       */
+      { type: 'updateTweak', key: 'telemetry.enabled', value: true },
+      { type: 'updateTweak', key: 'followNewSessions', value: 'true' },
+      { type: 'updateTweak', key: 'defaultOrdering', value: 'sideways' },
+      { type: 'updateTweak', key: 'defaultOrdering', value: true },
+      { type: 'updateTweak', key: 'followNewSessions' },
     ]) {
       view.fire(hostile);
     }
     expect(executed).toStrictEqual([]);
-    expect(c.counters.messagesDropped).toBe(10);
+    expect(c.counters.messagesDropped).toBe(15);
     expect(c.counters.commandsExecuted).toBe(0);
+    expect(c.counters.tweakWrites).toBe(0);
   });
 
   it('a command that throws, or rejects, reaches onError and never the host', async () => {
@@ -170,11 +206,170 @@ describe('the sidebar boundary', () => {
   it('disposes with the view, and drops its subscriptions', () => {
     const view = fakeView();
     const c = controller(view);
-    expect(view.subscriptions).toBe(2);
+    // Three now: messages, visibility (DoD 7.6) and dispose.
+    expect(view.subscriptions).toBe(3);
     view.dispose();
     expect(c.disposed).toBe(true);
     expect(view.subscriptions).toBe(0);
     c.dispose();
     expect(c.disposed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.8.0 DoD 7.6 — the Tweaks tab's host half
+// ---------------------------------------------------------------------------
+
+/** A settings message carrying every tweak, with a value chosen per kind. */
+function tweaksMessage(overrides: Record<string, boolean | string> = {}): Omit<SettingsMessage, 'type'> {
+  const tweaks: Record<string, boolean | string> = {};
+  for (const tweak of TWEAK_SETTINGS) {
+    tweaks[tweak.key] = tweak.kind === 'boolean' ? true : (tweak.options?.[1] ?? '');
+  }
+  return { canvasAutoFit: true, tweaks: { ...tweaks, ...overrides } };
+}
+
+describe('the Tweaks tab, host half (DoD 7.6)', () => {
+  it('posts nothing until it is told the settings, then posts exactly what it was told', () => {
+    const view = fakeView();
+    const c = controller(view);
+    // A view that has been told nothing is told nothing: the host reads the
+    // configuration and sends it, and there is no default manufactured here.
+    expect(view.posted).toStrictEqual([]);
+    expect(c.counters.settingsSent).toBe(0);
+
+    const sent = tweaksMessage();
+    c.setSettings(sent);
+    expect(view.posted).toStrictEqual([{ type: 'settings', ...sent }]);
+    expect(c.counters.settingsSent).toBe(1);
+    // Every declared tweak is on the wire — a message carrying three of four
+    // would leave one control drawing whatever the renderer's own default is.
+    const posted = view.posted[0]?.tweaks ?? {};
+    expect(Object.keys(posted).sort()).toStrictEqual(TWEAK_SETTINGS.map((x) => x.key).sort());
+  });
+
+  it('re-sends on becoming visible and not on being hidden: a re-shown view is a new document', () => {
+    const view = fakeView();
+    const c = controller(view);
+    const sent = tweaksMessage();
+    c.setSettings(sent);
+    expect(view.posted).toHaveLength(1);
+
+    view.setVisible(false);
+    expect(view.posted, 'a hidden view was posted to').toHaveLength(1);
+    view.setVisible(true);
+    expect(view.posted).toStrictEqual([
+      { type: 'settings', ...sent },
+      { type: 'settings', ...sent },
+    ]);
+    expect(c.counters.settingsSent).toBe(2);
+  });
+
+  it('holds no state of its own: after a re-show the values equal the last settings, not the first', () => {
+    /*
+     * THE DoD'S OWN PROPERTY — "the panel holds no state of its own (test:
+     * reload -> values equal settings)" — on the host side of the wire.
+     *
+     * The failure it rules out is a controller that remembered the FIRST
+     * settings it was given and replayed them on every reload, which looks
+     * identical to correct behaviour until a value changes.
+     */
+    const view = fakeView();
+    const c = controller(view);
+    c.setSettings(tweaksMessage({ followNewSessions: false }));
+    c.setSettings(tweaksMessage({ followNewSessions: true }));
+    view.setVisible(false);
+    view.setVisible(true);
+    expect(view.posted).toHaveLength(3);
+    expect(view.posted.at(-1)?.tweaks.followNewSessions).toBe(true);
+    // ...and the first message really did carry the other value, so the
+    // assertion above is not comparing `true` with `true`.
+    expect(view.posted[0]?.tweaks.followNewSessions).toBe(false);
+  });
+
+  it('an updateTweak the guard admits is handed on with its key and value, and counted', () => {
+    const view = fakeView();
+    const writes: { key: string; value: boolean | string }[] = [];
+    const c = new SidebarController({
+      surface: view.surface,
+      executeCommand: () => undefined,
+      onUpdateTweak: (key, value) => {
+        writes.push({ key, value });
+        return undefined;
+      },
+      nonce: 'AAAAAAAA',
+    });
+
+    // Every declared tweak, at a value of its own kind. `false` is included
+    // deliberately: an "is the value there" read discards it, which is why the
+    // boundary guard uses `ownDataProperty`.
+    view.fire({ type: 'updateTweak', key: 'followNewSessions', value: false });
+    view.fire({ type: 'updateTweak', key: 'openDrawerOnEnter', value: true });
+    view.fire({ type: 'updateTweak', key: 'drawerExpandedByDefault', value: true });
+    view.fire({ type: 'updateTweak', key: 'defaultOrdering', value: 'engine' });
+    expect(writes).toStrictEqual([
+      { key: 'followNewSessions', value: false },
+      { key: 'openDrawerOnEnter', value: true },
+      { key: 'drawerExpandedByDefault', value: true },
+      { key: 'defaultOrdering', value: 'engine' },
+    ]);
+    expect(c.counters.tweakWrites).toBe(4);
+    expect(c.counters.messagesDropped).toBe(0);
+
+    // AND IT DOES NOT ECHO. The control moves when the next `settings` message
+    // says so, never because this surface decided it had. Nothing was posted.
+    expect(view.posted).toStrictEqual([]);
+  });
+
+  it('with no writer wired, an updateTweak is dropped rather than half-acted-on', () => {
+    const view = fakeView();
+    const c = controller(view);
+    view.fire({ type: 'updateTweak', key: 'followNewSessions', value: true });
+    expect(c.counters.tweakWrites).toBe(0);
+    expect(c.counters.messagesDropped).toBe(1);
+  });
+
+  it('a write that throws, or rejects, reaches onError and never the host', async () => {
+    const view = fakeView();
+    const errors: unknown[] = [];
+    const c = new SidebarController({
+      surface: view.surface,
+      executeCommand: () => undefined,
+      onUpdateTweak: (key) => {
+        if (key === 'followNewSessions') throw new Error('read-only settings file');
+        return Promise.reject(new Error('later'));
+      },
+      nonce: 'AAAAAAAA',
+      onError: (e) => errors.push(e),
+    });
+    view.fire({ type: 'updateTweak', key: 'followNewSessions', value: true });
+    view.fire({ type: 'updateTweak', key: 'openDrawerOnEnter', value: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(errors.map((e) => (e as Error).message)).toStrictEqual([
+      'read-only settings file',
+      'later',
+    ]);
+    // A synchronous throw counts nothing — the write did not happen. The
+    // rejecting one was issued, so it did.
+    expect(c.counters.tweakWrites).toBe(1);
+  });
+
+  it('calls onDispose once, so a registry can drop it', () => {
+    const view = fakeView();
+    let disposals = 0;
+    const c = new SidebarController({
+      surface: view.surface,
+      executeCommand: () => undefined,
+      nonce: 'AAAAAAAA',
+      onDispose: () => {
+        disposals += 1;
+      },
+    });
+    view.dispose();
+    c.dispose();
+    expect(disposals).toBe(1);
+    // ...and a disposed controller posts nothing, however it is asked.
+    c.setSettings(tweaksMessage());
+    expect(view.posted).toStrictEqual([]);
   });
 });

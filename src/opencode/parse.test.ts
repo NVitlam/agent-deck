@@ -786,7 +786,14 @@ describe('synthetic rows', () => {
      * the tree, and it still does not.
      */
     const result = parseParts([
-      row({ type: 'step-finish', tokens: { input: 1, output: 2, cache: { read: 3, write: 4 } } }),
+      // `timeCreated` is OVERRIDDEN rather than left to `row`'s counter: v0.8.0
+      // DoD 7.1 puts this row's creation time on the turn as `atMs`, and the
+      // counter's value depends on how many rows this file built before, which
+      // would make the literal below move when an unrelated test is added.
+      row(
+        { type: 'step-finish', tokens: { input: 1, output: 2, cache: { read: 3, write: 4 } } },
+        { timeCreated: 1_787_100_000_777 },
+      ),
       row({ type: 'compaction', tail_start_id: 'prt_x' }),
       row({ type: 'compaction' }),
     ]);
@@ -797,8 +804,15 @@ describe('synthetic rows', () => {
     expect(result.toolsBySession.size).toBe(0);
 
     // The four components are read APART, which is what F6 and F7 need.
+    //
+    // `atMs` is v0.8.0 Phase 7, DoD 7.1 (F14), and it is the PART ROW's
+    // `time_created`: measured over both committed stores, all 210 step-finish
+    // payloads carry the key set {cost, reason, snapshot, tokens, type} and no
+    // `time` key at all, so the payload states no time of its own. Asserted
+    // with `toStrictEqual` over the whole turn, so a turn that gained the field
+    // under a different name or lost it entirely both fail here.
     expect([...result.usageBySession.values()].flat()).toStrictEqual([
-      { ordinal: 0, input: 1, cacheCreation: 4, cacheRead: 3, output: 2 },
+      { ordinal: 0, input: 1, cacheCreation: 4, cacheRead: 3, output: 2, atMs: 1_787_100_000_777 },
     ]);
     // Both compactions are `engine`, with no token figures: OpenCode states
     // that one happened and nothing about what it cost.
@@ -826,6 +840,14 @@ describe('synthetic rows', () => {
     expect(record.resultPreview).toBeUndefined();
     expect(record.resultTruncated).toBe(false);
     expect('durationMs' in record).toBe(false);
+    // v0.8.0 Phase 7, DoD 7.1 (F14). THE ARM THAT SEPARATES THE TWO FIELDS
+    // FROM THE DURATION: a running part states a start and no end, so the
+    // duration is absent and the START IS NOT. A parse boundary that carried
+    // the two operands on `durationMs`'s own conjunction would lose this start,
+    // and no committed fixture would say so — both corpora are 345 of 345
+    // `completed`/`error`, every one carrying both.
+    expect(record.startedAtMs).toBe(1000);
+    expect('endedAtMs' in record).toBe(false);
   });
 
   it('omits durationMs when state.time.end is absent (0 such parts in either corpus)', () => {
@@ -837,6 +859,25 @@ describe('synthetic rows', () => {
 
     const both = onlyRecord(parseParts([row(toolData('bash', { time: { start: 10, end: 42 } }))]));
     expect(both.durationMs).toBe(32);
+
+    /*
+     * v0.8.0 Phase 7, DoD 7.1 (F14), over the same three parts. The whole
+     * point of the two fields is that they do NOT move with `durationMs`:
+     *
+     *   start-only  -> start present, end absent, duration absent
+     *   no time     -> both absent (the engine states none)
+     *   start + end -> both present, and they are the duration's operands
+     *
+     * The last line is the one that makes the golden's `durationMs` a
+     * transitive pin on these two: `end - start` is 32 only if both are the
+     * numbers OpenCode wrote.
+     */
+    expect(noEnd.startedAtMs).toBe(1000);
+    expect('endedAtMs' in noEnd).toBe(false);
+    expect('startedAtMs' in noTime).toBe(false);
+    expect('endedAtMs' in noTime).toBe(false);
+    expect(both.startedAtMs).toBe(10);
+    expect(both.endedAtMs).toBe(42);
   });
 
   /*

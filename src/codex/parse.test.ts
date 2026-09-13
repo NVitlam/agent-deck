@@ -427,6 +427,102 @@ describe("C2's unknown-type tripwire (DoD 2.3)", () => {
   });
 });
 
+/**
+ * F14 — v0.8.0 Phase 7, DoD 7.1.
+ *
+ * WHICH RECORD EACH INSTANT COMES FROM, which is the thing a corpus count
+ * cannot say. The census in `src/stats/f14-corpus.test.ts` pins 42 starts and
+ * 41 ends over the committed runs; swap the two sources, or read the end off
+ * the wrong record, and every one of those numbers is unchanged.
+ *
+ * So the records here carry DELIBERATELY DISTINCT timestamps — `record()`
+ * writes the ordinal into the seconds field — and each instant is asserted
+ * against the exact record it must come from.
+ */
+describe('F14 — the two instants and the records that state them', () => {
+  const callPayload = (callId: string) => ({
+    type: 'function_call',
+    name: 'exec_command',
+    call_id: callId,
+    arguments: '{"cmd":"ls"}',
+  });
+
+  it('takes the start from the calling record and the end from the output record', () => {
+    const records = [
+      sessionMeta(0, {}),
+      record(1, 'turn_context', { multi_agent_version: 'v2' }),
+      record(3, 'response_item', callPayload('call_a')),
+      // Four records later, so an implementation reading any neighbouring
+      // record's timestamp lands on a different second.
+      record(7, 'response_item', {
+        type: 'function_call_output',
+        call_id: 'call_a',
+        output: 'ok',
+      }),
+    ];
+    const call = parseCodexThread(records, { file: 'f14.jsonl' }).thread?.toolCalls[0];
+
+    expect(call?.callId).toBe('call_a');
+    expect(call?.startedAtMs).toBe(Date.parse('2026-09-03T00:00:03.000Z'));
+    expect(call?.endedAtMs).toBe(Date.parse('2026-09-03T00:00:07.000Z'));
+    // Stated apart, so a swap of the two sources fails on both lines rather
+    // than on an ordering that a swap would also satisfy.
+    expect(call?.startedAtMs).toBeLessThan(call?.endedAtMs ?? 0);
+  });
+
+  it('a call with no output record states a start and no end', () => {
+    const records = [
+      sessionMeta(0, {}),
+      record(1, 'turn_context', { multi_agent_version: 'v2' }),
+      record(3, 'response_item', callPayload('call_running')),
+    ];
+    const call = parseCodexThread(records, { file: 'f14-running.jsonl' }).thread?.toolCalls[0];
+
+    expect(call?.startedAtMs).toBe(Date.parse('2026-09-03T00:00:03.000Z'));
+    // ABSENT, never 0. The thread-level `startedAtMs()` in `parse.ts` falls
+    // back to 0 deliberately so an unreadable thread start renders as 1970 and
+    // is visibly wrong; F14's contract is the opposite — absent where the
+    // engine states none — so that fallback is not reused here.
+    expect(call).toBeDefined();
+    expect(Object.hasOwn(call ?? {}, 'endedAtMs')).toBe(false);
+    // The same condition that leaves the end absent leaves the preview absent:
+    // there is no output record. Asserted so the arm cannot be satisfied by a
+    // call that was dropped rather than left running.
+    expect(call?.outputPreview).toBeUndefined();
+  });
+
+  it('gives each call its own output record rather than the first one seen', () => {
+    // Two calls, two outputs, interleaved so a joiner that pairs by position
+    // instead of by `call_id` swaps the two ends.
+    const records = [
+      sessionMeta(0, {}),
+      record(1, 'turn_context', { multi_agent_version: 'v2' }),
+      record(2, 'response_item', callPayload('call_first')),
+      record(4, 'response_item', callPayload('call_second')),
+      record(6, 'response_item', {
+        type: 'function_call_output',
+        call_id: 'call_second',
+        output: 'second',
+      }),
+      record(8, 'response_item', {
+        type: 'function_call_output',
+        call_id: 'call_first',
+        output: 'first',
+      }),
+    ];
+    const calls = parseCodexThread(records, { file: 'f14-two.jsonl' }).thread?.toolCalls ?? [];
+
+    expect(calls.map((c) => c.callId)).toEqual(['call_first', 'call_second']);
+    expect(calls[0]?.endedAtMs).toBe(Date.parse('2026-09-03T00:00:08.000Z'));
+    expect(calls[1]?.endedAtMs).toBe(Date.parse('2026-09-03T00:00:06.000Z'));
+    // `call_first` ends AFTER `call_second` here, which is the whole point: a
+    // positional join would produce the ascending pair and pass a test that
+    // only checked each end was later than its own start.
+    expect(calls[0]?.endedAtMs).toBeGreaterThan(calls[1]?.endedAtMs ?? 0);
+  });
+
+});
+
 describe('every response_item type in the corpus is handled or counted-skipped', () => {
   it('the corpus type set is declared in CODEX_RESPONSE_ITEM_DISPOSITION', () => {
     const seen = new Set<string>();

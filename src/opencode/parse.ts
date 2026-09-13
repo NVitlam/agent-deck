@@ -297,6 +297,19 @@ function toToolRecord(
   const end = time['end'];
   const durationMs =
     typeof start === 'number' && typeof end === 'number' ? end - start : undefined;
+  /*
+   * v0.8.0 Phase 7, DoD 7.1 (F14). The two operands of `durationMs` above were
+   * bound, used once and discarded; they are carried now, EACH ON ITS OWN
+   * TYPE TEST rather than on the conjunction that guards the duration. That
+   * asymmetry is the point: a part stating a start and no end yields a start
+   * and no duration, which is the running case, and a conjunction here would
+   * silently drop the start with it.
+   *
+   * No clock and no row column is consulted — these are the numbers OpenCode
+   * itself wrote into `part.data.state.time`.
+   */
+  const startedAtMs = typeof start === 'number' ? start : undefined;
+  const endedAtMs = typeof end === 'number' ? end : undefined;
 
   /*
    * The two task join keys use DIFFERENT predicates, matching
@@ -389,6 +402,8 @@ function toToolRecord(
     ...(touchedFile === undefined ? {} : { filePath: touchedFile }),
     ...(outputCut === undefined ? {} : { resultPreview: outputCut.text }),
     ...(durationMs === undefined ? {} : { durationMs }),
+    ...(startedAtMs === undefined ? {} : { startedAtMs }),
+    ...(endedAtMs === undefined ? {} : { endedAtMs }),
     ...(engineTruncated === undefined ? {} : { truncated: engineTruncated }),
     partId: row.id,
     sessionId: row.sessionId,
@@ -483,7 +498,34 @@ export function parseParts(
     // somewhere. Both are appended in row order, which `PART_SQL` already
     // establishes (`ORDER BY time_created, id`).
     if (type === 'step-finish') {
-      const turn = toUsageTurn(data, usageBySession.get(row.sessionId)?.length ?? 0);
+      /*
+       * v0.8.0 Phase 7, DoD 7.1 (F14) — the turn's time is the PART ROW's
+       * `time_created`, and the payload was measured before that was chosen.
+       *
+       * Census over both committed stores, every `step-finish` part (anchor
+       * 147, witness 63, 210 in all): the payload's key set is exactly
+       * {`cost`, `reason`, `snapshot`, `tokens`, `type`} on all 210, and a
+       * `time` key occurs 0 times. So `step-finish` states no time of its own
+       * and there is no payload field to prefer — the check the spec's "the
+       * engine's own timestamps only" demands was run, and it came back empty.
+       *
+       * `part.time_created` is the engine's own timestamp under that rule: it
+       * is a column OpenCode writes into OpenCode's store, content that
+       * survives a clone byte-for-byte, and it is the same class of value this
+       * package already reads for `AgentNode.endedAt` (`graft.ts`, from the
+       * session row's `time_updated`) and for this part's own sort key
+       * (`order: [row.timeCreated, row.id]` below). It is not a filesystem
+       * mtime and not this process's clock.
+       *
+       * `time_created` rather than `time_updated`: the two differ on all 210
+       * rows, and a step's time is when the engine recorded the step, not when
+       * a later write touched the row.
+       */
+      const turn = toUsageTurn(
+        data,
+        usageBySession.get(row.sessionId)?.length ?? 0,
+        row.timeCreated,
+      );
       if (turn === undefined) {
         counts.partsIgnoredNoNode++;
         continue;
@@ -562,7 +604,11 @@ export function parseParts(
  * caller counts it as ignored rather than pushing a row of zeroes, which would
  * add a turn that never happened and drag F6 towards 0.
  */
-function toUsageTurn(data: Record<string, unknown>, ordinal: number): UsageTurn | undefined {
+function toUsageTurn(
+  data: Record<string, unknown>,
+  ordinal: number,
+  atMs: number | undefined,
+): UsageTurn | undefined {
   const tokens = data['tokens'];
   if (!isRecord(tokens)) return undefined;
   const cache = isRecord(tokens['cache']) ? tokens['cache'] : {};
@@ -572,6 +618,7 @@ function toUsageTurn(data: Record<string, unknown>, ordinal: number): UsageTurn 
     cacheCreation: count(cache['write']),
     cacheRead: count(cache['read']),
     output: count(tokens['output']),
+    ...(atMs === undefined ? {} : { atMs }),
   };
 }
 

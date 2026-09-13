@@ -357,6 +357,35 @@ export interface CodexToolCall {
   readonly outputPreview?: string;
   readonly outputTruncated?: boolean;
   /**
+   * v0.8.0 Phase 7, DoD 7.1 (F14) — the envelope `timestamp` of the
+   * `response_item` record that MADE this call, in epoch milliseconds.
+   *
+   * REQUIRED and a plain `number`, because {@link CodexRecord.timestamp} is
+   * required and `asCodexRecord` refuses a record without one: a call exists
+   * only because a record carrying a timestamp was accepted, so there is no
+   * accepted call whose start is unknown. An unparseable string is the one
+   * remaining gap and it is reported as an absence rather than as a number —
+   * see {@link CodexToolCall.endedAtMs} for the shape that is optional.
+   *
+   * **It is NOT {@link startedAtMs}'s thread-level `0` fallback.** That
+   * function renders an unreadable thread start as 1970 deliberately, so a
+   * wrong date is visibly wrong; F14's contract is ABSENT where the engine
+   * states none, and a 0 here would be the engine stating 1970.
+   */
+  readonly startedAtMs?: number;
+  /**
+   * The envelope `timestamp` of the record carrying this call's OUTPUT
+   * (`function_call_output` / `custom_tool_call_output`, joined on `call_id`),
+   * in epoch milliseconds.
+   *
+   * Absent for a call with no output record — which is the running case, and
+   * the same condition that leaves {@link outputPreview} absent and makes the
+   * node `running`. The join is by primary key, never positional: leg 2 of
+   * `pairCalls` pairs an `item_completed` EVENT positionally, and that
+   * heuristic is not used as a time source here.
+   */
+  readonly endedAtMs?: number;
+  /**
    * v0.7.0 Phase 1, DoD 1.2 — SHA-256 over canonical JSON of this call's real
    * arguments, taken at the parse boundary.
    *

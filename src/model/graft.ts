@@ -834,6 +834,14 @@ function usageSeries(acc: AgentAccumulator): UsageTurn[] {
       cacheCreation: u.cacheCreation,
       cacheRead: u.cacheRead,
       output: u.output,
+      // v0.8.0 Phase 7, DoD 7.1 (F14). `MessageUsage.at` is the envelope
+      // `timestamp` of the FIRST line that carried this `message.id` — the same
+      // first-sighting rule `ordinal` above is assigned by, so the turn's time
+      // is when the engine began writing the message rather than when the last
+      // streamed fragment of it landed. Omitted, never written as `undefined`:
+      // the wire round trip compares with `toStrictEqual`, which distinguishes
+      // an absent key from a present undefined one.
+      ...(u.at === undefined ? {} : { atMs: u.at }),
     }));
 }
 
@@ -1175,6 +1183,20 @@ export class TreeGrafter {
     };
     if (call.filePath !== undefined) node.filePath = call.filePath;
     if (resultPreview !== undefined) node.resultPreview = resultPreview;
+    /*
+     * v0.8.0 Phase 7, DoD 7.1 (F14). The two operands are emitted as well as
+     * their difference, and each one INDEPENDENTLY — this is a promotion of
+     * values `scanEntries` already had, not a new source: both come from the
+     * envelope `timestamp` of the entry carrying the `tool_use` / `tool_result`
+     * block, which is the engine's own statement of when it wrote that block.
+     *
+     * Independently, because `durationMs` needs BOTH and F14 needs EACH. A
+     * RUNNING call has a start and no result entry, so it has a start and no
+     * end and no duration; `ToolNode.startedAtMs` says so where `durationMs`
+     * can only be silent about it.
+     */
+    if (call.startedAt !== undefined) node.startedAtMs = call.startedAt;
+    if (call.endedAt !== undefined) node.endedAtMs = call.endedAt;
     if (call.startedAt !== undefined && call.endedAt !== undefined) {
       node.durationMs = call.endedAt - call.startedAt;
     }
@@ -1366,6 +1388,23 @@ function serializeNode(node: TreeNode, anchor: number | undefined): SerializedNo
       filePath: previewFingerprint(node.filePath),
       inputHash: node.inputHash ?? null,
       ordinal: node.ordinal ?? null,
+      /*
+       * NO `startedAtMs` / `endedAtMs` KEY, and that is a decision rather than
+       * an oversight — v0.8.0 Phase 7, DoD 7.1 (F14).
+       *
+       * This serialisation is a PARTITION, not a mirror: it already omits
+       * `truncated` and `stalledSinceMs`, and `SerializedNode` is indexed by
+       * `[key: string]: unknown`, so nothing here asserts full coverage of
+       * `ToolNode`. Adding the two F14 fields would rewrite every committed
+       * golden under `fixtures/golden/graft/` for a property `durationMs` on
+       * the line above already pins TRANSITIVELY — it is their difference, from
+       * the same two operands, so a golden that holds `durationMs` cannot go
+       * green over a start or an end that moved together with it.
+       *
+       * What it does not pin is a start or an end moving ALONE, and that is
+       * covered where the DoD puts it: `src/stats/f14-corpus.test.ts` counts
+       * both fields per engine over the production path.
+       */
     };
     return out;
   }

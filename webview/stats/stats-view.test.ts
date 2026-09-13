@@ -1416,7 +1416,7 @@ describe('DoD 7.4 — F15 rendered beside silent', () => {
 // v0.8.0 DoD 7.14 (user ruling R3) — history read across schema versions
 // ---------------------------------------------------------------------------
 
-describe('DoD 7.14 — a record 0.7.1 wrote appears everywhere except the F14 series', () => {
+describe('DoD 7.14 (amended R3a) — a 0.7.1 record is a point in every Trends series not needing F14', () => {
   /*
    * The record is the REAL 0.7.1 one `src/stats/history.test.ts` reads through
    * the store (byte-identical to the v0.7.1 golden), upgraded by the SAME
@@ -1438,18 +1438,42 @@ describe('DoD 7.14 — a record 0.7.1 wrote appears everywhere except the F14 se
     return record;
   }
 
-  it('is in the Files, Loops & churn and Tokens tables', () => {
+  it('Files, Loops & churn and Tokens remain this window\'s live sessions — through the MOUNTED panel', () => {
+    /*
+     * THIS TEST REPLACES ONE THAT PASSED WHILE THE PRODUCT DID THE OPPOSITE.
+     * The first version called `statsLayout([old, current])` directly and found
+     * the old record in all three tables — true of the layout function, and never
+     * what the panel does: `StatsView.svelte` builds those parts from the LIVE
+     * records and only Trends from the STORED ones. Phase-7 verifier round 2
+     * mounted the panel and found none of the record's 80 paths in Files. The DoD
+     * was amended to match the product (user ruling, 2026-09-13, option a), and
+     * the test now asks the mounted panel, as a user would see it.
+     */
     const old = oldRecord();
-    const layout = statsLayout([old, currentRecord()]);
-    // Files: every path the old record touched is a row.
-    const paths = new Set(layout.files.rows.map((row) => row.filePath));
-    expect(old.files.length).toBeGreaterThan(0);
-    for (const file of old.files) expect(paths.has(file.filePath), file.filePath).toBe(true);
-    // Loops & churn: its seven churn chains, attributed to its session.
-    const chains = layout.loops.rows.filter((row) => row.session.sessionId === old.sessionId);
-    expect(chains).toHaveLength(7);
-    // Tokens: a session of its own.
-    expect(layout.tokens.sessions.map((s) => s.session.sessionId)).toContain(old.sessionId);
+    const current = currentRecord();
+    const panel = render();
+    send({ type: 'snapshot', sessions: [] });
+    send({ type: 'statsSnapshot', records: [current] });
+    send({ type: 'statsStore', records: [old, current], enabled: true });
+    click(one(panel.container, TESTID.statsToggle));
+
+    tab(panel, 'files');
+    const rendered = new Set(all(panel.container, TESTID.statsFileRow).map((row) => row.dataset['path']));
+    // Control: the live record IS drawn, so an empty table cannot pass.
+    expect(current.files.length).toBeGreaterThan(0);
+    for (const file of current.files) expect(rendered.has(file.filePath), file.filePath).toBe(true);
+    // The stored 0.7.1 record is not: none of its own paths is a row.
+    const liveOnly = new Set(current.files.map((f) => f.filePath));
+    const storedOnly = old.files.map((f) => f.filePath).filter((path) => !liveOnly.has(path));
+    expect(storedOnly.length).toBeGreaterThan(0);
+    for (const path of storedOnly) expect(rendered.has(path), path).toBe(false);
+
+    tab(panel, 'loops');
+    expect(panel.container.querySelectorAll(`[data-session="${old.sessionId}"]`)).toHaveLength(0);
+
+    tab(panel, 'tokens');
+    expect(panel.container.querySelectorAll(`[data-session="${old.sessionId}"]`)).toHaveLength(0);
+    expect(panel.container.querySelectorAll(`[data-session="${current.sessionId}"]`).length).toBeGreaterThan(0);
   });
 
   it('is a point in every Trends series that does not need F14, and not in tokens per minute', () => {

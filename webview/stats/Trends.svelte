@@ -1,7 +1,8 @@
 <!--
   Trends — spec §G view 4. From the store: prompt per session, loops per
-  session, engine-reported cost per session where present, one point per
-  session in order. Draws `layout.ts:trendsLayout` and derives nothing.
+  session, engine-reported cost per session where present, and — from v0.8.0
+  Phase 7 (DoD 7.3) — F14's tokens per minute, one point per session in order.
+  Draws `layout.ts:trendsLayout` and derives nothing.
 
   ONE LINE PER ENGINE, EACH SCALED TO ITS OWN MAXIMUM (DoD 4.12, user ruling
   2026-09-09). A shared axis across engines made two of the three invisible:
@@ -25,7 +26,7 @@
   import { TESTID } from '../canvas-contract.js';
   import type { TrendLine, TrendsLayout, TrendSeries } from './layout.js';
   import { ENGINE_NAMES, sessionPrimary } from './text.js';
-  import { formatUsd } from './text.js';
+  import { formatRate, formatUsd } from './text.js';
 
   let {
     trends,
@@ -80,8 +81,25 @@
     return line.max > 0 ? line.max : 1;
   }
 
+  /**
+   * How one series' raw `y` reads. Keyed on the series id and TOTAL over it, so
+   * a fifth series cannot arrive rendering a rate with a token formatter.
+   *
+   * `tokensPerMin` is v0.8.0 DoD 7.3's series and is the reason this stopped
+   * being a ternary: the record carries the exact IEEE quotient (`timing.ts`
+   * refuses to round, because rounding is presentation) and `formatTokens`
+   * TRUNCATES — `Math.trunc` — so a rate of 0.83 tokens a minute would have
+   * read as `0` in every tooltip and in the `max` caption.
+   */
+  const SERIES_TEXT: Readonly<Record<TrendSeries['id'], (y: number) => string>> = {
+    prompt: formatTokens,
+    loops: formatTokens,
+    cost: formatUsd,
+    tokensPerMin: formatRate,
+  };
+
   function valueText(series: TrendSeries, y: number): string {
-    return series.id === 'cost' ? formatUsd(y) : formatTokens(y);
+    return SERIES_TEXT[series.id](y);
   }
 </script>
 

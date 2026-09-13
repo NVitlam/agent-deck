@@ -25,6 +25,8 @@ import type { AgentNode, ToolNode } from '../src/model/events.js';
 import { TESTID } from './canvas-contract.js';
 import { COLLAPSED_PREVIEW_CHARS, EM_DASH } from './format.js';
 import { all, one, spawnBundle } from './testkit.js';
+import { HEADER_RESERVED_PX, layoutHeader, parseHeaderCss } from './inspector-header.js';
+import type { HeaderFieldText, HeaderLayout } from './inspector-header.js';
 import { agent, longPreview, tool } from './testdata.js';
 
 /**
@@ -902,5 +904,312 @@ describe('A9.5 — call order, and following the newest call', () => {
       list.dispatchEvent(new Event('scroll', { bubbles: false }));
     });
     expect(list.getAttribute('data-following')).toBe('true');
+  });
+});
+
+/**
+ * DoD 7.9 — THE HEADER’S FIELD ROW, DRIVEN THROUGH THE REAL MOUNT.
+ *
+ * The user’s v0.7.1 smoke recorded that at wide panel widths the SESSION
+ * value paints over SPAWN DEPTH (`media/inspector.png`). The cause is in the
+ * stylesheet and is described at `.field`’s own rule; the arithmetic of it
+ * lives in `webview/inspector-header.ts` and the answers in
+ * `webview/goldens/drawer/header-2400.json` and `header-1200.json`.
+ *
+ * WHAT THIS BLOCK ADDS THAT `inspector-header.test.ts` CANNOT. That file is a
+ * node suite over a model, and a model fed strings somebody typed is a model
+ * of nothing in particular. Here the seven fields, their order, their labels,
+ * their values and which of them carry `.mono` are READ OFF THE MOUNTED
+ * COMPONENT and fed to the same model — so the goldens are written over what
+ * the product renders rather than over what a test author remembered. Delete a
+ * field from the header, rename a label, drop `.mono` from a value, and this
+ * goes red while the model stays perfectly consistent with itself.
+ *
+ * WHAT IT STILL CANNOT DO: measure. jsdom lays nothing out. The x positions
+ * below are computed from the CSS, not observed, and the confirmation on a
+ * screen is the user’s smoke (DoD 7.12).
+ */
+describe('the inspector header’s field row (DoD 7.9)', () => {
+  /** Thirty-six characters, the length every engine’s session id runs to. */
+  const SESSION_ID = '0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9';
+
+  // The node from `media/inspector.png`, with its own session id replaced by a
+  // synthetic one of the same length: what the geometry reads is the count of
+  // characters, and a captured id is somebody’s real session.
+  const node: AgentNode = agent({
+    id: 'root',
+    kind: 'main',
+    label: 'Count symbols in parse.ts and test files in hooks',
+    status: 'running',
+    spawnDepth: 0,
+    contextNow: { prompt: 152_094, output: 0 },
+    burn: { prompt: 452_392, output: 2_004 },
+    startedAt: 0,
+    endedAt: 4_332_000,
+  });
+
+  interface HeaderGolden {
+    panelPx: number;
+    reservedPx: number;
+    fields: HeaderFieldText[];
+    layout: HeaderLayout;
+  }
+
+  let source: string;
+  let goldens: Record<string, HeaderGolden>;
+
+  beforeAll(async () => {
+    // The same runtime specifier the geometry block above uses, and for the
+    // same reason: `tsconfig.webview.json` sets `types: []`.
+    const fs = (await import(/* @vite-ignore */ NODE_FS)) as unknown as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    source = fs.readFileSync(`${process.cwd()}/webview/Inspector.svelte`, 'utf8');
+    const read = (name: string): HeaderGolden =>
+      JSON.parse(fs.readFileSync(`${process.cwd()}/webview/goldens/drawer/${name}`, 'utf8')) as HeaderGolden;
+    goldens = {
+      wide: read('header-2400.json'),
+      narrow: read('header-1200.json'),
+    };
+  });
+
+  /** The header’s field group, as the DOM has it. */
+  function fieldsFromDom(container: HTMLElement): HeaderFieldText[] {
+    return all(container, TESTID.drawerField).map((el) => {
+      const label = el.querySelector('.f-label');
+      const value = el.querySelector('.f-value');
+      if (label === null || value === null) throw new Error(`field without a label or a value`);
+      return {
+        field: el.dataset['field'] ?? '',
+        label: label.textContent ?? '',
+        value: value.textContent ?? '',
+        mono: value.classList.contains('mono'),
+      };
+    });
+  }
+
+  it('renders the seven fields, in the order and the words the goldens carry', () => {
+    const container = render({ node, sessionId: SESSION_ID });
+    const fields = fieldsFromDom(container);
+
+    // The exact set AND the exact count, both ways. A containment would pass
+    // over a header that had lost a field.
+    expect(fields).toHaveLength(7);
+    expect(fields).toEqual(goldens.wide?.fields);
+    expect(fields).toEqual(goldens.narrow?.fields);
+  });
+
+  it('places no field’s text inside another field’s box, at 2400px and at 1200px', () => {
+    const container = render({ node, sessionId: SESSION_ID });
+    const fields = fieldsFromDom(container);
+    const css = parseHeaderCss(source);
+
+    for (const key of ['wide', 'narrow'] as const) {
+      const g = goldens[key];
+      if (g === undefined) throw new Error(`no ${key} golden`);
+      expect(g.reservedPx).toBe(HEADER_RESERVED_PX);
+      const layout = layoutHeader({
+        panelPx: g.panelPx,
+        reservedPx: g.reservedPx,
+        fields,
+        css,
+      });
+      expect(layout.overlaps).toEqual([]);
+      expect(layout).toEqual(g.layout);
+    }
+  });
+
+  it('is the session id that needs the room, and the stylesheet says how much', () => {
+    // The one field whose value is longer than the box §8.6 gives it. With
+    // `.field` at the CSS initial shrink factor that ink landed on SPAWN
+    // DEPTH; `inspector-header.test.ts` drives that arm of the same model.
+    const container = render({ node, sessionId: SESSION_ID });
+    expect(one(container, 'inspector-session-id').textContent).toBe(SESSION_ID);
+    const css = parseHeaderCss(source);
+    const fields = fieldsFromDom(container);
+    const layout = layoutHeader({
+      panelPx: 1200,
+      reservedPx: HEADER_RESERVED_PX,
+      fields,
+      css,
+    });
+    const session = layout.fields.find((f) => f.field === 'sessionId');
+    expect(session?.contentPx).toBe(237.6);
+    expect(css.minWidthPx['sessionId']).toBe(128);
+    expect(session?.width).toBe(237.6);
+  });
+});
+
+/**
+ * DoD 7.3 — F14 RENDERED, DRIVEN THROUGH THE REAL MOUNT.
+ *
+ * `webview/call-time.ts` decides the three numbers and
+ * `webview/goldens/drawer/call-time.json` states them outside the code.
+ * `call-time.test.ts` checks the model against that table; what this block
+ * adds is the other half, and it is the half a model cannot supply: the
+ * component really prints those strings, in those columns, for a node built
+ * the way the host builds one.
+ *
+ * THE TWO ASSERTIONS THAT ARE NOT ABOUT THE NUMBERS. A row is looked up in a
+ * timeline built over the agent’s RUN ORDER, never over the list as drawn,
+ * so filtering the list and reversing it must leave every figure alone. Both
+ * are driven through the real controls rather than by setting a variable —
+ * `callTimeline(visibleCalls)` is a one-word change that no assertion about
+ * an unfiltered list can see.
+ */
+describe('the call list’s time column and inter-call gap (DoD 7.3)', () => {
+  interface RenderedRow {
+    at: string;
+    gap: string;
+    end: string;
+  }
+  interface TimeGolden {
+    cases: {
+      name: string;
+      calls: { id: string; startedAtMs?: number; endedAtMs?: number }[];
+      rendered: RenderedRow[];
+    }[];
+  }
+
+  let golden: TimeGolden;
+
+  beforeAll(async () => {
+    const fs = (await import(/* @vite-ignore */ NODE_FS)) as unknown as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    golden = JSON.parse(
+      fs.readFileSync(`${process.cwd()}/webview/goldens/drawer/call-time.json`, 'utf8'),
+    ) as TimeGolden;
+  });
+
+  /** The named case, as the component would be given it. */
+  const caseNamed = (fragment: string) => {
+    const found = golden.cases.find((c) => c.name.includes(fragment));
+    if (found === undefined) throw new Error(`no golden case naming ${fragment}`);
+    return found;
+  };
+
+  /**
+   * An agent whose calls carry the golden case’s instants.
+   *
+   * The three statuses are DELIBERATELY DIFFERENT so the status chips can
+   * filter the list down to one row that is not the first.
+   */
+  const runOf = (fragment: string): AgentNode => {
+    const statuses: ToolNode['status'][] = ['done', 'error', 'done'];
+    return agent({
+      id: 'root',
+      kind: 'main',
+      label: 'a run with instants',
+      status: 'running',
+      spawnDepth: 0,
+      children: caseNamed(fragment).calls.map((call, i) =>
+        tool({
+          id: call.id,
+          toolName: 'Read',
+          status: statuses[i] ?? 'done',
+          inputPreview: `{"file_path":"${call.id}.ts"}`,
+          ...(call.startedAtMs === undefined ? {} : { startedAtMs: call.startedAtMs }),
+          ...(call.endedAtMs === undefined ? {} : { endedAtMs: call.endedAtMs }),
+        }),
+      ),
+    });
+  };
+
+  /** Every row’s two columns, in the order the list draws them. */
+  const columns = (container: HTMLElement): { id: string; at: string; gap: string }[] =>
+    all(container, TESTID.actionRow).map((row) => {
+      const at = row.querySelector('[data-testid="action-at"]');
+      const gap = row.querySelector('[data-testid="action-gap"]');
+      if (at === null || gap === null) throw new Error(`a call row with no time columns`);
+      return {
+        id: row.dataset['actionId'] ?? '',
+        at: at.textContent ?? '',
+        gap: gap.textContent ?? '',
+      };
+    });
+
+  it('prints the committed figures, in the committed order', () => {
+    const c = caseNamed('all stated');
+    const container = render({ node: runOf('all stated'), drawerExpanded: true });
+    expect(columns(container)).toEqual(
+      c.calls.map((call, i) => ({
+        id: call.id,
+        at: c.rendered[i]?.at ?? '',
+        gap: c.rendered[i]?.gap ?? '',
+      })),
+    );
+  });
+
+  it('gives the first call an em dash for a gap, because it has no predecessor', () => {
+    const container = render({ node: runOf('all stated'), drawerExpanded: true });
+    const first = columns(container)[0];
+    expect(first?.id).toBe('a');
+    expect(first?.gap).toBe(EM_DASH);
+    expect(first?.at).toBe('+0ms');
+  });
+
+  it('prints an em dash in both columns for a call stating no start', () => {
+    const c = caseNamed('no start');
+    const container = render({ node: runOf('no start'), drawerExpanded: true });
+    const rows = columns(container);
+    expect(rows[1]).toEqual({ id: 'b', at: EM_DASH, gap: EM_DASH });
+    // And the call AFTER it loses its gap and keeps its offset.
+    expect(rows[2]).toEqual({ id: 'c', at: c.rendered[2]?.at, gap: EM_DASH });
+  });
+
+  it('keeps every figure when the list is FILTERED down to one row', () => {
+    const container = render({ node: runOf('all stated'), drawerExpanded: true });
+    const before = columns(container);
+    const failed = all(container, TESTID.drawerFilterChip).find(
+      (chip) => chip.dataset['filter'] === 'error',
+    );
+    if (failed === undefined) throw new Error('no Failed chip');
+    click(failed);
+
+    const after = columns(container);
+    expect(after).toHaveLength(1);
+    // `b` is the second call of the run. Over the FILTERED list it would be
+    // the first, and a first row has no predecessor and no gap — so an em
+    // dash here is exactly the defect this test exists for.
+    expect(after[0]).toEqual(before.find((r) => r.id === 'b'));
+    expect(after[0]?.gap).not.toBe(EM_DASH);
+  });
+
+  it('keeps every figure when the list is REVERSED', () => {
+    const container = render({ node: runOf('all stated'), drawerExpanded: true });
+    const before = columns(container);
+    const select = one(container, TESTID.drawerOrderSelect) as HTMLSelectElement;
+    harness.flushSync(() => {
+      select.value = 'newest';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    const after = columns(container);
+    expect(after.map((r) => r.id)).toEqual([...before.map((r) => r.id)].reverse());
+    expect([...after].reverse()).toEqual(before);
+  });
+
+  it('draws the selected call’s window in the detail head, both instants', () => {
+    const c = caseNamed('all stated');
+    const container = render({
+      node: runOf('all stated'),
+      drawerExpanded: true,
+      detailActionId: 'c',
+    });
+    expect(one(container, 'drawer-detail-start').textContent).toBe(c.rendered[2]?.at);
+    expect(one(container, 'drawer-detail-end').textContent).toBe(c.rendered[2]?.end);
+  });
+
+  it('draws an em dash for the end of a call the engine has not finished', () => {
+    const c = caseNamed('running');
+    const container = render({
+      node: runOf('running'),
+      drawerExpanded: true,
+      detailActionId: 'b',
+    });
+    expect(one(container, 'drawer-detail-start').textContent).toBe(c.rendered[1]?.at);
+    expect(one(container, 'drawer-detail-end').textContent).toBe(EM_DASH);
+    expect(c.rendered[1]?.end).toBe(EM_DASH);
   });
 });

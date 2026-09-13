@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "synthetic-01-reread-loop",
   "engine": "cc",
   "projectSlug": "synthetic-stats",
@@ -15,7 +15,8 @@
       "cacheRead": 100,
       "cacheRatio": 0.1,
       "toolCalls": 5,
-      "silent": false
+      "silent": false,
+      "resultUnreceived": false
     }
   ],
   "files": [
@@ -61,6 +62,7 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {},
   "totals": {
     "prompt": 1000,
     "output": 100,
@@ -77,6 +79,8 @@
   "unavailable": [
     "F10:cc",
     "F13.completed:snapshot",
+    "F14:cc",
+    "F15:cc",
     "F9:cc"
   ]
 }

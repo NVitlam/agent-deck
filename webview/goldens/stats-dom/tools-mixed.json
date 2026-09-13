@@ -1,0 +1,34 @@
+{
+  "what": "The same table over cc-synthetic-12-stall, whose Agent call carries a durationMs and whose Bash call does not — both arms of DoD 7.5 in ONE table.",
+  "cases": {
+    "columns": [
+      "tool",
+      "class",
+      "calls",
+      "errors",
+      "longest call",
+      "total duration",
+      "sessions"
+    ],
+    "rows": [
+      [
+        "Agent",
+        "spawn",
+        "1",
+        "0",
+        "47m 26s",
+        "47m 26s",
+        "1"
+      ],
+      [
+        "Bash",
+        "shell",
+        "1",
+        "0",
+        "—",
+        "—",
+        "1"
+      ]
+    ]
+  }
+}

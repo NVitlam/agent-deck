@@ -98,7 +98,7 @@
         "type": "statsSnapshot",
         "records": [
           {
-            "statsSchemaVersion": 1,
+            "statsSchemaVersion": 2,
             "sessionId": "synthetic-09-opencode-cost",
             "engine": "opencode",
             "projectSlug": "synthetic-stats",
@@ -114,7 +114,8 @@
                 "cacheRead": 100,
                 "cacheRatio": 0.1,
                 "toolCalls": 1,
-                "silent": false
+                "silent": false,
+                "resultUnreceived": false
               }
             ],
             "files": [
@@ -141,6 +142,7 @@
             "contextChurn": [],
             "compactions": [],
             "stalls": [],
+            "timing": {},
             "totals": {
               "prompt": 1000,
               "output": 100,
@@ -158,6 +160,8 @@
             "unavailable": [
               "F10:opencode",
               "F13.completed:snapshot",
+              "F14:opencode",
+              "F15:opencode",
               "F7:opencode"
             ]
           }

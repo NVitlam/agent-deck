@@ -343,6 +343,21 @@ function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | un
     fields.durationMs = next.durationMs === undefined ? null : next.durationMs;
     changed = true;
   }
+  // v0.8.0 Phase 7, F14. The same rule a fourth time, and this is the one
+  // pair that really MOVES rather than being carried for completeness: a
+  // call is added while it is running, with a start and no end, and gains
+  // its end in a later patch when the engine writes the result. Without
+  // these two the exactness property breaks on the commonest transition
+  // there is, and a live panel would keep showing a call as unfinished
+  // after the host had seen it finish.
+  if (prev.startedAtMs !== next.startedAtMs) {
+    fields.startedAtMs = next.startedAtMs === undefined ? null : next.startedAtMs;
+    changed = true;
+  }
+  if (prev.endedAtMs !== next.endedAtMs) {
+    fields.endedAtMs = next.endedAtMs === undefined ? null : next.endedAtMs;
+    changed = true;
+  }
   // Gate amendment B7. The CC engine never sets `truncated` — only the
   // OpenCode engine does — but the PATCH contract has to carry it anyway, and
   // that is not bookkeeping. `events.ts` states the contract as exact: for any

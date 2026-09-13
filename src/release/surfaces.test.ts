@@ -175,7 +175,7 @@ describe('6.D.2 (a) — package.json, the CHANGELOG and the page state one versi
 // ---------------------------------------------------------------------------
 
 interface KeywordRow {
-  readonly version: '0.7.0' | '0.7.1';
+  readonly version: '0.7.0' | '0.7.1' | '0.8.0';
   /** The bullet's bold lead, exactly as the CHANGELOG writes it. */
   readonly bullet: string;
   /** A phrase a reader of either page would search for. */
@@ -230,16 +230,43 @@ const KEYWORD_TABLE: readonly KeywordRow[] = [
     readme: true,
     site: true,
   },
+  // v0.8.0 Phase 7, DoD 7.D — reviewed by hand against the entry, one row per bullet.
+  { version: '0.8.0', bullet: 'A Tools part in the Stats view.', keyword: 'longest call', readme: true, site: true },
+  {
+    version: '0.8.0',
+    bullet: "A session's own timings in the Tokens part.",
+    keyword: 'time to the first tool call',
+    readme: true,
+    site: true,
+  },
+  { version: '0.8.0', bullet: 'Tokens a minute in Trends', keyword: 'tokens a minute', readme: true, site: true },
+  {
+    version: '0.8.0',
+    bullet: 'A time and a gap on every row of the tool-call drawer.',
+    keyword: 'gap between calls',
+    readme: true,
+    site: true,
+  },
+  {
+    version: '0.8.0',
+    bullet: 'Subagents whose spawning call has no result',
+    keyword: 'spawning call has no result',
+    readme: true,
+    site: true,
+  },
+  { version: '0.8.0', bullet: 'A Tweaks tab in the sidebar', keyword: 'Tweaks', readme: true, site: true },
+  { version: '0.8.0', bullet: 'Oversize Codex transcripts are read in part.', keyword: 'read in part', readme: true, site: true },
+  { version: '0.8.0', bullet: '`foreign` on the counters line.', keyword: 'foreign', readme: true, site: true },
 ];
 
-describe('6.D.2 (b) — every Added bullet of 0.7.0 and 0.7.1 is on the README and the page', () => {
+describe('6.D.2 (b) — every Added bullet of 0.7.0, 0.7.1 and 0.8.0 is on the README and the page', () => {
   it('the table has one row per Added bullet, in order, both ways, with the count beside it', () => {
-    for (const version of ['0.7.0', '0.7.1'] as const) {
+    for (const version of ['0.7.0', '0.7.1', '0.8.0'] as const) {
       const bullets = addedBullets(version);
       const rows = KEYWORD_TABLE.filter((row) => row.version === version).map((row) => row.bullet);
       expect(rows, `${version}: the table and the CHANGELOG's Added bullets differ`).toStrictEqual(bullets);
     }
-    expect(KEYWORD_TABLE).toHaveLength(15);
+    expect(KEYWORD_TABLE).toHaveLength(23);
     // Vacuity control: the extractor reads a bullet whose bold lead wraps.
     expect(addedBullets('0.7.0')).toContain(
       'Stalled `AskUserQuestion` and `ExitPlanMode` calls read "waiting on you".',
@@ -647,7 +674,13 @@ describe('6.D.5 — the GitHub Release body is the tag’s CHANGELOG section', (
     // Whole: from its heading, through every sub-heading, to its last line, and
     // no line of the entry below it.
     expect(TAGGED.stdout.startsWith(`## ${MANIFEST.version} - `)).toBe(true);
-    for (const sub of ['### Added', '### How it behaves', '### Changed']) expect(TAGGED.stdout).toContain(`\n${sub}\n`);
+    // The sub-headings are READ from the committed section rather than listed: a
+    // literal list named 0.7.1's three, so the check could only ever describe that
+    // one release. Pinned non-empty beside it, so an empty read is not a pass.
+    const section = CHANGELOG.replace(/\r\n/g, '\n').split(`\n## ${MANIFEST.version} `)[1]?.split('\n## ')[0] ?? '';
+    const subs = section.match(/^### .+$/gm) ?? [];
+    expect(subs.length).toBeGreaterThan(0);
+    for (const sub of subs) expect(TAGGED.stdout).toContain(`\n${sub}\n`);
     expect(TAGGED.stdout).not.toMatch(/^## (?!\S+ - )/m);
     expect(TAGGED.stdout.match(/^## /gm)).toHaveLength(1);
     expect(TAGGED.stdout.includes('\r')).toBe(false);

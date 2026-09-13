@@ -47,14 +47,16 @@
         "input": 2,
         "cacheCreation": 11227,
         "cacheRead": 28807,
-        "output": 387
+        "output": 387,
+        "atMs": 1787090184486
       },
       {
         "ordinal": 1,
         "input": 2,
         "cacheCreation": 3227,
         "cacheRead": 40034,
-        "output": 1611
+        "output": 1611,
+        "atMs": 1787090261835
       }
     ],
     "model": "claude-opus-5",
@@ -95,49 +97,56 @@
             "input": 2,
             "cacheCreation": 14871,
             "cacheRead": 0,
-            "output": 395
+            "output": 395,
+            "atMs": 1787090192635
           },
           {
             "ordinal": 1,
             "input": 2,
             "cacheCreation": 958,
             "cacheRead": 14871,
-            "output": 241
+            "output": 241,
+            "atMs": 1787090201051
           },
           {
             "ordinal": 2,
             "input": 2,
             "cacheCreation": 14572,
             "cacheRead": 15829,
-            "output": 345
+            "output": 345,
+            "atMs": 1787090204482
           },
           {
             "ordinal": 3,
             "input": 2,
             "cacheCreation": 10538,
             "cacheRead": 30401,
-            "output": 501
+            "output": 501,
+            "atMs": 1787090210765
           },
           {
             "ordinal": 4,
             "input": 2,
             "cacheCreation": 783,
             "cacheRead": 40939,
-            "output": 241
+            "output": 241,
+            "atMs": 1787090216848
           },
           {
             "ordinal": 5,
             "input": 2,
             "cacheCreation": 467,
             "cacheRead": 41722,
-            "output": 409
+            "output": 409,
+            "atMs": 1787090219666
           },
           {
             "ordinal": 6,
             "input": 2,
             "cacheCreation": 983,
             "cacheRead": 42189,
-            "output": 2731
+            "output": 2731,
+            "atMs": 1787090256907
           }
         ],
         "model": "claude-opus-5",

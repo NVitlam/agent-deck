@@ -1,0 +1,41 @@
+{
+  "what": "F14's six figures over the harvested anchor session. `raw` is the record's own value and `rendered` is what the DOM holds, so the formatting rule is auditable by hand from this file alone.",
+  "cases": [
+    {
+      "figure": "wallMs",
+      "stated": true,
+      "raw": 20438,
+      "rendered": "20.4s"
+    },
+    {
+      "figure": "timeToFirstToolMs",
+      "stated": true,
+      "raw": 2880,
+      "rendered": "2.9s"
+    },
+    {
+      "figure": "longestGapMs",
+      "stated": true,
+      "raw": 3687,
+      "rendered": "3.7s"
+    },
+    {
+      "figure": "tokensPerMin",
+      "stated": true,
+      "raw": 1218949.9951071532,
+      "rendered": "1,218,950.0"
+    },
+    {
+      "figure": "callsPerMin",
+      "stated": true,
+      "raw": 20.549955964380075,
+      "rendered": "20.5"
+    },
+    {
+      "figure": "costPerHourUsd",
+      "stated": false,
+      "raw": null,
+      "rendered": "—"
+    }
+  ]
+}

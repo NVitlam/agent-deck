@@ -46,6 +46,12 @@ media/*
 # painted out. Linked from README.md's telemetry section and, byte-identical, from
 # `site/`. Admitted in `.vscodeignore` too.
 !media/stats_tokens.png
+# The DoD 7.12 smoke captures (v0.8.0 DoD 7.D, 2026-09-13): session 94c5bc1a on build a49ae09 -
+# the drawer's time column, the sidebar's Tweaks tab, and Tokens with F14's figures (the project
+# slug painted out on that one). Linked from README.md and site/. Admitted in `.vscodeignore` too.
+!media/drawer-time.png
+!media/sidebar-tweaks.png
+!media/stats-tokens-timing.png
 # The hero GIF, added for 0.6.0 (DoD 5.8). It is a SIXTH tracked image and
 # not one of the four: 4,658,677 bytes, referenced by README.md, and denied
 # in `.vscodeignore` so it does not ship inside the VSIX - the Marketplace

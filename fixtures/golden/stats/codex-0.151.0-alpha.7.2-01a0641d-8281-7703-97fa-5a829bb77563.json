@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
   "engine": "codex",
   "projectSlug": "C--Users-dev-codex-probe-scratch",
@@ -15,6 +15,7 @@
       "output": 499,
       "toolCalls": 9,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.6-terra"
     },
     {
@@ -25,6 +26,7 @@
       "output": 125,
       "toolCalls": 1,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.6-terra"
     },
     {
@@ -35,6 +37,7 @@
       "output": 137,
       "toolCalls": 1,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.6-terra"
     },
     {
@@ -45,6 +48,7 @@
       "output": 139,
       "toolCalls": 1,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.6-terra"
     },
     {
@@ -55,6 +59,7 @@
       "output": 150,
       "toolCalls": 2,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.6-terra"
     },
     {
@@ -65,6 +70,7 @@
       "output": 132,
       "toolCalls": 1,
       "silent": false,
+      "resultUnreceived": false,
       "model": "gpt-5.6-terra"
     }
   ],
@@ -104,6 +110,13 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {
+    "wallMs": 48006,
+    "timeToFirstToolMs": 0,
+    "longestGapMs": 16388,
+    "tokensPerMin": 433604.5494313211,
+    "callsPerMin": 18.747656542932134
+  },
   "totals": {
     "prompt": 345745,
     "output": 1182,
@@ -111,6 +124,7 @@
     "contextFill": 0.06250386996904025,
     "subagents": 5,
     "silentSubagents": 0,
+    "subagentsUnreceived": 0,
     "stalls": 0
   },
   "params": {

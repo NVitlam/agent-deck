@@ -256,6 +256,11 @@ media/**
 # telemetry section. EIGHT lines. Ships like the other stills (92,140 bytes);
 # `.gitignore` admits it too.
 !media/stats_tokens.png
+# The DoD 7.12 smoke captures (v0.8.0 DoD 7.D): drawer time column, Tweaks tab, Tokens timings.
+# ELEVEN lines. They ship like the other stills; `.gitignore` admits them too.
+!media/drawer-time.png
+!media/sidebar-tweaks.png
+!media/stats-tokens-timing.png
 
 # THE HERO GIF IS TRACKED AND DELIBERATELY NOT RE-ADMITTED HERE (DoD 5.8
 # item 2, which authorises either outcome so long as it is recorded with the

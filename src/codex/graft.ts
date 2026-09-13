@@ -625,6 +625,20 @@ export function toCodexToolNode(
     // explicit "I did not truncate this" is a claim and is worth more than an
     // absence.
     ...(call.outputTruncated === undefined ? {} : { truncated: call.outputTruncated }),
+    /*
+     * v0.8.0 Phase 7, DoD 7.1 (F14). Both come from `parse.ts`, from envelope
+     * `timestamp`s of the two records that state this call: the one that made
+     * it and the one that carried its output.
+     *
+     * NO `durationMs` IS DERIVED FROM THEM HERE. This engine has never stated a
+     * tool duration and F14 does not add one — a difference computed in the
+     * grafter would be a number Agent Deck invented from two facts, and
+     * `ToolNode.durationMs` is documented as having telemetry as its other
+     * producer. The two operands cross; what a reader does with them is the
+     * reader's.
+     */
+    ...(call.startedAtMs === undefined ? {} : { startedAtMs: call.startedAtMs }),
+    ...(call.endedAtMs === undefined ? {} : { endedAtMs: call.endedAtMs }),
   };
 }
 

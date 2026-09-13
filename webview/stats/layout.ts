@@ -37,6 +37,8 @@ import type {
   LoopRecord,
   StallRecord,
   StatsRecord,
+  StatsToolClass,
+  TimingStats,
 } from '../../src/stats/schema.js';
 
 /* ------------------------------------------------------------------------ *
@@ -68,6 +70,18 @@ export const VOCABULARY = {
   silentSubagent: 'silent subagent',
   compaction: 'compaction',
   stall: 'stall',
+  /**
+   * F15, in the present tense — v0.8.0 DoD 7.4.
+   *
+   * `AgentStats.resultUnreceived`'s own header states the constraint this
+   * wording answers: the fact is a statement about THIS SNAPSHOT and is
+   * transient on a live session, because a subagent working right now has no
+   * result yet and will have one when it finishes. So the phrase says what the
+   * deriver read — the spawning `Agent` call carries no `tool_result` — and
+   * says nothing about whether one will arrive. "abandoned", "never returned"
+   * and "failed" would each claim the second thing.
+   */
+  unreceivedResult: 'spawning call has no result',
 } as const;
 
 /** The cost source, as the user reads it (spec §D F9 and §L F9(c)). */
@@ -189,6 +203,113 @@ export function filesLayout(records: readonly StatsRecord[]): FilesLayout {
 }
 
 /* ------------------------------------------------------------------------ *
+ * Tools — F2
+ * ------------------------------------------------------------------------ */
+
+/**
+ * One tool name, aggregated over every covered record that names it.
+ *
+ * v0.8.0 Phase 7, DoD 7.5. F2 has been derived, validated, stored and carried
+ * on the extension API since v0.7.0 and was rendered NOWHERE: `record.tools`
+ * had no reader in this directory at all, so `durationMsMax` and
+ * `durationMsSum` — the two columns the DoD names — had no surface to be
+ * absent from. This row is that surface.
+ */
+export interface ToolRow {
+  toolName: string;
+  class: StatsToolClass;
+  /** Calls of this tool across every record that names it. */
+  calls: number;
+  /**
+   * The three optional columns, and ALL OF THEM ARE ALL-OR-NOTHING.
+   *
+   * Present only when EVERY contributing record states the column; absent
+   * otherwise, and absent renders as the em dash. The alternative — summing
+   * over the records that happen to state one — publishes a total whose
+   * population is not the row's `calls`, which is §D's "never a substitute" in
+   * arithmetic form. `ToolStats.errors` is the case that makes it real:
+   * `schema.ts` records Codex as stating no structured tool status, so a tool
+   * name used by a Codex session and a Claude Code session would otherwise
+   * report the Claude Code half's error count against both halves' calls.
+   */
+  errors?: number;
+  durationMsSum?: number;
+  /** The largest single call. A max over a subset would be the same defect. */
+  durationMsMax?: number;
+  /** How many records name this tool. */
+  sessions: number;
+}
+
+export interface ToolsLayout {
+  rows: ToolRow[];
+  /** Records that contributed. 0 is the empty state. */
+  records: number;
+}
+
+/** One optional column while it is being aggregated. */
+interface Column {
+  /** Running total (or maximum). Meaningless while `complete` is false. */
+  value: number;
+  /** False as soon as one contributing record states no value. */
+  complete: boolean;
+}
+
+function column(): Column {
+  return { value: 0, complete: true };
+}
+
+function addTo(target: Column, value: number | undefined, combine: (a: number, b: number) => number): void {
+  if (value === undefined) {
+    target.complete = false;
+    return;
+  }
+  target.value = combine(target.value, value);
+}
+
+function closed(target: Column): number | undefined {
+  return target.complete ? target.value : undefined;
+}
+
+export function toolsLayout(records: readonly StatsRecord[]): ToolsLayout {
+  const covered = coveredRecords(records);
+  const rows = new Map<string, { row: ToolRow; errors: Column; sum: Column; max: Column }>();
+  for (const record of covered) {
+    for (const tool of record.tools) {
+      let entry = rows.get(tool.toolName);
+      if (entry === undefined) {
+        entry = {
+          row: { toolName: tool.toolName, class: tool.class, calls: 0, sessions: 0 },
+          errors: column(),
+          sum: column(),
+          max: column(),
+        };
+        rows.set(tool.toolName, entry);
+      }
+      entry.row.calls += tool.calls;
+      entry.row.sessions += 1;
+      addTo(entry.errors, tool.errors, (a, b) => a + b);
+      addTo(entry.sum, tool.durationMsSum, (a, b) => a + b);
+      addTo(entry.max, tool.durationMsMax, (a, b) => Math.max(a, b));
+    }
+  }
+  const out: ToolRow[] = [];
+  for (const entry of rows.values()) {
+    const errors = closed(entry.errors);
+    const sum = closed(entry.sum);
+    const max = closed(entry.max);
+    if (errors !== undefined) entry.row.errors = errors;
+    if (sum !== undefined) entry.row.durationMsSum = sum;
+    if (max !== undefined) entry.row.durationMsMax = max;
+    out.push(entry.row);
+  }
+  // Calls descending, then name ascending — `filesLayout`'s rule on the row's
+  // own magnitude, so a tool called once sorts below one called fifty times
+  // whatever its name, and two tools with equal calls sort deterministically.
+  out.sort((a, b) => b.calls - a.calls || (a.toolName < b.toolName ? -1 : a.toolName > b.toolName ? 1 : 0));
+  return { rows: out, records: covered.length };
+}
+
+/* ------------------------------------------------------------------------ *
  * Loops & churn
  * ------------------------------------------------------------------------ */
 
@@ -292,6 +413,11 @@ export interface AgentRow {
   cacheRatio?: number;
   toolCalls: number;
   silent: boolean;
+  /**
+   * F15 — v0.8.0 DoD 7.4. Never true of `main`, and false for every agent of
+   * a session that states no spawn edges, where `F15:<engine>` is the fact.
+   */
+  resultUnreceived: boolean;
   model?: string;
 }
 
@@ -341,6 +467,21 @@ export interface TokensSession {
   compactions: number;
   subagents: number;
   silentSubagents: number;
+  /**
+   * F15's per-session count — v0.8.0 DoD 7.4.
+   *
+   * OPTIONAL where `silentSubagents` is required, and the schema states why:
+   * the count needs `SessionState.spawnEdges`, which is itself optional, so a
+   * 0 here would be a zero standing in for an absence. Absent renders as the
+   * em dash beside the silent figure, never as 0.
+   */
+  subagentsUnreceived?: number;
+  /**
+   * F14 — v0.8.0 DoD 7.3. Carried whole rather than unpacked: every member is
+   * optional, every absence means the same thing, and the renderer's job is
+   * one formatter applied six times.
+   */
+  timing: TimingStats;
 }
 
 export interface TokensLayout {
@@ -359,6 +500,29 @@ function costOf(record: StatsRecord): CostView {
 
 function agentPrimary(agent: AgentStats): string {
   return agent.kind === 'main' ? 'main' : `subagent d${String(agent.spawnDepth)}`;
+}
+
+/**
+ * The record's F14 block, or an empty one — v0.8.0 DoD 7.3.
+ *
+ * `timing` is REQUIRED on `StatsRecord` and the host puts a block on every
+ * record it derives. This layout still reads it through a default, because the
+ * webview runs no validator: `webview/store.ts` assigns `message.records`
+ * verbatim, and records written under `STATS_SCHEMA_VERSION` 1 — every
+ * committed wire corpus under `webview/wire/` and every stats golden until
+ * they are regenerated — carry no block at all. Reading a member off
+ * `undefined` throws inside a `$derived`, which takes the whole panel down; an
+ * empty block renders each figure as the em dash, which is what an absent
+ * instant means anyway. That is G3 applied to a record this layer did not
+ * write: degrade, do not crash.
+ */
+function timingOf(record: StatsRecord): TimingStats {
+  return (record as { timing?: TimingStats }).timing ?? {};
+}
+
+/** F15's flag, read the same way and for the same reason as {@link timingOf}. */
+function resultUnreceivedOf(agent: AgentStats): boolean {
+  return (agent as { resultUnreceived?: boolean }).resultUnreceived === true;
 }
 
 function stripOf(record: StatsRecord): TurnStrip {
@@ -418,6 +582,7 @@ export function tokensLayout(records: readonly StatsRecord[]): TokensLayout {
         output: agent.output,
         toolCalls: agent.toolCalls,
         silent: agent.silent,
+        resultUnreceived: resultUnreceivedOf(agent),
       };
       if (agent.cacheRatio !== undefined) row.cacheRatio = agent.cacheRatio;
       if (agent.model !== undefined) row.model = agent.model;
@@ -441,8 +606,12 @@ export function tokensLayout(records: readonly StatsRecord[]): TokensLayout {
       compactions: record.totals.compactions,
       subagents: record.totals.subagents,
       silentSubagents: record.totals.silentSubagents,
+      timing: timingOf(record),
     };
     if (record.totals.contextFill !== undefined) session.contextFill = record.totals.contextFill;
+    if (record.totals.subagentsUnreceived !== undefined) {
+      session.subagentsUnreceived = record.totals.subagentsUnreceived;
+    }
     return session;
   });
   return { sessions, records: covered.length };
@@ -452,7 +621,18 @@ export function tokensLayout(records: readonly StatsRecord[]): TokensLayout {
  * Trends
  * ------------------------------------------------------------------------ */
 
-export type TrendSeriesId = 'prompt' | 'loops' | 'cost';
+/**
+ * `tokensPerMin` joins in v0.8.0 Phase 7, DoD 7.3, and it joins as a FOURTH
+ * SERIES rather than as a second line inside an existing one.
+ *
+ * The per-engine rule below is what forces that. A series owns one quantity
+ * and normalises each engine's line against that engine's own maximum; a rate
+ * and a total are different quantities, so putting them in one series would
+ * reintroduce across QUANTITIES exactly the shared axis DoD 4.12 removed
+ * across engines. The rate's own cross-engine disparity is handled by the same
+ * mechanism as every other series and needs no special case.
+ */
+export type TrendSeriesId = 'prompt' | 'loops' | 'cost' | 'tokensPerMin';
 
 export interface TrendPoint {
   sessionId: string;
@@ -528,6 +708,15 @@ export interface TrendsLayout {
    * an empty store — as though it were the answer.
    */
   reason?: 'disabled' | 'fewer-than-two' | 'loading';
+  /**
+   * v0.8.0 DoD 7.14 (user ruling R3): covered records naming `F14:absent` —
+   * history an older build wrote, which states no time. Each is a point in every
+   * series that does not need F14, and has NO point in `tokensPerMin`. Counted
+   * HERE, over the STORED records Trends draws, because that is the only place
+   * an older record can arrive from: a live record is always derived by this
+   * build. The footer states it. It is not an exclusion.
+   */
+  timeAbsent: number;
 }
 
 /**
@@ -553,6 +742,7 @@ export const TREND_LABELS: Readonly<Record<TrendSeriesId, string>> = {
   prompt: 'prompt tokens',
   loops: 'loops',
   cost: 'engine-reported cost (USD)',
+  tokensPerMin: 'tokens per minute',
 };
 
 export function trendsLayout(
@@ -595,8 +785,17 @@ export function trendsLayout(
   // "engine-reported cost per session where present": a user-priced or
   // telemetry figure is NOT an engine report and does not become one here.
   build('cost', (r) => (r.totals.costSource === 'engine' ? r.totals.costUsd : undefined));
+  // F14's rate, straight off the record — the EXACT IEEE quotient the deriver
+  // published, never rounded here. Rounding is presentation and it happens in
+  // the component; a point rounded in the layout would move the series maximum
+  // and therefore the viewBox, which is a transform derived from data the
+  // record does not carry. Absent where the session states no span
+  // (`timing.tokensPerMin` needs `wallMs > 0`), and an absent value produces no
+  // point at all rather than a zero.
+  build('tokensPerMin', (r) => timingOf(r).tokensPerMin);
   const width = sessions.length === 0 ? 0 : (sessions.length - 1) * TREND_STEP;
-  const layout: TrendsLayout = { series, sessions, width, empty: false };
+  const timeAbsent = covered.filter((r) => r.unavailable.includes(TIME_ABSENT_FACT)).length;
+  const layout: TrendsLayout = { series, sessions, width, empty: false, timeAbsent };
   // `loading` outranks everything, including `disabled`: before the store has
   // been read, "off" and "empty" are both guesses. Never render a partial store
   // as history (DoD 4.12).
@@ -623,6 +822,9 @@ export interface ExcludedSummary {
   byCode: Partial<Record<ExclusionCode, number>>;
 }
 
+/** The fact id R3 names for a record whose version states no time. */
+export const TIME_ABSENT_FACT = 'F14:absent';
+
 export function excludedSummary(records: readonly StatsRecord[]): ExcludedSummary {
   const byCode: Partial<Record<ExclusionCode, number>> = {};
   let count = 0;
@@ -641,6 +843,8 @@ export function excludedSummary(records: readonly StatsRecord[]): ExcludedSummar
 
 export interface StatsLayout {
   files: FilesLayout;
+  /** F2, rendered from v0.8.0 Phase 7 (DoD 7.5). */
+  tools: ToolsLayout;
   loops: LoopsLayout;
   tokens: TokensLayout;
   trends: TrendsLayout;
@@ -666,6 +870,7 @@ export function statsLayout(
   }
   return {
     files: filesLayout(records),
+    tools: toolsLayout(records),
     loops: loopsLayout(records),
     tokens: tokensLayout(records),
     // The VIEW does not read this one: `StatsView.svelte` calls `trendsLayout`

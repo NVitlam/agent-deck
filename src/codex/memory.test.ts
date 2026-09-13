@@ -91,11 +91,14 @@ if (outcome.kind !== 'ok') {
 }
 const result = outcome.result;
 const skipped = result.skipped === undefined ? [] : result.skipped;
+const partial = result.partialTranscripts === undefined ? [] : result.partialTranscripts;
 process.stdout.write(
   'OK sessions=' + result.sessions.length +
   ' threads=' + result.threads.length +
   ' refused=' + result.refused.length +
   ' skipped=' + skipped.length +
+  ' partial=' + partial.length +
+  ' read=' + partial.reduce((sum, one) => sum + one.readBytes, 0) +
   ' rss=' + Math.round(process.memoryUsage().rss / (1024 * 1024)) + 'MiB\\n',
 );
 `;
@@ -317,12 +320,24 @@ describe('H.1 — one oversized transcript does not exhaust the host heap', () =
     expect(run.stderr, describeRun(run)).not.toMatch(/heap out of memory/i);
     expect(run.status, describeRun(run)).toBe(0);
     expect(run.stdout, describeRun(run)).toMatch(/^OK /);
-    // SAY WHY IT SURVIVED. 80 MiB is over the shipped 64 MiB default, so this
-    // transcript is measured from `stat` and never opened -- and a green that
-    // did not name its own mechanism would pass just as well if the engine had
-    // read the file and got lucky with GC.
-    expect(run.stdout, describeRun(run)).toMatch(/skipped=1(?![0-9])/);
-    expect(run.stdout, describeRun(run)).toMatch(/threads=0(?![0-9])/);
+    /*
+     * SAY WHY IT SURVIVED, AND THE ANSWER CHANGED IN v0.8.0 DoD 7.7.
+     *
+     * 80 MiB is over the shipped 64 MiB default. It used to be measured from
+     * `stat` and never opened, and this test asserted `threads=0 skipped=1`.
+     * It is now read as 256 KiB of head plus the last 16 MiB — so the engine
+     * DOES open it, DOES parse 16.25 MiB of it, and still has to finish under
+     * a 128 MB heap. That is a strictly harder claim than the one this test
+     * made before, and a green that did not name its own mechanism would pass
+     * just as well if the engine had read the file whole and got lucky.
+     */
+    expect(run.stdout, describeRun(run)).toMatch(/skipped=0(?![0-9])/);
+    expect(run.stdout, describeRun(run)).toMatch(/threads=1(?![0-9])/);
+    expect(run.stdout, describeRun(run)).toMatch(/partial=1(?![0-9])/);
+    // THE BYTES, so "partial" cannot be satisfied by a read of nothing:
+    // 256 KiB + 16 MiB, exactly, against 80 MiB on disk.
+    const read = /read=(\d+)/.exec(run.stdout)?.[1];
+    expect(Number(read), describeRun(run)).toBe(256 * 1024 + 16 * MIB);
   }, 300_000);
 });
 
@@ -349,8 +364,8 @@ describe('H.6 — a 300 MiB data root with one oversize transcript', () => {
       cwd,
       300 * MIB - a - b,
     );
-    // 12 + 12 + 276. The two under the 64 MiB limit are read; the third is
-    // measured and never opened.
+    // 12 + 12 + 276. The two under the 64 MiB limit are read whole; the third
+    // is read as a head plus its last 16 MiB (DoD 7.7).
     total = a + b + giant;
   }, 300_000);
 
@@ -359,9 +374,16 @@ describe('H.6 — a 300 MiB data root with one oversize transcript', () => {
     const run = runEngineUnderCap(root);
     expect(run.stderr, describeRun(run)).not.toMatch(/heap out of memory/i);
     expect(run.status, describeRun(run)).toBe(0);
-    // The two transcripts under the limit are READ — a green that came only
-    // from skipping everything would be a green about nothing.
-    expect(run.stdout, describeRun(run)).toMatch(/threads=2\b/);
-    expect(run.stdout, describeRun(run)).toMatch(/skipped=1\b/);
+    // All three produce a thread — a green that came only from skipping
+    // everything would be a green about nothing.
+    expect(run.stdout, describeRun(run)).toMatch(/threads=3\b/);
+    expect(run.stdout, describeRun(run)).toMatch(/skipped=0\b/);
+    // The 276 MiB one, and only it, is partial. Its tail is NUL bytes with no
+    // newline in them, so it yields no record beyond its head — which is a
+    // fact about `writeOversize`'s corpus rather than about the engine, and is
+    // why the byte figures below are the assertion and a record count is not.
+    expect(run.stdout, describeRun(run)).toMatch(/partial=1\b/);
+    const read = /read=(\d+)/.exec(run.stdout)?.[1];
+    expect(Number(read), describeRun(run)).toBe(256 * 1024 + 16 * MIB);
   }, 300_000);
 });

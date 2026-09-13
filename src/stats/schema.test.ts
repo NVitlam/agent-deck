@@ -21,14 +21,21 @@ function aRecord(): StatsRecord {
 }
 
 describe('the version is pinned', () => {
-  it('is 1, and a record carrying anything else is rejected', () => {
-    expect(STATS_SCHEMA_VERSION).toBe(1);
+  it('is 2, and a record carrying anything else is rejected', () => {
+    // The literal is the pin, and it is deliberately a second place the number
+    // is written, so the bump has to be made twice on purpose rather than once by
+    // an edit that reads as housekeeping.
+    expect(STATS_SCHEMA_VERSION).toBe(2);
     const record = aRecord();
     expect(validateStatsRecord(record).ok).toBe(true);
-    const bumped = { ...record, statsSchemaVersion: 2 };
-    const verdict = validateStatsRecord(bumped);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.errors.join(' ')).toContain('statsSchemaVersion');
+    // BOTH directions. The VALIDATOR is strict: a writer and the API produce only
+    // the current version. An OLDER record is read only because the store upgrades
+    // it first (DoD 7.14, `src/stats/history.test.ts`); a FUTURE one stays refused.
+    for (const version of [1, 3]) {
+      const verdict = validateStatsRecord({ ...record, statsSchemaVersion: version });
+      expect(verdict.ok).toBe(false);
+      expect(verdict.errors.join(' ')).toContain('statsSchemaVersion');
+    }
   });
 });
 

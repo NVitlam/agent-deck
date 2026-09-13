@@ -68,14 +68,16 @@
         "input": 2,
         "cacheCreation": 13390,
         "cacheRead": 28807,
-        "output": 1512
+        "output": 1512,
+        "atMs": 1787123117477
       },
       {
         "ordinal": 1,
         "input": 2,
         "cacheCreation": 3174,
         "cacheRead": 42197,
-        "output": 617
+        "output": 617,
+        "atMs": 1787123240376
       }
     ],
     "model": "claude-opus-5",
@@ -116,14 +118,16 @@
             "input": 2,
             "cacheCreation": 26603,
             "cacheRead": 0,
-            "output": 203
+            "output": 203,
+            "atMs": 1787123124332
           },
           {
             "ordinal": 1,
             "input": 2,
             "cacheCreation": 1839,
             "cacheRead": 26603,
-            "output": 69
+            "output": 69,
+            "atMs": 1787123131725
           }
         ],
         "model": "claude-opus-5",
@@ -178,14 +182,16 @@
             "input": 2,
             "cacheCreation": 7920,
             "cacheRead": 18703,
-            "output": 146
+            "output": 146,
+            "atMs": 1787123127942
           },
           {
             "ordinal": 1,
             "input": 2,
             "cacheCreation": 1747,
             "cacheRead": 26623,
-            "output": 84
+            "output": 84,
+            "atMs": 1787123132459
           }
         ],
         "model": "claude-opus-5",
@@ -240,14 +246,16 @@
             "input": 2,
             "cacheCreation": 8054,
             "cacheRead": 18703,
-            "output": 518
+            "output": 518,
+            "atMs": 1787123133280
           },
           {
             "ordinal": 1,
             "input": 2,
             "cacheCreation": 4008,
             "cacheRead": 26757,
-            "output": 1099
+            "output": 1099,
+            "atMs": 1787123224072
           }
         ],
         "model": "claude-opus-5",
@@ -288,56 +296,64 @@
                 "input": 2,
                 "cacheCreation": 25726,
                 "cacheRead": 0,
-                "output": 185
+                "output": 185,
+                "atMs": 1787123142476
               },
               {
                 "ordinal": 1,
                 "input": 2,
                 "cacheCreation": 1018,
                 "cacheRead": 25726,
-                "output": 215
+                "output": 215,
+                "atMs": 1787123145675
               },
               {
                 "ordinal": 2,
                 "input": 2,
                 "cacheCreation": 1220,
                 "cacheRead": 26744,
-                "output": 294
+                "output": 294,
+                "atMs": 1787123153634
               },
               {
                 "ordinal": 3,
                 "input": 2,
                 "cacheCreation": 6680,
                 "cacheRead": 27964,
-                "output": 516
+                "output": 516,
+                "atMs": 1787123159910
               },
               {
                 "ordinal": 4,
                 "input": 2,
                 "cacheCreation": 7441,
                 "cacheRead": 34644,
-                "output": 490
+                "output": 490,
+                "atMs": 1787123167120
               },
               {
                 "ordinal": 5,
                 "input": 2,
                 "cacheCreation": 6482,
                 "cacheRead": 42085,
-                "output": 131
+                "output": 131,
+                "atMs": 1787123170194
               },
               {
                 "ordinal": 6,
                 "input": 2,
                 "cacheCreation": 8768,
                 "cacheRead": 48567,
-                "output": 744
+                "output": 744,
+                "atMs": 1787123176369
               },
               {
                 "ordinal": 7,
                 "input": 2,
                 "cacheCreation": 3773,
                 "cacheRead": 57335,
-                "output": 3477
+                "output": 3477,
+                "atMs": 1787123204595
               }
             ],
             "model": "claude-opus-5",

@@ -70,8 +70,17 @@ afterAll(async () => {
 });
 
 describe('the --stats recorder', () => {
-  it('writes one corpus per committed R8 fixture, all thirteen, byte-identical twice', () => {
-    expect(fixtureIds).toHaveLength(13);
+  it('writes one corpus per committed R8 fixture, all fourteen, byte-identical twice', () => {
+    /*
+     * FOURTEEN as of v0.8.0 Phase 7 (DoD 7.4): `14-aborted-spawn` joined
+     * `src/stats/synthetic.testkit.ts` for F15. `fixtureIds` is read off
+     * `fixtures/synthetic-stats/` and the recorder reads the same directory, so
+     * this pin goes red until the phase's single regeneration writes that
+     * fixture and its wire corpus. It is a LITERAL rather than a count derived
+     * from the directory, because the two being equal is satisfied by a
+     * regeneration that wrote neither.
+     */
+    expect(fixtureIds).toHaveLength(14);
     expect([...runA.keys()]).toStrictEqual(fixtureIds.map((id) => `${PREFIX}${id}.json`));
     expect([...runB.keys()]).toStrictEqual([...runA.keys()]);
     for (const [name, bytes] of runA) expect(runB.get(name), name).toBe(bytes);
@@ -120,7 +129,9 @@ describe('each corpus, replayed through the real store', () => {
       expect(view.patchFailure).toBeUndefined();
       checked += 1;
     }
-    expect(checked).toBe(13);
+    // Fourteen from v0.8.0 Phase 7 — see the pin above for why this is a
+    // literal and when it goes green.
+    expect(checked).toBe(14);
   });
 
   it('the excluded fixture arrives excluded, and the refused one refused, on the wire', () => {

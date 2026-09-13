@@ -243,6 +243,56 @@ describe('the resync ceiling', () => {
     const second = await tail.read();
     expect(second.lines.map((l) => l.text)).toEqual(['{"after":1}']);
     expect(second.oversized).toBe(0);
+    // The over-long line is `oversized`, never `boundaryFragments`: two
+    // counters for two causes, and this is the arm that proves the new one
+    // does not move for the old reason.
+    expect(first.boundaryFragments).toBe(0);
+    expect(second.boundaryFragments).toBe(0);
+  });
+});
+
+// ===========================================================================
+// skipTo — v0.8.0 DoD 7.7, the oversize tail's jump
+// ===========================================================================
+
+describe('skipTo is delegated, not re-implemented', () => {
+  it('agrees with the Claude Code tail line for line, offset for offset, after a jump', async () => {
+    const dir = tmp('cx-skip-diff-');
+    const mine = join(dir, 'mine.jsonl');
+    const theirs = join(dir, 'theirs.jsonl');
+    const body = '{"a":1}\n{"b":2}\n{"c":3}\n{"d":4}\n';
+    for (const p of [mine, theirs]) writeFileSync(p, body);
+
+    const codex = new CodexFileTail(mine);
+    const cc = new FileTail(theirs, { sessionId: 'theirs.jsonl', agentId: null });
+    // Mid-way through `{"b":2}`.
+    const target = 8 + 4;
+    expect(codex.skipTo(target)).toBe(cc.skipTo(target));
+
+    const a = await codex.read();
+    const b = await cc.read();
+    expect(a.lines.map((l) => l.text)).toEqual(b.lines.map((l) => l.text));
+    // The subject is non-empty: a wrapper that dropped everything would agree
+    // with a delegate that dropped everything, and both would be wrong.
+    expect(a.lines.map((l) => l.text)).toEqual(['{"c":3}', '{"d":4}']);
+    expect(a.boundaryFragments).toBe(1);
+    expect(a.boundaryFragments).toBe(b.boundaryFragments);
+    expect(codex.offset).toBe(cc.offset);
+    expect(codex.pending).toBe(cc.pending);
+    // And the hand-off state says the same thing the getters do.
+    expect(a.state.offset).toBe(codex.offset);
+  });
+
+  it('carries the jump into `state`, which is what a caller reads between passes', async () => {
+    const path = newFile('rollout-skip-state-1.jsonl', '{"a":1}\n{"b":2}\n{"c":3}\n');
+    const tail = new CodexFileTail(path);
+    tail.skipTo(8);
+    expect(tail.state.offset).toBe(8);
+    expect(tail.state.pending).toBe('');
+
+    const result = await tail.read();
+    expect(result.lines.map((l) => l.text)).toEqual(['{"c":3}']);
+    expect(result.state.offset).toBe(24);
   });
 });
 
@@ -386,6 +436,7 @@ describe('differential — identical behaviour to the Claude Code FileTail', () 
       expect(a.bytesRead).toBe(b.bytesRead);
       expect(a.reset).toBe(b.reset);
       expect(a.oversized).toBe(b.oversized);
+      expect(a.boundaryFragments).toBe(b.boundaryFragments);
       expect(codex.offset).toBe(cc.offset);
       expect(codex.pendingBytes).toBe(cc.pendingBytes);
       expect(codex.pending).toBe(cc.pending);

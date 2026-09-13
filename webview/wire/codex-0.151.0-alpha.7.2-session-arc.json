@@ -114,7 +114,9 @@
                   "inputHash": "4503e464594922bca079705e59c7efa912a378db406175949fca346e9a201776",
                   "ordinal": 0,
                   "resultPreview": "{\"task_name\":\"/root/p1\"}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386056457,
+                  "endedAtMs": 1788386058258
                 },
                 {
                   "id": "01a0641d-9c3c-7612-a666-786b575d4194",
@@ -131,7 +133,9 @@
                       "inputHash": "a0131128560d30dc73e49e798ad8676d3734cfdc9c66c63bb9975e8ca4ac941a",
                       "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 01: scratch fixture row for the Codex kill gate.\r\n",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386062949,
+                      "endedAtMs": 1788386065985
                     }
                   ],
                   "contextNow": {
@@ -154,7 +158,9 @@
                   "inputHash": "c9625b805f444257bc5d467dc00f18414361cad01af22689ff8f12b52a453666",
                   "ordinal": 1,
                   "resultPreview": "{\"task_name\":\"/root/p2\"}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386060292,
+                  "endedAtMs": 1788386062108
                 },
                 {
                   "id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
@@ -171,7 +177,9 @@
                       "inputHash": "39e13468f17b45e1a5e273631c823dfba5b77d4e33f885acdab9ad2726923a64",
                       "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 3.0 seconds\nOutput:\n\nLine 02: scratch fixture row for the Codex kill gate.\r\n",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386067069,
+                      "endedAtMs": 1788386070146
                     }
                   ],
                   "contextNow": {
@@ -194,7 +202,9 @@
                   "inputHash": "1e7dff8df71793720ed17c40e8ecd2c952c1956ab6c088681ca035b6855fd1b5",
                   "ordinal": 2,
                   "resultPreview": "{\"task_name\":\"/root/p3\"}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386064252,
+                  "endedAtMs": 1788386066142
                 },
                 {
                   "id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
@@ -211,7 +221,9 @@
                       "inputHash": "cb91085e00075bb65da1575a1b62fe3c9a484b8606df4241153c945d695f01d0",
                       "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 03: scratch fixture row for the Codex kill gate.\r\n",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386072215,
+                      "endedAtMs": 1788386075177
                     }
                   ],
                   "contextNow": {
@@ -234,7 +246,9 @@
                   "inputHash": "2eafc533edd1cedbf925cfaa58ea93f84b5b2060ca8323f0aa97a082f13ac45e",
                   "ordinal": 3,
                   "resultPreview": "{\"message\":\"Wait completed.\\n\\nRequested timeout of 600ms was clamped to the minimum of 10000ms.\",\"timed_out\":false}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386067440,
+                  "endedAtMs": 1788386069500
                 },
                 {
                   "id": "call_sdxbW21gqrEROfSmFTqtH9AG",
@@ -244,7 +258,9 @@
                   "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
                   "ordinal": 4,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386070822,
+                  "endedAtMs": 1788386073650
                 },
                 {
                   "id": "call_gHEgJ9QqzOG4qNyWjhY3hue9",
@@ -254,7 +270,9 @@
                   "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
                   "ordinal": 5,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386075007,
+                  "endedAtMs": 1788386078562
                 },
                 {
                   "id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
@@ -264,7 +282,9 @@
                   "inputHash": "35dc134f67355b0bd3e60d3cadd88e2911b04eb89cef221f5151dcbb882c00d5",
                   "ordinal": 6,
                   "resultPreview": "{\"task_name\":\"/root/outer\"}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386081895,
+                  "endedAtMs": 1788386083661
                 },
                 {
                   "id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
@@ -281,7 +301,9 @@
                       "inputHash": "b07dd27ef416f378401c4a44860244ffb216ead202d4749e9897e6fd5c58d82c",
                       "ordinal": 0,
                       "resultPreview": "{\"task_name\":\"/root/outer/inner\"}",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386088603,
+                      "endedAtMs": 1788386090388
                     },
                     {
                       "id": "01a0641e-19d6-7800-8330-98371a1683a5",
@@ -298,7 +320,9 @@
                           "inputHash": "33011f85229f8b25f1d37ebe84d70174a3bbcdbbb084f9bbddb238b9ef2b6303",
                           "ordinal": 0,
                           "resultPreview": "Script completed\nWall time 2.8 seconds\nOutput:\n\n20\r\n",
-                          "truncated": false
+                          "truncated": false,
+                          "startedAtMs": 1788386095346,
+                          "endedAtMs": 1788386098276
                         }
                       ],
                       "contextNow": {
@@ -321,7 +345,9 @@
                       "inputHash": "fb747c43f7528a9d1bdfb27ef09c7534a90287e7fcaced2d76b72184069a0277",
                       "ordinal": 1,
                       "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386091715,
+                      "endedAtMs": 1788386101573
                     }
                   ],
                   "contextNow": {
@@ -344,7 +370,9 @@
                   "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
                   "ordinal": 7,
                   "resultPreview": "{\"message\":\"Wait timed out.\",\"timed_out\":true}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386085011,
+                  "endedAtMs": 1788386096714
                 },
                 {
                   "id": "call_wYC0jwTFy9FjFSYO5vj9s0Mc",
@@ -354,7 +382,9 @@
                   "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
                   "ordinal": 8,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386098068,
+                  "endedAtMs": 1788386104463
                 }
               ],
               "contextNow": {
@@ -461,7 +491,9 @@
                   "inputHash": "4503e464594922bca079705e59c7efa912a378db406175949fca346e9a201776",
                   "ordinal": 0,
                   "resultPreview": "{\"task_name\":\"/root/p1\"}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386056457,
+                  "endedAtMs": 1788386058258
                 },
                 {
                   "id": "01a0641d-9c3c-7612-a666-786b575d4194",
@@ -478,7 +510,9 @@
                       "inputHash": "a0131128560d30dc73e49e798ad8676d3734cfdc9c66c63bb9975e8ca4ac941a",
                       "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 01: scratch fixture row for the Codex kill gate.\r\n",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386062949,
+                      "endedAtMs": 1788386065985
                     }
                   ],
                   "contextNow": {
@@ -501,7 +535,9 @@
                   "inputHash": "c9625b805f444257bc5d467dc00f18414361cad01af22689ff8f12b52a453666",
                   "ordinal": 1,
                   "resultPreview": "{\"task_name\":\"/root/p2\"}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386060292,
+                  "endedAtMs": 1788386062108
                 },
                 {
                   "id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
@@ -518,7 +554,9 @@
                       "inputHash": "39e13468f17b45e1a5e273631c823dfba5b77d4e33f885acdab9ad2726923a64",
                       "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 3.0 seconds\nOutput:\n\nLine 02: scratch fixture row for the Codex kill gate.\r\n",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386067069,
+                      "endedAtMs": 1788386070146
                     }
                   ],
                   "contextNow": {
@@ -541,7 +579,9 @@
                   "inputHash": "1e7dff8df71793720ed17c40e8ecd2c952c1956ab6c088681ca035b6855fd1b5",
                   "ordinal": 2,
                   "resultPreview": "{\"task_name\":\"/root/p3\"}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386064252,
+                  "endedAtMs": 1788386066142
                 },
                 {
                   "id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
@@ -558,7 +598,9 @@
                       "inputHash": "cb91085e00075bb65da1575a1b62fe3c9a484b8606df4241153c945d695f01d0",
                       "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 03: scratch fixture row for the Codex kill gate.\r\n",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386072215,
+                      "endedAtMs": 1788386075177
                     }
                   ],
                   "contextNow": {
@@ -581,7 +623,9 @@
                   "inputHash": "2eafc533edd1cedbf925cfaa58ea93f84b5b2060ca8323f0aa97a082f13ac45e",
                   "ordinal": 3,
                   "resultPreview": "{\"message\":\"Wait completed.\\n\\nRequested timeout of 600ms was clamped to the minimum of 10000ms.\",\"timed_out\":false}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386067440,
+                  "endedAtMs": 1788386069500
                 },
                 {
                   "id": "call_sdxbW21gqrEROfSmFTqtH9AG",
@@ -591,7 +635,9 @@
                   "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
                   "ordinal": 4,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386070822,
+                  "endedAtMs": 1788386073650
                 },
                 {
                   "id": "call_gHEgJ9QqzOG4qNyWjhY3hue9",
@@ -601,7 +647,9 @@
                   "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
                   "ordinal": 5,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386075007,
+                  "endedAtMs": 1788386078562
                 },
                 {
                   "id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
@@ -611,7 +659,9 @@
                   "inputHash": "35dc134f67355b0bd3e60d3cadd88e2911b04eb89cef221f5151dcbb882c00d5",
                   "ordinal": 6,
                   "resultPreview": "{\"task_name\":\"/root/outer\"}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386081895,
+                  "endedAtMs": 1788386083661
                 },
                 {
                   "id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
@@ -628,7 +678,9 @@
                       "inputHash": "b07dd27ef416f378401c4a44860244ffb216ead202d4749e9897e6fd5c58d82c",
                       "ordinal": 0,
                       "resultPreview": "{\"task_name\":\"/root/outer/inner\"}",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386088603,
+                      "endedAtMs": 1788386090388
                     },
                     {
                       "id": "01a0641e-19d6-7800-8330-98371a1683a5",
@@ -645,7 +697,9 @@
                           "inputHash": "33011f85229f8b25f1d37ebe84d70174a3bbcdbbb084f9bbddb238b9ef2b6303",
                           "ordinal": 0,
                           "resultPreview": "Script completed\nWall time 2.8 seconds\nOutput:\n\n20\r\n",
-                          "truncated": false
+                          "truncated": false,
+                          "startedAtMs": 1788386095346,
+                          "endedAtMs": 1788386098276
                         }
                       ],
                       "contextNow": {
@@ -668,7 +722,9 @@
                       "inputHash": "fb747c43f7528a9d1bdfb27ef09c7534a90287e7fcaced2d76b72184069a0277",
                       "ordinal": 1,
                       "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386091715,
+                      "endedAtMs": 1788386101573
                     }
                   ],
                   "contextNow": {
@@ -691,7 +747,9 @@
                   "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
                   "ordinal": 7,
                   "resultPreview": "{\"message\":\"Wait timed out.\",\"timed_out\":true}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386085011,
+                  "endedAtMs": 1788386096714
                 },
                 {
                   "id": "call_wYC0jwTFy9FjFSYO5vj9s0Mc",
@@ -701,7 +759,9 @@
                   "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
                   "ordinal": 8,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386098068,
+                  "endedAtMs": 1788386104463
                 }
               ],
               "contextNow": {
@@ -818,7 +878,9 @@
               "inputHash": "4503e464594922bca079705e59c7efa912a378db406175949fca346e9a201776",
               "ordinal": 0,
               "resultPreview": "{\"task_name\":\"/root/p1\"}",
-              "truncated": false
+              "truncated": false,
+              "startedAtMs": 1788386056457,
+              "endedAtMs": 1788386058258
             },
             {
               "id": "01a0641d-9c3c-7612-a666-786b575d4194",
@@ -835,7 +897,9 @@
                   "inputHash": "a0131128560d30dc73e49e798ad8676d3734cfdc9c66c63bb9975e8ca4ac941a",
                   "ordinal": 0,
                   "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 01: scratch fixture row for the Codex kill gate.\r\n",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386062949,
+                  "endedAtMs": 1788386065985
                 }
               ],
               "contextNow": {
@@ -858,7 +922,9 @@
               "inputHash": "c9625b805f444257bc5d467dc00f18414361cad01af22689ff8f12b52a453666",
               "ordinal": 1,
               "resultPreview": "{\"task_name\":\"/root/p2\"}",
-              "truncated": false
+              "truncated": false,
+              "startedAtMs": 1788386060292,
+              "endedAtMs": 1788386062108
             },
             {
               "id": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
@@ -875,7 +941,9 @@
                   "inputHash": "39e13468f17b45e1a5e273631c823dfba5b77d4e33f885acdab9ad2726923a64",
                   "ordinal": 0,
                   "resultPreview": "Script completed\nWall time 3.0 seconds\nOutput:\n\nLine 02: scratch fixture row for the Codex kill gate.\r\n",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386067069,
+                  "endedAtMs": 1788386070146
                 }
               ],
               "contextNow": {
@@ -898,7 +966,9 @@
               "inputHash": "1e7dff8df71793720ed17c40e8ecd2c952c1956ab6c088681ca035b6855fd1b5",
               "ordinal": 2,
               "resultPreview": "{\"task_name\":\"/root/p3\"}",
-              "truncated": false
+              "truncated": false,
+              "startedAtMs": 1788386064252,
+              "endedAtMs": 1788386066142
             },
             {
               "id": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
@@ -915,7 +985,9 @@
                   "inputHash": "cb91085e00075bb65da1575a1b62fe3c9a484b8606df4241153c945d695f01d0",
                   "ordinal": 0,
                   "resultPreview": "Script completed\nWall time 2.9 seconds\nOutput:\n\nLine 03: scratch fixture row for the Codex kill gate.\r\n",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386072215,
+                  "endedAtMs": 1788386075177
                 }
               ],
               "contextNow": {
@@ -938,7 +1010,9 @@
               "inputHash": "2eafc533edd1cedbf925cfaa58ea93f84b5b2060ca8323f0aa97a082f13ac45e",
               "ordinal": 3,
               "resultPreview": "{\"message\":\"Wait completed.\\n\\nRequested timeout of 600ms was clamped to the minimum of 10000ms.\",\"timed_out\":false}",
-              "truncated": false
+              "truncated": false,
+              "startedAtMs": 1788386067440,
+              "endedAtMs": 1788386069500
             },
             {
               "id": "call_sdxbW21gqrEROfSmFTqtH9AG",
@@ -948,7 +1022,9 @@
               "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
               "ordinal": 4,
               "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-              "truncated": false
+              "truncated": false,
+              "startedAtMs": 1788386070822,
+              "endedAtMs": 1788386073650
             },
             {
               "id": "call_gHEgJ9QqzOG4qNyWjhY3hue9",
@@ -958,7 +1034,9 @@
               "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
               "ordinal": 5,
               "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-              "truncated": false
+              "truncated": false,
+              "startedAtMs": 1788386075007,
+              "endedAtMs": 1788386078562
             },
             {
               "id": "call_GIl7WhobVTNSUVSpSw5aEwzw",
@@ -968,7 +1046,9 @@
               "inputHash": "35dc134f67355b0bd3e60d3cadd88e2911b04eb89cef221f5151dcbb882c00d5",
               "ordinal": 6,
               "resultPreview": "{\"task_name\":\"/root/outer\"}",
-              "truncated": false
+              "truncated": false,
+              "startedAtMs": 1788386081895,
+              "endedAtMs": 1788386083661
             },
             {
               "id": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
@@ -985,7 +1065,9 @@
                   "inputHash": "b07dd27ef416f378401c4a44860244ffb216ead202d4749e9897e6fd5c58d82c",
                   "ordinal": 0,
                   "resultPreview": "{\"task_name\":\"/root/outer/inner\"}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386088603,
+                  "endedAtMs": 1788386090388
                 },
                 {
                   "id": "01a0641e-19d6-7800-8330-98371a1683a5",
@@ -1002,7 +1084,9 @@
                       "inputHash": "33011f85229f8b25f1d37ebe84d70174a3bbcdbbb084f9bbddb238b9ef2b6303",
                       "ordinal": 0,
                       "resultPreview": "Script completed\nWall time 2.8 seconds\nOutput:\n\n20\r\n",
-                      "truncated": false
+                      "truncated": false,
+                      "startedAtMs": 1788386095346,
+                      "endedAtMs": 1788386098276
                     }
                   ],
                   "contextNow": {
@@ -1025,7 +1109,9 @@
                   "inputHash": "fb747c43f7528a9d1bdfb27ef09c7534a90287e7fcaced2d76b72184069a0277",
                   "ordinal": 1,
                   "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-                  "truncated": false
+                  "truncated": false,
+                  "startedAtMs": 1788386091715,
+                  "endedAtMs": 1788386101573
                 }
               ],
               "contextNow": {
@@ -1048,7 +1134,9 @@
               "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
               "ordinal": 7,
               "resultPreview": "{\"message\":\"Wait timed out.\",\"timed_out\":true}",
-              "truncated": false
+              "truncated": false,
+              "startedAtMs": 1788386085011,
+              "endedAtMs": 1788386096714
             },
             {
               "id": "call_wYC0jwTFy9FjFSYO5vj9s0Mc",
@@ -1058,7 +1146,9 @@
               "inputHash": "2342e8f336b76566ca94da3914a980c8adbbeb393d956d91b9e6d561967d90a2",
               "ordinal": 8,
               "resultPreview": "{\"message\":\"Wait completed.\",\"timed_out\":false}",
-              "truncated": false
+              "truncated": false,
+              "startedAtMs": 1788386098068,
+              "endedAtMs": 1788386104463
             }
           ],
           "contextNow": {

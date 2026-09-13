@@ -1,0 +1,87 @@
+{
+  "statsSchemaVersion": 2,
+  "sessionId": "synthetic-14-aborted-spawn",
+  "engine": "cc",
+  "projectSlug": "synthetic-stats",
+  "startedAt": 1700000000000,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 1000,
+      "output": 100,
+      "cacheRead": 100,
+      "cacheRatio": 0.1,
+      "toolCalls": 2,
+      "silent": false,
+      "resultUnreceived": false
+    },
+    {
+      "agentId": "unreceived",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 20,
+      "output": 2,
+      "cacheRead": 100,
+      "cacheRatio": 5,
+      "toolCalls": 1,
+      "silent": false,
+      "resultUnreceived": true
+    },
+    {
+      "agentId": "received",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 30,
+      "output": 3,
+      "cacheRead": 100,
+      "cacheRatio": 3.3333333333333335,
+      "toolCalls": 1,
+      "silent": false,
+      "resultUnreceived": false
+    }
+  ],
+  "files": [],
+  "tools": [
+    {
+      "toolName": "Agent",
+      "class": "spawn",
+      "calls": 2,
+      "errors": 0
+    },
+    {
+      "toolName": "Read",
+      "class": "read",
+      "calls": 2,
+      "errors": 0
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "timing": {},
+  "totals": {
+    "prompt": 1050,
+    "output": 105,
+    "cacheRead": 300,
+    "compactions": 0,
+    "subagents": 2,
+    "silentSubagents": 0,
+    "subagentsUnreceived": 1,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F14:cc",
+    "F9:cc"
+  ]
+}

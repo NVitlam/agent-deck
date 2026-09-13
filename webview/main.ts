@@ -18,15 +18,16 @@
  *
  * TWO SURFACES, ONE BUNDLE (v0.7.0 Phase 4, DoD 4.6b). The activity-bar
  * sidebar loads this same script. Which surface mounts is decided by which
- * root the host's document carries: `SIDEBAR_ROOT_ID` mounts the command menu
- * and `WEBVIEW_ROOT_ID` mounts the app. One bundle means one CSP, one egress
+ * root the host's document carries: `SIDEBAR_ROOT_ID` mounts the sidebar's two
+ * tabs and `WEBVIEW_ROOT_ID` mounts the app. One bundle means one CSP, one egress
  * guard and one stylesheet cover both, which is what spec §G2's "same bundle
  * rules" asks for.
  */
 
 import type { WebviewToHostMessage } from '../src/model/events.js';
 import App from './App.svelte';
-import Menu from './sidebar/Menu.svelte';
+import Sidebar from './sidebar/Sidebar.svelte';
+import { createTweaksSource } from './sidebar/tweaks-source.js';
 import { createStore } from './store.js';
 import type { Store } from './store.js';
 import { mount, unmount } from 'svelte';
@@ -94,27 +95,50 @@ export function start(target: HTMLElement, api: VsCodeApi = acquireApi()): {
 }
 
 /**
- * Start the SIDEBAR menu against a container (DoD 4.6b).
+ * Start the SIDEBAR against a container (DoD 4.6b; two tabs as of DoD 7.6).
  *
- * No store and no inbound messages: the menu is a list of buttons, and the
- * only thing it does is post `runCommand`. Exported for the same reason
- * {@link start} is — the harness drives exactly what VS Code drives.
+ * NO STORE, and it now takes ONE inbound message. Until v0.8.0 this function's
+ * doc said "no store and no inbound messages", which was true of a surface
+ * that was a list of buttons. The Tweaks tab renders four settings and the
+ * amendment makes settings the source of truth, so the panel has to be told
+ * what they are: the host's `settings` message — the same one the panel reads
+ * for `canvasAutoFit`, not a second type — reaches
+ * the sidebar's `TweaksSource`, and a control's position is whatever the last
+ * one said. Session data still never reaches this surface, and no store is
+ * constructed here.
+ *
+ * Exported for the same reason {@link start} is — the harness drives exactly
+ * what VS Code drives.
  */
 export function startSidebar(target: HTMLElement, api: VsCodeApi = acquireApi()): {
   dispose: () => void;
 } {
-  const menu = mount(Menu, {
+  const source = createTweaksSource((message) => api.postMessage(message));
+
+  const onMessage = (event: MessageEvent<unknown>): void => {
+    // Same guard as the panel's, and for the same reason (G3): the sidebar
+    // must survive anything that reaches its message port. Everything but
+    // `settings` is dropped — there is no session data on this surface.
+    if (!isHostMessage(event.data)) return;
+    if (event.data.type !== 'settings') return;
+    source.accept(event.data.tweaks);
+  };
+  globalThis.addEventListener('message', onMessage);
+
+  const sidebar = mount(Sidebar, {
     target,
     props: {
       entries: SIDEBAR_MENU,
       onrun: (command: string) => {
         api.postMessage({ type: 'runCommand', command });
       },
+      source,
     },
   });
   return {
     dispose: () => {
-      void unmount(menu, { outro: false });
+      globalThis.removeEventListener('message', onMessage);
+      void unmount(sidebar, { outro: false });
     },
   };
 }

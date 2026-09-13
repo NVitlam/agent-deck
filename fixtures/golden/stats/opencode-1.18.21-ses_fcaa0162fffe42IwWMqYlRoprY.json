@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "ses_fcaa0162fffe42IwWMqYlRoprY",
   "engine": "opencode",
   "projectSlug": "c--Users-dev-projects-agent-deck",
@@ -17,6 +17,7 @@
       "cacheRatio": 0.9204734677646901,
       "toolCalls": 40,
       "silent": false,
+      "resultUnreceived": false,
       "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}"
     },
     {
@@ -29,6 +30,7 @@
       "cacheRatio": 0.09132868506334087,
       "toolCalls": 0,
       "silent": true,
+      "resultUnreceived": false,
       "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}"
     }
   ],
@@ -205,6 +207,13 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {
+    "wallMs": 11054847,
+    "timeToFirstToolMs": 0,
+    "longestGapMs": 2340135,
+    "tokensPerMin": 15242.70756528788,
+    "callsPerMin": 0.2170993411306371
+  },
   "totals": {
     "prompt": 2746251,
     "output": 62179,
@@ -212,6 +221,7 @@
     "compactions": 0,
     "subagents": 1,
     "silentSubagents": 1,
+    "subagentsUnreceived": 0,
     "stalls": 0
   },
   "params": {

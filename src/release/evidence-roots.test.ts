@@ -60,9 +60,17 @@ interface RootDir {
  * ledgers (`runner`, `privacy`, `scrub`, `ui-states`, `opencode`) and the
  * phase directories of closed plans, plus the four v0.7.0-era ones the header
  * names. Pinned as a set: it may shrink, never grow.
+ *
+ * GROWN ONCE, BY USER RULING (R4, 2026-09-13): `phase-0-copilot` and
+ * `phase-0-cursor`, two phase-0 spikes of the same class as `phase-0b-otel` -
+ * standalone feasibility captures, not the evidence of a release. They sat
+ * untracked in lab and made this test the single red file of the 0.8.0 gate.
+ * The rule above still stands for anything else.
  */
 const UNVERSIONED: ReadonlySet<string> = new Set([
   'opencode',
+  'phase-0-copilot',
+  'phase-0-cursor',
   'phase-0-stats',
   'phase-0b-otel',
   'phase-0c',

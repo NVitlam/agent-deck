@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "synthetic-08-codex-window",
   "engine": "codex",
   "projectSlug": "synthetic-stats",
@@ -13,7 +13,8 @@
       "prompt": 1000,
       "output": 100,
       "toolCalls": 1,
-      "silent": false
+      "silent": false,
+      "resultUnreceived": false
     }
   ],
   "files": [],
@@ -29,6 +30,7 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {},
   "totals": {
     "prompt": 1000,
     "output": 100,
@@ -44,6 +46,8 @@
   "unavailable": [
     "F12:codex",
     "F13.completed:snapshot",
+    "F14:codex",
+    "F15:codex",
     "F1:codex",
     "F2.errors:codex",
     "F4:codex",

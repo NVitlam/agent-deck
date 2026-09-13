@@ -2,6 +2,46 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.8.0 - 2026-09-13 - Time, tools, tweaks and oversize Codex transcripts
+
+### Added
+
+- **A Tools part in the Stats view.** One row per tool: its class, calls, errors,
+  longest call and total duration, and how many sessions called it. A duration
+  the engine and telemetry state none of shows `—`.
+- **A session's own timings in the Tokens part.** Wall time, time to the first tool
+  call, the longest gap between calls, tokens and calls a minute, and cost an hour
+  where a cost source exists — all from the timestamps the engine wrote.
+- **Tokens a minute in Trends**, one line per engine, each on its own scale.
+- **A time and a gap on every row of the tool-call drawer.** The time since the
+  agent's first call and the gap between calls; the selected call's end when the
+  engine states one.
+- **Subagents whose spawning call has no result** are counted in the Tokens part
+  beside the silent subagents, and marked on their row.
+- **A Tweaks tab in the sidebar**, showing `agentDeck.followNewSessions`,
+  `agentDeck.openDrawerOnEnter`, `agentDeck.drawerExpandedByDefault` and
+  `agentDeck.defaultOrdering`. Each is also a setting; the tab keeps no value of its
+  own.
+- **Oversize Codex transcripts are read in part.** A transcript over
+  `agentDeck.codex.maxTranscriptBytes` is read from its first 256 KiB and its last
+  16 MiB, its deck card reads "read in part", and the output channel names the file
+  and the bytes read. `oversizePartial` counts them on the counters line.
+- **`foreign` on the counters line.** Telemetry rows for sessions this window does
+  not hold are counted as `foreign`; `unmatched` counts only rows for sessions it
+  holds, and the line states `(this window)`.
+
+### Changed
+
+- **Records from 0.7.x are read; time facts are absent for them.** The record
+  format is version 2; an older line is read as it is, nothing on disk is
+  rewritten, and its missing facts are named `F14:absent` and `F15:absent`.
+  It has no point in the tokens-per-minute series, and the Stats footer counts it.
+
+### Fixed
+
+- **The inspector header's fields no longer run into each other** at wide panel
+  widths. A field too far right for the panel is cut at the edge instead.
+
 ## 0.7.1 - 2026-09-11 - Claude Code's own telemetry, received on the hook listener
 
 ### Added

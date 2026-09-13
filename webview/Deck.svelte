@@ -94,6 +94,7 @@
     total,
     engineFilter = DEFAULT_ENGINE_FILTER,
     onenginefilter,
+    defaultOrdering = undefined,
     now,
     viewportWidth,
     viewportHeight,
@@ -199,6 +200,16 @@
      */
     onenginefilter?: ((filter: EngineFilter) => void) | undefined;
     /**
+     * `agentDeck.defaultOrdering` — the sort this deck STARTS at (DoD 7.6).
+     *
+     * Not the sort itself, and not store state: it is the value `sortMode`
+     * below is seeded from, once, when this component is built. Absent means
+     * the host has not stated one this build knows, and the fallback is
+     * `DEFAULT_DECK_SORT` — the design's own default, written in
+     * `layout.ts` and nowhere else.
+     */
+    defaultOrdering?: DeckSortMode | undefined;
+    /**
      * The renderer's clock, in epoch milliseconds, for each card's age.
      *
      * Read once per render from `Date.now()` when not supplied, and passed
@@ -252,7 +263,58 @@
    * arrives as a prop.
    */
   let layoutMode = $state.raw<DeckLayoutMode>(DEFAULT_DECK_LAYOUT);
+  /**
+   * The sort, and what seeds it: `agentDeck.defaultOrdering` (DoD 7.6).
+   *
+   * TWO FACTS DECIDE THE SHAPE HERE, and the second was measured rather than
+   * assumed.
+   *
+   * The first is the block above, which predates this setting: `App.svelte`
+   * mounts this component only at the deck altitude, so entering a session
+   * destroys it and returning builds a new one, and the sort going back to its
+   * starting value on that return is a decision recorded there rather than a
+   * leak. All the setting changes is WHAT it goes back to.
+   *
+   * The second is that A CONSTRUCTION-TIME SEED ALONE CANNOT WORK. The host
+   * creates the webview, the bundle mounts `App.svelte`, and `App.svelte`
+   * mounts this component immediately — the altitude starts at `deck` — so the
+   * first `settings` message ALWAYS arrives after this component was built.
+   * `let sortMode = $state.raw(defaultOrdering ?? DEFAULT_DECK_SORT)` applies
+   * the setting on every return to the deck and never on the first one, which
+   * is the deck a person opens the panel to. It was written that way and
+   * `tweaks-effects.test.ts` caught it.
+   *
+   * So the rule is: THE SORT FOLLOWS THE SETTING UNTIL THE USER PICKS ONE ON
+   * THIS DECK, and after that it is theirs for as long as this deck lives.
+   * Both halves matter — without the first the setting is dead on arrival, and
+   * without the second a configuration change re-sorts the deck under the
+   * control the user just used. `sortChosen` is what separates them, and it
+   * dies with the component, which is what makes the next deck the setting's
+   * again.
+   *
+   * ONE MECHANISM, NOT TWO: the initialiser is `DEFAULT_DECK_SORT`, the
+   * design's own default and the only default written down anywhere in this
+   * renderer, and the effect below is the ONLY place `defaultOrdering` is
+   * read. Seeding in both places would leave the initialiser's arm unobservable
+   * — the effect re-seeds every mount anyway — and this repository has shipped
+   * enough code that no test can contradict.
+   */
   let sortMode = $state.raw<DeckSortMode>(DEFAULT_DECK_SORT);
+
+  /** Has the user chosen a sort ON THIS DECK? Dies with the component. */
+  let sortChosen = $state.raw(false);
+
+  $effect(() => {
+    const seed = defaultOrdering;
+    if (sortChosen || seed === undefined || seed === sortMode) return;
+    sortMode = seed;
+  });
+
+  /** The control bar's own choice: it wins over the setting from here on. */
+  function chooseSort(value: DeckSortMode): void {
+    sortChosen = true;
+    sortMode = value;
+  }
 
   /**
    * The chips and segments, in the order they render.
@@ -527,7 +589,7 @@
     }
     const sort = SORTS.find((c) => c.key === key);
     if (sort !== undefined) {
-      sortMode = sort.value;
+      chooseSort(sort.value);
       event.preventDefault();
     }
   };
@@ -591,7 +653,7 @@
           data-active={String(sortMode === option.value)}
           aria-pressed={sortMode === option.value}
           title={`${option.label} (${option.key.toUpperCase()})`}
-          onclick={() => (sortMode = option.value)}>{option.label}</button
+          onclick={() => chooseSort(option.value)}>{option.label}</button
         >
       {/each}
       <span

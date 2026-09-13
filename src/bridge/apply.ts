@@ -112,6 +112,12 @@ function cloneTool(node: ToolNode): ToolNode {
   if (node.filePath !== undefined) out.filePath = node.filePath;
   if (node.inputHash !== undefined) out.inputHash = node.inputHash;
   if (node.ordinal !== undefined) out.ordinal = node.ordinal;
+  // v0.8.0 Phase 7, DoD 7.1 (F14), on exactly the same terms as the three
+  // above. A clone that dropped these would strip a call's start and end the
+  // moment it passed through the reducer, so the same node would carry them by
+  // SNAPSHOT and lose them by DIFF.
+  if (node.startedAtMs !== undefined) out.startedAtMs = node.startedAtMs;
+  if (node.endedAtMs !== undefined) out.endedAtMs = node.endedAtMs;
   return out;
 }
 
@@ -398,6 +404,16 @@ export function applySessionPatch(
         else if (f.resultPreview !== undefined) node.resultPreview = f.resultPreview;
         if (f.durationMs === null) delete node.durationMs;
         else if (f.durationMs !== undefined) node.durationMs = f.durationMs;
+        // v0.8.0 Phase 7, DoD 7.1 (F14). Both directions, for the reason B7
+        // states below and which is not theoretical for these two: a call is
+        // added `running` with a start and no end, and gains its end in a later
+        // patch. `null` is the engine withdrawing the instant and must DELETE
+        // the key — collapsing it to "unchanged" would leave a stale end on a
+        // node the engine has stopped stating one for.
+        if (f.startedAtMs === null) delete node.startedAtMs;
+        else if (f.startedAtMs !== undefined) node.startedAtMs = f.startedAtMs;
+        if (f.endedAtMs === null) delete node.endedAtMs;
+        else if (f.endedAtMs !== undefined) node.endedAtMs = f.endedAtMs;
         // Gate amendment B7. Both directions, or the round trip is not exact:
         // `null` is the engine withdrawing its truncation claim and must DELETE
         // the key, `false` is the engine actively claiming the payload is whole
@@ -471,5 +487,24 @@ export function applySessionPatch(
   if (parked !== undefined) next.parked = parked.map((p) => ({ ...p }));
   if (engine !== undefined) next.engine = engine;
   if (windowTokens !== undefined) next.windowTokens = windowTokens;
+  /*
+   * CARRIED, NEVER PATCHED (v0.8.0 DoD 7.7).
+   *
+   * `SessionState.partial` says the session was built from part of its
+   * transcript. `SessionPatch` has no key for it and deliberately so: the
+   * figures are latched by the engine at the read that established the tail
+   * (`src/codex/store.ts` carries the reason), so no two states of one session
+   * can differ in it and there is nothing for a patch to express.
+   *
+   * What this line does is the half that is NOT automatic. This reducer builds
+   * `next` field by field, so a field nobody names is DROPPED — a partial
+   * session would carry its mark on the snapshot and lose it on the first diff
+   * applied afterwards, which is the shape `parked`'s own comment above warns
+   * about and which is silent in exactly the same way.
+   *
+   * Copied rather than shared, like `parked` and `spawnEdges`: this reducer
+   * hands back a frozen object graph of its own.
+   */
+  if (prev.partial !== undefined) next.partial = { ...prev.partial };
   return deepFreeze(next);
 }

@@ -56,6 +56,24 @@ export interface TokenPair {
   output: number;
 }
 
+/**
+ * How much of an oversize transcript was read — v0.8.0 Phase 7, DoD 7.7.
+ *
+ * Both figures are BYTES and both are measured rather than estimated:
+ * `totalBytes` is discovery's own `statSync().size`, the same number the size
+ * gate compares, and `readBytes` is what the engine actually took.
+ *
+ * There is deliberately no percentage and no "how much is missing" field. A
+ * byte count is not a record count — Codex lines run to hundreds of kilobytes
+ * apiece — so a percentage of bytes would read as a percentage of the session,
+ * which is a different quantity nobody measured. The two numbers are stated
+ * and the reader may divide them knowing what they are.
+ */
+export interface TranscriptPartial {
+  readBytes: number;
+  totalBytes: number;
+}
+
 export interface SessionState {
   sessionId: string; // <sessionId>.jsonl basename
   projectSlug: string;
@@ -164,6 +182,35 @@ export interface SessionState {
    * them that relationship is not recoverable from `root` alone.
    */
   spawnEdges?: readonly SpawnEdge[];
+  /**
+   * The transcript was too big to read whole, so part of it was read and
+   * this session is built from that part — v0.8.0 Phase 7, DoD 7.7.
+   *
+   * Additive and optional for the reason `spawnEdges` and `parked` are:
+   * every earlier construction of this interface stays valid and no field
+   * above changes meaning. **Absence reads as "read whole"**, which is what
+   * every session before this release was.
+   *
+   * ## Why a session says this at all, instead of being skipped
+   *
+   * Before this, a Codex transcript over `agentDeck.codex.maxTranscriptBytes`
+   * was measured from its directory entry and never opened — correct, because
+   * Codex stores tool output whole and inline and a long session reaches
+   * hundreds of megabytes. But the user saw nothing on the deck and one line
+   * on a channel they had no reason to open, so the biggest session on the
+   * machine was the one Agent Deck was silent about. G3 says refuse rather
+   * than guess; it does not say refuse SILENTLY.
+   *
+   * ## What is and is not claimed
+   *
+   * The bytes read are real and everything derived from them is a fact about
+   * the session. What is NOT claimed is completeness: counts, totals and the
+   * tree are of the part that was read, and a renderer must say so rather
+   * than present them as the session. That is the whole reason this field is
+   * on the state instead of being a detail of the engine — a figure a user
+   * cannot tell is partial is worse than no figure.
+   */
+  partial?: TranscriptPartial;
   /**
    * Agents the grafter knows exist and deliberately did NOT attach to the
    * tree, each with the machine-readable code saying why.
@@ -496,6 +543,16 @@ export interface UsageTurn {
   cacheRead: number;
   /** Tokens generated this turn. */
   output: number;
+  /**
+   * F14 — when the ENGINE says this turn happened, in epoch milliseconds.
+   *
+   * v0.8.0 Phase 7, DoD 7.1. Absent where the engine states no time for a
+   * turn, and absent on every engine that states no series at all — Codex
+   * writes a running `total_token_usage` from which no turn can be recovered
+   * (`src/codex/parse.ts` records the measurement), so it has no `UsageTurn`
+   * for this field to hang on rather than a turn whose time is unknown.
+   */
+  atMs?: number;
 }
 
 /**
@@ -695,6 +752,35 @@ export interface ToolNode {
    */
   durationMs?: number;
   /**
+   * F14 — the instant the ENGINE says this call began, in epoch milliseconds.
+   *
+   * v0.8.0 Phase 7, DoD 7.1; spec `Amendment 2026-09-12`: *"gathered at the
+   * parse boundary, from the engine's own timestamps only; absent where the
+   * engine states none"*.
+   *
+   * ## Absent is a fact, and it is not the same fact as `durationMs` absent
+   *
+   * {@link ToolNode.durationMs} has TWO producers and telemetry is one of
+   * them: `otel/join.ts` fills it where the engine states none. These two do
+   * not, and may not — the amendment says "the engine's own timestamps only",
+   * so a telemetry-filled duration legitimately stands beside an absent start.
+   * A reader that treats `durationMs` as implying a start/end pair is wrong
+   * for exactly the telemetry case, which is why this is written down here
+   * rather than left to be inferred from the two fields being adjacent.
+   *
+   * The other direction is also legitimate and commoner: a RUNNING call has a
+   * start and no end, and therefore no duration. Neither field implies the
+   * other in either direction.
+   */
+  startedAtMs?: number;
+  /**
+   * F14 — the instant the ENGINE says this call ended, in epoch milliseconds.
+   *
+   * See {@link ToolNode.startedAtMs}. Absent on every call the engine has not
+   * reported a result for, and absent on every engine that states no end.
+   */
+  endedAtMs?: number;
+  /**
    * The observed engine reports that IT already truncated this payload, before
    * Agent Deck saw it.
    *
@@ -861,6 +947,18 @@ export interface ToolNodeFieldPatch {
   inputPreview?: string;
   resultPreview?: string | null;
   durationMs?: number | null;
+  /**
+   * `null` = cleared. See {@link ToolNode.startedAtMs}.
+   *
+   * Carried for the EXACTNESS reason this file states for `truncated` and
+   * `stalledSinceMs` below, and it is not theoretical here: a call is added
+   * with a start and no end, and gains its end in a later patch when the
+   * engine writes the result. That is a field that really moves, not one
+   * carried only to keep the contract total.
+   */
+  startedAtMs?: number | null;
+  /** `null` = cleared. See {@link ToolNode.endedAtMs}. */
+  endedAtMs?: number | null;
   /** `null` = cleared. See {@link ToolNode.truncated}. */
   truncated?: boolean | null;
   /**
@@ -1042,14 +1140,32 @@ export interface StatsStoreMessage {
 /**
  * Host settings the RENDERER reads (v0.7.0 Phase 4, DoD 4.0).
  *
- * One today: `agentDeck.canvas.autoFit`. Sent when the panel is created, again
- * on every reload (the new document knows nothing), and on every configuration
- * change. The webview's default while no message has arrived is the manifest
- * default, `true`, so a panel never waits on this to behave.
+ * Sent when a surface is created, again on every reload (the new document
+ * knows nothing), and on every configuration change. The webview's default
+ * while no message has arrived is the manifest default, so no surface waits
+ * on this to behave.
+ *
+ * **The Tweaks panel rides HERE rather than on a message of its own** (v0.8.0
+ * Phase 7, DoD 7.6). It is the same fact — settings as the host read them —
+ * going to a second surface, and a second type would have needed a second
+ * send site kept in step with this one by hand. It is also what makes the
+ * panel a renderer: the amendment says settings are the source of truth, so
+ * the control's position is whatever the last one of these said.
  */
 export interface SettingsMessage {
   type: 'settings';
   canvasAutoFit: boolean;
+  /**
+   * The four `src/sidebar/tweaks.ts` settings, keyed WITHOUT the `agentDeck.`
+   * prefix, as the host read them.
+   *
+   * Typed structurally rather than imported from `tweaks.ts`, deliberately:
+   * `bridge/apply.test.ts` pins this module's import graph, and a type-only
+   * import would widen it to buy a narrowing the boundary guard already does
+   * better. `isTweakKey`/`isTweakValue` are the real check, at the one place
+   * untrusted input arrives.
+   */
+  tweaks: Readonly<Record<string, boolean | string>>;
 }
 
 /**
@@ -1128,11 +1244,33 @@ export interface RunCommandMessage {
   command: string;
 }
 
+/**
+ * The TWEAKS panel asking the host to write one setting (v0.8.0 Phase 7,
+ * DoD 7.6).
+ *
+ * `key` is a member of `src/sidebar/tweaks.ts`'s list and `value` is a value
+ * that member may take — both checked by `isTweakKey`/`isTweakValue` in the
+ * `bridge/messages.ts` guard, at the boundary, BEFORE the host calls
+ * `WorkspaceConfiguration.update`. The host writes into the user's settings
+ * on the strength of this message, so a string that merely looks like a key
+ * must not reach that call.
+ *
+ * The PANEL ignores this message entirely; only the sidebar controller acts
+ * on it — the same division `runCommand` already has.
+ */
+export interface UpdateTweakMessage {
+  type: 'updateTweak';
+  /** A `TWEAK_SETTINGS` key, without the `agentDeck.` section prefix. */
+  key: string;
+  value: boolean | string;
+}
+
 export type WebviewToHostMessage =
   | ExpandNodeMessage
   | SelectSessionMessage
   | ResyncRequestMessage
-  | RunCommandMessage;
+  | RunCommandMessage
+  | UpdateTweakMessage;
 
 /**
  * One tree op that could not be applied, reported instead of thrown.

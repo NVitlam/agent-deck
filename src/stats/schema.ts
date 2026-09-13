@@ -73,8 +73,18 @@
 // host alike. Nothing here may reach a `node:` builtin, `vscode`, or an engine.
 import type { CompactionRecord } from '../model/events.js';
 
-/** The record format. Bumped when a reader must notice a change. */
-export const STATS_SCHEMA_VERSION = 1;
+/**
+ * The record format. Bumped when a reader must notice a change.
+ *
+ * **2 as of v0.8.0 Phase 7 (DoD 7.1).** What a WRITER produces, and what
+ * {@link validateStatsRecord} requires. A READER accepts older versions too —
+ * see {@link upgradeStatsRecord}: records 0.7.x wrote are read, never skipped
+ * and never rewritten, with the facts their version could not carry named
+ * absent (DoD 7.14, user ruling R3, 2026-09-13). An earlier draft of this
+ * comment said the bump cost a user their history; that was the behaviour
+ * until the ruling, and it is not the behaviour now.
+ */
+export const STATS_SCHEMA_VERSION = 2;
 
 /** The three observation engines, as `SessionState.engine` names them. */
 export type StatsEngine = 'cc' | 'opencode' | 'codex';
@@ -84,11 +94,18 @@ export type StatsEngine = 'cc' | 'opencode' | 'codex';
  *
  *   - `parked` — the grafter could not place every node (G3: no partial tree).
  *   - `unsupported` — the fingerprint refused the session.
+ *   - `partial` — the engine read only part of the transcript (v0.8.0 DoD 7.7:
+ *     an oversize Codex file, read as its head and its last 16 MiB). Every
+ *     count over it would be a count over a subset carrying no sign of it —
+ *     the reason `parked` is total, applied to bytes instead of nodes. Added
+ *     after the phase-7 verifier found such sessions stored as `full`, which
+ *     made the README's "a session Agent Deck could not read in full … appears
+ *     in no table" false.
  *   - `deriver-error` — {@link StatsRecord} construction threw. Set by the
  *     HOST, never here: G2 says a deriver failure increments `statsErrors` and
  *     is skipped, and this code is the thing that failed.
  */
-export type ExclusionCode = 'parked' | 'unsupported' | 'deriver-error';
+export type ExclusionCode = 'parked' | 'unsupported' | 'partial' | 'deriver-error';
 
 /** `'full'`, or why the session has none. */
 export type Coverage = 'full' | `excluded:${ExclusionCode}`;
@@ -237,6 +254,59 @@ export interface StallRecord {
   stalledMs: number;
 }
 
+/**
+ * F14 — what this session's own timestamps say about it, all derived.
+ *
+ * v0.8.0 Phase 7, DoD 7.2. Every member is optional and every absence is the
+ * same fact: **the instants this figure is a function of were not stated by
+ * the engine.** Never a zero, never a substitute — §D's rule, applied to time.
+ *
+ * ## The block is always present, its members need not be
+ *
+ * A reader always finds the block, so "this session states no time" is an
+ * empty object rather than a missing key — which could equally have meant
+ * "written by an older deriver". The schema version above already answers
+ * that second question, and this shape keeps the two questions apart.
+ *
+ * ## No clock is read here, and that is what makes a golden mean anything
+ *
+ * Every figure below is a difference or a ratio of instants ON THIS RECORD's
+ * own inputs. `deriveStats` has no clock of its own (see `derive.ts`'s
+ * header), and a span measured against `now` would move every time a golden
+ * was regenerated. A session still running therefore reports the span it has
+ * EVIDENCE of, never the span since it started.
+ */
+export interface TimingStats {
+  /**
+   * Last stated instant minus first stated instant, over every F14 instant in
+   * the session — tool starts, tool ends and usage-turn times alike.
+   *
+   * NOT `endedAt - startedAt`. Those two are the session's own envelope, and
+   * on Codex `endedAt` is a FILE MTIME (`graft.ts` says so in as many words),
+   * so a wall time built on them would be partly a statement about the
+   * filesystem. This one is a statement about work the engine timestamped.
+   */
+  wallMs?: number;
+  /** First tool start minus the first stated instant. 0 is a real answer. */
+  timeToFirstToolMs?: number;
+  /**
+   * The largest interval between one call starting and the next starting, in
+   * the SESSION-WIDE call order.
+   *
+   * Start-to-start rather than end-to-start, because an end is absent on every
+   * running call and on any engine that states none, so a gap measured from a
+   * mixture of the two would be a different quantity from row to row. Absent
+   * unless at least two calls state a start.
+   */
+  longestGapMs?: number;
+  /** `(totals.prompt + totals.output) / (wallMs / 60000)`. Needs `wallMs > 0`. */
+  tokensPerMin?: number;
+  /** Calls in the session-wide sequence over the same minutes. */
+  callsPerMin?: number;
+  /** `totals.costUsd` over the same hours. Present only WITH a cost source. */
+  costPerHourUsd?: number;
+}
+
 /** Per-agent totals. F5, F6, F8's silent flag, F9(b)'s model id. */
 export interface AgentStats {
   agentId: string;
@@ -253,6 +323,30 @@ export interface AgentStats {
   toolCalls: number;
   /** F8 — a spawned agent that made no tool call at all. Never true of `main`. */
   silent: boolean;
+  /**
+   * F15 — this agent was spawned and its spawning call never got a result.
+   *
+   * v0.8.0 Phase 7, DoD 7.4; spec `Amendment 2026-09-12`: *"A spawned agent
+   * whose spawning `Agent` call has no `tool_result` in the parent transcript.
+   * Structural; never inferred from message content."*
+   *
+   * Read STRUCTURALLY, off two things the model already carries: the
+   * `SpawnEdge` naming the `tool_use` block that spawned this agent, and that
+   * node's `status`. The grafter's rule is `resultPreview === undefined ?
+   * 'running' : 'done'`, so a status of `done` or `error` IS "a result
+   * arrived" and `running`/`stalled` IS "none has". No message is read.
+   *
+   * **It is a statement about this SNAPSHOT, and on a live session it is
+   * transient**: a subagent working right now has no result yet and reads
+   * true, then reads false when it finishes. That is the amendment's sentence
+   * implemented as written — the fact is "no result is present", not "no
+   * result will ever come", which a pure function over one snapshot cannot
+   * know. The rendered word says only the first (`webview/stats/layout.ts`).
+   *
+   * Never true of `main` — it has no spawning call — and never true where the
+   * session states no spawn edges, which `unavailable` names instead.
+   */
+  resultUnreceived: boolean;
   /** F9(b) — the model id as the engine wrote it. See the header on G4. */
   model?: string;
 }
@@ -274,6 +368,8 @@ export interface StatsRecord {
   contextChurn: ContextChurnRecord[];
   compactions: CompactionStat[];
   stalls: StallRecord[];
+  /** F14 — see {@link TimingStats}. Always present; may hold no member. */
+  timing: TimingStats;
   totals: {
     prompt: number;
     output: number;
@@ -284,6 +380,17 @@ export interface StatsRecord {
     contextFill?: number;
     subagents: number;
     silentSubagents: number;
+    /**
+     * F15 — how many subagents read `resultUnreceived`.
+     *
+     * OPTIONAL, unlike `silentSubagents`, and the asymmetry is the point: F8
+     * is derived from the tree, which every session has, while F15 needs
+     * `SessionState.spawnEdges`, which is optional and absent on a path that
+     * does not report it. A 0 there would be a zero standing in for an
+     * absence, which §D forbids by name; absent, with `F15:<engine>` in
+     * `unavailable`, says the honest thing.
+     */
+    subagentsUnreceived?: number;
     stalls: number;
   };
   params: { loopMin: number; spikeTokens?: number };
@@ -387,6 +494,7 @@ const COVERAGE_VALUES: ReadonlySet<string> = new Set([
   'full',
   'excluded:parked',
   'excluded:unsupported',
+  'excluded:partial',
   'excluded:deriver-error',
 ]);
 
@@ -474,4 +582,78 @@ export function validateStatsRecord(value: unknown): StatsValidation {
   walkStrings(record, '', '', errors);
 
   return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Every `statsSchemaVersion` a READER accepts, oldest first — v0.8.0 DoD 7.14.
+ *
+ * The store is append-only, so a record 0.7.x wrote stays on disk as 0.7.x
+ * wrote it. User ruling R3 (2026-09-13): such records are read, never skipped
+ * and never rewritten. A version outside this list is still refused, because
+ * nothing here knows what a FUTURE format means.
+ */
+export const READABLE_STATS_SCHEMA_VERSIONS: readonly number[] = [1, STATS_SCHEMA_VERSION];
+
+/**
+ * The fact ids an upgraded record names, per version it was written at.
+ *
+ * Version 1 predates F14 (time) and F15 (spawn results). R3 says every field
+ * the old record lacks is `F14:absent`, "like an engine that states no
+ * timestamps". The F15 fields are lacking too, and naming them `F14:absent`
+ * would put the wrong fact id on them, so they are named `F15:absent` beside
+ * it — the reading is recorded in `lab/PLAN.md` 7.14. Both follow the grammar
+ * `unavailable` already uses: `<fact>:<reason>`.
+ */
+export const HISTORY_ABSENT_FACTS: Readonly<Record<number, readonly string[]>> = {
+  1: ['F14:absent', 'F15:absent'],
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * A stored line, as the current reader sees it — v0.8.0 DoD 7.14.
+ *
+ * A current-version record, and anything that is not a version-1 record, is
+ * returned AS IS: validation is still {@link validateStatsRecord}'s job, and
+ * a version this reader does not know is still refused there.
+ *
+ * A version-1 record is returned as a NEW object in the current shape: an
+ * empty `timing` block (the shape a session stating no instant already has),
+ * `resultUnreceived: false` on each agent and no `subagentsUnreceived` (the
+ * shape a session stating no spawn edges already has), and
+ * {@link HISTORY_ABSENT_FACTS} added to `unavailable`. So a reader sees no
+ * zero standing in for an absence — every gap is named. Its
+ * `statsSchemaVersion` reads as the current one because it now has that SHAPE;
+ * where it came from is what `F14:absent` says. Nothing on disk is touched:
+ * the input is not mutated, and the store never writes a line it read.
+ */
+export function upgradeStatsRecord(value: unknown): unknown {
+  if (!isPlainObject(value)) return value;
+  const version = value['statsSchemaVersion'];
+  // Only a READABLE version older than the current one is upgraded. The list is
+  // what decides, so removing a version from it makes that version's lines
+  // refused again (the validator then sees the old number) — verifier round 2
+  // found the list declared and consulted by nothing.
+  if (typeof version !== 'number' || version === STATS_SCHEMA_VERSION) return value;
+  if (!READABLE_STATS_SCHEMA_VERSIONS.includes(version)) return value;
+  const absent = HISTORY_ABSENT_FACTS[version] ?? [];
+  const agents = value['agents'];
+  const unavailable = value['unavailable'];
+  return {
+    ...value,
+    statsSchemaVersion: STATS_SCHEMA_VERSION,
+    timing: isPlainObject(value['timing']) ? value['timing'] : {},
+    agents: Array.isArray(agents)
+      ? agents.map((agent: unknown) =>
+          isPlainObject(agent) && agent['resultUnreceived'] === undefined
+            ? { ...agent, resultUnreceived: false }
+            : agent,
+        )
+      : agents,
+    unavailable: Array.isArray(unavailable)
+      ? [...new Set([...(unavailable as unknown[]), ...absent])].sort()
+      : unavailable,
+  };
 }

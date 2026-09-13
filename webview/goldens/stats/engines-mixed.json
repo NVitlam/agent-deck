@@ -282,7 +282,8 @@
         }
       ],
       "width": 120,
-      "empty": false
+      "empty": false,
+      "timeAbsent": 0
     },
     "loading": {
       "series": [
@@ -533,6 +534,7 @@
       ],
       "width": 120,
       "empty": true,
+      "timeAbsent": 0,
       "reason": "loading"
     }
   }

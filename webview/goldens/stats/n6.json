@@ -922,7 +922,8 @@
         }
       ],
       "width": 120,
-      "empty": false
+      "empty": false,
+      "timeAbsent": 0
     },
     "excluded": {
       "count": 0,

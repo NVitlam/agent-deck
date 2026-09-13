@@ -136,6 +136,7 @@
       ],
       "width": 0,
       "empty": true,
+      "timeAbsent": 0,
       "reason": "fewer-than-two"
     },
     "excluded": {

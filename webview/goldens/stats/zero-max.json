@@ -171,7 +171,8 @@
         }
       ],
       "width": 48,
-      "empty": false
+      "empty": false,
+      "timeAbsent": 0
     }
   }
 }

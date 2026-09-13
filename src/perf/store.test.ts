@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MS_PER_DAY } from '../stats/retention.js';
+import { STATS_SCHEMA_VERSION } from '../stats/schema.js';
 import { STORE_DIR_NAME, StatsStore } from '../stats/store.js';
 import type { StoredStatsRecord } from '../stats/store.js';
 
@@ -43,7 +44,11 @@ const NOW = Date.parse('2026-09-08T13:00:00.000Z');
  */
 function record(sessionId: string, derivedAt: number): StoredStatsRecord {
   return {
-    statsSchemaVersion: 1,
+    // The constant, not a literal: a literal 1 made every one of the 1,800 seeded
+    // records invalid the day the format moved to 2, and the store refused them all.
+    // The subject assertion below caught it - `appended` read 0 - which is the whole
+    // reason it runs before either timing.
+    statsSchemaVersion: STATS_SCHEMA_VERSION,
     sessionId,
     engine: 'cc',
     projectSlug: 'c--ws-example',
@@ -81,6 +86,16 @@ function record(sessionId: string, derivedAt: number): StoredStatsRecord {
     contextChurn: [],
     compactions: [],
     stalls: [],
+    // F14 (v0.8.0): a full block, because this budget measures what the SHAPE costs
+    // to serialise and validate, and a real record carries all six.
+    timing: {
+      wallMs: 600_000,
+      timeToFirstToolMs: 4_200,
+      longestGapMs: 91_000,
+      tokensPerMin: 4_510,
+      callsPerMin: 3.6,
+      costPerHourUsd: 1.9,
+    },
     totals: {
       prompt: 42_000,
       output: 3_100,

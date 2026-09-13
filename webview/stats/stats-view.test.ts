@@ -1186,14 +1186,18 @@ describe('DoD 7.3 — F14 in Tokens', () => {
     expect(observed.every((f) => f.rendered === EM_DASH && !f.stated)).toBe(true);
   });
 
-  it('ONE figure, both arms: a stated 0 is 0ms and an absent one is the em dash', () => {
+  it('ONE figure, three arms: a stated value, a stated 0 and an absent one', () => {
     /*
      * §D's rule on one cell, which is the only shape that catches both
-     * mistakes. The anchor session states `timeToFirstToolMs: 0` FOR REAL — its
-     * first tool call IS its first stated instant — so a renderer that mapped
-     * an absent figure to `0` and a renderer that mapped a stated 0 to the em
-     * dash would each pass one arm of a test that used two different records
-     * for two different figures.
+     * mistakes: a renderer mapping an absent figure to `0`, and one mapping a
+     * stated 0 to the em dash.
+     *
+     * THIS TEST USED TO READ A "REAL" 0 OFF THE ANCHOR SESSION, AND THAT 0 WAS A
+     * DEFECT. Claude Code usage turns were timed by their LAST streamed line, so
+     * the first turn looked later than the first tool and the figure clamped to
+     * 0 (phase-7 verifier, D1). Timed by the first line, the anchor states
+     * 2,880 ms. The stated-0 arm is now a copy with that one field set to 0, so it
+     * differs from its control in the figure alone.
      */
     function timeToFirstTool(record: StatsRecord): HTMLElement | undefined {
       const panel = recordPanel([record]);
@@ -1203,10 +1207,14 @@ describe('DoD 7.3 — F14 in Tokens', () => {
       );
     }
 
-    expect(harvested.timing.timeToFirstToolMs).toBe(0);
+    expect(harvested.timing.timeToFirstToolMs).toBe(2880);
     const stated = timeToFirstTool(harvested);
     expect(stated?.dataset['stated']).toBe('true');
-    expect(stated?.textContent?.trim()).toBe('0ms');
+    expect(stated?.textContent?.trim()).toBe('2.9s');
+
+    const zero = timeToFirstTool({ ...harvested, timing: { ...harvested.timing, timeToFirstToolMs: 0 } });
+    expect(zero?.dataset['stated']).toBe('true');
+    expect(zero?.textContent?.trim()).toBe('0ms');
 
     const timing = { ...harvested.timing };
     delete timing.timeToFirstToolMs;

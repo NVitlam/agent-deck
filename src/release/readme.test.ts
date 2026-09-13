@@ -86,6 +86,7 @@ import {
 } from '../codex/fingerprint.js';
 import { CODEX_NEVER_OPEN } from '../codex/never-open.js';
 import { DEFAULT_HOOK_PORT, TELEMETRY_PATHS } from '../hooks/listener.js';
+import { normalizeSlug, workspaceMatch } from '../model/correlate.js';
 import {
   OC_VERSION_WINDOW,
   PINNED_OPENCODE_VERSION,
@@ -98,6 +99,7 @@ import {
   isVersionAccepted,
   versionWindow,
 } from '../parser/fingerprint.js';
+import { slugifyWorkspace } from '../parser/tailer.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -2450,6 +2452,187 @@ describe('README: several windows, one port (Phase 1b)', () => {
   });
 });
 
+/* -------------------------------------------------------------------------- *
+ * v0.8.0 DoD 7.10 — "Which sessions does a window show?"
+ * -------------------------------------------------------------------------- */
+
+/*
+ * THE ANSWER IS A HEADING, NOT A BULLET.
+ *
+ * The multi-window section already carried the fact - "each window still reads
+ * its own workspace's transcripts" - as the third of five bullets about the
+ * PORT. A reader whose question is "why is my other project's session not on
+ * this deck" scans headings, so the answer is printed under one of its own,
+ * inside that section rather than beside it: the bullet and the subsection
+ * state one fact, and two statements of one fact in two sections drift.
+ *
+ * EVERY ASSERTION BELOW IS SCOPED TO THAT SUBSECTION, sliced out of the parent
+ * section rather than out of the whole README. A `toContain` over the whole
+ * page is satisfied by a sentence anywhere on it, which is this repository's
+ * most-recorded defect class.
+ */
+describe('DoD 7.10 - the README answers which sessions a window shows', () => {
+  const PARENT = '## Several windows, one port';
+  const FAQ_HEADING = '### Which sessions does a window show?';
+
+  /**
+   * The subsection body: its heading to the next `### ` or to the end of the
+   * `## ` section containing it.
+   *
+   * Throws on an absent or repeated heading for the reason {@link sectionText}
+   * does. A repeated heading would mean two answers that can drift apart, and
+   * an absent one would silently reduce every assertion below to a question
+   * about an empty string.
+   */
+  const FAQ = (() => {
+    const parent = sectionText(PARENT);
+    const start = parent.indexOf(FAQ_HEADING);
+    if (start < 0) throw new Error(`${PARENT} has no subsection: ${FAQ_HEADING}`);
+    if (parent.indexOf(FAQ_HEADING, start + 1) >= 0) {
+      throw new Error(`${PARENT} repeats the subsection: ${FAQ_HEADING}`);
+    }
+    const rest = parent.slice(start + FAQ_HEADING.length);
+    const end = rest.indexOf('\n### ');
+    return end < 0 ? rest : rest.slice(0, end);
+  })();
+
+  it('slices a bounded subsection, so nothing below is asserted over the page', () => {
+    // THE VACUITY CONTROL FOR EVERY OTHER TEST IN THIS BLOCK. The slice must
+    // be non-empty, and it must be BOUNDED AT BOTH ENDS - a slice that ran to
+    // the end of the document would make each `toContain` below pass on a
+    // sentence that lives somewhere else entirely.
+    expect(FAQ.trim().length).toBeGreaterThan(0);
+    expect(FAQ.length).toBeLessThan(README.length);
+    // Above it: a bullet of the parent section, which is not in this slice.
+    expect(FAQ).not.toContain('binds the port');
+    // Below it: the opening sentence of the next `## ` section.
+    expect(FAQ).not.toContain('What each session touched');
+  });
+
+  it('answers with the open folders and the project key they encode to', () => {
+    // The mechanism, in the words the page really ships. A rewrite that keeps
+    // the heading and drops the mechanism goes red here.
+    const claims: [string, RegExp][] = [
+      ['the answer is the folders the window has open', /folders that window has open/i],
+      ['the scope is the workspace, not the machine', /scoped to its\s+workspace, not to the machine/i],
+      ['the key is derived from the folder path', /\*\*project key\*\*: the folder's path/],
+      ['the key names a Claude Code project directory', /`~\/\.claude\/projects`/],
+      ['a deck is filled from transcripts', /transcripts that window\s+reads/i],
+    ];
+    for (const [what, re] of claims) {
+      expect(re.test(FAQ), `the FAQ no longer states: ${what}`).toBe(true);
+    }
+  });
+
+  it('prints the fold rule `slugifyWorkspace` implements, bound rather than restated', () => {
+    // FOUR characters fold to `-`, and the SPACE is the one that was missing
+    // from the encoder until v0.7.0 DoD 1b.10, where its absence cost a real
+    // window its whole deck. So the sentence is held to the function, not to a
+    // second copy of itself.
+    for (const ch of [':', '\\', '/', ' ']) {
+      const printed = ch === ' ' ? 'spaces' : `\`${ch}\``;
+      expect(FAQ, `the FAQ does not name ${printed} as folded`).toContain(printed);
+      expect(slugifyWorkspace(`a${ch}b`), `${printed} is not folded to a dash`).toBe('a-b');
+    }
+    // "each folded to `-`" is a complete rule, not an example: nothing else
+    // in a path name folds.
+    expect(slugifyWorkspace('a.b_c-d')).toBe('a.b_c-d');
+  });
+
+  it('prints the case rule the correlator applies, with its control', () => {
+    // Both drive-letter spellings occur in this repository's own captured
+    // data, and a case-sensitive compare finds neither.
+    expect(FAQ).toMatch(/case is dropped/i);
+    expect(FAQ).toMatch(/drive letter/i);
+    expect(workspaceMatch('c--ws-a', 'c:\\ws\\a')).toBe('exact');
+    expect(workspaceMatch('C--ws-a', 'c:\\ws\\a')).toBe('caseInsensitive');
+    expect(normalizeSlug('C--WS-A')).toBe('c--ws-a');
+    // The control, without which "case is dropped" would read as "everything
+    // matches": a different folder is still a different folder.
+    expect(workspaceMatch('c--ws-b', 'c:\\ws\\a')).toBe('differentWorkspace');
+  });
+
+  it('states the scope of each engine, including the one that differs', () => {
+    // The asymmetry is real and lives in `src/extension.ts`: the Claude Code
+    // half correlates `firstWorkspacePath()` while the OpenCode and Codex
+    // halves are handed every open folder. A page saying "the folders you have
+    // open" for all three would be wrong in a multi-root workspace, which is
+    // the only case where a user can tell.
+    expect(FAQ).toMatch(/- \*\*Claude Code\*\* — the \*\*first\*\* open folder/);
+    expect(FAQ).toMatch(/- \*\*OpenCode\*\* — \*\*every\*\* open folder/);
+    expect(FAQ).toMatch(/- \*\*Codex\*\* — \*\*every\*\* open folder/);
+    expect(FAQ).toMatch(/multi-root workspace/i);
+  });
+
+  it('quotes the message the command really shows when no folder is open', () => {
+    // BOUND to `src/extension.ts`'s own constant, read as TEXT: importing that
+    // module pulls the whole host graph into a document guard. Reword the
+    // message and this goes red naming the README as the thing to fix.
+    const source = readText('src/extension.ts');
+    const declared = /export const NO_WORKSPACE_MESSAGE = '([^']+)';/.exec(source);
+    expect(declared, 'src/extension.ts no longer declares NO_WORKSPACE_MESSAGE').not.toBeNull();
+    const message = declared?.[1] ?? '';
+    expect(message.length).toBeGreaterThan(0);
+    expect(FAQ, 'the FAQ quotes a message the product does not show').toContain(message);
+  });
+
+  it('states the two cases that are neither a match nor an error, and the exception', () => {
+    const cases: [string, RegExp][] = [
+      ['no folder open', /\*\*No folder open\.\*\*/],
+      ['a folder Claude Code has never run in', /\*\*A folder Claude Code has never run in\.\*\*/],
+      ['the Claude Code half stays off rather than failing', /Claude\s+Code half stays off/],
+      ['the other two engines are read anyway', /while OpenCode and Codex are read as\s+usual/],
+      ['a refusal is shown wherever it ran', /\*\*A refused session is shown wherever it ran\.\*\*/],
+      ['and it is shown as unsupported', /`unsupported` card/],
+    ];
+    for (const [what, re] of cases) {
+      expect(re.test(FAQ), `the FAQ no longer states: ${what}`).toBe(true);
+    }
+  });
+
+  it('is reachable from the deck paragraph, through an anchor that resolves', () => {
+    // The deck paragraph is where a reader with this question starts, three
+    // hundred lines above the answer. The anchor is DERIVED from the heading
+    // rather than written twice - and trailing punctuation is dropped rather
+    // than turned into a dash, which is what GitHub and the Marketplace do.
+    // The multi-window anchor test above uses the naive transform because its
+    // heading has no punctuation to trip on; this one has a question mark.
+    const anchor = FAQ_HEADING.replace(/^###\s+/, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    expect(anchor).toBe('which-sessions-does-a-window-show');
+
+    const whatYouSee = sectionText('## What you see');
+    const deck = whatYouSee.split('\n\n').find((p) => p.includes('**The deck**')) ?? '';
+    expect(deck.length, 'the What you see section has no deck paragraph').toBeGreaterThan(0);
+    expect(deck).toContain(`(#${anchor})`);
+
+    // The claim that made the link necessary is gone. The deck is not every
+    // session on the machine; it is the ones the open folders account for.
+    expect(README).not.toContain('every session on the machine, one cell each');
+  });
+
+  it('carries no advice word, against the list `npm run lint` really uses', () => {
+    // G10 by BINDING, not by a second copy of the word list. This subsection
+    // is outside `scripts/forbidden-words.mjs`'s scopes - those name the stats
+    // layer, the telemetry section and the changelog blocks - so the list is
+    // read out of the script and applied here.
+    const script = readText('scripts/forbidden-words.mjs');
+    const block = /const FORBIDDEN = \[([^\]]+)\]/.exec(script)?.[1] ?? '';
+    const words = [...block.matchAll(/'([a-z]+)'/g)].map((m) => m[1] ?? '');
+    // Vacuity control: a parse that found nothing would make the loop assert
+    // nothing at all.
+    expect(words.length, 'could not read FORBIDDEN out of forbidden-words.mjs').toBe(9);
+    expect(words).toContain('should');
+    for (const word of words) {
+      const re = new RegExp(`\\b${word}\\w*\\b`, 'iu');
+      expect(re.test(FAQ), `the FAQ uses the advice word: ${word}`).toBe(false);
+    }
+    // ...and the predicate can fire, on a sentence this section does not ship.
+    expect(/\bshould\w*\b/iu.test('you should open a folder')).toBe(true);
+  });
+});
 /* -------------------------------------------------------------------------- *
  * v0.7.0 DoD 5.3 — the README's Stats section is BOUND, not restated
  * -------------------------------------------------------------------------- */

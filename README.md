@@ -39,8 +39,9 @@ content, and never advice.
 
 ## What you see
 
-**The deck** — every session on the machine, one cell each, from any of the three engines. Cells
-breathe while their session is working. Three layouts (List, Grid, Lanes), three sort orders (Live
+**The deck** — one cell per session, from any of the three engines,
+[scoped to the folders this window has open](#which-sessions-does-a-window-show). Cells breathe
+while their session is working. Three layouts (List, Grid, Lanes), three sort orders (Live
 first, Recent, Engine), and chips to filter by liveness or by engine. Keyboard: `A C O X`, `1 2 3`,
 `L R E`.
 
@@ -591,6 +592,39 @@ What happens instead:
 the same redaction the panel applies, so no reasoning content and no oversized payload crosses it.
 Loopback means same-user trust here exactly as it does for the hook listener itself: there is no
 token and no authentication, because a process running as you could read the hook payloads anyway.
+
+### Which sessions does a window show?
+
+**The sessions belonging to the folders that window has open.** A window is scoped to its
+workspace, not to the machine. What reaches its deck comes from the transcripts that window
+reads, and it reads only the ones its open folders account for — another project's run belongs
+to that project's window.
+
+The scope is a **project key**: the folder's path with `:`, `\`, `/` and spaces each folded to `-`,
+which is how Claude Code names the directory it keeps a project's transcripts in under
+`~/.claude/projects`. All three engines are matched against that one key, and case is dropped on
+both sides, because a Windows drive letter is spelled both ways in real data: a path beginning
+`c:` and a path beginning `C:` name one project.
+
+- **Claude Code** — the **first** open folder's key. Sessions are discovered under that one
+  project directory and no other is read, so in a multi-root workspace the second folder onward
+  contributes no Claude Code sessions.
+- **OpenCode** — **every** open folder. Each session records the worktree it ran in; that path
+  is folded to a key and compared with the key of each folder.
+- **Codex** — **every** open folder. Each transcript declares the directory it ran in, compared
+  the same way. A transcript that declares no directory matches no folder.
+
+Two answers are neither a match nor an error:
+
+- **No folder open.** Nothing is observed and no panel opens — the command reports
+  `Agent Deck: open a folder to see its sessions.`
+- **A folder Claude Code has never run in.** There is no project directory to read, so the Claude
+  Code half stays off — no watcher and no timer for it — while OpenCode and Codex are read as
+  usual. When none of the three has anything here, the command says so and no panel opens.
+
+**A refused session is shown wherever it ran.** An OpenCode or Codex session whose schema Agent
+Deck refuses appears as an `unsupported` card whatever folder produced it, because a refusal
+nobody can see is not a refusal. Every other session is matched to the folders above.
 
 ## Stats
 

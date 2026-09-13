@@ -21,14 +21,22 @@ function aRecord(): StatsRecord {
 }
 
 describe('the version is pinned', () => {
-  it('is 1, and a record carrying anything else is rejected', () => {
-    expect(STATS_SCHEMA_VERSION).toBe(1);
+  it('is 2, and a record carrying anything else is rejected', () => {
+    // The literal is the pin, and it is deliberately a second place the number
+    // is written: the constant's own header records that bumping it COSTS A
+    // USER THEIR HISTORY, so the bump has to be made twice on purpose rather
+    // than once by an edit that reads as housekeeping.
+    expect(STATS_SCHEMA_VERSION).toBe(2);
     const record = aRecord();
     expect(validateStatsRecord(record).ok).toBe(true);
-    const bumped = { ...record, statsSchemaVersion: 2 };
-    const verdict = validateStatsRecord(bumped);
-    expect(verdict.ok).toBe(false);
-    expect(verdict.errors.join(' ')).toContain('statsSchemaVersion');
+    // BOTH directions. A future version is the case `store.ts` describes; an
+    // OLDER one is every record 0.7.x wrote, and the seam's claim that those
+    // are skipped rests on this refusal rather than on the reader alone.
+    for (const version of [1, 3]) {
+      const verdict = validateStatsRecord({ ...record, statsSchemaVersion: version });
+      expect(verdict.ok).toBe(false);
+      expect(verdict.errors.join(' ')).toContain('statsSchemaVersion');
+    }
   });
 });
 

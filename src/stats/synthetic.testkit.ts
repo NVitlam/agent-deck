@@ -12,9 +12,9 @@
  * is its honest input and building one directly is not a shortcut past a parse.
  * The harvested corpora are what prove the PRODUCTION PATH: 23 real sessions,
  * read through `graftSession`, `readOpenCodeEngine` and `readCodexEngine`, each
- * with a committed golden. These thirteen prove the DERIVER over shapes no real
+ * with a committed golden. These fourteen prove the DERIVER over shapes no real
  * session in this repository contains — a non-zero engine cost, a user price
- * table, a currently-stalled tool.
+ * table, a currently-stalled tool, a spawning call with no result.
  *
  * **The cost, stated rather than left for a reader to find:** a hand-built
  * state could in principle describe a session no engine can produce, and then
@@ -163,6 +163,16 @@ interface StateSpec {
   contextNow?: { prompt: number; output: number };
   parked?: SessionState['parked'];
   telemetryCostUsd?: number;
+  /**
+   * F15's input, and OPTIONAL here because it is optional on `SessionState`.
+   *
+   * Absence is the state a session reports when it says nothing about how its
+   * agents were spawned, and the deriver answers it with an absent
+   * `totals.subagentsUnreceived` plus `F15:<engine>` — so a builder that always
+   * supplied edges would make that arm unreachable from R8. Thirteen of the
+   * fourteen fixtures leave it out; fixture 14 states it.
+   */
+  spawnEdges?: SessionState['spawnEdges'];
 }
 
 function state(spec: StateSpec): SessionState {
@@ -177,6 +187,7 @@ function state(spec: StateSpec): SessionState {
     ...(spec.contextNow === undefined ? {} : { contextNow: spec.contextNow }),
     ...(spec.windowTokens === undefined ? {} : { windowTokens: spec.windowTokens }),
     ...(spec.parked === undefined ? {} : { parked: spec.parked }),
+    ...(spec.spawnEdges === undefined ? {} : { spawnEdges: spec.spawnEdges }),
     ...(spec.telemetryCostUsd === undefined
       ? {}
       : { telemetryCostUsd: spec.telemetryCostUsd }),
@@ -230,7 +241,7 @@ function telemetrySessionId(slice: ReturnType<typeof mergeSlices>): string {
 }
 
 // ---------------------------------------------------------------------------
-// The thirteen
+// The fourteen
 // ---------------------------------------------------------------------------
 
 /**
@@ -550,6 +561,59 @@ export function buildSyntheticStatsFixtures(): SyntheticStatsFixture[] {
     id: '13-telemetry-cost',
     manufactures: "Claude Code's own OTel cost estimate, joined onto a session by session.id through the real joinTelemetry",
     state: joined,
+  });
+
+  // 14 — F15. One spawning call with no result, one with a result.
+  out.push({
+    id: '14-aborted-spawn',
+    manufactures:
+      'two spawned agents, one whose spawning Agent call carries no result and one whose spawning call carries one, both of which made a tool call',
+    state: state({
+      id: '14-aborted-spawn',
+      root: agent({
+        id: 'root',
+        prompt: 1000,
+        output: 100,
+        series: [turn(0, 0)],
+        children: [
+          // The spawning call with NO result: the grafter writes `running`
+          // when `resultPreview` is undefined, which is the structural form of
+          // "no `tool_result` in the parent transcript".
+          tool({ id: 'g0', toolName: 'Agent', ordinal: 0, status: 'running', inputHash: hash('a0') }),
+          // The negative arm, one status away: the same tool, the same shape,
+          // with a result. `done` and `error` both mean a result arrived.
+          tool({ id: 'g1', toolName: 'Agent', ordinal: 1, status: 'done', inputHash: hash('a1') }),
+          // BOTH subagents make a tool call, so neither is `silent`. Without
+          // that, `resultUnreceived` and F8's flag would move together on this
+          // fixture and a reader could not tell which fact a row reported.
+          agent({
+            id: 'unreceived',
+            kind: 'subagent',
+            spawnDepth: 1,
+            prompt: 20,
+            output: 2,
+            series: [turn(0, 0)],
+            children: [tool({ id: 'g2', toolName: 'Read', ordinal: 0, inputHash: hash('a2') })],
+          }),
+          agent({
+            id: 'received',
+            kind: 'subagent',
+            spawnDepth: 1,
+            prompt: 30,
+            output: 3,
+            series: [turn(0, 0)],
+            children: [tool({ id: 'g3', toolName: 'Read', ordinal: 0, inputHash: hash('a3') })],
+          }),
+        ],
+      }),
+      // The join key F15 reads. Without these the session states nothing about
+      // how its agents were spawned and the deriver reports `F15:cc` instead —
+      // which is the OTHER arm, and the thirteen fixtures above cover it.
+      spawnEdges: [
+        { toolUseId: 'g0', agentId: 'unreceived', parentNodeId: 'root', depth: 1, recordedDepth: 1 },
+        { toolUseId: 'g1', agentId: 'received', parentNodeId: 'root', depth: 1, recordedDepth: 1 },
+      ],
+    }),
   });
 
   return out;

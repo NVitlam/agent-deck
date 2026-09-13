@@ -367,12 +367,12 @@ export interface GoldenEntry {
  *
  * Named `<engine>-synthetic-<fixtureId>` rather than by session id, and fixture
  * 13 is why: its session id is the OTel capture's own, because the join is by
- * `session.id`. Keying the golden on the R8 name keeps all thirteen readable
+ * `session.id`. Keying the golden on the R8 name keeps all fourteen readable
  * and keeps that one from being filed under a UUID.
  *
- * ONE set of params for all thirteen, and that is deliberate: only `11-user-priced`
+ * ONE set of params for all fourteen, and that is deliberate: only `11-user-priced`
  * carries a model id in {@link SYNTHETIC_PRICING}, so applying the table to
- * every fixture also proves the other twelve do not acquire a cost from it.
+ * every fixture also proves the other thirteen do not acquire a cost from it.
  */
 export function syntheticGoldenEntries(): GoldenEntry[] {
   const { table } = parsePricing(SYNTHETIC_PRICING);

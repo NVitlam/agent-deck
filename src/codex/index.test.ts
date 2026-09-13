@@ -29,7 +29,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { readCodexEngine } from './index.js';
 import { PINNED_CODEX_VERSION } from './fingerprint.js';
 import { CodexTailStore, DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES } from './store.js';
-import { CODEX_HEAD_BYTES, CODEX_READ_BATCH_BYTES } from './tail.js';
+import {
+  CODEX_HEAD_BYTES,
+  CODEX_OVERSIZE_TAIL_BYTES,
+  CODEX_READ_BATCH_BYTES,
+} from './tail.js';
 
 // ---------------------------------------------------------------------------
 // The syscall tally
@@ -161,6 +165,30 @@ function bulk(ordinal: number, padding: string): string {
   });
 }
 
+/**
+ * A `response_item` / `function_call` with `bytes` of padding in its arguments.
+ *
+ * The shape from `fixtures/codex-0.151.0-alpha.7.2`: a `call_id` (check 7 of
+ * `fingerprintThread` refuses a call without one) and a `name`. Used where a
+ * test has to name the records that survived a partial read, because a thread
+ * carries `toolCalls` with their ordinals and carries plain messages as a
+ * count alone.
+ */
+function call(ordinal: number, padding: string): string {
+  return JSON.stringify({
+    timestamp: '2026-09-05T00:00:01.000Z',
+    ordinal,
+    type: 'response_item',
+    payload: {
+      type: 'function_call',
+      id: `fc_${String(ordinal)}`,
+      call_id: `call_${String(ordinal)}`,
+      name: 'shell',
+      arguments: JSON.stringify({ command: padding }),
+    },
+  });
+}
+
 /** Write a Codex-shaped transcript of at least `targetBytes`. Returns its size. */
 async function writeTranscript(
   path: string,
@@ -198,8 +226,13 @@ async function appendRecords(path: string, count: number): Promise<number> {
 /**
  * A transcript whose declared size is `targetBytes` and whose content stops
  * after the head. `truncate` extends without writing, which is what makes a
- * 65 MiB case affordable — and the file is never opened by the engine anyway,
- * which is the whole assertion.
+ * 65 MiB case affordable.
+ *
+ * **Its tail holds no newline**, so a head+tail read of one of these lands in
+ * a run of NUL bytes and resynchronises for ever without finding a line —
+ * which is why the partial-read cases below that assert on RECORDS use
+ * {@link writeSparseWithTail} instead. This one is for the cases whose subject
+ * is bytes and syscalls.
  */
 async function writeSparse(path: string, targetBytes: number): Promise<number> {
   const handle = await realOpen(path, 'w');
@@ -210,6 +243,55 @@ async function writeSparse(path: string, targetBytes: number): Promise<number> {
     await handle.close();
   }
   return targetBytes;
+}
+
+/**
+ * A sparse transcript with real records written at its END, plus a deliberate
+ * MID-LINE cut at the point a 16 MiB tail lands (DoD 7.7).
+ *
+ * The shape the oversize tail is for: a head to fingerprint on, a hole nobody
+ * reads, and recent records. `tailRecords` records are written so that the
+ * byte at `targetBytes - CODEX_OVERSIZE_TAIL_BYTES` falls INSIDE the first of
+ * them — which is the ordinary case for a jump to an offset chosen without
+ * reading the file, and the case whose fragment has to be dropped and counted.
+ *
+ * Returns the ordinals of the records it wrote after the landing point, so a
+ * test can assert exactly which ones survived rather than only how many.
+ */
+async function writeSparseWithTail(
+  path: string,
+  targetBytes: number,
+  tailRecords: number,
+): Promise<{ size: number; landingOrdinal: number; afterLanding: number[] }> {
+  const padding = 'x'.repeat(64 * 1024);
+  const lines: string[] = [];
+  for (let i = 0; i < tailRecords; i += 1) lines.push(`${call(500 + i, padding)}\n`);
+  const tailBytes = lines.reduce((sum, line) => sum + Buffer.byteLength(line, 'utf8'), 0);
+  const firstLineBytes = Buffer.byteLength(lines[0] as string, 'utf8');
+  // Where the records start, chosen so the landing point is inside the FIRST
+  // of them rather than at its start: half a line in.
+  const landing = targetBytes - CODEX_OVERSIZE_TAIL_BYTES;
+  const recordsStart = landing - Math.floor(firstLineBytes / 2);
+  if (recordsStart <= 0 || recordsStart + tailBytes > targetBytes) {
+    throw new Error('writeSparseWithTail: the records do not fit where they were asked to go');
+  }
+
+  const handle = await realOpen(path, 'w');
+  try {
+    await handle.write(`${sessionMeta('01a06400-0000-7000-8000-0000000000ff')}\n`);
+    await handle.truncate(recordsStart);
+    await handle.write(lines.join(''), recordsStart);
+    await handle.truncate(targetBytes);
+  } finally {
+    await handle.close();
+  }
+  const size = (await stat(path)).size;
+  if (size !== targetBytes) throw new Error(`writeSparseWithTail: size ${String(size)}`);
+  return {
+    size,
+    landingOrdinal: 500,
+    afterLanding: lines.slice(1).map((_line, i) => 501 + i),
+  };
 }
 
 beforeAll(async () => {
@@ -367,8 +449,8 @@ describe('H.2 — a tail survives the pass that created it', () => {
 // H.3 — the size gate
 // ===========================================================================
 
-describe('H.3 — a transcript over the limit is measured, not read', () => {
-  it('skips 65 MiB with oversize: and the limit, and never opens it', async () => {
+describe('H.3 / DoD 7.7 — a transcript over the limit is read head-plus-tail', () => {
+  it('reads 65 MiB as 256 KiB of head plus the last 16 MiB, and says so', async () => {
     const root = await makeRoot('h3-over');
     const path = transcriptPath(root, '01a06400-0000-7000-8000-0000000000ff');
     const size = await writeSparse(path, 65 * MIB);
@@ -378,41 +460,177 @@ describe('H.3 — a transcript over the limit is measured, not read', () => {
     const outcome = await readCodexEngine({ root });
     if (outcome.kind !== 'ok') throw new Error('engine did not read the corpus');
 
-    expect(outcome.result.skipped).toHaveLength(1);
-    const skip = outcome.result.skipped[0];
-    expect(skip?.path).toBe(path);
-    // The bytes AND the limit. A reason saying only "oversize" leaves a user
-    // reading the diagnostics channel with no way to know what to set.
-    expect(skip?.reason).toBe(
-      `oversize:${String(size)} limit=${String(DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES)}`,
-    );
-    expect(outcome.result.threads).toHaveLength(0);
+    // NOT SKIPPED. Before DoD 7.7 this file was measured from `stat` and never
+    // opened, so the largest session on a machine was the one the deck said
+    // nothing about.
+    expect(outcome.result.skipped).toStrictEqual([]);
+    expect(outcome.result.threads).toHaveLength(1);
 
-    // THE ASSERTION: not one syscall against the file. Measured from
-    // discovery's own `statSync().size`, which was already taken.
-    expect(tally.opens.get(path) ?? 0).toBe(0);
-    expect(tally.readLengths.get(path) ?? []).toStrictEqual([]);
+    // THE BYTES, exactly. `readBytes` is the file less the hole; the hole is
+    // everything between the end of the head and the tail's landing point.
+    const partial = outcome.result.partialTranscripts;
+    expect(partial).toHaveLength(1);
+    expect(partial[0]?.path).toBe(path);
+    expect(partial[0]?.totalBytes).toBe(size);
+    const skippedMiddle = size - CODEX_OVERSIZE_TAIL_BYTES - CODEX_HEAD_BYTES;
+    expect(partial[0]?.readBytes).toBe(size - skippedMiddle);
+    expect(partial[0]?.readBytes).toBe(CODEX_HEAD_BYTES + CODEX_OVERSIZE_TAIL_BYTES);
+
+    // THE READ ITSELF, from the syscall tally rather than from the return
+    // value: 65 MiB on disk, 16.25 MiB through the handle.
+    const read = tally.bytesRead.get(path) ?? 0;
+    expect(read).toBeLessThanOrEqual(CODEX_HEAD_BYTES + CODEX_OVERSIZE_TAIL_BYTES);
+    // VACUITY CONTROL: the file WAS opened and bytes DID move. A `toBeLessThan`
+    // on its own passes over a file nobody touched, which is precisely the
+    // behaviour this test was written to replace.
+    expect(tally.opens.get(path) ?? 0).toBeGreaterThan(0);
+    expect(read).toBeGreaterThan(0);
+
+    // AND THE SESSION SAYS IT. The mark is on the state, not only in the
+    // engine's diagnostics — a figure a user cannot tell is partial is worse
+    // than no figure.
+    const session = outcome.result.sessions[0];
+    expect(session?.partial).toStrictEqual({
+      readBytes: CODEX_HEAD_BYTES + CODEX_OVERSIZE_TAIL_BYTES,
+      totalBytes: size,
+    });
+  }, 120_000);
+
+  it('keeps the records at the end and drops the fragment where the tail lands', async () => {
+    const root = await makeRoot('h3-tail-records');
+    const path = transcriptPath(root, '01a06400-0000-7000-8000-0000000000ff');
+    const written = await writeSparseWithTail(path, 65 * MIB, 6);
+
+    resetTally();
+    const outcome = await readCodexEngine({ root });
+    if (outcome.kind !== 'ok') throw new Error('engine did not read the corpus');
+
+    const thread = outcome.result.threads[0];
+    if (thread === undefined) throw new Error('no thread');
+    const ordinals = thread.toolCalls.map((toolCall) => toolCall.ordinal).sort((a, b) => a - b);
+    // THE POPULATION IS NON-EMPTY AND IS EXACTLY THE RECORDS AFTER THE LANDING
+    // POINT. Asserting only "the straddling record is absent" would pass over
+    // a thread with no records at all, which is the vacuity this file's own
+    // header warns about.
+    expect(ordinals).toStrictEqual(written.afterLanding);
+    expect(ordinals.length).toBe(5);
+    expect(ordinals).not.toContain(written.landingOrdinal);
+
+    // THE FRAGMENT IS COUNTED, NOT SILENTLY DROPPED (G3, rule 18). One line
+    // straddled the landing point and one is reported.
+    expect(outcome.result.partialTranscripts[0]?.boundaryFragments).toBe(1);
+    // It is NOT counted as malformed: the bytes were never offered to the JSON
+    // parser, so calling them malformed would be a different and untrue claim.
+    expect(outcome.result.counters.malformedLines).toBe(0);
   }, 120_000);
 
   it('reads a transcript one byte under the limit — the gate is a limit, not a mood', async () => {
     const root = await makeRoot('h3-under');
     const path = transcriptPath(root, '01a06400-0000-7000-8000-00000000003a');
-    const size = await writeTranscript(path, 8 * MIB);
+    // Bigger than head + tail, or the two read shapes cover the same bytes and
+    // the off-by-one this test exists for would be invisible.
+    const size = await writeSparse(path, 20 * MIB);
+    expect(size).toBeGreaterThan(CODEX_HEAD_BYTES + CODEX_OVERSIZE_TAIL_BYTES);
+
     resetTally();
     const outcome = await readCodexEngine({ root, maxTranscriptBytes: size });
     if (outcome.kind !== 'ok') throw new Error('engine did not read the corpus');
 
-    // `>` not `>=`: a file EQUAL to the limit is read. Stated as a test
+    // `>` not `>=`: a file EQUAL to the limit is read WHOLE. Stated as a test
     // because an off-by-one here is silent and permanent.
-    expect(outcome.result.skipped).toHaveLength(0);
+    expect(outcome.result.skipped).toStrictEqual([]);
+    expect(outcome.result.partialTranscripts).toStrictEqual([]);
     expect(outcome.result.threads).toHaveLength(1);
-    expect(tally.opens.get(path) ?? 0).toBeGreaterThan(0);
+    expect(outcome.result.sessions[0]?.partial).toBeUndefined();
+    expect(tally.bytesRead.get(path) ?? 0).toBe(size);
 
     resetTally();
-    const refusedOutcome = await readCodexEngine({ root, maxTranscriptBytes: size - 1 });
-    if (refusedOutcome.kind !== 'ok') throw new Error('engine did not read the corpus');
-    expect(refusedOutcome.result.skipped).toHaveLength(1);
-    expect(tally.opens.get(path) ?? 0).toBe(0);
+    const overOutcome = await readCodexEngine({ root, maxTranscriptBytes: size - 1 });
+    if (overOutcome.kind !== 'ok') throw new Error('engine did not read the corpus');
+    // One byte over: the same file, read in two bounded pieces.
+    expect(overOutcome.result.skipped).toStrictEqual([]);
+    expect(overOutcome.result.partialTranscripts).toHaveLength(1);
+    expect(overOutcome.result.sessions[0]?.partial?.totalBytes).toBe(size);
+    expect(tally.bytesRead.get(path) ?? 0).toBeLessThan(size);
+  }, 120_000);
+
+  it('a file over the limit but smaller than head+tail is read whole and is not partial', async () => {
+    const root = await makeRoot('h3-small-over');
+    const path = transcriptPath(root, '01a06400-0000-7000-8000-00000000003b');
+    const size = await writeTranscript(path, 512 * 1024);
+    expect(size).toBeLessThan(CODEX_HEAD_BYTES + CODEX_OVERSIZE_TAIL_BYTES);
+
+    resetTally();
+    const outcome = await readCodexEngine({ root, maxTranscriptBytes: 256 * 1024 });
+    if (outcome.kind !== 'ok') throw new Error('engine did not read the corpus');
+
+    // OVER the limit, so the oversize read shape applies — and the jump has
+    // nowhere to go, because the last 16 MiB of a 512 KiB file is all of it.
+    // `skipTo` is forward-only, so nothing is skipped and nothing is claimed.
+    expect(outcome.result.partialTranscripts).toStrictEqual([]);
+    expect(outcome.result.sessions[0]?.partial).toBeUndefined();
+    expect(tally.bytesRead.get(path) ?? 0).toBe(size);
+    // The vacuity control for the line above: the file really does hold
+    // records, so "no partial" is a statement about a session that exists.
+    expect(outcome.result.threads[0]?.records).toBeGreaterThan(1);
+  }, 120_000);
+
+  it('an oversize transcript whose head decides nothing is terminal, counted and named', async () => {
+    const root = await makeRoot('h3-head-undecided');
+    const path = transcriptPath(root, '01a06400-0000-7000-8000-00000000003c');
+    // A first line longer than the head budget: one JSON record whose padding
+    // runs past 256 KiB, with the file then extended past the size gate.
+    const handle = await realOpen(path, 'w');
+    let size = 0;
+    try {
+      await handle.write(`${bulk(0, 'x'.repeat(CODEX_HEAD_BYTES + 1024))}\n`);
+      await handle.truncate(20 * MIB);
+      size = 20 * MIB;
+    } finally {
+      await handle.close();
+    }
+
+    resetTally();
+    const outcome = await readCodexEngine({ root, maxTranscriptBytes: 1024 });
+    if (outcome.kind !== 'ok') throw new Error('engine did not read the corpus');
+
+    expect(outcome.result.skipped).toHaveLength(1);
+    expect(outcome.result.skipped[0]?.reason).toBe(
+      `oversizeHeadUndecided:${String(size)} limit=1024 head=${String(CODEX_HEAD_BYTES)}`,
+    );
+    expect(outcome.result.partialTranscripts).toStrictEqual([]);
+    expect(outcome.result.threads).toStrictEqual([]);
+    // ONE HEAD, then it stops. Without the bound the drained path reads the
+    // whole 20 MiB looking for a newline that is 257 KiB in — and on a 3 GB
+    // transcript it reads 3 GB.
+    expect(tally.bytesRead.get(path) ?? 0).toBeLessThanOrEqual(CODEX_HEAD_BYTES);
+    expect(tally.bytesRead.get(path) ?? 0).toBeGreaterThan(0);
+  }, 120_000);
+
+  it('a terminal oversize verdict is re-reported every pass and re-read never', async () => {
+    const root = await makeRoot('h3-head-undecided-again');
+    const path = transcriptPath(root, '01a06400-0000-7000-8000-00000000003d');
+    const handle = await realOpen(path, 'w');
+    try {
+      await handle.write(`${bulk(0, 'x'.repeat(CODEX_HEAD_BYTES + 1024))}\n`);
+      await handle.truncate(20 * MIB);
+    } finally {
+      await handle.close();
+    }
+    const store = new CodexTailStore();
+
+    const first = await readCodexEngine({ root, tails: store, maxTranscriptBytes: 1024 });
+    if (first.kind !== 'ok') throw new Error('engine did not read the corpus');
+    expect(first.result.skipped).toHaveLength(1);
+
+    resetTally();
+    const second = await readCodexEngine({ root, tails: store, maxTranscriptBytes: 1024 });
+    if (second.kind !== 'ok') throw new Error('engine did not read the corpus');
+    // STILL REPORTED (rule 18): a skip that stops being restated is a zero
+    // nobody can tell from "nothing was skipped".
+    expect(second.result.skipped).toStrictEqual(first.result.skipped);
+    // AND NOT RE-READ: terminal means terminal.
+    expect(tally.bytesRead.get(path) ?? 0).toBe(0);
   }, 120_000);
 
   it('a live session that grows past the limit keeps its tail', async () => {

@@ -116,6 +116,27 @@ export const CODEX_HEAD_BYTES = 256 * 1024;
  */
 export const CODEX_READ_BATCH_BYTES = 4 * 1024 * 1024;
 
+/**
+ * The tail of a transcript over `maxTranscriptBytes`: **16 MiB** (v0.8.0
+ * DoD 7.7, user ruling 2026-09-12).
+ *
+ * A LOCKED DECISION, not a measurement, and it is written here beside the two
+ * ceilings above so the three sizes of read this engine performs are in one
+ * place. It is the last 16 MiB, which is where a transcript's most recent
+ * records are; what a user watching a session wants from it is what happened
+ * recently, and a head-only read of an oversize file would show a session
+ * frozen at its first few hundred records for ever.
+ *
+ * **It is read BESIDE the head, never instead of it**, and that is forced
+ * rather than chosen — see `index.ts` rule 3 and `fingerprintThread` check 2,
+ * which requires a `session_meta` at ordinal 0. A tail has no ordinal 0, so a
+ * bare tail refuses `sessionMetaMissing` and renders `unsupported` with no
+ * tree at all; `declaredCwd` would also come back `''`, so the session would
+ * never reach the workspace it belongs to. The bytes read are therefore
+ * `CODEX_HEAD_BYTES + this`, 16.25 MiB, with the middle skipped.
+ */
+export const CODEX_OVERSIZE_TAIL_BYTES = 16 * 1024 * 1024;
+
 /** One complete line of a rollout transcript, exactly as it sat on disk. */
 export interface CodexTailLine {
   /** Absolute path of the transcript. */
@@ -137,6 +158,15 @@ export interface CodexReadResult {
   readonly skipped?: SkippedFile;
   /** Lines dropped for exceeding {@link CODEX_MAX_PARTIAL_BYTES}. */
   readonly oversized: number;
+  /**
+   * Leading fragments dropped after a {@link CodexFileTail.skipTo}, forwarded
+   * verbatim from `FileTail` (v0.8.0 DoD 7.7).
+   *
+   * Distinct from {@link oversized} for the reason the tailer's own field doc
+   * gives: both drop a line by resynchronising at the next newline, and "the
+   * line was too long" and "the read started mid-line" are different facts.
+   */
+  readonly boundaryFragments: number;
   /** The state after this read, in the hand-off shape of `types.ts`. */
   readonly state: CodexTailState;
 }
@@ -193,6 +223,19 @@ export class CodexFileTail {
     return this.#tail.pending;
   }
 
+  /**
+   * Jump the offset forward, discarding the bytes in between (DoD 7.7).
+   *
+   * Delegated, like every other byte this class handles — `FileTail.skipTo`
+   * carries the whole contract, including what happens to the fragment at the
+   * landing point and which counter it lands on. Re-implementing the jump here
+   * would be the second "hold the last line back" implementation this file's
+   * header exists to forbid.
+   */
+  skipTo(target: number): number {
+    return this.#tail.skipTo(target);
+  }
+
   /** The hand-off shape of `types.ts`. `pending` is the real held-back text. */
   get state(): CodexTailState {
     return { path: this.path, offset: this.#tail.offset, pending: this.#tail.pending };
@@ -219,6 +262,7 @@ export class CodexFileTail {
       bytesRead: result.bytesRead,
       reset: result.reset,
       oversized: result.oversized,
+      boundaryFragments: result.boundaryFragments,
       state: this.state,
     };
     return result.skipped === undefined ? base : { ...base, skipped: result.skipped };

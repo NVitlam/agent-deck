@@ -199,7 +199,11 @@ import type {
   CodexLivenessReport,
   CodexLivenessSample,
 } from './codex/liveness.js';
-import type { CodexAgentLiveness, CodexToolCall } from './codex/types.js';
+import type {
+  CodexAgentLiveness,
+  CodexPartialTranscript,
+  CodexToolCall,
+} from './codex/types.js';
 import { deriveStats } from './stats/derive.js';
 import { parsePricing } from './stats/pricing.js';
 import type { PricingTable } from './stats/pricing.js';
@@ -1504,6 +1508,14 @@ export interface CodexEngineDiagnostics {
    */
   skippedTranscripts: number;
   tailsHeld: number;
+  /**
+   * Transcripts currently read as a head plus a tail (v0.8.0 DoD 7.7).
+   *
+   * A LEVEL like `skippedTranscripts` above and for the same reason: it is
+   * what the last read reported. A file replaced by a small one lowers it.
+   * This is the number the counters line prints as `oversizePartial`.
+   */
+  partialTranscripts: number;
   lastError?: string;
 }
 
@@ -1599,6 +1611,32 @@ export class CodexEnginePath {
    * rather than silently suppressed for ever.
    */
   #announcedSkips = new Set<string>();
+  /**
+   * Partial transcripts already announced, BY PATH ALONE (v0.8.0 DoD 7.7).
+   *
+   * Not `<path>|<numbers>`, which is the shape {@link #announcedSkips} uses. A
+   * skip's reason carries the file's size, so a growing file changes that key
+   * and is announced again — deliberately, because a file that grows may cross
+   * a limit differently. A partial file never changes state once it is
+   * partial, so it is announced once and the numbers stay off the key.
+   *
+   * **THE TWO KEYS ARE EQUIVALENT TODAY, AND THAT IS RECORDED RATHER THAN
+   * CLAIMED AS A GUARD.** Mutation-tested: keying this set on
+   * `<path>|<readBytes>` leaves every test green, because
+   * `CodexIngestEntry.partial` is LATCHED at the jump and its figures never
+   * move. So the path key is not what stops a line-per-poll here — the latch
+   * is. If a later change makes those figures live, this key becomes
+   * load-bearing on its own and the announce-once property has to be re-argued
+   * from it.
+   *
+   * Pruned against the current partial set on every read, so a transcript that
+   * stops being partial — replaced by a smaller file, which resets its entry —
+   * and later becomes partial again is announced again rather than suppressed
+   * for ever. Same rule as the skip set.
+   */
+  #announcedPartials = new Set<string>();
+  /** What the last read reported as partial. A level; see the diagnostics field. */
+  #partials: readonly CodexPartialTranscript[] = [];
 
   #liveness: CodexLivenessEngine | null = null;
   #contentPollHandle: PollTriggerHandle | undefined;
@@ -1692,6 +1730,7 @@ export class CodexEnginePath {
       hookEventsIngested: this.#hookEventsIngested,
       skippedTranscripts: this.#skipped.length,
       tailsHeld: this.#tails.size,
+      partialTranscripts: this.#partials.length,
       ...(this.#lastError !== undefined ? { lastError: this.#lastError } : {}),
     };
   }
@@ -2000,6 +2039,7 @@ export class CodexEnginePath {
         this.#lockDir = outcome.result.discovery.lockDir;
         this.#content = outcome.result.sessions.filter(belongsOnDeck);
         this.#reportSkips(outcome.result.skipped);
+        this.#reportPartials(outcome.result.partialTranscripts);
         return outcome;
       case 'unreadable':
         // G3/G2: the engine is unusable right now. The last good content and
@@ -2033,6 +2073,42 @@ export class CodexEnginePath {
    * invited to paste into a bug report. `bridge/diagnostics.ts` makes the same
    * decision for refusals, for the same reason.
    */
+  #reportPartials(partials: readonly CodexPartialTranscript[]): void {
+    this.#partials = partials;
+    const current = new Set(partials.map((partial) => partial.path));
+    for (const key of [...this.#announcedPartials]) {
+      if (!current.has(key)) this.#announcedPartials.delete(key);
+    }
+    for (const partial of partials) {
+      if (this.#announcedPartials.has(partial.path)) continue;
+      this.#announcedPartials.add(partial.path);
+      // Facts, in the same shape the channel event carries them: what was
+      // read, of what, and whether a line was dropped where the tail landed.
+      this.#log(
+        'info',
+        `Agent Deck: Codex transcript read in part ` +
+          `(read=${String(partial.readBytes)} of=${String(partial.totalBytes)})`,
+      );
+      // A diagnostics sink must never be able to break a read — the same
+      // reasoning, and the same empty `catch`, as `#reportSkips` below.
+      try {
+        this.#onDiagnostic?.({
+          kind: 'transcriptPartial',
+          engine: 'codex',
+          file: basenameOfPath(partial.path),
+          readBytes: partial.readBytes,
+          totalBytes: partial.totalBytes,
+          fragments: partial.boundaryFragments,
+        });
+      } catch {
+        // Counted nowhere, for the reason `#reportSkips` states: this class
+        // has no consumer-error counter and inventing one to record a throwing
+        // logger would be scope. The partial read itself is still in
+        // `diagnostics.partialTranscripts`.
+      }
+    }
+  }
+
   #reportSkips(skipped: readonly SkippedFile[]): void {
     this.#skipped = skipped;
     const current = new Set(skipped.map((skip) => `${skip.path}|${skip.reason}`));
@@ -4552,6 +4628,9 @@ export class AgentDeckHost {
       ccSessions: this.#engineCounts.cc,
       opencodeSessions: this.#engineCounts.opencode,
       codexSessions: this.#engineCounts.codex,
+      // v0.8.0 DoD 7.7. Read off the Codex path at WRITE time, the same rule
+      // as the relay and stats figures below: the path owns the number.
+      oversizePartial: d.codex.partialTranscripts,
       // Read off the shared listener at write time, for the reason this
       // method's own doc comment gives: the listener owns these numbers, and a
       // second copy kept in step by hand is how two accounts of one fact begin

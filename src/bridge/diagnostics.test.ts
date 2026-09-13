@@ -112,6 +112,14 @@ const SAMPLES: Record<DiagnosticsEvent['kind'], DiagnosticsEvent> = {
     file: 'rollout-2026-09-05T00-00-00-01a06400.jsonl',
     reason: 'oversize:83890435 limit=67108864',
   },
+  transcriptPartial: {
+    kind: 'transcriptPartial',
+    engine: 'codex',
+    file: 'rollout-2026-09-05T00-00-00-01a06400.jsonl',
+    readBytes: 17039360,
+    totalBytes: 83890435,
+    fragments: 1,
+  },
   listenerRole: { kind: 'listenerRole', role: 'follower', port: 47821 },
   hookListenerError: { kind: 'hookListenerError', detail: 'EADDRINUSE 47821' },
   hookNon2xx: { kind: 'hookNon2xx', status: 413, detail: 'payload too large' },
@@ -198,6 +206,9 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       statsDropped: 11,
       // v0.7.1 DoD 6.4 — distinct values again, for the same reason.
       telemetry: TELEMETRY_SAMPLE,
+      // v0.8.0 DoD 7.7 — a value nothing else on the line holds, so the
+      // by-value loop below cannot be satisfied by another field.
+      oversizePartial: 13,
     };
     const line = formatCounters(counters, '2026-08-27T12:00:00.000Z');
     for (const key of Object.keys(counters)) {
@@ -246,12 +257,14 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
         relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
         statsErrors: 0, storeMalformed: 0, statsDropped: 7,
         telemetry: TELEMETRY_SAMPLE,
+        oversizePartial: 0,
       },
       '2026-09-10T00:00:00.000Z',
     );
     // The whole tail, byte for byte: order, labels, separators, and the four
-    // statuses by number.
-    expect(line.endsWith(` statsDropped=7 ${TELEMETRY_SAMPLE_LINE}`)).toBe(true);
+    // statuses by number — up to the two fields appended after it in v0.8.0,
+    // which is the prefix rule working rather than an exception to it.
+    expect(line).toContain(` statsDropped=7 ${TELEMETRY_SAMPLE_LINE}`);
   });
 
   /*
@@ -274,6 +287,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
         relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
         statsErrors: 0, storeMalformed: 0, statsDropped: 0,
         telemetry: TELEMETRY_SAMPLE,
+        oversizePartial: 0,
       },
       '2026-09-13T00:00:00.000Z',
     );
@@ -299,6 +313,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
         relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
         statsErrors: 0, storeMalformed: 0, statsDropped: 0,
         telemetry: { ...TELEMETRY_SAMPLE, traces: { ...TELEMETRY_SAMPLE.traces, foreign: 99 } },
+        oversizePartial: 0,
       },
       '2026-09-13T00:00:00.000Z',
     );
@@ -315,6 +330,63 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
     // still comparable field by field to one read off a 0.8.0 line.
     const before = 'accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47';
     expect(TELEMETRY_SAMPLE_LINE).toContain(`otel.traces=${before},foreign:`);
+  });
+
+  /*
+   * v0.8.0 DoD 7.7 — `transcript partial`, the line that replaced
+   * `transcript skipped ... oversize`.
+   */
+  it('writes a partial transcript as one line carrying both byte figures', () => {
+    expect(formatEvent(SAMPLES.transcriptPartial, '2026-09-13T12:00:00.000Z')).toBe(
+      '2026-09-13T12:00:00.000Z transcript partial codex ' +
+        'rollout-2026-09-05T00-00-00-01a06400.jsonl read=17039360 of=83890435 fragments=1',
+    );
+  });
+
+  it('says PARTIAL rather than SKIPPED, which is the opposite claim', () => {
+    const partial = formatEvent(SAMPLES.transcriptPartial, '2026-09-13T12:00:00.000Z');
+    const skipped = formatEvent(SAMPLES.transcriptSkipped, '2026-09-13T12:00:00.000Z');
+    expect(partial).toContain('transcript partial');
+    expect(partial).not.toContain('transcript skipped');
+    // And the other way, so this pair cannot both be satisfied by one string.
+    expect(skipped).toContain('transcript skipped');
+    expect(skipped).not.toContain('transcript partial');
+  });
+
+  it('clips the basename: it came off a filesystem this module does not control', () => {
+    const line = formatEvent(
+      {
+        kind: 'transcriptPartial',
+        engine: 'codex',
+        file: 'r'.repeat(4000),
+        readBytes: 17039360,
+        totalBytes: 83890435,
+        fragments: 1,
+      },
+      '2026-09-13T12:00:00.000Z',
+    );
+    expect(line.length).toBeLessThan(4000);
+    // The clip did not eat the figures: they follow the name on the line.
+    expect(line).toContain('read=17039360');
+  });
+
+  it('prints oversizePartial on the counters line, from its own field', () => {
+    const base = {
+      grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+      patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+      ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+      relayRole: 'idle' as const, relayFollowers: 0, relayed: 0, relayReceived: 0,
+      statsErrors: 0, storeMalformed: 0, statsDropped: 0,
+      telemetry: TELEMETRY_SAMPLE,
+      oversizePartial: 0,
+    };
+    expect(formatCounters(base, '2026-09-13T12:00:00.000Z')).toContain('oversizePartial=0');
+    // Moved alone, so no other field can be standing in for it — the same
+    // control the `foreign` block above uses, for the same reason.
+    const moved = formatCounters({ ...base, oversizePartial: 4 }, '2026-09-13T12:00:00.000Z');
+    expect(moved).toContain('oversizePartial=4');
+    expect(moved).not.toContain('oversizePartial=0');
+    expect(moved).toContain('codex=0');
   });
 
   it('creates no sink until the first line', () => {
@@ -361,6 +433,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       storeMalformed: 0,
       statsDropped: 0,
       telemetry: TELEMETRY_SAMPLE,
+      oversizePartial: 0,
     });
     expect(sink.shown).toBe(0);
     channel.show();

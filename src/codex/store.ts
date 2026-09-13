@@ -51,14 +51,19 @@
  *   - {@link CodexIngestEntry.thread} is the parsed result, whose payloads are
  *     already truncated by `parse.ts`. It is what `v0.6.0` retained too, via
  *     the engine's return value.
- *   - A transcript over the size limit gets an entry with NO TAIL. Nothing is
- *     opened, so nothing is read, and the entry costs one `SkippedFile`.
+ *   - A transcript over the size limit is read as a HEAD PLUS A TAIL, with the
+ *     middle skipped (v0.8.0 DoD 7.7). It used to get an entry with no tail at
+ *     all — nothing opened, nothing read, one `SkippedFile` — and the
+ *     retention bound that gave up is replaced by a tighter one: such an entry
+ *     holds at most `CODEX_HEAD_BYTES + CODEX_OVERSIZE_TAIL_BYTES` of source,
+ *     16.25 MiB, which is a QUARTER of the 64 MiB an under-the-limit
+ *     transcript may hold.
  *
  * G1 read-only and G7 in-memory-only are inherited from `CodexFileTail`;
  * nothing here writes or persists anything.
  */
 
-import type { SkippedFile } from '../model/events.js';
+import type { SkippedFile, TranscriptPartial } from '../model/events.js';
 
 import { CodexFileTail } from './tail.js';
 import type { CodexCounters, CodexRecord, CodexRefusal, CodexThread } from './types.js';
@@ -90,6 +95,29 @@ export const DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES = 64 * 1024 * 1024;
  * bytes and not yet having a `session_meta` at ordinal 0 to judge them by. A
  * head that lands mid-first-line produces it, and the answer is to read more,
  * never to refuse.
+ *
+ * ---------------------------------------------------------------------------
+ * `oversize` STAYED IN THIS UNION AND ITS MEANING NARROWED (v0.8.0 DoD 7.7)
+ * ---------------------------------------------------------------------------
+ * It used to mean "this transcript is over `maxTranscriptBytes`", which is now
+ * the ORDINARY case and is not terminal at all: such a transcript is read as
+ * a head plus the last `CODEX_OVERSIZE_TAIL_BYTES` (`tail.ts`), becomes `accepted`
+ * like any other, and carries {@link CodexIngestEntry.partial}. A partial read
+ * that stopped reading would be the defect the item exists to fix.
+ *
+ * What is left here is the one oversize shape that cannot be read at all: a
+ * transcript over the limit whose HEAD spent its whole budget without yielding
+ * a record to decide on. For an ordinary file that state means "read more" —
+ * for this one there is no bounded amount of "more" to read, because the file
+ * is the size the gate exists to refuse to allocate. It is terminal so the
+ * engine cannot spend one head per poll for the life of the window on a file
+ * it has already failed to decide, and `index.ts` states the measurement that
+ * makes it near-unreachable: the largest ordinal-0 record in the committed
+ * corpus is 1,113 bytes against a 256 KiB head.
+ *
+ * A REPLACED file still gets a fresh entry and a fresh chance — terminality is
+ * for the life of THIS entry, and `index.ts`'s shrink/rewrite detection resets
+ * it. That is what the two `sourceBytes`/`sourceMtimeMs` fields below are for.
  */
 export type CodexIngestVerdict = 'undecided' | 'accepted' | 'refused' | 'foreign' | 'oversize';
 
@@ -97,11 +125,53 @@ export type CodexIngestVerdict = 'undecided' | 'accepted' | 'refused' | 'foreign
 export interface CodexIngestEntry {
   readonly path: string;
   /**
-   * `null` until the first read is authorised — which is what makes the size
-   * gate a gate. An oversize entry never gets one, so `handle.open` is never
-   * reached for it.
+   * `null` until the first read is authorised.
+   *
+   * Until v0.8.0 DoD 7.7 the size gate was the one thing that could leave it
+   * null for ever; now the gate chooses a READ SHAPE instead, and every
+   * transcript discovery reports gets a tail. What the gate still decides is
+   * {@link oversizeTail} — head plus the last
+   * `CODEX_OVERSIZE_TAIL_BYTES` (`tail.ts`), rather than the whole file.
    */
   tail: CodexFileTail | null;
+  /**
+   * This transcript is over `maxTranscriptBytes`, so it is read as a head plus
+   * a tail with the middle skipped (DoD 7.7).
+   *
+   * Set by the size gate, from `stat` alone, before anything is opened. It is
+   * NOT the same question as {@link partial}: this one says which shape the
+   * read takes, that one says a jump really happened. They differ whenever the
+   * file is over the limit and yet smaller than head + tail, which is the case
+   * for any `maxTranscriptBytes` below 16.25 MiB — there the two reads cover
+   * the same bytes and nothing is skipped.
+   */
+  oversizeTail: boolean;
+  /**
+   * Bytes between the end of the head and the tail's landing point: the part
+   * of this transcript that was never read.
+   *
+   * `0` for every whole read, which is what makes it the test for "is this
+   * session partial" without a second flag to keep in step.
+   */
+  skippedBytes: number;
+  /**
+   * What this transcript's session states about how much of it was read, LATCHED
+   * at the jump (DoD 7.7).
+   *
+   * **Latched rather than live, and the reason is the wire.** `SessionPatch`
+   * has no key for `partial` — `src/model/events.ts` is frozen for this phase
+   * — so a figure that moved would be carried on a snapshot and never on a
+   * diff, and the webview's copy would silently disagree with the host's. A
+   * number that cannot change cannot disagree.
+   *
+   * The cost, stated: for a live session the file keeps growing and every byte
+   * of that growth IS read (the tail follows it), so `readBytes` understates
+   * from the moment after the jump. It names the read that established the
+   * tail, which is the read the diagnostics channel announced.
+   */
+  partial: TranscriptPartial | null;
+  /** Leading fragments dropped at this transcript's tail landing point. */
+  boundaryFragments: number;
   verdict: CodexIngestVerdict;
   /**
    * Every record read from this transcript so far.
@@ -166,6 +236,10 @@ function freshEntry(path: string): CodexIngestEntry {
   return {
     path,
     tail: null,
+    oversizeTail: false,
+    skippedBytes: 0,
+    partial: null,
+    boundaryFragments: 0,
     verdict: 'undecided',
     records: [],
     malformedLines: 0,

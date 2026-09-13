@@ -235,6 +235,40 @@ describe('applySessionPatch — the properties the bridge relies on', () => {
     spawnEdges: [],
   });
 
+  /* ----------------------------------------------------------------------- *
+   * v0.8.0 DoD 7.7 — `partial` survives the reducer
+   * ----------------------------------------------------------------------- */
+
+  it('carries SessionState.partial across a patch that does not mention it', () => {
+    const partial: SessionState = deepFreeze({
+      ...base,
+      partial: { readBytes: 17_039_360, totalBytes: 20_971_520 },
+    });
+    const next = applySessionPatch(partial, {
+      fields: { liveness: 'idle' },
+      tree: [{ op: 'updateAgent', id: 'root', fields: { status: 'done' } }],
+    });
+    // The patch really did something — without this the assertion below would
+    // hold over a reducer that returned its input.
+    expect(next.liveness).toBe('idle');
+    expect(next.root.status).toBe('done');
+    // AND THE MARK SURVIVED. This reducer builds `next` field by field, so a
+    // field nobody names is dropped: a partial session would carry its mark on
+    // the snapshot and lose it on the first diff applied afterwards.
+    expect(next.partial).toStrictEqual({ readBytes: 17_039_360, totalBytes: 20_971_520 });
+    // Copied, not shared: this reducer hands back an object graph of its own.
+    expect(next.partial).not.toBe(partial.partial);
+    expect(Object.isFrozen(next.partial)).toBe(true);
+  });
+
+  it('a state that never carried partial comes out without the key', () => {
+    const next = applySessionPatch(base, { fields: { liveness: 'idle' } });
+    // NOT `partial: undefined`. The round trip compares with `toStrictEqual`,
+    // which tells an absent key from a key holding `undefined`, and absence is
+    // what "read whole" means on the wire.
+    expect('partial' in next).toBe(false);
+  });
+
   /**
    * DoD 5.5.1 changed what "cannot be applied" costs. An op addressing an id
    * this tree does not have is DIVERGENCE — reported, skipped, survivable —

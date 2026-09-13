@@ -32,7 +32,19 @@ import {
 } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  cp,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { basename, dirname, join } from 'node:path';
@@ -96,6 +108,7 @@ import { STATS_SCHEMA_VERSION } from './stats/schema.js';
 import type { StatsRecord } from './stats/schema.js';
 import { CORPUS_READ_BUDGET_MS, readCcSessions, warmCorpus } from './stats/corpus.testkit.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
+import { PINNED_CODEX_VERSION } from './codex/fingerprint.js';
 import { STORE_DIR_NAME, StatsStore, resolveStoreDir } from './stats/store.js';
 import { parsePricing } from './stats/pricing.js';
 import { formatCounters } from './bridge/diagnostics.js';
@@ -4185,6 +4198,145 @@ async function codexBaselineRoot(root: string): Promise<{ cwd: string; sessionId
   return { cwd: (rootThread as CodexThread).cwd, sessionId: (rootThread as CodexThread).sessionId };
 }
 
+/**
+ * A completion signal for one Codex CONTENT read, built out of `onChange`.
+ *
+ * `CodexEnginePath` fires a poll as `void this.#refresh()` and calls
+ * `onChange()` once that read has been applied, so `onChange` IS the "this
+ * read finished" event. Awaiting a fixed number of microtask turns instead
+ * would be a test that passes or fails by how long a 16 MiB read took, which
+ * this repository has paid for more than once.
+ *
+ * ---------------------------------------------------------------------------
+ * THE WAITER IS REGISTERED AFTER `fire()` RETURNS, AND THAT IS LOAD-BEARING
+ * ---------------------------------------------------------------------------
+ * `#enable` registers the LIVENESS poll before the content poll, and the
+ * liveness engine's `onUpdate` calls `onChange()` SYNCHRONOUSLY. So a waiter
+ * armed before `fire()` is resolved by the liveness callback inside `fire()`,
+ * while the content read is still in flight — and a loop built on it fires
+ * again, which runs two `readCodexEngine` passes concurrently over ONE
+ * `CodexTailStore`. Measured: a 20 MiB transcript that reaches its tail in 5
+ * passes never completed in 20.
+ *
+ * `#refresh` is `async` and awaits an `async` read, so its `onChange` cannot
+ * run before `fire()` returns. Arming afterwards therefore waits for the
+ * content read and for nothing else.
+ */
+function codexPump(): { onChange: () => void; next: () => Promise<void> } {
+  let waiting: (() => void) | undefined;
+  return {
+    onChange: () => {
+      const resolve = waiting;
+      waiting = undefined;
+      resolve?.();
+    },
+    next: () =>
+      new Promise<void>((done) => {
+        waiting = done;
+      }),
+  };
+}
+
+/** One poll, awaited to the end of the content read it started. */
+async function pumpCodexOnce(
+  poll: { fire: () => void },
+  pump: { next: () => Promise<void> },
+): Promise<void> {
+  poll.fire();
+  await pump.next();
+}
+
+/**
+ * Fire polls until `done()` holds, or give up after `limit` of them.
+ *
+ * BOUNDED, so a property that never becomes true fails the caller's own
+ * assertion rather than hanging the suite — and the caller asserts afterwards,
+ * so this is a wait for a real signal and not an assertion in a loop.
+ */
+async function pumpCodexUntil(
+  poll: { fire: () => void },
+  pump: { next: () => Promise<void> },
+  done: () => boolean,
+  limit = 20,
+): Promise<void> {
+  for (let i = 0; i < limit && !done(); i += 1) await pumpCodexOnce(poll, pump);
+}
+
+/**
+ * Plant a SPARSE oversize Codex transcript in a staged root (v0.8.0 DoD 7.7).
+ *
+ * `truncate` extends a file without writing it, so a 20 MiB transcript costs
+ * kilobytes on disk and the test is not a measurement of this machine's disk.
+ * Its shape is the shape the oversize tail is for: a `session_meta` at ordinal
+ * 0 for the fingerprint and the workspace match, a hole nobody reads, and real
+ * records at the end — placed so that the 16 MiB landing point falls INSIDE
+ * the first of them, which is the fragment case.
+ *
+ * `cwd` is the corpus's own workspace so the planted session lands on the same
+ * deck as the fixture's, which is what lets a test assert that one session
+ * carries the mark and the others do not.
+ */
+async function plantOversizeCodexTranscript(
+  root: string,
+  cwd: string,
+  size: number,
+): Promise<{ path: string; file: string; threadId: string; size: number }> {
+  const threadId = '01a06400-0000-7000-8000-00000000f00d';
+  const file = `rollout-2026-09-13T00-00-00-${threadId}.jsonl`;
+  const dayDir = join(root, 'sessions', '2026', '09', '13');
+  await mkdir(dayDir, { recursive: true });
+  const target = join(dayDir, file);
+
+  const meta = `${JSON.stringify({
+    timestamp: '2026-09-13T00:00:00.000Z',
+    ordinal: 0,
+    type: 'session_meta',
+    payload: {
+      session_id: threadId,
+      id: threadId,
+      timestamp: '2026-09-13T00:00:00.000Z',
+      cwd,
+      originator: 'codex_exec',
+      cli_version: PINNED_CODEX_VERSION,
+      source: 'exec',
+      thread_source: 'user',
+      model_provider: 'openai',
+    },
+  })}\n`;
+
+  const padding = 'y'.repeat(64 * 1024);
+  const tailLines: string[] = [];
+  for (let i = 0; i < 6; i += 1) {
+    tailLines.push(
+      `${JSON.stringify({
+        timestamp: '2026-09-13T00:00:01.000Z',
+        ordinal: 500 + i,
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          id: `fc_${String(500 + i)}`,
+          call_id: `call_${String(500 + i)}`,
+          name: 'shell',
+          arguments: JSON.stringify({ command: padding }),
+        },
+      })}\n`,
+    );
+  }
+  const firstLineBytes = Buffer.byteLength(tailLines[0] as string, 'utf8');
+  const recordsStart = size - 16 * 1024 * 1024 - Math.floor(firstLineBytes / 2);
+
+  const handle = await open(target, 'w');
+  try {
+    await handle.write(meta);
+    await handle.truncate(recordsStart);
+    await handle.write(tailLines.join(''), recordsStart);
+    await handle.truncate(size);
+  } finally {
+    await handle.close();
+  }
+  return { path: target, file, threadId, size };
+}
+
 /*
  * ===========================================================================
  * HOTFIX 0.6.1 — THE HOST WIRING, DRIVEN THE WAY PRODUCTION DRIVES IT
@@ -4237,16 +4389,22 @@ describe('hotfix 0.6.1 — CodexEnginePath owns the store and the limit', () => 
     path.dispose();
   }, 120_000);
 
-  it('applies the size limit and names the file on the diagnostics channel, ONCE', async () => {
+  it('a limit below every transcript still reads them: over the limit is a SHAPE (DoD 7.7)', async () => {
     const root = await stageCodexRoot(false);
     const { cwd } = await codexBaselineRoot(root);
     const poll = manualPollTrigger();
     const events: DiagnosticsEvent[] = [];
 
     /*
-     * A limit BELOW every transcript in the corpus, so the skip is a fact
+     * A limit BELOW every transcript in the corpus, so what happens is a fact
      * about the setting rather than about a file this test had to plant. The
      * fixture's smallest rollout is ~50 KB.
+     *
+     * Until v0.8.0 DoD 7.7 this produced `skippedTranscripts > 0` and
+     * `sessions === 0`: every transcript was measured and none was opened.
+     * Now each is read as a head plus its last 16 MiB — and each is far
+     * smaller than that, so the two reads cover the same bytes, nothing is
+     * skipped, nothing is partial, and the deck is populated.
      */
     const path = new CodexEnginePath({
       workspaceFolders: [cwd],
@@ -4260,34 +4418,167 @@ describe('hotfix 0.6.1 — CodexEnginePath owns the store and the limit', () => 
     });
     await path.start();
 
-    // Deleting `maxTranscriptBytes:` from the call site makes this 0.
-    expect(path.diagnostics.skippedTranscripts).toBeGreaterThan(0);
-    expect(path.diagnostics.sessions).toBe(0);
+    expect(path.diagnostics.skippedTranscripts).toBe(0);
+    expect(path.diagnostics.partialTranscripts).toBe(0);
+    // THE VACUITY CONTROL for the two zeroes above: sessions really were
+    // produced, so "nothing skipped" is a statement about a deck that filled.
+    expect(path.diagnostics.sessions).toBeGreaterThan(0);
+    expect(events.filter((e) => e.kind === 'transcriptSkipped')).toHaveLength(0);
+    expect(events.filter((e) => e.kind === 'transcriptPartial')).toHaveLength(0);
+    path.dispose();
+  }, 120_000);
 
-    const skips = events.filter((e) => e.kind === 'transcriptSkipped');
-    expect(skips.length).toBe(path.diagnostics.skippedTranscripts);
-    const first = skips[0];
-    expect(first?.kind).toBe('transcriptSkipped');
-    if (first?.kind !== 'transcriptSkipped') throw new Error('unreachable');
+  it('announces an oversize transcript as PARTIAL, with both figures, ONCE (DoD 7.7)', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd } = await codexBaselineRoot(root);
+    const planted = await plantOversizeCodexTranscript(root, cwd, 20 * 1024 * 1024);
+    const poll = manualPollTrigger();
+    const events: DiagnosticsEvent[] = [];
+    const pump = codexPump();
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: pump.onChange,
+      root,
+      log: captureLog().log,
+      pollTrigger: poll.trigger,
+      maxTranscriptBytes: 1024,
+      onDiagnostic: (event) => events.push(event),
+    });
+    await path.start();
+    // The oversize one arrives over several passes: the head, then the tail in
+    // 4 MiB batches, and it is reported once a whole parse exists.
+    await pumpCodexUntil(poll, pump, () => path.diagnostics.partialTranscripts === 1);
+
+    expect(path.diagnostics.partialTranscripts).toBe(1);
+    expect(path.diagnostics.skippedTranscripts).toBe(0);
+
+    const partials = events.filter((e) => e.kind === 'transcriptPartial');
+    expect(partials).toHaveLength(1);
+    const first = partials[0];
+    if (first?.kind !== 'transcriptPartial') throw new Error('unreachable');
     expect(first.engine).toBe('codex');
     // A BASENAME, never a path: this channel is a surface a user is invited
     // to paste into a bug report, and an absolute path here begins
     // `C:\\Users\\<user>\\` on Windows.
-    expect(first.file).toMatch(/^rollout-/);
+    expect(first.file).toBe(planted.file);
     expect(first.file).not.toMatch(/[\\/]/);
-    // The size AND the limit: "too big" with no number leaves a user nothing
-    // to set the setting to.
-    expect(first.reason).toMatch(/^oversize:\d+ limit=1024$/);
+    // BOTH FIGURES, measured: 256 KiB of head plus the last 16 MiB, of 20 MiB.
+    expect(first.totalBytes).toBe(planted.size);
+    expect(first.readBytes).toBe(256 * 1024 + 16 * 1024 * 1024);
+    expect(first.readBytes).toBeLessThan(first.totalBytes);
+    // The fragment at the landing point is reported rather than left silent.
+    expect(first.fragments).toBe(1);
 
-    // ONCE. A 3 GB transcript skipped every poll would otherwise write a line
-    // a second for as long as the window is open.
-    const afterStart = skips.length;
-    poll.fire();
-    await Promise.resolve();
-    poll.fire();
-    await Promise.resolve();
-    expect(events.filter((e) => e.kind === 'transcriptSkipped')).toHaveLength(afterStart);
+    // ONCE, and the key is the PATH: a live oversize session appends on every
+    // poll, and a key carrying the byte figures would write a line a second
+    // for as long as it runs.
+    const afterStart = partials.length;
+    for (let i = 0; i < 2; i += 1) await pumpCodexOnce(poll, pump);
+    expect(events.filter((e) => e.kind === 'transcriptPartial')).toHaveLength(afterStart);
     path.dispose();
+  }, 120_000);
+
+  it('the partial session reaches the deck saying how much of it was read (DoD 7.7)', async () => {
+    const root = await stageCodexRoot(false);
+    const { cwd } = await codexBaselineRoot(root);
+    const planted = await plantOversizeCodexTranscript(root, cwd, 20 * 1024 * 1024);
+    const poll = manualPollTrigger();
+    const pump = codexPump();
+
+    const path = new CodexEnginePath({
+      workspaceFolders: [cwd],
+      thresholdMs: DEFAULT_LIVENESS_THRESHOLD_MS,
+      onChange: pump.onChange,
+      root,
+      log: captureLog().log,
+      pollTrigger: poll.trigger,
+      maxTranscriptBytes: 1024,
+    });
+    await path.start();
+    await pumpCodexUntil(poll, pump, () => path.diagnostics.partialTranscripts === 1);
+
+    const sessions = path.sessions();
+    const partial = sessions.find((session) => session.sessionId === planted.threadId);
+    expect(partial?.partial).toStrictEqual({
+      readBytes: 256 * 1024 + 16 * 1024 * 1024,
+      totalBytes: planted.size,
+    });
+    // AND THE CONTROL, in the same assertion set: the corpus's own sessions
+    // are on the same deck and carry NO mark. Without this, a host that
+    // stamped `partial` onto every session would pass the line above.
+    const whole = sessions.filter((session) => session.sessionId !== planted.threadId);
+    expect(whole.length).toBeGreaterThan(0);
+    for (const session of whole) expect(session.partial).toBeUndefined();
+
+    // The figures are LATCHED: the tail follows the file, so a second read of
+    // the same session must not report a different pair. `SessionPatch` has no
+    // key for `partial`, so a figure that moved would ride a snapshot and
+    // never a diff.
+    await pumpCodexOnce(poll, pump);
+    const again = path.sessions().find((session) => session.sessionId === planted.threadId);
+    expect(again?.partial).toStrictEqual(partial?.partial);
+    path.dispose();
+  }, 120_000);
+});
+
+/*
+ * ===========================================================================
+ * v0.8.0 DoD 7.7 — `oversizePartial` ON THE COUNTERS LINE, END TO END
+ * ===========================================================================
+ *
+ * `AgentDeckHost.counters()` has ONE line that sources this figure —
+ * `oversizePartial: d.codex.partialTranscripts` — and a value with exactly one
+ * production assignment site has that site untested until something drives it
+ * the way production does. This repository has shipped that shape four times;
+ * `deleting the two lines that pass workspacePaths and tailsSession left 118
+ * tests green` is the comment two hundred lines above this one.
+ *
+ * So the whole host is built, with a Codex root holding one oversize
+ * transcript, and the assertion is on the rendered LINE.
+ */
+describe('DoD 7.7 — the host counters line carries oversizePartial', () => {
+  it('prints the Codex path\u2019s own figure, and zero when nothing is partial', async () => {
+    const staged = await stageCodexRoot(false);
+    const { cwd } = await codexBaselineRoot(staged);
+    await plantOversizeCodexTranscript(staged, cwd, 20 * 1024 * 1024);
+    const poll = manualPollTrigger();
+    const pump = codexPump();
+
+    const host = await startHostOnFreePort((port) =>
+      trackHost(
+        new AgentDeckHost({
+          workspacePath: cwd,
+          settings: settings({ port, 'codex.maxTranscriptBytes': 1024 }),
+          tickMs: 0,
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          onEmission: pump.onChange,
+          codex: { root: staged, pollTrigger: poll.trigger },
+        }),
+      ),
+    );
+
+    // BEFORE the tail has been drained there is no complete parse and so no
+    // partial session — and the line still carries the field, at 0. That is
+    // the control: without it, a `0` from a hard-coded literal and a `0` from
+    // an honest census are the same string.
+    const atStart = formatCounters(host.counters(), '2026-09-13T00:00:00.000Z');
+    expect(atStart).toContain('oversizePartial=0');
+
+    for (let i = 0; i < 20 && host.dataPath.diagnostics.codex.partialTranscripts === 0; i += 1) {
+      poll.fire();
+      await pump.next();
+    }
+
+    expect(host.dataPath.diagnostics.codex.partialTranscripts).toBe(1);
+    const line = formatCounters(host.counters(), '2026-09-13T00:00:00.000Z');
+    expect(line).toContain('oversizePartial=1');
+    // And it is the LAST field, appended after the 7.8 scope note, so every
+    // counters line quoted before this release is still a prefix of this one.
+    expect(line.endsWith(' oversizePartial=1')).toBe(true);
+    host.dispose();
   }, 120_000);
 });
 
@@ -6271,6 +6562,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
           logs: { accepted: 0, disabled: 0, unmatched: 0, foreign: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
           traces: { accepted: 0, disabled: 0, unmatched: 0, foreign: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
         },
+        oversizePartial: 0,
       },
       '2026-09-09T00:00:00.000Z',
     );

@@ -5,15 +5,45 @@
 // Through the REAL app: `harness.start` mounts `App.svelte` from the shipped
 // bundle, the records arrive as a `statsSnapshot` message the way the host
 // sends one, and the Stats mode is entered through its own control. The
-// records are the committed R8 goldens (`fixtures/golden/stats/*-synthetic-*`),
-// so every value asserted below is the value the deriver produced for the
-// shape the fixture manufactures — never a number this file made up.
+// records are the R8 fixtures' own derived records, so every value asserted
+// below is the value the deriver produced for the shape the fixture
+// manufactures — never a number this file made up.
+//
+// ## Where the v0.8.0 records come from, and why not from `src/stats/`'s testkits
+//
+// `STATS_SCHEMA_VERSION` moved to 2 (DoD 7.1) and the committed goldens are
+// regenerated ONCE, at the end of the phase, so every file under
+// `fixtures/golden/stats/` still carries a version-1 record with no `timing`
+// block and no `resultUnreceived` flag. The v0.7.x tests below keep reading
+// them — the webview runs no validator, so they arrive exactly as they did —
+// and the v0.8.0 tests derive their own records instead.
+//
+// `corpus.stats.testkit.ts` and `synthetic.testkit.ts` are the obvious source
+// and CANNOT BE IMPORTED HERE. Measured: both resolve `fixtures/` with
+// `fileURLToPath(new URL('…', import.meta.url))`, and under vitest's jsdom
+// environment `import.meta.url` is not a `file:` URL — the import fails at
+// module scope with `TypeError: The URL must be of scheme file` and the whole
+// suite reports as `no tests`, which is this repository's recorded
+// "fails to COLLECT, reads green" class. So the two things this file needs
+// beyond the committed records are built here with `resolve()` against the
+// working directory, the way `capture.test.ts` and `fixture-render.test.ts`
+// already read fixtures under jsdom:
+//
+//   - `deriveStats` over the committed R8 SessionStates, which is what makes
+//     F15 reachable (`resultUnreceived`, `totals.subagentsUnreceived`);
+//   - ONE harvested Claude Code session read through `parseLines` and
+//     `SessionModel`, which is the only source in the tree of F14 instants —
+//     see {@link harvested}.
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionState, ToolNode, WebviewToHostMessage } from '../../src/model/events.js';
+import { LivenessEngine } from '../../src/model/liveness.js';
+import { SessionModel } from '../../src/model/session.js';
+import { parseLines, parseSubagentMeta } from '../../src/parser/parse.js';
+import { deriveStats } from '../../src/stats/derive.js';
 import type { StatsRecord } from '../../src/stats/schema.js';
 import type { Store } from '../store.js';
 import type { WebviewHarness } from '../testkit.js';
@@ -21,7 +51,7 @@ import { all, loadHarness, one, press } from '../testkit.js';
 import { TESTID } from '../canvas-contract.js';
 import { EM_DASH } from '../format.js';
 import { liveSession } from '../testdata.js';
-import { COST_SOURCE_LABELS } from './layout.js';
+import { COST_SOURCE_LABELS, VOCABULARY } from './layout.js';
 
 let harness: WebviewHarness;
 
@@ -31,6 +61,14 @@ beforeAll(async () => {
 
 const GOLDEN_DIR = resolve('fixtures/golden/stats');
 
+/**
+ * The clock every stats golden is derived under (`corpus.stats.testkit.ts`'s
+ * `FIXED_NOW_MS`), restated because that module cannot be imported here. It
+ * decides F13 alone — no session is live and no tool is stalled under it — so
+ * nothing this file asserts moves with it.
+ */
+const FIXED_NOW_MS = 1_700_000_000_000;
+
 function golden(id: string, engine = 'cc'): StatsRecord {
   return JSON.parse(readFileSync(resolve(GOLDEN_DIR, `${engine}-synthetic-${id}.json`), 'utf8')) as StatsRecord;
 }
@@ -39,6 +77,118 @@ function golden(id: string, engine = 'cc'): StatsRecord {
 function fixtureState(id: string): SessionState {
   return (JSON.parse(readFileSync(resolve('fixtures/synthetic-stats', `${id}.json`), 'utf8')) as { state: SessionState }).state;
 }
+
+/**
+ * An R8 fixture's record AS v0.8.0's deriver produces it.
+ *
+ * The committed state is the input either way; this is one step earlier in the
+ * same production path, so the record carries `timing` and F15 while the file
+ * on disk still does not.
+ */
+function derived(id: string): StatsRecord {
+  return deriveStats(fixtureState(id), { now: FIXED_NOW_MS });
+}
+
+/* ------------------------------------------------------------------------ *
+ * One HARVESTED session, for the facts no manufactured fixture states
+ * ------------------------------------------------------------------------ */
+
+/**
+ * F14 IS ABSENT ON EVERY R8 FIXTURE, and that is a property of the builder
+ * rather than an oversight: `synthetic.testkit.ts`'s `tool()` sets `durationMs`
+ * and never `startedAtMs`/`endedAtMs`, and its `turn()` sets no `atMs`, so
+ * `deriveTiming` returns an empty block for all of them. The test below asserts
+ * that over the whole committed set rather than taking it on trust.
+ *
+ * So the PRESENT arm of DoD 7.3 has to come from a session a real engine
+ * timestamped, and the only such thing in the tree is a captured transcript:
+ * every Claude Code entry carries an envelope `timestamp`, which DoD 7.1's
+ * parse boundary turns into `ToolNode.startedAtMs`/`endedAtMs` and
+ * `UsageTurn.atMs`. The committed `fixtures/golden/session/*.json` snapshots
+ * predate that field and carry none.
+ *
+ * WHAT IS DUPLICATED HERE, AND WHY. The twenty lines below are
+ * `corpus.stats.testkit.ts`'s Claude Code reader narrowed to one session —
+ * `SessionModel`, never the graft snapshot, which is the distinction that
+ * file's header exists to state. It is copied rather than imported because
+ * that module cannot load under jsdom at all (see the file header). What is
+ * NOT re-implemented is anything that decides a value: `parseLines`,
+ * `SessionModel` and `deriveStats` are the production units, and the session
+ * chosen is the anchor corpus's own, the same one
+ * `fixtures/golden/stats/cc-2.1.246-07e6c820-….json` was derived from.
+ */
+const HARVESTED_SLUG = 'c--Users-dev-projects-agent-deck';
+
+/** The anchor corpus's own session: six tools, every call timestamped. */
+const ANCHOR_SESSION_ID = '07e6c820-b285-4ea8-8127-98ea762291d9';
+
+/**
+ * The one committed session captured MID-SPAWN — `src/stats/f15.test.ts`
+ * pins it as the corpus's own positive arm for F15: its `Agent` block has no
+ * `tool_result` in the parent transcript, so exactly one subagent reads
+ * `resultUnreceived`. A real capture, not a manufactured shape.
+ */
+const ABORTED_SPAWN_SESSION_ID = '99f96635-2042-41dc-9000-bbc9f9233bc3';
+
+function readHarvested(corpus: string, sessionId: string): SessionState {
+  const slugDir = resolve(`fixtures/${corpus}/projects`, HARVESTED_SLUG);
+  const model = new SessionModel({
+    workspacePath: HARVESTED_SLUG.replace(/^([a-zA-Z])--/u, '$1:\\').replace(/-/gu, '\\'),
+    liveness: new LivenessEngine({ now: () => FIXED_NOW_MS }),
+  });
+  model.registerSession({ sessionId, projectSlug: HARVESTED_SLUG });
+
+  const mainPath = join(slugDir, `${sessionId}.jsonl`);
+  const main = parseLines(readFileSync(mainPath, 'utf8').split('\n').filter((l) => l.length > 0));
+  if (!main.ok) throw new Error(`${sessionId} no longer parses: ${JSON.stringify(main.mismatch)}`);
+  model.ingestTranscript(sessionId, HARVESTED_SLUG, {
+    kind: 'main',
+    path: mainPath,
+    entries: main.value.entries,
+  });
+
+  const subagentDir = join(slugDir, sessionId, 'subagents');
+  if (existsSync(subagentDir)) {
+    for (const entry of readdirSync(subagentDir).sort()) {
+      if (!entry.startsWith('agent-') || !entry.endsWith('.jsonl')) continue;
+      const agentId = entry.slice('agent-'.length, -'.jsonl'.length);
+      const jsonlPath = join(subagentDir, entry);
+      const parsed = parseLines(readFileSync(jsonlPath, 'utf8').split('\n').filter((l) => l.length > 0));
+      if (!parsed.ok) continue;
+      model.ingestTranscript(sessionId, HARVESTED_SLUG, {
+        kind: 'subagent',
+        path: jsonlPath,
+        agentId,
+        entries: parsed.value.entries,
+      });
+      const metaPath = join(subagentDir, `agent-${agentId}.meta.json`);
+      if (!existsSync(metaPath)) continue;
+      const meta = parseSubagentMeta(readFileSync(metaPath, 'utf8'), metaPath);
+      model.ingestSidecar(sessionId, HARVESTED_SLUG, {
+        agentId,
+        metaPath,
+        ...(meta.ok ? { meta: meta.value } : { metaFailure: 'unparsed' as const }),
+      });
+    }
+  }
+
+  const state = model.sessionState(sessionId);
+  if (state === undefined) throw new Error(`no state assembled for ${sessionId}`);
+  return state;
+}
+
+/** The anchor session's record: F14 present, both duration columns present. */
+let harvested: StatsRecord;
+
+/** The mid-spawn session's record: F15's one harvested positive arm. */
+let abortedSpawn: StatsRecord;
+
+beforeAll(() => {
+  harvested = deriveStats(readHarvested('cc-2.1.246', ANCHOR_SESSION_ID), { now: FIXED_NOW_MS });
+  abortedSpawn = deriveStats(readHarvested('cc-2.1.260', ABORTED_SPAWN_SESSION_ID), {
+    now: FIXED_NOW_MS,
+  });
+}, 60_000);
 
 interface Panel {
   container: HTMLElement;
@@ -178,16 +328,17 @@ describe('the third view mode', () => {
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('stats');
   });
 
-  it('has four tabs in the spec\'s order and the empty states say so when nothing is there', () => {
+  it('has five tabs in the spec\'s order and the empty states say so when nothing is there', () => {
     const panel = render();
     click(one(panel.container, TESTID.statsToggle));
     expect(all(panel.container, TESTID.statsTab).map((t) => t.dataset['view'])).toStrictEqual([
       'files',
+      'tools',
       'loops',
       'tokens',
       'trends',
     ]);
-    for (const view of ['files', 'loops', 'tokens', 'trends']) {
+    for (const view of ['files', 'tools', 'loops', 'tokens', 'trends']) {
       tab(panel, view);
       expect(one(panel.container, TESTID.statsEmpty).dataset['view']).toBe(view);
     }
@@ -462,7 +613,16 @@ describe('DoD 4.3 — Trends', () => {
     click(one(panel.container, TESTID.statsToggle));
     tab(panel, 'trends');
     const series = all(panel.container, TESTID.statsTrendSeries);
-    expect(series.map((s) => s.dataset['series'])).toStrictEqual(['prompt', 'loops', 'cost']);
+    // FOUR from v0.8.0 Phase 7 (DoD 7.3): `tokensPerMin` joined. These three
+    // records state no span, so its series carries no line — which is the
+    // shape the next assertion but one pins.
+    expect(series.map((s) => s.dataset['series'])).toStrictEqual([
+      'prompt',
+      'loops',
+      'cost',
+      'tokensPerMin',
+    ]);
+    expect(all(series[3] as HTMLElement, TESTID.statsTrendLine)).toHaveLength(0);
     // ONE LINE PER ENGINE (DoD 4.12), so the points group by engine and keep
     // their GLOBAL session index — the two Claude Code sessions are 0 and 2 and
     // the OpenCode one between them is 1. Before the ruling all three shared a
@@ -814,5 +974,433 @@ describe('DoD 4.14: an empty statsStore after a full one empties the view on its
     expect(empty.dataset['view']).toBe('trends');
     expect(empty.dataset['reason']).toBe('fewer-than-two');
     expect(all(panel.container, TESTID.statsTrendSeries)).toHaveLength(0);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * v0.8.0 Phase 7 — the DOM goldens for F2's durations, F14 and F15
+ * ------------------------------------------------------------------------ */
+
+/**
+ * A committed DOM golden, and how it comes to exist.
+ *
+ * `webview/goldens/stats-dom/README.md` states what these are. The mechanism
+ * belongs here: a missing golden PRINTS the observed value and fails, so the
+ * file is created by reading a failure rather than by a script that could
+ * quietly rewrite it. There is no write mode — a test that can write its own
+ * golden cannot fail against one.
+ *
+ * `webview/goldens/stats/` is NOT where these live: that directory is owned by
+ * `scripts/gen-webview-goldens.mjs`, which deletes anything it did not write.
+ */
+const DOM_GOLDEN_DIR = resolve('webview/goldens/stats-dom');
+
+function domGolden<T>(name: string, observed: T): T {
+  const path = resolve(DOM_GOLDEN_DIR, `${name}.json`);
+  if (!existsSync(path)) {
+    throw new Error(
+      `webview/goldens/stats-dom/${name}.json is missing. Observed:\n${JSON.stringify(observed, null, 2)}`,
+    );
+  }
+  return (JSON.parse(readFileSync(path, 'utf8')) as { cases: T }).cases;
+}
+
+/** Mount over records that are not R8 fixtures, and enter the Stats mode. */
+function recordPanel(records: readonly StatsRecord[], sessions: SessionState[] = []): Panel {
+  const panel = render();
+  send({ type: 'snapshot', sessions });
+  send({ type: 'statsSnapshot', records });
+  click(one(panel.container, TESTID.statsToggle));
+  return panel;
+}
+
+/** The Tools table as a reader sees it: the header, then one array per row. */
+function toolsTable(panel: Panel): { columns: string[]; rows: string[][] } {
+  const columns = [...panel.container.querySelectorAll('table[aria-label="Tools"] th')].map(
+    (th) => th.textContent?.trim() ?? '',
+  );
+  const rows = all(panel.container, TESTID.statsToolRow).map((row) =>
+    [...row.querySelectorAll(`[data-testid="${TESTID.statsToolCell}"]`)].map(
+      (cell) => cell.textContent?.trim() ?? '',
+    ),
+  );
+  return { columns, rows };
+}
+
+/** Which schema field each cell of a row reports, in order. */
+function toolColumns(panel: Panel): string[] {
+  const row = all(panel.container, TESTID.statsToolRow)[0];
+  if (row === undefined) throw new Error('no tool row');
+  return [...row.querySelectorAll(`[data-testid="${TESTID.statsToolCell}"]`)].map(
+    (cell) => (cell as HTMLElement).dataset['column'] ?? '',
+  );
+}
+
+describe('DoD 7.5 — F2 has a surface, and its two duration columns are on it', () => {
+  /*
+   * THE DoD's FIXTURE CLAUSE IS INVERTED, AND THE MEASUREMENT IS WHY.
+   *
+   * It reads "fixture 13 (telemetry) shows numbers, every other golden shows
+   * —". Counted over all 36 committed stats goldens, `tools[]` rows carrying
+   * `durationMsSum`: 57 of 88. Harvested Claude Code 36 of 36, harvested
+   * OpenCode 20 of 20, Codex 0 of 18, and fixture 13 itself 0 of 1.
+   *
+   * The cause is structural rather than accidental. A duration is the ENGINE's
+   * — Claude Code from its transcript timestamps, OpenCode from
+   * `state.time.start`/`.end` — and telemetry only FILLS where the engine
+   * states none (`src/otel/join.ts`). Fixture 13 is a synthetic COST fixture
+   * whose builder sets no per-call timestamps at all, and the Codex engine sets
+   * no `ToolNode.durationMs` on any call.
+   *
+   * So the arms below are a harvested Claude Code session for PRESENT, the
+   * Codex fixture for ABSENT, and fixture 12 for both IN ONE TABLE. The item's
+   * substance — both columns, an em dash where absent, proved on a present row
+   * and an absent row — is met; the fixture names are not.
+   */
+
+  it('the Tools tab is the second of five, and its columns are F2\'s own fields', () => {
+    const panel = recordPanel([harvested]);
+    tab(panel, 'tools');
+    expect(toolColumns(panel)).toStrictEqual([
+      'tool',
+      'class',
+      'calls',
+      'errors',
+      'durationMsMax',
+      'durationMsSum',
+      'sessions',
+    ]);
+    // The row count, pinned beside the contents: an `{#each}` over an empty
+    // array satisfies every "no wrong row is present" assertion there is.
+    expect(all(panel.container, TESTID.statsToolRow)).toHaveLength(harvested.tools.length);
+    expect(harvested.tools.length).toBeGreaterThan(0);
+  });
+
+  it('a harvested session shows a number in both duration columns, on every row (DOM golden)', () => {
+    const panel = recordPanel([harvested]);
+    tab(panel, 'tools');
+    const observed = toolsTable(panel);
+    expect(observed).toStrictEqual(domGolden('tools-present', observed));
+    // Not one em dash anywhere in the two duration columns — the vacuity
+    // control for the golden, stated as the property rather than as bytes.
+    for (const row of all(panel.container, TESTID.statsToolRow)) {
+      expect(row.dataset['duration'], row.dataset['tool']).toBe('true');
+    }
+  });
+
+  it('a Codex session shows the em dash in both columns, and in errors (DOM golden)', () => {
+    const panel = recordPanel([golden('08-codex-window', 'codex')]);
+    tab(panel, 'tools');
+    const observed = toolsTable(panel);
+    expect(observed).toStrictEqual(domGolden('tools-absent', observed));
+    // THE CELL EXISTS AND HOLDS THE DASH. "this cell shows an em dash" passes
+    // when the cell is absent, so the count comes first and the text second.
+    const cells = all(panel.container, TESTID.statsToolCell).filter((c) =>
+      ['durationMsMax', 'durationMsSum'].includes(c.dataset['column'] ?? ''),
+    );
+    expect(cells).toHaveLength(2);
+    for (const cell of cells) expect(cell.textContent).toBe(EM_DASH);
+  });
+
+  it('12: one table holds a row WITH both durations and a row with neither (DOM golden)', () => {
+    const panel = recordPanel([golden('12-stall')]);
+    tab(panel, 'tools');
+    const observed = toolsTable(panel);
+    expect(observed).toStrictEqual(domGolden('tools-mixed', observed));
+    const rows = all(panel.container, TESTID.statsToolRow);
+    expect(rows.map((r) => r.dataset['duration'])).toStrictEqual(['true', 'false']);
+  });
+
+  it('a column no contributing record states stays absent, per ROW rather than per table', () => {
+    /*
+     * The aggregation rule `ToolRow` states, driven through the product: the
+     * Codex `exec` row and the harvested Claude Code rows in one table. Codex
+     * states no `errors` and no duration, so its row keeps three em dashes
+     * while the rows beside it keep their numbers.
+     */
+    const panel = recordPanel([harvested, golden('08-codex-window', 'codex')]);
+    tab(panel, 'tools');
+    const byTool = new Map(
+      all(panel.container, TESTID.statsToolRow).map((r) => [r.dataset['tool'] ?? '', r]),
+    );
+    expect(byTool.get('exec')?.dataset['duration']).toBe('false');
+    expect(byTool.get('Read')?.dataset['duration']).toBe('true');
+    expect(byTool.size).toBe(harvested.tools.length + 1);
+  });
+});
+
+describe('DoD 7.3 — F14 in Tokens', () => {
+  /** The six figures as the DOM reports them, with the record's raw value. */
+  function figures(
+    panel: Panel,
+    record: StatsRecord,
+  ): { figure: string; stated: boolean; raw: number | null; rendered: string }[] {
+    const timing = (record.timing ?? {}) as unknown as Record<string, number | undefined>;
+    return all(panel.container, TESTID.statsTiming).map((el) => {
+      const figure = el.dataset['figure'] ?? '';
+      return {
+        figure,
+        stated: el.dataset['stated'] === 'true',
+        raw: timing[figure] ?? null,
+        rendered: el.textContent?.trim() ?? '',
+      };
+    });
+  }
+
+  it('a harvested session states its span, and every figure is rendered (DOM golden)', () => {
+    const panel = recordPanel([harvested]);
+    tab(panel, 'tokens');
+    const observed = figures(panel, harvested);
+    expect(observed).toStrictEqual(domGolden('timing-present', observed));
+    // The vacuity control the golden cannot give: SIX rows, and the three the
+    // DoD names are among them and stated.
+    expect(observed).toHaveLength(6);
+    const stated = new Map(observed.map((f) => [f.figure, f.stated]));
+    expect(stated.get('wallMs')).toBe(true);
+    expect(stated.get('timeToFirstToolMs')).toBe(true);
+    expect(stated.get('longestGapMs')).toBe(true);
+  });
+
+  it('an R8 fixture states no instant, so all six are the em dash (DOM golden)', () => {
+    /*
+     * MEASURED OVER THE WHOLE COMMITTED SET, not assumed:
+     * `synthetic.testkit.ts`'s `tool()` sets `durationMs` and never
+     * `startedAtMs`/`endedAtMs`, and its `turn()` sets no `atMs`, so
+     * `deriveTiming` returns {} for every R8 state. A fixture that acquires an
+     * instant later moves this test rather than passing silently.
+     */
+    const ids = readdirSync(resolve('fixtures/synthetic-stats'))
+      .filter((n) => n.endsWith('.json'))
+      .map((n) => n.replace(/\.json$/u, ''));
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) {
+      expect(Object.keys(derived(id).timing), `${id} states an instant`).toStrictEqual([]);
+    }
+
+    const record = derived('01-reread-loop');
+    const panel = recordPanel([record]);
+    tab(panel, 'tokens');
+    const observed = figures(panel, record);
+    expect(observed).toStrictEqual(domGolden('timing-absent', observed));
+    expect(observed).toHaveLength(6);
+    expect(observed.every((f) => f.rendered === EM_DASH && !f.stated)).toBe(true);
+  });
+
+  it('ONE figure, both arms: a stated 0 is 0ms and an absent one is the em dash', () => {
+    /*
+     * §D's rule on one cell, which is the only shape that catches both
+     * mistakes. The anchor session states `timeToFirstToolMs: 0` FOR REAL — its
+     * first tool call IS its first stated instant — so a renderer that mapped
+     * an absent figure to `0` and a renderer that mapped a stated 0 to the em
+     * dash would each pass one arm of a test that used two different records
+     * for two different figures.
+     */
+    function timeToFirstTool(record: StatsRecord): HTMLElement | undefined {
+      const panel = recordPanel([record]);
+      tab(panel, 'tokens');
+      return all(panel.container, TESTID.statsTiming).find(
+        (el) => el.dataset['figure'] === 'timeToFirstToolMs',
+      );
+    }
+
+    expect(harvested.timing.timeToFirstToolMs).toBe(0);
+    const stated = timeToFirstTool(harvested);
+    expect(stated?.dataset['stated']).toBe('true');
+    expect(stated?.textContent?.trim()).toBe('0ms');
+
+    const timing = { ...harvested.timing };
+    delete timing.timeToFirstToolMs;
+    const absent = timeToFirstTool({ ...harvested, timing });
+    expect(absent?.dataset['stated']).toBe('false');
+    expect(absent?.textContent?.trim()).toBe(EM_DASH);
+  });
+});
+
+describe('DoD 7.3 — the tokens-per-minute series, per engine', () => {
+  /**
+   * THE CODEX LINE'S RATE IS THIS TEST'S NUMBER, AND THE CLAUDE CODE ONES ARE
+   * NOT. Said plainly because the two are different kinds of evidence.
+   *
+   * The Claude Code points are two harvested sessions' own derived rates. The
+   * Codex record is the committed R8 fixture with a `timing` block attached
+   * here: Codex DOES timestamp its calls (`f14-corpus.test.ts` pins 42 of 42
+   * starts), but no Codex `SessionState` carrying instants is reachable from a
+   * jsdom suite — `src/codex/index.ts` would have to be imported into the
+   * webview TypeScript project, which `tsconfig.webview.json`'s `types: []`
+   * makes a typecheck hazard rather than a small change.
+   *
+   * What the arm is FOR is the transform, not the value: two lines whose
+   * maxima are orders apart, each drawn in a box scaled to its own. That is the
+   * disparity DoD 4.12 measured (a factor of ~5,700 between two engines'
+   * medians) reproduced at a magnitude this test states.
+   */
+  const CODEX_RATE = 12;
+
+  function rated(): StatsRecord[] {
+    const codex = golden('08-codex-window', 'codex');
+    return [
+      harvested,
+      abortedSpawn,
+      { ...codex, timing: { wallMs: 600_000, tokensPerMin: CODEX_RATE } },
+    ];
+  }
+
+  function trendsPanel(records: readonly StatsRecord[]): Panel {
+    const panel = render();
+    send({ type: 'statsStore', records, enabled: true });
+    click(one(panel.container, TESTID.statsToggle));
+    tab(panel, 'trends');
+    return panel;
+  }
+
+  /** That engine's own maximum, recomputed FROM THE RECORDS. */
+  function maxOf(records: readonly StatsRecord[], engine: string): number {
+    const own = records.filter((r) => r.engine === engine).map((r) => r.timing?.tokensPerMin ?? 0);
+    return Math.max(...own);
+  }
+
+  it('draws one line per engine, each in a viewBox that is its OWN maximum (DOM golden)', () => {
+    const records = rated();
+    const panel = trendsPanel(records);
+    const lines = all(panel.container, TESTID.statsTrendLine).filter(
+      (l) => l.dataset['series'] === 'tokensPerMin',
+    );
+    const observed = lines.map((line) => {
+      const engine = line.dataset['engine'] ?? '';
+      return {
+        engine,
+        points: line.dataset['points'] ?? '',
+        // Recomputed here from the records rather than read off the layout: a
+        // golden that compared the layout's `max` with the component's viewBox
+        // would agree with itself whatever the scale was.
+        maxFromRecords: maxOf(records, engine),
+        viewBoxHeight: (line.querySelector('svg')?.getAttribute('viewBox') ?? '').split(/\s+/)[3] ?? '',
+        maxCaption: line.querySelector('.max')?.textContent?.trim() ?? '',
+      };
+    });
+    expect(observed).toStrictEqual(domGolden('trends-tokens-per-min', observed));
+
+    // THE TRANSFORM, NOT ONLY THE NUMBERS THAT FEED IT (DoD 4.12's lesson):
+    // each engine's box height IS that engine's own maximum.
+    for (const line of observed) {
+      expect(Number(line.viewBoxHeight), line.engine).toBe(line.maxFromRecords);
+    }
+    // Not vacuous: two engines, and their maxima are orders apart. One shared
+    // maximum would satisfy every assertion above on a single line.
+    expect(observed.map((l) => l.engine)).toStrictEqual(['cc', 'codex']);
+    expect(maxOf(records, 'cc') / maxOf(records, 'codex')).toBeGreaterThan(100);
+  });
+
+  it('every marker sits at its own line\'s scale, so one shared constant goes red', () => {
+    const records = rated();
+    const panel = trendsPanel(records);
+    let checked = 0;
+    for (const line of all(panel.container, TESTID.statsTrendLine)) {
+      if (line.dataset['series'] !== 'tokensPerMin') continue;
+      const max = maxOf(records, line.dataset['engine'] ?? '');
+      for (const marker of line.querySelectorAll(`[data-testid="${TESTID.statsTrendPoint}"]`)) {
+        const y = Number(marker.getAttribute('data-y'));
+        // `markerOf` flips the raw y inside the box: `max - y`.
+        expect(markerY(marker), `${String(line.dataset['engine'])} ${String(y)}`).toBe(String(max - y));
+        checked += 1;
+      }
+    }
+    expect(checked).toBe(records.length);
+  });
+
+  it('is a FOURTH series, in the layout\'s order, and the other three are unchanged', () => {
+    const panel = trendsPanel(rated());
+    expect(all(panel.container, TESTID.statsTrendSeries).map((s) => s.dataset['series'])).toStrictEqual([
+      'prompt',
+      'loops',
+      'cost',
+      'tokensPerMin',
+    ]);
+  });
+
+  it('a session that states no rate contributes no point to the series', () => {
+    const withoutRate = { ...derived('01-reread-loop'), startedAt: 1 };
+    const records = [...rated(), withoutRate];
+    const panel = trendsPanel(records);
+    const cc = all(panel.container, TESTID.statsTrendLine).find(
+      (l) => l.dataset['series'] === 'tokensPerMin' && l.dataset['engine'] === 'cc',
+    );
+    expect(cc?.dataset['points']).toBe('2');
+    // The session is still ON the axis: the x positions are global, and only
+    // the y scale is per engine.
+    expect(panel.container.querySelectorAll('.axis li')).toHaveLength(records.length);
+  });
+});
+
+describe('DoD 7.4 — F15 rendered beside silent', () => {
+  function subagentFigure(panel: Panel): { text: string; silent: string; unreceived: string } {
+    const figure = one(panel.container, TESTID.statsSubagents);
+    return {
+      text: figure.textContent?.replace(/\s+/gu, ' ').trim() ?? '',
+      silent: figure.dataset['silent'] ?? '',
+      unreceived: figure.dataset['unreceived'] ?? '',
+    };
+  }
+
+  it('the harvested mid-spawn session: the count, and the chip on the agent it names (DOM golden)', () => {
+    /*
+     * F15's positive arm is a real capture, not a manufactured shape — one
+     * committed Claude Code session was captured while a subagent was still
+     * working, so its `Agent` block has no `tool_result` in the parent
+     * transcript. `src/stats/f15.test.ts` pins it as the only one in the
+     * corpus; this is the same session rendered.
+     */
+    const panel = recordPanel([abortedSpawn]);
+    tab(panel, 'tokens');
+    const observed = {
+      ...subagentFigure(panel),
+      flags: all(panel.container, TESTID.statsUnreceivedFlag).map((f) => f.dataset['agent'] ?? ''),
+      flaggedRows: all(panel.container, TESTID.statsAgentRow)
+        .filter((r) => r.dataset['unreceived'] === 'true')
+        .map((r) => ({ agent: r.dataset['agent'] ?? '', kind: r.dataset['kind'] ?? '' })),
+    };
+    expect(observed).toStrictEqual(domGolden('f15-present', observed));
+
+    // The row count beside the row contents, and the chip's own words: it
+    // states what the snapshot holds and nothing about what will arrive.
+    expect(all(panel.container, TESTID.statsAgentRow)).toHaveLength(abortedSpawn.agents.length);
+    expect(all(panel.container, TESTID.statsUnreceivedFlag)).toHaveLength(1);
+    expect(one(panel.container, TESTID.statsUnreceivedFlag).textContent).toBe(
+      VOCABULARY.unreceivedResult,
+    );
+    expect(abortedSpawn.totals.subagentsUnreceived).toBe(1);
+    expect(observed.flaggedRows[0]?.kind).toBe('subagent');
+  });
+
+  it('a session that states no spawn edges shows the em dash, never 0 (DOM golden)', () => {
+    /*
+     * The other arm, and the one a `?? 0` would swallow. `03-silent-subagent`
+     * states no `spawnEdges`, so `totals.subagentsUnreceived` is ABSENT and the
+     * record names `F15:cc` in `unavailable` — a different fact from "every
+     * spawning call got a result", which is what a 0 would say.
+     */
+    const record = derived('03-silent-subagent');
+    expect(record.totals.subagentsUnreceived).toBeUndefined();
+    expect(record.unavailable).toContain('F15:cc');
+    const panel = recordPanel([record], [fixtureState('03-silent-subagent')]);
+    tab(panel, 'tokens');
+    const observed = subagentFigure(panel);
+    expect(observed).toStrictEqual(domGolden('f15-absent', observed));
+    expect(observed.text).toContain(EM_DASH);
+    expect(observed.text).not.toContain('0 with no spawning result');
+    expect(all(panel.container, TESTID.statsUnreceivedFlag)).toHaveLength(0);
+    // The silent flag is still there, one figure away: the two facts sit beside
+    // each other and this fixture moves only one of them.
+    expect(observed.silent).toBe('1');
+  });
+
+  it('the chip says only what the snapshot holds', () => {
+    // G10 and the seam's own constraint (`AgentStats.resultUnreceived`): F15 is
+    // transient on a live session, so the rendered phrase is present tense and
+    // carries no claim about the future.
+    expect(VOCABULARY.unreceivedResult).toBe('spawning call has no result');
+    for (const word of ['never', 'abandoned', 'failed', 'lost', 'will']) {
+      expect(VOCABULARY.unreceivedResult).not.toContain(word);
+    }
   });
 });

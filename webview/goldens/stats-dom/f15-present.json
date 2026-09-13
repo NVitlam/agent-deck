@@ -1,0 +1,17 @@
+{
+  "what": "The subagent figure and the flagged rows over fixtures/cc-2.1.260 99f96635-2042-41dc-9000-bbc9f9233bc3 — the one committed session captured mid-spawn, which src/stats/f15.test.ts pins as the corpus's only positive arm for F15.",
+  "cases": {
+    "text": "3 (0 silent, 1 with no spawning result)",
+    "silent": "0",
+    "unreceived": "1",
+    "flags": [
+      "a7d51ba7a0fe16c4b"
+    ],
+    "flaggedRows": [
+      {
+        "agent": "a7d51ba7a0fe16c4b",
+        "kind": "subagent"
+      }
+    ]
+  }
+}

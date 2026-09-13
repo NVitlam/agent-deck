@@ -1,0 +1,70 @@
+{
+  "what": "The Tools table over the harvested Claude Code session fixtures/cc-2.1.246 07e6c820-b285-4ea8-8127-98ea762291d9, read through parseLines + SessionModel + deriveStats and rendered by webview/stats/Tools.svelte. Every row states both durations.",
+  "cases": {
+    "columns": [
+      "tool",
+      "class",
+      "calls",
+      "errors",
+      "longest call",
+      "total duration",
+      "sessions"
+    ],
+    "rows": [
+      [
+        "Read",
+        "read",
+        "2",
+        "0",
+        "316ms",
+        "627ms",
+        "1"
+      ],
+      [
+        "Agent",
+        "spawn",
+        "1",
+        "0",
+        "16.5s",
+        "16.5s",
+        "1"
+      ],
+      [
+        "Bash",
+        "shell",
+        "1",
+        "0",
+        "1.8s",
+        "1.8s",
+        "1"
+      ],
+      [
+        "Glob",
+        "search",
+        "1",
+        "0",
+        "755ms",
+        "755ms",
+        "1"
+      ],
+      [
+        "Grep",
+        "search",
+        "1",
+        "0",
+        "647ms",
+        "647ms",
+        "1"
+      ],
+      [
+        "Write",
+        "write",
+        "1",
+        "0",
+        "343ms",
+        "343ms",
+        "1"
+      ]
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "what": "The tokens-per-minute series' lines. The two Claude Code points are harvested sessions' own derived rates; the Codex line's rate is supplied by the test at a magnitude orders below them (stated in the test), because no Codex SessionState carrying instants is reachable under jsdom. maxFromRecords is recomputed from the records, viewBoxHeight is read off the SVG.",
+  "cases": [
+    {
+      "engine": "cc",
+      "points": "2",
+      "maxFromRecords": 1418891.673311311,
+      "viewBoxHeight": "1418891.673311311",
+      "maxCaption": "max 1,418,891.7"
+    },
+    {
+      "engine": "codex",
+      "points": "1",
+      "maxFromRecords": 12,
+      "viewBoxHeight": "12",
+      "maxCaption": "max 12.0"
+    }
+  ]
+}

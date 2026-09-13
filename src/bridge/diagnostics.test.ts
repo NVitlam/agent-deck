@@ -106,6 +106,20 @@ const SAMPLES: Record<DiagnosticsEvent['kind'], DiagnosticsEvent> = {
     expected: '2.1.246',
     actual: '1.0',
   },
+  /*
+   * A FORMATTER FIXTURE, and its `reason` is a string no path now produces.
+   *
+   * `oversize:<bytes> limit=<limit>` was the size gate refusing to open a large
+   * transcript; v0.8.0 DoD 7.7 reads such a transcript as a head plus a tail
+   * and reports it as `transcriptPartial` instead. It is kept rather than
+   * re-pointed because `reason` is the one FREE-TEXT field on this event and
+   * what these tests pin is the clipping and the line's shape — a reason with
+   * a colon, a number and a space in it exercises that better than a fresh
+   * one would, and swapping it would quietly reduce what the sample covers.
+   * The reasons the engine does produce today are
+   * `oversizeHeadUndecided:<bytes> limit=<limit> head=<head>` and `FileTail`'s
+   * own open/read failures.
+   */
   transcriptSkipped: {
     kind: 'transcriptSkipped',
     engine: 'codex',

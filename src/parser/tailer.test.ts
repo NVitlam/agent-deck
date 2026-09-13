@@ -922,6 +922,141 @@ describe('FileTail — hostile input never throws (G3)', () => {
     await appendFile(file, `\n${jsonl({ n: 1 })}`);
     const second = await tail.read();
     expect(second.lines.map((l) => l.text)).toEqual(['{"n":1}']);
+    // The two drop counters are separate, and this is the arm that proves the
+    // new one does not move for the OLD reason: a line dropped for length is
+    // `oversized`, never `boundaryFragments`.
+    expect(first.boundaryFragments).toBe(0);
+    expect(second.boundaryFragments).toBe(0);
+  });
+
+  /* ----------------------------------------------------------------------- *
+   * skipTo — v0.8.0 DoD 7.7
+   * ----------------------------------------------------------------------- */
+
+  it('skipTo drops the straddled line, counts it once, and keeps every later line', async () => {
+    const file = join(tmpRoot, 'skip-midline.jsonl');
+    const one = JSON.stringify({ n: 1 });
+    const two = JSON.stringify({ n: 2 });
+    const three = JSON.stringify({ n: 3 });
+    await writeFile(file, `${one}\n${two}\n${three}\n`);
+    const firstBytes = Buffer.byteLength(`${one}\n`, 'utf8');
+    const secondBytes = Buffer.byteLength(`${two}\n`, 'utf8');
+
+    const tail = new FileTail(file, { sessionId: SESSION_A });
+    // Land INSIDE the second line: the ordinary case for an offset chosen
+    // without reading the file.
+    const landed = tail.skipTo(firstBytes + Math.floor(secondBytes / 2));
+    expect(landed).toBe(firstBytes + Math.floor(secondBytes / 2));
+
+    const result = await tail.read();
+    // The straddled line is gone and the one after it is whole. Both halves
+    // matter: an implementation that dropped everything would satisfy the
+    // first assertion alone.
+    expect(result.lines.map((l) => l.text)).toEqual([three]);
+    expect(result.boundaryFragments).toBe(1);
+    expect(result.oversized).toBe(0);
+  });
+
+  it('skipTo counts the drop ONCE, on the read that sees the newline', async () => {
+    const file = join(tmpRoot, 'skip-late-newline.jsonl');
+    const one = JSON.stringify({ n: 1 });
+    await writeFile(file, `${one}\nabcdefghij`);
+    const tail = new FileTail(file, { sessionId: SESSION_A });
+    tail.skipTo(Buffer.byteLength(`${one}\n`, 'utf8') + 3);
+
+    // No newline yet: the fragment is incomplete, so nothing is claimed about
+    // it. A count taken at the moment of the skip would say 1 here and would
+    // be a statement about a record nobody has seen the end of.
+    const before = await tail.read();
+    expect(before.lines).toEqual([]);
+    expect(before.boundaryFragments).toBe(0);
+
+    await appendFile(file, `\n${JSON.stringify({ n: 2 })}\n`);
+    const after = await tail.read();
+    expect(after.lines.map((l) => l.text)).toEqual(['{"n":2}']);
+    expect(after.boundaryFragments).toBe(1);
+
+    // And ONCE: a later read does not re-count a drop that already happened.
+    await appendFile(file, `${JSON.stringify({ n: 3 })}\n`);
+    const later = await tail.read();
+    expect(later.lines.map((l) => l.text)).toEqual(['{"n":3}']);
+    expect(later.boundaryFragments).toBe(0);
+  });
+
+  it('skipTo is forward-only: a target at or behind the offset moves nothing', async () => {
+    const file = join(tmpRoot, 'skip-backwards.jsonl');
+    await writeFile(file, `${JSON.stringify({ n: 1 })}\n${JSON.stringify({ n: 2 })}\n`);
+    const tail = new FileTail(file, { sessionId: SESSION_A });
+    const read = await tail.read();
+    expect(read.lines).toHaveLength(2);
+    const offset = tail.offset;
+
+    expect(tail.skipTo(0)).toBe(offset);
+    expect(tail.skipTo(offset)).toBe(offset);
+    expect(tail.offset).toBe(offset);
+
+    // A backwards skip that took effect would re-emit the two lines above with
+    // fresh `lineNo`s, which a caller cannot tell from an append.
+    await appendFile(file, `${JSON.stringify({ n: 3 })}\n`);
+    const next = await tail.read();
+    expect(next.lines.map((l) => l.text)).toEqual(['{"n":3}']);
+    expect(next.lines[0]?.lineNo).toBe(3);
+    expect(next.boundaryFragments).toBe(0);
+  });
+
+  it('skipTo drops one whole line when it lands exactly on a line start', async () => {
+    const file = join(tmpRoot, 'skip-aligned.jsonl');
+    const one = JSON.stringify({ n: 1 });
+    const two = JSON.stringify({ n: 2 });
+    const three = JSON.stringify({ n: 3 });
+    await writeFile(file, `${one}\n${two}\n${three}\n`);
+    const tail = new FileTail(file, { sessionId: SESSION_A });
+    tail.skipTo(Buffer.byteLength(`${one}\n`, 'utf8'));
+
+    const result = await tail.read();
+    // THE STATED COST. The landing point is a line start, so line 2 is whole
+    // and is dropped anyway — one record, deterministically, and counted. It
+    // is written down as a test rather than as a comment because it is the
+    // price of not probing the byte before the target.
+    expect(result.lines.map((l) => l.text)).toEqual([three]);
+    expect(result.boundaryFragments).toBe(1);
+  });
+
+  it('skipTo past a split UTF-8 sequence does not corrupt the first surviving line', async () => {
+    const file = join(tmpRoot, 'skip-utf8.jsonl');
+    // A multi-byte character immediately before the landing point: a decoder
+    // carried across the jump would stitch its trailing bytes onto whatever
+    // follows and invent a character the file never held.
+    const head = `${JSON.stringify({ s: 'h\u00e9llo w\u00f6rld \u2713' })}\n`;
+    const kept = JSON.stringify({ s: '\u03a9 after the jump' });
+    await writeFile(file, `${head}${kept}\n`, 'utf8');
+    const tail = new FileTail(file, { sessionId: SESSION_A });
+    // Mid-way through the first line, which is where its multi-byte bytes are.
+    tail.skipTo(Math.floor(Buffer.byteLength(head, 'utf8') / 2));
+
+    const result = await tail.read();
+    expect(result.lines.map((l) => l.text)).toEqual([kept]);
+    expect(JSON.parse(result.lines[0]?.text ?? 'null')).toStrictEqual({
+      s: '\u03a9 after the jump',
+    });
+  });
+
+  it('a file that shrinks after a skipTo resets to zero and reads from the start', async () => {
+    const file = join(tmpRoot, 'skip-then-shrink.jsonl');
+    const one = JSON.stringify({ n: 1 });
+    const two = JSON.stringify({ n: 2 });
+    await writeFile(file, `${one}\n${two}\n${JSON.stringify({ n: 3 })}\n`);
+    const tail = new FileTail(file, { sessionId: SESSION_A });
+    tail.skipTo(Buffer.byteLength(`${one}\n${two}\n`, 'utf8'));
+    await tail.read();
+
+    await writeFile(file, `${JSON.stringify({ n: 9 })}\n`);
+    const result = await tail.read();
+    expect(result.reset).toBe(true);
+    // The skip's pending state went with the reset: the first line of the
+    // replacement file is a real first line and is NOT dropped as a fragment.
+    expect(result.lines.map((l) => l.text)).toEqual(['{"n":9}']);
+    expect(result.boundaryFragments).toBe(0);
   });
 });
 

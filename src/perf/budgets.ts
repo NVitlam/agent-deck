@@ -724,6 +724,71 @@ export const RELAY_BUDGET: TimingBudget = {
   },
 };
 
+/**
+ * v0.8.0 DoD 7.7 — one whole-engine pass over a 1.2 GB oversize transcript.
+ *
+ * ## What the subject is
+ *
+ * `readCodexEngine` against a data root holding ONE transcript of
+ * 1,288,490,188 bytes, drained to end-of-file in a single call: discovery's
+ * `stat`, the 256 KiB head, the fingerprint, the jump, the last 16 MiB in
+ * 4 MiB batches, the parse and the graft. It is the whole production path, not
+ * a timed slice of it, because the claim the DoD makes is about the pass a
+ * user's window performs.
+ *
+ * ## THE FILE IS SPARSE, AND THE TEST ASSERTS THAT IT WAS NOT READ WHOLE
+ *
+ * `truncate` extends a file without writing it, so the corpus costs kilobytes
+ * on disk and this measures the reader rather than the disk. The read is
+ * pinned twice over: `partialTranscripts[0].readBytes` must equal
+ * `CODEX_HEAD_BYTES + CODEX_OVERSIZE_TAIL_BYTES` exactly, and the test's own
+ * `fs` spy must show no read outside those two windows. A budget met by a
+ * machine that never opened the file would be the vacuity this table's header
+ * warns about, and a budget met by reading 1.2 GB fast would be a measurement
+ * of an SSD.
+ *
+ * ## The measurement, and the margin
+ *
+ * Three standalone runs of `src/perf/oversize.test.ts` in the `perf` project
+ * (`pool: 'forks'`), Windows 11, 2026-09-13, 1 discarded warm-up + 5 kept
+ * samples each. Kept medians **39.54, 38.53, 38.02 ms**; the SLOWEST is the
+ * set point below. The warm-up is discarded and PRINTED rather than dropped
+ * silently, the same rule `RELAY_BUDGET` states.
+ *
+ * The limit is 2,000 ms, 50.6x the set point. What it is FOR is a reader that
+ * went LINEAR in the file's size — a jump that fell back to reading the
+ * middle, a `Buffer.alloc(size - offset)` restored, a resync that accumulated
+ * instead of discarding — any of which moves 1.2 GB through a buffer and a
+ * `StringDecoder` and clears this limit by orders of magnitude rather than
+ * marginally. It does not catch a doubling, stated rather than implied, and it
+ * is not the file's main guard: `oversize.test.ts` pins the bytes read and the
+ * two windows they fall in, which is what a clock cannot say.
+ *
+ * The margin is wide on purpose. This machine has been measured running a
+ * whole block at half speed, and a wall-clock limit set for a doubling would
+ * be red on correct code — the mistake the version window's own history
+ * records, in timing form.
+ */
+export const OVERSIZE_TAIL_BUDGET: TimingBudget = {
+  id: 'codex.oversizeTail.dod',
+  what: 'one readCodexEngine pass over a 1.2 GB sparse transcript, drained to EOF',
+  statistic: 'median',
+  limitMs: 2_000,
+  source: 'dod',
+  enforced: true,
+  measured: {
+    valueMs: 39.54,
+    on: 'a generated 1,288,490,188-byte sparse Codex transcript, 3 runs x (1 discarded + 5 kept), 2026-09-13',
+    marginX: 50.6,
+    note:
+      'Kept medians 39.54 / 38.53 / 38.02 ms across three standalone runs in the `perf` ' +
+      'project (pool: forks); the SLOWEST is the set point. Warm-up samples ran 38.9-44.5 ms ' +
+      'and are printed by the test rather than dropped silently. The subject is the WHOLE ' +
+      'pass — discovery stat, 256 KiB head, fingerprint, jump, 16 MiB tail in 4 MiB batches, ' +
+      'parse, graft — against a file 79x larger than the bytes it reads.',
+  },
+};
+
 export const STATS_LAYOUT_BUDGET: TimingBudget = {
   id: 'webview.statsLayout.dod',
   what: 'statsLayout over every harvested corpus record',

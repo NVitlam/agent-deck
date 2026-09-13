@@ -446,6 +446,23 @@ export interface FileReadResult {
   skipped?: SkippedFile;
   /** Lines dropped for exceeding `maxPartialBytes`. */
   oversized: number;
+  /**
+   * Leading fragments dropped after a {@link FileTail.skipTo} (v0.8.0 DoD 7.7).
+   *
+   * ONE per skip at most, and counted when the fragment's terminating newline
+   * arrives rather than when the skip is made: until that newline the bytes
+   * are still an incomplete line, and a count made earlier would be a claim
+   * about a record nobody has seen the end of.
+   *
+   * SEPARATE FROM {@link oversized}, which counts a line dropped for exceeding
+   * `maxPartialBytes` — a different event with a different cause. Both use the
+   * same resynchronise-at-the-next-newline mechanism, which is exactly why
+   * they need two counters: one number covering both would make "a line was
+   * too long" and "the read started mid-line" indistinguishable.
+   *
+   * 0 on every Claude Code path, which never skips.
+   */
+  boundaryFragments: number;
 }
 
 /** Per-read options. See {@link FileReadOptions.maxBytes} — the whole point. */
@@ -512,6 +529,8 @@ export class FileTail {
   #partial = '';
   #decoder = new StringDecoder('utf8');
   #resyncing = false;
+  /** A {@link skipTo} is waiting for its first newline. See `boundaryFragments`. */
+  #skipFragmentPending = false;
   readonly #maxPartialBytes: number;
 
   constructor(path: string, options: FileTailOptions) {
@@ -549,11 +568,58 @@ export class FileTail {
     return this.#partial;
   }
 
+  /**
+   * Jump the offset FORWARD, discarding the bytes in between (v0.8.0 DoD 7.7).
+   *
+   * Returns the offset this tail will read from next, which is `offset`
+   * unchanged when `target` is at or behind it. **Forward only**: moving
+   * backwards would re-emit lines this tail has already handed out, with
+   * `lineNo` continuing to climb, and a caller cannot tell a re-emission from
+   * an append.
+   *
+   * ## Why the bytes at the landing point are thrown away
+   *
+   * `target` is a byte offset chosen by a caller that has not read the file,
+   * so it is not known to be the first byte of a line — and for the caller
+   * this exists for (`src/codex/index.ts`'s oversize tail) it almost never is.
+   * Emitting the bytes from `target` to the next newline would hand `parse.ts`
+   * a truncated JSON line, which it would count as malformed: the same silent
+   * loss the partial-line hold exists to prevent, arriving through the front
+   * of a line instead of the back.
+   *
+   * So the tail resynchronises at the next newline, exactly as it does when a
+   * line exceeds `maxPartialBytes`, and the drop is COUNTED — `boundaryFragments`
+   * on the next {@link FileReadResult} that sees that newline. G3: skipped and
+   * counted, never guessed at.
+   *
+   * **The cost, stated:** when `target` HAPPENS to be the first byte of a line,
+   * that whole line is dropped rather than a fragment of one. That is one
+   * record, deterministically, and it is preferred to a probe read of the
+   * preceding byte — a check whose answer changes nothing a reader can act on,
+   * since the counter reports the drop either way.
+   *
+   * The decoder is replaced rather than reused: a jump can land in the middle
+   * of a UTF-8 sequence, and a decoder still holding the head's trailing bytes
+   * would stitch two unrelated byte runs into a character that was never in
+   * the file. `#lineNo` is NOT reset — it counts lines this tail has emitted
+   * over its whole life, which the jump does not change.
+   */
+  skipTo(target: number): number {
+    if (!Number.isFinite(target) || target <= this.#offset) return this.#offset;
+    this.#offset = Math.floor(target);
+    this.#partial = '';
+    this.#decoder = new StringDecoder('utf8');
+    this.#resyncing = true;
+    this.#skipFragmentPending = true;
+    return this.#offset;
+  }
+
   #reset(): void {
     this.#offset = 0;
     this.#partial = '';
     this.#decoder = new StringDecoder('utf8');
     this.#resyncing = false;
+    this.#skipFragmentPending = false;
   }
 
   /**
@@ -561,7 +627,13 @@ export class FileTail {
    * and never throws (G3) — failures come back as `skipped`.
    */
   async read(options: FileReadOptions = {}): Promise<FileReadResult> {
-    const empty: FileReadResult = { lines: [], bytesRead: 0, reset: false, oversized: 0 };
+    const empty: FileReadResult = {
+      lines: [],
+      bytesRead: 0,
+      reset: false,
+      oversized: 0,
+      boundaryFragments: 0,
+    };
 
     let handle;
     try {
@@ -639,15 +711,24 @@ export class FileTail {
   }
 
   /** Split decoded text into complete lines, holding any tail back. */
-  #consume(decoded: string): { lines: TailLine[]; oversized: number } {
+  #consume(decoded: string): { lines: TailLine[]; oversized: number; boundaryFragments: number } {
     let text = decoded;
     let oversized = 0;
+    let boundaryFragments = 0;
 
     if (this.#resyncing) {
       const nl = text.indexOf('\n');
-      if (nl === -1) return { lines: [], oversized };
+      if (nl === -1) return { lines: [], oversized, boundaryFragments };
       text = text.slice(nl + 1);
       this.#resyncing = false;
+      // The fragment is dropped at the moment its newline arrives, not at the
+      // moment of the skip. A `skipTo` whose file never produces another
+      // newline therefore reports 0 here, which is the truth: no complete
+      // record was dropped because no complete record was ever there.
+      if (this.#skipFragmentPending) {
+        this.#skipFragmentPending = false;
+        boundaryFragments += 1;
+      }
     }
 
     text = this.#partial + text;
@@ -673,7 +754,7 @@ export class FileTail {
         lineNo: this.#lineNo,
       });
     }
-    return { lines, oversized };
+    return { lines, oversized, boundaryFragments };
   }
 }
 

@@ -487,5 +487,24 @@ export function applySessionPatch(
   if (parked !== undefined) next.parked = parked.map((p) => ({ ...p }));
   if (engine !== undefined) next.engine = engine;
   if (windowTokens !== undefined) next.windowTokens = windowTokens;
+  /*
+   * CARRIED, NEVER PATCHED (v0.8.0 DoD 7.7).
+   *
+   * `SessionState.partial` says the session was built from part of its
+   * transcript. `SessionPatch` has no key for it and deliberately so: the
+   * figures are latched by the engine at the read that established the tail
+   * (`src/codex/store.ts` carries the reason), so no two states of one session
+   * can differ in it and there is nothing for a patch to express.
+   *
+   * What this line does is the half that is NOT automatic. This reducer builds
+   * `next` field by field, so a field nobody names is DROPPED — a partial
+   * session would carry its mark on the snapshot and lose it on the first diff
+   * applied afterwards, which is the shape `parked`'s own comment above warns
+   * about and which is silent in exactly the same way.
+   *
+   * Copied rather than shared, like `parked` and `spawnEdges`: this reducer
+   * hands back a frozen object graph of its own.
+   */
+  if (prev.partial !== undefined) next.partial = { ...prev.partial };
   return deepFreeze(next);
 }

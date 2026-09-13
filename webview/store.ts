@@ -52,6 +52,7 @@ import type {
   ViewMode,
 } from './canvas-contract.js';
 import { countNodes } from './layout.js';
+import type { DeckSortMode } from './layout.js';
 import { fit as fitCanvas } from './layout/fit.js';
 import type { DrawerRect } from './layout/fit.js';
 import type { StatsRecord } from '../src/stats/schema.js';
@@ -98,6 +99,47 @@ export interface FitTrigger {
   event: string;
   fits: boolean;
   why: string;
+}
+
+/* ------------------------------------------------------------------------ *
+ * The deck's sorts, enumerated (v0.8.0 Phase 7, DoD 7.6)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Every `DeckSortMode`, as an object `tsc` checks for exhaustiveness.
+ *
+ * `layout.ts` declares the union as a TYPE, which has no runtime form, and
+ * `src/sidebar/tweaks.ts` writes the three values out again as its `options`
+ * because that module may not import anything at all — it is read by the host
+ * and by the CSP-strict webview bundle alike. So the values exist in two
+ * places and something has to check that they agree.
+ *
+ * This is that something, and it is not a third hand-written copy: the literal
+ * is typed `Record<DeckSortMode, true>`, so a member added to the union is a
+ * compile error here and a member removed is an excess property. The list
+ * below cannot lag the type, and `webview/sidebar/tweaks.test.ts` compares
+ * `tweaks.ts`'s `options` to it.
+ */
+const EVERY_DECK_SORT: Readonly<Record<DeckSortMode, true>> = {
+  live: true,
+  recent: true,
+  engine: true,
+};
+
+/** Every `DeckSortMode`, in the order the deck's control bar shows them. */
+export const DECK_SORTS: readonly DeckSortMode[] = Object.keys(
+  EVERY_DECK_SORT,
+) as DeckSortMode[];
+
+/**
+ * True iff `value` names a deck sort.
+ *
+ * `Object.hasOwn`, never `in`: `'toString' in EVERY_DECK_SORT` is true, and a
+ * guard that admitted a prototype key would hand the deck a sort with no
+ * comparator behind it.
+ */
+export function isDeckSort(value: unknown): value is DeckSortMode {
+  return typeof value === 'string' && Object.hasOwn(EVERY_DECK_SORT, value);
 }
 
 export const FIT_TRIGGERS: readonly FitTrigger[] = [
@@ -499,6 +541,21 @@ export interface WebviewView {
    */
   canvasAutoFit: boolean;
   /**
+   * `agentDeck.defaultOrdering`, as the host last said (DoD 7.6).
+   *
+   * ABSENT until a `settings` message states a value this build knows — which
+   * is the absence of an answer, not a default. `Deck.svelte` falls back to
+   * `DEFAULT_DECK_SORT` when it is absent, so the deck has never once waited
+   * on this to draw, and no default is written down twice.
+   *
+   * The deck's sort itself is NOT here. It is `Deck.svelte`'s own state, by a
+   * decision that predates this phase and is argued in that file: the control
+   * bar is re-chosen from in front of you, and the component's lifetime — one
+   * deck visit — is the right lifetime for it. This value only says what it
+   * is re-chosen FROM.
+   */
+  defaultOrdering?: DeckSortMode;
+  /**
    * Incremented every time the store FITS the canvas. The renderer adopts
    * `canvasView` when this moves and not otherwise, which is what lets a
    * user's own pan survive a re-render that fitted nothing.
@@ -800,6 +857,8 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let followNewSessions = false;
   let openDrawerOnEnter = false;
   let drawerOpensExpanded = false;
+  /** `undefined` until a message states a sort this build knows. */
+  let defaultOrdering: DeckSortMode | undefined;
   /* ----- auto-fit state (DoD 4.0) ----------------------------------------- */
   let canvasAutoFit = true;
   let canvasFitEpoch = 0;
@@ -1114,6 +1173,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         statsStoreEnabled,
         statsStoreLoaded,
       };
+      if (defaultOrdering !== undefined) view.defaultOrdering = defaultOrdering;
       if (detailActionId !== undefined) view.detailActionId = detailActionId;
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
       if (selected !== undefined) view.selected = selected;
@@ -1176,6 +1236,13 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
             followNewSessions = tweaks?.['followNewSessions'] === true;
             openDrawerOnEnter = tweaks?.['openDrawerOnEnter'] === true;
             drawerOpensExpanded = tweaks?.['drawerExpandedByDefault'] === true;
+            // A sort this build does not know is not a sort. It reads as
+            // ABSENT rather than as `DEFAULT_DECK_SORT`, so a value the host
+            // sent and the renderer could not use is never mistaken for a
+            // value the user chose — and `Deck.svelte`'s fallback is the one
+            // place the design's own default is written.
+            const ordering = tweaks?.['defaultOrdering'];
+            defaultOrdering = isDeckSort(ordering) ? ordering : undefined;
           }
           break;
         case 'showView':

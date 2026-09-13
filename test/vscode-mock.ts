@@ -60,6 +60,19 @@ export const ViewColumn = {
   Two: 2,
 } as const;
 
+/**
+ * `vscode.ConfigurationTarget`, with VS Code's own numbering (v0.8.0 DoD 7.6).
+ *
+ * The NUMBERS matter and are not arbitrary: `update`'s third argument is
+ * recorded and asserted, so a double that numbered them differently would let
+ * a test pass while production wrote a setting into the wrong file.
+ */
+export const ConfigurationTarget = {
+  Global: 1,
+  Workspace: 2,
+  WorkspaceFolder: 3,
+} as const;
+
 // ---------------------------------------------------------------------------
 // Webview view (the sidebar) — v0.7.0 Phase 4, DoD 4.6b
 // ---------------------------------------------------------------------------
@@ -69,8 +82,14 @@ export class MockWebviewView {
   readonly viewType: string;
   readonly webview: MockWebview;
   disposed = false;
+  /**
+   * `vscode.WebviewView.visible`. A resolved view starts visible — VS Code
+   * resolves it when the container is opened.
+   */
+  visible = true;
 
   readonly #inbound = new Emitter<unknown>();
+  readonly #visibility = new Emitter<void>();
   readonly #onDispose = new Emitter<void>();
   readonly #posted: unknown[] = [];
 
@@ -94,6 +113,13 @@ export class MockWebviewView {
     };
   }
 
+  /** `vscode.WebviewView.onDidChangeVisibility` — fires with no argument. */
+  onDidChangeVisibility(listener: () => void): MockDisposable {
+    return this.#visibility.event(() => {
+      listener();
+    });
+  }
+
   onDidDispose(listener: () => void): MockDisposable {
     return this.#onDispose.event(() => {
       listener();
@@ -103,6 +129,19 @@ export class MockWebviewView {
   /** Deliver a raw message as if the sidebar had posted it. */
   fireMessage(raw: unknown): void {
     this.#inbound.fire(raw);
+  }
+
+  /**
+   * Hide or re-show the view (v0.8.0 DoD 7.6).
+   *
+   * Moves `visible` and THEN fires, which is the order the real API has and
+   * the order the whole check depends on: the controller reads `view.visible`
+   * inside the handler, so a mock that fired first would let a re-send land on
+   * a view still marked hidden.
+   */
+  setVisible(visible: boolean): void {
+    this.visible = visible;
+    this.#visibility.fire(undefined);
   }
 
   dispose(): void {
@@ -294,6 +333,14 @@ interface MockState {
    * the test nobody remembered to write.
    */
   warningAnswer: string | undefined;
+  /**
+   * Every `WorkspaceConfiguration.update` call, in order (v0.8.0 DoD 7.6).
+   *
+   * The TARGET is recorded, not only the key and value: which file a
+   * setting is written into is a decision `src/extension.ts` states a reason
+   * for, and a decision nothing asserts is a comment.
+   */
+  configurationWrites: { section: string; key: string; value: unknown; target: number | undefined }[];
   configurationEmitter: Emitter<{ affectsConfiguration(section: string): boolean }>;
 }
 
@@ -310,6 +357,7 @@ const state: MockState = {
   informationMessages: [],
   warningMessages: [],
   warningAnswer: undefined,
+  configurationWrites: [],
   configurationEmitter: new Emitter(),
 };
 
@@ -327,6 +375,7 @@ export function resetVscodeMock(): void {
   state.informationMessages = [];
   state.warningMessages = [];
   state.warningAnswer = undefined;
+  state.configurationWrites = [];
   state.configurationEmitter = new Emitter();
 }
 
@@ -341,6 +390,15 @@ export const mock = {
   },
   setConfig(section: string, values: Record<string, unknown>): void {
     state.configuration.set(section, new Map(Object.entries(values)));
+  },
+  /** Every `WorkspaceConfiguration.update` call, in order, with its target. */
+  get configurationWrites(): {
+    section: string;
+    key: string;
+    value: unknown;
+    target: number | undefined;
+  }[] {
+    return state.configurationWrites;
   },
   fireConfigurationChange(section: string): void {
     state.configurationEmitter.fire({
@@ -404,10 +462,37 @@ export const workspace = {
   get workspaceFolders(): { uri: Uri; name: string; index: number }[] | undefined {
     return state.workspaceFolders;
   },
-  getConfiguration(section: string): { get(key: string): unknown } {
+  /**
+   * `vscode.workspace.getConfiguration`.
+   *
+   * `update` is REAL here (v0.8.0 DoD 7.6): it writes into the same map `get`
+   * reads, so a test can drive the whole round trip — a click posts
+   * `updateTweak`, the host calls `update`, and the next read returns the new
+   * value. A mock that only recorded the call would let a test pass while the
+   * host wrote a key nothing reads back.
+   *
+   * The write is recorded in {@link MockState.configurationWrites} with its
+   * target, because WHICH file a setting lands in is a decision with a stated
+   * reason, and a decision nothing asserts is a comment.
+   *
+   * It does NOT fire `onDidChangeConfiguration`: real VS Code does, and a test
+   * that wants the follow-on calls `mock.fireConfigurationChange` itself. An
+   * automatic fire would make every test's ordering implicit.
+   */
+  getConfiguration(section: string): {
+    get(key: string): unknown;
+    update(key: string, value: unknown, target?: number): Promise<void>;
+  } {
     const values = state.configuration.get(section);
     return {
       get: (key: string) => values?.get(key),
+      update: (key: string, value: unknown, target?: number): Promise<void> => {
+        const existing = state.configuration.get(section) ?? new Map<string, unknown>();
+        existing.set(key, value);
+        state.configuration.set(section, existing);
+        state.configurationWrites.push({ section, key, value, target });
+        return Promise.resolve();
+      },
     };
   },
   onDidChangeConfiguration(

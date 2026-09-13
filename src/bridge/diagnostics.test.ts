@@ -45,15 +45,16 @@ const AT = Date.parse('2026-08-27T12:00:00.000Z');
  * can only match if each figure landed in its own slot.
  */
 const TELEMETRY_SAMPLE: DiagnosticsTelemetry = {
-  metrics: { accepted: 21, disabled: 22, unmatched: 23, rejected: { 400: 24, 405: 25, 413: 26, 415: 27 } },
-  logs: { accepted: 31, disabled: 32, unmatched: 33, rejected: { 400: 34, 405: 35, 413: 36, 415: 37 } },
-  traces: { accepted: 41, disabled: 42, unmatched: 43, rejected: { 400: 44, 405: 45, 413: 46, 415: 47 } },
+  metrics: { accepted: 21, disabled: 22, unmatched: 23, foreign: 28, rejected: { 400: 24, 405: 25, 413: 26, 415: 27 } },
+  logs: { accepted: 31, disabled: 32, unmatched: 33, foreign: 38, rejected: { 400: 34, 405: 35, 413: 36, 415: 37 } },
+  traces: { accepted: 41, disabled: 42, unmatched: 43, foreign: 48, rejected: { 400: 44, 405: 45, 413: 46, 415: 47 } },
 };
 
 const TELEMETRY_SAMPLE_LINE =
-  'otel.metrics=accepted:21,disabled:22,unmatched:23,400:24,405:25,413:26,415:27 ' +
-  'otel.logs=accepted:31,disabled:32,unmatched:33,400:34,405:35,413:36,415:37 ' +
-  'otel.traces=accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47';
+  'otel.metrics=accepted:21,disabled:22,unmatched:23,400:24,405:25,413:26,415:27,foreign:28 ' +
+  'otel.logs=accepted:31,disabled:32,unmatched:33,400:34,405:35,413:36,415:37,foreign:38 ' +
+  'otel.traces=accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47,foreign:48 ' +
+  'otel.unmatched-scope=(this window)';
 
 /** A spy sink. Records everything and can be made to fail on demand. */
 function spySink(options: { throwOnWrite?: boolean } = {}): DiagnosticsSink & {
@@ -251,6 +252,69 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
     // The whole tail, byte for byte: order, labels, separators, and the four
     // statuses by number.
     expect(line.endsWith(` statsDropped=7 ${TELEMETRY_SAMPLE_LINE}`)).toBe(true);
+  });
+
+  /*
+   * v0.8.0 DoD 7.8 — the line carries `foreign` beside `unmatched`, and says
+   * that `unmatched` is this window's.
+   *
+   * Pinned here as FORMAT only: what lands in each figure is the joiner's, and
+   * `extension.telemetry.test.ts` drives that through the socket. What this
+   * block can say, and what no host test says as cheaply, is that the two
+   * figures reach the line in their own slots — a formatter that printed
+   * `unmatched` into both would satisfy every host assertion about the
+   * numbers.
+   */
+  it('carries foreign beside unmatched, each in its own slot, and names the scope (DoD 7.8)', () => {
+    const line = formatCounters(
+      {
+        grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+        patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+        ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+        relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
+        statsErrors: 0, storeMalformed: 0, statsDropped: 0,
+        telemetry: TELEMETRY_SAMPLE,
+      },
+      '2026-09-13T00:00:00.000Z',
+    );
+    // The DoD's literal text, on the line.
+    expect(line).toContain('(this window)');
+    // Each signal's own pair, with both numbers distinct across all six slots
+    // (21..48 in `TELEMETRY_SAMPLE`) so no figure can stand in for another.
+    expect(line).toContain('otel.metrics=accepted:21,disabled:22,unmatched:23,400:24,405:25,413:26,415:27,foreign:28');
+    expect(line).toContain('otel.logs=accepted:31,disabled:32,unmatched:33,400:34,405:35,413:36,415:37,foreign:38');
+    expect(line).toContain('otel.traces=accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47,foreign:48');
+
+    /*
+     * THE VACUITY CONTROL, and it is the one that matters here: the three
+     * assertions above are satisfied by a formatter that reads `foreign` and
+     * one that reads any OTHER field holding the same number. So move one
+     * figure and nothing else, and watch exactly one token move.
+     */
+    const moved = formatCounters(
+      {
+        grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+        patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+        ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+        relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
+        statsErrors: 0, storeMalformed: 0, statsDropped: 0,
+        telemetry: { ...TELEMETRY_SAMPLE, traces: { ...TELEMETRY_SAMPLE.traces, foreign: 99 } },
+      },
+      '2026-09-13T00:00:00.000Z',
+    );
+    expect(moved).toContain('415:47,foreign:99');
+    expect(moved).not.toContain('415:47,foreign:48');
+    // ...and `unmatched` did NOT move with it, which is what proves the two
+    // are read from two fields rather than from one.
+    expect(moved).toContain('unmatched:43,400:44');
+  });
+
+  it('every 0.7.1 signal figure is still a prefix of the 0.8.0 one (DoD 7.8 appends)', () => {
+    // The append-only rule, applied to the per-signal blob rather than to the
+    // whole line: a figure quoted in a 0.7.1 evidence file or bug report is
+    // still comparable field by field to one read off a 0.8.0 line.
+    const before = 'accepted:41,disabled:42,unmatched:43,400:44,405:45,413:46,415:47';
+    expect(TELEMETRY_SAMPLE_LINE).toContain(`otel.traces=${before},foreign:`);
   });
 
   it('creates no sink until the first line', () => {

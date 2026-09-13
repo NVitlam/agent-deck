@@ -174,19 +174,41 @@ export interface DiagnosticsTelemetrySignal {
   /** Requests answered `403` because `agentDeck.telemetry.enabled` is off. */
   disabled: number;
   /**
-   * Rows this window's join still could not place after retrying (v0.7.1,
-   * ruling 2026-09-11): a span whose session or tool call the next pump after
-   * its arrival does not show, or each row of a held count-and-cost slot that
-   * was evicted. An early row that joined later is not counted.
+   * Rows FOR SESSIONS THIS WINDOW HOLDS that its join still could not place
+   * after retrying (v0.7.1 ruling 2026-09-11, narrowed by v0.8.0 DoD 7.8): a
+   * span whose session the next pump after its arrival shows and whose tool
+   * call it does not. An early row that joined later is not counted.
+   *
+   * A non-zero figure here is a statement about THIS window's tree. A row
+   * about a session this window has never shown is {@link foreign} instead,
+   * which is why the counters line carries `(this window)` beside these.
    */
   unmatched: number;
+  /**
+   * Rows about sessions this window does NOT hold (v0.8.0 DoD 7.8).
+   *
+   * The exporter is machine-wide, so on a machine running several windows this
+   * is the ordinary bulk of what arrives and is never an error. It was folded
+   * into {@link unmatched} until 0.8.0, which made that figure unreadable: a
+   * number that mixes "my rows did not join" with "these rows were never mine"
+   * answers neither question.
+   */
+  foreign: number;
   /** Requests refused, by status. */
   rejected: { 400: number; 405: number; 413: number; 415: number };
 }
 
 export type DiagnosticsTelemetry = Record<'metrics' | 'logs' | 'traces', DiagnosticsTelemetrySignal>;
 
-/** One signal's field, `accepted:N,disabled:N,unmatched:N,400:N,405:N,413:N,415:N`. */
+/**
+ * One signal's field,
+ * `accepted:N,disabled:N,unmatched:N,400:N,405:N,413:N,415:N,foreign:N`.
+ *
+ * `foreign` is APPENDED (v0.8.0 DoD 7.8), for the reason {@link formatCounters}
+ * gives for appending to the line: every 0.7.1 signal figure quoted in an
+ * evidence file or a bug report is still a prefix of the current one, so an
+ * old quotation stays comparable to a new line field by field.
+ */
 function formatTelemetrySignal(signal: DiagnosticsTelemetrySignal): string {
   return (
     `accepted:${String(signal.accepted)}` +
@@ -195,9 +217,22 @@ function formatTelemetrySignal(signal: DiagnosticsTelemetrySignal): string {
     `,400:${String(signal.rejected[400])}` +
     `,405:${String(signal.rejected[405])}` +
     `,413:${String(signal.rejected[413])}` +
-    `,415:${String(signal.rejected[415])}`
+    `,415:${String(signal.rejected[415])}` +
+    `,foreign:${String(signal.foreign)}`
   );
 }
+
+/**
+ * The scope note the counters line ends on (v0.8.0 DoD 7.8).
+ *
+ * `unmatched` is per WINDOW and always was — the same body can match in one
+ * window and not in another — but the line never said so, and the figure reads
+ * as a property of the machine's telemetry. The DoD's wording is the literal
+ * text here. It is ONE token at the end rather than a repetition inside each
+ * of the three signal fields, so each of those stays a comma-separated run of
+ * `key:value` with no spaces in it.
+ */
+export const COUNTERS_WINDOW_SCOPE = 'otel.unmatched-scope=(this window)';
 
 /**
  * The events that each produce exactly one line.
@@ -541,7 +576,9 @@ export function formatCounters(counters: DiagnosticsCounters, isoTime: string): 
     // still a prefix of the current format.
     ` otel.metrics=${formatTelemetrySignal(counters.telemetry.metrics)}` +
     ` otel.logs=${formatTelemetrySignal(counters.telemetry.logs)}` +
-    ` otel.traces=${formatTelemetrySignal(counters.telemetry.traces)}`
+    ` otel.traces=${formatTelemetrySignal(counters.telemetry.traces)}` +
+    // v0.8.0 DoD 7.8. Appended once more, same rule.
+    ` ${COUNTERS_WINDOW_SCOPE}`
   );
 }
 

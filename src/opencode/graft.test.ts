@@ -449,6 +449,18 @@ function parseParts(parts: readonly RawPart[]): OcParseResult {
         cacheCreation: positive(cache['write']),
         cacheRead: positive(cache['read']),
         output: positive(tokens['output']),
+        // v0.8.0 Phase 7, F14. The part ROW's own `time_created`, which is what
+        // `src/opencode/parse.ts` reads and what `scripts/opencode-golden.mjs`
+        // reads from its own SQL. Three readers, one column.
+        //
+        // THIS RE-DERIVATION IS WHY THE GOLDEN WENT RED, and the shape is one
+        // this repository has paid for before: v0.6.0 Phase 2 lost a whole
+        // release's subagent join because this same private reader built
+        // `agentPath` from a different field than `parse.ts` did, so the test
+        // never built the input that triggered the defect. A field added to a
+        // usage turn in production has to be added HERE in the same change, or
+        // this file quietly stops testing the thing it names.
+        atMs: part.timeCreated,
       });
       usageBySession.set(part.sessionId, list);
       counts.stepFinishParts++;

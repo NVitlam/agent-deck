@@ -1090,8 +1090,13 @@ describe('DoD 6.4 — per-signal accepted, rejected by status, disabled and unma
     expect(line).toContain(
       ` otel.traces=accepted:43,disabled:0,unmatched:${String(40 - placed)},400:1,405:0,413:1,415:0,foreign:0`,
     );
-    // v0.8.0 DoD 7.8 — the line says which window the unmatched figures are about.
-    expect(line.endsWith(' otel.unmatched-scope=(this window)')).toBe(true);
+    // v0.8.0 DoD 7.8 — the line says which window the unmatched figures are about,
+    // and says it IMMEDIATELY after the last otel figure. Not "at the end of the
+    // line": the line is append-only (every earlier release's line stays a
+    // prefix), and DoD 7.7 appended `oversizePartial=` after the scope note, so
+    // `endsWith` stopped being true for a reason unrelated to the scope. What
+    // matters is that the note sits beside the figures it qualifies.
+    expect(line).toMatch(/ otel\.traces=\S+ otel\.unmatched-scope=\(this window\)( |$)/);
   }, 120_000);
 });
 
@@ -1523,7 +1528,8 @@ describe('DoD 7.8 — unmatched counts only this window\'s rows; the rest are fo
     expect(leaderLine).toContain(
       ` otel.traces=accepted:43,disabled:0,unmatched:0,400:0,405:0,413:0,415:0,foreign:${String(spans)}`,
     );
-    expect(leaderLine.endsWith(' otel.unmatched-scope=(this window)')).toBe(true);
+    // Beside the otel figures, not at the end of the line — see the DoD 6.4 test.
+    expect(leaderLine).toMatch(/ otel\.traces=\S+ otel\.unmatched-scope=\(this window\)( |$)/);
     const followerLine = formatCounters(follower.host.counters(), '2026-09-13T00:00:00.000Z');
     // The follower holds no socket, so its route figures are zeroes and its
     // join figures are its own — which is the whole reason `unmatched` could

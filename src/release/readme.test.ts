@@ -241,14 +241,22 @@ const RELEASE_IMAGES: readonly string[] = [
   'media/deck.png',
   'media/tree.png',
   'media/inspector.png',
+  // v0.8.0 DoD 7.D (2026-09-13): the user's 7.12 smoke capture of session 94c5bc1a on
+  // build a49ae09 — the drawer's time column and gaps — at its own size, unedited.
+  'media/drawer-time.png',
   // SIX SINCE v0.7.0 (DoD 5.5b): the sidebar, linked from the install section.
   // Committed as a placeholder the user replaces with a capture; the
   // package-audit leg of `vsix.test.ts` refuses to package the placeholder.
   'media/sidebar.png',
+  // v0.8.0 DoD 7.D: the 7.12 capture of the sidebar's Tweaks tab, unedited.
+  'media/sidebar-tweaks.png',
   // SEVEN SINCE v0.7.1 (DoD 6.D.4): the Stats view's Tokens part with the
   // telemetry cost and its label, linked from the telemetry section: the 6.9
   // smoke capture at its own size, with the project slug painted out.
   'media/stats_tokens.png',
+  // v0.8.0 DoD 7.D: the 7.12 capture of Tokens with F14's figures, the project slug
+  // painted out as on stats_tokens.png (lab smoke record has the box and the diff).
+  'media/stats-tokens-timing.png',
 ];
 
 /* ------------------------------------------------------------------------- *
@@ -830,9 +838,10 @@ describe('README exists and ships clean', () => {
     // EIGHT SINCE v0.7.0 DoD 5.5b: plus the sidebar screenshot.
     // NINE SINCE v0.7.1 DoD 6.D.4: plus the Tokens screenshot.
     // EIGHT SINCE v0.7.1 DoD 6.D.1: four stills out, three captures in.
+    // ELEVEN SINCE v0.8.0 DoD 7.D: plus the 7.12 smoke's drawer, Tweaks and Tokens captures.
     // Amended, never relaxed - this is still equality both ways with the count
     // beside it, and the reason is unchanged from the v0.5.0 comment above.
-    expect(tracked).toHaveLength(8);
+    expect(tracked).toHaveLength(11);
   }, 20_000);
 });
 

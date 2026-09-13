@@ -71,6 +71,8 @@ one or scroll away.
 
 ![The inspector under the tree: the root agent's four tool calls, one of them expanded to its input and output](media/inspector.png)
 
+![The tool-call drawer under a session's tree: each call with its time since the agent's first call and the gap since the call before it](media/drawer-time.png)
+
 **Stats** — a view mode beside the canvas and the list: files by touch count, identical-call loops
 and churn chains, tokens per agent, and trends across the sessions stored on this machine. Facts
 only; what each term means is in [Stats](#stats).
@@ -232,6 +234,8 @@ session, open the drawer expanded, and the deck ordering. Changing one writes th
 keeps no value of its own and shows whatever the settings say.
 
 ![The Agent Deck sidebar in the activity bar](media/sidebar.png)
+
+![The sidebar's Tweaks tab: four settings, three checked, deck ordering live](media/sidebar-tweaks.png)
 
 Every entry is also in the Command Palette, under **Agent Deck:**. Your sessions appear on their
 own — there is nothing to point it at and nothing to switch on.
@@ -647,6 +651,8 @@ timings — wall time, time to the first tool call, the longest gap between call
 a minute — and, beside the silent subagents, the subagents whose spawning call has no result) and
 **Trends** (one point per stored session, with tokens a minute drawn per engine). The engine chips narrow every part exactly as they narrow the deck. A session
 Agent Deck could not read in full is counted in the footer with its reason, and appears in no table.
+
+![The Stats view's Tokens part for one Claude Code session: wall time, time to the first tool, longest gap, tokens and calls a minute, and cost an hour](media/stats-tokens-timing.png)
 
 Everything here is a count, a ratio or a token figure taken from the structure of a session. None of
 it reads message text, tool payloads or reasoning, and none of it says why a number is what it is.

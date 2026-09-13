@@ -290,6 +290,23 @@ export interface OcToolRecord {
   readonly resultPreview?: string;
   readonly durationMs?: number;
   /**
+   * v0.8.0 Phase 7, DoD 7.1 (F14) — `state.time.start` / `state.time.end`,
+   * epoch milliseconds, exactly as OpenCode wrote them into the part payload.
+   *
+   * **Two fields where `durationMs` above is one, because they answer a
+   * different question and they can disagree in availability.** `durationMs`
+   * requires BOTH and is therefore absent for a running tool; each of these is
+   * emitted on its own, so a part that states a start and no end carries the
+   * start. Over the committed corpora that case does not occur — all 345 tool
+   * parts (anchor 246, witness 99) carry both, every one of them `completed` or
+   * `error` — so the running arm is exercised by nothing under `fixtures/`, and
+   * that is stated here rather than left to be inferred from two numbers being
+   * equal.
+   */
+  readonly startedAtMs?: number;
+  /** See {@link OcToolRecord.startedAtMs}. `state.time.end`. */
+  readonly endedAtMs?: number;
+  /**
    * `state.metadata.truncated` — OPENCODE'S OWN claim, carried verbatim.
    *
    * Three states, and they are three different facts (`ToolNode.truncated` in

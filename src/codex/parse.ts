@@ -660,8 +660,20 @@ interface RawCall {
    * engine synthesises from the tool name.
    */
   readonly inputHash: string;
+  /**
+   * v0.8.0 Phase 7, DoD 7.1 (F14) — the making record's envelope `timestamp`,
+   * parsed. `undefined` only when the string will not parse, which C2's
+   * required-timestamp gate makes unreachable for an accepted record.
+   */
+  readonly startedAtMs: number | undefined;
   item: CompletedItem | null;
   relation: CodexIdRelation;
+}
+
+/** An ISO envelope timestamp as epoch milliseconds, or `undefined`. */
+function recordAtMs(record: CodexRecord): number | undefined {
+  const parsed = Date.parse(record.timestamp);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 /**
@@ -709,6 +721,11 @@ function pairCalls(kept: readonly CodexRecord[]): { calls: RawCall[]; items: Com
       callId: typeof payload['call_id'] === 'string' ? payload['call_id'] : '',
       args: parseArguments(payload['arguments']),
       inputHash: codexInputHash(kind, payload),
+      // v0.8.0 Phase 7, DoD 7.1 (F14). Taken HERE, where the record that made
+      // the call is still in hand; the construction site downstream sees only
+      // the `RawCall`. `record.ordinal` was already crossing and the timestamp
+      // beside it was being discarded.
+      startedAtMs: recordAtMs(record),
       item: null,
       relation: 'no_item',
     });
@@ -755,9 +772,26 @@ function parseArguments(value: unknown): Record<string, unknown> | null {
   return asObject(value);
 }
 
-/** Every call output in this file, keyed by `call_id`. First occurrence wins. */
-function collectOutputs(kept: readonly CodexRecord[]): Map<string, unknown> {
-  const outputs = new Map<string, unknown>();
+/**
+ * Every call output in this file, keyed by `call_id`. First occurrence wins.
+ *
+ * v0.8.0 Phase 7, DoD 7.1 (F14): the entry carries the OUTPUT RECORD'S OWN
+ * `timestamp` beside the value. The end of a call is when the engine wrote
+ * that call's result, and the record holding the result is the only place
+ * that instant is stated — `CompletedItem` carries an ordinal and no time, and
+ * it is reached through a positional heuristic for the v2 `exec` shape, so it
+ * is not used here.
+ *
+ * `atMs` is `undefined` where the envelope string will not parse; the value is
+ * still carried, so a call keeps its result preview and loses only its end.
+ */
+interface CallOutput {
+  readonly value: unknown;
+  readonly atMs: number | undefined;
+}
+
+function collectOutputs(kept: readonly CodexRecord[]): Map<string, CallOutput> {
+  const outputs = new Map<string, CallOutput>();
   for (const record of kept) {
     if (record.type !== 'response_item') continue;
     const payload = asObject(record.payload);
@@ -766,7 +800,7 @@ function collectOutputs(kept: readonly CodexRecord[]): Map<string, unknown> {
     if (typeof kind !== 'string' || !TOOL_OUTPUT_PAYLOAD_TYPES.has(kind)) continue;
     const callId = payload['call_id'];
     if (typeof callId !== 'string' || callId === '' || outputs.has(callId)) continue;
-    outputs.set(callId, payload['output']);
+    outputs.set(callId, { value: payload['output'], atMs: recordAtMs(record) });
   }
   return outputs;
 }
@@ -871,7 +905,8 @@ export function parseCodexThread(
     if (call.namespace.present && typeof call.namespace.value === 'string') {
       namespaces.add(call.namespace.value);
     }
-    const rendered = renderOutput(outputs.get(call.callId));
+    const output = outputs.get(call.callId);
+    const rendered = renderOutput(output?.value);
     const toolCall: {
       -readonly [K in keyof CodexToolCall]: CodexToolCall[K];
     } = {
@@ -889,6 +924,12 @@ export function parseCodexThread(
       // shapes are still distinguishable. Carried across, never recomputed.
       inputHash: call.inputHash,
     };
+    // v0.8.0 Phase 7, DoD 7.1 (F14). Assigned rather than spread into the
+    // literal above so an unparseable envelope leaves the key ABSENT instead of
+    // present-and-undefined: `toStrictEqual` in the wire round trip
+    // distinguishes the two, and "the engine stated no time" is the fact.
+    if (call.startedAtMs !== undefined) toolCall.startedAtMs = call.startedAtMs;
+    if (output?.atMs !== undefined) toolCall.endedAtMs = output.atMs;
     if (rendered !== null) {
       const wasMarked = splitTruncationMarker(rendered) !== undefined;
       const preview = truncatePreservingMarker(rendered, maxPayloadBytes);

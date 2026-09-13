@@ -517,3 +517,134 @@ describe('applySessionPatch — ToolNode.truncated', () => {
     expect(toolOf(next)['status']).toBe('error');
   });
 });
+
+/**
+ * `startedAtMs` / `endedAtMs` — v0.8.0 Phase 7, DoD 7.1 (F14).
+ *
+ * The same two questions the block above asks of `truncated`, and for these two
+ * the second one is not hypothetical: `events.ts` states on
+ * `ToolNodeFieldPatch.startedAtMs` that **a call is added with a start and no
+ * end and gains its end in a later patch**, which is the ordinary life of every
+ * running tool on every engine. So the SET direction is exercised by real
+ * traffic, not merely carried to keep the contract total.
+ *
+ * Both are asserted INDEPENDENTLY of each other and of `durationMs`, because
+ * `events.ts` says neither implies the other in either direction — a
+ * telemetry-filled duration stands beside an absent start, and a running call
+ * has a start with no end.
+ */
+describe('applySessionPatch — ToolNode.startedAtMs / endedAtMs', () => {
+  function stateWith(startedAtMs: number | undefined, endedAtMs: number | undefined): SessionState {
+    const tool: ToolNode = {
+      id: 't1',
+      toolName: 'Bash',
+      status: 'running',
+      inputPreview: 'ls',
+    };
+    if (startedAtMs !== undefined) tool.startedAtMs = startedAtMs;
+    if (endedAtMs !== undefined) tool.endedAtMs = endedAtMs;
+    return deepFreeze<SessionState>({
+      sessionId: 's1',
+      projectSlug: 'c--Users-dev-repo',
+      workspaceMatch: true,
+      liveness: 'live',
+      schemaOk: true,
+      root: {
+        id: 'root',
+        kind: 'main',
+        label: 'root',
+        status: 'running',
+        spawnDepth: 0,
+        children: [tool],
+        contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
+        startedAt: 1,
+      },
+      totals: { costUsd: 0 }, contextNow: { prompt: 0, output: 0 }, burn: { prompt: 0, output: 0 },
+      spawnEdges: [],
+    });
+  }
+
+  function toolOf(state: SessionState): ToolNode {
+    return state.root.children[0] as ToolNode;
+  }
+
+  it('carries both instants through a patch that mentions neither', () => {
+    // The CLONE is where these are lost, and losing them there is silent: the
+    // same node would carry its times when it arrived by SNAPSHOT and lose them
+    // the moment any unrelated patch passed it through the reducer.
+    const next = applySessionPatch(stateWith(1_700_000_000_000, 1_700_000_002_500), {
+      fields: { liveness: 'idle' },
+    });
+    expect(toolOf(next).startedAtMs).toBe(1_700_000_000_000);
+    expect(toolOf(next).endedAtMs).toBe(1_700_000_002_500);
+  });
+
+  it('carries a start through the clone while the end is genuinely absent', () => {
+    // The running shape, and the reason the two are cloned on separate tests: a
+    // clone that carried them as a PAIR would pass the test above and drop this
+    // start, which is the commoner state of the two.
+    const next = applySessionPatch(stateWith(1_700_000_000_000, undefined), {
+      fields: { liveness: 'idle' },
+    });
+    expect(toolOf(next).startedAtMs).toBe(1_700_000_000_000);
+    expect('endedAtMs' in toolOf(next)).toBe(false);
+  });
+
+  it('adds the end to a running call that already had a start', () => {
+    // The transition `events.ts` names on the patch member: the engine wrote
+    // the result, so the end arrives on its own and the start does not move.
+    const next = applySessionPatch(stateWith(1_700_000_000_000, undefined), {
+      tree: [
+        { op: 'updateTool', id: 't1', fields: { status: 'done', endedAtMs: 1_700_000_002_500 } },
+      ],
+    });
+    expect(toolOf(next).startedAtMs).toBe(1_700_000_000_000);
+    expect(toolOf(next).endedAtMs).toBe(1_700_000_002_500);
+    expect(toolOf(next)['status']).toBe('done');
+  });
+
+  it('sets, changes and clears each one, and a clear removes the key', () => {
+    const set = applySessionPatch(stateWith(undefined, undefined), {
+      tree: [
+        {
+          op: 'updateTool',
+          id: 't1',
+          fields: { startedAtMs: 1_700_000_000_000, endedAtMs: 1_700_000_002_500 },
+        },
+      ],
+    });
+    expect(toolOf(set).startedAtMs).toBe(1_700_000_000_000);
+    expect(toolOf(set).endedAtMs).toBe(1_700_000_002_500);
+
+    const changed = applySessionPatch(stateWith(1_700_000_000_000, 1_700_000_002_500), {
+      tree: [{ op: 'updateTool', id: 't1', fields: { startedAtMs: 1_700_000_000_001 } }],
+    });
+    expect(toolOf(changed).startedAtMs).toBe(1_700_000_000_001);
+    // Untouched by a patch that named only the other field.
+    expect(toolOf(changed).endedAtMs).toBe(1_700_000_002_500);
+
+    const clearedEnd = applySessionPatch(stateWith(1_700_000_000_000, 1_700_000_002_500), {
+      tree: [{ op: 'updateTool', id: 't1', fields: { endedAtMs: null } }],
+    });
+    // `null` is the engine withdrawing the instant. It must DELETE the key: a
+    // stale end left in place reads as "this call finished then", which is a
+    // statement the engine has stopped making.
+    expect('endedAtMs' in toolOf(clearedEnd)).toBe(false);
+    expect(toolOf(clearedEnd).startedAtMs).toBe(1_700_000_000_000);
+
+    const clearedStart = applySessionPatch(stateWith(1_700_000_000_000, 1_700_000_002_500), {
+      tree: [{ op: 'updateTool', id: 't1', fields: { startedAtMs: null } }],
+    });
+    expect('startedAtMs' in toolOf(clearedStart)).toBe(false);
+    expect(toolOf(clearedStart).endedAtMs).toBe(1_700_000_002_500);
+  });
+
+  it('a tool node that never carried either comes out without the keys', () => {
+    const next = applySessionPatch(stateWith(undefined, undefined), {
+      tree: [{ op: 'updateTool', id: 't1', fields: { status: 'error' } }],
+    });
+    expect('startedAtMs' in toolOf(next)).toBe(false);
+    expect('endedAtMs' in toolOf(next)).toBe(false);
+    expect(toolOf(next)['status']).toBe('error');
+  });
+});

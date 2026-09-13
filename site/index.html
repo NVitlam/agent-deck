@@ -129,7 +129,7 @@
   <header class="top"><nav class="wrap nav"><a class="brand" href="#top"><i class="mark"></i>Agent Deck</a><div class="links"><a href="#see">What you see</a><a href="#stats">Stats</a><a href="#install">Install</a><a href="#trust">Trust</a><a href="#compatibility">Compatibility</a></div><a class="github" href="https://github.com/NVitlam/agent-deck">View on GitHub ↗</a></nav></header>
   <main id="top">
     <div class="wrap hero">
-      <span class="eyebrow"><i class="dot"></i> VS Code extension · Open source · <span id="version">0.7.1</span></span>
+      <span class="eyebrow"><i class="dot"></i> VS Code extension · Open source · <span id="version">0.8.0</span></span>
       <h1>See the shape of your agent work.</h1>
       <p class="intro">Agent Deck turns a scrolling swarm of coding-agent activity into a live, legible map—sessions, subagents, tool calls, and cost, all inside VS Code. Claude Code, OpenCode and Codex, side by side in one panel.</p>
       <div class="actions"><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install Agent Deck <span>→</span></a><a class="button" href="#see">See how it works</a></div>
@@ -149,20 +149,20 @@
     <section class="wrap" id="stats"><!-- g10 --><span class="tag">Stats</span><h2>What each session touched, repeated and spent, as numbers.</h2><p class="lead">A Stats view beside the canvas and the list. Its figures are counts, ratios and token figures taken from the structure of each session; none of them reads message text, tool payloads or reasoning, and none says why a number is what it is.</p>
       <div class="stats"><figure><img src="media/stats_tokens.png" alt="The Tokens part of the Stats view: one Claude Code session, its cost with the label estimated by Claude Code, and its tokens per agent" width="1581" height="560"><figcaption>Tokens: one session’s cost, estimated by Claude Code, and its tokens per agent.</figcaption></figure>
         <ul class="parts">
-          <li><b>Files</b> — every file a session touched, with its reads, edits, writes and errors.</li>
+          <li><b>Files</b> — every file a session touched, with its reads, edits, writes and errors.</li><li><b>Tools</b> — every tool a session called, with its calls, errors, longest call and total duration.</li>
           <li><b>Loops &amp; churn</b> — identical-call loops and churn chains; every call in a chain links back to the tree.</li>
-          <li><b>Tokens</b> — prompt, output, cache ratio and context fill per agent where the engine states them, and cost with its source named beside it.</li>
-          <li><b>Trends</b> — one point per stored session.</li>
+          <li><b>Tokens</b> — prompt, output, cache ratio and context fill per agent where the engine states them, cost with its source named beside it, the session’s own timings (wall time, time to the first tool call, the longest gap between calls, tokens and calls a minute), and the subagents whose spawning call has no result.</li>
+          <li><b>Trends</b> — one point per stored session, with tokens a minute drawn per engine.</li>
         </ul>
       </div>
       <div class="facts">
         <article><h3>A local history</h3><p>Derived numbers only, in VS Code’s storage for this extension, one JSON Lines file per week. Kept for <code>agentDeck.stats.retentionDays</code> (90 days by default), off with <code>agentDeck.stats.enabled</code>, removed by <b>Clear Stats History</b>. Nothing leaves the machine.</p></article>
         <article><h3>Stalls</h3><p>A tool call still running while its session has been silent for longer than <code>agentDeck.livenessThresholdMs</code> is drawn stalled, in amber, with the length of the silence. On <code>AskUserQuestion</code> and <code>ExitPlanMode</code> it reads “waiting on you”.</p></article>
         <article><h3>Cost, with its source named</h3><p>Reported by the engine; estimated by Claude Code, from Claude Code’s own telemetry; or estimated from your prices, set in <code>agentDeck.pricing</code>. Agent Deck ships no price table.</p></article>
-        <article><h3>Claude Code telemetry, optional</h3><p>With <code>agentDeck.telemetry.enabled</code> on (off by default, machine-scoped), the hook listener also receives Claude Code’s own OpenTelemetry export on <code>/v1/metrics</code>, <code>/v1/logs</code> and <code>/v1/traces</code>, at 127.0.0.1. A Claude Code session whose start the window received carries a cost estimated by Claude Code, and a tool duration fills in where the session states none, in its stats record. The Agent Deck output channel’s counters line states the requests accepted, refused and unmatched.</p></article>
-        <article><h3>A sidebar in the activity bar</h3><p>Open Deck, Open Statistics, Show Diagnostics, Settings and Clear Stats History, one entry each.</p></article>
+        <article><h3>Claude Code telemetry, optional</h3><p>With <code>agentDeck.telemetry.enabled</code> on (off by default, machine-scoped), the hook listener also receives Claude Code’s own OpenTelemetry export on <code>/v1/metrics</code>, <code>/v1/logs</code> and <code>/v1/traces</code>, at 127.0.0.1. A Claude Code session whose start the window received carries a cost estimated by Claude Code, and a tool duration fills in where the session states none, in its stats record and the Tools part. The Agent Deck output channel’s counters line states the requests accepted, refused and unmatched in this window, and the rows for sessions another window holds as foreign.</p></article>
+        <article><h3>A sidebar in the activity bar</h3><p>Open Deck, Open Statistics, Show Diagnostics, Settings and Clear Stats History, one entry each. A Tweaks tab beside them shows four settings and writes each one to your settings.</p></article>
         <article><h3>Several windows, one port</h3><p>The first VS Code window binds the hook listener; later windows follow its event stream on 127.0.0.1. Every deck stays live, with nothing to configure.</p></article>
-        <article><h3>The canvas and the drawer</h3><p>The canvas re-fits on each change to its geometry (<code>agentDeck.canvas.autoFit</code>, on by default). The tool-call drawer follows new calls as they arrive.</p></article>
+        <article><h3>The canvas and the drawer</h3><p>The canvas re-fits on each change to its geometry (<code>agentDeck.canvas.autoFit</code>, on by default). The tool-call drawer follows new calls as they arrive, and each row carries its time and the gap between calls.</p></article><article><h3>Oversize Codex transcripts</h3><p>A transcript over <code>agentDeck.codex.maxTranscriptBytes</code> is read in part — its first 256 KiB and its last 16 MiB — and its deck card reads “read in part”.</p></article>
         <article><h3>An extension API</h3><p><code>getLiveStats()</code>, <code>getStoredStats()</code> and <code>onDidUpdateStats</code>, from the extension’s exports. It hands out stats records and nothing else.</p></article>
       </div>
     <!-- /g10 --></section>

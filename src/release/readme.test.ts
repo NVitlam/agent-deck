@@ -3101,22 +3101,28 @@ describe('DoD 6.8 — the README documents the telemetry route, and never sets a
     }
   });
 
-  it('the CHANGELOG entry for the shipped version names the setting', () => {
-    const block = CHANGELOG_TEXT.split(`\n## ${MANIFEST.version} `)[1]?.split('\n## ')[0] ?? '';
+  it('the CHANGELOG 0.7.1 entry names the setting', () => {
+    // Pinned to 0.7.1, the release that shipped the route. It read the CURRENT
+    // version until 0.8.0, which would have pointed a history check at an entry
+    // about something else the moment the manifest moved.
+    const block = CHANGELOG_TEXT.split('\n## 0.7.1 ')[1]?.split('\n## ')[0] ?? '';
     expect(block.length).toBeGreaterThan(0);
     expect(block).toContain('`agentDeck.telemetry.enabled`');
     expect(block).toContain('estimated by Claude Code');
   });
 
   /*
-   * No view renders a tool duration: telemetry's durations reach the stats
-   * record (history, extension API) and nothing draws them. Round 1 of the
-   * phase verifier found three shipped sentences saying otherwise; round 2
-   * found the third still shipping, because nothing checked it. A sentence
-   * that names a view may not place durations, "both", or "the figures" in
-   * it, unless it says the view shows no per-tool durations.
+   * 0.7.1: no view rendered a tool duration, and round 1 of that phase's
+   * verifier found three shipped sentences saying otherwise.
+   *
+   * 0.8.0 (DoD 7.5) SUPERSEDES THE PREMISE, not the guard: the Stats view's
+   * Tools part now draws each tool's longest call and total duration. So the
+   * rule splits in two. The 0.7.1 CHANGELOG entry is history and still may
+   * place durations in no view. The README telemetry section may place them
+   * in the Tools part and in no other view - a sentence saying the Tokens
+   * part shows them is as wrong today as "both appear in the Stats view" was.
    */
-  it('no sentence in the telemetry section or the 0.7.1 entry places tool durations in a view', () => {
+  it('the 0.7.1 entry places tool durations in no view; the README places them only in the Tools part', () => {
     const VIEW = /\b(?:Stats view|Tokens view|Tokens part)\b/;
     const PLACES = [/\bdurations?\b/i, /\bBoth appear\b/, /\bThe figures reach\b/];
     const DENIES = /\bno per-tool durations\b/;
@@ -3132,13 +3138,26 @@ describe('DoD 6.8 — the README documents the telemetry route, and never sets a
     expect(placing('The figures reach the Stats view; the session tree and its wire messages carry none of them.')).toHaveLength(1);
     expect(placing('The Stats view shows no per-tool durations.')).toStrictEqual([]);
 
-    const block = CHANGELOG_TEXT.split(`\n## ${MANIFEST.version} `)[1]?.split('\n## ')[0] ?? '';
+    const block = CHANGELOG_TEXT.split('\n## 0.7.1 ')[1]?.split('\n## ')[0] ?? '';
     expect(block.length).toBeGreaterThan(0);
     expect(SECTION.length).toBeGreaterThan(0);
     // Both texts DO name a view, so the rule is not passing over prose that never mentions one.
     expect(VIEW.test(block)).toBe(true);
     expect(VIEW.test(SECTION)).toBe(true);
-    expect(placing(SECTION), 'README telemetry section').toStrictEqual([]);
-    expect(placing(block), `CHANGELOG ${MANIFEST.version}`).toStrictEqual([]);
+    expect(placing(block), 'CHANGELOG 0.7.1').toStrictEqual([]);
+
+    // The README, from 0.8.0: a sentence placing durations in a view names the Tools part.
+    const TOOLS_PART = /\bTools part\b/;
+    const misplacing = (text: string): string[] =>
+      sentencesOf(paragraphs(text)).filter(
+        (s) => (VIEW.test(s) || TOOLS_PART.test(s)) && PLACES.some((re) => re.test(s)) && !TOOLS_PART.test(s),
+      );
+    // VACUITY: the 0.7.1-era overclaim and a Tokens-part claim are caught; the shipped sentence is not.
+    expect(misplacing('Both appear in the Stats view, with the duration of each call.')).toHaveLength(1);
+    expect(misplacing('Tool durations are shown in the Tokens part.')).toHaveLength(1);
+    expect(misplacing("It is in the Stats view's Tools part, as each tool's longest call and total duration.")).toStrictEqual([]);
+    expect(misplacing(SECTION), 'README telemetry section').toStrictEqual([]);
+    // And the section does place them somewhere, so the rule is not satisfied by silence.
+    expect(sentencesOf(paragraphs(SECTION)).some((s) => TOOLS_PART.test(s) && /\bduration\b/.test(s))).toBe(true);
   });
 });

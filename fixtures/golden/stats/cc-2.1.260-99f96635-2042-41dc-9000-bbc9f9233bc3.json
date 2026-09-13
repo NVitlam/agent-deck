@@ -469,11 +469,11 @@
   "compactions": [],
   "stalls": [],
   "timing": {
-    "wallMs": 9582909,
-    "timeToFirstToolMs": 0,
+    "wallMs": 9585037,
+    "timeToFirstToolMs": 2128,
     "longestGapMs": 3009516,
-    "tokensPerMin": 625996.0498424852,
-    "callsPerMin": 2.679770829504903
+    "tokensPerMin": 625857.070765611,
+    "callsPerMin": 2.6791758863319983
   },
   "totals": {
     "prompt": 99707750,

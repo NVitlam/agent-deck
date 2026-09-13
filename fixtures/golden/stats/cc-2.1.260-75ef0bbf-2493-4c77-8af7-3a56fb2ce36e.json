@@ -1427,11 +1427,11 @@
   ],
   "stalls": [],
   "timing": {
-    "wallMs": 233099856,
-    "timeToFirstToolMs": 0,
+    "wallMs": 233101089,
+    "timeToFirstToolMs": 1233,
     "longestGapMs": 206631455,
-    "tokensPerMin": 39339.34167681339,
-    "callsPerMin": 0.11685978905109233
+    "tokensPerMin": 39339.133589375895,
+    "callsPerMin": 0.11685917091532765
   },
   "totals": {
     "prompt": 152542397,

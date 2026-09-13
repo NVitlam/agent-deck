@@ -4,14 +4,14 @@
     {
       "figure": "wallMs",
       "stated": true,
-      "raw": 17558,
-      "rendered": "17.6s"
+      "raw": 20438,
+      "rendered": "20.4s"
     },
     {
       "figure": "timeToFirstToolMs",
       "stated": true,
-      "raw": 0,
-      "rendered": "0ms"
+      "raw": 2880,
+      "rendered": "2.9s"
     },
     {
       "figure": "longestGapMs",
@@ -22,14 +22,14 @@
     {
       "figure": "tokensPerMin",
       "stated": true,
-      "raw": 1418891.673311311,
-      "rendered": "1,418,891.7"
+      "raw": 1218949.9951071532,
+      "rendered": "1,218,950.0"
     },
     {
       "figure": "callsPerMin",
       "stated": true,
-      "raw": 23.92071989976079,
-      "rendered": "23.9"
+      "raw": 20.549955964380075,
+      "rendered": "20.5"
     },
     {
       "figure": "costPerHourUsd",

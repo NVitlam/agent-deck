@@ -51,11 +51,11 @@
   "compactions": [],
   "stalls": [],
   "timing": {
-    "wallMs": 34065,
-    "timeToFirstToolMs": 0,
+    "wallMs": 35147,
+    "timeToFirstToolMs": 1082,
     "longestGapMs": 6963,
-    "tokensPerMin": 528216.644649934,
-    "callsPerMin": 8.806693086745927
+    "tokensPerMin": 511955.50118075515,
+    "callsPerMin": 8.535579139044584
   },
   "totals": {
     "prompt": 298091,

@@ -161,11 +161,11 @@
   ],
   "stalls": [],
   "timing": {
-    "wallMs": 2439009,
-    "timeToFirstToolMs": 0,
+    "wallMs": 2439131,
+    "timeToFirstToolMs": 128,
     "longestGapMs": 501630,
-    "tokensPerMin": 17545.986915177436,
-    "callsPerMin": 0.5166032597665692
+    "tokensPerMin": 17545.109303272355,
+    "callsPerMin": 0.5165774204009542
   },
   "totals": {
     "prompt": 700299,

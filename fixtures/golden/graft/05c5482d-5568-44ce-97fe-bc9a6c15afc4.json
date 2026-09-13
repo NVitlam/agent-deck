@@ -24,7 +24,7 @@
         "cacheCreation": 13390,
         "cacheRead": 28807,
         "output": 1512,
-        "atMs": 1787123128714
+        "atMs": 1787123117477
       },
       {
         "ordinal": 1,
@@ -32,7 +32,7 @@
         "cacheCreation": 3174,
         "cacheRead": 42197,
         "output": 617,
-        "atMs": 1787123247179
+        "atMs": 1787123240376
       }
     ],
     "model": "claude-opus-5",
@@ -74,7 +74,7 @@
             "cacheCreation": 26603,
             "cacheRead": 0,
             "output": 203,
-            "atMs": 1787123125895
+            "atMs": 1787123124332
           },
           {
             "ordinal": 1,
@@ -138,7 +138,7 @@
             "cacheCreation": 7920,
             "cacheRead": 18703,
             "output": 146,
-            "atMs": 1787123129081
+            "atMs": 1787123127942
           },
           {
             "ordinal": 1,
@@ -202,7 +202,7 @@
             "cacheCreation": 8054,
             "cacheRead": 18703,
             "output": 518,
-            "atMs": 1787123138383
+            "atMs": 1787123133280
           },
           {
             "ordinal": 1,
@@ -210,7 +210,7 @@
             "cacheCreation": 4008,
             "cacheRead": 26757,
             "output": 1099,
-            "atMs": 1787123236425
+            "atMs": 1787123224072
           }
         ],
         "model": "claude-opus-5",
@@ -252,7 +252,7 @@
                 "cacheCreation": 25726,
                 "cacheRead": 0,
                 "output": 185,
-                "atMs": 1787123143684
+                "atMs": 1787123142476
               },
               {
                 "ordinal": 1,
@@ -260,7 +260,7 @@
                 "cacheCreation": 1018,
                 "cacheRead": 25726,
                 "output": 215,
-                "atMs": 1787123146777
+                "atMs": 1787123145675
               },
               {
                 "ordinal": 2,
@@ -268,7 +268,7 @@
                 "cacheCreation": 1220,
                 "cacheRead": 26744,
                 "output": 294,
-                "atMs": 1787123154058
+                "atMs": 1787123153634
               },
               {
                 "ordinal": 3,
@@ -276,7 +276,7 @@
                 "cacheCreation": 6680,
                 "cacheRead": 27964,
                 "output": 516,
-                "atMs": 1787123161152
+                "atMs": 1787123159910
               },
               {
                 "ordinal": 4,
@@ -284,7 +284,7 @@
                 "cacheCreation": 7441,
                 "cacheRead": 34644,
                 "output": 490,
-                "atMs": 1787123167515
+                "atMs": 1787123167120
               },
               {
                 "ordinal": 5,
@@ -300,7 +300,7 @@
                 "cacheCreation": 8768,
                 "cacheRead": 48567,
                 "output": 744,
-                "atMs": 1787123180993
+                "atMs": 1787123176369
               },
               {
                 "ordinal": 7,
@@ -308,7 +308,7 @@
                 "cacheCreation": 3773,
                 "cacheRead": 57335,
                 "output": 3477,
-                "atMs": 1787123220342
+                "atMs": 1787123204595
               }
             ],
             "model": "claude-opus-5",

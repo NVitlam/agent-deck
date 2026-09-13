@@ -232,11 +232,11 @@
           "subagents": 4,
           "silentSubagents": 0,
           "timing": {
-            "wallMs": 126259,
-            "timeToFirstToolMs": 0,
+            "wallMs": 122899,
+            "timeToFirstToolMs": 3443,
             "longestGapMs": 10799,
-            "tokensPerMin": 280201.64899135905,
-            "callsPerMin": 6.652991073903642
+            "tokensPerMin": 287862.22833383514,
+            "callsPerMin": 6.834880674374894
           },
           "subagentsUnreceived": 0
         },
@@ -305,11 +305,11 @@
           "subagents": 1,
           "silentSubagents": 0,
           "timing": {
-            "wallMs": 88454,
-            "timeToFirstToolMs": 0,
+            "wallMs": 77349,
+            "timeToFirstToolMs": 4388,
             "longestGapMs": 6699,
-            "tokensPerMin": 216585.11768828996,
-            "callsPerMin": 8.13982408935718
+            "tokensPerMin": 247680.25443121436,
+            "callsPerMin": 9.30845906217275
           },
           "subagentsUnreceived": 0
         }
@@ -384,16 +384,16 @@
                   "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
                   "index": 0,
                   "x": 0,
-                  "y": 280201.64899135905
+                  "y": 287862.22833383514
                 },
                 {
                   "sessionId": "4299490e-4a09-46a0-a544-7ffb0429e7e7",
                   "index": 1,
                   "x": 24,
-                  "y": 216585.11768828996
+                  "y": 247680.25443121436
                 }
               ],
-              "max": 280201.64899135905,
+              "max": 287862.22833383514,
               "flat": false
             }
           ]

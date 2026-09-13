@@ -20,7 +20,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { WebviewToHostMessage } from '../../src/model/events.js';
 import { TWEAK_SETTINGS } from '../../src/sidebar/tweaks.js';
-import type { DeckSortMode } from '../layout.js';
+import { DECK_SORTS } from '../store.js';
 import type { WebviewHarness } from '../testkit.js';
 import { all, loadHarness, one } from '../testkit.js';
 import { TESTID } from '../canvas-contract.js';
@@ -229,12 +229,14 @@ describe('the panel renders src/sidebar/tweaks.ts', () => {
     // makes the duplication safe, and it is the standing treatment here for a
     // value declared in two places.
     //
-    // The right-hand side is not a literal list: `Record<DeckSortMode, true>`
-    // is exhaustive-checked by `tsc`, so a member added to the union is a
-    // compile error on this object and a member removed is one too. Its keys
-    // are therefore the union, enumerated at runtime.
-    const EVERY_SORT: Record<DeckSortMode, true> = { live: true, recent: true, engine: true };
-    const sorts = Object.keys(EVERY_SORT);
+    // The right-hand side is not a literal list. `store.ts:DECK_SORTS` is the
+    // keys of a `Record<DeckSortMode, true>`, which `tsc` checks for
+    // exhaustiveness — a member added to the union is a compile error there
+    // and a member removed is an excess property — so it cannot lag the type,
+    // and it is the list the PRODUCT validates against (`isDeckSort`). This
+    // test is therefore comparing the panel's options to the same enumeration
+    // the store refuses on, not to a third copy written for the test.
+    const sorts = [...DECK_SORTS];
     const options = [...(TWEAK_SETTINGS.find((t) => t.key === 'defaultOrdering')?.options ?? [])];
     expect(options).toStrictEqual(sorts);
     // Order is asserted above; this says the SETS agree even if someone

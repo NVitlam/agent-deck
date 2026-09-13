@@ -1,0 +1,32 @@
+{
+  "what": "webview/inspector-header.ts:layoutHeader at a 1200px panel — v0.8.0 DoD 7.9. The same seven boxes at half the width. The boxes do not move: with .field at flex-shrink 0 the group's content does not reflow with the panel, so what a narrower panel changes is how much of the group is drawn. Hand-written from the flex arithmetic. NOT a browser measurement.",
+  "panelPx": 1200,
+  "reservedPx": 520,
+  "fields": [
+    { "field": "status", "label": "status", "value": "running", "mono": false },
+    { "field": "id", "label": "id", "value": "root", "mono": true },
+    { "field": "sessionId", "label": "session", "value": "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9", "mono": true },
+    { "field": "spawnDepth", "label": "spawn depth", "value": "0", "mono": true },
+    { "field": "context", "label": "context", "value": "152,094", "mono": true },
+    { "field": "burn", "label": "burn", "value": "452,392 in / 2,004 out", "mono": true },
+    { "field": "duration", "label": "duration", "value": "1h 12m", "mono": true }
+  ],
+  "layout": {
+    "availablePx": 680,
+    "naturalPx": 907.6,
+    "usedPx": 907.6,
+    "visiblePx": 680,
+    "fields": [
+      { "field": "status", "x": 0, "width": 58, "contentPx": 40.04, "overflows": false, "clipped": false, "outside": false },
+      { "field": "id", "x": 72, "width": 128, "contentPx": 26.4, "overflows": false, "clipped": false, "outside": false },
+      { "field": "sessionId", "x": 214, "width": 237.6, "contentPx": 237.6, "overflows": false, "clipped": false, "outside": false },
+      { "field": "spawnDepth", "x": 465.6, "width": 74, "contentPx": 67.32, "overflows": false, "clipped": false, "outside": false },
+      { "field": "context", "x": 553.6, "width": 104, "contentPx": 46.2, "overflows": false, "clipped": false, "outside": false },
+      { "field": "burn", "x": 671.6, "width": 158, "contentPx": 145.2, "overflows": false, "clipped": true, "outside": false },
+      { "field": "duration", "x": 843.6, "width": 64, "contentPx": 48.96, "overflows": false, "clipped": false, "outside": true }
+    ],
+    "overlaps": [],
+    "clipped": ["burn"],
+    "outside": ["duration"]
+  }
+}

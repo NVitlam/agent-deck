@@ -44,6 +44,16 @@ These are build-time law in this repository, not guidelines. A change that break
   `~/.claude`, ever. Hook installation is a snippet the user pastes themselves; the extension never
   edits a settings file to install it. In this repository the hook block lives in the repo-local
   `.claude/settings.local.json` precisely so that `~/.claude` stays untouched.
+
+  **One write the extension does make, stated because G1 is about engines and this is not one.**
+  The sidebar's Tweaks tab (0.8.0) changes four of Agent Deck's own settings —
+  `agentDeck.followNewSessions`, `agentDeck.openDrawerOnEnter`,
+  `agentDeck.drawerExpandedByDefault`, `agentDeck.defaultOrdering` — through VS Code's
+  `WorkspaceConfiguration.update`, to the user settings (`ConfigurationTarget.Global`), never to a
+  workspace's `.vscode/settings.json`. Nothing under any engine's directory is written. A message
+  naming any other key, or a value the setting cannot take, is refused before the call.
+  Proof: `src/extension.test.ts` › "an updateTweak writes through workspace.getConfiguration().update, to Global";
+  `src/sidebar/provider.test.ts` › "with no writer wired, an updateTweak is dropped rather than half-acted-on".
   `src/hooks/listener.ts` imports no filesystem API at all, and a test asserts that against the
   source text — including that it never resolves a home directory.
 
@@ -158,6 +168,13 @@ is how every test reaches a fixture instead of your data (G6).
 | `<root>/sessions/**` | `readdirSync` to discover those files |
 | `<root>/thread-writer-locks/` | `readdirSync` — **names only** |
 | a transcript | `statSync().mtimeMs`, for the liveness fallback |
+
+**A transcript over `agentDeck.codex.maxTranscriptBytes` (0.8.0) is read in two windows and no
+others:** its first 256 KiB, on which the fingerprint and the workspace match run, and its last
+16 MiB. The bytes between are not read. The session is marked partial on the deck and on
+`SessionState.partial`, and the line the jump lands in is dropped and counted, never parsed.
+Proof: `src/perf/oversize.test.ts` › "reads 16.25 MiB of it, in those two windows and nowhere else";
+`src/codex/index.test.ts` › "reads 65 MiB as 256 KiB of head plus the last 16 MiB, and says so".
 
 The lock files are **never opened**. They are 0 bytes and their whole content is their name, so the
 engine reads the directory listing and stops there. `.coordination.lock` is process-lifetime and is

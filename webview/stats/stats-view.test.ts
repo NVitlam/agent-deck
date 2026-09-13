@@ -49,7 +49,7 @@ import { all, loadHarness, one, press } from '../testkit.js';
 import { TESTID } from '../canvas-contract.js';
 import { EM_DASH } from '../format.js';
 import { liveSession } from '../testdata.js';
-import { COST_SOURCE_LABELS, VOCABULARY, statsLayout, trendsLayout } from './layout.js';
+import { COST_SOURCE_LABELS, VOCABULARY, trendsLayout } from './layout.js';
 import { upgradeStatsRecord } from '../../src/stats/schema.js';
 
 let harness: WebviewHarness;

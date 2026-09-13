@@ -1039,3 +1039,177 @@ describe('the inspector header’s field row (DoD 7.9)', () => {
     expect(session?.width).toBe(237.6);
   });
 });
+
+/**
+ * DoD 7.3 — F14 RENDERED, DRIVEN THROUGH THE REAL MOUNT.
+ *
+ * `webview/call-time.ts` decides the three numbers and
+ * `webview/goldens/drawer/call-time.json` states them outside the code.
+ * `call-time.test.ts` checks the model against that table; what this block
+ * adds is the other half, and it is the half a model cannot supply: the
+ * component really prints those strings, in those columns, for a node built
+ * the way the host builds one.
+ *
+ * THE TWO ASSERTIONS THAT ARE NOT ABOUT THE NUMBERS. A row is looked up in a
+ * timeline built over the agent’s RUN ORDER, never over the list as drawn,
+ * so filtering the list and reversing it must leave every figure alone. Both
+ * are driven through the real controls rather than by setting a variable —
+ * `callTimeline(visibleCalls)` is a one-word change that no assertion about
+ * an unfiltered list can see.
+ */
+describe('the call list’s time column and inter-call gap (DoD 7.3)', () => {
+  interface RenderedRow {
+    at: string;
+    gap: string;
+    end: string;
+  }
+  interface TimeGolden {
+    cases: {
+      name: string;
+      calls: { id: string; startedAtMs?: number; endedAtMs?: number }[];
+      rendered: RenderedRow[];
+    }[];
+  }
+
+  let golden: TimeGolden;
+
+  beforeAll(async () => {
+    const fs = (await import(/* @vite-ignore */ NODE_FS)) as unknown as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    golden = JSON.parse(
+      fs.readFileSync(`${process.cwd()}/webview/goldens/drawer/call-time.json`, 'utf8'),
+    ) as TimeGolden;
+  });
+
+  /** The named case, as the component would be given it. */
+  const caseNamed = (fragment: string) => {
+    const found = golden.cases.find((c) => c.name.includes(fragment));
+    if (found === undefined) throw new Error(`no golden case naming ${fragment}`);
+    return found;
+  };
+
+  /**
+   * An agent whose calls carry the golden case’s instants.
+   *
+   * The three statuses are DELIBERATELY DIFFERENT so the status chips can
+   * filter the list down to one row that is not the first.
+   */
+  const runOf = (fragment: string): AgentNode => {
+    const statuses: ToolNode['status'][] = ['done', 'error', 'done'];
+    return agent({
+      id: 'root',
+      kind: 'main',
+      label: 'a run with instants',
+      status: 'running',
+      spawnDepth: 0,
+      children: caseNamed(fragment).calls.map((call, i) =>
+        tool({
+          id: call.id,
+          toolName: 'Read',
+          status: statuses[i] ?? 'done',
+          inputPreview: `{"file_path":"${call.id}.ts"}`,
+          ...(call.startedAtMs === undefined ? {} : { startedAtMs: call.startedAtMs }),
+          ...(call.endedAtMs === undefined ? {} : { endedAtMs: call.endedAtMs }),
+        }),
+      ),
+    });
+  };
+
+  /** Every row’s two columns, in the order the list draws them. */
+  const columns = (container: HTMLElement): { id: string; at: string; gap: string }[] =>
+    all(container, TESTID.actionRow).map((row) => {
+      const at = row.querySelector('[data-testid="action-at"]');
+      const gap = row.querySelector('[data-testid="action-gap"]');
+      if (at === null || gap === null) throw new Error(`a call row with no time columns`);
+      return {
+        id: row.dataset['actionId'] ?? '',
+        at: at.textContent ?? '',
+        gap: gap.textContent ?? '',
+      };
+    });
+
+  it('prints the committed figures, in the committed order', () => {
+    const c = caseNamed('all stated');
+    const container = render({ node: runOf('all stated'), drawerExpanded: true });
+    expect(columns(container)).toEqual(
+      c.calls.map((call, i) => ({
+        id: call.id,
+        at: c.rendered[i]?.at ?? '',
+        gap: c.rendered[i]?.gap ?? '',
+      })),
+    );
+  });
+
+  it('gives the first call an em dash for a gap, because it has no predecessor', () => {
+    const container = render({ node: runOf('all stated'), drawerExpanded: true });
+    const first = columns(container)[0];
+    expect(first?.id).toBe('a');
+    expect(first?.gap).toBe(EM_DASH);
+    expect(first?.at).toBe('+0ms');
+  });
+
+  it('prints an em dash in both columns for a call stating no start', () => {
+    const c = caseNamed('no start');
+    const container = render({ node: runOf('no start'), drawerExpanded: true });
+    const rows = columns(container);
+    expect(rows[1]).toEqual({ id: 'b', at: EM_DASH, gap: EM_DASH });
+    // And the call AFTER it loses its gap and keeps its offset.
+    expect(rows[2]).toEqual({ id: 'c', at: c.rendered[2]?.at, gap: EM_DASH });
+  });
+
+  it('keeps every figure when the list is FILTERED down to one row', () => {
+    const container = render({ node: runOf('all stated'), drawerExpanded: true });
+    const before = columns(container);
+    const failed = all(container, TESTID.drawerFilterChip).find(
+      (chip) => chip.dataset['filter'] === 'error',
+    );
+    if (failed === undefined) throw new Error('no Failed chip');
+    click(failed);
+
+    const after = columns(container);
+    expect(after).toHaveLength(1);
+    // `b` is the second call of the run. Over the FILTERED list it would be
+    // the first, and a first row has no predecessor and no gap — so an em
+    // dash here is exactly the defect this test exists for.
+    expect(after[0]).toEqual(before.find((r) => r.id === 'b'));
+    expect(after[0]?.gap).not.toBe(EM_DASH);
+  });
+
+  it('keeps every figure when the list is REVERSED', () => {
+    const container = render({ node: runOf('all stated'), drawerExpanded: true });
+    const before = columns(container);
+    const select = one(container, TESTID.drawerOrderSelect) as HTMLSelectElement;
+    harness.flushSync(() => {
+      select.value = 'newest';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    const after = columns(container);
+    expect(after.map((r) => r.id)).toEqual([...before.map((r) => r.id)].reverse());
+    expect([...after].reverse()).toEqual(before);
+  });
+
+  it('draws the selected call’s window in the detail head, both instants', () => {
+    const c = caseNamed('all stated');
+    const container = render({
+      node: runOf('all stated'),
+      drawerExpanded: true,
+      detailActionId: 'c',
+    });
+    expect(one(container, 'drawer-detail-start').textContent).toBe(c.rendered[2]?.at);
+    expect(one(container, 'drawer-detail-end').textContent).toBe(c.rendered[2]?.end);
+  });
+
+  it('draws an em dash for the end of a call the engine has not finished', () => {
+    const c = caseNamed('running');
+    const container = render({
+      node: runOf('running'),
+      drawerExpanded: true,
+      detailActionId: 'b',
+    });
+    expect(one(container, 'drawer-detail-start').textContent).toBe(c.rendered[1]?.at);
+    expect(one(container, 'drawer-detail-end').textContent).toBe(EM_DASH);
+    expect(c.rendered[1]?.end).toBe(EM_DASH);
+  });
+});

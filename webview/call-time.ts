@@ -96,6 +96,12 @@ export function callTimeline(calls: readonly CallInstants[]): CallTime[] {
     const end = call.endedAtMs;
     if (base !== undefined && start !== undefined) row.atMs = start - base;
     if (base !== undefined && end !== undefined) row.endAtMs = end - base;
+    // The `i === 0` arm is REDUNDANT and is kept for the reader: `calls[-1]`
+    // is already `undefined`, so removing it changes nothing — measured, as an
+    // equivalent mutant that the whole suite survived. What carries the
+    // first-row rule is therefore array indexing, and the assertions that pin
+    // it are about the OUTPUT (`'gapMs' in row` is false) rather than about
+    // this line.
     const previous = i === 0 ? undefined : calls[i - 1]?.startedAtMs;
     if (start !== undefined && previous !== undefined) row.gapMs = start - previous;
     return row;

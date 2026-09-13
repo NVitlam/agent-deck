@@ -87,7 +87,7 @@ export const TWEAK_SETTINGS: readonly TweakSetting[] = [
   {
     key: 'defaultOrdering',
     label: 'Deck ordering',
-    detail: 'The order deck cards are placed in when a window opens.',
+    detail: 'The order deck cards are placed in when the deck opens.',
     kind: 'enum',
     // `DeckSortMode` in `webview/layout.ts`. NOT imported — this module has no
     // imports, by the rule above — so `webview/tweaks.test.ts` asserts the two

@@ -76,15 +76,13 @@ import type { CompactionRecord } from '../model/events.js';
 /**
  * The record format. Bumped when a reader must notice a change.
  *
- * **2 as of v0.8.0 Phase 7 (DoD 7.1), and the bump COSTS A USER THEIR
- * HISTORY.** {@link validateStatsRecord} requires this exact value, and the
- * store's reader counts a line it cannot validate on `storeMalformed` and
- * skips it — the behaviour `store.ts`'s header already states for "a record
- * from a future schema version", reached here from the other side. So every
- * record 0.7.x wrote is skipped by 0.8.0: Trends starts again, nothing on
- * disk is rewritten, and no read fails. Stated on the constant because the
- * consequence is a user-visible one that the number itself does not show, and
- * it is named in the 0.8.0 CHANGELOG and README for the same reason.
+ * **2 as of v0.8.0 Phase 7 (DoD 7.1).** What a WRITER produces, and what
+ * {@link validateStatsRecord} requires. A READER accepts older versions too —
+ * see {@link upgradeStatsRecord}: records 0.7.x wrote are read, never skipped
+ * and never rewritten, with the facts their version could not carry named
+ * absent (DoD 7.14, user ruling R3, 2026-09-13). An earlier draft of this
+ * comment said the bump cost a user their history; that was the behaviour
+ * until the ruling, and it is not the behaviour now.
  */
 export const STATS_SCHEMA_VERSION = 2;
 
@@ -584,4 +582,72 @@ export function validateStatsRecord(value: unknown): StatsValidation {
   walkStrings(record, '', '', errors);
 
   return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Every `statsSchemaVersion` a READER accepts, oldest first — v0.8.0 DoD 7.14.
+ *
+ * The store is append-only, so a record 0.7.x wrote stays on disk as 0.7.x
+ * wrote it. User ruling R3 (2026-09-13): such records are read, never skipped
+ * and never rewritten. A version outside this list is still refused, because
+ * nothing here knows what a FUTURE format means.
+ */
+export const READABLE_STATS_SCHEMA_VERSIONS: readonly number[] = [1, STATS_SCHEMA_VERSION];
+
+/**
+ * The fact ids an upgraded record names, per version it was written at.
+ *
+ * Version 1 predates F14 (time) and F15 (spawn results). R3 says every field
+ * the old record lacks is `F14:absent`, "like an engine that states no
+ * timestamps". The F15 fields are lacking too, and naming them `F14:absent`
+ * would put the wrong fact id on them, so they are named `F15:absent` beside
+ * it — the reading is recorded in `lab/PLAN.md` 7.14. Both follow the grammar
+ * `unavailable` already uses: `<fact>:<reason>`.
+ */
+export const HISTORY_ABSENT_FACTS: Readonly<Record<number, readonly string[]>> = {
+  1: ['F14:absent', 'F15:absent'],
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * A stored line, as the current reader sees it — v0.8.0 DoD 7.14.
+ *
+ * A current-version record, and anything that is not a version-1 record, is
+ * returned AS IS: validation is still {@link validateStatsRecord}'s job, and
+ * a version this reader does not know is still refused there.
+ *
+ * A version-1 record is returned as a NEW object in the current shape: an
+ * empty `timing` block (the shape a session stating no instant already has),
+ * `resultUnreceived: false` on each agent and no `subagentsUnreceived` (the
+ * shape a session stating no spawn edges already has), and
+ * {@link HISTORY_ABSENT_FACTS} added to `unavailable`. So a reader sees no
+ * zero standing in for an absence — every gap is named. Its
+ * `statsSchemaVersion` reads as the current one because it now has that SHAPE;
+ * where it came from is what `F14:absent` says. Nothing on disk is touched:
+ * the input is not mutated, and the store never writes a line it read.
+ */
+export function upgradeStatsRecord(value: unknown): unknown {
+  if (!isPlainObject(value)) return value;
+  if (value['statsSchemaVersion'] !== 1) return value;
+  const absent = HISTORY_ABSENT_FACTS[1] ?? [];
+  const agents = value['agents'];
+  const unavailable = value['unavailable'];
+  return {
+    ...value,
+    statsSchemaVersion: STATS_SCHEMA_VERSION,
+    timing: isPlainObject(value['timing']) ? value['timing'] : {},
+    agents: Array.isArray(agents)
+      ? agents.map((agent: unknown) =>
+          isPlainObject(agent) && agent['resultUnreceived'] === undefined
+            ? { ...agent, resultUnreceived: false }
+            : agent,
+        )
+      : agents,
+    unavailable: Array.isArray(unavailable)
+      ? [...new Set([...(unavailable as unknown[]), ...absent])].sort()
+      : unavailable,
+  };
 }

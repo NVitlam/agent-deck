@@ -708,6 +708,15 @@ export interface TrendsLayout {
    * an empty store — as though it were the answer.
    */
   reason?: 'disabled' | 'fewer-than-two' | 'loading';
+  /**
+   * v0.8.0 DoD 7.14 (user ruling R3): covered records naming `F14:absent` —
+   * history an older build wrote, which states no time. Each is a point in every
+   * series that does not need F14, and has NO point in `tokensPerMin`. Counted
+   * HERE, over the STORED records Trends draws, because that is the only place
+   * an older record can arrive from: a live record is always derived by this
+   * build. The footer states it. It is not an exclusion.
+   */
+  timeAbsent: number;
 }
 
 /**
@@ -785,7 +794,8 @@ export function trendsLayout(
   // point at all rather than a zero.
   build('tokensPerMin', (r) => timingOf(r).tokensPerMin);
   const width = sessions.length === 0 ? 0 : (sessions.length - 1) * TREND_STEP;
-  const layout: TrendsLayout = { series, sessions, width, empty: false };
+  const timeAbsent = covered.filter((r) => r.unavailable.includes(TIME_ABSENT_FACT)).length;
+  const layout: TrendsLayout = { series, sessions, width, empty: false, timeAbsent };
   // `loading` outranks everything, including `disabled`: before the store has
   // been read, "off" and "empty" are both guesses. Never render a partial store
   // as history (DoD 4.12).
@@ -811,6 +821,9 @@ export interface ExcludedSummary {
   /** Reason code -> how many. Codes are `ExclusionCode`, nothing invented. */
   byCode: Partial<Record<ExclusionCode, number>>;
 }
+
+/** The fact id R3 names for a record whose version states no time. */
+export const TIME_ABSENT_FACT = 'F14:absent';
 
 export function excludedSummary(records: readonly StatsRecord[]): ExcludedSummary {
   const byCode: Partial<Record<ExclusionCode, number>> = {};

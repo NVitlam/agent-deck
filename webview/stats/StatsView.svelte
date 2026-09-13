@@ -78,9 +78,13 @@
 
   let excludedText = $derived.by(() => {
     const { count, byCode } = layout.excluded;
-    if (count === 0) return 'no session excluded';
+    const { timeAbsent } = trends;
+    // v0.8.0 DoD 7.14: history with no time facts is shown everywhere except the
+    // F14 series, and the footer names it — a missing point is said, not implied.
+    const time = timeAbsent === 0 ? '' : `; F14:absent ${String(timeAbsent)}, not in tokens per minute`;
+    if (count === 0) return `no session excluded${time}`;
     const parts = Object.entries(byCode).map(([code, n]) => `${code} ${String(n)}`);
-    return `${String(count)} session${count === 1 ? '' : 's'} excluded: ${parts.join(', ')}`;
+    return `${String(count)} session${count === 1 ? '' : 's'} excluded: ${parts.join(', ')}${time}`;
   });
 
   function follow(session: SessionRef, agentId: string, ordinal: number): boolean {

@@ -77,7 +77,7 @@ import { join } from 'node:path';
 
 import { expiredFileNames, storeFileName } from './retention.js';
 import type { StatsRecord } from './schema.js';
-import { validateStatsRecord } from './schema.js';
+import { upgradeStatsRecord, validateStatsRecord } from './schema.js';
 
 /** The subdirectory of `globalStorageUri` the store owns. One declaration. */
 export const STORE_DIR_NAME = 'stats';
@@ -382,6 +382,9 @@ export class StatsStore {
       this.#countMalformed(`${file}: line is not JSON`);
       return null;
     }
+    // v0.8.0 DoD 7.14 (R3): a line an older version wrote is READ, in the current
+    // shape, with its missing facts named. The line on disk is not touched.
+    parsed = upgradeStatsRecord(parsed);
     const validation = validateStatsRecord(parsed);
     if (!validation.ok) {
       this.#countMalformed(`${file}: ${validation.errors[0] ?? 'invalid record'}`);

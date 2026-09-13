@@ -51,7 +51,8 @@ import { all, loadHarness, one, press } from '../testkit.js';
 import { TESTID } from '../canvas-contract.js';
 import { EM_DASH } from '../format.js';
 import { liveSession } from '../testdata.js';
-import { COST_SOURCE_LABELS, VOCABULARY } from './layout.js';
+import { COST_SOURCE_LABELS, VOCABULARY, statsLayout, trendsLayout } from './layout.js';
+import { upgradeStatsRecord } from '../../src/stats/schema.js';
 
 let harness: WebviewHarness;
 
@@ -1410,5 +1411,86 @@ describe('DoD 7.4 — F15 rendered beside silent', () => {
     for (const word of ['never', 'abandoned', 'failed', 'lost', 'will']) {
       expect(VOCABULARY.unreceivedResult).not.toContain(word);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.8.0 DoD 7.14 (user ruling R3) — history read across schema versions
+// ---------------------------------------------------------------------------
+
+describe('DoD 7.14 — a record 0.7.1 wrote appears everywhere except the F14 series', () => {
+  /*
+   * The record is the REAL 0.7.1 one `src/stats/history.test.ts` reads through
+   * the store (byte-identical to the v0.7.1 golden), upgraded by the SAME
+   * function the store applies on read. The current record is a committed
+   * schema-2 golden of a different session, so Trends has two points to draw.
+   */
+  function oldRecord(): StatsRecord {
+    const raw = JSON.parse(
+      readFileSync(resolve('fixtures/golden/stats-history/v0.7.1-cc-2.1.260-75ef0bbf-2493-4c77-8af7-3a56fb2ce36e.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(raw['statsSchemaVersion']).toBe(1);
+    return upgradeStatsRecord(raw) as StatsRecord;
+  }
+  function currentRecord(): StatsRecord {
+    const record = JSON.parse(
+      readFileSync(resolve(GOLDEN_DIR, 'cc-2.1.260-99f96635-2042-41dc-9000-bbc9f9233bc3.json'), 'utf8'),
+    ) as StatsRecord;
+    expect(record.statsSchemaVersion).toBe(2);
+    return record;
+  }
+
+  it('is in the Files, Loops & churn and Tokens tables', () => {
+    const old = oldRecord();
+    const layout = statsLayout([old, currentRecord()]);
+    // Files: every path the old record touched is a row.
+    const paths = new Set(layout.files.rows.map((row) => row.filePath));
+    expect(old.files.length).toBeGreaterThan(0);
+    for (const file of old.files) expect(paths.has(file.filePath), file.filePath).toBe(true);
+    // Loops & churn: its seven churn chains, attributed to its session.
+    const chains = layout.loops.rows.filter((row) => row.session.sessionId === old.sessionId);
+    expect(chains).toHaveLength(7);
+    // Tokens: a session of its own.
+    expect(layout.tokens.sessions.map((s) => s.session.sessionId)).toContain(old.sessionId);
+  });
+
+  it('is a point in every Trends series that does not need F14, and not in tokens per minute', () => {
+    const old = oldRecord();
+    const current = currentRecord();
+    const trends = trendsLayout([old, current]);
+    const pointsOf = (id: string, sessionId: string): number =>
+      trends.series
+        .filter((series) => series.id === id)
+        .flatMap((series) => series.lines.flatMap((line) => line.points))
+        .filter((point) => point.sessionId === sessionId).length;
+    expect(pointsOf('prompt', old.sessionId)).toBe(1);
+    expect(pointsOf('loops', old.sessionId)).toBe(1);
+    // `cost` needs an ENGINE-reported cost, which neither record carries; that is
+    // the cost series' own rule, not F14's, and it holds for the current record too.
+    expect(pointsOf('cost', old.sessionId)).toBe(pointsOf('cost', current.sessionId));
+    // The F14 series: no point for the old record, one for the current one (control).
+    expect(pointsOf('tokensPerMin', old.sessionId)).toBe(0);
+    expect(pointsOf('tokensPerMin', current.sessionId)).toBe(1);
+    expect(trends.timeAbsent).toBe(1);
+  });
+
+  it('the footer names F14:absent, counted over the stored history Trends draws', () => {
+    const old = oldRecord();
+    const current = currentRecord();
+    const panel = render();
+    send({ type: 'snapshot', sessions: [] });
+    send({ type: 'statsSnapshot', records: [current] });
+    send({ type: 'statsStore', records: [old, current], enabled: true });
+    click(one(panel.container, TESTID.statsToggle));
+    const footer = one(panel.container, TESTID.statsFooter).textContent ?? '';
+    expect(footer).toContain('F14:absent 1');
+    expect(footer).toContain('not in tokens per minute');
+    // Control: with only current records stored, the footer says nothing of F14.
+    const plain = render();
+    send({ type: 'snapshot', sessions: [] });
+    send({ type: 'statsSnapshot', records: [current] });
+    send({ type: 'statsStore', records: [current], enabled: true });
+    click(one(plain.container, TESTID.statsToggle));
+    expect(one(plain.container, TESTID.statsFooter).textContent).not.toContain('F14:absent');
   });
 });

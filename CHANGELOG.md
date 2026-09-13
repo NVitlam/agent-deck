@@ -32,9 +32,10 @@ All notable changes to Agent Deck are documented here.
 
 ### Changed
 
-- **Stats records from 0.7.x are not read.** The record format is version 2; each
-  older line is counted on `storeMalformed` and skipped, nothing on disk is
-  rewritten, and Trends starts from the first session 0.8.0 records.
+- **Records from 0.7.x are read; time facts are absent for them.** The record
+  format is version 2; an older line is read as it is, nothing on disk is
+  rewritten, and its missing facts are named `F14:absent` and `F15:absent`.
+  It has no point in the tokens-per-minute series, and the Stats footer counts it.
 
 ### Fixed
 

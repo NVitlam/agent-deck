@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { HostToWebviewMessage, ToolNode, WebviewToHostMessage } from '../src/model/events.js';
 import type { StatsRecord } from '../src/stats/schema.js';
+import { STATS_SCHEMA_VERSION } from '../src/stats/schema.js';
 import { FIT_TRIGGERS, createStore } from './store.js';
 import type { CanvasGeometry, Store } from './store.js';
 import { VIEW_MODES } from './canvas-contract.js';
@@ -18,7 +19,7 @@ import { liveSession, tool } from './testdata.js';
 /** A minimal, valid-shaped record. The store does not validate; the host did. */
 function record(overrides: Partial<StatsRecord> = {}): StatsRecord {
   return {
-    statsSchemaVersion: 1,
+    statsSchemaVersion: STATS_SCHEMA_VERSION,
     sessionId: 'session-live',
     engine: 'cc',
     projectSlug: 'c--Users-dev-projects-agent-deck',
@@ -32,6 +33,9 @@ function record(overrides: Partial<StatsRecord> = {}): StatsRecord {
     contextChurn: [],
     compactions: [],
     stalls: [],
+    // F14 (v0.8.0). An empty block is a real record: a session that states no
+    // instant at all derives one, and the Stats layout has to render it.
+    timing: {},
     totals: { prompt: 1, output: 1, compactions: 0, subagents: 0, silentSubagents: 0, stalls: 0 },
     params: { loopMin: 3 },
     unavailable: [],
@@ -61,7 +65,7 @@ function rig(options: { autoFit?: boolean; enter?: boolean } = {}): Rig {
   }
   const { store } = out;
   store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
-  if (options.autoFit === false) store.handleMessage({ type: 'settings', canvasAutoFit: false });
+  if (options.autoFit === false) store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {} });
   if (options.enter !== false) store.enterSession('session-live');
   store.reportCanvasGeometry(GEOMETRY);
   // Everything above may have fitted; the assertions start from zero.
@@ -272,9 +276,9 @@ describe('DoD 4.0 — agentDeck.canvas.autoFit off: fit is never called after th
   it('defaults to on, and a settings message turns it off', () => {
     const store = createStore();
     expect(store.getView().canvasAutoFit).toBe(true);
-    store.handleMessage({ type: 'settings', canvasAutoFit: false });
+    store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {} });
     expect(store.getView().canvasAutoFit).toBe(false);
-    store.handleMessage({ type: 'settings', canvasAutoFit: true });
+    store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {} });
     expect(store.getView().canvasAutoFit).toBe(true);
   });
 
@@ -302,7 +306,7 @@ describe('DoD 4.0 — agentDeck.canvas.autoFit off: fit is never called after th
 
   it('turning the setting on later does not fit by itself; the next trigger does', () => {
     const r = rig({ autoFit: false });
-    r.store.handleMessage({ type: 'settings', canvasAutoFit: true });
+    r.store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {} });
     expect(r.fits).toBe(0);
     r.store.selectNode('tool-read');
     expect(r.fits).toBe(1);
@@ -452,7 +456,7 @@ describe('the message guard in main.ts and the contract agree', () => {
       { type: 'degraded', engine: 'cc', degraded: false },
       { type: 'statsSnapshot', records: [] },
       { type: 'statsStore', records: [], enabled: true },
-      { type: 'settings', canvasAutoFit: true },
+      { type: 'settings', canvasAutoFit: true, tweaks: {} },
       { type: 'showView', mode: 'stats' },
     ];
     expect([...HOST_MESSAGE_TYPES].sort()).toStrictEqual(samples.map((m) => m.type).sort());

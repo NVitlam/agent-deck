@@ -148,12 +148,20 @@ function boot(root: HTMLElement): void {
     stage.append(container);
     const started = start(container, {
       postMessage: (message: WebviewToHostMessage) => {
+        // Narrowed by KEY rather than by `type`, so a message type added to
+        // the union does not silently fall into another arm. v0.8.0 added
+        // `updateTweak`, which carries neither `nodeId` nor `command` nor
+        // `sessionId` - it reads its own `key`, and the chain says so.
         intentLabel.textContent = `intent: ${message.type} ${
           'nodeId' in message
             ? message.nodeId
             : 'command' in message
               ? message.command
-              : (message.sessionId ?? '')
+              : 'key' in message
+                ? message.key
+                : 'sessionId' in message
+                  ? (message.sessionId ?? '')
+                  : ''
         }`;
       },
     });

@@ -630,11 +630,13 @@ nobody can see is not a refusal. Every other session is matched to the folders a
 
 **What each session touched, repeated and spent — as numbers.** **Open Statistics** in the sidebar,
 or **Agent Deck: Open Statistics** in the Command Palette, switches the panel to its Stats view, in
-four parts: **Files** (every file a session touched, with its reads, edits, writes and errors),
+five parts: **Files** (every file a session touched, with its reads, edits, writes and errors),
+**Tools** (every tool a session called, with its calls, errors, longest call and total duration),
 **Loops & churn** (every call in a chain is a link back to the tree), **Tokens** (per agent: prompt,
 output, cache ratio and context fill where the engine states them, context-churn and compaction
-markers on a per-turn strip, stalls, and cost with its source beside it) and **Trends** (one point
-per stored session). The engine chips narrow every part exactly as they narrow the deck. A session
+markers on a per-turn strip, stalls, and cost with its source beside it, and the session's own
+timings — wall time, time to the first tool call, the longest gap between calls, tokens and calls
+a minute) and **Trends** (one point per stored session). The engine chips narrow every part exactly as they narrow the deck. A session
 Agent Deck could not read in full is counted in the footer with its reason, and appears in no table.
 
 Everything here is a count, a ratio or a token figure taken from the structure of a session. None of
@@ -825,6 +827,10 @@ honesty is kept, and they were not loosened alongside it.
 | `agentDeck.stats.idleFlushMs` | How long a session may go unchanged before its record is written anyway, in milliseconds. Default 3600000 (one hour). A record is normally written when the session ends; this covers the session that never does. Later work is recomputed in full and written as a second record; reads keep the newest per session and nothing on disk is rewritten. |
 | `agentDeck.pricing` | Your own prices per model id, in USD per million tokens — `{"<model id>": {"prompt": 3, "cacheRead": 0.3, "cacheWrite": 3.75, "output": 15}}`. Used only for sessions for which neither the engine nor Claude Code's telemetry, received from the session's start, states a cost. Agent Deck ships no price table and never guesses one: a model with no entry gets no figure, a malformed entry is ignored and named on the output channel, and anything computed this way is labelled as estimated from your prices. |
 | `agentDeck.telemetry.enabled` | Accept Claude Code's own OpenTelemetry export on the hook listener's `/v1/metrics`, `/v1/logs` and `/v1/traces` paths. Default `false`: off, those paths answer `403` and no body is parsed. Machine-scoped, so every window on the machine reads the same value. See [Claude Code telemetry](#claude-code-telemetry-optional). |
+| `agentDeck.followNewSessions` | Select a session that appears while the deck is open, so the deck moves to it. Default `false`: the new session is added in its sort position and the current selection is left alone. This changes what the deck shows and never what is observed. Also in the Tweaks tab of the sidebar, which reads and writes this same value. |
+| `agentDeck.openDrawerOnEnter` | Open a session's tool-call drawer when the session is entered from the deck. Default `false`: the drawer opens when a tool call is selected. The drawer holds the same calls either way. Also in the Tweaks tab. |
+| `agentDeck.drawerExpandedByDefault` | Open the tool-call drawer at its expanded height rather than its collapsed one. Default `false`. The drawer can be expanded and collapsed in the panel at either value; this is the height it opens at. Also in the Tweaks tab. |
+| `agentDeck.defaultOrdering` | The order deck cards are placed in when the deck opens. Default `live`, which puts live sessions first, then idle, degraded, unsupported and ended; `recent` puts the most recently active first; `engine` groups the cards by the engine that produced them. The order chosen on the deck itself applies to that deck and leaves this value alone. Also in the Tweaks tab. |
 
 Clearing the history is a command, not a button on the deck: **Agent Deck: Clear Stats History** in
 the command palette or the sidebar, behind a modal confirm. It works whether or not `agentDeck.stats.enabled` is on, so turning

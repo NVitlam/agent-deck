@@ -145,7 +145,7 @@
         "agentDeck.drawerExpandedByDefault": {
           "type": "boolean",
           "default": false,
-          "description": "Open the tool-call drawer at its expanded height rather than its collapsed one. The drawer can be expanded and collapsed from its own control at either value; this is the height it opens at. This setting also appears in the Tweaks tab of the Agent Deck sidebar, which reads and writes this same value."
+          "description": "Open the tool-call drawer at its expanded height rather than its collapsed one. The drawer can be expanded and collapsed in the panel at either value; this is the height it opens at. This setting also appears in the Tweaks tab of the Agent Deck sidebar, which reads and writes this same value."
         },
         "agentDeck.defaultOrdering": {
           "type": "string",
@@ -155,7 +155,7 @@
             "recent",
             "engine"
           ],
-          "description": "The order deck cards are placed in when a window opens. live puts live sessions first, then idle, degraded, unsupported and ended. recent puts the most recently active first. engine groups the cards by the engine that produced them. The deck's own ordering control changes the order for that window and leaves this value alone. This setting also appears in the Tweaks tab of the Agent Deck sidebar, which reads and writes this same value."
+          "description": "The order deck cards are placed in when the deck opens. live puts live sessions first, then idle, degraded, unsupported and ended. recent puts the most recently active first. engine groups the cards by the engine that produced them. An order chosen on the deck itself applies to that deck and leaves this value alone. This setting also appears in the Tweaks tab of the Agent Deck sidebar, which reads and writes this same value."
         }
       }
     },

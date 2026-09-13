@@ -56,6 +56,24 @@ export interface TokenPair {
   output: number;
 }
 
+/**
+ * How much of an oversize transcript was read — v0.8.0 Phase 7, DoD 7.7.
+ *
+ * Both figures are BYTES and both are measured rather than estimated:
+ * `totalBytes` is discovery's own `statSync().size`, the same number the size
+ * gate compares, and `readBytes` is what the engine actually took.
+ *
+ * There is deliberately no percentage and no "how much is missing" field. A
+ * byte count is not a record count — Codex lines run to hundreds of kilobytes
+ * apiece — so a percentage of bytes would read as a percentage of the session,
+ * which is a different quantity nobody measured. The two numbers are stated
+ * and the reader may divide them knowing what they are.
+ */
+export interface TranscriptPartial {
+  readBytes: number;
+  totalBytes: number;
+}
+
 export interface SessionState {
   sessionId: string; // <sessionId>.jsonl basename
   projectSlug: string;
@@ -164,6 +182,35 @@ export interface SessionState {
    * them that relationship is not recoverable from `root` alone.
    */
   spawnEdges?: readonly SpawnEdge[];
+  /**
+   * The transcript was too big to read whole, so part of it was read and
+   * this session is built from that part — v0.8.0 Phase 7, DoD 7.7.
+   *
+   * Additive and optional for the reason `spawnEdges` and `parked` are:
+   * every earlier construction of this interface stays valid and no field
+   * above changes meaning. **Absence reads as "read whole"**, which is what
+   * every session before this release was.
+   *
+   * ## Why a session says this at all, instead of being skipped
+   *
+   * Before this, a Codex transcript over `agentDeck.codex.maxTranscriptBytes`
+   * was measured from its directory entry and never opened — correct, because
+   * Codex stores tool output whole and inline and a long session reaches
+   * hundreds of megabytes. But the user saw nothing on the deck and one line
+   * on a channel they had no reason to open, so the biggest session on the
+   * machine was the one Agent Deck was silent about. G3 says refuse rather
+   * than guess; it does not say refuse SILENTLY.
+   *
+   * ## What is and is not claimed
+   *
+   * The bytes read are real and everything derived from them is a fact about
+   * the session. What is NOT claimed is completeness: counts, totals and the
+   * tree are of the part that was read, and a renderer must say so rather
+   * than present them as the session. That is the whole reason this field is
+   * on the state instead of being a detail of the engine — a figure a user
+   * cannot tell is partial is worse than no figure.
+   */
+  partial?: TranscriptPartial;
   /**
    * Agents the grafter knows exist and deliberately did NOT attach to the
    * tree, each with the machine-readable code saying why.

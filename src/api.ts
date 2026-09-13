@@ -145,6 +145,13 @@ export const MODEL_ONLY_KEYS = [
   'burn',
   'spawnEdges',
   'parked',
+  // v0.8.0 Phase 7. MODEL-ONLY: a `StatsRecord` states how much of a
+  // transcript was read nowhere, and must not — a stats record is a record
+  // of facts, and "these facts are of part of the session" is a statement
+  // about the READ rather than about the session.
+  'partial',
+  'readBytes',
+  'totalBytes',
   'windowTokens',
   // AgentNode
   'id',

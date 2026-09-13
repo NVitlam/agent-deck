@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "synthetic-04-context-spike",
   "engine": "cc",
   "projectSlug": "synthetic-stats",
@@ -15,7 +15,8 @@
       "cacheRead": 300,
       "cacheRatio": 0.3,
       "toolCalls": 0,
-      "silent": false
+      "silent": false,
+      "resultUnreceived": false
     }
   ],
   "files": [],
@@ -31,6 +32,7 @@
   ],
   "compactions": [],
   "stalls": [],
+  "timing": {},
   "totals": {
     "prompt": 1000,
     "output": 100,
@@ -47,6 +49,8 @@
   "unavailable": [
     "F10:cc",
     "F13.completed:snapshot",
+    "F14:cc",
+    "F15:cc",
     "F9:cc"
   ]
 }

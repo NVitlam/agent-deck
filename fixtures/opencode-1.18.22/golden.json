@@ -254,504 +254,576 @@
             "input": 12081,
             "cacheCreation": 0,
             "cacheRead": 0,
-            "output": 84
+            "output": 84,
+            "atMs": 1787631931008
           },
           {
             "ordinal": 1,
             "input": 1519,
             "cacheCreation": 0,
             "cacheRead": 12165,
-            "output": 125
+            "output": 125,
+            "atMs": 1787631982548
           },
           {
             "ordinal": 2,
             "input": 15597,
             "cacheCreation": 0,
             "cacheRead": 13810,
-            "output": 81
+            "output": 81,
+            "atMs": 1787632196805
           },
           {
             "ordinal": 3,
             "input": 14178,
             "cacheCreation": 0,
             "cacheRead": 29489,
-            "output": 503
+            "output": 503,
+            "atMs": 1787632487944
           },
           {
             "ordinal": 4,
             "input": 17941,
             "cacheCreation": 0,
             "cacheRead": 44170,
-            "output": 1123
+            "output": 1123,
+            "atMs": 1787633090980
           },
           {
             "ordinal": 5,
             "input": 2390,
             "cacheCreation": 0,
             "cacheRead": 62107,
-            "output": 554
+            "output": 554,
+            "atMs": 1787633299347
           },
           {
             "ordinal": 6,
             "input": 482,
             "cacheCreation": 0,
             "cacheRead": 65051,
-            "output": 1510
+            "output": 1510,
+            "atMs": 1787633646179
           },
           {
             "ordinal": 7,
             "input": 397,
             "cacheCreation": 0,
             "cacheRead": 67043,
-            "output": 1264
+            "output": 1264,
+            "atMs": 1787633911112
           },
           {
             "ordinal": 8,
             "input": 456,
             "cacheCreation": 0,
             "cacheRead": 68705,
-            "output": 5014
+            "output": 5014,
+            "atMs": 1787634499503
           },
           {
             "ordinal": 9,
             "input": 537,
             "cacheCreation": 0,
             "cacheRead": 74176,
-            "output": 8590
+            "output": 8590,
+            "atMs": 1787635473704
           },
           {
             "ordinal": 10,
             "input": 22460,
             "cacheCreation": 0,
             "cacheRead": 74709,
-            "output": 1918
+            "output": 1918,
+            "atMs": 1787636030729
           },
           {
             "ordinal": 11,
             "input": 6308,
             "cacheCreation": 0,
             "cacheRead": 99086,
-            "output": 2083
+            "output": 2083,
+            "atMs": 1787636429992
           },
           {
             "ordinal": 12,
             "input": 504,
             "cacheCreation": 0,
             "cacheRead": 107477,
-            "output": 1243
+            "output": 1243,
+            "atMs": 1787636874402
           },
           {
             "ordinal": 13,
             "input": 191,
             "cacheCreation": 0,
             "cacheRead": 109224,
-            "output": 786
+            "output": 786,
+            "atMs": 1787637053297
           },
           {
             "ordinal": 14,
             "input": 13146,
             "cacheCreation": 0,
             "cacheRead": 109411,
-            "output": 2334
+            "output": 2334,
+            "atMs": 1787637738751
           },
           {
             "ordinal": 15,
             "input": 5270,
             "cacheCreation": 0,
             "cacheRead": 124890,
-            "output": 1495
+            "output": 1495,
+            "atMs": 1787638259849
           },
           {
             "ordinal": 16,
             "input": 2604,
             "cacheCreation": 0,
             "cacheRead": 131654,
-            "output": 1077
+            "output": 1077,
+            "atMs": 1787638616288
           },
           {
             "ordinal": 17,
             "input": 7414,
             "cacheCreation": 0,
             "cacheRead": 135335,
-            "output": 9756
+            "output": 9756,
+            "atMs": 1787640018150
           },
           {
             "ordinal": 18,
             "input": 204,
             "cacheCreation": 0,
             "cacheRead": 152504,
-            "output": 2097
+            "output": 2097,
+            "atMs": 1787640373582
           },
           {
             "ordinal": 19,
             "input": 64,
             "cacheCreation": 0,
             "cacheRead": 154804,
-            "output": 1700
+            "output": 1700,
+            "atMs": 1787640628872
           },
           {
             "ordinal": 20,
             "input": 20,
             "cacheCreation": 0,
             "cacheRead": 156567,
-            "output": 131
+            "output": 131,
+            "atMs": 1787640704466
           },
           {
             "ordinal": 21,
             "input": 225,
             "cacheCreation": 0,
             "cacheRead": 156583,
-            "output": 4756
+            "output": 4756,
+            "atMs": 1787641421801
           },
           {
             "ordinal": 22,
             "input": 1577,
             "cacheCreation": 0,
             "cacheRead": 161564,
-            "output": 4775
+            "output": 4775,
+            "atMs": 1787642172627
           },
           {
             "ordinal": 23,
             "input": 12247,
             "cacheCreation": 0,
             "cacheRead": 171600,
-            "output": 157
+            "output": 157,
+            "atMs": 1787676044324
           },
           {
             "ordinal": 24,
             "input": 425,
             "cacheCreation": 0,
             "cacheRead": 184003,
-            "output": 4028
+            "output": 4028,
+            "atMs": 1787678479996
           },
           {
             "ordinal": 25,
             "input": 196421,
             "cacheCreation": 0,
             "cacheRead": 0,
-            "output": 3649
+            "output": 3649,
+            "atMs": 1787682075923
           },
           {
             "ordinal": 26,
             "input": 1932,
             "cacheCreation": 0,
             "cacheRead": 200071,
-            "output": 963
+            "output": 963,
+            "atMs": 1787682324385
           },
           {
             "ordinal": 27,
             "input": 20,
             "cacheCreation": 0,
             "cacheRead": 202965,
-            "output": 1403
+            "output": 1403,
+            "atMs": 1787682597084
           },
           {
             "ordinal": 28,
             "input": 20,
             "cacheCreation": 0,
             "cacheRead": 204387,
-            "output": 451
+            "output": 451,
+            "atMs": 1787682714897
           },
           {
             "ordinal": 29,
             "input": 18,
             "cacheCreation": 0,
             "cacheRead": 204859,
-            "output": 446
+            "output": 446,
+            "atMs": 1787682866909
           },
           {
             "ordinal": 30,
             "input": 387,
             "cacheCreation": 0,
             "cacheRead": 205324,
-            "output": 1525
+            "output": 1525,
+            "atMs": 1787683166730
           },
           {
             "ordinal": 31,
             "input": 62,
             "cacheCreation": 0,
             "cacheRead": 207236,
-            "output": 578
+            "output": 578,
+            "atMs": 1787683308268
           },
           {
             "ordinal": 32,
             "input": 1540,
             "cacheCreation": 0,
             "cacheRead": 207294,
-            "output": 1595
+            "output": 1595,
+            "atMs": 1787683669716
           },
           {
             "ordinal": 33,
             "input": 3269,
             "cacheCreation": 0,
             "cacheRead": 210429,
-            "output": 2859
+            "output": 2859,
+            "atMs": 1787684237328
           },
           {
             "ordinal": 34,
             "input": 2908,
             "cacheCreation": 0,
             "cacheRead": 213694,
-            "output": 429
+            "output": 429,
+            "atMs": 1787684440996
           },
           {
             "ordinal": 35,
             "input": 467,
             "cacheCreation": 0,
             "cacheRead": 216598,
-            "output": 856
+            "output": 856,
+            "atMs": 1787684652692
           },
           {
             "ordinal": 36,
             "input": 947,
             "cacheCreation": 0,
             "cacheRead": 217061,
-            "output": 309
+            "output": 309,
+            "atMs": 1787684799622
           },
           {
             "ordinal": 37,
             "input": 783,
             "cacheCreation": 0,
             "cacheRead": 218004,
-            "output": 930
+            "output": 930,
+            "atMs": 1787685042491
           },
           {
             "ordinal": 38,
             "input": 979,
             "cacheCreation": 0,
             "cacheRead": 218783,
-            "output": 724
+            "output": 724,
+            "atMs": 1787685255841
           },
           {
             "ordinal": 39,
             "input": 1188,
             "cacheCreation": 0,
             "cacheRead": 219758,
-            "output": 405
+            "output": 405,
+            "atMs": 1787685418309
           },
           {
             "ordinal": 40,
             "input": 515,
             "cacheCreation": 0,
             "cacheRead": 220942,
-            "output": 418
+            "output": 418,
+            "atMs": 1787685572617
           },
           {
             "ordinal": 41,
             "input": 460,
             "cacheCreation": 0,
             "cacheRead": 221453,
-            "output": 462
+            "output": 462,
+            "atMs": 1787685728891
           },
           {
             "ordinal": 42,
             "input": 524,
             "cacheCreation": 0,
             "cacheRead": 221909,
-            "output": 12794
+            "output": 12794,
+            "atMs": 1787687501143
           },
           {
             "ordinal": 43,
             "input": 125864,
             "cacheCreation": 0,
             "cacheRead": 0,
-            "output": 7650
+            "output": 7650,
+            "atMs": 1787689604541
           },
           {
             "ordinal": 44,
             "input": 36229,
             "cacheCreation": 0,
             "cacheRead": 0,
-            "output": 3230
+            "output": 3230,
+            "atMs": 1787692622873
           },
           {
             "ordinal": 45,
             "input": 41943,
             "cacheCreation": 0,
             "cacheRead": 0,
-            "output": 1691
+            "output": 1691,
+            "atMs": 1787693206800
           },
           {
             "ordinal": 46,
             "input": 20,
             "cacheCreation": 0,
             "cacheRead": 43633,
-            "output": 464
+            "output": 464,
+            "atMs": 1787693283659
           },
           {
             "ordinal": 47,
             "input": 18,
             "cacheCreation": 0,
             "cacheRead": 44118,
-            "output": 1240
+            "output": 1240,
+            "atMs": 1787693418254
           },
           {
             "ordinal": 48,
             "input": 19,
             "cacheCreation": 0,
             "cacheRead": 45376,
-            "output": 522
+            "output": 522,
+            "atMs": 1787693498241
           },
           {
             "ordinal": 49,
             "input": 18,
             "cacheCreation": 0,
             "cacheRead": 45918,
-            "output": 487
+            "output": 487,
+            "atMs": 1787693571379
           },
           {
             "ordinal": 50,
             "input": 1910,
             "cacheCreation": 0,
             "cacheRead": 45932,
-            "output": 463
+            "output": 463,
+            "atMs": 1787693665854
           },
           {
             "ordinal": 51,
             "input": 20,
             "cacheCreation": 0,
             "cacheRead": 48304,
-            "output": 113
+            "output": 113,
+            "atMs": 1787693706594
           },
           {
             "ordinal": 52,
             "input": 75,
             "cacheCreation": 0,
             "cacheRead": 48436,
-            "output": 107
+            "output": 107,
+            "atMs": 1787693749369
           },
           {
             "ordinal": 53,
             "input": 1256,
             "cacheCreation": 0,
             "cacheRead": 48617,
-            "output": 256
+            "output": 256,
+            "atMs": 1787693816555
           },
           {
             "ordinal": 54,
             "input": 19,
             "cacheCreation": 0,
             "cacheRead": 50129,
-            "output": 148
+            "output": 148,
+            "atMs": 1787693866514
           },
           {
             "ordinal": 55,
             "input": 261,
             "cacheCreation": 0,
             "cacheRead": 50144,
-            "output": 146
+            "output": 146,
+            "atMs": 1787693924476
           },
           {
             "ordinal": 56,
             "input": 1005,
             "cacheCreation": 0,
             "cacheRead": 50550,
-            "output": 339
+            "output": 339,
+            "atMs": 1787694009681
           },
           {
             "ordinal": 57,
             "input": 20,
             "cacheCreation": 0,
             "cacheRead": 51893,
-            "output": 387
+            "output": 387,
+            "atMs": 1787694079513
           },
           {
             "ordinal": 58,
             "input": 546,
             "cacheCreation": 0,
             "cacheRead": 52301,
-            "output": 981
+            "output": 981,
+            "atMs": 1787694202709
           },
           {
             "ordinal": 59,
             "input": 1032,
             "cacheCreation": 0,
             "cacheRead": 52843,
-            "output": 500
+            "output": 500,
+            "atMs": 1787694291475
           },
           {
             "ordinal": 60,
             "input": 12238,
             "cacheCreation": 0,
             "cacheRead": 54376,
-            "output": 3647
+            "output": 3647,
+            "atMs": 1787694772870
           },
           {
             "ordinal": 61,
             "input": 20,
             "cacheCreation": 0,
             "cacheRead": 70260,
-            "output": 137
+            "output": 137,
+            "atMs": 1787694826077
           },
           {
             "ordinal": 62,
             "input": 639,
             "cacheCreation": 0,
             "cacheRead": 70418,
-            "output": 509
+            "output": 509,
+            "atMs": 1787694925323
           },
           {
             "ordinal": 63,
             "input": 647,
             "cacheCreation": 0,
             "cacheRead": 71053,
-            "output": 1236
+            "output": 1236,
+            "atMs": 1787695139884
           },
           {
             "ordinal": 64,
             "input": 20,
             "cacheCreation": 0,
             "cacheRead": 72935,
-            "output": 379
+            "output": 379,
+            "atMs": 1787695213094
           },
           {
             "ordinal": 65,
             "input": 19,
             "cacheCreation": 0,
             "cacheRead": 73334,
-            "output": 346
+            "output": 346,
+            "atMs": 1787695297707
           },
           {
             "ordinal": 66,
             "input": 19,
             "cacheCreation": 0,
             "cacheRead": 73699,
-            "output": 547
+            "output": 547,
+            "atMs": 1787695390222
           },
           {
             "ordinal": 67,
             "input": 20,
             "cacheCreation": 0,
             "cacheRead": 74264,
-            "output": 955
+            "output": 955,
+            "atMs": 1787695519209
           },
           {
             "ordinal": 68,
             "input": 19,
             "cacheCreation": 0,
             "cacheRead": 75239,
-            "output": 137
+            "output": 137,
+            "atMs": 1787695569075
           },
           {
             "ordinal": 69,
             "input": 1465,
             "cacheCreation": 0,
             "cacheRead": 75395,
-            "output": 218
+            "output": 218,
+            "atMs": 1787695646081
           },
           {
             "ordinal": 70,
             "input": 356,
             "cacheCreation": 0,
             "cacheRead": 76856,
-            "output": 143
+            "output": 143,
+            "atMs": 1787695704566
           },
           {
             "ordinal": 71,
             "input": 385,
             "cacheCreation": 0,
             "cacheRead": 77208,
-            "output": 597
+            "output": 597,
+            "atMs": 1787695800027
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
@@ -1328,28 +1400,32 @@
                 "input": 11616,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 175
+                "output": 175,
+                "atMs": 1787642848206
               },
               {
                 "ordinal": 1,
                 "input": 27044,
                 "cacheCreation": 0,
                 "cacheRead": 11792,
-                "output": 240
+                "output": 240,
+                "atMs": 1787643155075
               },
               {
                 "ordinal": 2,
                 "input": 15361,
                 "cacheCreation": 0,
                 "cacheRead": 39075,
-                "output": 207
+                "output": 207,
+                "atMs": 1787643390404
               },
               {
                 "ordinal": 3,
                 "input": 626,
                 "cacheCreation": 0,
                 "cacheRead": 54643,
-                "output": 135
+                "output": 135,
+                "atMs": 1787643469074
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -1481,14 +1557,16 @@
                 "input": 11655,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 92
+                "output": 92,
+                "atMs": 1787643830596
               },
               {
                 "ordinal": 1,
                 "input": 63,
                 "cacheCreation": 0,
                 "cacheRead": 11746,
-                "output": 205
+                "output": 205,
+                "atMs": 1787643900716
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -1581,14 +1659,16 @@
                 "input": 11613,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 97
+                "output": 97,
+                "atMs": 1787646897257
               },
               {
                 "ordinal": 1,
                 "input": 117,
                 "cacheCreation": 0,
                 "cacheRead": 11709,
-                "output": 169
+                "output": 169,
+                "atMs": 1787646973964
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -1668,14 +1748,16 @@
                 "input": 12018,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 479
+                "output": 479,
+                "atMs": 1787647899951
               },
               {
                 "ordinal": 1,
                 "input": 71,
                 "cacheCreation": 0,
                 "cacheRead": 12497,
-                "output": 284
+                "output": 284,
+                "atMs": 1787647979867
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -1781,7 +1863,8 @@
                 "input": 11436,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 175
+                "output": 175,
+                "atMs": 1787651170133
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -1848,14 +1931,16 @@
                 "input": 11706,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 174
+                "output": 174,
+                "atMs": 1787651835788
               },
               {
                 "ordinal": 1,
                 "input": 163,
                 "cacheCreation": 0,
                 "cacheRead": 11880,
-                "output": 247
+                "output": 247,
+                "atMs": 1787651901856
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -1974,21 +2059,24 @@
                 "input": 11521,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 265
+                "output": 265,
+                "atMs": 1787655292019
               },
               {
                 "ordinal": 1,
                 "input": 27130,
                 "cacheCreation": 0,
                 "cacheRead": 11787,
-                "output": 267
+                "output": 267,
+                "atMs": 1787655576357
               },
               {
                 "ordinal": 2,
                 "input": 10833,
                 "cacheCreation": 0,
                 "cacheRead": 39185,
-                "output": 269
+                "output": 269,
+                "atMs": 1787655767621
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -2107,14 +2195,16 @@
                 "input": 11659,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 334
+                "output": 334,
+                "atMs": 1787656190695
               },
               {
                 "ordinal": 1,
                 "input": 132,
                 "cacheCreation": 0,
                 "cacheRead": 11993,
-                "output": 189
+                "output": 189,
+                "atMs": 1787656260494
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -2220,42 +2310,48 @@
                 "input": 11455,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 111
+                "output": 111,
+                "atMs": 1787658994887
               },
               {
                 "ordinal": 1,
                 "input": 63,
                 "cacheCreation": 0,
                 "cacheRead": 11565,
-                "output": 190
+                "output": 190,
+                "atMs": 1787659060109
               },
               {
                 "ordinal": 2,
                 "input": 27001,
                 "cacheCreation": 0,
                 "cacheRead": 11819,
-                "output": 177
+                "output": 177,
+                "atMs": 1787659319674
               },
               {
                 "ordinal": 3,
                 "input": 15359,
                 "cacheCreation": 0,
                 "cacheRead": 38998,
-                "output": 263
+                "output": 263,
+                "atMs": 1787659567178
               },
               {
                 "ordinal": 4,
                 "input": 242,
                 "cacheCreation": 0,
                 "cacheRead": 54620,
-                "output": 112
+                "output": 112,
+                "atMs": 1787659617880
               },
               {
                 "ordinal": 5,
                 "input": 3273,
                 "cacheCreation": 0,
                 "cacheRead": 54975,
-                "output": 112
+                "output": 112,
+                "atMs": 1787659706953
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -2413,14 +2509,16 @@
                 "input": 11591,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 314
+                "output": 314,
+                "atMs": 1787660051020
               },
               {
                 "ordinal": 1,
                 "input": 302,
                 "cacheCreation": 0,
                 "cacheRead": 11905,
-                "output": 313
+                "output": 313,
+                "atMs": 1787660128023
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -2539,21 +2637,24 @@
                 "input": 11595,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 256
+                "output": 256,
+                "atMs": 1787662655532
               },
               {
                 "ordinal": 1,
                 "input": 70,
                 "cacheCreation": 0,
                 "cacheRead": 11851,
-                "output": 178
+                "output": 178,
+                "atMs": 1787662717754
               },
               {
                 "ordinal": 2,
                 "input": 37742,
                 "cacheCreation": 0,
                 "cacheRead": 12099,
-                "output": 271
+                "output": 271,
+                "atMs": 1787663106082
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -2672,14 +2773,16 @@
                 "input": 11644,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 167
+                "output": 167,
+                "atMs": 1787663460655
               },
               {
                 "ordinal": 1,
                 "input": 70,
                 "cacheCreation": 0,
                 "cacheRead": 11811,
-                "output": 252
+                "output": 252,
+                "atMs": 1787663554896
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -2785,14 +2888,16 @@
                 "input": 11430,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 97
+                "output": 97,
+                "atMs": 1787667146038
               },
               {
                 "ordinal": 1,
                 "input": 61,
                 "cacheCreation": 0,
                 "cacheRead": 11528,
-                "output": 91
+                "output": 91,
+                "atMs": 1787667186723
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -2859,14 +2964,16 @@
                 "input": 11536,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 330
+                "output": 330,
+                "atMs": 1787667807446
               },
               {
                 "ordinal": 1,
                 "input": 18420,
                 "cacheCreation": 0,
                 "cacheRead": 11866,
-                "output": 240
+                "output": 240,
+                "atMs": 1787668008246
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -2972,14 +3079,16 @@
                 "input": 1524,
                 "cacheCreation": 0,
                 "cacheRead": 10150,
-                "output": 95
+                "output": 95,
+                "atMs": 1787668638300
               },
               {
                 "ordinal": 1,
                 "input": 63,
                 "cacheCreation": 0,
                 "cacheRead": 11768,
-                "output": 205
+                "output": 205,
+                "atMs": 1787668704085
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -3059,21 +3168,24 @@
                 "input": 11750,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 93
+                "output": 93,
+                "atMs": 1787669394224
               },
               {
                 "ordinal": 1,
                 "input": 63,
                 "cacheCreation": 0,
                 "cacheRead": 11842,
-                "output": 126
+                "output": 126,
+                "atMs": 1787669458079
               },
               {
                 "ordinal": 2,
                 "input": 18364,
                 "cacheCreation": 0,
                 "cacheRead": 12030,
-                "output": 168
+                "output": 168,
+                "atMs": 1787669640982
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -3179,28 +3291,32 @@
                 "input": 11355,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 103
+                "output": 103,
+                "atMs": 1787672148988
               },
               {
                 "ordinal": 1,
                 "input": 122,
                 "cacheCreation": 0,
                 "cacheRead": 11457,
-                "output": 196
+                "output": 196,
+                "atMs": 1787672286760
               },
               {
                 "ordinal": 2,
                 "input": 27258,
                 "cacheCreation": 0,
                 "cacheRead": 11775,
-                "output": 99
+                "output": 99,
+                "atMs": 1787672538363
               },
               {
                 "ordinal": 3,
                 "input": 10862,
                 "cacheCreation": 0,
                 "cacheRead": 39029,
-                "output": 78
+                "output": 78,
+                "atMs": 1787672678259
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -3306,14 +3422,16 @@
                 "input": 11593,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 170
+                "output": 170,
+                "atMs": 1787672964271
               },
               {
                 "ordinal": 1,
                 "input": 125,
                 "cacheCreation": 0,
                 "cacheRead": 11763,
-                "output": 228
+                "output": 228,
+                "atMs": 1787673046043
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -3432,70 +3550,80 @@
                 "input": 10831,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 499
+                "output": 499,
+                "atMs": 1787677332301
               },
               {
                 "ordinal": 1,
                 "input": 123,
                 "cacheCreation": 0,
                 "cacheRead": 11331,
-                "output": 93
+                "output": 93,
+                "atMs": 1787677392833
               },
               {
                 "ordinal": 2,
                 "input": 131,
                 "cacheCreation": 0,
                 "cacheRead": 11450,
-                "output": 115
+                "output": 115,
+                "atMs": 1787677485989
               },
               {
                 "ordinal": 3,
                 "input": 20135,
                 "cacheCreation": 0,
                 "cacheRead": 11577,
-                "output": 292
+                "output": 292,
+                "atMs": 1787677891746
               },
               {
                 "ordinal": 4,
                 "input": 394,
                 "cacheCreation": 0,
                 "cacheRead": 31708,
-                "output": 118
+                "output": 118,
+                "atMs": 1787677935288
               },
               {
                 "ordinal": 5,
                 "input": 498,
                 "cacheCreation": 0,
                 "cacheRead": 32221,
-                "output": 387
+                "output": 387,
+                "atMs": 1787678017144
               },
               {
                 "ordinal": 6,
                 "input": 1964,
                 "cacheCreation": 0,
                 "cacheRead": 33106,
-                "output": 583
+                "output": 583,
+                "atMs": 1787678147153
               },
               {
                 "ordinal": 7,
                 "input": 723,
                 "cacheCreation": 0,
                 "cacheRead": 35066,
-                "output": 190
+                "output": 190,
+                "atMs": 1787678207057
               },
               {
                 "ordinal": 8,
                 "input": 860,
                 "cacheCreation": 0,
                 "cacheRead": 35785,
-                "output": 166
+                "output": 166,
+                "atMs": 1787678269613
               },
               {
                 "ordinal": 9,
                 "input": 1328,
                 "cacheCreation": 0,
                 "cacheRead": 36641,
-                "output": 1169
+                "output": 1169,
+                "atMs": 1787678479223
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -3926,91 +4054,104 @@
                 "input": 11961,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 329
+                "output": 329,
+                "atMs": 1787690462413
               },
               {
                 "ordinal": 1,
                 "input": 9822,
                 "cacheCreation": 0,
                 "cacheRead": 12291,
-                "output": 642
+                "output": 642,
+                "atMs": 1787690595343
               },
               {
                 "ordinal": 2,
                 "input": 443,
                 "cacheCreation": 0,
                 "cacheRead": 22756,
-                "output": 1321
+                "output": 1321,
+                "atMs": 1787690746169
               },
               {
                 "ordinal": 3,
                 "input": 5724,
                 "cacheCreation": 0,
                 "cacheRead": 24521,
-                "output": 1587
+                "output": 1587,
+                "atMs": 1787690938430
               },
               {
                 "ordinal": 4,
                 "input": 1898,
                 "cacheCreation": 0,
                 "cacheRead": 31832,
-                "output": 486
+                "output": 486,
+                "atMs": 1787691025670
               },
               {
                 "ordinal": 5,
                 "input": 3027,
                 "cacheCreation": 0,
                 "cacheRead": 34216,
-                "output": 477
+                "output": 477,
+                "atMs": 1787691139587
               },
               {
                 "ordinal": 6,
                 "input": 490,
                 "cacheCreation": 0,
                 "cacheRead": 37720,
-                "output": 1006
+                "output": 1006,
+                "atMs": 1787691270013
               },
               {
                 "ordinal": 7,
                 "input": 645,
                 "cacheCreation": 0,
                 "cacheRead": 39215,
-                "output": 484
+                "output": 484,
+                "atMs": 1787691375432
               },
               {
                 "ordinal": 8,
                 "input": 4360,
                 "cacheCreation": 0,
                 "cacheRead": 40344,
-                "output": 598
+                "output": 598,
+                "atMs": 1787691520602
               },
               {
                 "ordinal": 9,
                 "input": 2199,
                 "cacheCreation": 0,
                 "cacheRead": 45301,
-                "output": 362
+                "output": 362,
+                "atMs": 1787691595566
               },
               {
                 "ordinal": 10,
                 "input": 993,
                 "cacheCreation": 0,
                 "cacheRead": 47863,
-                "output": 168
+                "output": 168,
+                "atMs": 1787691648608
               },
               {
                 "ordinal": 11,
                 "input": 53788,
                 "cacheCreation": 0,
                 "cacheRead": 0,
-                "output": 1585
+                "output": 1585,
+                "atMs": 1787692282355
               },
               {
                 "ordinal": 12,
                 "input": 1283,
                 "cacheCreation": 0,
                 "cacheRead": 55374,
-                "output": 3974
+                "output": 3974,
+                "atMs": 1787692622045
               }
             ],
             "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\",\"variant\":\"default\"}",
@@ -4800,7 +4941,8 @@
             "input": 12082,
             "cacheCreation": 0,
             "cacheRead": 0,
-            "output": 45
+            "output": 45,
+            "atMs": 1787738665855
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
@@ -4846,21 +4988,24 @@
             "input": 12859,
             "cacheCreation": 0,
             "cacheRead": 0,
-            "output": 161
+            "output": 161,
+            "atMs": 1787766557141
           },
           {
             "ordinal": 1,
             "input": 19396,
             "cacheCreation": 0,
             "cacheRead": 13019,
-            "output": 240
+            "output": 240,
+            "atMs": 1787766715282
           },
           {
             "ordinal": 2,
             "input": 2164,
             "cacheCreation": 0,
             "cacheRead": 32656,
-            "output": 306
+            "output": 306,
+            "atMs": 1787766773505
           }
         ],
         "model": "{\"id\":\"qwen3.8-27b\",\"providerID\":\"qwen-local\"}",
@@ -4959,14 +5104,16 @@
             "input": 13756,
             "cacheCreation": 0,
             "cacheRead": 0,
-            "output": 13
+            "output": 13,
+            "atMs": 1787767925709
           },
           {
             "ordinal": 1,
             "input": 16694,
             "cacheCreation": 0,
             "cacheRead": 0,
-            "output": 131
+            "output": 131,
+            "atMs": 1787767988086
           }
         ],
         "model": "{\"id\":\"nemotron-3-ultra-free\",\"providerID\":\"opencode\"}",

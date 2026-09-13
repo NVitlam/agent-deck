@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "8c1910bb-9e45-40a3-ad0d-982df98ed71b",
   "engine": "cc",
   "projectSlug": "synthetic-stats",
@@ -15,7 +15,8 @@
       "cacheRead": 100,
       "cacheRatio": 0.1,
       "toolCalls": 1,
-      "silent": false
+      "silent": false,
+      "resultUnreceived": false
     }
   ],
   "files": [],
@@ -32,6 +33,7 @@
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
+  "timing": {},
   "totals": {
     "prompt": 1000,
     "output": 100,
@@ -49,6 +51,8 @@
   },
   "unavailable": [
     "F10:cc",
-    "F13.completed:snapshot"
+    "F13.completed:snapshot",
+    "F14:cc",
+    "F15:cc"
   ]
 }

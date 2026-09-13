@@ -104,6 +104,44 @@
           "id": "cost",
           "label": "engine-reported cost (USD)",
           "lines": []
+        },
+        {
+          "id": "tokensPerMin",
+          "label": "tokens per minute",
+          "lines": [
+            {
+              "engine": "cc",
+              "points": [
+                {
+                  "sessionId": "zero-cc-1",
+                  "index": 0,
+                  "x": 0,
+                  "y": 280201.64899135905
+                },
+                {
+                  "sessionId": "zero-cc-2",
+                  "index": 1,
+                  "x": 24,
+                  "y": 280201.64899135905
+                }
+              ],
+              "max": 280201.64899135905,
+              "flat": false
+            },
+            {
+              "engine": "codex",
+              "points": [
+                {
+                  "sessionId": "zero-codex-looped",
+                  "index": 2,
+                  "x": 48,
+                  "y": 433604.5494313211
+                }
+              ],
+              "max": 433604.5494313211,
+              "flat": false
+            }
+          ]
         }
       ],
       "sessions": [

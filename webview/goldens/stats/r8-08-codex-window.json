@@ -8,6 +8,17 @@
       "rows": [],
       "records": 1
     },
+    "tools": {
+      "rows": [
+        {
+          "toolName": "exec",
+          "class": "shell",
+          "calls": 1,
+          "sessions": 1
+        }
+      ],
+      "records": 1
+    },
     "loops": {
       "rows": [],
       "loops": 0,
@@ -32,7 +43,8 @@
               "prompt": 1000,
               "output": 100,
               "toolCalls": 1,
-              "silent": false
+              "silent": false,
+              "resultUnreceived": false
             }
           ],
           "totals": {
@@ -53,6 +65,7 @@
           "compactions": 0,
           "subagents": 0,
           "silentSubagents": 0,
+          "timing": {},
           "contextFill": 0.25
         }
       ],
@@ -101,6 +114,11 @@
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
+          "lines": []
+        },
+        {
+          "id": "tokensPerMin",
+          "label": "tokens per minute",
           "lines": []
         }
       ],

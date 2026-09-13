@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
   "engine": "cc",
   "projectSlug": "c--Users-dev-projects-agent-deck",
@@ -16,6 +16,7 @@
       "cacheRatio": 0.8496385115500664,
       "toolCalls": 21,
       "silent": false,
+      "resultUnreceived": false,
       "model": "C:\\AI <LOCAL_MODEL>"
     }
   ],
@@ -159,6 +160,13 @@
     }
   ],
   "stalls": [],
+  "timing": {
+    "wallMs": 2439009,
+    "timeToFirstToolMs": 0,
+    "longestGapMs": 501630,
+    "tokensPerMin": 17545.986915177436,
+    "callsPerMin": 0.5166032597665692
+  },
   "totals": {
     "prompt": 700299,
     "output": 12948,
@@ -166,6 +174,7 @@
     "compactions": 1,
     "subagents": 0,
     "silentSubagents": 0,
+    "subagentsUnreceived": 0,
     "stalls": 0
   },
   "params": {

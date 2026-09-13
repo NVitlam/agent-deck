@@ -1,8 +1,8 @@
 {
   "formatVersion": 2,
-  "id": "synthetic-stats-03-silent-subagent",
+  "id": "synthetic-stats-14-aborted-spawn",
   "kind": "synthetic",
-  "title": "R8 03-silent-subagent — one subagent with zero tool calls, beside a subagent that made one",
+  "title": "R8 14-aborted-spawn — two spawned agents, one whose spawning Agent call carries no result and one whose spawning call carries one, both of which made a tool call",
   "description": "One R8 fixture (fixtures/synthetic-stats/<id>.json) as the host would put it on the wire: its SessionState as a snapshot through a real SessionBridge, then its committed golden StatsRecord (fixtures/golden/stats/<engine>-synthetic-<id>.json) as a statsSnapshot, passed through the same host-side validator PanelController.publishStats runs. The theater replays it through the real store so the Stats view is reviewed over exactly the shape the fixture manufactures. Synthetic: the state was built, not captured.",
   "producedBy": "scripts/record-wire.mjs --stats",
   "engine": "cc",
@@ -12,7 +12,7 @@
     {
       "atMs": 0,
       "label": "snapshot",
-      "what": "the 03-silent-subagent state, as the host's first snapshot"
+      "what": "the 14-aborted-spawn state, as the host's first snapshot"
     },
     {
       "atMs": 1000,
@@ -28,7 +28,7 @@
         "type": "snapshot",
         "sessions": [
           {
-            "sessionId": "synthetic-03-silent-subagent",
+            "sessionId": "synthetic-14-aborted-spawn",
             "projectSlug": "synthetic-stats",
             "workspaceMatch": true,
             "liveness": "ended",
@@ -41,24 +41,41 @@
               "spawnDepth": 0,
               "children": [
                 {
-                  "id": "s0",
+                  "id": "g0",
+                  "toolName": "Agent",
+                  "status": "running",
+                  "inputPreview": "",
+                  "ordinal": 0,
+                  "inputHash": "a0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                },
+                {
+                  "id": "g1",
                   "toolName": "Agent",
                   "status": "done",
                   "inputPreview": "",
-                  "ordinal": 0,
-                  "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                  "ordinal": 1,
+                  "inputHash": "a1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                 },
                 {
-                  "id": "quiet",
+                  "id": "unreceived",
                   "kind": "subagent",
-                  "label": "synthetic-quiet",
+                  "label": "synthetic-unreceived",
                   "status": "done",
                   "spawnDepth": 1,
-                  "children": [],
+                  "children": [
+                    {
+                      "id": "g2",
+                      "toolName": "Read",
+                      "status": "done",
+                      "inputPreview": "",
+                      "ordinal": 0,
+                      "inputHash": "a2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    }
+                  ],
                   "startedAt": 1700000000000,
                   "burn": {
-                    "prompt": 10,
-                    "output": 1
+                    "prompt": 20,
+                    "output": 2
                   },
                   "usageSeries": [
                     {
@@ -71,25 +88,25 @@
                   ]
                 },
                 {
-                  "id": "busy",
+                  "id": "received",
                   "kind": "subagent",
-                  "label": "synthetic-busy",
+                  "label": "synthetic-received",
                   "status": "done",
                   "spawnDepth": 1,
                   "children": [
                     {
-                      "id": "s1",
+                      "id": "g3",
                       "toolName": "Read",
                       "status": "done",
                       "inputPreview": "",
                       "ordinal": 0,
-                      "inputHash": "01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                      "inputHash": "a3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                     }
                   ],
                   "startedAt": 1700000000000,
                   "burn": {
-                    "prompt": 20,
-                    "output": 2
+                    "prompt": 30,
+                    "output": 3
                   },
                   "usageSeries": [
                     {
@@ -120,6 +137,22 @@
             "totals": {
               "costUsd": 0
             },
+            "spawnEdges": [
+              {
+                "toolUseId": "g0",
+                "agentId": "unreceived",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              },
+              {
+                "toolUseId": "g1",
+                "agentId": "received",
+                "parentNodeId": "root",
+                "depth": 1,
+                "recordedDepth": 1
+              }
+            ],
             "engine": "cc"
           }
         ]
@@ -151,7 +184,7 @@
         "records": [
           {
             "statsSchemaVersion": 2,
-            "sessionId": "synthetic-03-silent-subagent",
+            "sessionId": "synthetic-14-aborted-spawn",
             "engine": "cc",
             "projectSlug": "synthetic-stats",
             "startedAt": 1700000000000,
@@ -165,30 +198,30 @@
                 "output": 100,
                 "cacheRead": 100,
                 "cacheRatio": 0.1,
-                "toolCalls": 1,
+                "toolCalls": 2,
                 "silent": false,
                 "resultUnreceived": false
               },
               {
-                "agentId": "quiet",
-                "kind": "subagent",
-                "spawnDepth": 1,
-                "prompt": 10,
-                "output": 1,
-                "cacheRead": 100,
-                "cacheRatio": 10,
-                "toolCalls": 0,
-                "silent": true,
-                "resultUnreceived": false
-              },
-              {
-                "agentId": "busy",
+                "agentId": "unreceived",
                 "kind": "subagent",
                 "spawnDepth": 1,
                 "prompt": 20,
                 "output": 2,
                 "cacheRead": 100,
                 "cacheRatio": 5,
+                "toolCalls": 1,
+                "silent": false,
+                "resultUnreceived": true
+              },
+              {
+                "agentId": "received",
+                "kind": "subagent",
+                "spawnDepth": 1,
+                "prompt": 30,
+                "output": 3,
+                "cacheRead": 100,
+                "cacheRatio": 3.3333333333333335,
                 "toolCalls": 1,
                 "silent": false,
                 "resultUnreceived": false
@@ -199,13 +232,13 @@
               {
                 "toolName": "Agent",
                 "class": "spawn",
-                "calls": 1,
+                "calls": 2,
                 "errors": 0
               },
               {
                 "toolName": "Read",
                 "class": "read",
-                "calls": 1,
+                "calls": 2,
                 "errors": 0
               }
             ],
@@ -216,12 +249,13 @@
             "stalls": [],
             "timing": {},
             "totals": {
-              "prompt": 1030,
-              "output": 103,
+              "prompt": 1050,
+              "output": 105,
               "cacheRead": 300,
               "compactions": 0,
               "subagents": 2,
-              "silentSubagents": 1,
+              "silentSubagents": 0,
+              "subagentsUnreceived": 1,
               "stalls": 0
             },
             "params": {
@@ -232,7 +266,6 @@
               "F10:cc",
               "F13.completed:snapshot",
               "F14:cc",
-              "F15:cc",
               "F9:cc"
             ]
           }
@@ -252,7 +285,7 @@
   "final": {
     "sessions": [
       {
-        "sessionId": "synthetic-03-silent-subagent",
+        "sessionId": "synthetic-14-aborted-spawn",
         "projectSlug": "synthetic-stats",
         "workspaceMatch": true,
         "liveness": "ended",
@@ -265,24 +298,41 @@
           "spawnDepth": 0,
           "children": [
             {
-              "id": "s0",
+              "id": "g0",
+              "toolName": "Agent",
+              "status": "running",
+              "inputPreview": "",
+              "ordinal": 0,
+              "inputHash": "a0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+              "id": "g1",
               "toolName": "Agent",
               "status": "done",
               "inputPreview": "",
-              "ordinal": 0,
-              "inputHash": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+              "ordinal": 1,
+              "inputHash": "a1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
             },
             {
-              "id": "quiet",
+              "id": "unreceived",
               "kind": "subagent",
-              "label": "synthetic-quiet",
+              "label": "synthetic-unreceived",
               "status": "done",
               "spawnDepth": 1,
-              "children": [],
+              "children": [
+                {
+                  "id": "g2",
+                  "toolName": "Read",
+                  "status": "done",
+                  "inputPreview": "",
+                  "ordinal": 0,
+                  "inputHash": "a2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                }
+              ],
               "startedAt": 1700000000000,
               "burn": {
-                "prompt": 10,
-                "output": 1
+                "prompt": 20,
+                "output": 2
               },
               "usageSeries": [
                 {
@@ -295,25 +345,25 @@
               ]
             },
             {
-              "id": "busy",
+              "id": "received",
               "kind": "subagent",
-              "label": "synthetic-busy",
+              "label": "synthetic-received",
               "status": "done",
               "spawnDepth": 1,
               "children": [
                 {
-                  "id": "s1",
+                  "id": "g3",
                   "toolName": "Read",
                   "status": "done",
                   "inputPreview": "",
                   "ordinal": 0,
-                  "inputHash": "01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                  "inputHash": "a3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
                 }
               ],
               "startedAt": 1700000000000,
               "burn": {
-                "prompt": 20,
-                "output": 2
+                "prompt": 30,
+                "output": 3
               },
               "usageSeries": [
                 {
@@ -344,6 +394,22 @@
         "totals": {
           "costUsd": 0
         },
+        "spawnEdges": [
+          {
+            "toolUseId": "g0",
+            "agentId": "unreceived",
+            "parentNodeId": "root",
+            "depth": 1,
+            "recordedDepth": 1
+          },
+          {
+            "toolUseId": "g1",
+            "agentId": "received",
+            "parentNodeId": "root",
+            "depth": 1,
+            "recordedDepth": 1
+          }
+        ],
         "engine": "cc"
       }
     ],

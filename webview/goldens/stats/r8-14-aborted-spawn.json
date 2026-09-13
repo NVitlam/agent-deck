@@ -1,38 +1,25 @@
 {
   "generator": "scripts/gen-webview-goldens.mjs",
   "records": [
-    "cc-synthetic-01-reread-loop"
+    "cc-synthetic-14-aborted-spawn"
   ],
   "layout": {
     "files": {
-      "rows": [
-        {
-          "filePath": "/synthetic/a.ts",
-          "basename": "a.ts",
-          "reads": 3,
-          "edits": 0,
-          "writes": 0,
-          "errors": 0,
-          "touches": 3,
-          "sessions": 1,
-          "loop": true,
-          "churn": false
-        }
-      ],
+      "rows": [],
       "records": 1
     },
     "tools": {
       "rows": [
         {
-          "toolName": "Read",
-          "class": "read",
-          "calls": 3,
+          "toolName": "Agent",
+          "class": "spawn",
+          "calls": 2,
           "sessions": 1,
           "errors": 0
         },
         {
-          "toolName": "Grep",
-          "class": "search",
+          "toolName": "Read",
+          "class": "read",
           "calls": 2,
           "sessions": 1,
           "errors": 0
@@ -41,30 +28,8 @@
       "records": 1
     },
     "loops": {
-      "rows": [
-        {
-          "kind": "loop",
-          "key": "synthetic-01-reread-loop:root:loop:0",
-          "session": {
-            "sessionId": "synthetic-01-reread-loop",
-            "engine": "cc",
-            "projectSlug": "synthetic-stats",
-            "startedAt": 1700000000000
-          },
-          "agentId": "root",
-          "term": "re-read loop",
-          "toolName": "Read",
-          "count": 3,
-          "ordinals": [
-            0,
-            1,
-            2
-          ],
-          "filePath": "/synthetic/a.ts",
-          "basename": "a.ts"
-        }
-      ],
-      "loops": 1,
+      "rows": [],
+      "loops": 0,
       "churn": 0,
       "records": 1
     },
@@ -72,7 +37,7 @@
       "sessions": [
         {
           "session": {
-            "sessionId": "synthetic-01-reread-loop",
+            "sessionId": "synthetic-14-aborted-spawn",
             "engine": "cc",
             "projectSlug": "synthetic-stats",
             "startedAt": 1700000000000
@@ -85,16 +50,40 @@
               "primary": "main",
               "prompt": 1000,
               "output": 100,
-              "toolCalls": 5,
+              "toolCalls": 2,
               "silent": false,
               "resultUnreceived": false,
               "cacheRatio": 0.1
+            },
+            {
+              "agentId": "unreceived",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 20,
+              "output": 2,
+              "toolCalls": 1,
+              "silent": false,
+              "resultUnreceived": true,
+              "cacheRatio": 5
+            },
+            {
+              "agentId": "received",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 30,
+              "output": 3,
+              "toolCalls": 1,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 3.3333333333333335
             }
           ],
           "totals": {
-            "prompt": 1000,
-            "output": 100,
-            "cacheRead": 100
+            "prompt": 1050,
+            "output": 105,
+            "cacheRead": 300
           },
           "cost": {
             "label": "not computed"
@@ -108,9 +97,10 @@
           },
           "stalls": [],
           "compactions": 0,
-          "subagents": 0,
+          "subagents": 2,
           "silentSubagents": 0,
-          "timing": {}
+          "timing": {},
+          "subagentsUnreceived": 1
         }
       ],
       "records": 1
@@ -125,13 +115,13 @@
               "engine": "cc",
               "points": [
                 {
-                  "sessionId": "synthetic-01-reread-loop",
+                  "sessionId": "synthetic-14-aborted-spawn",
                   "index": 0,
                   "x": 0,
-                  "y": 1000
+                  "y": 1050
                 }
               ],
-              "max": 1000,
+              "max": 1050,
               "flat": false
             }
           ]
@@ -144,14 +134,14 @@
               "engine": "cc",
               "points": [
                 {
-                  "sessionId": "synthetic-01-reread-loop",
+                  "sessionId": "synthetic-14-aborted-spawn",
                   "index": 0,
                   "x": 0,
-                  "y": 1
+                  "y": 0
                 }
               ],
-              "max": 1,
-              "flat": false
+              "max": 0,
+              "flat": true
             }
           ]
         },
@@ -168,7 +158,7 @@
       ],
       "sessions": [
         {
-          "sessionId": "synthetic-01-reread-loop",
+          "sessionId": "synthetic-14-aborted-spawn",
           "engine": "cc",
           "projectSlug": "synthetic-stats",
           "startedAt": 1700000000000,

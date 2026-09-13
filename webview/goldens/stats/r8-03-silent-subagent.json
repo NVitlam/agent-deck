@@ -8,6 +8,25 @@
       "rows": [],
       "records": 1
     },
+    "tools": {
+      "rows": [
+        {
+          "toolName": "Agent",
+          "class": "spawn",
+          "calls": 1,
+          "sessions": 1,
+          "errors": 0
+        },
+        {
+          "toolName": "Read",
+          "class": "read",
+          "calls": 1,
+          "sessions": 1,
+          "errors": 0
+        }
+      ],
+      "records": 1
+    },
     "loops": {
       "rows": [],
       "loops": 0,
@@ -33,6 +52,7 @@
               "output": 100,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.1
             },
             {
@@ -44,6 +64,7 @@
               "output": 1,
               "toolCalls": 0,
               "silent": true,
+              "resultUnreceived": false,
               "cacheRatio": 10
             },
             {
@@ -55,6 +76,7 @@
               "output": 2,
               "toolCalls": 1,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 5
             }
           ],
@@ -76,7 +98,8 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 2,
-          "silentSubagents": 1
+          "silentSubagents": 1,
+          "timing": {}
         }
       ],
       "records": 1
@@ -124,6 +147,11 @@
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
+          "lines": []
+        },
+        {
+          "id": "tokensPerMin",
+          "label": "tokens per minute",
           "lines": []
         }
       ],

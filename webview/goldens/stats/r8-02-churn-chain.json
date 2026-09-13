@@ -33,6 +33,25 @@
       ],
       "records": 1
     },
+    "tools": {
+      "rows": [
+        {
+          "toolName": "Edit",
+          "class": "edit",
+          "calls": 4,
+          "sessions": 1,
+          "errors": 0
+        },
+        {
+          "toolName": "Bash",
+          "class": "shell",
+          "calls": 2,
+          "sessions": 1,
+          "errors": 1
+        }
+      ],
+      "records": 1
+    },
     "loops": {
       "rows": [
         {
@@ -79,6 +98,7 @@
               "output": 100,
               "toolCalls": 6,
               "silent": false,
+              "resultUnreceived": false,
               "cacheRatio": 0.1
             }
           ],
@@ -100,7 +120,8 @@
           "stalls": [],
           "compactions": 0,
           "subagents": 0,
-          "silentSubagents": 0
+          "silentSubagents": 0,
+          "timing": {}
         }
       ],
       "records": 1
@@ -148,6 +169,11 @@
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
+          "lines": []
+        },
+        {
+          "id": "tokensPerMin",
+          "label": "tokens per minute",
           "lines": []
         }
       ],

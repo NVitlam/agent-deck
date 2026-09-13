@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 1,
+  "statsSchemaVersion": 2,
   "sessionId": "75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
   "engine": "cc",
   "projectSlug": "c--Users-dev-projects-agent-deck",
@@ -16,6 +16,7 @@
       "cacheRatio": 0.9811363154069173,
       "toolCalls": 316,
       "silent": false,
+      "resultUnreceived": false,
       "model": "claude-opus-5"
     },
     {
@@ -28,6 +29,7 @@
       "cacheRatio": 0.9771323765504667,
       "toolCalls": 62,
       "silent": false,
+      "resultUnreceived": false,
       "model": "claude-opus-5"
     },
     {
@@ -40,6 +42,7 @@
       "cacheRatio": 0.851763346293594,
       "toolCalls": 6,
       "silent": false,
+      "resultUnreceived": false,
       "model": "claude-opus-5"
     },
     {
@@ -52,6 +55,7 @@
       "cacheRatio": 0.9728383853690152,
       "toolCalls": 70,
       "silent": false,
+      "resultUnreceived": false,
       "model": "claude-opus-5"
     }
   ],
@@ -1422,6 +1426,13 @@
     }
   ],
   "stalls": [],
+  "timing": {
+    "wallMs": 233099856,
+    "timeToFirstToolMs": 0,
+    "longestGapMs": 206631455,
+    "tokensPerMin": 39339.34167681339,
+    "callsPerMin": 0.11685978905109233
+  },
   "totals": {
     "prompt": 152542397,
     "output": 290851,
@@ -1429,6 +1440,7 @@
     "compactions": 2,
     "subagents": 3,
     "silentSubagents": 0,
+    "subagentsUnreceived": 0,
     "stalls": 0
   },
   "params": {

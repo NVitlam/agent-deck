@@ -6,6 +6,10 @@
       "rows": [],
       "records": 0
     },
+    "tools": {
+      "rows": [],
+      "records": 0
+    },
     "loops": {
       "rows": [],
       "loops": 0,
@@ -31,6 +35,11 @@
         {
           "id": "cost",
           "label": "engine-reported cost (USD)",
+          "lines": []
+        },
+        {
+          "id": "tokensPerMin",
+          "label": "tokens per minute",
           "lines": []
         }
       ],

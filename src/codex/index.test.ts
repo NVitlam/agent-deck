@@ -26,6 +26,7 @@ import { resolve } from 'node:path';
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { deriveStats } from '../stats/derive.js';
 import { readCodexEngine } from './index.js';
 import { PINNED_CODEX_VERSION } from './fingerprint.js';
 import { CodexTailStore, DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES } from './store.js';
@@ -494,6 +495,18 @@ describe('H.3 / DoD 7.7 — a transcript over the limit is read head-plus-tail',
       readBytes: CODEX_HEAD_BYTES + CODEX_OVERSIZE_TAIL_BYTES,
       totalBytes: size,
     });
+
+    // AND IT IS KEPT OUT OF STATS, through the real deriver: a count over part of
+    // a transcript is a subset carrying no sign of it. Found by the phase-7
+    // verifier (D2) stored as `coverage: full`.
+    if (session === undefined) throw new Error('no session');
+    const record = deriveStats(session, {});
+    expect(record.coverage).toBe('excluded:partial');
+    expect(record.tools).toStrictEqual([]);
+    // Control: the same state without the mark is derived in full.
+    const whole = { ...session };
+    delete (whole as { partial?: unknown }).partial;
+    expect(deriveStats(whole, {}).coverage).not.toBe('excluded:partial');
   }, 120_000);
 
   it('keeps the records at the end and drops the fragment where the tail lands', async () => {

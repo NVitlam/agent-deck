@@ -857,8 +857,10 @@
        declares no `overflow`, so a `nowrap` value painted outside its box
        and onto the next field. At 0 the used width is the larger of the
        content and the `min-width` below, so a value cannot leave its own
-       box; the group’s `overflow: hidden` then cuts whole fields off at
-       the right-hand edge instead of letting text collide. A9.1 had
+       box; the group’s `overflow: hidden` then cuts the row at the
+       right-hand edge instead of letting text collide — a field at the
+       edge may be cut part-way and a field past it is not drawn (the
+       1200 px golden shows `burn` cut and `duration` not drawn). A9.1 had
        already stated the intent for `.f-value` — it "may now push the row
        wider rather than lose characters" — and the shrink factor was what
        stopped it from doing so. `webview/inspector-header.ts` models this

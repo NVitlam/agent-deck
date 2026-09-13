@@ -12,7 +12,7 @@ It also keeps the facts: which files a session touched, which calls it repeated,
 moved, in a [Stats](#stats) view and a local history on your machine — numbers, never session
 content, and never advice.
 
-![Agent Deck: one panel, every session on the machine, live](media/agent-deck-hero.gif)
+![Agent Deck: one panel, the sessions of the folders this window has open, live](media/agent-deck-hero.gif)
 
 > **Claude Code compatibility** — anchor `2.1.246`, accepts `2.0.x` to `2.2.x`, refuses on
 > structural change, not on patch number. **A session imported from another machine — Claude

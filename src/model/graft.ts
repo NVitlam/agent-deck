@@ -731,7 +731,11 @@ function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[],
           // message updates the counters and must NOT move the message.
           ordinal: prev === undefined ? acc.usageOrdinal++ : prev.ordinal,
         };
-        const stamp = at ?? prev?.at;
+        // F14 first-sighting, the rule `ordinal` above follows and the comment on
+        // `usageSeries` states. It read `at ?? prev?.at` until the phase-7
+        // verifier measured it: that keeps the LAST streamed line, 11.2 s late on
+        // session 05c5482d, which made time-to-first-tool read 0 for 3,443 ms of work.
+        const stamp = prev?.at ?? at;
         if (stamp !== undefined) next.at = stamp;
         acc.usageByMessage.set(m.id, next);
       }

@@ -1190,6 +1190,8 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
     // exercised on both arms rather than compared undefined to undefined.
     const scopes = Object.values(SETTING_SHAPES).map((shape) => shape.scope);
     expect(scopes).toContain('machine');
+    // v0.8.0: the four tweaks declare `window` explicitly (DoD 7.6's "scopes").
+    expect(scopes.filter((scope) => scope === 'window')).toHaveLength(4);
     expect(scopes).toContain(undefined);
   });
 

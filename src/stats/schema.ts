@@ -96,11 +96,18 @@ export type StatsEngine = 'cc' | 'opencode' | 'codex';
  *
  *   - `parked` — the grafter could not place every node (G3: no partial tree).
  *   - `unsupported` — the fingerprint refused the session.
+ *   - `partial` — the engine read only part of the transcript (v0.8.0 DoD 7.7:
+ *     an oversize Codex file, read as its head and its last 16 MiB). Every
+ *     count over it would be a count over a subset carrying no sign of it —
+ *     the reason `parked` is total, applied to bytes instead of nodes. Added
+ *     after the phase-7 verifier found such sessions stored as `full`, which
+ *     made the README's "a session Agent Deck could not read in full … appears
+ *     in no table" false.
  *   - `deriver-error` — {@link StatsRecord} construction threw. Set by the
  *     HOST, never here: G2 says a deriver failure increments `statsErrors` and
  *     is skipped, and this code is the thing that failed.
  */
-export type ExclusionCode = 'parked' | 'unsupported' | 'deriver-error';
+export type ExclusionCode = 'parked' | 'unsupported' | 'partial' | 'deriver-error';
 
 /** `'full'`, or why the session has none. */
 export type Coverage = 'full' | `excluded:${ExclusionCode}`;
@@ -489,6 +496,7 @@ const COVERAGE_VALUES: ReadonlySet<string> = new Set([
   'full',
   'excluded:parked',
   'excluded:unsupported',
+  'excluded:partial',
   'excluded:deriver-error',
 ]);
 

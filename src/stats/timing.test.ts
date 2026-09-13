@@ -735,3 +735,27 @@ describe('the R8 fixtures state no instant, and say so', () => {
     expect(full).toBe(13);
   });
 });
+
+// ---------------------------------------------------------------------------
+// phase-7 verifier round, D1 and D4 — both survived the suite before these.
+// ---------------------------------------------------------------------------
+
+describe('a usage turn is timed by the FIRST line of its message', () => {
+  it('cc 05c5482d: the first tool starts 3,443 ms after the first turn, not 0', () => {
+    // D1: the grafter kept the LAST streamed line's timestamp (`at ?? prev?.at`),
+    // 11.2 s late on this session, so the first turn appeared to start after the
+    // first tool and time-to-first-tool read 0. The number is the verifier's
+    // measurement off the transcript, not this deriver's output restated.
+    const hit = records.find((r) => r.entry.engine === 'cc' && r.record.sessionId.startsWith('05c5482d'));
+    expect(hit, 'the session is in the corpus').toBeDefined();
+    expect(hit?.record.timing.timeToFirstToolMs).toBe(3443);
+  });
+
+  it('time to first tool is not zero everywhere — a constant 0 cannot pass', () => {
+    // D4: replacing the figure with 0 left 168 tests green, because every golden
+    // that carried it read 0. Pinned as a population fact, with the population.
+    const carried = records.filter((r) => r.record.timing.timeToFirstToolMs !== undefined);
+    expect(carried.length).toBeGreaterThan(0);
+    expect(carried.some((r) => (r.record.timing.timeToFirstToolMs ?? 0) > 0)).toBe(true);
+  });
+});

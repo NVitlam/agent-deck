@@ -541,4 +541,29 @@ describe('the spawning call decides, and only its status', () => {
     expect(agentsOf(errored.root)).toHaveLength(3);
     expect(fixtureRecord('14-aborted-spawn').totals.subagentsUnreceived).toBe(1);
   });
+
+  it('a STALLED spawning call has no result either — both running and stalled count', () => {
+    // phase-7 verifier D3: dropping `stalled` from the rule left 445 tests green,
+    // because fixture 14's spawn is `running` and nothing else is stalled. A stalled
+    // call is a running call the session has been silent over; it has no result.
+    const fixture = buildSyntheticStatsFixtures().find((f) => f.id === '14-aborted-spawn');
+    expect(fixture).toBeDefined();
+    if (fixture === undefined) return;
+    const stalled: SessionState = {
+      ...fixture.state,
+      root: {
+        ...fixture.state.root,
+        children: fixture.state.root.children.map((child) =>
+          !isAgentNode(child) && child.id === 'g0'
+            ? { ...child, status: 'stalled' as const, stalledSinceMs: SYNTHETIC_NOW_MS - 1 }
+            : child,
+        ),
+      },
+    };
+    const record = deriveStats(stalled, { now: SYNTHETIC_NOW_MS });
+    expect(agentsOf(stalled.root)).toHaveLength(3);
+    expect(record.agents.find((a) => a.agentId === 'unreceived')?.resultUnreceived).toBe(true);
+    expect(record.agents.find((a) => a.agentId === 'received')?.resultUnreceived).toBe(false);
+    expect(record.totals.subagentsUnreceived).toBe(1);
+  });
 });

@@ -513,7 +513,7 @@ export interface SettingShape {
    * The manifest cross-check reads this for EVERY shape, so a scope added to
    * the manifest alone fails as loudly as one added here alone.
    */
-  readonly scope?: 'machine';
+  readonly scope?: 'machine' | 'window';
   /**
    * Every value a `string` setting may take, and the `enum` `package.json`
    * must declare — v0.8.0 DoD 7.6, the first non-numeric setting that is not a
@@ -555,15 +555,17 @@ export const SETTING_SHAPES: Readonly<
   // v0.7.1 DoD 6.1, the locked ruling: boolean, default OFF, machine scope.
   'telemetry.enabled': { type: 'boolean', defaultOf: (): boolean => false, scope: 'machine' },
   /*
-   * v0.8.0 DoD 7.6 — the four tweaks. No `scope`, so each takes VS Code's
-   * default (`window`), and every default is 0.7.1's shipped behaviour. See
-   * {@link AgentDeckSettings} for both decisions in full.
+   * v0.8.0 DoD 7.6 — the four tweaks, each DECLARING `scope: window`. The DoD
+   * says "declared with defaults and scopes"; leaving the key out took the same
+   * value and declared nothing, which the phase-7 verifier graded as unmet.
+   * Every default is 0.7.1's shipped behaviour; {@link AgentDeckSettings}.
    */
-  followNewSessions: { type: 'boolean', defaultOf: (): boolean => false },
-  openDrawerOnEnter: { type: 'boolean', defaultOf: (): boolean => false },
-  drawerExpandedByDefault: { type: 'boolean', defaultOf: (): boolean => false },
+  followNewSessions: { type: 'boolean', defaultOf: (): boolean => false, scope: 'window' },
+  openDrawerOnEnter: { type: 'boolean', defaultOf: (): boolean => false, scope: 'window' },
+  drawerExpandedByDefault: { type: 'boolean', defaultOf: (): boolean => false, scope: 'window' },
   defaultOrdering: {
     type: 'string',
+    scope: 'window',
     // `webview/layout.ts`'s `DEFAULT_DECK_SORT`, which is what a deck with no
     // setting sorts by today. Not imported — the host cannot import a webview
     // module — so `webview/tweaks.test.ts` is where the two are compared.

@@ -53,7 +53,7 @@ These are build-time law in this repository, not guidelines. A change that break
   workspace's `.vscode/settings.json`. Nothing under any engine's directory is written. A message
   naming any other key, or a value the setting cannot take, is refused before the call.
   Proof: `src/extension.test.ts` › "an updateTweak writes through workspace.getConfiguration().update, to Global";
-  `src/sidebar/provider.test.ts` › "with no writer wired, an updateTweak is dropped rather than half-acted-on".
+  `src/sidebar/provider.test.ts` › "drops a runCommand naming anything off the menu, and every other message type".
   `src/hooks/listener.ts` imports no filesystem API at all, and a test asserts that against the
   source text — including that it never resolves a home directory.
 
@@ -168,6 +168,13 @@ is how every test reaches a fixture instead of your data (G6).
 | `<root>/sessions/**` | `readdirSync` to discover those files |
 | `<root>/thread-writer-locks/` | `readdirSync` — **names only** |
 | a transcript | `statSync().mtimeMs`, for the liveness fallback |
+
+**Time and spawn results (0.8.0) add no content to a stats record.** F14's figures are differences
+and ratios of the timestamps the engine wrote on each tool call and usage turn — never a clock reading
+and never message text. F15 reads one structural fact, the status of the call that spawned an agent,
+and no preview. A session read in part is excluded from stats entirely, as a parked one is.
+Proof: `src/stats/timing.test.ts` › "states a wall time that is the span of its own instants, not its envelope";
+`src/stats/f15.test.ts` › "reads the status and no preview — an errored spawn has its result".
 
 **A transcript over `agentDeck.codex.maxTranscriptBytes` (0.8.0) is read in two windows and no
 others:** its first 256 KiB, on which the fingerprint and the workspace match run, and its last

@@ -34,7 +34,7 @@
 // a release whose changelog was about wrong token numbers. Every figure below
 // is selected on its own testid and compared to a computed expectation.
 
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionState } from '../src/model/events.js';
 import {
   ANIMATED_CLASSES,
@@ -80,6 +80,62 @@ const FS = 'node:fs';
 
 interface FsModule {
   readFileSync(path: string, encoding: 'utf8'): string;
+}
+
+/* ------------------------------------------------------------------------ *
+ * v0.8.0 DoD 7.7 — the four modules the partial-mark block reaches for
+ * ------------------------------------------------------------------------ *
+ *
+ * Specifiers in variables and shapes declared by hand, for the reason `FS`
+ * above is: `tsconfig.webview.json` sets `types: []`, so `node:fs/promises`
+ * has no types here and `src/codex/index.ts` reaches it transitively. A static
+ * import of either would fail the WEBVIEW typecheck, which is the compile-time
+ * half of "the webview has no fs and no network" and is not worth weakening
+ * for a test fixture.
+ *
+ * The two `node:` specifiers carry `@vite-ignore` because they are builtins
+ * vite must not try to transform. The two `src/` ones deliberately do NOT: they
+ * are repository source, and vite's own resolver is what maps `.js` to the
+ * `.ts` on disk.
+ */
+const FS_PROMISES = 'node:fs/promises';
+const PATH = 'node:path';
+const CODEX_ENGINE = '../src/codex/index.js';
+const CODEX_FINGERPRINT = '../src/codex/fingerprint.js';
+
+interface FileHandleLike {
+  write(text: string, position?: number): Promise<unknown>;
+  truncate(length: number): Promise<void>;
+  close(): Promise<void>;
+}
+
+interface FsPromisesModule {
+  mkdir(path: string, options: { recursive: boolean }): Promise<unknown>;
+  mkdtemp(prefix: string): Promise<string>;
+  open(path: string, flags: string): Promise<FileHandleLike>;
+  writeFile(path: string, data: string, encoding: 'utf8'): Promise<void>;
+  rm(path: string, options: { recursive: boolean; force: boolean }): Promise<void>;
+}
+
+interface PathModule {
+  resolve(...parts: string[]): string;
+}
+
+interface CodexEngineModule {
+  readCodexEngine(options: {
+    root: string;
+    workspaceFolders: readonly string[];
+    maxTranscriptBytes: number;
+  }): Promise<{ kind: string; result: { sessions: readonly SessionState[] } }>;
+}
+
+interface CodexFingerprintModule {
+  PINNED_CODEX_VERSION: string;
+}
+
+/** Byte length without `Buffer`, which `types: []` keeps out of this project. */
+function utf8Length(text: string): number {
+  return new TextEncoder().encode(text).length;
 }
 
 const GLOBAL_NAME = 'AgentDeckDeckHarness';
@@ -1515,6 +1571,210 @@ describe('the store applies the deck viewport through viewport.ts and nowhere el
     store.zoomDeck(1, Number.NaN, 0);
     store.fitDeck({ x: 0, y: 0, w: Number.NaN, h: 10 }, { width: 100, height: 100 });
     expect(store.getView().deckView).toStrictEqual({ x: 0, y: 0, k: 1 });
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * v0.8.0 DoD 7.7 — the partial mark, driven by the REAL Codex engine
+ * ------------------------------------------------------------------------ */
+
+/*
+ * NOTHING HERE IS A HAND-BUILT SUMMARY, AND THAT IS THE POINT.
+ *
+ * `SessionSummary.partial` has exactly one producer — `summarize()` in
+ * `store.ts` — and a value with one production assignment site has that site
+ * untested until something drives it end to end. This repository has shipped
+ * that shape (D4) four times, most recently as a `Deck.svelte` prop nothing
+ * passed. So this block plants a real oversize transcript, reads it with
+ * `readCodexEngine`, puts the states it returns on the wire as a `snapshot`,
+ * and asserts on the RENDERED cell. The only thing written by hand is the
+ * transcript.
+ *
+ * It is in this file rather than in a host suite because the claim is about a
+ * rendered card, and a rendered card is what no host test can see.
+ */
+describe('a session read from part of its transcript says so on its card', () => {
+  const OVERSIZE_BYTES = 20 * 1024 * 1024;
+  const READ_BYTES = 256 * 1024 + 16 * 1024 * 1024;
+  const PARTIAL_THREAD = '01a06400-0000-7000-8000-0000000077aa';
+  const WHOLE_THREAD = '01a06400-0000-7000-8000-0000000077bb';
+
+  let codexScratch = '';
+  let codexSessions: readonly SessionState[] = [];
+
+  beforeAll(async () => {
+    const fsp = (await import(/* @vite-ignore */ FS_PROMISES)) as unknown as FsPromisesModule;
+    const pathMod = (await import(/* @vite-ignore */ PATH)) as unknown as PathModule;
+    const engine = (await import(CODEX_ENGINE)) as unknown as CodexEngineModule;
+    const fingerprint = (await import(CODEX_FINGERPRINT)) as unknown as CodexFingerprintModule;
+
+    await fsp.mkdir(pathMod.resolve('dist'), { recursive: true });
+    codexScratch = await fsp.mkdtemp(pathMod.resolve('dist', 'deck-oversize-'));
+    const codexRoot = pathMod.resolve(codexScratch, '.codex');
+    const codexWorkspace = pathMod.resolve(codexScratch, 'workspace');
+    const dayDir = pathMod.resolve(codexRoot, 'sessions', '2026', '09', '13');
+    await fsp.mkdir(dayDir, { recursive: true });
+
+    const meta = (threadId: string): string =>
+      `${JSON.stringify({
+        timestamp: '2026-09-13T00:00:00.000Z',
+        ordinal: 0,
+        type: 'session_meta',
+        payload: {
+          session_id: threadId,
+          id: threadId,
+          timestamp: '2026-09-13T00:00:00.000Z',
+          cwd: codexWorkspace,
+          originator: 'codex_exec',
+          cli_version: fingerprint.PINNED_CODEX_VERSION,
+          source: 'exec',
+          thread_source: 'user',
+          model_provider: 'openai',
+        },
+      })}\n`;
+    const call = (ordinal: number, padding: string): string =>
+      `${JSON.stringify({
+        timestamp: '2026-09-13T00:00:01.000Z',
+        ordinal,
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          id: `fc_${String(ordinal)}`,
+          call_id: `call_${String(ordinal)}`,
+          name: 'shell',
+          arguments: JSON.stringify({ command: padding }),
+        },
+      })}\n`;
+
+    // THE PARTIAL ONE. Sparse — `truncate` extends without writing — with real
+    // records at the end, the first of them straddling the point a 16 MiB tail
+    // lands on. 20 MiB costs kilobytes on disk this way.
+    const padding = 'w'.repeat(64 * 1024);
+    const lines: string[] = [];
+    for (let i = 0; i < 6; i += 1) lines.push(call(500 + i, padding));
+    const recordsStart =
+      OVERSIZE_BYTES - 16 * 1024 * 1024 - Math.floor(utf8Length(lines[0] ?? '') / 2);
+    const big = await fsp.open(
+      pathMod.resolve(dayDir, `rollout-2026-09-13T00-00-00-${PARTIAL_THREAD}.jsonl`),
+      'w',
+    );
+    try {
+      await big.write(meta(PARTIAL_THREAD));
+      await big.truncate(recordsStart);
+      await big.write(lines.join(''), recordsStart);
+      await big.truncate(OVERSIZE_BYTES);
+    } finally {
+      await big.close();
+    }
+
+    // AND A WHOLE ONE BESIDE IT. Without a second session on the same deck,
+    // "this card carries the mark" is satisfied by a component that marks
+    // every card, which is the vacuity shape this file's own header warns of.
+    await fsp.writeFile(
+      pathMod.resolve(dayDir, `rollout-2026-09-13T00-00-01-${WHOLE_THREAD}.jsonl`),
+      `${meta(WHOLE_THREAD)}${call(1, 'small')}`,
+      'utf8',
+    );
+
+    const outcome = await engine.readCodexEngine({
+      root: codexRoot,
+      workspaceFolders: [codexWorkspace],
+      // BELOW BOTH transcripts, so the oversize read shape is a fact about the
+      // setting rather than about a file this test had to grow to 64 MiB. The
+      // small one is under head+tail either way and is read whole.
+      maxTranscriptBytes: 1024,
+    });
+    if (outcome.kind !== 'ok') throw new Error(`the engine did not read: ${outcome.kind}`);
+    codexSessions = outcome.result.sessions;
+  }, 300_000);
+
+  afterAll(async () => {
+    if (codexScratch === '') return;
+    const fsp = (await import(/* @vite-ignore */ FS_PROMISES)) as unknown as FsPromisesModule;
+    await fsp.rm(codexScratch, { recursive: true, force: true });
+  });
+
+  it('the engine produced one partial session and one whole one', () => {
+    // The subject, pinned before anything is rendered: every assertion below
+    // is about a deck holding BOTH shapes, and a corpus that produced only one
+    // of them would make the comparisons meaningless rather than red.
+    expect([...codexSessions.map((s) => s.sessionId)].sort()).toStrictEqual(
+      [PARTIAL_THREAD, WHOLE_THREAD].sort(),
+    );
+    expect(codexSessions.find((s) => s.sessionId === PARTIAL_THREAD)?.partial).toStrictEqual({
+      readBytes: READ_BYTES,
+      totalBytes: OVERSIZE_BYTES,
+    });
+    expect(codexSessions.find((s) => s.sessionId === WHOLE_THREAD)?.partial).toBeUndefined();
+  });
+
+  it('the store carries it onto the summary, and only for that session', () => {
+    const view = viewOf(codexSessions);
+    const rows = new Map(view.sessions.map((row) => [row.sessionId, row]));
+    expect(rows.get(PARTIAL_THREAD)?.partial).toStrictEqual({
+      readBytes: READ_BYTES,
+      totalBytes: OVERSIZE_BYTES,
+    });
+    // ABSENT, not present-and-undefined: absence is what "read whole" means.
+    expect('partial' in (rows.get(WHOLE_THREAD) as object)).toBe(false);
+  });
+
+  it('renders the mark on that card and on no other', () => {
+    const view = viewOf(codexSessions);
+    const container = render({ sessions: view.sessions, now: NOW });
+
+    const marked = cellFor(container, PARTIAL_THREAD);
+    expect(marked.dataset['partial']).toBe('true');
+    expect(one(marked, TESTID.deckPartial).textContent).toBe('read in part');
+    // The accessible name states it too: a mark only a sighted user can read
+    // is half a mark.
+    expect(marked.getAttribute('aria-label')).toContain(', read in part');
+
+    const whole = cellFor(container, WHOLE_THREAD);
+    expect(whole.dataset['partial']).toBe('false');
+    expect(all(whole, TESTID.deckPartial)).toStrictEqual([]);
+    expect(whole.getAttribute('aria-label')).not.toContain('read in part');
+  });
+
+  it('states no byte figure anywhere on the card (user ruling, 2026-09-13)', () => {
+    const view = viewOf(codexSessions);
+    const container = render({ sessions: view.sessions, now: NOW });
+    const marked = cellFor(container, PARTIAL_THREAD);
+
+    /*
+     * THE RULING, AS AN ASSERTION. The pair is latched at the read that
+     * established the tail while the file goes on growing under it, so a
+     * rendered figure would go stale on exactly the sessions this mark exists
+     * for. The numbers live on the `transcript partial` diagnostics line and
+     * on `SessionState.partial`, both of which are dated by the read that
+     * produced them.
+     *
+     * Both numbers are looked for in several renderings, not just as raw
+     * digits: the plain integers, their grouped forms, and the MB/MiB
+     * roundings a formatter would reach for.
+     */
+    const text = marked.textContent ?? '';
+    const attrs = [...marked.querySelectorAll('*')]
+      .flatMap((el) => [...el.attributes].map((a) => a.value))
+      .concat([...marked.attributes].map((a) => a.value))
+      .join(' ');
+    const forbidden = [
+      String(READ_BYTES),
+      String(OVERSIZE_BYTES),
+      READ_BYTES.toLocaleString('en-US'),
+      OVERSIZE_BYTES.toLocaleString('en-US'),
+      '16.3',
+      '17.0',
+      '20.0',
+      '20.9',
+    ];
+    for (const needle of forbidden) {
+      expect(text, `the card renders ${needle}`).not.toContain(needle);
+      expect(attrs, `a card attribute carries ${needle}`).not.toContain(needle);
+    }
+    // The vacuity control for the loop above: the card DOES carry the mark, so
+    // these are absences on a card that has something to say.
+    expect(text).toContain('read in part');
   });
 });
 

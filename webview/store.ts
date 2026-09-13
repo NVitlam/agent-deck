@@ -31,6 +31,7 @@ import type {
   HostToWebviewMessage,
   SessionState,
   TokenPair,
+  TranscriptPartial,
   TreeNode,
   TreeOp,
   WebviewToHostMessage,
@@ -351,6 +352,32 @@ export interface SessionSummary {
    * last under `recent` and renders its age as an em-dash.
    */
   lastEventAt: number;
+  /**
+   * Present when this session was built from PART of its transcript
+   * (v0.8.0 Phase 7, DoD 7.7).
+   *
+   * Carried by reference off `SessionState.partial`, and carried WHOLE rather
+   * than reduced to a boolean, for the reason every other optional field on
+   * this row is carried whole: the summary is the store's view of a session,
+   * and a row that had already thrown the figures away would force any later
+   * reader to go back to `SessionState`.
+   *
+   * **The deck cell renders the MARK and not the figures** (user ruling,
+   * 2026-09-13), and that is not a presentation preference. `SessionPatch` has
+   * no key for `partial`, so the pair is latched by the engine at the read
+   * that established the tail — while the tail goes on following the file and
+   * discovery re-`stat`s it every poll. A card reading `17.0 MB of 1.2 GB`
+   * would therefore be a figure that silently goes stale on exactly the
+   * sessions the feature exists for. The numbers stay where they are dated:
+   * the `transcript partial` diagnostics line, which states them once with the
+   * read that produced them, and `SessionState.partial` for the extension API.
+   *
+   * **Absent for a refused session**, like `nodeCount` and `errorCount` above
+   * and for the same reason (G3): a refusal reads nothing off a tree it
+   * declined to trust, and "part of it was read" is a claim about a read whose
+   * result was thrown away.
+   */
+  partial?: TranscriptPartial;
 }
 
 /** A patch the host sent that could not be applied. */
@@ -835,6 +862,11 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
     ...(refused || state.contextNow === undefined ? {} : { contextNow: state.contextNow }),
     ...(refused || state.burn === undefined ? {} : { burn: state.burn }),
     ...(refused || state.windowTokens === undefined ? {} : { windowTokens: state.windowTokens }),
+    // v0.8.0 DoD 7.7. Zeroed-out for a refusal the same way `nodeCount` is:
+    // see the field's own doc above. Carried by reference, like the three
+    // pairs above it — `applySessionPatch` deep-freezes the state, so nothing
+    // can mutate it behind a renderer's back.
+    ...(refused || state.partial === undefined ? {} : { partial: state.partial }),
   };
 }
 

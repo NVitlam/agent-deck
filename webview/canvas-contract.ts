@@ -261,6 +261,8 @@ export const TESTID = {
   deckBlob: 'deck-blob',
   deckEmpty: 'deck-empty',
   deckErrorBadge: 'deck-error-badge',
+  /** The v0.8.0 DoD 7.7 mark: this session was read from part of its transcript. */
+  deckPartial: 'deck-cell-partial',
 
   /* Session interior */
   canvas: 'session-canvas',

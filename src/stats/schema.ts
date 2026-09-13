@@ -73,8 +73,20 @@
 // host alike. Nothing here may reach a `node:` builtin, `vscode`, or an engine.
 import type { CompactionRecord } from '../model/events.js';
 
-/** The record format. Bumped when a reader must notice a change. */
-export const STATS_SCHEMA_VERSION = 1;
+/**
+ * The record format. Bumped when a reader must notice a change.
+ *
+ * **2 as of v0.8.0 Phase 7 (DoD 7.1), and the bump COSTS A USER THEIR
+ * HISTORY.** {@link validateStatsRecord} requires this exact value, and the
+ * store's reader counts a line it cannot validate on `storeMalformed` and
+ * skips it — the behaviour `store.ts`'s header already states for "a record
+ * from a future schema version", reached here from the other side. So every
+ * record 0.7.x wrote is skipped by 0.8.0: Trends starts again, nothing on
+ * disk is rewritten, and no read fails. Stated on the constant because the
+ * consequence is a user-visible one that the number itself does not show, and
+ * it is named in the 0.8.0 CHANGELOG and README for the same reason.
+ */
+export const STATS_SCHEMA_VERSION = 2;
 
 /** The three observation engines, as `SessionState.engine` names them. */
 export type StatsEngine = 'cc' | 'opencode' | 'codex';
@@ -237,6 +249,59 @@ export interface StallRecord {
   stalledMs: number;
 }
 
+/**
+ * F14 — what this session's own timestamps say about it, all derived.
+ *
+ * v0.8.0 Phase 7, DoD 7.2. Every member is optional and every absence is the
+ * same fact: **the instants this figure is a function of were not stated by
+ * the engine.** Never a zero, never a substitute — §D's rule, applied to time.
+ *
+ * ## The block is always present, its members need not be
+ *
+ * A reader always finds the block, so "this session states no time" is an
+ * empty object rather than a missing key — which could equally have meant
+ * "written by an older deriver". The schema version above already answers
+ * that second question, and this shape keeps the two questions apart.
+ *
+ * ## No clock is read here, and that is what makes a golden mean anything
+ *
+ * Every figure below is a difference or a ratio of instants ON THIS RECORD's
+ * own inputs. `deriveStats` has no clock of its own (see `derive.ts`'s
+ * header), and a span measured against `now` would move every time a golden
+ * was regenerated. A session still running therefore reports the span it has
+ * EVIDENCE of, never the span since it started.
+ */
+export interface TimingStats {
+  /**
+   * Last stated instant minus first stated instant, over every F14 instant in
+   * the session — tool starts, tool ends and usage-turn times alike.
+   *
+   * NOT `endedAt - startedAt`. Those two are the session's own envelope, and
+   * on Codex `endedAt` is a FILE MTIME (`graft.ts` says so in as many words),
+   * so a wall time built on them would be partly a statement about the
+   * filesystem. This one is a statement about work the engine timestamped.
+   */
+  wallMs?: number;
+  /** First tool start minus the first stated instant. 0 is a real answer. */
+  timeToFirstToolMs?: number;
+  /**
+   * The largest interval between one call starting and the next starting, in
+   * the SESSION-WIDE call order.
+   *
+   * Start-to-start rather than end-to-start, because an end is absent on every
+   * running call and on any engine that states none, so a gap measured from a
+   * mixture of the two would be a different quantity from row to row. Absent
+   * unless at least two calls state a start.
+   */
+  longestGapMs?: number;
+  /** `(totals.prompt + totals.output) / (wallMs / 60000)`. Needs `wallMs > 0`. */
+  tokensPerMin?: number;
+  /** Calls in the session-wide sequence over the same minutes. */
+  callsPerMin?: number;
+  /** `totals.costUsd` over the same hours. Present only WITH a cost source. */
+  costPerHourUsd?: number;
+}
+
 /** Per-agent totals. F5, F6, F8's silent flag, F9(b)'s model id. */
 export interface AgentStats {
   agentId: string;
@@ -253,6 +318,30 @@ export interface AgentStats {
   toolCalls: number;
   /** F8 — a spawned agent that made no tool call at all. Never true of `main`. */
   silent: boolean;
+  /**
+   * F15 — this agent was spawned and its spawning call never got a result.
+   *
+   * v0.8.0 Phase 7, DoD 7.4; spec `Amendment 2026-09-12`: *"A spawned agent
+   * whose spawning `Agent` call has no `tool_result` in the parent transcript.
+   * Structural; never inferred from message content."*
+   *
+   * Read STRUCTURALLY, off two things the model already carries: the
+   * `SpawnEdge` naming the `tool_use` block that spawned this agent, and that
+   * node's `status`. The grafter's rule is `resultPreview === undefined ?
+   * 'running' : 'done'`, so a status of `done` or `error` IS "a result
+   * arrived" and `running`/`stalled` IS "none has". No message is read.
+   *
+   * **It is a statement about this SNAPSHOT, and on a live session it is
+   * transient**: a subagent working right now has no result yet and reads
+   * true, then reads false when it finishes. That is the amendment's sentence
+   * implemented as written — the fact is "no result is present", not "no
+   * result will ever come", which a pure function over one snapshot cannot
+   * know. The rendered word says only the first (`webview/stats/layout.ts`).
+   *
+   * Never true of `main` — it has no spawning call — and never true where the
+   * session states no spawn edges, which `unavailable` names instead.
+   */
+  resultUnreceived: boolean;
   /** F9(b) — the model id as the engine wrote it. See the header on G4. */
   model?: string;
 }
@@ -274,6 +363,8 @@ export interface StatsRecord {
   contextChurn: ContextChurnRecord[];
   compactions: CompactionStat[];
   stalls: StallRecord[];
+  /** F14 — see {@link TimingStats}. Always present; may hold no member. */
+  timing: TimingStats;
   totals: {
     prompt: number;
     output: number;
@@ -284,6 +375,17 @@ export interface StatsRecord {
     contextFill?: number;
     subagents: number;
     silentSubagents: number;
+    /**
+     * F15 — how many subagents read `resultUnreceived`.
+     *
+     * OPTIONAL, unlike `silentSubagents`, and the asymmetry is the point: F8
+     * is derived from the tree, which every session has, while F15 needs
+     * `SessionState.spawnEdges`, which is optional and absent on a path that
+     * does not report it. A 0 there would be a zero standing in for an
+     * absence, which §D forbids by name; absent, with `F15:<engine>` in
+     * `unavailable`, says the honest thing.
+     */
+    subagentsUnreceived?: number;
     stalls: number;
   };
   params: { loopMin: number; spikeTokens?: number };

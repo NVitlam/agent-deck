@@ -31,6 +31,7 @@ import type {
 } from '../model/events.js';
 import type { SessionEmission } from '../model/session.js';
 import { isSidebarCommand } from '../sidebar/menu.js';
+import { isTweakKey, isTweakValue } from '../sidebar/tweaks.js';
 import { applySessionPatch } from './apply.js';
 
 // ---------------------------------------------------------------------------
@@ -80,6 +81,11 @@ export const WEBVIEW_TO_HOST_TYPES = [
   // HERE, at the boundary, so a message that merely looks like a menu entry
   // cannot make the host execute an arbitrary command id.
   'runCommand',
+  // v0.8.0 Phase 7, DoD 7.6. The TWEAKS panel's one message: write one
+  // setting. `key` must be a member of `src/sidebar/tweaks.ts`'s list and
+  // `value` a value that member may take — validated HERE, at the boundary,
+  // because the host's next act is to write it into the user's settings.
+  'updateTweak',
 ] as const;
 
 /**
@@ -185,6 +191,13 @@ export function isWebviewToHostMessage(
       case 'runCommand': {
         const command = ownNonEmptyString(value, 'command');
         return command !== undefined && isSidebarCommand(command);
+      }
+      case 'updateTweak': {
+        const key = ownNonEmptyString(value, 'key');
+        if (key === undefined || !isTweakKey(key)) return false;
+        // `ownDataProperty`, not a plain read: the value may legitimately be
+        // `false`, which every "is it there" shortcut would discard.
+        return isTweakValue(key, ownDataProperty(value, 'value'));
       }
       default:
         return false;

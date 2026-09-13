@@ -154,6 +154,12 @@ export const MODEL_ONLY_KEYS = [
   'usageSeries',
   // ToolNode
   'stalledSinceMs',
+  // F14 (v0.8.0). MODEL-ONLY, not shared: `StatsRecord` states time as the
+  // DERIVED `timing` block, never as a raw instant, so no record key can
+  // collide with these three and `modelKeyIn` stays a real refusal.
+  'startedAtMs',
+  'endedAtMs',
+  'atMs',
   'inputPreview',
   'inputHash',
   'resultPreview',

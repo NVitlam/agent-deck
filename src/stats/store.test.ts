@@ -107,6 +107,11 @@ function record(sessionId: string, derivedAt: number): StoredStatsRecord {
     contextChurn: [],
     compactions: [],
     stalls: [],
+    // F14's block, holding nothing. A hand-built record is not a session, so it
+    // states no instant — and an empty block is what the deriver produces for
+    // any session that states none, so this fixture stays a record the
+    // validator accepts rather than a shape only this file can make.
+    timing: {},
     totals: {
       prompt: 10,
       output: 5,

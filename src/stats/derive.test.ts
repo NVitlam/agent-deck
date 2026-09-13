@@ -56,6 +56,12 @@ const STATS_PURE_LAYER = [
   'src/stats/pricing.ts',
   'src/stats/schema.ts',
   'src/stats/stalls.ts',
+  // v0.8.0 Phase 7, DoD 7.2. F14's six figures, and it joins the layer under
+  // the same reading as `stalls.ts` and the other four the DoD's Modules list
+  // names: it is reachable from `derive.ts`, it imports `events.ts` and
+  // `schema.ts` and nothing else, and it holds no clock. Widened here with the
+  // reason on it rather than by adding a name.
+  'src/stats/timing.ts',
   'src/stats/toolclass.ts',
 ];
 

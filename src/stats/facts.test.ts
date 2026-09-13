@@ -34,9 +34,9 @@ function record(id: string): StatsRecord {
 }
 
 describe('the fixture set itself', () => {
-  it('is the thirteen R8 shapes, each derived once', () => {
+  it('is the fourteen R8 shapes, each derived once', () => {
     // Vacuity control for every test below: they all read this map.
-    expect(RECORDS.size).toBe(13);
+    expect(RECORDS.size).toBe(14);
     expect([...RECORDS.keys()].sort()[0]).toBe('01-reread-loop');
   });
 });

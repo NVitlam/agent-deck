@@ -144,7 +144,7 @@ describe('DoD 2.2 — deriveStats is pure', () => {
     // The count beside the set, per rule 19's shape: a set comparison written
     // against an accidentally empty listing passes vacuously, and a count is
     // the cheapest thing that goes red when it does.
-    expect(scan.modules).toHaveLength(10);
+    expect(scan.modules).toHaveLength(11);
     expect(scan.edges).toBeGreaterThan(0);
     expect(scan.unresolved).toEqual([]);
   });

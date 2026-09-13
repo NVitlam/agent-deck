@@ -147,6 +147,49 @@ function timingOf(state: SessionState): TimingStats {
   return deriveStats(state, { now: FIXED_NOW_MS }).timing;
 }
 
+/** Starts of the tools that are DIRECT children of one agent, in ordinal order. */
+function directToolStarts(node: AgentNode): number[] {
+  return node.children
+    .filter((child): child is ToolNode => !isAgentNode(child))
+    .sort((a, b) => (a.ordinal ?? 0) - (b.ordinal ?? 0))
+    .map((tool) => tool.startedAtMs)
+    .filter((value): value is number => value !== undefined);
+}
+
+/** Starts of every tool below one agent's SUBAGENTS. */
+function subagentStarts(node: AgentNode): number[] {
+  const out: number[] = [];
+  for (const child of node.children) {
+    if (!isAgentNode(child)) continue;
+    out.push(...directToolStarts(child), ...subagentStarts(child));
+  }
+  return out;
+}
+
+/**
+ * A copy whose root-level calls all start (and end) `deltaMs` later.
+ *
+ * Nothing below a subagent is touched, so the session's earliest start moves
+ * from the root's ordinal 0 to a subagent's call — which is the one shape that
+ * separates "the earliest start" from "the first start in sequence order".
+ */
+function delayRootCalls(state: SessionState, deltaMs: number): SessionState {
+  return {
+    ...state,
+    root: {
+      ...state.root,
+      children: state.root.children.map((child) => {
+        if (isAgentNode(child)) return child;
+        return {
+          ...child,
+          ...(child.startedAtMs === undefined ? {} : { startedAtMs: child.startedAtMs + deltaMs }),
+          ...(child.endedAtMs === undefined ? {} : { endedAtMs: child.endedAtMs + deltaMs }),
+        };
+      }),
+    },
+  };
+}
+
 /**
  * The first model id in this tree that F9(b) could actually multiply.
  *
@@ -492,6 +535,53 @@ describe('longestGapMs is start-to-start', () => {
     expect(timing.wallMs).toBeDefined();
     expect(timing.timeToFirstToolMs).toBeDefined();
     expect(subject.record.timing.longestGapMs).toBeDefined();
+
+    // And `callsPerMin` still counts EVERY call, not the one that kept its
+    // start. This is the only input in the file where the two populations
+    // differ — every committed tool node states a start — so without it a
+    // deriver that divided the started calls instead would be unobservable.
+    const stripped = deriveStats(single, { now: FIXED_NOW_MS });
+    const calls = stripped.tools.reduce((sum, t) => sum + t.calls, 0);
+    expect(calls).toBeGreaterThan(1);
+    expect(instantsOf(single).starts).toHaveLength(1);
+    expect(timing.callsPerMin).toBe(calls / ((timing.wallMs ?? 1) / 60_000));
+  });
+});
+
+describe('timeToFirstToolMs is the EARLIEST start, not the first in sequence order', () => {
+  it('holds when a subagent call precedes the root agent’s own first call', () => {
+    // Added because a mutation survived: reading `firstStart` as the first
+    // start in SEQUENCE order instead of the minimum left the whole file green.
+    // It could, because on every committed session the root's ordinal 0 also
+    // happens to be the earliest call — so the corpus cannot tell the two
+    // readings apart, and the distinguishing case has to be made.
+    //
+    // The sequence is STRUCTURAL: the root's calls come first whatever the
+    // clock says. Pushing every root-level start an hour forward on a copy
+    // leaves the session's earliest start belonging to a SUBAGENT, and the two
+    // readings then disagree by that hour.
+    const subject = records.find(({ entry }) => {
+      const rootStarts = directToolStarts(entry.state.root);
+      const childStarts = subagentStarts(entry.state.root);
+      return rootStarts.length > 0 && childStarts.length > 0;
+    });
+    expect(subject).toBeDefined();
+    if (subject === undefined) return;
+
+    const delayed = delayRootCalls(subject.entry.state, 3_600_000);
+    const instants = instantsOf(delayed);
+    const earliest = Math.min(...instants.starts);
+    const sequenceFirst = directToolStarts(delayed.root)[0];
+    expect(sequenceFirst).toBeDefined();
+    // The control that keeps the arm from being vacuous: the two candidate
+    // answers must really differ on this input.
+    expect(sequenceFirst).toBeGreaterThan(earliest);
+
+    const timing = timingOf(delayed);
+    expect(timing.timeToFirstToolMs).toBe(earliest - Math.min(...allOf(instants)));
+    // And the figure stays non-negative, which is the property the minimum
+    // buys and the sequence reading does not.
+    expect(timing.timeToFirstToolMs).toBeGreaterThanOrEqual(0);
   });
 });
 

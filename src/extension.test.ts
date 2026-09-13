@@ -78,6 +78,7 @@ import {
   StatsPipeline,
   WORKBENCH_OPEN_SETTINGS,
   statsSettingDefaults,
+  tweaksOf,
   workspacePathsOf,
 } from './extension.js';
 import type {
@@ -91,6 +92,7 @@ import type {
 import type { WebviewToHostMessage } from './model/events.js';
 import type { SessionEmission } from './model/session.js';
 import type { AgentDeckApi } from './api.js';
+import { STATS_SCHEMA_VERSION } from './stats/schema.js';
 import type { StatsRecord } from './stats/schema.js';
 import { CORPUS_READ_BUDGET_MS, readCcSessions, warmCorpus } from './stats/corpus.testkit.js';
 import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
@@ -118,12 +120,14 @@ import type { DiagnosticsEvent } from './bridge/diagnostics.js';
 import { TRUNCATION_MARKER_RE, truncationMarker } from './parser/redact.js';
 import { SIDEBAR_ROOT_ID, WEBVIEW_ROOT_ID } from './bridge/contract.js';
 import { SIDEBAR_MENU, SIDEBAR_VIEW_ID } from './sidebar/menu.js';
-import type { HostToWebviewMessage, SessionState, TreeNode } from './model/events.js';
+import { TWEAK_SETTINGS } from './sidebar/tweaks.js';
+import type { HostToWebviewMessage, SessionState, SettingsMessage, TreeNode } from './model/events.js';
 import { isAgentNode } from './model/events.js';
 import { ManualTime, slugifyWorkspace, snapshotTree } from './parser/tailer.js';
 import type { DiscoveryFailure, DiscoveryFailureKind, TreeSnapshotEntry } from './parser/tailer.js';
 import { correlateWorkspace } from './model/correlate.js';
 import {
+  ConfigurationTarget,
   Uri,
   ViewColumn,
   createExtensionContext,
@@ -927,6 +931,14 @@ describe('readSettings', () => {
       // v0.7.1 DoD 6.1: the telemetry route accepts nothing until a user
       // turns it on.
       'telemetry.enabled': false,
+      // v0.8.0 DoD 7.6 — the four tweaks. Every default is the behaviour
+      // 0.7.1 already shipped, so an installation that never opens the Tweaks
+      // tab behaves as it did; `DoD 7.6 — the four tweaks, the host half`
+      // below is where that decision is stated in full.
+      followNewSessions: false,
+      openDrawerOnEnter: false,
+      drawerExpandedByDefault: false,
+      defaultOrdering: 'live',
     });
   });
 
@@ -949,6 +961,12 @@ describe('readSettings', () => {
           pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
           'canvas.autoFit': false,
           'telemetry.enabled': true,
+          // v0.8.0 DoD 7.6. All four, each configured AWAY from its default,
+          // for the reason the comment above gives about the Phase 3 four.
+          followNewSessions: true,
+          openDrawerOnEnter: true,
+          drawerExpandedByDefault: true,
+          defaultOrdering: 'engine',
         })[key],
     });
     expect(read).toStrictEqual({
@@ -962,6 +980,10 @@ describe('readSettings', () => {
       pricing: { 'a-model': { prompt: 1, cacheRead: 1, cacheWrite: 1, output: 1 } },
       'canvas.autoFit': false,
       'telemetry.enabled': true,
+      followNewSessions: true,
+      openDrawerOnEnter: true,
+      drawerExpandedByDefault: true,
+      defaultOrdering: 'engine',
     });
   });
 
@@ -1050,6 +1072,8 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
     maximum?: unknown;
     description?: unknown;
     scope?: unknown;
+    /** v0.8.0 DoD 7.6 — the accepted set of a `string` setting. */
+    enum?: unknown;
   }
 
   async function manifestProperties(): Promise<Record<string, ManifestProperty>> {
@@ -1119,6 +1143,22 @@ describe('the settings manifest and SETTING_BOUNDS must agree', () => {
       // unscoped shape must declare none, so a stray `scope` in the manifest
       // fails too.
       expect(property.scope, `${key}.scope`).toBe(shape.scope);
+      /*
+       * v0.8.0 DoD 7.6 — the ENUM, both ways, for the same reason and with
+       * one extra: the manifest's list is what the settings UI offers, and
+       * `readSettings` refuses anything outside `SettingShape.values`. A
+       * manifest offering a fourth ordering the reader rejects would put a
+       * value in the dropdown that silently reads back as the default.
+       */
+      if (shape.values === undefined) {
+        expect(property.enum, `${key}.enum`).toBeUndefined();
+      } else {
+        expect(property.enum, `${key}.enum`).toStrictEqual([...shape.values]);
+        expect(shape.values.length, `${key}.values is empty`).toBeGreaterThan(0);
+        // ...and the declared default is one of them. A default outside the
+        // enum is a setting whose shipped value the UI will not offer.
+        expect(shape.values, `${key}.default`).toContain(shape.defaultOf() as string);
+      }
     }
   });
 
@@ -4406,8 +4446,28 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
     // OPTIONAL INPUT Claude Code can be pointed at is accepted, not whether an
     // engine is read. It names no engine, so the engine-word loop below still
     // applies to it and still passes.
+    //
+    // v0.8.0 DoD 7.6 adds THREE booleans, and each is on this list in writing
+    // because the rule is that a boolean must justify itself here:
+    //
+    //   followNewSessions        what the deck does with a session that
+    //                            appears. The session is discovered, tailed,
+    //                            grafted and counted at either value; what
+    //                            moves is the selection.
+    //   openDrawerOnEnter        whether entering a session opens its
+    //                            tool-call drawer. The drawer holds the same
+    //                            calls either way.
+    //   drawerExpandedByDefault  the height the drawer opens at. The drawer's
+    //                            own control still expands and collapses it.
+    //
+    // None of the three can turn an engine, a tap or a listener off, none
+    // changes what is read from disk, and the control at the bottom of this
+    // test still runs the Codex engine with every setting at its default.
     const BOOLEAN_ALLOW_LIST = [
       'agentDeck.canvas.autoFit',
+      'agentDeck.drawerExpandedByDefault',
+      'agentDeck.followNewSessions',
+      'agentDeck.openDrawerOnEnter',
       'agentDeck.stats.enabled',
       'agentDeck.telemetry.enabled',
     ];
@@ -5559,7 +5619,10 @@ describe('the host writes stats records through the real data path (DoD 3.7)', (
       expect(record['coverage']).toBe('full');
       expect(record['engine']).toBe('cc');
       expect(typeof record['derivedAt']).toBe('number');
-      expect(record['statsSchemaVersion']).toBe(1);
+      // BOUND to the constant, not written out: this literal read `1` and
+      // went stale the moment v0.8.0 bumped the version, which is this
+      // repository's most-recorded defect in its cheapest form.
+      expect(record['statsSchemaVersion']).toBe(STATS_SCHEMA_VERSION);
     }
     expect(host.stats?.store.appended).toBe(sessionIds.length);
   });
@@ -6086,7 +6149,15 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     // Snapshot FIRST — the bridge's oldest invariant — then the settings.
     expect(types[0]).toBe('snapshot');
     expect(types).toContain('settings');
-    expect(panel?.webview.posted[types.indexOf('settings')]).toStrictEqual({ type: 'settings', canvasAutoFit: false });
+    // v0.8.0 DoD 7.6: `tweaks` rides on the SAME message, so what the panel
+    // hears first is both halves. Compared against `readSettings` rather
+    // than against four literals, so a default that moves does not have to
+    // be copied here.
+    expect(panel?.webview.posted[types.indexOf('settings')]).toStrictEqual({
+      type: 'settings',
+      canvasAutoFit: false,
+      tweaks: tweaksOf(readSettings(undefined)),
+    });
     expect(types.indexOf('settings')).toBeGreaterThan(types.indexOf('snapshot'));
     expect(types).toContain('statsSnapshot');
     expect(types).toContain('statsStore');
@@ -6112,7 +6183,14 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     // A configuration change reaches the renderer live, as a fresh settings message.
     mock.setConfig(CONFIG_SECTION, { port: currentHost()?.dataPath.settings.port, 'canvas.autoFit': true });
     mock.fireConfigurationChange(CONFIG_SECTION);
-    expect(panel?.webview.posted.at(-1)).toStrictEqual({ type: 'settings', canvasAutoFit: true });
+    // v0.8.0 DoD 7.6: the four tweaks ride on the same message, so the fresh
+    // send carries both halves. The configuration set above names neither
+    // tweak, so each re-reads as its declared default.
+    expect(panel?.webview.posted.at(-1)).toStrictEqual({
+      type: 'settings',
+      canvasAutoFit: true,
+      tweaks: tweaksOf(readSettings(undefined)),
+    });
   });
 
   it('agentDeck.openStats opens the same panel and asks for the stats view', async () => {
@@ -6141,14 +6219,18 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
         snapshots += 1;
       },
     });
-    controller.setSettings({ canvasAutoFit: false });
-    expect(panel.posted).toStrictEqual([{ type: 'settings', canvasAutoFit: false }]);
+    // v0.8.0 DoD 7.6: `tweaks` rides on the SAME message, so what a reload
+    // re-sends is both halves or neither. A non-default value here, so a
+    // re-send that quietly rebuilt the message from defaults would fail.
+    const sent = { canvasAutoFit: false, tweaks: { followNewSessions: true } };
+    controller.setSettings(sent);
+    expect(panel.posted).toStrictEqual([{ type: 'settings', ...sent }]);
     panel.fireBecameVisible();
     // The pump (asked for first) supplies the snapshot; the settings follow.
     expect(snapshots).toBe(1);
     expect(panel.posted).toStrictEqual([
-      { type: 'settings', canvasAutoFit: false },
-      { type: 'settings', canvasAutoFit: false },
+      { type: 'settings', ...sent },
+      { type: 'settings', ...sent },
     ]);
     controller.dispose();
   });
@@ -6185,9 +6267,9 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
         relayRole: 'idle', relayFollowers: 0, relayed: 0, relayReceived: 0,
         statsErrors: 0, storeMalformed: 0, statsDropped: 7,
         telemetry: {
-          metrics: { accepted: 0, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
-          logs: { accepted: 0, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
-          traces: { accepted: 0, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
+          metrics: { accepted: 0, disabled: 0, unmatched: 0, foreign: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
+          logs: { accepted: 0, disabled: 0, unmatched: 0, foreign: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
+          traces: { accepted: 0, disabled: 0, unmatched: 0, foreign: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
         },
       },
       '2026-09-09T00:00:00.000Z',
@@ -7125,4 +7207,296 @@ describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () =>
     const stored = await api.getStoredStats();
     expect(stored.map((r) => r.sessionId)).toContain(state.sessionId);
   }, CORPUS_READ_BUDGET_MS);
+});
+
+// ---------------------------------------------------------------------------
+// v0.8.0 Phase 7, DoD 7.6 — the Tweaks panel, HOST HALF
+// ---------------------------------------------------------------------------
+
+/*
+ * WHAT IS REAL HERE. `activate()`, the registered view provider, the real
+ * `SidebarController` over the real `adaptWebviewView`, the real
+ * `isWebviewToHostMessage` guard, and the mock's `workspace.getConfiguration`
+ * whose `update` writes into the same map `get` reads. No test in this block
+ * constructs a `settings` message by hand and hands it to a surface — that is
+ * the D4 shape this repository has shipped four times, and what it hides is
+ * exactly a value production never sends.
+ *
+ * The EFFECTS of three of the four (the deck moving, the drawer opening, the
+ * ordering applied) are drawn in `webview/`, and are that package's to test.
+ * What is host-observable, and asserted here, is the whole path a value takes:
+ * read from the configuration, sent to the surface on create, re-sent on every
+ * change, written back through `update` when the panel asks, and read back
+ * with the new value.
+ */
+describe('DoD 7.6 — the four tweaks, the host half', () => {
+  const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
+
+  afterEach(async () => {
+    await deactivate();
+    if (previousRoot === undefined) delete process.env['CLAUDE_PROJECTS_ROOT'];
+    else process.env['CLAUDE_PROJECTS_ROOT'] = previousRoot;
+  });
+
+  /**
+   * The configuration reader the host itself reads through, so a test compares
+   * what was SENT with what `workspace.getConfiguration()` answers rather than
+   * with a value the test wrote down.
+   */
+  const mockConfiguration = (): { get(key: string): unknown } =>
+    mock.state.configuration.get(CONFIG_SECTION) ?? new Map<string, unknown>();
+
+  /** The `settings` messages a view was posted, in order. */
+  const settingsPosted = (view: { webview: { posted: unknown[] } }): SettingsMessage[] =>
+    view.webview.posted.filter(
+      (m): m is SettingsMessage => (m as { type?: string }).type === 'settings',
+    );
+
+  it('declares all four, and an unconfigured window reads the shipped defaults', () => {
+    // The four keys are `src/sidebar/tweaks.ts`'s, read from there rather than
+    // written out again: a row the panel draws with no setting behind it is a
+    // control over nothing.
+    const read = readSettings(undefined) as unknown as Record<string, unknown>;
+    for (const tweak of TWEAK_SETTINGS) {
+      expect(SETTING_SHAPES, tweak.key).toHaveProperty(tweak.key);
+      expect(read[tweak.key], tweak.key).toBe(
+        SETTING_SHAPES[tweak.key as keyof typeof SETTING_SHAPES].defaultOf(),
+      );
+    }
+    // The shipped values, written out ONCE so a default that moves has to come
+    // past a line that names it. Each is 0.7.1's behaviour.
+    expect(tweaksOf(readSettings(undefined))).toStrictEqual({
+      followNewSessions: false,
+      openDrawerOnEnter: false,
+      drawerExpandedByDefault: false,
+      defaultOrdering: 'live',
+    });
+  });
+
+  it('reads booleans type-strictly and an ordering by membership, never by truthiness', () => {
+    // The string "true" is not a `true`, and `0` is not a `false`: a
+    // truthiness read would turn a tweak on because a value has the wrong
+    // type. `"LIVE"` and `"sideways"` are not orderings the renderer has a
+    // branch for, so they read as the default rather than reaching it.
+    const hostile = readSettings({
+      get: (key: string) =>
+        ({
+          followNewSessions: 'true',
+          openDrawerOnEnter: 1,
+          drawerExpandedByDefault: null,
+          defaultOrdering: 'LIVE',
+        })[key],
+    });
+    expect(tweaksOf(hostile)).toStrictEqual({
+      followNewSessions: false,
+      openDrawerOnEnter: false,
+      drawerExpandedByDefault: false,
+      defaultOrdering: 'live',
+    });
+
+    // CONTROL, in both directions: real values of the right type DO come
+    // through, so the block above is a refusal and not a reader stuck on its
+    // defaults.
+    const real = readSettings({
+      get: (key: string) =>
+        ({
+          followNewSessions: true,
+          openDrawerOnEnter: true,
+          drawerExpandedByDefault: true,
+          defaultOrdering: 'engine',
+        })[key],
+    });
+    expect(tweaksOf(real)).toStrictEqual({
+      followNewSessions: true,
+      openDrawerOnEnter: true,
+      drawerExpandedByDefault: true,
+      defaultOrdering: 'engine',
+    });
+    // ...and every option the panel offers is accepted, not just this one.
+    for (const option of TWEAK_SETTINGS.find((x) => x.key === 'defaultOrdering')?.options ?? []) {
+      expect(readSettings({ get: () => option }).defaultOrdering, option).toBe(option);
+    }
+  });
+
+  it('a resolved sidebar is sent the settings as configured, in a window with no host', async () => {
+    /*
+     * NO WORKSPACE, so `activate()` returns before building a host. The Tweaks
+     * tab is exactly the tab a user opens in that window, and the values it
+     * draws must still be the user's own: the configuration is the source of
+     * truth on both paths, which is why this does not go through the host.
+     */
+    resetVscodeMock();
+    mock.setConfig(CONFIG_SECTION, { followNewSessions: true, defaultOrdering: 'recent' });
+    await activate(extensionContext());
+    expect(currentHost()).toBeNull();
+
+    const view = mock.resolveView(SIDEBAR_VIEW_ID);
+    const messages = settingsPosted(view);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.tweaks).toStrictEqual({
+      followNewSessions: true,
+      openDrawerOnEnter: false,
+      drawerExpandedByDefault: false,
+      defaultOrdering: 'recent',
+    });
+    // The same message carries `canvasAutoFit`: one type, one send site, so a
+    // second surface cannot be added with half the settings wired.
+    expect(messages[0]?.canvasAutoFit).toBe(true);
+  });
+
+  it('a configuration change re-sends to every live sidebar, with the new values', async () => {
+    resetVscodeMock();
+    mock.setConfig(CONFIG_SECTION, {});
+    await activate(extensionContext());
+    const view = mock.resolveView(SIDEBAR_VIEW_ID);
+    expect(settingsPosted(view).at(-1)?.tweaks.defaultOrdering).toBe('live');
+
+    mock.setConfig(CONFIG_SECTION, { defaultOrdering: 'engine', drawerExpandedByDefault: true });
+    mock.fireConfigurationChange(CONFIG_SECTION);
+    const latest = settingsPosted(view).at(-1);
+    expect(settingsPosted(view)).toHaveLength(2);
+    expect(latest?.tweaks.defaultOrdering).toBe('engine');
+    expect(latest?.tweaks.drawerExpandedByDefault).toBe(true);
+
+    // A change in some OTHER extension's section re-sends nothing.
+    mock.state.configurationEmitter.fire({ affectsConfiguration: () => false });
+    expect(settingsPosted(view)).toHaveLength(2);
+  });
+
+  it('a re-shown sidebar is told again: the panel holds no state, so the values equal the settings', async () => {
+    /*
+     * THE DoD'S "reload -> values equal settings", end to end. A hidden
+     * `WebviewView` is torn down, so what comes back is a new document that
+     * knows nothing; if the host did not re-send, the tab would draw the
+     * renderer's own defaults over a configuration that says otherwise.
+     *
+     * The value is changed BETWEEN the first send and the re-show, so a
+     * controller that replayed its first message would show `live` here.
+     */
+    resetVscodeMock();
+    mock.setConfig(CONFIG_SECTION, { defaultOrdering: 'recent' });
+    await activate(extensionContext());
+    const view = mock.resolveView(SIDEBAR_VIEW_ID);
+    expect(settingsPosted(view).at(-1)?.tweaks.defaultOrdering).toBe('recent');
+
+    mock.setConfig(CONFIG_SECTION, { defaultOrdering: 'engine' });
+    mock.fireConfigurationChange(CONFIG_SECTION);
+    view.setVisible(false);
+    view.setVisible(true);
+
+    const latest = settingsPosted(view).at(-1);
+    expect(latest?.tweaks).toStrictEqual(
+      tweaksOf(readSettings(mockConfiguration())),
+    );
+    expect(latest?.tweaks.defaultOrdering).toBe('engine');
+    // VACUITY: the first message really did say something else.
+    expect(settingsPosted(view)[0]?.tweaks.defaultOrdering).toBe('recent');
+  });
+
+  it('an updateTweak writes through workspace.getConfiguration().update, to Global', async () => {
+    resetVscodeMock();
+    mock.setConfig(CONFIG_SECTION, {});
+    await activate(extensionContext());
+    const view = mock.resolveView(SIDEBAR_VIEW_ID);
+
+    // Every declared tweak, at a value of its own kind, through the real
+    // guard and the real controller.
+    view.fireMessage({ type: 'updateTweak', key: 'followNewSessions', value: true });
+    view.fireMessage({ type: 'updateTweak', key: 'openDrawerOnEnter', value: true });
+    view.fireMessage({ type: 'updateTweak', key: 'drawerExpandedByDefault', value: true });
+    view.fireMessage({ type: 'updateTweak', key: 'defaultOrdering', value: 'engine' });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mock.configurationWrites).toStrictEqual([
+      { section: CONFIG_SECTION, key: 'followNewSessions', value: true, target: 1 },
+      { section: CONFIG_SECTION, key: 'openDrawerOnEnter', value: true, target: 1 },
+      { section: CONFIG_SECTION, key: 'drawerExpandedByDefault', value: true, target: 1 },
+      { section: CONFIG_SECTION, key: 'defaultOrdering', value: 'engine', target: 1 },
+    ]);
+    // `1` is `ConfigurationTarget.Global`, asserted by name as well as by
+    // number: the decision is the FILE, the user's own settings rather than
+    // the workspace's `.vscode/settings.json`, and a number alone would not
+    // say which was meant.
+    expect(ConfigurationTarget.Global).toBe(1);
+
+    // AND THE WRITE IS WHAT MOVES THE VALUE: read back through the same
+    // configuration the host reads, the four now hold what was clicked.
+    expect(tweaksOf(readSettings(mockConfiguration()))).toStrictEqual({
+      followNewSessions: true,
+      openDrawerOnEnter: true,
+      drawerExpandedByDefault: true,
+      defaultOrdering: 'engine',
+    });
+  });
+
+  it('a message the guard refuses writes nothing at all', async () => {
+    /*
+     * The boundary, from the host's side. Each of these is well-formed JSON
+     * naming a real-looking setting, and the next thing the host would do is
+     * write into the user's `settings.json` — so the assertion that matters is
+     * that NOTHING was written, not that nothing was drawn.
+     */
+    resetVscodeMock();
+    mock.setConfig(CONFIG_SECTION, {});
+    await activate(extensionContext());
+    const view = mock.resolveView(SIDEBAR_VIEW_ID);
+    for (const hostile of [
+      { type: 'updateTweak', key: 'telemetry.enabled', value: true },
+      { type: 'updateTweak', key: 'port', value: 1 },
+      { type: 'updateTweak', key: 'followNewSessions', value: 'yes' },
+      { type: 'updateTweak', key: 'defaultOrdering', value: 'sideways' },
+      { type: 'updateTweak', key: '__proto__', value: true },
+      { type: 'updateTweak', value: true },
+    ]) {
+      view.fireMessage(hostile);
+    }
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.configurationWrites).toStrictEqual([]);
+
+    // VACUITY CONTROL: this view CAN write — the same path, one legal message.
+    view.fireMessage({ type: 'updateTweak', key: 'followNewSessions', value: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.configurationWrites).toHaveLength(1);
+  });
+
+  it('a host tells its panel the tweaks on open and on every change', async () => {
+    /*
+     * The PANEL's half of the same message. `canvas.autoFit` has ridden on it
+     * since 0.7.0 and the four join it rather than taking a channel of their
+     * own, so this asserts they arrive together and that a change re-sends
+     * both — a second message type would have been a second send site kept in
+     * step by hand.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    resetVscodeMock();
+    mock.setWorkspaceFolder(await capturedWorkspacePath());
+    mock.setConfig(CONFIG_SECTION, { followNewSessions: true });
+    await activate(extensionContext());
+    const host = currentHost();
+    expect(host).not.toBeNull();
+    await mock.runCommand(OPEN_COMMAND);
+    const panel = mock.panels[0];
+    expect(panel).toBeDefined();
+
+    const first = (panel?.webview.posted ?? []).filter(
+      (m): m is SettingsMessage => (m as { type?: string }).type === 'settings',
+    );
+    expect(first.at(-1)?.tweaks.followNewSessions).toBe(true);
+    expect(first.at(-1)?.tweaks.defaultOrdering).toBe('live');
+
+    mock.setConfig(CONFIG_SECTION, { followNewSessions: false, defaultOrdering: 'recent' });
+    mock.fireConfigurationChange(CONFIG_SECTION);
+    const after = (panel?.webview.posted ?? []).filter(
+      (m): m is SettingsMessage => (m as { type?: string }).type === 'settings',
+    );
+    expect(after.length).toBeGreaterThan(first.length);
+    expect(after.at(-1)?.tweaks).toStrictEqual({
+      followNewSessions: false,
+      openDrawerOnEnter: false,
+      drawerExpandedByDefault: false,
+      defaultOrdering: 'recent',
+    });
+    // ...and the host's own copy agrees with what it sent.
+    expect(host?.tweaks).toStrictEqual(after.at(-1)?.tweaks);
+  });
 });

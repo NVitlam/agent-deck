@@ -515,15 +515,30 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     expect(after.joined.map((s) => s.sessionId)).toStrictEqual([OTEL_SESSION_A]);
     expect(r.host.stats).toBeUndefined();
     const { costPoints } = census();
-    // B's spans are not kept (B is never held), so the pump counts every one.
+    // B's spans are not kept (B is never held), so the pump judges every one.
     // B's cost and count points are HELD for B, not counted: they could still
     // join if B appeared, and are counted only if their slot is evicted
     // (ruling 2026-09-11).
     expect(costPoints.get(OTEL_SESSION_B) ?? 0).toBeGreaterThan(0);
     expect(r.host.telemetry.unmatched.metrics).toBe(0);
+    expect(r.host.telemetry.foreign.metrics).toBe(0);
     expect(r.host.telemetry.pendingSessions).toBe(1);
+    /*
+     * v0.8.0 DoD 7.8 — THE SPLIT, on the cleanest population there is: this
+     * window holds A and has never held B. So B's spans are `foreign` to the
+     * last one, and the only `unmatched` spans are A's own, the ones the
+     * staging placed on no call of A's. Before 7.8 both sums landed in
+     * `unmatched` and the two facts could not be told apart.
+     */
     const unplacedA = r.staged[0]?.unplaced.length ?? Number.NaN;
-    expect(r.host.telemetry.unmatched.traces).toBe(spanToolIds(OTEL_SESSION_B).length + unplacedA);
+    expect(spanToolIds(OTEL_SESSION_B).length).toBeGreaterThan(0);
+    expect(unplacedA).toBeGreaterThan(0);
+    expect(r.host.telemetry.foreign.traces).toBe(spanToolIds(OTEL_SESSION_B).length);
+    expect(r.host.telemetry.unmatched.traces).toBe(unplacedA);
+    // ...and a foreign span writes NO line: every unmatched line names A.
+    const spanLines = r.lines.filter((l) => / otel span unmatched session=/.test(l));
+    expect(spanLines).toHaveLength(unplacedA);
+    for (const line of spanLines) expect(line).toContain(` session=${OTEL_SESSION_A} `);
     // CONTROL: A's own rows DID land, so the zero-creation is not a join that
     // placed nothing anywhere.
     expect(after.joined[0]?.telemetryCostUsd).toBeGreaterThan(0);
@@ -575,23 +590,34 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     // and a held row is not unmatched (ruling 2026-09-11) — it joins below.
     expect(costPoints.get(OTEL_SESSION_B) ?? 0).toBeGreaterThan(0);
     expect(r.host.telemetry.unmatched.metrics).toBe(0);
+    expect(r.host.telemetry.foreign.metrics).toBe(0);
     expect(r.host.telemetry.pendingSessions).toBe(1);
 
     // THE NEXT PUMP DOES NOT SHOW B, so it is where B's spans are judged: each
-    // is dropped and counted, with one line naming it. A's unplaced spans are
-    // counted at the same pump (A is shown; they name no call of A's).
+    // is dropped. v0.8.0 DoD 7.8 — dropped for want of a SESSION is `foreign`,
+    // and a foreign span writes no line. A's unplaced spans are judged at the
+    // same pump (A is shown; they name no call of A's) and are `unmatched`,
+    // with one line each.
     pumpOnce(r);
     const unplacedA = r.staged[0]?.unplaced.length ?? Number.NaN;
     const bSpans = spanToolIds(OTEL_SESSION_B);
     expect(bSpans.length).toBeGreaterThan(0);
-    expect(r.host.telemetry.unmatched.traces).toBe(bSpans.length + unplacedA);
+    expect(unplacedA).toBeGreaterThan(0);
+    expect(r.host.telemetry.foreign.traces).toBe(bSpans.length);
+    expect(r.host.telemetry.unmatched.traces).toBe(unplacedA);
     const bLines = r.lines.filter((l) => l.includes(` otel span unmatched session=${OTEL_SESSION_B} `));
-    expect(bLines.map((l) => / tool_use_id=(\S+)$/.exec(l)?.[1]).sort()).toStrictEqual([...bSpans].sort());
+    expect(bLines, 'a foreign span wrote a diagnostics line').toStrictEqual([]);
+    // VACUITY CONTROL for that empty list: lines ARE written at this pump, for
+    // A's unplaceable spans, so the zero above is about B and not about a
+    // channel nobody wrote to.
+    const aLines = r.lines.filter((l) => l.includes(` otel span unmatched session=${OTEL_SESSION_A} `));
+    expect(aLines).toHaveLength(unplacedA);
 
     const lateB = await stageLate(r);
     const after = pumpOnce(r);
     // Judged once: B appearing later neither re-counts nor revives its spans.
-    expect(r.host.telemetry.unmatched.traces).toBe(bSpans.length + unplacedA);
+    expect(r.host.telemetry.foreign.traces).toBe(bSpans.length);
+    expect(r.host.telemetry.unmatched.traces).toBe(unplacedA);
     const b = after.joined.find((s) => s.sessionId === OTEL_SESSION_B);
     const bRaw = after.raw.find((s) => s.sessionId === OTEL_SESSION_B);
     expect(b, 'the late session was not emitted').toBeDefined();
@@ -644,6 +670,11 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     // THE RULING: B's placed spans are not counted; the ones the staging placed
     // on no call are, and they alone have lines.
     expect(r.host.telemetry.unmatched.traces).toBe(lateB.unplaced.length);
+    // v0.8.0 DoD 7.8 — and NONE of them is foreign: the pump that judged them
+    // shows B, so every one of B's spans is a row about a session this window
+    // holds. This is the other arm of the split from the test above, on the
+    // same spans.
+    expect(r.host.telemetry.foreign.traces).toBe(0);
     const lines = r.lines.filter((l) => / otel span unmatched session=/.test(l));
     expect(lines.map((l) => / tool_use_id=(\S+)$/.exec(l)?.[1]).sort()).toStrictEqual([...lateB.unplaced].sort());
   }, 120_000);
@@ -661,12 +692,22 @@ describe('DoD 6.3 — the host joins the route\'s slices onto the live states, a
     await replayCorpus(r.port, onlyB);
     expect(r.host.telemetry.pendingSessions).toBe(1);
     expect(r.host.telemetry.unmatched.metrics).toBe(0);
+    expect(r.host.telemetry.foreign.metrics).toBe(0);
 
     const flood = Array.from({ length: PENDING_SESSIONS_MAX }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
     expect((await postTo(r.port, TELEMETRY_PATHS.metrics, sessionCountBody(flood))).status).toBe(200);
     expect(r.host.telemetry.pendingSessions).toBe(PENDING_SESSIONS_MAX);
-    // B's slot, and only B's, was pushed out: its count point plus every cost point.
-    expect(r.host.telemetry.unmatched.metrics).toBe(1 + bCostPoints);
+    /*
+     * B's slot, and only B's, was pushed out: its count point plus every cost
+     * point. v0.8.0 DoD 7.8 puts them on `foreign`, not `unmatched`, and the
+     * reason is structural rather than a preference: a pending slot exists
+     * only for a session no emission has held, so at eviction this window does
+     * not hold it. `unmatched.metrics` therefore has no increment site at all
+     * and stays 0 — asserted here so a later change that starts feeding it
+     * has to come past this line.
+     */
+    expect(r.host.telemetry.foreign.metrics).toBe(1 + bCostPoints);
+    expect(r.host.telemetry.unmatched.metrics).toBe(0);
   }, 120_000);
 
   it('never satisfies the provenance gate: a history session with telemetry is not written; the same session is, once it works', async () => {
@@ -887,7 +928,14 @@ describe('DoD 6.3b — Claude Code\'s cost is selected only when its session.cou
     // An EVICTED slot's rows can no longer join, and that is where they are
     // counted: B's count point (pushed out by the flood), then the one flood
     // row B's cost slot pushed out. Nothing else was evicted.
-    expect(r.host.telemetry.unmatched.metrics).toBe(2);
+    //
+    // v0.8.0 DoD 7.8 puts them on `foreign`: a pending slot exists only for a
+    // session no emission has held, so at eviction this window does not hold
+    // it. `unmatched.metrics` is 0 here and everywhere, and is asserted
+    // beside it so a change that starts feeding it has to come past a line
+    // that says it does not.
+    expect(r.host.telemetry.foreign.metrics).toBe(2);
+    expect(r.host.telemetry.unmatched.metrics).toBe(0);
   }, 120_000);
 });
 
@@ -999,10 +1047,18 @@ describe('DoD 6.4 — per-signal accepted, rejected by status, disabled and unma
     expect(placed).toBeGreaterThan(0);
     expect(census().spans).toBe(40);
 
+    /*
+     * v0.8.0 DoD 7.8. BOTH sessions are staged here, so every one of the 40
+     * spans names a session this window holds: the ones the staging placed on
+     * no call are this window's own unplaceable rows (`unmatched`), and
+     * `foreign` is 0 across all three signals. That zero is the control for
+     * the split — a change that routed every span to `foreign` would satisfy
+     * "40 - placed rows were counted somewhere" and fail here.
+     */
     const expected = {
-      metrics: { accepted: 77, disabled: 1, unmatched: 0, rejected: { 400: 0, 405: 1, 413: 0, 415: 0 } },
-      logs: { accepted: 74, disabled: 0, unmatched: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 1 } },
-      traces: { accepted: 43, disabled: 0, unmatched: 40 - placed, rejected: { 400: 1, 405: 0, 413: 1, 415: 0 } },
+      metrics: { accepted: 77, disabled: 1, unmatched: 0, foreign: 0, rejected: { 400: 0, 405: 1, 413: 0, 415: 0 } },
+      logs: { accepted: 74, disabled: 0, unmatched: 0, foreign: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 1 } },
+      traces: { accepted: 43, disabled: 0, unmatched: 40 - placed, foreign: 0, rejected: { 400: 1, 405: 0, 413: 1, 415: 0 } },
     };
     expect(r.host.counters().telemetry).toStrictEqual(expected);
     // One diagnostics line per counted span, each naming a span id the staging
@@ -1029,11 +1085,13 @@ describe('DoD 6.4 — per-signal accepted, rejected by status, disabled and unma
 
     // The DIAGNOSTICS VIEW: the counters line a user copies into a report.
     const line = formatCounters(r.host.counters(), '2026-09-10T00:00:00.000Z');
-    expect(line).toContain(' otel.metrics=accepted:77,disabled:1,unmatched:0,400:0,405:1,413:0,415:0');
-    expect(line).toContain(' otel.logs=accepted:74,disabled:0,unmatched:0,400:0,405:0,413:0,415:1');
+    expect(line).toContain(' otel.metrics=accepted:77,disabled:1,unmatched:0,400:0,405:1,413:0,415:0,foreign:0');
+    expect(line).toContain(' otel.logs=accepted:74,disabled:0,unmatched:0,400:0,405:0,413:0,415:1,foreign:0');
     expect(line).toContain(
-      ` otel.traces=accepted:43,disabled:0,unmatched:${String(40 - placed)},400:1,405:0,413:1,415:0`,
+      ` otel.traces=accepted:43,disabled:0,unmatched:${String(40 - placed)},400:1,405:0,413:1,415:0,foreign:0`,
     );
+    // v0.8.0 DoD 7.8 — the line says which window the unmatched figures are about.
+    expect(line.endsWith(' otel.unmatched-scope=(this window)')).toBe(true);
   }, 120_000);
 });
 
@@ -1365,5 +1423,113 @@ describe('DoD 6.7 — follower parity, through the production caller', () => {
     // counted every body.
     expect(follower.host.counters().telemetry.traces.accepted).toBe(0);
     expect(leader.host.counters().telemetry.traces.accepted).toBe(43);
+  }, 180_000);
+});
+
+// ---------------------------------------------------------------------------
+// v0.8.0 DoD 7.8 — `unmatched` is THIS window's; every other row is `foreign`
+// ---------------------------------------------------------------------------
+
+/*
+ * THE DoD'S OWN TEST, and it is the shape only two windows can produce.
+ *
+ * The exporter is machine-wide: one listener takes every body and relays it to
+ * every other window, so a window receives rows about sessions it has never
+ * shown as a matter of course. Until 0.8.0 those rows and a window's own
+ * unplaceable rows shared one counter, and `unmatched:40` could not be read.
+ *
+ * Two windows on ONE port with DIFFERENT projects roots is what separates the
+ * two populations cleanly, and nothing smaller can: the leader holds no
+ * session at all while the follower holds both, and the same 40 spans reach
+ * both of them over the real socket and the real relay.
+ *
+ *   leader    foreign 40, unmatched 0, and not one diagnostics line — it has
+ *             no tree for a span to fail to join.
+ *   follower  foreign 0, because every span names a session it shows; the
+ *             ones its staging placed on no call are its own `unmatched`.
+ */
+describe('DoD 7.8 — unmatched counts only this window\'s rows; the rest are foreign', () => {
+  it('a leader holding nothing counts every span foreign; a follower holding the sessions matches them', async () => {
+    // Two projects roots, deliberately: `stage([])` gives the leader an empty
+    // one. A shared root would make both windows hold the same sessions, which
+    // is the one arrangement that cannot show the split.
+    const leader = await rig({ stage: [] });
+    const follower = await rig({ stage: ['idle-as-A', 'stalled-as-B'], port: leader.port });
+    expect(leader.host.dataPath.relayRole).toBe('leader');
+    expect(follower.host.dataPath.relayRole).toBe('follower');
+
+    const first = pumpOnce(leader);
+    pumpOnce(follower);
+    // THE PRECONDITION, asserted rather than assumed: the leader really does
+    // hold nothing, so every row that reaches it is about somebody else's
+    // session.
+    expect(first.raw).toStrictEqual([]);
+
+    await replayCorpus(leader.port);
+    await waitFor(
+      () => follower.host.telemetry.slicesIngested === ENVELOPES.length,
+      'every relayed slice at the follower',
+    );
+    expect(leader.host.telemetry.slicesIngested).toBe(ENVELOPES.length);
+    // The pump after arrival is where every span is judged (ruling 2026-09-11).
+    pumpOnce(leader);
+    const f = pumpOnce(follower);
+
+    const spans = census().spans;
+    expect(spans).toBe(40);
+    const placed = follower.staged.reduce((n, s) => n + s.remapped.size, 0);
+    expect(placed).toBeGreaterThan(0);
+    expect(spans - placed).toBeGreaterThan(0);
+
+    // THE LEADER: N foreign, 0 unmatched, where N is every span posted.
+    expect(leader.host.telemetry.foreign.traces).toBe(spans);
+    expect(leader.host.telemetry.unmatched.traces).toBe(0);
+    // ...and no line, because a foreign span writes none.
+    expect(leader.lines.filter((l) => / otel span unmatched session=/.test(l))).toStrictEqual([]);
+
+    // THE FOLLOWER: the same 40 spans, none of them foreign, and the ones its
+    // staging placed on a real call MATCHED.
+    expect(follower.host.telemetry.foreign.traces).toBe(0);
+    expect(follower.host.telemetry.unmatched.traces).toBe(spans - placed);
+    expect(follower.host.telemetry.lastReport?.spansMatched).toBe(placed);
+    expect(
+      follower.lines.filter((l) => / otel span unmatched session=/.test(l)),
+    ).toHaveLength(spans - placed);
+
+    /*
+     * THE VACUITY CONTROL, and it is the one this pair of counters needs most:
+     * a counter named for what is MISSING cannot show that anything arrived.
+     * So pin the population as non-empty with a POSITIVE per-session fact —
+     * the follower's own sessions carry the cost the same bodies stated.
+     */
+    for (const id of [OTEL_SESSION_A, OTEL_SESSION_B]) {
+      expect(f.joined.find((s) => s.sessionId === id)?.telemetryCostUsd, id).toBeGreaterThan(0);
+    }
+    // And the leader created nothing from rows it holds no session for.
+    expect(leader.host.statsObserved?.sessions).toStrictEqual([]);
+
+    // METRICS on both: a cost or count point for a session the window does not
+    // hold is HELD, not judged, so neither figure has moved. `foreign.metrics`
+    // moves only at eviction — the test above drives that.
+    expect(leader.host.telemetry.pendingSessions).toBe(2);
+    expect(leader.host.telemetry.foreign.metrics).toBe(0);
+    expect(leader.host.telemetry.unmatched.metrics).toBe(0);
+    expect(follower.host.telemetry.unmatched.metrics).toBe(0);
+    expect(follower.host.telemetry.foreign.metrics).toBe(0);
+
+    // THE COUNTERS LINE a user copies out of each window, which is where the
+    // two figures have to be legible apart.
+    const leaderLine = formatCounters(leader.host.counters(), '2026-09-13T00:00:00.000Z');
+    expect(leaderLine).toContain(
+      ` otel.traces=accepted:43,disabled:0,unmatched:0,400:0,405:0,413:0,415:0,foreign:${String(spans)}`,
+    );
+    expect(leaderLine.endsWith(' otel.unmatched-scope=(this window)')).toBe(true);
+    const followerLine = formatCounters(follower.host.counters(), '2026-09-13T00:00:00.000Z');
+    // The follower holds no socket, so its route figures are zeroes and its
+    // join figures are its own — which is the whole reason `unmatched` could
+    // never have lived on the listener.
+    expect(followerLine).toContain(
+      ` otel.traces=accepted:0,disabled:0,unmatched:${String(spans - placed)},400:0,405:0,413:0,415:0,foreign:0`,
+    );
   }, 180_000);
 });

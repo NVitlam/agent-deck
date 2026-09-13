@@ -132,6 +132,7 @@ import type { AgentDeckApi } from './api.js';
 import { SIDEBAR_VIEW_ID } from './sidebar/menu.js';
 import { SidebarController } from './sidebar/provider.js';
 import type { SidebarSurface } from './sidebar/provider.js';
+import { TWEAK_SETTINGS } from './sidebar/tweaks.js';
 import { inSessionOrder, statsWireRecords } from './stats/wire.js';
 import type { StatsRecord } from './stats/schema.js';
 import {
@@ -183,7 +184,7 @@ import {
 import type { TelemetryRouteCounters } from './hooks/listener.js';
 import { SharedHookListener } from './hooks/shared.js';
 import { TelemetryJoiner } from './model/telemetry.js';
-import type { TelemetryUnmatched } from './model/telemetry.js';
+import type { TelemetryForeign, TelemetryUnmatched } from './model/telemetry.js';
 import type { RelayCounters, RelayRole } from './hooks/relay.js';
 import { readCodexEngine, resolveCodexRoot } from './codex/index.js';
 import {
@@ -345,6 +346,34 @@ export interface AgentDeckSettings {
    * socket only one of them owns.
    */
   'telemetry.enabled': boolean;
+  /**
+   * The four TWEAKS — v0.8.0 Phase 7, DoD 7.6.
+   *
+   * `src/sidebar/tweaks.ts` declares them as data, in the order the panel
+   * shows them, with the label and the line of fact under it. The keys here
+   * are the same four and the type is the same four; what lives HERE and not
+   * there is the DEFAULT, because that file deliberately carries none — the
+   * amendment makes the settings the source of truth and the panel a
+   * renderer, so a third copy of a default would be the stale one.
+   *
+   * **Every default is the behaviour 0.7.1 already shipped**, and that is one
+   * decision taken four times rather than four decisions: a setting that
+   * changes what a user sees the moment they update, without their asking, is
+   * a product change wearing a preference's clothes. `false`, `false`, `false`
+   * and `'live'` are what the renderer does today, so an installation that
+   * never opens the Tweaks tab behaves exactly as it did.
+   *
+   * None declares a `scope`, so each takes VS Code's default (`window`) —
+   * unlike `telemetry.enabled`, which is machine-scoped because one socket is
+   * shared. Nothing shared is involved here: the value governs what ONE
+   * window's panel draws, and two windows on two workspaces may legitimately
+   * differ.
+   */
+  followNewSessions: boolean;
+  openDrawerOnEnter: boolean;
+  drawerExpandedByDefault: boolean;
+  /** One of `TWEAK_SETTINGS`'s `defaultOrdering` options; anything else reads as the default. */
+  defaultOrdering: string;
 }
 
 /** The settings {@link SETTING_BOUNDS} governs — the integer ones. */
@@ -471,9 +500,9 @@ export const SETTING_BOUNDS: Readonly<Record<NumericSettingKey, SettingBounds>> 
  */
 export interface SettingShape {
   /** The `type` string `package.json` must declare. */
-  readonly type: 'boolean' | 'object';
+  readonly type: 'boolean' | 'object' | 'string';
   /** Produces the default. A factory so no default object is shared. */
-  readonly defaultOf: () => boolean | Record<string, unknown>;
+  readonly defaultOf: () => boolean | string | Record<string, unknown>;
   /**
    * The `scope` `package.json` must declare, or absent for VS Code's default
    * (`window`). v0.7.1 DoD 6.1 — the first setting with a scope of its own.
@@ -481,10 +510,39 @@ export interface SettingShape {
    * the manifest alone fails as loudly as one added here alone.
    */
   readonly scope?: 'machine';
+  /**
+   * Every value a `string` setting may take, and the `enum` `package.json`
+   * must declare — v0.8.0 DoD 7.6, the first non-numeric setting that is not a
+   * free value.
+   *
+   * Read from `src/sidebar/tweaks.ts` rather than written out here, so the
+   * list the settings UI offers, the list the panel draws and the list
+   * `readSettings` accepts are ONE list. Two agreeing literals is not a
+   * contract, and this repository has the module-boundary seam on record.
+   */
+  readonly values?: readonly string[];
 }
 
+/** The `options` a `TWEAK_SETTINGS` entry declares, or `undefined`. One reader. */
+function tweakOptions(key: string): readonly string[] | undefined {
+  return TWEAK_SETTINGS.find((tweak) => tweak.key === key)?.options;
+}
+
+/** `defaultOrdering`'s accepted set, from the one place it is declared. */
+const ORDERING_VALUES: readonly string[] = tweakOptions('defaultOrdering') ?? [];
+
 export const SETTING_SHAPES: Readonly<
-  Record<'stats.enabled' | 'pricing' | 'canvas.autoFit' | 'telemetry.enabled', SettingShape>
+  Record<
+    | 'stats.enabled'
+    | 'pricing'
+    | 'canvas.autoFit'
+    | 'telemetry.enabled'
+    | 'followNewSessions'
+    | 'openDrawerOnEnter'
+    | 'drawerExpandedByDefault'
+    | 'defaultOrdering',
+    SettingShape
+  >
 > = {
   'stats.enabled': { type: 'boolean', defaultOf: (): boolean => true },
   pricing: { type: 'object', defaultOf: (): Record<string, unknown> => ({}) },
@@ -492,6 +550,22 @@ export const SETTING_SHAPES: Readonly<
   'canvas.autoFit': { type: 'boolean', defaultOf: (): boolean => true },
   // v0.7.1 DoD 6.1, the locked ruling: boolean, default OFF, machine scope.
   'telemetry.enabled': { type: 'boolean', defaultOf: (): boolean => false, scope: 'machine' },
+  /*
+   * v0.8.0 DoD 7.6 — the four tweaks. No `scope`, so each takes VS Code's
+   * default (`window`), and every default is 0.7.1's shipped behaviour. See
+   * {@link AgentDeckSettings} for both decisions in full.
+   */
+  followNewSessions: { type: 'boolean', defaultOf: (): boolean => false },
+  openDrawerOnEnter: { type: 'boolean', defaultOf: (): boolean => false },
+  drawerExpandedByDefault: { type: 'boolean', defaultOf: (): boolean => false },
+  defaultOrdering: {
+    type: 'string',
+    // `webview/layout.ts`'s `DEFAULT_DECK_SORT`, which is what a deck with no
+    // setting sorts by today. Not imported — the host cannot import a webview
+    // module — so `webview/tweaks.test.ts` is where the two are compared.
+    defaultOf: (): string => 'live',
+    values: ORDERING_VALUES,
+  },
 };
 
 /**
@@ -515,8 +589,25 @@ export function statsSettingDefaults(): Pick<
   | 'pricing'
   | 'canvas.autoFit'
   | 'telemetry.enabled'
+  | 'followNewSessions'
+  | 'openDrawerOnEnter'
+  | 'drawerExpandedByDefault'
+  | 'defaultOrdering'
 > {
   return {
+    /*
+     * v0.8.0 DoD 7.6's four ride along too, and the name of this function is
+     * now wrong in the same way it was wrong when `canvas.autoFit` joined.
+     * It is kept, because what it is FOR has not changed: every harness that
+     * builds a whole `AgentDeckSettings` by hand must name every key or the
+     * type rejects it, and the alternative to one ride-along is four literals
+     * at three call sites — the "two agreeing literals is not a contract"
+     * defect waiting for the next default to move.
+     */
+    followNewSessions: SETTING_SHAPES.followNewSessions.defaultOf() as boolean,
+    openDrawerOnEnter: SETTING_SHAPES.openDrawerOnEnter.defaultOf() as boolean,
+    drawerExpandedByDefault: SETTING_SHAPES.drawerExpandedByDefault.defaultOf() as boolean,
+    defaultOrdering: SETTING_SHAPES.defaultOrdering.defaultOf() as string,
     // Phase 4's `canvas.autoFit` rides along: the harnesses that spread this
     // into a whole `AgentDeckSettings` would otherwise each need a sixth
     // literal, which is the same defect the function exists to remove.
@@ -588,7 +679,59 @@ export function readSettings(reader: SettingsReader | undefined): AgentDeckSetti
       typeof get('pricing') === 'object' && get('pricing') !== null && !Array.isArray(get('pricing'))
         ? (get('pricing') as Record<string, unknown>)
         : (SETTING_SHAPES.pricing.defaultOf() as Record<string, unknown>),
+    /*
+     * v0.8.0 DoD 7.6 — the four tweaks, read by the same two rules as
+     * everything above and for the same reasons.
+     *
+     * The three booleans are read TYPE-STRICTLY: the string `"true"` in a
+     * user's `settings.json` is not a `true`, and a truthiness read would turn
+     * a tweak on because the value has the wrong type. `defaultOrdering` is
+     * checked against the declared set rather than against `typeof`, because
+     * a string that is not one of the three is a value the renderer has no
+     * branch for — the sort would silently become whatever the renderer's own
+     * fallback is, which is a second, quieter default.
+     */
+    followNewSessions: booleanSetting(get('followNewSessions'), 'followNewSessions'),
+    openDrawerOnEnter: booleanSetting(get('openDrawerOnEnter'), 'openDrawerOnEnter'),
+    drawerExpandedByDefault: booleanSetting(
+      get('drawerExpandedByDefault'),
+      'drawerExpandedByDefault',
+    ),
+    defaultOrdering:
+      typeof get('defaultOrdering') === 'string' &&
+      ORDERING_VALUES.includes(get('defaultOrdering') as string)
+        ? (get('defaultOrdering') as string)
+        : (SETTING_SHAPES.defaultOrdering.defaultOf() as string),
   };
+}
+
+/** A boolean setting, or its declared default. Never a truthiness read. */
+function booleanSetting(
+  value: unknown,
+  key: 'followNewSessions' | 'openDrawerOnEnter' | 'drawerExpandedByDefault',
+): boolean {
+  return typeof value === 'boolean' ? value : (SETTING_SHAPES[key].defaultOf() as boolean);
+}
+
+/**
+ * The four tweaks, keyed as `src/sidebar/tweaks.ts` keys them, ready for a
+ * `settings` message (v0.8.0 DoD 7.6).
+ *
+ * Built by walking `TWEAK_SETTINGS` rather than by writing the four keys out
+ * again, so the panel is sent exactly the rows it draws: a row added there
+ * without a setting here would send `undefined` and is a compile error
+ * instead, and a setting here with no row would simply never be drawn.
+ *
+ * A FRESH object per call, for the reason `pricing`'s default is a factory: a
+ * shared record handed to two surfaces is one mutation away from a window
+ * showing a value nobody set.
+ */
+export function tweaksOf(settings: AgentDeckSettings): Record<string, boolean | string> {
+  const out: Record<string, boolean | string> = {};
+  for (const tweak of TWEAK_SETTINGS) {
+    out[tweak.key] = settings[tweak.key as keyof AgentDeckSettings] as boolean | string;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -2982,17 +3125,20 @@ export class AgentDeckDataPath {
 
 /**
  * The counters line's telemetry half (v0.7.1 DoD 6.4): the route's per-signal
- * accounting beside this window's `unmatched`. A pure reshaping — neither
- * number is kept here, so neither can drift from the object that owns it.
+ * accounting beside this window's `unmatched` and `foreign` (v0.8.0 DoD 7.8).
+ * A pure reshaping — no number is kept here, so none can drift from the object
+ * that owns it.
  */
 function telemetryDiagnostics(
   route: TelemetryRouteCounters,
   unmatched: TelemetryUnmatched,
+  foreign: TelemetryForeign,
 ): DiagnosticsTelemetry {
   const one = (signal: keyof DiagnosticsTelemetry): DiagnosticsTelemetry[keyof DiagnosticsTelemetry] => ({
     accepted: route[signal].accepted,
     disabled: route[signal].disabled,
     unmatched: unmatched[signal],
+    foreign: foreign[signal],
     rejected: { ...route[signal].rejected },
   });
   return { metrics: one('metrics'), logs: one('logs'), traces: one('traces') };
@@ -4018,6 +4164,16 @@ export class AgentDeckHost {
   /** `agentDeck.canvas.autoFit`, as last read. Sent to every panel (DoD 4.0). */
   #canvasAutoFit: boolean;
   /**
+   * The four tweaks, as last read. Sent with every `settings` message
+   * (v0.8.0 DoD 7.6).
+   *
+   * Held for the same reason `#canvasAutoFit` is, and it is not state the
+   * panel could keep instead: a panel created after a configuration change has
+   * to be told the CURRENT values, and the panel is a renderer that stores
+   * none.
+   */
+  #tweaks: Readonly<Record<string, boolean | string>>;
+  /**
    * How many flushes the pipeline had performed when the store was last read
    * for the wire, or -1 when it has never been read (or a reload made the
    * last read moot). The store is re-read only when this lags the pipeline:
@@ -4040,6 +4196,7 @@ export class AgentDeckHost {
     } = options;
     this.#createPanel = createPanel;
     this.#canvasAutoFit = options.settings['canvas.autoFit'];
+    this.#tweaks = tweaksOf(options.settings);
     if (nonce !== undefined) this.#nonce = nonce;
     this.#scheduler = options.scheduler ?? systemScheduler;
     const clock = options.now ?? ((): number => Date.now());
@@ -4331,7 +4488,32 @@ export class AgentDeckHost {
    */
   setCanvasAutoFit(value: boolean): void {
     this.#canvasAutoFit = value;
-    this.#panel?.setSettings({ canvasAutoFit: value });
+    this.#panel?.setSettings(this.#settingsMessage());
+  }
+
+  /**
+   * The four tweaks changed (v0.8.0 DoD 7.6). Live, no reload, same shape as
+   * `canvas.autoFit`: the renderer reads them on its next decision.
+   *
+   * Taken as a whole `AgentDeckSettings` rather than key by key, because the
+   * configuration change that triggers it is not per key either — VS Code
+   * reports that something under `agentDeck.` moved, and re-reading all four
+   * is what guarantees the panel is never told three new values and one old
+   * one.
+   */
+  setTweaks(settings: AgentDeckSettings): void {
+    this.#tweaks = tweaksOf(settings);
+    this.#panel?.setSettings(this.#settingsMessage());
+  }
+
+  /** What every surface is told, from the two values held here. One builder. */
+  #settingsMessage(): Omit<SettingsMessage, 'type'> {
+    return { canvasAutoFit: this.#canvasAutoFit, tweaks: this.#tweaks };
+  }
+
+  /** The tweaks as this host last read them, for a surface it does not own. A copy. */
+  get tweaks(): Readonly<Record<string, boolean | string>> {
+    return { ...this.#tweaks };
   }
 
   /** `agentDeck.openStats`: the panel, showing the Stats view mode (DoD 4.6b). */
@@ -4396,7 +4578,17 @@ export class AgentDeckHost {
       // could not own it without being wrong for every window but one. It
       // counts rows still unmatched after the join retried (ruling
       // 2026-09-11); `src/model/telemetry.ts` says exactly when.
-      telemetry: telemetryDiagnostics(this.dataPath.listener.telemetryCounters, this.telemetry.unmatched),
+      //
+      // v0.8.0 DoD 7.8: `unmatched` now counts only rows for sessions THIS
+      // window holds, and `foreign` counts the rest. Both come off the same
+      // joiner and neither is accumulated here — the host owning a second copy
+      // of a number the joiner already has is how two counters describing one
+      // fact begin to disagree.
+      telemetry: telemetryDiagnostics(
+        this.dataPath.listener.telemetryCounters,
+        this.telemetry.unmatched,
+        this.telemetry.foreign,
+      ),
     };
   }
 
@@ -4474,7 +4666,7 @@ export class AgentDeckHost {
     // Then the settings (DoD 4.0). After, not before: the snapshot-first
     // invariant is the older contract, and the renderer's default while it
     // waits is the manifest default.
-    controller.setSettings({ canvasAutoFit: this.#canvasAutoFit });
+    controller.setSettings(this.#settingsMessage());
     return controller;
   }
 
@@ -4774,6 +4966,22 @@ export function adaptWebviewView(
     },
     asWebviewUri: (...segments: string[]): string =>
       view.webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, ...segments)).toString(),
+    // v0.8.0 DoD 7.6. The return is a thenable VS Code resolves with whether
+    // the document was there to receive it; nothing here acts on that, for the
+    // reason `PanelController` gives about its own posts — a message the
+    // renderer did not get is re-sent by the next `setSettings`, and a
+    // rejected post must not surface as an error to the user.
+    postMessage: (message: SettingsMessage): void => {
+      void view.webview.postMessage(message);
+    },
+    onDidChangeVisibility: (handler: (visible: boolean) => void): Unsubscribe => {
+      const subscription = view.onDidChangeVisibility(() => {
+        handler(view.visible);
+      });
+      return () => {
+        subscription.dispose();
+      };
+    },
     onDidReceiveMessage: (handler: (raw: unknown) => void): Unsubscribe => {
       const subscription = view.webview.onDidReceiveMessage((raw: unknown) => {
         handler(raw);
@@ -4922,6 +5130,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     },
   );
 
+  /*
+   * v0.8.0 DoD 7.6 — every sidebar view currently resolved in this window.
+   *
+   * VS Code resolves the view when the container is first opened and disposes
+   * it when the window closes, and it can do both more than once in a
+   * session. A SET rather than one slot, because nothing in the API promises
+   * one at a time, and each controller removes itself through `onDispose` —
+   * a list that only ever grew would be a small leak with a long fuse, and
+   * this repository has the `CodexTailStore.retain` precedent for exactly
+   * that shape.
+   */
+  const sidebars = new Set<SidebarController>();
+
+  /**
+   * The `settings` message for a surface, read from the configuration at the
+   * moment of asking (DoD 7.6).
+   *
+   * Read HERE rather than off `activeHost` because the sidebar exists in
+   * windows where no host does. The settings are the source of truth on both
+   * paths, so the two agree by construction rather than by being kept in step.
+   */
+  const settingsMessageFor = (): Omit<SettingsMessage, 'type'> => {
+    const current = readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION));
+    return { canvasAutoFit: current['canvas.autoFit'], tweaks: tweaksOf(current) };
+  };
+
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_COMMAND, () => {
       const host = activeHost;
@@ -4967,16 +5201,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      */
     vscode.window.registerWebviewViewProvider(SIDEBAR_VIEW_ID, {
       resolveWebviewView: (view: vscode.WebviewView): void => {
-        new SidebarController({
+        const controller = new SidebarController({
           surface: adaptWebviewView(view, context.extensionUri),
           executeCommand: (command: string) => vscode.commands.executeCommand(command),
+          /*
+           * v0.8.0 DoD 7.6 — THE ONE WRITE, and the target is the decision.
+           *
+           * `ConfigurationTarget.Global` writes the user's own `settings.json`
+           * and nothing else. The alternative VS Code would pick if no target
+           * were passed is the WORKSPACE file, i.e. `.vscode/settings.json`
+           * inside the user's repository, which is usually tracked — so a
+           * click in this panel would put a personal display preference into
+           * somebody's version control. For an extension whose trust anchor is
+           * that it writes nothing into the projects it observes, that is the
+           * wrong file, and "which file did that click edit" is not a question
+           * a user reads a label to answer.
+           *
+           * The stated cost: these settings are `window`-scoped, so a user who
+           * has set a workspace override keeps it, and a click here writes
+           * Global underneath a value that still wins. The control then shows
+           * the effective value — unmoved — because the panel draws whatever
+           * the next `settings` message says and that message is read through
+           * `getConfiguration()`, which resolves the override. That is the
+           * honest reading of the user's own configuration rather than a
+           * second opinion about it.
+           */
+          onUpdateTweak: (key: string, value: boolean | string) =>
+            vscode.workspace
+              .getConfiguration(CONFIG_SECTION)
+              .update(key, value, vscode.ConfigurationTarget.Global),
           onError: (error: unknown) => {
             void vscode.window.showErrorMessage(
               `Agent Deck: ${error instanceof Error ? error.message : String(error)}`,
             );
           },
+          onDispose: () => {
+            sidebars.delete(controller);
+          },
         });
+        sidebars.add(controller);
+        // The settings, now. The sidebar is registered ABOVE the activation
+        // gates, so this must not go through the host: in a window observing
+        // nothing there is no host, and the Tweaks tab is exactly the tab such
+        // a user opens. The configuration is the source of truth and it is
+        // readable either way.
+        controller.setSettings(settingsMessageFor());
       },
+    }),
+    /*
+     * ...and again on every change, for every live sidebar (DoD 7.6).
+     *
+     * A SECOND listener, beside the one registered further down with the host,
+     * and deliberately not folded into it: that one lives inside the
+     * activation gates and would never run in a window that observes nothing.
+     * This one is unconditional, like the registration above it, so the Tweaks
+     * tab tracks `settings.json` in every window — including the window where
+     * a user opened the tab precisely because nothing else is showing.
+     */
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration(CONFIG_SECTION)) return;
+      const next = settingsMessageFor();
+      for (const controller of [...sidebars]) controller.setSettings(next);
     }),
     /*
      * DoD 5.5.3. Registered beside `agentDeck.open` and for the same reason
@@ -5230,6 +5515,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       // ...and `telemetry.enabled` (v0.7.1 DoD 6.2): one boolean the route
       // reads per request, so the next telemetry request is answered by it.
       host.dataPath.setTelemetryEnabled(next['telemetry.enabled']);
+      // ...and the four tweaks (v0.8.0 DoD 7.6), which move live for the same
+      // reason `canvas.autoFit` does: the renderer reads them on its next
+      // decision and nothing on disk or on a socket depends on them. The
+      // SIDEBAR's copy is sent by the unconditional listener above, which runs
+      // in windows this one never reaches.
+      host.setTweaks(next);
     }),
   );
 

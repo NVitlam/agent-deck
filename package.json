@@ -131,6 +131,31 @@
           "default": false,
           "scope": "machine",
           "description": "Accept Claude Code's own OpenTelemetry export (OTLP over HTTP, JSON only) on the hook listener: POST /v1/metrics, /v1/logs and /v1/traces on 127.0.0.1, at agentDeck.port. Off, those paths answer 403 and no body is parsed. Claude Code sends there only if its OpenTelemetry environment variables name that address, and Agent Deck never writes Claude Code's settings. Kept: a cost figure Claude Code estimates, and tool durations where the session states none, joined to sessions this window already shows. Identity attributes and prompt or response text are dropped where the body is parsed. Machine-scoped: every window on this machine reads the same value."
+        },
+        "agentDeck.followNewSessions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Select a session that appears while the deck is open, so the deck moves to it. Off, the new session is added in its sort position and the current selection is left alone. This changes what the deck shows and never what is observed: a session is discovered, tailed and counted the same way either way. This setting also appears in the Tweaks tab of the Agent Deck sidebar, which reads and writes this same value."
+        },
+        "agentDeck.openDrawerOnEnter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open a session's tool-call drawer when the session is entered from the deck. Off, the drawer opens when a tool call is selected. The drawer holds the same calls either way. This setting also appears in the Tweaks tab of the Agent Deck sidebar, which reads and writes this same value."
+        },
+        "agentDeck.drawerExpandedByDefault": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open the tool-call drawer at its expanded height rather than its collapsed one. The drawer can be expanded and collapsed from its own control at either value; this is the height it opens at. This setting also appears in the Tweaks tab of the Agent Deck sidebar, which reads and writes this same value."
+        },
+        "agentDeck.defaultOrdering": {
+          "type": "string",
+          "default": "live",
+          "enum": [
+            "live",
+            "recent",
+            "engine"
+          ],
+          "description": "The order deck cards are placed in when a window opens. live puts live sessions first, then idle, degraded, unsupported and ended. recent puts the most recently active first. engine groups the cards by the engine that produced them. The deck's own ordering control changes the order for that window and leaves this value alone. This setting also appears in the Tweaks tab of the Agent Deck sidebar, which reads and writes this same value."
         }
       }
     },

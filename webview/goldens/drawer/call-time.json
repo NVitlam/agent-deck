@@ -1,0 +1,98 @@
+{
+  "what": "webview/call-time.ts:callTimeline and formatOffset — v0.8.0 DoD 7.3. What F14's instants say about a run of calls: each call's start as an offset from the run's first stated start, its end as an offset from the same instant, and its start minus the previous call's start. Hand-written from the rule, not captured from a run. Every number is a DIFFERENCE of two instants on one record, so it carries no timezone, no locale and no epoch — which is why no value here is a placeholder.",
+  "cases": [
+    {
+      "name": "three calls, all stated: the first has no gap",
+      "calls": [
+        { "id": "a", "startedAtMs": 1700000001000, "endedAtMs": 1700000001500 },
+        { "id": "b", "startedAtMs": 1700000005200, "endedAtMs": 1700000005900 },
+        { "id": "c", "startedAtMs": 1700000066200, "endedAtMs": 1700000066700 }
+      ],
+      "rows": [
+        { "id": "a", "atMs": 0, "endAtMs": 500 },
+        { "id": "b", "atMs": 4200, "endAtMs": 4900, "gapMs": 4200 },
+        { "id": "c", "atMs": 65200, "endAtMs": 65700, "gapMs": 61000 }
+      ],
+      "rendered": [
+        { "at": "+0ms", "gap": "—", "end": "+500ms" },
+        { "at": "+4.2s", "gap": "+4.2s", "end": "+4.9s" },
+        { "at": "+1m 05s", "gap": "+1m 01s", "end": "+1m 05s" }
+      ]
+    },
+    {
+      "name": "a running call states no end",
+      "calls": [
+        { "id": "a", "startedAtMs": 1700000001000, "endedAtMs": 1700000001500 },
+        { "id": "b", "startedAtMs": 1700000009000 }
+      ],
+      "rows": [
+        { "id": "a", "atMs": 0, "endAtMs": 500 },
+        { "id": "b", "atMs": 8000, "gapMs": 8000 }
+      ],
+      "rendered": [
+        { "at": "+0ms", "gap": "—", "end": "+500ms" },
+        { "at": "+8.0s", "gap": "+8.0s", "end": "—" }
+      ]
+    },
+    {
+      "name": "a call stating no start takes the next call's gap with it",
+      "calls": [
+        { "id": "a", "startedAtMs": 1700000001000, "endedAtMs": 1700000001500 },
+        { "id": "b" },
+        { "id": "c", "startedAtMs": 1700000009000, "endedAtMs": 1700000009400 }
+      ],
+      "rows": [
+        { "id": "a", "atMs": 0, "endAtMs": 500 },
+        { "id": "b" },
+        { "id": "c", "atMs": 8000, "endAtMs": 8400 }
+      ],
+      "rendered": [
+        { "at": "+0ms", "gap": "—", "end": "+500ms" },
+        { "at": "—", "gap": "—", "end": "—" },
+        { "at": "+8.0s", "gap": "—", "end": "+8.4s" }
+      ]
+    },
+    {
+      "name": "an end with no start anywhere: an offset from nothing is nothing",
+      "calls": [{ "id": "a", "endedAtMs": 1700000001500 }],
+      "rows": [{ "id": "a" }],
+      "rendered": [{ "at": "—", "gap": "—", "end": "—" }]
+    },
+    {
+      "name": "one call: no predecessor, so no gap",
+      "calls": [{ "id": "a", "startedAtMs": 1700000001000, "endedAtMs": 1700000003000 }],
+      "rows": [{ "id": "a", "atMs": 0, "endAtMs": 2000 }],
+      "rendered": [{ "at": "+0ms", "gap": "—", "end": "+2.0s" }]
+    },
+    {
+      "name": "no calls at all",
+      "calls": [],
+      "rows": [],
+      "rendered": []
+    },
+    {
+      "name": "instants that disagree with the run order: the base is the earliest stated start, and the backwards gap is not named",
+      "calls": [
+        { "id": "a", "startedAtMs": 1700000005000 },
+        { "id": "b", "startedAtMs": 1700000001000 }
+      ],
+      "rows": [
+        { "id": "a", "atMs": 4000 },
+        { "id": "b", "atMs": 0, "gapMs": -4000 }
+      ],
+      "rendered": [
+        { "at": "+4.0s", "gap": "—", "end": "—" },
+        { "at": "+0ms", "gap": "—", "end": "—" }
+      ]
+    }
+  ],
+  "formatOffset": [
+    { "ms": null, "text": "—" },
+    { "ms": 0, "text": "+0ms" },
+    { "ms": 500, "text": "+500ms" },
+    { "ms": 4200, "text": "+4.2s" },
+    { "ms": 61000, "text": "+1m 01s" },
+    { "ms": 4332000, "text": "+1h 12m" },
+    { "ms": -4000, "text": "—" }
+  ]
+}

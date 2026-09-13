@@ -16,6 +16,10 @@ import { TESTID } from './canvas-contract.js';
 import { COLLAPSED_PREVIEW_CHARS } from './format.js';
 import { all, one, spawnBundle } from './testkit.js';
 import { agent, longPreview, tool } from './testdata.js';
+import { applySessionPatch } from '../src/bridge/apply.js';
+import type { AgentNode, SessionPatch, SessionState } from '../src/model/events.js';
+import { EM_DASH } from './format.js';
+import { liveSession } from './testdata.js';
 
 
 const GLOBAL_NAME = 'AgentDeckInspectorHarness4';
@@ -313,5 +317,141 @@ describe('DoD 4.9b — the drawer follows the latest call, pins while an entry i
       el.dispatchEvent(new Event('scroll', { bubbles: false }));
     });
     expect(el.getAttribute('data-following')).toBe('true');
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 7.3 — a running call gains its end, through the real patch reducer
+ * ------------------------------------------------------------------------ */
+
+/**
+ * THE LIVE CASE, and the only one of DoD 7.3’s that a re-render cannot fake.
+ *
+ * `src/model/session.ts:toolFieldPatch` diffs `startedAtMs` and `endedAtMs`,
+ * so a call added while running and finishing later reaches the webview as a
+ * `updateTool` op rather than as a new snapshot. The value the drawer draws
+ * after that patch is therefore produced by PRODUCTION CODE —
+ * `applySessionPatch`, the same function the store calls — and not by this
+ * test editing a node. A test that hand-built the finished node would prove
+ * the component can render a number, which nothing doubted.
+ *
+ * `InspectorRig` is what makes it a patch rather than a remount: the
+ * component instance is kept and its props change, which is what a store
+ * update does.
+ */
+describe('DoD 7.3 — the call window after a patch, not after a resnapshot', () => {
+  // The golden case `a running call states no end`, as instants.
+  const FIRST_START = 1_700_000_001_000;
+  const FIRST_END = 1_700_000_001_500;
+  const SECOND_START = 1_700_000_005_200;
+  const SECOND_END = 1_700_000_005_900;
+
+  const running = (): SessionState => {
+    const root: AgentNode = agent({
+      id: 'root',
+      kind: 'main',
+      label: 'a run in flight',
+      status: 'running',
+      spawnDepth: 0,
+      children: [
+        tool({
+          id: 'c1',
+          toolName: 'Read',
+          status: 'done',
+          startedAtMs: FIRST_START,
+          endedAtMs: FIRST_END,
+        }),
+        // NO `endedAtMs`. That is what a running call looks like on the
+        // wire, and it is the state the row has to render as an absence.
+        tool({
+          id: 'c2',
+          toolName: 'Bash',
+          status: 'running',
+          startedAtMs: SECOND_START,
+        }),
+      ],
+    });
+    return liveSession({ root, spawnEdges: [], sessionId: 'session-7-3' });
+  };
+
+  /** Mount through the rig, so props can change after mounting. */
+  function rig(initial: Record<string, unknown>): {
+    container: HTMLElement;
+    update: (next: Record<string, unknown>) => void;
+  } {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const app = harness.mount(harness.InspectorRig, { target: container, props: { initial } }) as {
+      update: (next: Record<string, unknown>) => void;
+    };
+    harness.flushSync();
+    mounted.push({
+      container,
+      dispose: () => {
+        harness.unmount(app);
+        container.remove();
+      },
+    });
+    return {
+      container,
+      update: (next) => {
+        harness.flushSync(() => {
+          app.update(next);
+        });
+      },
+    };
+  }
+
+  const endText = (container: HTMLElement): string =>
+    one(container, 'drawer-detail-end').textContent ?? '';
+  const startText = (container: HTMLElement): string =>
+    one(container, 'drawer-detail-start').textContent ?? '';
+  const gapOf = (container: HTMLElement, id: string): string => {
+    const row = all(container, TESTID.actionRow).find((r) => r.dataset['actionId'] === id);
+    if (row === undefined) throw new Error(`no row for ${id}`);
+    const gap = row.querySelector('[data-testid="action-gap"]');
+    if (gap === null) throw new Error(`row ${id} has no gap column`);
+    return gap.textContent ?? '';
+  };
+
+  it('shows an em dash for the end, then the offset the patch brought', () => {
+    const before = running();
+    const { container, update } = rig({
+      node: before.root,
+      drawerExpanded: true,
+      detailActionId: 'c2',
+    });
+
+    expect(startText(container)).toBe('+4.2s');
+    expect(endText(container)).toBe(EM_DASH);
+    expect(gapOf(container, 'c2')).toBe('+4.2s');
+
+    // THE PATCH, through the reducer the store uses. Nothing below builds a
+    // finished node by hand.
+    const patch: SessionPatch = {
+      tree: [{ op: 'updateTool', id: 'c2', fields: { endedAtMs: SECOND_END, status: 'done' } }],
+    };
+    const after = applySessionPatch(before, patch);
+    update({ node: after.root });
+
+    expect(endText(container)).toBe('+4.9s');
+    expect(startText(container)).toBe('+4.2s');
+    // The gap is a function of two STARTS, so a call finishing does not move
+    // it. That is the start-to-start rule, observed live.
+    expect(gapOf(container, 'c2')).toBe('+4.2s');
+  });
+
+  it('the reducer is what carries the instant — the control', () => {
+    // Without this the test above would pass over a reducer that dropped
+    // `endedAtMs` and a component that read it off the original node.
+    const before = running();
+    const patch: SessionPatch = {
+      tree: [{ op: 'updateTool', id: 'c2', fields: { endedAtMs: SECOND_END } }],
+    };
+    const after = applySessionPatch(before, patch);
+    const untouched = before.root.children.find((c) => c.id === 'c2');
+    const patched = after.root.children.find((c) => c.id === 'c2');
+    expect((untouched as { endedAtMs?: number }).endedAtMs).toBeUndefined();
+    expect((patched as { endedAtMs?: number }).endedAtMs).toBe(SECOND_END);
   });
 });

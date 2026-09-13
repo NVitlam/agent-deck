@@ -795,6 +795,21 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
+    /* DoD 7.9 — the header overlap the user recorded in the v0.7.1 smoke:
+       at the panel width in `media/inspector.png` the SESSION value paints
+       over SPAWN DEPTH. An explicit `min-width` REPLACES a flex item’s
+       automatic content-based minimum, so under the initial
+       `flex-shrink: 1` a field shrank below its own text — and `.field`
+       declares no `overflow`, so a `nowrap` value painted outside its box
+       and onto the next field. At 0 the used width is the larger of the
+       content and the `min-width` below, so a value cannot leave its own
+       box; the group’s `overflow: hidden` then cuts whole fields off at
+       the right-hand edge instead of letting text collide. A9.1 had
+       already stated the intent for `.f-value` — it "may now push the row
+       wider rather than lose characters" — and the shrink factor was what
+       stopped it from doing so. `webview/inspector-header.ts` models this
+       rule and the goldens under `webview/goldens/drawer` pin the result. */
+    flex-shrink: 0;
   }
 
   /* §8.6's fixed min-widths. They exist so a value changing length never

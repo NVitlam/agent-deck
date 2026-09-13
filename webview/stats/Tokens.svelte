@@ -8,13 +8,25 @@
   Component 12 rendering (the Phase 1 ruling): a telemetry cost appears here
   only when the record's source is `telemetry`, labelled "estimated by Claude
   Code"; nothing else from telemetry is rendered in this release.
+
+  v0.8.0 Phase 7 adds F14 (DoD 7.3) — the six timing figures, each an em dash
+  where the session states no instant — and F15 (DoD 7.4) — the count beside
+  the silent count, and a chip on the agent row it names.
 -->
 <script lang="ts">
   import { EM_DASH, formatTokens, stalledForLabel } from '../format.js';
   import { TESTID } from '../canvas-contract.js';
   import type { TokensLayout } from './layout.js';
   import { VOCABULARY } from './layout.js';
-  import { copyText, formatRatio, formatUsd, sessionPrimary, shortId } from './text.js';
+  import {
+    copyText,
+    formatRate,
+    formatRatio,
+    formatSpan,
+    formatUsd,
+    sessionPrimary,
+    shortId,
+  } from './text.js';
 
   let {
     tokens,
@@ -23,6 +35,30 @@
     tokens: TokensLayout;
     liveLabels: ReadonlyMap<string, string>;
   } = $props();
+
+  /**
+   * F14's six figures, in one table — v0.8.0 DoD 7.3.
+   *
+   * DECLARED AS A LIST rather than written out six times in the markup, so the
+   * absence rule is applied once: every figure goes through one formatter, and
+   * a figure the session does not state renders as that formatter's em dash.
+   * Six rows written by hand would be six places for a `?? 0` to appear.
+   *
+   * `figure` is the schema's own member name and reaches the DOM as
+   * `data-figure`, so a golden names the field rather than the caption.
+   */
+  const TIMING_FIGURES: readonly {
+    figure: keyof TokensLayout['sessions'][number]['timing'];
+    label: string;
+    format: (value: number | undefined) => string;
+  }[] = [
+    { figure: 'wallMs', label: 'wall time', format: formatSpan },
+    { figure: 'timeToFirstToolMs', label: 'time to first tool', format: formatSpan },
+    { figure: 'longestGapMs', label: 'longest gap', format: formatSpan },
+    { figure: 'tokensPerMin', label: 'tokens per minute', format: formatRate },
+    { figure: 'callsPerMin', label: 'calls per minute', format: formatRate },
+    { figure: 'costPerHourUsd', label: 'cost per hour', format: formatUsd },
+  ];
 
   /** The id last copied, for a moment of feedback on the button. */
   let copied = $state<string | undefined>(undefined);
@@ -74,11 +110,44 @@
           <span class="f-label">{VOCABULARY.compaction}s</span>
           <span class="f-value">{session.compactions}</span>
         </span>
+        <!--
+          F15 SITS BESIDE F8's "silent" (DoD 7.4), on the same figure, because
+          the two are one-status apart on the same population and a reader
+          comparing them needs both counts in one place. The count is OPTIONAL
+          where the silent count is required — it needs `SessionState.spawnEdges`
+          — so an absent one is the em dash and never a 0, and `data-unreceived`
+          carries `absent` so a golden can tell the two apart without reading
+          the words.
+        -->
         <span class="figure">
           <span class="f-label">subagents</span>
-          <span class="f-value">{session.subagents} ({session.silentSubagents} silent)</span>
+          <span
+            class="f-value"
+            data-testid={TESTID.statsSubagents}
+            data-silent={String(session.silentSubagents)}
+            data-unreceived={session.subagentsUnreceived === undefined
+              ? 'absent'
+              : String(session.subagentsUnreceived)}
+            >{session.subagents} ({session.silentSubagents} silent, {session.subagentsUnreceived ??
+              EM_DASH} with no spawning result)</span
+          >
         </span>
       </header>
+
+      <div class="row timing" aria-label="Timing">
+        {#each TIMING_FIGURES as entry (entry.figure)}
+          <span class="figure">
+            <span class="f-label">{entry.label}</span>
+            <span
+              class="f-value"
+              data-testid={TESTID.statsTiming}
+              data-figure={entry.figure}
+              data-stated={String(session.timing[entry.figure] !== undefined)}
+              >{entry.format(session.timing[entry.figure])}</span
+            >
+          </span>
+        {/each}
+      </div>
 
       <table class="grid" aria-label="Agents">
         <thead>
@@ -98,11 +167,17 @@
               data-agent={agent.agentId}
               data-kind={agent.kind}
               data-silent={String(agent.silent)}
+              data-unreceived={String(agent.resultUnreceived)}
             >
               <td>
                 <span class="primary" data-testid={TESTID.statsAgentPrimary}>{agent.primary}</span>
                 <span class="secondary" title={agent.agentId}>{shortId(agent.agentId)}</span>
                 {#if agent.silent}<span class="flag">{VOCABULARY.silentSubagent}</span>{/if}
+                {#if agent.resultUnreceived}<span
+                    class="flag"
+                    data-testid={TESTID.statsUnreceivedFlag}
+                    data-agent={agent.agentId}>{VOCABULARY.unreceivedResult}</span
+                  >{/if}
               </td>
               <td class="num">{formatTokens(agent.prompt)}</td>
               <td class="num">{formatTokens(agent.output)}</td>
@@ -306,6 +381,11 @@
     flex-wrap: wrap;
     gap: 8px;
     padding: 6px 12px 0;
+  }
+
+  .timing {
+    gap: 14px;
+    align-items: baseline;
   }
 
   .model {

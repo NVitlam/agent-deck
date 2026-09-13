@@ -1,0 +1,41 @@
+{
+  "what": "The same six over cc-synthetic-01-reread-loop. No R8 state carries a tool start, a tool end or a usage-turn time, so the block is empty and every figure is the em dash.",
+  "cases": [
+    {
+      "figure": "wallMs",
+      "stated": false,
+      "raw": null,
+      "rendered": "—"
+    },
+    {
+      "figure": "timeToFirstToolMs",
+      "stated": false,
+      "raw": null,
+      "rendered": "—"
+    },
+    {
+      "figure": "longestGapMs",
+      "stated": false,
+      "raw": null,
+      "rendered": "—"
+    },
+    {
+      "figure": "tokensPerMin",
+      "stated": false,
+      "raw": null,
+      "rendered": "—"
+    },
+    {
+      "figure": "callsPerMin",
+      "stated": false,
+      "raw": null,
+      "rendered": "—"
+    },
+    {
+      "figure": "costPerHourUsd",
+      "stated": false,
+      "raw": null,
+      "rendered": "—"
+    }
+  ]
+}

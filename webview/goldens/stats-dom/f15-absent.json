@@ -1,0 +1,8 @@
+{
+  "what": "The same figure over cc-synthetic-03-silent-subagent, which states no spawnEdges, so the count is absent and renders as the em dash rather than as 0.",
+  "cases": {
+    "text": "2 (1 silent, — with no spawning result)",
+    "silent": "1",
+    "unreceived": "absent"
+  }
+}

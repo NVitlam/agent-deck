@@ -2,8 +2,8 @@
   The Stats view mode — spec §G, Component 9 (v0.7.0 Phase 4).
 
   The third entry in the view-mode switch: the Layer 1 facts, rendered from
-  `StatsRecord[]` and never from a session tree. Four views under one tab row
-  — Files · Loops & churn · Tokens · Trends — every one drawn from the pure
+  `StatsRecord[]` and never from a session tree. Five views under one tab row
+  — Files · Tools · Loops & churn · Tokens · Trends — every one drawn from the pure
   `layout.ts` over the records the host put on the wire. The engine chips
   narrow every view exactly as they narrow the deck (DoD 4.6): the SAME store
   state, `engineFilter`, so a chip pressed here is pressed on the deck too.
@@ -26,13 +26,20 @@
   import Files from './Files.svelte';
   import Loops from './Loops.svelte';
   import Tokens from './Tokens.svelte';
+  import Tools from './Tools.svelte';
   import Trends from './Trends.svelte';
 
   let { store, view }: { store: Store; view: WebviewView } = $props();
 
-  type Tab = 'files' | 'loops' | 'tokens' | 'trends';
+  /**
+   * FIVE tabs as of v0.8.0 Phase 7 (DoD 7.5). `tools` sits second, next to
+   * Files: both are aggregates over every session shown, keyed on a name the
+   * engine wrote, while Tokens and Trends are per session and over time.
+   */
+  type Tab = 'files' | 'tools' | 'loops' | 'tokens' | 'trends';
   const TABS: readonly { id: Tab; label: string }[] = [
     { id: 'files', label: 'Files' },
+    { id: 'tools', label: 'Tools' },
     { id: 'loops', label: 'Loops & churn' },
     { id: 'tokens', label: 'Tokens' },
     { id: 'trends', label: 'Trends' },
@@ -125,6 +132,8 @@
   <div class="body">
     {#if tab === 'files'}
       <Files files={layout.files} />
+    {:else if tab === 'tools'}
+      <Tools tools={layout.tools} />
     {:else if tab === 'loops'}
       <Loops loops={layout.loops} {liveLabels} onordinal={follow} />
     {:else if tab === 'tokens'}

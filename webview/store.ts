@@ -784,6 +784,22 @@ function summarize(state: SessionState, refused: boolean): SessionSummary {
 export function createStore(postIntent: IntentSink = () => {}, options: StoreOptions = {}): Store {
   const fitFn = options.fit ?? fitCanvas;
   const sessions = new Map<string, SessionState>();
+  /* ----- the Tweaks settings (v0.8.0 Phase 7, DoD 7.6) --------------------- */
+  //
+  // EVERY ONE STARTS OFF, AND THAT IS THE ABSENCE OF AN ANSWER RATHER THAN A
+  // GUESSED DEFAULT. `src/sidebar/tweaks.ts` carries no default by design —
+  // the amendment makes `settings.json` the source of truth and a second copy
+  // of a default is the stale one — so until the host's `settings` message
+  // arrives this store behaves EXACTLY as it did before DoD 7.6 existed: no
+  // follow, no drawer on entry, a collapsed drawer. The host sends that
+  // message when the surface is created, so the window is one message wide,
+  // and nothing in it is a statement about what the user has configured.
+  //
+  // Read with `=== true` and never for truthiness: the record is typed
+  // `boolean | string`, and a non-empty string must not turn an effect on.
+  let followNewSessions = false;
+  let openDrawerOnEnter = false;
+  let drawerOpensExpanded = false;
   /* ----- auto-fit state (DoD 4.0) ----------------------------------------- */
   let canvasAutoFit = true;
   let canvasFitEpoch = 0;
@@ -830,7 +846,14 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let livenessFilter: LivenessFilter = DEFAULT_LIVENESS_FILTER;
   let engineFilter: EngineFilter = DEFAULT_ENGINE_FILTER;
   let inspectorOpen = false;
-  /** §8.6's two drawer heights. Collapsed is the default, on every entry. */
+  /**
+   * §8.6's two drawer heights.
+   *
+   * `false` here rather than `drawerOpensExpanded` because no drawer is open
+   * yet and no `settings` message has arrived: the OPENING height is read at
+   * the moment a drawer opens, which is the only moment it can be read from a
+   * setting the host may not have sent yet (DoD 7.6).
+   */
   let drawerExpanded = false;
   /** Which call row's detail pane is open. One at a time (§8.6). */
   let detailActionId: string | undefined;
@@ -918,9 +941,44 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     }
   };
 
+  /**
+   * Open the drawer on the session's ROOT node (DoD 7.6, `openDrawerOnEnter`).
+   *
+   * The drawer is a node's panel — `App.svelte` mounts it only while
+   * `inspectorOpen && selectedNode !== undefined` — so "open the drawer on
+   * entering" has to name a node, and the root is the only one entering a
+   * session picks out. Its call rows are the session's own tool calls, which
+   * is what the setting's own sentence describes.
+   *
+   * A REFUSED session opens nothing (G3, C7.4): its interior renders the
+   * refusal card and no tree, so there is nothing to inspect. That is the same
+   * refusal `selectNode` already makes, stated here rather than reached by
+   * calling through it, because this runs mid-entry with the altitude already
+   * moved.
+   */
+  const openDrawerOnRoot = (state: SessionState): void => {
+    if (isRefused(state)) return;
+    selectedNodeId = state.root.id;
+    altitude = 'inspector';
+    inspectorOpen = true;
+    // The drawer is opening, so it takes its opening height (DoD 7.6,
+    // `drawerExpandedByDefault`).
+    drawerExpanded = drawerOpensExpanded;
+    detailActionId = undefined;
+    // The drawer opened: the field just lost a band (trigger table,
+    // `selectNode`'s row — the same geometry change by the same cause).
+    triggerFit();
+  };
+
   const applySnapshot = (incoming: SessionState[]): void => {
     const nextOrder: string[] = [];
     const seen = new Set<string>();
+    // Taken BEFORE the clear: a session is new when this window has never held
+    // it (DoD 7.6, `followNewSessions`). A host snapshot is the only thing that
+    // introduces one — the store's own comment below says a snapshot is the
+    // re-statement that carries an added or removed session — so this is the
+    // one place the question can be asked.
+    const known = new Set(sessions.keys());
     sessions.clear();
     for (const state of incoming) {
       sessions.set(state.sessionId, state);
@@ -967,8 +1025,39 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         // left, and an expanded height would be the only thing on screen still
         // describing it.
         detailActionId = undefined;
-        drawerExpanded = false;
+        drawerExpanded = drawerOpensExpanded;
         altitude = 'deck';
+      }
+    }
+
+    // `followNewSessions` (DoD 7.6): a session that APPEARS while the deck is
+    // open becomes the selected one.
+    //
+    // Three conditions, each of which is the setting read literally rather
+    // than generously:
+    //
+    //  * `known.size > 0` — the FIRST snapshot introduces every session at
+    //    once, and "the new one" is not a thing that set has. That case is
+    //    already decided above (`order[0]`), by a rule this must not reverse.
+    //  * `altitude === 'deck'` — the setting says "while the deck is open".
+    //    Moving the selection out from under someone who is inside another
+    //    session's interior would change what their whole panel is showing.
+    //  * the LAST new id in the host's order, when several appear at once —
+    //    the host appends as it discovers, so the last one is the most
+    //    recently appeared, which is what "a session appears" names.
+    //
+    // Nothing is posted to the host: `selectSession` is a message about the
+    // USER's intent, and this is the host's own news coming back to it.
+    if (followNewSessions && known.size > 0 && altitude === 'deck') {
+      const appeared = nextOrder.filter((id) => !known.has(id));
+      const newest = appeared[appeared.length - 1];
+      if (newest !== undefined && newest !== selectedSessionId) {
+        selectedSessionId = newest;
+        // The node selection belonged to whatever was selected before.
+        selectedNodeId = undefined;
+        inspectorOpen = false;
+        detailActionId = undefined;
+        drawerExpanded = drawerOpensExpanded;
       }
     }
   };
@@ -1071,6 +1160,23 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
           break;
         case 'settings':
           canvasAutoFit = message.canvasAutoFit;
+          // DoD 7.6. Three of the four tweaks change what this reducer does;
+          // the fourth (`defaultOrdering`) is the deck's own control bar. The
+          // keys are `TWEAK_SETTINGS`' keys, without the `agentDeck.` prefix.
+          //
+          // READ THROUGH A NULLABLE ALIAS, and the cast is the point rather
+          // than a convenience. `handleMessage` never throws (G3) and the
+          // guard above it — `webview/messages.ts:isHostMessage` — checks the
+          // `type` field and nothing else, so a `settings` message reaching
+          // this port without its record is a shape the renderer has to
+          // survive. The contract says the field is required; the message port
+          // is not the contract.
+          {
+            const tweaks = message.tweaks as Readonly<Record<string, unknown>> | undefined;
+            followNewSessions = tweaks?.['followNewSessions'] === true;
+            openDrawerOnEnter = tweaks?.['openDrawerOnEnter'] === true;
+            drawerOpensExpanded = tweaks?.['drawerExpandedByDefault'] === true;
+          }
           break;
         case 'showView':
           this.setViewMode(message.mode);
@@ -1193,7 +1299,8 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       // `SessionCanvas.svelte`'s entry fit, which owns the rendered transform;
       // this value is not read by it.
       canvasView = { ...IDENTITY_VIEW };
-      if (!sessions.has(sessionId)) return;
+      const entering = sessions.get(sessionId);
+      if (entering === undefined) return;
       if (sessionId !== selectedSessionId) selectedNodeId = undefined;
       selectedSessionId = sessionId;
       altitude = 'session';
@@ -1202,6 +1309,11 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       // the new tree first; this marks the fit pending so the first geometry
       // report after entry fits under the store's rule as well.
       triggerFit();
+      // DoD 7.6. AFTER the altitude has moved to `session` and before
+      // `normalize`, so the drawer's altitude is raised from a state that is
+      // already consistent and `normalize` still gets to demote it if the
+      // session cannot hold it.
+      if (openDrawerOnEnter) openDrawerOnRoot(entering);
       normalize();
       notify();
     },
@@ -1218,6 +1330,12 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       // one call belonging to one node; carrying it across a selection change
       // would leave it describing a call the drawer above it no longer lists.
       if (nodeId !== selectedNodeId) detailActionId = undefined;
+      // A drawer that is SHUT is about to open, so it takes its opening height
+      // (DoD 7.6, `drawerExpandedByDefault`). A drawer already open keeps
+      // whatever height the user last put it at: moving a node selection is
+      // not opening a drawer, and resizing the one in front of them would be
+      // a height change nobody asked for.
+      if (!inspectorOpen) drawerExpanded = drawerOpensExpanded;
       selectedNodeId = nodeId;
       altitude = 'inspector';
       inspectorOpen = true;
@@ -1241,8 +1359,10 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         inspectorOpen = false;
         selectedNodeId = undefined;
         // The height goes with the drawer. Reopening on the next selection at
-        // 46vh would be the drawer remembering a state the user left.
-        drawerExpanded = false;
+        // a height the user left it at would be the drawer remembering; it
+        // returns to its OPENING height instead, which is `false` until
+        // `drawerExpandedByDefault` says otherwise (DoD 7.6).
+        drawerExpanded = drawerOpensExpanded;
         // The drawer closed (trigger table): the field regained its band.
         triggerFit();
       } else if (altitude === 'session') {
@@ -1323,11 +1443,13 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       if (open && selectedNodeId !== undefined) altitude = 'inspector';
       if (!open && altitude === 'inspector') altitude = 'session';
       // Shutting the drawer discards both of its own states, so reopening
-      // gives the collapsed, undetailed drawer §8.6 describes rather than
-      // whatever it looked like when it was dismissed.
+      // gives the undetailed drawer §8.6 describes at its OPENING height
+      // rather than whatever it looked like when it was dismissed. That
+      // height is collapsed until `drawerExpandedByDefault` says otherwise
+      // (DoD 7.6).
       if (!open) {
         detailActionId = undefined;
-        drawerExpanded = false;
+        drawerExpanded = drawerOpensExpanded;
       }
       // The drawer opened or closed (trigger table).
       triggerFit();

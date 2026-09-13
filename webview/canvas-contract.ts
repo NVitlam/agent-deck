@@ -396,6 +396,29 @@ export const TESTID = {
   sidebarMenu: 'sidebar-menu',
   /** One menu entry. data-command names the command it runs. */
   sidebarEntry: 'sidebar-entry',
+
+  /* The sidebar's tabs and the Tweaks panel (v0.8.0 Phase 7, DoD 7.6) */
+  sidebarTablist: 'sidebar-tablist',
+  /** One tab button. data-tab names the panel it shows. */
+  sidebarTab: 'sidebar-tab',
+  /** The showing tab's panel. data-tab names which one it is. */
+  sidebarPanel: 'sidebar-panel',
+  /** The Tweaks panel itself. */
+  tweaksPanel: 'tweaks-panel',
+  /**
+   * One setting's row. `data-key` is its `TWEAK_SETTINGS` key, `data-known`
+   * says whether a `settings` message has positioned it, and `data-value` is
+   * the position it is at — empty while unknown, never a guessed default.
+   */
+  tweakRow: 'tweak-row',
+  /** The row's control: a checkbox for `boolean`, a select for `enum`. */
+  tweakControl: 'tweak-control',
+  /** The row's label, as the user reads it. Never a key. */
+  tweakLabel: 'tweak-label',
+  /** The row's one line of fact under the label. */
+  tweakDetail: 'tweak-detail',
+  /** Present only while the row has no value from the host. */
+  tweakUnknown: 'tweak-unknown',
 } as const;
 
 /* ------------------------------------------------------------------------ *

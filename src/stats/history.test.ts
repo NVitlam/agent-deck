@@ -84,6 +84,9 @@ describe('DoD 7.14 — a record 0.7.1 wrote is read by 0.8.0', () => {
     if (record === undefined) throw new Error('no record');
     for (const fact of HISTORY_ABSENT_FACTS[1] ?? []) expect(record.unavailable).toContain(fact);
     expect(record.unavailable).toContain('F14:absent');
+    // By name, not through the constant: removing it from HISTORY_ABSENT_FACTS
+    // survived every test in round 2 because the loop above read the same list.
+    expect(record.unavailable).toContain('F15:absent');
     // No time, as a session stating no instant has no time: an empty block.
     expect(record.timing).toStrictEqual({});
     // No F15, as a session stating no spawn edges has none: flag false, count absent.

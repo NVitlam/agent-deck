@@ -744,9 +744,9 @@ a record or is reloaded. A session still running refills the history as it goes.
 
 ### Where it lives, and what leaves the machine
 
-**Records from 0.7.x are read; time facts are absent for them.** Nothing on disk is rewritten. Such a
-record appears in every table and every Trends series except tokens per minute, and the footer counts
-it as `F14:absent`.
+**Records from 0.7.x are read; time facts are absent for them.** Nothing on disk is rewritten. Stored
+history is what Trends draws: such a record is a point in every Trends series except tokens per minute,
+and the footer counts it as `F14:absent`.
 
 **Nothing leaves the machine.** No upload, no sync, and no telemetry sent. The history is kept in VS Code's
 global storage for this extension, as one JSON Lines file per week — not under `~/.claude`, not

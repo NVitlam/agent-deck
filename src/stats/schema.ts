@@ -631,8 +631,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  */
 export function upgradeStatsRecord(value: unknown): unknown {
   if (!isPlainObject(value)) return value;
-  if (value['statsSchemaVersion'] !== 1) return value;
-  const absent = HISTORY_ABSENT_FACTS[1] ?? [];
+  const version = value['statsSchemaVersion'];
+  // Only a READABLE version older than the current one is upgraded. The list is
+  // what decides, so removing a version from it makes that version's lines
+  // refused again (the validator then sees the old number) — verifier round 2
+  // found the list declared and consulted by nothing.
+  if (typeof version !== 'number' || version === STATS_SCHEMA_VERSION) return value;
+  if (!READABLE_STATS_SCHEMA_VERSIONS.includes(version)) return value;
+  const absent = HISTORY_ABSENT_FACTS[version] ?? [];
   const agents = value['agents'];
   const unavailable = value['unavailable'];
   return {

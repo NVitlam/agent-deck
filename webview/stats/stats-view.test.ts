@@ -11,12 +11,10 @@
 //
 // ## Where the v0.8.0 records come from, and why not from `src/stats/`'s testkits
 //
-// `STATS_SCHEMA_VERSION` moved to 2 (DoD 7.1) and the committed goldens are
-// regenerated ONCE, at the end of the phase, so every file under
-// `fixtures/golden/stats/` still carries a version-1 record with no `timing`
-// block and no `resultUnreceived` flag. The v0.7.x tests below keep reading
-// them — the webview runs no validator, so they arrive exactly as they did —
-// and the v0.8.0 tests derive their own records instead.
+// `STATS_SCHEMA_VERSION` moved to 2 (DoD 7.1). The v0.8.0 tests derive their own
+// records from harvested sessions rather than reading goldens, so they pin the
+// deriver's output directly; the webview runs no validator. A version-1 record
+// appears only in the DoD 7.14 block, and only after the store's upgrade.
 //
 // `corpus.stats.testkit.ts` and `synthetic.testkit.ts` are the obvious source
 // and CANNOT BE IMPORTED HERE. Measured: both resolve `fixtures/` with
@@ -1472,6 +1470,11 @@ describe('DoD 7.14 — a record 0.7.1 wrote appears everywhere except the F14 se
     expect(pointsOf('tokensPerMin', old.sessionId)).toBe(0);
     expect(pointsOf('tokensPerMin', current.sessionId)).toBe(1);
     expect(trends.timeAbsent).toBe(1);
+    // Over COVERED records, as Trends is: an excluded old record is in no series,
+    // so it is not counted as a missing point either (verifier round 2: counting
+    // over every stored record survived the suite).
+    const excluded = { ...old, sessionId: 'excluded-history', coverage: 'excluded:parked' as const };
+    expect(trendsLayout([excluded, old, current]).timeAbsent).toBe(1);
   });
 
   it('the footer names F14:absent, counted over the stored history Trends draws', () => {

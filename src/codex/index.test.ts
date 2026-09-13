@@ -506,7 +506,7 @@ describe('H.3 / DoD 7.7 — a transcript over the limit is read head-plus-tail',
     // Control: the same state without the mark is derived in full.
     const whole = { ...session };
     delete (whole as { partial?: unknown }).partial;
-    expect(deriveStats(whole, {}).coverage).not.toBe('excluded:partial');
+    expect(deriveStats(whole, {}).coverage).toBe('full');
   }, 120_000);
 
   it('keeps the records at the end and drops the fragment where the tail lands', async () => {

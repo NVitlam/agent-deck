@@ -65,9 +65,24 @@ const FIELD_NAMES = [
   'duration',
 ] as const;
 
-describe('parseHeaderCss — the stylesheet is the input', () => {
-  const css = parseHeaderCss(SOURCE);
+/**
+ * The parse, taken once and called from inside a test rather than from a
+ * describe body.
+ *
+ * A throw while a describe body runs is a FAILED SUITE and a `no tests`
+ * line: the run is red and the tests line a reader scans is not. This
+ * repository has met that reporting shape through a broken import, a hook
+ * timeout and a slow fixture. Called from inside an `it`, the same throw is
+ * one red test carrying the parser’s own message — which is what the
+ * mutation that points the parser at a stylesheet it cannot read depends on.
+ */
+let parsed: HeaderCss | undefined;
+const headerCss = (): HeaderCss => {
+  parsed ??= parseHeaderCss(SOURCE);
+  return parsed;
+};
 
+describe('parseHeaderCss — the stylesheet is the input', () => {
   it('reads exactly seven field min-width rules, and they are the seven fields', () => {
     // THE VACUITY CONTROL FOR EVERY ASSERTION BELOW. A regex that matched
     // nothing would return an empty table, every field would fall back to a
@@ -76,13 +91,13 @@ describe('parseHeaderCss — the stylesheet is the input', () => {
     // which is rule 19's shape applied to a stylesheet: a set comparison
     // written against an accidentally empty listing passes, and a count is the
     // cheapest thing that goes red when it does.
-    expect(Object.keys(css.minWidthPx)).toHaveLength(HEADER_MIN_WIDTH_RULES);
+    expect(Object.keys(headerCss().minWidthPx)).toHaveLength(HEADER_MIN_WIDTH_RULES);
     expect(HEADER_MIN_WIDTH_RULES).toBe(7);
-    expect(Object.keys(css.minWidthPx).sort()).toEqual([...FIELD_NAMES].sort());
+    expect(Object.keys(headerCss().minWidthPx).sort()).toEqual([...FIELD_NAMES].sort());
   });
 
   it('reads each min-width as the number §8.6 and A6 fixed', () => {
-    expect(css.minWidthPx).toEqual({
+    expect(headerCss().minWidthPx).toEqual({
       status: 58,
       id: 128,
       sessionId: 128,
@@ -94,10 +109,10 @@ describe('parseHeaderCss — the stylesheet is the input', () => {
   });
 
   it('reads the group gap and the two font sizes the widths are measured in', () => {
-    expect(css.gapPx).toBe(14);
-    expect(css.valueFontPx).toBe(11);
-    expect(css.labelFontPx).toBe(9);
-    expect(css.labelLetterSpacingEm).toBe(0.08);
+    expect(headerCss().gapPx).toBe(14);
+    expect(headerCss().valueFontPx).toBe(11);
+    expect(headerCss().labelFontPx).toBe(9);
+    expect(headerCss().labelLetterSpacingEm).toBe(0.08);
   });
 
   it('reads a field shrink factor of 0 — the DoD 7.9 fix, in the stylesheet', () => {
@@ -107,7 +122,7 @@ describe('parseHeaderCss — the stylesheet is the input', () => {
     // flex item's automatic content-based minimum, so at 1 a field shrinks
     // below its own text and — `.field` declaring no `overflow` — paints
     // outside its box.
-    expect(css.shrink).toBe(0);
+    expect(headerCss().shrink).toBe(0);
   });
 
   it('falls back to the CSS initial shrink of 1 when the rule declares none', () => {
@@ -146,38 +161,34 @@ describe('parseHeaderCss — a parse that finds nothing refuses', () => {
 });
 
 describe('contentWidthPx — the character-advance model, stated as an estimate', () => {
-  const css = parseHeaderCss(SOURCE);
-
   it('measures a 36-character session id at 36 mono advances of the value size', () => {
     const sessionId = WIDE.fields.find((f) => f.field === 'sessionId');
     expect(sessionId?.value).toHaveLength(36);
-    expect(contentWidthPx(sessionId as HeaderFieldText, css)).toBeCloseTo(
+    expect(contentWidthPx(sessionId as HeaderFieldText, headerCss())).toBeCloseTo(
       36 * 11 * MONO_ADVANCE_RATIO,
       6,
     );
     // 237.6 against the 128px min-width the same stylesheet declares. That
     // ratio is the whole defect: at shrink 1 the box is 128 and the ink is
     // 237.6, and 109.6px of session id lands on its neighbours.
-    expect(contentWidthPx(sessionId as HeaderFieldText, css)).toBeCloseTo(237.6, 6);
-    expect(css.minWidthPx['sessionId']).toBe(128);
+    expect(contentWidthPx(sessionId as HeaderFieldText, headerCss())).toBeCloseTo(237.6, 6);
+    expect(headerCss().minWidthPx['sessionId']).toBe(128);
   });
 
   it('takes the label when the label is the wider of the two', () => {
     const spawnDepth = WIDE.fields.find((f) => f.field === 'spawnDepth');
     // "spawn depth" is eleven micro-caps characters; the value is one digit.
-    expect(contentWidthPx(spawnDepth as HeaderFieldText, css)).toBeCloseTo(11 * 6.12, 6);
+    expect(contentWidthPx(spawnDepth as HeaderFieldText, headerCss())).toBeCloseTo(11 * 6.12, 6);
   });
 });
 
 describe('the goldens — 2400px and 1200px', () => {
-  const css = parseHeaderCss(SOURCE);
-
   it.each([
     ['2400px', WIDE],
     ['1200px', NARROW],
   ])('%s reproduces its committed placement', (_name, g) => {
     expect(g.reservedPx).toBe(HEADER_RESERVED_PX);
-    expect(layoutHeader({ panelPx: g.panelPx, reservedPx: g.reservedPx, fields: g.fields, css })).toEqual(
+    expect(layoutHeader({ panelPx: g.panelPx, reservedPx: g.reservedPx, fields: g.fields, css: headerCss() })).toEqual(
       g.layout,
     );
   });
@@ -186,8 +197,22 @@ describe('the goldens — 2400px and 1200px', () => {
     ['2400px', WIDE],
     ['1200px', NARROW],
   ])('%s places no field’s text inside another field’s box', (_name, g) => {
+    // RECOMPUTED, not read back out of the golden. The first draft asserted
+    // over `g.layout.overlaps` — the committed answer — which is a mirror of
+    // this code's own output and cannot go red for a stylesheet change at all.
+    // Measured: under mutation 1 (the fix removed) the placement table above
+    // went red and this test stayed green.
+    const layout = layoutHeader({
+      panelPx: g.panelPx,
+      reservedPx: g.reservedPx,
+      fields: g.fields,
+      css: headerCss(),
+    });
+    expect(layout.overlaps).toEqual([]);
+    expect(layout.fields.filter((f) => f.overflows)).toEqual([]);
+    // And the committed table carries the same answer, so a reader of the file
+    // does not have to run it to see which one is pinned.
     expect(g.layout.overlaps).toEqual([]);
-    expect(g.layout.fields.filter((f) => f.overflows)).toEqual([]);
   });
 
   it('the two goldens differ in which trailing fields are drawn, not in the boxes', () => {
@@ -285,14 +310,12 @@ describe('the defect the fix removes, driven through the same model', () => {
 });
 
 describe('the flex resolution itself', () => {
-  const css = parseHeaderCss(SOURCE);
-
   it('distributes no free space: a wide panel leaves every box at its base', () => {
     const layout = layoutHeader({
       panelPx: 4000,
       reservedPx: HEADER_RESERVED_PX,
       fields: WIDE.fields,
-      css,
+      css: headerCss(),
     });
     // `flex-grow` is 0, so 3,480px of room adds nothing to any field.
     expect(layout.fields.map((f) => f.width)).toEqual(WIDE.layout.fields.map((f) => f.width));
@@ -342,7 +365,7 @@ describe('the flex resolution itself', () => {
       panelPx: 100,
       reservedPx: HEADER_RESERVED_PX,
       fields: WIDE.fields,
-      css,
+      css: headerCss(),
     });
     expect(layout.availablePx).toBe(0);
     expect(layout.visiblePx).toBe(0);

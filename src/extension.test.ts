@@ -2231,8 +2231,13 @@ describe('activate', () => {
     expect(d?.hookBindAttempted).toBe(true);
     expect(d?.listening).toBe(true);
     // The CC half allocated nothing: the watcher never started, and with
-    // `tickMs` at its default the only timer a CC half arms is the tick.
+    // `tickMs` at its default the only timer a CC half arms is the tick —
+    // asserted, not only said (verifier round, hotfix 0.8.1: arming the tick
+    // before Claude Code is seen left every test green). `start()` ends in a
+    // pump, which cancels the emit timer, and no chain ran, so a CC tick is
+    // the only thing that could make this non-zero.
     expect(host?.dataPath.watcher.diagnostics.started).toBe(false);
+    expect(d?.timersArmed).toBe(0);
     expect(d?.ccLateLookups).toBe(0);
     expect(mock.errorMessages).toStrictEqual([]);
 
@@ -5362,6 +5367,21 @@ describe('hotfix 0.8.1 — Claude Code is enabled late, by its first hook event'
     return { port, projectsRoot, workspace, host };
   }
 
+  /** The first real `PreToolUse` body of the redacted capture, moved to `sessionId` in `cwd`. */
+  async function firstPreToolUseBody(sessionId: string, cwd: string): Promise<Record<string, unknown>> {
+    const stream = await readFile(
+      fileURLToPath(new URL('../fixtures/hook-events/cc-2.1.234-redacted.jsonl', import.meta.url)),
+      'utf8',
+    );
+    const body = stream
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== '')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((event) => event['hook_event_name'] === 'PreToolUse');
+    expect(body, 'the redacted capture holds no PreToolUse').toBeDefined();
+    return { ...body, session_id: sessionId, cwd };
+  }
+
   /** What Claude Code does on disk at a session's onset: the slug dir and its transcript. */
   async function claudeCodeCreates(projectsRoot: string, workspace: string, sessionId: string): Promise<void> {
     const slugDir = join(projectsRoot, slugifyWorkspace(workspace));
@@ -5392,8 +5412,51 @@ describe('hotfix 0.8.1 — Claude Code is enabled late, by its first hook event'
       expect(host.dataPath.liveness.degradedState()).toStrictEqual({ degraded: false });
       expect(host.dataPath.diagnostics.ccLateEnabled).toBe(1);
       expect(host.dataPath.watcher.diagnostics.started).toBe(true);
+
+      // AFTER enablement the model is ON THE TAP, not only fed the replay
+      // (verifier round, hotfix 0.8.1: deleting `#subscribeCc()` from the late
+      // path left every test green, because the replayed SessionStart alone
+      // satisfied everything above). A later, DIFFERENT real event — the first
+      // `PreToolUse` of the redacted capture, for this session and workspace —
+      // must reach this session's liveness. Dispatch happens before the 200.
+      const seen = host.dataPath.model.livenessSnapshot(sessionId)?.hookEventCount ?? 0;
+      expect(seen, 'the replayed SessionStart').toBeGreaterThan(0);
+      const later = await firstPreToolUseBody(sessionId, workspace);
+      expect(await postHookEventTo(port, later)).toBe(HOOK_OK);
+      expect(host.dataPath.model.livenessSnapshot(sessionId)?.hookEventCount).toBe(seen + 1);
     }, 60_000);
   }
+
+  it('a data path disposed mid-chain leaves no late-lookup timer behind', async () => {
+    const projectsRoot = await makeTempDir();
+    const workspace = join(await makeTempDir(), 'disposed-mid-chain-ws');
+    const time = new ManualTime(1_000_000);
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: workspace,
+          projectsRoot,
+          ccEnabled: false,
+          codex: { root: join(projectsRoot, 'no-codex-root') },
+          settings: settings({ port }),
+          scheduler: time,
+          tickMs: 0,
+          log: () => {},
+          onEmission: () => {},
+        }),
+      ),
+    );
+    expect(await postHookEventTo(path.settings.port, await sessionStartBody(workspace))).toBe(HOOK_OK);
+    await waitFor(
+      () => path.diagnostics.ccLateLookups === 1 && path.diagnostics.timersArmed === 1,
+      'the first attempt to fail and arm its retry',
+    );
+    await path.dispose();
+    expect(path.diagnostics.timersArmed).toBe(0);
+    expect(path.diagnostics.ccLateChainActive).toBe(false);
+    time.advance(60_000);
+    expect(path.diagnostics.ccLateLookups).toBe(1);
+  }, 60_000);
 
   it('H3: a SessionStart from ANOTHER workspace enables nothing — and this workspace’s own then does', async () => {
     const { port, projectsRoot, workspace, host } = await activateBeforeClaudeCode();

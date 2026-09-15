@@ -7,8 +7,10 @@
  * It owns four things and implements none of them:
  *
  *   1. ACTIVATION.   Workspace-match, not command-only. If the open workspace
- *                    has no matching CC project slug the data path is never
- *                    constructed — no watcher, no socket, no timer.
+ *                    has no matching CC project slug the Claude Code half does
+ *                    not start — no CC watcher, no CC timer — until Claude
+ *                    Code's first hook event from this workspace starts it
+ *                    (hotfix 0.8.1). The socket binds whenever a folder is open.
  *   2. THE DATA PATH. `ProjectWatcher` -> `graftSession` -> `SessionModel`,
  *                    and `HookListener` -> `SessionModel.onHookEvent`, with the
  *                    JSONL inference source finally wired into the liveness
@@ -2920,7 +2922,15 @@ export class AgentDeckDataPath {
       return;
     }
     if (result?.ok === true) {
-      await this.#enableCcLate(result.value.slug);
+      try {
+        await this.#enableCcLate(result.value.slug);
+      } catch (error) {
+        // The chain is started with `void`, so a throw from the late watcher
+        // start would otherwise be an unhandled rejection. Reported the way a
+        // start-time failure is; the half stays enabled, as it would at
+        // activation (verifier round, hotfix 0.8.1).
+        this.#onError(error);
+      }
       return;
     }
     if (attempt >= CC_LATE_LOOKUP_RETRIES) {
@@ -5289,11 +5299,15 @@ function editorGroupCount(): number {
  * Order matters and is the point of the whole function:
  *
  *   1. Find the open workspace. None -> nothing starts.
- *   2. Correlate it to a CC project slug. No match -> NOTHING starts: no
- *      watcher, no socket, no timer. That is the price of activating on
- *      `onStartupFinished` instead of on the command, and containing it here
- *      is what makes the choice defensible.
- *   3. Only then build the host and start the data path.
+ *   2. Correlate it to a CC project slug. No match -> the Claude Code half does
+ *      not start: no CC watcher, no CC timer. That is the price of activating
+ *      on `onStartupFinished` instead of on the command, and containing it
+ *      here is what makes the choice defensible. Until hotfix 0.8.1 no match
+ *      with no other engine meant NOTHING started, the socket included; a
+ *      folder open now always gets a host and a bound (or following) socket,
+ *      so Claude Code's first hook event can start its half (user ruling
+ *      2026-09-15).
+ *   3. Build the host and start the data path.
  *
  * The command is registered in BOTH cases, and this is a deliberate departure
  * from a literal "do nothing at all": `contributes.commands` puts "Agent Deck:
@@ -5351,10 +5365,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    * v0.7.0 DoD 5.1 — THE API, BUILT FIRST AND RETURNED FROM EVERY PATH.
    *
    * `activate()`'s return value is what VS Code hands another extension as
-   * `getExtension('nvitlam.agent-deck').exports`, and it has two early returns
-   * below (no folder; a folder with nothing to observe) before a host exists,
-   * plus the final one. The API is built above all three so each returns it,
-   * and each has its own test in `extension.test.ts`: a window observing
+   * `getExtension('nvitlam.agent-deck').exports`, and it has one early return
+   * below (no folder) before a host exists, plus the final one. There were two
+   * early returns until hotfix 0.8.1 removed "a folder with nothing to
+   * observe". The API is built above both so each returns it, and each has its
+   * own test in `extension.test.ts`: a window observing
    * nothing still has a stored history (the store is per MACHINE), and a
    * consumer that got `undefined` from half of all windows would have to guess
    * why.

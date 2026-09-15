@@ -5460,8 +5460,14 @@ describe('hotfix 0.8.1 — Claude Code is enabled late, by its first hook event'
       () => path.diagnostics.ccLateLookups === 1 && path.diagnostics.timersArmed === 1,
       'the first attempt to fail and arm its retry',
     );
+    expect(time.pendingTimers, 'the retry is armed on the scheduler itself').toBeGreaterThan(0);
     await path.dispose();
     expect(path.diagnostics.timersArmed).toBe(0);
+    // THE SCHEDULER, not the field (verifier round 2): `timersArmed` is computed
+    // from the handle, which `dispose()` nulls whether or not it cleared the
+    // timer, so a dispose that forgot `clearTimer` read 0 there while a real
+    // retry stayed pending.
+    expect(time.pendingTimers).toBe(0);
     expect(path.diagnostics.ccLateChainActive).toBe(false);
     time.advance(60_000);
     expect(path.diagnostics.ccLateLookups).toBe(1);
@@ -5601,6 +5607,12 @@ describe('hotfix 0.8.1 — Claude Code is enabled late, by its first hook event'
       const onLog = logged.lines.filter((line) => line.message === reason);
       if (kind === 'ambiguousSlug') {
         expect(onChannel).toStrictEqual([expect.stringMatching(/ cc correlation refused Agent Deck: .*ambiguousSlug/)]);
+        // The WHOLE line is the time, the event words and the sentence — so no
+        // path can ride along after it (verifier round 2: appending
+        // `failure.path` to the reason passed every earlier assertion).
+        expect(onChannel[0]?.endsWith(` cc correlation refused ${reason}`)).toBe(true);
+        expect(onChannel[0]).not.toContain(failure.path);
+        expect(sink.lines.some((line) => line.includes(failure.path))).toBe(false);
         expect(onLog).toStrictEqual([]);
       } else {
         expect(onChannel).toStrictEqual([]);

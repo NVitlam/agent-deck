@@ -22,8 +22,10 @@ All notable changes to Agent Deck are documented here.
   to arrive. A window with no folder open still binds nothing.
 - **A folder matching two Claude Code project directories that differ only in letter
   case is reported on the Agent Deck output channel**, as `cc correlation refused`
-  with the reason. It was an information message on **Agent Deck: Open**; that
-  command now opens the panel in every window with a folder open.
+  with the reason. In 0.8.0 it was an information message on **Agent Deck: Open**,
+  and only in a window with no OpenCode store and no Codex data root; in any other
+  window it was not shown anywhere. That command now opens the panel in every
+  window with a folder open.
 
 ## 0.8.0 - 2026-09-13 - Time, tools, tweaks and oversize Codex transcripts
 

@@ -140,7 +140,22 @@ const SAMPLES: Record<DiagnosticsEvent['kind'], DiagnosticsEvent> = {
   patchFailure: { kind: 'patchFailure', sessionId: 's1', detail: 'no node with id x' },
   resyncRequest: { kind: 'resyncRequest', sessionId: 's1', reason: 'insertNode failed', failedOp: 'insertNode' },
   otelSpanUnmatched: { kind: 'otelSpanUnmatched', sessionId: 's1', toolUseId: 'toolu_01x' },
+  ccEnabledLate: { kind: 'ccEnabledLate', slug: 'c--ws-first-session' },
 };
+
+describe('cc enabled late (hotfix 0.8.1)', () => {
+  it('names the slug, in a fixed format', () => {
+    expect(formatEvent(SAMPLES.ccEnabledLate, '2026-09-15T12:00:00.000Z')).toBe(
+      '2026-09-15T12:00:00.000Z cc enabled late slug=c--ws-first-session',
+    );
+  });
+
+  it('holds the slug to one token, so it cannot forge a second key', () => {
+    const line = formatEvent({ kind: 'ccEnabledLate', slug: 'a b\nslug=forged' }, '2026-09-15T12:00:00.000Z');
+    expect(line).not.toContain('\n');
+    expect(line.split(' slug=')).toHaveLength(2);
+  });
+});
 
 describe('otel span unmatched (v0.7.1, ruling 2026-09-11)', () => {
   it('writes the two join keys and nothing else, in a fixed format', () => {
@@ -223,6 +238,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       // v0.8.0 DoD 7.7 — a value nothing else on the line holds, so the
       // by-value loop below cannot be satisfied by another field.
       oversizePartial: 13,
+      ccLateEnabled: 51,
     };
     const line = formatCounters(counters, '2026-08-27T12:00:00.000Z');
     for (const key of Object.keys(counters)) {
@@ -272,6 +288,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
         statsErrors: 0, storeMalformed: 0, statsDropped: 7,
         telemetry: TELEMETRY_SAMPLE,
         oversizePartial: 0,
+        ccLateEnabled: 0,
       },
       '2026-09-10T00:00:00.000Z',
     );
@@ -302,6 +319,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
         statsErrors: 0, storeMalformed: 0, statsDropped: 0,
         telemetry: TELEMETRY_SAMPLE,
         oversizePartial: 0,
+        ccLateEnabled: 0,
       },
       '2026-09-13T00:00:00.000Z',
     );
@@ -328,6 +346,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
         statsErrors: 0, storeMalformed: 0, statsDropped: 0,
         telemetry: { ...TELEMETRY_SAMPLE, traces: { ...TELEMETRY_SAMPLE.traces, foreign: 99 } },
         oversizePartial: 0,
+        ccLateEnabled: 0,
       },
       '2026-09-13T00:00:00.000Z',
     );
@@ -384,6 +403,28 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
     expect(line).toContain('read=17039360');
   });
 
+  it('prints ccLateEnabled LAST on the counters line, from its own field (hotfix 0.8.1)', () => {
+    const base = {
+      grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
+      patchesSent: 0, patchesApplied: 0, patchesFailed: 0, resyncs: 0,
+      ccSessions: 0, opencodeSessions: 0, codexSessions: 0,
+      relayRole: 'idle' as const, relayFollowers: 0, relayed: 0, relayReceived: 0,
+      statsErrors: 0, storeMalformed: 0, statsDropped: 0,
+      telemetry: TELEMETRY_SAMPLE,
+      oversizePartial: 0,
+      ccLateEnabled: 0,
+    };
+    const atZero = formatCounters(base, '2026-09-15T12:00:00.000Z');
+    expect(atZero.endsWith(' oversizePartial=0 ccLateEnabled=0')).toBe(true);
+    // Moved alone, so no other field can be standing in for it.
+    const moved = formatCounters({ ...base, ccLateEnabled: 1 }, '2026-09-15T12:00:00.000Z');
+    expect(moved.endsWith(' ccLateEnabled=1')).toBe(true);
+    // Appended: the line before it is unchanged, so every 0.8.0 line is a prefix.
+    expect(moved.slice(0, moved.lastIndexOf(' ccLateEnabled='))).toBe(
+      atZero.slice(0, atZero.lastIndexOf(' ccLateEnabled=')),
+    );
+  });
+
   it('prints oversizePartial on the counters line, from its own field', () => {
     const base = {
       grafts: 0, graftRefusals: 0, graftErrors: 0, malformedLines: 0, unknownFields: 0,
@@ -393,6 +434,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       statsErrors: 0, storeMalformed: 0, statsDropped: 0,
       telemetry: TELEMETRY_SAMPLE,
       oversizePartial: 0,
+      ccLateEnabled: 0,
     };
     expect(formatCounters(base, '2026-09-13T12:00:00.000Z')).toContain('oversizePartial=0');
     // Moved alone, so no other field can be standing in for it — the same
@@ -448,6 +490,7 @@ describe('DiagnosticsChannel (DoD 5.5.3)', () => {
       statsDropped: 0,
       telemetry: TELEMETRY_SAMPLE,
       oversizePartial: 0,
+      ccLateEnabled: 0,
     });
     expect(sink.shown).toBe(0);
     channel.show();

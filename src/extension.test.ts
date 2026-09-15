@@ -51,7 +51,7 @@ import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AgentDeckDataPath,
@@ -67,7 +67,9 @@ import {
   DEFAULT_PORT,
   DEFAULT_CODEX_MAX_TRANSCRIPT_BYTES,
   DEFAULT_PREVIEW_BYTES,
-  NO_HOOK_ENGINE_LOG,
+  CC_LATE_LOOKUP_INTERVAL_MS,
+  CC_LATE_LOOKUP_RETRIES,
+  CC_LATE_REPLAY_MAX,
   OPENCODE_ABSENT_LOG,
   OPEN_COMMAND,
   OpenCodeEnginePath,
@@ -111,7 +113,7 @@ import { OPENCODE_DATA_ROOT_ENV, opencodeDataDir } from './opencode/index.js';
 import { PINNED_CODEX_VERSION } from './codex/fingerprint.js';
 import { STORE_DIR_NAME, StatsStore, resolveStoreDir } from './stats/store.js';
 import { parsePricing } from './stats/pricing.js';
-import { formatCounters } from './bridge/diagnostics.js';
+import { COUNTERS_INTERVAL_MS, formatCounters } from './bridge/diagnostics.js';
 import type { DiagnosticsCounters } from './bridge/diagnostics.js';
 import { HookListener } from './hooks/listener.js';
 import { SharedHookListener } from './hooks/shared.js';
@@ -344,7 +346,8 @@ function extensionContext(globalStoragePath?: string): Parameters<typeof activat
  * A free loopback port, taken and released.
  *
  * THIS FUNCTION HAS AN UNCLOSEABLE TOCTOU WINDOW, which is why only
- * {@link onFreePort} and one commented exception call it directly. It binds
+ * {@link onFreePort} calls it directly (the one commented exception went with
+ * hotfix 0.8.1, when a refused correlation started binding). It binds
  * port 0, reads what the OS assigned, closes the socket, and hands the number
  * out; between that close and the real bind inside `AgentDeckDataPath.start()`
  * or `activate()`, anything on the machine can take the port. Historical red
@@ -2204,45 +2207,40 @@ describe('activate', () => {
     expect(currentHost()).toBeNull();
   });
 
-  it('a NON-matching workspace starts nothing: no watcher, no socket, no timer', async () => {
+  it('a NON-matching workspace starts no Claude Code half, and still binds for its first hook event', async () => {
+    /*
+     * Until hotfix 0.8.1 this test was "starts nothing: no watcher, no socket,
+     * no timer" — `activate()` returned before building a host. That was every
+     * new Claude Code user's first session, and the user ruled (2026-09-15)
+     * that a window with a folder open always builds a host and binds, so
+     * Claude Code's first hook event has somewhere to land. What the
+     * correlation gate still owns is the CC HALF: no watcher, no CC timer,
+     * the model not on the tap.
+     */
     process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
     const foreign = join(await makeTempDir(), 'not-a-cc-project');
-
-    // The positive proof below binds the configured port itself, so the whole
-    // activate-then-probe sequence is the retried region: a port stolen by the
-    // rest of the machine would otherwise read as "the extension bound it".
-    // The two causes stay distinguishable because `currentHost()` is asserted
-    // null BEFORE the probe -- with no host there is nothing of ours that
-    // could be holding the port, so an EADDRINUSE here can only be foreign.
-    await onFreePort<number>({
-      use: async (port) => {
-        resetVscodeMock();
-        mock.setWorkspaceFolder(foreign);
-        mock.setConfig(CONFIG_SECTION, { port });
-        await activate(extensionContext());
-
-        // No host means no `AgentDeckDataPath`, which is the only thing that
-        // constructs a watcher, a listener or a timer.
-        expect(currentHost()).toBeNull();
-        expect(mock.panels).toHaveLength(0);
-
-        // Proved positively rather than by absence of a host: the configured
-        // port is still free, so nothing bound it.
-        const release = await holdPort(port);
-        await release();
-        return port;
-      },
-      discard: async () => {
-        await deactivate();
-      },
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(foreign);
+      mock.setConfig(CONFIG_SECTION, { port });
     });
 
-    // The command still exists and explains itself instead of erroring.
+    const host = currentHost();
+    expect(host).not.toBeNull();
+    const d = host?.dataPath.diagnostics;
+    expect(d?.ccEnabled).toBe(false);
+    expect(d?.hookBindAttempted).toBe(true);
+    expect(d?.listening).toBe(true);
+    // The CC half allocated nothing: the watcher never started, and with
+    // `tickMs` at its default the only timer a CC half arms is the tick.
+    expect(host?.dataPath.watcher.diagnostics.started).toBe(false);
+    expect(d?.ccLateLookups).toBe(0);
+    expect(mock.errorMessages).toStrictEqual([]);
+
+    // The command opens the panel rather than explaining an absence.
     expect(mock.hasCommand(OPEN_COMMAND)).toBe(true);
     await mock.runCommand(OPEN_COMMAND);
-    expect(mock.panels).toHaveLength(0);
-    expect(mock.informationMessages).toHaveLength(1);
-    expect(mock.informationMessages[0]).toContain('Agent Deck');
+    expect(mock.panels).toHaveLength(1);
+    expect(mock.informationMessages).toHaveLength(0);
   });
 
   it('no workspace folder at all starts nothing', async () => {
@@ -2644,29 +2642,39 @@ describe('the inactive message distinguishes a refusal from an absence', () => {
       },
     ];
 
+    /*
+     * Since hotfix 0.8.1 the sentence is no longer the answer to
+     * `agentDeck.open`: a window with a folder open always has a host (user
+     * ruling 2026-09-15), so the command opens the panel. The sentence is
+     * logged once at info when the data path starts with Claude Code not yet
+     * seen, through `DataPathOptions.ccNotYetSeenReason` — the production
+     * logger is `console.info`, so that is what is observed.
+     */
     for (const leg of legs) {
-      resetVscodeMock();
       process.env['CLAUDE_PROJECTS_ROOT'] = leg.root;
-      mock.setWorkspaceFolder(leg.workspace);
-      // The ONE call site that is deliberately not retried, because it cannot
-      // lose the race: both legs are correlation refusals, `activate` builds no
-      // host, and nothing here ever binds the port. It is configured only so
-      // the settings are complete. `expect(currentHost()).toBeNull()` below is
-      // what makes that claim checkable rather than assumed.
-      mock.setConfig(CONFIG_SECTION, { port: await freePort() });
 
       const correlation = await correlateWorkspace(leg.workspace);
       expect(correlation.ok, `${leg.name}: expected a refusal`).toBe(false);
       if (correlation.ok) throw new Error('unreachable');
       expect(correlation.failure.kind).toBe(leg.expectKind);
 
-      await activate(extensionContext());
-      expect(currentHost()).toBeNull();
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+      try {
+        await activateOnFreePort((port) => {
+          info.mockClear();
+          mock.setWorkspaceFolder(leg.workspace);
+          mock.setConfig(CONFIG_SECTION, { port });
+        });
+        expect(currentHost(), `${leg.name}: a folder is open, so a host`).not.toBeNull();
+        const logged = info.mock.calls.map((call) => String(call[0]));
+        const expected = inactiveReasonFor(correlation.failure);
+        expect(logged.filter((line) => line === expected), `${leg.name}: logged once`).toHaveLength(1);
+        expect(claimsAbsence(expected)).toBe(true);
+      } finally {
+        info.mockRestore();
+      }
       await mock.runCommand(OPEN_COMMAND);
-
-      expect(mock.informationMessages).toHaveLength(1);
-      expect(mock.informationMessages[0]).toBe(inactiveReasonFor(correlation.failure));
-      expect(claimsAbsence(mock.informationMessages[0] as string)).toBe(true);
+      expect(mock.informationMessages).toHaveLength(0);
       await deactivate();
     }
   });
@@ -3963,17 +3971,21 @@ describe('DoD 5.2 — the OpenCode engine is on when its store exists, and off w
     const lonely = join(await makeTempDir(), 'no-cc-here');
     await mkdir(lonely, { recursive: true });
 
-    resetVscodeMock();
-    mock.setWorkspaceFolder(lonely);
-    mock.setConfig(CONFIG_SECTION, { port: DEFAULT_PORT });
-    await activate(extensionContext());
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(lonely);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
 
     const host = currentHost();
     expect(host, 'an OpenCode-only workspace still gets a deck').not.toBeNull();
     const diagnostics = host?.dataPath.diagnostics;
-    // The correlation gate's point survives: no watcher, no socket, no CC tick.
+    // The correlation gate's point survives: no CC watcher, no CC tick.
     expect(diagnostics?.ccEnabled).toBe(false);
-    expect(diagnostics?.listening).toBe(false);
+    expect(host?.dataPath.watcher.diagnostics.started).toBe(false);
+    // Hotfix 0.8.1 (user ruling 2026-09-15): the socket binds anyway — this
+    // was `false` — so Claude Code's first hook event in this workspace can
+    // switch its half on.
+    expect(diagnostics?.listening).toBe(true);
     expect(diagnostics?.opencode.enabled).toBe(true);
 
     await deactivate();
@@ -4577,9 +4589,11 @@ describe('DoD 7.7 — the host counters line carries oversizePartial', () => {
     expect(host.dataPath.diagnostics.codex.partialTranscripts).toBe(1);
     const line = formatCounters(host.counters(), '2026-09-13T00:00:00.000Z');
     expect(line).toContain('oversizePartial=1');
-    // And it is the LAST field, appended after the 7.8 scope note, so every
+    // And it was the LAST field, appended after the 7.8 scope note, so every
     // counters line quoted before this release is still a prefix of this one.
-    expect(line.endsWith(' oversizePartial=1')).toBe(true);
+    // Hotfix 0.8.1 appended `ccLateEnabled` after it by the same rule; this
+    // workspace carries no Claude Code project and no hook event arrived, so 0.
+    expect(line.endsWith(' oversizePartial=1 ccLateEnabled=0')).toBe(true);
     host.dispose();
   }, 120_000);
 });
@@ -4942,6 +4956,11 @@ describe('DoD 3.2 — the Codex engine is on when its data root exists, and off 
  * project correlates OR a Codex data root exists. Neither, and the socket is
  * deliberately not bound, said once at info. A port collision remains an error
  * and is never a silent re-pick.
+ *
+ * SUPERSEDED IN ITS "NEITHER" CLAUSE by hotfix 0.8.1 (user ruling 2026-09-15):
+ * every started data path binds or follows, because "neither" is every new
+ * Claude Code user before their first session, and that session's first hook
+ * event is what enables the CC half. The last test in this block says so.
  */
 describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
   /** POST one hook payload to the listener, exactly as a real hook does. */
@@ -5081,7 +5100,6 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
     // THE DEFECT, in one line: this was `false`.
     expect(before?.hookBindAttempted).toBe(true);
     expect(before?.listening).toBe(true);
-    expect(before?.noHookEngineLogs).toBe(0);
 
     const payloads = await capturedCodexPayloads();
     expect(payloads.length, 'the captured stream must not be empty').toBeGreaterThan(0);
@@ -5089,6 +5107,11 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
 
     // Received AND routed: `acceptedCodex` is the discriminator's own count.
     expect(host?.dataPath.listener.counters.acceptedCodex).toBe(payloads.length);
+    // Hotfix 0.8.1: routed to the Codex handlers ONLY. These payloads name this
+    // very workspace as their `cwd`, so a Codex body misrouted to the Claude
+    // Code handler set would have started a slug lookup here.
+    expect(host?.dataPath.diagnostics.ccLateLookups).toBe(0);
+    expect(host?.dataPath.diagnostics.ccEnabled).toBe(false);
 
     /*
      * ATTRIBUTED, and this assertion had to be rewritten to say so.
@@ -5203,53 +5226,59 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
     }
   });
 
-  it('binds NOTHING when neither engine is hook-driven, and says so exactly once at info', async () => {
+  it('binds even when neither engine is observable, and says once why Claude Code has not started', async () => {
+    /*
+     * HOTFIX 0.8.1 REVERSED THIS TEST'S SUBJECT. It was "binds NOTHING when
+     * neither engine is hook-driven". Until the user ruling of 2026-09-15 a window with neither
+     * engine bound nothing and logged `NO_HOOK_ENGINE_LOG` once. That window
+     * is every new Claude Code user before their first session, and Claude
+     * Code's first hook event could never reach it. It binds now, and the one
+     * info line is the reason the CC half has not started.
+     */
     const lonely = await workspaceWithNoClaudeCode();
     const absent = join(await makeTempDir(), 'no-such-.codex');
     expect(existsSync(absent)).toBe(false);
     const sink = captureLog();
+    const reason = 'Agent Deck: no Claude Code sessions for this workspace (projectSlugNotFound).';
 
     const emissions: DataPathEmission[] = [];
-    const path = trackDataPath(
-      new AgentDeckDataPath({
-        workspacePath: lonely,
-        projectsRoot: process.env['CLAUDE_PROJECTS_ROOT'] as string,
-        ccEnabled: false,
-        codex: { root: absent },
-        settings: settings({ port: DEFAULT_PORT }),
-        tickMs: 0,
-        log: sink.log,
-        onEmission: (payload) => {
-          emissions.push(payload);
-        },
-      }),
-    );
-    /*
-     * Repeated, and the comment its siblings carry would be an over-read here.
-     * `start()` opens with `if (this.#disposed || this.#started) return;`, so
-     * calls 2 and 3 never reach the log site: what this repetition proves is
-     * the `#started` guard, NOT that the log site itself is once-only. The
-     * once-ness rests on there being exactly one call site, which
-     * `noHookEngineLogs === 1` records and a second site would break.
-     */
-    await path.start();
+    const path = await startDataPathOnFreePort((port) => {
+      sink.lines.length = 0;
+      emissions.length = 0;
+      return trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: lonely,
+          projectsRoot: process.env['CLAUDE_PROJECTS_ROOT'] as string,
+          ccEnabled: false,
+          ccNotYetSeenReason: reason,
+          codex: { root: absent },
+          settings: settings({ port }),
+          tickMs: 0,
+          log: sink.log,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      );
+    });
+    // `start()` opens with `if (this.#disposed || this.#started) return;`, so
+    // these prove the `#started` guard: still one reason line, not three.
     await path.start();
     await path.start();
 
-    expect(path.diagnostics.hookBindAttempted).toBe(false);
-    expect(path.diagnostics.listening).toBe(false);
-    expect(path.diagnostics.noHookEngineLogs).toBe(1);
+    expect(path.diagnostics.hookBindAttempted).toBe(true);
+    expect(path.diagnostics.listening).toBe(true);
+    expect(path.diagnostics.ccEnabled).toBe(false);
     // All three, in the order `start()` reaches them, and pinned as a whole
     // rather than by `toContain`: an extra line here would be a second engine
     // reporting an absence nobody asked about, which is worth a red.
     expect(sink.lines).toStrictEqual([
       { level: 'info', message: OPENCODE_ABSENT_LOG },
       { level: 'info', message: CODEX_ABSENT_LOG },
-      { level: 'info', message: NO_HOOK_ENGINE_LOG },
+      { level: 'info', message: reason },
     ]);
-    // Not degraded: nothing here is hook-driven, so there is nothing to be
-    // degraded ABOUT. Reporting `listenerDown` for a socket nobody wants is
-    // the same mislabelling as reporting a silent CC tap that is switched off.
+    // Not degraded: the socket is up, so there is nothing to be degraded ABOUT.
+    // A silent CC tap that has not started is not a silent hook.
     expect(emissions.length).toBeGreaterThan(0);
     for (const emission of emissions) {
       expect(emission.degraded).toStrictEqual({ degraded: false });
@@ -5257,6 +5286,250 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
     // The deck still renders. A window with no hook engine is not a dead one.
     expect(path.diagnostics.emissions).toBeGreaterThan(0);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Hotfix 0.8.1 — late Claude Code enablement (spec Amendment 2026-09-15)
+// ---------------------------------------------------------------------------
+
+/*
+ * THE DEFECT. `ccEnabled` was decided once, at activation, from a slug
+ * directory lookup. A workspace that has never run Claude Code has no slug
+ * directory yet, so the Claude Code watcher never started and hook events never
+ * reached the model for the window's lifetime — and on a machine with no
+ * OpenCode store and no Codex root, `activate()` returned before a host existed
+ * at all. Every new user's first session.
+ *
+ * H1 drives the product the way the user meets it: `activate()` over a projects
+ * root that holds no slug directory, then Claude Code's own first moves — the
+ * slug directory and an empty transcript appear, and one REAL `SessionStart`
+ * body (the committed capture, `cwd` rewritten to this workspace) arrives on
+ * the listener.
+ */
+describe('hotfix 0.8.1 — Claude Code is enabled late, by its first hook event', () => {
+  const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
+
+  afterEach(() => {
+    if (previousRoot === undefined) delete process.env['CLAUDE_PROJECTS_ROOT'];
+    else process.env['CLAUDE_PROJECTS_ROOT'] = previousRoot;
+  });
+
+  /** The first captured `SessionStart` body, with `cwd` rewritten to `cwd`. */
+  async function sessionStartBody(cwd: string): Promise<Record<string, unknown>> {
+    const stream = await readFile(
+      fileURLToPath(new URL('../fixtures/hook-events/cc-2.1.234-sessionstart.jsonl', import.meta.url)),
+      'utf8',
+    );
+    const first = stream.split(/\r?\n/).find((line) => line.trim() !== '');
+    expect(first, 'the SessionStart capture is empty').toBeDefined();
+    const body = JSON.parse(first ?? '{}') as Record<string, unknown>;
+    expect(body['hook_event_name']).toBe('SessionStart');
+    expect(typeof body['session_id']).toBe('string');
+    return { ...body, cwd };
+  }
+
+  /**
+   * Activate over an existing projects root that holds NO slug directory.
+   *
+   * `withCodexRoot` is the second arm. With a Codex root present a host and a
+   * bound socket existed before the fix too, so that arm isolates the INNER
+   * defect (the one-shot `ccEnabled`) from the activation gate above it, and a
+   * fix to only one of the two leaves one arm red.
+   */
+  async function activateBeforeClaudeCode(withCodexRoot = false): Promise<{
+    port: number;
+    projectsRoot: string;
+    workspace: string;
+    host: AgentDeckHost;
+  }> {
+    const projectsRoot = await makeTempDir();
+    const workspace = join(await makeTempDir(), 'first-session-ws');
+    await mkdir(workspace, { recursive: true });
+    process.env['CLAUDE_PROJECTS_ROOT'] = projectsRoot;
+    if (withCodexRoot) process.env[CODEX_HOME_VAR] = await stageCodexRoot(false);
+    expect(codexRootExists()).toBe(withCodexRoot);
+    expect((await correlateWorkspace(workspace)).ok, 'the slug directory must not exist yet').toBe(false);
+
+    const port = await activateOnFreePort((attemptPort) => {
+      mock.setWorkspaceFolder(workspace);
+      mock.setConfig(CONFIG_SECTION, { port: attemptPort });
+    });
+    const host = currentHost();
+    expect(host, 'a window with a folder open must have a host').not.toBeNull();
+    if (host === null) throw new Error('unreachable');
+    expect(host.dataPath.diagnostics.ccEnabled).toBe(false);
+    expect(host.dataPath.diagnostics.listening).toBe(true);
+    return { port, projectsRoot, workspace, host };
+  }
+
+  /** What Claude Code does on disk at a session's onset: the slug dir and its transcript. */
+  async function claudeCodeCreates(projectsRoot: string, workspace: string, sessionId: string): Promise<void> {
+    const slugDir = join(projectsRoot, slugifyWorkspace(workspace));
+    await mkdir(slugDir, { recursive: true });
+    await writeFile(join(slugDir, `${sessionId}.jsonl`), '');
+  }
+
+  for (const withCodexRoot of [false, true]) {
+    const arm = withCodexRoot ? 'with a Codex root (the inner gate)' : 'Claude Code only (the activation gate)';
+    it(`H1: no slug directory at activation; the first SessionStart registers the session — ${arm}`, async () => {
+      const { port, projectsRoot, workspace, host } = await activateBeforeClaudeCode(withCodexRoot);
+      const body = await sessionStartBody(workspace);
+      const sessionId = body['session_id'] as string;
+      await claudeCodeCreates(projectsRoot, workspace, sessionId);
+
+      expect(await postHookEventTo(port, body)).toBe(HOOK_OK);
+
+      await waitFor(() => host.dataPath.model.hasSession(sessionId), 'the session to register');
+      expect(host.dataPath.diagnostics.ccEnabled).toBe(true);
+      const snapshot = host.dataPath.model.snapshot();
+      expect(snapshot.map((s) => s.sessionId)).toStrictEqual([sessionId]);
+      // And what LEFT: the host's own count comes from the emission it published,
+      // so a model that registered the session and never emitted it stays red.
+      await waitFor(() => host.counters().ccSessions === 1, 'the session to be emitted');
+      // The ENABLING event reached the model too (`CC_LATE_REPLAY_MAX`): without
+      // the replay the tap has received nothing and reads `noHookEvents` over a
+      // session whose hooks just proved they arrive.
+      expect(host.dataPath.liveness.degradedState()).toStrictEqual({ degraded: false });
+      expect(host.dataPath.diagnostics.ccLateEnabled).toBe(1);
+      expect(host.dataPath.watcher.diagnostics.started).toBe(true);
+    }, 60_000);
+  }
+
+  it('H3: a SessionStart from ANOTHER workspace enables nothing — and this workspace’s own then does', async () => {
+    const { port, projectsRoot, workspace, host } = await activateBeforeClaudeCode();
+    const body = await sessionStartBody(workspace);
+    const sessionId = body['session_id'] as string;
+    // The slug directory EXISTS, so a lookup would succeed if one ran: the
+    // only thing standing between this event and an enabled half is the guard.
+    await claudeCodeCreates(projectsRoot, workspace, sessionId);
+    const foreign = join(await makeTempDir(), 'some-other-repo');
+    expect(slugifyWorkspace(foreign)).not.toBe(slugifyWorkspace(workspace));
+
+    expect(await postHookEventTo(port, { ...body, cwd: foreign })).toBe(HOOK_OK);
+    // Dispatch happens before the 200 (listener.ts), and a lookup is counted
+    // before its first await, so "no lookup" is decided by now — no sleep.
+    expect(host.dataPath.listener.counters.accepted).toBe(1);
+    expect(host.dataPath.diagnostics.ccLateLookups).toBe(0);
+    expect(host.dataPath.diagnostics.ccEnabled).toBe(false);
+
+    // THE CONTROL, in the same window: the same body with this workspace's
+    // cwd enables it. Without this the zero above could be a path that never
+    // runs for anyone.
+    expect(await postHookEventTo(port, body)).toBe(HOOK_OK);
+    await waitFor(() => host.dataPath.diagnostics.ccEnabled, 'the same-workspace event to enable the half');
+    expect(host.dataPath.diagnostics.ccLateLookups).toBe(1);
+  }, 60_000);
+
+  it('H2: the retry count and interval are the pinned constants, and the chain uses them', async () => {
+    expect(CC_LATE_LOOKUP_RETRIES).toBe(5);
+    expect(CC_LATE_LOOKUP_INTERVAL_MS).toBe(200);
+    expect(CC_LATE_REPLAY_MAX).toBe(32);
+
+    const projectsRoot = await makeTempDir();
+    const workspace = join(await makeTempDir(), 'slow-disk-ws');
+    const time = new ManualTime(1_000_000);
+    const path = await startDataPathOnFreePort((port) =>
+      trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: workspace,
+          projectsRoot,
+          ccEnabled: false,
+          codex: { root: join(projectsRoot, 'no-codex-root') },
+          settings: settings({ port }),
+          scheduler: time,
+          tickMs: 0,
+          log: () => {},
+          onEmission: () => {},
+        }),
+      ),
+    );
+    const port = path.settings.port;
+    const body = await sessionStartBody(workspace);
+    const d = (): AgentDeckDataPath['diagnostics'] => path.diagnostics;
+
+    // The slug directory is NOT there yet: every attempt fails.
+    expect(await postHookEventTo(port, body)).toBe(HOOK_OK);
+    for (let attempt = 1; attempt <= CC_LATE_LOOKUP_RETRIES; attempt += 1) {
+      await waitFor(
+        () => d().ccLateLookups === attempt && d().timersArmed === 1,
+        `attempt ${String(attempt)} to fail and arm its retry`,
+      );
+      time.advance(CC_LATE_LOOKUP_INTERVAL_MS - 1);
+      expect(d().ccLateLookups, 'a retry fired before the interval').toBe(attempt);
+      // A second event DURING the chain starts no second chain.
+      if (attempt === 1) {
+        expect(await postHookEventTo(port, body)).toBe(HOOK_OK);
+        expect(d().ccLateLookups).toBe(1);
+      }
+      time.advance(1);
+      expect(d().ccLateLookups, 'the retry did not fire at the interval').toBe(attempt + 1);
+    }
+    // One first attempt plus exactly CC_LATE_LOOKUP_RETRIES retries, then stop.
+    await waitFor(() => !d().ccLateChainActive, 'the chain to exhaust');
+    expect(d().ccLateLookups).toBe(1 + CC_LATE_LOOKUP_RETRIES);
+    expect(d().timersArmed).toBe(0);
+    time.advance(60_000);
+    expect(d().ccLateLookups).toBe(1 + CC_LATE_LOOKUP_RETRIES);
+    expect(d().ccEnabled).toBe(false);
+
+    // An exhausted chain is not the end: Claude Code finally writes the
+    // directory, and the next same-workspace event starts a fresh chain.
+    await claudeCodeCreates(projectsRoot, workspace, body['session_id'] as string);
+    expect(await postHookEventTo(port, body)).toBe(HOOK_OK);
+    await waitFor(() => d().ccEnabled, 'the next event to enable the half');
+    expect(d().ccLateLookups).toBe(2 + CC_LATE_LOOKUP_RETRIES);
+    expect(d().ccLateEnabled).toBe(1);
+    expect(d().ccLateChainActive).toBe(false);
+  }, 60_000);
+
+  it('H4: one "cc enabled late" line naming the slug, and ccLateEnabled on the channel’s counters line', async () => {
+    const projectsRoot = await makeTempDir();
+    const workspace = join(await makeTempDir(), 'channel-ws');
+    const sink = collectingSink();
+    const time = new ManualTime(Date.parse('2026-09-15T00:00:00.000Z'));
+    const host = await startHostOnFreePort((port) =>
+      trackHost(
+        new AgentDeckHost({
+          workspacePath: workspace,
+          projectsRoot,
+          ccEnabled: false,
+          codex: { root: join(projectsRoot, 'no-codex-root') },
+          settings: settings({ port }),
+          scheduler: time,
+          now: () => time.now(),
+          tickMs: 0,
+          log: () => {},
+          nonce: 'AAAAAAAA',
+          createPanel: () => fakePanel().surface,
+          createDiagnosticsSink: sink.factory,
+          onEmission: () => {},
+        }),
+      ),
+    );
+
+    // The control: before Claude Code is seen, the counters line says 0.
+    time.advance(COUNTERS_INTERVAL_MS);
+    const before = sink.lines.filter((line) => line.includes(' counters '));
+    expect(before).toHaveLength(1);
+    expect(before[0]?.endsWith(' ccLateEnabled=0')).toBe(true);
+
+    const body = await sessionStartBody(workspace);
+    await claudeCodeCreates(projectsRoot, workspace, body['session_id'] as string);
+    expect(await postHookEventTo(host.dataPath.settings.port, body)).toBe(HOOK_OK);
+    await waitFor(() => host.dataPath.diagnostics.ccEnabled, 'the half to enable');
+    // More events after enablement write no second line: it is once per window.
+    expect(await postHookEventTo(host.dataPath.settings.port, body)).toBe(HOOK_OK);
+
+    const late = sink.lines.filter((line) => line.includes(' cc enabled late '));
+    expect(late).toStrictEqual([
+      expect.stringMatching(new RegExp(` cc enabled late slug=${slugifyWorkspace(workspace)}$`)),
+    ]);
+
+    time.advance(COUNTERS_INTERVAL_MS);
+    const after = sink.lines.filter((line) => line.includes(' counters '));
+    expect(after).toHaveLength(2);
+    expect(after[1]?.endsWith(' ccLateEnabled=1')).toBe(true);
+  }, 60_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -6565,6 +6838,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
           traces: { accepted: 0, disabled: 0, unmatched: 0, foreign: 0, rejected: { 400: 0, 405: 0, 413: 0, 415: 0 } },
         },
         oversizePartial: 0,
+        ccLateEnabled: 0,
       },
       '2026-09-09T00:00:00.000Z',
     );
@@ -7376,10 +7650,11 @@ describe('DoD 4.11b — each engine supplies its own activity, and the merge is 
  * `activate()` — the recorded D4 shape: a module test that builds the object
  * by hand proves the module and says nothing about whether anything wires it.
  * Deleting the `onStatsUpdate` line from `activate()` turns a test here red,
- * and so does replacing any of its three `return api` statements (no folder,
- * a folder with nothing to observe, a host) with `undefined` — each has its
- * own test below. Until the Phase 5 verifier round the second had none, while
- * this comment said it did.
+ * and so does replacing either of its two `return api` statements (no folder,
+ * a host) with `undefined` — each has its own test below, and the "nothing to
+ * observe" test reaches the second through a host. There were three until
+ * hotfix 0.8.1 removed the nothing-to-observe return; until the Phase 5
+ * verifier round that one had no test, while this comment said it did.
  */
 describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () => {
   const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
@@ -7418,23 +7693,33 @@ describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () =>
   });
 
   it('a window WITH a folder and nothing to observe still returns the API', async () => {
-    // The second early return. Found by the Phase 5 verifier: replacing this
-    // `return api` with `undefined` left every test green, because the only
-    // no-host test above has no folder and takes the FIRST return. Each engine
-    // is proved absent through the same predicate `activate()` asks, so this
-    // cannot drift onto another path while still passing.
-    resetVscodeMock();
+    // This was the second early return, found unguarded by the Phase 5
+    // verifier. Hotfix 0.8.1 removed that return (user ruling 2026-09-15): a
+    // window with a folder open always builds a host, so this path now takes
+    // the FINAL `return api`, and a host is what proves it did. Each engine is
+    // still proved absent through the predicates `activate()` used to ask.
     process.env['CLAUDE_PROJECTS_ROOT'] = join(await makeTempDir(), 'no-such-projects-root');
     const workspacePath = join(await makeTempDir(), 'ws');
-    mock.setWorkspaceFolder(workspacePath);
     expect((await correlateWorkspace(workspacePath)).ok).toBe(false);
     expect(opencodeStoreExists()).toBe(false);
     expect(codexRootExists()).toBe(false);
     const globalStorage = await makeTempDir();
     const seeded = await seedGolden(globalStorage);
 
-    const api: AgentDeckApi = await activate(extensionContext(globalStorage));
-    expect(currentHost(), 'this path is meant to have no host').toBeNull();
+    const api = await onFreePort<AgentDeckApi>({
+      use: async (port) => {
+        resetVscodeMock();
+        mock.setWorkspaceFolder(workspacePath);
+        mock.setConfig(CONFIG_SECTION, { port });
+        return activate(extensionContext(globalStorage));
+      },
+      collided: () => currentHost()?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+      discard: async () => {
+        await deactivate();
+      },
+    });
+    expect(currentHost(), 'a folder is open, so this path has a host').not.toBeNull();
+    expect(currentHost()?.dataPath.diagnostics.ccEnabled).toBe(false);
     expect(api?.apiVersion).toBe(1);
     expect(api.getLiveStats()).toStrictEqual([]);
     const stored = await api.getStoredStats();

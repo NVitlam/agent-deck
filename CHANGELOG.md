@@ -2,6 +2,31 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.8.1 - 2026-09-15 - A first Claude Code session in a new folder
+
+### Fixed
+
+- **A folder Claude Code had never run in now shows its first session.** Agent Deck
+  looked for the folder's Claude Code project directory once, when the window
+  opened. A folder opened before its first Claude Code session had none yet, so
+  that session and every later one stayed off the deck until the window was
+  reloaded. The first Claude Code hook event whose working directory is this folder
+  now starts the Claude Code half, looking again for up to a second while Claude
+  Code creates the directory. The output channel logs `cc enabled late` with the
+  project key, and `ccLateEnabled` counts it on the counters line.
+
+### Changed
+
+- **The hook listener is bound in every window with a folder open**, including one
+  where no engine has anything to read yet, so that first hook event has somewhere
+  to arrive. A window with no folder open still binds nothing.
+- **A folder matching two Claude Code project directories that differ only in letter
+  case is reported on the Agent Deck output channel**, as `cc correlation refused`
+  with the reason. In 0.8.0 it was an information message on **Agent Deck: Open**,
+  and only in a window with no OpenCode store and no Codex data root; in any other
+  window it was not shown anywhere. That command now opens the panel in every
+  window with a folder open.
+
 ## 0.8.0 - 2026-09-13 - Time, tools, tweaks and oversize Codex transcripts
 
 ### Added

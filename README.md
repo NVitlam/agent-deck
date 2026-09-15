@@ -630,9 +630,10 @@ Two answers are neither a match nor an error:
 
 - **No folder open.** Nothing is observed and no panel opens — the command reports
   `Agent Deck: open a folder to see its sessions.`
-- **A folder Claude Code has never run in.** There is no project directory to read, so the Claude
+- **A folder Claude Code has never run in.** There is no project directory to read yet, so the Claude
   Code half stays off — no watcher and no timer for it — while OpenCode and Codex are read as
-  usual. When none of the three has anything here, the command says so and no panel opens.
+  usual. The hook listener is bound anyway, and the first Claude Code hook event whose working
+  directory is this folder starts the Claude Code half, with no reload. The panel opens either way.
 
 **A refused session is shown wherever it ran.** An OpenCode or Codex session whose schema Agent
 Deck refuses appears as an `unsupported` card whatever folder produced it, because a refusal

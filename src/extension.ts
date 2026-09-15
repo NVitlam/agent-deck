@@ -7,8 +7,10 @@
  * It owns four things and implements none of them:
  *
  *   1. ACTIVATION.   Workspace-match, not command-only. If the open workspace
- *                    has no matching CC project slug the data path is never
- *                    constructed — no watcher, no socket, no timer.
+ *                    has no matching CC project slug the Claude Code half does
+ *                    not start — no CC watcher, no CC timer — until Claude
+ *                    Code's first hook event from this workspace starts it
+ *                    (hotfix 0.8.1). The socket binds whenever a folder is open.
  *   2. THE DATA PATH. `ProjectWatcher` -> `graftSession` -> `SessionModel`,
  *                    and `HookListener` -> `SessionModel.onHookEvent`, with the
  *                    JSONL inference source finally wired into the liveness
@@ -149,7 +151,8 @@ import type {
   DiagnosticsSinkFactory,
   DiagnosticsTelemetry,
 } from './bridge/diagnostics.js';
-import { correlateWorkspace } from './model/correlate.js';
+import { correlateWorkspace, sameWorkspace } from './model/correlate.js';
+import type { CorrelationResult } from './model/correlate.js';
 import { graftSession } from './model/graft.js';
 import type { GraftSessionOptions, GraftSessionResult } from './model/graft.js';
 import { isFingerprintMismatch } from './parser/fingerprint.js';
@@ -158,6 +161,7 @@ import { SessionModel, diffSessionState } from './model/session.js';
 import type { SessionDiff, SessionEmission } from './model/session.js';
 import type {
   HostToWebviewMessage,
+  NormalizedHookEvent,
   SessionState,
   SettingsMessage,
   ShowViewMessage,
@@ -2239,12 +2243,21 @@ export interface DataPathOptions {
   ) => Promise<GraftSessionResult>;
 
   /**
-   * Whether the Claude Code half runs at all. Defaults to `true`.
+   * Whether the Claude Code half runs FROM THE START. Defaults to `true`.
    *
-   * `false` means: no watcher, no hook socket, no CC timer — the CC engine is
-   * not merely empty, it is off. `activate()` sets it from the correlation
-   * result, so a workspace with OpenCode sessions and no Claude Code project
-   * directory still gets a deck.
+   * `false` means "Claude Code not yet seen": no watcher and no CC timer yet,
+   * and the model is not subscribed to the hook tap. `activate()` sets it from
+   * the correlation result, so a workspace with OpenCode sessions and no
+   * Claude Code project directory still gets a deck.
+   *
+   * **It is not one-shot (hotfix 0.8.1, spec Amendment 2026-09-15).** A window
+   * opened before Claude Code ever ran in the workspace has no slug directory
+   * at activation, and that used to switch the CC half off for the window's
+   * lifetime — every new user's first session. Now an accepted CC hook event
+   * whose `cwd` is this workspace triggers a re-lookup
+   * ({@link CC_LATE_LOOKUP_RETRIES} retries, {@link CC_LATE_LOOKUP_INTERVAL_MS}
+   * apart), and on success the CC half starts exactly as it would have at
+   * activation.
    *
    * This is G2 in the activation dimension. Gating the OpenCode engine behind
    * a Claude Code correlation would be a shared failure path between two
@@ -2253,6 +2266,30 @@ export interface DataPathOptions {
    * Code.
    */
   ccEnabled?: boolean;
+
+  /**
+   * Why the Claude Code half did not start at activation: the correlation's own
+   * refusal. {@link AgentDeckDataPath.start} says it ONCE, as
+   * `inactiveReasonFor(failure)`, when {@link ccEnabled} is `false`.
+   *
+   * Until hotfix 0.8.1 that sentence was the answer to `agentDeck.open` in a
+   * window with no host; a window with a folder open now always has one, so
+   * the sentence needs another surface, and the two arms get different ones:
+   *
+   *   - **`ambiguousSlug` -> the Agent Deck output channel** (user ruling
+   *     2026-09-15, no dialog). It is the one refusal that is not an absence:
+   *     sessions exist, Agent Deck declines to guess between two directories
+   *     differing only by case, and the Claude Code half can never start in
+   *     this window. Without a line a user reads, the deck is simply empty.
+   *   - **The absence kinds -> the host log at info**, not the channel. "This
+   *     folder has no Claude Code project yet" is the ordinary state of every
+   *     window Claude Code has not run in, and a late hook event resolves it
+   *     on its own, so it is not a refusal a user has to act on; the ruling
+   *     named the ambiguity alone. (Not because the channel stays unopened:
+   *     since 0.8.1 binds in every folder window, the `listenerRole` line
+   *     opens it there regardless.)
+   */
+  ccCorrelationFailure?: DiscoveryFailure;
 
   /**
    * The OpenCode half's options, minus the ones this data path supplies.
@@ -2355,20 +2392,41 @@ export interface DataPathDiagnostics {
   consumerErrors: number;
   /** Timers currently armed. Must be 0 after {@link AgentDeckDataPath.dispose}. */
   timersArmed: number;
-  /** False when the Claude Code half was switched off at construction. */
+  /**
+   * Whether the Claude Code half is running NOW: `true` from construction, or
+   * from the moment a late re-lookup found the slug directory (hotfix 0.8.1).
+   * `false` is "Claude Code not yet seen".
+   */
   ccEnabled: boolean;
   /**
    * Whether {@link AgentDeckDataPath.start} tried to bind the hook socket.
    *
-   * `false` is a DECISION, not a failure: no Claude Code project correlated
-   * and no Codex data root exists, so nothing in this window is hook-driven
-   * and binding a port would be allocating a socket for no observer. Read it
-   * beside `listening` — `attempted && !listening` is a real bind failure and
-   * `!attempted && !listening` is a quiet window.
+   * Since hotfix 0.8.1 (user ruling 2026-09-15) every started data path tries:
+   * a window with a folder open binds or follows whether or not any engine is
+   * observable, because Claude Code's first hook event is what enables its
+   * half. `false` therefore means "not started". Read it beside `listening` —
+   * `attempted && !listening` is a real bind failure.
    */
   hookBindAttempted: boolean;
-  /** Times {@link NO_HOOK_ENGINE_LOG} was emitted. Exactly 0 or 1. */
-  noHookEngineLogs: number;
+  /**
+   * Times the Claude Code half was enabled LATE, by a re-lookup a hook event
+   * triggered (hotfix 0.8.1). 0 or 1: once enabled it never turns off. On the
+   * counters line as `ccLateEnabled`.
+   */
+  ccLateEnabled: number;
+  /**
+   * Slug-directory lookups a same-workspace hook event has run while Claude
+   * Code was not yet seen, retries included. 0 in a window that was enabled at
+   * activation, and 0 when every event arriving was another workspace's —
+   * which is what makes the `sameWorkspace` guard assertable.
+   */
+  ccLateLookups: number;
+  /**
+   * A late lookup chain is running: an attempt is in flight or its retry timer
+   * is armed. False once it enabled the half or exhausted its retries — the
+   * completion signal a test waits on instead of a sleep.
+   */
+  ccLateChainActive: boolean;
   /**
    * `SessionModel.emit()` threw and the emission was assembled without its
    * half. DoD 5.3's CC -> OpenCode direction, counted.
@@ -2398,15 +2456,33 @@ export interface DataPathDiagnostics {
  * `HookListener` and `LivenessEngine` against fixtures with no editor present.
  */
 /**
- * The message logged, ONCE, when nothing in this window is hook-driven so the
- * loopback socket is deliberately not bound.
+ * How many times a late Claude Code lookup is RETRIED after its first attempt
+ * (hotfix 0.8.1, spec Amendment 2026-09-15: "retried up to 5 times at 200 ms").
  *
- * A named constant for the reason {@link OPENCODE_ABSENT_LOG} is one: "logged
- * exactly once" is an assertable property only while the string is the same
- * string every time.
+ * Read literally: one attempt when the event arrives, then up to five more,
+ * so a chain spans about a second. The retries exist because Claude Code fires
+ * `SessionStart` at the onset of a session and the slug directory it belongs
+ * to may not be on disk yet when the POST lands. A chain that exhausts is not
+ * the end: the next accepted same-workspace event starts another, so a slow
+ * disk costs a session its first second of hooks, never its window.
  */
-export const NO_HOOK_ENGINE_LOG =
-  'Agent Deck: no Claude Code project and no Codex data root; the hook listener is not bound.';
+export const CC_LATE_LOOKUP_RETRIES = 5;
+
+/** Milliseconds between two attempts of one late lookup chain. See {@link CC_LATE_LOOKUP_RETRIES}. */
+export const CC_LATE_LOOKUP_INTERVAL_MS = 200;
+
+/**
+ * Same-workspace hook events held while a late lookup chain runs, and replayed
+ * into the model when it succeeds.
+ *
+ * Without the replay the event that ENABLED the half would be the one event it
+ * never saw: its liveness would start from nothing, and the tap would read
+ * `eventsReceived === 0` and paint "no hook events" over a session whose hooks
+ * had just been proven to arrive — the D2 shape once more. Bounded, because a
+ * chain that never succeeds must not hold a growing list; the oldest are
+ * dropped first, and a session's liveness only needs its latest events.
+ */
+export const CC_LATE_REPLAY_MAX = 32;
 
 export class AgentDeckDataPath {
   readonly workspacePath: string;
@@ -2422,7 +2498,15 @@ export class AgentDeckDataPath {
   /** The third engine. Always constructed; enabled by its data root's existence. */
   readonly codex: CodexEnginePath;
 
-  readonly #ccEnabled: boolean;
+  /** Mutable since hotfix 0.8.1: false -> true once, by {@link #enableCcLate}. Never back. */
+  #ccEnabled: boolean;
+  readonly #ccCorrelationFailure: DiscoveryFailure | undefined;
+  /** The slug lookup's injection seams, the same ones the watcher is given. */
+  readonly #discoverOptions: {
+    projectsRoot?: string;
+    env?: Record<string, string | undefined>;
+    homedir?: () => string;
+  };
   readonly #log: HostLogger;
   readonly #onEmission: (emission: DataPathEmission) => void;
   readonly #onError: (error: unknown) => void;
@@ -2466,16 +2550,22 @@ export class AgentDeckDataPath {
   #ccEmitErrors = 0;
   #opencodeEmitErrors = 0;
   #codexEmitErrors = 0;
-  /** Times {@link NO_HOOK_ENGINE_LOG} was emitted. The rule's "once" is 1. */
-  #noHookEngineLogs = 0;
   /**
-   * Whether {@link start} intended to bind the socket at all.
-   *
-   * Not the same question as `listening`: this one is "was anything in this
-   * window hook-driven", and it is what makes an unbound socket a fact rather
-   * than a fault. See {@link AgentDeckDataPath.#degradedState}.
+   * Whether {@link start} reached the bind. Every started data path does since
+   * hotfix 0.8.1; see {@link DataPathDiagnostics.hookBindAttempted}.
    */
   #hookBindAttempted = false;
+  // ---- hotfix 0.8.1: late Claude Code enablement ---------------------------
+  #ccLateEnabled = 0;
+  #ccLateLookups = 0;
+  /** True while a lookup chain is running; a second event does not start another. */
+  #lateChainActive = false;
+  /** The retry timer of the running chain, or null. Counted in `timersArmed`. */
+  #lateTimer: TimerHandle | null = null;
+  /** The pre-enablement subscription, removed the moment the half starts. */
+  #unsubscribeLate: (() => void) | null = null;
+  /** Same-workspace events held during a chain. See {@link CC_LATE_REPLAY_MAX}. */
+  #lateReplay: NormalizedHookEvent[] = [];
   #bindError?: { code: string; port: number; message: string };
   /** The shared listener's role, mirrored for the counters line (DoD 1b.7). */
   #relayRole: RelayRole = 'idle';
@@ -2490,6 +2580,12 @@ export class AgentDeckDataPath {
     this.workspacePath = options.workspacePath;
     this.workspacePaths = options.workspacePaths ?? [options.workspacePath];
     this.#ccEnabled = options.ccEnabled ?? true;
+    this.#ccCorrelationFailure = options.ccCorrelationFailure;
+    this.#discoverOptions = {
+      ...(options.projectsRoot !== undefined ? { projectsRoot: options.projectsRoot } : {}),
+      ...(options.env !== undefined ? { env: options.env } : {}),
+      ...(options.homedir !== undefined ? { homedir: options.homedir } : {}),
+    };
     this.#log = options.log ?? consoleLogger;
     this.settings = options.settings;
     this.#onEmission = options.onEmission;
@@ -2629,10 +2725,15 @@ export class AgentDeckDataPath {
       graftRefusals: this.#graftRefusals,
       graftErrors: this.#graftErrors,
       consumerErrors: this.#consumerErrors,
-      timersArmed: (this.#emitTimer === null ? 0 : 1) + (this.#tickTimer === null ? 0 : 1),
+      timersArmed:
+        (this.#emitTimer === null ? 0 : 1) +
+        (this.#tickTimer === null ? 0 : 1) +
+        (this.#lateTimer === null ? 0 : 1),
       ccEnabled: this.#ccEnabled,
       hookBindAttempted: this.#hookBindAttempted,
-      noHookEngineLogs: this.#noHookEngineLogs,
+      ccLateEnabled: this.#ccLateEnabled,
+      ccLateLookups: this.#ccLateLookups,
+      ccLateChainActive: this.#lateChainActive,
       ccEmitErrors: this.#ccEmitErrors,
       opencodeEmitErrors: this.#opencodeEmitErrors,
       codexEmitErrors: this.#codexEmitErrors,
@@ -2689,20 +2790,23 @@ export class AgentDeckDataPath {
      * saw a hook event. Nothing failed; the tap was simply silent, which is
      * the failure shape this repository keeps paying for.
      *
-     * The rule now: bind when ANY engine that is fed by hooks is observable —
-     * a CC project correlates, OR there is a Codex data root. Neither, and the
-     * socket is deliberately not bound, said once at info. A port collision
-     * remains an error surfaced to the user and is NEVER a silent re-pick: the
-     * port is a setting, and a listener that quietly moves is a capture that
-     * silently records nothing.
+     * The 2026-09-04 rule was: bind when ANY engine that is fed by hooks is
+     * observable — a CC project correlates, OR there is a Codex data root —
+     * and neither meant no bind.
      *
-     * `codex.diagnostics.enabled` is the probe, and it is deliberately the
-     * engine's OWN answer rather than a second `existsSync` here: `start()`
-     * above has already resolved the root (honouring `$CODEX_HOME` and any
-     * injected fixture root) and read it. A separate check could disagree with
-     * the engine it is deciding for, and would do it silently.
+     * -----------------------------------------------------------------------
+     * AND NOW ALWAYS (hotfix 0.8.1, user ruling 2026-09-15)
+     * -----------------------------------------------------------------------
+     *
+     * "Neither" was the state of every new Claude Code user before their first
+     * session: no slug directory yet, no Codex root. Claude Code's first hook
+     * event is what tells this window the CC half has something to observe
+     * (spec Amendment 2026-09-15), and an unbound socket can never receive it,
+     * so the window stayed empty for its lifetime. Every started data path
+     * binds or follows now. A port collision remains an error surfaced to the
+     * user and is NEVER a silent re-pick: the port is a setting, and a listener
+     * that quietly moves is a capture that silently records nothing.
      */
-    const codexObservable = this.codex.diagnostics.enabled;
 
     /*
      * SUBSCRIBED UNCONDITIONALLY, AND BEFORE THE CC GATE BELOW.
@@ -2718,20 +2822,23 @@ export class AgentDeckDataPath {
     });
 
     if (this.#ccEnabled) {
-      this.listener.subscribe(this.model.onHookEvent);
-      this.listener.subscribe(() => {
-        this.#scheduleEmit();
+      this.#subscribeCc();
+    } else {
+      // Claude Code not yet seen. BEFORE the bind, like the subscriptions
+      // above, so an event racing the bind is not the one that is missed.
+      const failure = this.#ccCorrelationFailure;
+      if (failure !== undefined) {
+        // Two surfaces, one sentence: see `DataPathOptions.ccCorrelationFailure`.
+        const reason = inactiveReasonFor(failure);
+        if (failure.kind === 'ambiguousSlug') {
+          this.#onDiagnostic?.({ kind: 'ccCorrelationRefused', reason });
+        } else {
+          this.#log('info', reason);
+        }
+      }
+      this.#unsubscribeLate = this.listener.subscribe((event) => {
+        this.#onHookEventBeforeCc(event);
       });
-    }
-
-    if (!this.#ccEnabled && !codexObservable) {
-      // ONCE, and at info: a window with neither engine is a normal window,
-      // not a fault. The counter exists so a test can prove the "once" rather
-      // than assume it — the same shape as CODEX_ABSENT_LOG.
-      this.#noHookEngineLogs += 1;
-      this.#log('info', NO_HOOK_ENGINE_LOG);
-      this.pump();
-      return;
     }
 
     this.#hookBindAttempted = true;
@@ -2764,21 +2871,114 @@ export class AgentDeckDataPath {
     }
 
     if (!this.#ccEnabled) {
-      // The socket is bound — for Codex — and everything below this line is
-      // the Claude Code half: its watcher, its first drain, its tick. The
-      // correlation gate's original point (a non-matching workspace allocates
-      // no watcher and no CC timer) is preserved exactly; what it no longer
-      // takes down with it is the shared tap.
+      // The socket is bound and everything below this line is the Claude Code
+      // half: its watcher, its first drain, its tick. A workspace with no CC
+      // project allocates none of them until Claude Code is seen here — see
+      // `#onHookEventBeforeCc`.
       this.pump();
       return;
     }
 
+    await this.#startCc();
+  }
+
+  /** The model and the emit schedule, on the hook tap. Once per data path. */
+  #subscribeCc(): void {
+    this.listener.subscribe(this.model.onHookEvent);
+    this.listener.subscribe(() => {
+      this.#scheduleEmit();
+    });
+  }
+
+  /** The Claude Code half's watcher, first drain and tick — at activation or late. */
+  async #startCc(): Promise<void> {
     if (this.#disposed) return;
     await this.watcher.start();
     if (this.#disposed) return;
     await this.#drain();
     this.#armTick();
     this.pump();
+  }
+
+  /**
+   * A Claude Code hook event, while Claude Code is not yet seen here (hotfix
+   * 0.8.1, spec Amendment 2026-09-15).
+   *
+   * **`sameWorkspace` IS THE GUARD, AND IT IS NOT DECORATION.** Local events
+   * reach this handler without the shared listener's ownership filter — see
+   * `hooks/shared.ts` — so every Claude Code session on the machine arrives
+   * here. Only an event whose `cwd` encodes to THIS workspace's slug may cost a
+   * filesystem lookup; anything else would turn every other window's tool
+   * calls into lookups in this one. An event with no `cwd` is not evidence
+   * about this workspace and is ignored for the same reason.
+   */
+  #onHookEventBeforeCc(event: NormalizedHookEvent): void {
+    if (this.#ccEnabled || this.#disposed) return;
+    const cwd = event.cwd;
+    if (cwd === undefined || cwd === '' || !sameWorkspace(this.workspacePath, cwd)) return;
+    this.#lateReplay.push(event);
+    if (this.#lateReplay.length > CC_LATE_REPLAY_MAX) this.#lateReplay.shift();
+    if (this.#lateChainActive) return;
+    this.#lateChainActive = true;
+    void this.#lateLookup(0);
+  }
+
+  /** One attempt of a late lookup chain. Never throws. */
+  async #lateLookup(attempt: number): Promise<void> {
+    this.#lateTimer = null;
+    if (this.#disposed || this.#ccEnabled) {
+      this.#lateChainActive = false;
+      return;
+    }
+    this.#ccLateLookups += 1;
+    let result: CorrelationResult | undefined;
+    try {
+      result = await correlateWorkspace(this.workspacePath, this.#discoverOptions);
+    } catch (error) {
+      // Documented not to throw; counted as a failed attempt rather than trusted.
+      this.#onError(error);
+    }
+    if (this.#disposed) {
+      this.#lateChainActive = false;
+      return;
+    }
+    if (result?.ok === true) {
+      try {
+        await this.#enableCcLate(result.value.slug);
+      } catch (error) {
+        // The chain is started with `void`, so a throw from the late watcher
+        // start would otherwise be an unhandled rejection. Reported the way a
+        // start-time failure is; the half stays enabled, as it would at
+        // activation (verifier round, hotfix 0.8.1).
+        this.#onError(error);
+      }
+      return;
+    }
+    if (attempt >= CC_LATE_LOOKUP_RETRIES) {
+      // Exhausted. The held events go with it; the next same-workspace event
+      // starts a fresh chain with fresh events.
+      this.#lateChainActive = false;
+      this.#lateReplay = [];
+      return;
+    }
+    this.#lateTimer = this.#scheduler.setTimer(() => {
+      void this.#lateLookup(attempt + 1);
+    }, CC_LATE_LOOKUP_INTERVAL_MS);
+  }
+
+  /** The slug directory exists now: start the half exactly as activation would have. */
+  async #enableCcLate(slug: string): Promise<void> {
+    this.#ccEnabled = true;
+    this.#lateChainActive = false;
+    this.#unsubscribeLate?.();
+    this.#unsubscribeLate = null;
+    this.#ccLateEnabled += 1;
+    this.#onDiagnostic?.({ kind: 'ccEnabledLate', slug });
+    this.#subscribeCc();
+    const replay = this.#lateReplay;
+    this.#lateReplay = [];
+    for (const event of replay) this.model.onHookEvent(event);
+    await this.#startCc();
   }
 
   /**
@@ -2861,6 +3061,14 @@ export class AgentDeckDataPath {
     this.#disposed = true;
     this.#cancelEmitTimer();
     this.#cancelTick();
+    if (this.#lateTimer !== null) {
+      this.#scheduler.clearTimer(this.#lateTimer);
+      this.#lateTimer = null;
+    }
+    this.#lateChainActive = false;
+    this.#lateReplay = [];
+    this.#unsubscribeLate?.();
+    this.#unsubscribeLate = null;
     this.#dirty.clear();
     // First, and unconditionally: the OpenCode poll trigger and WAL watch, and
     // the Codex poll triggers, must not outlive the host even if a Claude Code
@@ -2945,14 +3153,16 @@ export class AgentDeckDataPath {
    * its own hooks were silent forever.
    *
    * So when the CC half is off, the only question left with an answer is
-   * whether the socket Codex needs is up:
+   * whether the socket is up — the one Codex needs, and since hotfix 0.8.1 the
+   * one Claude Code's first hook event must reach to switch its half on:
    *
    *   - bind attempted and listening  -> not degraded.
    *   - bind attempted and not up     -> `listenerDown`, which is true and
-   *                                      actionable: Codex liveness is blind.
-   *   - never attempted               -> not degraded. Nothing here is
-   *                                      hook-driven, so there is nothing to
-   *                                      be degraded about.
+   *                                      actionable: Codex liveness is blind,
+   *                                      and Claude Code can never be seen.
+   *   - never attempted               -> not degraded. The data path has not
+   *                                      started, so there is nothing to be
+   *                                      degraded about yet.
    */
   /**
    * THE CODEX TAP'S HEALTH (DoD 5.0b), and it asks the Codex path, never the
@@ -4633,6 +4843,8 @@ export class AgentDeckHost {
       // v0.8.0 DoD 7.7. Read off the Codex path at WRITE time, the same rule
       // as the relay and stats figures below: the path owns the number.
       oversizePartial: d.codex.partialTranscripts,
+      // Hotfix 0.8.1. Read off the data path at write time: it owns the number.
+      ccLateEnabled: d.ccLateEnabled,
       // Read off the shared listener at write time, for the reason this
       // method's own doc comment gives: the listener owns these numbers, and a
       // second copy kept in step by hand is how two accounts of one fact begin
@@ -4922,6 +5134,13 @@ function firstWorkspacePath(): string | undefined {
  * duplicate the probe {@link OpenCodeEnginePath.start} already does and, on a
  * WAL-mode database, would touch the `-shm` sidecar a second time for no
  * information.
+ *
+ * **No production caller since hotfix 0.8.1**, and it is kept on purpose rather
+ * than left looking like a gate: `activate()` asked this and
+ * {@link codexRootExists} to decide whether to build a host at all, and a
+ * window with a folder open now always builds one (user ruling 2026-09-15).
+ * The engine paths answer the question for themselves. The tests use both
+ * functions to prove an engine absent through the resolution production uses.
  */
 export function opencodeStoreExists(env: NodeJS.ProcessEnv = process.env): boolean {
   return existsSync(opencodeDbPath(opencodeDataDir(env)));
@@ -5101,11 +5320,15 @@ function editorGroupCount(): number {
  * Order matters and is the point of the whole function:
  *
  *   1. Find the open workspace. None -> nothing starts.
- *   2. Correlate it to a CC project slug. No match -> NOTHING starts: no
- *      watcher, no socket, no timer. That is the price of activating on
- *      `onStartupFinished` instead of on the command, and containing it here
- *      is what makes the choice defensible.
- *   3. Only then build the host and start the data path.
+ *   2. Correlate it to a CC project slug. No match -> the Claude Code half does
+ *      not start: no CC watcher, no CC timer. That is the price of activating
+ *      on `onStartupFinished` instead of on the command, and containing it
+ *      here is what makes the choice defensible. Until hotfix 0.8.1 no match
+ *      with no other engine meant NOTHING started, the socket included; a
+ *      folder open now always gets a host and a bound (or following) socket,
+ *      so Claude Code's first hook event can start its half (user ruling
+ *      2026-09-15).
+ *   3. Build the host and start the data path.
  *
  * The command is registered in BOTH cases, and this is a deliberate departure
  * from a literal "do nothing at all": `contributes.commands` puts "Agent Deck:
@@ -5163,10 +5386,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    * v0.7.0 DoD 5.1 — THE API, BUILT FIRST AND RETURNED FROM EVERY PATH.
    *
    * `activate()`'s return value is what VS Code hands another extension as
-   * `getExtension('nvitlam.agent-deck').exports`, and it has two early returns
-   * below (no folder; a folder with nothing to observe) before a host exists,
-   * plus the final one. The API is built above all three so each returns it,
-   * and each has its own test in `extension.test.ts`: a window observing
+   * `getExtension('nvitlam.agent-deck').exports`, and it has one early return
+   * below (no folder) before a host exists, plus the final one. There were two
+   * early returns until hotfix 0.8.1 removed "a folder with nothing to
+   * observe". The API is built above both so each returns it, and each has its
+   * own test in `extension.test.ts`: a window observing
    * nothing still has a stored history (the store is per MACHINE), and a
    * consumer that got `undefined` from half of all windows would have to guess
    * why.
@@ -5442,14 +5666,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    * no watcher, no CC timer — is preserved by `ccEnabled` rather than by
    * returning: a workspace with no CC project directory still starts nothing
    * on the CC side.
+   *
+   * **AND "ALL THREE FAILING" NO LONGER RETURNS (hotfix 0.8.1, user ruling
+   * 2026-09-15).** That state is every new Claude Code user before their first
+   * session in this workspace: no slug directory yet, and often no OpenCode
+   * store or Codex root. Returning here left no host and no socket, so Claude
+   * Code's first hook event — the thing that says the CC half now has
+   * something to observe (spec Amendment 2026-09-15) — had nowhere to land.
+   * A window with a folder open always gets a host; the engines each still
+   * decide for themselves whether they have anything to read. This is the
+   * outer half of the late-enablement fix, and without it the inner half
+   * (`AgentDeckDataPath.#onHookEventBeforeCc`) fixes nothing for the user it
+   * is for — the same two-gate shape as the Codex arm above.
    */
   const correlation = await correlateWorkspace(workspacePath);
-  const opencodeAvailable = opencodeStoreExists();
-  const codexAvailable = codexRootExists();
-  if (!correlation.ok && !opencodeAvailable && !codexAvailable) {
-    inactiveReason = inactiveReasonFor(correlation.failure);
-    return api;
-  }
   inactiveReason = null;
 
   const settings = readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION));
@@ -5475,6 +5705,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      */
     workspacePaths: workspacePaths(),
     ccEnabled: correlation.ok,
+    ...(correlation.ok ? {} : { ccCorrelationFailure: correlation.failure }),
     /*
      * DoD 5.5.3. A FACTORY, not a channel: `DiagnosticsChannel` calls this on
      * its first line and never at construction, so a window where nothing

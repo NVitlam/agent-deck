@@ -173,6 +173,13 @@ export interface DiagnosticsCounters {
    * observing no Codex root reports 0, which is the truth about it.
    */
   oversizePartial: number;
+  /**
+   * Times the Claude Code half was enabled LATE, by a lookup a same-workspace
+   * hook event triggered (hotfix 0.8.1, spec Amendment 2026-09-15). 0 or 1:
+   * the half never switches back off. 0 in a window whose workspace had a
+   * Claude Code project at activation.
+   */
+  ccLateEnabled: number;
 }
 
 /**
@@ -416,7 +423,28 @@ export type DiagnosticsEvent =
    * duration and the agent id are deliberately not written — a line names
    * which row did not join, and the counters line says how many.
    */
-  | { kind: 'otelSpanUnmatched'; sessionId: string; toolUseId: string };
+  | { kind: 'otelSpanUnmatched'; sessionId: string; toolUseId: string }
+  /**
+   * The Claude Code half started late, because a same-workspace hook event
+   * found the slug directory that was absent at activation (hotfix 0.8.1).
+   *
+   * THE SLUG IS NAMED because the amendment names it, and it is the one fact
+   * that says WHICH project directory the half is now reading — a workspace
+   * whose drive letter was spelled two ways on disk would otherwise be
+   * undiagnosable from the channel. Stated plainly: a slug encodes the whole
+   * workspace path, the same reason `refusalLocation` keeps paths OUT of
+   * refusal lines. This line is written once per window, and the channel is
+   * local and never shown unasked.
+   */
+  | { kind: 'ccEnabledLate'; slug: string }
+  /**
+   * The open folder matches more than one Claude Code project directory,
+   * differing only by case, and Agent Deck refuses to guess (hotfix 0.8.1,
+   * user ruling 2026-09-15: on this channel, no dialog). Written once, when the
+   * data path starts. `reason` is `inactiveReasonFor`'s sentence, which names
+   * the failure kind and no path.
+   */
+  | { kind: 'ccCorrelationRefused'; reason: string };
 
 /** Every `kind` above, as data, so a test can assert the switch is total. */
 export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
@@ -433,6 +461,8 @@ export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
   'patchFailure',
   'resyncRequest',
   'otelSpanUnmatched',
+  'ccEnabledLate',
+  'ccCorrelationRefused',
 ];
 
 /**
@@ -595,6 +625,11 @@ export function formatEvent(event: DiagnosticsEvent, isoTime: string): string {
         `${isoTime} otel span unmatched session=${oneToken(event.sessionId)} ` +
         `tool_use_id=${oneToken(event.toolUseId)}`
       );
+    case 'ccEnabledLate':
+      // One token, so a slug cannot write a second `slug=` into the line.
+      return `${isoTime} cc enabled late slug=${oneToken(event.slug)}`;
+    case 'ccCorrelationRefused':
+      return `${isoTime} cc correlation refused ${clip(event.reason)}`;
   }
 }
 
@@ -636,7 +671,10 @@ export function formatCounters(counters: DiagnosticsCounters, isoTime: string): 
     // v0.8.0 DoD 7.7. Appended after the scope note rather than before it: the
     // note is one `key=value` token like every other field, so a line quoted
     // before this release is still a prefix of this one.
-    ` oversizePartial=${String(counters.oversizePartial)}`
+    ` oversizePartial=${String(counters.oversizePartial)}` +
+    // Hotfix 0.8.1. Appended last, same rule: every line quoted before this
+    // release is still a prefix of this one.
+    ` ccLateEnabled=${String(counters.ccLateEnabled)}`
   );
 }
 

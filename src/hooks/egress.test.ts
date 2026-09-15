@@ -1570,22 +1570,89 @@ describe('G5 runtime socket census: Codex alone still binds exactly one socket',
 });
 
 /**
- * Neither hook-driven engine observable: NOTHING binds, and the census says so.
+ * A folder open and no engine observable: STILL exactly one socket (hotfix
+ * 0.8.1, user ruling 2026-09-15).
  *
- * The other half of the 2026-09-04 rule, and the control that makes "zero
- * others" mean something in the two scenarios above. A census that reported no
- * socket because the child never bound one would look exactly like a census
- * that reported no EXTRA socket — so this run proves the environment really
- * decides, and that a bound socket in the other scenarios is a product fact
- * rather than a harness artefact.
+ * Until the ruling this environment bound nothing — the "neither" half of the
+ * 2026-09-04 rule. It is also every new Claude Code user before their first
+ * session in the workspace, and Claude Code's first hook event is what enables
+ * the CC half (spec Amendment 2026-09-15), so an unbound socket left that
+ * user's window empty for its lifetime. Measured the same way as Codex alone:
+ * one listener, it serves, and still no Claude Code watcher — the socket is
+ * bound, the CC half is not started.
  */
-describe('G5 runtime socket census: no observable engine binds nothing at all', () => {
+describe('G5 runtime socket census: a folder with no observable engine binds exactly one socket', () => {
+  let report: CensusReport;
+  let port = 0;
+  let stderr = '';
+
+  beforeAll(async () => {
+    const run = await runCensus({
+      workspaces: [await stagedEmptyDir('nowhere-yet')],
+      claudeProjectsRoot: await stagedEmptyDir('no-claude'),
+      opencodeRoot: await stagedEmptyDir('no-opencode'),
+      codexHome: await stagedAbsentPath('no-codex-root-yet'),
+      expectBind: true,
+    });
+    report = run.report;
+    port = run.port;
+    stderr = run.stderr;
+  }, 120_000);
+
+  it('the census child ran the real bundle to completion', () => {
+    expect(report.error ?? '', stderr).toBe('');
+    expect(report.ok).toBe(true);
+    expect(report.activated).toBe(true);
+  });
+
+  it('announces no engine', () => {
+    expect(enginesAnnouncedIn(report.diagnosticsLines)).toStrictEqual([]);
+  });
+
+  it('binds exactly one loopback listener, and it serves', () => {
+    const expected = [`listener ${HOOK_LISTENER_HOST}:${String(port)}`];
+    expect(networkDescriptors(report, 'activated')).toStrictEqual(expected);
+    expect(networkHandles(report, 'activated').length).toBe(1);
+    expect(networkDescriptors(report, 'engines')).toStrictEqual(expected);
+    // The socket answers — which is what Claude Code's first hook event finds.
+    expect(report.postStatus).toBe(200);
+    expect(networkDescriptors(report, 'loaded')).toStrictEqual([]);
+    expect(networkDescriptors(report, 'disposed')).toStrictEqual([]);
+  });
+
+  it('allocates no Claude Code watcher before Claude Code is seen', () => {
+    // The census's POST carries no `cwd` naming this workspace, so it enables
+    // nothing: the kind set stays the socket alone through every phase.
+    expect(handleKinds(report, 'activated')).toStrictEqual(['Server/TCP']);
+    expect(handleKinds(report, 'engines')).toStrictEqual(['Server/TCP']);
+    expect(handleKinds(report, 'disposed')).toStrictEqual([]);
+  });
+
+  it('attempts zero outbound connections and resolves only the loopback bind', () => {
+    expect(report.outboundFinal).toStrictEqual([]);
+    expect(report.dnsFinal.length).toBe(1);
+  });
+});
+
+/**
+ * No workspace folder at all: NOTHING binds, and the census says so.
+ *
+ * Until hotfix 0.8.1 this scenario was "no observable engine", with a folder
+ * open; that environment binds now (the scenario above). A window with NO
+ * folder is the one that still builds no host, so it inherits this control:
+ * the one that makes "zero others" mean something in the scenarios above. A
+ * census that reported no socket because the child never bound one would look
+ * exactly like a census that reported no EXTRA socket — so this run proves the
+ * environment really decides, and that a bound socket in the other scenarios
+ * is a product fact rather than a harness artefact.
+ */
+describe('G5 runtime socket census: no workspace folder binds nothing at all', () => {
   let report: CensusReport;
   let stderr = '';
 
   beforeAll(async () => {
     const run = await runCensus({
-      workspaces: [await stagedEmptyDir('nowhere')],
+      workspaces: [],
       claudeProjectsRoot: await stagedEmptyDir('no-claude'),
       opencodeRoot: await stagedEmptyDir('no-opencode'),
       // `codexRootExists` is `statSync(root).isDirectory()`, so a path that

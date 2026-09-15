@@ -436,7 +436,15 @@ export type DiagnosticsEvent =
    * refusal lines. This line is written once per window, and the channel is
    * local and never shown unasked.
    */
-  | { kind: 'ccEnabledLate'; slug: string };
+  | { kind: 'ccEnabledLate'; slug: string }
+  /**
+   * The open folder matches more than one Claude Code project directory,
+   * differing only by case, and Agent Deck refuses to guess (hotfix 0.8.1,
+   * user ruling 2026-09-15: on this channel, no dialog). Written once, when the
+   * data path starts. `reason` is `inactiveReasonFor`'s sentence, which names
+   * the failure kind and no path.
+   */
+  | { kind: 'ccCorrelationRefused'; reason: string };
 
 /** Every `kind` above, as data, so a test can assert the switch is total. */
 export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
@@ -454,6 +462,7 @@ export const DIAGNOSTICS_EVENT_KINDS: readonly DiagnosticsEvent['kind'][] = [
   'resyncRequest',
   'otelSpanUnmatched',
   'ccEnabledLate',
+  'ccCorrelationRefused',
 ];
 
 /**
@@ -619,6 +628,8 @@ export function formatEvent(event: DiagnosticsEvent, isoTime: string): string {
     case 'ccEnabledLate':
       // One token, so a slug cannot write a second `slug=` into the line.
       return `${isoTime} cc enabled late slug=${oneToken(event.slug)}`;
+    case 'ccCorrelationRefused':
+      return `${isoTime} cc correlation refused ${clip(event.reason)}`;
   }
 }
 

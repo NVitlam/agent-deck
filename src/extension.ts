@@ -2268,16 +2268,28 @@ export interface DataPathOptions {
   ccEnabled?: boolean;
 
   /**
-   * Why the Claude Code half did not start at activation, logged ONCE at info
-   * by {@link AgentDeckDataPath.start} when {@link ccEnabled} is `false`.
+   * Why the Claude Code half did not start at activation: the correlation's own
+   * refusal. {@link AgentDeckDataPath.start} says it ONCE, as
+   * `inactiveReasonFor(failure)`, when {@link ccEnabled} is `false`.
    *
-   * `activate()` passes `inactiveReasonFor(correlation.failure)`. Until hotfix
-   * 0.8.1 that sentence was the answer to `agentDeck.open` in a window with no
-   * host; a window with a folder open now always has one, so the sentence —
-   * including the one arm that is not an absence, `ambiguousSlug` — would
-   * otherwise reach nobody.
+   * Until hotfix 0.8.1 that sentence was the answer to `agentDeck.open` in a
+   * window with no host; a window with a folder open now always has one, so
+   * the sentence needs another surface, and the two arms get different ones:
+   *
+   *   - **`ambiguousSlug` -> the Agent Deck output channel** (user ruling
+   *     2026-09-15, no dialog). It is the one refusal that is not an absence:
+   *     sessions exist, Agent Deck declines to guess between two directories
+   *     differing only by case, and the Claude Code half can never start in
+   *     this window. Without a line a user reads, the deck is simply empty.
+   *   - **The absence kinds -> the host log at info**, not the channel. "This
+   *     folder has no Claude Code project yet" is the ordinary state of every
+   *     window Claude Code has not run in, and a late hook event resolves it
+   *     on its own, so it is not a refusal a user has to act on; the ruling
+   *     named the ambiguity alone. (Not because the channel stays unopened:
+   *     since 0.8.1 binds in every folder window, the `listenerRole` line
+   *     opens it there regardless.)
    */
-  ccNotYetSeenReason?: string;
+  ccCorrelationFailure?: DiscoveryFailure;
 
   /**
    * The OpenCode half's options, minus the ones this data path supplies.
@@ -2488,7 +2500,7 @@ export class AgentDeckDataPath {
 
   /** Mutable since hotfix 0.8.1: false -> true once, by {@link #enableCcLate}. Never back. */
   #ccEnabled: boolean;
-  readonly #ccNotYetSeenReason: string | undefined;
+  readonly #ccCorrelationFailure: DiscoveryFailure | undefined;
   /** The slug lookup's injection seams, the same ones the watcher is given. */
   readonly #discoverOptions: {
     projectsRoot?: string;
@@ -2568,7 +2580,7 @@ export class AgentDeckDataPath {
     this.workspacePath = options.workspacePath;
     this.workspacePaths = options.workspacePaths ?? [options.workspacePath];
     this.#ccEnabled = options.ccEnabled ?? true;
-    this.#ccNotYetSeenReason = options.ccNotYetSeenReason;
+    this.#ccCorrelationFailure = options.ccCorrelationFailure;
     this.#discoverOptions = {
       ...(options.projectsRoot !== undefined ? { projectsRoot: options.projectsRoot } : {}),
       ...(options.env !== undefined ? { env: options.env } : {}),
@@ -2814,7 +2826,16 @@ export class AgentDeckDataPath {
     } else {
       // Claude Code not yet seen. BEFORE the bind, like the subscriptions
       // above, so an event racing the bind is not the one that is missed.
-      if (this.#ccNotYetSeenReason !== undefined) this.#log('info', this.#ccNotYetSeenReason);
+      const failure = this.#ccCorrelationFailure;
+      if (failure !== undefined) {
+        // Two surfaces, one sentence: see `DataPathOptions.ccCorrelationFailure`.
+        const reason = inactiveReasonFor(failure);
+        if (failure.kind === 'ambiguousSlug') {
+          this.#onDiagnostic?.({ kind: 'ccCorrelationRefused', reason });
+        } else {
+          this.#log('info', reason);
+        }
+      }
       this.#unsubscribeLate = this.listener.subscribe((event) => {
         this.#onHookEventBeforeCc(event);
       });
@@ -5684,7 +5705,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      */
     workspacePaths: workspacePaths(),
     ccEnabled: correlation.ok,
-    ...(correlation.ok ? {} : { ccNotYetSeenReason: inactiveReasonFor(correlation.failure) }),
+    ...(correlation.ok ? {} : { ccCorrelationFailure: correlation.failure }),
     /*
      * DoD 5.5.3. A FACTORY, not a channel: `DiagnosticsChannel` calls this on
      * its first line and never at construction, so a window where nothing

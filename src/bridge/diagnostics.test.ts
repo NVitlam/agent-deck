@@ -141,6 +141,10 @@ const SAMPLES: Record<DiagnosticsEvent['kind'], DiagnosticsEvent> = {
   resyncRequest: { kind: 'resyncRequest', sessionId: 's1', reason: 'insertNode failed', failedOp: 'insertNode' },
   otelSpanUnmatched: { kind: 'otelSpanUnmatched', sessionId: 's1', toolUseId: 'toolu_01x' },
   ccEnabledLate: { kind: 'ccEnabledLate', slug: 'c--ws-first-session' },
+  ccCorrelationRefused: {
+    kind: 'ccCorrelationRefused',
+    reason: 'Agent Deck: this workspace matches more than one Claude Code project directory (ambiguousSlug).',
+  },
 };
 
 describe('cc enabled late (hotfix 0.8.1)', () => {
@@ -148,6 +152,15 @@ describe('cc enabled late (hotfix 0.8.1)', () => {
     expect(formatEvent(SAMPLES.ccEnabledLate, '2026-09-15T12:00:00.000Z')).toBe(
       '2026-09-15T12:00:00.000Z cc enabled late slug=c--ws-first-session',
     );
+  });
+
+  it('a refused correlation is one line, in a fixed format, clipped', () => {
+    expect(formatEvent(SAMPLES.ccCorrelationRefused, '2026-09-15T12:00:00.000Z')).toBe(
+      '2026-09-15T12:00:00.000Z cc correlation refused Agent Deck: this workspace matches more than one Claude Code project directory (ambiguousSlug).',
+    );
+    const long = formatEvent({ kind: 'ccCorrelationRefused', reason: `a\nb${'x'.repeat(10_000)}` }, 'T');
+    expect(long).not.toContain('\n');
+    expect(long.length).toBeLessThan(1_000);
   });
 
   it('holds the slug to one token, so it cannot forge a second key', () => {

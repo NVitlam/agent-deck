@@ -2652,8 +2652,11 @@ describe('the inactive message distinguishes a refusal from an absence', () => {
      * `agentDeck.open`: a window with a folder open always has a host (user
      * ruling 2026-09-15), so the command opens the panel. The sentence is
      * logged once at info when the data path starts with Claude Code not yet
-     * seen, through `DataPathOptions.ccNotYetSeenReason` — the production
-     * logger is `console.info`, so that is what is observed.
+     * seen, through `DataPathOptions.ccCorrelationFailure` — the production
+     * logger is `console.info`, so that is what is observed. These are the
+     * ABSENCE kinds; `ambiguousSlug` goes to the output channel instead (user
+     * ruling 2026-09-15), proved in the hotfix 0.8.1 block, because NTFS cannot
+     * hold the two directories that produce it through `activate()`.
      */
     for (const leg of legs) {
       process.env['CLAUDE_PROJECTS_ROOT'] = leg.root;
@@ -5244,7 +5247,13 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
     const absent = join(await makeTempDir(), 'no-such-.codex');
     expect(existsSync(absent)).toBe(false);
     const sink = captureLog();
-    const reason = 'Agent Deck: no Claude Code sessions for this workspace (projectSlugNotFound).';
+    const failure: DiscoveryFailure = {
+      kind: 'projectSlugNotFound',
+      code: 'ENOENT',
+      path: join(lonely, 'no-slug'),
+      message: 'synthetic projectSlugNotFound',
+    };
+    const reason = inactiveReasonFor(failure);
 
     const emissions: DataPathEmission[] = [];
     const path = await startDataPathOnFreePort((port) => {
@@ -5255,7 +5264,7 @@ describe('§6.1 — the hook socket binds for any hook-driven engine', () => {
           workspacePath: lonely,
           projectsRoot: process.env['CLAUDE_PROJECTS_ROOT'] as string,
           ccEnabled: false,
-          ccNotYetSeenReason: reason,
+          ccCorrelationFailure: failure,
           codex: { root: absent },
           settings: settings({ port }),
           tickMs: 0,
@@ -5544,6 +5553,64 @@ describe('hotfix 0.8.1 — Claude Code is enabled late, by its first hook event'
     expect(d().ccLateEnabled).toBe(1);
     expect(d().ccLateChainActive).toBe(false);
   }, 60_000);
+
+  /*
+   * RULING 2026-09-15 (3): the ambiguous-folder explanation goes to the Agent
+   * Deck output channel, no dialog. Driven through a whole host with a sink,
+   * because the `vscode` double has no `createOutputChannel` and NTFS cannot
+   * hold the two case-variant directories that make `activate()` produce the
+   * failure — the same constraint the (8b) block records. Both arms, so a
+   * surface that took every kind (or none) goes red.
+   */
+  for (const kind of ['ambiguousSlug', 'projectSlugNotFound'] as const) {
+    it(`ruling (3): ${kind} — ${kind === 'ambiguousSlug' ? 'one line on the output channel, not the log' : 'the log, never the channel'}; no dialog`, async () => {
+      const projectsRoot = await makeTempDir();
+      const workspace = join(await makeTempDir(), 'refused-ws');
+      const sink = collectingSink();
+      const logged = captureLog();
+      const failure: DiscoveryFailure = {
+        kind,
+        code: kind === 'ambiguousSlug' ? 'EAMBIGUOUS' : 'ENOENT',
+        path: join(projectsRoot, 'some-slug'),
+        message: `synthetic ${kind}`,
+      };
+      const reason = inactiveReasonFor(failure);
+      const host = await startHostOnFreePort((port) => {
+        sink.lines.length = 0;
+        logged.lines.length = 0;
+        return trackHost(
+          new AgentDeckHost({
+            workspacePath: workspace,
+            projectsRoot,
+            ccEnabled: false,
+            ccCorrelationFailure: failure,
+            codex: { root: join(projectsRoot, 'no-codex-root') },
+            settings: settings({ port }),
+            tickMs: 0,
+            log: logged.log,
+            nonce: 'AAAAAAAA',
+            createPanel: () => fakePanel().surface,
+            createDiagnosticsSink: sink.factory,
+            onEmission: () => {},
+          }),
+        );
+      });
+      expect(host.dataPath.diagnostics.listening).toBe(true);
+
+      const onChannel = sink.lines.filter((line) => line.includes(reason));
+      const onLog = logged.lines.filter((line) => line.message === reason);
+      if (kind === 'ambiguousSlug') {
+        expect(onChannel).toStrictEqual([expect.stringMatching(/ cc correlation refused Agent Deck: .*ambiguousSlug/)]);
+        expect(onLog).toStrictEqual([]);
+      } else {
+        expect(onChannel).toStrictEqual([]);
+        expect(onLog).toStrictEqual([{ level: 'info', message: reason }]);
+      }
+      // No dialog on either arm: nothing reached the `vscode` window double.
+      expect(mock.informationMessages).toStrictEqual([]);
+      expect(mock.errorMessages).toStrictEqual([]);
+    }, 60_000);
+  }
 
   it('H4: one "cc enabled late" line naming the slug, and ccLateEnabled on the channel’s counters line', async () => {
     const projectsRoot = await makeTempDir();

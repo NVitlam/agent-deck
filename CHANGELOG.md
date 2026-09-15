@@ -20,6 +20,10 @@ All notable changes to Agent Deck are documented here.
 - **The hook listener is bound in every window with a folder open**, including one
   where no engine has anything to read yet, so that first hook event has somewhere
   to arrive. A window with no folder open still binds nothing.
+- **A folder matching two Claude Code project directories that differ only in letter
+  case is reported on the Agent Deck output channel**, as `cc correlation refused`
+  with the reason. It was an information message on **Agent Deck: Open**; that
+  command now opens the panel in every window with a folder open.
 
 ## 0.8.0 - 2026-09-13 - Time, tools, tweaks and oversize Codex transcripts
 

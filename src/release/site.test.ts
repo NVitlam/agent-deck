@@ -175,9 +175,21 @@ describe('the page exists as a publishable tree', () => {
     // `../media/x.png` would 404 on the live site while resolving perfectly in
     // a local browser opened from the repository root - the failure that only
     // the published page can show you, asserted here instead.
+    /*
+     * v0.9.0 DoD 9.8 — the four plan placeholders are LITERALS the page
+     * ships with, and one of them (`POLAR_URL`) sits in an `href`. It is not
+     * a path and never resolves to one.
+     *
+     * Exempt by NAME rather than by loosening the rule, and the exemption is
+     * safe because `surfaces.test.ts` pins all four by exact literal and by
+     * count: a placeholder cannot go unnoticed, it can only be shipped on
+     * purpose.
+     */
+    const PLAN_PLACEHOLDERS = new Set(['POLAR_URL']);
     const refs = [...PAGE.matchAll(/(?:src|href)="([^"]+)"/g)]
       .map((m) => m[1] ?? '')
-      .filter((ref) => !ref.startsWith('#') && !/^https?:/.test(ref));
+      .filter((ref) => !ref.startsWith('#') && !/^https?:/.test(ref))
+      .filter((ref) => !PLAN_PLACEHOLDERS.has(ref));
 
     expect(refs.length, 'no relative asset references found - the check would be vacuous').toBeGreaterThan(0);
     for (const ref of refs) {
@@ -224,8 +236,26 @@ describe('the page reaches nothing it should not', () => {
     // stale in precisely this way before it was bound, and a page naming the
     // wrong owner is a 404 the author cannot see from their own machine.
     const repoPath = new URL(MANIFEST.repository.url.replace(/\.git$/, '')).pathname;
-    const repoLinks = pageUrls().filter((u) => new URL(u).host === 'github.com');
+    /*
+     * v0.9.0 DoD 9.7/9.8 — the Sponsor link is a github.com URL that is
+     * deliberately NOT a repository link: `github.com/sponsors/<user>` is a
+     * different surface with a different path shape.
+     *
+     * Named here rather than the host filter being widened, and it is not a
+     * free pass: `surfaces.test.ts` holds this exact url against the
+     * manifest's `sponsor.url` and against the About entry's own list, so
+     * all three have to agree.
+     */
+    const SPONSORS_PATH = '/sponsors/';
+    const repoLinks = pageUrls()
+      .filter((u) => new URL(u).host === 'github.com')
+      .filter((u) => !new URL(u).pathname.startsWith(SPONSORS_PATH));
     expect(repoLinks.length).toBeGreaterThan(0);
+    // The exemption is not vacuous: the page really does carry one.
+    expect(
+      pageUrls().some((u) => new URL(u).pathname.startsWith(SPONSORS_PATH)),
+      'no sponsors link on the page - the exemption above covers nothing',
+    ).toBe(true);
     for (const link of repoLinks) {
       expect(new URL(link).pathname.startsWith(repoPath), `${link} is not this repository`).toBe(true);
     }

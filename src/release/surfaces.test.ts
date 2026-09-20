@@ -43,6 +43,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_MAX_BODY_BYTES, TELEMETRY_PATHS } from '../hooks/listener.js';
 import { SIDEBAR_MENU } from '../sidebar/menu.js';
 import { COST_SOURCE_LABELS } from '../../webview/stats/layout.js';
+import { ABOUT_LINKS, SPONSOR_URL } from '../about.js';
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore -- a plain .mjs script with no declarations; the same import `golden-check.test.ts` makes.
@@ -714,3 +715,51 @@ describe('6.D.5 — the GitHub Release body is the tag’s CHANGELOG section', (
     expect(code).not.toContain('--notes ');
   });
 });
+
+/* ------------------------------------------------------------------------ *
+ * v0.9.0 DoD 9.8 — the plans section, and the sponsor url across surfaces
+ * ------------------------------------------------------------------------ */
+
+describe('9.8 — the site states the Insights plans', () => {
+  /**
+   * The four literal placeholders the spec amendment names.
+   *
+   * PINNED BY EXACT LITERAL, and that is the whole point of pinning a
+   * placeholder: the page ships with these strings in it, so shipping one is
+   * a decision somebody takes rather than one that happens by being
+   * forgotten. When the real prices land, these assertions are what has to be
+   * edited, deliberately, in the same commit.
+   */
+  const PLACEHOLDERS = ['PRICE_MONTHLY', 'PRICE_YEARLY', 'PRICE_LIFETIME', 'POLAR_URL'] as const;
+
+  it('carries a plans section naming all three plans', () => {
+    expect(PAGE).toContain('id="plans"');
+    expect(PAGE).toContain('Monthly');
+    expect(PAGE).toContain('Yearly');
+    expect(PAGE).toContain('Lifetime, early bird');
+  });
+
+  it('carries every placeholder, exactly once each', () => {
+    for (const token of PLACEHOLDERS) {
+      const count = PAGE.split(token).length - 1;
+      expect(count, `${token} appears ${String(count)} times, expected 1`).toBe(1);
+    }
+  });
+
+  it('links Sponsors at the same url the About entry and the manifest use', () => {
+    // Three places carry that URL now. This is the one that compares them.
+    expect(PAGE).toContain(SPONSOR_URL);
+    const sponsor = (JSON.parse(readText('package.json')) as { sponsor?: { url?: string } })
+      .sponsor?.url;
+    expect(sponsor).toBe(SPONSOR_URL);
+    expect(ABOUT_LINKS.find((link) => link.label === 'Sponsor')?.url).toBe(SPONSOR_URL);
+  });
+
+  it('says Agent Deck itself is unaffected', () => {
+    // The claim the page has to keep making, because a plans section is the
+    // one place a free product starts reading as a trial.
+    expect(PAGE).toContain('Agent Deck itself is unaffected');
+    expect(PAGE).toContain('no feature moves behind a plan');
+  });
+});
+

@@ -6784,6 +6784,81 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     expect(mock.hasViewProvider(SIDEBAR_VIEW_ID)).toBe(false);
   });
 
+  it('a control command moves the TREE and the PANEL together', async () => {
+    /*
+     * THE WIRING, DRIVEN THE WAY PRODUCTION DRIVES IT — the recorded D4
+     * shape, and a mutation said it was missing: emptying
+     * `applyControlCommand` left every host test green while
+     * `controls.test.ts` went red, because nothing here ran a control
+     * command and looked at what moved.
+     *
+     * The registration is a LOOP over one table, so it is one production
+     * assignment site for 27 commands: if it is wrong it is wrong for all of
+     * them, and if nothing drives it nothing knows.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_COMMAND);
+
+    const tree = mock.treeView(SIDEBAR_VIEW_ID);
+    const descriptionOf = (group: string): string | undefined => {
+      const view = tree.provider
+        .getChildren()
+        .find((node) => tree.provider.getTreeItem(node).label === 'View');
+      const row = tree.provider
+        .getChildren(view as never)
+        .find((node) => tree.provider.getTreeItem(node).label === group);
+      return tree.provider.getTreeItem(row as never).description;
+    };
+    const lastControls = (): Record<string, unknown> => {
+      const posted = mock.panels[0]?.webview.posted ?? [];
+      const controls = posted.filter((m) => (m as { type?: string }).type === 'viewControls');
+      return (controls.at(-1) as { controls: Record<string, unknown> } | undefined)?.controls ?? {};
+    };
+
+    expect(descriptionOf('Sort')).toBe('Live first');
+    expect(lastControls()['deckSort']).toBe('live');
+
+    await mock.runCommand('agentDeck.sort.recent');
+    expect(descriptionOf('Sort')).toBe('Recent');
+    expect(lastControls()['deckSort']).toBe('recent');
+
+    // A SECOND field, so a loop that applied the first row to everything
+    // would fail: the two commands set different fields.
+    await mock.runCommand('agentDeck.layout.lanes');
+    expect(descriptionOf('Layout')).toBe('Lanes');
+    expect(lastControls()['deckLayout']).toBe('lanes');
+    // ...and the first one did not move.
+    expect(lastControls()['deckSort']).toBe('recent');
+  });
+
+  it('every value-setting command is registered and moves its own field', async () => {
+    // All 27 rows, through the real commands, against the host's own table:
+    // a registration loop that skipped a section would pass the two rows the
+    // test above happens to name.
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_COMMAND);
+
+    const sets = CONTROL_COMMANDS.filter((entry) => entry.sets !== undefined);
+    expect(sets.length).toBe(27);
+    for (const entry of sets) {
+      await mock.runCommand(entry.command);
+      const posted = mock.panels[0]?.webview.posted ?? [];
+      const controls = posted.filter((m) => (m as { type?: string }).type === 'viewControls');
+      const state = (controls.at(-1) as { controls: Record<string, unknown> }).controls;
+      expect(state[entry.sets?.field as string], entry.command).toBe(entry.sets?.value);
+    }
+  });
+
   it('the sidebar is a native tree: four sections, in the amendment’s order', async () => {
     resetVscodeMock();
     await activate(extensionContext());

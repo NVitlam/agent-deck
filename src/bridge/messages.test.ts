@@ -18,6 +18,7 @@ import { slugifyWorkspace } from '../parser/tailer.js';
 import { applySessionPatch } from './apply.js';
 import {
   SessionBridge,
+  WEBVIEW_TO_HOST_TYPES,
   isWebviewToHostMessage,
   type HostToWebviewPort,
 } from './messages.js';
@@ -797,5 +798,51 @@ describe('isWebviewToHostMessage — parked is outbound only', () => {
     };
     expect(isWebviewToHostMessage(message)).toBe(true);
     expect('parked' in message).toBe(true);
+  });
+});
+
+describe('WEBVIEW_TO_HOST_TYPES is bound to the guard it describes', () => {
+  /*
+   * v0.9.0 DoD 9.14, and it is a mutation finding rather than a plan item.
+   *
+   * The mutation was `'runCommand'` back in the list. Both suites stayed
+   * GREEN — correctly, because the guard's `switch` has no case for it and
+   * falls to `default: return false`. Measuring that is what showed the
+   * list had NO READERS AT ALL: an exported constant that claims to be the
+   * inbound grammar, and nothing anywhere compared it to the grammar.
+   *
+   * That is the `CANVAS_CONTRACT_VERSION` shape a verifier round already
+   * caught once — a constant introduced already-satisfied. These two tests
+   * are the binding, in both directions: a type listed with no case is red,
+   * and a case with no listing is red.
+   */
+  /** One well-formed message per listed type. */
+  const SAMPLES: Readonly<Record<string, unknown>> = {
+    expandNode: { type: 'expandNode', sessionId: 's1', nodeId: 'n1' },
+    selectSession: { type: 'selectSession', sessionId: 's1' },
+    resyncRequest: { type: 'resyncRequest', reason: 'because' },
+  };
+
+  it('every listed type has a case that accepts a well-formed message', () => {
+    expect(Object.keys(SAMPLES).sort()).toStrictEqual([...WEBVIEW_TO_HOST_TYPES].sort());
+    for (const type of WEBVIEW_TO_HOST_TYPES) {
+      expect(SAMPLES[type], `no sample for ${type}`).toBeDefined();
+      expect(isWebviewToHostMessage(SAMPLES[type]), type).toBe(true);
+    }
+  });
+
+  it('a type the list does not carry is refused, whatever it looks like', () => {
+    // `runCommand` and `updateTweak` are the two v0.9.0 removed, and the
+    // first is what made About dead. A renderer cannot reach a command.
+    for (const gone of [
+      { type: 'runCommand', command: 'agentDeck.open' },
+      { type: 'runCommand', command: 'agentDeck.about' },
+      { type: 'updateTweak', key: 'followNewSessions', value: true },
+    ]) {
+      expect(isWebviewToHostMessage(gone), JSON.stringify(gone)).toBe(false);
+      expect([...WEBVIEW_TO_HOST_TYPES], JSON.stringify(gone)).not.toContain(
+        (gone as { type: string }).type,
+      );
+    }
   });
 });

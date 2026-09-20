@@ -264,6 +264,12 @@ function agentFieldPatch(prev: AgentNode, next: AgentNode): AgentNodeFieldPatch 
     fields.model = next.model === undefined ? null : next.model;
     changed = true;
   }
+  // v0.9.0 DoD 9.2. Sidecar-written and stable once seen, but patched like
+  // every other field: a subagent is grafted before its sidecar is read.
+  if (prev.agentType !== next.agentType) {
+    fields.agentType = next.agentType === undefined ? null : next.agentType;
+    changed = true;
+  }
   if (!sameCompactions(prev.compactions, next.compactions)) {
     fields.compactions =
       next.compactions === undefined ? null : next.compactions.map((c) => ({ ...c }));
@@ -384,6 +390,12 @@ function toolFieldPatch(prev: ToolNode, next: ToolNode): ToolNodeFieldPatch | un
   // for the ones today's engines happen to make.
   if (prev.filePath !== next.filePath) {
     fields.filePath = next.filePath === undefined ? null : next.filePath;
+    changed = true;
+  }
+  // v0.9.0 DoD 9.3, beside `filePath` because it is the same kind of value:
+  // one named key of the structured input, read at the parse boundary.
+  if (prev.skillName !== next.skillName) {
+    fields.skillName = next.skillName === undefined ? null : next.skillName;
     changed = true;
   }
   if (prev.inputHash !== next.inputHash) {
@@ -637,6 +649,11 @@ function serializeSessionNode(
       // so rule 1 (no filesystem paths) survives; `inputHash` is a one-way
       // digest and `ordinal` an integer, so both are safe verbatim.
       filePath: previewFingerprint(node.filePath),
+      // v0.9.0 DoD 9.3. NOT fingerprinted: a skill name is a short
+      // identifier from a closed set the user installed, not a captured
+      // absolute path, so recording it verbatim leaks nothing a `toolName`
+      // does not already.
+      skillName: node.skillName ?? null,
       inputHash: node.inputHash ?? null,
       ordinal: node.ordinal ?? null,
     };
@@ -652,6 +669,9 @@ function serializeSessionNode(
     burn: node.burn === undefined ? null : { ...node.burn },
     usageSeries: node.usageSeries === undefined ? null : node.usageSeries.map((t) => ({ ...t })),
     model: node.model ?? null,
+    // v0.9.0 DoD 9.2. The TYPE only; the golden records it verbatim beside
+    // `label`, which is where the description half already shows.
+    agentType: node.agentType ?? null,
     // NO `agentName` KEY: DoD 1.9e was closed UNAVAILABLE on 2026-09-06 and the
     // field is gone from `AgentNode`. See the note there.
     compactions: node.compactions === undefined ? null : node.compactions.map((c) => ({ ...c })),

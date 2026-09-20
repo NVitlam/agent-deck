@@ -86,6 +86,9 @@ function record(sessionId: string, derivedAt: number): StoredStatsRecord {
     contextChurn: [],
     compactions: [],
     stalls: [],
+    // DoD 9.3 - always present. Without it the record fails validation and
+    // the store refuses all 1800, which the control above is what catches.
+    skills: [],
     // F14 (v0.8.0): a full block, because this budget measures what the SHAPE costs
     // to serialise and validate, and a real record carries all six.
     timing: {

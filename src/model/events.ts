@@ -583,6 +583,23 @@ export interface AgentNode {
   label: string; // meta.agentType + meta.description
   status: 'running' | 'done' | 'error';
   spawnDepth: number; // from meta.json; 0 for main
+  /**
+   * The sidecar’s `meta.agentType`, on its own field — v0.9.0 DoD 9.2.
+   *
+   * {@link AgentNode.label} is `agentType + ": " + description` and the
+   * description half is prose written by whoever spawned the agent. Layer 1
+   * exports the TYPE and never the description, so the type is carried here
+   * rather than recovered by splitting the label: a split is a rule about a
+   * separator, and a description containing ": " would hand the exporter
+   * prose. `src/stats/schema.ts` excludes the label outright for the same
+   * reason.
+   *
+   * From the `<sessionId>/subagents/agent-<agentId>.meta.json` sidecar,
+   * joined by `toolUseId` — the primary-key join, never an inference.
+   * Absent on `main`, which has no sidecar, and absent where a sidecar
+   * states none.
+   */
+  agentType?: string;
   children: (AgentNode | ToolNode)[];
   /**
    * This agent's context level: its own last assistant message by ordinal.
@@ -702,6 +719,21 @@ export interface ToolNode {
    * `UNAVAILABLE:codex`.
    */
   filePath?: string;
+  /**
+   * The skill this call invoked, for a `Skill` call — v0.9.0 DoD 9.3.
+   *
+   * Read from ONE named key of the structured input (`skill`), by exactly
+   * the rule {@link ToolNode.filePath} follows: structure, never text, and
+   * no regex over any value. `src/stats/skills.ts` is the definition and
+   * binds itself to the generated census rather than restating it.
+   *
+   * The sibling key `args` is the user’s own prose and is never read here,
+   * never hashed for this purpose and never exported.
+   *
+   * Absent on every call that is not a `Skill` call, and on a `Skill` call
+   * whose input states no name.
+   */
+  skillName?: string;
   /**
    * SHA-256 over canonical JSON of the **untruncated** structured input —
    * DoD 1.2. `src/stats/canonical.ts` is the definition.
@@ -918,6 +950,8 @@ export interface SessionFieldPatch {
 export interface AgentNodeFieldPatch {
   kind?: AgentNode['kind'];
   label?: string;
+  /** v0.9.0 DoD 9.2. `null` = cleared. */
+  agentType?: string | null;
   status?: AgentNode['status'];
   spawnDepth?: number;
   /** Replaced whole; `prompt` and `output` are never patched apart. */
@@ -943,6 +977,8 @@ export interface AgentNodeFieldPatch {
 /** A change to a `ToolNode`'s scalars. `null` = cleared; see {@link AgentNodeFieldPatch}. */
 export interface ToolNodeFieldPatch {
   toolName?: string;
+  /** v0.9.0 DoD 9.3. `null` = cleared. */
+  skillName?: string | null;
   status?: ToolNode['status'];
   inputPreview?: string;
   resultPreview?: string | null;

@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 2,
+  "statsSchemaVersion": 3,
   "sessionId": "ses_fcaa0162fffe42IwWMqYlRoprY",
   "engine": "opencode",
   "projectSlug": "c--Users-dev-projects-agent-deck",
@@ -204,6 +204,7 @@
   ],
   "loops": [],
   "churn": [],
+  "skills": [],
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
@@ -231,6 +232,7 @@
     "F10:opencode",
     "F13.completed:snapshot",
     "F7:opencode",
-    "F9:opencode"
+    "F9:opencode",
+    "skills:opencode"
   ]
 }

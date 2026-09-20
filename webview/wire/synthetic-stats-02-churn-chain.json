@@ -141,7 +141,7 @@
         "type": "statsSnapshot",
         "records": [
           {
-            "statsSchemaVersion": 2,
+            "statsSchemaVersion": 3,
             "sessionId": "synthetic-02-churn-chain",
             "engine": "cc",
             "projectSlug": "synthetic-stats",
@@ -208,6 +208,7 @@
                 "errors": 1
               }
             ],
+            "skills": [],
             "contextChurn": [],
             "compactions": [],
             "stalls": [],

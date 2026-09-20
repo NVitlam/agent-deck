@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 2,
+  "statsSchemaVersion": 3,
   "sessionId": "synthetic-07-oversize-input",
   "engine": "cc",
   "projectSlug": "synthetic-stats",
@@ -40,6 +40,7 @@
   ],
   "loops": [],
   "churn": [],
+  "skills": [],
   "contextChurn": [],
   "compactions": [],
   "stalls": [],

@@ -73,7 +73,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { AgentNode, SessionState, ToolNode } from '../model/events.js';
 import { allGoldenEntries } from './corpus.stats.testkit.js';
 import type { GoldenEntry } from './corpus.stats.testkit.js';
-import { STATS_STRING_FIELDS } from './schema.js';
+import { STATS_SCOPED_STRING_FIELDS, STATS_STRING_FIELDS } from './schema.js';
 
 const FIXTURES = fileURLToPath(new URL('../../fixtures/', import.meta.url));
 const WINDOW = 12;
@@ -392,8 +392,23 @@ const ENUM_VALUES: ReadonlySet<string> = new Set([
   'other',
 ]);
 
-/** `F7:opencode`, `F2.errors:codex`, `F13.completed:snapshot`. */
-const UNAVAILABLE_CODE = /^F\d+(?:\.[a-z]+)?:[a-z-]+$/u;
+/**
+ * `F7:opencode`, `F2.errors:codex`, `F13.completed:snapshot` — and, from
+ * v0.9.0, two forms keyed by a RECORD SECTION rather than a fact id.
+ *
+ * Spec `Amendment 2026-09-20` widens `unavailable` from "fact ids" to "fact
+ * ids and record sections", and says why: `filePath` serves F1, F3 and F4 at
+ * once, so no single `F<n>` is true of a refused path, and inventing a fact
+ * number for a REFUSAL would put a fact where there is none. The two added
+ * forms are `<section>:<engine>` (`skills:codex` — that engine has no
+ * skill-invoking tool) and `<section>:string-overlength:<field>`.
+ *
+ * The section is an ENUMERATED alternation, not `[a-z]+`, so the widening
+ * admits the sections this release names and not any lower-case word a
+ * later edit happens to write.
+ */
+const UNAVAILABLE_CODE =
+  /^(?:F\d+(?:\.[a-z]+)?:[a-z-]+|(?:agents|files|tools|loops|churn|skills):(?:string-overlength:[A-Za-z]+|[a-z-]+))$/u;
 
 /**
  * Every string the ENGINE wrote onto a named field of one state.
@@ -408,11 +423,17 @@ function engineStringsOf(state: SessionState): Set<string> {
     if ('children' in node) {
       out.add(node.id);
       if (node.model !== undefined) out.add(node.model);
+      // v0.9.0 DoD 9.2 — the sidecar-written agent type, an identifier of
+      // the same class as `model` and `toolName`. The DESCRIPTION is not
+      // here and must never be: `agent-type.test.ts` holds it out.
+      if (node.agentType !== undefined) out.add(node.agentType);
       for (const child of node.children) walk(child);
       return;
     }
     out.add(node.toolName);
     if (node.filePath !== undefined) out.add(node.filePath);
+    // v0.9.0 DoD 9.3 — read from ONE named input key, like `filePath`.
+    if (node.skillName !== undefined) out.add(node.skillName);
   };
   walk(state.root);
   return out;
@@ -653,20 +674,43 @@ describe('the allow-list and the records agree', () => {
   it('every string key in every golden is on the allow-list', () => {
     // The static half of the same guarantee, over the committed bytes rather
     // than over the objects that produced them.
+    //
+    // PATH-AWARE, exactly as `walkStrings` is. v0.9.0 allow-lists
+    // `skills[].name` by PATH rather than by key, because `name` is the
+    // weakest key in the record and bare-listing it would allow a string on
+    // that key anywhere, at any depth — the widening the key-based design
+    // exists to prevent. Adding `name` to the bare set here to make this
+    // test pass would give away precisely that property.
     const seen = new Set<string>();
-    const walk = (value: unknown, key: string): void => {
+    const walk = (value: unknown, key: string, path: string): void => {
       if (Array.isArray(value)) {
-        for (const item of value) walk(item, key);
+        value.forEach((item, i) => walk(item, key, `${path}[${String(i)}]`));
         return;
       }
       if (value !== null && typeof value === 'object') {
-        for (const [childKey, child] of Object.entries(value)) walk(child, childKey);
+        for (const [childKey, child] of Object.entries(value)) {
+          walk(child, childKey, path === '' ? childKey : `${path}.${childKey}`);
+        }
         return;
       }
-      if (typeof value === 'string') seen.add(key);
+      if (typeof value === 'string') seen.add(JSON.stringify([key, path]));
     };
-    for (const entry of entries) walk(JSON.parse(entry.text), '');
+    for (const entry of entries) walk(JSON.parse(entry.text), '', '');
     expect(seen.size).toBeGreaterThan(5);
-    for (const key of seen) expect(STATS_STRING_FIELDS.has(key)).toBe(true);
+    for (const entry of seen) {
+      const [key, path] = JSON.parse(entry) as [string, string];
+      const scoped = path.replace(/\[\d+\]/g, '[]');
+      expect(
+        STATS_STRING_FIELDS.has(key) || STATS_SCOPED_STRING_FIELDS.has(scoped),
+        `${path} (key '${key}') is on neither allow-list`,
+      ).toBe(true);
+    }
+  });
+
+  it('the scoped entry did not widen the bare key set', () => {
+    // The control the change above needs: `name` must still be OFF the bare
+    // list, or every `name` in the record would be allowed at any depth.
+    expect(STATS_STRING_FIELDS.has('name')).toBe(false);
+    expect(STATS_SCOPED_STRING_FIELDS.has('skills[].name')).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 2,
+  "statsSchemaVersion": 3,
   "sessionId": "synthetic-11-user-priced",
   "engine": "cc",
   "projectSlug": "synthetic-stats",
@@ -31,6 +31,7 @@
   ],
   "loops": [],
   "churn": [],
+  "skills": [],
   "contextChurn": [
     {
       "agentId": "root",

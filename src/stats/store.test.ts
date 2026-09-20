@@ -107,6 +107,9 @@ function record(sessionId: string, derivedAt: number): StoredStatsRecord {
     contextChurn: [],
     compactions: [],
     stalls: [],
+    // DoD 9.3 - always present, possibly empty. A hand-built record
+    // invoked no skill, which is exactly what an empty array states.
+    skills: [],
     // F14's block, holding nothing. A hand-built record is not a session, so it
     // states no instant — and an empty block is what the deriver produces for
     // any session that states none, so this fixture stays a record the

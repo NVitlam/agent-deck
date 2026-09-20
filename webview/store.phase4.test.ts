@@ -33,6 +33,8 @@ function record(overrides: Partial<StatsRecord> = {}): StatsRecord {
     contextChurn: [],
     compactions: [],
     stalls: [],
+    // DoD 9.3 - always present, possibly empty.
+    skills: [],
     // F14 (v0.8.0). An empty block is a real record: a session that states no
     // instant at all derives one, and the Stats layout has to render it.
     timing: {},

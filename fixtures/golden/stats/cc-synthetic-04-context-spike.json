@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 2,
+  "statsSchemaVersion": 3,
   "sessionId": "synthetic-04-context-spike",
   "engine": "cc",
   "projectSlug": "synthetic-stats",
@@ -23,6 +23,7 @@
   "tools": [],
   "loops": [],
   "churn": [],
+  "skills": [],
   "contextChurn": [
     {
       "agentId": "root",

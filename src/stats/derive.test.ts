@@ -55,6 +55,11 @@ const STATS_PURE_LAYER = [
   'src/stats/loops.ts',
   'src/stats/pricing.ts',
   'src/stats/schema.ts',
+  // v0.9.0 DoD 9.3. Joins the layer under the same reading as `timing.ts`:
+  // reachable from `derive.ts`, imports only a TYPE from `toolclass.ts`,
+  // holds no clock, reaches no `node:` builtin and no package. It is the
+  // `Skill` call's one named input key and nothing else.
+  'src/stats/skills.ts',
   'src/stats/stalls.ts',
   // v0.8.0 Phase 7, DoD 7.2. F14's six figures, and it joins the layer under
   // the same reading as `stalls.ts` and the other four the DoD's Modules list
@@ -144,7 +149,7 @@ describe('DoD 2.2 — deriveStats is pure', () => {
     // The count beside the set, per rule 19's shape: a set comparison written
     // against an accidentally empty listing passes vacuously, and a count is
     // the cheapest thing that goes red when it does.
-    expect(scan.modules).toHaveLength(11);
+    expect(scan.modules).toHaveLength(12);
     expect(scan.edges).toBeGreaterThan(0);
     expect(scan.unresolved).toEqual([]);
   });

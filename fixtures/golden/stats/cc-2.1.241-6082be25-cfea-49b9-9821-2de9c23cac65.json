@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 2,
+  "statsSchemaVersion": 3,
   "sessionId": "6082be25-cfea-49b9-9821-2de9c23cac65",
   "engine": "cc",
   "projectSlug": "c--Users-dev-projects-agent-deck",
@@ -148,6 +148,7 @@
   ],
   "loops": [],
   "churn": [],
+  "skills": [],
   "contextChurn": [],
   "compactions": [
     {

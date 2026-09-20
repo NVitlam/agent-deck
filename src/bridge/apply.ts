@@ -110,6 +110,7 @@ function cloneTool(node: ToolNode): ToolNode {
   // reducer, so a node that arrived by SNAPSHOT would carry them and the same
   // node arriving by DIFF would not.
   if (node.filePath !== undefined) out.filePath = node.filePath;
+  if (node.skillName !== undefined) out.skillName = node.skillName;
   if (node.inputHash !== undefined) out.inputHash = node.inputHash;
   if (node.ordinal !== undefined) out.ordinal = node.ordinal;
   // v0.8.0 Phase 7, DoD 7.1 (F14), on exactly the same terms as the three
@@ -143,6 +144,7 @@ function cloneAgent(node: AgentNode): AgentNode {
   // history that has already been rendered.
   if (node.usageSeries !== undefined) out.usageSeries = node.usageSeries.map((t) => ({ ...t }));
   if (node.model !== undefined) out.model = node.model;
+  if (node.agentType !== undefined) out.agentType = node.agentType;
   if (node.compactions !== undefined) out.compactions = node.compactions.map((c) => ({ ...c }));
   return out;
 }
@@ -381,6 +383,8 @@ export function applySessionPatch(
         else if (f.usageSeries !== undefined) node.usageSeries = f.usageSeries.map((t) => ({ ...t }));
         if (f.model === null) delete node.model;
         else if (f.model !== undefined) node.model = f.model;
+        if (f.agentType === null) delete node.agentType;
+        else if (f.agentType !== undefined) node.agentType = f.agentType;
         if (f.compactions === null) delete node.compactions;
         else if (f.compactions !== undefined) node.compactions = f.compactions.map((c) => ({ ...c }));
         break;
@@ -431,6 +435,8 @@ export function applySessionPatch(
         // v0.7.0 Phase 1, both directions for the same reason as above.
         if (f.filePath === null) delete node.filePath;
         else if (f.filePath !== undefined) node.filePath = f.filePath;
+        if (f.skillName === null) delete node.skillName;
+        else if (f.skillName !== undefined) node.skillName = f.skillName;
         if (f.inputHash === null) delete node.inputHash;
         else if (f.inputHash !== undefined) node.inputHash = f.inputHash;
         if (f.ordinal === null) delete node.ordinal;

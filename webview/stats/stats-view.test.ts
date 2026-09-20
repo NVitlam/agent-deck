@@ -50,7 +50,7 @@ import { TESTID } from '../canvas-contract.js';
 import { EM_DASH } from '../format.js';
 import { liveSession } from '../testdata.js';
 import { COST_SOURCE_LABELS, VOCABULARY, trendsLayout } from './layout.js';
-import { upgradeStatsRecord } from '../../src/stats/schema.js';
+import { STATS_SCHEMA_VERSION, upgradeStatsRecord } from '../../src/stats/schema.js';
 
 let harness: WebviewHarness;
 
@@ -1434,7 +1434,9 @@ describe('DoD 7.14 (amended R3a) — a 0.7.1 record is a point in every Trends s
     const record = JSON.parse(
       readFileSync(resolve(GOLDEN_DIR, 'cc-2.1.260-99f96635-2042-41dc-9000-bbc9f9233bc3.json'), 'utf8'),
     ) as StatsRecord;
-    expect(record.statsSchemaVersion).toBe(2);
+    // BOUND, not written down again: the claim is "this golden is a current
+    // record", and the current version moves every release.
+    expect(record.statsSchemaVersion).toBe(STATS_SCHEMA_VERSION);
     return record;
   }
 

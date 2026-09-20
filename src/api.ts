@@ -171,6 +171,9 @@ export const MODEL_ONLY_KEYS = [
   'inputHash',
   'resultPreview',
   'truncated',
+  // v0.9.0 DoD 9.3. MODEL-ONLY: a record states skills as `skills[].name`,
+  // never as a `skillName` key, so this stays a refusable name.
+  'skillName',
 ] as const;
 
 /**
@@ -194,6 +197,10 @@ export const MODEL_SHARED_KEYS = [
   'filePath',
   'ordinal',
   'durationMs',
+  // v0.9.0 DoD 9.2. SHARED: `AgentStats.agentType` really carries it, which
+  // is what guard (4) in `api.test.ts` checks — the shared list cannot be
+  // used to silence guard (1) for a key no record has.
+  'agentType',
 ] as const;
 
 const MODEL_ONLY: ReadonlySet<string> = new Set(MODEL_ONLY_KEYS);

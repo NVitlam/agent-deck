@@ -78,10 +78,21 @@ export interface InsightExample {
 /**
  * The three examples, in rotation order.
  *
- * **Every path and every id is SYNTHETIC** — `acme-widgets`, `ses_example*`,
- * paths under a `repo/` that exists nowhere. `insights.test.ts` holds them
- * against this repository's own identity set and against the committed corpora,
- * and `scripts/privacy-sweep.mjs` walks the built bundle they ship in.
+ * **Every path and every id is SYNTHETIC** — `ses_example*`, `a_example*` and
+ * paths under a `repo/` that exists nowhere. `insights.test.ts` checks that
+ * two ways: by SHAPE (no absolute path, no `toolu_` id, no uuid) and by
+ * searching every committed corpus for each example string.
+ *
+ * (This list named `acme-widgets` until a verifier round grepped for it and
+ * found it in no example — a comment naming a value the code does not have.)
+ *
+ * The sweep reaches these strings HERE, at their source: this file is
+ * tracked, so `scripts/privacy-sweep.mjs` reads it on its working-tree and
+ * history legs. It does NOT read `dist/` — that is gitignored, the untracked
+ * walk is scoped to `fixtures/`, and the script refuses to widen ("a mode
+ * nobody can leave on is a mode nobody runs"). An earlier version of this
+ * paragraph claimed the bundle was walked; it is not, and it does not need
+ * to be, because no example text exists anywhere but in this file.
  *
  * They are static because they are ILLUSTRATIONS. Deriving them from the user's
  * own sessions would make the tab a second stats view, and deriving them from a
@@ -121,8 +132,13 @@ export const EXAMPLES: readonly InsightExample[] = Object.freeze([
  * The example to show for a given open count — DoD 9.6, 1 -> 2 -> 3 -> 1.
  *
  * The counter is WEBVIEW-LOCAL and starts at 0, so the first open shows the
- * first example. Modulo rather than a stored index, so a counter that has run
- * for a long time still lands somewhere valid and nothing has to be reset.
+ * first example. It advances when the Insights view is LEFT (`store.ts`
+ * says why it is not on entering) and when "See an example" is pressed, so
+ * a reader who never presses the button still sees a different one each
+ * time they open the tab.
+ *
+ * Modulo rather than a stored index, so a counter that has run for a long
+ * time still lands somewhere valid and nothing has to be reset.
  */
 export function exampleAt(openCount: number): InsightExample {
   const length = EXAMPLES.length;

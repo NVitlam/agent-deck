@@ -40,9 +40,11 @@ All notable changes to Agent Deck are documented here.
   still read, exactly as they were written - nothing on disk is rewritten - and
   each one names the facts its version could not carry.
 - **Long names and paths are left out rather than shortened.** A file path over
-  1024 characters, or an agent type or skill name over 64, is omitted from the
-  record instead of being cut short, and the record says which one was left
-  out. The session keeps every other number it has.
+  1024 characters, or an agent type or skill name over 64, is omitted instead of
+  being cut short - a shortened path is still a path - and the record says what
+  was left out. For an agent type the field alone goes; for a file, a churn
+  chain or a skill the whole row goes, so that row's counts go with it. The
+  session keeps every other number it has, and is not excluded.
 
 ## 0.8.1 - 2026-09-15 - A first Claude Code session in a new folder
 

@@ -5623,9 +5623,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      */
     // v0.9.0 DoD 9.7. Unconditional, like the sidebar: a window with no
     // observable engine can still open About.
-    vscode.commands.registerCommand(ABOUT_COMMAND, () => {
-      void showAbout();
-    }),
+    vscode.commands.registerCommand(ABOUT_COMMAND, () => showAbout()),
     vscode.commands.registerCommand(INSIGHTS_COMMAND, () => {
       if (isInsightsInstalled()) {
         void vscode.commands.executeCommand(INSIGHTS_OPEN_COMMAND);

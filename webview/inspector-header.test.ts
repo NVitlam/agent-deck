@@ -328,6 +328,38 @@ describe('the goldens — 2400px, 1200px and 700px', () => {
     expect(TIGHT.layout.outside).toEqual([]);
     expect(new Set(TIGHT.layout.fields.map((f) => f.row)).size).toBe(7);
   });
+
+  it('states how many pairs each width actually COMPARES for overlap', () => {
+    /*
+     * A VERIFIER ROUND FOUND THE NARROW GOLDEN’S `overlaps: []` VACUOUS,
+     * and it is right: overlap is compared within a row only, and at 700px
+     * every field has a row to itself, so there are ZERO comparable pairs.
+     * A zero over an empty population is not evidence.
+     *
+     * The honest fix is not to contrive a width — it is to PRINT THE
+     * POPULATION beside the zero, at every width, so a reader can see which
+     * tables the no-overlap claim rests on. 1200 is the one that carries it
+     * with the wrap ON: 2 rows, 11 comparable pairs, 0 overlaps.
+     */
+    const pairs = (g: HeaderGolden): number => {
+      let n = 0;
+      const rows = g.layout.fields.map((f) => f.row);
+      for (let i = 0; i < rows.length; i += 1) {
+        for (let j = i + 1; j < rows.length; j += 1) if (rows[i] === rows[j]) n += 1;
+      }
+      return n;
+    };
+    expect(pairs(WIDE)).toBe(21);
+    expect(pairs(MID)).toBe(11);
+    // STATED, not hidden: the narrow table proves the wrap and the clip,
+    // and proves nothing at all about overlap.
+    expect(pairs(TIGHT)).toBe(0);
+
+    // So the no-overlap claim rests on these two, and both are non-empty.
+    expect(pairs(WIDE) + pairs(MID)).toBeGreaterThan(30);
+    expect(WIDE.layout.overlaps).toEqual([]);
+    expect(MID.layout.overlaps).toEqual([]);
+  });
 });
 
 describe('the defect the fix removes, driven through the same model', () => {

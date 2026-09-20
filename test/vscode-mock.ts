@@ -48,8 +48,27 @@ export class Uri {
     return new Uri(base.scheme, joined);
   }
 
+  /**
+   * `vscode.Uri.parse` — v0.9.0 DoD 9.7.
+   *
+   * Keeps the WHOLE string rather than splitting it into scheme and path,
+   * because `toString()` is what a test asserts about an opened link, and a
+   * lossy round trip would make that assertion about this mock rather than
+   * about the url. `parsed` carries the original; `toString` returns it.
+   */
+  static parse(value: string): Uri {
+    const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(value)?.[1] ?? 'file';
+    const uri = new Uri(scheme, value);
+    uri.#parsed = value;
+    return uri;
+  }
+
+  /** Set only by {@link Uri.parse}; see the note there. */
+  #parsed: string | undefined;
+
   toString(): string {
-    return `${this.scheme}://${this.fsPath}`;
+    // A parsed url is returned verbatim — see {@link Uri.parse}.
+    return this.#parsed ?? `${this.scheme}://${this.fsPath}`;
   }
 }
 
@@ -293,6 +312,10 @@ interface MockState {
   commands: Map<string, (...args: unknown[]) => unknown>;
   /** Extension ids this fake editor has installed (DoD 9.6). */
   extensions: Set<string>;
+  /** Every URI handed to `env.openExternal`, in order (DoD 9.7). */
+  openedExternal: string[];
+  /** What the next modal returns, as if the user had pressed it (DoD 9.7). */
+  modalAnswer: string | undefined;
   panels: MockWebviewPanel[];
   /**
    * Every `createWebviewPanel` call's `viewColumn`, in order (v0.7.0 DoD
@@ -351,6 +374,8 @@ const state: MockState = {
   configuration: new Map(),
   commands: new Map(),
   extensions: new Set<string>(),
+  openedExternal: [] as string[],
+  modalAnswer: undefined as string | undefined,
   panels: [],
   panelColumns: [],
   executed: [],
@@ -378,6 +403,8 @@ export function resetVscodeMock(): void {
   state.informationMessages = [];
   state.warningMessages = [];
   state.warningAnswer = undefined;
+  state.openedExternal = [];
+  state.modalAnswer = undefined;
   state.configurationWrites = [];
   state.configurationEmitter = new Emitter();
 }
@@ -420,6 +447,14 @@ export const mock = {
   setExtensionInstalled(id: string, installed: boolean): void {
     if (installed) state.extensions.add(id);
     else state.extensions.delete(id);
+  },
+  /** DoD 9.7 — every URI handed to `env.openExternal`, in order. */
+  get openedExternal(): readonly string[] {
+    return state.openedExternal;
+  },
+  /** DoD 9.7 — answer the next modal as if the user had pressed that button. */
+  answerModal(label: string | undefined): void {
+    state.modalAnswer = label;
   },
   get panels(): MockWebviewPanel[] {
     return state.panels;
@@ -545,6 +580,21 @@ export const commands = {
  * record rather than a boolean, so the mock does too: a test that set a
  * boolean here would be testing a shape the editor does not have.
  */
+/**
+ * `vscode.env`, enough of it for DoD 9.7.
+ *
+ * `openExternal` RECORDS what it was handed rather than answering `true`
+ * and forgetting: a test that could only see "it was called" cannot tell a
+ * correct link from the first link, which is exactly the mutation that
+ * survived before this existed.
+ */
+export const env = {
+  openExternal(target: unknown): Promise<boolean> {
+    state.openedExternal.push(String((target as { toString(): string }).toString()));
+    return Promise.resolve(true);
+  },
+};
+
 export const extensions = {
   getExtension(id: string): { id: string; isActive: boolean } | undefined {
     return state.extensions.has(id) ? { id, isActive: false } : undefined;
@@ -582,9 +632,27 @@ export const window = {
     state.errorMessages.push(message);
     return Promise.resolve(undefined);
   },
-  showInformationMessage(message: string): Promise<undefined> {
+  /**
+   * Both overloads. The MODAL one is what DoD 9.7’s About entry calls:
+   * `showInformationMessage(message, { modal: true }, ...labels)`.
+   *
+   * It answers `state.modalAnswer`, which a test sets with
+   * `mock.answerModal(label)` — so a test can press a named button and then
+   * assert WHICH url was opened. Answering `undefined` blindly, which this
+   * did until v0.9.0, makes every modal an unanswered one and every branch
+   * below the answer unreachable.
+   */
+  showInformationMessage(
+    message: string,
+    _options?: { modal?: boolean },
+    ...items: string[]
+  ): Promise<string | undefined> {
     state.informationMessages.push(message);
-    return Promise.resolve(undefined);
+    if (items.length === 0) return Promise.resolve(undefined);
+    // Only an answer that is one of the offered labels, because the editor
+    // can only return one of them.
+    const answer = state.modalAnswer;
+    return Promise.resolve(answer !== undefined && items.includes(answer) ? answer : undefined);
   },
   /**
    * The modal overload, recorded rather than answered blindly.

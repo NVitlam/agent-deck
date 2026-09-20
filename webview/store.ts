@@ -1606,6 +1606,17 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       // still notify — which is why this is not an early return on the mode.
       const focusChanged = focusSessionId !== statsFocusSessionId;
       if (!modeChanged && !focusChanged) return;
+      /*
+       * DoD 9.6 — "one shown per open". The counter advances when the
+       * Insights view is LEFT, so the NEXT open shows the next example and
+       * the FIRST open shows the first one.
+       *
+       * On leaving rather than on entering, because entering would have to
+       * start the counter at -1 to keep `exampleAt(0)` first, and a counter
+       * whose first value means something different from all the others is
+       * a field waiting to be read wrong.
+       */
+      if (modeChanged && viewMode === 'insights') insightsOpenCount += 1;
       viewMode = mode;
       statsFocusSessionId = focusSessionId;
       // Mode switch BACK to the canvas (trigger table): the field was

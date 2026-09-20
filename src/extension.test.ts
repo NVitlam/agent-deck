@@ -22,6 +22,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { ABOUT_COMMAND, ABOUT_LINKS, ABOUT_TEXT } from './about.js';
 import {
   appendFileSync,
   existsSync,
@@ -6989,6 +6990,82 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
    * The branch is a fact about the EDITOR, taken with `getExtension`, which
    * answers without activating anything of theirs.
    */
+  /*
+   * v0.9.0 DoD 9.7 — About, DRIVEN.
+   *
+   * THESE EXIST BECAUSE A MUTATION SURVIVED. Until a verifier round,
+   * `showAbout`'s only cover was a TEXT SCAN of its own source — it asserted
+   * that the body contains `vscode.env.openExternal` and no `fetch(`.
+   * Replacing the label->link lookup with `ABOUT_LINKS[0]`, so every link
+   * opened the Website url whatever the user pressed, left 307 tests green.
+   *
+   * The mock had no `env.openExternal` at all, which is why: there was
+   * nothing to drive it with.
+   */
+  it('About opens the url of the link the user pressed — every one of the four', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+
+    for (const link of ABOUT_LINKS) {
+      const before = mock.openedExternal.length;
+      mock.answerModal(link.label);
+      await mock.runCommand(ABOUT_COMMAND);
+      const opened = mock.openedExternal.slice(before);
+      // EXACTLY ONE url, and it is THIS link’s. A lookup that answered the
+      // first link every time passes "something was opened" and fails this.
+      expect(opened, `pressing ${link.label} opened ${String(opened.length)} urls`).toStrictEqual([
+        link.url,
+      ]);
+    }
+    expect(mock.openedExternal).toHaveLength(ABOUT_LINKS.length);
+  });
+
+  it('About offers the paragraph and the four labels, as a modal', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    mock.answerModal(undefined);
+    await mock.runCommand(ABOUT_COMMAND);
+    // The paragraph the spec fixes, verbatim, on the surface the user sees.
+    expect(mock.state.informationMessages).toContain(ABOUT_TEXT);
+  });
+
+  it('About dismissed opens nothing', async () => {
+    // The branch above the lookup. Without this, a `showAbout` that opened
+    // the first link on a dismissed modal would pass every test above.
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    mock.answerModal(undefined);
+    await mock.runCommand(ABOUT_COMMAND);
+    expect(mock.openedExternal).toStrictEqual([]);
+  });
+
+  it('About opens nothing for a label that is not one of ours', async () => {
+    // The editor can only return an offered label, so this is defence rather
+    // than a reachable state — and it is the assertion that keeps the url a
+    // LITERAL from `about.ts` rather than a string that came back.
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    mock.answerModal('Not A Label');
+    await mock.runCommand(ABOUT_COMMAND);
+    expect(mock.openedExternal).toStrictEqual([]);
+  });
+
   it('agentDeck.insights opens the Marketplace page when it is NOT installed', async () => {
     mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
     process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
@@ -8214,6 +8291,40 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     // The same message carries `canvasAutoFit`: one type, one send site, so a
     // second surface cannot be added with half the settings wired.
     expect(messages[0]?.canvasAutoFit).toBe(true);
+  });
+
+  /*
+   * v0.9.0 DoD 9.6 — THE SIDEBAR IS TOLD THE SAME FACT AS THE PANEL.
+   *
+   * THIS EXISTS BECAUSE A MUTATION SURVIVED. `activate()`'s own
+   * `settingsMessageFor()` builds a settings message for the sidebar, and
+   * forcing its `insightsInstalled` to `false` left the FULL SUITE green —
+   * 148 files, 4,318 tests. The comment at that site claims "the two
+   * surfaces cannot disagree", and nothing checked it.
+   *
+   * No sidebar component reads the field today, so this is a LATENT D4
+   * rather than a live defect. It is tested now because the day one does
+   * read it is not the day to discover the value was never wired.
+   */
+  it('the sidebar is told whether Insights is installed, from the same probe as the panel', async () => {
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
+    mock.setConfig(CONFIG_SECTION, {});
+    await activate(extensionContext());
+
+    const installed = settingsPosted(mock.resolveView(SIDEBAR_VIEW_ID));
+    expect(installed.length).toBeGreaterThan(0);
+    expect(installed[0]?.insightsInstalled).toBe(true);
+
+    // BOTH arms, or a field hard-coded to `true` passes the first.
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
+    mock.setConfig(CONFIG_SECTION, {});
+    await activate(extensionContext());
+
+    const absent = settingsPosted(mock.resolveView(SIDEBAR_VIEW_ID));
+    expect(absent.length).toBeGreaterThan(0);
+    expect(absent[0]?.insightsInstalled).toBe(false);
   });
 
   it('a configuration change re-sends to every live sidebar, with the new values', async () => {

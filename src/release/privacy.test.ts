@@ -690,8 +690,26 @@ describe('privacy sweep against this repository', () => {
     // and only their findings are diverted - the count is the evidence the scan
     // reached them.
     if (report.config.identity.status === 'SKIPPED') return;
-    expect(report.config.identity.exemptPaths).toContain('LICENSE');
-    expect(report.config.identity.exemptPaths).toContain('package.json');
+    /*
+     * THE EXACT SET AND ITS COUNT — rule 19, applied to this list for the
+     * first time in v0.9.0.
+     *
+     * It was two `toContain`s, so an ADDITION tripped nothing. The list
+     * decides where the identity may appear, and 0.9.0 added two whole
+     * source files to it (DoD 9.7: the About paragraph names the author).
+     * A list that can grow silently is the wrong shape for that.
+     *
+     * Adding a path now means editing this literal, which is the point.
+     */
+    expect([...report.config.identity.exemptPaths].sort()).toStrictEqual([
+      'LICENSE',
+      'package-lock.json',
+      'package.json',
+      'site/index.html',
+      'src/about.test.ts',
+      'src/about.ts',
+    ]);
+    expect(report.config.identity.exemptPaths).toHaveLength(6);
     expect(report.workingTree.identity.exemptHits).toBeGreaterThan(0);
   });
 

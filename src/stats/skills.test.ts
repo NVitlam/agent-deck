@@ -12,11 +12,17 @@
  *
  * ## `args` is the control, and it is a real one
  *
- * Every one of those five calls carries an `args` value, and four of them are
- * long prose about this project's own work. They are the single most
- * content-shaped strings a `Skill` call can carry, so they are exactly the
- * right literal bytes to hold against every derived record — the
- * `redaction.test.ts` technique, applied to the field this DoD adds.
+ * THREE of those five calls carry prose `args`; a fourth carries `args: "0"`
+ * and the fifth carries no `args` key at all. The three are long prose about
+ * this project's own work, which makes them the single most content-shaped
+ * strings a `Skill` call can carry and exactly the right literal bytes to
+ * hold against every derived record — the `redaction.test.ts` technique,
+ * applied to the field this DoD adds.
+ *
+ * (This paragraph said "five … four of them are long prose" until a
+ * verifier round re-counted it. The TEST below had 3 all along; the header
+ * was the stale half — the recorded shape where a fix lands at one site and
+ * the wrong claim survives in the prose above it.)
  *
  * A byte test over a corpus that happened to carry no prose would be vacuous,
  * so the population is pinned non-empty before it is searched: the run fails on

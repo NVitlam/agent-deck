@@ -18,12 +18,23 @@
  * ## The privacy leg
  *
  * The three examples SHIP IN THE BUNDLE. Their paths and ids are synthetic, and
- * "synthetic" is checked rather than asserted: every one is held against this
- * repository's own committed corpora and against the real session ids and paths
- * they contain. `scripts/privacy-sweep.mjs` covers the built bundle on top.
+ * "synthetic" is CHECKED rather than asserted, two ways: by SHAPE (no absolute
+ * path, no `toolu_` id, no uuid) and by SEARCHING every committed corpus for
+ * each example string.
+ *
+ * The sweep reaches the same strings at their SOURCE — `webview/insights/
+ * layout.ts` is tracked — and not in `dist/`, which is gitignored and which
+ * the sweep deliberately does not walk. An earlier version of this paragraph
+ * claimed the latter; a verifier round measured the sweep and found it
+ * unchanged in this release.
+ *
+ * The advice scan drives the MOUNTED component and reads rendered
+ * `textContent` across five states, so a shipped string that never renders is
+ * not scanned by it. `forbidden-words.mjs`, which reads this directory as of
+ * v0.9.0, is what covers those.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -316,6 +327,54 @@ describe('the Insights tab, through the mounted app', () => {
     expect(sentences[0]?.textContent?.trim()).toBe(PRODUCT_SENTENCE);
   });
 
+  it('rotates the example on each OPEN — 1, 2, 3, 1 — a golden', () => {
+    /*
+     * THE SPEC’S OWN WORDS: "three static examples, ONE SHOWN PER OPEN,
+     * rotating 1->2->3->1 by a webview-local counter".
+     *
+     * Until a verifier round caught it, the counter advanced only when the
+     * "See an example" button was pressed, so opening the tab three times
+     * showed example 1 three times — while the code's own identifiers
+     * (`insightsOpenCount`, "the first open shows the first example")
+     * asserted the behaviour that was missing. The press golden below was
+     * green throughout, because it asserts a different sequence.
+     */
+    const panel = render();
+    send({ type: 'settings', canvasAutoFit: true, tweaks: {}, insightsInstalled: false });
+    send({ type: 'statsStore', records: busyRecords(), enabled: true });
+
+    const shown = (): string =>
+      one(panel.container, TESTID.insightsExample).dataset['example'] ?? '';
+
+    const seen: string[] = [];
+    for (let open = 0; open < 4; open += 1) {
+      // In through the panel's own control, and out again — the real path.
+      click(one(panel.container, TESTID.insightsToggle));
+      seen.push(shown());
+      click(one(panel.container, TESTID.insightsToggle));
+    }
+    expect(seen).toStrictEqual(['compaction', 'cache-miss', 'reread-loop', 'compaction']);
+  });
+
+  it('a session that never leaves the tab sees one example until it presses', () => {
+    // The other side of the same rule: the counter advances on LEAVING, so
+    // re-rendering inside one open does not move it. Without this, a counter
+    // that advanced on every notify would pass the test above by accident.
+    const panel = render();
+    send({ type: 'settings', canvasAutoFit: true, tweaks: {}, insightsInstalled: false });
+    send({ type: 'statsStore', records: busyRecords(), enabled: true });
+    click(one(panel.container, TESTID.insightsToggle));
+
+    const shown = (): string =>
+      one(panel.container, TESTID.insightsExample).dataset['example'] ?? '';
+    expect(shown()).toBe('compaction');
+
+    // Two more store messages: re-renders, not opens.
+    send({ type: 'statsStore', records: busyRecords(), enabled: true });
+    send({ type: 'statsStore', records: busyRecords(), enabled: true });
+    expect(shown()).toBe('compaction');
+  });
+
   it('rotates the example on each press, and labels every one — a golden', () => {
     const panel = render();
     open(panel, busyRecords());
@@ -434,9 +493,56 @@ describe('the tab states facts and never advises', () => {
     expect(text.includes('you should')).toBe(true);
   });
 
-  it('every example path and id is synthetic', () => {
-    // Held against this repository's OWN committed corpora: if an example
-    // string appeared in one, it would be a real path or a real session id.
+  it('no example string appears anywhere in the committed corpora', () => {
+    /*
+     * The check the header claims, and until a verifier round did not run.
+     *
+     * If an example id or path appeared in a captured corpus it would BE a
+     * real one, however synthetic it looks. This walks every file under
+     * `fixtures/` and searches for each distinctive token.
+     *
+     * The tokens are the distinctive parts, not whole sentences: a sentence
+     * would never match and the search would pass while reading nothing.
+     */
+    const TOKENS = [
+      'ses_example01',
+      'ses_example02',
+      'a_example03',
+      'repo/src/config.ts',
+      'repo/docs/schema.md',
+    ];
+    // Every token really is in an example, or the search below is vacuous.
+    const exampleBody = EXAMPLES.flatMap((e) => [e.title, ...e.lines]).join('\n');
+    for (const token of TOKENS) {
+      expect(exampleBody, `${token} is in no example`).toContain(token);
+    }
+
+    let filesRead = 0;
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        // Binary corpora (the OpenCode databases) are read as latin1, which
+        // cannot throw and preserves byte positions for an ASCII needle.
+        const text = readFileSync(full).toString('latin1');
+        filesRead += 1;
+        for (const token of TOKENS) {
+          expect(text.includes(token), `${token} appears in ${full}`).toBe(false);
+        }
+      }
+    };
+    walk(resolve('fixtures'));
+    // The population, pinned non-empty: a walk that found nothing would
+    // report the same clean pass.
+    expect(filesRead).toBeGreaterThan(50);
+  }, 120_000);
+
+  it('every example path and id is synthetic in SHAPE too', () => {
+    // The other half: a string can be absent from every corpus and still be
+    // shaped like a real path or a real id.
     const exampleText = EXAMPLES.flatMap((e) => [e.title, ...e.lines]).join('\n');
 
     // Nothing that looks like an absolute path on any platform.

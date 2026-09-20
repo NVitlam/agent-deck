@@ -1857,3 +1857,62 @@ describe('SessionState.engine — the CC engine stamps its own name', () => {
     expect(serializeSessionState(untagged).engine).toBeNull();
   });
 });
+
+describe('the golden serializer carries skillName — v0.9.0 DoD 9.3', () => {
+  /*
+   * THIS EXISTS BECAUSE A MUTATION SURVIVED. Replacing
+   * `skillName: node.skillName ?? null` with a bare `null` left 902 tests
+   * green, and the cause is the corpus rather than the assertion: every
+   * committed session golden is a cc-2.1.234 session, and those carry
+   * **26 `"skillName": null` and no non-null value at all**. A field that can
+   * only take one value across the whole golden corpus cannot be wrong.
+   *
+   * Driven directly rather than by adding a 2.1.260 session to the golden
+   * set: the goldens are a corpus with its own provenance, and widening them
+   * to reach one field would change what they are evidence OF.
+   */
+  it('serializes a non-null skillName, and a null one, from the same tree', () => {
+    const withSkill: ToolNode = {
+      id: 'toolu_skill',
+      toolName: 'Skill',
+      status: 'done',
+      inputPreview: '{}',
+      inputHash: 'a'.repeat(64),
+      ordinal: 0,
+      skillName: 'handoff',
+    };
+    const without: ToolNode = {
+      id: 'toolu_read',
+      toolName: 'Read',
+      status: 'done',
+      inputPreview: '{}',
+      inputHash: 'b'.repeat(64),
+      ordinal: 1,
+    };
+    const state = {
+      sessionId: 'skill-session',
+      projectSlug: 'c--ws',
+      engine: 'cc' as const,
+      workspaceMatch: true,
+      liveness: 'idle' as const,
+      schemaOk: true,
+      totals: { costUsd: 0 },
+      root: {
+        id: 'root',
+        kind: 'main' as const,
+        label: 'a session',
+        status: 'running' as const,
+        spawnDepth: 0,
+        children: [withSkill, without],
+        startedAt: 1_000,
+      },
+    } as SessionState;
+
+    const serialized = JSON.stringify(serializeSessionState(state));
+    // BOTH arms, against one tree. A serializer that emitted a constant
+    // passes either one alone.
+    expect(serialized).toContain('"skillName":"handoff"');
+    expect(serialized).toContain('"skillName":null');
+  });
+});
+

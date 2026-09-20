@@ -23,7 +23,8 @@ export const HOST_MESSAGE_TYPES: readonly HostToWebviewMessage['type'][] = [
   'statsSnapshot',
   'statsStore',
   'settings',
-  'showView',
+  'viewControls',
+  'viewAction',
 ];
 
 /** Type guard for anything arriving on `window.message`. */

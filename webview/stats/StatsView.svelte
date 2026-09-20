@@ -44,8 +44,17 @@
     { id: 'tokens', label: 'Tokens' },
     { id: 'trends', label: 'Trends' },
   ];
-  /** Local: nothing walks it, and §1.1's reset-on-close rule fits it. */
-  let tab = $state<Tab>('files');
+  /*
+   * WHICH TAB IS SHOWING IS THE HOST'S as of v0.9.0 DoD 9.14, ruling 4.
+   *
+   * It was local because "nothing walks it" and because §1.1's reset-on-close
+   * rule fitted it. Spec `Amendment 2026-09-20` moves the tab strip into
+   * View ▸ Statistics, so the value comes from the store and this reads it.
+   * `TABS` stays because the five ids and their labels are still this
+   * surface's own vocabulary, and `controls.test.ts` holds it against
+   * `STATS_TABS` so the menu and the tables cannot name different sets.
+   */
+  let tab = $derived<Tab>(view.statsTab);
 
   const ENGINE_LABELS: Readonly<Record<EngineFilter, string>> = {
     all: 'All',
@@ -101,37 +110,15 @@
   data-stored={String(view.statsStored.length)}
   aria-label="Statistics"
 >
-  <div class="bar">
-    <div class="group" role="group" aria-label="Filter by engine">
-      {#each ENGINE_FILTERS as filter (filter)}
-        <button
-          type="button"
-          class="chip"
-          data-testid={TESTID.statsEngineChip}
-          data-engine={filter}
-          data-active={String(view.engineFilter === filter)}
-          data-count={String(counts[filter])}
-          aria-pressed={view.engineFilter === filter}
-          onclick={() => store.setEngineFilter(filter)}
-          >{ENGINE_LABELS[filter]}<span class="count">{counts[filter]}</span></button
-        >
-      {/each}
-    </div>
-    <div class="group tabs" role="tablist" aria-label="Statistics views">
-      {#each TABS as entry (entry.id)}
-        <button
-          type="button"
-          role="tab"
-          class="seg"
-          data-testid={TESTID.statsTab}
-          data-view={entry.id}
-          data-active={String(tab === entry.id)}
-          aria-selected={tab === entry.id}
-          onclick={() => (tab = entry.id)}>{entry.label}</button
-        >
-      {/each}
-    </div>
-  </div>
+  <!--
+    THE BAR WAS HERE UNTIL v0.9.0 DoD 9.14: four engine chips with their
+    counts, and the five tab segments.
+
+    Ruling 4 sends the tabs to View ▸ Statistics; ruling 6 gives the engine
+    filter ONE entry, shared with the deck's, acting on whichever surface is
+    active. Both values still arrive — `view.engineFilter` and
+    `view.statsTab` — so the tables are exactly the tables that were shown.
+  -->
 
   <div class="body">
     {#if tab === 'files'}
@@ -191,83 +178,10 @@
     -webkit-user-select: text;
   }
 
-  .bar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
-    padding: 4px 12px;
-    border-bottom: 1px solid var(--line);
-    background: var(--panel);
-  }
-
-  .group {
-    display: flex;
-    gap: 4px;
-  }
-
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font: inherit;
-    font-size: 11px;
-    color: var(--ink-2);
-    background: none;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 2px 9px;
-    cursor: pointer;
-  }
-
-  .chip[data-active='true'] {
-    background: var(--press);
-    border-color: var(--ink-3);
-    color: var(--ink);
-  }
-
-  .count {
-    font-family: var(--mono);
-    font-weight: 600;
-    font-size: 10px;
-    min-width: 16px;
-    text-align: center;
-    border-radius: 999px;
-    background: var(--line-soft);
-  }
-
-  .tabs {
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--bg);
-    gap: 0;
-  }
-
-  .seg {
-    font: inherit;
-    font-size: 11px;
-    color: var(--ink-2);
-    background: none;
-    border: none;
-    border-right: 1px solid var(--line-soft);
-    padding: 3px 10px;
-    cursor: pointer;
-  }
-
-  .seg:last-child {
-    border-right: none;
-  }
-
-  .seg[data-active='true'] {
-    background: var(--press);
-    color: var(--ink);
-  }
-
-  .chip:focus-visible,
-  .seg:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 1px;
-  }
+  /*
+   * The bar's rules were here until v0.9.0 DoD 9.14: bar, group, chip, count,
+   * tabs and seg. Every element they styled is gone.
+   */
 
   .body {
     flex: 1 1 auto;

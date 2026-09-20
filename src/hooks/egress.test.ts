@@ -787,13 +787,31 @@ const api = {
     file: (p) => ({ fsPath: p, scheme: 'file', path: p }),
     joinPath: (base, ...parts) => ({ fsPath: [base.fsPath, ...parts].join('/'), scheme: 'file' }),
   },
-  ViewColumn: { Beside: 2, One: 1 },
+  ViewColumn: { Beside: 2, One: 1, Active: -1 },
+  // v0.9.0 DoD 9.14: the sidebar is a NATIVE TreeView, so activate() builds
+  // an EventEmitter and a TreeItem or two before any test touches it. A stub
+  // missing them fails at load with 'EventEmitter is not a constructor',
+  // which reads as a census that measured nothing - and the census's own
+  // "ran to completion" assertion is what caught it.
+  EventEmitter: class { constructor() { this.event = () => noop; } fire() {} dispose() {} },
+  TreeItem: class { constructor(label, collapsibleState) { this.label = label; this.collapsibleState = collapsibleState; } },
+  TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+  TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
+  ThemeIcon: class { constructor(id) { this.id = id; } },
+  ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
+  env: { openExternal: () => Promise.resolve(true) },
+  extensions: { getExtension: () => undefined },
   // v0.7.0 Phase 4: activate() registers the sidebar view and can run
   // workbench commands; the census never resolves the view or opens a panel.
   commands: { registerCommand: () => noop, executeCommand: () => Promise.resolve(undefined) },
   window: {
     createWebviewPanel: () => { throw new Error('the census never opens a panel'); },
     registerWebviewViewProvider: () => noop,
+    // The tree is CREATED at activation and never read by the census: what
+    // matters here is that building it opens no socket, which is exactly
+    // what a native view buys over a webview.
+    createTreeView: () => ({ dispose() {} }),
+    showQuickPick: () => Promise.resolve(undefined),
     tabGroups: { all: [{}] },
     // A LINE COLLECTOR, and not decoration. DiagnosticsChannel creates its
     // sink lazily inside a try/catch (G2: a channel that cannot be created

@@ -41,7 +41,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_MAX_BODY_BYTES, TELEMETRY_PATHS } from '../hooks/listener.js';
-import { SIDEBAR_MENU } from '../sidebar/menu.js';
+import { MENU_COMMANDS as SIDEBAR_MENU } from '../view/controls.js';
 import { COST_SOURCE_LABELS } from '../../webview/stats/layout.js';
 import { ABOUT_LINKS, SPONSOR_URL } from '../about.js';
 

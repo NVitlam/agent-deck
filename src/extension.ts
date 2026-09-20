@@ -127,15 +127,26 @@ import * as vscode from 'vscode';
 import { SessionBridge, isWebviewToHostMessage } from './bridge/messages.js';
 import type { BridgeDegradedState } from './bridge/messages.js';
 import { createNonce, webviewHtml } from './bridge/html.js';
-import { ABOUT_COMMAND, ABOUT_LINKS, ABOUT_TEXT } from './about.js';
+import { ABOUT_COMMAND } from './about.js';
+import { ABOUT_PANEL_TITLE, ABOUT_PANEL_VIEW_TYPE, aboutLinkFor, aboutPanelHtml } from './about-panel.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
 import { StatsUpdateEmitter, createAgentDeckApi } from './api.js';
 import type { AgentDeckApi } from './api.js';
-import { SIDEBAR_VIEW_ID } from './sidebar/menu.js';
-import { SidebarController } from './sidebar/provider.js';
-import type { SidebarSurface } from './sidebar/provider.js';
+import { AgentDeckTreeProvider, SIDEBAR_VIEW_ID } from './sidebar/tree.js';
+import type { InsightsSection, TreeNodeModel } from './sidebar/tree.js';
 import { TWEAK_SETTINGS } from './sidebar/tweaks.js';
+import { ALL_ZERO_LINE, exampleAt, insightsLayout } from './insights/layout.js';
+import type { ViewControls } from './view/controls.js';
+import {
+  CONTROL_COMMANDS,
+  DEFAULT_VIEW_CONTROLS,
+  INSPECTOR_TOOL_ALL,
+  applyControlCommand,
+  asDeckSort,
+  tweakKeyOf,
+  tweakValueOf,
+} from './view/controls.js';
 import { inSessionOrder, statsWireRecords } from './stats/wire.js';
 import type { StatsRecord } from './stats/schema.js';
 import {
@@ -165,8 +176,8 @@ import type {
   NormalizedHookEvent,
   SessionState,
   SettingsMessage,
-  ShowViewMessage,
   SkippedFile,
+  ViewControlsMessage,
   WebviewToHostMessage,
 } from './model/events.js';
 import { opencodeDataDir, opencodeDbPath, readOpenCodeEngine } from './opencode/index.js';
@@ -3583,6 +3594,9 @@ export class PanelController {
    */
   #settings: SettingsMessage | null = null;
 
+  /** The last control state sent, re-posted on reload (DoD 9.14). */
+  #viewControls: ViewControlsMessage | null = null;
+
   constructor(options: PanelControllerOptions) {
     this.#panel = options.panel;
     this.#onMessage = options.onMessage ?? ((): void => {});
@@ -3620,6 +3634,12 @@ export class PanelController {
         // older than this message. The renderer's default is the manifest
         // default, so nothing is decided wrongly in the gap.
         if (this.#settings !== null) this.#panel.postMessage(this.#settings);
+        // ...and the controls (DoD 9.14), for the same reason and in the same
+        // order. A reloaded document is back at `DEFAULT_VIEW_CONTROLS`, so
+        // without this a panel that was hidden and shown again would forget
+        // which filter the user had chosen and the sidebar's tick would be
+        // describing a state nothing was in.
+        if (this.#viewControls !== null) this.#panel.postMessage(this.#viewControls);
       }),
     );
     if (options.onDispose !== undefined) {
@@ -3660,17 +3680,30 @@ export class PanelController {
   }
 
   /**
-   * Ask the renderer to show a view mode (DoD 4.6b: `agentDeck.openStats`).
+   * State every control value — v0.9.0 DoD 9.14, replacing `showView`.
    *
-   * v0.9.0 DoD 9.5: with a `sessionId`, the panel opens focused on that
-   * session. The host does not check that the session exists — the webview
-   * holds the records and answers that question without a round trip.
+   * THE WHOLE STATE, every time. `showView` said one field and the renderer
+   * owned the rest; under spec `Amendment 2026-09-20` there are no controls
+   * on any webview surface, so the renderer owns none of them and the host
+   * says all of them. The deep-link focus rides here too (DoD 9.5), because
+   * it moves with the mode and a second message would be a second owner.
    */
-  showView(mode: ShowViewMessage['mode'], sessionId?: string): void {
+  sendViewControls(controls: ViewControls): void {
     if (this.#disposed) return;
-    this.#panel.postMessage(
-      sessionId === undefined ? { type: 'showView', mode } : { type: 'showView', mode, sessionId },
-    );
+    this.#viewControls = { type: 'viewControls', controls };
+    this.#panel.postMessage(this.#viewControls);
+  }
+
+  /**
+   * Ask the renderer to DO something — Reset view, or walk back to the deck.
+   *
+   * Separate from {@link PanelController.sendViewControls} because neither is
+   * a value: both happen once, and a state message is re-sent whenever
+   * anything in it moves.
+   */
+  sendViewAction(action: 'resetView' | 'openDeck'): void {
+    if (this.#disposed) return;
+    this.#panel.postMessage({ type: 'viewAction', action });
   }
 
   /**
@@ -4253,6 +4286,15 @@ export interface AgentDeckHostOptions extends DataPathOptions {
    * reveals the existing one instead.
    */
   createPanel: () => PanelSurface;
+  /**
+   * The view-control state, READ THROUGH rather than held — v0.9.0 DoD 9.14.
+   *
+   * `activate()` owns the one copy, because the sidebar tree exists in
+   * windows where no host does and both surfaces must tick the same value. A
+   * host that kept its own copy would be the second owner the amendment's
+   * whole design exists to remove.
+   */
+  viewControls?: () => ViewControls;
   /** Injected so a test can assert the emitted document byte for byte. */
   nonce?: string;
   /**
@@ -4456,6 +4498,12 @@ export class AgentDeckHost {
     codex: 0,
   };
   #panel: PanelController | null = null;
+
+  /**
+   * How this host reads the view controls (DoD 9.14). Defaults to the shipped
+   * defaults, which is what every host test that is about something else gets.
+   */
+  #viewControls: () => ViewControls = () => DEFAULT_VIEW_CONTROLS;
   #panelsCreated = 0;
   #disposed = false;
   /** `agentDeck.canvas.autoFit`, as last read. Sent to every panel (DoD 4.0). */
@@ -4484,6 +4532,7 @@ export class AgentDeckHost {
   constructor(options: AgentDeckHostOptions) {
     const {
       createPanel,
+      viewControls,
       nonce,
       onEmission,
       createDiagnosticsSink,
@@ -4492,6 +4541,7 @@ export class AgentDeckHost {
       ...rest
     } = options;
     this.#createPanel = createPanel;
+    if (viewControls !== undefined) this.#viewControls = viewControls;
     this.#canvasAutoFit = options.settings['canvas.autoFit'];
     this.#tweaks = tweaksOf(options.settings);
     if (nonce !== undefined) this.#nonce = nonce;
@@ -4808,10 +4858,6 @@ export class AgentDeckHost {
     return {
       canvasAutoFit: this.#canvasAutoFit,
       tweaks: this.#tweaks,
-      // DoD 9.6 — read at SEND time rather than held, so a panel reload
-      // after the user installs Insights reports the new answer without
-      // anything having to notice the install.
-      insightsInstalled: isInsightsInstalled(),
     };
   }
 
@@ -4825,9 +4871,12 @@ export class AgentDeckHost {
    *
    * v0.9.0 DoD 9.5: an optional `sessionId` opens it focused on one session.
    */
-  openStats(sessionId?: string): PanelController | null {
+  openStats(controls: ViewControls): PanelController | null {
     const controller = this.open();
-    controller?.showView('stats', sessionId);
+    // The CALLER has already moved the shared state to `stats` (and to the
+    // focused session, when the deep link named one), so this re-states it
+    // rather than composing a second opinion about what the mode should be.
+    controller?.sendViewControls(controls);
     return controller;
   }
 
@@ -4961,23 +5010,18 @@ export class AgentDeckHost {
         // done the repair by the time this runs; what is left is to say so
         // where a human can read it (DoD 5.5.3).
         /*
-         * v0.9.0 DoD 9.6 — the ONE command the panel acts on.
+         * The `runCommand` arm was here until v0.9.0 DoD 9.14.
          *
-         * An EQUALITY against one constant, not a list and not a prefix: the
-         * sidebar gates its own `runCommand` on `SIDEBAR_MENU` because it
-         * has five entries, and this surface has one. A webview asking for
-         * anything else is dropped exactly as `expandNode` is — the panel
-         * stays a renderer, and the one exception is named here in full.
+         * It is what made About dead: the message never got this far, because
+         * `isWebviewToHostMessage` validated a `runCommand` against the
+         * SIDEBAR's five-entry list and `agentDeck.about` was not on it. The
+         * arm that allowed About and Insights was unreachable from this
+         * surface for the whole of its life.
+         *
+         * Neither the arm nor the message exists now: spec
+         * `Amendment 2026-09-20` moves every control into the editor's own
+         * menus, so no webview asks the host to run anything.
          */
-        if (message.type === 'runCommand') {
-          // The TWO commands this surface may ask for, by equality against
-          // the constants. A list of two, not a prefix and not a set that
-          // grows by accident: every addition is a line here.
-          if (message.command === INSIGHTS_COMMAND || message.command === ABOUT_COMMAND) {
-            void vscode.commands.executeCommand(message.command);
-          }
-          return;
-        }
         if (message.type !== 'resyncRequest') return;
         this.diagnostics?.record({
           kind: 'resyncRequest',
@@ -4998,6 +5042,10 @@ export class AgentDeckHost {
     // invariant is the older contract, and the renderer's default while it
     // waits is the manifest default.
     controller.setSettings(this.#settingsMessage());
+    // ...and the controls (DoD 9.14), after the settings for the same reason
+    // the settings come after the snapshot: the renderer's default is the
+    // host's default, so nothing is decided wrongly in the gap.
+    controller.sendViewControls(this.#viewControls());
     return controller;
   }
 
@@ -5076,19 +5124,49 @@ export const INSIGHTS_COMMAND = 'agentDeck.insights';
  * opens no socket, so `SECURITY.md`’s "makes no network call" is unchanged
  * and `egress.test.ts`’s census of the bundle still finds one client.
  */
-export async function showAbout(): Promise<void> {
-  const choice = await vscode.window.showInformationMessage(
-    ABOUT_TEXT,
-    { modal: true },
-    ...ABOUT_LINKS.map((link) => link.label),
+let aboutPanel: vscode.WebviewPanel | null = null;
+
+export function showAbout(): void {
+  if (aboutPanel !== null) {
+    aboutPanel.reveal();
+    return;
+  }
+  const panel = vscode.window.createWebviewPanel(
+    ABOUT_PANEL_VIEW_TYPE,
+    ABOUT_PANEL_TITLE,
+    vscode.ViewColumn.Active,
+    {
+      enableScripts: true,
+      // NO resource roots at all: the document is self-contained, so there is
+      // nothing for it to load and nothing it may reach if it tries.
+      localResourceRoots: [],
+    },
   );
-  if (choice === undefined) return;
-  const link = ABOUT_LINKS.find((entry) => entry.label === choice);
-  // A label that is not one of ours opens nothing. The editor returns what
-  // it was given, but a lookup is what keeps the URL a LITERAL from this
-  // module rather than a string that came back from somewhere.
-  if (link === undefined) return;
-  await vscode.env.openExternal(vscode.Uri.parse(link.url));
+  aboutPanel = panel;
+  panel.webview.html = aboutPanelHtml(createNonce(), panel.webview.cspSource);
+  panel.webview.onDidReceiveMessage((raw: unknown) => {
+    const link = aboutLinkFor(raw);
+    // An index that is not one of ours opens nothing. The page posts an
+    // INDEX and never a url, so the only thing a renderer can name is one of
+    // this extension's own four literals.
+    if (link === undefined) return;
+    void vscode.env.openExternal(vscode.Uri.parse(link.url));
+  });
+  panel.onDidDispose(() => {
+    aboutPanel = null;
+  });
+}
+
+/**
+ * Drop the About panel, for `deactivate()` and for test isolation.
+ *
+ * A module-level slot that survived a suite's `resetVscodeMock()` would
+ * make the SECOND test in a file see a panel the first one opened, which is
+ * the shape of every "green because the previous test did it" defect.
+ */
+export function disposeAboutPanel(): void {
+  aboutPanel?.dispose();
+  aboutPanel = null;
 }
 
 /**
@@ -5346,65 +5424,12 @@ export function adaptWebviewPanel(
   };
 }
 
-/**
- * Adapt a real `vscode.WebviewView` to {@link SidebarSurface} (DoD 4.6b).
- *
- * Same shape as {@link adaptWebviewPanel} and for the same reason: the one
- * place the editor API and the sidebar controller's vocabulary meet, written
- * out so a change in either is a compile error here.
+/*
+ * `adaptWebviewView` was here until v0.9.0 DoD 9.14. It adapted a
+ * `vscode.WebviewView` for the sidebar WEBVIEW, and spec
+ * `Amendment 2026-09-20` replaces that surface with a native `TreeView` —
+ * which the editor renders itself, so there is nothing to adapt.
  */
-export function adaptWebviewView(
-  view: vscode.WebviewView,
-  extensionUri: vscode.Uri,
-): SidebarSurface {
-  view.webview.options = {
-    enableScripts: true,
-    // The same two files the panel may read, and nothing else.
-    localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist')],
-  };
-  return {
-    get cspSource(): string {
-      return view.webview.cspSource;
-    },
-    setHtml: (html: string): void => {
-      view.webview.html = html;
-    },
-    asWebviewUri: (...segments: string[]): string =>
-      view.webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, ...segments)).toString(),
-    // v0.8.0 DoD 7.6. The return is a thenable VS Code resolves with whether
-    // the document was there to receive it; nothing here acts on that, for the
-    // reason `PanelController` gives about its own posts — a message the
-    // renderer did not get is re-sent by the next `setSettings`, and a
-    // rejected post must not surface as an error to the user.
-    postMessage: (message: SettingsMessage): void => {
-      void view.webview.postMessage(message);
-    },
-    onDidChangeVisibility: (handler: (visible: boolean) => void): Unsubscribe => {
-      const subscription = view.onDidChangeVisibility(() => {
-        handler(view.visible);
-      });
-      return () => {
-        subscription.dispose();
-      };
-    },
-    onDidReceiveMessage: (handler: (raw: unknown) => void): Unsubscribe => {
-      const subscription = view.webview.onDidReceiveMessage((raw: unknown) => {
-        handler(raw);
-      });
-      return () => {
-        subscription.dispose();
-      };
-    },
-    onDidDispose: (handler: () => void): Unsubscribe => {
-      const subscription = view.onDidDispose(() => {
-        handler();
-      });
-      return () => {
-        subscription.dispose();
-      };
-    },
-  };
-}
 
 /**
  * How many editor groups the window has. `tabGroups` has been on `window`
@@ -5521,18 +5546,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
   const api = createAgentDeckApi(
     {
       liveRecords: () => activeHost?.stats?.liveRecords() ?? [],
-      readStored: (query) => {
-        const pipeline = activeHost?.stats;
-        if (pipeline !== undefined) return pipeline.store.readRecords(query);
-        const dir = statsDirFor(context);
-        if (dir === undefined) return [];
-        const current = readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION));
-        return new StatsStore({
-          dir,
-          enabled: current['stats.enabled'],
-          retentionDays: current['stats.retentionDays'],
-        }).readRecords(query);
-      },
+      readStored: (query) => readStoredRecords(query),
     },
     updates,
     (reason) => {
@@ -5540,18 +5554,190 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     },
   );
 
-  /*
-   * v0.8.0 DoD 7.6 — every sidebar view currently resolved in this window.
+  /* ----------------------------------------------------------------------- *
+   * v0.9.0 DoD 9.14 — the view controls, and the native sidebar
+   * ----------------------------------------------------------------------- */
+
+  /**
+   * THE ONE COPY OF THE CONTROL STATE for this window.
    *
-   * VS Code resolves the view when the container is first opened and disposes
-   * it when the window closes, and it can do both more than once in a
-   * session. A SET rather than one slot, because nothing in the API promises
-   * one at a time, and each controller removes itself through `onDispose` —
-   * a list that only ever grew would be a small leak with a long fuse, and
-   * this repository has the `CodexTailStore.retain` precedent for exactly
-   * that shape.
+   * Spec `Amendment 2026-09-20` puts every control in the editor's own menus,
+   * so the host is what holds their values and the panel renders them. It
+   * lives HERE rather than on `AgentDeckHost` because the sidebar tree exists
+   * in windows where no host does — a window observing nothing still shows
+   * Menu, View, Tweaks and Insights — and two copies would let the tree's tick
+   * and the panel's filter describe different states.
+   *
+   * `deckSort` is seeded from `agentDeck.defaultOrdering` rather than from the
+   * defaults object: that setting's whole job is to say what the deck opens
+   * sorted by, and settings are the source of truth for the value they name.
    */
-  const sidebars = new Set<SidebarController>();
+  let viewControls: ViewControls = {
+    ...DEFAULT_VIEW_CONTROLS,
+    deckSort: asDeckSort(readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION)).defaultOrdering),
+  };
+
+  /** How many times "See an example" has been pressed. Rotates the example. */
+  let insightsExampleCount = 0;
+
+  /**
+   * The stored history. ONE reader, two callers — the extension API and the
+   * sidebar's Insights section — so a window with no host answers the same
+   * way to both, honouring `agentDeck.stats.enabled` in either.
+   */
+  const readStoredRecords = (
+    query: Parameters<StatsStore['readRecords']>[0],
+  ): ReturnType<StatsStore['readRecords']> => {
+    const pipeline = activeHost?.stats;
+    if (pipeline !== undefined) return pipeline.store.readRecords(query);
+    const dir = statsDirFor(context);
+    if (dir === undefined) return [];
+    const current = readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION));
+    return new StatsStore({
+      dir,
+      enabled: current['stats.enabled'],
+      retentionDays: current['stats.retentionDays'],
+    }).readRecords(query);
+  };
+
+  /**
+   * The Insights section, from THIS USER'S OWN records — DoD 9.6, unchanged
+   * in substance and moved from the webview to the tree by the amendment.
+   */
+  const insightsSection = (): InsightsSection => {
+    const layout = insightsLayout(readStoredRecords({}));
+    return {
+      counts:
+        layout.allZero
+          ? ALL_ZERO_LINE
+          : layout.shown.map((row) => `${String(row.count)} ${row.label}`).join(' · '),
+      example: exampleAt(insightsExampleCount),
+      installed: isInsightsInstalled(),
+      sessions: layout.sessions,
+    };
+  };
+
+  const treeProvider = new AgentDeckTreeProvider({
+    controls: () => viewControls,
+    tweakValue: (key: string) =>
+      tweaksOf(readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION)))[key],
+    insights: insightsSection,
+  });
+  const treeView = vscode.window.createTreeView<TreeNodeModel>(SIDEBAR_VIEW_ID, {
+    treeDataProvider: treeProvider,
+  });
+
+  /**
+   * Move the control state and tell everything that renders it.
+   *
+   * ONE FUNCTION, called by every control command, so "the panel and the tree
+   * agree" is a property of the code rather than of whoever wrote the last
+   * command. The panel is told even when it is closed — `sendViewControls` is
+   * a no-op on a disposed controller, and the next `open()` sends the current
+   * state anyway.
+   */
+  const commitControls = (next: ViewControls): void => {
+    viewControls = next;
+    activeHost?.panel?.sendViewControls(viewControls);
+    treeProvider.refresh();
+  };
+
+  /** Ask the renderer to do something that is not a value (DoD 9.14). */
+  const sendViewAction = (action: 'resetView' | 'openDeck'): void => {
+    activeHost?.panel?.sendViewAction(action);
+  };
+
+  /**
+   * Every control command that is a CHOICE AMONG VALUES, registered from the
+   * table rather than one by one.
+   *
+   * `applyControlCommand` is the whole body: a row with a `sets` is applied
+   * identically to every other, so a new filter, layout, sort or tab is a row
+   * in `src/view/controls.ts` and a line in `package.json`, and never a new
+   * arm here. That is what keeps the tree, the submenus and the renderer from
+   * drifting apart one entry at a time.
+   */
+  for (const entry of CONTROL_COMMANDS) {
+    if (entry.sets === undefined) continue;
+    const command = entry.command;
+    context.subscriptions.push(
+      vscode.commands.registerCommand(command, () => {
+        commitControls(applyControlCommand(viewControls, command));
+      }),
+    );
+  }
+
+  /** The three boolean tweaks and the three ordering choices (ruling 1). */
+  for (const entry of CONTROL_COMMANDS) {
+    if (entry.section !== 'tweaks') continue;
+    const key = tweakKeyOf(entry.command);
+    if (key === undefined) continue;
+    const wanted = tweakValueOf(entry.command);
+    context.subscriptions.push(
+      vscode.commands.registerCommand(entry.command, () => {
+        const current = tweaksOf(readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION)));
+        // `Global`, for the reason the v0.8.0 sidebar gave and which has not
+        // changed: the alternative VS Code picks by default is the WORKSPACE
+        // file inside the user's own repository, which is usually tracked.
+        void vscode.workspace
+          .getConfiguration(CONFIG_SECTION)
+          .update(
+            key,
+            wanted ?? current[key] !== true,
+            vscode.ConfigurationTarget.Global,
+          );
+      }),
+    );
+  }
+
+  const sidebarCommands = [
+    /**
+     * Ruling 6 — Reset view has ONE entry and the STORE decides which surface
+     * it means, because the store is what knows the altitude. The host sends
+     * the request and holds no opinion about the answer.
+     */
+    vscode.commands.registerCommand('agentDeck.resetView', () => {
+      sendViewAction('resetView');
+    }),
+    /**
+     * The tool filter is a QUICK PICK, because tool names are the engine's
+     * and a command per name is not a thing a manifest can hold.
+     *
+     * The names come from the LIVE records this window holds, which is a
+     * superset of any one drawer's: the host does not know which node is
+     * selected, and asking would mean the renderer reporting its selection
+     * back — a second owner of a value the renderer already owns. Picking a
+     * tool the open drawer never called shows an empty list, which is the
+     * honest answer to "show me only that tool".
+     */
+    vscode.commands.registerCommand('agentDeck.inspector.tool', async () => {
+      const names = new Set<string>();
+      for (const record of activeHost?.stats?.liveRecords() ?? []) {
+        for (const tool of record.tools) names.add(tool.toolName);
+      }
+      const picked = await vscode.window.showQuickPick(
+        [INSPECTOR_TOOL_ALL, ...[...names].sort()],
+        { placeHolder: 'Tool names from the sessions this window holds' },
+      );
+      if (picked === undefined) return;
+      commitControls({ ...viewControls, inspectorTool: picked });
+    }),
+    /**
+     * DoD 9.6 — the next example.
+     *
+     * The counter advances on the PRESS and nothing else, so the first sight
+     * of the section is the first example. v0.9.0 advanced it on LEAVING a
+     * tab that no longer exists; a tree section is never left, so the rule
+     * that replaced it is the simpler one it should have been.
+     */
+    vscode.commands.registerCommand('agentDeck.insights.nextExample', () => {
+      insightsExampleCount += 1;
+      treeProvider.refresh();
+    }),
+  ];
+
+  context.subscriptions.push(treeView, treeProvider, ...sidebarCommands);
+
 
   /**
    * The `settings` message for a surface, read from the configuration at the
@@ -5561,17 +5747,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    * windows where no host does. The settings are the source of truth on both
    * paths, so the two agree by construction rather than by being kept in step.
    */
-  const settingsMessageFor = (): Omit<SettingsMessage, 'type'> => {
-    const current = readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION));
-    return {
-      canvasAutoFit: current['canvas.autoFit'],
-      tweaks: tweaksOf(current),
-      // DoD 9.6. The sidebar is told the same fact the panel is, from the
-      // same probe, so the two surfaces cannot disagree about whether
-      // Insights is installed.
-      insightsInstalled: isInsightsInstalled(),
-    };
-  };
+  /*
+   * `settingsMessageFor` built a `settings` message for the SIDEBAR from the
+   * configuration rather than from the host, because the sidebar exists in
+   * windows where no host does. The sidebar is a native `TreeView` now and
+   * reads the configuration itself through `tweakValue` — the same source by
+   * a shorter path — so the message and the surface that received it are both
+   * gone. The PANEL's settings still come from `PanelController`.
+   */
 
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_COMMAND, () => {
@@ -5584,6 +5767,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
         return;
       }
       host.open();
+      // Ruling 2 — the breadcrumbs are gone, so this is one of the two ways
+      // back out of a session. `open()` has already sent the control state;
+      // this is the action beside it.
+      host.panel?.sendViewAction('openDeck');
     }),
     /*
      * v0.7.0 DoD 4.6b. The same panel, asked to show the Stats view mode.
@@ -5605,7 +5792,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
         );
         return;
       }
-      host.openStats(typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined);
+      const focus = typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined;
+      // DoD 9.5 + 9.14. The deep link moves the SHARED state, so the sidebar
+      // ticks Statistics at the same moment the panel shows it.
+      const { focusSessionId: _cleared, ...rest } = viewControls;
+      commitControls(
+        focus === undefined
+          ? { ...rest, viewMode: 'stats' }
+          : { ...rest, viewMode: 'stats', focusSessionId: focus },
+      );
+      host.openStats(viewControls);
     }),
     /*
      * v0.7.0 DoD 4.6b. VS Code's settings UI, filtered to this extension —
@@ -5632,77 +5828,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       void vscode.commands.executeCommand(WORKBENCH_OPEN_EXTENSION, INSIGHTS_EXTENSION_ID);
     }),
     /*
-     * v0.7.0 DoD 4.6b — THE SIDEBAR, registered UNCONDITIONALLY and above the
-     * activation gates, like the clear command and for the same reason: it is
-     * the product's front door, and a front door that only exists in windows
-     * the data path started in is missing from exactly the window someone
-     * opens to find out why nothing is showing. Every entry runs a command
-     * registered in this same function, so each explains itself when there is
-     * nothing to show.
-     */
-    vscode.window.registerWebviewViewProvider(SIDEBAR_VIEW_ID, {
-      resolveWebviewView: (view: vscode.WebviewView): void => {
-        const controller = new SidebarController({
-          surface: adaptWebviewView(view, context.extensionUri),
-          executeCommand: (command: string) => vscode.commands.executeCommand(command),
-          /*
-           * v0.8.0 DoD 7.6 — THE ONE WRITE, and the target is the decision.
-           *
-           * `ConfigurationTarget.Global` writes the user's own `settings.json`
-           * and nothing else. The alternative VS Code would pick if no target
-           * were passed is the WORKSPACE file, i.e. `.vscode/settings.json`
-           * inside the user's repository, which is usually tracked — so a
-           * click in this panel would put a personal display preference into
-           * somebody's version control. For an extension whose trust anchor is
-           * that it writes nothing into the projects it observes, that is the
-           * wrong file, and "which file did that click edit" is not a question
-           * a user reads a label to answer.
-           *
-           * The stated cost: these settings are `window`-scoped, so a user who
-           * has set a workspace override keeps it, and a click here writes
-           * Global underneath a value that still wins. The control then shows
-           * the effective value — unmoved — because the panel draws whatever
-           * the next `settings` message says and that message is read through
-           * `getConfiguration()`, which resolves the override. That is the
-           * honest reading of the user's own configuration rather than a
-           * second opinion about it.
-           */
-          onUpdateTweak: (key: string, value: boolean | string) =>
-            vscode.workspace
-              .getConfiguration(CONFIG_SECTION)
-              .update(key, value, vscode.ConfigurationTarget.Global),
-          onError: (error: unknown) => {
-            void vscode.window.showErrorMessage(
-              `Agent Deck: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          },
-          onDispose: () => {
-            sidebars.delete(controller);
-          },
-        });
-        sidebars.add(controller);
-        // The settings, now. The sidebar is registered ABOVE the activation
-        // gates, so this must not go through the host: in a window observing
-        // nothing there is no host, and the Tweaks tab is exactly the tab such
-        // a user opens. The configuration is the source of truth and it is
-        // readable either way.
-        controller.setSettings(settingsMessageFor());
-      },
-    }),
-    /*
-     * ...and again on every change, for every live sidebar (DoD 7.6).
+     * v0.9.0 DoD 9.14 — the sidebar is a native `TreeView` now, created
+     * above; what is left here is keeping it current.
      *
-     * A SECOND listener, beside the one registered further down with the host,
-     * and deliberately not folded into it: that one lives inside the
-     * activation gates and would never run in a window that observes nothing.
-     * This one is unconditional, like the registration above it, so the Tweaks
-     * tab tracks `settings.json` in every window — including the window where
-     * a user opened the tab precisely because nothing else is showing.
+     * The tree draws three things that can move without anything on this
+     * path noticing: a checkbox is a SETTING, the ordering group is a
+     * setting, and both are writable from the Settings UI and from
+     * `settings.json` directly. So a configuration change refreshes it, for
+     * the same reason the webview sidebar was sent a fresh `settings`
+     * message — and unconditionally, like the registration above it, because
+     * a window observing nothing is exactly the window somebody opens the
+     * sidebar in.
      */
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration(CONFIG_SECTION)) return;
-      const next = settingsMessageFor();
-      for (const controller of [...sidebars]) controller.setSettings(next);
+      treeProvider.refresh();
     }),
     /*
      * DoD 5.5.3. Registered beside `agentDeck.open` and for the same reason
@@ -5978,6 +6118,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
 
 /** Dispose everything. A bound socket or a live watcher after this is a defect. */
 export async function deactivate(): Promise<void> {
+  // v0.9.0 DoD 9.14. About is a module-level slot, because the command may
+  // run in a window with no host and a second press should reveal the panel
+  // rather than stack another. A slot that survived deactivation would be a
+  // reference to a disposed editor object, and in a test suite it is the
+  // shape of every "green because the previous test did it" defect.
+  disposeAboutPanel();
   const host = activeHost;
   activeHost = null;
   inactiveReason = null;

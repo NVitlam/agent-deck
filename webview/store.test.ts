@@ -15,6 +15,7 @@ import {
   deckLayout,
 } from './layout.js';
 import { liveSession, unsupportedSession } from './testdata.js';
+import { viewControls } from './testkit.js';
 
 /**
  * `src/model/session.ts` is node-only code — it reaches `graft.ts`, which
@@ -585,17 +586,24 @@ describe('Escape walks the altitudes up (C7.8)', () => {
   });
 });
 
-describe('the in-panel view toggle (C7.2)', () => {
+describe('the view mode, which the HOST states (C7.2, v0.9.0 DoD 9.14)', () => {
+  /*
+   * The in-panel toggle was here until spec `Amendment 2026-09-20 — Clean
+   * windows`. The pair is View ▸ Canvas | List now, so the mode arrives on
+   * the `viewControls` message and the store assigns it. Every property this
+   * block asserted is unchanged: the default, that a switch touches nothing
+   * else, that nothing reaches the host, and that a reload starts over.
+   */
   it('starts on the canvas, with no setting and nothing remembered', () => {
     expect(createStore().getView().viewMode).toBe('canvas');
     expect(createStore().getView().viewMode).toBe(DEFAULT_VIEW_MODE);
   });
 
-  it('toggles canvas -> list -> canvas', () => {
+  it('goes canvas -> list -> canvas, as the host says', () => {
     const store = createStore();
-    store.toggleViewMode();
+    store.handleMessage(viewControls({ viewMode: 'list' }));
     expect(store.getView().viewMode).toBe('list');
-    store.toggleViewMode();
+    store.handleMessage(viewControls({ viewMode: 'canvas' }));
     expect(store.getView().viewMode).toBe('canvas');
   });
 
@@ -604,7 +612,7 @@ describe('the in-panel view toggle (C7.2)', () => {
     store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
     store.enterSession('session-live');
     store.selectNode('tool-read');
-    store.toggleViewMode();
+    store.handleMessage(viewControls({ viewMode: 'list' }));
     const view = store.getView();
     expect(view.viewMode).toBe('list');
     expect(view.altitude).toBe('inspector');
@@ -614,19 +622,30 @@ describe('the in-panel view toggle (C7.2)', () => {
   it('sends the host nothing, in either direction', () => {
     const { sink, sent } = collect();
     const store = createStore(sink);
-    store.setViewMode('list');
-    store.toggleViewMode();
+    store.handleMessage(viewControls({ viewMode: 'list' }));
+    store.handleMessage(viewControls({ viewMode: 'canvas' }));
     expect(sent).toEqual([]);
   });
 
-  it('does not notify when the mode is set to the one already showing', () => {
+  it('notifies on every control message, because the host states the WHOLE state', () => {
+    /*
+     * THIS IS A DELIBERATE CHANGE FROM THE TOGGLE'S BEHAVIOUR, and it is
+     * worth saying why rather than quietly keeping the old assertion.
+     *
+     * `setViewMode` returned early when the mode was already showing, which
+     * was right for a control that could only change one thing. The message
+     * carries nine values, so "is it the same?" would mean comparing all
+     * nine — and a renderer deciding which host messages were worth acting
+     * on is exactly the second owner this design removes. A notify is cheap;
+     * a divergence is not.
+     */
     const store = createStore();
     let calls = 0;
     const off = store.subscribe(() => (calls += 1));
-    store.setViewMode('canvas');
-    expect(calls).toBe(0);
-    store.setViewMode('list');
+    store.handleMessage(viewControls({ viewMode: 'canvas' }));
     expect(calls).toBe(1);
+    store.handleMessage(viewControls({ viewMode: 'list' }));
+    expect(calls).toBe(2);
     off();
   });
 
@@ -636,7 +655,7 @@ describe('the in-panel view toggle (C7.2)', () => {
     // on the wire. The shipped-bundle guard in `bundle.test.ts` pins the
     // absence of the storage APIs themselves.
     const before = createStore();
-    before.setViewMode('list');
+    before.handleMessage(viewControls({ viewMode: 'list' }));
     expect(before.getView().viewMode).toBe('list');
     expect(createStore().getView().viewMode).toBe('canvas');
   });
@@ -1033,7 +1052,7 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     expect(all.livenessFilter).toBe('all');
     expect(all.filteredSessions).toHaveLength(3);
 
-    store.setLivenessFilter('live');
+    store.handleMessage(viewControls({ livenessFilter: 'live' }));
     const live = store.getView();
     expect(live.filteredSessions.map((r) => r.liveness)).toEqual(['live']);
 
@@ -1062,7 +1081,7 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     });
     expect(store.getView().engineFilter).toBe('all');
 
-    store.setEngineFilter('oc');
+    store.handleMessage(viewControls({ engineFilter: 'oc' }));
     expect(store.getView().engineFilter).toBe('oc');
 
     store.enterSession('session-live');
@@ -1073,51 +1092,42 @@ describe('Phase 4.6 — deck filter, inspector toggle, pan/zoom', () => {
     // The whole test. Before the fix this read 'all'.
     expect(store.getView().engineFilter).toBe('oc');
 
-    // The two axes are independent: setting one never moves the other.
-    store.setLivenessFilter('live');
+    // The two axes are independent, and the message carries both: a state
+    // naming one of them without the other is not a shape the host can send.
+    store.handleMessage(viewControls({ engineFilter: 'oc', livenessFilter: 'live' }));
     expect(store.getView().engineFilter).toBe('oc');
-    store.setEngineFilter('cc');
+    expect(store.getView().livenessFilter).toBe('live');
+    store.handleMessage(viewControls({ engineFilter: 'cc', livenessFilter: 'live' }));
+    expect(store.getView().engineFilter).toBe('cc');
     expect(store.getView().livenessFilter).toBe('live');
   });
 
-  it('refuses an engine value that is not one of the four, and notifies nobody', () => {
-    // "Four" as of v0.6.0 Phase 3: `all` / `cc` / `oc` / `cx`. This test's
-    // title said "three" before Codex widened `ENGINE_FILTERS`.
+  it('carries every one of the four engine values, from the host', () => {
+    /*
+     * v0.9.0 DoD 9.14. This test refused an invented value and asserted that
+     * nobody was notified — a guard on `setEngineFilter`, which the renderer
+     * no longer has. The value comes from `src/view/controls.ts`'s table
+     * through a command the host registers, so an invented one cannot be
+     * asked for: there is no command for it.
+     *
+     * What survives is the half that was always about the product — all FOUR
+     * values reach the view, `cx` included, rather than three plus one the
+     * guard merely tolerated.
+     */
     const store = createStore();
     store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
-    let notifications = 0;
-    store.subscribe(() => {
-      notifications += 1;
-    });
-    // Cast because the point is a caller that invented a value; `tsc` stops
-    // this at compile time for every caller in the repo, and the guard is for
-    // the ones it cannot see.
-    store.setEngineFilter('everything' as never);
-    expect(store.getView().engineFilter).toBe('all');
-    expect(notifications).toBe(0);
-
-    // Vacuity control: a real value DOES notify, so the 0 above is the guard
-    // working rather than the subscription never firing.
-    store.setEngineFilter('oc');
-    expect(notifications).toBe(1);
-    // And setting the value it already holds is not a change.
-    store.setEngineFilter('oc');
-    expect(notifications).toBe(1);
-
-    // The fourth value is a real one too, not merely tolerated by the guard
-    // above failing to reject it.
-    store.setEngineFilter('cx');
-    expect(store.getView().engineFilter).toBe('cx');
-    expect(notifications).toBe(2);
+    for (const engineFilter of ['all', 'cc', 'oc', 'cx'] as const) {
+      store.handleMessage(viewControls({ engineFilter }));
+      expect(store.getView().engineFilter, engineFilter).toBe(engineFilter);
+    }
   });
 
   it('sends the host NOTHING for either filter — both are view state (G7)', () => {
     const sent: unknown[] = [];
     const store = createStore((message) => sent.push(message));
     store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
-    store.setEngineFilter('cc');
-    store.setLivenessFilter('idle');
-    store.setEngineFilter('all');
+    store.handleMessage(viewControls({ engineFilter: 'cc', livenessFilter: 'idle' }));
+    store.handleMessage(viewControls({ engineFilter: 'all' }));
     expect(sent).toStrictEqual([]);
   });
 

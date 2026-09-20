@@ -73,7 +73,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { SIDEBAR_MENU } from '../sidebar/menu.js';
+import { MENU_COMMANDS as SIDEBAR_MENU } from '../view/controls.js';
 import { LOOP_MIN, SPIKE_TOKENS } from '../stats/constants.js';
 import { costOfSeries, parsePricing } from '../stats/pricing.js';
 import type { StatsRecord } from '../stats/schema.js';

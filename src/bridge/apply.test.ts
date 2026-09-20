@@ -50,8 +50,20 @@ const SESSION = fileURLToPath(new URL('../model/session.ts', import.meta.url));
  * `schema.ts` imports exactly one thing — `events.ts` — and `derive.test.ts`
  * pins that; it is a validator over plain objects and is as bundleable as
  * `apply.ts` itself.
+ *
+ * FOUR since v0.9.0 DoD 9.14. `events.ts` carries the `viewControls` wire
+ * message, whose payload is `ViewControls`, and type-imports it from
+ * `src/view/controls.ts`. That module has NO IMPORTS AT ALL — it is written
+ * that way because the CSP-strict webview bundle reads it, which is the same
+ * property this layer exists to protect — so the layer is one module wider
+ * and no weaker, and the two tests after this one still prove it.
  */
-const PURE_TYPES_LAYER = ['src/bridge/apply.ts', 'src/model/events.ts', 'src/stats/schema.ts'];
+const PURE_TYPES_LAYER = [
+  'src/bridge/apply.ts',
+  'src/model/events.ts',
+  'src/stats/schema.ts',
+  'src/view/controls.ts',
+];
 
 function repoRelative(absolute: string): string {
   return relative(REPO_ROOT, absolute).split(sep).join('/');

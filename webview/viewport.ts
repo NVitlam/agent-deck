@@ -71,8 +71,95 @@ export const DECK_ZOOM_LIMITS: ZoomLimits = { min: 0.5, max: 2 };
 /** Tree zoom range. Further out than the deck, because a tree gets wider. */
 export const TREE_ZOOM_LIMITS: ZoomLimits = { min: 0.4, max: 2 };
 
-/** Scale multiplier per wheel notch. */
-export const ZOOM_FACTOR = 1.1;
+/**
+ * Scale multiplier per wheel notch — v0.9.0 DoD 9.14.
+ *
+ * **1.05, reduced from 1.1**, and the reduction is half of the fix. The other
+ * half is {@link WHEEL_NOTCH_DELTA}: until this release every wheel EVENT was
+ * one notch, so a trackpad — which emits a burst of small events per flick —
+ * applied ten per cent per event and crossed the whole zoom range in one
+ * gesture. The own-eyes pass called the sensitivity far too high; this is
+ * the measured step the spec's `Amendment 2026-09-20` locks, and
+ * `webview/goldens/zoom-step.json` is what locks it.
+ */
+export const ZOOM_FACTOR = 1.05;
+
+/**
+ * How much wheel travel makes one notch, in CSS pixels.
+ *
+ * 100 is not a preference: it is one detent of a standard mouse wheel in a
+ * Chromium `DOM_DELTA_PIXEL` event, so a mouse behaves exactly as it always
+ * did — one click, one notch — while a trackpad flick is divided by its
+ * TRAVEL rather than multiplied by its event count.
+ */
+export const WHEEL_NOTCH_DELTA = 100;
+
+/**
+ * Silence that ends a gesture, in milliseconds.
+ *
+ * The accumulator is reset after it, so a part-notch left over from one flick
+ * never adds itself to the next one — which is what "one notch per gesture,
+ * not per event" means in a stream that has no gesture-end event of its own.
+ */
+export const WHEEL_GESTURE_IDLE_MS = 120;
+
+/**
+ * `WheelEvent.deltaMode` in CSS pixels.
+ *
+ * A LINE is 100/3 px so that Firefox's three-lines-per-detent and Chromium's
+ * 100-px-per-detent come to the same one notch. A PAGE is treated as one
+ * detent: it is rare, and a large multiplier there is the direction that
+ * surprises a user who has never seen it before.
+ */
+const DELTA_MODE_PX: Readonly<Record<number, number>> = Object.freeze({
+  0: 1,
+  1: WHEEL_NOTCH_DELTA / 3,
+  2: WHEEL_NOTCH_DELTA,
+});
+
+/** One wheel stream's accumulator. Pure; the caller supplies the clock. */
+export interface WheelNotcher {
+  /**
+   * Feed one wheel event. Returns the SIGNED notches it completed — usually
+   * 0, because most events are a fraction of a detent.
+   */
+  feed(deltaY: number, deltaMode: number, atMs: number): number;
+}
+
+/**
+ * Turn a wheel stream into notches.
+ *
+ * ONE ACCUMULATOR PER SURFACE, and it is a closure rather than component
+ * state so the rule is written once and both canvases obey the same one —
+ * including ctrl+wheel and trackpad pinch, which arrive as ordinary wheel
+ * events and are deliberately not special-cased (the amendment: "pinch and
+ * ctrl-wheel obey the same law").
+ *
+ * A direction change resets the accumulator too. Without that, 90 px in and
+ * then 90 px out would leave 0 and emit nothing, which reads as a dead
+ * control rather than as a cancelled gesture.
+ */
+export function createWheelNotcher(): WheelNotcher {
+  let carried = 0;
+  let lastAtMs = Number.NEGATIVE_INFINITY;
+  return {
+    feed(deltaY: number, deltaMode: number, atMs: number): number {
+      if (!Number.isFinite(deltaY) || deltaY === 0) return 0;
+      const scale = DELTA_MODE_PX[deltaMode] ?? 1;
+      const travel = deltaY * scale;
+      const idle = atMs - lastAtMs > WHEEL_GESTURE_IDLE_MS;
+      const reversed = carried !== 0 && Math.sign(travel) !== Math.sign(carried);
+      carried = idle || reversed ? travel : carried + travel;
+      lastAtMs = atMs;
+      const whole = Math.trunc(carried / WHEEL_NOTCH_DELTA);
+      if (whole === 0) return 0;
+      carried -= whole * WHEEL_NOTCH_DELTA;
+      // Wheel DOWN is positive `deltaY` and means zoom OUT, so the sign is
+      // inverted here — once, in the one place that reads a wheel event.
+      return -whole;
+    },
+  };
+}
 
 /** Clear space {@link fitTo} leaves around the deck's content, in pixels. */
 export const DECK_FIT_PADDING = 24;

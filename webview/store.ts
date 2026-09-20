@@ -42,9 +42,6 @@ import {
   DEFAULT_ENGINE_FILTER,
   DEFAULT_LIVENESS_FILTER,
   DEFAULT_VIEW_MODE,
-  ENGINE_FILTERS,
-  LIVENESS_FILTERS,
-  VIEW_MODES,
 } from './canvas-contract.js';
 import type {
   Altitude,
@@ -53,10 +50,17 @@ import type {
   ViewMode,
 } from './canvas-contract.js';
 import { countNodes } from './layout.js';
-import type { DeckSortMode } from './layout.js';
+import type { DeckLayoutMode, DeckSortMode } from './layout.js';
 import { fit as fitCanvas } from './layout/fit.js';
 import type { DrawerRect } from './layout/fit.js';
 import type { StatsRecord } from '../src/stats/schema.js';
+import type {
+  InspectorOrder,
+  InspectorStatus,
+  StatsTab,
+  ViewControls,
+} from '../src/view/controls.js';
+import { DEFAULT_VIEW_CONTROLS } from '../src/view/controls.js';
 
 /**
  * The one command this surface may ask the host to run — DoD 9.6.
@@ -171,8 +175,9 @@ export const FIT_TRIGGERS: readonly FitTrigger[] = [
   { event: 'snapshot', fits: true, why: 'a full re-statement of the sessions (R6 replay step, reload)' },
   { event: 'enterSession', fits: true, why: 'session switch' },
   { event: 'selectSession', fits: true, why: 'session switch' },
-  { event: 'setEngineFilter', fits: true, why: 'engine chip toggle' },
-  { event: 'setViewMode:canvas', fits: true, why: 'mode switch back to canvas' },
+  { event: 'viewControls:engineFilter', fits: true, why: 'the engine filter moved' },
+  { event: 'viewControls:canvas', fits: true, why: 'mode switch back to canvas' },
+  { event: 'viewAction:openDeck', fits: true, why: 'Menu -> Open Deck walks out: the drawer closes' },
   { event: 'reportCanvasGeometry:changed', fits: true, why: 'panel or editor-group resize; label re-wrap that changed a node width' },
   // Numbers move, geometry does not: never fit.
   { event: 'diff:updateAgent', fits: false, why: 'token counters, status: a number on a box that did not move' },
@@ -182,9 +187,13 @@ export const FIT_TRIGGERS: readonly FitTrigger[] = [
   { event: 'schemaMismatch', fits: false, why: 'a refusal replaces the field entirely' },
   { event: 'statsSnapshot', fits: false, why: 'the Stats view; nothing on the canvas moved' },
   { event: 'statsStore', fits: false, why: 'the Stats view; nothing on the canvas moved' },
-  { event: 'setLivenessFilter', fits: false, why: 'a deck filter' },
-  { event: 'setViewMode:list', fits: false, why: 'leaving the canvas' },
-  { event: 'setViewMode:stats', fits: false, why: 'leaving the canvas' },
+  { event: 'viewControls:livenessFilter', fits: false, why: 'a deck filter' },
+  { event: 'viewControls:list', fits: false, why: 'leaving the canvas' },
+  { event: 'viewControls:stats', fits: false, why: 'leaving the canvas' },
+  { event: 'viewControls:deckSort', fits: false, why: 'the same cards in another order; layout re-places, the field does not move' },
+  { event: 'viewControls:statsTab', fits: false, why: 'the Stats view; nothing on the canvas moved' },
+  { event: 'viewControls:inspectorStatus', fits: false, why: 'the drawer lists fewer rows; it does not resize' },
+  { event: 'viewAction:resetView', fits: false, why: 'the user asked for the identity transform; fitting would take it away again' },
   { event: 'setDetailAction', fits: false, why: 'the drawer body splits; the drawer does not resize' },
   { event: 'toggleNode', fits: false, why: 'list-view expansion' },
   { event: 'dismissDegraded', fits: false, why: 'the banner' },
@@ -591,43 +600,49 @@ export interface WebviewView {
    */
   canvasAutoFit: boolean;
   /**
-   * Whether `nvitlam.agent-deck-insights` is installed — v0.9.0 DoD 9.6.
+   * The six control values the HOST owns — v0.9.0 DoD 9.14.
    *
-   * From the host, on the settings message. Defaults to FALSE before one
-   * arrives, which is the safe direction: the tab offers to get it, and a
-   * user who has it sees the other button one message later. Claiming it was
-   * installed and running a command that does not exist is the failure with
-   * no good recovery.
+   * They were component-local until the amendment: `deckLayout`/`deckSort`
+   * in `Deck.svelte`, `statsTab` in `StatsView.svelte`, the three inspector
+   * ones in `Inspector.svelte`. Every one of them was re-chosen from a
+   * control bar on the surface itself, and there are no control bars now, so
+   * the lifetime argument that kept them local has gone with the bars. They
+   * arrive on `viewControls` and this store assigns them; nothing here
+   * chooses one.
    */
-  insightsInstalled: boolean;
-  /**
-   * How many times the Insights example has been asked for — DoD 9.6.
+  deckLayout: DeckLayoutMode;
+  deckSort: DeckSortMode;
+  statsTab: StatsTab;
+  inspectorStatus: InspectorStatus;
+  inspectorOrder: InspectorOrder;
+  /** A tool name, or `all`. Free text: tool names are the engine's. */
+  inspectorTool: string;
+  /*
+   * `defaultOrdering` was here until v0.9.0 DoD 9.14.
    *
-   * WEBVIEW-LOCAL, never persisted, never sent: G7. It exists so the three
-   * examples rotate 1 -> 2 -> 3 -> 1, and `exampleAt` is what reads it.
+   * It was the setting the deck's own sort STARTED at, carried to the
+   * renderer so `Deck.svelte` could seed its `$state` from it. There is no
+   * component state and no control bar now (spec
+   * `Amendment 2026-09-20`): the setting seeds the HOST's `deckSort` once,
+   * at activation, and the renderer is told the result on `viewControls`.
+   * One mechanism instead of two, and `deckSort` above is the value.
    */
-  insightsOpenCount: number;
-  /**
-   * `agentDeck.defaultOrdering`, as the host last said (DoD 7.6).
-   *
-   * ABSENT until a `settings` message states a value this build knows — which
-   * is the absence of an answer, not a default. `Deck.svelte` falls back to
-   * `DEFAULT_DECK_SORT` when it is absent, so the deck has never once waited
-   * on this to draw, and no default is written down twice.
-   *
-   * The deck's sort itself is NOT here. It is `Deck.svelte`'s own state, by a
-   * decision that predates this phase and is argued in that file: the control
-   * bar is re-chosen from in front of you, and the component's lifetime — one
-   * deck visit — is the right lifetime for it. This value only says what it
-   * is re-chosen FROM.
-   */
-  defaultOrdering?: DeckSortMode;
   /**
    * Incremented every time the store FITS the canvas. The renderer adopts
    * `canvasView` when this moves and not otherwise, which is what lets a
    * user's own pan survive a re-render that fitted nothing.
    */
   canvasFitEpoch: number;
+  /**
+   * Incremented every time View ▸ Reset view is run INSIDE a session —
+   * v0.9.0 DoD 9.14, ruling 6.
+   *
+   * An epoch rather than a transform, because the interior's reset is A9.3's
+   * re-root-and-fit and only the canvas can compute it. At the deck altitude
+   * the same entry sets `deckView` directly, which is that surface's whole
+   * answer.
+   */
+  canvasResetEpoch: number;
   /**
    * The LIVE Layer 1 facts: one record per observed session, as the host's
    * pipeline last derived them (DoD 4.1). Replaced whole on every
@@ -714,54 +729,19 @@ export interface Store {
    * empty pane.
    */
   setDetailAction(actionId: string | undefined): void;
-  /**
-   * Show the next Insights example — v0.9.0 DoD 9.6.
+  /*
+   * `nextInsightsExample`, `openInsights`, `showAbout`, `setViewMode`,
+   * `toggleViewMode`, `setLivenessFilter`, `setEngineFilter` and
+   * `toggleStats` were here until v0.9.0 DoD 9.14.
    *
-   * Advances the webview-local counter and notifies. Nothing is posted: the
-   * examples are static and the host has no part in them.
+   * Every one of them was a CONTROL'S CALLBACK, and the amendment removes
+   * every control from every webview surface. The values they set arrive on
+   * `viewControls` instead, and the host is the only party that chooses one.
+   * Deleting them is what makes that true rather than merely intended: a
+   * setter left on this interface is a way for a renderer to disagree with
+   * the host, and two owners of one value is the defect class this
+   * repository has paid for twice.
    */
-  nextInsightsExample(): void;
-  /**
-   * Ask the host to run `agentDeck.insights` — v0.9.0 DoD 9.6.
-   *
-   * NARROW ON PURPOSE. A generic `runCommand(id)` here would let any
-   * component ask the host to run anything, and the host’s own guard is a
-   * single equality precisely so the webview cannot choose. This is the
-   * only command the panel can ask for, and its name is written once.
-   *
-   * What the command DOES is the host’s to decide: installed, it opens
-   * Insights; not installed, it opens the page. The webview renders the
-   * word and does not branch on it.
-   */
-  openInsights(): void;
-  /**
-   * Ask the host to show About — v0.9.0 DoD 9.7.
-   *
-   * Narrow for the reason {@link Store.openInsights} states.
-   */
-  showAbout(): void;
-  /**
-   * Switch renderers (C7.2). Not persisted, not a setting, not a message.
-   *
-   * v0.9.0 DoD 9.5: `focusSessionId` is the session the Stats view was
-   * opened ON, and it moves WITH the mode — one call, one notify. Omitting
-   * it CLEARS the focus, which is what every internal caller wants: a focus
-   * belongs to the deep link that set it, never to the view.
-   */
-  setViewMode(mode: ViewMode, focusSessionId?: string): void;
-  /** The in-panel toggle: canvas ⇄ list. */
-  toggleViewMode(): void;
-  /** Show only sessions of this liveness, or all of them. */
-  setLivenessFilter(filter: LivenessFilter): void;
-  /**
-   * Show only sessions from this engine, or all of them.
-   *
-   * Posts NOTHING and touches no session list, exactly like
-   * {@link Store.setLivenessFilter}. An unknown value is ignored rather than
-   * stored: the deck's chips are built from `ENGINE_FILTERS`, so a value
-   * outside it can only come from a caller that invented one.
-   */
-  setEngineFilter(filter: EngineFilter): void;
   /** Open or shut the inspector panel without changing the selected node. */
   setInspectorOpen(open: boolean): void;
   /** Pan the deck by a delta in CLIENT pixels. `viewport.ts:panBy`. */
@@ -808,8 +788,6 @@ export interface Store {
    * stale is completed here, against the fresh numbers.
    */
   reportCanvasGeometry(geometry: CanvasGeometry): void;
-  /** Enter or leave the Stats view mode (DoD 4.3): stats <-> canvas. */
-  toggleStats(): void;
   /**
    * Link-back (DoD 4.4): select the tool node a chain ordinal names, through
    * the EXISTING select intent. Resolves `(sessionId, agentId, ordinal)`
@@ -963,12 +941,12 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let openDrawerOnEnter = false;
   let drawerOpensExpanded = false;
   /** `undefined` until a message states a sort this build knows. */
-  let defaultOrdering: DeckSortMode | undefined;
+
   /* ----- auto-fit state (DoD 4.0) ----------------------------------------- */
   let canvasAutoFit = true;
-  let insightsInstalled = false;
-  let insightsOpenCount = 0;
   let canvasFitEpoch = 0;
+  /** Bumped by View ▸ Reset view inside a session (DoD 9.14, ruling 6). */
+  let canvasResetEpoch = 0;
   /** What the renderer last reported. `null` until it has reported once. */
   let geometry: CanvasGeometry | null = null;
   /** A trigger fired and no fit has run against fresh geometry since. */
@@ -1001,6 +979,63 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     if (failure.op !== undefined) request.failedOp = failure.op;
     postIntent(request);
   };
+  /**
+   * Assign every control value the host stated — DoD 9.14.
+   *
+   * ONE ASSIGNMENT PER FIELD, no branching and no merging: the message
+   * carries the whole state, so "what changed" is only ever asked to decide
+   * whether to FIT, and the two questions it asks are the two rows the
+   * trigger table carries. A renderer that tried to decide which fields were
+   * meaningful would be the second owner this design exists to remove.
+   */
+  const applyViewControls = (next: ViewControls): void => {
+    const toCanvas = next.viewMode === 'canvas' && viewMode !== 'canvas';
+    const engineMoved = next.engineFilter !== engineFilter;
+    viewMode = next.viewMode;
+    livenessFilter = next.livenessFilter;
+    engineFilter = next.engineFilter;
+    deckLayout = next.deckLayout;
+    deckSort = next.deckSort;
+    statsTab = next.statsTab;
+    inspectorStatus = next.inspectorStatus;
+    inspectorOrder = next.inspectorOrder;
+    inspectorTool = next.inspectorTool;
+    statsFocusSessionId = next.focusSessionId;
+    // The two trigger-table rows, in the order they are listed there.
+    if (engineMoved) triggerFit();
+    if (toCanvas) triggerFit();
+    notify();
+  };
+
+  /**
+   * Ruling 6 — Reset view has ONE entry and it acts on the ACTIVE surface.
+   *
+   * The deck and the session interior are different spaces with different
+   * transforms, and the menu entry is one item, so the store is what decides
+   * which of the two a press means. `altitude` is the answer: at `deck` it is
+   * the deck's transform, anywhere else it is the interior's.
+   */
+  const resetActiveView = (): void => {
+    if (altitude === 'deck') {
+      if (deckView.x === 0 && deckView.y === 0 && deckView.k === 1) return;
+      deckView = { ...IDENTITY_VIEW };
+      notify();
+      return;
+    }
+    /*
+     * THE INTERIOR'S RESET IS NOT THE IDENTITY TRANSFORM, and that is why
+     * this is an epoch rather than an assignment.
+     *
+     * Design amendment A9.3: reset re-roots on the SESSION ROOT and fits the
+     * whole tree. Setting `canvasView` to the identity here would throw the
+     * user at the stage origin with the root off-screen — the exact defect
+     * A9.3 exists to record. The layout is the canvas's, so the canvas does
+     * it, and this says only that it was asked for.
+     */
+    canvasResetEpoch += 1;
+    notify();
+  };
+
   /** Session order as the host sent it; a Map preserves it, but be explicit. */
   let order: string[] = [];
   const mismatched = new Set<string>();
@@ -1012,6 +1047,18 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let statsFocusSessionId: string | undefined;
   let livenessFilter: LivenessFilter = DEFAULT_LIVENESS_FILTER;
   let engineFilter: EngineFilter = DEFAULT_ENGINE_FILTER;
+  /*
+   * The six the host owns (DoD 9.14). Seeded from `DEFAULT_VIEW_CONTROLS`,
+   * which is the HOST's defaults object — not a second copy written here —
+   * so the renderer's pre-message behaviour is the host's post-message
+   * behaviour and no surface waits on a message to draw.
+   */
+  let deckLayout: DeckLayoutMode = DEFAULT_VIEW_CONTROLS.deckLayout;
+  let deckSort: DeckSortMode = DEFAULT_VIEW_CONTROLS.deckSort;
+  let statsTab: StatsTab = DEFAULT_VIEW_CONTROLS.statsTab;
+  let inspectorStatus: InspectorStatus = DEFAULT_VIEW_CONTROLS.inspectorStatus;
+  let inspectorOrder: InspectorOrder = DEFAULT_VIEW_CONTROLS.inspectorOrder;
+  let inspectorTool: string = DEFAULT_VIEW_CONTROLS.inspectorTool;
   let inspectorOpen = false;
   /**
    * §8.6's two drawer heights.
@@ -1276,15 +1323,19 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         canvasView: { ...canvasView },
         resyncs,
         canvasAutoFit,
-        insightsInstalled,
-        insightsOpenCount,
+        deckLayout,
+        deckSort,
+        statsTab,
+        inspectorStatus,
+        inspectorOrder,
+        inspectorTool,
         canvasFitEpoch,
+        canvasResetEpoch,
         statsLive,
         statsStored,
         statsStoreEnabled,
         statsStoreLoaded,
       };
-      if (defaultOrdering !== undefined) view.defaultOrdering = defaultOrdering;
       if (detailActionId !== undefined) view.detailActionId = detailActionId;
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
       if (selected !== undefined) view.selected = selected;
@@ -1331,14 +1382,11 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
           break;
         case 'settings':
           canvasAutoFit = message.canvasAutoFit;
-          // DoD 9.6. Read defensively, for the reason the block below states
-          // about `tweaks`: the message guard checks `type` and nothing else,
-          // so a settings message without this field is a shape the renderer
-          // has to survive. Anything but `true` is "not installed".
-          insightsInstalled = message.insightsInstalled === true;
-          // DoD 7.6. Three of the four tweaks change what this reducer does;
-          // the fourth (`defaultOrdering`) is the deck's own control bar. The
-          // keys are `TWEAK_SETTINGS`' keys, without the `agentDeck.` prefix.
+          // DoD 7.6. THREE of the four tweaks reach the renderer, and the
+          // fourth does not: `defaultOrdering` seeds the HOST's `deckSort`
+          // at activation (v0.9.0 DoD 9.14), so it arrives on `viewControls`
+          // as a value rather than here as a setting. The keys are
+          // `TWEAK_SETTINGS`' keys, without the `agentDeck.` prefix.
           //
           // READ THROUGH A NULLABLE ALIAS, and the cast is the point rather
           // than a convenience. `handleMessage` never throws (G3) and the
@@ -1352,27 +1400,26 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
             followNewSessions = tweaks?.['followNewSessions'] === true;
             openDrawerOnEnter = tweaks?.['openDrawerOnEnter'] === true;
             drawerOpensExpanded = tweaks?.['drawerExpandedByDefault'] === true;
-            // A sort this build does not know is not a sort. It reads as
-            // ABSENT rather than as `DEFAULT_DECK_SORT`, so a value the host
-            // sent and the renderer could not use is never mistaken for a
-            // value the user chose — and `Deck.svelte`'s fallback is the one
-            // place the design's own default is written.
-            const ordering = tweaks?.['defaultOrdering'];
-            defaultOrdering = isDeckSort(ordering) ? ordering : undefined;
           }
           break;
-        case 'showView': {
-          // DoD 9.5. The mode and the focus move in ONE call, so this stays
-          // "sets the mode, once, and posts nothing". Anything that is not a
-          // non-empty string is absent rather than refused.
-          const focus = message.sessionId;
-          this.setViewMode(
-            message.mode,
-            typeof focus === 'string' && focus !== '' ? focus : undefined,
-          );
-          // `setViewMode` has already notified; nothing below must run twice.
+        case 'viewControls':
+          // DoD 9.14. The host states the whole control state; this assigns
+          // it. `applyViewControls` has already notified.
+          applyViewControls(message.controls);
           return;
-        }
+        case 'viewAction':
+          // DoD 9.14, ruling 6 (Reset view acts on the ACTIVE surface) and
+          // ruling 2 (back is Escape and Menu -> Open Deck).
+          if (message.action === 'resetView') {
+            resetActiveView();
+          } else {
+            // Menu -> Open Deck. Bounded by the three altitudes rather
+            // than looped on the condition: escape is a no-op at the deck
+            // altitude, so an unbounded loop would rest on that never
+            // changing.
+            for (let i = 0; i < 3 && altitude !== 'deck'; i += 1) this.escape();
+          }
+          return;
         case 'diff': {
           const prev = sessions.get(message.sessionId);
           if (prev === undefined) {
@@ -1597,67 +1644,6 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       notify();
     },
 
-    setViewMode(mode: ViewMode, focusSessionId?: string): void {
-      if (!VIEW_MODES.includes(mode)) return;
-      const modeChanged = mode !== viewMode;
-      // DoD 9.5 — a focus belongs to the deep link that set it, never to the
-      // view, so every caller that passes none CLEARS it. A second link to a
-      // second session, with the view already open, moves the focus and must
-      // still notify — which is why this is not an early return on the mode.
-      const focusChanged = focusSessionId !== statsFocusSessionId;
-      if (!modeChanged && !focusChanged) return;
-      /*
-       * DoD 9.6 — "one shown per open". The counter advances when the
-       * Insights view is LEFT, so the NEXT open shows the next example and
-       * the FIRST open shows the first one.
-       *
-       * On leaving rather than on entering, because entering would have to
-       * start the counter at -1 to keep `exampleAt(0)` first, and a counter
-       * whose first value means something different from all the others is
-       * a field waiting to be read wrong.
-       */
-      if (modeChanged && viewMode === 'insights') insightsOpenCount += 1;
-      viewMode = mode;
-      statsFocusSessionId = focusSessionId;
-      // Mode switch BACK to the canvas (trigger table): the field was
-      // unmounted and its geometry is whatever the window is now. Only on a
-      // real mode change — a focus moving inside the Stats view moves nothing
-      // on the canvas.
-      if (modeChanged && mode === 'canvas') triggerFit();
-      notify();
-    },
-
-    nextInsightsExample(): void {
-      insightsOpenCount += 1;
-      notify();
-    },
-
-    openInsights(): void {
-      postIntent({ type: 'runCommand', command: INSIGHTS_COMMAND });
-    },
-
-    showAbout(): void {
-      postIntent({ type: 'runCommand', command: ABOUT_COMMAND });
-    },
-
-    toggleStats(): void {
-      this.setViewMode(viewMode === 'stats' ? 'canvas' : 'stats');
-    },
-
-    setLivenessFilter(filter: LivenessFilter): void {
-      if (!LIVENESS_FILTERS.includes(filter) || filter === livenessFilter) return;
-      livenessFilter = filter;
-      notify();
-    },
-
-    setEngineFilter(filter: EngineFilter): void {
-      if (!ENGINE_FILTERS.includes(filter) || filter === engineFilter) return;
-      engineFilter = filter;
-      // Engine chip toggle (trigger table).
-      triggerFit();
-      notify();
-    },
-
     setInspectorOpen(open: boolean): void {
       if (open === inspectorOpen) return;
       inspectorOpen = open;
@@ -1742,12 +1728,6 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       if (already) return;
       deckView = { ...IDENTITY_VIEW };
       notify();
-    },
-
-    toggleViewMode(): void {
-      // Canvas <-> list, as it always was. From `stats` the toggle goes to
-      // the canvas: the list is one step further from where the user is.
-      this.setViewMode(viewMode === 'canvas' ? 'list' : 'canvas');
     },
 
     reportCanvasGeometry(next: CanvasGeometry): void {

@@ -68,6 +68,13 @@ const STATS_PURE_LAYER = [
   // reason on it rather than by adding a name.
   'src/stats/timing.ts',
   'src/stats/toolclass.ts',
+  // v0.9.0 DoD 9.14. `events.ts` carries the `viewControls` wire message and
+  // type-imports `ViewControls` from here. The module has NO IMPORTS AT ALL
+  // — it is written that way because the CSP-strict webview bundle reads it,
+  // which is the same property this layer exists to protect — so it is
+  // reachable, it holds no clock, and it reaches no `node:` builtin and no
+  // package. Widened with the reason on it rather than by adding a name.
+  'src/view/controls.ts',
 ];
 
 interface Violation {
@@ -149,7 +156,8 @@ describe('DoD 2.2 — deriveStats is pure', () => {
     // The count beside the set, per rule 19's shape: a set comparison written
     // against an accidentally empty listing passes vacuously, and a count is
     // the cheapest thing that goes red when it does.
-    expect(scan.modules).toHaveLength(12);
+    expect(scan.modules).toHaveLength(STATS_PURE_LAYER.length);
+    expect(STATS_PURE_LAYER).toHaveLength(13);
     expect(scan.edges).toBeGreaterThan(0);
     expect(scan.unresolved).toEqual([]);
   });

@@ -595,8 +595,25 @@ function capture(window, harness, drive) {
   // DOM-text capture — but it is a different artifact, and the human's
   // real-window pass (Phase 4 DoD 4) still has only the list column to compare
   // against.
+  // v0.9.0 DoD 9.14: the view mode is the HOST's and arrives on
+  // `viewControls`. The capture sends what the host sends, so the evidence
+  // is of the path production takes rather than of a setter that no longer
+  // exists.
   harness.flushSync(() => {
-    started.store.setViewMode('list');
+    started.store.handleMessage({
+      type: 'viewControls',
+      controls: {
+        viewMode: 'list',
+        livenessFilter: 'all',
+        engineFilter: 'all',
+        deckLayout: 'grid',
+        deckSort: 'live',
+        statsTab: 'files',
+        inspectorStatus: 'all',
+        inspectorOrder: 'oldest',
+        inspectorTool: 'all',
+      },
+    });
   });
 
   const dispatch = (message) => {

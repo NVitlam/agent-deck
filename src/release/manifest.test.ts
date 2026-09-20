@@ -74,7 +74,17 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_HOOK_PORT } from '../hooks/listener.js';
-import { SIDEBAR_CONTAINER_ID, SIDEBAR_MENU, SIDEBAR_VIEW_ID } from '../sidebar/menu.js';
+import { PANEL_VIEW_TYPE } from '../extension.js';
+import {
+  CONTROL_COMMANDS,
+  CONTROL_KEYBINDINGS,
+  CONTROL_SECTIONS,
+  KEYBINDING_WHEN,
+  MENU_COMMANDS as SIDEBAR_MENU,
+  PANEL_VIEW_TYPE as CONTROLS_PANEL_VIEW_TYPE,
+  SIDEBAR_CONTAINER_ID,
+  SIDEBAR_VIEW_ID,
+} from '../view/controls.js';
 
 const REPO_ROOT = new URL('../../', import.meta.url);
 
@@ -423,17 +433,35 @@ describe('the local store settings and command (v0.7.0 Phase 3)', () => {
      * command palette and the sidebar menu (Phase 4) — NEVER a visible button
      * on the deck or the Stats view."
      *
-     * Phase 3 asserted the absence of BOTH `menus` and `views`. Phase 4 adds
-     * the sidebar, which is a `views` entry — but the sidebar's menu is DATA
-     * (`src/sidebar/menu.ts`), rendered by the webview, and not a
-     * `contributes.menus` contribution. So `menus` stays absent: the manifest
-     * puts the clear command on no toolbar, no context menu and no editor
-     * title, and the one surface that offers it beside the palette is the
-     * list the block below pins.
+     * Phase 3 asserted the absence of BOTH `menus` and `views`. Phase 4 added
+     * the sidebar as a `views` entry whose menu was DATA rendered by a
+     * webview, so `menus` stayed absent.
      */
-    const contributes = (await readManifest()).contributes as Record<string, unknown> | undefined;
+    /*
+     * v0.9.0 DoD 9.14 changed what this can assert, and the narrowing is
+     * stated rather than dropped.
+     *
+     * It read "contributes no `menus` at all", which was true while the
+     * extension had none — clearing was reachable from the palette and the
+     * sidebar list and nowhere else. Spec `Amendment 2026-09-20` puts every
+     * control in the editor's menus, so there is a `menus` block now, and
+     * the honest form of the same claim is that clearing appears in exactly
+     * ONE of them: the Menu submenu, which IS the sidebar list.
+     */
+    const contributes = (await readManifest()).contributes as
+      | { menus?: Record<string, { command?: string }[]> }
+      | undefined;
     expect(contributes).toBeDefined();
-    expect(Object.keys(contributes ?? {})).not.toContain('menus');
+    const menus = contributes?.menus ?? {};
+    const inMenus = Object.entries(menus)
+      .filter(([, rows]) => rows.some((row) => row.command === 'agentDeck.stats.clearHistory'))
+      .map(([id]) => id);
+    expect(inMenus).toStrictEqual(['agentDeck.submenu.menu']);
+    // ...and it is NOT on an editor context menu, a title bar or a tab: the
+    // one-click-from-anywhere shapes this test existed to forbid.
+    for (const surface of ['editor/context', 'editor/title', 'explorer/context', 'view/item/context']) {
+      expect(Object.keys(menus), surface).not.toContain(surface);
+    }
   });
 });
 
@@ -465,59 +493,135 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
     expect(existsSync(fileURLToPath(new URL(String(containers[0]?.icon), REPO_ROOT)))).toBe(true);
   });
 
-  it('declares one webview view in that container, with the id the provider registers', async () => {
+  it('declares one NATIVE TREE view in that container, with the id the provider registers', async () => {
     const manifest = (await readManifest()) as SidebarManifest;
     const views = manifest.contributes?.views?.[SIDEBAR_CONTAINER_ID] ?? [];
     expect(views).toHaveLength(1);
-    expect(views[0]).toMatchObject({ type: 'webview', id: SIDEBAR_VIEW_ID });
+    expect(views[0]).toMatchObject({ id: SIDEBAR_VIEW_ID });
+    // NO `type` AT ALL, and that is the whole of v0.9.0 DoD 9.14's ruling 1
+    // in the manifest: `type: 'webview'` is what made the sidebar a webview,
+    // and its absence is what makes it a tree. A test that asserted only the
+    // id would pass on either.
+    expect(views[0]).not.toHaveProperty('type');
     expect(Object.keys(manifest.contributes?.views ?? {})).toStrictEqual([SIDEBAR_CONTAINER_ID]);
   });
 
-  it('every menu entry names a contributed command — and the menu is the locked five, in order', async () => {
+  it('contributes EXACTLY the control table, in its order', async () => {
+    /*
+     * v0.9.0 DoD 9.14. `src/view/controls.ts` is the table, and this is the
+     * both-ways equality that keeps it honest: no contributed command that
+     * the tree and the submenus cannot reach, and no table row that VS Code
+     * has never heard of.
+     *
+     * The old shape was "the menu's five plus an enumerated exception list",
+     * which existed because two commands were reachable only from a webview
+     * button. Both of those buttons were DEAD — the panel's `runCommand` was
+     * validated against the sidebar's list — so the exceptions were
+     * describing a route that did not work.
+     */
     const manifest = (await readManifest()) as SidebarManifest;
-    const contributed = new Set((manifest.contributes?.commands ?? []).map((c) => String(c.command)));
-    for (const entry of SIDEBAR_MENU) {
-      expect(contributed.has(entry.command), `${entry.command} is not in contributes.commands`).toBe(true);
-    }
+    const contributed = (manifest.contributes?.commands ?? []).map((c) => String(c.command));
+    expect(contributed).toStrictEqual(CONTROL_COMMANDS.map((entry) => entry.command));
+    expect(new Set(contributed).size, 'a command id is contributed twice').toBe(contributed.length);
+  });
+
+  it('the Menu section is the locked order, with About added by the amendment', () => {
     expect(SIDEBAR_MENU.map((e) => e.label)).toStrictEqual([
       'Open Deck',
       'Open Statistics',
       'Show Diagnostics',
       'Settings',
       'Clear Stats History',
+      'About',
     ]);
-    /*
-     * Every contributed command is either a menu entry or an ENUMERATED
-     * exception with its reason beside it — no dead palette entry, and no
-     * menu entry without a command.
-     *
-     * The list was `SIDEBAR_MENU`’s five exactly until v0.9.0, when DoD 9.6
-     * added a command that is deliberately not a menu entry. Loosening the
-     * equality to a containment would have given away the "no dead palette
-     * entry" half; enumerating the exceptions keeps both halves, and a
-     * seventh command appearing without a line here is still red.
-     */
-    const NON_MENU_COMMANDS: readonly { command: string; why: string }[] = [
-      {
-        command: 'agentDeck.insights',
-        why: 'v0.9.0 DoD 9.6 — reached from the Insights tab\u2019s own button and from '
-          + 'the palette. Not a menu entry: the menu is the five locked in v0.7.0 and '
-          + 'readme.test.ts pins its labels.',
-      },
-      {
-        command: 'agentDeck.about',
-        why: 'v0.9.0 DoD 9.7 - reached from the deck header and from the palette. '
-          + 'Not a menu entry, for the same reason agentDeck.insights is not.',
-      },
-    ];
-    expect([...contributed].sort()).toStrictEqual(
-      [...SIDEBAR_MENU.map((e) => e.command), ...NON_MENU_COMMANDS.map((c) => c.command)].sort(),
-    );
-    // Every exception carries a reason. A line added with an empty `why` is
-    // an exception nobody justified.
-    for (const entry of NON_MENU_COMMANDS) {
-      expect(entry.why.length, `${entry.command} has no reason`).toBeGreaterThan(20);
+  });
+
+  it('every section and group is a submenu, and every submenu is reachable', async () => {
+    const manifest = (await readManifest()) as unknown as {
+      contributes?: {
+        submenus?: { id: string; label: string }[];
+        menus?: Record<string, { command?: string; submenu?: string; when?: string }[]>;
+      };
+    };
+    const submenus = manifest.contributes?.submenus ?? [];
+    const menus = manifest.contributes?.menus ?? {};
+
+    // Every submenu has a menu of its own: a submenu with no entries is a
+    // menu item that opens onto nothing.
+    for (const submenu of submenus) {
+      expect(menus[submenu.id], `${submenu.id} has no entries`).toBeDefined();
+      expect((menus[submenu.id] ?? []).length, submenu.id).toBeGreaterThan(0);
     }
+
+    // The four sections hang off the view title, in the amendment's order.
+    expect((menus['view/title'] ?? []).map((row) => row.submenu)).toStrictEqual(
+      CONTROL_SECTIONS.map((section) => `agentDeck.submenu.${section.id}`),
+    );
+    // ...and only on THIS view, or they would appear on every view's title.
+    for (const row of menus['view/title'] ?? []) {
+      expect(row.when, JSON.stringify(row)).toBe(`view == ${SIDEBAR_VIEW_ID}`);
+    }
+
+    // Every command in the table is reachable from exactly one menu.
+    const inMenus = Object.entries(menus)
+      .filter(([id]) => id !== 'commandPalette' && id !== 'view/title')
+      .flatMap(([, rows]) => rows.map((row) => row.command))
+      .filter((command): command is string => command !== undefined);
+    expect([...inMenus].sort()).toStrictEqual(
+      CONTROL_COMMANDS.map((entry) => entry.command).sort(),
+    );
+  });
+
+  it('the palette shows the Menu six plus Insights, and hides the rest', async () => {
+    /*
+     * Thirty-six granular entries in the palette would bury every other
+     * command a user has. They are reachable from the tree, from the
+     * submenus and from the keyboard, which is every route the amendment
+     * names — so they are hidden there and nowhere else.
+     */
+    const manifest = (await readManifest()) as unknown as {
+      contributes?: { menus?: Record<string, { command?: string; when?: string }[]> };
+    };
+    const hidden = new Set(
+      (manifest.contributes?.menus?.['commandPalette'] ?? [])
+        .filter((row) => row.when === 'false')
+        .map((row) => row.command),
+    );
+    const visible = CONTROL_COMMANDS.filter((entry) => !hidden.has(entry.command));
+    expect(visible.map((entry) => entry.command)).toStrictEqual([
+      ...SIDEBAR_MENU.map((entry) => entry.command),
+      'agentDeck.insights',
+    ]);
+  });
+
+  it('the nine keyboard shortcuts survive the amendment, scoped to the panel', async () => {
+    /*
+     * "Keyboard shortcuts stay" is the ruling's own clause. They were
+     * `Deck.svelte`'s `keydown` handler; the component owns none of those
+     * values now, so they are the EDITOR's — bound to the same commands the
+     * View submenu runs.
+     *
+     * The `when` clause is what makes a bare letter safe. Without it, `c`
+     * would fire while somebody was typing in a file, which is the kind of
+     * defect a manifest ships silently.
+     */
+    const manifest = (await readManifest()) as unknown as {
+      contributes?: { keybindings?: { command: string; key: string; when?: string }[] };
+    };
+    const bindings = manifest.contributes?.keybindings ?? [];
+    expect(bindings.map((row) => `${row.key} -> ${row.command}`)).toStrictEqual(
+      CONTROL_KEYBINDINGS.map((row) => `${row.key} -> ${row.command}`),
+    );
+    for (const row of bindings) {
+      expect(row.when, row.command).toBe(KEYBINDING_WHEN);
+    }
+    // Every bound command is a real one, and the `when` names the panel's
+    // real view type — two literals in two modules, held against each other
+    // rather than both being correct by coincidence.
+    const ids = new Set(CONTROL_COMMANDS.map((entry) => entry.command));
+    for (const row of CONTROL_KEYBINDINGS) expect(ids.has(row.command), row.command).toBe(true);
+    expect(KEYBINDING_WHEN).toContain(CONTROLS_PANEL_VIEW_TYPE);
+    expect(PANEL_VIEW_TYPE).toBe(CONTROLS_PANEL_VIEW_TYPE);
   });
 });
 

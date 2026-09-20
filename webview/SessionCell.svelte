@@ -578,14 +578,32 @@ ${statusTitle}`);
     stroke: var(--vscode-focusBorder, currentColor);
   }
 
+  /*
+   * TWO CHANNELS PER STATE, NEVER HUE ALONE — v0.9.0 DoD 9.14.
+   *
+   * The legend is gone (spec `Amendment 2026-09-20`), so each card has to
+   * state its own liveness. The amendment's rule is warm/cool AND light/dark,
+   * and the card carries three channels rather than two:
+   *
+   *   live   WARM  (yellow)  · heaviest stroke  · full-strength fill
+   *   idle   NEUTRAL         · medium stroke    · dimmed fill
+   *   ended  COOL  (blue)    · lightest stroke  · dimmest fill, 0.55 opacity
+   *
+   * Plus the status row's own word — "live" / "idle" / "ended" — which is the
+   * channel that survives greyscale, a colour-blind reader and a screenshot.
+   * A test asserts all three states differ on stroke AND on fill, so a later
+   * theme change cannot quietly collapse them onto hue.
+   */
   .cell[data-state='live'] .border {
     stroke: var(--vscode-charts-yellow, currentColor);
-    stroke-width: 1.5;
+    stroke-width: 2;
+    fill-opacity: 1;
   }
 
   .cell[data-state='idle'] .border {
     stroke: var(--vscode-panel-border, currentColor);
-    stroke-width: 1;
+    stroke-width: 1.25;
+    fill-opacity: 0.72;
   }
 
   .cell[data-state='ended'] {
@@ -593,7 +611,10 @@ ${statusTitle}`);
   }
 
   .cell[data-state='ended'] .border {
-    stroke: none;
+    stroke: var(--vscode-charts-blue, currentColor);
+    stroke-width: 1;
+    stroke-opacity: 0.5;
+    fill-opacity: 0.4;
   }
 
   .cell[data-state='degraded'] .border,

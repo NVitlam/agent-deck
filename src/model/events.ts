@@ -14,6 +14,7 @@
 // only events.ts" guard is about what a CSP-strict bundle can reach, which
 // this does not change.
 import type { StatsRecord } from '../stats/schema.js';
+import type { ViewControls } from '../view/controls.js';
 
 // ---------------------------------------------------------------------------
 // (a) Domain model — session tree held in the extension host
@@ -1202,44 +1203,47 @@ export interface SettingsMessage {
    * untrusted input arrives.
    */
   tweaks: Readonly<Record<string, boolean | string>>;
-  /**
-   * Whether `nvitlam.agent-deck-insights` is installed in this editor —
-   * v0.9.0 DoD 9.6.
-   *
-   * A FIELD on the settings message rather than a message of its own: the
-   * Insights tab needs it at mount and on every reload, which is exactly
-   * when the settings message is already sent, and DoD 5.1’s "no new
-   * host<->webview message types" is still the standing rule.
-   *
-   * It is a statement about the EDITOR, not about the user: the webview
-   * cannot ask, and guessing from a failed command would mean running one.
-   */
-  insightsInstalled: boolean;
 }
 
 /**
- * The host asks the panel to show one of its view modes (v0.7.0 Phase 4,
- * DoD 4.6b). `agentDeck.openStats` opens the panel and sends `stats`; nothing
- * else sends this. View mode stays webview-local UI state — this is a
- * REQUEST from the host, not a value the host owns.
+ * The host stating every view-control value — v0.9.0 DoD 9.14 (spec
+ * `Amendment 2026-09-20`).
+ *
+ * **THIS REPLACES `showView`, and the replacement is the point.** Under the
+ * amendment no webview surface carries a control, so the renderer has no way
+ * to change a filter, a layout, a sort, a tab or a mode — the host owns every
+ * one of them, a command moves it, and this message is how the renderer hears.
+ * `showView` was a REQUEST about one field; this is the whole state, so the
+ * two sides cannot hold different answers to "which tab is showing".
+ *
+ * Sent when a surface is created, on every reload, and after every control
+ * command. THE WHOLE VALUE EVERY TIME, never a delta: a partial update needs
+ * both sides to agree about what "unchanged" means, and a value with two
+ * owners is the defect class this repository has paid for twice.
  */
-export interface ShowViewMessage {
-  type: 'showView';
-  mode: 'canvas' | 'list' | 'stats';
-  /**
-   * The session the panel should open ON — v0.9.0 DoD 9.5, the Insights
-   * deep link.
-   *
-   * Optional, and absence is the behaviour that shipped: open the mode and
-   * focus nothing. Present, it names the session whose Tokens card is
-   * focused — the Stats view’s one per-session surface.
-   *
-   * An id this window does not hold focuses NOTHING and is not an error. A
-   * deep link arrives from another extension, about a store that may have
-   * been cleared or that belongs to another workspace; failing shut on that
-   * would make the link worse than useless.
-   */
-  sessionId?: string;
+export interface ViewControlsMessage {
+  type: 'viewControls';
+  controls: ViewControls;
+}
+
+/**
+ * The host asking the renderer to DO something — v0.9.0 DoD 9.14.
+ *
+ * Two, and the union is closed. They are here rather than as fields on
+ * {@link ViewControlsMessage} because neither is a VALUE: "reset the view" and
+ * "walk back to the deck" are things that happen once, and a state message is
+ * re-sent whenever anything in it moves. An epoch counter would have made them
+ * fit in that message and would have made every reader ask what the number
+ * meant.
+ *
+ * `resetView` acts on the ACTIVE surface (ruling 6: one menu entry, two
+ * spaces), and the store is what knows which is active. `openDeck` is the
+ * other half of ruling 2 — the breadcrumbs are gone, so back is Escape and
+ * this.
+ */
+export interface ViewActionMessage {
+  type: 'viewAction';
+  action: 'resetView' | 'openDeck';
 }
 
 export type HostToWebviewMessage =
@@ -1250,7 +1254,8 @@ export type HostToWebviewMessage =
   | StatsSnapshotMessage
   | StatsStoreMessage
   | SettingsMessage
-  | ShowViewMessage;
+  | ViewControlsMessage
+  | ViewActionMessage;
 
 export interface ExpandNodeMessage {
   type: 'expandNode';
@@ -1292,48 +1297,27 @@ export interface ResyncRequestMessage {
   sessionId?: string;
 }
 
-/**
- * The SIDEBAR asking the host to run one of its menu commands (v0.7.0 Phase 4,
- * DoD 4.6b).
+/*
+ * `runCommand` and `updateTweak` were here until v0.9.0 DoD 9.14.
  *
- * `command` is a member of `src/sidebar/menu.ts`'s list and nothing else: the
- * guard in `bridge/messages.ts` refuses any other string, so the sidebar
- * cannot be turned into a way of running arbitrary commands by a message that
- * merely looks like one of its own. The PANEL ignores this message entirely;
- * only the sidebar's controller executes it.
+ * Both existed for the sidebar WEBVIEW, and the amendment deletes it: the
+ * sidebar is a native `TreeView` now, its items run commands directly, and a
+ * tweak is written by the command rather than by a message. **No webview posts
+ * a command any more** (ruling 1, 2026-09-20), which removes the mechanism
+ * behind the dead About button rather than patching it — the panel's own
+ * guard validated a `runCommand` against the sidebar's five-entry list, so
+ * `agentDeck.about` and `agentDeck.insights` were dropped at the boundary and
+ * the handler that allowed them was unreachable.
+ *
+ * REMOVED rather than left unused: a message type nothing sends is a guard
+ * arm nothing exercises, and this repository already records what an
+ * unreachable arm is worth.
  */
-export interface RunCommandMessage {
-  type: 'runCommand';
-  command: string;
-}
-
-/**
- * The TWEAKS panel asking the host to write one setting (v0.8.0 Phase 7,
- * DoD 7.6).
- *
- * `key` is a member of `src/sidebar/tweaks.ts`'s list and `value` is a value
- * that member may take — both checked by `isTweakKey`/`isTweakValue` in the
- * `bridge/messages.ts` guard, at the boundary, BEFORE the host calls
- * `WorkspaceConfiguration.update`. The host writes into the user's settings
- * on the strength of this message, so a string that merely looks like a key
- * must not reach that call.
- *
- * The PANEL ignores this message entirely; only the sidebar controller acts
- * on it — the same division `runCommand` already has.
- */
-export interface UpdateTweakMessage {
-  type: 'updateTweak';
-  /** A `TWEAK_SETTINGS` key, without the `agentDeck.` section prefix. */
-  key: string;
-  value: boolean | string;
-}
 
 export type WebviewToHostMessage =
   | ExpandNodeMessage
   | SelectSessionMessage
-  | ResyncRequestMessage
-  | RunCommandMessage
-  | UpdateTweakMessage;
+  | ResyncRequestMessage;
 
 /**
  * One tree op that could not be applied, reported instead of thrown.

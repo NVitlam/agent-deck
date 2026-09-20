@@ -2,20 +2,50 @@
 
 All notable changes to Agent Deck are documented here.
 
-## 0.9.0 - 2026-09-20 - Insights, About, and a header that wraps
+## 0.9.0 - 2026-09-20 - Clean windows, Insights, About
+
+### Changed
+
+- **Every control has left the panels.** The deck, the session tree, the
+  tool-call drawer and the Stats view are content only now: no bars, no
+  buttons, no chips, no counts, no legend. You pan, drag, zoom and select;
+  everything else is a menu entry.
+- **The sidebar is a native tree** with four sections - **Menu**, **View**,
+  **Tweaks** and **Insights** - and the same four are on the view's title menu.
+  Menu carries Open Deck, Open Statistics, Show Diagnostics, Settings, Clear
+  Stats History and About. View carries Canvas or List, the session and engine
+  filters, the deck's layout and sort, which Statistics table is showing, the
+  drawer's status, order and tool filters, and Reset view, which acts on
+  whichever surface you are on.
+- **The keyboard shortcuts are unchanged and are the editor's now.** `a` `c`
+  `o` `x` for the engines, `1` `2` `3` for the layout and `l` `r` `e` for
+  the sort, while the deck panel has focus. `Escape` still walks back out of a
+  session and `k` still collapses the tree.
+- **A session's state is on the session.** live, idle and ended are told apart
+  by colour AND by weight on every card and every row - warm against cool, and
+  light against dark - so the colour key beside the deck is gone with nothing
+  lost.
+- **Zooming is much less sensitive.** A wheel notch is 5% rather than 10%, and
+  a notch is now 100 pixels of travel rather than one wheel event: a mouse
+  behaves exactly as it did, one click one notch, and a trackpad flick moves
+  by how far it travelled instead of by how many events it sent. Pinch and
+  ctrl-wheel obey the same rule.
+- **The Tokens view no longer offers a copy button.** The model id is still
+  shown in a monospace element and is still selectable.
 
 ### Added
 
-- **An Insights tab on the deck.** It counts four things across the sessions
-  Agent Deck has recorded for you - compactions, long-idle resumes, re-read
-  loops and failed tool calls - and names the record field each count comes
-  from. A count of zero is left out; when all four are zero it says so in one
-  line. **See an example** shows one of three worked examples, each labelled as
-  an example and built from invented paths and ids, never from your sessions.
-- **An About entry**, as **Agent Deck: About** in the Command Palette and a link
-  in the deck header. It carries links to the project, the author and the
-  sponsor page. The links open in your browser through VS Code; the extension
-  itself still makes no network call.
+- **An Insights section in the sidebar.** It counts four things across the
+  sessions Agent Deck has recorded for you - compactions, long-idle resumes,
+  re-read loops and failed tool calls - and names the record field each count
+  comes from. A count of zero is left out; when all four are zero it says so in
+  one line. **See an example** shows one of three worked examples, each
+  labelled as an example and built from invented paths and ids, never from your
+  sessions.
+- **An About entry**, as **Agent Deck: About** in the Command Palette and in
+  Menu. It opens a panel with what this is, and links to the project, the
+  author and the sponsor page. The links open in your browser through VS Code;
+  the extension itself still makes no network call.
 - **Which agent type a subagent was.** Each subagent in the statistics now
   carries the type Claude Code recorded for it. The description beside it is
   not carried, and a test holds the captured descriptions against every record

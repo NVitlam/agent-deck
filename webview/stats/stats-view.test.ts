@@ -45,7 +45,8 @@ import { deriveStats } from '../../src/stats/derive.js';
 import type { StatsRecord } from '../../src/stats/schema.js';
 import type { Store } from '../store.js';
 import type { WebviewHarness } from '../testkit.js';
-import { all, loadHarness, one, press } from '../testkit.js';
+import { all, loadHarness, one, press, viewControls } from '../testkit.js';
+import type { ViewControls } from '../../src/view/controls.js';
 import { TESTID } from '../canvas-contract.js';
 import { EM_DASH } from '../format.js';
 import { liveSession } from '../testdata.js';
@@ -228,10 +229,16 @@ function click(element: Element): void {
   });
 }
 
-function tab(panel: Panel, view: string): void {
-  const button = all(panel.container, TESTID.statsTab).find((t) => t.dataset['view'] === view);
-  if (button === undefined) throw new Error(`no ${view} tab`);
-  click(button);
+/**
+ * Show one Stats table — v0.9.0 DoD 9.14, ruling 4.
+ *
+ * The tab strip is View ▸ Statistics now, so this sends the control state the
+ * host would send rather than pressing a segment. `panel` is kept in the
+ * signature because every caller reads as "show this table on this panel",
+ * and the message reaches whichever panel is mounted.
+ */
+function tab(_panel: Panel, view: string): void {
+  send(viewControls({ viewMode: 'stats', statsTab: view as ViewControls['statsTab'] }));
 }
 
 /**
@@ -281,7 +288,7 @@ function statsPanel(ids: string[], options: { engineOf?: (id: string) => string 
   const engineOf = options.engineOf ?? ((): string => 'cc');
   send({ type: 'snapshot', sessions: ids.map((id) => fixtureState(id)) });
   send({ type: 'statsSnapshot', records: ids.map((id) => golden(id, engineOf(id))) });
-  click(one(panel.container, TESTID.statsToggle));
+  send(viewControls({ viewMode: 'stats' }));
   return panel;
 }
 
@@ -295,28 +302,38 @@ afterEach(() => {
  * ------------------------------------------------------------------------ */
 
 describe('the third view mode', () => {
-  it('its own control enters and leaves it; the canvas/list toggle is not shown inside it', () => {
+  it('the host states the mode, and the surface carries no control at all', () => {
+    /*
+     * v0.9.0 DoD 9.14. The Stats toggle, the canvas/list toggle and the five
+     * tab segments were all on this surface until spec
+     * `Amendment 2026-09-20`; the mode is the host's now, and the assertions
+     * that matter are that it LANDS and that nothing is left to press.
+     */
     const panel = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('canvas');
-    click(one(panel.container, TESTID.statsToggle));
+
+    send(viewControls({ viewMode: 'stats' }));
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('stats');
     one(panel.container, TESTID.statsView);
     expect(all(panel.container, TESTID.deck)).toHaveLength(0);
-    expect(all(panel.container, TESTID.viewToggle)).toHaveLength(0);
-    expect(one(panel.container, TESTID.statsToggle).getAttribute('aria-pressed')).toBe('true');
-    click(one(panel.container, TESTID.statsToggle));
+
+    // ...and back, by the same message.
+    send(viewControls({ viewMode: 'canvas' }));
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('canvas');
     expect(all(panel.container, TESTID.statsView)).toHaveLength(0);
-    // Webview-local: nothing about the mode reached the host.
+
+    // Webview-local: nothing about the mode reached the host. It cannot —
+    // the renderer has no message that could carry it.
     expect(panel.sent).toStrictEqual([]);
   });
 
-  it('a showView message from the host lands in the mode', () => {
+  it('the deep link mode and focus arrive together, on one message', () => {
     const panel = render();
-    send({ type: 'showView', mode: 'stats' });
+    send(viewControls({ viewMode: 'stats', focusSessionId: 'ses-01' }));
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('stats');
     one(panel.container, TESTID.statsView);
+    expect(panel.store.getView().statsFocusSessionId).toBe('ses-01');
   });
 
   it('Escape does nothing in the Stats mode', () => {
@@ -329,14 +346,10 @@ describe('the third view mode', () => {
 
   it('has five tabs in the spec\'s order and the empty states say so when nothing is there', () => {
     const panel = render();
-    click(one(panel.container, TESTID.statsToggle));
-    expect(all(panel.container, TESTID.statsTab).map((t) => t.dataset['view'])).toStrictEqual([
-      'files',
-      'tools',
-      'loops',
-      'tokens',
-      'trends',
-    ]);
+    send(viewControls({ viewMode: 'stats' }));
+    // The five tables, each reachable by its own control value (ruling 4).
+    // `controls.test.ts` holds `STATS_TABS` against this surface's own list,
+    // so the menu and the tables cannot name different sets.
     for (const view of ['files', 'tools', 'loops', 'tokens', 'trends']) {
       tab(panel, view);
       expect(one(panel.container, TESTID.statsEmpty).dataset['view']).toBe(view);
@@ -454,16 +467,10 @@ describe('DoD 4.3 — Tokens (03, 08, 09, 10, 11, 12, 13)', () => {
     expect(one(panel.container, TESTID.statsCostSource).textContent).toBe('estimated from your prices');
     expect(one(panel.container, TESTID.statsModelId).textContent).toBe('synthetic-model-a');
 
-    const written: string[] = [];
-    Object.defineProperty(globalThis.navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: (t: string) => { written.push(t); return Promise.resolve(); } },
-    });
-    const copy = one(panel.container, TESTID.statsModelCopy);
-    expect(copy.dataset['model']).toBe('synthetic-model-a');
-    click(copy);
-    expect(written).toStrictEqual(['synthetic-model-a']);
-    expect(one(panel.container, TESTID.statsModelCopy).dataset['copied']).toBe('true');
+    // The copy button was here until v0.9.0 DoD 9.14, ruling 7: REMOVED.
+    // The id is still rendered in a monospace element and still selectable,
+    // so copying it is the editor's own text selection.
+    expect(all(panel.container, 'stats-model-copy')).toHaveLength(0);
   });
 
   it('12: the stall is listed with its tool, its ordinal and the silence measured', () => {
@@ -510,7 +517,7 @@ describe('DoD 4.3 — Trends', () => {
   it('is empty below two stored records once the read HAS resolved, and says why', () => {
     const panel = render();
     send({ type: 'statsStore', records: [golden('01-reread-loop')], enabled: true });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'trends');
     expect(one(panel.container, TESTID.statsEmpty).dataset['reason']).toBe('fewer-than-two');
   });
@@ -521,7 +528,7 @@ describe('DoD 4.3 — Trends', () => {
     const panel = render();
     send({ type: 'snapshot', sessions: [] });
     send({ type: 'statsSnapshot', records: [golden('01-reread-loop')] });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'trends');
     expect(one(panel.container, TESTID.statsEmpty).dataset['reason']).toBe('loading');
     // ...then the read lands, with all three engines in it.
@@ -545,7 +552,7 @@ describe('DoD 4.3 — Trends', () => {
   it('is empty when the store is off, and says that instead', () => {
     const panel = render();
     send({ type: 'statsStore', records: [golden('01-reread-loop'), golden('02-churn-chain')], enabled: false });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'trends');
     expect(one(panel.container, TESTID.statsEmpty).dataset['reason']).toBe('disabled');
     expect(one(panel.container, TESTID.statsEmpty).textContent).toContain('agentDeck.stats.enabled');
@@ -577,7 +584,7 @@ describe('DoD 4.3 — Trends', () => {
       ],
       enabled: true,
     });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'trends');
 
     const lines = all(panel.container, TESTID.statsTrendLine).filter(
@@ -609,7 +616,7 @@ describe('DoD 4.3 — Trends', () => {
       records: [golden('01-reread-loop'), golden('09-opencode-cost', 'opencode'), golden('02-churn-chain')],
       enabled: true,
     });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'trends');
     const series = all(panel.container, TESTID.statsTrendSeries);
     // FOUR from v0.8.0 Phase 7 (DoD 7.3): `tokensPerMin` joined. These three
@@ -686,7 +693,7 @@ describe('DoD 4.4 — clicking a chain ordinal selects the tool node through the
     const panel = render();
     send({ type: 'snapshot', sessions: [state] });
     send({ type: 'statsSnapshot', records: [record] });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'loops');
     click(one(panel.container, TESTID.statsChainRow).querySelector('button.head') as Element);
     const ordinal = all(panel.container, TESTID.statsChainOrdinal).find((o) => o.dataset['ordinal'] === '1');
@@ -746,7 +753,7 @@ describe('DoD 4.5 — labels law', () => {
     const panel = render();
     send({ type: 'snapshot', sessions: [state] });
     send({ type: 'statsSnapshot', records: [record] });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'tokens');
     expect(one(panel.container, TESTID.statsSessionPrimary).textContent).toBe('main session');
   });
@@ -761,38 +768,38 @@ describe('DoD 4.6 — the engine chips narrow every stats view', () => {
   const engineOf = (id: string): string =>
     id.startsWith('08') ? 'codex' : id.startsWith('09') ? 'opencode' : 'cc';
 
-  it('shows the four chips with counts, and the same filter state the deck holds', () => {
+  it('the surface carries no engine chip, and states the filter it was given', () => {
     const panel = statsPanel(ids, { engineOf });
-    const chips = all(panel.container, TESTID.statsEngineChip);
-    expect(chips.map((c) => c.dataset['engine'])).toStrictEqual(['all', 'cc', 'oc', 'cx']);
-    expect(chips.map((c) => c.dataset['count'])).toStrictEqual(['3', '1', '1', '1']);
+    expect(all(panel.container, 'stats-engine-chip')).toHaveLength(0);
     expect(one(panel.container, TESTID.statsView).dataset['engineFilter']).toBe('all');
   });
 
-  it('a chip narrows Files, Loops, Tokens and Trends to that engine — and the deck agrees', () => {
+  it('the filter narrows Files, Loops, Tokens and Trends — and the deck agrees', () => {
     const panel = render();
     send({ type: 'snapshot', sessions: ids.map((id) => fixtureState(id)) });
     const records = ids.map((id) => golden(id, engineOf(id)));
     send({ type: 'statsSnapshot', records });
     send({ type: 'statsStore', records, enabled: true });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats', statsTab: 'tokens' }));
 
-    tab(panel, 'tokens');
     expect(all(panel.container, TESTID.statsSession)).toHaveLength(3);
-    const oc = all(panel.container, TESTID.statsEngineChip).find((c) => c.dataset['engine'] === 'oc');
-    click(oc as Element);
+    send(viewControls({ viewMode: 'stats', statsTab: 'tokens', engineFilter: 'oc' }));
     expect(one(panel.container, TESTID.statsView).dataset['engineFilter']).toBe('oc');
-    expect(all(panel.container, TESTID.statsSession).map((s) => s.dataset['engine'])).toStrictEqual(['opencode']);
-    tab(panel, 'files');
+    expect(all(panel.container, TESTID.statsSession).map((s) => s.dataset['engine'])).toStrictEqual([
+      'opencode',
+    ]);
+
+    send(viewControls({ viewMode: 'stats', statsTab: 'files', engineFilter: 'oc' }));
     // Only 09 has a file row among the three.
     expect(all(panel.container, TESTID.statsFileRow)).toHaveLength(1);
-    tab(panel, 'trends');
+    send(viewControls({ viewMode: 'stats', statsTab: 'trends', engineFilter: 'oc' }));
     expect(one(panel.container, TESTID.statsEmpty).dataset['reason']).toBe('fewer-than-two');
-    // The SAME store state the deck reads: leave the mode and the deck's chip is pressed.
+
+    // ONE filter, two surfaces (ruling 6): leaving the mode leaves the deck
+    // narrowed by the same value, because there is only one of it.
     expect(panel.store.getView().engineFilter).toBe('oc');
-    click(one(panel.container, TESTID.statsToggle));
-    const deckChip = all(panel.container, 'deck-engine-chip').find((c) => c.dataset['engine'] === 'oc');
-    expect(deckChip?.dataset['active']).toBe('true');
+    send(viewControls({ viewMode: 'canvas', engineFilter: 'oc' }));
+    expect(one(panel.container, TESTID.deck).dataset['engineFilter']).toBe('oc');
   });
 });
 
@@ -805,7 +812,7 @@ describe('DoD 4.13: a Trends line never draws a picture of its own stand-in scal
   function trendsOver(records: StatsRecord[]): Panel {
     const panel = render();
     send({ type: 'statsStore', records, enabled: true });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'trends');
     return panel;
   }
@@ -963,7 +970,7 @@ describe('DoD 4.14: an empty statsStore after a full one empties the view on its
      */
     const panel = render();
     send({ type: 'statsStore', records: [golden('01-reread-loop'), golden('02-churn-chain')], enabled: true });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'trends');
     expect(all(panel.container, TESTID.statsTrendSeries).length, 'the history never drew').toBeGreaterThan(0);
 
@@ -1009,7 +1016,7 @@ function recordPanel(records: readonly StatsRecord[], sessions: SessionState[] =
   const panel = render();
   send({ type: 'snapshot', sessions });
   send({ type: 'statsSnapshot', records });
-  click(one(panel.container, TESTID.statsToggle));
+  send(viewControls({ viewMode: 'stats' }));
   return panel;
 }
 
@@ -1255,7 +1262,7 @@ describe('DoD 7.3 — the tokens-per-minute series, per engine', () => {
   function trendsPanel(records: readonly StatsRecord[]): Panel {
     const panel = render();
     send({ type: 'statsStore', records, enabled: true });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'trends');
     return panel;
   }
@@ -1457,7 +1464,7 @@ describe('DoD 7.14 (amended R3a) — a 0.7.1 record is a point in every Trends s
     send({ type: 'snapshot', sessions: [] });
     send({ type: 'statsSnapshot', records: [current] });
     send({ type: 'statsStore', records: [old, current], enabled: true });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
 
     tab(panel, 'files');
     const rendered = new Set(all(panel.container, TESTID.statsFileRow).map((row) => row.dataset['path']));
@@ -1510,7 +1517,7 @@ describe('DoD 7.14 (amended R3a) — a 0.7.1 record is a point in every Trends s
     send({ type: 'snapshot', sessions: [] });
     send({ type: 'statsSnapshot', records: [current] });
     send({ type: 'statsStore', records: [old, current], enabled: true });
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     const footer = one(panel.container, TESTID.statsFooter).textContent ?? '';
     expect(footer).toContain('F14:absent 1');
     expect(footer).toContain('not in tokens per minute');
@@ -1519,7 +1526,7 @@ describe('DoD 7.14 (amended R3a) — a 0.7.1 record is a point in every Trends s
     send({ type: 'snapshot', sessions: [] });
     send({ type: 'statsSnapshot', records: [current] });
     send({ type: 'statsStore', records: [current], enabled: true });
-    click(one(plain.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     expect(one(plain.container, TESTID.statsFooter).textContent).not.toContain('F14:absent');
   });
 });
@@ -1545,8 +1552,7 @@ describe('DoD 9.5 — agentDeck.openStats opens the panel on a session', () => {
     expect(allIds.length).toBeGreaterThan(1);
 
     // The real message the host posts, through the real window listener.
-    send({ type: 'showView', mode: 'stats', sessionId: allIds[1] });
-    tab(panel, 'tokens');
+    send(viewControls({ viewMode: 'stats', statsTab: 'tokens', focusSessionId: allIds[1] }));
 
     expect(focused(panel)).toStrictEqual([allIds[1]]);
     expect(panel.store.getView().statsFocusSessionId).toBe(allIds[1]);
@@ -1554,8 +1560,7 @@ describe('DoD 9.5 — agentDeck.openStats opens the panel on a session', () => {
 
   it('focuses nothing when no sessionId is sent', () => {
     const panel = statsPanel(['01-reread-loop', '02-churn-chain']);
-    send({ type: 'showView', mode: 'stats' });
-    tab(panel, 'tokens');
+    send(viewControls({ viewMode: 'stats', statsTab: 'tokens' }));
     expect(cards(panel).length).toBeGreaterThan(1);
     expect(focused(panel)).toStrictEqual([]);
     expect(panel.store.getView().statsFocusSessionId).toBeUndefined();
@@ -1565,24 +1570,25 @@ describe('DoD 9.5 — agentDeck.openStats opens the panel on a session', () => {
     // A deep link arrives from another extension, about a store that may have
     // been cleared or that belongs to another workspace. It must not fail shut.
     const panel = statsPanel(['01-reread-loop', '02-churn-chain']);
-    send({ type: 'showView', mode: 'stats', sessionId: 'no-such-session' });
-    tab(panel, 'tokens');
+    send(
+      viewControls({ viewMode: 'stats', statsTab: 'tokens', focusSessionId: 'no-such-session' }),
+    );
     expect(cards(panel).length).toBeGreaterThan(1);
     expect(focused(panel)).toStrictEqual([]);
   });
 
   it('a second link moves the focus, with the Stats view already open', () => {
-    // `setViewMode` returns early when the mode is unchanged, so a focus set
-    // inside it would never move on a second link. This is that case.
+    // The mode is unchanged between the two links, so a focus that only
+    // moved when the MODE moved would never reach the second session. That
+    // was a real early-return in `setViewMode`; the control message carries
+    // the whole state and assigns it, which removes the shape entirely.
     const panel = statsPanel(['01-reread-loop', '02-churn-chain']);
     tab(panel, 'tokens');
     const ids = cards(panel);
-    send({ type: 'showView', mode: 'stats', sessionId: ids[0] });
-    tab(panel, 'tokens');
+    send(viewControls({ viewMode: 'stats', statsTab: 'tokens', focusSessionId: ids[0] }));
     expect(focused(panel)).toStrictEqual([ids[0]]);
 
-    send({ type: 'showView', mode: 'stats', sessionId: ids[1] });
-    tab(panel, 'tokens');
+    send(viewControls({ viewMode: 'stats', statsTab: 'tokens', focusSessionId: ids[1] }));
     expect(focused(panel)).toStrictEqual([ids[1]]);
   });
 
@@ -1592,24 +1598,27 @@ describe('DoD 9.5 — agentDeck.openStats opens the panel on a session', () => {
     // pointed it.
     //
     // THE FIRST DRAFT OF THIS TEST WAS VACUOUS AND A MUTATION SAID SO. It
-    // left the view by sending `showView mode:canvas`, which carries no
-    // `sessionId` — so the message handler cleared the focus on its own and
-    // the clear inside `setViewMode` was never reached. Deleting that clear
-    // left the test GREEN.
+    // left the view by sending a message that carried no `sessionId`, so the
+    // handler cleared the focus on its own and the clear the test was about
+    // was never reached.
     //
-    // The panel's own toggle reaches `setViewMode` and nothing else, which is
-    // both the real user path and the only one that can see the defect.
+    // v0.9.0 DoD 9.14 makes the rule structural rather than a line somebody
+    // has to remember: the host CLEARS `focusSessionId` on every control
+    // command (`applyControlCommand`), so any menu entry the user runs drops
+    // it, and the renderer simply assigns what it is told. The shape asserted
+    // here is the one a user reaches — a later control state with no focus in
+    // it — and `controls.test.ts` drives the host half.
     const panel = statsPanel(['01-reread-loop', '02-churn-chain']);
     tab(panel, 'tokens');
     const ids = cards(panel);
-    send({ type: 'showView', mode: 'stats', sessionId: ids[1] });
+    send(viewControls({ viewMode: 'stats', statsTab: 'tokens', focusSessionId: ids[1] }));
     expect(panel.store.getView().statsFocusSessionId).toBe(ids[1]);
 
     // Out through the control the user presses, and back in.
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     expect(panel.store.getView().statsFocusSessionId).toBeUndefined();
 
-    click(one(panel.container, TESTID.statsToggle));
+    send(viewControls({ viewMode: 'stats' }));
     tab(panel, 'tokens');
     expect(focused(panel)).toStrictEqual([]);
   });

@@ -118,7 +118,22 @@
  *    `WEBVIEW_ROOT_ID`, not here, because the HOST emits it; the note here is
  *    so a reader looking for it in this file finds the pointer.
  */
-export const CANVAS_CONTRACT_VERSION = 6;
+/*
+ * **7 is v0.9.0 DoD 9.14 — every control left every webview surface.**
+ *
+ * Spec `Amendment 2026-09-20 — Clean windows: all controls in the view menu`.
+ * Three things moved on the shared surface:
+ *
+ *  - {@link ViewMode} LOSES `'insights'` and is three again. The tab became a
+ *    section of the native sidebar tree, which is not a panel mode.
+ *  - `TESTID` loses forty-two ids — every control on the deck chrome, the
+ *    drawer's filter row, the Stats bar, the Tokens copy button, the Insights
+ *    tab and the sidebar webview. The note inside the object lists them.
+ *  - The renderer no longer OWNS a control value. `src/view/controls.ts` is
+ *    the host's table, it arrives on the `viewControls` message, and the
+ *    unions here are checked against it rather than trusted.
+ */
+export const CANVAS_CONTRACT_VERSION = 7;
 
 /* ------------------------------------------------------------------------ *
  * Layout
@@ -234,17 +249,20 @@ export const DEFAULT_LIVENESS_FILTER: LivenessFilter = 'all';
  * `stats` is the third mode (v0.7.0 Phase 4, spec §G): the Layer 1 facts,
  * rendered from `StatsRecord[]` and never from a session tree.
  */
-/**
- * v0.9.0 DoD 9.6 adds `'insights'`, the fourth entry.
+/*
+ * v0.9.0 DoD 9.6 added `'insights'` as a fourth mode; **v0.9.0 DoD 9.14
+ * REMOVES it.** Spec `Amendment 2026-09-20 — Clean windows` moves the whole
+ * Insights tab into the sidebar tree, where it is a section rather than a
+ * panel mode, so there is no surface for a fourth entry to name.
  *
- * It is a PLACE TO GO, not the next notch of the canvas/list toggle — the
- * same reading `'stats'` was added under, and the reason `toggleViewMode`
- * still swaps only those two.
+ * THREE AGAIN, and `src/view/controls.ts` writes the same three for the host.
+ * `controls.test.ts` holds the two lists against each other, because this
+ * module is the renderer's and that one may not import it.
  */
-export type ViewMode = 'canvas' | 'list' | 'stats' | 'insights';
+export type ViewMode = 'canvas' | 'list' | 'stats';
 
-/** The three modes, in the order a switch renders them. */
-export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats', 'insights'];
+/** The three modes, in the order the View submenu renders them. */
+export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats'];
 
 /** The default at startup and after a reload. Canvas, immediately, no setting. */
 export const DEFAULT_VIEW_MODE: ViewMode = 'canvas';
@@ -302,20 +320,10 @@ export const TESTID = {
   drawerHead: 'drawer-head',
   /** One label-over-value pair in the header field group. Carries data-field. */
   drawerField: 'drawer-field',
-  /** Toggles the drawer between its collapsed and expanded heights. */
-  drawerExpand: 'drawer-expand',
   /** The scrolling body: the call-row list, plus the detail pane when open. */
   drawerBody: 'drawer-body',
   /** The detail pane, present only while a call row is open. */
   drawerDetail: 'drawer-detail',
-  /** The filter row. Exists ONLY in the expanded state (§8.6). */
-  drawerFilters: 'drawer-filters',
-  /** One status filter chip in that row. Carries data-filter and data-active. */
-  drawerFilterChip: 'drawer-filter-chip',
-  /** The call-order select — oldest first / newest first (A9.5). */
-  drawerOrderSelect: 'drawer-order-select',
-  /** The tool-name select, pinned right in the filter row. */
-  drawerToolSelect: 'drawer-tool-select',
 
   /** One action row in the inspector: what an agent DID, by description. */
   actionRow: 'action-row',
@@ -323,59 +331,8 @@ export const TESTID = {
   actionSummary: 'action-summary',
   /** The session interior pan/zoom wrapper. A transform, never a coordinate. */
   canvasStage: 'canvas-stage',
-  /** Resets the interior pan/zoom. */
-  canvasReset: 'canvas-reset',
-
-  /* Navigation and controls (Phase 4.6) */
-  /** The breadcrumb nav. Spec C7.8 calls it the session dock. */
-  dock: 'dock',
-  /** The crumb that returns to altitude 0. A real button, not decoration. */
-  crumbDeck: 'crumb-deck',
-  /** The crumb naming where you are now. */
-  crumbHere: 'crumb-here',
-  /** One liveness filter chip. Carries data-filter and data-active. */
-  filterChip: 'filter-chip',
-  /** Reopens the inspector on the current selection after it was closed. */
-  inspectorToggle: 'inspector-toggle',
   /** The pan/zoom wrapper. Carries the transform; NEVER a coordinate. */
   deckStage: 'deck-stage',
-  /** Resets pan and zoom to the identity transform. */
-  deckReset: 'deck-reset',
-  /** How many sessions are showing, and of how many. */
-  countChip: 'count-chip',
-  /** The membrane-colour key. */
-  legend: 'legend',
-
-  /* Chrome */
-  viewToggle: 'view-toggle',
-  /** Enters the Stats view mode, and leaves it (v0.7.0 Phase 4). */
-  statsToggle: 'stats-toggle',
-  /** Enters the Insights view mode, and leaves it (v0.9.0 DoD 9.6). */
-  insightsToggle: 'insights-toggle',
-  /** The About link in the deck header (v0.9.0 DoD 9.7). */
-  aboutLink: 'about-link',
-
-  /* The Insights view mode (v0.9.0 DoD 9.6). */
-  /** The whole surface. Carries data-installed. */
-  insightsView: 'insights-view',
-  /** The counts line. Absent when every count is zero. */
-  insightsCounts: 'insights-counts',
-  /** One non-zero count. data-id, data-count. */
-  insightsCount: 'insights-count',
-  /** The one plain fact line shown when every count is zero. */
-  insightsAllZero: 'insights-all-zero',
-  /** The single product sentence. */
-  insightsSentence: 'insights-sentence',
-  /** The control that shows the next example. */
-  insightsExampleButton: 'insights-example-button',
-  /** The example currently shown. data-example. */
-  insightsExample: 'insights-example',
-  /** The label every example carries. */
-  insightsExampleLabel: 'insights-example-label',
-  /** The one button: get it, or open it. data-action. */
-  insightsAction: 'insights-action',
-  /** The parameters line (IDLE_RESUME_MS and the source fields). */
-  insightsParams: 'insights-params',
   hud: 'hud',
   hudDegradedChip: 'hud-degraded-chip',
 
@@ -383,10 +340,6 @@ export const TESTID = {
      component emits and `stats-view.test.ts` selects on. */
   /** The whole surface. Carries data-view (which tab) and data-engine-filter. */
   statsView: 'stats-view',
-  /** One tab button: Files · Tools · Loops & churn · Tokens · Trends. data-view. */
-  statsTab: 'stats-tab',
-  /** One engine chip on the stats surface. data-engine, data-active. */
-  statsEngineChip: 'stats-engine-chip',
   /** The footer: excluded sessions with reason codes, never in a table. */
   statsFooter: 'stats-footer',
   /** The measurement parameters line (`LOOP_MIN`, `SPIKE_TOKENS`). */
@@ -405,6 +358,15 @@ export const TESTID = {
   statsToolCell: 'stats-tool-cell',
   /* Loops & churn */
   statsChainRow: 'stats-chain-row',
+  /**
+   * The chain row's own expand/collapse — v0.9.0 DoD 9.14.
+   *
+   * NAMED, because `chrome.test.ts` exempts the two content interactions the
+   * amendment allows BY TESTID and reports an unnamed clickable as
+   * `(no testid)`. A control nobody can name is a control nobody can exempt
+   * on purpose, which is the direction that catches the next chip.
+   */
+  statsChainHead: 'stats-chain-head',
   /** One ordinal inside an expanded chain. A button: fires the select intent. */
   statsChainOrdinal: 'stats-chain-ordinal',
   /* Tokens */
@@ -426,7 +388,6 @@ export const TESTID = {
   statsUnreceivedFlag: 'stats-unreceived-flag',
   /** One model id, copyable. */
   statsModelId: 'stats-model-id',
-  statsModelCopy: 'stats-model-copy',
   /** The per-turn strip; markers carry data-kind (spike | compaction). */
   statsTurnStrip: 'stats-turn-strip',
   statsTurnMarker: 'stats-turn-marker',
@@ -438,34 +399,21 @@ export const TESTID = {
   /** One ENGINE's line inside a series (DoD 4.12). Never shared across engines. */
   statsTrendLine: 'stats-trend-line',
   statsTrendPoint: 'stats-trend-point',
-
-  /* The sidebar menu (DoD 4.6b) */
-  sidebarMenu: 'sidebar-menu',
-  /** One menu entry. data-command names the command it runs. */
-  sidebarEntry: 'sidebar-entry',
-
-  /* The sidebar's tabs and the Tweaks panel (v0.8.0 Phase 7, DoD 7.6) */
-  sidebarTablist: 'sidebar-tablist',
-  /** One tab button. data-tab names the panel it shows. */
-  sidebarTab: 'sidebar-tab',
-  /** The showing tab's panel. data-tab names which one it is. */
-  sidebarPanel: 'sidebar-panel',
-  /** The Tweaks panel itself. */
-  tweaksPanel: 'tweaks-panel',
-  /**
-   * One setting's row. `data-key` is its `TWEAK_SETTINGS` key, `data-known`
-   * says whether a `settings` message has positioned it, and `data-value` is
-   * the position it is at — empty while unknown, never a guessed default.
+  /*
+   * FORTY-TWO IDS WERE REMOVED HERE BY v0.9.0 DoD 9.14, and the removal is
+   * the point rather than tidying: a testid with no element is a selector
+   * that silently matches zero, which this file already records as the shape
+   * of the `capture-states.mjs` defect.
+   *
+   * They addressed the deck chrome (dock, crumbs, the liveness filter chips,
+   * the count, the legend, the inspector toggle, both Reset view controls and
+   * the Canvas/List, Stats, About and Insights buttons), the drawer's filter
+   * row and expand control, the Stats bar's tabs and engine chips, the Tokens
+   * copy button, the whole Insights tab, and the sidebar webview's menu and
+   * Tweaks panel. Spec `Amendment 2026-09-20 — Clean windows` moves every one
+   * of them into the editor's own menus, and `src/view/controls.ts` is where
+   * they are named now.
    */
-  tweakRow: 'tweak-row',
-  /** The row's control: a checkbox for `boolean`, a select for `enum`. */
-  tweakControl: 'tweak-control',
-  /** The row's label, as the user reads it. Never a key. */
-  tweakLabel: 'tweak-label',
-  /** The row's one line of fact under the label. */
-  tweakDetail: 'tweak-detail',
-  /** Present only while the row has no value from the host. */
-  tweakUnknown: 'tweak-unknown',
 } as const;
 
 /* ------------------------------------------------------------------------ *

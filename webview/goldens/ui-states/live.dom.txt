@@ -1,10 +1,5 @@
 div
   div [app] .app data-altitude="deck" data-degraded="false" data-liveness="live" data-refused="false" data-view-mode="list"
-    div .chrome
-      button [stats-toggle] .toggle aria-pressed="false" type="button" "Stats"
-      button [about-link] .toggle .about type="button" "About"
-      button [insights-toggle] .toggle aria-pressed="false" type="button" "Insights"
-      button [view-toggle] .toggle aria-pressed="false" data-view-mode="list" type="button" "List"
     div .body
       nav [session-rail] .rail aria-label="Sessions"
         h2 .rail-title "Sessions"

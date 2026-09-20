@@ -59,7 +59,13 @@
         data-expanded={String(expanded.has(row.key))}
         data-unresolved={String(unresolved.has(row.key))}
       >
-        <button type="button" class="head" onclick={() => toggle(row.key)} aria-expanded={expanded.has(row.key)}>
+        <button
+          type="button"
+          class="head"
+          data-testid={TESTID.statsChainHead}
+          onclick={() => toggle(row.key)}
+          aria-expanded={expanded.has(row.key)}
+        >
           <span class="term">{row.term}</span>
           <span class="primary" title={row.filePath ?? row.toolName ?? ''}
             >{row.kind === 'loop' ? row.toolName : (row.basename ?? EM_DASH)}</span

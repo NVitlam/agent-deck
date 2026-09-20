@@ -99,10 +99,14 @@ const PATTERNS = FORBIDDEN.map((word) => ({
 const DEFAULT_SCOPES = [
   { kind: 'dir', dir: join(REPO_ROOT, 'src', 'stats'), label: 'src/stats' },
   { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'stats'), label: 'webview/stats' },
-  { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'sidebar'), label: 'webview/sidebar' },
-  // v0.9.0 DoD 9.6. The Insights tab is the surface most able to drift into
-  // advice, because it is the one that names another product.
-  { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'insights'), label: 'webview/insights' },
+  // v0.9.0 DoD 9.14. The sidebar and the Insights tab were webview surfaces
+  // under `webview/sidebar` and `webview/insights`; spec
+  // `Amendment 2026-09-20` makes both native, so the words a user reads on
+  // them are written here instead. Insights is still the surface most able to
+  // drift into advice, because it is the one that names another product.
+  { kind: 'dir', dir: join(REPO_ROOT, 'src', 'sidebar'), label: 'src/sidebar' },
+  { kind: 'dir', dir: join(REPO_ROOT, 'src', 'insights'), label: 'src/insights' },
+  { kind: 'dir', dir: join(REPO_ROOT, 'src', 'view'), label: 'src/view' },
   {
     kind: 'block',
     file: join(REPO_ROOT, 'CHANGELOG.md'),

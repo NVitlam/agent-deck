@@ -26,7 +26,7 @@
  * two cannot drift.
  */
 
-import type { StatsRecord } from '../../src/stats/schema.js';
+import type { StatsRecord } from '../stats/schema.js';
 
 /**
  * The silence a gap must exceed to count as an idle resume.

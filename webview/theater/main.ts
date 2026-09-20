@@ -67,8 +67,10 @@ function describe(message: HostToWebviewMessage): string {
       return `statsStore (${message.records.length} records, ${message.enabled ? 'enabled' : 'disabled'})`;
     case 'settings':
       return `settings (autoFit ${message.canvasAutoFit ? 'on' : 'off'})`;
-    case 'showView':
-      return `showView ${message.mode}`;
+    case 'viewControls':
+      return `viewControls ${message.controls.viewMode}`;
+    case 'viewAction':
+      return `viewAction ${message.action}`;
   }
 }
 

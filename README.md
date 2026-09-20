@@ -220,18 +220,35 @@ Install from the VS Code Marketplace - open the **Extensions** view and search f
 code --install-extension nvitlam.agent-deck
 ```
 
-**Where to find it: the Agent Deck icon in the activity bar.** It opens a sidebar with one entry
-per command:
+**Where to find it: the Agent Deck icon in the activity bar.** It opens a tree with four
+sections, and the same four are on the view's title menu.
+
+**Everything is in that tree or that menu. The panels are content only** — no bars, no buttons,
+no chips. You pan, drag, zoom and select; everything else is a menu entry or a keyboard shortcut.
+
+**Menu**
 
 - **Open Deck** — the session deck, in the first editor group.
 - **Open Statistics** — the same panel, on its Stats view.
 - **Show Diagnostics** — the Agent Deck output channel.
 - **Settings** — VS Code's settings, filtered to Agent Deck.
 - **Clear Stats History** — removes the local stats history, after a confirmation.
+- **About** — a panel with what this is and where to find it.
 
-A second tab, **Tweaks**, shows four settings — follow new sessions, open the drawer on entering a
-session, open the drawer expanded, and the deck ordering. Changing one writes that setting; the tab
-keeps no value of its own and shows whatever the settings say.
+**View** — Canvas or List; filter the sessions by liveness and by engine; the deck's layout and
+sort; which Statistics table is showing; the drawer's status, order and tool filters; and Reset
+view, which acts on whichever surface you are on.
+
+**Tweaks** — four settings, as checkboxes and one choice: follow new sessions, open the drawer on
+entering a session, open the drawer expanded, and the deck ordering. Ticking one writes that
+setting; the tree keeps no value of its own and shows whatever the settings say.
+
+**Insights** — what your own recorded history counts, one example, and a way to get or open
+Agent Deck Insights.
+
+**The keyboard shortcuts are unchanged**, and they work while the deck panel has focus: `a` `c`
+`o` `x` for the engines, `1` `2` `3` for the layout, `l` `r` `e` for the sort. `Escape` walks
+back out of a session, and `k` collapses the tree.
 
 ![The Agent Deck sidebar in the activity bar](media/sidebar.png)
 

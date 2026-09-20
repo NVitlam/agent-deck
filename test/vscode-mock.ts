@@ -333,6 +333,12 @@ interface MockState {
   executed: { command: string; args: unknown[] }[];
   /** The providers `registerWebviewViewProvider` was given, by view id. */
   viewProviders: Map<string, { resolveWebviewView(view: MockWebviewView): void }>;
+  /** The tree views `createTreeView` was given, by view id (DoD 9.14). */
+  treeViews: Map<string, MockTreeView<unknown>>;
+  /** Every `showQuickPick` call, in order, with the items it offered. */
+  quickPicks: { items: string[]; placeHolder: string | undefined }[];
+  /** What the next `showQuickPick` returns, when it is one of the items. */
+  quickPickAnswer: string | undefined;
   /** What `window.tabGroups.all.length` reports. Default one group. */
   editorGroups: number;
   errorMessages: string[];
@@ -380,6 +386,9 @@ const state: MockState = {
   panelColumns: [],
   executed: [],
   viewProviders: new Map(),
+  treeViews: new Map(),
+  quickPicks: [],
+  quickPickAnswer: undefined as string | undefined,
   editorGroups: 1,
   errorMessages: [],
   informationMessages: [],
@@ -398,6 +407,9 @@ export function resetVscodeMock(): void {
   state.panelColumns = [];
   state.executed = [];
   state.viewProviders = new Map();
+  state.treeViews = new Map();
+  state.quickPicks = [];
+  state.quickPickAnswer = undefined;
   state.editorGroups = 1;
   state.errorMessages = [];
   state.informationMessages = [];
@@ -481,6 +493,23 @@ export const mock = {
   },
   hasViewProvider(viewId: string): boolean {
     return state.viewProviders.has(viewId);
+  },
+  /** The tree view a `createTreeView` call registered (DoD 9.14). */
+  treeView(viewId: string): MockTreeView<unknown> {
+    const view = state.treeViews.get(viewId);
+    if (view === undefined) throw new Error(`no tree view created: ${viewId}`);
+    return view;
+  },
+  hasTreeView(viewId: string): boolean {
+    return state.treeViews.has(viewId);
+  },
+  /** Every `showQuickPick` call, in order. */
+  get quickPicks(): { items: string[]; placeHolder: string | undefined }[] {
+    return state.quickPicks;
+  },
+  /** What the next `showQuickPick` returns. Ignored unless it is offered. */
+  answerQuickPick(answer: string | undefined): void {
+    state.quickPickAnswer = answer;
   },
   get errorMessages(): string[] {
     return state.errorMessages;
@@ -601,7 +630,109 @@ export const extensions = {
   },
 };
 
+/* -------------------------------------------------------------------------- *
+ * TreeView — v0.9.0 DoD 9.14
+ * -------------------------------------------------------------------------- *
+ *
+ * The sidebar is a NATIVE tree now, so the mock has to carry the four
+ * primitives the provider touches: `TreeItem`, its two enums, `ThemeIcon`
+ * and `EventEmitter`. They are the real API's shapes and nothing more — a
+ * mock that invented a convenience here would let a test pass against a
+ * structure VS Code does not have, which is this repository's recorded
+ * "a harness comment describing what a fixture MEANS is an assertion with
+ * no test behind it".
+ */
+
+export const TreeItemCollapsibleState = {
+  None: 0,
+  Collapsed: 1,
+  Expanded: 2,
+} as const;
+
+export const TreeItemCheckboxState = {
+  Unchecked: 0,
+  Checked: 1,
+} as const;
+
+export class ThemeIcon {
+  constructor(readonly id: string) {}
+}
+
+export class TreeItem {
+  label: string;
+  collapsibleState: number;
+  id?: string;
+  description?: string;
+  iconPath?: ThemeIcon;
+  command?: { command: string; title: string } | undefined;
+  checkboxState?: number;
+
+  constructor(label: string, collapsibleState = TreeItemCollapsibleState.None) {
+    this.label = label;
+    this.collapsibleState = collapsibleState;
+  }
+}
+
+export class EventEmitter<T> {
+  readonly #emitter = new Emitter<T>();
+
+  readonly event = this.#emitter.event;
+
+  fire(value: T): void {
+    this.#emitter.fire(value);
+  }
+
+  dispose(): void {
+    this.#emitter.listeners.clear();
+  }
+}
+
+/** What `createTreeView` hands back, plus what a test needs to drive it. */
+export interface MockTreeView<T> {
+  readonly provider: {
+    getChildren(element?: T): T[];
+    getTreeItem(element: T): TreeItem;
+  };
+  readonly checkboxEmitter: Emitter<{ items: [T, number][] }>;
+  visible: boolean;
+  dispose(): void;
+}
+
 export const window = {
+  /**
+   * `createTreeView`, recording the provider so a test can walk the real one.
+   *
+   * The provider is NOT wrapped or adapted: a test reads the same object the
+   * editor would, so the adapter half of `AgentDeckTreeProvider` — the one
+   * that turns the model into `TreeItem`s — is driven rather than assumed.
+   */
+  createTreeView<T>(
+    viewId: string,
+    options: { treeDataProvider: { getChildren(element?: T): T[]; getTreeItem(element: T): TreeItem } },
+  ): MockTreeView<T> {
+    const view: MockTreeView<T> = {
+      provider: options.treeDataProvider,
+      checkboxEmitter: new Emitter<{ items: [T, number][] }>(),
+      visible: true,
+      dispose: () => {
+        state.treeViews.delete(viewId);
+      },
+    };
+    state.treeViews.set(viewId, view as MockTreeView<unknown>);
+    return view;
+  },
+  /**
+   * `showQuickPick`, answering `state.quickPickAnswer`.
+   *
+   * Recorded as well as answered: the tool filter's whole job is to offer the
+   * names this window holds, and a test that could only see the ANSWER could
+   * not tell a correct list from an empty one.
+   */
+  showQuickPick(items: readonly string[], options?: { placeHolder?: string }): Promise<string | undefined> {
+    state.quickPicks.push({ items: [...items], placeHolder: options?.placeHolder });
+    const answer = state.quickPickAnswer;
+    return Promise.resolve(answer !== undefined && items.includes(answer) ? answer : undefined);
+  },
   createWebviewPanel(
     viewType: string,
     title: string,

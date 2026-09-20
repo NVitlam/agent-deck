@@ -33,7 +33,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionState, WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
-import { all, loadHarness, one, press } from './testkit.js';
+import { all, loadHarness, one, press, viewControls } from './testkit.js';
 import { TESTID } from './canvas-contract.js';
 import { agent, liveSession, unsupportedSession } from './testdata.js';
 import { DEFAULT_DECK_SORT } from './layout.js';
@@ -372,7 +372,7 @@ describe('drawerExpandedByDefault — the height a drawer opens at', () => {
     enter(panel, 'session-live');
     expect(drawer(panel)?.dataset['expanded']).toBe('true');
 
-    act(() => press(one(panel.container, TESTID.drawerExpand)));
+    act(() => panel.store.toggleDrawerExpanded());
     expect(drawer(panel)?.dataset['expanded']).toBe('false');
 
     act(() => panel.store.setInspectorOpen(false));
@@ -386,7 +386,7 @@ describe('drawerExpandedByDefault — the height a drawer opens at', () => {
     settings({ ...OFF, openDrawerOnEnter: true, drawerExpandedByDefault: false });
     snapshot([liveSession()]);
     enter(panel, 'session-live');
-    act(() => press(one(panel.container, TESTID.drawerExpand)));
+    act(() => panel.store.toggleDrawerExpanded());
     expect(drawer(panel)?.dataset['expanded']).toBe('true');
   });
 
@@ -399,7 +399,7 @@ describe('drawerExpandedByDefault — the height a drawer opens at', () => {
     act(() => {
       if (cell !== undefined) press(cell);
     });
-    act(() => press(one(panel.container, TESTID.drawerExpand)));
+    act(() => panel.store.toggleDrawerExpanded());
     expect(drawer(panel)?.dataset['expanded']).toBe('true');
 
     // Moving the selection is not opening a drawer, so it does not resize the
@@ -411,11 +411,22 @@ describe('drawerExpandedByDefault — the height a drawer opens at', () => {
 });
 
 describe('defaultOrdering — the sort the deck opens at', () => {
-  // TWO SESSIONS WHOSE ORDER DISAGREES BETWEEN TWO SORTS, which is what makes
-  // every assertion below non-vacuous: `live` ranks by status first (live
-  // before ended) and `recent` by last event first, so the live-but-old
-  // session leads one order and trails the other. Two sessions that agreed
-  // would satisfy both expectations at once.
+  /*
+   * WHERE THIS BEHAVIOUR LIVES CHANGED IN v0.9.0 DoD 9.14, and most of this
+   * block moved with it.
+   *
+   * Until this release the renderer adopted `agentDeck.defaultOrdering`: the
+   * store carried it, `Deck.svelte` seeded its own `$state` from it, and a
+   * `sortChosen` flag decided whether a later settings message could
+   * overrule a control the user had just pressed. There is no control and no
+   * component state now — spec `Amendment 2026-09-20` moves the sort to
+   * View ▸ Sort — so the setting seeds the HOST's `deckSort` ONCE, at
+   * activation, and `src/extension.test.ts` is where that is driven.
+   *
+   * What is left here is the renderer's half, which is the half this file
+   * can see: the deck draws the sort it is given, and the two fixtures
+   * really do sort differently so that saying so means something.
+   */
   const OLD_LIVE = 'session-old-live';
   const NEW_ENDED = 'session-new-ended';
 
@@ -434,53 +445,34 @@ describe('defaultOrdering — the sort the deck opens at', () => {
   it('the two fixtures really do sort differently, so the tests below can fail', () => {
     // The control for every expectation in this block. If `live` and `recent`
     // ever produced the same order over these two, each test would pass
-    // whatever the setting did.
+    // whatever the host said.
     const panel = render();
-    settings({ ...OFF, defaultOrdering: 'live' });
     snapshot(twoSessions());
+    act(() => panel.store.handleMessage(viewControls({ deckSort: 'live' })));
     const live = order(panel);
-    expect(live).toHaveLength(2);
     expect(live).toStrictEqual([OLD_LIVE, NEW_ENDED]);
 
-    act(() => {
-      const recent = all(panel.container, 'deck-sort-option').find(
-        (b) => b.dataset['sort'] === 'recent',
-      );
-      if (recent !== undefined) press(recent);
-    });
+    act(() => panel.store.handleMessage(viewControls({ deckSort: 'recent' })));
     expect(order(panel)).toStrictEqual([NEW_ENDED, OLD_LIVE]);
     expect(order(panel)).not.toStrictEqual(live);
   });
 
-  it('recent: the deck opens in that order, cards and all', () => {
+  it('the deck draws the sort the host states — every one of the three', () => {
     const panel = render();
-    settings({ ...OFF, defaultOrdering: 'recent' });
     snapshot(twoSessions());
-    expect(deckSort(panel)).toBe('recent');
+    for (const sort of ['live', 'recent', 'engine'] as const) {
+      act(() => panel.store.handleMessage(viewControls({ deckSort: sort })));
+      expect(deckSort(panel), sort).toBe(sort);
+    }
+    // ...and the two whose ORDER differs differ on the cards too, so the
+    // attribute above is not the only thing that moved.
+    act(() => panel.store.handleMessage(viewControls({ deckSort: 'recent' })));
     expect(order(panel)).toStrictEqual([NEW_ENDED, OLD_LIVE]);
-    expect(
-      all(panel.container, 'deck-sort-option').find((b) => b.dataset['sort'] === 'recent')?.dataset[
-        'active'
-      ],
-    ).toBe('true');
-  });
-
-  it('live: the deck opens in that order', () => {
-    const panel = render();
-    settings({ ...OFF, defaultOrdering: 'live' });
-    snapshot(twoSessions());
-    expect(deckSort(panel)).toBe('live');
+    act(() => panel.store.handleMessage(viewControls({ deckSort: 'live' })));
     expect(order(panel)).toStrictEqual([OLD_LIVE, NEW_ENDED]);
   });
 
-  it('engine: the deck opens at that sort', () => {
-    const panel = render();
-    settings({ ...OFF, defaultOrdering: 'engine' });
-    snapshot(twoSessions());
-    expect(deckSort(panel)).toBe('engine');
-  });
-
-  it('with NO settings message at all, the deck opens at the design default', () => {
+  it('with no control message at all, the deck opens at the design default', () => {
     const panel = render();
     snapshot(twoSessions());
     expect(deckSort(panel)).toBe(DEFAULT_DECK_SORT);
@@ -488,36 +480,15 @@ describe('defaultOrdering — the sort the deck opens at', () => {
     expect(order(panel)).toStrictEqual([OLD_LIVE, NEW_ENDED]);
   });
 
-  it('a sort this build does not know is refused, and the design default applies', () => {
+  it('the sort SURVIVES a session visit, because the host holds it', () => {
+    // The old behaviour was the opposite and was argued for: the control bar
+    // was re-chosen from in front of you, so a re-mount went back to the
+    // setting. There is no bar, so the value is the host's and it holds —
+    // which is also what keeps the sidebar's tick agreeing with the field.
     const panel = render();
-    settings({ ...OFF, defaultOrdering: 'alphabetical' });
     snapshot(twoSessions());
-    expect(panel.store.getView().defaultOrdering).toBeUndefined();
-    expect(deckSort(panel)).toBe(DEFAULT_DECK_SORT);
-    expect(order(panel)).toStrictEqual([OLD_LIVE, NEW_ENDED]);
-  });
-
-  it('the user can still re-sort, and leaving the deck and coming back opens at the setting again', () => {
-    // THE RECORDED DECISION, MADE TESTABLE. `App.svelte` mounts `<Deck>` only
-    // at the deck altitude, so a session visit destroys it and returning
-    // builds a new one — and the control bar going back to its starting value
-    // on that return is the behaviour `Deck.svelte`'s own block argues for,
-    // written down before this setting existed. All the setting changes is
-    // WHAT it goes back to. Anyone who "fixes" the re-read into a persisted
-    // sort turns this test red.
-    const panel = render();
-    settings({ ...OFF, defaultOrdering: 'recent' });
-    snapshot(twoSessions());
+    act(() => panel.store.handleMessage(viewControls({ deckSort: 'recent' })));
     expect(deckSort(panel)).toBe('recent');
-
-    act(() => {
-      const live = all(panel.container, 'deck-sort-option').find(
-        (b) => b.dataset['sort'] === 'live',
-      );
-      if (live !== undefined) press(live);
-    });
-    expect(deckSort(panel)).toBe('live');
-    expect(order(panel)).toStrictEqual([OLD_LIVE, NEW_ENDED]);
 
     enter(panel, OLD_LIVE);
     expect(all(panel.container, TESTID.deck)).toHaveLength(0);
@@ -526,53 +497,6 @@ describe('defaultOrdering — the sort the deck opens at', () => {
 
     expect(deckSort(panel)).toBe('recent');
     expect(order(panel)).toStrictEqual([NEW_ENDED, OLD_LIVE]);
-  });
-
-  it('a deck the user has not touched adopts a later settings message', () => {
-    // THE FIRST MESSAGE IS ALWAYS A LATER ONE, and that is why this behaviour
-    // exists rather than a construction-time seed alone. The host creates the
-    // webview, the bundle mounts `App.svelte`, `App.svelte` mounts `<Deck>`
-    // immediately — the altitude starts at `deck` — and only then does the
-    // `settings` message arrive. A deck that read the setting only when it was
-    // built would ignore it on the one deck a person sees when they open the
-    // panel.
-    const panel = render();
-    snapshot(twoSessions());
-    expect(deckSort(panel)).toBe(DEFAULT_DECK_SORT);
-
-    settings({ ...OFF, defaultOrdering: 'recent' });
-    expect(panel.store.getView().defaultOrdering).toBe('recent');
-    expect(deckSort(panel)).toBe('recent');
-    expect(order(panel)).toStrictEqual([NEW_ENDED, OLD_LIVE]);
-  });
-
-  it('once the user has chosen a sort, a later settings message does not overrule it', () => {
-    // The other half of the same rule. A configuration change that re-sorted
-    // the deck under the control the user had just used would be the setting
-    // winning an argument it is not in.
-    const panel = render();
-    settings({ ...OFF, defaultOrdering: 'recent' });
-    snapshot(twoSessions());
-    expect(deckSort(panel)).toBe('recent');
-
-    act(() => {
-      const live = all(panel.container, 'deck-sort-option').find(
-        (b) => b.dataset['sort'] === 'live',
-      );
-      if (live !== undefined) press(live);
-    });
-    expect(deckSort(panel)).toBe('live');
-
-    settings({ ...OFF, defaultOrdering: 'engine' });
-    expect(panel.store.getView().defaultOrdering).toBe('engine');
-    expect(deckSort(panel)).toBe('live');
-    expect(order(panel)).toStrictEqual([OLD_LIVE, NEW_ENDED]);
-
-    // ...and the choice dies with the deck it was made on, so the next one
-    // opens at the setting.
-    enter(panel, OLD_LIVE);
-    act(() => panel.store.escape());
-    expect(deckSort(panel)).toBe('engine');
   });
 });
 
@@ -588,7 +512,9 @@ describe('what the store does before the first settings message', () => {
     // reconciliation is the host package's.
     const panel = render();
     const view = panel.store.getView();
-    expect(view.defaultOrdering).toBeUndefined();
+    // `defaultOrdering` left the view in v0.9.0 DoD 9.14: the setting seeds
+    // the HOST's `deckSort` at activation and the renderer never sees it.
+    expect(view.deckSort).toBe(DEFAULT_DECK_SORT);
 
     snapshot([deckRow('session-a', 'live', 1_000)]);
     snapshot([deckRow('session-a', 'live', 1_000), deckRow('session-b', 'live', 2_000)]);

@@ -30,8 +30,6 @@ import type {
   WebviewToHostMessage,
 } from '../model/events.js';
 import type { SessionEmission } from '../model/session.js';
-import { isSidebarCommand } from '../sidebar/menu.js';
-import { isTweakKey, isTweakValue } from '../sidebar/tweaks.js';
 import { applySessionPatch } from './apply.js';
 
 // ---------------------------------------------------------------------------
@@ -76,16 +74,16 @@ export const WEBVIEW_TO_HOST_TYPES = [
   // through it; `sessionId` is optional because a diff for an unknown session
   // has no session state to name.
   'resyncRequest',
-  // v0.7.0 Phase 4, DoD 4.6b. The SIDEBAR's one message: run a menu command.
-  // `command` must be a member of `src/sidebar/menu.ts`'s list — validated
-  // HERE, at the boundary, so a message that merely looks like a menu entry
-  // cannot make the host execute an arbitrary command id.
-  'runCommand',
-  // v0.8.0 Phase 7, DoD 7.6. The TWEAKS panel's one message: write one
-  // setting. `key` must be a member of `src/sidebar/tweaks.ts`'s list and
-  // `value` a value that member may take — validated HERE, at the boundary,
-  // because the host's next act is to write it into the user's settings.
-  'updateTweak',
+  /*
+   * `runCommand` and `updateTweak` were here until v0.9.0 DoD 9.14.
+   *
+   * The sidebar webview they belonged to is deleted — the sidebar is a native
+   * `TreeView` now and its items run commands directly — so nothing posts
+   * either one. The guard arms went with them: an arm no producer can reach
+   * is an arm nothing exercises, and it was one of those two arms that made
+   * About a dead button (it validated the panel's `runCommand` against the
+   * SIDEBAR's five-entry list, which never held `agentDeck.about`).
+   */
 ] as const;
 
 /**
@@ -187,17 +185,6 @@ export function isWebviewToHostMessage(
           if (typeof sessionId !== 'string' || sessionId.length === 0) return false;
         }
         return true;
-      }
-      case 'runCommand': {
-        const command = ownNonEmptyString(value, 'command');
-        return command !== undefined && isSidebarCommand(command);
-      }
-      case 'updateTweak': {
-        const key = ownNonEmptyString(value, 'key');
-        if (key === undefined || !isTweakKey(key)) return false;
-        // `ownDataProperty`, not a plain read: the value may legitimately be
-        // `false`, which every "is it there" shortcut would discard.
-        return isTweakValue(key, ownDataProperty(value, 'value'));
       }
       default:
         return false;

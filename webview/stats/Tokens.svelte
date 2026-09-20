@@ -19,7 +19,6 @@
   import type { TokensLayout } from './layout.js';
   import { VOCABULARY } from './layout.js';
   import {
-    copyText,
     formatRate,
     formatRatio,
     formatSpan,
@@ -63,12 +62,12 @@
     { figure: 'costPerHourUsd', label: 'cost per hour', format: formatUsd },
   ];
 
-  /** The id last copied, for a moment of feedback on the button. */
-  let copied = $state<string | undefined>(undefined);
-
-  function copy(id: string): void {
-    copied = copyText(id) ? id : undefined;
-  }
+  /*
+   * The copy-to-clipboard button was here until v0.9.0 DoD 9.14, ruling 7:
+   * REMOVED, with no replacement. The model id is still rendered, still in a
+   * monospace `code` element and still selectable, so copying it is the
+   * editor's own text selection — which is what it was competing with.
+   */
 </script>
 
 {#if tokens.sessions.length === 0}
@@ -201,15 +200,6 @@
           {#each session.models as model (model)}
             <span class="model">
               <code data-testid={TESTID.statsModelId}>{model}</code>
-              <button
-                type="button"
-                class="copy"
-                data-testid={TESTID.statsModelCopy}
-                data-model={model}
-                data-copied={String(copied === model)}
-                title="copy the model id for agentDeck.pricing"
-                onclick={() => copy(model)}>{copied === model ? 'copied' : 'copy'}</button
-              >
             </span>
           {/each}
         {/if}
@@ -409,22 +399,6 @@
     -webkit-user-select: text;
   }
 
-  .copy {
-    font: inherit;
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--ink-2);
-    background: none;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 0 6px;
-    cursor: pointer;
-  }
-
-  .copy:hover {
-    color: var(--ink);
-    background: var(--press);
-  }
 
   .strip {
     display: block;

@@ -15,6 +15,7 @@ import type { CanvasGeometry, Store } from './store.js';
 import { VIEW_MODES } from './canvas-contract.js';
 import { fit } from './layout/fit.js';
 import { liveSession, tool } from './testdata.js';
+import { viewControls } from './testkit.js';
 
 /** A minimal, valid-shaped record. The store does not validate; the host did. */
 function record(overrides: Partial<StatsRecord> = {}): StatsRecord {
@@ -67,7 +68,7 @@ function rig(options: { autoFit?: boolean; enter?: boolean } = {}): Rig {
   }
   const { store } = out;
   store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
-  if (options.autoFit === false) store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {}, insightsInstalled: false });
+  if (options.autoFit === false) store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {} });
   if (options.enter !== false) store.enterSession('session-live');
   store.reportCanvasGeometry(GEOMETRY);
   // Everything above may have fitted; the assertions start from zero.
@@ -155,11 +156,25 @@ const DRIVERS: Record<string, (r: Rig) => void> = {
   snapshot: (r) => r.store.handleMessage({ type: 'snapshot', sessions: [liveSession()] }),
   enterSession: (r) => r.store.enterSession('session-live'),
   selectSession: (r) => r.store.selectSession('session-live'),
-  setEngineFilter: (r) => r.store.setEngineFilter('cc'),
-  'setViewMode:canvas': (r) => {
-    r.store.setViewMode('list');
+  'viewControls:engineFilter': (r) =>
+    r.store.handleMessage(viewControls({ engineFilter: 'cc' })),
+  'viewControls:canvas': (r) => {
+    r.store.handleMessage(viewControls({ viewMode: 'list' }));
     r.fits = 0;
-    r.store.setViewMode('canvas');
+    r.store.handleMessage(viewControls({ viewMode: 'canvas' }));
+  },
+  'viewAction:openDeck': (r) => {
+    // From inside a session with the drawer open, so there is an altitude to
+    // walk out of: at the deck this is a no-op and would measure nothing.
+    r.store.enterSession('session-live');
+    r.store.selectNode('root');
+    r.fits = 0;
+    r.store.handleMessage({ type: 'viewAction', action: 'openDeck' });
+  },
+  'viewAction:resetView': (r) => {
+    r.store.panDeck(30, 30);
+    r.fits = 0;
+    r.store.handleMessage({ type: 'viewAction', action: 'resetView' });
   },
   'reportCanvasGeometry:changed': (r) =>
     r.store.reportCanvasGeometry({ ...GEOMETRY, viewport: { width: 1200, height: 640 } }),
@@ -186,9 +201,14 @@ const DRIVERS: Record<string, (r: Rig) => void> = {
   schemaMismatch: (r) => r.store.handleMessage({ type: 'schemaMismatch', sessionId: 'session-other' }),
   statsSnapshot: (r) => r.store.handleMessage({ type: 'statsSnapshot', records: [record()] }),
   statsStore: (r) => r.store.handleMessage({ type: 'statsStore', records: [record()], enabled: true }),
-  setLivenessFilter: (r) => r.store.setLivenessFilter('live'),
-  'setViewMode:list': (r) => r.store.setViewMode('list'),
-  'setViewMode:stats': (r) => r.store.setViewMode('stats'),
+  'viewControls:livenessFilter': (r) =>
+    r.store.handleMessage(viewControls({ livenessFilter: 'live' })),
+  'viewControls:list': (r) => r.store.handleMessage(viewControls({ viewMode: 'list' })),
+  'viewControls:stats': (r) => r.store.handleMessage(viewControls({ viewMode: 'stats' })),
+  'viewControls:deckSort': (r) => r.store.handleMessage(viewControls({ deckSort: 'recent' })),
+  'viewControls:statsTab': (r) => r.store.handleMessage(viewControls({ statsTab: 'tools' })),
+  'viewControls:inspectorStatus': (r) =>
+    r.store.handleMessage(viewControls({ inspectorStatus: 'error' })),
   setDetailAction: (r) => {
     r.store.selectNode('root');
     r.fits = 0;
@@ -278,9 +298,9 @@ describe('DoD 4.0 — agentDeck.canvas.autoFit off: fit is never called after th
   it('defaults to on, and a settings message turns it off', () => {
     const store = createStore();
     expect(store.getView().canvasAutoFit).toBe(true);
-    store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {}, insightsInstalled: false });
+    store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {} });
     expect(store.getView().canvasAutoFit).toBe(false);
-    store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {}, insightsInstalled: false });
+    store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {} });
     expect(store.getView().canvasAutoFit).toBe(true);
   });
 
@@ -300,7 +320,15 @@ describe('DoD 4.0 — agentDeck.canvas.autoFit off: fit is never called after th
     const moved = r.store.getView().canvasView;
     for (const row of FIT_TRIGGERS) {
       if (!row.fits) continue;
-      if (row.event === 'enterSession' || row.event === 'selectSession') continue; // resets by design
+      // These reset the interior view BY DESIGN: a session switch is a new
+      // space, and v0.9.0 DoD 9.14's Menu -> Open Deck walks out through one.
+      if (
+        row.event === 'enterSession' ||
+        row.event === 'selectSession' ||
+        row.event === 'viewAction:openDeck'
+      ) {
+        continue;
+      }
       DRIVERS[row.event]?.(r);
     }
     expect(r.store.getView().canvasView).toStrictEqual(moved);
@@ -308,7 +336,7 @@ describe('DoD 4.0 — agentDeck.canvas.autoFit off: fit is never called after th
 
   it('turning the setting on later does not fit by itself; the next trigger does', () => {
     const r = rig({ autoFit: false });
-    r.store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {}, insightsInstalled: false });
+    r.store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {} });
     expect(r.fits).toBe(0);
     r.store.selectNode('tool-read');
     expect(r.fits).toBe(1);
@@ -350,56 +378,126 @@ describe('DoD 4.1 — the stats messages land in the view, replaced whole', () =
   });
 });
 
-describe('the third view mode (spec §G)', () => {
-  it('VIEW_MODES lists the three, and stats is entered and left by its own control', () => {
-    // FOUR as of v0.9.0 DoD 9.6. The list is pinned as a SET AND A COUNT
-    // because it is what `setViewMode` validates against: a mode added
-    // without a line here is a mode nothing reviewed.
-    expect(VIEW_MODES).toStrictEqual(['canvas', 'list', 'stats', 'insights']);
+describe('the third view mode (spec §G), as the HOST states it', () => {
+  it('VIEW_MODES lists the three, and the host names which one', () => {
+    /*
+     * THREE AGAIN as of v0.9.0 DoD 9.14. `'insights'` was the fourth in
+     * v0.9.0 DoD 9.6; spec `Amendment 2026-09-20` moves that whole tab into
+     * the native sidebar tree, which is not a panel mode. The list is pinned
+     * as a SET AND A COUNT because `src/view/controls.ts` writes the same
+     * three for the host and `controls.test.ts` holds the two against each
+     * other.
+     */
+    expect(VIEW_MODES).toStrictEqual(['canvas', 'list', 'stats']);
+
     const store = createStore();
-    store.toggleStats();
-    expect(store.getView().viewMode).toBe('stats');
-    store.toggleStats();
-    expect(store.getView().viewMode).toBe('canvas');
-    // From the list, Stats goes to stats; leaving stats goes to the canvas.
-    store.setViewMode('list');
-    store.toggleStats();
-    expect(store.getView().viewMode).toBe('stats');
-    store.toggleStats();
-    expect(store.getView().viewMode).toBe('canvas');
+    for (const mode of VIEW_MODES) {
+      store.handleMessage(viewControls({ viewMode: mode }));
+      expect(store.getView().viewMode).toBe(mode);
+    }
   });
 
-  it('toggleViewMode still swaps canvas and list, and from stats it goes to the canvas', () => {
-    const store = createStore();
-    store.toggleViewMode();
-    expect(store.getView().viewMode).toBe('list');
-    store.toggleViewMode();
-    expect(store.getView().viewMode).toBe('canvas');
-    store.setViewMode('stats');
-    store.toggleViewMode();
-    expect(store.getView().viewMode).toBe('canvas');
-  });
-
-  it('showView from the host sets the mode, once, and posts nothing', () => {
+  it('the control message states the WHOLE state, and posts nothing', () => {
     const sent: WebviewToHostMessage[] = [];
     const store = createStore((m) => sent.push(m));
     let notified = 0;
     store.subscribe(() => {
       notified += 1;
     });
-    store.handleMessage({ type: 'showView', mode: 'stats' });
-    expect(store.getView().viewMode).toBe('stats');
+
+    store.handleMessage(
+      viewControls({
+        viewMode: 'stats',
+        livenessFilter: 'idle',
+        engineFilter: 'cx',
+        deckLayout: 'lanes',
+        deckSort: 'recent',
+        statsTab: 'trends',
+        inspectorStatus: 'error',
+        inspectorOrder: 'newest',
+        inspectorTool: 'Read',
+      }),
+    );
     expect(notified).toBe(1);
     expect(sent).toStrictEqual([]);
-    // An unknown mode is refused rather than stored.
-    store.handleMessage({ type: 'showView', mode: 'nope' as unknown as 'stats' });
-    expect(store.getView().viewMode).toBe('stats');
+
+    const view = store.getView();
+    expect({
+      viewMode: view.viewMode,
+      livenessFilter: view.livenessFilter,
+      engineFilter: view.engineFilter,
+      deckLayout: view.deckLayout,
+      deckSort: view.deckSort,
+      statsTab: view.statsTab,
+      inspectorStatus: view.inspectorStatus,
+      inspectorOrder: view.inspectorOrder,
+      inspectorTool: view.inspectorTool,
+    }).toStrictEqual({
+      viewMode: 'stats',
+      livenessFilter: 'idle',
+      engineFilter: 'cx',
+      deckLayout: 'lanes',
+      deckSort: 'recent',
+      statsTab: 'trends',
+      inspectorStatus: 'error',
+      inspectorOrder: 'newest',
+      inspectorTool: 'Read',
+    });
+  });
+
+  it('the deep link focus rides with the mode, and absence CLEARS it', () => {
+    const store = createStore();
+    store.handleMessage(viewControls({ viewMode: 'stats', focusSessionId: 'ses-7' }));
+    expect(store.getView().statsFocusSessionId).toBe('ses-7');
+    // A later control command carries no focus, which is what clears it: a
+    // focus belongs to the link that set it, never to the view.
+    store.handleMessage(viewControls({ viewMode: 'stats', statsTab: 'tokens' }));
+    expect(store.getView().statsFocusSessionId).toBeUndefined();
   });
 
   it('the view mode is not remembered: a fresh store starts on the canvas (G7)', () => {
     const a = createStore();
-    a.setViewMode('stats');
+    a.handleMessage(viewControls({ viewMode: 'stats' }));
+    expect(a.getView().viewMode).toBe('stats');
     expect(createStore().getView().viewMode).toBe('canvas');
+  });
+
+  it('Reset view acts on the ACTIVE surface (ruling 6)', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+
+    // At the deck: the deck's transform goes back, the interior's epoch does
+    // not move — both halves, or an implementation that reset everything
+    // would pass the half this test names.
+    store.panDeck(40, 20);
+    expect(store.getView().deckView).not.toStrictEqual({ x: 0, y: 0, k: 1 });
+    const epochBefore = store.getView().canvasResetEpoch;
+    store.handleMessage({ type: 'viewAction', action: 'resetView' });
+    expect(store.getView().deckView).toStrictEqual({ x: 0, y: 0, k: 1 });
+    expect(store.getView().canvasResetEpoch).toBe(epochBefore);
+
+    // Inside a session: the epoch moves and the DECK's transform is left
+    // alone, because the canvas owns A9.3's re-root-and-fit.
+    store.enterSession('session-live');
+    store.panDeck(15, 15);
+    const deckBefore = store.getView().deckView;
+    store.handleMessage({ type: 'viewAction', action: 'resetView' });
+    expect(store.getView().canvasResetEpoch).toBe(epochBefore + 1);
+    expect(store.getView().deckView).toStrictEqual(deckBefore);
+  });
+
+  it('Open Deck walks every altitude out (ruling 2)', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.enterSession('session-live');
+    store.selectNode('root');
+    expect(store.getView().altitude).toBe('inspector');
+    store.handleMessage({ type: 'viewAction', action: 'openDeck' });
+    expect(store.getView().altitude).toBe('deck');
+    // Idempotent: at the deck it does nothing, rather than throwing or
+    // looping on a condition that can no longer change.
+    store.handleMessage({ type: 'viewAction', action: 'openDeck' });
+    expect(store.getView().altitude).toBe('deck');
   });
 });
 
@@ -418,7 +516,7 @@ describe('DoD 4.4 — link-back through the existing select intent', () => {
     const sent: WebviewToHostMessage[] = [];
     const store = createStore((m) => sent.push(m));
     store.handleMessage({ type: 'snapshot', sessions: [withOrdinals()] });
-    store.setViewMode('stats');
+    store.handleMessage(viewControls({ viewMode: 'stats' }));
     sent.length = 0;
 
     expect(store.selectToolByOrdinal('session-live', 'root', 1)).toBe(true);
@@ -461,8 +559,9 @@ describe('the message guard in main.ts and the contract agree', () => {
       { type: 'degraded', engine: 'cc', degraded: false },
       { type: 'statsSnapshot', records: [] },
       { type: 'statsStore', records: [], enabled: true },
-      { type: 'settings', canvasAutoFit: true, tweaks: {}, insightsInstalled: false },
-      { type: 'showView', mode: 'stats' },
+      { type: 'settings', canvasAutoFit: true, tweaks: {} },
+      viewControls({ viewMode: 'stats' }),
+      { type: 'viewAction', action: 'resetView' },
     ];
     expect([...HOST_MESSAGE_TYPES].sort()).toStrictEqual(samples.map((m) => m.type).sort());
     for (const sample of samples) expect(isHostMessage(sample), sample.type).toBe(true);

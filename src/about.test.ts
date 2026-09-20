@@ -114,16 +114,42 @@ describe('the links', () => {
   });
 
   it('every link opens through the editor and nothing else', () => {
-    // The claim SECURITY.md makes, checked against the source that makes it:
-    // `showAbout` reaches `vscode.env.openExternal` and no fetch, no http, no
-    // https module, no XMLHttpRequest.
+    /*
+     * The claim SECURITY.md makes, checked against the source that makes it:
+     * `showAbout` reaches `vscode.env.openExternal` and no fetch, no http, no
+     * https module, no XMLHttpRequest.
+     *
+     * A TEXT SCAN, and v0.9.0 DoD 9.14 is the release that learned what that
+     * is worth: this was `showAbout`'s ONLY cover, and a verifier replaced
+     * the label->link lookup with `ABOUT_LINKS[0]` without moving a byte it
+     * reads. It stays because the claim it checks is about what the code
+     * CANNOT reach, which no behavioural test states — and the behaviour is
+     * now driven, twice, by `src/about-panel.test.ts` and by the four
+     * "About opens a REAL panel" tests in `src/extension.test.ts`.
+     *
+     * Both halves are scanned: the command, and the PAGE it opens.
+     */
     const source = readFileSync(fileURLToPath(new URL('./extension.ts', import.meta.url)), 'utf8');
-    const about = source.slice(source.indexOf('export async function showAbout'));
+    const about = source.slice(source.indexOf('export function showAbout'));
     const body = about.slice(0, about.indexOf('\n}'));
     expect(body).toContain('vscode.env.openExternal');
+    const page = readFileSync(
+      fileURLToPath(new URL('./about-panel.ts', import.meta.url)),
+      'utf8',
+    );
     for (const banned of ['fetch(', 'XMLHttpRequest', "require('http", 'node:http', 'axios']) {
       expect(body.includes(banned), `showAbout reaches ${banned}`).toBe(false);
+      expect(page.includes(banned), `the About page reaches ${banned}`).toBe(false);
     }
+    // The page's own CSP denies a socket even if something in it tried:
+    // `default-src 'none'` with no `connect-src` of its own. Read as the
+    // POLICY STRING rather than as the file, because the file's own header
+    // argues about `connect-src` in prose and a whole-file scan would fail
+    // on the comment that explains the rule.
+    const policy = /content="(default-src[^"]+)"/.exec(page)?.[1] ?? '';
+    expect(policy, 'the About page states no CSP').not.toBe('');
+    expect(policy).toContain("default-src 'none'");
+    expect(policy).not.toContain('connect-src');
   });
 
   it('SECURITY.md states the extension makes no network call, and names its proof', () => {

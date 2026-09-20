@@ -10,13 +10,26 @@ All notable changes to Agent Deck are documented here.
   tool-call drawer and the Stats view are content only now: no bars, no
   buttons, no chips, no counts, no legend. You pan, drag, zoom and select;
   everything else is a menu entry.
-- **The sidebar is a native tree** with four sections - **Menu**, **View**,
-  **Tweaks** and **Insights** - and the same four are on the view's title menu.
-  Menu carries Open Deck, Open Statistics, Show Diagnostics, Settings, Clear
-  Stats History and About. View carries Canvas or List, the session and engine
-  filters, the deck's layout and sort, which Statistics table is showing, the
-  drawer's status, order and tool filters, and Reset view, which acts on
-  whichever surface you are on.
+- **The sidebar carries a strip of four tabs** - **Menu**, **View**,
+  **Tweaks** and **Insights** - one open at a time, and the same four are on
+  the view's title menu. Menu carries Open Deck, Open Statistics, Show
+  Diagnostics, Settings, Clear Stats History and About. View carries Renderer,
+  Sessions, Engines, Layout and Sort as collapsible groups, each showing what
+  it is set to and folding up again once you choose, plus Inspector - the
+  drawer's status, order and tool filters - which appears while a drawer is
+  open, and Reset view, which acts on whichever surface you are on.
+- **Open Deck comes back to the deck from anywhere**, including from
+  Statistics, and keeps the renderer you chose. **Open Statistics always lands
+  on the Files tab.**
+- **Tweaks is three settings, each with a line saying what it does.** The
+  deck's opening order is `agentDeck.defaultOrdering` in Settings; the deck's
+  own order is View - Sort.
+- **Insights offers Get Agent Deck Insights when it is not installed, or Open
+  Insights and Run Insights when it is**, each with a line saying what it does.
+  Agent Deck never asks about your Insights licence; Insights handles that
+  itself.
+- **The Statistics window keeps its five tabs** - Files, Tools, Loops & churn,
+  Tokens, Trends. They are the one thing left to press on a panel.
 - **The keyboard shortcuts are unchanged and are the editor's now.** `a` `c`
   `o` `x` for the engines, `1` `2` `3` for the layout and `l` `r` `e` for
   the sort, while the deck panel has focus. `Escape` still walks back out of a

@@ -599,11 +599,21 @@ function capture(window, harness, drive) {
   // `viewControls`. The capture sends what the host sends, so the evidence
   // is of the path production takes rather than of a setter that no longer
   // exists.
+  //
+  // DoD 9.17 SPLIT `viewMode` INTO `renderer` AND `surface`, AND THIS FILE
+  // IS NOT TYPECHECKED. It is `.mjs`, so it kept sending `viewMode: 'list'`
+  // against a contract that no longer has the field; the store derived
+  // `undefined`, the rail rendered nothing, and the only thing that caught
+  // it was this script's own "the refused session never reached the rail"
+  // assertion at runtime. That assertion is why the failure was legible at
+  // all — the recorded lesson about a scripted copy of a typed contract,
+  // paid once more.
   harness.flushSync(() => {
     started.store.handleMessage({
       type: 'viewControls',
       controls: {
-        viewMode: 'list',
+        renderer: 'list',
+        surface: 'sessions',
         livenessFilter: 'all',
         engineFilter: 'all',
         deckLayout: 'grid',

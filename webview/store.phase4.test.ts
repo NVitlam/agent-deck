@@ -15,7 +15,8 @@ import type { CanvasGeometry, Store } from './store.js';
 import { VIEW_MODES } from './canvas-contract.js';
 import { fit } from './layout/fit.js';
 import { liveSession, tool } from './testdata.js';
-import { viewControls } from './testkit.js';
+import { DEFAULT_VIEW_CONTROLS } from '../src/view/controls.js';
+import { controlsForMode, viewControls } from './testkit.js';
 
 /** A minimal, valid-shaped record. The store does not validate; the host did. */
 function record(overrides: Partial<StatsRecord> = {}): StatsRecord {
@@ -159,9 +160,9 @@ const DRIVERS: Record<string, (r: Rig) => void> = {
   'viewControls:engineFilter': (r) =>
     r.store.handleMessage(viewControls({ engineFilter: 'cc' })),
   'viewControls:canvas': (r) => {
-    r.store.handleMessage(viewControls({ viewMode: 'list' }));
+    r.store.handleMessage(viewControls({ renderer: 'list' }));
     r.fits = 0;
-    r.store.handleMessage(viewControls({ viewMode: 'canvas' }));
+    r.store.handleMessage(viewControls({ renderer: 'canvas' }));
   },
   'viewAction:openDeck': (r) => {
     // From inside a session with the drawer open, so there is an altitude to
@@ -203,8 +204,8 @@ const DRIVERS: Record<string, (r: Rig) => void> = {
   statsStore: (r) => r.store.handleMessage({ type: 'statsStore', records: [record()], enabled: true }),
   'viewControls:livenessFilter': (r) =>
     r.store.handleMessage(viewControls({ livenessFilter: 'live' })),
-  'viewControls:list': (r) => r.store.handleMessage(viewControls({ viewMode: 'list' })),
-  'viewControls:stats': (r) => r.store.handleMessage(viewControls({ viewMode: 'stats' })),
+  'viewControls:list': (r) => r.store.handleMessage(viewControls({ renderer: 'list' })),
+  'viewControls:stats': (r) => r.store.handleMessage(viewControls({ surface: 'stats' })),
   'viewControls:deckSort': (r) => r.store.handleMessage(viewControls({ deckSort: 'recent' })),
   'viewControls:statsTab': (r) => r.store.handleMessage(viewControls({ statsTab: 'tools' })),
   'viewControls:inspectorStatus': (r) =>
@@ -392,7 +393,7 @@ describe('the third view mode (spec §G), as the HOST states it', () => {
 
     const store = createStore();
     for (const mode of VIEW_MODES) {
-      store.handleMessage(viewControls({ viewMode: mode }));
+      store.handleMessage(viewControls(controlsForMode(mode)));
       expect(store.getView().viewMode).toBe(mode);
     }
   });
@@ -407,7 +408,7 @@ describe('the third view mode (spec §G), as the HOST states it', () => {
 
     store.handleMessage(
       viewControls({
-        viewMode: 'stats',
+        surface: 'stats',
         livenessFilter: 'idle',
         engineFilter: 'cx',
         deckLayout: 'lanes',
@@ -447,17 +448,17 @@ describe('the third view mode (spec §G), as the HOST states it', () => {
 
   it('the deep link focus rides with the mode, and absence CLEARS it', () => {
     const store = createStore();
-    store.handleMessage(viewControls({ viewMode: 'stats', focusSessionId: 'ses-7' }));
+    store.handleMessage(viewControls({ surface: 'stats', focusSessionId: 'ses-7' }));
     expect(store.getView().statsFocusSessionId).toBe('ses-7');
     // A later control command carries no focus, which is what clears it: a
     // focus belongs to the link that set it, never to the view.
-    store.handleMessage(viewControls({ viewMode: 'stats', statsTab: 'tokens' }));
+    store.handleMessage(viewControls({ surface: 'stats', statsTab: 'tokens' }));
     expect(store.getView().statsFocusSessionId).toBeUndefined();
   });
 
   it('the view mode is not remembered: a fresh store starts on the canvas (G7)', () => {
     const a = createStore();
-    a.handleMessage(viewControls({ viewMode: 'stats' }));
+    a.handleMessage(viewControls({ surface: 'stats' }));
     expect(a.getView().viewMode).toBe('stats');
     expect(createStore().getView().viewMode).toBe('canvas');
   });
@@ -516,7 +517,7 @@ describe('DoD 4.4 — link-back through the existing select intent', () => {
     const sent: WebviewToHostMessage[] = [];
     const store = createStore((m) => sent.push(m));
     store.handleMessage({ type: 'snapshot', sessions: [withOrdinals()] });
-    store.handleMessage(viewControls({ viewMode: 'stats' }));
+    store.handleMessage(viewControls({ surface: 'stats' }));
     sent.length = 0;
 
     expect(store.selectToolByOrdinal('session-live', 'root', 1)).toBe(true);
@@ -528,8 +529,13 @@ describe('DoD 4.4 — link-back through the existing select intent', () => {
     expect(view.inspectorOpen).toBe(true);
     // The canvas, because that is where the node is.
     expect(view.viewMode).toBe('canvas');
-    // The EXISTING intent — the same message a deck click sends — and no other.
-    expect(sent).toStrictEqual([{ type: 'selectSession', sessionId: 'session-live' }]);
+    // The EXISTING intent — the same message a deck click sends — plus the
+    // drawer report the amendment adds (DoD 9.17), and nothing else. The
+    // link-back OPENS a drawer, so the sidebar has to hear about it.
+    expect(sent).toStrictEqual([
+      { type: 'selectSession', sessionId: 'session-live' },
+      { type: 'drawerState', open: true },
+    ]);
   });
 
   it('refuses a session that is gone, an agent that is not one, and an ordinal nothing carries', () => {
@@ -560,11 +566,57 @@ describe('the message guard in main.ts and the contract agree', () => {
       { type: 'statsSnapshot', records: [] },
       { type: 'statsStore', records: [], enabled: true },
       { type: 'settings', canvasAutoFit: true, tweaks: {} },
-      viewControls({ viewMode: 'stats' }),
+      viewControls({ surface: 'stats' }),
       { type: 'viewAction', action: 'resetView' },
     ];
-    expect([...HOST_MESSAGE_TYPES].sort()).toStrictEqual(samples.map((m) => m.type).sort());
+    /*
+     * THE GUARD COVERS BOTH SURFACES, AND THE STORE IS ONLY ONE OF THEM.
+     *
+     * `sidebarState` is a host message that the PANEL's store has no arm
+     * for — it is the sidebar's whole render, and the sidebar is a different
+     * document with its own listener (DoD 9.17). So it is enumerated here
+     * with its reason rather than added to `samples`, which would claim the
+     * store handles it.
+     */
+    const OTHER_SURFACE: Readonly<Record<string, string>> = {
+      sidebarState: "the SIDEBAR's whole render; `webview/sidebar` takes it and this store drops it",
+    };
+    expect([...HOST_MESSAGE_TYPES].sort()).toStrictEqual(
+      [...samples.map((m) => m.type), ...Object.keys(OTHER_SURFACE)].sort(),
+    );
     for (const sample of samples) expect(isHostMessage(sample), sample.type).toBe(true);
+    for (const [type, why] of Object.entries(OTHER_SURFACE)) {
+      expect(why.length, type).toBeGreaterThan(20);
+      expect(isHostMessage({ type }), type).toBe(true);
+    }
     expect(isHostMessage({ type: 'runCommand', command: 'x' })).toBe(false);
+  });
+
+  it('the PANEL drops the sidebar’s message without moving anything', () => {
+    /*
+     * G3, and the other half of the enumeration above: the guard admits
+     * `sidebarState` because it is a real host message, so the store is what
+     * has to ignore it. A store that threw would take the panel down on a
+     * message the host legitimately sends; a store that acted on it would be
+     * a second reader of the sidebar's state.
+     */
+    const sent: WebviewToHostMessage[] = [];
+    const store = createStore((m) => sent.push(m));
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    const before = JSON.stringify(store.getView());
+    let notified = 0;
+    store.subscribe(() => {
+      notified += 1;
+    });
+    store.handleMessage({
+      type: 'sidebarState',
+      controls: DEFAULT_VIEW_CONTROLS,
+      tweaks: {},
+      insightsInstalled: true,
+      drawerOpen: true,
+    });
+    expect(JSON.stringify(store.getView())).toBe(before);
+    expect(notified).toBe(0);
+    expect(sent).toStrictEqual([]);
   });
 });

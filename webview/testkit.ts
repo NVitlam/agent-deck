@@ -12,7 +12,7 @@
 import type { WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import { ANIMATED_CLASSES } from './canvas-contract.js';
-import type { ViewControls } from '../src/view/controls.js';
+import type { ViewControls, ViewMode } from '../src/view/controls.js';
 import { DEFAULT_VIEW_CONTROLS } from '../src/view/controls.js';
 
 export interface WebviewHarness {
@@ -145,6 +145,22 @@ export async function loadHarness(): Promise<WebviewHarness> {
  * fields to change one would be nine chances to write a different default
  * than the host's.
  */
+/**
+ * The two control fields that put the panel in one {@link ViewMode}.
+ *
+ * THE INVERSE OF `viewModeOf`, and it is only available to tests because the
+ * inverse is not a function: `stats` says nothing about which renderer is
+ * underneath it, which is exactly the fact the split exists to keep. So this
+ * leaves `renderer` alone for `stats` and a caller that cares states it.
+ *
+ * It exists because roughly sixty call sites say "put the panel in this mode"
+ * and that is still one idea; writing the pair out at each of them would be
+ * sixty chances to write `surface: 'sessions'` and mean it.
+ */
+export function controlsForMode(mode: ViewMode): Partial<ViewControls> {
+  return mode === 'stats' ? { surface: 'stats' } : { renderer: mode, surface: 'sessions' };
+}
+
 export function viewControls(over: Partial<ViewControls> = {}): {
   type: 'viewControls';
   controls: ViewControls;

@@ -10,6 +10,19 @@
  * exceptions: selecting a content item (a session, a node, a tool call, an
  * expand/collapse of a content entry) and the degraded-status dismiss."
  *
+ * **A THIRD EXCEPTION, RULED IN BY `Amendment 2026-09-20 — Sidebar shape`:**
+ * the Statistics window keeps its five tabs inside the window. It is written
+ * into {@link ALLOWED} as one entry with its own clause rather than left to
+ * be inferred, and {@link EXCEPTIONS} below pins the whole set of
+ * not-a-content-interaction exemptions at exactly two — the dismiss and the
+ * tabs — so a fourth cannot arrive without this file saying so.
+ *
+ * **THE SIDEBAR IS NOT WALKED, and that is the same amendment's doing.** It
+ * is the one webview that carries controls; walking it would assert the
+ * opposite of what it is for. `webview/sidebar/sidebar.test.ts` is where it
+ * is held to its own shape, and the surfaces below are the four the
+ * content-only law is about: deck, session interior, drawer, Statistics.
+ *
  * So this walks each rendered surface through the SHIPPED BUNDLE and asserts
  * that every clickable element it finds is one of the exceptions, by testid.
  * A component that grew a button back is red here whatever its own test says.
@@ -72,7 +85,20 @@ const ALLOWED: Readonly<Record<string, string>> = Object.freeze({
   [TESTID.statsChainHead]: 'expand/collapse of a content entry: a loop chain’s ordinals.',
   [TESTID.statsChainOrdinal]: 'content item: a call ordinal. Selecting it opens that call.',
   'degraded-dismiss': 'the degraded-status dismiss — the amendment names it in full.',
+  'stats-tab':
+    'the Statistics window’s own tab strip — `Amendment 2026-09-20 — Sidebar shape` rules it ' +
+    'back into the window as a third exception. It runs a host COMMAND, so the value still has ' +
+    'one owner and Menu ▸ Open Statistics still lands on Files.',
 });
+
+/**
+ * Every exemption that is NOT a content interaction, pinned as a set.
+ *
+ * Two, and the amendments name both. This is what stops the allow-list
+ * growing a fourth entry quietly: adding one means editing this array, which
+ * is a line a reviewer reads.
+ */
+const EXCEPTIONS = ['degraded-dismiss', 'stats-tab'];
 
 /** Everything a browser treats as clickable, by selector. */
 const CLICKABLE = [
@@ -200,17 +226,18 @@ describe('the allow-list itself', () => {
       expect(
         why.startsWith('content item') ||
           why.startsWith('expand/collapse') ||
-          why.startsWith('the degraded-status dismiss'),
+          why.startsWith('the degraded-status dismiss') ||
+          why.startsWith('the Statistics window’s own tab strip'),
         `${id}: ${why}`,
       ).toBe(true);
     }
   });
 
-  it('the dismiss is the ONLY entry that is not a content interaction', () => {
+  it('the dismiss and the Stats tabs are the ONLY non-content entries', () => {
     const notContent = Object.entries(ALLOWED).filter(
       ([, why]) => !why.startsWith('content item') && !why.startsWith('expand/collapse'),
     );
-    expect(notContent.map(([id]) => id)).toStrictEqual(['degraded-dismiss']);
+    expect(notContent.map(([id]) => id).sort()).toStrictEqual([...EXCEPTIONS].sort());
   });
 });
 
@@ -233,7 +260,7 @@ describe('every surface is content only', () => {
   it('the LIST view carries nothing but its rows and twisties', () => {
     const panel = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
-    send(viewControls({ viewMode: 'list' }));
+    send(viewControls({ renderer: 'list' }));
     harness.flushSync(() => {
       panel.store.selectSession('session-live');
     });
@@ -306,9 +333,12 @@ describe('every surface is content only', () => {
       send({ type: 'snapshot', sessions: [liveSession()] });
       send({ type: 'statsSnapshot', records });
       send({ type: 'statsStore', records, enabled: true });
-      send(viewControls({ viewMode: 'stats', statsTab }));
+      send(viewControls({ surface: 'stats', statsTab }));
       // The surface rendered at all.
       expect(all(panel.container, TESTID.statsView).length, statsTab).toBe(1);
+      // The five tabs are really there — the exemption above is about a
+      // strip that exists, not a name nobody emits.
+      expect(all(panel.container, 'stats-tab').length, statsTab).toBe(5);
       expect(chrome(panel.container), statsTab).toStrictEqual([]);
       panel.dispose();
       mounted.pop();
@@ -435,7 +465,6 @@ describe('the shipped bundle carries no control the DOM walk might miss', () => 
       'about-link',
       'insights-view',
       'insights-action',
-      'stats-tab',
       'stats-engine-chip',
       'stats-model-copy',
       'drawer-filters',
@@ -445,12 +474,19 @@ describe('the shipped bundle carries no control the DOM walk might miss', () => 
       'drawer-expand',
       'inspector-close',
       'drawer-detail-close',
-      'sidebar-tab',
       'sidebar-entry',
       'tweak-control',
     ]) {
       expect(source, `the bundle still carries ${gone}`).not.toContain(`"${gone}"`);
     }
+    /*
+     * `stats-tab` and `sidebar-tab` came OFF this list in DoD 9.17/9.20, and
+     * their removal is asserted rather than silent: both are ids the
+     * amendment rules back in, and a list that still forbade them would be a
+     * test asserting the previous release.
+     */
+    expect(source).toContain('"stats-tab"');
+    expect(source).toContain('"sidebar-tab"');
     // VACUITY: the bundle is a real bundle and does carry the ids that stay.
     expect(source).toContain('"deck-blob"');
     expect(source).toContain('"degraded-dismiss"');

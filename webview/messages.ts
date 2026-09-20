@@ -25,6 +25,11 @@ export const HOST_MESSAGE_TYPES: readonly HostToWebviewMessage['type'][] = [
   'settings',
   'viewControls',
   'viewAction',
+  // The sidebar's whole render, in one message (v0.9.0 DoD 9.17). The PANEL
+  // drops it — `store.ts` has no arm for it — and the sidebar drops
+  // everything else; both are asserted, so neither surface is trusted to
+  // ignore the other's traffic by accident.
+  'sidebarState',
 ];
 
 /** Type guard for anything arriving on `window.message`. */

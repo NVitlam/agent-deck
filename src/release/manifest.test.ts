@@ -81,6 +81,8 @@ import {
   CONTROL_SECTIONS,
   KEYBINDING_WHEN,
   MENU_COMMANDS as SIDEBAR_MENU,
+  commandSurface,
+  isPaletteVisible,
   PANEL_VIEW_TYPE as CONTROLS_PANEL_VIEW_TYPE,
   SIDEBAR_CONTAINER_ID,
   SIDEBAR_VIEW_ID,
@@ -562,22 +564,41 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
       expect(row.when, JSON.stringify(row)).toBe(`view == ${SIDEBAR_VIEW_ID}`);
     }
 
-    // Every command in the table is reachable from exactly one menu.
+    /*
+     * Every SIDEBAR command is reachable from exactly one submenu, and every
+     * WINDOW command from none.
+     *
+     * The split is the amendment's: the five Statistics tabs live in the
+     * Statistics window's own strip (DoD 9.20), so they are contributed and
+     * registered and palette-hidden, and they hang in no submenu. Asserted
+     * in BOTH directions, because "every command is in a menu" would now be
+     * false and "most commands are" is not a check.
+     */
     const inMenus = Object.entries(menus)
       .filter(([id]) => id !== 'commandPalette' && id !== 'view/title')
       .flatMap(([, rows]) => rows.map((row) => row.command))
       .filter((command): command is string => command !== undefined);
     expect([...inMenus].sort()).toStrictEqual(
-      CONTROL_COMMANDS.map((entry) => entry.command).sort(),
+      CONTROL_COMMANDS.filter((entry) => commandSurface(entry) === 'sidebar')
+        .map((entry) => entry.command)
+        .sort(),
     );
+    for (const entry of CONTROL_COMMANDS) {
+      if (commandSurface(entry) !== 'panel') continue;
+      expect(inMenus, entry.command).not.toContain(entry.command);
+    }
   });
 
-  it('the palette shows the Menu six plus Insights, and hides the rest', async () => {
+  it('the palette shows the Menu six and the Insights three, and hides the rest', async () => {
     /*
-     * Thirty-six granular entries in the palette would bury every other
-     * command a user has. They are reachable from the tree, from the
-     * submenus and from the keyboard, which is every route the amendment
-     * names — so they are hidden there and nowhere else.
+     * Thirty-two granular entries in the palette would bury every other
+     * command a user has. They are reachable from the sidebar, from the
+     * submenus and from the keyboard, which is every route the amendments
+     * name — so they are hidden there and nowhere else.
+     *
+     * The manifest is held against `isPaletteVisible`, which is the TABLE's
+     * own rule, rather than against a list written here: a second list is
+     * how the manifest and the table came apart in the first place.
      */
     const manifest = (await readManifest()) as unknown as {
       contributes?: { menus?: Record<string, { command?: string; when?: string }[]> };
@@ -588,9 +609,15 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
         .map((row) => row.command),
     );
     const visible = CONTROL_COMMANDS.filter((entry) => !hidden.has(entry.command));
+    expect(visible.map((entry) => entry.command)).toStrictEqual(
+      CONTROL_COMMANDS.filter(isPaletteVisible).map((entry) => entry.command),
+    );
+    // ...and the rule is the one a reader would expect, stated once.
     expect(visible.map((entry) => entry.command)).toStrictEqual([
       ...SIDEBAR_MENU.map((entry) => entry.command),
-      'agentDeck.insights',
+      'agentDeck.insights.get',
+      'agentDeck.insights.open',
+      'agentDeck.insights.run',
     ]);
   });
 

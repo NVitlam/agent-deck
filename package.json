@@ -154,31 +154,6 @@
         "category": "Agent Deck"
       },
       {
-        "command": "agentDeck.stats.tab.files",
-        "title": "Files",
-        "category": "Agent Deck"
-      },
-      {
-        "command": "agentDeck.stats.tab.tools",
-        "title": "Tools",
-        "category": "Agent Deck"
-      },
-      {
-        "command": "agentDeck.stats.tab.loops",
-        "title": "Loops & churn",
-        "category": "Agent Deck"
-      },
-      {
-        "command": "agentDeck.stats.tab.tokens",
-        "title": "Tokens",
-        "category": "Agent Deck"
-      },
-      {
-        "command": "agentDeck.stats.tab.trends",
-        "title": "Trends",
-        "category": "Agent Deck"
-      },
-      {
         "command": "agentDeck.inspector.status.all",
         "title": "All",
         "category": "Agent Deck"
@@ -210,12 +185,37 @@
       },
       {
         "command": "agentDeck.inspector.tool",
-        "title": "Filter by tool",
+        "title": "Tool",
         "category": "Agent Deck"
       },
       {
         "command": "agentDeck.resetView",
         "title": "Reset view",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.files",
+        "title": "Files",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.tools",
+        "title": "Tools",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.loops",
+        "title": "Loops & churn",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.tokens",
+        "title": "Tokens",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.trends",
+        "title": "Trends",
         "category": "Agent Deck"
       },
       {
@@ -234,28 +234,18 @@
         "category": "Agent Deck"
       },
       {
-        "command": "agentDeck.tweak.defaultOrdering.live",
-        "title": "Live first",
+        "command": "agentDeck.insights.get",
+        "title": "Get Agent Deck Insights",
         "category": "Agent Deck"
       },
       {
-        "command": "agentDeck.tweak.defaultOrdering.recent",
-        "title": "Recent",
+        "command": "agentDeck.insights.open",
+        "title": "Open Insights",
         "category": "Agent Deck"
       },
       {
-        "command": "agentDeck.tweak.defaultOrdering.engine",
-        "title": "Engine",
-        "category": "Agent Deck"
-      },
-      {
-        "command": "agentDeck.insights.nextExample",
-        "title": "See an example",
-        "category": "Agent Deck"
-      },
-      {
-        "command": "agentDeck.insights",
-        "title": "Insights",
+        "command": "agentDeck.insights.run",
+        "title": "Run Insights",
         "category": "Agent Deck"
       }
     ],
@@ -282,11 +272,11 @@
       },
       {
         "id": "agentDeck.submenu.group.sessions",
-        "label": "Filters: sessions"
+        "label": "Sessions"
       },
       {
         "id": "agentDeck.submenu.group.engines",
-        "label": "Filters: engines"
+        "label": "Engines"
       },
       {
         "id": "agentDeck.submenu.group.layout",
@@ -297,20 +287,16 @@
         "label": "Sort"
       },
       {
-        "id": "agentDeck.submenu.group.statistics",
-        "label": "Statistics"
+        "id": "agentDeck.submenu.group.inspector",
+        "label": "Inspector"
       },
       {
         "id": "agentDeck.submenu.group.inspectorStatus",
-        "label": "Inspector: status"
+        "label": "Status"
       },
       {
         "id": "agentDeck.submenu.group.inspectorOrder",
-        "label": "Inspector: order"
-      },
-      {
-        "id": "agentDeck.submenu.group.ordering",
-        "label": "Deck ordering"
+        "label": "Order"
       }
     ],
     "menus": {
@@ -365,209 +351,175 @@
       "agentDeck.submenu.view": [
         {
           "submenu": "agentDeck.submenu.group.renderer",
-          "group": "0_groups@1"
-        },
-        {
-          "submenu": "agentDeck.submenu.group.sessions",
-          "group": "0_groups@3"
-        },
-        {
-          "submenu": "agentDeck.submenu.group.engines",
           "group": "0_groups@7"
         },
         {
+          "submenu": "agentDeck.submenu.group.sessions",
+          "group": "0_groups@8"
+        },
+        {
+          "submenu": "agentDeck.submenu.group.engines",
+          "group": "0_groups@9"
+        },
+        {
           "submenu": "agentDeck.submenu.group.layout",
-          "group": "0_groups@11"
+          "group": "0_groups@10"
         },
         {
           "submenu": "agentDeck.submenu.group.sort",
-          "group": "0_groups@14"
+          "group": "0_groups@11"
         },
         {
-          "submenu": "agentDeck.submenu.group.statistics",
-          "group": "0_groups@17"
-        },
-        {
-          "submenu": "agentDeck.submenu.group.inspectorStatus",
-          "group": "0_groups@22"
-        },
-        {
-          "submenu": "agentDeck.submenu.group.inspectorOrder",
-          "group": "0_groups@26"
-        },
-        {
-          "command": "agentDeck.inspector.tool",
-          "group": "1_items@28"
+          "submenu": "agentDeck.submenu.group.inspector",
+          "group": "0_groups@12"
         },
         {
           "command": "agentDeck.resetView",
-          "group": "1_items@29"
+          "group": "1_items@13"
         }
       ],
       "agentDeck.submenu.tweaks": [
         {
           "command": "agentDeck.tweak.followNewSessions",
-          "group": "1_items@1"
+          "group": "1_items@14"
         },
         {
           "command": "agentDeck.tweak.openDrawerOnEnter",
-          "group": "1_items@2"
+          "group": "1_items@15"
         },
         {
           "command": "agentDeck.tweak.drawerExpandedByDefault",
-          "group": "1_items@3"
-        },
-        {
-          "submenu": "agentDeck.submenu.group.ordering",
-          "group": "0_groups@4"
+          "group": "1_items@16"
         }
       ],
       "agentDeck.submenu.insights": [
         {
-          "command": "agentDeck.insights.nextExample",
-          "group": "1_items@1"
+          "command": "agentDeck.insights.get",
+          "group": "1_items@17"
         },
         {
-          "command": "agentDeck.insights",
-          "group": "1_items@2"
+          "command": "agentDeck.insights.open",
+          "group": "1_items@18"
+        },
+        {
+          "command": "agentDeck.insights.run",
+          "group": "1_items@19"
         }
       ],
       "agentDeck.submenu.group.renderer": [
         {
           "command": "agentDeck.view.canvas",
-          "group": "1_choices@1"
+          "group": "1_items@20"
         },
         {
           "command": "agentDeck.view.list",
-          "group": "1_choices@2"
+          "group": "1_items@21"
         }
       ],
       "agentDeck.submenu.group.sessions": [
         {
           "command": "agentDeck.filter.sessions.all",
-          "group": "1_choices@1"
+          "group": "1_items@22"
         },
         {
           "command": "agentDeck.filter.sessions.live",
-          "group": "1_choices@2"
+          "group": "1_items@23"
         },
         {
           "command": "agentDeck.filter.sessions.idle",
-          "group": "1_choices@3"
+          "group": "1_items@24"
         },
         {
           "command": "agentDeck.filter.sessions.ended",
-          "group": "1_choices@4"
+          "group": "1_items@25"
         }
       ],
       "agentDeck.submenu.group.engines": [
         {
           "command": "agentDeck.filter.engines.all",
-          "group": "1_choices@1"
+          "group": "1_items@26"
         },
         {
           "command": "agentDeck.filter.engines.cc",
-          "group": "1_choices@2"
+          "group": "1_items@27"
         },
         {
           "command": "agentDeck.filter.engines.oc",
-          "group": "1_choices@3"
+          "group": "1_items@28"
         },
         {
           "command": "agentDeck.filter.engines.cx",
-          "group": "1_choices@4"
+          "group": "1_items@29"
         }
       ],
       "agentDeck.submenu.group.layout": [
         {
           "command": "agentDeck.layout.list",
-          "group": "1_choices@1"
+          "group": "1_items@30"
         },
         {
           "command": "agentDeck.layout.grid",
-          "group": "1_choices@2"
+          "group": "1_items@31"
         },
         {
           "command": "agentDeck.layout.lanes",
-          "group": "1_choices@3"
+          "group": "1_items@32"
         }
       ],
       "agentDeck.submenu.group.sort": [
         {
           "command": "agentDeck.sort.live",
-          "group": "1_choices@1"
+          "group": "1_items@33"
         },
         {
           "command": "agentDeck.sort.recent",
-          "group": "1_choices@2"
+          "group": "1_items@34"
         },
         {
           "command": "agentDeck.sort.engine",
-          "group": "1_choices@3"
+          "group": "1_items@35"
         }
       ],
-      "agentDeck.submenu.group.statistics": [
+      "agentDeck.submenu.group.inspector": [
         {
-          "command": "agentDeck.stats.tab.files",
-          "group": "1_choices@1"
+          "submenu": "agentDeck.submenu.group.inspectorStatus",
+          "group": "0_groups@36"
         },
         {
-          "command": "agentDeck.stats.tab.tools",
-          "group": "1_choices@2"
+          "submenu": "agentDeck.submenu.group.inspectorOrder",
+          "group": "0_groups@37"
         },
         {
-          "command": "agentDeck.stats.tab.loops",
-          "group": "1_choices@3"
-        },
-        {
-          "command": "agentDeck.stats.tab.tokens",
-          "group": "1_choices@4"
-        },
-        {
-          "command": "agentDeck.stats.tab.trends",
-          "group": "1_choices@5"
+          "command": "agentDeck.inspector.tool",
+          "group": "1_items@38"
         }
       ],
       "agentDeck.submenu.group.inspectorStatus": [
         {
           "command": "agentDeck.inspector.status.all",
-          "group": "1_choices@1"
+          "group": "1_items@39"
         },
         {
           "command": "agentDeck.inspector.status.running",
-          "group": "1_choices@2"
+          "group": "1_items@40"
         },
         {
           "command": "agentDeck.inspector.status.done",
-          "group": "1_choices@3"
+          "group": "1_items@41"
         },
         {
           "command": "agentDeck.inspector.status.error",
-          "group": "1_choices@4"
+          "group": "1_items@42"
         }
       ],
       "agentDeck.submenu.group.inspectorOrder": [
         {
           "command": "agentDeck.inspector.order.oldest",
-          "group": "1_choices@1"
+          "group": "1_items@43"
         },
         {
           "command": "agentDeck.inspector.order.newest",
-          "group": "1_choices@2"
-        }
-      ],
-      "agentDeck.submenu.group.ordering": [
-        {
-          "command": "agentDeck.tweak.defaultOrdering.live",
-          "group": "1_choices@1"
-        },
-        {
-          "command": "agentDeck.tweak.defaultOrdering.recent",
-          "group": "1_choices@2"
-        },
-        {
-          "command": "agentDeck.tweak.defaultOrdering.engine",
-          "group": "1_choices@3"
+          "group": "1_items@44"
         }
       ],
       "commandPalette": [
@@ -636,26 +588,6 @@
           "when": "false"
         },
         {
-          "command": "agentDeck.stats.tab.files",
-          "when": "false"
-        },
-        {
-          "command": "agentDeck.stats.tab.tools",
-          "when": "false"
-        },
-        {
-          "command": "agentDeck.stats.tab.loops",
-          "when": "false"
-        },
-        {
-          "command": "agentDeck.stats.tab.tokens",
-          "when": "false"
-        },
-        {
-          "command": "agentDeck.stats.tab.trends",
-          "when": "false"
-        },
-        {
           "command": "agentDeck.inspector.status.all",
           "when": "false"
         },
@@ -688,6 +620,26 @@
           "when": "false"
         },
         {
+          "command": "agentDeck.stats.tab.files",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.stats.tab.tools",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.stats.tab.loops",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.stats.tab.tokens",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.stats.tab.trends",
+          "when": "false"
+        },
+        {
           "command": "agentDeck.tweak.followNewSessions",
           "when": "false"
         },
@@ -697,22 +649,6 @@
         },
         {
           "command": "agentDeck.tweak.drawerExpandedByDefault",
-          "when": "false"
-        },
-        {
-          "command": "agentDeck.tweak.defaultOrdering.live",
-          "when": "false"
-        },
-        {
-          "command": "agentDeck.tweak.defaultOrdering.recent",
-          "when": "false"
-        },
-        {
-          "command": "agentDeck.tweak.defaultOrdering.engine",
-          "when": "false"
-        },
-        {
-          "command": "agentDeck.insights.nextExample",
           "when": "false"
         }
       ]

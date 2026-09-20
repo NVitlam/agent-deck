@@ -99,14 +99,21 @@ const PATTERNS = FORBIDDEN.map((word) => ({
 const DEFAULT_SCOPES = [
   { kind: 'dir', dir: join(REPO_ROOT, 'src', 'stats'), label: 'src/stats' },
   { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'stats'), label: 'webview/stats' },
-  // v0.9.0 DoD 9.14. The sidebar and the Insights tab were webview surfaces
-  // under `webview/sidebar` and `webview/insights`; spec
-  // `Amendment 2026-09-20` makes both native, so the words a user reads on
-  // them are written here instead. Insights is still the surface most able to
-  // drift into advice, because it is the one that names another product.
+  /*
+   * v0.9.0 DoD 9.17. The sidebar is a webview again, so BOTH sides of it are
+   * scanned: `src/view/controls.ts` holds every label and every one-line
+   * explanation, and `webview/sidebar` renders them. Scanning only the table
+   * would miss a sentence a component added; scanning only the component
+   * would miss the table, which is where the words now live.
+   *
+   * `src/insights` is gone — the amendment drops the counts and the examples
+   * from the parent entirely, and a scope pointing at a directory that does
+   * not exist is a scan that reports nothing and looks clean. The script
+   * refuses one rather than skipping it (rule 18).
+   */
   { kind: 'dir', dir: join(REPO_ROOT, 'src', 'sidebar'), label: 'src/sidebar' },
-  { kind: 'dir', dir: join(REPO_ROOT, 'src', 'insights'), label: 'src/insights' },
   { kind: 'dir', dir: join(REPO_ROOT, 'src', 'view'), label: 'src/view' },
+  { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'sidebar'), label: 'webview/sidebar' },
   {
     kind: 'block',
     file: join(REPO_ROOT, 'CHANGELOG.md'),

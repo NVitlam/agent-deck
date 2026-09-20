@@ -1,20 +1,18 @@
 /**
- * The view controls — v0.9.0 DoD 9.14 (spec `Amendment 2026-09-20 — Clean
- * windows: all controls in the view menu`).
+ * The view controls — v0.9.0 DoD 9.17 (spec `Amendment 2026-09-20 — Sidebar
+ * shape`, which supersedes the TreeView ruling of the same day).
  *
- * THE HOST OWNS EVERY CONTROL VALUE AND THE WEBVIEW RENDERS IT. That is the
+ * THE HOST OWNS EVERY CONTROL VALUE AND A RENDERER RENDERS IT. That is the
  * whole of this module's reason to exist, and it is the same arrangement
  * `src/sidebar/tweaks.ts` already describes for settings: one source of
- * truth, one direction of travel. Under the amendment no webview surface has
- * a control on it, so the renderer has nothing to write back — a value moves
- * because a command ran, never because something was clicked on a canvas.
+ * truth, one direction of travel. A value moves because a COMMAND ran; the
+ * sidebar's job is to name the command and to show what the value is now.
  *
- * NO IMPORTS AT ALL, like `src/sidebar/menu.ts`, `src/sidebar/tweaks.ts` and
- * `src/bridge/contract.ts`. This module is read by the HOST (to hold the
- * state, to build the tree and to validate nothing — there is nothing inbound
- * to validate any more) and by the CSP-strict WEBVIEW bundle (to type the
- * message it receives), and an import is how a node dependency reaches a
- * browser bundle.
+ * NO IMPORTS AT ALL, like `src/sidebar/tweaks.ts` and `src/bridge/contract.ts`.
+ * This module is read by the HOST (to hold the state, to register the
+ * commands, to validate an inbound `runCommand`) and by the CSP-strict
+ * WEBVIEW bundle (to draw the sidebar and to type the message it receives),
+ * and an import is how a node dependency reaches a browser bundle.
  *
  * ## The values are written here and CHECKED against the renderer
  *
@@ -22,23 +20,51 @@
  * `webview/canvas-contract.ts`, and `DeckLayoutMode`/`DeckSortMode` in
  * `webview/layout.ts`, because those modules are the renderer's own and this
  * one may not import them. The duplication is CHECKED rather than trusted —
- * `src/view/controls.test.ts` compares every list to the renderer's — which
- * is the treatment `tweaks.ts`'s `options` already gets.
+ * `src/view/controls.test.ts` compares every list to the renderer's.
  *
- * ## `insights` is NOT a view mode any more
+ * ## THE TABLE IS THE ALLOW-LIST (DoD 9.18)
  *
- * v0.9.0 shipped `viewMode: 'insights'` as a fourth panel mode. The amendment
- * moves the whole tab into the sidebar tree, so the mode is gone and the
- * renderer's `VIEW_MODES` loses a member. Three remain, and `Canvas | List`
- * is the pair the amendment names; `stats` is reached from Menu ▸ Open
- * Statistics.
+ * The sidebar is a webview again and it posts `{type:'runCommand'}`. The
+ * defect that shape produced in v0.9.0 was not the message: it was that the
+ * GUARD validated against one list (the sidebar's five-entry menu) while the
+ * PRODUCER rendered another, so `agentDeck.about` and `agentDeck.insights`
+ * were dropped at the boundary and the handler that allowed them was
+ * unreachable. There is now exactly ONE list — {@link CONTROL_COMMANDS} —
+ * and every party derives from it: `package.json` contributes it, the
+ * sidebar renders it, `activate()` registers it, and
+ * {@link isControlCommand} is what the boundary asks. `controls.test.ts` and
+ * `manifest.test.ts` hold all four against each other, both ways and by
+ * count, so a command can be neither unlisted-but-rendered nor
+ * contributed-with-nothing-behind-it.
+ *
+ * ## `renderer` and `surface` are TWO facts, and they were one
+ *
+ * v0.9.0 carried a single `viewMode: 'canvas' | 'list' | 'stats'`, so opening
+ * Statistics DESTROYED the user's renderer choice and Menu ▸ Open Deck had
+ * nothing to restore it to. The sidebar mock shows Renderer carrying a value
+ * at all times and has no Statistics group at all, which is only coherent if
+ * the two are separate — so they are. {@link viewModeOf} is the one place
+ * they are combined, and the renderer still sees the three-valued mode it has
+ * always seen.
  */
 
 /* ------------------------------------------------------------------------ *
  * The value types
  * ------------------------------------------------------------------------ */
 
-/** Which renderer the panel is showing. */
+/** Which renderer draws sessions. The View ▸ Renderer choice. */
+export type Renderer = 'canvas' | 'list';
+
+/** Which surface the panel is showing. Menu ▸ Open Deck / Open Statistics. */
+export type Surface = 'sessions' | 'stats';
+
+/**
+ * What the RENDERER sees — the three-valued mode `webview/` has always used.
+ *
+ * Derived from `renderer` and `surface` by {@link viewModeOf} and never
+ * stored: a second field holding it would be the second owner this split
+ * exists to remove.
+ */
 export type ViewMode = 'canvas' | 'list' | 'stats';
 
 /** Show only sessions of this liveness, or all of them. */
@@ -71,7 +97,8 @@ export type InspectorOrder = 'oldest' | 'newest';
  * this repository has already paid for a value with two owners twice.
  */
 export interface ViewControls {
-  readonly viewMode: ViewMode;
+  readonly renderer: Renderer;
+  readonly surface: Surface;
   readonly livenessFilter: LivenessFilter;
   readonly engineFilter: EngineFilter;
   readonly deckLayout: DeckLayout;
@@ -83,7 +110,7 @@ export interface ViewControls {
   readonly inspectorTool: string;
   /**
    * The session the Stats view is focused ON — v0.9.0 DoD 9.5, the Insights
-   * deep link, carried here now that `showView` is gone.
+   * deep link.
    *
    * Absence CLEARS the focus, which is what every caller but the deep link
    * wants: a focus belongs to the link that set it, never to the view.
@@ -91,10 +118,23 @@ export interface ViewControls {
   readonly focusSessionId?: string;
 }
 
+/**
+ * The renderer's three-valued mode, from the two facts that decide it.
+ *
+ * THE ONE PLACE THEY ARE COMBINED. `surface` wins, because Statistics is a
+ * different surface rather than a third way of drawing sessions; the renderer
+ * choice survives underneath it and Menu ▸ Open Deck comes back to it.
+ */
+export function viewModeOf(controls: Pick<ViewControls, 'renderer' | 'surface'>): ViewMode {
+  return controls.surface === 'stats' ? 'stats' : controls.renderer;
+}
+
 /* ------------------------------------------------------------------------ *
  * The enumerations, in the order the menus show them
  * ------------------------------------------------------------------------ */
 
+export const RENDERERS: readonly Renderer[] = ['canvas', 'list'];
+export const SURFACES: readonly Surface[] = ['sessions', 'stats'];
 export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats'];
 export const LIVENESS_FILTERS: readonly LivenessFilter[] = ['all', 'live', 'idle', 'ended'];
 export const ENGINE_FILTERS: readonly EngineFilter[] = ['all', 'cc', 'oc', 'cx'];
@@ -117,7 +157,8 @@ export const INSPECTOR_TOOL_ALL = 'all';
  * of truth for the value they name.
  */
 export const DEFAULT_VIEW_CONTROLS: ViewControls = Object.freeze({
-  viewMode: 'canvas',
+  renderer: 'canvas',
+  surface: 'sessions',
   livenessFilter: 'all',
   engineFilter: 'all',
   deckLayout: 'grid',
@@ -149,18 +190,75 @@ export const PANEL_VIEW_TYPE = 'agentDeck.panel';
  * ------------------------------------------------------------------------ */
 
 /**
- * Which section of the sidebar tree — and which `view/title` submenu — an
- * entry belongs to. The amendment names exactly these four.
+ * Which page of the sidebar an entry belongs to.
+ *
+ * The amendment names four, and they are the four the strip shows. `window`
+ * is the fifth member and is NOT a page: it marks a command that is
+ * contributed and registered and reachable from the Statistics window's own
+ * tab strip and from the palette, and that appears in no sidebar page at all.
+ * The Stats tabs are the only members, by the amendment's ruled exception.
  */
-export type ControlSection = 'menu' | 'view' | 'tweaks' | 'insights';
+export type ControlSection = 'menu' | 'view' | 'tweaks' | 'insights' | 'window';
 
 /**
- * One command the user can run, from the tree or from the view-title menu.
+ * Which webview may post a given command (DoD 9.18).
  *
- * THE TABLE IS DATA, exactly as `menu.ts`'s list is, and for the same reason:
- * `package.json` contributes what is here, the tree renders what is here, and
- * `manifest.test.ts` reads it back, so an entry can be neither an unlisted
- * command nor a contributed command with nothing behind it.
+ * Derived from `section` rather than written a second time — see
+ * {@link commandSurface}. The point of stating it at all is that the panel
+ * and the sidebar are different surfaces with different contents, and the
+ * defect this release exists to correct was a guard that confused them.
+ */
+export type ControlSurface = 'sidebar' | 'panel';
+
+/**
+ * A condition an entry is shown under, or `undefined` for always.
+ *
+ * Three, and the union is closed. They are DATA rather than a branch in a
+ * component, so a test can assert "Inspector is absent with no drawer open"
+ * against the table instead of against a rendering of it.
+ */
+export type ControlWhen = 'drawerOpen' | 'insightsInstalled' | 'insightsMissing';
+
+/** The facts {@link controlVisible} decides against. */
+export interface ControlFacts {
+  /** True while the panel is showing a drawer. Reported by the panel. */
+  readonly drawerOpen: boolean;
+  /** True when `nvitlam.agent-deck-insights` is installed in this editor. */
+  readonly insightsInstalled: boolean;
+}
+
+/**
+ * Is an entry shown?
+ *
+ * ONE PREDICATE, read by the sidebar and by every test, so "Inspector appears
+ * only while a drawer is open" is a single fact rather than a rule restated
+ * per surface.
+ *
+ * **The parent never knows the LICENCE state.** `insightsInstalled` is the
+ * only thing it asks, because installation is a fact about this editor and a
+ * licence is Insights' own business: Insights refuses its own run when
+ * unlicensed, and a parent that guessed at it would show two different wrong
+ * answers on two machines.
+ */
+export function controlVisible(when: ControlWhen | undefined, facts: ControlFacts): boolean {
+  switch (when) {
+    case undefined:
+      return true;
+    case 'drawerOpen':
+      return facts.drawerOpen;
+    case 'insightsInstalled':
+      return facts.insightsInstalled;
+    case 'insightsMissing':
+      return !facts.insightsInstalled;
+  }
+}
+
+/**
+ * One command the user can run, from the sidebar or from the view-title menu.
+ *
+ * THE TABLE IS DATA: `package.json` contributes what is here, the sidebar
+ * renders what is here, `activate()` registers what is here, and the boundary
+ * accepts what is here.
  */
 export interface ControlCommand {
   /** The command id `activate()` registers and `package.json` contributes. */
@@ -170,34 +268,95 @@ export interface ControlCommand {
   readonly section: ControlSection;
   /**
    * The group inside the section — the submenu an entry hangs in, and the
-   * parent item it sits under in the tree. `undefined` means the entry sits
-   * directly under its section.
+   * collapsible parent it sits under in the sidebar. `undefined` means the
+   * entry sits directly on its page.
    */
   readonly group?: string;
+  /**
+   * One line of fact under the label, for the pages that carry explanations.
+   *
+   * Tweaks and Insights have one on every row, because the mock asks for it
+   * and because a setting whose name is its only explanation is a setting
+   * people guess at. G10 applies: a fact about what the control does, never
+   * advice and never a recommendation.
+   */
+  readonly detail?: string;
+  /** The condition this entry is shown under. `undefined` means always. */
+  readonly when?: ControlWhen;
   /**
    * The `ViewControls` field this entry SETS, and the value it sets it to.
    *
    * Present on exactly the entries that are a choice among values, which is
-   * what lets the tree tick the active one and the host apply them all
-   * through one assignment rather than through a switch with 20 arms.
+   * what lets the sidebar tick the active one and the host apply them all
+   * through one assignment rather than through a switch with twenty arms.
    */
   readonly sets?: { readonly field: keyof ViewControls; readonly value: string };
 }
 
-/** The group labels, written once so the tree and the manifest agree. */
-export const CONTROL_GROUPS: Readonly<Record<string, string>> = Object.freeze({
-  renderer: 'Renderer',
-  sessions: 'Filters: sessions',
-  engines: 'Filters: engines',
-  layout: 'Layout',
-  sort: 'Sort',
-  statistics: 'Statistics',
-  inspectorStatus: 'Inspector: status',
-  inspectorOrder: 'Inspector: order',
-  ordering: 'Deck ordering',
-});
+/**
+ * A collapsible group — one row that shows its current value and opens to
+ * reveal the choices.
+ *
+ * An ARRAY rather than the `Record<string,string>` v0.9.0 carried, because a
+ * group now has more to say than its label: which page it is on, whether it
+ * nests inside another group, and what it is shown under. Inspector's three
+ * sub-groups are the reason nesting exists at all.
+ */
+export interface ControlGroup {
+  readonly id: string;
+  readonly label: string;
+  readonly section: ControlSection;
+  /** The group this one nests inside, if any. One level is all there is. */
+  readonly parent?: string;
+  /** The condition this group is shown under. `undefined` means always. */
+  readonly when?: ControlWhen;
+}
 
-/** The section headings, in the order the tree shows them. */
+/**
+ * Every group, in the order the sidebar shows them.
+ *
+ * View's five are the mock's five — Renderer, Sessions, Engines, Layout,
+ * Sort — each collapsed by default with its current value as a grey suffix.
+ *
+ * **There is no Statistics group and no Deck ordering group.** The amendment
+ * removes both: the Stats tabs went back into the Statistics window (they are
+ * `section: 'window'` below) and Deck ordering was a second way to say
+ * View ▸ Sort.
+ */
+export const CONTROL_GROUPS: readonly ControlGroup[] = Object.freeze([
+  Object.freeze({ id: 'renderer', label: 'Renderer', section: 'view' as const }),
+  Object.freeze({ id: 'sessions', label: 'Sessions', section: 'view' as const }),
+  Object.freeze({ id: 'engines', label: 'Engines', section: 'view' as const }),
+  Object.freeze({ id: 'layout', label: 'Layout', section: 'view' as const }),
+  Object.freeze({ id: 'sort', label: 'Sort', section: 'view' as const }),
+  Object.freeze({
+    id: 'inspector',
+    label: 'Inspector',
+    section: 'view' as const,
+    when: 'drawerOpen' as const,
+  }),
+  Object.freeze({
+    id: 'inspectorStatus',
+    label: 'Status',
+    section: 'view' as const,
+    parent: 'inspector',
+    when: 'drawerOpen' as const,
+  }),
+  Object.freeze({
+    id: 'inspectorOrder',
+    label: 'Order',
+    section: 'view' as const,
+    parent: 'inspector',
+    when: 'drawerOpen' as const,
+  }),
+]);
+
+/** A group by id, or `undefined`. */
+export function groupOf(id: string): ControlGroup | undefined {
+  return CONTROL_GROUPS.find((group) => group.id === id);
+}
+
+/** The four pages, in the order the strip shows them. */
 export const CONTROL_SECTIONS: readonly { readonly id: ControlSection; readonly label: string }[] =
   Object.freeze([
     Object.freeze({ id: 'menu' as const, label: 'Menu' }),
@@ -206,14 +365,15 @@ export const CONTROL_SECTIONS: readonly { readonly id: ControlSection; readonly 
     Object.freeze({ id: 'insights' as const, label: 'Insights' }),
   ]);
 
+/** The page the sidebar opens on. The front door, as it has always been. */
+export const DEFAULT_SECTION: ControlSection = 'menu';
+
 /**
  * Every command, in the order it is shown.
  *
- * The Menu section's first five are the v0.7.0 sidebar's own list, in the
- * user's locked order (Open Deck · Open Statistics · Show Diagnostics ·
- * Settings · Clear Stats History), with About added by the amendment.
- * `src/sidebar/menu.ts` is GONE — its list is these six rows minus About, and
- * `controls.test.ts` is where the order is now pinned.
+ * The Menu page's six are the v0.7.0 sidebar's own list, in the user's locked
+ * order (Open Deck · Open Statistics · Show Diagnostics · Settings · Clear
+ * Stats History), with About added by the 2026-09-20 amendment.
  */
 export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
   /* Menu ------------------------------------------------------------------ */
@@ -230,17 +390,17 @@ export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
     label: 'Canvas',
     section: 'view',
     group: 'renderer',
-    sets: { field: 'viewMode', value: 'canvas' },
+    sets: { field: 'renderer', value: 'canvas' },
   },
   {
     command: 'agentDeck.view.list',
     label: 'List',
     section: 'view',
     group: 'renderer',
-    sets: { field: 'viewMode', value: 'list' },
+    sets: { field: 'renderer', value: 'list' },
   },
 
-  /* View ▸ Filters: sessions ---------------------------------------------- */
+  /* View ▸ Sessions ------------------------------------------------------- */
   {
     command: 'agentDeck.filter.sessions.all',
     label: 'All',
@@ -270,7 +430,7 @@ export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
     sets: { field: 'livenessFilter', value: 'ended' },
   },
 
-  /* View ▸ Filters: engines ----------------------------------------------- */
+  /* View ▸ Engines -------------------------------------------------------- */
   {
     command: 'agentDeck.filter.engines.all',
     label: 'All',
@@ -346,49 +506,13 @@ export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
     sets: { field: 'deckSort', value: 'engine' },
   },
 
-  /* View ▸ Statistics (ruling 4) ------------------------------------------ */
-  {
-    command: 'agentDeck.stats.tab.files',
-    label: 'Files',
-    section: 'view',
-    group: 'statistics',
-    sets: { field: 'statsTab', value: 'files' },
-  },
-  {
-    command: 'agentDeck.stats.tab.tools',
-    label: 'Tools',
-    section: 'view',
-    group: 'statistics',
-    sets: { field: 'statsTab', value: 'tools' },
-  },
-  {
-    command: 'agentDeck.stats.tab.loops',
-    label: 'Loops & churn',
-    section: 'view',
-    group: 'statistics',
-    sets: { field: 'statsTab', value: 'loops' },
-  },
-  {
-    command: 'agentDeck.stats.tab.tokens',
-    label: 'Tokens',
-    section: 'view',
-    group: 'statistics',
-    sets: { field: 'statsTab', value: 'tokens' },
-  },
-  {
-    command: 'agentDeck.stats.tab.trends',
-    label: 'Trends',
-    section: 'view',
-    group: 'statistics',
-    sets: { field: 'statsTab', value: 'trends' },
-  },
-
-  /* View ▸ Inspector (ruling 5) ------------------------------------------- */
+  /* View ▸ Inspector — shown only while a drawer is open ------------------- */
   {
     command: 'agentDeck.inspector.status.all',
     label: 'All',
     section: 'view',
     group: 'inspectorStatus',
+    when: 'drawerOpen',
     sets: { field: 'inspectorStatus', value: 'all' },
   },
   {
@@ -396,6 +520,7 @@ export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
     label: 'Running',
     section: 'view',
     group: 'inspectorStatus',
+    when: 'drawerOpen',
     sets: { field: 'inspectorStatus', value: 'running' },
   },
   {
@@ -403,6 +528,7 @@ export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
     label: 'Completed',
     section: 'view',
     group: 'inspectorStatus',
+    when: 'drawerOpen',
     sets: { field: 'inspectorStatus', value: 'done' },
   },
   {
@@ -410,6 +536,7 @@ export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
     label: 'Failed',
     section: 'view',
     group: 'inspectorStatus',
+    when: 'drawerOpen',
     sets: { field: 'inspectorStatus', value: 'error' },
   },
   {
@@ -417,6 +544,7 @@ export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
     label: 'Oldest first',
     section: 'view',
     group: 'inspectorOrder',
+    when: 'drawerOpen',
     sets: { field: 'inspectorOrder', value: 'oldest' },
   },
   {
@@ -424,57 +552,113 @@ export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
     label: 'Newest first',
     section: 'view',
     group: 'inspectorOrder',
+    when: 'drawerOpen',
     sets: { field: 'inspectorOrder', value: 'newest' },
   },
   /*
    * The TOOL filter is a QUICK PICK, not a list of contributed commands: the
    * tool names are the engine's, they differ per session, and a command per
-   * name is not a thing a manifest can hold. One command, one pick.
+   * name is not a thing a manifest can hold. One command, one pick — so it
+   * is a ROW under Inspector rather than a group, showing the current value
+   * as its grey suffix exactly as a collapsed group does.
    */
-  { command: 'agentDeck.inspector.tool', label: 'Filter by tool', section: 'view' },
+  {
+    command: 'agentDeck.inspector.tool',
+    label: 'Tool',
+    section: 'view',
+    group: 'inspector',
+    when: 'drawerOpen',
+  },
 
-  /* View ▸ Reset view (ruling 6: one entry, the active surface) ------------ */
+  /* View ▸ Reset view (one entry, the active surface) ---------------------- */
   { command: 'agentDeck.resetView', label: 'Reset view', section: 'view' },
+
+  /* The Statistics window's own tabs — a ruled exception, and not a page --- */
+  {
+    command: 'agentDeck.stats.tab.files',
+    label: 'Files',
+    section: 'window',
+    sets: { field: 'statsTab', value: 'files' },
+  },
+  {
+    command: 'agentDeck.stats.tab.tools',
+    label: 'Tools',
+    section: 'window',
+    sets: { field: 'statsTab', value: 'tools' },
+  },
+  {
+    command: 'agentDeck.stats.tab.loops',
+    label: 'Loops & churn',
+    section: 'window',
+    sets: { field: 'statsTab', value: 'loops' },
+  },
+  {
+    command: 'agentDeck.stats.tab.tokens',
+    label: 'Tokens',
+    section: 'window',
+    sets: { field: 'statsTab', value: 'tokens' },
+  },
+  {
+    command: 'agentDeck.stats.tab.trends',
+    label: 'Trends',
+    section: 'window',
+    sets: { field: 'statsTab', value: 'trends' },
+  },
 
   /* Tweaks ---------------------------------------------------------------- */
   {
     command: 'agentDeck.tweak.followNewSessions',
     label: 'Follow new sessions',
     section: 'tweaks',
+    detail: 'A session that appears while the deck is open becomes the selected one.',
   },
   {
     command: 'agentDeck.tweak.openDrawerOnEnter',
     label: 'Open the drawer on entering a session',
     section: 'tweaks',
+    detail: 'Entering a session from the deck opens its tool-call drawer.',
   },
   {
     command: 'agentDeck.tweak.drawerExpandedByDefault',
     label: 'Open the drawer expanded',
     section: 'tweaks',
-  },
-  {
-    command: 'agentDeck.tweak.defaultOrdering.live',
-    label: 'Live first',
-    section: 'tweaks',
-    group: 'ordering',
-  },
-  {
-    command: 'agentDeck.tweak.defaultOrdering.recent',
-    label: 'Recent',
-    section: 'tweaks',
-    group: 'ordering',
-  },
-  {
-    command: 'agentDeck.tweak.defaultOrdering.engine',
-    label: 'Engine',
-    section: 'tweaks',
-    group: 'ordering',
+    detail: 'The drawer opens at its expanded height rather than its collapsed one.',
   },
 
-  /* Insights -------------------------------------------------------------- */
-  { command: 'agentDeck.insights.nextExample', label: 'See an example', section: 'insights' },
-  { command: 'agentDeck.insights', label: 'Insights', section: 'insights' },
+  /* Insights — two states, and the parent never knows the licence ---------- */
+  {
+    command: 'agentDeck.insights.get',
+    label: 'Get Agent Deck Insights',
+    section: 'insights',
+    detail: 'Opens the Insights page in your browser.',
+    when: 'insightsMissing',
+  },
+  {
+    command: 'agentDeck.insights.open',
+    label: 'Open Insights',
+    section: 'insights',
+    detail: 'Shows the latest findings.',
+    when: 'insightsInstalled',
+  },
+  {
+    command: 'agentDeck.insights.run',
+    label: 'Run Insights',
+    section: 'insights',
+    detail: 'Builds the payload, shows it for review, then sends it to your agent CLI.',
+    when: 'insightsInstalled',
+  },
 ]);
+
+/**
+ * Which surface may post a command (DoD 9.18).
+ *
+ * Derived from `section`, so it is a reading of the one table rather than a
+ * second list beside it. `window` is the Statistics tab strip, which lives in
+ * the PANEL; everything else is a sidebar page.
+ */
+export function commandSurface(entry: ControlCommand): ControlSurface {
+  return entry.section === 'window' ? 'panel' : 'sidebar';
+}
 
 /**
  * The `agentDeck.` configuration keys a `tweak.` command writes, derived from
@@ -489,15 +673,6 @@ export function tweakKeyOf(command: string): string | undefined {
   const rest = command.slice(prefix.length);
   const dot = rest.indexOf('.');
   return dot === -1 ? rest : rest.slice(0, dot);
-}
-
-/** The enum VALUE a `tweak.<key>.<value>` command writes, if it names one. */
-export function tweakValueOf(command: string): string | undefined {
-  const prefix = 'agentDeck.tweak.';
-  if (!command.startsWith(prefix)) return undefined;
-  const rest = command.slice(prefix.length);
-  const dot = rest.indexOf('.');
-  return dot === -1 ? undefined : rest.slice(dot + 1);
 }
 
 /**
@@ -515,18 +690,13 @@ export function asDeckSort(value: unknown): DeckSort {
 }
 
 /**
- * The keyboard shortcuts, which the RULING keeps — v0.9.0 DoD 9.14.
+ * The keyboard shortcuts.
  *
- * They were `Deck.svelte`'s own `keydown` handler until this release, setting
- * values the component owned. It owns none of them now, so the shortcuts are
- * contributed to the EDITOR and bound to the same commands the View submenu
+ * They were `Deck.svelte`'s own `keydown` handler until v0.9.0, setting values
+ * the component owned. It owns none of them now, so the shortcuts are
+ * contributed to the EDITOR and bound to the same commands the View page
  * runs. **TEN**, exactly the ten that existed — four engines (`a c o x`),
  * three layouts (`1 2 3`) and three sorts (`l r e`).
- *
- * (This comment said "nine" until a verifier round counted the array. The
- * array was always ten; `git show 0991ef7:webview/Deck.svelte` has
- * `all: { label: 'All', key: 'a' }` in its engine table. A number written
- * beside the thing it counts is this repository's most-recorded defect.)
  *
  * {@link KEYBINDING_WHEN} is what keeps a bare letter safe: without it, `c`
  * would fire while somebody was typing in a file.
@@ -557,24 +727,49 @@ export const CONTROL_KEYBINDINGS: readonly { readonly command: string; readonly 
 export const KEYBINDING_WHEN = "activeWebviewPanelId == 'agentDeck.panel'";
 
 /**
- * The Menu section's six, in the user's locked order.
+ * The Menu page's six, in the user's locked order.
  *
- * `src/sidebar/menu.ts`'s `SIDEBAR_MENU` until v0.9.0 DoD 9.14, plus About.
  * Derived from {@link CONTROL_COMMANDS} rather than written again, so the
- * order a reader sees in the table is the order the tree and the submenu show.
+ * order a reader sees in the table is the order the page shows.
  */
 export const MENU_COMMANDS: readonly ControlCommand[] = Object.freeze(
   CONTROL_COMMANDS.filter((entry) => entry.section === 'menu'),
 );
 
-/** Every command id, for the manifest check and for registration. */
+/** Every command id, for the manifest check, for registration, and for the guard. */
 export const CONTROL_COMMAND_IDS: readonly string[] = Object.freeze(
   CONTROL_COMMANDS.map((entry) => entry.command),
 );
 
-/** True iff `command` is one of them. */
+/**
+ * True iff `command` is one of them — **THE ALLOW-LIST, and there is one.**
+ *
+ * Asked by `isWebviewToHostMessage` at the untrusted boundary and by the
+ * host's own dispatch. The v0.9.0 defect was two lists that disagreed; a
+ * single derived array cannot.
+ */
 export function isControlCommand(command: string): boolean {
   return CONTROL_COMMAND_IDS.includes(command);
+}
+
+/** True iff `surface` may post `command`. The second half of the boundary. */
+export function isCommandFrom(surface: ControlSurface, command: string): boolean {
+  const entry = CONTROL_COMMANDS.find((row) => row.command === command);
+  return entry !== undefined && commandSurface(entry) === surface;
+}
+
+/**
+ * Does this entry appear in the command palette?
+ *
+ * The Menu page's six and the Insights page's three — the entries a person
+ * would think to search for by name. The thirty-two granular ones (a filter,
+ * a layout, a sort, an inspector option, a Stats tab) are hidden, because
+ * thirty-two entries reading `Agent Deck: All` would bury every other command
+ * a user has. They are reachable from the sidebar, from the submenus and,
+ * for ten of them, from the keyboard.
+ */
+export function isPaletteVisible(entry: ControlCommand): boolean {
+  return entry.section === 'menu' || entry.section === 'insights';
 }
 
 /**

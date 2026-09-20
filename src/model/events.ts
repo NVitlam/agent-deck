@@ -1246,6 +1246,40 @@ export interface ViewActionMessage {
   action: 'resetView' | 'openDeck';
 }
 
+/**
+ * Everything the SIDEBAR draws, as one message — v0.9.0 DoD 9.17.
+ *
+ * **ONE MESSAGE, because the sidebar is one render of one moment.** It needs
+ * four facts: what every control is set to, what the three tweaks are set to,
+ * whether Insights is installed, and whether a drawer is open. Four messages
+ * would let four of its lines describe four different instants — the same
+ * argument `InsightsSection` carried when the sidebar was a tree — and the
+ * user would see a tick that disagreed with the panel beside it.
+ *
+ * Sent when the view is created, on every reload (the new document knows
+ * nothing), after every control command, on every configuration change, and
+ * when the panel reports its drawer opening or closing.
+ *
+ * `drawerOpen` is what makes View ▸ Inspector appear and disappear, and it is
+ * the PANEL's fact: the host learns it from {@link DrawerStateMessage} and
+ * relays it. The sidebar cannot ask the panel directly — they are two
+ * documents — and the host is the only party that sees both.
+ */
+export interface SidebarStateMessage {
+  type: 'sidebarState';
+  controls: ViewControls;
+  /**
+   * The three `src/sidebar/tweaks.ts` settings, keyed WITHOUT the
+   * `agentDeck.` prefix, as the host read them.
+   *
+   * Typed structurally rather than imported from `tweaks.ts`, for the reason
+   * {@link SettingsMessage} gives about the same record.
+   */
+  tweaks: Readonly<Record<string, boolean | string>>;
+  insightsInstalled: boolean;
+  drawerOpen: boolean;
+}
+
 export type HostToWebviewMessage =
   | SnapshotMessage
   | DiffMessage
@@ -1255,7 +1289,8 @@ export type HostToWebviewMessage =
   | StatsStoreMessage
   | SettingsMessage
   | ViewControlsMessage
-  | ViewActionMessage;
+  | ViewActionMessage
+  | SidebarStateMessage;
 
 export interface ExpandNodeMessage {
   type: 'expandNode';
@@ -1297,27 +1332,58 @@ export interface ResyncRequestMessage {
   sessionId?: string;
 }
 
-/*
- * `runCommand` and `updateTweak` were here until v0.9.0 DoD 9.14.
+/**
+ * A surface asking the host to run one of ITS OWN commands — v0.9.0 DoD 9.18.
  *
- * Both existed for the sidebar WEBVIEW, and the amendment deletes it: the
- * sidebar is a native `TreeView` now, its items run commands directly, and a
- * tweak is written by the command rather than by a message. **No webview posts
- * a command any more** (ruling 1, 2026-09-20), which removes the mechanism
- * behind the dead About button rather than patching it — the panel's own
- * guard validated a `runCommand` against the sidebar's five-entry list, so
- * `agentDeck.about` and `agentDeck.insights` were dropped at the boundary and
- * the handler that allowed them was unreachable.
+ * ## This message was deleted eight hours ago, and bringing it back is the fix
  *
- * REMOVED rather than left unused: a message type nothing sends is a guard
- * arm nothing exercises, and this repository already records what an
- * unreachable arm is worth.
+ * v0.9.0 DoD 9.14 removed `runCommand` outright, on the reading that the dead
+ * About button was the message's fault. It was not. The message was fine; the
+ * GUARD was validating it against the sidebar's five-entry menu list while
+ * the panel rendered a different set, so `agentDeck.about` and
+ * `agentDeck.insights` were dropped at the boundary and the arm that allowed
+ * them could not be reached. Removing the mechanism removed the defect and
+ * also removed the sidebar, which the user then rejected as too long and
+ * unexplained.
+ *
+ * So it is back, with the thing that was actually wrong fixed: **there is one
+ * list**, `CONTROL_COMMANDS`, and `isControlCommand` is the only question the
+ * boundary asks. `package.json` contributes that list, the sidebar renders
+ * it, `activate()` registers it, and `controls.test.ts` holds all four
+ * against each other. A command cannot be renderable and unacceptable.
+ *
+ * `command` is not free text at the boundary: an id that is not in the table
+ * is rejected there, so a renderer can name one of OUR commands or nothing at
+ * all. That is the same shape `aboutLinkFor` uses for a url — the renderer
+ * names an entry, never a value.
  */
+export interface RunCommandMessage {
+  type: 'runCommand';
+  command: string;
+}
+
+/**
+ * The panel telling the host whether a drawer is open — v0.9.0 DoD 9.17.
+ *
+ * A STATE REPORT, not a command: it says what the renderer is showing, the
+ * way `selectSession` and `expandNode` already do, and the host does nothing
+ * with it but relay it to the sidebar so View ▸ Inspector can appear beside a
+ * drawer and be absent without one.
+ *
+ * Posted on every change and never on a tick, so the host is told when the
+ * answer moves rather than repeatedly told the same answer.
+ */
+export interface DrawerStateMessage {
+  type: 'drawerState';
+  open: boolean;
+}
 
 export type WebviewToHostMessage =
   | ExpandNodeMessage
   | SelectSessionMessage
-  | ResyncRequestMessage;
+  | ResyncRequestMessage
+  | RunCommandMessage
+  | DrawerStateMessage;
 
 /**
  * One tree op that could not be applied, reported instead of thrown.

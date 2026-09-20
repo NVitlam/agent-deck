@@ -16,6 +16,7 @@ import { graftSession } from '../model/graft.js';
 import { LivenessEngine } from '../model/liveness.js';
 import { slugifyWorkspace } from '../parser/tailer.js';
 import { applySessionPatch } from './apply.js';
+import { CONTROL_COMMANDS } from '../view/controls.js';
 import {
   SessionBridge,
   WEBVIEW_TO_HOST_TYPES,
@@ -821,6 +822,10 @@ describe('WEBVIEW_TO_HOST_TYPES is bound to the guard it describes', () => {
     expandNode: { type: 'expandNode', sessionId: 's1', nodeId: 'n1' },
     selectSession: { type: 'selectSession', sessionId: 's1' },
     resyncRequest: { type: 'resyncRequest', reason: 'because' },
+    // v0.9.0 DoD 9.18. The command is one the TABLE holds; see the tests
+    // below for the other half, which is that one it does not is refused.
+    runCommand: { type: 'runCommand', command: 'agentDeck.open' },
+    drawerState: { type: 'drawerState', open: true },
   };
 
   it('every listed type has a case that accepts a well-formed message', () => {
@@ -832,17 +837,109 @@ describe('WEBVIEW_TO_HOST_TYPES is bound to the guard it describes', () => {
   });
 
   it('a type the list does not carry is refused, whatever it looks like', () => {
-    // `runCommand` and `updateTweak` are the two v0.9.0 removed, and the
-    // first is what made About dead. A renderer cannot reach a command.
+    /*
+     * `updateTweak` stays gone: a tweak is written by its COMMAND now, so a
+     * renderer naming a settings key has no route at all.
+     *
+     * `runCommand` came BACK in DoD 9.18, and this test's own history is the
+     * argument for what changed. It was removed on the reading that the dead
+     * About button was the message's fault; it was the LIST's fault. So the
+     * type is listed again and the refusal moved down a level — see the
+     * allow-list tests below.
+     */
     for (const gone of [
-      { type: 'runCommand', command: 'agentDeck.open' },
-      { type: 'runCommand', command: 'agentDeck.about' },
       { type: 'updateTweak', key: 'followNewSessions', value: true },
+      { type: 'runTweak', key: 'x' },
+      { type: 'openExternal', url: 'https://example.invalid' },
     ]) {
       expect(isWebviewToHostMessage(gone), JSON.stringify(gone)).toBe(false);
       expect([...WEBVIEW_TO_HOST_TYPES], JSON.stringify(gone)).not.toContain(
         (gone as { type: string }).type,
       );
+    }
+  });
+
+  /* ---------------------------------------------------------------------- *
+   * The ONE allow-list (DoD 9.18)
+   * ---------------------------------------------------------------------- */
+
+  it('`runCommand` accepts every id in the table and NOTHING else', () => {
+    /*
+     * THE DEFECT THIS DELTA EXISTS AROUND, asserted where it happened.
+     *
+     * v0.9.0's guard validated a `runCommand` against the SIDEBAR's
+     * five-entry menu list while the panel rendered a different set, so
+     * `agentDeck.about` and `agentDeck.insights` were dropped HERE and the
+     * handler that allowed them was unreachable. Two dead buttons, one line.
+     *
+     * Both directions, over the whole table: every command a surface can
+     * render is accepted, and an id outside the table is refused. A command
+     * cannot be renderable and unacceptable, by construction.
+     */
+    for (const entry of CONTROL_COMMANDS) {
+      expect(
+        isWebviewToHostMessage({ type: 'runCommand', command: entry.command }),
+        entry.command,
+      ).toBe(true);
+    }
+    // The two that were dead, by name, so the regression has a witness.
+    expect(isWebviewToHostMessage({ type: 'runCommand', command: 'agentDeck.about' })).toBe(true);
+    expect(
+      isWebviewToHostMessage({ type: 'runCommand', command: 'agentDeck.insights.get' }),
+    ).toBe(true);
+
+    for (const outside of [
+      'workbench.action.closeWindow',
+      'workbench.action.terminal.kill',
+      'agentDeck',
+      'agentDeck.',
+      'agentDeck.nope',
+      'AGENTDECK.OPEN',
+      ' agentDeck.open',
+      'agentDeck.open ',
+    ]) {
+      expect(
+        isWebviewToHostMessage({ type: 'runCommand', command: outside }),
+        outside,
+      ).toBe(false);
+    }
+  });
+
+  it('`runCommand` refuses every shape that is not a command id', () => {
+    for (const bad of [
+      { type: 'runCommand' },
+      { type: 'runCommand', command: '' },
+      { type: 'runCommand', command: 42 },
+      { type: 'runCommand', command: null },
+      { type: 'runCommand', command: ['agentDeck.open'] },
+      { type: 'runCommand', command: { toString: () => 'agentDeck.open' } },
+    ]) {
+      expect(isWebviewToHostMessage(bad), JSON.stringify(bad)).toBe(false);
+    }
+    // An accessor is not a JSON shape, and a getter that throws must not take
+    // the guard down with it.
+    const hostile = { type: 'runCommand' };
+    Object.defineProperty(hostile, 'command', {
+      get() {
+        throw new Error('no');
+      },
+      enumerable: true,
+    });
+    expect(isWebviewToHostMessage(hostile)).toBe(false);
+  });
+
+  it('`drawerState` takes a boolean and nothing else', () => {
+    expect(isWebviewToHostMessage({ type: 'drawerState', open: true })).toBe(true);
+    expect(isWebviewToHostMessage({ type: 'drawerState', open: false })).toBe(true);
+    // No truthiness: the host's next act is to state it to a second surface.
+    for (const bad of [
+      { type: 'drawerState' },
+      { type: 'drawerState', open: 'true' },
+      { type: 'drawerState', open: 1 },
+      { type: 'drawerState', open: 0 },
+      { type: 'drawerState', open: null },
+    ]) {
+      expect(isWebviewToHostMessage(bad), JSON.stringify(bad)).toBe(false);
     }
   });
 });

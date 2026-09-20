@@ -77,8 +77,10 @@ import {
   CONTROL_COMMANDS,
   CONTROL_GROUPS,
   CONTROL_KEYBINDINGS,
+  CONTROL_SECTIONS,
   MENU_COMMANDS as SIDEBAR_MENU,
 } from '../view/controls.js';
+import { INSIGHTS_PAGE_URL } from '../extension.js';
 import { LOOP_MIN, SPIKE_TOKENS } from '../stats/constants.js';
 import { costOfSeries, parsePricing } from '../stats/pricing.js';
 import type { StatsRecord } from '../stats/schema.js';
@@ -1825,56 +1827,122 @@ const SUPERSEDED_CONTROLS = [
   'Do not build drift tolerance into the fingerprint.',
 ];
 
-describe.skipIf(SPEC === null)('the Clean-windows amendment names what shipped', () => {
+describe.skipIf(SPEC === null)('the 2026-09-20 amendments name what shipped', () => {
   /*
-   * v0.9.0 DoD 9.14. `PLAN.md`'s delta calls that amendment "the law", and a
-   * verifier round found its own table saying `Sort Live first/Recent` while
-   * the build shipped three sorts — and naming neither Statistics nor
-   * Inspector, which rulings 4 and 5 add. NOTHING BOUND THE TABLE TO THE
-   * CODE, so the two could disagree indefinitely.
+   * v0.9.0 DoD 9.17. `PLAN.md`'s delta calls these amendments "the law", and
+   * a verifier round found the Clean-windows table saying
+   * `Sort Live first/Recent` while the build shipped three sorts — and naming
+   * neither Statistics nor Inspector. NOTHING BOUND THE TABLE TO THE CODE, so
+   * the two could disagree indefinitely. This is the binding.
    *
-   * This is the binding. It is deliberately about LABELS rather than about
-   * the table's layout: the spec is prose and may arrange its rows however
-   * reads best, but every label a user will see in a menu has to appear in
-   * it, and a label the spec names has to be one the product has.
+   * TWO SLICES, because there are two amendments and they govern different
+   * things. `Clean windows` still owns the content-only law, the zoom rule
+   * and the keyboard shortcuts; `Sidebar shape` supersedes its control table
+   * and is therefore what the command and group labels are held against.
+   * Binding the labels to the superseded table would be worse than not
+   * binding them at all — it would be a test asserting the old product.
+   *
+   * It is deliberately about LABELS rather than about layout: the spec is
+   * prose and may arrange its rows however reads best, but every label a user
+   * will see has to appear in it, and a label the spec names has to be one
+   * the product has.
    */
-  const AMENDMENT = (SPEC ?? '').slice(
-    (SPEC ?? '').indexOf('## Amendment 2026-09-20 — Clean windows'),
-    (SPEC ?? '').indexOf('## Amendment 2026-08-26'),
+  const slice = (from: string, to: string): string =>
+    (SPEC ?? '').slice((SPEC ?? '').indexOf(from), (SPEC ?? '').indexOf(to));
+
+  const CLEAN_WINDOWS = slice(
+    '## Amendment 2026-09-20 — Clean windows',
+    '## Amendment 2026-09-20 — Sidebar shape',
+  );
+  const SIDEBAR = slice(
+    '## Amendment 2026-09-20 — Sidebar shape',
+    '## Amendment 2026-08-26',
   );
 
-  it('is present, and is the section this test thinks it is', () => {
-    expect(AMENDMENT.length, 'the Clean-windows amendment is missing').toBeGreaterThan(1000);
-    expect(AMENDMENT).toContain('content only');
+  it('both are present, and each is the section this test thinks it is', () => {
+    expect(CLEAN_WINDOWS.length, 'the Clean-windows amendment is missing').toBeGreaterThan(1000);
+    expect(CLEAN_WINDOWS).toContain('content only');
+    expect(SIDEBAR.length, 'the Sidebar-shape amendment is missing').toBeGreaterThan(1000);
+    expect(SIDEBAR).toContain('The sidebar is a webview again');
+    // The slices do not overlap, or every assertion below could be satisfied
+    // by the wrong section.
+    expect(CLEAN_WINDOWS).not.toContain('Sidebar shape');
+    expect(SIDEBAR).not.toContain('all controls in the view menu');
   });
 
-  it('names every command label the product contributes', () => {
-    const missing = CONTROL_COMMANDS.filter((entry) => !AMENDMENT.includes(entry.label));
+  it('the later amendment SAYS it supersedes the earlier one', () => {
+    /*
+     * The two disagree, on purpose, about where the controls live — a reader
+     * who found the first table and stopped would build the product that was
+     * just rejected. So the supersession is stated in the text rather than
+     * left to the reading order.
+     */
+    expect(SIDEBAR).toContain('supersedes');
+    expect(SIDEBAR).toContain('TreeView');
+  });
+
+  it('the Sidebar amendment names every command label the product contributes', () => {
+    const missing = CONTROL_COMMANDS.filter((entry) => !SIDEBAR.includes(entry.label));
     expect(missing.map((entry) => `${entry.command} (${entry.label})`)).toStrictEqual([]);
   });
 
-  it('names every group heading', () => {
-    const missing = Object.values(CONTROL_GROUPS).filter(
-      (label) => !AMENDMENT.includes(label),
-    );
-    expect(missing).toStrictEqual([]);
+  it('...and every group heading', () => {
+    const missing = CONTROL_GROUPS.filter((group) => !SIDEBAR.includes(group.label));
+    expect(missing.map((group) => group.id)).toStrictEqual([]);
   });
 
-  it('states the keyboard shortcuts as the count the product contributes', () => {
-    // The count, spelled, and every key: "nine" stood in four places while
-    // the array held ten, which is this repository's most-recorded defect.
-    expect(AMENDMENT).toContain('TEN');
-    for (const row of CONTROL_KEYBINDINGS) {
-      expect(AMENDMENT, row.key).toContain(`\`${row.key}`);
+  it('...and the four pages of the strip, in order', () => {
+    for (const section of CONTROL_SECTIONS) {
+      expect(SIDEBAR, section.id).toContain(section.label);
+    }
+    expect(SIDEBAR).toContain('Menu | View | Tweaks | Insights');
+  });
+
+  it('...and states the two removals by name', () => {
+    // Both are things the product HAD this morning, so their absence from
+    // the code is only legible if the spec says they were taken out.
+    expect(SIDEBAR).toContain('There is no Statistics group');
+    expect(SIDEBAR).toContain('"Deck ordering" is removed');
+  });
+
+  it('...and the Insights page as two states, with no licence in the parent', () => {
+    expect(SIDEBAR).toContain('The parent never knows the licence state');
+    expect(SIDEBAR).toContain('Opens the Insights page in your browser.');
+    expect(SIDEBAR).toContain(INSIGHTS_PAGE_URL);
+    // The dropped teaser, said rather than implied.
+    expect(SIDEBAR).toContain('No counts and no examples in the parent any more');
+  });
+
+  it('...and the Statistics tabs as a ruled exception', () => {
+    expect(SIDEBAR).toContain('Ruled exception');
+    for (const entry of CONTROL_COMMANDS) {
+      if (entry.section !== 'window') continue;
+      expect(SIDEBAR, entry.command).toContain(entry.label);
     }
   });
 
-  it('VACUITY CONTROL: a label the product does not have is NOT in it', () => {
+  it('the Clean-windows amendment still states the shortcuts as the count contributed', () => {
+    // The count, spelled, and every key: "nine" stood in four places while
+    // the array held ten, which is this repository's most-recorded defect.
+    expect(CLEAN_WINDOWS).toContain('TEN');
+    for (const row of CONTROL_KEYBINDINGS) {
+      expect(CLEAN_WINDOWS, row.key).toContain(`\`${row.key}`);
+    }
+  });
+
+  it('VACUITY CONTROL: a label the product does not have is in NEITHER', () => {
     // Without this, a test over an amendment that happened to contain every
     // word in the language would pass.
     for (const absent of ['Reset everything', 'Loops and churn', 'Pin session']) {
-      expect(AMENDMENT, absent).not.toContain(absent);
+      expect(CLEAN_WINDOWS, absent).not.toContain(absent);
+      expect(SIDEBAR, absent).not.toContain(absent);
     }
+    // ...and the two labels this delta REMOVED are not in the new table,
+    // which is the direction that catches a spec left describing the old
+    // product. `Deck ordering` appears only inside the sentence that says it
+    // was removed, so the check is on the table's own row shape.
+    expect(SIDEBAR).not.toContain('See an example');
+    expect(SIDEBAR).not.toContain('Get Insights |');
   });
 });
 describe.skipIf(SPEC === null)('agent-deck-spec.md restates the superseded version posture nowhere', () => {

@@ -43,6 +43,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionState, WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
+import { controlsForMode } from './testkit.js';
 import { all, animated, hasAnimatedAncestor, loadHarness, one, press, viewControls } from './testkit.js';
 import {
   ANIMATED_CLASSES,
@@ -174,7 +175,7 @@ afterEach(() => {
  */
 function useView(panel: Panel, mode: ViewMode): void {
   act(() => {
-    panel.store.handleMessage(viewControls({ viewMode: mode }));
+    panel.store.handleMessage(viewControls(controlsForMode(mode)));
   });
   expect(one(panel.container, 'app').dataset['viewMode']).toBe(mode);
 }
@@ -1252,12 +1253,12 @@ describe('both surfaces are projections of the same store (C7.2)', () => {
     send({ type: 'snapshot', sessions: [liveSession()] });
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('canvas');
 
-    send(viewControls({ viewMode: 'list' }));
+    send(viewControls({ renderer: 'list' }));
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('list');
     expect(all(panel.container, TESTID.deck)).toHaveLength(0);
     expect(all(panel.container, 'session-rail')).toHaveLength(1);
 
-    send(viewControls({ viewMode: 'canvas' }));
+    send(viewControls({ renderer: 'canvas' }));
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('canvas');
     expect(all(panel.container, TESTID.deck)).toHaveLength(1);
     expect(all(panel.container, 'session-rail')).toHaveLength(0);

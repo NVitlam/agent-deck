@@ -15,6 +15,6 @@
  * to the production bundle.
  */
 
-export { start, isHostMessage, acquireApi } from './main.js';
+export { start, startSidebar, isHostMessage, acquireApi } from './main.js';
 export { createStore } from './store.js';
 export { flushSync } from 'svelte';

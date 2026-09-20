@@ -60,19 +60,18 @@ import type {
   StatsTab,
   ViewControls,
 } from '../src/view/controls.js';
-import { DEFAULT_VIEW_CONTROLS } from '../src/view/controls.js';
+import { DEFAULT_VIEW_CONTROLS, isCommandFrom, viewModeOf } from '../src/view/controls.js';
 
-/**
- * The one command this surface may ask the host to run — DoD 9.6.
+/*
+ * `INSIGHTS_COMMAND` and `ABOUT_COMMAND` were here until v0.9.0 DoD 9.17.
  *
- * Written here rather than imported from `src/extension.ts`: this module is
- * the webview’s, it reaches no host module, and `insights.test.ts` holds
- * the two literals against each other so they cannot part.
+ * Both were v0.9.0 deck-chrome buttons; DoD 9.14 removed the buttons and left
+ * the two constants exported with NOTHING IN THIS REPOSITORY READING THEM —
+ * the `CANVAS_CONTRACT_VERSION` shape this file's own neighbours record, one
+ * release later. The commands themselves live in `src/view/controls.ts`,
+ * which is the one table, and the panel now names a command in exactly one
+ * place: `runCommand` below, whose ids come from that table.
  */
-export const INSIGHTS_COMMAND = 'agentDeck.insights';
-
-/** The other command this surface may ask for — DoD 9.7. */
-export const ABOUT_COMMAND = 'agentDeck.about';
 import {
   DECK_FIT_PADDING,
   DECK_ZOOM_LIMITS,
@@ -742,6 +741,24 @@ export interface Store {
    * the host, and two owners of one value is the defect class this
    * repository has paid for twice.
    */
+  /**
+   * Ask the host to run one of ITS OWN commands — v0.9.0 DoD 9.18.
+   *
+   * THE PANEL'S ONLY CONTROL, and it exists for exactly one surface: the
+   * Statistics window's tab strip, which the amendment rules back INTO the
+   * window as a third clickable exception. The store refuses anything the
+   * table does not mark as the panel's, so this method cannot become a
+   * general back door to the command registry — `isCommandFrom('panel', …)`
+   * is satisfied today by the five `agentDeck.stats.tab.*` ids and nothing
+   * else, and a caller naming Clear Stats History posts nothing.
+   *
+   * The refusal is here as well as at the host's boundary on purpose. The
+   * host's guard is what protects the EXTENSION from a hostile renderer;
+   * this one is what stops OUR OWN components quietly acquiring a control
+   * the amendment does not give them, which is the failure that actually
+   * happens.
+   */
+  runCommand(command: string): void;
   /** Open or shut the inspector panel without changing the selected node. */
   setInspectorOpen(open: boolean): void;
   /** Pan the deck by a delta in CLIENT pixels. `viewport.ts:panBy`. */
@@ -989,9 +1006,15 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
    * meaningful would be the second owner this design exists to remove.
    */
   const applyViewControls = (next: ViewControls): void => {
-    const toCanvas = next.viewMode === 'canvas' && viewMode !== 'canvas';
+    // `viewModeOf` is the ONE place `renderer` and `surface` are combined
+    // (DoD 9.17). The renderer still sees the three-valued mode it always
+    // has; what changed is that opening Statistics no longer destroys the
+    // Canvas/List choice underneath it, which is what lets Menu ▸ Open Deck
+    // come back to the renderer the user picked.
+    const nextMode = viewModeOf(next);
+    const toCanvas = nextMode === 'canvas' && viewMode !== 'canvas';
     const engineMoved = next.engineFilter !== engineFilter;
-    viewMode = next.viewMode;
+    viewMode = nextMode;
     livenessFilter = next.livenessFilter;
     engineFilter = next.engineFilter;
     deckLayout = next.deckLayout;
@@ -1083,7 +1106,58 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let patchFailure: PatchFailure | undefined;
   const listeners = new Set<() => void>();
 
+  /**
+   * What the panel last told the host about its drawer — DoD 9.17.
+   *
+   * **`false`, not `undefined`, and the difference is a message per panel.**
+   * The host holds `drawerOpen = false` for a window with no panel, so a
+   * renderer that has never opened a drawer agrees with it already and has
+   * nothing to say. Seeding this `undefined` would make the first notify of
+   * every store post `{open:false}` — true, and noise, and it would have
+   * quietly falsified a dozen tests whose whole claim is that view state
+   * reaches the host through nothing.
+   *
+   * A sidebar opened AFTER a drawer is not missed by this: the host kept the
+   * `true` from the transition and states it when the view resolves.
+   */
+  let reportedDrawerOpen = false;
+
+  /**
+   * Is a drawer really on screen?
+   *
+   * The SAME predicate `App.svelte` mounts the drawer on —
+   * `inspectorOpen && selectedNode !== undefined` — and it is written once,
+   * here, rather than approximated. `inspectorOpen` alone would be wrong for
+   * the window between a diff removing the selected node and the store
+   * noticing: the drawer is gone from the panel, and the sidebar would still
+   * be offering to filter it.
+   */
+  const drawerVisible = (): boolean => {
+    if (!inspectorOpen || selectedNodeId === undefined || selectedSessionId === undefined) {
+      return false;
+    }
+    const selected = sessions.get(selectedSessionId);
+    if (selected === undefined) return false;
+    return findNode(selected.root, selectedNodeId) !== undefined;
+  };
+
+  /**
+   * Tell the host when — and only when — the answer moves.
+   *
+   * Called from `notify`, which is the one place that already runs after
+   * every state change, so no caller has to remember. ON CHANGE ONLY: a
+   * report per notify would post on every diff of every session, which is a
+   * message per poll saying the same thing.
+   */
+  const reportDrawer = (): void => {
+    const open = drawerVisible();
+    if (open === reportedDrawerOpen) return;
+    reportedDrawerOpen = open;
+    postIntent({ type: 'drawerState', open });
+  };
+
   const notify = (): void => {
+    reportDrawer();
     for (const listener of [...listeners]) listener();
   };
 
@@ -1508,6 +1582,20 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
           degradedReason = message.degraded ? message.reason : undefined;
           if (!message.degraded) degradedDismissed = false;
           break;
+        case 'sidebarState':
+          /*
+           * THE SIDEBAR'S WHOLE RENDER, AND NOT THIS SURFACE'S (DoD 9.17).
+           *
+           * The host posts it to the sidebar view, so in production it never
+           * reaches this port at all. The arm exists because the guard
+           * ADMITS it — it is a real host message — and a message the guard
+           * admits has to land somewhere: without this it fell through to
+           * `normalize(); notify();` below and re-rendered the whole panel
+           * for a message about a different document.
+           *
+           * `return`, not `break`, for exactly that reason.
+           */
+          return;
       }
       normalize();
       notify();
@@ -1642,6 +1730,17 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       if (!owner.children.some((child) => child.id === actionId && !isAgentNode(child))) return;
       detailActionId = actionId;
       notify();
+    },
+
+    runCommand(command: string): void {
+      // The table decides, not this file: `isCommandFrom` reads the same
+      // `CONTROL_COMMANDS` the host's guard reads, so "what the panel may
+      // send" has one definition. A refused id posts nothing and says
+      // nothing — a renderer asking for a command it was never given is a
+      // defect in the component, and the surface it would have reached is
+      // the one place it must not silently half-work.
+      if (!isCommandFrom('panel', command)) return;
+      postIntent({ type: 'runCommand', command });
     },
 
     setInspectorOpen(open: boolean): void {

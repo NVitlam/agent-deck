@@ -89,10 +89,13 @@ import {
   readSettings,
   OPEN_SETTINGS_COMMAND,
   OPEN_STATS_COMMAND,
-  INSIGHTS_COMMAND,
+  INSIGHTS_EXEC_COMMAND,
+  INSIGHTS_GET_COMMAND,
+  INSIGHTS_PAGE_URL,
+  INSIGHTS_RUN_COMMAND,
+  INSIGHTS_SHOW_COMMAND,
   INSIGHTS_EXTENSION_ID,
   INSIGHTS_OPEN_COMMAND,
-  WORKBENCH_OPEN_EXTENSION,
   EVEN_EDITOR_WIDTHS,
   SETTINGS_FILTER,
   StatsPipeline,
@@ -141,10 +144,12 @@ import type { GraftSessionResult } from './model/graft.js';
 import type { DiagnosticsEvent } from './bridge/diagnostics.js';
 import { TRUNCATION_MARKER_RE, truncationMarker } from './parser/redact.js';
 import { WEBVIEW_ROOT_ID } from './bridge/contract.js';
+import type { ControlSection, ViewControls } from './view/controls.js';
 import {
   CONTROL_COMMANDS,
-  MENU_COMMANDS as SIDEBAR_MENU,
+  CONTROL_SECTIONS,
   SIDEBAR_VIEW_ID,
+  isCommandFrom,
 } from './view/controls.js';
 import { isWebviewToHostMessage } from './bridge/messages.js';
 import { TWEAK_SETTINGS } from './sidebar/tweaks.js';
@@ -155,6 +160,7 @@ import type { DiscoveryFailure, DiscoveryFailureKind, TreeSnapshotEntry } from '
 import { correlateWorkspace } from './model/correlate.js';
 import {
   ConfigurationTarget,
+  MockWebviewView,
   Uri,
   ViewColumn,
   createExtensionContext,
@@ -162,6 +168,8 @@ import {
   resetVscodeMock,
   window as vscodeWindowDouble,
 } from '../test/vscode-mock.js';
+import { sidebarPage } from '../webview/sidebar/model.js';
+import type { SidebarRow } from '../webview/sidebar/model.js';
 
 // ---------------------------------------------------------------------------
 // Fixture roots — derived, never assumed
@@ -2166,6 +2174,67 @@ describe('AgentDeckHost', () => {
 // ---------------------------------------------------------------------------
 // (8) activate / deactivate, through the vscode double
 // ---------------------------------------------------------------------------
+
+/* ------------------------------------------------------------------------ *
+ * The sidebar, as a webview (v0.9.0 DoD 9.17)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Resolve the registered provider into a live view, the way VS Code does.
+ *
+ * The provider is registered at activation and RESOLVED when the container
+ * is first opened, so a test that never resolves is testing a sidebar nobody
+ * looked at.
+ */
+function resolveSidebar(): MockWebviewView {
+  return mock.resolveView(SIDEBAR_VIEW_ID);
+}
+
+/**
+ * The rows one page of that sidebar would draw, from the LAST state the host
+ * posted to it.
+ *
+ * Through `sidebarPage`, which is the renderer's own pure model, so a host
+ * test asserts what the user would see rather than what the message happens
+ * to carry. It is the renderer's function and not a second copy of it: the
+ * component and this test cannot disagree about what a state renders.
+ */
+function sidebarRows(view: MockWebviewView, section: ControlSection): readonly SidebarRow[] {
+  const posted = view.webview.posted.filter(
+    (m) => (m as { type?: string }).type === 'sidebarState',
+  );
+  const last = posted.at(-1) as
+    | {
+        controls: ViewControls;
+        tweaks: Readonly<Record<string, boolean | string>>;
+        insightsInstalled: boolean;
+        drawerOpen: boolean;
+      }
+    | undefined;
+  if (last === undefined) throw new Error('the host has stated nothing to the sidebar');
+  return sidebarPage(section, {
+    controls: last.controls,
+    tweaks: last.tweaks,
+    insightsInstalled: last.insightsInstalled,
+    drawerOpen: last.drawerOpen,
+  });
+}
+
+/** One page's rows as `label|value|checked`, for a whole-page comparison. */
+function sidebarText(view: MockWebviewView, section: ControlSection): string[] {
+  const out: string[] = [];
+  const walk = (rows: readonly SidebarRow[], depth: number): void => {
+    for (const row of rows) {
+      const value = row.kind === 'group' ? (row.value ?? '') : (row.kind === 'action' ? (row.value ?? '') : '');
+      const checked =
+        row.kind === 'toggle' ? String(row.checked) : row.kind === 'choice' ? String(row.ticked) : '';
+      out.push(`${'  '.repeat(depth)}${row.label}|${value}|${checked}`);
+      if (row.kind === 'group') walk(row.children, depth + 1);
+    }
+  };
+  walk(sidebarRows(view, section), 0);
+  return out;
+}
 
 describe('activate', () => {
   const previousRoot = process.env['CLAUDE_PROJECTS_ROOT'];
@@ -6779,9 +6848,14 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     for (const entry of CONTROL_COMMANDS) {
       expect(mock.hasCommand(entry.command), entry.command).toBe(true);
     }
-    expect(mock.hasTreeView(SIDEBAR_VIEW_ID)).toBe(true);
-    // ...and the webview sidebar is GONE (DoD 9.14, ruling 1).
-    expect(mock.hasViewProvider(SIDEBAR_VIEW_ID)).toBe(false);
+    /*
+     * A WEBVIEW VIEW, not a tree (DoD 9.17). The native `TreeView` shipped
+     * for half a day and was rejected on the own-eyes pass: too long, and no
+     * room to explain anything. Both directions are asserted, because "the
+     * sidebar exists" was true of the surface that was just removed.
+     */
+    expect(mock.hasViewProvider(SIDEBAR_VIEW_ID)).toBe(true);
+    expect(mock.hasTreeView(SIDEBAR_VIEW_ID)).toBe(false);
   });
 
   it('a control command moves the TREE and the PANEL together', async () => {
@@ -6804,15 +6878,10 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     });
     await mock.runCommand(OPEN_COMMAND);
 
-    const tree = mock.treeView(SIDEBAR_VIEW_ID);
+    const view = resolveSidebar();
     const descriptionOf = (group: string): string | undefined => {
-      const view = tree.provider
-        .getChildren()
-        .find((node) => tree.provider.getTreeItem(node).label === 'View');
-      const row = tree.provider
-        .getChildren(view as never)
-        .find((node) => tree.provider.getTreeItem(node).label === group);
-      return tree.provider.getTreeItem(row as never).description;
+      const row = sidebarRows(view, 'view').find((entry) => entry.label === group);
+      return row?.kind === 'group' ? row.value : undefined;
     };
     const lastControls = (): Record<string, unknown> => {
       const posted = mock.panels[0]?.webview.posted ?? [];
@@ -6859,42 +6928,68 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     }
   });
 
-  it('the sidebar is a native tree: four sections, in the amendment’s order', async () => {
+  it('the sidebar states its whole render in ONE message, on resolve', async () => {
+    resetVscodeMock();
+    mock.setConfig(CONFIG_SECTION, { followNewSessions: true });
+    await activate(extensionContext());
+    const view = resolveSidebar();
+    const posted = view.webview.posted.filter(
+      (m) => (m as { type?: string }).type === 'sidebarState',
+    );
+    // ONE, at once: a document that has just loaded shows the shipped
+    // defaults until it is told this window's.
+    expect(posted).toHaveLength(1);
+    const state = posted[0] as {
+      controls: Record<string, unknown>;
+      tweaks: Record<string, unknown>;
+      insightsInstalled: boolean;
+      drawerOpen: boolean;
+    };
+    // All four facts, in one message, read at one instant.
+    expect(state.controls['renderer']).toBe('canvas');
+    expect(state.controls['surface']).toBe('sessions');
+    expect(state.tweaks['followNewSessions']).toBe(true);
+    expect(state.insightsInstalled).toBe(false);
+    expect(state.drawerOpen).toBe(false);
+  });
+
+  it('the strip is the amendment’s four pages, in its order', async () => {
     resetVscodeMock();
     await activate(extensionContext());
-    const tree = mock.treeView(SIDEBAR_VIEW_ID);
-    const roots = tree.provider.getChildren();
-    expect(roots.map((node) => tree.provider.getTreeItem(node).label)).toStrictEqual([
+    const view = resolveSidebar();
+    // The PAGES are the table's, and the host is what states the values each
+    // one renders; the rendering itself is `webview/sidebar`'s own tests.
+    expect(CONTROL_SECTIONS.map((section) => section.label)).toStrictEqual([
       'Menu',
       'View',
       'Tweaks',
       'Insights',
     ]);
+    for (const section of CONTROL_SECTIONS) {
+      expect(sidebarRows(view, section.id).length, section.id).toBeGreaterThan(0);
+    }
   });
 
-  it('a tree item runs its command THROUGH THE EDITOR — no message, no guard', async () => {
+  it('a sidebar row runs its command through the REAL boundary — the About defect', async () => {
     /*
-     * This is the About defect's regression test, and it is about the
-     * MECHANISM rather than about About.
+     * THE REGRESSION TEST FOR THE DEFECT THIS WHOLE DELTA EXISTS AROUND, and
+     * it is about the MECHANISM rather than about About.
      *
-     * The old sidebar posted `runCommand` and the host validated it against
-     * a five-entry list, so `agentDeck.about` and `agentDeck.insights` were
-     * dropped at the boundary. A `TreeItem.command` is the editor's own
-     * path: the item carries the id, the editor runs it, and there is no
-     * list for it to be missing from.
+     * v0.9.0's sidebar posted `runCommand` and the host validated it against
+     * a five-entry menu list, so `agentDeck.about` and `agentDeck.insights`
+     * were dropped at the boundary and the handler that allowed them was
+     * unreachable — two dead buttons, one line, and the test that "covered"
+     * the Insights one stopped at `panel.sent`.
+     *
+     * So this asserts the HOST ACTED, not that a message was posted: the
+     * message goes in through `fireMessage`, which is the same event the
+     * editor fires, and what is checked is the panel that opened.
      */
     resetVscodeMock();
     await activate(extensionContext());
-    const tree = mock.treeView(SIDEBAR_VIEW_ID);
-    const menu = tree.provider.getChildren()[0];
-    const items = tree.provider
-      .getChildren(menu)
-      .map((node) => tree.provider.getTreeItem(node).command?.command);
-    expect(items).toStrictEqual(SIDEBAR_MENU.map((entry) => entry.command));
-    expect(items).toContain(ABOUT_COMMAND);
-
-    // ...and running the one that was dead reaches its REAL handler.
-    await mock.runCommand(ABOUT_COMMAND);
+    const view = resolveSidebar();
+    view.fireMessage({ type: 'runCommand', command: ABOUT_COMMAND });
+    await new Promise((r) => setTimeout(r, 0));
     expect(mock.panels.map((panel) => panel.viewType)).toContain(ABOUT_PANEL_VIEW_TYPE);
   });
 
@@ -7078,7 +7173,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     const posted = mock.panels[0]?.webview.posted ?? [];
     const controls = posted
       .filter((m) => (m as { type?: string }).type === 'viewControls')
-      .map((m) => (m as { controls: { viewMode: string } }).controls.viewMode);
+      .map((m) => (m as { controls: { surface: string } }).controls.surface);
     expect(controls.at(-1)).toBe('stats');
     // The same panel: a plain open afterwards reveals rather than creating.
     await mock.runCommand(OPEN_COMMAND);
@@ -7104,7 +7199,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
       .filter((m) => (m as { type?: string }).type === 'viewControls')
       .map((m) => (m as { controls: Record<string, unknown> }).controls);
     expect(controls.at(-1)).toMatchObject({
-      viewMode: 'stats',
+      surface: 'stats',
       focusSessionId: 'session-abc',
     });
   });
@@ -7124,7 +7219,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     const shown = posted
       .filter((m) => (m as { type?: string }).type === 'viewControls')
       .map((m) => (m as { controls: Record<string, unknown> }).controls);
-    expect(shown.at(-1)).toMatchObject({ viewMode: 'stats' });
+    expect(shown.at(-1)).toMatchObject({ surface: 'stats' });
     // NO `focusSessionId` KEY AT ALL, not a key holding undefined: a focus
     // belongs to the link that set it, and the palette set none.
     expect(Object.keys(shown.at(-1) as object)).not.toContain('focusSessionId');
@@ -7189,35 +7284,21 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
    * not-one-of-ours case is the hostile-message test below it.
    */
 
-  it('agentDeck.insights opens the Marketplace page when it is NOT installed', async () => {
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
-    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
-    const workspacePath = await capturedWorkspacePath();
-    await activateOnFreePort((port) => {
-      mock.setWorkspaceFolder(workspacePath);
-      mock.setConfig(CONFIG_SECTION, { port });
-    });
-    await mock.runCommand(INSIGHTS_COMMAND);
-    expect(mock.executed).toContainEqual({
-      command: WORKBENCH_OPEN_EXTENSION,
-      args: [INSIGHTS_EXTENSION_ID],
-    });
-    // And it did NOT try to run a command that does not exist.
-    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_OPEN_COMMAND);
-  });
-
-  it('agentDeck.insights runs its panel command when it IS installed', async () => {
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
-    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
-    const workspacePath = await capturedWorkspacePath();
-    await activateOnFreePort((port) => {
-      mock.setWorkspaceFolder(workspacePath);
-      mock.setConfig(CONFIG_SECTION, { port });
-    });
-    await mock.runCommand(INSIGHTS_COMMAND);
-    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_OPEN_COMMAND);
-    expect(mock.executed.map((e) => e.command)).not.toContain(WORKBENCH_OPEN_EXTENSION);
-  });
+  /*
+   * Two tests were here until v0.9.0 DoD 9.17.
+   *
+   * They drove `agentDeck.insights`, ONE command with two outcomes: run the
+   * panel command when installed, open the Marketplace page inside VS Code
+   * when not. `Amendment 2026-09-20 — Sidebar shape` splits it into three —
+   * Get / Open / Run — because the installed state offers two things and the
+   * missing state offers one, and because the amendment says the Get entry
+   * "opens the Insights page in your browser" rather than a Marketplace page
+   * inside the editor.
+   *
+   * What replaced them is in the sidebar block below and is stronger: it
+   * asserts the URL that was opened and WHICH of Insights' own two commands
+   * each entry invokes, rather than that a branch was taken.
+   */
 
   /*
    * Two tests were here until v0.9.0 DoD 9.14.
@@ -8363,104 +8444,84 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
 
   /*
    * -------------------------------------------------------------------------
-   * v0.9.0 DoD 9.14 — the sidebar is a NATIVE TREE
+   * v0.9.0 DoD 9.17 — the sidebar is a WEBVIEW again
    * -------------------------------------------------------------------------
    *
-   * Everything below drove the sidebar WEBVIEW until this release: a
-   * `settings` message carried the four tweaks to it, a click posted
-   * `updateTweak` back, and a guard decided whether to write. Spec
-   * `Amendment 2026-09-20 — Clean windows` deletes that surface, so the tests
-   * drive what replaced it — the real provider, through the object the editor
-   * itself would read.
+   * Everything below drove a native `TreeView` for half a day, and a
+   * `settings`-fed webview before that. `Amendment 2026-09-20 — Sidebar
+   * shape` puts a webview back in the slot with a four-page strip, so the
+   * tests drive that — the real provider, resolved the way the editor
+   * resolves it, and the renderer's own pure model reading the message the
+   * host really posted.
    *
    * The FACTS are unchanged and so are the assertions about them: the
    * configuration is the source of truth, a window with no host still shows
    * the user's own values, a change re-reads them, and a click writes Global.
    */
 
-  /** Every row of one tree section, as `label|description|checkbox|icon`. */
-  const sectionRows = (sectionLabel: string): string[] => {
-    const tree = mock.treeView(SIDEBAR_VIEW_ID);
-    const roots = tree.provider.getChildren();
-    const section = roots.find(
-      (node) => tree.provider.getTreeItem(node).label === sectionLabel,
-    );
-    if (section === undefined) throw new Error(`no section: ${sectionLabel}`);
-    const out: string[] = [];
-    const walk = (node: unknown, depth: number): void => {
-      const item = tree.provider.getTreeItem(node);
-      out.push(
-        [
-          '  '.repeat(depth) + item.label,
-          item.description ?? '',
-          item.checkboxState === undefined ? '' : String(item.checkboxState),
-          item.iconPath?.id ?? '',
-        ].join('|'),
-      );
-      for (const child of tree.provider.getChildren(node)) walk(child, depth + 1);
-    };
-    for (const child of tree.provider.getChildren(section)) walk(child, 0);
-    return out;
-  };
-
-  it('the Tweaks section draws the configuration, in a window with no host', async () => {
+  it('the Tweaks page draws the configuration, in a window with no host', async () => {
     /*
      * NO WORKSPACE, so `activate()` returns before building a host. Tweaks is
-     * exactly the section a user opens in that window, and the values it
-     * draws must still be their own: the configuration is the source of truth
-     * on both paths, which is why this does not go through the host.
+     * exactly the page a user opens in that window, and the values it draws
+     * must still be their own: the configuration is the source of truth on
+     * both paths, which is why this does not go through the host.
      */
     resetVscodeMock();
     mock.setConfig(CONFIG_SECTION, { followNewSessions: true, defaultOrdering: 'recent' });
     await activate(extensionContext());
     expect(currentHost()).toBeNull();
+    const view = resolveSidebar();
 
-    expect(sectionRows('Tweaks')).toStrictEqual([
-      'Follow new sessions||1|',
-      'Open the drawer on entering a session||0|',
-      'Open the drawer expanded||0|',
-      'Deck ordering|Recent||',
-      '  Live first|||',
-      '  Recent|||check',
-      '  Engine|||',
+    /*
+     * THREE ROWS. "Deck ordering" is gone — the amendment removes it as a
+     * second way to say View ▸ Sort — and its absence is asserted by the
+     * whole-page comparison rather than by a `not.toContain`, which would
+     * also pass on an empty page.
+     */
+    expect(sidebarText(view, 'tweaks')).toStrictEqual([
+      'Follow new sessions||true',
+      'Open the drawer on entering a session||false',
+      'Open the drawer expanded||false',
     ]);
+    // ...and every row carries its one-line explanation, which is the half
+    // of the rejection that was about the tree having no room for one.
+    for (const row of sidebarRows(view, 'tweaks')) {
+      expect(row.kind, row.label).toBe('toggle');
+      expect(
+        row.kind === 'toggle' ? (row.detail ?? '') : '',
+        row.label,
+      ).not.toBe('');
+    }
   });
 
-  it('a configuration change re-reads the tree, with the new values', async () => {
+  it('a configuration change re-states the sidebar, with the new values', async () => {
     resetVscodeMock();
     mock.setConfig(CONFIG_SECTION, {});
     await activate(extensionContext());
-    expect(sectionRows('Tweaks')[0]).toBe('Follow new sessions||0|');
-    expect(sectionRows('Tweaks')[3]).toBe('Deck ordering|Live first||');
+    const view = resolveSidebar();
+    expect(sidebarText(view, 'tweaks')[0]).toBe('Follow new sessions||false');
 
-    mock.setConfig(CONFIG_SECTION, { defaultOrdering: 'engine', followNewSessions: true });
+    mock.setConfig(CONFIG_SECTION, { followNewSessions: true });
     mock.fireConfigurationChange(CONFIG_SECTION);
-    expect(sectionRows('Tweaks')[0]).toBe('Follow new sessions||1|');
-    expect(sectionRows('Tweaks')[3]).toBe('Deck ordering|Engine||');
+    expect(sidebarText(view, 'tweaks')[0]).toBe('Follow new sessions||true');
 
     /*
-     * A change in some OTHER extension's section REFRESHES NOTHING, and the
-     * assertion has to be about the refresh rather than about the value.
+     * A change in some OTHER extension's section STATES NOTHING, and the
+     * assertion has to be about the send rather than about the value.
      *
-     * The tree reads the configuration on every `getChildren`, so its rows
-     * are current whether or not anything told it to re-read — a test that
-     * compared values here would pass on a host with no listener at all.
-     * What the listener does is tell the EDITOR to come back and ask, and
-     * that is the change event.
+     * A sidebar webview cannot read the configuration itself — it is a
+     * document with no host API — so unlike the tree it shows whatever the
+     * last message said. That makes the message COUNT the right subject: a
+     * host with no listener at all would leave the page stale, and a host
+     * that re-stated on every event would post on every keystroke in
+     * somebody else's settings.
      */
-    const view = mock.treeView(SIDEBAR_VIEW_ID);
-    const provider = view.provider as unknown as {
-      onDidChangeTreeData(listener: () => void): { dispose(): void };
-    };
-    let fired = 0;
-    provider.onDidChangeTreeData(() => {
-      fired += 1;
-    });
+    const before = view.webview.posted.length;
     mock.state.configurationEmitter.fire({ affectsConfiguration: () => false });
-    expect(fired, 'another extension’s section refreshed our tree').toBe(0);
+    expect(view.webview.posted.length - before, 'another extension’s section re-stated ours').toBe(0);
     // VACUITY CONTROL: ours does.
     mock.fireConfigurationChange(CONFIG_SECTION);
-    expect(fired).toBe(1);
+    expect(view.webview.posted.length - before).toBe(1);
   });
 
   it('a tweak command writes through workspace.getConfiguration().update, to Global', async () => {
@@ -8468,19 +8529,17 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     mock.setConfig(CONFIG_SECTION, {});
     await activate(extensionContext());
 
-    // Every declared tweak, at a value of its own kind, through the REAL
-    // command the tree item and the submenu both run.
+    // Every declared BOOLEAN tweak, through the REAL command the row and the
+    // submenu both run.
     await mock.runCommand('agentDeck.tweak.followNewSessions');
     await mock.runCommand('agentDeck.tweak.openDrawerOnEnter');
     await mock.runCommand('agentDeck.tweak.drawerExpandedByDefault');
-    await mock.runCommand('agentDeck.tweak.defaultOrdering.engine');
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mock.configurationWrites).toStrictEqual([
       { section: CONFIG_SECTION, key: 'followNewSessions', value: true, target: 1 },
       { section: CONFIG_SECTION, key: 'openDrawerOnEnter', value: true, target: 1 },
       { section: CONFIG_SECTION, key: 'drawerExpandedByDefault', value: true, target: 1 },
-      { section: CONFIG_SECTION, key: 'defaultOrdering', value: 'engine', target: 1 },
     ]);
     // `1` is `ConfigurationTarget.Global`, asserted by name as well as by
     // number: the decision is the FILE, the user's own settings rather than
@@ -8489,16 +8548,40 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     expect(ConfigurationTarget.Global).toBe(1);
 
     // AND THE WRITE IS WHAT MOVES THE VALUE: read back through the same
-    // configuration the host reads, the four now hold what was clicked.
+    // configuration the host reads, the three now hold what was clicked.
+    // `defaultOrdering` is unchanged, because no command writes it any more.
     expect(tweaksOf(readSettings(mockConfiguration()))).toStrictEqual({
       followNewSessions: true,
       openDrawerOnEnter: true,
       drawerExpandedByDefault: true,
-      defaultOrdering: 'engine',
+      defaultOrdering: 'live',
     });
   });
 
-  it('agentDeck.defaultOrdering SEEDS the deck sort at activation (DoD 9.14)', async () => {
+  it('THE DECK-ORDERING COMMANDS ARE GONE, and the setting still works', async () => {
+    /*
+     * The amendment removes the group; it does NOT remove the setting, which
+     * is what decides what the deck OPENS sorted by and is still reachable
+     * from Menu ▸ Settings. Asserted both ways, because "removed" is easy to
+     * over-apply: the commands must not be registered, and the setting must
+     * still seed the sort.
+     */
+    resetVscodeMock();
+    mock.setConfig(CONFIG_SECTION, { defaultOrdering: 'engine' });
+    await activate(extensionContext());
+    for (const gone of [
+      'agentDeck.tweak.defaultOrdering.live',
+      'agentDeck.tweak.defaultOrdering.recent',
+      'agentDeck.tweak.defaultOrdering.engine',
+    ]) {
+      expect(mock.hasCommand(gone), gone).toBe(false);
+    }
+    const view = resolveSidebar();
+    const sort = sidebarRows(view, 'view').find((row) => row.label === 'Sort');
+    expect(sort?.kind === 'group' ? sort.value : undefined).toBe('Engine');
+  });
+
+  it('agentDeck.defaultOrdering SEEDS the deck sort at activation', async () => {
     /*
      * THE BEHAVIOUR MOVED, and this is where it landed.
      *
@@ -8506,7 +8589,7 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
      * its own `$state` from it, and a `sortChosen` flag decided whether a
      * later settings message could overrule a control the user had just
      * pressed. There is no control, so the setting seeds the HOST's
-     * `deckSort` ONCE, at activation, and the panel is told the result.
+     * `deckSort` ONCE, at activation, and both surfaces are told the result.
      *
      * EVERY VALUE, and the default, or a seed hard-coded to one of them
      * would pass the arm that happens to match.
@@ -8515,14 +8598,9 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
       resetVscodeMock();
       mock.setConfig(CONFIG_SECTION, { defaultOrdering: ordering });
       await activate(extensionContext());
-      const tree = mock.treeView(SIDEBAR_VIEW_ID);
-      const view = tree.provider
-        .getChildren()
-        .find((node) => tree.provider.getTreeItem(node).label === 'View');
-      const sort = tree.provider
-        .getChildren(view as never)
-        .find((node) => tree.provider.getTreeItem(node).label === 'Sort');
-      expect(tree.provider.getTreeItem(sort as never).description, ordering).toBe(
+      const view = resolveSidebar();
+      const sort = sidebarRows(view, 'view').find((row) => row.label === 'Sort');
+      expect(sort?.kind === 'group' ? sort.value : undefined, ordering).toBe(
         { live: 'Live first', recent: 'Recent', engine: 'Engine' }[ordering],
       );
       await deactivate();
@@ -8534,61 +8612,430 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     resetVscodeMock();
     mock.setConfig(CONFIG_SECTION, { defaultOrdering: 'alphabetical' });
     await activate(extensionContext());
-    const tree = mock.treeView(SIDEBAR_VIEW_ID);
-    const view = tree.provider
-      .getChildren()
-      .find((node) => tree.provider.getTreeItem(node).label === 'View');
-    const sort = tree.provider
-      .getChildren(view as never)
-      .find((node) => tree.provider.getTreeItem(node).label === 'Sort');
-    expect(tree.provider.getTreeItem(sort as never).description).toBe('Live first');
+    const fallback = sidebarRows(resolveSidebar(), 'view').find((row) => row.label === 'Sort');
+    expect(fallback?.kind === 'group' ? fallback.value : undefined).toBe('Live first');
   });
 
-  it('a boolean tweak command TOGGLES rather than setting true', async () => {
-    // Both arms, or a command hard-coded to `true` passes the first.
-    resetVscodeMock();
-    mock.setConfig(CONFIG_SECTION, { followNewSessions: true });
-    await activate(extensionContext());
-    await mock.runCommand('agentDeck.tweak.followNewSessions');
-    await new Promise((r) => setTimeout(r, 0));
-    expect(mock.configurationWrites).toStrictEqual([
-      { section: CONFIG_SECTION, key: 'followNewSessions', value: false, target: 1 },
-    ]);
-  });
-
-  it('no webview can ask the host to run a command or write a setting any more', async () => {
+  it('the boundary accepts a control command and refuses everything else', async () => {
     /*
-     * THE ABOUT DEFECT'S OTHER HALF, asserted at the boundary.
+     * THE ONE ALLOW-LIST (DoD 9.18), at the level the guard lives.
      *
-     * `runCommand` and `updateTweak` are gone from the wire (DoD 9.14), so
-     * the guard refuses both — including the exact message the old sidebar
-     * sent, and including the one the panel sent that was dropped for being
-     * on the wrong list. A renderer cannot reach a command at all now.
+     * Every id in the table is accepted; an id of the editor's, of another
+     * extension's, or one of ours that is not in the table is refused. This
+     * is the assertion whose ABSENCE let About die: the guard was asked
+     * about a different list from the one the surface rendered.
      */
-    for (const gone of [
-      { type: 'runCommand', command: OPEN_COMMAND },
-      { type: 'runCommand', command: ABOUT_COMMAND },
-      { type: 'updateTweak', key: 'followNewSessions', value: true },
-    ]) {
-      expect(isWebviewToHostMessage(gone), JSON.stringify(gone)).toBe(false);
+    for (const entry of CONTROL_COMMANDS) {
+      expect(
+        isWebviewToHostMessage({ type: 'runCommand', command: entry.command }),
+        entry.command,
+      ).toBe(true);
     }
-    // VACUITY CONTROL: the guard still accepts what the renderer really sends.
-    expect(isWebviewToHostMessage({ type: 'selectSession', sessionId: 's1' })).toBe(true);
+    for (const refused of [
+      'workbench.action.closeWindow',
+      'agentDeck',
+      'agentDeck.nope',
+      '',
+    ]) {
+      expect(
+        isWebviewToHostMessage({ type: 'runCommand', command: refused }),
+        refused,
+      ).toBe(false);
+    }
+    // ...and the shape itself is checked: no command, a non-string command,
+    // a poisoned prototype.
+    expect(isWebviewToHostMessage({ type: 'runCommand' })).toBe(false);
+    expect(isWebviewToHostMessage({ type: 'runCommand', command: 42 })).toBe(false);
+    expect(
+      isWebviewToHostMessage(
+        JSON.parse('{"type":"runCommand","command":"agentDeck.open","__proto__":{"x":1}}'),
+      ),
+    ).toBe(false);
+    // `updateTweak` stays gone: a tweak is written by its COMMAND now, so a
+    // renderer naming a settings key has no route at all.
+    expect(
+      isWebviewToHostMessage({ type: 'updateTweak', key: 'followNewSessions', value: true }),
+    ).toBe(false);
   });
 
-  it('the Insights section says get or open, from the same probe the panel used', async () => {
+  it('a sidebar cannot run a PANEL command, and the panel cannot run a sidebar one', async () => {
+    /*
+     * The surface half of the same question, driven through the real
+     * provider. `Clear Stats History` is the one that matters: it is a
+     * sidebar row, so a hostile PANEL document naming it must reach nothing.
+     */
+    resetVscodeMock();
+    await activate(extensionContext());
+    const view = resolveSidebar();
+
+    // A Stats TAB is the panel's, so the sidebar naming it reaches nothing.
+    view.fireMessage({ type: 'runCommand', command: 'agentDeck.stats.tab.tokens' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.executed.map((e) => e.command)).not.toContain('agentDeck.stats.tab.tokens');
+
+    // VACUITY CONTROL: a command that IS the sidebar's does reach the host.
+    view.fireMessage({ type: 'runCommand', command: 'agentDeck.sort.recent' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.executed.map((e) => e.command)).toContain('agentDeck.sort.recent');
+  });
+
+  /* ---------------------------------------------------------------------- *
+   * DoD 9.18 — the host ACTS, and 9.19/9.20 — where it lands
+   * ---------------------------------------------------------------------- */
+
+  it('EVERY sidebar command, posted as a message, reaches a real handler', async () => {
+    /*
+     * THE OTHER HALF OF THE JOIN (DoD 9.18).
+     *
+     * `webview/sidebar/sidebar.test.ts` clicks every row through the built
+     * bundle and proves the posted id passes the guard. This fires the same
+     * message at the REAL provider and proves the host ACTED — the
+     * distinction the previous release got wrong twice over.
+     *
+     * The Insights button's test stopped at `panel.sent`: the webview POSTED
+     * the message, and nothing asked whether the host ACCEPTED it. Would
+     * that assertion still pass if the message were posted and then dropped?
+     * It would, and it did. About had no behavioural test at all.
+     *
+     * So the subject here is `mock.executed`, which the mock's
+     * `executeCommand` fills BY DISPATCHING to the registered handler: an id
+     * with no registration is recorded and does nothing, which is why the
+     * registration assertion sits beside it rather than instead of it.
+     */
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
+    await activate(extensionContext());
+    const view = resolveSidebar();
+
+    const sidebarCommandIds = CONTROL_COMMANDS.filter((entry) =>
+      isCommandFrom('sidebar', entry.command),
+    ).map((entry) => entry.command);
+    // The population, stated: an empty list would satisfy the loop below.
+    expect(sidebarCommandIds.length).toBeGreaterThan(20);
+
+    for (const command of sidebarCommandIds) {
+      // Registered at all — the "command not found" shape About shipped in.
+      expect(mock.hasCommand(command), `${command} is not registered`).toBe(true);
+      const before = mock.executed.length;
+      view.fireMessage({ type: 'runCommand', command });
+      await new Promise((r) => setTimeout(r, 0));
+      const after = mock.executed.slice(before).map((e) => e.command);
+      expect(after, `${command} was dropped at the boundary`).toContain(command);
+    }
+  });
+
+  it('a mutation of the allow-list is what that catches', async () => {
+    /*
+     * The negative control for the test above, and it is the mutation the
+     * DoD names: an id the table does not hold reaches nothing at all. The
+     * v0.9.0 defect is exactly this outcome for an id the table DID hold,
+     * and the loop above is what now fails in that case.
+     */
+    resetVscodeMock();
+    await activate(extensionContext());
+    const view = resolveSidebar();
+    const before = mock.executed.length;
+    for (const refused of [
+      'agentDeck.notACommand',
+      'workbench.action.closeWindow',
+      'agentDeck.stats.tab.files',
+    ]) {
+      view.fireMessage({ type: 'runCommand', command: refused });
+    }
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.executed.slice(before)).toStrictEqual([]);
+  });
+
+  it('OPEN DECK snaps to the sessions view from every altitude (DoD 9.19)', async () => {
+    /*
+     * "Open Deck snaps to the sessions view from any altitude and reveals
+     * the panel." Three altitudes, driven one after another through the real
+     * command, because a snap that works from a session and not from
+     * Statistics is the case a single-arm test would miss.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_COMMAND);
+    const posted = (): unknown[] => mock.panels[0]?.webview.posted ?? [];
+    const lastControls = (): Record<string, unknown> =>
+      (posted()
+        .filter((m) => (m as { type?: string }).type === 'viewControls')
+        .at(-1) as { controls: Record<string, unknown> } | undefined)?.controls ?? {};
+    const actionsSince = (from: number): string[] =>
+      posted()
+        .slice(from)
+        .filter((m) => (m as { type?: string }).type === 'viewAction')
+        .map((m) => (m as { action: string }).action);
+
+    // (1) FROM A SESSION, and (2) FROM A DRAWER. Both are the RENDERER's
+    // altitude — the host does not know which one it is at, which is why the
+    // answer is an action rather than a value. The panel reports its drawer,
+    // so the drawer arm is driven by that report.
+    for (const drawerOpen of [false, true]) {
+      mock.panels[0]?.fireMessage({ type: 'drawerState', open: drawerOpen });
+      const from = posted().length;
+      await mock.runCommand(OPEN_COMMAND);
+      expect(actionsSince(from), `drawerOpen=${String(drawerOpen)}`).toContain('openDeck');
+    }
+
+    // (3) FROM STATISTICS — the arm a `viewAction` alone cannot serve, because
+    // Statistics is a SURFACE rather than an altitude.
+    await mock.runCommand(OPEN_STATS_COMMAND);
+    expect(lastControls()['surface']).toBe('stats');
+    const from = posted().length;
+    await mock.runCommand(OPEN_COMMAND);
+    expect(lastControls()['surface']).toBe('sessions');
+    expect(actionsSince(from)).toContain('openDeck');
+  });
+
+  it('...and it comes back to the RENDERER the user chose, not to the default', async () => {
+    /*
+     * The reason `renderer` and `surface` are two fields. v0.9.0 carried one
+     * `viewMode`, so opening Statistics destroyed the Canvas/List choice and
+     * Open Deck had nothing to restore. Asserted with List chosen, because
+     * `canvas` is the default and a broken restore would look correct.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_COMMAND);
+    const lastControls = (): Record<string, unknown> =>
+      ((mock.panels[0]?.webview.posted ?? [])
+        .filter((m) => (m as { type?: string }).type === 'viewControls')
+        .at(-1) as { controls: Record<string, unknown> } | undefined)?.controls ?? {};
+
+    await mock.runCommand('agentDeck.view.list');
+    expect(lastControls()['renderer']).toBe('list');
+
+    await mock.runCommand(OPEN_STATS_COMMAND);
+    // The renderer SURVIVES underneath Statistics.
+    expect(lastControls()['surface']).toBe('stats');
+    expect(lastControls()['renderer']).toBe('list');
+
+    await mock.runCommand(OPEN_COMMAND);
+    expect(lastControls()['surface']).toBe('sessions');
+    expect(lastControls()['renderer']).toBe('list');
+  });
+
+  it('OPEN STATISTICS always lands on the Files tab (DoD 9.19)', async () => {
+    /*
+     * "Open Statistics (always lands on the Files tab)". Driven FROM Trends,
+     * because landing on Files from Files is the arm that passes whatever
+     * the code does.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_STATS_COMMAND);
+    const lastControls = (): Record<string, unknown> =>
+      ((mock.panels[0]?.webview.posted ?? [])
+        .filter((m) => (m as { type?: string }).type === 'viewControls')
+        .at(-1) as { controls: Record<string, unknown> } | undefined)?.controls ?? {};
+    expect(lastControls()['statsTab']).toBe('files');
+
+    await mock.runCommand('agentDeck.stats.tab.trends');
+    expect(lastControls()['statsTab']).toBe('trends');
+
+    // Back through the front door: Files, not wherever it was left.
+    await mock.runCommand(OPEN_STATS_COMMAND);
+    expect(lastControls()['statsTab']).toBe('files');
+  });
+
+  it('a STATS TAB press from the panel reaches the host (DoD 9.20)', async () => {
+    /*
+     * The Statistics window keeps its tabs — the amendment's ruled third
+     * exception — and a tab press RUNS A COMMAND, so the value still has one
+     * owner. Driven as a real inbound message from the panel's own webview,
+     * through `PanelController`'s boundary.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_STATS_COMMAND);
+    const panel = mock.panels[0];
+    expect(panel).toBeDefined();
+    const lastControls = (): Record<string, unknown> =>
+      ((mock.panels[0]?.webview.posted ?? [])
+        .filter((m) => (m as { type?: string }).type === 'viewControls')
+        .at(-1) as { controls: Record<string, unknown> } | undefined)?.controls ?? {};
+
+    for (const tab of ['tools', 'loops', 'tokens', 'trends', 'files']) {
+      panel?.fireMessage({ type: 'runCommand', command: `agentDeck.stats.tab.${tab}` });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(lastControls()['statsTab'], tab).toBe(tab);
+    }
+  });
+
+  it('...and the panel CANNOT reach a destructive command that way', async () => {
+    /*
+     * The surface half of the allow-list, on the id that matters: Clear
+     * Stats History is a sidebar row, so a panel document naming it must
+     * reach nothing. It is refused at `PanelController`'s boundary, where
+     * the drop is COUNTED — a refusal nobody can see is how a dead button
+     * survives a release.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_COMMAND);
+    const panel = mock.panels[0];
+    const before = mock.executed.length;
+    for (const refused of [CLEAR_STATS_COMMAND, ABOUT_COMMAND, 'agentDeck.sort.recent']) {
+      panel?.fireMessage({ type: 'runCommand', command: refused });
+    }
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.executed.slice(before).map((e) => e.command)).toStrictEqual([]);
+    expect(mock.warningMessages).toStrictEqual([]);
+  });
+
+  it('the panel reports its DRAWER, and the sidebar hears it (DoD 9.17)', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    const view = resolveSidebar();
+    await mock.runCommand(OPEN_COMMAND);
+    const panel = mock.panels[0];
+    const drawerOpen = (): boolean => {
+      const last = view.webview.posted
+        .filter((m) => (m as { type?: string }).type === 'sidebarState')
+        .at(-1) as { drawerOpen: boolean } | undefined;
+      return last?.drawerOpen ?? false;
+    };
+
+    expect(drawerOpen()).toBe(false);
+    panel?.fireMessage({ type: 'drawerState', open: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(drawerOpen()).toBe(true);
+    // ...and View ▸ Inspector is really there, through the renderer's model.
+    expect(
+      sidebarRows(view, 'view')
+        .filter((row) => row.kind === 'group')
+        .map((row) => row.label),
+    ).toContain('Inspector');
+
+    panel?.fireMessage({ type: 'drawerState', open: false });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(drawerOpen()).toBe(false);
+  });
+
+  it('a CLOSED panel is showing no drawer, whatever it last reported', async () => {
+    /*
+     * The renderer reports on CHANGE and a disposed document reports nothing
+     * ever again, so without the host saying so the sidebar would keep
+     * offering View ▸ Inspector for a drawer that went away with the panel.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    const view = resolveSidebar();
+    await mock.runCommand(OPEN_COMMAND);
+    mock.panels[0]?.fireMessage({ type: 'drawerState', open: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(
+      sidebarRows(view, 'view').filter((row) => row.kind === 'group').map((row) => row.label),
+    ).toContain('Inspector');
+
+    mock.panels[0]?.dispose();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(
+      sidebarRows(view, 'view').filter((row) => row.kind === 'group').map((row) => row.label),
+    ).not.toContain('Inspector');
+  });
+
+  it('the Insights page is two states, from the same probe, and never asks about a licence', async () => {
     resetVscodeMock();
     mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
     mock.setConfig(CONFIG_SECTION, {});
     await activate(extensionContext());
-    expect(sectionRows('Insights').at(-1)).toBe('Open Insights|||');
+    expect(sidebarText(resolveSidebar(), 'insights')).toStrictEqual([
+      'Open Insights||',
+      'Run Insights||',
+    ]);
 
     // BOTH arms, or a label hard-coded to one of them passes the first.
     resetVscodeMock();
     mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
     mock.setConfig(CONFIG_SECTION, {});
     await activate(extensionContext());
-    expect(sectionRows('Insights').at(-1)).toBe('Get Insights|||');
+    expect(sidebarText(resolveSidebar(), 'insights')).toStrictEqual([
+      'Get Agent Deck Insights||',
+    ]);
+  });
+
+  it('NO COUNTS AND NO EXAMPLES reach the parent any more', async () => {
+    /*
+     * The 9.6 teaser is dropped from Agent Deck by the amendment: it belongs
+     * to the Insights extension's own window and to the site. Asserted as an
+     * exact page rather than by absence of a word, because a count row that
+     * came back under a different label would pass a `not.toContain`.
+     */
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
+    await activate(extensionContext());
+    const rows = sidebarRows(resolveSidebar(), 'insights');
+    expect(rows.map((row) => row.label)).toStrictEqual(['Open Insights', 'Run Insights']);
+    for (const row of rows) expect(row.kind, row.label).toBe('action');
+    expect(mock.hasCommand('agentDeck.insights.nextExample')).toBe(false);
+  });
+
+  it('Get Agent Deck Insights opens the project page through the EDITOR', async () => {
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
+    await activate(extensionContext());
+    await mock.runCommand(INSIGHTS_GET_COMMAND);
+    /*
+     * `env.openExternal`, i.e. the editor opens it. The extension opens no
+     * socket, which is what lets SECURITY.md still say it makes no network
+     * call — and it is a URL rather than the Marketplace page the previous
+     * shape opened inside VS Code, because the amendment says "opens the
+     * Insights page in your browser".
+     */
+    expect(mock.openedExternal.map(String)).toStrictEqual([INSIGHTS_PAGE_URL]);
+  });
+
+  it('Open and Run invoke INSIGHTS’ OWN commands, and nothing else', async () => {
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
+    await activate(extensionContext());
+
+    await mock.runCommand(INSIGHTS_SHOW_COMMAND);
+    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_OPEN_COMMAND);
+    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_EXEC_COMMAND);
+
+    await mock.runCommand(INSIGHTS_RUN_COMMAND);
+    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_EXEC_COMMAND);
+
+    /*
+     * THE PARENT NEVER KNOWS THE LICENCE STATE. It asks nothing about one
+     * and refuses nothing on its behalf: Insights refuses its own run. So
+     * the RUN reaches Insights whatever the licence is, and the only way to
+     * assert that is to note there is no branch — the same call is made and
+     * no message is shown.
+     */
+    expect(mock.informationMessages).toStrictEqual([]);
+    expect(mock.openedExternal).toStrictEqual([]);
   });
 
   it('a host tells its panel the tweaks on open and on every change', async () => {

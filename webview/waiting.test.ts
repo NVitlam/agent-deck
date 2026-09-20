@@ -46,7 +46,7 @@ function renderList(state: SessionState): HTMLElement {
   const sent: WebviewToHostMessage[] = [];
   const started = harness.start(container, { postMessage: (m) => sent.push(m) });
   harness.flushSync(() => {
-    started.store.handleMessage(viewControls({ viewMode: 'list' }));
+    started.store.handleMessage(viewControls({ renderer: 'list' }));
   });
   harness.flushSync(() => {
     globalThis.dispatchEvent(new MessageEvent('message', { data: { type: 'snapshot', sessions: [state] } }));

@@ -220,39 +220,48 @@ Install from the VS Code Marketplace - open the **Extensions** view and search f
 code --install-extension nvitlam.agent-deck
 ```
 
-**Where to find it: the Agent Deck icon in the activity bar.** It opens a tree with four
-sections, and the same four are on the view's title menu.
+**Where to find it: the Agent Deck icon in the activity bar.** It opens a sidebar with a strip
+of four tabs — **Menu · View · Tweaks · Insights** — one open at a time. The same four are on the
+view's title menu.
 
-**Everything is in that tree or that menu. The panels are content only** — no bars, no buttons,
-no chips. You pan, drag, zoom and select; everything else is a menu entry or a keyboard shortcut.
+**Everything is in that sidebar or that menu. The panels are content only** — no bars, no buttons,
+no chips, with one exception noted under Statistics below. You pan, drag, zoom and select;
+everything else is a sidebar entry, a menu entry or a keyboard shortcut.
 
 **Menu**
 
-- **Open Deck** — the session deck, in the first editor group.
-- **Open Statistics** — the same panel, on its Stats view.
+- **Open Deck** — the session deck, in the first editor group. It comes back to the deck from
+  wherever you are, including from Statistics, and keeps the renderer you chose.
+- **Open Statistics** — the same panel, on its Stats view, always on the **Files** tab.
 - **Show Diagnostics** — the Agent Deck output channel.
 - **Settings** — VS Code's settings, filtered to Agent Deck.
 - **Clear Stats History** — removes the local stats history, after a confirmation.
 - **About** — a panel with what this is and where to find it.
 
-**View** — Canvas or List; filter the sessions by liveness and by engine; the deck's layout and
-sort; which Statistics table is showing; the drawer's status, order and tool filters; and Reset
-view, which acts on whichever surface you are on.
+**View** — five collapsible groups, each showing what it is set to and folding up again once you
+choose: **Renderer** (Canvas or List), **Sessions** and **Engines** (the two filters), **Layout**
+and **Sort**. **Inspector** appears under them while a tool-call drawer is open, with the drawer's
+status, order and tool filters. **Reset view** acts on whichever surface you are on.
 
-**Tweaks** — four settings, as checkboxes and one choice: follow new sessions, open the drawer on
-entering a session, open the drawer expanded, and the deck ordering. Ticking one writes that
-setting; the tree keeps no value of its own and shows whatever the settings say.
+**Tweaks** — three settings as checkboxes, each with a line saying what it does: follow new
+sessions, open the drawer on entering a session, open the drawer expanded. Ticking one writes that
+setting; the sidebar keeps no value of its own and shows whatever the settings say. The deck's
+opening order is `agentDeck.defaultOrdering` in Settings — the deck's own order is View ▸ Sort.
 
-**Insights** — what your own recorded history counts, one example, and a way to get or open
-Agent Deck Insights.
+**Insights** — one entry to **Get Agent Deck Insights** when it is not installed, or **Open
+Insights** and **Run Insights** when it is, each with a line saying what it does. Agent Deck never
+asks about your Insights licence; Insights handles that itself.
+
+**Statistics keeps its five tabs inside its own window** — Files, Tools, Loops & churn, Tokens,
+Trends. They are the one thing left to press on a panel.
 
 **The keyboard shortcuts are unchanged**, and they work while the deck panel has focus: `a` `c`
 `o` `x` for the engines, `1` `2` `3` for the layout, `l` `r` `e` for the sort. `Escape` walks
 back out of a session, and `k` collapses the tree.
 
-![The Agent Deck sidebar in the activity bar](media/sidebar.png)
+![The Agent Deck sidebar in the activity bar — a screenshot of an earlier release, to be retaken](media/sidebar.png)
 
-![The sidebar's four settings, three checked, deck ordering live — a screenshot of the previous release's Tweaks tab, to be retaken](media/sidebar-tweaks.png)
+![The sidebar's settings — a screenshot of an earlier release's Tweaks tab, to be retaken](media/sidebar-tweaks.png)
 
 Every entry is also in the Command Palette, under **Agent Deck:**. Your sessions appear on their
 own — there is nothing to point it at and nothing to switch on.
@@ -658,7 +667,7 @@ nobody can see is not a refusal. Every other session is matched to the folders a
 
 ## Stats
 
-**What each session touched, repeated and spent — as numbers.** **Open Statistics** in the sidebar,
+**What each session touched, repeated and spent — as numbers.** **Menu ▸ Open Statistics** in the sidebar,
 or **Agent Deck: Open Statistics** in the Command Palette, switches the panel to its Stats view, in
 five parts: **Files** (every file a session touched, with its reads, edits, writes and errors),
 **Tools** (every tool a session called, with its calls, errors, longest call and total duration),
@@ -760,7 +769,7 @@ so there is nothing to put in this setting for it, and its sessions show no cost
 
 ### Clearing the history
 
-**Clear Stats History** — in the sidebar, or **Agent Deck: Clear Stats History** in the Command
+**Clear Stats History** — in the sidebar's Menu tab, or **Agent Deck: Clear Stats History** in the Command
 Palette — deletes the whole history after a modal confirmation, and works whether or not
 `agentDeck.stats.enabled` is on. There is one history per machine, so it is cleared for every window
 at once; **another window that is already open keeps showing what it had read** until it next writes
@@ -901,7 +910,7 @@ honesty is kept, and they were not loosened alongside it.
 | `agentDeck.followNewSessions` | Select a session that appears while the deck is open, so the deck moves to it. Default `false`: the new session is added in its sort position and the current selection is left alone. This changes what the deck shows and never what is observed. Also in the Tweaks tab of the sidebar, which reads and writes this same value. |
 | `agentDeck.openDrawerOnEnter` | Open a session's tool-call drawer when the session is entered from the deck. Default `false`: the drawer opens when a tool call is selected. The drawer holds the same calls either way. Also in the Tweaks tab. |
 | `agentDeck.drawerExpandedByDefault` | Open the tool-call drawer at its expanded height rather than its collapsed one. Default `false`. The drawer can be expanded and collapsed in the panel at either value; this is the height it opens at. Also in the Tweaks tab. |
-| `agentDeck.defaultOrdering` | The order deck cards are placed in when the deck opens. Default `live`, which puts live sessions first, then idle, degraded, unsupported and ended; `recent` puts the most recently active first; `engine` groups the cards by the engine that produced them. The order chosen on the deck itself applies to that deck and leaves this value alone. Also in the Tweaks tab. |
+| `agentDeck.defaultOrdering` | The order deck cards are placed in when the deck opens. Default `live`, which puts live sessions first, then idle, degraded, unsupported and ended; `recent` puts the most recently active first; `engine` groups the cards by the engine that produced them. The order chosen on the deck itself — View ▸ Sort — applies to that deck and leaves this value alone. **It has no sidebar entry**: the sidebar's Sort group is the deck's own order, and this is what the deck opens with. |
 
 Clearing the history is a command, not a button on the deck: **Agent Deck: Clear Stats History** in
 the command palette or the sidebar, behind a modal confirm. It works whether or not `agentDeck.stats.enabled` is on, so turning

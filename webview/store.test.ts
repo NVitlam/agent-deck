@@ -487,7 +487,7 @@ describe('altitude and node selection', () => {
     expect(store.getView().altitude).toBe('deck');
   });
 
-  it('selectNode opens the inspector and sends the host NOTHING', () => {
+  it('selectNode opens the inspector and reports ONLY the drawer', () => {
     const { sink, sent } = collect();
     const store = createStore(sink);
     store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
@@ -498,7 +498,28 @@ describe('altitude and node selection', () => {
     expect(view.altitude).toBe('inspector');
     expect(view.selectedNodeId).toBe('tool-bash');
     expect(view.selectedNode?.id).toBe('tool-bash');
+    /*
+     * `drawerState` is the ONE thing a drawer opening tells the host
+     * (v0.9.0 DoD 9.17), and it is a state report rather than a control:
+     * View ▸ Inspector appears in the sidebar exactly while a drawer is on
+     * screen, the sidebar is a different document, and the host is the only
+     * party that sees both. Nothing about the SELECTION reaches the host —
+     * that is still the renderer's.
+     */
+    expect(sent).toEqual([{ type: 'drawerState', open: true }]);
+
+    // ...and it is reported ONCE. A second selection inside the same open
+    // drawer does not move the answer, so it posts nothing: the report is on
+    // CHANGE, not per notify, or a session under load would post one of
+    // these per poll.
+    sent.length = 0;
+    store.selectNode('tool-read');
     expect(sent).toEqual([]);
+
+    // Shutting it reports the other way, or the sidebar would keep offering
+    // to filter a drawer that is gone.
+    store.setInspectorOpen(false);
+    expect(sent).toEqual([{ type: 'drawerState', open: false }]);
   });
 
   it('finds a node at any depth, agent or tool', () => {
@@ -601,9 +622,9 @@ describe('the view mode, which the HOST states (C7.2, v0.9.0 DoD 9.14)', () => {
 
   it('goes canvas -> list -> canvas, as the host says', () => {
     const store = createStore();
-    store.handleMessage(viewControls({ viewMode: 'list' }));
+    store.handleMessage(viewControls({ renderer: 'list' }));
     expect(store.getView().viewMode).toBe('list');
-    store.handleMessage(viewControls({ viewMode: 'canvas' }));
+    store.handleMessage(viewControls({ renderer: 'canvas' }));
     expect(store.getView().viewMode).toBe('canvas');
   });
 
@@ -612,7 +633,7 @@ describe('the view mode, which the HOST states (C7.2, v0.9.0 DoD 9.14)', () => {
     store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
     store.enterSession('session-live');
     store.selectNode('tool-read');
-    store.handleMessage(viewControls({ viewMode: 'list' }));
+    store.handleMessage(viewControls({ renderer: 'list' }));
     const view = store.getView();
     expect(view.viewMode).toBe('list');
     expect(view.altitude).toBe('inspector');
@@ -622,8 +643,8 @@ describe('the view mode, which the HOST states (C7.2, v0.9.0 DoD 9.14)', () => {
   it('sends the host nothing, in either direction', () => {
     const { sink, sent } = collect();
     const store = createStore(sink);
-    store.handleMessage(viewControls({ viewMode: 'list' }));
-    store.handleMessage(viewControls({ viewMode: 'canvas' }));
+    store.handleMessage(viewControls({ renderer: 'list' }));
+    store.handleMessage(viewControls({ renderer: 'canvas' }));
     expect(sent).toEqual([]);
   });
 
@@ -642,9 +663,9 @@ describe('the view mode, which the HOST states (C7.2, v0.9.0 DoD 9.14)', () => {
     const store = createStore();
     let calls = 0;
     const off = store.subscribe(() => (calls += 1));
-    store.handleMessage(viewControls({ viewMode: 'canvas' }));
+    store.handleMessage(viewControls({ renderer: 'canvas' }));
     expect(calls).toBe(1);
-    store.handleMessage(viewControls({ viewMode: 'list' }));
+    store.handleMessage(viewControls({ renderer: 'list' }));
     expect(calls).toBe(2);
     off();
   });
@@ -655,7 +676,7 @@ describe('the view mode, which the HOST states (C7.2, v0.9.0 DoD 9.14)', () => {
     // on the wire. The shipped-bundle guard in `bundle.test.ts` pins the
     // absence of the storage APIs themselves.
     const before = createStore();
-    before.handleMessage(viewControls({ viewMode: 'list' }));
+    before.handleMessage(viewControls({ renderer: 'list' }));
     expect(before.getView().viewMode).toBe('list');
     expect(createStore().getView().viewMode).toBe('canvas');
   });

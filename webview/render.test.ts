@@ -57,7 +57,7 @@ function render(): Mounted {
   // the mode is the HOST's and arrives on `viewControls`, which is the same
   // message production sends — there is no toggle to press any more.
   harness.flushSync(() => {
-    started.store.handleMessage(viewControls({ viewMode: 'list' }));
+    started.store.handleMessage(viewControls({ renderer: 'list' }));
   });
   const record: Mounted = {
     container,

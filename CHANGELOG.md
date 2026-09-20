@@ -2,6 +2,48 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.9.0 - 2026-09-20 - Insights, About, and a header that wraps
+
+### Added
+
+- **An Insights tab on the deck.** It counts four things across the sessions
+  Agent Deck has recorded for you - compactions, long-idle resumes, re-read
+  loops and failed tool calls - and names the record field each count comes
+  from. A count of zero is left out; when all four are zero it says so in one
+  line. **See an example** shows one of three worked examples, each labelled as
+  an example and built from invented paths and ids, never from your sessions.
+- **An About entry**, as **Agent Deck: About** in the Command Palette and a link
+  in the deck header. It carries links to the project, the author and the
+  sponsor page. The links open in your browser through VS Code; the extension
+  itself still makes no network call.
+- **Which agent type a subagent was.** Each subagent in the statistics now
+  carries the type Claude Code recorded for it. The description beside it is
+  not carried, and a test holds the captured descriptions against every record
+  to keep it that way.
+- **Which skills a session invoked.** A session now records each `Skill` call by
+  name and by its position in that session’s calls. The arguments passed to the
+  skill are not recorded. Which later tool calls a skill produced is not
+  something Claude Code writes down, so Agent Deck does not claim it.
+- **A session id on Agent Deck: Open Statistics.** Given one, the Stats view
+  opens with that session’s Tokens card highlighted. Given none, it behaves
+  exactly as before. An id this window does not hold highlights nothing and is
+  not an error.
+
+### Changed
+
+- **The drawer header wraps instead of running off the edge.** At narrow panel
+  widths the header’s fields used to be cut at the right-hand edge, and the
+  last of them was not drawn at all. They now break onto a second row, and at
+  1200px every field is drawn. A panel narrower than a single field can still
+  cut that field.
+- **Statistics records are version 3.** Records written by 0.7.x and 0.8.x are
+  still read, exactly as they were written - nothing on disk is rewritten - and
+  each one names the facts its version could not carry.
+- **Long names and paths are left out rather than shortened.** A file path over
+  1024 characters, or an agent type or skill name over 64, is omitted from the
+  record instead of being cut short, and the record says which one was left
+  out. The session keeps every other number it has.
+
 ## 0.8.1 - 2026-09-15 - A first Claude Code session in a new folder
 
 ### Fixed

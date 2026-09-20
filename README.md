@@ -771,6 +771,19 @@ model ids — and never message text, tool payloads or reasoning. Turn it off wi
 - **A session that finishes while no VS Code window is open is not recorded.** Agent Deck records
   what it observes while a window is running. It never reads old transcripts back into the history.
 
+### What a record carries about agents and skills
+
+Each subagent carries the **agent type** Claude Code recorded for it. The description beside it is
+not carried: it is prose written by whoever spawned the agent, and Agent Deck keeps prose out of
+these records.
+
+Each session carries the **skills it invoked**, by name and by position in that session’s calls.
+The arguments passed to a skill are not carried, for the same reason. Which later tool calls a
+skill produced is not something Claude Code writes down, so Agent Deck does not claim it.
+
+A file path over 1024 characters, or an agent type or skill name over 64, is **left out rather
+than shortened** — a shortened path is still a path — and the record names what was left out. The
+session keeps every other number it has.
 ### For extension authors
 
 `vscode.extensions.getExtension('nvitlam.agent-deck')?.exports` is Agent Deck's extension API,
@@ -779,6 +792,27 @@ model ids — and never message text, tool payloads or reasoning. Turn it off wi
 every two seconds for that session. It hands out these records and nothing else — never a session's
 tree and never a preview.
 
+## Insights
+
+A tab beside the canvas, the list and Stats. It counts four things across the sessions Agent Deck
+has recorded on this machine — compactions, long-idle resumes, re-read loops and failed tool
+calls — and prints the record field each count is taken from. A count of zero is left out; when
+all four are zero it says so in one line.
+
+**See an example** shows one of three worked examples, rotating on each press. Each is labelled as
+an example and is built from invented paths and ids: they illustrate what the patterns look like
+and are never drawn from your own sessions.
+
+**Agent Deck Insights** is a separate extension that reads the same local records and groups them
+into patterns across sessions. The tab offers to get it, or opens it when it is installed. Nothing
+Agent Deck does depends on it, and no feature of Agent Deck moves behind it.
+
+## About
+
+**Agent Deck: About** in the Command Palette, and a link in the deck header. It carries the
+project, the author and the sponsor page. The links open in your browser through VS Code — the
+extension opens no socket for them and makes no network call of its own. `SECURITY.md` §1 states
+that and names its proofs.
 ## Claude Code version window
 
 - **Anchor `2.1.246`** — the release the committed corpora were captured from. It is a

@@ -1523,3 +1523,95 @@ describe('DoD 7.14 (amended R3a) — a 0.7.1 record is a point in every Trends s
     expect(one(plain.container, TESTID.statsFooter).textContent).not.toContain('F14:absent');
   });
 });
+
+/* ------------------------------------------------------------------------ *
+ * v0.9.0 DoD 9.5 — the Insights deep link
+ * ------------------------------------------------------------------------ */
+
+describe('DoD 9.5 — agentDeck.openStats opens the panel on a session', () => {
+  /** The ids the R8 fixtures derive to, in the order Tokens renders them. */
+  const cards = (panel: Panel): string[] =>
+    all(panel.container, TESTID.statsSession).map((el) => el.dataset['session'] ?? '');
+
+  const focused = (panel: Panel): string[] =>
+    all(panel.container, TESTID.statsSession)
+      .filter((el) => el.dataset['focus'] !== undefined)
+      .map((el) => el.dataset['session'] ?? '');
+
+  it('focuses the named session\u2019s card, and only that one', () => {
+    const panel = statsPanel(['01-reread-loop', '02-churn-chain']);
+    tab(panel, 'tokens');
+    const allIds = cards(panel);
+    expect(allIds.length).toBeGreaterThan(1);
+
+    // The real message the host posts, through the real window listener.
+    send({ type: 'showView', mode: 'stats', sessionId: allIds[1] });
+    tab(panel, 'tokens');
+
+    expect(focused(panel)).toStrictEqual([allIds[1]]);
+    expect(panel.store.getView().statsFocusSessionId).toBe(allIds[1]);
+  });
+
+  it('focuses nothing when no sessionId is sent', () => {
+    const panel = statsPanel(['01-reread-loop', '02-churn-chain']);
+    send({ type: 'showView', mode: 'stats' });
+    tab(panel, 'tokens');
+    expect(cards(panel).length).toBeGreaterThan(1);
+    expect(focused(panel)).toStrictEqual([]);
+    expect(panel.store.getView().statsFocusSessionId).toBeUndefined();
+  });
+
+  it('an unknown id focuses nothing and renders every card', () => {
+    // A deep link arrives from another extension, about a store that may have
+    // been cleared or that belongs to another workspace. It must not fail shut.
+    const panel = statsPanel(['01-reread-loop', '02-churn-chain']);
+    send({ type: 'showView', mode: 'stats', sessionId: 'no-such-session' });
+    tab(panel, 'tokens');
+    expect(cards(panel).length).toBeGreaterThan(1);
+    expect(focused(panel)).toStrictEqual([]);
+  });
+
+  it('a second link moves the focus, with the Stats view already open', () => {
+    // `setViewMode` returns early when the mode is unchanged, so a focus set
+    // inside it would never move on a second link. This is that case.
+    const panel = statsPanel(['01-reread-loop', '02-churn-chain']);
+    tab(panel, 'tokens');
+    const ids = cards(panel);
+    send({ type: 'showView', mode: 'stats', sessionId: ids[0] });
+    tab(panel, 'tokens');
+    expect(focused(panel)).toStrictEqual([ids[0]]);
+
+    send({ type: 'showView', mode: 'stats', sessionId: ids[1] });
+    tab(panel, 'tokens');
+    expect(focused(panel)).toStrictEqual([ids[1]]);
+  });
+
+  it('the USER leaving the view drops the focus', () => {
+    // A focus belongs to the link that set it, not to the view: coming back
+    // shows the Stats view as the user left it, not as an earlier link
+    // pointed it.
+    //
+    // THE FIRST DRAFT OF THIS TEST WAS VACUOUS AND A MUTATION SAID SO. It
+    // left the view by sending `showView mode:canvas`, which carries no
+    // `sessionId` — so the message handler cleared the focus on its own and
+    // the clear inside `setViewMode` was never reached. Deleting that clear
+    // left the test GREEN.
+    //
+    // The panel's own toggle reaches `setViewMode` and nothing else, which is
+    // both the real user path and the only one that can see the defect.
+    const panel = statsPanel(['01-reread-loop', '02-churn-chain']);
+    tab(panel, 'tokens');
+    const ids = cards(panel);
+    send({ type: 'showView', mode: 'stats', sessionId: ids[1] });
+    expect(panel.store.getView().statsFocusSessionId).toBe(ids[1]);
+
+    // Out through the control the user presses, and back in.
+    click(one(panel.container, TESTID.statsToggle));
+    expect(panel.store.getView().statsFocusSessionId).toBeUndefined();
+
+    click(one(panel.container, TESTID.statsToggle));
+    tab(panel, 'tokens');
+    expect(focused(panel)).toStrictEqual([]);
+  });
+});
+

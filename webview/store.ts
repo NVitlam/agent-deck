@@ -473,6 +473,17 @@ export interface WebviewView {
    */
   viewMode: ViewMode;
   /**
+   * The session the Stats view was opened ON — v0.9.0 DoD 9.5.
+   *
+   * Webview-local, like `viewMode` itself: it is where the panel was
+   * pointed, not a value the host owns. Absent unless a `showView` carried
+   * one, and CLEARED by any later mode switch, so a stale focus cannot
+   * survive the user navigating away and back.
+   *
+   * An id no record matches simply focuses nothing.
+   */
+  statsFocusSessionId?: string;
+  /**
    * Which LIVENESS the deck shows. `sessions` below is ALWAYS the full list —
    * filtering is a view over it, so nothing downstream can mistake a filtered
    * view for the host's account of what exists.
@@ -674,8 +685,15 @@ export interface Store {
    * empty pane.
    */
   setDetailAction(actionId: string | undefined): void;
-  /** Switch renderers (C7.2). Not persisted, not a setting, not a message. */
-  setViewMode(mode: ViewMode): void;
+  /**
+   * Switch renderers (C7.2). Not persisted, not a setting, not a message.
+   *
+   * v0.9.0 DoD 9.5: `focusSessionId` is the session the Stats view was
+   * opened ON, and it moves WITH the mode — one call, one notify. Omitting
+   * it CLEARS the focus, which is what every internal caller wants: a focus
+   * belongs to the deep link that set it, never to the view.
+   */
+  setViewMode(mode: ViewMode, focusSessionId?: string): void;
   /** The in-panel toggle: canvas ⇄ list. */
   toggleViewMode(): void;
   /** Show only sessions of this liveness, or all of them. */
@@ -934,6 +952,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let selectedNodeId: string | undefined;
   let altitude: Altitude = 'deck';
   let viewMode: ViewMode = DEFAULT_VIEW_MODE;
+  let statsFocusSessionId: string | undefined;
   let livenessFilter: LivenessFilter = DEFAULT_LIVENESS_FILTER;
   let engineFilter: EngineFilter = DEFAULT_ENGINE_FILTER;
   let inspectorOpen = false;
@@ -1182,6 +1201,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         },
         toggledNodeIds,
         viewMode,
+        ...(statsFocusSessionId === undefined ? {} : { statsFocusSessionId }),
         altitude,
         livenessFilter,
         engineFilter,
@@ -1277,10 +1297,18 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
             defaultOrdering = isDeckSort(ordering) ? ordering : undefined;
           }
           break;
-        case 'showView':
-          this.setViewMode(message.mode);
+        case 'showView': {
+          // DoD 9.5. The mode and the focus move in ONE call, so this stays
+          // "sets the mode, once, and posts nothing". Anything that is not a
+          // non-empty string is absent rather than refused.
+          const focus = message.sessionId;
+          this.setViewMode(
+            message.mode,
+            typeof focus === 'string' && focus !== '' ? focus : undefined,
+          );
           // `setViewMode` has already notified; nothing below must run twice.
           return;
+        }
         case 'diff': {
           const prev = sessions.get(message.sessionId);
           if (prev === undefined) {
@@ -1505,13 +1533,22 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       notify();
     },
 
-    setViewMode(mode: ViewMode): void {
-      if (mode === viewMode) return;
+    setViewMode(mode: ViewMode, focusSessionId?: string): void {
       if (!VIEW_MODES.includes(mode)) return;
+      const modeChanged = mode !== viewMode;
+      // DoD 9.5 — a focus belongs to the deep link that set it, never to the
+      // view, so every caller that passes none CLEARS it. A second link to a
+      // second session, with the view already open, moves the focus and must
+      // still notify — which is why this is not an early return on the mode.
+      const focusChanged = focusSessionId !== statsFocusSessionId;
+      if (!modeChanged && !focusChanged) return;
       viewMode = mode;
+      statsFocusSessionId = focusSessionId;
       // Mode switch BACK to the canvas (trigger table): the field was
-      // unmounted and its geometry is whatever the window is now.
-      if (mode === 'canvas') triggerFit();
+      // unmounted and its geometry is whatever the window is now. Only on a
+      // real mode change — a focus moving inside the Stats view moves nothing
+      // on the canvas.
+      if (modeChanged && mode === 'canvas') triggerFit();
       notify();
     },
 

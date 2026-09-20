@@ -3658,10 +3658,18 @@ export class PanelController {
     this.#panel.postMessage(this.#settings);
   }
 
-  /** Ask the renderer to show a view mode (DoD 4.6b: `agentDeck.openStats`). */
-  showView(mode: ShowViewMessage['mode']): void {
+  /**
+   * Ask the renderer to show a view mode (DoD 4.6b: `agentDeck.openStats`).
+   *
+   * v0.9.0 DoD 9.5: with a `sessionId`, the panel opens focused on that
+   * session. The host does not check that the session exists — the webview
+   * holds the records and answers that question without a round trip.
+   */
+  showView(mode: ShowViewMessage['mode'], sessionId?: string): void {
     if (this.#disposed) return;
-    this.#panel.postMessage({ type: 'showView', mode });
+    this.#panel.postMessage(
+      sessionId === undefined ? { type: 'showView', mode } : { type: 'showView', mode, sessionId },
+    );
   }
 
   /**
@@ -4804,10 +4812,14 @@ export class AgentDeckHost {
     return { ...this.#tweaks };
   }
 
-  /** `agentDeck.openStats`: the panel, showing the Stats view mode (DoD 4.6b). */
-  openStats(): PanelController | null {
+  /**
+   * `agentDeck.openStats`: the panel, showing the Stats view mode (DoD 4.6b).
+   *
+   * v0.9.0 DoD 9.5: an optional `sessionId` opens it focused on one session.
+   */
+  openStats(sessionId?: string): PanelController | null {
     const controller = this.open();
-    controller?.showView('stats');
+    controller?.showView('stats', sessionId);
     return controller;
   }
 
@@ -5477,7 +5489,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      * v0.7.0 DoD 4.6b. The same panel, asked to show the Stats view mode.
      * Same inactive message as `agentDeck.open`, because it is the same panel.
      */
-    vscode.commands.registerCommand(OPEN_STATS_COMMAND, () => {
+    /*
+     * v0.9.0 DoD 9.5. The argument is OPTIONAL and UNTRUSTED: a command is
+     * callable by any extension and by the palette, which passes nothing.
+     * Anything that is not a non-empty string is treated as absent rather
+     * than refused, because the command’s job is to open the panel and a
+     * malformed deep link should still do that.
+     */
+    vscode.commands.registerCommand(OPEN_STATS_COMMAND, (sessionId?: unknown) => {
       const host = activeHost;
       if (host === null) {
         void vscode.window.showInformationMessage(
@@ -5486,7 +5505,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
         );
         return;
       }
-      host.openStats();
+      host.openStats(typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined);
     }),
     /*
      * v0.7.0 DoD 4.6b. VS Code's settings UI, filtered to this extension —

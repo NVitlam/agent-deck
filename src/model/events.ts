@@ -1213,6 +1213,20 @@ export interface SettingsMessage {
 export interface ShowViewMessage {
   type: 'showView';
   mode: 'canvas' | 'list' | 'stats';
+  /**
+   * The session the panel should open ON — v0.9.0 DoD 9.5, the Insights
+   * deep link.
+   *
+   * Optional, and absence is the behaviour that shipped: open the mode and
+   * focus nothing. Present, it names the session whose Tokens card is
+   * focused — the Stats view’s one per-session surface.
+   *
+   * An id this window does not hold focuses NOTHING and is not an error. A
+   * deep link arrives from another extension, about a store that may have
+   * been cleared or that belongs to another workspace; failing shut on that
+   * would make the link worse than useless.
+   */
+  sessionId?: string;
 }
 
 export type HostToWebviewMessage =

@@ -6917,6 +6917,64 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     expect(mock.panels).toHaveLength(1);
   });
 
+  /*
+   * v0.9.0 DoD 9.5 — the Insights deep link.
+   *
+   * The command is NOT new: it has shipped since v0.7.0 DoD 4.6b with no
+   * argument, and the spec amendment records that correction. What is new is
+   * the optional `sessionId`.
+   */
+  it('agentDeck.openStats carries a sessionId when one is given (DoD 9.5)', async () => {
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_STATS_COMMAND, 'session-abc');
+    expect(mock.panels[0]?.webview.posted ?? []).toContainEqual({
+      type: 'showView',
+      mode: 'stats',
+      sessionId: 'session-abc',
+    });
+  });
+
+  it('agentDeck.openStats with no argument is unchanged (DoD 9.5)', async () => {
+    // The half a "the argument works" test misses: the palette passes
+    // nothing, and that path must post exactly what it always did — no
+    // `sessionId` key at all, not a key holding undefined.
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_STATS_COMMAND);
+    const posted = mock.panels[0]?.webview.posted ?? [];
+    const shown = posted.filter((m) => (m as { type?: string }).type === 'showView');
+    expect(shown).toStrictEqual([{ type: 'showView', mode: 'stats' }]);
+    expect(Object.keys(shown[0] as object)).not.toContain('sessionId');
+  });
+
+  it('agentDeck.openStats treats a malformed argument as absent, and never throws', async () => {
+    // A command is callable by any extension. Anything that is not a
+    // non-empty string is absent rather than refused: the job is to open the
+    // panel, and a malformed deep link should still do that.
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    for (const bad of [42, null, {}, [], '', true]) {
+      await expect(mock.runCommand(OPEN_STATS_COMMAND, bad)).resolves.not.toThrow();
+    }
+    const posted = mock.panels[0]?.webview.posted ?? [];
+    for (const message of posted.filter((m) => (m as { type?: string }).type === 'showView')) {
+      expect(Object.keys(message as object)).not.toContain('sessionId');
+    }
+  });
+
   it('a reload re-sends the settings, after asking for the snapshot', () => {
     const panel = fakePanel();
     let snapshots = 0;

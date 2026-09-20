@@ -31,9 +31,12 @@
   let {
     tokens,
     liveLabels,
+    focusSessionId,
   }: {
     tokens: TokensLayout;
     liveLabels: ReadonlyMap<string, string>;
+    /** DoD 9.5 - the deep link’s session, or absent. Focuses at most one card. */
+    focusSessionId?: string;
   } = $props();
 
   /**
@@ -77,6 +80,7 @@
       data-testid={TESTID.statsSession}
       data-session={session.session.sessionId}
       data-engine={session.session.engine}
+      data-focus={session.session.sessionId === focusSessionId ? true : undefined}
       aria-label="Session tokens"
     >
       <header class="head">

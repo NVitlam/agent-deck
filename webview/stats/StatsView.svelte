@@ -141,7 +141,7 @@
     {:else if tab === 'loops'}
       <Loops loops={layout.loops} {liveLabels} onordinal={follow} />
     {:else if tab === 'tokens'}
-      <Tokens tokens={layout.tokens} {liveLabels} />
+      <Tokens tokens={layout.tokens} {liveLabels} focusSessionId={view.statsFocusSessionId} />
     {:else}
       <Trends {trends} {liveLabels} />
     {/if}

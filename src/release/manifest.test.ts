@@ -495,16 +495,27 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
     expect(existsSync(fileURLToPath(new URL(String(containers[0]?.icon), REPO_ROOT)))).toBe(true);
   });
 
-  it('declares one NATIVE TREE view in that container, with the id the provider registers', async () => {
+  it('declares one WEBVIEW view in that container, with the id the provider registers', async () => {
+    /*
+     * `type: 'webview'` IS WHAT MAKES VS CODE BUILD A WEBVIEW, and its
+     * absence is what makes it a tree. **This test asserted the absence
+     * until v0.9.0 DoD 9.21**, correctly, for the half-day the sidebar was a
+     * native `TreeView` — and then the sidebar became a webview again and
+     * this was not updated. So it went green over a manifest that declared a
+     * TREE while `activate()` registered a WEBVIEW VIEW PROVIDER, the
+     * sidebar could not render in a real editor, and the test titled itself
+     * NATIVE TREE while blocking the one-line fix.
+     *
+     * That is this repository's recorded "the manifest and the build
+     * disagree" class — the one that shipped an inert `.js` host bundle —
+     * and a test asserting only the id would pass on either shape. The
+     * binding that can actually see it is in `extension.test.ts`: it reads
+     * this declared kind and asserts `activate()` registers THAT kind.
+     */
     const manifest = (await readManifest()) as SidebarManifest;
     const views = manifest.contributes?.views?.[SIDEBAR_CONTAINER_ID] ?? [];
     expect(views).toHaveLength(1);
-    expect(views[0]).toMatchObject({ id: SIDEBAR_VIEW_ID });
-    // NO `type` AT ALL, and that is the whole of v0.9.0 DoD 9.14's ruling 1
-    // in the manifest: `type: 'webview'` is what made the sidebar a webview,
-    // and its absence is what makes it a tree. A test that asserted only the
-    // id would pass on either.
-    expect(views[0]).not.toHaveProperty('type');
+    expect(views[0]).toMatchObject({ type: 'webview', id: SIDEBAR_VIEW_ID });
     expect(Object.keys(manifest.contributes?.views ?? {})).toStrictEqual([SIDEBAR_CONTAINER_ID]);
   });
 

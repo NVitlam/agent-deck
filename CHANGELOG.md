@@ -52,13 +52,11 @@ All notable changes to Agent Deck are documented here.
 
 ### Added
 
-- **An Insights section in the sidebar.** It counts four things across the
-  sessions Agent Deck has recorded for you - compactions, long-idle resumes,
-  re-read loops and failed tool calls - and names the record field each count
-  comes from. A count of zero is left out; when all four are zero it says so in
-  one line. **See an example** shows one of three worked examples, each
-  labelled as an example and built from invented paths and ids, never from your
-  sessions.
+- **An Insights tab in the sidebar.** With Agent Deck Insights not installed it
+  offers **Get Agent Deck Insights**, which opens the project page in your
+  browser; with it installed, **Open Insights** and **Run Insights**, which run
+  that extension's own commands. Agent Deck never asks about your Insights
+  licence.
 - **An About entry**, as **Agent Deck: About** in the Command Palette and in
   Menu. It opens a panel with what this is, and links to the project, the
   author and the sponsor page. The links open in your browser through VS Code;

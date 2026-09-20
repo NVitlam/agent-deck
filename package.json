@@ -1,9 +1,9 @@
 {
   "name": "agent-deck",
-  "displayName": "Agent Deck — Watch Your Agents Work.",
+  "displayName": "Agent Deck \u2014 Watch Your Agents Work.",
   "version": "0.9.0",
   "publisher": "nvitlam",
-  "description": "Live observability for coding-agent swarms — Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
+  "description": "Live observability for coding-agent swarms \u2014 Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
   "sponsor": {
     "url": "https://github.com/sponsors/NVitlam"
   },
@@ -814,6 +814,7 @@
     "views": {
       "agentDeck": [
         {
+          "type": "webview",
           "id": "agentDeck.sidebar",
           "name": "Agent Deck"
         }

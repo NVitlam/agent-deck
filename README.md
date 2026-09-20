@@ -820,18 +820,23 @@ tree and never a preview.
 
 ## Insights
 
-A tab beside the canvas, the list and Stats. It counts four things across the sessions Agent Deck
-has recorded on this machine — compactions, long-idle resumes, re-read loops and failed tool
-calls — and prints the record field each count is taken from. A count of zero is left out; when
-all four are zero it says so in one line.
+The **Insights** tab of the sidebar, and it holds one or two entries depending on what is
+installed. Nothing Agent Deck does depends on Insights, and no feature of Agent Deck moves behind
+it.
 
-**See an example** shows one of three worked examples, rotating on each press. Each is labelled as
-an example and is built from invented paths and ids: they illustrate what the patterns look like
-and are never drawn from your own sessions.
+- **Not installed** — one entry, **Get Agent Deck Insights**, which opens
+  <https://nvitlam.github.io/agent-deck/> in your browser. Agent Deck hands the address to VS Code;
+  it opens no connection itself.
+- **Installed** — **Open Insights** and **Run Insights**, which run that extension's own commands,
+  `agentDeckInsights.open` and `agentDeckInsights.run`.
 
 **Agent Deck Insights** is a separate extension that reads the same local records and groups them
-into patterns across sessions. The tab offers to get it, or opens it when it is installed. Nothing
-Agent Deck does depends on it, and no feature of Agent Deck moves behind it.
+into patterns across sessions. **Agent Deck never asks about your Insights licence** — whether a
+run is permitted is Insights' own business, and it says so itself.
+
+*(Until 0.9.0 this was a tab beside the canvas, counting four things across your recorded sessions
+and showing worked examples. That content moved to the Insights extension's own window and to the
+project page; Agent Deck's own surface is the two entries above.)*
 
 ## About
 

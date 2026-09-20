@@ -5522,10 +5522,11 @@ export function adaptWebviewPanel(
 }
 
 /*
- * `adaptWebviewView` was here until v0.9.0 DoD 9.14. It adapted a
- * `vscode.WebviewView` for the sidebar WEBVIEW, and spec
- * `Amendment 2026-09-20` replaces that surface with a native `TreeView` —
- * which the editor renders itself, so there is nothing to adapt.
+ * `adaptWebviewView` was here until v0.9.0 DoD 9.14, when the sidebar became
+ * a native `TreeView` for half a day. `Amendment 2026-09-20 — Sidebar shape`
+ * brings the webview back, and it did NOT come back: `resolveWebviewView`
+ * below takes the editor's own `WebviewView` directly, because the adapter
+ * existed to narrow it for a controller this surface no longer has.
  */
 
 /**
@@ -5937,10 +5938,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
   /*
    * `settingsMessageFor` built a `settings` message for the SIDEBAR from the
    * configuration rather than from the host, because the sidebar exists in
-   * windows where no host does. The sidebar is a native `TreeView` now and
-   * reads the configuration itself through `tweakValue` — the same source by
-   * a shorter path — so the message and the surface that received it are both
-   * gone. The PANEL's settings still come from `PanelController`.
+   * windows where no host does. That message is gone: the sidebar has its
+   * own state message now (`sidebarState`, built by `sidebarState()` above),
+   * which carries the tweaks read from the same configuration at the moment
+   * of asking. The PANEL's settings still come from `PanelController`.
+   *
+   * (This comment said the sidebar was "a native `TreeView` now" reading the
+   * configuration "through `tweakValue`" until DoD 9.21. `tweakValue` was
+   * the tree's dependency and went with it — the comment named a function
+   * that exists nowhere in the tree, which is why a verifier round grepped
+   * for it and found the prose describing a surface two designs old.)
    */
 
   context.subscriptions.push(

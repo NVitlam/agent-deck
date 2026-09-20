@@ -80,7 +80,7 @@ import {
   CONTROL_SECTIONS,
   MENU_COMMANDS as SIDEBAR_MENU,
 } from '../view/controls.js';
-import { INSIGHTS_PAGE_URL } from '../extension.js';
+import { INSIGHTS_EXEC_COMMAND, INSIGHTS_OPEN_COMMAND, INSIGHTS_PAGE_URL } from '../extension.js';
 import { LOOP_MIN, SPIKE_TOKENS } from '../stats/constants.js';
 import { costOfSeries, parsePricing } from '../stats/pricing.js';
 import type { StatsRecord } from '../stats/schema.js';
@@ -487,6 +487,45 @@ const LIVE_SETTINGS: HookSettings | null = existsSync(LIVE_PATH)
   : null;
 
 describe('README exists and ships clean', () => {
+  it('names the two commands Insights contributes, so the ids have a SECOND anchor', () => {
+    /*
+     * THE THIRD SURVIVING MUTATION OF THE 9.21 VERIFIER ROUND.
+     *
+     * `INSIGHTS_OPEN_COMMAND` and `INSIGHTS_EXEC_COMMAND` name commands in a
+     * DIFFERENT EXTENSION. The host runs them through `executeCommand`, and
+     * every test of that path reads the SAME constant back out of
+     * `mock.executed` — so they all pin that the handler forwards the
+     * constant, and none of them pins that the constant is right. Changing
+     * either literal to any other string left the whole suite green, and the
+     * user-visible result would be two dead buttons: exactly the defect this
+     * release exists to close, in the one place the boundary cannot help
+     * because the command belongs to somebody else.
+     *
+     * A second anchor is the only thing that can catch it, and it has to be
+     * a file that a fresh clone HAS: the spec amendment names the Insights
+     * page url, but that block is `skipIf(SPEC === null)` and skips on any
+     * runner without `lab/`. The README ships in the VSIX and is the
+     * Marketplace listing, so it is the right place for a user to read the
+     * ids anyway.
+     *
+     * This does NOT prove the ids are the ones Insights really contributes —
+     * nothing in this repository can, because that extension is not here. It
+     * proves they are stated twice and cannot drift apart silently, which is
+     * what turns a typo into a red test instead of a dead button.
+     */
+    for (const command of [INSIGHTS_OPEN_COMMAND, INSIGHTS_EXEC_COMMAND]) {
+      expect(README, `the README does not name ${command}`).toContain(`\`${command}\``);
+    }
+    // Both, distinct, and neither is one of OUR ids: a constant that had
+    // drifted onto an `agentDeck.` command would satisfy a containment test
+    // over a README that names plenty of those.
+    expect(INSIGHTS_OPEN_COMMAND).not.toBe(INSIGHTS_EXEC_COMMAND);
+    for (const command of [INSIGHTS_OPEN_COMMAND, INSIGHTS_EXEC_COMMAND]) {
+      expect(command.startsWith('agentDeckInsights.'), command).toBe(true);
+      expect(CONTROL_COMMANDS.map((entry) => entry.command)).not.toContain(command);
+    }
+  });
+
   it('is present at the repository root and is not empty', () => {
     expect(README.length).toBeGreaterThan(0);
     expect(README.trimStart().startsWith('# Agent Deck')).toBe(true);

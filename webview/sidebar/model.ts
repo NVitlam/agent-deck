@@ -34,6 +34,7 @@ import type {
 import {
   CONTROL_COMMANDS,
   CONTROL_GROUPS,
+  CONTROL_SECTIONS,
   INSPECTOR_TOOL_ALL,
   controlVisible,
 } from '../../src/view/controls.js';
@@ -244,8 +245,14 @@ export function sidebarCommands(state: SidebarState): readonly string[] {
       seen.push(row.command);
     }
   };
-  for (const section of ['menu', 'view', 'tweaks', 'insights'] as const) {
-    walk(sidebarPage(section, state));
+  // CONTROL_SECTIONS, not a literal list of the same four: this file's own
+  // header says nothing here is written a second time, and a hand-written
+  // copy of the strip would quietly stop covering a fifth page the day one
+  // is added. (It WAS a literal until DoD 9.21; the two-way equality in
+  // `sidebar.test.ts` would have caught the drift, which is why this was
+  // latent rather than live.)
+  for (const section of CONTROL_SECTIONS) {
+    walk(sidebarPage(section.id, state));
   }
   return seen;
 }

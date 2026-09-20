@@ -148,6 +148,7 @@ import type { ControlSection, ViewControls } from './view/controls.js';
 import {
   CONTROL_COMMANDS,
   CONTROL_SECTIONS,
+  DEFAULT_VIEW_CONTROLS,
   SIDEBAR_VIEW_ID,
   isCommandFrom,
 } from './view/controls.js';
@@ -6858,6 +6859,61 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     expect(mock.hasTreeView(SIDEBAR_VIEW_ID)).toBe(false);
   });
 
+  it('THE MANIFEST DECLARES THE KIND activate() REGISTERS', async () => {
+    /*
+     * THE CHECK WHOSE ABSENCE SHIPPED A SIDEBAR THAT CANNOT RENDER, found by
+     * a verifier round at `ec7aa03` and fixed in DoD 9.21.
+     *
+     * `contributes.views[].type` is what makes VS Code build a webview; with
+     * no `type` it builds a TREE and answers a webview provider with
+     * "There is no data provider registered that can provide view data".
+     * DoD 9.14 removed the key for the native tree — correctly — and DoD
+     * 9.17 brought the webview back WITHOUT restoring it. The manifest said
+     * tree, `activate()` registered a webview provider, and the pair shipped
+     * in the VSIX.
+     *
+     * NOTHING COULD SEE IT. `manifest.test.ts` read the manifest and never
+     * the registration; every host test drives `test/vscode-mock.ts`, which
+     * stores the provider in a `Map` and builds a `MockWebviewView`
+     * unconditionally — it has no notion of the manifest at all. So each
+     * half was internally consistent and the two disagreed, which is this
+     * repository's recorded "the manifest and the build disagree" class, the
+     * one that shipped an inert `.js` host bundle.
+     *
+     * This is the only assertion that holds the two together, so it reads
+     * the DECLARED kind rather than hard-coding one: a manifest that goes
+     * back to a tree must fail here unless the registration goes with it.
+     */
+    resetVscodeMock();
+    await activate(extensionContext());
+
+    const manifest = JSON.parse(
+      await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+    ) as {
+      contributes?: { views?: Record<string, { type?: string; id?: string }[]> };
+    };
+    const view = (manifest.contributes?.views?.['agentDeck'] ?? []).find(
+      (row) => row.id === SIDEBAR_VIEW_ID,
+    );
+    expect(view, `package.json contributes no view ${SIDEBAR_VIEW_ID}`).toBeDefined();
+
+    const declared = view?.type === 'webview' ? 'webview' : 'tree';
+    const registered = mock.hasViewProvider(SIDEBAR_VIEW_ID)
+      ? 'webview'
+      : mock.hasTreeView(SIDEBAR_VIEW_ID)
+        ? 'tree'
+        : 'nothing';
+    expect(
+      registered,
+      `package.json declares a ${declared} for ${SIDEBAR_VIEW_ID}; activate() registers a ${registered}`,
+    ).toBe(declared);
+
+    // ...and the shipped answer today is the webview, stated so a manifest
+    // that lost the key AND a registration that followed it would still be
+    // caught rather than agreeing with each other on the wrong surface.
+    expect(declared).toBe('webview');
+  });
+
   it('a control command moves the TREE and the PANEL together', async () => {
     /*
      * THE WIRING, DRIVEN THE WAY PRODUCTION DRIVES IT — the recorded D4
@@ -8710,8 +8766,16 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     const sidebarCommandIds = CONTROL_COMMANDS.filter((entry) =>
       isCommandFrom('sidebar', entry.command),
     ).map((entry) => entry.command);
-    // The population, stated: an empty list would satisfy the loop below.
-    expect(sidebarCommandIds.length).toBeGreaterThan(20);
+    /*
+     * The population, EXACTLY: an empty list would satisfy the loop below,
+     * and so would a list of 21 — which is the number the sidebar's own
+     * broken walk reached before DoD 9.21 fixed it. Derived from the table
+     * both ways rather than written down.
+     */
+    expect(sidebarCommandIds.length).toBe(CONTROL_COMMANDS.length - 5);
+    expect(
+      CONTROL_COMMANDS.filter((entry) => entry.section === 'window'),
+    ).toHaveLength(5);
 
     for (const command of sidebarCommandIds) {
       // Registered at all — the "command not found" shape About shipped in.
@@ -8722,6 +8786,66 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
       const after = mock.executed.slice(before).map((e) => e.command);
       expect(after, `${command} was dropped at the boundary`).toContain(command);
     }
+  });
+
+  it('a panel opened AFTER a control moved is told the MOVED state', async () => {
+    /*
+     * THE SURVIVING MUTATION FROM THE 9.21 VERIFIER ROUND, and the defect it
+     * covers is one this delta's own commit message claimed to have fixed.
+     *
+     * `AgentDeckHostOptions.viewControls` has existed since DoD 9.14 with a
+     * default of `DEFAULT_VIEW_CONTROLS`. Nothing passed it until 9.17, so
+     * `open()`'s `sendViewControls(this.#viewControls())` stated the SHIPPED
+     * defaults to every newly created panel. 9.17 passed it — and NOTHING
+     * DROVE IT: deleting the line again left all 4,384 tests green, which
+     * the verifier proved by doing exactly that.
+     *
+     * Why every existing test missed it: they all open the panel FIRST and
+     * then run commands, and `commitControls` posts to the live panel
+     * directly. The injected getter is only read when a panel is CREATED, so
+     * the only shape that can see it is: move the value, then create the
+     * panel. That is also the user-visible bug — set a filter, close the
+     * deck, reopen it, and the deck comes back unfiltered while the sidebar
+     * still ticks the filter.
+     *
+     * TWO FIELDS, because a getter wired to the wrong single field would
+     * pass a one-field test, and neither is the default.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+
+    // NO PANEL YET. The commands move the host's own state.
+    expect(mock.panels).toHaveLength(0);
+    await mock.runCommand('agentDeck.sort.recent');
+    await mock.runCommand('agentDeck.filter.engines.cx');
+    expect(DEFAULT_VIEW_CONTROLS.deckSort).not.toBe('recent');
+    expect(DEFAULT_VIEW_CONTROLS.engineFilter).not.toBe('cx');
+
+    // Now open it. The FIRST control message this document ever receives has
+    // to carry the moved values.
+    await mock.runCommand(OPEN_COMMAND);
+    const posted = mock.panels[0]?.webview.posted ?? [];
+    const first = posted.find((m) => (m as { type?: string }).type === 'viewControls') as
+      | { controls: Record<string, unknown> }
+      | undefined;
+    expect(first, 'the new panel was told no control state at all').toBeDefined();
+    expect(first?.controls['deckSort']).toBe('recent');
+    expect(first?.controls['engineFilter']).toBe('cx');
+
+    // ...and again for a panel created after a DISPOSE, which is the exact
+    // sequence a user performs: close the deck, reopen it.
+    await mock.runCommand('agentDeck.layout.lanes');
+    mock.panels[0]?.dispose();
+    await mock.runCommand(OPEN_COMMAND);
+    const reopened = (mock.panels[1]?.webview.posted ?? []).find(
+      (m) => (m as { type?: string }).type === 'viewControls',
+    ) as { controls: Record<string, unknown> } | undefined;
+    expect(reopened?.controls['deckLayout']).toBe('lanes');
+    expect(reopened?.controls['deckSort']).toBe('recent');
   });
 
   it('a mutation of the allow-list is what that catches', async () => {
@@ -8849,6 +8973,23 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     // Back through the front door: Files, not wherever it was left.
     await mock.runCommand(OPEN_STATS_COMMAND);
     expect(lastControls()['statsTab']).toBe('files');
+
+    /*
+     * AND THE DEEP-LINK ARM, which is a SECOND branch and was unguarded.
+     *
+     * `agentDeck.openStats` has two: with a session id (the Insights deep
+     * link, DoD 9.5) and without. The verifier deleted `statsTab: 'files'`
+     * from the deep-link branch alone and four test files stayed green —
+     * this test drove the no-argument arm only, so the craft note it was
+     * written to honour ("driven FROM Trends, because landing on Files from
+     * Files passes whatever the code does") covered one arm of two.
+     */
+    await mock.runCommand('agentDeck.stats.tab.trends');
+    expect(lastControls()['statsTab']).toBe('trends');
+    await mock.runCommand(OPEN_STATS_COMMAND, 'ses-deep-link');
+    expect(lastControls()['statsTab']).toBe('files');
+    // ...and the link's own job still happens: the focus is set.
+    expect(lastControls()['focusSessionId']).toBe('ses-deep-link');
   });
 
   it('a STATS TAB press from the panel reaches the host (DoD 9.20)', async () => {

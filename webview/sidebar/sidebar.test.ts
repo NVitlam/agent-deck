@@ -44,6 +44,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { isWebviewToHostMessage } from '../../src/bridge/messages.js';
 import {
   CONTROL_COMMANDS,
+  CONTROL_GROUPS,
   CONTROL_SECTIONS,
   DEFAULT_VIEW_CONTROLS,
   isCommandFrom,
@@ -589,19 +590,31 @@ describe('the DOM goldens', () => {
     }
   });
 
-  it('every View group, expanded', () => {
-    for (const [group, label] of [
-      ['renderer', 'Renderer'],
-      ['sessions', 'Sessions'],
-      ['engines', 'Engines'],
-      ['layout', 'Layout'],
-      ['sort', 'Sort'],
-      ['inspector', 'Inspector'],
-    ] as const) {
+  it('EVERY View group, expanded — all eight, derived from the table', () => {
+    /*
+     * DERIVED FROM `CONTROL_GROUPS`, not a list written here, and that is
+     * the fix rather than a tidy-up: the hand-written list held SIX of the
+     * eight, so `inspectorStatus` and `inspectorOrder` — the two nested
+     * groups, the only ones this delta's nesting exists for — had no
+     * expanded golden at all. A verifier round counted the table against
+     * the list. A list that has to be kept in step with a table is a list
+     * that falls behind it.
+     *
+     * A nested group needs its PARENT opened first, or its head is not in
+     * the DOM to click.
+     */
+    expect(CONTROL_GROUPS.filter((group) => group.section === 'view')).toHaveLength(8);
+    for (const group of CONTROL_GROUPS) {
+      if (group.section !== 'view') continue;
       const panel = mount(baseState({ drawerOpen: true }));
       openPage(panel, 'view');
-      click(panel, label);
-      golden(`view-group-${group}`, domText(panel));
+      if (group.parent !== undefined) {
+        const parent = CONTROL_GROUPS.find((row) => row.id === group.parent);
+        expect(parent, `${group.id} names a parent that is not a group`).toBeDefined();
+        click(panel, parent?.label ?? '');
+      }
+      click(panel, group.label);
+      golden(`view-group-${group.id}`, domText(panel));
       panel.dispose();
       mounted.pop();
     }
@@ -699,9 +712,18 @@ describe('every control the sidebar can send passes the host’s own guard', () 
       ...sidebarCommands(baseState({ insightsInstalled: true, drawerOpen: true })),
     ]);
     expect([...posted].sort()).toStrictEqual([...reachable].sort());
-    // The population, stated: a walk that clicked nothing would agree with
-    // an empty model.
-    expect(posted.size).toBeGreaterThan(20);
+    /*
+     * THE POPULATION, EXACTLY — every command in the table that is not the
+     * panel's.
+     *
+     * It read `toBeGreaterThan(20)` until DoD 9.21, and **21 is precisely
+     * what the broken first version of this walk reached** before it was
+     * fixed to re-read the DOM. A floor that the known-bad case clears is a
+     * floor that would not have reported the known-bad case.
+     */
+    expect(posted.size).toBe(
+      CONTROL_COMMANDS.filter((entry) => isCommandFrom('sidebar', entry.command)).length,
+    );
   });
 
   it('...and EVERY ONE of them is accepted by the real host-side guard', () => {

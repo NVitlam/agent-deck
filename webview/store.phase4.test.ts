@@ -67,7 +67,7 @@ function rig(options: { autoFit?: boolean; enter?: boolean } = {}): Rig {
   }
   const { store } = out;
   store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
-  if (options.autoFit === false) store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {} });
+  if (options.autoFit === false) store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {}, insightsInstalled: false });
   if (options.enter !== false) store.enterSession('session-live');
   store.reportCanvasGeometry(GEOMETRY);
   // Everything above may have fitted; the assertions start from zero.
@@ -278,9 +278,9 @@ describe('DoD 4.0 — agentDeck.canvas.autoFit off: fit is never called after th
   it('defaults to on, and a settings message turns it off', () => {
     const store = createStore();
     expect(store.getView().canvasAutoFit).toBe(true);
-    store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {} });
+    store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {}, insightsInstalled: false });
     expect(store.getView().canvasAutoFit).toBe(false);
-    store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {} });
+    store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {}, insightsInstalled: false });
     expect(store.getView().canvasAutoFit).toBe(true);
   });
 
@@ -308,7 +308,7 @@ describe('DoD 4.0 — agentDeck.canvas.autoFit off: fit is never called after th
 
   it('turning the setting on later does not fit by itself; the next trigger does', () => {
     const r = rig({ autoFit: false });
-    r.store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {} });
+    r.store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {}, insightsInstalled: false });
     expect(r.fits).toBe(0);
     r.store.selectNode('tool-read');
     expect(r.fits).toBe(1);
@@ -352,7 +352,10 @@ describe('DoD 4.1 — the stats messages land in the view, replaced whole', () =
 
 describe('the third view mode (spec §G)', () => {
   it('VIEW_MODES lists the three, and stats is entered and left by its own control', () => {
-    expect(VIEW_MODES).toStrictEqual(['canvas', 'list', 'stats']);
+    // FOUR as of v0.9.0 DoD 9.6. The list is pinned as a SET AND A COUNT
+    // because it is what `setViewMode` validates against: a mode added
+    // without a line here is a mode nothing reviewed.
+    expect(VIEW_MODES).toStrictEqual(['canvas', 'list', 'stats', 'insights']);
     const store = createStore();
     store.toggleStats();
     expect(store.getView().viewMode).toBe('stats');
@@ -458,7 +461,7 @@ describe('the message guard in main.ts and the contract agree', () => {
       { type: 'degraded', engine: 'cc', degraded: false },
       { type: 'statsSnapshot', records: [] },
       { type: 'statsStore', records: [], enabled: true },
-      { type: 'settings', canvasAutoFit: true, tweaks: {} },
+      { type: 'settings', canvasAutoFit: true, tweaks: {}, insightsInstalled: false },
       { type: 'showView', mode: 'stats' },
     ];
     expect([...HOST_MESSAGE_TYPES].sort()).toStrictEqual(samples.map((m) => m.type).sort());

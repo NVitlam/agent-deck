@@ -100,6 +100,9 @@ const DEFAULT_SCOPES = [
   { kind: 'dir', dir: join(REPO_ROOT, 'src', 'stats'), label: 'src/stats' },
   { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'stats'), label: 'webview/stats' },
   { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'sidebar'), label: 'webview/sidebar' },
+  // v0.9.0 DoD 9.6. The Insights tab is the surface most able to drift into
+  // advice, because it is the one that names another product.
+  { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'insights'), label: 'webview/insights' },
   {
     kind: 'block',
     file: join(REPO_ROOT, 'CHANGELOG.md'),

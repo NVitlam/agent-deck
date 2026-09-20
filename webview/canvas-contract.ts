@@ -234,10 +234,17 @@ export const DEFAULT_LIVENESS_FILTER: LivenessFilter = 'all';
  * `stats` is the third mode (v0.7.0 Phase 4, spec §G): the Layer 1 facts,
  * rendered from `StatsRecord[]` and never from a session tree.
  */
-export type ViewMode = 'canvas' | 'list' | 'stats';
+/**
+ * v0.9.0 DoD 9.6 adds `'insights'`, the fourth entry.
+ *
+ * It is a PLACE TO GO, not the next notch of the canvas/list toggle — the
+ * same reading `'stats'` was added under, and the reason `toggleViewMode`
+ * still swaps only those two.
+ */
+export type ViewMode = 'canvas' | 'list' | 'stats' | 'insights';
 
 /** The three modes, in the order a switch renders them. */
-export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats'];
+export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats', 'insights'];
 
 /** The default at startup and after a reload. Canvas, immediately, no setting. */
 export const DEFAULT_VIEW_MODE: ViewMode = 'canvas';
@@ -343,6 +350,30 @@ export const TESTID = {
   viewToggle: 'view-toggle',
   /** Enters the Stats view mode, and leaves it (v0.7.0 Phase 4). */
   statsToggle: 'stats-toggle',
+  /** Enters the Insights view mode, and leaves it (v0.9.0 DoD 9.6). */
+  insightsToggle: 'insights-toggle',
+
+  /* The Insights view mode (v0.9.0 DoD 9.6). */
+  /** The whole surface. Carries data-installed. */
+  insightsView: 'insights-view',
+  /** The counts line. Absent when every count is zero. */
+  insightsCounts: 'insights-counts',
+  /** One non-zero count. data-id, data-count. */
+  insightsCount: 'insights-count',
+  /** The one plain fact line shown when every count is zero. */
+  insightsAllZero: 'insights-all-zero',
+  /** The single product sentence. */
+  insightsSentence: 'insights-sentence',
+  /** The control that shows the next example. */
+  insightsExampleButton: 'insights-example-button',
+  /** The example currently shown. data-example. */
+  insightsExample: 'insights-example',
+  /** The label every example carries. */
+  insightsExampleLabel: 'insights-example-label',
+  /** The one button: get it, or open it. data-action. */
+  insightsAction: 'insights-action',
+  /** The parameters line (IDLE_RESUME_MS and the source fields). */
+  insightsParams: 'insights-params',
   hud: 'hud',
   hudDegradedChip: 'hud-degraded-chip',
 

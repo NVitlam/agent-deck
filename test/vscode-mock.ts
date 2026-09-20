@@ -291,6 +291,8 @@ interface MockState {
   workspaceFolders: { uri: Uri; name: string; index: number }[] | undefined;
   configuration: Map<string, Map<string, unknown>>;
   commands: Map<string, (...args: unknown[]) => unknown>;
+  /** Extension ids this fake editor has installed (DoD 9.6). */
+  extensions: Set<string>;
   panels: MockWebviewPanel[];
   /**
    * Every `createWebviewPanel` call's `viewColumn`, in order (v0.7.0 DoD
@@ -348,6 +350,7 @@ const state: MockState = {
   workspaceFolders: undefined,
   configuration: new Map(),
   commands: new Map(),
+  extensions: new Set<string>(),
   panels: [],
   panelColumns: [],
   executed: [],
@@ -412,6 +415,11 @@ export const mock = {
   },
   hasCommand(id: string): boolean {
     return state.commands.has(id);
+  },
+  /** DoD 9.6 — install or uninstall an extension in this fake editor. */
+  setExtensionInstalled(id: string, installed: boolean): void {
+    if (installed) state.extensions.add(id);
+    else state.extensions.delete(id);
   },
   get panels(): MockWebviewPanel[] {
     return state.panels;
@@ -527,6 +535,19 @@ export const commands = {
     const handler = state.commands.get(command);
     if (handler === undefined) return Promise.resolve(undefined);
     return Promise.resolve(handler(...args));
+  },
+};
+
+/**
+ * `vscode.extensions`, enough of it for DoD 9.6.
+ *
+ * `getExtension` ANSWERS WITHOUT ACTIVATING, and the real one returns a
+ * record rather than a boolean, so the mock does too: a test that set a
+ * boolean here would be testing a shape the editor does not have.
+ */
+export const extensions = {
+  getExtension(id: string): { id: string; isActive: boolean } | undefined {
+    return state.extensions.has(id) ? { id, isActive: false } : undefined;
   },
 };
 

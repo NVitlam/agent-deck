@@ -1202,6 +1202,19 @@ export interface SettingsMessage {
    * untrusted input arrives.
    */
   tweaks: Readonly<Record<string, boolean | string>>;
+  /**
+   * Whether `nvitlam.agent-deck-insights` is installed in this editor —
+   * v0.9.0 DoD 9.6.
+   *
+   * A FIELD on the settings message rather than a message of its own: the
+   * Insights tab needs it at mount and on every reload, which is exactly
+   * when the settings message is already sent, and DoD 5.1’s "no new
+   * host<->webview message types" is still the standing rule.
+   *
+   * It is a statement about the EDITOR, not about the user: the webview
+   * cannot ask, and guessing from a failed command would mean running one.
+   */
+  insightsInstalled: boolean;
 }
 
 /**

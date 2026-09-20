@@ -9,6 +9,7 @@
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
   import StatsView from './stats/StatsView.svelte';
+  import Insights from './insights/Insights.svelte';
   import { displayLiveness, formatTokens, formatWindowTokens } from './format.js';
   import { LIVENESS_FILTERS, TESTID } from './canvas-contract.js';
   import { deckEngine } from './layout.js';
@@ -292,7 +293,18 @@
     >
       Stats
     </button>
-    {#if view.viewMode !== 'stats'}
+    <!-- DoD 9.6. Beside Stats and read the same way: a place to go, not
+         the next notch of the canvas/list toggle. -->
+    <button
+      type="button"
+      class="toggle"
+      data-testid={TESTID.insightsToggle}
+      aria-pressed={view.viewMode === 'insights'}
+      onclick={() => store.setViewMode(view.viewMode === 'insights' ? 'canvas' : 'insights')}
+    >
+      Insights
+    </button>
+    {#if view.viewMode !== 'stats' && view.viewMode !== 'insights'}
       <button
         type="button"
         class="toggle"
@@ -306,7 +318,12 @@
     {/if}
   </div>
 
-  {#if view.viewMode === 'stats'}
+  {#if view.viewMode === 'insights'}
+    <!-- DoD 9.6. THIS USER’S OWN HISTORY (the store), not this window’s
+         live sessions: the counts are about what has been recorded, and a
+         window opened a minute ago has recorded almost nothing. -->
+    <Insights {store} {view} records={view.statsStored} />
+  {:else if view.viewMode === 'stats'}
     <!-- The Layer 1 facts. Full stats live in the panel (locked open
          question); this is the whole field while the mode is on. -->
     <StatsView {store} {view} />

@@ -64,6 +64,11 @@
         "command": "agentDeck.stats.clearHistory",
         "title": "Clear Stats History",
         "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.insights",
+        "title": "Insights",
+        "category": "Agent Deck"
       }
     ],
     "configuration": {

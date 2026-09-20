@@ -57,6 +57,15 @@ import type { DeckSortMode } from './layout.js';
 import { fit as fitCanvas } from './layout/fit.js';
 import type { DrawerRect } from './layout/fit.js';
 import type { StatsRecord } from '../src/stats/schema.js';
+
+/**
+ * The one command this surface may ask the host to run — DoD 9.6.
+ *
+ * Written here rather than imported from `src/extension.ts`: this module is
+ * the webview’s, it reaches no host module, and `insights.test.ts` holds
+ * the two literals against each other so they cannot part.
+ */
+export const INSIGHTS_COMMAND = 'agentDeck.insights';
 import {
   DECK_FIT_PADDING,
   DECK_ZOOM_LIMITS,
@@ -579,6 +588,23 @@ export interface WebviewView {
    */
   canvasAutoFit: boolean;
   /**
+   * Whether `nvitlam.agent-deck-insights` is installed — v0.9.0 DoD 9.6.
+   *
+   * From the host, on the settings message. Defaults to FALSE before one
+   * arrives, which is the safe direction: the tab offers to get it, and a
+   * user who has it sees the other button one message later. Claiming it was
+   * installed and running a command that does not exist is the failure with
+   * no good recovery.
+   */
+  insightsInstalled: boolean;
+  /**
+   * How many times the Insights example has been asked for — DoD 9.6.
+   *
+   * WEBVIEW-LOCAL, never persisted, never sent: G7. It exists so the three
+   * examples rotate 1 -> 2 -> 3 -> 1, and `exampleAt` is what reads it.
+   */
+  insightsOpenCount: number;
+  /**
    * `agentDeck.defaultOrdering`, as the host last said (DoD 7.6).
    *
    * ABSENT until a `settings` message states a value this build knows — which
@@ -685,6 +711,26 @@ export interface Store {
    * empty pane.
    */
   setDetailAction(actionId: string | undefined): void;
+  /**
+   * Show the next Insights example — v0.9.0 DoD 9.6.
+   *
+   * Advances the webview-local counter and notifies. Nothing is posted: the
+   * examples are static and the host has no part in them.
+   */
+  nextInsightsExample(): void;
+  /**
+   * Ask the host to run `agentDeck.insights` — v0.9.0 DoD 9.6.
+   *
+   * NARROW ON PURPOSE. A generic `runCommand(id)` here would let any
+   * component ask the host to run anything, and the host’s own guard is a
+   * single equality precisely so the webview cannot choose. This is the
+   * only command the panel can ask for, and its name is written once.
+   *
+   * What the command DOES is the host’s to decide: installed, it opens
+   * Insights; not installed, it opens the page. The webview renders the
+   * word and does not branch on it.
+   */
+  openInsights(): void;
   /**
    * Switch renderers (C7.2). Not persisted, not a setting, not a message.
    *
@@ -911,6 +957,8 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let defaultOrdering: DeckSortMode | undefined;
   /* ----- auto-fit state (DoD 4.0) ----------------------------------------- */
   let canvasAutoFit = true;
+  let insightsInstalled = false;
+  let insightsOpenCount = 0;
   let canvasFitEpoch = 0;
   /** What the renderer last reported. `null` until it has reported once. */
   let geometry: CanvasGeometry | null = null;
@@ -1219,6 +1267,8 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         canvasView: { ...canvasView },
         resyncs,
         canvasAutoFit,
+        insightsInstalled,
+        insightsOpenCount,
         canvasFitEpoch,
         statsLive,
         statsStored,
@@ -1272,6 +1322,11 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
           break;
         case 'settings':
           canvasAutoFit = message.canvasAutoFit;
+          // DoD 9.6. Read defensively, for the reason the block below states
+          // about `tweaks`: the message guard checks `type` and nothing else,
+          // so a settings message without this field is a shape the renderer
+          // has to survive. Anything but `true` is "not installed".
+          insightsInstalled = message.insightsInstalled === true;
           // DoD 7.6. Three of the four tweaks change what this reducer does;
           // the fourth (`defaultOrdering`) is the deck's own control bar. The
           // keys are `TWEAK_SETTINGS`' keys, without the `agentDeck.` prefix.
@@ -1550,6 +1605,15 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       // on the canvas.
       if (modeChanged && mode === 'canvas') triggerFit();
       notify();
+    },
+
+    nextInsightsExample(): void {
+      insightsOpenCount += 1;
+      notify();
+    },
+
+    openInsights(): void {
+      postIntent({ type: 'runCommand', command: INSIGHTS_COMMAND });
     },
 
     toggleStats(): void {

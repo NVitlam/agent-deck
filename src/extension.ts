@@ -4802,9 +4802,16 @@ export class AgentDeckHost {
     this.#panel?.setSettings(this.#settingsMessage());
   }
 
-  /** What every surface is told, from the two values held here. One builder. */
+  /** What every surface is told, from the values held here. One builder. */
   #settingsMessage(): Omit<SettingsMessage, 'type'> {
-    return { canvasAutoFit: this.#canvasAutoFit, tweaks: this.#tweaks };
+    return {
+      canvasAutoFit: this.#canvasAutoFit,
+      tweaks: this.#tweaks,
+      // DoD 9.6 — read at SEND time rather than held, so a panel reload
+      // after the user installs Insights reports the new answer without
+      // anything having to notice the install.
+      insightsInstalled: isInsightsInstalled(),
+    };
   }
 
   /** The tweaks as this host last read them, for a surface it does not own. A copy. */
@@ -4952,6 +4959,21 @@ export class AgentDeckHost {
         // that it could not apply what we sent. `PanelController` has already
         // done the repair by the time this runs; what is left is to say so
         // where a human can read it (DoD 5.5.3).
+        /*
+         * v0.9.0 DoD 9.6 — the ONE command the panel acts on.
+         *
+         * An EQUALITY against one constant, not a list and not a prefix: the
+         * sidebar gates its own `runCommand` on `SIDEBAR_MENU` because it
+         * has five entries, and this surface has one. A webview asking for
+         * anything else is dropped exactly as `expandNode` is — the panel
+         * stays a renderer, and the one exception is named here in full.
+         */
+        if (message.type === 'runCommand') {
+          if (message.command === INSIGHTS_COMMAND) {
+            void vscode.commands.executeCommand(INSIGHTS_COMMAND);
+          }
+          return;
+        }
         if (message.type !== 'resyncRequest') return;
         this.diagnostics?.record({
           kind: 'resyncRequest',
@@ -5017,6 +5039,50 @@ export const OPEN_SETTINGS_COMMAND = 'agentDeck.openSettings';
 
 /** The workbench command `agentDeck.openSettings` runs, and its argument. */
 export const WORKBENCH_OPEN_SETTINGS = 'workbench.action.openSettings';
+
+/**
+ * Layer 2, as a separate extension — v0.9.0 DoD 9.6.
+ *
+ * Named here, once, and read by `#settingsMessage()` and by the command
+ * below. Agent Deck never requires it, never activates it and never fails
+ * because it is absent: everything Layer 1 does, it does alone.
+ */
+export const INSIGHTS_EXTENSION_ID = 'nvitlam.agent-deck-insights';
+
+/** The command Insights contributes. Run only when it is installed. */
+export const INSIGHTS_OPEN_COMMAND = 'agentDeckInsights.open';
+
+/**
+ * The editor's own command for showing one extension's page.
+ *
+ * `extension.open` opens the Marketplace page INSIDE VS Code. That is what
+ * the spec amendment asks for, and it is also why no URL is opened here:
+ * the extension makes no network call, the editor does.
+ */
+export const WORKBENCH_OPEN_EXTENSION = 'extension.open';
+
+/** `agentDeck.insights`: get it, or open it. */
+export const INSIGHTS_COMMAND = 'agentDeck.insights';
+
+/**
+ * Is Layer 2 installed in this editor? — v0.9.0 DoD 9.6.
+ *
+ * `getExtension` ANSWERS WITHOUT ACTIVATING: it returns the extension’s
+ * record, and `isActive` on that record is a different question nobody here
+ * asks. So this is a statement about what the editor has, taken without
+ * running anything of theirs.
+ *
+ * Wrapped, because it is read at activation and on every settings change,
+ * and an editor that throws here must not take the panel down with it: a
+ * failed probe reads as NOT INSTALLED, which is the state that still works.
+ */
+export function isInsightsInstalled(): boolean {
+  try {
+    return vscode.extensions.getExtension(INSIGHTS_EXTENSION_ID) !== undefined;
+  } catch {
+    return false;
+  }
+}
 export const SETTINGS_FILTER = '@ext:nvitlam.agent-deck';
 
 /**
@@ -5470,7 +5536,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    */
   const settingsMessageFor = (): Omit<SettingsMessage, 'type'> => {
     const current = readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION));
-    return { canvasAutoFit: current['canvas.autoFit'], tweaks: tweaksOf(current) };
+    return {
+      canvasAutoFit: current['canvas.autoFit'],
+      tweaks: tweaksOf(current),
+      // DoD 9.6. The sidebar is told the same fact the panel is, from the
+      // same probe, so the two surfaces cannot disagree about whether
+      // Insights is installed.
+      insightsInstalled: isInsightsInstalled(),
+    };
   };
 
   context.subscriptions.push(
@@ -5513,6 +5586,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      */
     vscode.commands.registerCommand(OPEN_SETTINGS_COMMAND, () => {
       void vscode.commands.executeCommand(WORKBENCH_OPEN_SETTINGS, SETTINGS_FILTER);
+    }),
+    /*
+     * v0.9.0 DoD 9.6. ONE command, two outcomes, and the branch is a fact
+     * about the editor rather than a preference: installed -> run its panel
+     * command; not installed -> open its page. Registered UNCONDITIONALLY,
+     * above the activation gates, like the sidebar and the clear command:
+     * a workspace with no observable engine can still reach it.
+     */
+    vscode.commands.registerCommand(INSIGHTS_COMMAND, () => {
+      if (isInsightsInstalled()) {
+        void vscode.commands.executeCommand(INSIGHTS_OPEN_COMMAND);
+        return;
+      }
+      void vscode.commands.executeCommand(WORKBENCH_OPEN_EXTENSION, INSIGHTS_EXTENSION_ID);
     }),
     /*
      * v0.7.0 DoD 4.6b — THE SIDEBAR, registered UNCONDITIONALLY and above the

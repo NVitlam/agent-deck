@@ -486,9 +486,33 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
       'Settings',
       'Clear Stats History',
     ]);
-    // Five contributed commands, exactly the five the menu names: no dead
-    // palette entry and no menu entry without one.
-    expect([...contributed].sort()).toStrictEqual(SIDEBAR_MENU.map((e) => e.command).sort());
+    /*
+     * Every contributed command is either a menu entry or an ENUMERATED
+     * exception with its reason beside it — no dead palette entry, and no
+     * menu entry without a command.
+     *
+     * The list was `SIDEBAR_MENU`’s five exactly until v0.9.0, when DoD 9.6
+     * added a command that is deliberately not a menu entry. Loosening the
+     * equality to a containment would have given away the "no dead palette
+     * entry" half; enumerating the exceptions keeps both halves, and a
+     * seventh command appearing without a line here is still red.
+     */
+    const NON_MENU_COMMANDS: readonly { command: string; why: string }[] = [
+      {
+        command: 'agentDeck.insights',
+        why: 'v0.9.0 DoD 9.6 — reached from the Insights tab\u2019s own button and from '
+          + 'the palette. Not a menu entry: the menu is the five locked in v0.7.0 and '
+          + 'readme.test.ts pins its labels.',
+      },
+    ];
+    expect([...contributed].sort()).toStrictEqual(
+      [...SIDEBAR_MENU.map((e) => e.command), ...NON_MENU_COMMANDS.map((c) => c.command)].sort(),
+    );
+    // Every exception carries a reason. A line added with an empty `why` is
+    // an exception nobody justified.
+    for (const entry of NON_MENU_COMMANDS) {
+      expect(entry.why.length, `${entry.command} has no reason`).toBeGreaterThan(20);
+    }
   });
 });
 

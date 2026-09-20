@@ -87,6 +87,10 @@ import {
   readSettings,
   OPEN_SETTINGS_COMMAND,
   OPEN_STATS_COMMAND,
+  INSIGHTS_COMMAND,
+  INSIGHTS_EXTENSION_ID,
+  INSIGHTS_OPEN_COMMAND,
+  WORKBENCH_OPEN_EXTENSION,
   EVEN_EDITOR_WIDTHS,
   SETTINGS_FILTER,
   StatsPipeline,
@@ -6864,6 +6868,8 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     expect(panel?.webview.posted[types.indexOf('settings')]).toStrictEqual({
       type: 'settings',
       canvasAutoFit: false,
+      // v0.9.0 DoD 9.6 - false because this fake editor installs no Insights.
+      insightsInstalled: false,
       tweaks: tweaksOf(readSettings(undefined)),
     });
     expect(types.indexOf('settings')).toBeGreaterThan(types.indexOf('snapshot'));
@@ -6897,6 +6903,8 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     expect(panel?.webview.posted.at(-1)).toStrictEqual({
       type: 'settings',
       canvasAutoFit: true,
+      // v0.9.0 DoD 9.6 - false because this fake editor installs no Insights.
+      insightsInstalled: false,
       tweaks: tweaksOf(readSettings(undefined)),
     });
   });
@@ -6975,6 +6983,85 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     }
   });
 
+  /*
+   * v0.9.0 DoD 9.6 — one command, two outcomes.
+   *
+   * The branch is a fact about the EDITOR, taken with `getExtension`, which
+   * answers without activating anything of theirs.
+   */
+  it('agentDeck.insights opens the Marketplace page when it is NOT installed', async () => {
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(INSIGHTS_COMMAND);
+    expect(mock.executed).toContainEqual({
+      command: WORKBENCH_OPEN_EXTENSION,
+      args: [INSIGHTS_EXTENSION_ID],
+    });
+    // And it did NOT try to run a command that does not exist.
+    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_OPEN_COMMAND);
+  });
+
+  it('agentDeck.insights runs its panel command when it IS installed', async () => {
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(INSIGHTS_COMMAND);
+    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_OPEN_COMMAND);
+    expect(mock.executed.map((e) => e.command)).not.toContain(WORKBENCH_OPEN_EXTENSION);
+  });
+
+  it('the settings message reports whether Insights is installed', async () => {
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_COMMAND);
+    const settings = (mock.panels[0]?.webview.posted ?? []).filter(
+      (m) => (m as { type?: string }).type === 'settings',
+    );
+    expect(settings.length).toBeGreaterThan(0);
+    for (const message of settings) {
+      expect((message as { insightsInstalled?: unknown })['insightsInstalled']).toBe(true);
+    }
+  });
+
+  it('a panel runCommand naming anything but the Insights command is dropped', async () => {
+    // The panel stays a RENDERER. Its one exception is an equality against
+    // one constant, so this is the arm that proves the equality is not a
+    // prefix, a list, or an allow-everything.
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    const workspacePath = await capturedWorkspacePath();
+    await activateOnFreePort((port) => {
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+    });
+    await mock.runCommand(OPEN_COMMAND);
+    const before = mock.executed.length;
+    for (const hostile of [
+      'workbench.action.closeWindow',
+      'agentDeck.stats.clearHistory',
+      'agentDeck.insights ',
+      'agentDeck.insight',
+      '',
+    ]) {
+      mock.panels[0]?.fireMessage({ type: 'runCommand', command: hostile });
+    }
+    expect(mock.executed.length, "a hostile runCommand reached the editor").toBe(before);
+  });
+
   it('a reload re-sends the settings, after asking for the snapshot', () => {
     const panel = fakePanel();
     let snapshots = 0;
@@ -6988,7 +7075,13 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     // v0.8.0 DoD 7.6: `tweaks` rides on the SAME message, so what a reload
     // re-sends is both halves or neither. A non-default value here, so a
     // re-send that quietly rebuilt the message from defaults would fail.
-    const sent = { canvasAutoFit: false, tweaks: { followNewSessions: true } };
+    const sent = {
+      canvasAutoFit: false,
+      tweaks: { followNewSessions: true },
+      // DoD 9.6, non-default for the same reason the two above are: a
+      // re-send that rebuilt the message from defaults would fail here.
+      insightsInstalled: true,
+    };
     controller.setSettings(sent);
     expect(panel.posted).toStrictEqual([{ type: 'settings', ...sent }]);
     panel.fireBecameVisible();

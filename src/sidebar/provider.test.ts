@@ -226,7 +226,7 @@ function tweaksMessage(overrides: Record<string, boolean | string> = {}): Omit<S
   for (const tweak of TWEAK_SETTINGS) {
     tweaks[tweak.key] = tweak.kind === 'boolean' ? true : (tweak.options?.[1] ?? '');
   }
-  return { canvasAutoFit: true, tweaks: { ...tweaks, ...overrides } };
+  return { canvasAutoFit: true, tweaks: { ...tweaks, ...overrides }, insightsInstalled: false };
 }
 
 describe('the Tweaks tab, host half (DoD 7.6)', () => {

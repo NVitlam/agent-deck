@@ -841,6 +841,26 @@
     display: flex;
     align-items: baseline;
     gap: 14px;
+    /*
+     * v0.9.0 DoD 9.9 — THE HEADER WRAPS.
+     *
+     * DoD 7.9 stopped the fields shrinking below their own text, which is
+     * why they no longer paint over each other. What it could not do is
+     * make seven fields fit a panel too narrow for them: at the narrow end
+     * they simply ran off the visible width and `overflow: hidden` cut
+     * them. A row break is the remaining half.
+     *
+     * `row-gap` is declared SEPARATELY from the `gap` shorthand above so
+     * the two can differ — a wrapped row needs less vertical air than the
+     * horizontal rhythm — and so `inspector-header.ts` can read it as its
+     * own value rather than inferring one.
+     *
+     * `overflow: hidden` STAYS. Wrapping removes the need to cut at the
+     * narrow end; it does not make a cut impossible at a width narrower
+     * than a single field.
+     */
+    flex-wrap: wrap;
+    row-gap: 6px;
     min-width: 0;
     overflow: hidden;
   }

@@ -1,6 +1,6 @@
 {
-  "what": "the seven header fields at a 1200px panel (mid)",
-  "panelPx": 1200,
+  "what": "the seven header fields at a 700px panel (narrow) - the row wraps",
+  "panelPx": 700,
   "reservedPx": 520,
   "fields": [
     {
@@ -47,10 +47,10 @@
     }
   ],
   "layout": {
-    "availablePx": 680,
+    "availablePx": 180,
     "naturalPx": 907.6,
-    "usedPx": 657.6,
-    "visiblePx": 657.6,
+    "usedPx": 237.6,
+    "visiblePx": 180,
     "fields": [
       {
         "field": "status",
@@ -65,45 +65,45 @@
       },
       {
         "field": "id",
-        "x": 72,
+        "x": 0,
         "width": 128,
         "contentPx": 26.4,
         "overflows": false,
-        "row": 0,
-        "y": 0,
+        "row": 1,
+        "y": 6,
         "clipped": false,
         "outside": false
       },
       {
         "field": "sessionId",
-        "x": 214,
+        "x": 0,
         "width": 237.6,
         "contentPx": 237.6,
         "overflows": false,
-        "row": 0,
-        "y": 0,
-        "clipped": false,
+        "row": 2,
+        "y": 12,
+        "clipped": true,
         "outside": false
       },
       {
         "field": "spawnDepth",
-        "x": 465.6,
+        "x": 0,
         "width": 74,
         "contentPx": 67.32,
         "overflows": false,
-        "row": 0,
-        "y": 0,
+        "row": 3,
+        "y": 18,
         "clipped": false,
         "outside": false
       },
       {
         "field": "context",
-        "x": 553.6,
+        "x": 0,
         "width": 104,
         "contentPx": 46.2,
         "overflows": false,
-        "row": 0,
-        "y": 0,
+        "row": 4,
+        "y": 24,
         "clipped": false,
         "outside": false
       },
@@ -113,26 +113,28 @@
         "width": 158,
         "contentPx": 145.2,
         "overflows": false,
-        "row": 1,
-        "y": 6,
+        "row": 5,
+        "y": 30,
         "clipped": false,
         "outside": false
       },
       {
         "field": "duration",
-        "x": 172,
+        "x": 0,
         "width": 64,
         "contentPx": 48.96,
         "overflows": false,
-        "row": 1,
-        "y": 6,
+        "row": 6,
+        "y": 36,
         "clipped": false,
         "outside": false
       }
     ],
     "overlaps": [],
-    "clipped": [],
+    "clipped": [
+      "sessionId"
+    ],
     "outside": [],
-    "rows": 2
+    "rows": 7
   }
 }

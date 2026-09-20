@@ -52,7 +52,23 @@ const golden = (name: string): HeaderGolden =>
   JSON.parse(readFileSync(resolve(`webview/goldens/drawer/${name}`), 'utf8')) as HeaderGolden;
 
 const WIDE = golden('header-2400.json');
+/**
+ * The MID width. It was called NARROW until v0.9.0, when a genuinely narrow
+ * table joined it; the name is kept so every existing reference below still
+ * reads, and `MID` is its alias for the new ones.
+ */
 const NARROW = golden('header-1200.json');
+const MID = NARROW;
+/**
+ * The NARROW width — v0.9.0 DoD 9.9.
+ *
+ * 700px against a reserved 520 leaves 180, which is less than the widest
+ * single field, so every field takes a row of its own AND `sessionId` is
+ * still clipped. That is the honest extreme, and it is the table that
+ * proves the stylesheet's own claim: wrapping removes the need to cut at the
+ * narrow end, it does not make a cut impossible.
+ */
+const TIGHT = golden('header-700.json');
 
 /** The seven fields `Inspector.svelte` renders for an agent node. */
 const FIELD_NAMES = [
@@ -182,10 +198,66 @@ describe('contentWidthPx — the character-advance model, stated as an estimate'
   });
 });
 
-describe('the goldens — 2400px and 1200px', () => {
+describe('the wrap declarations — v0.9.0 DoD 9.9', () => {
+  /** The shipped stylesheet with one declaration rewritten. */
+  const withStyle = (replace: (css: string) => string): string =>
+    SOURCE.replace(/<style>[\s\S]*<\/style>/, (block) => replace(block));
+
+  it('reads flex-wrap and row-gap off .fields', () => {
+    const css = parseHeaderCss(SOURCE);
+    expect(css.wrap).toBe(true);
+    expect(css.rowGapPx).toBe(6);
+    // Declared SEPARATELY from the gap shorthand, so the two really differ
+    // and a parser that read one for the other would be visible here.
+    expect(css.gapPx).toBe(14);
+    expect(css.rowGapPx).not.toBe(css.gapPx);
+  });
+
+  it('row-gap falls back to the gap shorthand when the rule declares none', () => {
+    /*
+     * THE BRANCH A MUTATION SURVIVED ON.
+     *
+     * The shipped stylesheet declares `row-gap`, so this fallback is never
+     * taken by the real parse: replacing it with `0` left the whole suite
+     * green. It is not decoration — `gap: 14px` alone sets BOTH axes, which
+     * is what the shorthand means, and a parser that read the row gap as 0
+     * there would stack wrapped rows on top of each other.
+     */
+    const noRowGap = withStyle((block) => block.replace(/\n\s*row-gap:\s*6px;/, ''));
+    // The DECLARATION, not the word: the rule's own comment names `row-gap`
+    // in prose, so asserting the bare string would fail on the comment.
+    expect(noRowGap).not.toContain('row-gap:');
+    const css = parseHeaderCss(noRowGap);
+    expect(css.rowGapPx).toBe(css.gapPx);
+    expect(css.rowGapPx).toBe(14);
+    // The control: the shipped sheet does NOT take this branch, which is why
+    // the mutation could survive in the first place.
+    expect(parseHeaderCss(SOURCE).rowGapPx).toBe(6);
+  });
+
+  it('a stylesheet with no flex-wrap parses as nowrap, and places one row', () => {
+    // The pre-0.9.0 state, read off a real stylesheet rather than a literal.
+    const noWrap = withStyle((block) => block.replace(/\n\s*flex-wrap:\s*wrap;/, ''));
+    const css = parseHeaderCss(noWrap);
+    expect(css.wrap).toBe(false);
+    const layout = layoutHeader({
+      panelPx: TIGHT.panelPx,
+      reservedPx: TIGHT.reservedPx,
+      fields: TIGHT.fields,
+      css,
+    });
+    expect(layout.rows).toBe(1);
+    // And that is the state the DoD exists to leave behind: one row at 700px
+    // means fields nobody can read.
+    expect(layout.outside.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the goldens — 2400px, 1200px and 700px', () => {
   it.each([
     ['2400px', WIDE],
-    ['1200px', NARROW],
+    ['1200px', MID],
+    ['700px', TIGHT],
   ])('%s reproduces its committed placement', (_name, g) => {
     expect(g.reservedPx).toBe(HEADER_RESERVED_PX);
     expect(layoutHeader({ panelPx: g.panelPx, reservedPx: g.reservedPx, fields: g.fields, css: headerCss() })).toEqual(
@@ -195,7 +267,8 @@ describe('the goldens — 2400px and 1200px', () => {
 
   it.each([
     ['2400px', WIDE],
-    ['1200px', NARROW],
+    ['1200px', MID],
+    ['700px', TIGHT],
   ])('%s places no field’s text inside another field’s box', (_name, g) => {
     // RECOMPUTED, not read back out of the golden. The first draft asserted
     // over `g.layout.overlaps` — the committed answer — which is a mirror of
@@ -215,33 +288,64 @@ describe('the goldens — 2400px and 1200px', () => {
     expect(g.layout.overlaps).toEqual([]);
   });
 
-  it('the two goldens differ in which trailing fields are drawn, not in the boxes', () => {
-    // Two widths that agreed about everything would be one golden written
-    // twice. With `.field` at shrink 0 the group's content does not reflow
-    // with the panel, so the boxes are identical and what moves is how much of
-    // the group is inside `.fields`' `overflow: hidden`.
-    const boxes = (g: HeaderGolden): unknown =>
-      g.layout.fields.map((f) => [f.field, f.x, f.width, f.contentPx]);
-    expect(boxes(NARROW)).toEqual(boxes(WIDE));
+  it('the three goldens differ in HOW MANY ROWS, and every field is drawn at 1200', () => {
+    // Three widths that agreed about everything would be one golden written
+    // three times. What moves between them is the row count.
+    expect(WIDE.layout.rows).toBe(1);
+    expect(MID.layout.rows).toBe(2);
+    expect(TIGHT.layout.rows).toBe(7);
 
     expect(WIDE.layout.availablePx).toBe(1880);
-    expect(NARROW.layout.availablePx).toBe(680);
-    expect(WIDE.layout.visiblePx).toBe(907.6);
-    expect(NARROW.layout.visiblePx).toBe(680);
+    expect(MID.layout.availablePx).toBe(680);
+    expect(TIGHT.layout.availablePx).toBe(180);
 
+    /*
+     * v0.9.0 DoD 9.9 REMOVES DoD 7.9's STATED COST, and this is the
+     * assertion that records it.
+     *
+     * Until 0.9.0 this test read: "At 1200 the row is wider than the space it
+     * is given: `burn` is cut at the right-hand edge and `duration` is not
+     * drawn at all. That is the stated cost of the fix — a whole field leaves
+     * the row instead of two values sharing one patch of screen."
+     *
+     * The row breaks now, so nothing is cut and nothing leaves. Both halves
+     * are asserted, because "no overlap" was already true at 1200 and it is
+     * the DRAWN-ness that changed.
+     */
     expect(WIDE.layout.clipped).toEqual([]);
     expect(WIDE.layout.outside).toEqual([]);
-    // At 1200 the row is wider than the space it is given: `burn` is cut at
-    // the right-hand edge and `duration` is not drawn at all. That is the
-    // stated cost of the fix — a whole field leaves the row instead of two
-    // values sharing one patch of screen.
-    expect(NARROW.layout.clipped).toEqual(['burn']);
-    expect(NARROW.layout.outside).toEqual(['duration']);
+    expect(MID.layout.clipped).toEqual([]);
+    expect(MID.layout.outside).toEqual([]);
+
+    /*
+     * AND THE LIMIT, which the stylesheet's own comment claims: wrapping
+     * removes the need to cut at the narrow end, it does not make a cut
+     * impossible. At 700px the group is offered 180, which is narrower than
+     * `sessionId` alone, so that one field is still cut — on a row of its
+     * own, with nothing beside it to paint over.
+     */
+    expect(TIGHT.layout.clipped).toEqual(['sessionId']);
+    expect(TIGHT.layout.outside).toEqual([]);
+    expect(new Set(TIGHT.layout.fields.map((f) => f.row)).size).toBe(7);
   });
 });
 
 describe('the defect the fix removes, driven through the same model', () => {
-  const shipped = (): HeaderCss => ({ ...parseHeaderCss(SOURCE), shrink: 1 });
+  /**
+ * The state the user's v0.7.1 smoke recorded, reproduced from the current
+   * stylesheet.
+   *
+   * TWO declarations are taken back out, not one. `shrink: 1` is DoD 7.9’s
+   * fix; `wrap: false` is DoD 9.9’s. With the wrap left on, the seven fields
+   * break across rows and the session id has nothing to paint over — so the
+   * control below would report no overlap and would be proving nothing,
+   * which is exactly the shape it exists to rule out.
+   */
+  const shipped = (): HeaderCss => ({
+    ...parseHeaderCss(SOURCE),
+    shrink: 1,
+    wrap: false,
+  });
 
   it('at 1200px the shipped shrink factor paints the session id over two fields', () => {
     // THE CONTROL THAT MAKES "no overlaps" MEAN SOMETHING. Every no-overlap
@@ -339,6 +443,11 @@ describe('the flex resolution itself', () => {
       valueFontPx: 1 / MONO_ADVANCE_RATIO,
       labelFontPx: 1 / MONO_ADVANCE_RATIO,
       labelLetterSpacingEm: 0,
+      // v0.9.0 DoD 9.9. NOWRAP here on purpose: this test is about the
+      // shrink pass, and wrapping would give the two fields a row each and
+      // remove the deficit the arithmetic above exists to check.
+      wrap: false,
+      rowGapPx: 10,
     };
     const layout = layoutHeader({
       panelPx: 390,

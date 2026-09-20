@@ -311,7 +311,7 @@ describe('6.D.1 — the page describes 0.7.0 and 0.7.1 as shipped', () => {
     }
   });
 
-  it('lists the sidebar menu as src/sidebar/menu.ts declares it', () => {
+  it('lists the sidebar menu as src/view/controls.ts declares it', () => {
     for (const entry of SIDEBAR_MENU) expect(PAGE_TEXT, entry.label).toContain(entry.label);
     expect(SIDEBAR_MENU.length).toBeGreaterThan(0);
   });

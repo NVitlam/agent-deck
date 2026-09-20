@@ -98,9 +98,19 @@ function clickables(root: ParentNode): string[] {
   });
 }
 
-/** The ones the amendment does NOT allow. */
+/**
+ * The ones the amendment does NOT allow.
+ *
+ * `Object.hasOwn`, never a truthiness read of `ALLOWED[id]`: a frozen object
+ * literal still inherits `toString`, `constructor`, `valueOf` and
+ * `hasOwnProperty`, so an element with one of those as its testid would have
+ * been SILENTLY EXEMPTED — contradicting this file's own promise that an
+ * unnamed control is one nobody can exempt on purpose. A verifier round found
+ * it; no such testid exists, which is exactly why it would have stayed found
+ * only by reading.
+ */
 function chrome(root: ParentNode): string[] {
-  return [...new Set(clickables(root).filter((id) => ALLOWED[id] === undefined))].sort();
+  return [...new Set(clickables(root).filter((id) => !Object.hasOwn(ALLOWED, id)))].sort();
 }
 
 /* ------------------------------------------------------------------------ *
@@ -353,6 +363,21 @@ describe('the walk is not vacuous', () => {
     planted.setAttribute('data-testid', 'filter-chip');
     one(panel.container, TESTID.deck).appendChild(planted);
     expect(chrome(panel.container)).toStrictEqual(['filter-chip']);
+  });
+
+  it('a control named after an INHERITED property is found too', () => {
+    // The prototype hole a verifier round found: `ALLOWED['toString']` is a
+    // function on a frozen object literal, so a truthiness read would have
+    // exempted every one of these.
+    const panel = render();
+    send({ type: 'snapshot', sessions: [liveSession()] });
+    for (const inherited of ['toString', 'constructor', 'valueOf', 'hasOwnProperty']) {
+      const planted = document.createElement('button');
+      planted.setAttribute('data-testid', inherited);
+      one(panel.container, TESTID.deck).appendChild(planted);
+      expect(chrome(panel.container), inherited).toContain(inherited);
+      planted.remove();
+    }
   });
 
   it('an UNNAMED control is found too, and named as such', () => {

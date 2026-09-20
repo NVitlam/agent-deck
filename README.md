@@ -252,7 +252,7 @@ back out of a session, and `k` collapses the tree.
 
 ![The Agent Deck sidebar in the activity bar](media/sidebar.png)
 
-![The sidebar's Tweaks tab: four settings, three checked, deck ordering live](media/sidebar-tweaks.png)
+![The sidebar's four settings, three checked, deck ordering live — a screenshot of the previous release's Tweaks tab, to be retaken](media/sidebar-tweaks.png)
 
 Every entry is also in the Command Palette, under **Agent Deck:**. Your sessions appear on their
 own — there is nothing to point it at and nothing to switch on.

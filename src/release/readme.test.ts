@@ -73,7 +73,12 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { MENU_COMMANDS as SIDEBAR_MENU } from '../view/controls.js';
+import {
+  CONTROL_COMMANDS,
+  CONTROL_GROUPS,
+  CONTROL_KEYBINDINGS,
+  MENU_COMMANDS as SIDEBAR_MENU,
+} from '../view/controls.js';
 import { LOOP_MIN, SPIKE_TOKENS } from '../stats/constants.js';
 import { costOfSeries, parsePricing } from '../stats/pricing.js';
 import type { StatsRecord } from '../stats/schema.js';
@@ -248,7 +253,7 @@ const RELEASE_IMAGES: readonly string[] = [
   // Committed as a placeholder the user replaces with a capture; the
   // package-audit leg of `vsix.test.ts` refuses to package the placeholder.
   'media/sidebar.png',
-  // v0.8.0 DoD 7.D: the 7.12 capture of the sidebar's Tweaks tab, unedited.
+  // v0.8.0 DoD 7.D: the 7.12 capture of the sidebar's four settings, unedited.
   'media/sidebar-tweaks.png',
   // SEVEN SINCE v0.7.1 (DoD 6.D.4): the Stats view's Tokens part with the
   // telemetry cost and its label, linked from the telemetry section: the 6.9
@@ -1820,6 +1825,58 @@ const SUPERSEDED_CONTROLS = [
   'Do not build drift tolerance into the fingerprint.',
 ];
 
+describe.skipIf(SPEC === null)('the Clean-windows amendment names what shipped', () => {
+  /*
+   * v0.9.0 DoD 9.14. `PLAN.md`'s delta calls that amendment "the law", and a
+   * verifier round found its own table saying `Sort Live first/Recent` while
+   * the build shipped three sorts — and naming neither Statistics nor
+   * Inspector, which rulings 4 and 5 add. NOTHING BOUND THE TABLE TO THE
+   * CODE, so the two could disagree indefinitely.
+   *
+   * This is the binding. It is deliberately about LABELS rather than about
+   * the table's layout: the spec is prose and may arrange its rows however
+   * reads best, but every label a user will see in a menu has to appear in
+   * it, and a label the spec names has to be one the product has.
+   */
+  const AMENDMENT = (SPEC ?? '').slice(
+    (SPEC ?? '').indexOf('## Amendment 2026-09-20 — Clean windows'),
+    (SPEC ?? '').indexOf('## Amendment 2026-08-26'),
+  );
+
+  it('is present, and is the section this test thinks it is', () => {
+    expect(AMENDMENT.length, 'the Clean-windows amendment is missing').toBeGreaterThan(1000);
+    expect(AMENDMENT).toContain('content only');
+  });
+
+  it('names every command label the product contributes', () => {
+    const missing = CONTROL_COMMANDS.filter((entry) => !AMENDMENT.includes(entry.label));
+    expect(missing.map((entry) => `${entry.command} (${entry.label})`)).toStrictEqual([]);
+  });
+
+  it('names every group heading', () => {
+    const missing = Object.values(CONTROL_GROUPS).filter(
+      (label) => !AMENDMENT.includes(label),
+    );
+    expect(missing).toStrictEqual([]);
+  });
+
+  it('states the keyboard shortcuts as the count the product contributes', () => {
+    // The count, spelled, and every key: "nine" stood in four places while
+    // the array held ten, which is this repository's most-recorded defect.
+    expect(AMENDMENT).toContain('TEN');
+    for (const row of CONTROL_KEYBINDINGS) {
+      expect(AMENDMENT, row.key).toContain(`\`${row.key}`);
+    }
+  });
+
+  it('VACUITY CONTROL: a label the product does not have is NOT in it', () => {
+    // Without this, a test over an amendment that happened to contain every
+    // word in the language would pass.
+    for (const absent of ['Reset everything', 'Loops and churn', 'Pin session']) {
+      expect(AMENDMENT, absent).not.toContain(absent);
+    }
+  });
+});
 describe.skipIf(SPEC === null)('agent-deck-spec.md restates the superseded version posture nowhere', () => {
   it('carries neither superseded sentence, anywhere in the document', () => {
     const lower = (SPEC ?? '').toLowerCase();
@@ -2984,7 +3041,7 @@ describe('DoD 5.5b — the README install section names the sidebar and its menu
     expect(INSTALL).toContain('the Agent Deck icon in the activity bar');
   });
 
-  it('lists the menu EXACTLY as src/sidebar/menu.ts declares it, in order', () => {
+  it('lists the menu EXACTLY as src/view/controls.ts declares it, in order', () => {
     const listed = [...INSTALL.matchAll(/^- \*\*([^*]+)\*\* —/gm)].map((m) => m[1] ?? '');
     expect(listed).toStrictEqual(SIDEBAR_MENU.map((entry) => entry.label));
     // Vacuity control: the menu is not empty, so equality is not empty-equals-empty.

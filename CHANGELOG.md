@@ -32,6 +32,10 @@ All notable changes to Agent Deck are documented here.
   ctrl-wheel obey the same rule.
 - **The Tokens view no longer offers a copy button.** The model id is still
   shown in a monospace element and is still selectable.
+- **The deck ordering setting now applies when a window opens.** Changing
+  `agentDeck.defaultOrdering` used to re-sort a deck that was already on
+  screen; it seeds the sort once, when the extension starts, and View - Sort
+  is what changes it afterwards.
 
 ### Added
 

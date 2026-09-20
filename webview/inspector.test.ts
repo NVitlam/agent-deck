@@ -24,7 +24,10 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { AgentNode, ToolNode } from '../src/model/events.js';
 import { TESTID } from './canvas-contract.js';
 import { COLLAPSED_PREVIEW_CHARS, EM_DASH } from './format.js';
-import { all, one, spawnBundle } from './testkit.js';
+import { all, loadHarness, one, spawnBundle, viewControls } from './testkit.js';
+import type { WebviewHarness } from './testkit.js';
+import type { Store } from './store.js';
+import { liveSession } from './testdata.js';
 import { HEADER_RESERVED_PX, layoutHeader, parseHeaderCss } from './inspector-header.js';
 import type { HeaderFieldText, HeaderLayout } from './inspector-header.js';
 import { agent, longPreview, tool } from './testdata.js';
@@ -103,6 +106,12 @@ beforeAll(async () => {
   const factory = new Function(`${code}\nreturn ${GLOBAL_NAME};`) as () => InspectorHarness;
   harness = factory();
 }, 60_000);
+
+/** The SHIPPED bundle's `start()`, for the through-the-app block at the end. */
+let appHarness: WebviewHarness;
+beforeAll(async () => {
+  appHarness = await loadHarness();
+}, 120_000);
 
 interface Mounted {
   container: HTMLElement;
@@ -1213,5 +1222,158 @@ describe('the call list’s time column and inter-call gap (DoD 7.3)', () => {
     expect(one(container, 'drawer-detail-start').textContent).toBe(c.rendered[1]?.at);
     expect(one(container, 'drawer-detail-end').textContent).toBe(EM_DASH);
     expect(c.rendered[1]?.end).toBe(EM_DASH);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * v0.9.0 DoD 9.14, ruling 5 — THROUGH THE MOUNTED APP
+ * ------------------------------------------------------------------------ */
+
+describe('View -> Inspector reaches the drawer the way production does', () => {
+  /*
+   * THIS EXISTS BECAUSE THE WIRING WAS MISSING AND EVERY TEST ABOVE WAS GREEN.
+   *
+   * Ruling 5 moved the drawer's status, order and tool filters to
+   * View -> Inspector. The commands were contributed and registered, the host
+   * held the values, the panel was sent them, the store stored them, and the
+   * sidebar ticked the active one - and `App.svelte` did not pass them to
+   * `<Inspector>`, so all seven commands were dead. A verifier round found it.
+   *
+   * It is the recorded D4 shape and the fifth time this repository has
+   * shipped it: the tests above mount the component and supply the props BY
+   * HAND, which proves the component honours values the product never sent.
+   * The rule this file now carries is the one the repository already wrote
+   * down - for any prop that changes user-visible output, one test must
+   * reach it the way production does.
+   */
+  interface Panel {
+    container: HTMLElement;
+    store: Store;
+    dispose: () => void;
+  }
+
+  const panels: Panel[] = [];
+
+  function panel(): Panel {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const started = appHarness.start(container, { postMessage: () => {} });
+    const record: Panel = {
+      container,
+      store: started.store,
+      dispose: () => {
+        started.dispose();
+        container.remove();
+      },
+    };
+    panels.push(record);
+    return record;
+  }
+
+  /**
+   * A session whose root agent made three calls, ONE PER STATUS and two tool
+   * names, with the drawer EXPANDED.
+   *
+   * Expanded because of section 8.6: a collapsed drawer always shows the
+   * unfiltered list, deliberately. A test that opened it at its default
+   * height would assert that the filters do nothing and would have passed
+   * against the missing wiring this block exists for.
+   */
+  function opened(): Panel {
+    const p = panel();
+    const state = liveSession();
+    const root = state.root as AgentNode;
+    const calls: ToolNode[] = [
+      tool({ id: 'c-run', toolName: 'Read', status: 'running' }),
+      tool({ id: 'c-done', toolName: 'Read', status: 'done' }),
+      tool({ id: 'c-err', toolName: 'Bash', status: 'error' }),
+    ];
+    appHarness.flushSync(() => {
+      p.store.handleMessage({
+        type: 'snapshot',
+        sessions: [{ ...state, root: { ...root, children: calls } }],
+      });
+    });
+    appHarness.flushSync(() => {
+      p.store.enterSession('session-live');
+      p.store.selectNode('root');
+    });
+    appHarness.flushSync(() => {
+      p.store.toggleDrawerExpanded();
+    });
+    return p;
+  }
+
+  const rows = (p: Panel): string[] =>
+    all(p.container, TESTID.actionRow).map((r) => r.dataset['actionId'] ?? '');
+
+  const statuses = (p: Panel): string[] =>
+    all(p.container, TESTID.actionRow).map((r) => r.dataset['status'] ?? '');
+
+  afterEach(() => {
+    while (panels.length > 0) panels.pop()?.dispose();
+  });
+
+  it('the STATUS filter narrows the real drawer, on every value', () => {
+    const p = opened();
+    const everything = rows(p);
+    expect(everything).toStrictEqual(['c-run', 'c-done', 'c-err']);
+    // The control: three DIFFERENT statuses, or every arm below would be
+    // satisfied by a filter that did nothing.
+    expect(new Set(statuses(p)).size).toBe(3);
+
+    for (const status of ['running', 'done', 'error'] as const) {
+      appHarness.flushSync(() => {
+        p.store.handleMessage(viewControls({ inspectorStatus: status }));
+      });
+      const shown = statuses(p);
+      expect(shown.length, status).toBeGreaterThan(0);
+      expect(new Set(shown), status).toStrictEqual(new Set([status]));
+    }
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorStatus: 'all' }));
+    });
+    expect(rows(p)).toStrictEqual(everything);
+  });
+
+  it('the ORDER reverses the real drawer, and back', () => {
+    const p = opened();
+    const oldest = rows(p);
+    expect(oldest.length).toBeGreaterThan(1);
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorOrder: 'newest' }));
+    });
+    expect(rows(p)).toStrictEqual([...oldest].reverse());
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorOrder: 'oldest' }));
+    });
+    expect(rows(p)).toStrictEqual(oldest);
+  });
+
+  it('the TOOL filter narrows the real drawer to one tool', () => {
+    const p = opened();
+    const before = rows(p);
+    expect(before).toStrictEqual(['c-run', 'c-done', 'c-err']);
+
+    // ONE tool name, then a name no call used. Both arms, because a filter
+    // that ignored its input would keep the list full for any value, and one
+    // that emptied it for every value would pass the second arm alone.
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorTool: 'Bash' }));
+    });
+    expect(rows(p)).toStrictEqual(['c-err']);
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorTool: 'NoSuchTool' }));
+    });
+    expect(rows(p)).toStrictEqual([]);
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorTool: 'all' }));
+    });
+    expect(rows(p)).toStrictEqual(before);
   });
 });

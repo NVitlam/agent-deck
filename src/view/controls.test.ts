@@ -298,7 +298,7 @@ describe('the keyboard shortcuts', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('are the nine the deck had, plus All — the set is pinned', () => {
+  it('are the TEN the deck had — the set is pinned', () => {
     expect(CONTROL_KEYBINDINGS.map((row) => `${row.key}=${row.command.split('.').pop() ?? ''}`))
       .toStrictEqual([
         'a=all',

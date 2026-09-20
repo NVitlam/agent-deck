@@ -520,7 +520,13 @@ export function asDeckSort(value: unknown): DeckSort {
  * They were `Deck.svelte`'s own `keydown` handler until this release, setting
  * values the component owned. It owns none of them now, so the shortcuts are
  * contributed to the EDITOR and bound to the same commands the View submenu
- * runs. Nine, exactly the nine that existed.
+ * runs. **TEN**, exactly the ten that existed — four engines (`a c o x`),
+ * three layouts (`1 2 3`) and three sorts (`l r e`).
+ *
+ * (This comment said "nine" until a verifier round counted the array. The
+ * array was always ten; `git show 0991ef7:webview/Deck.svelte` has
+ * `all: { label: 'All', key: 'a' }` in its engine table. A number written
+ * beside the thing it counts is this repository's most-recorded defect.)
  *
  * {@link KEYBINDING_WHEN} is what keeps a bare letter safe: without it, `c`
  * would fire while somebody was typing in a file.

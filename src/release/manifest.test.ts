@@ -594,7 +594,7 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
     ]);
   });
 
-  it('the nine keyboard shortcuts survive the amendment, scoped to the panel', async () => {
+  it('the ten keyboard shortcuts survive the amendment, scoped to the panel', async () => {
     /*
      * "Keyboard shortcuts stay" is the ruling's own clause. They were
      * `Deck.svelte`'s `keydown` handler; the component owns none of those

@@ -369,9 +369,24 @@
          `sessionId`, `engine` and `spawnEdges` are passed HERE for the first
          time. The props existed and had no caller, so the header's session id
          and engine glyph, and every call row's "→ child" link, were reachable
-         only from a test. `breadcrumb` is still unwired: the focus path lives
-         in `SessionCanvas.svelte` as component state, so App cannot see it —
-         the same reason §8.6's "re-root to parent" Escape step is unbuilt. -->
+         only from a test.
+
+         AND IT HAPPENED AGAIN IN v0.9.0 DoD 9.14, one verifier round later,
+         to `statusFilter`, `callOrder` and `toolFilter`. Ruling 5 moved the
+         drawer's three filters to View ▸ Inspector; the commands were
+         contributed and registered, the host held the values, the panel was
+         sent them, the store stored them and the sidebar TICKED the active
+         one — and this mount did not pass them, so all seven commands were
+         dead. The same shape as the About button this whole delta exists to
+         fix. `inspector.test.ts`'s "through the mounted app" block is the
+         guard: it drives them the way production does, which is the only
+         shape that can see a missing attribute.
+
+         `breadcrumb` is still unwired, and that is a decision rather than
+         an oversight: the focus path lives in `SessionCanvas.svelte` as
+         component state, so App cannot see it, and ruling 2 removed the
+         clickable crumbs rather than adding a second place to read a path.
+         `inspector.test.ts` tests it as a component prop and says so. -->
     {#if view.inspectorOpen && view.selectedNode !== undefined}
       <Inspector
         node={inspected}
@@ -382,6 +397,9 @@
         ondrawertoggle={() => store.toggleDrawerExpanded()}
         detailActionId={view.detailActionId}
         ondetail={(id) => store.setDetailAction(id)}
+        statusFilter={view.inspectorStatus}
+        callOrder={view.inspectorOrder}
+        toolFilter={view.inspectorTool}
         expanded={inspectedExpanded}
         ontoggle={() => {
           if (inspected !== undefined) store.toggleNode(inspected.id);

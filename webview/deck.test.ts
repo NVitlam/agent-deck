@@ -1288,7 +1288,7 @@ describe('the control bar', () => {
     /*
      * "Keyboard shortcuts stay" is ruling 1's own clause, and they do — as
      * `package.json` keybindings on the same commands the View submenu runs,
-     * scoped by `activeWebviewPanelId`. `manifest.test.ts` pins the nine.
+     * scoped by `activeWebviewPanelId`. `manifest.test.ts` pins the ten.
      *
      * What this asserts is the other half: the COMPONENT answers none of
      * them, so there is no second path to a value it no longer owns — and no

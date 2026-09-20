@@ -504,6 +504,11 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
           + 'the palette. Not a menu entry: the menu is the five locked in v0.7.0 and '
           + 'readme.test.ts pins its labels.',
       },
+      {
+        command: 'agentDeck.about',
+        why: 'v0.9.0 DoD 9.7 - reached from the deck header and from the palette. '
+          + 'Not a menu entry, for the same reason agentDeck.insights is not.',
+      },
     ];
     expect([...contributed].sort()).toStrictEqual(
       [...SIDEBAR_MENU.map((e) => e.command), ...NON_MENU_COMMANDS.map((c) => c.command)].sort(),

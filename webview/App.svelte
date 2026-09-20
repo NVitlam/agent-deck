@@ -293,6 +293,16 @@
     >
       Stats
     </button>
+    <!-- DoD 9.7. The About link, in the deck header. A link rather than a
+         toggle: it opens a modal and leaves the view where it is. -->
+    <button
+      type="button"
+      class="toggle about"
+      data-testid={TESTID.aboutLink}
+      onclick={() => store.showAbout()}
+    >
+      About
+    </button>
     <!-- DoD 9.6. Beside Stats and read the same way: a place to go, not
          the next notch of the canvas/list toggle. -->
     <button

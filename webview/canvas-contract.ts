@@ -352,6 +352,8 @@ export const TESTID = {
   statsToggle: 'stats-toggle',
   /** Enters the Insights view mode, and leaves it (v0.9.0 DoD 9.6). */
   insightsToggle: 'insights-toggle',
+  /** The About link in the deck header (v0.9.0 DoD 9.7). */
+  aboutLink: 'about-link',
 
   /* The Insights view mode (v0.9.0 DoD 9.6). */
   /** The whole surface. Carries data-installed. */

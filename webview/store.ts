@@ -66,6 +66,9 @@ import type { StatsRecord } from '../src/stats/schema.js';
  * the two literals against each other so they cannot part.
  */
 export const INSIGHTS_COMMAND = 'agentDeck.insights';
+
+/** The other command this surface may ask for — DoD 9.7. */
+export const ABOUT_COMMAND = 'agentDeck.about';
 import {
   DECK_FIT_PADDING,
   DECK_ZOOM_LIMITS,
@@ -731,6 +734,12 @@ export interface Store {
    * word and does not branch on it.
    */
   openInsights(): void;
+  /**
+   * Ask the host to show About — v0.9.0 DoD 9.7.
+   *
+   * Narrow for the reason {@link Store.openInsights} states.
+   */
+  showAbout(): void;
   /**
    * Switch renderers (C7.2). Not persisted, not a setting, not a message.
    *
@@ -1614,6 +1623,10 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
 
     openInsights(): void {
       postIntent({ type: 'runCommand', command: INSIGHTS_COMMAND });
+    },
+
+    showAbout(): void {
+      postIntent({ type: 'runCommand', command: ABOUT_COMMAND });
     },
 
     toggleStats(): void {

@@ -4,6 +4,9 @@
   "version": "0.8.1",
   "publisher": "nvitlam",
   "description": "Live observability for coding-agent swarms — Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
+  "sponsor": {
+    "url": "https://github.com/sponsors/NVitlam"
+  },
   "license": "MIT",
   "keywords": [
     "claude code",
@@ -68,6 +71,11 @@
       {
         "command": "agentDeck.insights",
         "title": "Insights",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.about",
+        "title": "About",
         "category": "Agent Deck"
       }
     ],

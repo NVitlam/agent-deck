@@ -5,6 +5,7 @@ div
       button [degraded-dismiss] .dismiss type="button" "Dismiss"
     div .chrome
       button [stats-toggle] .toggle aria-pressed="false" type="button" "Stats"
+      button [about-link] .toggle .about type="button" "About"
       button [insights-toggle] .toggle aria-pressed="false" type="button" "Insights"
       button [view-toggle] .toggle aria-pressed="false" data-view-mode="list" type="button" "List"
     div .body

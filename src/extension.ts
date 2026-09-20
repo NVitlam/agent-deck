@@ -127,6 +127,7 @@ import * as vscode from 'vscode';
 import { SessionBridge, isWebviewToHostMessage } from './bridge/messages.js';
 import type { BridgeDegradedState } from './bridge/messages.js';
 import { createNonce, webviewHtml } from './bridge/html.js';
+import { ABOUT_COMMAND, ABOUT_LINKS, ABOUT_TEXT } from './about.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
 import { StatsUpdateEmitter, createAgentDeckApi } from './api.js';
@@ -4969,8 +4970,11 @@ export class AgentDeckHost {
          * stays a renderer, and the one exception is named here in full.
          */
         if (message.type === 'runCommand') {
-          if (message.command === INSIGHTS_COMMAND) {
-            void vscode.commands.executeCommand(INSIGHTS_COMMAND);
+          // The TWO commands this surface may ask for, by equality against
+          // the constants. A list of two, not a prefix and not a set that
+          // grows by accident: every addition is a line here.
+          if (message.command === INSIGHTS_COMMAND || message.command === ABOUT_COMMAND) {
+            void vscode.commands.executeCommand(message.command);
           }
           return;
         }
@@ -5063,6 +5067,29 @@ export const WORKBENCH_OPEN_EXTENSION = 'extension.open';
 
 /** `agentDeck.insights`: get it, or open it. */
 export const INSIGHTS_COMMAND = 'agentDeck.insights';
+
+/**
+ * `agentDeck.about` — v0.9.0 DoD 9.7.
+ *
+ * A modal with the paragraph and the four links. Each link opens through
+ * `vscode.env.openExternal`, which hands a URI to the EDITOR: the extension
+ * opens no socket, so `SECURITY.md`’s "makes no network call" is unchanged
+ * and `egress.test.ts`’s census of the bundle still finds one client.
+ */
+export async function showAbout(): Promise<void> {
+  const choice = await vscode.window.showInformationMessage(
+    ABOUT_TEXT,
+    { modal: true },
+    ...ABOUT_LINKS.map((link) => link.label),
+  );
+  if (choice === undefined) return;
+  const link = ABOUT_LINKS.find((entry) => entry.label === choice);
+  // A label that is not one of ours opens nothing. The editor returns what
+  // it was given, but a lookup is what keeps the URL a LITERAL from this
+  // module rather than a string that came back from somewhere.
+  if (link === undefined) return;
+  await vscode.env.openExternal(vscode.Uri.parse(link.url));
+}
 
 /**
  * Is Layer 2 installed in this editor? — v0.9.0 DoD 9.6.
@@ -5594,6 +5621,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      * above the activation gates, like the sidebar and the clear command:
      * a workspace with no observable engine can still reach it.
      */
+    // v0.9.0 DoD 9.7. Unconditional, like the sidebar: a window with no
+    // observable engine can still open About.
+    vscode.commands.registerCommand(ABOUT_COMMAND, () => {
+      void showAbout();
+    }),
     vscode.commands.registerCommand(INSIGHTS_COMMAND, () => {
       if (isInsightsInstalled()) {
         void vscode.commands.executeCommand(INSIGHTS_OPEN_COMMAND);

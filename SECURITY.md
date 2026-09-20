@@ -34,6 +34,14 @@ literal**: a second VS Code window asking the first for its event stream, from 0
 Receiving Claude Code's telemetry, from 0.7.1, added no way to send. Zero egress here is a property
 of what the build contains, and a test fails if that changes.
 
+**The extension itself makes no network call.** From 0.9.0 the About entry offers four links —
+a website, a project page, LinkedIn and a sponsor page — and each one is handed to the EDITOR
+through `vscode.env.openExternal`, which opens your browser. The extension opens no socket for
+any of them, fetches nothing, and checks nothing for reachability, so the census in §4 is
+unchanged by them: one client, one loopback destination.
+Proof: `src/about.test.ts` › "every link opens through the editor and nothing else";
+`src/hooks/egress.test.ts` › "contains a server and exactly one client, whose destination is the loopback literal".
+
 ---
 
 ## 2. Grounding rules that this posture rests on

@@ -418,23 +418,34 @@ export interface AgentStats {
  * {@link STATS_SCOPED_STRING_FIELDS} — so a `name` anywhere else is still
  * refused.
  *
- * ## `ordinal`, and a recorded tension about its name
+ * ## `seq`, and why it is not `ordinal`
  *
  * The value is the SESSION-WIDE call-sequence position, the same sequence
- * `FileStats.firstTouchSeq` counts in. This file's own rule says a
- * session-wide position is named `...Seq` and a per-agent one `...Ordinal`,
- * so the name cuts against the convention. It is kept verbatim as the spec
- * amendment specifies, and a rename to `seq` is PROPOSED to the user rather
- * than taken, because the field name is the user’s own words. The VALUE is
- * the session-wide position either way: an array index would be a field
- * that cannot be wrong, which is this repository’s most-recorded defect
- * shape.
+ * `FileStats.firstTouchSeq` counts in. This file's own rule, stated at the
+ * top of {@link FileStats}, is that a session-wide position is named
+ * `...Seq` and a per-agent one `...Ordinal`, *and the suffix is
+ * load-bearing*: three different numbering systems live in this record and
+ * naming them all "ordinal" is how a later reader resolves the wrong node.
+ *
+ * **The spec amendment of 2026-09-20 first specified `ordinal`.** It was
+ * built that way and the tension was recorded here rather than resolved
+ * silently, because a field name in a spec amendment is the user’s own
+ * words. **User ruling, 2026-09-20: renamed to `seq`, to match the naming.**
+ *
+ * The VALUE never moved: it is the session-wide position under either name.
+ * An array index would be a field that cannot be wrong, which is this
+ * repository’s most-recorded defect shape, and the goldens carry 115, 185,
+ * 248, 43 and 184 to show it is not one.
  */
 export interface SkillStat {
   /** The skill as the call named it, from the one input key `skill`. */
   name: string;
-  /** Position in the SESSION-WIDE call sequence. See above on the name. */
-  ordinal: number;
+  /**
+   * Position in the SESSION-WIDE call sequence — the `...Seq` suffix, per
+   * this file's naming rule. See above; it was `ordinal` until the user's
+   * ruling of 2026-09-20.
+   */
+  seq: number;
 }
 
 /** One session's Layer 1 facts. */

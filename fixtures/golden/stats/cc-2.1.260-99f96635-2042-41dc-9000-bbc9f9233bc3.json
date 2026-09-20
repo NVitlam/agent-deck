@@ -415,11 +415,11 @@
   "skills": [
     {
       "name": "phase",
-      "ordinal": 43
+      "seq": 43
     },
     {
       "name": "handoff",
-      "ordinal": 184
+      "seq": 184
     }
   ],
   "contextChurn": [

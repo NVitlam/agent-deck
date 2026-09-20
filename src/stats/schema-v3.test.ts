@@ -155,7 +155,7 @@ describe('upgradeStatsRecord gives an old record the v3 shape', () => {
   });
 
   it('a current-version record is returned unchanged', () => {
-    const current = { statsSchemaVersion: STATS_SCHEMA_VERSION, skills: [{ name: 'x', ordinal: 0 }] };
+    const current = { statsSchemaVersion: STATS_SCHEMA_VERSION, skills: [{ name: 'x', seq: 0 }] };
     expect(upgradeStatsRecord(current)).toBe(current);
   });
 

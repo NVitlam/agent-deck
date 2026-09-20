@@ -1316,15 +1316,15 @@
   "skills": [
     {
       "name": "handoff",
-      "ordinal": 115
+      "seq": 115
     },
     {
       "name": "phase",
-      "ordinal": 185
+      "seq": 185
     },
     {
       "name": "handoff",
-      "ordinal": 248
+      "seq": 248
     }
   ],
   "contextChurn": [

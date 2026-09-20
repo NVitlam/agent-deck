@@ -178,7 +178,7 @@ describe('validateStatsRecord refuses an over-length string', () => {
 
   it('refuses a skill name over the name cap', () => {
     const record = base();
-    record['skills'] = [{ name: LONG_NAME, ordinal: 0 }];
+    record['skills'] = [{ name: LONG_NAME, seq: 0 }];
     expect(validateStatsRecord(record).errors.join('\n')).toMatch(
       /string over cap: skills\[0\]\.name/,
     );
@@ -200,11 +200,11 @@ describe('validateStatsRecord refuses an over-length string', () => {
 
   it('boundary: exactly at the cap is accepted, one over is refused', () => {
     const atName = base();
-    atName['skills'] = [{ name: 'n'.repeat(NAME_MAX_CHARS), ordinal: 0 }];
+    atName['skills'] = [{ name: 'n'.repeat(NAME_MAX_CHARS), seq: 0 }];
     expect(validateStatsRecord(atName).errors).toEqual([]);
 
     const overName = base();
-    overName['skills'] = [{ name: 'n'.repeat(NAME_MAX_CHARS + 1), ordinal: 0 }];
+    overName['skills'] = [{ name: 'n'.repeat(NAME_MAX_CHARS + 1), seq: 0 }];
     expect(validateStatsRecord(overName).ok).toBe(false);
 
     const row = (filePath: string): unknown => ({

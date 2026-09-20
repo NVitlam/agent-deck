@@ -182,27 +182,27 @@ describe('the committed corpus proves the join', () => {
     }
   });
 
-  it('ordinal is the session-wide call position, not the array index', async () => {
+  it('seq is the session-wide call position, not the array index', async () => {
     const states = await readCcSessions();
     let sawNonIndex = false;
     for (const state of states) {
       const record = deriveStats(state);
       record.skills.forEach((skill, index) => {
-        expect(Number.isInteger(skill.ordinal)).toBe(true);
-        expect(skill.ordinal).toBeGreaterThanOrEqual(index);
-        if (skill.ordinal !== index) sawNonIndex = true;
+        expect(Number.isInteger(skill.seq)).toBe(true);
+        expect(skill.seq).toBeGreaterThanOrEqual(index);
+        if (skill.seq !== index) sawNonIndex = true;
       });
       // Ascending, because the sequence is.
-      const ordinals = record.skills.map((s) => s.ordinal);
-      expect([...ordinals].sort((a, b) => a - b)).toEqual(ordinals);
+      const seqs = record.skills.map((s) => s.seq);
+      expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
     }
-    // THE VACUITY CONTROL. Were `ordinal` the array index, every value would
+    // THE VACUITY CONTROL. Were `seq` the array index, every value would
     // equal its index and this flag would never be set — so the field could
     // not be wrong, which is this repository's most-recorded defect shape.
     expect(sawNonIndex, 'no corpus skill call sits away from its array index').toBe(true);
   });
 
-  it('the ordinal really indexes the session-wide sequence', async () => {
+  it('seq really indexes the session-wide sequence', async () => {
     // A SECOND, INDEPENDENT implementation of the order `derive.ts`
     // documents: a depth-first walk of the tree, each agent's own calls in
     // ordinal order. Replicating it here rather than importing it is what
@@ -238,8 +238,8 @@ describe('the committed corpus proves the join', () => {
       if (record.skills.length === 0) continue;
       const sequence = sequenceOf(state.root);
       for (const skill of record.skills) {
-        const at = sequence[skill.ordinal];
-        expect(at, `no call at session ordinal ${String(skill.ordinal)}`).toBeDefined();
+        const at = sequence[skill.seq];
+        expect(at, `no call at session seq ${String(skill.seq)}`).toBeDefined();
         expect(at?.toolName).toBe(SKILL_TOOL);
         checked += 1;
       }

@@ -214,10 +214,14 @@ function deriveFiles(
 /**
  * Every `Skill` call this session made, in SESSION-WIDE call order — DoD 9.3.
  *
- * `ordinal` is the position in that sequence, not the index in this array:
- * a session whose third and seventh calls are skills produces ordinals 2 and
- * 6, which is what makes the field capable of being wrong. `skills.ts` reads
- * the name off one named input key and never touches `args`.
+ * `seq` is the position in that sequence, not the index in this array: a
+ * session whose third and seventh calls are skills produces 2 and 6, which
+ * is what makes the field capable of being wrong. `skills.ts` reads the name
+ * off one named input key and never touches `args`.
+ *
+ * Named `seq` and not `ordinal` per the user's ruling of 2026-09-20 and
+ * `schema.ts`'s own rule: a session-wide position is a `...Seq`, a per-agent
+ * one an `...Ordinal`, and `ToolNode.ordinal` above is the per-agent kind.
  */
 function deriveSkills(engine: StatsEngine, sequence: readonly ToolNode[]): SkillStat[] {
   const out: SkillStat[] = [];
@@ -228,7 +232,7 @@ function deriveSkills(engine: StatsEngine, sequence: readonly ToolNode[]): Skill
     // engine does not have is not a skill call.
     if (tool.skillName === undefined) return;
     if (skillNameOf(engine, tool.toolName, { skill: tool.skillName }) === undefined) return;
-    out.push({ name: tool.skillName, ordinal: index });
+    out.push({ name: tool.skillName, seq: index });
   });
   return out;
 }

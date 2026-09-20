@@ -44,14 +44,34 @@ describe('the About text', () => {
       if (SPEC === null) return;
       const amendment = SPEC.slice(SPEC.indexOf('## Amendment 2026-09-20'));
       expect(amendment.length, 'the 0.9.0 amendment is not in the spec').toBeGreaterThan(100);
-      // The amendment quotes the paragraph as a blockquote, one sentence per
-      // line. Rebuilt into one line the way the constant holds it.
-      const quoted = amendment
+      /*
+       * THE ABOUT SECTION, not the whole amendment.
+       *
+       * This took every `> ` line in the amendment until the 2026-09-20
+       * ruling added a second blockquote (the dated note recording the
+       * `ordinal` -> `seq` rename), and then concatenated the two. "The
+       * blockquote" was never a well-defined thing in a document that may
+       * carry several.
+       */
+      const aboutAt = amendment.indexOf('### About');
+      expect(aboutAt, 'the amendment has no About section').toBeGreaterThan(-1);
+      const nextSection = amendment.indexOf('\n### ', aboutAt + 1);
+      const about = amendment.slice(aboutAt, nextSection === -1 ? undefined : nextSection);
+
+      const quoted = about
         .split(/\r?\n/)
         .filter((line) => line.trimStart().startsWith('> '))
         .map((line) => line.trimStart().slice(2).trim())
         .join(' ');
-      expect(quoted.length, 'the amendment carries no blockquote').toBeGreaterThan(100);
+      expect(quoted.length, 'the About section carries no blockquote').toBeGreaterThan(100);
+      // EXACTLY ONE blockquote in that section, so a second one is red rather
+      // than joined onto the first.
+      const blocks = about.split(/\r?\n/).reduce<number>((n, line, i, all) => {
+        const isQuote = line.trimStart().startsWith('> ');
+        const prevQuote = i > 0 && (all[i - 1] ?? '').trimStart().startsWith('> ');
+        return isQuote && !prevQuote ? n + 1 : n;
+      }, 0);
+      expect(blocks, 'the About section carries more than one blockquote').toBe(1);
       expect(quoted).toBe(ABOUT_TEXT);
     });
 

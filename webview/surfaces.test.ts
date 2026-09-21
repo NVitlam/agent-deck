@@ -232,6 +232,30 @@ describe('one panel, switched in place — DoD 9.27', () => {
     send(viewControls({ surface: 'stats', focusSessionId: 'session-a' }));
     expect(panel.store.getView().selectedSessionId).toBe('session-a');
   });
+
+  it('a focus that did not MOVE selects nothing — the user’s own choice stands', () => {
+    /*
+     * Verifier round 9.33, D2. The host re-sends the whole control state on
+     * every command; a focus still riding on it re-selected its session and
+     * cleared the drawer's node on each one. The host now drops the focus
+     * when the link ends, and the store selects only when the focus changes.
+     */
+    const panel = render();
+    const a = liveSession({ sessionId: 'session-a' });
+    const b = liveSession({ sessionId: 'session-b' });
+    send({ type: 'snapshot', sessions: [a, b] });
+    send(viewControls({ surface: 'stats', focusSessionId: 'session-b' }));
+    expect(panel.store.getView().selectedSessionId).toBe('session-b');
+    harness.flushSync(() => {
+      panel.store.selectSession('session-a');
+      panel.store.selectNode('tool-bash');
+    });
+    expect(panel.store.getView().selectedNodeId).toBe('tool-bash');
+    // The same focus again, on a later command's state.
+    send(viewControls({ surface: 'sessions', focusSessionId: 'session-b' }));
+    expect(panel.store.getView().selectedSessionId).toBe('session-a');
+    expect(panel.store.getView().selectedNodeId).toBe('tool-bash');
+  });
 });
 
 /* ------------------------------------------------------------------------ *
@@ -334,6 +358,30 @@ describe('the Insights surface, PROVIDER — DoD 9.30', () => {
     expect(one(panel.container, TESTID.insightsSurface).getAttribute('data-state')).toBe('free');
     // Disposal is the free state, not a blank: the facts and the Get tile return.
     expect(all(panel.container, TESTID.insightsGetTile)).toHaveLength(1);
+  });
+
+  it('repeated ids on the wire still render — the surface keys its lists by position', () => {
+    // Verifier round 9.33, D1. The host's check now drops a repeated run id
+    // or evidence key, and this is the second layer: keyed on the ids, Svelte
+    // threw `each_key_duplicate` and the whole surface rendered nothing.
+    const panel = render();
+    const state = providerState() as { provider: Record<string, unknown> };
+    const run = { runId: 'run-1', createdAt: Date.UTC(2026, 8, 21, 10, 0), outcome: 'findings', findings: 1 };
+    const evidence = { statsKey: 'sessions[0].totals.stalls', value: 2 };
+    send({
+      ...state,
+      provider: {
+        ...state.provider,
+        latest: {
+          ...(state.provider['latest'] as Record<string, unknown>),
+          findings: [{ kind: 'stall', confidence: 'low', evidence: [evidence, evidence] }],
+        },
+        runs: [run, run],
+      },
+    });
+    send(viewControls({ surface: 'insights' }));
+    expect(all(panel.container, TESTID.insightsHistoryRow)).toHaveLength(2);
+    expect(all(panel.container, TESTID.insightsFinding)).toHaveLength(1);
   });
 
   it('the store refuses a Get intent while a provider is registered', () => {

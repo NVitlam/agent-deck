@@ -1927,11 +1927,15 @@ describe.skipIf(SPEC === null)('the 2026-09-20 amendments name what shipped', ()
     expect(missing.map((group) => group.id)).toStrictEqual([]);
   });
 
-  it('...and the four pages of the strip, in order', () => {
+  it('...and the three pages of the strip, in order — the one-window amendment’s', () => {
+    // Four until spec `Amendment 2026-09-21 — One window` deleted the
+    // Insights tab (v0.9.0 DoD 9.28). The 2026-09-20 amendment still reads
+    // four, as history; what is held is the LATER sentence.
     for (const section of CONTROL_SECTIONS) {
       expect(SIDEBAR, section.id).toContain(section.label);
     }
-    expect(SIDEBAR).toContain('Menu | View | Tweaks | Insights');
+    expect(SIDEBAR).toContain('**Sidebar strip is Menu | View | Tweaks.** The Insights tab is deleted.');
+    expect(CONTROL_SECTIONS.map((section) => section.label)).toStrictEqual(['Menu', 'View', 'Tweaks']);
   });
 
   it('...and states the two removals by name', () => {

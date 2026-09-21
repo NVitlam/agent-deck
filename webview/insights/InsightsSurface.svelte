@@ -150,7 +150,7 @@
             <div class="finding" data-testid={TESTID.insightsFinding}>
               <span class="label strong">{finding.label}</span>
               <span class="note">{finding.confidence}</span>
-              {#each finding.evidence as line (line)}
+              {#each finding.evidence as line, at (at)}
                 <span class="source">{line}</span>
               {/each}
             </div>
@@ -165,7 +165,7 @@
         <p class="line">No run is recorded yet.</p>
       {:else}
         <ul class="history">
-          {#each paid.history as row (row.runId)}
+          {#each paid.history as row, at (at)}
             <li data-testid={TESTID.insightsHistoryRow}>
               <span>{row.when}</span> · <span>{row.outcome}</span>
             </li>

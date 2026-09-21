@@ -314,6 +314,13 @@ describe('6.D.1 — the page describes 0.7.0 and 0.7.1 as shipped', () => {
   it('lists the sidebar menu as src/view/controls.ts declares it', () => {
     for (const entry of SIDEBAR_MENU) expect(PAGE_TEXT, entry.label).toContain(entry.label);
     expect(SIDEBAR_MENU.length).toBeGreaterThan(0);
+    // IN ORDER, not only present (verifier round 9.33, C4: the list reversed
+    // on the page left this green). The page lists them once, in brackets
+    // after "Menu".
+    const list = /Menu \(([^)]*)\)/.exec(PAGE_TEXT)?.[1] ?? '';
+    expect(list.split(',').map((label) => label.trim())).toStrictEqual(
+      SIDEBAR_MENU.map((entry) => entry.label),
+    );
   });
 
   it('"What it never does" is the four sentences it was, and nothing was added to it', () => {

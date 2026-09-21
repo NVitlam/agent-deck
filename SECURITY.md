@@ -49,12 +49,15 @@ the panel's bundle to none.
 
 **An Insights provider is another extension, and what it hands over is data.** From 0.9.0 the
 extension API (`apiVersion` 2) lets one extension register as the Insights provider. The
-provider data is plain JSON, checked field by field, and never executed: Agent Deck reads only
-own data properties (never a getter), matches every string against a fixed shape, checks every enum
-against its list, caps every list, and drops and counts what fails. No text from a provider is
-shown — a finding is a kind, a confidence and numbers, and every word about it is Agent Deck's own.
-Agent Deck calls the provider's `getLatest`, `listRuns` and `run`, and nothing else; it asks no
-licence question and opens no connection for it.
+provider data is plain JSON, checked field by field, and never executed: Agent Deck reads what
+the provider returns as own data properties only (never through a getter), refuses a contract
+member given as a getter, matches every string against a fixed shape, checks every enum against its
+list, caps every list, and drops and counts what fails. No prose from a provider is shown — a
+finding is a kind, a confidence and numbers, and every word about it is Agent Deck's own; the only
+provider strings displayed are its name, its version and each evidence item's stats key, each
+matched against its fixed shape first. Agent Deck calls the provider's `getLatest`, `listRuns` and
+`run` and subscribes once through `onDidChange`; it calls nothing else, asks no licence question and
+opens no connection for it.
 Proof: `src/insights-provider.test.ts`.
 
 ---

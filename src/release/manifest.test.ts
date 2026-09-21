@@ -569,7 +569,7 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
       expect((menus[submenu.id] ?? []).length, submenu.id).toBeGreaterThan(0);
     }
 
-    // The four sections hang off the view title, in the amendment's order.
+    // The three sections hang off the view title, in the amendment's order.
     expect((menus['view/title'] ?? []).map((row) => row.submenu)).toStrictEqual(
       CONTROL_SECTIONS.map((section) => `agentDeck.submenu.${section.id}`),
     );

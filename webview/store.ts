@@ -1089,6 +1089,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     inspectorStatus = next.inspectorStatus;
     inspectorOrder = next.inspectorOrder;
     inspectorTool = next.inspectorTool;
+    const focusMoved = next.focusSessionId !== statsFocusSessionId;
     statsFocusSessionId = next.focusSessionId;
     /*
      * `agentDeck.openStats(sessionId)` "switches the surface and SELECTS the
@@ -1096,8 +1097,13 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
      * focus already highlights its Tokens card; this makes it the selected
      * session too, so Open Deck afterwards lands on it. An id this window
      * does not hold selects nothing and is not an error.
+     *
+     * ONLY WHEN THE FOCUS MOVES (verifier round 9.33, D2). The host re-sends
+     * the whole control state on every command, and a focus still riding on
+     * it would snap the selection back — and clear the drawer's node — each
+     * time the user picked anything else.
      */
-    if (next.focusSessionId !== undefined && sessions.has(next.focusSessionId)) {
+    if (focusMoved && next.focusSessionId !== undefined && sessions.has(next.focusSessionId)) {
       if (next.focusSessionId !== selectedSessionId) selectedNodeId = undefined;
       selectedSessionId = next.focusSessionId;
     }

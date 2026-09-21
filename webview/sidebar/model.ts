@@ -138,7 +138,7 @@ export function toolLabel(tool: string): string {
  * that is already on its own row underneath.
  *
  * `undefined` when nothing underneath is a choice, which is every group on
- * the Menu, Tweaks and Insights pages — none of which has one.
+ * the Menu and Tweaks pages — neither of which has one.
  */
 function groupValue(children: readonly SidebarRow[]): string | undefined {
   const parts: string[] = [];

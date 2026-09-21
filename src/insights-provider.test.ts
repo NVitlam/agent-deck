@@ -32,6 +32,7 @@ import {
   CONFIDENCES,
   FINDING_KINDS,
   InsightsProviderRegistry,
+  MAX_EVIDENCE,
   MAX_FINDINGS,
   MAX_RUNS,
   PROVIDER_VERSION,
@@ -276,7 +277,7 @@ describe('the run history is checked the same way', () => {
     ]);
     expect(value.map((r) => r.runId)).toStrictEqual(['run-1', 'run-2']);
     expect(dropped).toBe(3);
-    const capped = viewOfRuns(Array.from({ length: MAX_RUNS + 2 }, () => run()));
+    const capped = viewOfRuns(Array.from({ length: MAX_RUNS + 2 }, (_, i) => run({ runId: `run-${String(i)}` })));
     expect(capped.value).toHaveLength(MAX_RUNS);
     expect(capped.dropped).toBe(2);
   });
@@ -517,5 +518,97 @@ describe('onDidChange, run and disposal', () => {
     registry.register(fakeProvider({ about: { name: 'Second', version: '1.0.0' } }).provider);
     first.dispose();
     expect(registry.about()?.name).toBe('Second');
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * Verifier round 9.33 — the paths no test drove (D1, D4)
+ * ------------------------------------------------------------------------ */
+
+describe('what the first round left undriven', () => {
+  it('D1: a repeated run id is dropped and counted — the history names runs by id', () => {
+    const checked = viewOfRuns([run(), run({ createdAt: 1 }), run({ runId: 'run-2' })]);
+    expect(checked.value.map((r) => r.runId)).toStrictEqual(['run-1', 'run-2']);
+    expect(checked.dropped).toBe(1);
+  });
+
+  it('D1: a finding citing one stats key twice is dropped, and the set keeps the rest', () => {
+    const twice = finding({
+      evidence: [
+        { statsKey: 'sessions[0].loops[1].count', value: 7 },
+        { statsKey: 'sessions[0].loops[1].count', value: 8 },
+      ],
+    });
+    const checked = viewOfFindingSet(findingSet({ findings: [twice, finding()] }));
+    expect(checked.value?.findings).toHaveLength(1);
+    expect(checked.dropped).toBe(1);
+  });
+
+  it('V38: evidence past MAX_EVIDENCE drops the finding; at the cap it passes', () => {
+    const items = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ statsKey: `sessions[${String(i)}].totals.prompt`, value: i }));
+    const at = viewOfFindingSet(findingSet({ findings: [finding({ evidence: items(MAX_EVIDENCE) })] }));
+    expect(at.value?.findings).toHaveLength(1);
+    const past = viewOfFindingSet(findingSet({ findings: [finding({ evidence: items(MAX_EVIDENCE + 1) })] }));
+    expect(past.value?.findings).toHaveLength(0);
+    expect(past.dropped).toBe(1);
+  });
+
+  it('V21: a contract MEMBER given as a getter is refused, and the getter never runs', () => {
+    let ran = 0;
+    const provider = fakeProvider().provider as unknown as Record<string, unknown>;
+    const withGetter = { ...provider };
+    delete withGetter['getLatest'];
+    Object.defineProperty(withGetter, 'getLatest', {
+      enumerable: true,
+      get: () => {
+        ran += 1;
+        return () => null;
+      },
+    });
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    expect(() => registry.register(withGetter as unknown as InsightsProvider)).toThrow(TypeError);
+    expect(ran).toBe(0);
+    expect(registry.registered).toBe(false);
+  });
+
+  it('V14/V18: a provider disposed MID-RUN leaves the next one free to run, and its late settle changes nothing', async () => {
+    let releaseA: () => void = () => undefined;
+    const a = fakeProvider({ run: () => new Promise<void>((resolve) => (releaseA = resolve)) });
+    let releaseB: () => void = () => undefined;
+    let bRuns = 0;
+    const b = fakeProvider({
+      about: { name: 'Second', version: '1.0.0' },
+      run: () => {
+        bRuns += 1;
+        return new Promise<void>((resolve) => (releaseB = resolve));
+      },
+    });
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    const handleA = registry.register(a.provider);
+    const runA = registry.run();
+    expect(registry.snapshot()?.running).toBe(true);
+    handleA.dispose();
+    registry.register(b.provider);
+    // Disposal reset the flag, so B is not stuck behind A's run...
+    expect(registry.snapshot()?.running).toBe(false);
+    const runB = registry.run();
+    expect(bRuns).toBe(1);
+    expect(registry.snapshot()?.running).toBe(true);
+    // ...and A settling late does not clear B's.
+    releaseA();
+    await runA;
+    expect(registry.snapshot()?.running).toBe(true);
+    releaseB();
+    await runB;
+    expect(registry.snapshot()?.running).toBe(false);
+  });
+
+  it('V15: after the registry is disposed (deactivation) nothing can register', () => {
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    registry.register(fakeProvider().provider);
+    registry.dispose();
+    expect(registry.registered).toBe(false);
+    expect(() => registry.register(fakeProvider().provider)).toThrow(/shutting down/);
   });
 });

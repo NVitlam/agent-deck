@@ -5744,7 +5744,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    * so the host is what holds their values and the panel renders them. It
    * lives HERE rather than on `AgentDeckHost` because the sidebar tree exists
    * in windows where no host does — a window observing nothing still shows
-   * Menu, View, Tweaks and Insights — and two copies would let the tree's tick
+   * Menu, View and Tweaks — and two copies would let the tree's tick
    * and the panel's filter describe different states.
    *
    * `deckSort` is seeded from `agentDeck.defaultOrdering` rather than from the
@@ -6060,7 +6060,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
         { placeHolder: 'Tool names from the sessions this window holds' },
       );
       if (picked === undefined) return;
-      commitControls({ ...viewControls, inspectorTool: picked });
+      const { focusSessionId: _left, ...rest } = viewControls;
+      commitControls({ ...rest, inspectorTool: picked });
     }),
     /*
      * Menu ▸ Open Insights and Menu ▸ About — DoD 9.27, 9.32. Both switch the
@@ -6126,7 +6127,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
        * call is sent the current state as part of being created, so
        * committing after would send the old surface and then correct it.
        */
-      commitControls({ ...viewControls, surface: 'sessions' });
+      // The deep link's focus ends here, as it does in `openSurface`: a
+      // focus left on the state would follow every later command.
+      const { focusSessionId: _left, ...deck } = viewControls;
+      commitControls({ ...deck, surface: 'sessions' });
       host.open();
       host.panel?.sendViewAction('openDeck');
     }),

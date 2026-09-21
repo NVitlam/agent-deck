@@ -227,11 +227,16 @@ function viewOfFinding(value: unknown): FindingView | null {
   if (!isOneOf(kind, FINDING_KINDS) || !isOneOf(confidence, CONFIDENCES)) return null;
   if (items === null || items.length === 0 || items.length > MAX_EVIDENCE) return null;
   const evidence: FindingEvidenceView[] = [];
+  const keys = new Set<string>();
   for (const item of items) {
     const view = viewOfEvidence(item);
     // One bad piece of evidence drops the FINDING, not the evidence: a
     // finding shown with part of what it rests on is a partial render.
     if (view === null) return null;
+    // The same stats key twice is either a repeat or two values for one
+    // number, and neither is a finding to show (verifier round 9.33, D1).
+    if (keys.has(view.statsKey)) return null;
+    keys.add(view.statsKey);
     evidence.push(view);
   }
   return { kind, confidence, evidence };
@@ -314,10 +319,17 @@ export function viewOfRuns(value: unknown): Checked<RunSummary[]> {
   if (items === null) return { value: [], dropped: value === undefined ? 0 : 1 };
   const runs: RunSummary[] = [];
   let dropped = 0;
+  const ids = new Set<string>();
   for (const item of items.slice(0, MAX_RUNS)) {
     const view = viewOfRun(item);
-    if (view === null) dropped += 1;
-    else runs.push(view);
+    // A run id seen before is dropped and counted: the history names runs by
+    // id, and two rows with one id are one claim made twice (verifier round
+    // 9.33, D1 — the surface keyed its rows on it and Svelte threw).
+    if (view === null || ids.has(view.runId)) dropped += 1;
+    else {
+      ids.add(view.runId);
+      runs.push(view);
+    }
   }
   dropped += Math.max(0, items.length - MAX_RUNS);
   return { value: runs, dropped };

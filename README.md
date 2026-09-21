@@ -845,12 +845,14 @@ about a finding is Agent Deck's own. One provider at a time — a second registr
 both — and disposing the registration returns the surface to its free state.
 
 **What a provider hands over is data: provider data is plain JSON, checked field by field, and never
-executed.** Agent Deck reads only
-the provider's own data properties, never a getter; every string must match a fixed shape (an id,
-a stats key, a name, a version); every enum is checked against its list; lists are capped (64
-findings, 16 evidence items each, 50 runs). A value that fails is dropped and counted, and the
-surface says how many were dropped. Agent Deck calls `getLatest`, `listRuns` and `run` and nothing
-else.
+executed.** Agent Deck reads what the provider returns as the objects' own data properties,
+never through a getter; every string must match a fixed shape (an id, a stats key, a name, a
+version); every enum is checked against its list; lists are capped (64 findings, 16 evidence items
+each, 50 runs); a run id or an evidence key that repeats is refused. A value that fails is dropped
+and counted, and the surface says how many were dropped. The only provider strings shown are its
+name and version and each evidence item's stats key, each matched against its shape first. Agent
+Deck calls `getLatest`, `listRuns` and `run`, and subscribes once through `onDidChange`; it calls
+nothing else.
 
 ## Insights
 
@@ -859,8 +861,9 @@ and no feature of Agent Deck moves behind it.
 
 **Free — no Insights provider registered.** The facts the stats history already holds for the last
 7 days, as tiles, each naming the record field it was counted from: sessions by engine,
-compactions, long-idle resumes (a gap between calls of at least
-`agentDeck.livenessThresholdMs`), re-read loops, failed tool calls, stalls, silent subagents,
+compactions, long-idle resumes (sessions whose longest gap between calls is 120 seconds or more —
+the default of `agentDeck.livenessThresholdMs`, fixed rather than read from your setting), re-read
+loops, failed tool calls, stalls, silent subagents,
 prompt and output tokens, and the cost the engines reported themselves (cost estimated by Claude
 Code or from your prices is not added in). A session read only in part is not counted, and the
 surface says how many were left out. Below them, one of three examples, labelled *"Example, based on

@@ -145,6 +145,7 @@ import {
   CONTROL_COMMANDS,
   CONTROL_SECTIONS,
   DEFAULT_VIEW_CONTROLS,
+  INSPECTOR_TOOL_ALL,
   PANEL_VIEW_TYPE,
   SIDEBAR_VIEW_ID,
   isCommandFrom,
@@ -7208,6 +7209,26 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
       (m) => (m as { type?: string }).type === 'viewControls',
     ) as { controls: ViewControls }[];
     expect(after.at(-1)?.controls.focusSessionId).toBeUndefined();
+
+    // Verifier round 9.33, D2: Open Deck and the Inspector tool pick end the
+    // link's focus too. Left on the state, it rode every later command and
+    // snapped the selection back to the linked session.
+    const last = (): ViewControls | undefined =>
+      (
+        deckPanel().webview.posted.filter(
+          (m) => (m as { type?: string }).type === 'viewControls',
+        ) as { controls: ViewControls }[]
+      ).at(-1)?.controls;
+    await mock.runCommand(OPEN_STATS_COMMAND, 'ses-deep-link');
+    expect(last()?.focusSessionId).toBe('ses-deep-link');
+    await mock.runCommand(OPEN_COMMAND);
+    expect(last()?.surface).toBe('sessions');
+    expect(Object.keys(last() ?? {})).not.toContain('focusSessionId');
+    await mock.runCommand(OPEN_STATS_COMMAND, 'ses-deep-link');
+    mock.answerQuickPick(INSPECTOR_TOOL_ALL);
+    await mock.runCommand('agentDeck.inspector.tool');
+    expect(mock.quickPicks.length).toBeGreaterThan(0);
+    expect(Object.keys(last() ?? {})).not.toContain('focusSessionId');
   });
 
   it('each About tile opens its OWN url, asked first — through the one panel', async () => {
@@ -7549,10 +7570,11 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
    * replaces the modal with a PANEL, so the lookup they exercised — a string
    * comparison against text the editor handed back — does not exist.
    *
-   * What replaced them is stronger and is in two places: the four "About
-   * opens a REAL panel" tests below drive the command, the panel and the
-   * boundary; `src/about-panel.test.ts` clicks the real page in jsdom and
-   * proves which INDEX each of the four buttons posts. The dismissal case is
+   * What replaced them is stronger and is in two places: the About tests
+   * below drive the command, the one panel and the boundary (About has been a
+   * SURFACE of that panel since v0.9.0 DoD 9.32); `webview/surfaces.test.ts`
+   * presses the real tiles in the mounted app and proves which INDEX each
+   * posts. The dismissal case is
    * gone with the modal — a panel is closed, not answered — and the
    * not-one-of-ours case is the hostile-message test below it.
    */
@@ -7614,6 +7636,45 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     expect(panel.posted).toStrictEqual([
       { type: 'settings', ...sent },
       { type: 'settings', ...sent },
+    ]);
+    controller.dispose();
+  });
+
+  it('a reload re-sends the controls and the provider state, after the settings', () => {
+    /*
+     * Verifier round 9.33, D3. Every hide and show reloads the document
+     * (`retainContextWhenHidden` is off), and a reloaded store is back at its
+     * defaults: without these two re-posts a panel shown again would lose the
+     * user's filters and surface, and Insights would read FREE — About blank —
+     * while a provider is registered. Non-default values, so a re-send rebuilt
+     * from defaults would fail.
+     */
+    const panel = fakePanel();
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {},
+    });
+    const controls = { ...DEFAULT_VIEW_CONTROLS, surface: 'insights' as const, deckLayout: 'list' as const };
+    const provider = {
+      page: aboutPage('0.9.0'),
+      provider: {
+        about: { name: 'Agent Deck Insights', version: '0.2.0' },
+        latest: null,
+        runs: [],
+        running: false,
+        dropped: 0,
+      },
+    };
+    controller.setSettings({ canvasAutoFit: false, tweaks: {} });
+    controller.sendViewControls(controls);
+    controller.sendProviderState(provider);
+    const before = panel.posted.length;
+    panel.fireBecameVisible();
+    expect(panel.posted.slice(before)).toStrictEqual([
+      { type: 'settings', canvasAutoFit: false, tweaks: {} },
+      { type: 'viewControls', controls },
+      { type: 'providerState', ...provider },
     ]);
     controller.dispose();
   });
@@ -9528,6 +9589,24 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
       ),
     ).toThrow(/already registered \(Agent Deck Insights 0\.2\.0\); Other Insights 9\.9\.9 was refused/);
     expect(openInsightsValue(resolveSidebar())).toBe('Agent Deck Insights 0.2.0');
+  });
+
+  it('the registry goes with the extension: once its subscriptions are disposed, nothing registers', async () => {
+    // Verifier round 9.33, V4. The editor disposes `context.subscriptions`
+    // on deactivation; the registry must be among them, or a provider could
+    // register into an extension that has shut down.
+    resetVscodeMock();
+    const context = extensionContext();
+    const api = await activate(context);
+    api.registerInsightsProvider(fakeInsightsProvider().provider);
+    for (const subscription of (context as unknown as { subscriptions: { dispose(): unknown }[] })
+      .subscriptions) {
+      subscription.dispose();
+    }
+    expect(() => api.registerInsightsProvider(fakeInsightsProvider().provider)).toThrow(
+      /shutting down/,
+    );
+    await deactivate();
   });
 
   it('a host tells its panel the tweaks on open and on every change', async () => {

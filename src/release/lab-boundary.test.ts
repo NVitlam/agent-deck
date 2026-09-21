@@ -101,6 +101,10 @@ const ALLOWED: Readonly<Record<string, { readonly count: number; readonly why: s
    * literal `evidence` is what the pattern's `(^|/)evidence(/|$)` arm matches.
    * Enumerated rather than narrowing the pattern, which guards real paths.
    */
+  'src/api.test.ts': {
+    count: 1,
+    why: 'the key `evidence` of FindingView in the API’s type-equality check (DoD 9.42); a field name, never a path.',
+  },
   'src/insights-provider.test.ts': {
     count: 1,
     why: 'the key `evidence` of FindingView in a type-equality check; a field name, never a path.',

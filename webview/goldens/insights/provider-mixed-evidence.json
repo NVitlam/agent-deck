@@ -1,0 +1,53 @@
+{
+  "title": "Agent Deck Insights 0.2.0",
+  "latest": {
+    "state": "ok",
+    "facts": {
+      "heading": "Latest run · 2026-09-21 12:00 UTC",
+      "agent": "Claude Code 2.1.246",
+      "window": "3 sessions since 2026-09-14 12:00 UTC",
+      "usage": "Run usage: 1,000 prompt tokens · 100 output tokens · 0.0040 USD (estimated by Claude Code)"
+    },
+    "findings": [
+      {
+        "lead": "Lead line 0 for re-read-loop",
+        "meta": "Re-read loop · low confidence · since last run: new",
+        "detail": "Detail paragraph 0.\nIt spans two lines.",
+        "cause": "Cause sentence 0.",
+        "evidence": [
+          {
+            "label": "Reads",
+            "value": "7",
+            "source": "sessions[0].loops[0].count · ses_example01"
+          },
+          {
+            "label": "File",
+            "value": "repo/docs/schema.md",
+            "source": "sessions[0].files[2].filePath · ses_example01"
+          },
+          {
+            "label": "Skill",
+            "value": "phase",
+            "source": "sessions[1].skills[0].name · ses_example02"
+          },
+          {
+            "label": "Cache ratio",
+            "value": "0.11",
+            "source": "sessions[1].totals.prompt · ses_example02"
+          }
+        ]
+      }
+    ],
+    "rawOutput": false
+  },
+  "history": [
+    {
+      "runId": "run-7",
+      "when": "2026-09-21 12:00 UTC",
+      "outcome": "1 finding",
+      "agent": "Claude Code"
+    }
+  ],
+  "running": true,
+  "dropped": "1 value from the provider did not pass the check and is not shown"
+}

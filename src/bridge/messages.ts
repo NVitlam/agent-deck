@@ -107,6 +107,12 @@ export const WEBVIEW_TO_HOST_TYPES = [
   'aboutLink',
   'insightsGet',
   'insightsRun',
+  /*
+   * v0.9.0 DoD 9.40 — "Show raw output" on a refused set. No payload: the
+   * host resolves the run from the snapshot it built and asks the provider,
+   * so a renderer can name no run id of its own.
+   */
+  'insightsRawOutput',
 ] as const;
 
 /**
@@ -245,6 +251,7 @@ export function isWebviewToHostMessage(
       }
       case 'insightsGet':
       case 'insightsRun':
+      case 'insightsRawOutput':
         // No payload. The type IS the whole message.
         return true;
       default:

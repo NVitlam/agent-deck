@@ -1,0 +1,27 @@
+{
+  "title": "Agent Deck Insights 0.2.0",
+  "latest": {
+    "state": "refused",
+    "facts": {
+      "heading": "Latest run · 2026-09-21 12:00 UTC",
+      "agent": "Claude Code 2.1.246",
+      "window": "4 sessions since 2026-09-14 12:00 UTC",
+      "usage": null
+    },
+    "findings": [],
+    "refusal": {
+      "step": "validate",
+      "reason": "The response held no JSON object.\nNothing was stored."
+    },
+    "rawOutput": true
+  },
+  "history": [
+    {
+      "runId": "run-5",
+      "when": "2026-09-21 12:00 UTC",
+      "outcome": "refused",
+      "agent": "Claude Code"
+    }
+  ],
+  "running": false
+}

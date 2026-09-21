@@ -91,7 +91,9 @@ afterEach(() => {
 
 /** Intents the panel posted, without the ready/handshake traffic. */
 function intents(panel: Panel): WebviewToHostMessage[] {
-  return panel.posted.filter((m) => ['aboutLink', 'insightsGet', 'insightsRun'].includes(m.type));
+  return panel.posted.filter((m) =>
+    ['aboutLink', 'insightsGet', 'insightsRun', 'insightsRawOutput'].includes(m.type),
+  );
 }
 
 const HOUR = 3_600_000;
@@ -127,41 +129,91 @@ function record(sessionId: string, hoursAgo: number, over: Partial<StatsRecord> 
 /** The About page as the host builds it — the production builder, not a copy. */
 const PAGE = aboutPage('0.9.0');
 
+const LATEST_AT = Date.UTC(2026, 8, 21, 10, 0);
+
+/** A finding as the host sends it after the check (DoD 9.40). */
+function viewFinding(id: string, over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id,
+    kind: 're-read-loop',
+    confidence: 'high',
+    action: { lead: `Lead of ${id}`, detail: `Detail of ${id}.\nSecond line.` },
+    cause: `Cause of ${id}.`,
+    evidence: [{ label: 'Reads', sessionId: 'ses_example01', statsKey: 'sessions[1].loops[0].count', value: 7 }],
+    sinceLastRun: 'new',
+    ...over,
+  };
+}
+
+/** The four latest sets DoD 9.41 names. */
+const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Record<string, unknown>>> = {
+  ok: {
+    createdAt: LATEST_AT,
+    agent: { kind: 'claude', version: '2.1.246' },
+    window: { sessions: 3, excluded: 1, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
+    usage: { prompt: 12_345, output: 2_345, costUsd: 0.42 },
+    findings: [
+      viewFinding('f-1', { kind: 'stall', confidence: 'medium', sinceLastRun: 'still' }),
+      viewFinding('f-2', { sinceLastRun: null }),
+    ],
+    rejected: 1,
+    state: 'ok',
+  },
+  empty: {
+    createdAt: LATEST_AT,
+    agent: { kind: 'codex', version: '0.151.0' },
+    window: { sessions: 2, excluded: 0, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
+    usage: { prompt: 900, output: 40 },
+    findings: [],
+    rejected: 0,
+    state: 'empty',
+  },
+  refused: {
+    createdAt: LATEST_AT,
+    agent: { kind: 'claude', version: '2.1.246' },
+    window: { sessions: 3, excluded: 0, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
+    usage: null,
+    findings: [],
+    rejected: 0,
+    state: 'refused',
+    refusal: { step: 'validate', reason: 'The response held no JSON object.' },
+  },
+  'mixed-evidence': {
+    createdAt: LATEST_AT,
+    agent: { kind: 'claude', version: '2.1.246' },
+    window: { sessions: 3, excluded: 0, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
+    usage: null,
+    findings: [
+      viewFinding('f-1', {
+        evidence: [
+          { label: 'Reads', sessionId: 'ses_example01', statsKey: 'sessions[0].loops[0].count', value: 7 },
+          { label: 'File', sessionId: 'ses_example01', statsKey: 'sessions[0].files[2].filePath', value: 'repo/docs/schema.md' },
+        ],
+      }),
+    ],
+    rejected: 0,
+    state: 'ok',
+  },
+};
+
 /** A registered provider's checked snapshot, as the host sends it. */
-function providerState(over: { running?: boolean } = {}): unknown {
+function providerState(
+  over: { running?: boolean; latest?: keyof typeof LATEST; rawOutput?: boolean } = {},
+): unknown {
+  const latest = over.latest ?? 'ok';
   return {
     type: 'providerState',
     page: PAGE,
     provider: {
       about: { name: 'Agent Deck Insights', version: '0.2.0' },
-      latest: {
-        runId: 'run-1',
-        createdAt: Date.UTC(2026, 8, 21, 10, 0),
-        agent: 'claude',
-        window: { sinceMs: Date.UTC(2026, 8, 14, 10, 0), sessions: 3 },
-        findings: [
-          {
-            kind: 'stall',
-            confidence: 'medium',
-            evidence: [{ statsKey: 'sessions[0].totals.stalls', value: 2 }],
-          },
-          {
-            kind: 're-read-loop',
-            confidence: 'high',
-            evidence: [
-              { statsKey: 'sessions[1].loops[0].count', value: 7 },
-              { statsKey: 'sessions[1].loops.length', value: 1 },
-            ],
-          },
-        ],
-        findingsRejected: 1,
-      },
+      latest: LATEST[latest],
       runs: [
-        { runId: 'run-1', createdAt: Date.UTC(2026, 8, 21, 10, 0), outcome: 'findings', findings: 2 },
-        { runId: 'run-0', createdAt: Date.UTC(2026, 8, 20, 9, 30), outcome: 'refused', findings: 0 },
+        { runId: 'run-1', createdAt: LATEST_AT, state: 'ok', findings: 2, agentKind: 'claude' },
+        { runId: 'run-0', createdAt: Date.UTC(2026, 8, 20, 9, 30), state: 'refused', findings: 0, agentKind: 'codex' },
       ],
       running: over.running ?? false,
       dropped: 0,
+      rawOutput: over.rawOutput ?? latest === 'refused',
     },
   };
 }
@@ -394,22 +446,23 @@ describe('the Insights surface, PROVIDER — DoD 9.30', () => {
     // threw `each_key_duplicate` and the whole surface rendered nothing.
     const panel = render();
     const state = providerState() as { provider: Record<string, unknown> };
-    const run = { runId: 'run-1', createdAt: Date.UTC(2026, 8, 21, 10, 0), outcome: 'findings', findings: 1 };
-    const evidence = { statsKey: 'sessions[0].totals.stalls', value: 2 };
+    const run = { runId: 'run-1', createdAt: LATEST_AT, state: 'ok', findings: 1, agentKind: 'claude' };
+    const evidence = { label: 'Stalls', sessionId: 'ses_example01', statsKey: 'sessions[0].totals.stalls', value: 2 };
     send({
       ...state,
       provider: {
         ...state.provider,
         latest: {
           ...(state.provider['latest'] as Record<string, unknown>),
-          findings: [{ kind: 'stall', confidence: 'low', evidence: [evidence, evidence] }],
+          findings: [viewFinding('f-1', { evidence: [evidence, evidence] }), viewFinding('f-1')],
         },
         runs: [run, run],
       },
     });
     send(viewControls({ surface: 'insights' }));
     expect(all(panel.container, TESTID.insightsHistoryRow)).toHaveLength(2);
-    expect(all(panel.container, TESTID.insightsFinding)).toHaveLength(1);
+    expect(all(panel.container, TESTID.insightsFinding)).toHaveLength(2);
+    expect(all(panel.container, TESTID.insightsEvidence)).toHaveLength(3);
   });
 
   it('the store refuses a Get intent while a provider is registered', () => {
@@ -417,6 +470,136 @@ describe('the Insights surface, PROVIDER — DoD 9.30', () => {
     send(providerState());
     panel.store.getInsights();
     expect(intents(panel)).toStrictEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * DoD 9.41 — the widened finding, mounted
+ * ------------------------------------------------------------------------ */
+
+/** The testids and text of a finding's children, in DOCUMENT order. */
+function findingOrder(finding: Element): string[] {
+  return [...finding.querySelectorAll('[data-testid]')].map((el) => el.getAttribute('data-testid') ?? '');
+}
+
+describe('the provider’s text, rendered — DoD 9.41', () => {
+  it('a finding reads LEAD first, then its words, the detail behind an expand, the cause, the evidence', () => {
+    const panel = render();
+    send(providerState());
+    send(viewControls({ surface: 'insights' }));
+    const [first] = all(panel.container, TESTID.insightsFinding);
+    expect(findingOrder(first as Element)).toStrictEqual([
+      'insights-finding-lead',
+      'insights-finding-meta',
+      TESTID.insightsDetail,
+      'insights-finding-detail',
+      'insights-finding-cause',
+      TESTID.insightsEvidence,
+    ]);
+    expect(one(first as Element, 'insights-finding-lead').textContent).toBe('Lead of f-1');
+    expect(one(first as Element, 'insights-finding-meta').textContent).toBe(
+      'Stall · medium confidence · since last run: still',
+    );
+    // The detail is BEHIND the expand: inside a closed <details>, under its <summary>.
+    const detail = one(first as Element, 'insights-finding-detail');
+    const details = detail.closest('details');
+    expect(details).not.toBeNull();
+    expect(details?.hasAttribute('open')).toBe(false);
+    expect(details?.querySelector('summary')?.getAttribute('data-testid')).toBe(TESTID.insightsDetail);
+    // The provider's own line break survives as text.
+    expect(detail.textContent).toBe('Detail of f-1.\nSecond line.');
+    // A finding with no since-last-run says nothing about it.
+    const second = all(panel.container, TESTID.insightsFinding)[1] as Element;
+    expect(one(second, 'insights-finding-meta').textContent).toBe('Re-read loop · high confidence');
+  });
+
+  it('provider text is TEXT: markup in it renders as characters, never as elements', () => {
+    const panel = render();
+    const state = providerState() as { provider: Record<string, unknown> };
+    send({
+      ...state,
+      provider: {
+        ...state.provider,
+        latest: {
+          ...(state.provider['latest'] as Record<string, unknown>),
+          findings: [viewFinding('f-x', { cause: 'wrote <img src=x onerror=alert(1)> into a.ts' })],
+        },
+      },
+    });
+    send(viewControls({ surface: 'insights' }));
+    const cause = one(panel.container, 'insights-finding-cause');
+    expect(cause.textContent).toContain('<img src=x onerror=alert(1)>');
+    expect(cause.querySelector('img')).toBeNull();
+  });
+
+  it('run facts head the set: "estimated by Claude Code" on a Claude run’s usage, and not on a Codex run’s', () => {
+    const claude = render();
+    send(providerState());
+    send(viewControls({ surface: 'insights' }));
+    expect(one(claude.container, 'insights-run-usage').textContent).toBe(
+      'Run usage: 12,345 prompt tokens · 2,345 output tokens · 0.42 USD (estimated by Claude Code)',
+    );
+    expect(one(claude.container, TESTID.insightsRunFacts).textContent).toContain('Claude Code 2.1.246');
+    claude.dispose();
+    mounted.pop();
+
+    const codex = render();
+    send(providerState({ latest: 'empty' }));
+    send(viewControls({ surface: 'insights' }));
+    expect(one(codex.container, 'insights-run-usage').textContent).toBe('Run usage: 900 prompt tokens · 40 output tokens');
+    expect(one(codex.container, TESTID.insightsRunFacts).textContent).not.toContain('estimated');
+    expect(one(codex.container, 'insights-latest-note').textContent).toBe(
+      'The run read the window and recorded no findings.',
+    );
+  });
+
+  it('a REFUSED set shows its step and reason, and "Show raw output" posts the intent', () => {
+    const panel = render();
+    send(providerState({ latest: 'refused' }));
+    send(viewControls({ surface: 'insights' }));
+    const refusal = one(panel.container, TESTID.insightsRefusal);
+    expect(refusal.textContent).toContain('Refused at step: validate');
+    expect(refusal.textContent).toContain('The response held no JSON object.');
+    expect(all(panel.container, TESTID.insightsFinding)).toStrictEqual([]);
+    click(one(panel.container, TESTID.insightsRawOutput));
+    expect(intents(panel)).toStrictEqual([{ type: 'insightsRawOutput' }]);
+  });
+
+  it('no raw-output action where the host did not offer one — and the store posts nothing if asked', () => {
+    const panel = render();
+    send(providerState({ latest: 'refused', rawOutput: false }));
+    send(viewControls({ surface: 'insights' }));
+    expect(all(panel.container, TESTID.insightsRefusal)).toHaveLength(1);
+    expect(all(panel.container, TESTID.insightsRawOutput)).toStrictEqual([]);
+    panel.store.showInsightsRawOutput();
+    expect(intents(panel)).toStrictEqual([]);
+    // Nor on a set that was not refused, whatever the flag says.
+    send(providerState({ latest: 'ok', rawOutput: true }));
+    expect(all(panel.container, TESTID.insightsRawOutput)).toStrictEqual([]);
+  });
+
+  it('a string and a number of evidence each render under their label', () => {
+    const panel = render();
+    send(providerState({ latest: 'mixed-evidence' }));
+    send(viewControls({ surface: 'insights' }));
+    expect(
+      all(panel.container, TESTID.insightsEvidence).map((el) => el.textContent?.replace(/\s+/g, ' ').trim()),
+    ).toStrictEqual([
+      'Reads 7 sessions[0].loops[0].count · ses_example01',
+      'File repo/docs/schema.md sessions[0].files[2].filePath · ses_example01',
+    ]);
+  });
+
+  it('the history names each run’s state and agent', () => {
+    const panel = render();
+    send(providerState());
+    send(viewControls({ surface: 'insights' }));
+    expect(
+      all(panel.container, TESTID.insightsHistoryRow).map((el) => el.textContent?.replace(/\s+/g, ' ').trim()),
+    ).toStrictEqual([
+      '2026-09-21 10:00 UTC · 2 findings · Claude Code',
+      '2026-09-20 09:30 UTC · refused · Codex',
+    ]);
   });
 });
 
@@ -621,13 +804,19 @@ describe('DOM goldens of both surfaces in both states', () => {
     });
     send(viewControls({ surface: 'insights' }));
     golden('insights-free', one(free.container, TESTID.insightsSurface));
-    free.dispose();
-    mounted.pop();
+    // The provider state's goldens are the four below (DoD 9.41); the one
+    // that stood here until 9.40 was the `ok` state and is `-ok` now.
+  });
 
-    const paid = render();
-    send(providerState());
-    send(viewControls({ surface: 'insights' }));
-    golden('insights-provider', one(paid.container, TESTID.insightsSurface));
+  it('Insights with a provider, in each of DoD 9.41’s four states', () => {
+    for (const latest of ['ok', 'empty', 'refused', 'mixed-evidence'] as const) {
+      const panel = render();
+      send(providerState({ latest }));
+      send(viewControls({ surface: 'insights' }));
+      golden(`insights-provider-${latest}`, one(panel.container, TESTID.insightsSurface));
+      panel.dispose();
+      mounted.pop();
+    }
   });
 
   it('the goldens are not being written by this run', () => {

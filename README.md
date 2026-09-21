@@ -832,27 +832,63 @@ disposable. A provider is:
   getLatest(): FindingSetView | null;
   listRuns(): RunSummary[];
   run(): Promise<void>;
+  getRawOutput?(runId: string): string | null; // optional
   onDidChange: Event<void>;
 }
 ```
 
-`FindingSetView` and `RunSummary` are plain JSON types defined by Agent Deck. A finding is a
-**kind** from a fixed list (re-read loop, churn chain, context churn, stall, silent subagent,
-compaction, cache miss, other), a **confidence** (low, medium, high) and **numeric evidence**, each
-item a stats-record key and a number. `providerVersion` is `1`, and a provider fires `onDidChange`
-whenever what `getLatest` or `listRuns` would return has moved. There is no text field: every word the Insights surface shows
-about a finding is Agent Deck's own. One provider at a time — a second registration throws, naming
-both — and disposing the registration returns the surface to its free state.
+`FindingSetView` and `RunSummary` are plain JSON types defined by Agent Deck and exported from its
+API module with every type they use:
+
+```ts
+FindingSetView {
+  createdAt: number;
+  agent: { kind: 'claude' | 'codex'; version: string };
+  window: { sessions: number; excluded: number; sinceMs: number };
+  usage: { prompt: number; output: number; costUsd?: number } | null;
+  findings: FindingView[];      // empty unless state is 'ok'
+  rejected: number;
+  state: 'ok' | 'empty' | 'refused';
+  refusal?: { step: string; reason: string }; // present exactly when refused
+}
+FindingView {
+  id: string;
+  kind: 're-read-loop' | 'churn-chain' | 'context-churn' | 'stall'
+      | 'silent-subagent' | 'compaction' | 'cache-miss' | 'other';
+  confidence: 'low' | 'medium' | 'high';
+  action: { lead: string; detail: string }; // lead: at most 15 words, one line
+  cause: string;
+  evidence: { label: string; sessionId: string; statsKey: string; value: number | string }[];
+  sinceLastRun: 'new' | 'still' | 'resolved' | null;
+}
+RunSummary { runId: string; createdAt: number; state: 'ok' | 'empty' | 'refused'; findings: number; agentKind: 'claude' | 'codex' }
+```
+
+`providerVersion` is `1`, and a provider fires `onDidChange` whenever what `getLatest` or
+`listRuns` would return has moved. The Insights surface shows each finding's action lead first, its
+kind, confidence and "since last run" as words (never a score), the detail behind an expand, the
+cause, then each piece of evidence under its label. Above them it states the run: when, which
+agent CLI and version, the window, and the run's own usage — marked *estimated by Claude Code*
+when the agent was Claude Code. A refused run shows the step and the reason, and, when the
+provider has `getRawOutput`, a **Show raw output** action that opens that run's raw output as an
+untitled plain-text document. One provider at a time — a second registration throws, naming both —
+and disposing the registration returns the surface to its free state.
 
 **What a provider hands over is data: provider data is plain JSON, checked field by field, and never
 executed.** Agent Deck reads what the provider returns as the objects' own data properties,
-never through a getter; every string must match a fixed shape (an id, a stats key, a name, a
-version); every enum is checked against its list; lists are capped (64 findings, 16 evidence items
-each, 50 runs); a run id or an evidence key that repeats is refused. A value that fails is dropped
-and counted, and the surface says how many were dropped. The only provider strings shown are its
-name and version and each evidence item's stats key, each matched against its shape first. Agent
-Deck calls `getLatest`, `listRuns` and `run`, and subscribes once through `onDidChange`; it calls
-nothing else.
+never through a getter; every enum is checked against its list; every id, version and stats key
+must match a fixed shape; lists are capped (64 findings, 16 evidence items each, 50 runs); a run
+id, a finding id, or one stats key of one session that repeats is refused. **Every text is
+length-capped and checked**: a name (an evidence label, a refusal's step) at most 64 characters,
+a path at most 1,024, free text (an action, a cause, a refusal's reason) at most 2,000 — the
+first two are the stats history's own caps — with no non-printing character (free text may carry a
+line break or a tab), no bidirectional override, no line or paragraph separator and no lone
+surrogate. Evidence may be text only on a stats-record field the history itself stores as text,
+under that field's cap. A set whose state and findings disagree is refused whole. A value that
+fails is **dropped and counted, never shortened**, and the surface says how many were dropped.
+Raw output over 1,048,576 characters is not opened at all. Agent Deck calls `getLatest`,
+`listRuns` and `run`, `getRawOutput` only when you ask for a refused run's raw output, and
+subscribes once through `onDidChange`; it calls nothing else.
 
 ## Insights
 

@@ -1,10 +1,11 @@
 /**
- * The Insights provider — extension API v2, v0.9.0 DoD 9.30 (spec `Amendment
- * 2026-09-21 — One window, Insights provider, Menu-only entry`).
+ * The Insights provider — extension API v2, v0.9.0 DoD 9.30, widened by DoD
+ * 9.40 (spec `Amendment 2026-09-22 — Provider contract v1 widened
+ * (pre-publish; API_VERSION stays 2)`).
  *
  * ## What changed, and why the parent stopped asking whether Insights is installed
  *
- * Until this delta the parent looked Insights up by extension id, asked
+ * Until DoD 9.30 the parent looked Insights up by extension id, asked
  * whether it was INSTALLED, and ran its commands by name. Two own-eyes passes
  * found that wrong: a command id the parent invented and Insights never
  * contributed, and a sidebar that described the wrong state while the panel
@@ -15,11 +16,13 @@
  *
  * ## What the parent may do with a provider — and nothing else
  *
- * It reads `providerVersion` and `about` once, at registration. It calls
- * `getLatest()` and `listRuns()` to build a snapshot, `run()` when the user
- * presses Run, and subscribes to `onDidChange`. **It calls nothing else on
- * it**, and `insights-provider.test.ts` holds that with a provider wrapped in a
- * Proxy that records every property read.
+ * It reads `providerVersion`, `about` and whether `getRawOutput` exists once,
+ * at registration. It calls `getLatest()` and `listRuns()` to build a
+ * snapshot, `run()` when the user presses Run, `getRawOutput(runId)` when
+ * the user asks for a refused run's raw output, and subscribes to
+ * `onDidChange`. **It calls nothing else on it**, and
+ * `insights-provider.test.ts` holds that with a provider wrapped in a Proxy
+ * that records every property read.
  *
  * Insights registers only after it has verified a licence signature, so the
  * parent never has licence knowledge: a provider being registered is the
@@ -31,12 +34,22 @@
  * (`src/model/events.ts`), and a provider is another extension's code. So
  * nothing it returns is passed on: {@link viewOfFindingSet} and
  * {@link viewOfRuns} read each field through own-data-property access, check
- * it — enumerations against their lists, every other string against a strict
- * shape — and build a fresh object from the fields that passed. A value that
- * fails is DROPPED and COUNTED, never repaired (G3), and the count is shown
- * on the surface. **No raw model output crosses**: a finding is its kind, its
- * confidence and its numeric evidence, and the words the surface prints about
- * it are the parent's own.
+ * it, and build a fresh object from the fields that passed.
+ *
+ * **Since DoD 9.40 a finding carries the provider's TEXT** — an action lead
+ * and detail, a cause, evidence labels, a refusal's step and reason. Every
+ * one is checked against a TEXT CLASS, the same caps the stats store keeps:
+ * a NAME is at most {@link NAME_MAX_CHARS} characters, a PATH at most
+ * {@link PATH_MAX_CHARS}, FREE TEXT at most {@link FREE_TEXT_MAX_CHARS}. The
+ * store states the first two (`src/stats/schema.ts`); it has no free-text
+ * class, because nothing in a stats record is prose, so the third is new
+ * here and is the amendment's number. No text may carry a control character
+ * (free text may carry a line break and a tab), a bidirectional override, a
+ * line or paragraph separator, or a lone surrogate.
+ *
+ * A value that fails is DROPPED and COUNTED — never truncated, never
+ * repaired (G3) — and the count is shown on the surface. A truncated string
+ * is still text the provider did not send.
  *
  * ## No `vscode` import
  *
@@ -45,15 +58,26 @@
  */
 
 import type {
+  FindingActionView,
   FindingEvidenceView,
+  FindingSetRefusalView,
   FindingSetView,
+  FindingSinceLastRun,
   FindingView,
+  InsightsAgentKind,
   InsightsConfidence,
   InsightsFindingKind,
   InsightsProviderAbout,
   InsightsProviderSnapshot,
+  InsightsRunState,
   RunSummary,
 } from './model/events.js';
+import {
+  NAME_MAX_CHARS,
+  PATH_MAX_CHARS,
+  STATS_SCOPED_STRING_FIELDS,
+  STATS_STRING_FIELDS,
+} from './stats/schema.js';
 
 /** The provider contract's version. A provider states it; any other is refused. */
 export const PROVIDER_VERSION = 1;
@@ -72,14 +96,17 @@ export const FINDING_KINDS: readonly InsightsFindingKind[] = Object.freeze([
 
 export const CONFIDENCES: readonly InsightsConfidence[] = Object.freeze(['low', 'medium', 'high']);
 
-export const RUN_OUTCOMES: readonly RunSummary['outcome'][] = Object.freeze(['findings', 'refused']);
+export const RUN_STATES: readonly InsightsRunState[] = Object.freeze(['ok', 'empty', 'refused']);
 
-export const AGENTS: readonly Exclude<FindingSetView['agent'], null>[] = Object.freeze([
-  'claude',
-  'codex',
+export const SINCE_LAST_RUN: readonly FindingSinceLastRun[] = Object.freeze([
+  'new',
+  'still',
+  'resolved',
 ]);
 
-/** A run id. Short, and no character that means anything to a renderer. */
+export const AGENTS: readonly InsightsAgentKind[] = Object.freeze(['claude', 'codex']);
+
+/** An id — a run's, a finding's, a session's. No character that means anything to a renderer. */
 export const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 /**
@@ -92,13 +119,36 @@ export const STATS_KEY_PATTERN =
 /** A provider's display name. */
 export const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 
-/** A provider's version: `1.2.3`, optionally `-rc.1`. */
+/** A version: `1.2.3`, optionally `-rc.1` or `-alpha.7.2`. */
 export const VERSION_PATTERN = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-[A-Za-z0-9.]{1,32})?$/;
+
+/**
+ * The free-text cap — the amendment's number. The store caps names and paths
+ * ({@link NAME_MAX_CHARS}, {@link PATH_MAX_CHARS}) and has no prose to cap.
+ */
+export const FREE_TEXT_MAX_CHARS = 2000;
+
+/** An action's lead: at most this many words. */
+export const LEAD_MAX_WORDS = 15;
+
+/** The text classes and their caps, in CHARACTERS as the store counts them. */
+export type TextClass = 'name' | 'path' | 'free';
+export const TEXT_CAPS: Readonly<Record<TextClass, number>> = Object.freeze({
+  name: NAME_MAX_CHARS,
+  path: PATH_MAX_CHARS,
+  free: FREE_TEXT_MAX_CHARS,
+});
 
 /** Upper bounds, so a provider cannot make the panel draw without end. */
 export const MAX_FINDINGS = 64;
 export const MAX_EVIDENCE = 16;
 export const MAX_RUNS = 50;
+
+/**
+ * The most raw output the host will open, in characters. More is REFUSED,
+ * never cut: a cut transcript of what a model said is a different transcript.
+ */
+export const RAW_OUTPUT_MAX_CHARS = 1_048_576;
 
 /** `vscode.Disposable`'s shape. */
 export interface ProviderDisposable {
@@ -113,8 +163,9 @@ export type ProviderEvent<T> = (
 ) => ProviderDisposable;
 
 /**
- * What another extension registers — spec `Amendment 2026-09-21`, verbatim in
- * shape. Every member is the parent's to READ; none is the parent's to write.
+ * What another extension registers — spec `Amendment 2026-09-21`, widened by
+ * `Amendment 2026-09-22`. Every member is the parent's to READ; none is the
+ * parent's to write.
  */
 export interface InsightsProvider {
   readonly providerVersion: typeof PROVIDER_VERSION;
@@ -125,6 +176,11 @@ export interface InsightsProvider {
   listRuns(): RunSummary[];
   /** Run once. The parent awaits it and shows `running` until it settles. */
   run(): Promise<void>;
+  /**
+   * OPTIONAL — a run's raw output, or `null` when the provider has none.
+   * Asked only for a REFUSED run, when the user presses "Show raw output".
+   */
+  getRawOutput?(runId: string): string | null;
   /** Fires when anything `getLatest` or `listRuns` would return has moved. */
   readonly onDidChange: ProviderEvent<void>;
 }
@@ -176,6 +232,11 @@ function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 1e9;
 }
 
+/** A token count: any non-negative safe integer (a window can exceed a billion). */
+function isTokens(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
 function isInstant(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 8.64e15;
 }
@@ -199,6 +260,72 @@ function itemsOf(value: unknown): readonly unknown[] | null {
 }
 
 /* ------------------------------------------------------------------------ *
+ * Text
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Characters no provider text may carry, in any class: C0 controls other
+ * than tab and line feed, DEL and the C1 controls, the line and paragraph
+ * separators, and the bidirectional marks and overrides a renderer would
+ * obey (the Trojan Source class).
+ */
+const FORBIDDEN_CHARS =
+  // Matching control characters is this pattern's whole job.
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u061C\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069]/;
+
+/** A high surrogate with no low after it, or a low with no high before it. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/**
+ * True iff `value` is text of `cls`: a string, not blank, within the class's
+ * cap, free of {@link FORBIDDEN_CHARS} and lone surrogates — and, unless
+ * `multiline`, with no line feed or tab.
+ */
+export function isText(value: unknown, cls: TextClass, multiline = false): value is string {
+  if (typeof value !== 'string' || value.length > TEXT_CAPS[cls]) return false;
+  if (value.trim() === '') return false;
+  if (!multiline && /[\n\t]/.test(value)) return false;
+  return !FORBIDDEN_CHARS.test(value) && !LONE_SURROGATE.test(value);
+}
+
+/** An action's lead: one line of free text, at most {@link LEAD_MAX_WORDS} words. */
+export function isLead(value: unknown): value is string {
+  return isText(value, 'free') && value.trim().split(/\s+/).length <= LEAD_MAX_WORDS;
+}
+
+/** A session record's path inside a stats key: `sessions[3].<this>`. */
+const RECORD_PATH = /^sessions\[(?:0|[1-9]\d{0,5})\]\.(.+)$/;
+
+/**
+ * The text class a STRING evidence value may take at `statsKey`, or `null`
+ * when a string is not admitted there.
+ *
+ * The store's own allow-list decides, judged the way its validator judges a
+ * stored record: the key the path ends in (an array element is judged by the
+ * array's name, so `unavailable[2]` is `unavailable`) against
+ * `STATS_STRING_FIELDS`, or the path with every index as `[]` against
+ * `STATS_SCOPED_STRING_FIELDS` (`skills[].name`). A key the store does not
+ * allow as a string cannot carry one here either — which is what keeps this
+ * from being a second, unchecked route for a string into the panel.
+ *
+ * The cap is the store's where it has one (`filePath` 1,024, `agentType` and
+ * a skill's `name` 64); `projectSlug` is a path's encoding and takes the path
+ * cap; every other admitted key is an identifier or an enum and takes the
+ * name cap.
+ */
+export function stringEvidenceClass(statsKey: string): TextClass | null {
+  if (!STATS_KEY_PATTERN.test(statsKey)) return null;
+  const path = RECORD_PATH.exec(statsKey)?.[1];
+  if (path === undefined) return null;
+  const key = /([A-Za-z_][A-Za-z0-9_]*)(?:\[\d+\])*$/.exec(path)?.[1];
+  if (key === undefined) return null;
+  const scoped = path.replace(/\[\d+\]/g, '[]');
+  if (!STATS_STRING_FIELDS.has(key) && !STATS_SCOPED_STRING_FIELDS.has(scoped)) return null;
+  return key === 'filePath' || key === 'projectSlug' ? 'path' : 'name';
+}
+
+/* ------------------------------------------------------------------------ *
  * The views
  * ------------------------------------------------------------------------ */
 
@@ -212,19 +339,43 @@ export function viewOfAbout(value: unknown): InsightsProviderAbout | null {
 }
 
 function viewOfEvidence(value: unknown): FindingEvidenceView | null {
-  if (!hasExactly(value, ['statsKey', 'value'])) return null;
+  if (!hasExactly(value, ['label', 'sessionId', 'statsKey', 'value'])) return null;
+  const label = own(value, 'label');
+  const sessionId = own(value, 'sessionId');
   const statsKey = own(value, 'statsKey');
-  const number = own(value, 'value');
-  if (!matches(statsKey, STATS_KEY_PATTERN) || !isFiniteNumber(number)) return null;
-  return { statsKey, value: number };
+  const item = own(value, 'value');
+  if (!isText(label, 'name') || !matches(sessionId, ID_PATTERN)) return null;
+  if (!matches(statsKey, STATS_KEY_PATTERN)) return null;
+  if (isFiniteNumber(item)) return { label, sessionId, statsKey, value: item };
+  if (typeof item !== 'string') return null;
+  const cls = stringEvidenceClass(statsKey);
+  if (cls === null || !isText(item, cls)) return null;
+  return { label, sessionId, statsKey, value: item };
 }
 
+function viewOfAction(value: unknown): FindingActionView | null {
+  if (!hasExactly(value, ['lead', 'detail'])) return null;
+  const lead = own(value, 'lead');
+  const detail = own(value, 'detail');
+  if (!isLead(lead) || !isText(detail, 'free', true)) return null;
+  return { lead, detail };
+}
+
+const FINDING_KEYS = ['id', 'kind', 'confidence', 'action', 'cause', 'evidence', 'sinceLastRun'];
+
 function viewOfFinding(value: unknown): FindingView | null {
-  if (!hasExactly(value, ['kind', 'confidence', 'evidence'])) return null;
+  if (!hasExactly(value, FINDING_KEYS)) return null;
+  const id = own(value, 'id');
   const kind = own(value, 'kind');
   const confidence = own(value, 'confidence');
+  const action = viewOfAction(own(value, 'action'));
+  const cause = own(value, 'cause');
+  const sinceLastRun = own(value, 'sinceLastRun');
   const items = itemsOf(own(value, 'evidence'));
+  if (!matches(id, ID_PATTERN)) return null;
   if (!isOneOf(kind, FINDING_KINDS) || !isOneOf(confidence, CONFIDENCES)) return null;
+  if (action === null || !isText(cause, 'free', true)) return null;
+  if (sinceLastRun !== null && !isOneOf(sinceLastRun, SINCE_LAST_RUN)) return null;
   if (items === null || items.length === 0 || items.length > MAX_EVIDENCE) return null;
   const evidence: FindingEvidenceView[] = [];
   const keys = new Set<string>();
@@ -233,84 +384,139 @@ function viewOfFinding(value: unknown): FindingView | null {
     // One bad piece of evidence drops the FINDING, not the evidence: a
     // finding shown with part of what it rests on is a partial render.
     if (view === null) return null;
-    // The same stats key twice is either a repeat or two values for one
-    // number, and neither is a finding to show (verifier round 9.33, D1).
-    if (keys.has(view.statsKey)) return null;
-    keys.add(view.statsKey);
+    // The same key of the same session twice is either a repeat or two
+    // values for one number, and neither is a finding to show (verifier
+    // round 9.33, D1).
+    const key = JSON.stringify([view.sessionId, view.statsKey]);
+    if (keys.has(key)) return null;
+    keys.add(key);
     evidence.push(view);
   }
-  return { kind, confidence, evidence };
+  return { id, kind, confidence, action, cause, evidence, sinceLastRun };
 }
 
-/** A checked finding set, and how many values were dropped on the way. */
+function viewOfUsage(value: unknown): FindingSetView['usage'] | undefined {
+  if (value === null) return null;
+  const withCost = hasExactly(value, ['prompt', 'output', 'costUsd']);
+  if (!withCost && !hasExactly(value, ['prompt', 'output'])) return undefined;
+  const prompt = own(value, 'prompt');
+  const output = own(value, 'output');
+  if (!isTokens(prompt) || !isTokens(output)) return undefined;
+  if (!withCost) return { prompt, output };
+  const costUsd = own(value, 'costUsd');
+  if (!isFiniteNumber(costUsd) || costUsd < 0) return undefined;
+  return { prompt, output, costUsd };
+}
+
+function viewOfRefusal(value: unknown): FindingSetRefusalView | null {
+  if (!hasExactly(value, ['step', 'reason'])) return null;
+  const step = own(value, 'step');
+  const reason = own(value, 'reason');
+  if (!isText(step, 'name') || !isText(reason, 'free', true)) return null;
+  return { step, reason };
+}
+
+/** A checked value, and how many values were dropped on the way. */
 export interface Checked<T> {
   value: T;
   dropped: number;
 }
 
+const SET_KEYS = ['createdAt', 'agent', 'window', 'usage', 'findings', 'rejected', 'state'];
+
 /**
  * The latest finding set, checked and copied.
  *
- * The envelope must be whole: a set whose id, instant, agent or window fails
- * is dropped entirely (one drop) and the surface shows no latest set. Findings
- * are checked one by one, and each that fails is dropped and counted while
- * the rest are shown — the set is still the provider's statement about a
- * run, and the drop count beside it says it was not shown whole.
+ * The ENVELOPE must be whole: a set whose instant, agent, window, usage,
+ * state or refusal fails is dropped entirely (one drop) and the surface shows
+ * no latest set. So is a set whose state and findings disagree — `ok` with no
+ * finding, `empty` or `refused` with one — or whose `refusal` is present
+ * without `refused` or absent with it: a set that contradicts itself is not a
+ * statement about a run.
+ *
+ * Findings are checked one by one, and each that fails is dropped and counted
+ * while the rest are shown — the set is still the provider's statement about
+ * a run, and the drop count beside it says it was not shown whole. A finding
+ * id seen before in the same set is dropped and counted the same way.
  */
 export function viewOfFindingSet(value: unknown): Checked<FindingSetView | null> {
   if (value === null || value === undefined) return { value: null, dropped: 0 };
-  const expected = ['runId', 'createdAt', 'agent', 'window', 'findings', 'findingsRejected'];
-  if (!hasExactly(value, expected)) return { value: null, dropped: 1 };
-  const runId = own(value, 'runId');
+  const dropSet = { value: null, dropped: 1 };
+  const state = own(value, 'state');
+  if (!isOneOf(state, RUN_STATES)) return dropSet;
+  if (!hasExactly(value, state === 'refused' ? [...SET_KEYS, 'refusal'] : SET_KEYS)) return dropSet;
   const createdAt = own(value, 'createdAt');
   const agent = own(value, 'agent');
   const window = own(value, 'window');
-  const findingsRejected = own(value, 'findingsRejected');
+  const rejected = own(value, 'rejected');
+  const usage = viewOfUsage(own(value, 'usage'));
   const items = itemsOf(own(value, 'findings'));
-  const sinceMs = own(window, 'sinceMs');
+  const kind = own(agent, 'kind');
+  const version = own(agent, 'version');
   const sessions = own(window, 'sessions');
+  const excluded = own(window, 'excluded');
+  const sinceMs = own(window, 'sinceMs');
   const envelopeOk =
-    matches(runId, ID_PATTERN) &&
     isInstant(createdAt) &&
-    (agent === null || isOneOf(agent, AGENTS)) &&
-    hasExactly(window, ['sinceMs', 'sessions']) &&
-    isInstant(sinceMs) &&
+    hasExactly(agent, ['kind', 'version']) &&
+    isOneOf(kind, AGENTS) &&
+    matches(version, VERSION_PATTERN) &&
+    hasExactly(window, ['sessions', 'excluded', 'sinceMs']) &&
     isCount(sessions) &&
-    isCount(findingsRejected) &&
-    items !== null;
-  if (!envelopeOk) return { value: null, dropped: 1 };
+    isCount(excluded) &&
+    isInstant(sinceMs) &&
+    usage !== undefined &&
+    isCount(rejected) &&
+    items !== null &&
+    (state === 'ok' ? items.length > 0 : items.length === 0);
+  if (!envelopeOk) return dropSet;
+  let refusal: FindingSetRefusalView | null = null;
+  if (state === 'refused') {
+    refusal = viewOfRefusal(own(value, 'refusal'));
+    if (refusal === null) return dropSet;
+  }
   const findings: FindingView[] = [];
+  const ids = new Set<string>();
   let dropped = 0;
   for (const item of items.slice(0, MAX_FINDINGS)) {
     const view = viewOfFinding(item);
-    if (view === null) dropped += 1;
-    else findings.push(view);
+    if (view === null || ids.has(view.id)) dropped += 1;
+    else {
+      ids.add(view.id);
+      findings.push(view);
+    }
   }
   // Past the cap is not "invalid", and it is not shown either — so it is
   // counted, because a drop nobody can see is the silent partial render.
   dropped += Math.max(0, items.length - MAX_FINDINGS);
   return {
     value: {
-      runId,
       createdAt,
-      agent,
-      window: { sinceMs, sessions },
+      agent: { kind, version },
+      window: { sessions, excluded, sinceMs },
+      usage,
       findings,
-      findingsRejected,
+      rejected,
+      state,
+      ...(refusal === null ? {} : { refusal }),
     },
     dropped,
   };
 }
 
 function viewOfRun(value: unknown): RunSummary | null {
-  if (!hasExactly(value, ['runId', 'createdAt', 'outcome', 'findings'])) return null;
+  if (!hasExactly(value, ['runId', 'createdAt', 'state', 'findings', 'agentKind'])) return null;
   const runId = own(value, 'runId');
   const createdAt = own(value, 'createdAt');
-  const outcome = own(value, 'outcome');
+  const state = own(value, 'state');
   const findings = own(value, 'findings');
+  const agentKind = own(value, 'agentKind');
   if (!matches(runId, ID_PATTERN) || !isInstant(createdAt)) return null;
-  if (!isOneOf(outcome, RUN_OUTCOMES) || !isCount(findings)) return null;
-  return { runId, createdAt, outcome, findings };
+  if (!isOneOf(state, RUN_STATES) || !isCount(findings) || !isOneOf(agentKind, AGENTS)) return null;
+  // The same agreement the set keeps: an `ok` run found something, the
+  // others found nothing.
+  if (state === 'ok' ? findings === 0 : findings !== 0) return null;
+  return { runId, createdAt, state, findings, agentKind };
 }
 
 /** The run history, checked and copied, capped at {@link MAX_RUNS}. */
@@ -335,6 +541,23 @@ export function viewOfRuns(value: unknown): Checked<RunSummary[]> {
   return { value: runs, dropped };
 }
 
+/**
+ * The run a refused latest set belongs to, or `null`.
+ *
+ * The set view carries no run id (the amendment's shape), so the host joins
+ * it to the history: EXACTLY ONE run whose `createdAt` equals the set's and
+ * whose state is `refused`. None, or more than one, is `null` — the raw
+ * output of a run the host had to guess at is not offered (G3).
+ */
+export function refusedRunIdOf(
+  latest: FindingSetView | null,
+  runs: readonly RunSummary[],
+): string | null {
+  if (latest === null || latest.state !== 'refused') return null;
+  const matched = runs.filter((run) => run.createdAt === latest.createdAt && run.state === 'refused');
+  return matched.length === 1 ? (matched[0] as RunSummary).runId : null;
+}
+
 /* ------------------------------------------------------------------------ *
  * The registry — one provider at a time
  * ------------------------------------------------------------------------ */
@@ -350,8 +573,23 @@ export interface InsightsProviderRegistryOptions {
 interface Registration {
   readonly provider: InsightsProvider;
   readonly about: InsightsProviderAbout;
+  /** Whether the provider had `getRawOutput` when it registered. */
+  readonly rawOutput: boolean;
   readonly subscription: ProviderDisposable | null;
 }
+
+/**
+ * What asking for a refused run's raw output came to.
+ *
+ * `ok` carries the text, whole. Every other answer names why nothing is
+ * shown; `too-large` carries the length, because "over the cap" without the
+ * number is not something a reader can check.
+ */
+export type RawOutputResult =
+  | { ok: true; runId: string; text: string }
+  | { ok: false; reason: 'no-provider' | 'unsupported' | 'no-run' }
+  | { ok: false; reason: 'none' | 'invalid' | 'threw'; runId: string }
+  | { ok: false; reason: 'too-large'; runId: string; length: number };
 
 /**
  * Holds the ONE registered provider.
@@ -378,6 +616,10 @@ export class InsightsProviderRegistry {
    * Throws a `TypeError` for anything that is not a provider of this
    * contract's version, and an `Error` naming both parties when one is
    * already registered. A registration that throws changes nothing.
+   *
+   * `getRawOutput` is OPTIONAL: absent, the surface never offers raw output;
+   * present, it must be a function. Given as a getter it reads as absent,
+   * because a getter would run the provider's code in the middle of a check.
    */
   register(provider: unknown): ProviderDisposable {
     if (this.#disposed) throw new Error('Agent Deck: the extension is shutting down; no provider can register.');
@@ -398,6 +640,10 @@ export class InsightsProviderRegistry {
         throw new TypeError(`Agent Deck: an Insights provider must have ${member}.`);
       }
     }
+    const rawOutput = readMember(provider, 'getRawOutput');
+    if (rawOutput !== undefined && typeof rawOutput !== 'function') {
+      throw new TypeError('Agent Deck: an Insights provider’s getRawOutput, when present, must be a function.');
+    }
     const current = this.#current;
     if (current !== null) {
       throw new Error(
@@ -414,7 +660,12 @@ export class InsightsProviderRegistry {
     } catch (error) {
       this.#report(error);
     }
-    const registration: Registration = { provider: typed, about, subscription };
+    const registration: Registration = {
+      provider: typed,
+      about,
+      rawOutput: rawOutput !== undefined,
+      subscription,
+    };
     this.#current = registration;
     this.#onChange();
     let released = false;
@@ -449,15 +700,10 @@ export class InsightsProviderRegistry {
   }
 
   /**
-   * What the Insights surface is told, or `null` in the free state.
-   *
-   * Calls `getLatest()` and `listRuns()` — two of the four members the parent
-   * may call — and checks and copies what they return. A method that throws
+   * `getLatest()` and `listRuns()`, checked and copied. A method that throws
    * reads as nothing and counts as one drop.
    */
-  snapshot(): InsightsProviderSnapshot | null {
-    const current = this.#current;
-    if (current === null) return null;
+  #read(current: Registration): { latest: FindingSetView | null; runs: RunSummary[]; dropped: number } {
     let dropped = 0;
     let latest: FindingSetView | null = null;
     try {
@@ -477,7 +723,56 @@ export class InsightsProviderRegistry {
       dropped += 1;
       this.#report(error);
     }
-    return { about: { ...current.about }, latest, runs, running: this.#running, dropped };
+    return { latest, runs, dropped };
+  }
+
+  /**
+   * What the Insights surface is told, or `null` in the free state.
+   *
+   * Calls `getLatest()` and `listRuns()` — two of the five members the parent
+   * may call — and checks and copies what they return.
+   */
+  snapshot(): InsightsProviderSnapshot | null {
+    const current = this.#current;
+    if (current === null) return null;
+    const { latest, runs, dropped } = this.#read(current);
+    return {
+      about: { ...current.about },
+      latest,
+      runs,
+      running: this.#running,
+      dropped,
+      rawOutput: current.rawOutput && refusedRunIdOf(latest, runs) !== null,
+    };
+  }
+
+  /**
+   * The latest refused run's raw output — DoD 9.40.
+   *
+   * Resolves the run from what the provider says NOW, not from a snapshot a
+   * surface may still be showing, and asks `getRawOutput` for that id alone.
+   * A string over {@link RAW_OUTPUT_MAX_CHARS} is refused whole, never cut.
+   */
+  rawOutput(): RawOutputResult {
+    const current = this.#current;
+    if (current === null) return { ok: false, reason: 'no-provider' };
+    if (!current.rawOutput) return { ok: false, reason: 'unsupported' };
+    const { latest, runs } = this.#read(current);
+    const runId = refusedRunIdOf(latest, runs);
+    if (runId === null) return { ok: false, reason: 'no-run' };
+    let text: unknown;
+    try {
+      text = (current.provider.getRawOutput as (id: string) => unknown).call(current.provider, runId);
+    } catch (error) {
+      this.#report(error);
+      return { ok: false, reason: 'threw', runId };
+    }
+    if (text === null) return { ok: false, reason: 'none', runId };
+    if (typeof text !== 'string') return { ok: false, reason: 'invalid', runId };
+    if (text.length > RAW_OUTPUT_MAX_CHARS) {
+      return { ok: false, reason: 'too-large', runId, length: text.length };
+    }
+    return { ok: true, runId, text };
   }
 
   /**

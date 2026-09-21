@@ -136,7 +136,8 @@ import {
   aboutPage,
 } from './about.js';
 import type { AboutLink } from './about.js';
-import { InsightsProviderRegistry } from './insights-provider.js';
+import { InsightsProviderRegistry, RAW_OUTPUT_MAX_CHARS } from './insights-provider.js';
+import type { RawOutputResult } from './insights-provider.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
 import { StatsUpdateEmitter, createAgentDeckApi } from './api.js';
@@ -182,6 +183,7 @@ import type {
   AboutLinkMessage,
   HostToWebviewMessage,
   InsightsGetMessage,
+  InsightsRawOutputMessage,
   InsightsRunMessage,
   NormalizedHookEvent,
   ProviderStateMessage,
@@ -4388,7 +4390,7 @@ export interface AgentDeckHostOptions extends DataPathOptions {
    * already checked the message's shape; the handler checks it again against
    * what it names.
    */
-  onSurfaceIntent?: (message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage) => void;
+  onSurfaceIntent?: (message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage | InsightsRawOutputMessage) => void;
   /** Injected so a test can assert the emitted document byte for byte. */
   nonce?: string;
   /**
@@ -4613,7 +4615,7 @@ export class AgentDeckHost {
   });
   /** Where a surface's tile or Run action goes. A sink by default (DoD 9.29). */
   #onSurfaceIntent: (
-    message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage,
+    message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage | InsightsRawOutputMessage,
   ) => void = () => {};
   #panelsCreated = 0;
   #disposed = false;
@@ -5200,7 +5202,8 @@ export class AgentDeckHost {
         if (
           message.type === 'aboutLink' ||
           message.type === 'insightsGet' ||
-          message.type === 'insightsRun'
+          message.type === 'insightsRun' ||
+          message.type === 'insightsRawOutput'
         ) {
           this.#onSurfaceIntent(message);
           return;
@@ -5417,6 +5420,34 @@ export function currentHost(): AgentDeckHost | null {
  * A new `DiscoveryFailureKind` lands in the absence arm by default. That is a
  * decision to make deliberately, not one to inherit.
  */
+/**
+ * What "Show raw output" says when it shows nothing — v0.9.0 DoD 9.40. One
+ * sentence per reason, naming the run where the registry resolved one, and
+ * the length where the text was over the cap: the output is refused whole,
+ * never cut, and a reader should be able to see by how much.
+ */
+export function rawOutputRefusal(result: Extract<RawOutputResult, { ok: false }>): string {
+  switch (result.reason) {
+    case 'no-provider':
+      return 'Agent Deck: no Insights provider is registered.';
+    case 'unsupported':
+      return 'Agent Deck: the Insights provider offers no raw output.';
+    case 'no-run':
+      return 'Agent Deck: the latest refused set matches no single run in the history, so no raw output was asked for.';
+    case 'none':
+      return `Agent Deck: the Insights provider has no raw output for run ${result.runId}.`;
+    case 'invalid':
+      return `Agent Deck: the Insights provider returned raw output for run ${result.runId} that is not text; it is not shown.`;
+    case 'threw':
+      return `Agent Deck: the Insights provider failed while returning the raw output for run ${result.runId}.`;
+    case 'too-large':
+      return (
+        `Agent Deck: the raw output for run ${result.runId} is ${String(result.length)} characters, ` +
+        `over the ${String(RAW_OUTPUT_MAX_CHARS)} Agent Deck opens; it is not shown and not cut.`
+      );
+  }
+}
+
 export function inactiveReasonFor(failure: DiscoveryFailure): string {
   return failure.kind === 'ambiguousSlug'
     ? `Agent Deck: this workspace matches more than one Claude Code project directory, differing only by case. Refusing to guess which one (${failure.kind}).`
@@ -6026,7 +6057,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    * confirmation every About tile has used since DoD 9.23.
    */
   const onSurfaceIntent = (
-    message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage,
+    message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage | InsightsRawOutputMessage,
   ): void => {
     switch (message.type) {
       case 'aboutLink': {
@@ -6041,6 +6072,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       case 'insightsRun':
         void providers.run();
         return;
+      case 'insightsRawOutput':
+        void showRawOutput();
+        return;
+    }
+  };
+
+  /**
+   * "Show raw output" on a refused set — v0.9.0 DoD 9.40.
+   *
+   * The registry resolves the run and asks the provider; the text opens as an
+   * UNTITLED plain-text document, so nothing is written anywhere (G1) and the
+   * model's words never enter the webview. Every answer that shows nothing
+   * says why, naming the run where there is one — a press that does nothing
+   * silently is the dead-button class this release has paid for twice.
+   */
+  const showRawOutput = async (): Promise<void> => {
+    const result = providers.rawOutput();
+    if (!result.ok) {
+      void vscode.window.showInformationMessage(rawOutputRefusal(result));
+      return;
+    }
+    try {
+      const document = await vscode.workspace.openTextDocument({
+        content: result.text,
+        language: 'plaintext',
+      });
+      await vscode.window.showTextDocument(document, { preview: true });
+    } catch (error) {
+      void vscode.window.showInformationMessage(
+        `Agent Deck: the raw output for run ${result.runId} could not be opened.`,
+      );
+      try {
+        sharedOutput().appendLine(
+          `[${new Date().toISOString()}] insights raw output: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } catch {
+        // G2: a channel that cannot be created must not take the caller down.
+      }
     }
   };
 

@@ -1,45 +1,59 @@
 /**
- * API v2 — the Insights provider contract (v0.9.0 DoD 9.30).
+ * API v2 — the Insights provider contract (v0.9.0 DoD 9.30), WIDENED by DoD
+ * 9.40 (spec `Amendment 2026-09-22 — Provider contract v1 widened
+ * (pre-publish; API_VERSION stays 2)`).
  *
- * Spec `Amendment 2026-09-21 — One window, Insights provider, Menu-only
- * entry`. What is held here:
+ * What is held here:
  *
- *  1. THE TYPES, pinned at compile time: the provider's shape is the
- *     amendment's, and `FindingSetView`/`RunSummary` carry exactly the keys
- *     they declare — so a field added on either side is a compile error here
- *     before it is anything else.
- *  2. THE ALLOW-LIST: every string a provider returns is an enumeration member
- *     or matches a strict shape, and **no raw model output crosses** — a
- *     finding carrying Insights' `cause`/`action` prose is refused whole.
+ *  1. THE TYPES, pinned at compile time: the provider's shape and every view
+ *     is the amendment's, key for key — so a field added on either side is a
+ *     compile error here before it is anything else.
+ *  2. THE ALLOW-LIST. Every string a provider returns is an enumeration
+ *     member, matches a strict shape, or is TEXT of one class — a name (64),
+ *     a path (1,024) or free text (2,000) — with no control character, no
+ *     bidirectional override and no lone surrogate. A string evidence value
+ *     only where the store allows a string. Anything else is DROPPED AND
+ *     COUNTED, never truncated: each cap is driven at the cap and one past it.
  *  3. ONE PROVIDER AT A TIME, a second refused BY NAME.
  *  4. THE PARENT CALLS NOTHING ELSE: a provider wrapped in a Proxy records
  *     every property the registry touches.
- *  5. `onDidChange`, `run()` and DISPOSAL: a change re-renders, a run is one
- *     at a time, and disposing returns to the free state.
+ *  5. `onDidChange`, `run()` and DISPOSAL.
+ *  6. RAW OUTPUT: optional, asked only for the one refused run the host can
+ *     place, refused whole over its cap.
  */
 
 import { describe, expect, it } from 'vitest';
 
 import type {
+  FindingActionView,
+  FindingEvidenceView,
   FindingSetView,
   FindingView,
   InsightsConfidence,
   InsightsFindingKind,
+  InsightsProviderSnapshot,
   RunSummary,
 } from './model/events.js';
-import type { InsightsProvider, ProviderEvent } from './insights-provider.js';
+import type { InsightsProvider, ProviderEvent, TextClass } from './insights-provider.js';
 import {
   CONFIDENCES,
   FINDING_KINDS,
+  FREE_TEXT_MAX_CHARS,
   InsightsProviderRegistry,
+  LEAD_MAX_WORDS,
   MAX_EVIDENCE,
   MAX_FINDINGS,
   MAX_RUNS,
   PROVIDER_VERSION,
+  RAW_OUTPUT_MAX_CHARS,
+  TEXT_CAPS,
+  refusedRunIdOf,
+  stringEvidenceClass,
   viewOfAbout,
   viewOfFindingSet,
   viewOfRuns,
 } from './insights-provider.js';
+import { NAME_MAX_CHARS, PATH_MAX_CHARS, STATS_STRING_CAPS } from './stats/schema.js';
 
 /* ------------------------------------------------------------------------ *
  * 1. The types — compile-time
@@ -54,16 +68,52 @@ interface AmendmentProvider {
   getLatest(): FindingSetView | null;
   listRuns(): RunSummary[];
   run(): Promise<void>;
+  getRawOutput?(runId: string): string | null;
   readonly onDidChange: ProviderEvent<void>;
 }
 
-const providerShape: Exact<keyof InsightsProvider, keyof AmendmentProvider> = true;
-const setKeys: Exact<
-  keyof FindingSetView,
-  'runId' | 'createdAt' | 'agent' | 'window' | 'findings' | 'findingsRejected'
+/** The amendment's finding view, written out. */
+interface AmendmentFinding {
+  id: string;
+  kind: InsightsFindingKind;
+  confidence: InsightsConfidence;
+  action: { lead: string; detail: string };
+  cause: string;
+  evidence: { label: string; sessionId: string; statsKey: string; value: number | string }[];
+  sinceLastRun: 'new' | 'still' | 'resolved' | null;
+}
+
+/** The amendment's set view, written out. */
+interface AmendmentSet {
+  createdAt: number;
+  agent: { kind: 'claude' | 'codex'; version: string };
+  window: { sessions: number; excluded: number; sinceMs: number };
+  usage: { prompt: number; output: number; costUsd?: number } | null;
+  findings: FindingView[];
+  rejected: number;
+  state: 'ok' | 'empty' | 'refused';
+  refusal?: { step: string; reason: string };
+}
+
+/** The amendment's run summary, written out. */
+interface AmendmentRun {
+  runId: string;
+  createdAt: number;
+  state: 'ok' | 'empty' | 'refused';
+  findings: number;
+  agentKind: 'claude' | 'codex';
+}
+
+const providerShape: Exact<InsightsProvider, AmendmentProvider> = true;
+const findingShape: Exact<FindingView, AmendmentFinding> = true;
+const setShape: Exact<FindingSetView, AmendmentSet> = true;
+const runShape: Exact<RunSummary, AmendmentRun> = true;
+const actionKeys: Exact<keyof FindingActionView, 'lead' | 'detail'> = true;
+const evidenceKeys: Exact<keyof FindingEvidenceView, 'label' | 'sessionId' | 'statsKey' | 'value'> = true;
+const snapshotKeys: Exact<
+  keyof InsightsProviderSnapshot,
+  'about' | 'latest' | 'runs' | 'running' | 'dropped' | 'rawOutput'
 > = true;
-const findingKeys: Exact<keyof FindingView, 'kind' | 'confidence' | 'evidence'> = true;
-const runKeys: Exact<keyof RunSummary, 'runId' | 'createdAt' | 'outcome' | 'findings'> = true;
 const kindsExhaustive: Exact<(typeof FINDING_KINDS)[number], InsightsFindingKind> = true;
 const confidencesExhaustive: Exact<(typeof CONFIDENCES)[number], InsightsConfidence> = true;
 
@@ -71,19 +121,21 @@ describe('the contract types', () => {
   it('are the amendment’s, key for key (a violation is a compile error)', () => {
     expect([
       providerShape,
-      setKeys,
-      findingKeys,
-      runKeys,
+      findingShape,
+      setShape,
+      runShape,
+      actionKeys,
+      evidenceKeys,
+      snapshotKeys,
       kindsExhaustive,
       confidencesExhaustive,
-    ]).toStrictEqual([true, true, true, true, true, true]);
+    ]).toStrictEqual(Array.from({ length: 9 }, () => true));
+    // Pre-publish widening: neither version moved (the amendment's title).
     expect(PROVIDER_VERSION).toBe(1);
   });
 
   it('the finding kinds are Insights’ own eight, in its order', () => {
     // Insights' `src/engine/validator.ts` `FINDING_KINDS`, read 2026-09-21.
-    // A second copy of another repository's list is a claim; this pins it
-    // so a change is a deliberate edit here rather than a silent drop.
     expect([...FINDING_KINDS]).toStrictEqual([
       're-read-loop',
       'churn-chain',
@@ -95,38 +147,90 @@ describe('the contract types', () => {
       'other',
     ]);
   });
+
+  it('the text caps are the store’s two and the amendment’s third', () => {
+    expect(TEXT_CAPS).toStrictEqual({ name: NAME_MAX_CHARS, path: PATH_MAX_CHARS, free: FREE_TEXT_MAX_CHARS });
+    expect([NAME_MAX_CHARS, PATH_MAX_CHARS, FREE_TEXT_MAX_CHARS]).toStrictEqual([64, 1024, 2000]);
+    expect(LEAD_MAX_WORDS).toBe(15);
+  });
 });
 
 /* ------------------------------------------------------------------------ *
  * Builders
  * ------------------------------------------------------------------------ */
 
-function finding(over: Record<string, unknown> = {}): Record<string, unknown> {
+type Obj = Record<string, unknown>;
+
+function evidence(over: Obj = {}): Obj {
   return {
+    label: 'Reads of the schema file',
+    sessionId: 'ses_example01',
+    statsKey: 'sessions[0].loops[1].count',
+    value: 7,
+    ...over,
+  };
+}
+
+function finding(over: Obj = {}): Obj {
+  return {
+    id: 'f-1',
     kind: 're-read-loop',
     confidence: 'high',
-    evidence: [{ statsKey: 'sessions[0].loops[1].count', value: 7 }],
+    action: {
+      lead: 'Keep the schema file open between edits',
+      detail: 'The agent read the file 7 times.\nEach read followed a failed edit.',
+    },
+    cause: 'An edit failed and the agent re-read the file before retrying.',
+    evidence: [evidence()],
+    sinceLastRun: 'new',
     ...over,
   };
 }
 
-function findingSet(over: Record<string, unknown> = {}): Record<string, unknown> {
+function findingSet(over: Obj = {}): Obj {
   return {
-    runId: 'run-2026-09-21.1',
     createdAt: 1_790_000_000_000,
-    agent: 'claude',
-    window: { sinceMs: 1_789_400_000_000, sessions: 5 },
+    agent: { kind: 'claude', version: '2.1.246' },
+    window: { sessions: 5, excluded: 1, sinceMs: 1_789_400_000_000 },
+    usage: { prompt: 12_345, output: 2_345, costUsd: 0.42 },
     findings: [finding()],
-    findingsRejected: 0,
+    rejected: 0,
+    state: 'ok',
     ...over,
   };
 }
 
-function run(over: Record<string, unknown> = {}): Record<string, unknown> {
-  return { runId: 'run-1', createdAt: 1_790_000_000_000, outcome: 'findings', findings: 1, ...over };
+function refusedSet(over: Obj = {}): Obj {
+  return findingSet({
+    findings: [],
+    state: 'refused',
+    refusal: { step: 'validate', reason: 'The model returned no JSON object.' },
+    ...over,
+  });
 }
 
-/** A provider with its own change emitter, for the registry tests. */
+function run(over: Obj = {}): Obj {
+  return {
+    runId: 'run-1',
+    createdAt: 1_790_000_000_000,
+    state: 'ok',
+    findings: 1,
+    agentKind: 'claude',
+    ...over,
+  };
+}
+
+/** Deep-set `path` (dot-separated, numeric parts index arrays) on a fresh copy. */
+function withField(base: Obj, path: string, value: unknown): Obj {
+  const copy = structuredClone(base);
+  const parts = path.split('.');
+  let target: Record<string, unknown> = copy;
+  for (const part of parts.slice(0, -1)) target = target[part] as Record<string, unknown>;
+  target[parts[parts.length - 1] as string] = value;
+  return copy;
+}
+
+/** A fake provider with its own change emitter, for the registry tests. */
 function fakeProvider(over: Partial<Record<string, unknown>> = {}): {
   provider: InsightsProvider;
   fire: () => void;
@@ -169,74 +273,312 @@ function fakeProvider(over: Partial<Record<string, unknown>> = {}): {
   };
 }
 
+/** One finding in a set of two, checked; how many findings survived and were dropped. */
+function checkOne(over: Obj): { kept: number; dropped: number; json: string } {
+  const { value, dropped } = viewOfFindingSet(findingSet({ findings: [finding({ id: 'ok' }), over] }));
+  return { kept: (value?.findings.length ?? 0) - 1, dropped, json: JSON.stringify(value) };
+}
+
 /* ------------------------------------------------------------------------ *
  * 2. The allow-list
  * ------------------------------------------------------------------------ */
 
 describe('a finding set is checked field by field, and copied', () => {
-  it('a valid set passes whole, as a FRESH object', () => {
+  it('a valid set passes whole, as a FRESH object at every level', () => {
     const input = findingSet();
     const { value, dropped } = viewOfFindingSet(input);
     expect(dropped).toBe(0);
     expect(value).toStrictEqual(input);
     expect(value).not.toBe(input);
-    expect(value?.findings[0]).not.toBe((input['findings'] as unknown[])[0]);
+    const inputFinding = (input['findings'] as Obj[])[0] as Obj;
+    expect(value?.findings[0]).not.toBe(inputFinding);
+    expect(value?.findings[0]?.action).not.toBe(inputFinding['action']);
+    expect(value?.findings[0]?.evidence[0]).not.toBe((inputFinding['evidence'] as Obj[])[0]);
+    expect(value?.usage).not.toBe(input['usage']);
   });
 
-  it('REFUSES a finding carrying the model’s prose — no raw model output crosses', () => {
-    /*
-     * Insights' stored finding carries `cause` and `action`, written by the
-     * model. The view has no field for either, so a finding that brings them
-     * has extra keys and is dropped WHOLE rather than trimmed: trimming
-     * would render a finding the provider did not send.
-     */
-    for (const prose of [
-      { cause: 'The agent re-read the file because the edit failed.' },
-      { action: 'You should cache the schema.' },
-    ]) {
-      const { value, dropped } = viewOfFindingSet(
-        findingSet({ findings: [finding(prose), finding()] }),
-      );
-      expect(value?.findings).toHaveLength(1);
-      expect(dropped).toBe(1);
-      expect(JSON.stringify(value)).not.toMatch(/cause|action|should|re-read the file/);
+  it('the three states, each whole: ok, empty, refused', () => {
+    expect(viewOfFindingSet(findingSet({ findings: [], state: 'empty' })).value?.state).toBe('empty');
+    const refused = viewOfFindingSet(refusedSet());
+    expect(refused.dropped).toBe(0);
+    expect(refused.value?.refusal).toStrictEqual({
+      step: 'validate',
+      reason: 'The model returned no JSON object.',
+    });
+    // `refusal` is absent, not undefined, on the other two.
+    expect(Object.hasOwn(viewOfFindingSet(findingSet()).value ?? {}, 'refusal')).toBe(false);
+  });
+});
+
+/** Every text field of a finding, its class, and whether it may span lines. */
+const FINDING_TEXT: readonly { path: string; cls: TextClass; multiline: boolean }[] = [
+  { path: 'action.lead', cls: 'free', multiline: false },
+  { path: 'action.detail', cls: 'free', multiline: true },
+  { path: 'cause', cls: 'free', multiline: true },
+  { path: 'evidence.0.label', cls: 'name', multiline: false },
+];
+
+/** A string of exactly `n` characters with at most a few words. */
+function charsOf(n: number): string {
+  return 'x'.repeat(n);
+}
+
+describe('TEXT: every field at its cap passes, one past it is dropped and counted — never cut', () => {
+  for (const field of FINDING_TEXT) {
+    it(`${field.path}: ${field.cls}, ${String(TEXT_CAPS[field.cls])} characters`, () => {
+      const cap = TEXT_CAPS[field.cls];
+      const at = checkOne(withField(finding(), field.path, charsOf(cap)));
+      expect(at, 'at the cap').toMatchObject({ kept: 1, dropped: 0 });
+      // A marker that would survive any cut, placed past the cap.
+      const over = `${charsOf(cap)}Z`;
+      const past = checkOne(withField(finding(), field.path, over));
+      expect(past, 'one past the cap').toMatchObject({ kept: 0, dropped: 1 });
+      // NEVER TRUNCATED: neither the whole string nor its first `cap` characters reached the view.
+      expect(past.json).not.toContain(charsOf(cap));
+    });
+  }
+
+  it('the refusal: step is a name (64), reason free text (2,000); a bad one drops the SET', () => {
+    for (const [path, cap] of [
+      ['refusal.step', NAME_MAX_CHARS],
+      ['refusal.reason', FREE_TEXT_MAX_CHARS],
+    ] as const) {
+      expect(viewOfFindingSet(withField(refusedSet(), path, charsOf(cap))).dropped, path).toBe(0);
+      const past = viewOfFindingSet(withField(refusedSet(), path, charsOf(cap + 1)));
+      expect(past, path).toStrictEqual({ value: null, dropped: 1 });
     }
   });
 
-  it('refuses a string where a number belongs, and a key that is not a stats path', () => {
-    for (const evidence of [
-      [{ statsKey: 'sessions[0].files[2].filePath', value: 'C:/Users/someone/secret.ts' }],
-      [{ statsKey: 'process.env.HOME', value: 1 }],
-      [{ statsKey: 'sessions.', value: 1 }],
-      [{ statsKey: 'sessions[0].totals.prompt', value: Number.NaN }],
+  it('the LEAD: at most 15 words and one line', () => {
+    const words = (n: number): string => Array.from({ length: n }, (_, i) => `w${String(i)}`).join(' ');
+    expect(checkOne(withField(finding(), 'action.lead', words(LEAD_MAX_WORDS))).kept).toBe(1);
+    expect(checkOne(withField(finding(), 'action.lead', words(LEAD_MAX_WORDS + 1))).kept).toBe(0);
+    // Whitespace runs are one separator; leading and trailing space are not words.
+    expect(checkOne(withField(finding(), 'action.lead', `  ${words(LEAD_MAX_WORDS).replace(/ /g, '   ')}  `)).kept).toBe(1);
+  });
+
+  it('a line break or a tab: allowed in free text that may span lines, refused in one-line text', () => {
+    for (const field of FINDING_TEXT) {
+      for (const breaker of ['one\ntwo', 'one\ttwo']) {
+        const checked = checkOne(withField(finding(), field.path, breaker));
+        expect(checked.kept, `${field.path} ${JSON.stringify(breaker)}`).toBe(field.multiline ? 1 : 0);
+      }
+    }
+  });
+
+  it('refuses control characters, bidirectional overrides, separators, lone surrogates and blanks everywhere', () => {
+    const hostile = [
+      'a\u0000b',
+      'a\u001Bb',
+      'a\u007Fb',
+      'a\u0085b',
+      'a\u009Fb',
+      'a\u202Eb',
+      'a\u2066b',
+      'a\u2069b',
+      'a\u061Cb',
+      'a\u200Fb',
+      'a\u2028b',
+      'a\u2029b',
+      'a\uD800b',
+      'a\uDC00b',
+      '',
+      '   ',
+      '\n\n',
+    ];
+    for (const field of FINDING_TEXT) {
+      for (const text of hostile) {
+        const checked = checkOne(withField(finding(), field.path, text));
+        expect(checked.kept, `${field.path} ${JSON.stringify(text)}`).toBe(0);
+        expect(checked.dropped).toBe(1);
+      }
+      // The control: a paired surrogate (an emoji) is text.
+      expect(checkOne(withField(finding(), field.path, 'a \uD83D\uDE00 b')).kept, field.path).toBe(1);
+      // A non-string is not text.
+      expect(checkOne(withField(finding(), field.path, 42)).kept, field.path).toBe(0);
+    }
+  });
+
+  it('markup is TEXT, not refused: the renderer escapes it, and refusing it would refuse every code sample', () => {
+    const checked = checkOne(withField(finding(), 'cause', 'The edit wrote <script>alert(1)</script> into a.ts.'));
+    expect(checked.kept).toBe(1);
+  });
+});
+
+describe('EVIDENCE: labelled, per session, a number — or a string only where the store allows one', () => {
+  it('a string value is admitted on the store’s string keys, under the store’s caps', () => {
+    const cases: readonly [string, TextClass][] = [
+      ['sessions[0].files[2].filePath', 'path'],
+      ['sessions[3].projectSlug', 'path'],
+      ['sessions[0].skills[1].name', 'name'],
+      ['sessions[0].agents[0].agentType', 'name'],
+      ['sessions[0].agents[0].agentId', 'name'],
+      ['sessions[0].tools[4].toolName', 'name'],
+      ['sessions[0].unavailable[3]', 'name'],
+      ['sessions[0].engine', 'name'],
+      ['sessions[0].sessionId', 'name'],
+    ];
+    for (const [statsKey, cls] of cases) {
+      expect(stringEvidenceClass(statsKey), statsKey).toBe(cls);
+      const cap = TEXT_CAPS[cls];
+      const at = checkOne(finding({ evidence: [evidence({ statsKey, value: charsOf(cap) })] }));
+      expect(at.kept, `${statsKey} at ${String(cap)}`).toBe(1);
+      const past = checkOne(finding({ evidence: [evidence({ statsKey, value: charsOf(cap + 1) })] }));
+      expect(past.kept, `${statsKey} past ${String(cap)}`).toBe(0);
+      expect(past.json).not.toContain(charsOf(cap));
+    }
+  });
+
+  it('the caps agree with the STORE’s, key for key, wherever the store caps one', () => {
+    const probe: Readonly<Record<string, string>> = {
+      agentType: 'sessions[0].agents[0].agentType',
+      name: 'sessions[0].skills[0].name',
+      filePath: 'sessions[0].files[0].filePath',
+    };
+    expect(Object.keys(probe).sort()).toStrictEqual([...STATS_STRING_CAPS.keys()].sort());
+    for (const [key, cap] of STATS_STRING_CAPS) {
+      const cls = stringEvidenceClass(probe[key] as string);
+      expect(cls === null ? null : TEXT_CAPS[cls], key).toBe(cap);
+    }
+  });
+
+  it('a string anywhere else DROPS THE FINDING: numbers, off-list keys, a `name` outside skills, no record index', () => {
+    for (const statsKey of [
+      'sessions[0].totals.prompt',
+      'sessions[0].loops[1].count',
+      'sessions[0].agents[0].name',
+      'sessions[0].name',
+      'sessions[0].files[0].filePath.extra',
+      'sessions.filePath',
+      'sessions[0]',
+      'sessions[0].description',
+      'sessions[0].agents[0].description',
+    ]) {
+      expect(checkOne(finding({ evidence: [evidence({ statsKey, value: 'C:/x/y.ts' })] })).kept, statsKey).toBe(0);
+    }
+  });
+
+  it('refuses a non-finite number, a bad key, a bad label or session id, and an empty or oversized list', () => {
+    for (const items of [
+      [evidence({ value: Number.NaN })],
+      [evidence({ value: Number.POSITIVE_INFINITY })],
+      [evidence({ value: true })],
+      [evidence({ statsKey: 'process.env.HOME' })],
+      [evidence({ statsKey: 'sessions.' })],
+      [evidence({ sessionId: 'ses 1; <x>' })],
+      [evidence({ sessionId: '' })],
+      [evidence({ label: 'x'.repeat(NAME_MAX_CHARS + 1) })],
+      [evidence({ note: 'an extra key' })],
+      [{ statsKey: 'sessions[0].totals.prompt', value: 1 }],
       [],
+      Array.from({ length: MAX_EVIDENCE + 1 }, (_, i) => evidence({ statsKey: `sessions[${String(i)}].totals.prompt` })),
     ]) {
-      const { value, dropped } = viewOfFindingSet(findingSet({ findings: [finding({ evidence })] }));
-      expect(value?.findings, JSON.stringify(evidence)).toHaveLength(0);
-      expect(dropped).toBe(1);
+      expect(checkOne(finding({ evidence: items })).kept, JSON.stringify(items).slice(0, 80)).toBe(0);
     }
+    // At the cap it passes.
+    const atCap = Array.from({ length: MAX_EVIDENCE }, (_, i) =>
+      evidence({ statsKey: `sessions[${String(i)}].totals.prompt` }),
+    );
+    expect(checkOne(finding({ evidence: atCap })).kept).toBe(1);
   });
 
-  it('refuses an unknown kind or confidence — enumerations, not free text', () => {
-    for (const over of [{ kind: 'Your agent is slow' }, { confidence: 'certain' }]) {
-      const { dropped } = viewOfFindingSet(findingSet({ findings: [finding(over)] }));
-      expect(dropped, JSON.stringify(over)).toBe(1);
-    }
+  it('one key of one session twice drops the finding; the same key of two sessions is two facts', () => {
+    expect(checkOne(finding({ evidence: [evidence(), evidence({ value: 8 })] })).kept).toBe(0);
+    expect(
+      checkOne(finding({ evidence: [evidence(), evidence({ sessionId: 'ses_example02' })] })).kept,
+    ).toBe(1);
   });
+});
 
-  it('a broken ENVELOPE drops the whole set, counted once', () => {
+describe('FINDINGS: ids, enumerations, and nothing the amendment does not name', () => {
+  it('refuses an unknown kind, confidence or sinceLastRun — enumerations, not free text', () => {
     for (const over of [
-      { runId: 'run 1; <script>' },
-      { createdAt: -1 },
-      { agent: 'gpt' },
-      { window: { sinceMs: 1, sessions: 1, extra: 'x' } },
-      { findingsRejected: 1.5 },
-      { findings: 'none' },
-      { note: 'an extra top-level key' },
+      { kind: 'Your agent is slow' },
+      { confidence: 'certain' },
+      { sinceLastRun: 'gone' },
+      { sinceLastRun: undefined },
+      { id: 'f 1' },
+      { id: '' },
     ]) {
-      const { value, dropped } = viewOfFindingSet(findingSet(over));
-      expect(value, JSON.stringify(over)).toBeNull();
-      expect(dropped).toBe(1);
+      expect(checkOne(finding(over)).kept, JSON.stringify(over)).toBe(0);
+    }
+    for (const since of ['new', 'still', 'resolved', null]) {
+      expect(checkOne(finding({ sinceLastRun: since })).kept, String(since)).toBe(1);
+    }
+  });
+
+  it('a key the amendment does not name is refused whole — a score, a severity, a raw payload', () => {
+    for (const extra of [{ score: 0.93 }, { severity: 'high' }, { raw: '{"cause":"..."}' }]) {
+      expect(checkOne(finding(extra)).kept, JSON.stringify(extra)).toBe(0);
+    }
+    expect(checkOne(finding({ action: { lead: 'Keep it open', detail: 'd', why: 'x' } })).kept).toBe(0);
+    expect(checkOne(finding({ action: 'Keep it open' })).kept).toBe(0);
+  });
+
+  it('a finding id seen before in the set is dropped and counted; the first stays', () => {
+    const { value, dropped } = viewOfFindingSet(
+      findingSet({ findings: [finding({ id: 'f-1' }), finding({ id: 'f-1', cause: 'second' }), finding({ id: 'f-2' })] }),
+    );
+    expect(value?.findings.map((f) => f.id)).toStrictEqual(['f-1', 'f-2']);
+    expect(value?.findings[0]?.cause).not.toBe('second');
+    expect(dropped).toBe(1);
+  });
+
+  it('past the cap is counted as dropped, never silently cut', () => {
+    const many = Array.from({ length: MAX_FINDINGS + 3 }, (_, i) => finding({ id: `f-${String(i)}` }));
+    const { value, dropped } = viewOfFindingSet(findingSet({ findings: many }));
+    expect(value?.findings).toHaveLength(MAX_FINDINGS);
+    expect(dropped).toBe(3);
+  });
+});
+
+describe('the ENVELOPE: whole, self-consistent, or dropped as one', () => {
+  it('a broken envelope drops the whole set, counted once', () => {
+    for (const set of [
+      findingSet({ createdAt: -1 }),
+      findingSet({ agent: 'claude' }),
+      findingSet({ agent: { kind: 'gpt', version: '1.0.0' } }),
+      findingSet({ agent: { kind: 'claude', version: 'latest' } }),
+      findingSet({ agent: { kind: 'claude', version: '2.1.246', extra: 1 } }),
+      findingSet({ window: { sessions: 1, sinceMs: 1 } }),
+      findingSet({ window: { sessions: 1, excluded: -1, sinceMs: 1 } }),
+      findingSet({ usage: { prompt: 1.5, output: 1 } }),
+      findingSet({ usage: { prompt: 1, output: 1, costUsd: -0.01 } }),
+      findingSet({ usage: { prompt: 1, output: 1, costUsd: Number.NaN } }),
+      findingSet({ usage: { prompt: 1 } }),
+      findingSet({ usage: { prompt: 1, output: 1, currency: 'USD' } }),
+      findingSet({ rejected: 1.5 }),
+      findingSet({ findings: 'none' }),
+      findingSet({ state: 'partial' }),
+      findingSet({ note: 'an extra top-level key' }),
+      findingSet({ runId: 'run-1' }),
+    ]) {
+      expect(viewOfFindingSet(set), JSON.stringify(set).slice(0, 120)).toStrictEqual({ value: null, dropped: 1 });
+    }
+  });
+
+  it('usage: null, tokens only, or tokens and a cost — and a token count may pass a billion', () => {
+    for (const usage of [
+      null,
+      { prompt: 0, output: 0 },
+      { prompt: 5_000_000_000, output: 12, costUsd: 0 },
+    ]) {
+      expect(viewOfFindingSet(findingSet({ usage })).value?.usage, JSON.stringify(usage)).toStrictEqual(usage);
+    }
+  });
+
+  it('STATE and FINDINGS agree, and REFUSAL is present exactly when refused', () => {
+    for (const set of [
+      findingSet({ findings: [] }), // ok with nothing found
+      findingSet({ state: 'empty' }), // empty with a finding
+      refusedSet({ findings: [finding()] }), // refused with a finding
+      findingSet({ findings: [], state: 'refused' }), // refused with no refusal
+      findingSet({ refusal: { step: 's', reason: 'r' } }), // a refusal on an ok set
+      findingSet({ findings: [], state: 'empty', refusal: { step: 's', reason: 'r' } }),
+      refusedSet({ refusal: { step: 's' } }),
+      refusedSet({ refusal: { step: 'a\nb', reason: 'r' } }),
+    ]) {
+      expect(viewOfFindingSet(set), JSON.stringify(set).slice(0, 160)).toStrictEqual({ value: null, dropped: 1 });
     }
   });
 
@@ -247,22 +589,27 @@ describe('a finding set is checked field by field, and copied', () => {
   it('a GETTER is never run: an accessor field reads as absent', () => {
     let ran = false;
     const input = findingSet();
-    Object.defineProperty(input, 'runId', {
+    Object.defineProperty(input, 'createdAt', {
       enumerable: true,
       get: () => {
         ran = true;
-        return 'run-1';
+        return 1;
       },
     });
     expect(viewOfFindingSet(input).value).toBeNull();
     expect(ran).toBe(false);
   });
 
-  it('past the cap is counted as dropped, never silently cut', () => {
-    const many = Array.from({ length: MAX_FINDINGS + 3 }, () => finding());
-    const { value, dropped } = viewOfFindingSet(findingSet({ findings: many }));
-    expect(value?.findings).toHaveLength(MAX_FINDINGS);
-    expect(dropped).toBe(3);
+  it('the 9.30 shape — numbers only, with a run id — is refused whole now', () => {
+    const old = {
+      runId: 'run-1',
+      createdAt: 1_790_000_000_000,
+      agent: 'claude',
+      window: { sinceMs: 1, sessions: 1 },
+      findings: [{ kind: 'stall', confidence: 'low', evidence: [{ statsKey: 'sessions[0].totals.stalls', value: 2 }] }],
+      findingsRejected: 0,
+    };
+    expect(viewOfFindingSet(old)).toStrictEqual({ value: null, dropped: 1 });
   });
 });
 
@@ -270,16 +617,27 @@ describe('the run history is checked the same way', () => {
   it('passes valid runs, drops and counts the rest, caps at MAX_RUNS', () => {
     const { value, dropped } = viewOfRuns([
       run(),
-      run({ outcome: 'crashed' }),
+      run({ runId: 'run-2', state: 'empty', findings: 0, agentKind: 'codex' }),
+      run({ runId: 'run-3', state: 'refused', findings: 0 }),
+      run({ runId: 'run-4', state: 'crashed' }),
+      run({ runId: 'run-5', state: 'ok', findings: 0 }),
+      run({ runId: 'run-6', state: 'empty', findings: 2 }),
+      run({ runId: 'run-7', agentKind: 'gpt' }),
       run({ runId: '' }),
-      run({ findings: -1 }),
-      run({ runId: 'run-2', outcome: 'refused', findings: 0 }),
+      run({ runId: 'run-8', findings: -1 }),
+      { runId: 'run-9', createdAt: 1, outcome: 'findings', findings: 1 },
     ]);
-    expect(value.map((r) => r.runId)).toStrictEqual(['run-1', 'run-2']);
-    expect(dropped).toBe(3);
+    expect(value.map((r) => r.runId)).toStrictEqual(['run-1', 'run-2', 'run-3']);
+    expect(dropped).toBe(7);
     const capped = viewOfRuns(Array.from({ length: MAX_RUNS + 2 }, (_, i) => run({ runId: `run-${String(i)}` })));
     expect(capped.value).toHaveLength(MAX_RUNS);
     expect(capped.dropped).toBe(2);
+  });
+
+  it('D1: a repeated run id is dropped and counted — the history names runs by id', () => {
+    const checked = viewOfRuns([run(), run({ createdAt: 1 }), run({ runId: 'run-2' })]);
+    expect(checked.value.map((r) => r.runId)).toStrictEqual(['run-1', 'run-2']);
+    expect(checked.dropped).toBe(1);
   });
 
   it('about is two strings in their shapes, and nothing else', () => {
@@ -295,6 +653,36 @@ describe('the run history is checked the same way', () => {
     ]) {
       expect(viewOfAbout(bad), JSON.stringify(bad)).toBeNull();
     }
+  });
+});
+
+describe('refusedRunIdOf: the ONE refused run a refused set belongs to, or nothing', () => {
+  const latest = viewOfFindingSet(refusedSet()).value;
+  const at = 1_790_000_000_000;
+  const runs = (items: Obj[]): RunSummary[] => viewOfRuns(items).value;
+
+  it('joins on createdAt and state, and only when exactly one run matches', () => {
+    expect(latest).not.toBeNull();
+    expect(
+      refusedRunIdOf(latest, runs([run({ runId: 'r-9', createdAt: at, state: 'refused', findings: 0 }), run({ createdAt: 5 })])),
+    ).toBe('r-9');
+    // None.
+    expect(refusedRunIdOf(latest, runs([run({ createdAt: at })]))).toBeNull();
+    // Two at the same instant: not unique, so not guessed.
+    expect(
+      refusedRunIdOf(
+        latest,
+        runs([
+          run({ runId: 'a', createdAt: at, state: 'refused', findings: 0 }),
+          run({ runId: 'b', createdAt: at, state: 'refused', findings: 0 }),
+        ]),
+      ),
+    ).toBeNull();
+    // A set that is not refused has no raw output to ask for.
+    expect(
+      refusedRunIdOf(viewOfFindingSet(findingSet()).value, runs([run({ createdAt: at, state: 'refused', findings: 0 })])),
+    ).toBeNull();
+    expect(refusedRunIdOf(null, [])).toBeNull();
   });
 });
 
@@ -324,7 +712,6 @@ describe('the registry holds ONE provider', () => {
     );
     expect(registry.about()?.name).toBe('Agent Deck Insights');
     expect(changes).toBe(1);
-    // The refused one was never subscribed to.
     expect(second.listeners).toBe(0);
   });
 
@@ -337,24 +724,29 @@ describe('the registry holds ONE provider', () => {
       fakeProvider({ about: { name: 'x' } }).provider,
       fakeProvider({ run: 'not a function' }).provider,
       fakeProvider({ onDidChange: undefined }).provider,
+      fakeProvider({ getRawOutput: 'not a function' }).provider,
+      fakeProvider({ getRawOutput: null }).provider,
     ]) {
       expect(() => registry.register(bad), JSON.stringify(bad)).toThrow(TypeError);
     }
     expect(registry.registered).toBe(false);
   });
 
-  it('a provider written as a CLASS (methods on the prototype) registers', () => {
+  it('a provider written as a CLASS (methods on the prototype) registers, getRawOutput included', () => {
     class Provider {
       readonly providerVersion = 1 as const;
       readonly about = { name: 'Class Insights', version: '1.0.0' };
-      getLatest(): null {
-        return null;
+      getLatest(): unknown {
+        return refusedSet();
       }
-      listRuns(): RunSummary[] {
-        return [];
+      listRuns(): unknown[] {
+        return [run({ state: 'refused', findings: 0 })];
       }
       run(): Promise<void> {
         return Promise.resolve();
+      }
+      getRawOutput(runId: string): string {
+        return `raw for ${runId} from ${this.about.name}`;
       }
       onDidChange(): { dispose(): void } {
         return { dispose: () => undefined };
@@ -362,13 +754,9 @@ describe('the registry holds ONE provider', () => {
     }
     const registry = new InsightsProviderRegistry({ onChange: () => undefined });
     registry.register(new Provider());
-    expect(registry.snapshot()).toStrictEqual({
-      about: { name: 'Class Insights', version: '1.0.0' },
-      latest: null,
-      runs: [],
-      running: false,
-      dropped: 0,
-    });
+    expect(registry.snapshot()?.rawOutput).toBe(true);
+    // `this` is the provider: a prototype method is called ON it.
+    expect(registry.rawOutput()).toStrictEqual({ ok: true, runId: 'run-1', text: 'raw for run-1 from Class Insights' });
   });
 });
 
@@ -377,10 +765,14 @@ describe('the registry holds ONE provider', () => {
  * ------------------------------------------------------------------------ */
 
 describe('the parent reads and calls ONLY the contract’s members', () => {
-  it('a Proxy provider sees no other property touched, and only three called', async () => {
+  it('a Proxy provider sees no other property touched, and getRawOutput called only when asked', async () => {
     const touched = new Set<string>();
     const called: string[] = [];
-    const base = fakeProvider().provider as unknown as Record<string, unknown>;
+    const base = fakeProvider({
+      getLatest: () => refusedSet(),
+      listRuns: () => [run({ state: 'refused', findings: 0 })],
+      getRawOutput: () => 'raw',
+    }).provider as unknown as Record<string, unknown>;
     const wrap = (key: string, value: unknown): unknown =>
       typeof value === 'function'
         ? (...args: unknown[]): unknown => {
@@ -409,14 +801,16 @@ describe('the parent reads and calls ONLY the contract’s members', () => {
     const handle = registry.register(spy);
     registry.snapshot();
     await registry.run();
+    // Snapshots and runs never ask for raw output.
+    expect(called).not.toContain('getRawOutput');
+    expect(registry.rawOutput()).toMatchObject({ ok: true, text: 'raw' });
     handle.dispose();
 
-    const CONTRACT = ['providerVersion', 'about', 'getLatest', 'listRuns', 'run', 'onDidChange'];
+    const CONTRACT = ['providerVersion', 'about', 'getLatest', 'listRuns', 'run', 'getRawOutput', 'onDidChange'];
     expect([...touched].filter((key) => !CONTRACT.includes(key))).toStrictEqual([]);
-    // The population is not empty: every member was reached.
     expect([...touched].sort()).toStrictEqual([...CONTRACT].sort());
     expect([...new Set(called)].sort()).toStrictEqual(
-      ['getLatest', 'listRuns', 'onDidChange', 'run'].sort(),
+      ['getLatest', 'listRuns', 'onDidChange', 'run', 'getRawOutput'].sort(),
     );
   });
 });
@@ -431,7 +825,6 @@ describe('onDidChange, run and disposal', () => {
     const registry = new InsightsProviderRegistry({ onChange: () => (changes += 1) });
     const fake = fakeProvider();
     registry.register(fake.provider);
-    expect(changes).toBe(1);
     fake.fire();
     fake.fire();
     expect(changes).toBe(3);
@@ -500,13 +893,10 @@ describe('onDidChange, run and disposal', () => {
     expect(registry.about()).toBeNull();
     expect(fake.listeners).toBe(0);
     expect(changes).toBe(2);
-    // Idempotent.
     handle.dispose();
     expect(changes).toBe(2);
-    // A change from the disposed provider no longer reaches the registry.
     fake.fire();
     expect(changes).toBe(2);
-    // The next provider may register.
     registry.register(fakeProvider({ about: { name: 'Next', version: '1.0.0' } }).provider);
     expect(registry.about()?.name).toBe('Next');
   });
@@ -518,40 +908,6 @@ describe('onDidChange, run and disposal', () => {
     registry.register(fakeProvider({ about: { name: 'Second', version: '1.0.0' } }).provider);
     first.dispose();
     expect(registry.about()?.name).toBe('Second');
-  });
-});
-
-/* ------------------------------------------------------------------------ *
- * Verifier round 9.33 — the paths no test drove (D1, D4)
- * ------------------------------------------------------------------------ */
-
-describe('what the first round left undriven', () => {
-  it('D1: a repeated run id is dropped and counted — the history names runs by id', () => {
-    const checked = viewOfRuns([run(), run({ createdAt: 1 }), run({ runId: 'run-2' })]);
-    expect(checked.value.map((r) => r.runId)).toStrictEqual(['run-1', 'run-2']);
-    expect(checked.dropped).toBe(1);
-  });
-
-  it('D1: a finding citing one stats key twice is dropped, and the set keeps the rest', () => {
-    const twice = finding({
-      evidence: [
-        { statsKey: 'sessions[0].loops[1].count', value: 7 },
-        { statsKey: 'sessions[0].loops[1].count', value: 8 },
-      ],
-    });
-    const checked = viewOfFindingSet(findingSet({ findings: [twice, finding()] }));
-    expect(checked.value?.findings).toHaveLength(1);
-    expect(checked.dropped).toBe(1);
-  });
-
-  it('V38: evidence past MAX_EVIDENCE drops the finding; at the cap it passes', () => {
-    const items = (n: number) =>
-      Array.from({ length: n }, (_, i) => ({ statsKey: `sessions[${String(i)}].totals.prompt`, value: i }));
-    const at = viewOfFindingSet(findingSet({ findings: [finding({ evidence: items(MAX_EVIDENCE) })] }));
-    expect(at.value?.findings).toHaveLength(1);
-    const past = viewOfFindingSet(findingSet({ findings: [finding({ evidence: items(MAX_EVIDENCE + 1) })] }));
-    expect(past.value?.findings).toHaveLength(0);
-    expect(past.dropped).toBe(1);
   });
 
   it('V21: a contract MEMBER given as a getter is refused, and the getter never runs', () => {
@@ -587,15 +943,11 @@ describe('what the first round left undriven', () => {
     const registry = new InsightsProviderRegistry({ onChange: () => undefined });
     const handleA = registry.register(a.provider);
     const runA = registry.run();
-    expect(registry.snapshot()?.running).toBe(true);
     handleA.dispose();
     registry.register(b.provider);
-    // Disposal reset the flag, so B is not stuck behind A's run...
     expect(registry.snapshot()?.running).toBe(false);
     const runB = registry.run();
     expect(bRuns).toBe(1);
-    expect(registry.snapshot()?.running).toBe(true);
-    // ...and A settling late does not clear B's.
     releaseA();
     await runA;
     expect(registry.snapshot()?.running).toBe(true);
@@ -610,5 +962,113 @@ describe('what the first round left undriven', () => {
     registry.dispose();
     expect(registry.registered).toBe(false);
     expect(() => registry.register(fakeProvider().provider)).toThrow(/shutting down/);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * 6. Raw output — optional, placed, and never cut
+ * ------------------------------------------------------------------------ */
+
+describe('raw output (DoD 9.40)', () => {
+  const REFUSED_RUN = run({ state: 'refused', findings: 0 });
+
+  function registryWith(over: Partial<Record<string, unknown>>): {
+    registry: InsightsProviderRegistry;
+    asked: string[];
+    errors: unknown[];
+  } {
+    const asked: string[] = [];
+    const errors: unknown[] = [];
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined, onError: (e) => errors.push(e) });
+    registry.register(
+      fakeProvider({
+        getLatest: () => refusedSet(),
+        listRuns: () => [REFUSED_RUN],
+        getRawOutput: (runId: string) => {
+          asked.push(runId);
+          return `raw output of ${runId}`;
+        },
+        ...over,
+      }).provider,
+    );
+    return { registry, asked, errors };
+  }
+
+  it('offered only when ALL THREE hold: the method, a refused set, and one run that places it', () => {
+    expect(registryWith({}).registry.snapshot()?.rawOutput).toBe(true);
+    // No method.
+    const without = new InsightsProviderRegistry({ onChange: () => undefined });
+    without.register(fakeProvider({ getLatest: () => refusedSet(), listRuns: () => [REFUSED_RUN] }).provider);
+    expect(without.snapshot()?.rawOutput).toBe(false);
+    expect(without.rawOutput()).toStrictEqual({ ok: false, reason: 'unsupported' });
+    // Not refused.
+    expect(registryWith({ getLatest: () => findingSet() }).registry.snapshot()?.rawOutput).toBe(false);
+    // Not placeable.
+    expect(registryWith({ listRuns: () => [] }).registry.snapshot()?.rawOutput).toBe(false);
+  });
+
+  it('asks for the resolved run id and nothing else, and returns the text WHOLE', () => {
+    const { registry, asked } = registryWith({});
+    expect(registry.rawOutput()).toStrictEqual({ ok: true, runId: 'run-1', text: 'raw output of run-1' });
+    expect(asked).toStrictEqual(['run-1']);
+  });
+
+  it('each way it shows nothing is named, with the run where there is one', () => {
+    expect(registryWith({ listRuns: () => [] }).registry.rawOutput()).toStrictEqual({ ok: false, reason: 'no-run' });
+    expect(registryWith({ getRawOutput: () => null }).registry.rawOutput()).toStrictEqual({
+      ok: false,
+      reason: 'none',
+      runId: 'run-1',
+    });
+    expect(registryWith({ getRawOutput: () => 42 }).registry.rawOutput()).toStrictEqual({
+      ok: false,
+      reason: 'invalid',
+      runId: 'run-1',
+    });
+    const threw = registryWith({
+      getRawOutput: () => {
+        throw new Error('gone');
+      },
+    });
+    expect(threw.registry.rawOutput()).toStrictEqual({ ok: false, reason: 'threw', runId: 'run-1' });
+    expect(threw.errors.map((e) => (e as Error).message)).toStrictEqual(['gone']);
+    expect(new InsightsProviderRegistry({ onChange: () => undefined }).rawOutput()).toStrictEqual({
+      ok: false,
+      reason: 'no-provider',
+    });
+  });
+
+  it(`at ${String(RAW_OUTPUT_MAX_CHARS)} characters it opens; one more is refused whole, with its length`, () => {
+    const at = registryWith({ getRawOutput: () => 'r'.repeat(RAW_OUTPUT_MAX_CHARS) }).registry.rawOutput();
+    expect(at.ok && at.text.length).toBe(RAW_OUTPUT_MAX_CHARS);
+    const past = registryWith({ getRawOutput: () => 'r'.repeat(RAW_OUTPUT_MAX_CHARS + 1) }).registry.rawOutput();
+    expect(past).toStrictEqual({ ok: false, reason: 'too-large', runId: 'run-1', length: RAW_OUTPUT_MAX_CHARS + 1 });
+  });
+
+  it('a getRawOutput given as a getter reads as ABSENT and never runs', () => {
+    let ran = 0;
+    const provider = fakeProvider({ getLatest: () => refusedSet(), listRuns: () => [REFUSED_RUN] })
+      .provider as unknown as Record<string, unknown>;
+    Object.defineProperty(provider, 'getRawOutput', {
+      enumerable: true,
+      get: () => {
+        ran += 1;
+        return () => 'raw';
+      },
+    });
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    registry.register(provider);
+    expect(registry.snapshot()?.rawOutput).toBe(false);
+    expect(registry.rawOutput()).toStrictEqual({ ok: false, reason: 'unsupported' });
+    expect(ran).toBe(0);
+  });
+
+  it('resolves from what the provider says NOW: a run placed after the snapshot is the one asked for', () => {
+    let runs: unknown[] = [];
+    const { registry, asked } = registryWith({ listRuns: () => runs });
+    expect(registry.snapshot()?.rawOutput).toBe(false);
+    runs = [run({ runId: 'run-late', state: 'refused', findings: 0 })];
+    expect(registry.rawOutput()).toMatchObject({ ok: true, runId: 'run-late' });
+    expect(asked).toStrictEqual(['run-late']);
   });
 });

@@ -84,12 +84,17 @@ import { validateStatsRecord } from './stats/schema.js';
 import type { StoredStatsRecord } from './stats/store.js';
 
 export type {
+  FindingActionView,
   FindingEvidenceView,
+  FindingSetRefusalView,
   FindingSetView,
+  FindingSinceLastRun,
   FindingView,
+  InsightsAgentKind,
   InsightsConfidence,
   InsightsFindingKind,
   InsightsProviderAbout,
+  InsightsRunState,
   RunSummary,
 } from './model/events.js';
 export type { InsightsProvider } from './insights-provider.js';

@@ -233,6 +233,7 @@
       idleThresholdMs={view.livenessThresholdMs}
       onget={() => store.getInsights()}
       onrun={() => store.runInsights()}
+      onrawoutput={() => store.showInsightsRawOutput()}
     />
   {:else if view.viewMode === 'about'}
     <!-- v0.9.0 DoD 9.32 — About, in this one panel rather than a panel of

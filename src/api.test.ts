@@ -38,7 +38,19 @@ import {
   refusalOf,
 } from './api.js';
 import type { AgentDeckApi, ApiSources } from './api.js';
-import { InsightsProviderRegistry } from './insights-provider.js';
+import type {
+  FindingActionView as ApiFindingActionView,
+  FindingEvidenceView as ApiFindingEvidenceView,
+  FindingSetRefusalView as ApiFindingSetRefusalView,
+  FindingSetView as ApiFindingSetView,
+  FindingSinceLastRun as ApiFindingSinceLastRun,
+  FindingView as ApiFindingView,
+  InsightsAgentKind as ApiInsightsAgentKind,
+  InsightsProvider as ApiInsightsProvider,
+  InsightsRunState as ApiInsightsRunState,
+  RunSummary as ApiRunSummary,
+} from './api.js';
+import { InsightsProviderRegistry, PROVIDER_VERSION } from './insights-provider.js';
 
 /** A registry nothing reads, for the tests that are about something else. */
 const registry = (): InsightsProviderRegistry =>
@@ -193,6 +205,85 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
       ].sort(),
     );
     expect(Object.isFrozen(api)).toBe(true);
+  });
+
+  it('9.42: the API EXPORTS the widened provider contract, key for key, and neither version moved', () => {
+    /*
+     * `Amendment 2026-09-22 — Provider contract v1 widened (pre-publish;
+     * API_VERSION stays 2)`. What another extension compiles against is the
+     * set of types `api.ts` re-exports, so they are pinned HERE, through the
+     * API's own module, against the amendment written out. A key added to or
+     * dropped from any view is a compile error in this file.
+     */
+    type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+    const finding: Exact<
+      keyof ApiFindingView,
+      'id' | 'kind' | 'confidence' | 'action' | 'cause' | 'evidence' | 'sinceLastRun'
+    > = true;
+    const action: Exact<ApiFindingActionView, { lead: string; detail: string }> = true;
+    const evidence: Exact<
+      ApiFindingEvidenceView,
+      { label: string; sessionId: string; statsKey: string; value: number | string }
+    > = true;
+    const set: Exact<
+      keyof ApiFindingSetView,
+      'createdAt' | 'agent' | 'window' | 'usage' | 'findings' | 'rejected' | 'state' | 'refusal'
+    > = true;
+    const refusalOptional: Exact<ApiFindingSetView['refusal'], ApiFindingSetRefusalView | undefined> = true;
+    const run: Exact<keyof ApiRunSummary, 'runId' | 'createdAt' | 'state' | 'findings' | 'agentKind'> = true;
+    const states: Exact<ApiInsightsRunState, 'ok' | 'empty' | 'refused'> = true;
+    const since: Exact<ApiFindingSinceLastRun, 'new' | 'still' | 'resolved'> = true;
+    const agents: Exact<ApiInsightsAgentKind, 'claude' | 'codex'> = true;
+    const rawOutput: Exact<ApiInsightsProvider['getRawOutput'], ((runId: string) => string | null) | undefined> = true;
+    expect([finding, action, evidence, set, refusalOptional, run, states, since, agents, rawOutput]).toStrictEqual(
+      Array.from({ length: 10 }, () => true),
+    );
+    expect(API_VERSION).toBe(2);
+    expect(PROVIDER_VERSION).toBe(1);
+  });
+
+  it('9.42: a widened fake provider registers THROUGH THE API and its text reaches the snapshot whole', () => {
+    const { emitter: e } = emitter();
+    const providers = registry();
+    const api = createAgentDeckApi(sourcesOver([], null), e, providers);
+    const latest: ApiFindingSetView = {
+      createdAt: 1_790_000_000_000,
+      agent: { kind: 'codex', version: '0.151.0' },
+      window: { sessions: 2, excluded: 0, sinceMs: 1_789_400_000_000 },
+      usage: { prompt: 900, output: 40 },
+      findings: [
+        {
+          id: 'f-1',
+          kind: 'cache-miss',
+          confidence: 'medium',
+          action: { lead: 'Keep the config file stable between turns', detail: 'The file changed.\nTwice.' },
+          cause: 'The config file was rewritten before each drop.',
+          evidence: [
+            { label: 'File', sessionId: 'ses_example02', statsKey: 'sessions[0].files[0].filePath', value: 'repo/src/config.ts' },
+            { label: 'Prompt tokens', sessionId: 'ses_example02', statsKey: 'sessions[0].totals.prompt', value: 96_000 },
+          ],
+          sinceLastRun: 'still',
+        },
+      ],
+      rejected: 0,
+      state: 'ok',
+    };
+    const provider: ApiInsightsProvider = {
+      providerVersion: 1,
+      about: { name: 'Fake Insights', version: '1.0.0' },
+      getLatest: () => latest,
+      listRuns: () => [{ runId: 'run-1', createdAt: 1_790_000_000_000, state: 'ok', findings: 1, agentKind: 'codex' }],
+      run: () => Promise.resolve(),
+      onDidChange: () => ({ dispose: () => undefined }),
+    };
+    const handle = api.registerInsightsProvider(provider);
+    const snapshot = providers.snapshot();
+    expect(snapshot?.latest).toStrictEqual(latest);
+    expect(snapshot?.latest).not.toBe(latest);
+    expect(snapshot?.dropped).toBe(0);
+    expect(snapshot?.rawOutput).toBe(false);
+    handle.dispose();
+    expect(providers.snapshot()).toBeNull();
   });
 
   it('the event has the shape of vscode.Event: subscribe, dispose, disposables, thisArgs', () => {

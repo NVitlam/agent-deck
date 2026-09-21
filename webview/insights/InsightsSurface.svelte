@@ -12,10 +12,12 @@
   that asks before it opens the page.
 
   PROVIDER: the latest finding set, the run history, and a Run action that
-  calls the provider — rendered from the snapshot the host checked. A finding
-  is its kind, its confidence and its numeric evidence; every word about it is
-  the parent's own (`layout.ts` `FINDING_LABELS`), because no model prose
-  crosses the boundary.
+  calls the provider — rendered from the snapshot the host checked. Since
+  DoD 9.41 a finding carries the provider's text, every string of it
+  allow-listed and capped at the boundary: the action's lead first, the
+  detail behind an expand, the cause, then the labelled evidence. A refused
+  set shows its step and reason, and "Show raw output" when the host could
+  place the run and the provider offers it.
 
   IT DECIDES NOTHING. `layout.ts` computes every tile and row; this renders
   them. The clock is read here, once per render, because the window is "the
@@ -46,6 +48,7 @@
     now = () => Date.now(),
     onget,
     onrun,
+    onrawoutput,
   }: {
     /** The STORED history — "the facts the store already holds". */
     records: readonly StatsRecord[];
@@ -62,6 +65,8 @@
     now?: () => number;
     onget: () => void;
     onrun: () => void;
+    /** "Show raw output" on a refused set (DoD 9.40). */
+    onrawoutput: () => void;
   } = $props();
 
   let free = $derived(freeInsightsLayout(records, now(), idleThresholdMs));
@@ -140,22 +145,56 @@
       {#if paid.dropped !== undefined}
         <p class="line" data-testid="insights-dropped">{paid.dropped}</p>
       {/if}
-      <div class="latest" data-testid={TESTID.insightsLatest}>
+      <div class="latest" data-testid={TESTID.insightsLatest} data-state={paid.latest?.state ?? 'none'}>
         {#if paid.latest === null}
           <p class="line">No finding set is recorded yet.</p>
         {:else}
-          <h2>{paid.latest.heading}</h2>
-          <p class="line">{paid.latest.window}</p>
-          {#if paid.latest.findings.length === 0}
-            <p class="line">The run recorded no findings.</p>
+          <div class="facts-block" data-testid={TESTID.insightsRunFacts}>
+            <h2>{paid.latest.facts.heading}</h2>
+            <p class="fact">{paid.latest.facts.agent}</p>
+            <p class="fact">{paid.latest.facts.window}</p>
+            {#if paid.latest.facts.usage !== null}
+              <p class="fact" data-testid="insights-run-usage">{paid.latest.facts.usage}</p>
+            {/if}
+          </div>
+          {#if paid.latest.refusal !== undefined}
+            <div class="refusal" data-testid={TESTID.insightsRefusal}>
+              <span class="label strong">Refused at step: {paid.latest.refusal.step}</span>
+              <p class="text">{paid.latest.refusal.reason}</p>
+              {#if paid.latest.rawOutput}
+                <button
+                  type="button"
+                  class="run"
+                  data-testid={TESTID.insightsRawOutput}
+                  onclick={() => onrawoutput()}>Show raw output</button
+                >
+              {/if}
+            </div>
+          {/if}
+          {#if paid.latest.note !== undefined}
+            <p class="line" data-testid="insights-latest-note">{paid.latest.note}</p>
           {/if}
           {#each paid.latest.findings as finding, index (index)}
             <div class="finding" data-testid={TESTID.insightsFinding}>
-              <span class="label strong">{finding.label}</span>
-              <span class="note">{finding.confidence}</span>
-              {#each finding.evidence as line, at (at)}
-                <span class="source">{line}</span>
-              {/each}
+              <span class="lead strong" data-testid="insights-finding-lead">{finding.lead}</span>
+              <span class="note" data-testid="insights-finding-meta">{finding.meta}</span>
+              <details class="detail">
+                <summary data-testid={TESTID.insightsDetail}>Detail</summary>
+                <p class="text" data-testid="insights-finding-detail">{finding.detail}</p>
+              </details>
+              <p class="text" data-testid="insights-finding-cause">
+                <span class="caption">Cause</span>
+                {finding.cause}
+              </p>
+              <ul class="evidence">
+                {#each finding.evidence as item, at (at)}
+                  <li data-testid={TESTID.insightsEvidence}>
+                    <span class="caption">{item.label}</span>
+                    <span class="strong">{item.value}</span>
+                    <span class="source">{item.source}</span>
+                  </li>
+                {/each}
+              </ul>
             </div>
           {/each}
           {#if paid.latest.rejected !== undefined}
@@ -170,7 +209,7 @@
         <ul class="history">
           {#each paid.history as row, at (at)}
             <li data-testid={TESTID.insightsHistoryRow}>
-              <span>{row.when}</span> · <span>{row.outcome}</span>
+              <span>{row.when}</span> · <span>{row.outcome}</span> · <span>{row.agent}</span>
             </li>
           {/each}
         </ul>
@@ -311,5 +350,48 @@
   .history {
     margin: 0;
     padding-left: 18px;
+  }
+
+  .facts-block {
+    margin-bottom: 12px;
+  }
+
+  .fact {
+    margin: 2px 0;
+  }
+
+  /* Provider text keeps its own line breaks; it is never parsed as markup. */
+  .text {
+    margin: 4px 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+
+  .caption {
+    font-size: 0.88em;
+    color: var(--vscode-descriptionForeground, inherit);
+  }
+
+  .detail summary {
+    cursor: pointer;
+    font-size: 0.88em;
+    color: var(--vscode-textLink-foreground, inherit);
+  }
+
+  .evidence {
+    margin: 4px 0 0;
+    padding-left: 18px;
+  }
+
+  .refusal {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-left: 3px solid var(--vscode-charts-red, currentColor);
+    background: var(--vscode-editorWidget-background, transparent);
+    border-radius: 6px;
   }
 </style>

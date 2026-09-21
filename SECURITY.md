@@ -51,13 +51,22 @@ the panel's bundle to none.
 extension API (`apiVersion` 2) lets one extension register as the Insights provider. The
 provider data is plain JSON, checked field by field, and never executed: Agent Deck reads what
 the provider returns as own data properties only (never through a getter), refuses a contract
-member given as a getter, matches every string against a fixed shape, checks every enum against its
-list, caps every list, and drops and counts what fails. No prose from a provider is shown — a
-finding is a kind, a confidence and numbers, and every word about it is Agent Deck's own; the only
-provider strings displayed are its name, its version and each evidence item's stats key, each
-matched against its fixed shape first. Agent Deck calls the provider's `getLatest`, `listRuns` and
-`run` and subscribes once through `onDidChange`; it calls nothing else, asks no licence question and
-opens no connection for it.
+member given as a getter, checks every enum against its list, matches every id, version and stats
+key against a fixed shape, caps every list, and drops and counts what fails.
+
+**A provider's text is shown, and every string of it is bounded first.** A finding carries the
+provider's own words: an action (a lead of at most 15 words and a detail), a cause, and a label on
+each piece of evidence; a refused run carries the step it stopped at and the reason. Each is a
+name (at most 64 characters), a path (at most 1,024) or free text (at most 2,000) — the first two
+are the stats history's own caps — and none may carry a control character (free text may carry a
+line break or a tab), a bidirectional override, a line or paragraph separator, or a lone
+surrogate. A string that fails is **dropped and counted, never shortened**. A piece of evidence
+may be text only on a stats-record field the history itself stores as text, under that field's
+cap. The panel renders all of it as text, never as markup. Agent Deck calls the provider's
+`getLatest`, `listRuns` and `run`, the optional `getRawOutput` only when you press **Show raw
+output** on a refused run, and subscribes once through `onDidChange`; it calls nothing else, asks
+no licence question and opens no connection for it. Raw output opens as an untitled plain-text
+document — nothing is written to disk — and more than 1,048,576 characters is not opened at all.
 Proof: `src/insights-provider.test.ts`.
 
 ---

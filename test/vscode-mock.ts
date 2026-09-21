@@ -341,6 +341,12 @@ interface MockState {
   outputChannelsDisposed: string[];
   /** Every URI handed to `env.openExternal`, in order (DoD 9.7). */
   openedExternal: string[];
+  /**
+   * Every UNTITLED document opened with content, and whether it was then
+   * SHOWN (v0.9.0 DoD 9.40). Both, because "a document was made" and "the
+   * user sees it" are two claims, and the raw-output action makes the second.
+   */
+  openedDocuments: { content: string; language: string | undefined; shown: boolean }[];
   /** What the next modal returns, as if the user had pressed it (DoD 9.7). */
   modalAnswer: string | undefined;
   panels: MockWebviewPanel[];
@@ -414,6 +420,7 @@ const state: MockState = {
   outputChannelsCreated: [],
   outputChannelsDisposed: [],
   openedExternal: [] as string[],
+  openedDocuments: [] as { content: string; language: string | undefined; shown: boolean }[],
   modalAnswer: undefined as string | undefined,
   panels: [],
   panelColumns: [],
@@ -449,6 +456,7 @@ export function resetVscodeMock(): void {
   state.warningMessages = [];
   state.warningAnswer = undefined;
   state.openedExternal = [];
+  state.openedDocuments = [];
   state.modalAnswer = undefined;
   state.configurationWrites = [];
   state.configurationEmitter = new Emitter();
@@ -541,6 +549,10 @@ export const mock = {
   /** DoD 9.7 — every URI handed to `env.openExternal`, in order. */
   get openedExternal(): readonly string[] {
     return state.openedExternal;
+  },
+  /** DoD 9.40 — every untitled document opened with content, and whether shown. */
+  get openedDocuments(): readonly { content: string; language: string | undefined; shown: boolean }[] {
+    return state.openedDocuments;
   },
   /** DoD 9.7 — answer the next modal as if the user had pressed that button. */
   answerModal(label: string | undefined): void {
@@ -649,6 +661,19 @@ export const workspace = {
     listener: (event: { affectsConfiguration(section: string): boolean }) => void,
   ): MockDisposable {
     return state.configurationEmitter.event(listener);
+  },
+  /**
+   * `vscode.workspace.openTextDocument({ content, language })` — the UNTITLED
+   * overload only (DoD 9.40). A path or a Uri is refused here, because this
+   * extension opens nothing from disk and a test reaching for it has found a
+   * write-shaped path worth failing on.
+   */
+  openTextDocument(options: { content?: string; language?: string }): Promise<{ index: number }> {
+    if (typeof options !== 'object' || options === null || typeof options.content !== 'string') {
+      return Promise.reject(new Error('vscode-mock: only the untitled { content } overload is modelled'));
+    }
+    state.openedDocuments.push({ content: options.content, language: options.language, shown: false });
+    return Promise.resolve({ index: state.openedDocuments.length - 1 });
   },
 };
 
@@ -914,6 +939,13 @@ export const window = {
         state.outputChannelsDisposed.push(name);
       },
     };
+  },
+  /** `vscode.window.showTextDocument` for a document {@link workspace.openTextDocument} made. */
+  showTextDocument(document: { index: number }): Promise<undefined> {
+    const opened = state.openedDocuments[document.index];
+    if (opened === undefined) return Promise.reject(new Error('vscode-mock: no such document'));
+    opened.shown = true;
+    return Promise.resolve(undefined);
   },
   showErrorMessage(message: string): Promise<undefined> {
     state.errorMessages.push(message);

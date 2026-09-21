@@ -35,10 +35,11 @@ import type { StatsRecord } from './stats/schema.js';
 import { STATS_SCHEMA_VERSION } from './stats/schema.js';
 import { StatsStore } from './stats/store.js';
 import { STATS_GOLDEN_DIR } from './stats/corpus.stats.testkit.js';
-import type { InsightsProviderSnapshot } from './model/events.js';
+import type { FindingSetView, FindingView, InsightsProviderSnapshot } from './model/events.js';
 import {
   EXAMPLES,
   EXAMPLE_LABEL,
+  ESTIMATED_BY_CLAUDE_CODE,
   FINDING_LABELS,
   IDLE_RESUME_MS,
   INSIGHTS_WINDOW_DAYS,
@@ -336,32 +337,206 @@ describe('the example rotation', () => {
 });
 
 /* ------------------------------------------------------------------------ *
+ * DoD 9.41 — the provider state's renderer, against goldens
+ * ------------------------------------------------------------------------ */
+
+const SINCE = ['new', 'still', 'resolved', null] as const;
+
+/** A checked finding as the host would send it. Neutral text: see `surfaceText`. */
+function viewFinding(index: number, over: Partial<FindingView> = {}): FindingView {
+  const kind = FINDING_KINDS[index % FINDING_KINDS.length] as FindingView['kind'];
+  return {
+    id: `f-${String(index)}`,
+    kind,
+    confidence: (['low', 'medium', 'high'] as const)[index % 3] as FindingView['confidence'],
+    action: {
+      lead: `Lead line ${String(index)} for ${kind}`,
+      detail: `Detail paragraph ${String(index)}.\nIt spans two lines.`,
+    },
+    cause: `Cause sentence ${String(index)}.`,
+    evidence: [
+      { label: 'Prompt tokens', sessionId: 'ses_example01', statsKey: 'sessions[0].totals.prompt', value: 128_400 },
+    ],
+    sinceLastRun: SINCE[index % SINCE.length] ?? null,
+    ...over,
+  };
+}
+
+const ABOUT = { name: 'Agent Deck Insights', version: '0.2.0' };
+
+/** The four states DoD 9.41 names, as checked snapshots. */
+const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', InsightsProviderSnapshot>> = {
+  ok: {
+    about: ABOUT,
+    latest: {
+      createdAt: NOW,
+      agent: { kind: 'claude', version: '2.1.246' },
+      window: { sessions: 12, excluded: 2, sinceMs: NOW - 7 * DAY },
+      usage: { prompt: 48_210, output: 3_904, costUsd: 0.2381 },
+      findings: FINDING_KINDS.map((_, index) => viewFinding(index)),
+      rejected: 1,
+      state: 'ok',
+    },
+    runs: [
+      { runId: 'run-3', createdAt: NOW, state: 'ok', findings: 8, agentKind: 'claude' },
+      { runId: 'run-2', createdAt: NOW - DAY, state: 'empty', findings: 0, agentKind: 'codex' },
+      { runId: 'run-1', createdAt: NOW - 2 * DAY, state: 'refused', findings: 0, agentKind: 'claude' },
+    ],
+    running: false,
+    dropped: 2,
+    rawOutput: false,
+  },
+  empty: {
+    about: ABOUT,
+    latest: {
+      createdAt: NOW,
+      agent: { kind: 'codex', version: '0.151.0-alpha.7.2' },
+      window: { sessions: 1, excluded: 0, sinceMs: NOW - DAY },
+      usage: { prompt: 9_000, output: 400 },
+      findings: [],
+      rejected: 0,
+      state: 'empty',
+    },
+    runs: [{ runId: 'run-9', createdAt: NOW, state: 'empty', findings: 0, agentKind: 'codex' }],
+    running: false,
+    dropped: 0,
+    rawOutput: false,
+  },
+  refused: {
+    about: ABOUT,
+    latest: {
+      createdAt: NOW,
+      agent: { kind: 'claude', version: '2.1.246' },
+      window: { sessions: 4, excluded: 0, sinceMs: NOW - 7 * DAY },
+      usage: null,
+      findings: [],
+      rejected: 0,
+      state: 'refused',
+      refusal: { step: 'validate', reason: 'The response held no JSON object.\nNothing was stored.' },
+    },
+    runs: [{ runId: 'run-5', createdAt: NOW, state: 'refused', findings: 0, agentKind: 'claude' }],
+    running: false,
+    dropped: 0,
+    rawOutput: true,
+  },
+  'mixed-evidence': {
+    about: ABOUT,
+    latest: {
+      createdAt: NOW,
+      agent: { kind: 'claude', version: '2.1.246' },
+      window: { sessions: 3, excluded: 0, sinceMs: NOW - 7 * DAY },
+      usage: { prompt: 1_000, output: 100, costUsd: 0.004 },
+      findings: [
+        viewFinding(0, {
+          evidence: [
+            { label: 'Reads', sessionId: 'ses_example01', statsKey: 'sessions[0].loops[0].count', value: 7 },
+            { label: 'File', sessionId: 'ses_example01', statsKey: 'sessions[0].files[2].filePath', value: 'repo/docs/schema.md' },
+            { label: 'Skill', sessionId: 'ses_example02', statsKey: 'sessions[1].skills[0].name', value: 'phase' },
+            { label: 'Cache ratio', sessionId: 'ses_example02', statsKey: 'sessions[1].totals.prompt', value: 0.11 },
+          ],
+        }),
+      ],
+      rejected: 0,
+      state: 'ok',
+    },
+    runs: [{ runId: 'run-7', createdAt: NOW, state: 'ok', findings: 1, agentKind: 'claude' }],
+    running: true,
+    dropped: 1,
+    rawOutput: false,
+  },
+};
+
+describe('the provider state’s renderer — DoD 9.41', () => {
+  for (const [name, snapshot] of Object.entries(PROVIDER_STATES)) {
+    it(`${name}: matches webview/goldens/insights/provider-${name}.json`, () => {
+      goldenCompare(resolve(`webview/goldens/insights/provider-${name}.json`), providerInsightsLayout(snapshot));
+    });
+  }
+
+  it('a finding reads in the amendment’s order: the LEAD, then kind, confidence and since-last-run as words', () => {
+    const rows = providerInsightsLayout(PROVIDER_STATES.ok).latest?.findings ?? [];
+    expect(rows.map((r) => r.lead)).toStrictEqual(FINDING_KINDS.map((kind, i) => `Lead line ${String(i)} for ${kind}`));
+    expect(rows.map((r) => r.meta)).toStrictEqual(
+      FINDING_KINDS.map((kind, i) => {
+        const since = SINCE[i % SINCE.length];
+        return `${FINDING_LABELS[kind]} · ${(['low', 'medium', 'high'] as const)[i % 3] ?? ''} confidence${since === null || since === undefined ? '' : ` · since last run: ${since}`}`;
+      }),
+    );
+    // No score anywhere: every meta is words.
+    for (const row of rows) expect(row.meta, row.meta).not.toMatch(/\d/);
+  });
+
+  it('"estimated by Claude Code" is on a Claude Code run’s usage, and never on a Codex run’s', () => {
+    const claude = providerInsightsLayout(PROVIDER_STATES.ok).latest?.facts.usage ?? '';
+    const codex = providerInsightsLayout(PROVIDER_STATES.empty).latest?.facts.usage ?? '';
+    expect(claude).toContain(`(${ESTIMATED_BY_CLAUDE_CODE})`);
+    expect(codex).not.toContain('estimated');
+    expect(codex).toBe('Run usage: 9,000 prompt tokens · 400 output tokens');
+    expect(ESTIMATED_BY_CLAUDE_CODE).toBe('estimated by Claude Code');
+    // No usage: no line.
+    expect(providerInsightsLayout(PROVIDER_STATES.refused).latest?.facts.usage).toBeNull();
+  });
+
+  it('a string and a number sit side by side in one finding, each under its label', () => {
+    const evidence = providerInsightsLayout(PROVIDER_STATES['mixed-evidence']).latest?.findings[0]?.evidence;
+    expect(evidence).toStrictEqual([
+      { label: 'Reads', value: '7', source: 'sessions[0].loops[0].count · ses_example01' },
+      { label: 'File', value: 'repo/docs/schema.md', source: 'sessions[0].files[2].filePath · ses_example01' },
+      { label: 'Skill', value: 'phase', source: 'sessions[1].skills[0].name · ses_example02' },
+      { label: 'Cache ratio', value: '0.11', source: 'sessions[1].totals.prompt · ses_example02' },
+    ]);
+  });
+
+  it('raw output is offered only on a REFUSED set, and only when the host said so', () => {
+    expect(providerInsightsLayout(PROVIDER_STATES.refused).latest?.rawOutput).toBe(true);
+    expect(providerInsightsLayout({ ...PROVIDER_STATES.refused, rawOutput: false }).latest?.rawOutput).toBe(false);
+    expect(providerInsightsLayout({ ...PROVIDER_STATES.ok, rawOutput: true }).latest?.rawOutput).toBe(false);
+  });
+
+  it('an ok set the parent emptied says so, and is not read as a run that found nothing', () => {
+    const emptied = providerInsightsLayout({
+      ...PROVIDER_STATES.ok,
+      latest: { ...(PROVIDER_STATES.ok.latest as FindingSetView), findings: [] },
+    });
+    expect(emptied.latest?.note).toBe('No finding from this run passed the check.');
+    expect(providerInsightsLayout(PROVIDER_STATES.empty).latest?.note).toBe(
+      'The run read the window and recorded no findings.',
+    );
+  });
+});
+
+/* ------------------------------------------------------------------------ *
  * No advice, and nothing real in the examples
  * ------------------------------------------------------------------------ */
 
 describe('the Insights surface states facts and never advises', () => {
-  /** Every string the surface can show, built from the DATA and the component. */
+  /**
+   * Every string the PARENT can show, built from the DATA and the component.
+   *
+   * Since DoD 9.40 a finding carries the PROVIDER's text — an action is
+   * imperative by definition (the amendment's word), so advice is what it is
+   * for, and it is Insights' to write. This ban is on the parent's OWN words:
+   * the provider fixtures below carry neutral text, and every fixed string
+   * the layout and the component add around them is scanned.
+   */
   function surfaceText(): string {
     const layout = freeInsightsLayout(storedRecords(), NOW, IDLE_RESUME_MS);
-    const provider: InsightsProviderSnapshot = {
-      about: { name: 'Agent Deck Insights', version: '0.2.0' },
-      latest: {
-        runId: 'run-1',
-        createdAt: NOW,
-        agent: 'codex',
-        window: { sinceMs: NOW - DAY, sessions: 1 },
-        findings: FINDING_KINDS.map((kind) => ({
-          kind,
-          confidence: 'low' as const,
-          evidence: [{ statsKey: 'sessions[0].totals.prompt', value: 1 }],
-        })),
-        findingsRejected: 2,
-      },
-      runs: [{ runId: 'run-1', createdAt: NOW, outcome: 'refused', findings: 0 }],
-      running: false,
-      dropped: 3,
+    const shownOf = (snapshot: InsightsProviderSnapshot): string[] => {
+      const paid = providerInsightsLayout(snapshot);
+      const latest = paid.latest;
+      return [
+        paid.title,
+        latest?.facts.heading ?? '',
+        latest?.facts.agent ?? '',
+        latest?.facts.window ?? '',
+        latest?.facts.usage ?? '',
+        latest?.note ?? '',
+        latest?.rejected ?? '',
+        ...(latest?.findings ?? []).flatMap((f) => [f.meta, ...f.evidence.map((e) => e.source)]),
+        ...paid.history.flatMap((h) => [h.when, h.outcome, h.agent]),
+        paid.dropped ?? '',
+      ];
     };
-    const paid = providerInsightsLayout(provider);
     // The component's own fixed sentences, read from its source.
     const component = readFileSync(resolve('webview/insights/InsightsSurface.svelte'), 'utf8');
     const markup = component.slice(component.indexOf('</script>'), component.indexOf('<style>'));
@@ -369,13 +544,7 @@ describe('the Insights surface states facts and never advises', () => {
       ...layout.tiles.flatMap((t) => [t.label, t.value, t.note ?? '']),
       EXAMPLE_LABEL,
       ...EXAMPLES.flatMap((e) => [e.title, ...e.lines]),
-      paid.title,
-      paid.latest?.heading ?? '',
-      paid.latest?.window ?? '',
-      paid.latest?.rejected ?? '',
-      ...(paid.latest?.findings ?? []).flatMap((f) => [f.label, f.confidence, ...f.evidence]),
-      ...paid.history.flatMap((h) => [h.when, h.outcome]),
-      paid.dropped ?? '',
+      ...Object.values(PROVIDER_STATES).flatMap(shownOf),
       markup.replace(/<[^>]*>/g, ' ').replace(/\{[^}]*\}/g, ' '),
     ];
     return shown.join('\n');

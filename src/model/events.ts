@@ -1299,23 +1299,33 @@ export interface SidebarStateMessage {
 }
 
 /* ------------------------------------------------------------------------ *
- * API v2 — the Insights provider's view types (v0.9.0 DoD 9.30)
+ * API v2 — the Insights provider's view types (v0.9.0 DoD 9.30, 9.40)
  * ------------------------------------------------------------------------ *
  *
  * Spec `Amendment 2026-09-21 — One window, Insights provider, Menu-only
- * entry`. A provider registers through `registerInsightsProvider` on the
- * extension API and the parent RENDERS what it returns. These are the types
- * it returns, defined in the PARENT, and they are plain JSON.
+ * entry`, WIDENED by `Amendment 2026-09-22 — Provider contract v1 widened
+ * (pre-publish; API_VERSION stays 2)`. A provider registers through
+ * `registerInsightsProvider` on the extension API and the parent RENDERS what
+ * it returns. These are the types it returns, defined in the PARENT, and they
+ * are plain JSON.
  *
- * **EVERY STRING IS ALLOW-LISTED AND NO RAW MODEL OUTPUT CROSSES.** A finding
- * is its kind, its confidence and its numeric evidence — never the model's own
- * prose. Insights' stored finding carries a `cause` and an `action` written by
- * the model; neither has a field here, so neither can reach the panel. Every
- * word the Insights surface prints about a finding is the parent's own, chosen
- * by `kind`. `src/insights-provider.ts` enforces this at runtime on every
- * value a provider returns: enumerations are checked against their lists, and
- * every other string against a strict shape (an id, a stats key, a name, a
- * version). A value that fails is dropped and counted, never repaired.
+ * ## What the widening changed, and why
+ *
+ * Until 2026-09-22 a finding was its kind, its confidence and numeric
+ * evidence, and no text crossed: every word about a finding was the parent's
+ * own. The Insights repository built against that and found it cannot render
+ * a report — a finding with no action says nothing anyone can act on. So a
+ * finding now carries the provider's TEXT: an action (a lead of at most 15
+ * words and a detail), a cause, and labelled evidence.
+ *
+ * **EVERY STRING IS STILL ALLOW-LISTED AND LENGTH-CAPPED.**
+ * `src/insights-provider.ts` checks every value a provider returns: an
+ * enumeration against its list, an id or a stats key against its pattern,
+ * and every text against one of three classes — a NAME (64 characters), a
+ * PATH (1,024) or FREE TEXT (2,000), with no control character and no
+ * bidirectional override in any of them. A string evidence value is admitted
+ * only on a stats key the store itself allow-lists as a string. A value that
+ * fails is DROPPED AND COUNTED, never truncated and never repaired.
  */
 
 /** A finding's kind. The same eight Insights' validator names. */
@@ -1331,48 +1341,92 @@ export type InsightsFindingKind =
 
 export type InsightsConfidence = 'low' | 'medium' | 'high';
 
+/** The agent CLI a run used. */
+export type InsightsAgentKind = 'claude' | 'codex';
+
 /**
- * One piece of evidence: a path into the Layer 1 payload and the NUMBER there.
+ * What a run came to: `ok` (it produced findings), `empty` (it read the
+ * window and found nothing) or `refused` (it stopped at a step and says why).
+ */
+export type InsightsRunState = 'ok' | 'empty' | 'refused';
+
+/** A finding against the run before it. `null` when the provider cannot say. */
+export type FindingSinceLastRun = 'new' | 'still' | 'resolved';
+
+/**
+ * One piece of evidence: a label, the session it is about, a path into that
+ * session's Layer 1 record, and the value there.
  *
- * Numbers only. Insights' own evidence may cite a string (a file path, a tool
- * name) — that is Layer 1 data it read from this extension, and the parent
- * already shows it on its own surfaces. Letting it back in through a provider
- * would be a second, unchecked route for a string, so it does not cross.
+ * A STRING value is admitted only where the store itself allows a string —
+ * `STATS_STRING_FIELDS` or `STATS_SCOPED_STRING_FIELDS` in
+ * `src/stats/schema.ts`, judged on the key the path ends in — and under the
+ * store's cap for that key. Anywhere else a string drops the finding.
  */
 export interface FindingEvidenceView {
+  /** A NAME: at most 64 characters, one line. */
+  label: string;
+  /** The session the value is from. An id. */
+  sessionId: string;
   /** `sessions[0].totals.compactions`-shaped. Checked against a strict pattern. */
   statsKey: string;
-  value: number;
+  value: number | string;
+}
+
+/** What to do about a finding: a short lead, and the detail behind it. */
+export interface FindingActionView {
+  /** At most 15 words, one line, imperative. */
+  lead: string;
+  /** FREE TEXT, at most 2,000 characters. Shown behind an expand. */
+  detail: string;
 }
 
 export interface FindingView {
+  /** The provider's id for this finding. An id, unique within its set. */
+  id: string;
   kind: InsightsFindingKind;
   confidence: InsightsConfidence;
+  action: FindingActionView;
+  /** FREE TEXT, at most 2,000 characters. */
+  cause: string;
   evidence: FindingEvidenceView[];
+  sinceLastRun: FindingSinceLastRun | null;
+}
+
+/** Why a run was refused: the step it stopped at, and the reason. */
+export interface FindingSetRefusalView {
+  /** A NAME: at most 64 characters, one line. */
+  step: string;
+  /** FREE TEXT, at most 2,000 characters. */
+  reason: string;
 }
 
 /** The latest finding set, as the provider states it. */
 export interface FindingSetView {
-  /** An id — `[A-Za-z0-9._:-]`, 1 to 128 characters. */
-  runId: string;
   /** Epoch milliseconds. */
   createdAt: number;
-  /** Which agent CLI produced it, or `null` when the provider does not say. */
-  agent: 'claude' | 'codex' | null;
-  /** The window the run read: since when, and how many sessions. */
-  window: { sinceMs: number; sessions: number };
+  /** The agent CLI the run used, and its version. */
+  agent: { kind: InsightsAgentKind; version: string };
+  /** The window the run read: how many sessions, how many excluded, since when. */
+  window: { sessions: number; excluded: number; sinceMs: number };
+  /** What the run itself cost, as the agent reported it, or `null`. */
+  usage: { prompt: number; output: number; costUsd?: number } | null;
+  /** Empty unless `state` is `ok`. */
   findings: FindingView[];
   /** How many findings the provider's own validator rejected. */
-  findingsRejected: number;
+  rejected: number;
+  state: InsightsRunState;
+  /** Present exactly when `state` is `refused`. */
+  refusal?: FindingSetRefusalView;
 }
 
 /** One run in the history list. */
 export interface RunSummary {
   runId: string;
   createdAt: number;
-  /** `findings` when the run produced a finding set; `refused` when it did not. */
-  outcome: 'findings' | 'refused';
+  state: InsightsRunState;
+  /** How many findings the run produced: at least 1 when `ok`, else 0. */
   findings: number;
+  agentKind: InsightsAgentKind;
 }
 
 /** The provider's name and version, as About and the sidebar state them. */
@@ -1396,6 +1450,16 @@ export interface InsightsProviderSnapshot {
    * silent partial render ships.
    */
   dropped: number;
+  /**
+   * True when the surface may offer "Show raw output" — v0.9.0 DoD 9.40.
+   *
+   * All three must hold: the provider has the optional `getRawOutput`, the
+   * latest set is `refused`, and exactly ONE run in the history has that
+   * set's `createdAt` and is `refused`. The set view carries no run id, so
+   * that join is how the host knows which run to ask about; when it is not
+   * unique, the action is not offered rather than guessed (G3).
+   */
+  rawOutput: boolean;
 }
 
 /**
@@ -1563,6 +1627,18 @@ export interface InsightsRunMessage {
   type: 'insightsRun';
 }
 
+/**
+ * The Insights surface's "Show raw output" action on a refused set — v0.9.0
+ * DoD 9.40. NO PAYLOAD: the host resolves which run it means from the
+ * snapshot it built (the one refused run whose `createdAt` is the latest
+ * set's), asks the provider's optional `getRawOutput`, and opens what comes
+ * back as an untitled plain-text document. The renderer names no run id, for
+ * the same reason `aboutLink` names no url.
+ */
+export interface InsightsRawOutputMessage {
+  type: 'insightsRawOutput';
+}
+
 export type WebviewToHostMessage =
   | ExpandNodeMessage
   | SelectSessionMessage
@@ -1571,7 +1647,8 @@ export type WebviewToHostMessage =
   | DrawerStateMessage
   | AboutLinkMessage
   | InsightsGetMessage
-  | InsightsRunMessage;
+  | InsightsRunMessage
+  | InsightsRawOutputMessage;
 
 /**
  * One tree op that could not be applied, reported instead of thrown.

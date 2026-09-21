@@ -421,6 +421,16 @@ export const TESTID = {
   insightsLatest: 'insights-latest',
   insightsFinding: 'insights-finding',
   insightsHistoryRow: 'insights-history-row',
+  /** DoD 9.41: the latest run's facts, above its findings. */
+  insightsRunFacts: 'insights-run-facts',
+  /** DoD 9.41: a finding's detail toggle — the `<summary>` of its `<details>`. */
+  insightsDetail: 'insights-detail',
+  /** DoD 9.41: one labelled piece of a finding's evidence. */
+  insightsEvidence: 'insights-evidence',
+  /** DoD 9.41: a refused set's step and reason. */
+  insightsRefusal: 'insights-refusal',
+  /** DoD 9.41: "Show raw output" on a refused set, when the provider offers it. */
+  insightsRawOutput: 'insights-raw-output',
   /* About surface — v0.9.0 DoD 9.32 */
   aboutSurface: 'about',
   aboutLink: 'about-link',

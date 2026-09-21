@@ -70,9 +70,15 @@ All notable changes to Agent Deck are documented here.
   the panel is open.
 - **Extension API version 2.** `registerInsightsProvider` lets one extension
   register as the Insights provider. Version 2 only adds to version 1. A
-  provider's data is plain JSON, checked field by field, and never executed; a
-  finding is a kind, a confidence and numbers, and every word about it is
-  Agent Deck's own. Agent Deck never asks about your Insights licence.
+  provider's data is plain JSON, checked field by field, and never executed. A
+  finding carries the provider's own text - an action (a short lead and a
+  detail), a cause and labelled evidence - and every string of it is capped
+  (names 64 characters, paths 1,024, free text 2,000) and checked for control
+  and bidirectional characters; a string that fails is dropped and counted,
+  never shortened. The Insights surface shows the lead first, the detail
+  behind an expand, the cause, then the evidence, with the run's facts above
+  them; a refused run shows its step and reason and can open its raw output
+  as an untitled document. Agent Deck never asks about your Insights licence.
 - **An About entry**, as **Agent Deck: About** in the Command Palette and in
   Menu. It switches the panel to a page in the deck's own look: a short
   introduction, four tiles - Portfolio, Repository, LinkedIn and Sponsor - and

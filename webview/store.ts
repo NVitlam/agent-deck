@@ -802,6 +802,11 @@ export interface Store {
    * only while a provider is registered and not already running.
    */
   runInsights(): void;
+  /**
+   * "Show raw output" on a refused set — DoD 9.40. Posts `insightsRawOutput`,
+   * and only while the snapshot says the provider offers it for this set.
+   */
+  showInsightsRawOutput(): void;
   /** Open or shut the inspector panel without changing the selected node. */
   setInspectorOpen(open: boolean): void;
   /** Pan the deck by a delta in CLIENT pixels. `viewport.ts:panBy`. */
@@ -1868,6 +1873,11 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     runInsights(): void {
       if (insightsProvider === null || insightsProvider.running) return;
       postIntent({ type: 'insightsRun' });
+    },
+
+    showInsightsRawOutput(): void {
+      if (insightsProvider?.rawOutput !== true) return;
+      postIntent({ type: 'insightsRawOutput' });
     },
 
     setInspectorOpen(open: boolean): void {

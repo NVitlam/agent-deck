@@ -523,6 +523,50 @@ describe('README exists and ships clean', () => {
     }
   });
 
+  it('9.42: the widened contract is documented, and the numbers-only claim is gone from EVERY shipped document', () => {
+    /*
+     * `Amendment 2026-09-22 — Provider contract v1 widened`. Until 9.40 three
+     * shipped documents promised that no provider text is shown. That promise
+     * is now false, and a false trust claim is the worst sentence a release
+     * can carry — so the claim is scanned for across README, SECURITY and the
+     * CHANGELOG's 0.9.0 block, each pattern paired below with the sentence
+     * that really shipped (the vacuity control).
+     */
+    const changelog = readText('CHANGELOG.md');
+    const block = changelog.slice(changelog.indexOf('## 0.9.0'), changelog.indexOf('\n## ', changelog.indexOf('## 0.9.0') + 1));
+    expect(block.length).toBeGreaterThan(200);
+    const shipped: readonly [string, string][] = [
+      ['README.md', README],
+      ['SECURITY.md', readText('SECURITY.md')],
+      ['CHANGELOG.md 0.9.0', block],
+    ];
+    const STALE: readonly [RegExp, string][] = [
+      [/there is no text field/i, 'There is no text field: every word the Insights surface shows'],
+      [/every word (?:the insights surface shows )?about (?:a finding|it) is agent deck'?s own/i, 'every word about it is Agent Deck\'s own'],
+      [/no prose from a provider is shown/i, 'No prose from a provider is shown'],
+      [/the only provider strings (?:shown|displayed)/i, 'the only provider strings displayed are its name'],
+      [/a finding is a kind, a confidence and numbers/i, 'a finding is a kind, a confidence and numbers'],
+      [/\*\*numeric evidence\*\*/i, 'a **confidence** (low, medium, high) and **numeric evidence**'],
+    ];
+    for (const [pattern, sentence] of STALE) {
+      expect(pattern.test(sentence), `the control for ${String(pattern)} does not match what shipped`).toBe(true);
+      for (const [name, text] of shipped) {
+        expect(pattern.test(text.replace(/\s+/g, ' ')), `${name} still says ${String(pattern)}`).toBe(false);
+      }
+    }
+    // What is true now, stated where an extension author and a security reader look.
+    const flat = README.replace(/\s+/g, ' ');
+    for (const member of ['getRawOutput', 'sinceLastRun', 'refusal', 'agentKind']) {
+      expect(README, member).toContain(member);
+    }
+    expect(flat).toContain('dropped and counted, never shortened');
+    expect(flat).toContain('estimated by Claude Code');
+    const security = readText('SECURITY.md').replace(/\s+/g, ' ');
+    for (const fact of ['at most 64 characters', 'at most 1,024', 'at most 2,000', 'never shortened', 'bidirectional override']) {
+      expect(security, fact).toContain(fact);
+    }
+  });
+
   it('is present at the repository root and is not empty', () => {
     expect(README.length).toBeGreaterThan(0);
     expect(README.trimStart().startsWith('# Agent Deck')).toBe(true);

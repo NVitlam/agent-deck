@@ -24,6 +24,7 @@
 import { execFileSync } from 'node:child_process';
 import { ABOUT_COMMAND, ABOUT_LINKS, aboutPage } from './about.js';
 import type { InsightsProvider } from './insights-provider.js';
+import { RAW_OUTPUT_MAX_CHARS } from './insights-provider.js';
 import type { FindingSetView } from './model/events.js';
 import {
   appendFileSync,
@@ -87,6 +88,7 @@ import {
   deactivate,
   inactiveReasonFor,
   opencodeStoreExists,
+  rawOutputRefusal,
   readSettings,
   OPEN_SETTINGS_COMMAND,
   OPEN_STATS_COMMAND,
@@ -2260,19 +2262,35 @@ async function activateWithHost(): Promise<AgentDeckApi> {
   });
 }
 
-/** A finding set in the parent's view shape, with `findings` findings. */
+/** A finding set in the parent's view shape (DoD 9.40), with `findings` findings. */
 function fakeFindingSet(findings: number): FindingSetView {
   return {
-    runId: 'run-2026-09-21.1',
     createdAt: 1_790_000_000_000,
-    agent: 'claude',
-    window: { sinceMs: 1_789_400_000_000, sessions: 5 },
-    findings: Array.from({ length: findings }, () => ({
+    agent: { kind: 'claude', version: '2.1.246' },
+    window: { sessions: 5, excluded: 0, sinceMs: 1_789_400_000_000 },
+    usage: { prompt: 12_345, output: 2_345 },
+    findings: Array.from({ length: findings }, (_, index) => ({
+      id: `f-${String(index)}`,
       kind: 're-read-loop' as const,
       confidence: 'high' as const,
-      evidence: [{ statsKey: 'sessions[0].loops[1].count', value: 7 }],
+      action: { lead: 'Keep the schema file open between edits', detail: 'Seven reads.' },
+      cause: 'An edit failed and the file was read again.',
+      evidence: [
+        { label: 'Reads', sessionId: 'ses_example01', statsKey: 'sessions[0].loops[1].count', value: 7 },
+      ],
+      sinceLastRun: 'new' as const,
     })),
-    findingsRejected: 0,
+    rejected: 0,
+    state: findings > 0 ? 'ok' : 'empty',
+  };
+}
+
+/** A REFUSED set at the instant `fakeFindingSet` uses, for the raw-output tests. */
+function fakeRefusedSet(): FindingSetView {
+  return {
+    ...fakeFindingSet(0),
+    state: 'refused',
+    refusal: { step: 'validate', reason: 'The model returned no JSON object.' },
   };
 }
 
@@ -2293,7 +2311,7 @@ function fakeInsightsProvider(over: Partial<InsightsProvider> = {}): {
     about: { name: 'Agent Deck Insights', version: '0.2.0' },
     getLatest: () => fakeFindingSet(1),
     listRuns: () => [
-      { runId: 'run-1', createdAt: 1_790_000_000_000, outcome: 'findings', findings: 1 },
+      { runId: 'run-1', createdAt: 1_790_000_000_000, state: 'ok', findings: 1, agentKind: 'claude' },
     ],
     run: () => {
       runs += 1;
@@ -7668,6 +7686,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
         runs: [],
         running: false,
         dropped: 0,
+        rawOutput: false,
       },
     };
     controller.setSettings({ canvasAutoFit: false, tweaks: {}, livenessThresholdMs: 300_000 });
@@ -9528,18 +9547,20 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     const state = lastProviderState() as {
       provider: {
         about: { name: string; version: string };
-        latest: { runId: string; findings: unknown[] } | null;
+        latest: FindingSetView | null;
         runs: { runId: string }[];
         running: boolean;
         dropped: number;
+        rawOutput: boolean;
       } | null;
     };
     expect(state.provider?.about).toStrictEqual({ name: 'Agent Deck Insights', version: '0.2.0' });
-    expect(state.provider?.latest?.runId).toBe('run-2026-09-21.1');
-    expect(state.provider?.latest?.findings).toHaveLength(1);
+    // The widened view reaches the panel whole — the provider's text included.
+    expect(state.provider?.latest).toStrictEqual(fakeFindingSet(1));
     expect(state.provider?.runs.map((r) => r.runId)).toStrictEqual(['run-1']);
     expect(state.provider?.running).toBe(false);
     expect(state.provider?.dropped).toBe(0);
+    expect(state.provider?.rawOutput).toBe(false);
   });
 
   it('with the panel OPEN: registering, a change and disposal each re-state it', async () => {
@@ -9581,6 +9602,100 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     panel?.fireMessage({ type: 'insightsRun' });
     await new Promise((r) => setTimeout(r, 0));
     expect(fake.runs()).toBe(1);
+  });
+
+  /*
+   * DoD 9.40 — "Show raw output", driven the production way: the panel's
+   * intent through the guard, the relay and the host's handler, to the
+   * provider and back out as an UNTITLED document that is SHOWN.
+   */
+  const REFUSED_RUN = {
+    runId: 'run-refused-1',
+    createdAt: 1_790_000_000_000,
+    state: 'refused' as const,
+    findings: 0,
+    agentKind: 'claude' as const,
+  };
+
+  async function rawOutputPanel(
+    over: Partial<InsightsProvider>,
+  ): Promise<{ panel: ReturnType<typeof mock.panels.find>; asked: string[] }> {
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    const asked: string[] = [];
+    api.registerInsightsProvider(
+      fakeInsightsProvider({
+        getLatest: () => fakeRefusedSet(),
+        listRuns: () => [REFUSED_RUN],
+        getRawOutput: (runId: string) => {
+          asked.push(runId);
+          return `raw output of ${runId}\nsecond line`;
+        },
+        ...over,
+      }).provider,
+    );
+    return { panel, asked };
+  }
+
+  it('9.40: the snapshot OFFERS raw output on a placed refused set, and the press opens it untitled and shown', async () => {
+    const { panel, asked } = await rawOutputPanel({});
+    expect((lastProviderState()?.provider as { rawOutput?: boolean } | null)?.rawOutput).toBe(true);
+    panel?.fireMessage({ type: 'insightsRawOutput' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(asked).toStrictEqual(['run-refused-1']);
+    expect(mock.openedDocuments).toStrictEqual([
+      { content: 'raw output of run-refused-1\nsecond line', language: 'plaintext', shown: true },
+    ]);
+  });
+
+  it('9.40: every way it shows nothing SAYS so, and opens nothing', async () => {
+    const cases: readonly [Partial<InsightsProvider>, string][] = [
+      [{ getRawOutput: () => null }, 'Agent Deck: the Insights provider has no raw output for run run-refused-1.'],
+      [{ listRuns: () => [] }, 'Agent Deck: the latest refused set matches no single run in the history, so no raw output was asked for.'],
+      [
+        { getRawOutput: () => 'r'.repeat(RAW_OUTPUT_MAX_CHARS + 1) },
+        `Agent Deck: the raw output for run run-refused-1 is ${String(RAW_OUTPUT_MAX_CHARS + 1)} characters, over the ${String(RAW_OUTPUT_MAX_CHARS)} Agent Deck opens; it is not shown and not cut.`,
+      ],
+    ];
+    for (const [over, message] of cases) {
+      resetVscodeMock();
+      const { panel } = await rawOutputPanel(over);
+      panel?.fireMessage({ type: 'insightsRawOutput' });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(mock.openedDocuments, message).toStrictEqual([]);
+      expect(mock.informationMessages, message).toContain(message);
+      await deactivate();
+    }
+  });
+
+  it('9.40: with no provider the press says so; a provider without getRawOutput is never offered it', async () => {
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    panel?.fireMessage({ type: 'insightsRawOutput' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.informationMessages).toContain('Agent Deck: no Insights provider is registered.');
+    api.registerInsightsProvider(
+      fakeInsightsProvider({ getLatest: () => fakeRefusedSet(), listRuns: () => [REFUSED_RUN] }).provider,
+    );
+    expect((lastProviderState()?.provider as { rawOutput?: boolean } | null)?.rawOutput).toBe(false);
+    panel?.fireMessage({ type: 'insightsRawOutput' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.informationMessages).toContain('Agent Deck: the Insights provider offers no raw output.');
+    expect(mock.openedDocuments).toStrictEqual([]);
+  });
+
+  it('9.40: every refusal reason has its sentence, naming the run where there is one', () => {
+    expect(rawOutputRefusal({ ok: false, reason: 'invalid', runId: 'r-1' })).toBe(
+      'Agent Deck: the Insights provider returned raw output for run r-1 that is not text; it is not shown.',
+    );
+    expect(rawOutputRefusal({ ok: false, reason: 'threw', runId: 'r-1' })).toBe(
+      'Agent Deck: the Insights provider failed while returning the raw output for run r-1.',
+    );
+    for (const reason of ['no-provider', 'unsupported', 'no-run'] as const) {
+      expect(rawOutputRefusal({ ok: false, reason })).toMatch(/^Agent Deck: /);
+    }
   });
 
   it('a SECOND provider is refused BY NAME through the API, and the first stays', async () => {

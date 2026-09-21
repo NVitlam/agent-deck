@@ -109,13 +109,27 @@ const ALLOWED: Readonly<Record<string, string>> = Object.freeze({
   [TESTID.insightsRun]:
     'the Insights surface’s Run action — `Amendment 2026-09-21 — One window`, in the provider ' +
     'state only. It calls the registered provider and nothing else.',
+  /*
+   * v0.9.0 DoD 9.41. `Amendment 2026-09-22 — Provider contract v1 widened`
+   * names both: a finding's detail "behind expand", and "show raw output" on
+   * a refused set. The first reveals content already on the page and posts
+   * nothing; the second is an intent the host checks again.
+   */
+  [TESTID.insightsDetail]:
+    'expand/collapse of a content entry: a finding’s detail, which `Amendment 2026-09-22 — ' +
+    'Provider contract v1 widened` puts behind an expand. A native <details>; it posts nothing.',
+  [TESTID.insightsRawOutput]:
+    'the Insights surface’s "Show raw output" on a refused set — `Amendment 2026-09-22 — Provider ' +
+    'contract v1 widened`. It asks the host, which resolves the run and asks the provider.',
 });
 
 /**
  * Every exemption that is NOT a content interaction, pinned as a set.
  *
- * Six, and the amendments name every one: the dismiss, the Stats tabs, and
- * the four the one-window amendment gives the About and Insights surfaces.
+ * Seven, and the amendments name every one: the dismiss, the Stats tabs,
+ * the four the one-window amendment gives the About and Insights surfaces,
+ * and a refused set's "Show raw output" (the 2026-09-22 widening). A
+ * finding's detail toggle is expand/collapse of content, not listed here.
  * This is what stops the allow-list growing an entry quietly: adding one
  * means editing this array, which is a line a reviewer reads.
  */
@@ -126,6 +140,7 @@ const EXCEPTIONS = [
   TESTID.aboutGetTile,
   TESTID.insightsGetTile,
   TESTID.insightsRun,
+  TESTID.insightsRawOutput,
 ];
 
 /** Everything a browser treats as clickable, by selector. */
@@ -263,7 +278,7 @@ describe('the allow-list itself', () => {
     }
   });
 
-  it('the dismiss, the Stats tabs and the four surface intents are the ONLY non-content entries', () => {
+  it('the dismiss, the Stats tabs and the five surface intents are the ONLY non-content entries', () => {
     const notContent = Object.entries(ALLOWED).filter(
       ([, why]) => !why.startsWith('content item') && !why.startsWith('expand/collapse'),
     );
@@ -411,22 +426,44 @@ describe('every surface is content only', () => {
     provider: {
       about: { name: 'Agent Deck Insights', version: '0.2.0' },
       latest: {
-        runId: 'run-1',
         createdAt: 1_790_000_000_000,
-        agent: 'claude',
-        window: { sinceMs: 1_789_400_000_000, sessions: 3 },
+        agent: { kind: 'claude', version: '2.1.246' },
+        window: { sessions: 3, excluded: 0, sinceMs: 1_789_400_000_000 },
+        usage: null,
         findings: [
           {
+            id: 'f-1',
             kind: 'stall',
             confidence: 'medium',
-            evidence: [{ statsKey: 'sessions[0].totals.stalls', value: 2 }],
+            action: { lead: 'Lead of f-1', detail: 'Detail of f-1.' },
+            cause: 'Cause of f-1.',
+            evidence: [{ label: 'Stalls', sessionId: 'ses_example01', statsKey: 'sessions[0].totals.stalls', value: 2 }],
+            sinceLastRun: null,
           },
         ],
-        findingsRejected: 0,
+        rejected: 0,
+        state: 'ok',
       },
-      runs: [{ runId: 'run-1', createdAt: 1_790_000_000_000, outcome: 'findings', findings: 1 }],
+      runs: [{ runId: 'run-1', createdAt: 1_790_000_000_000, state: 'ok', findings: 1, agentKind: 'claude' }],
       running: false,
       dropped: 0,
+      rawOutput: false,
+    },
+  };
+
+  /** The same provider, its latest set REFUSED and its raw output offered (DoD 9.41). */
+  const REFUSED_STATE = {
+    ...PROVIDER_STATE,
+    provider: {
+      ...PROVIDER_STATE.provider,
+      latest: {
+        ...PROVIDER_STATE.provider.latest,
+        findings: [],
+        state: 'refused',
+        refusal: { step: 'validate', reason: 'No JSON object.' },
+      },
+      runs: [{ runId: 'run-1', createdAt: 1_790_000_000_000, state: 'refused', findings: 0, agentKind: 'claude' }],
+      rawOutput: true,
     },
   };
 
@@ -443,13 +480,23 @@ describe('every surface is content only', () => {
     free.dispose();
     mounted.pop();
 
-    // PROVIDER: the finding, the history, and Run — Run is the one intent.
+    // PROVIDER: the finding, the history, Run — and each finding's detail
+    // toggle (DoD 9.41), which reveals content and posts nothing.
     const paid = render();
     send(PROVIDER_STATE);
     send(viewControls({ surface: 'insights' }));
     expect(all(paid.container, TESTID.insightsFinding).length).toBe(1);
-    expect(clickables(paid.container)).toStrictEqual([TESTID.insightsRun]);
+    expect(clickables(paid.container)).toStrictEqual([TESTID.insightsRun, TESTID.insightsDetail]);
     expect(chrome(paid.container)).toStrictEqual([]);
+    paid.dispose();
+    mounted.pop();
+
+    // REFUSED: Run and "Show raw output", and no finding to expand.
+    const refused = render();
+    send(REFUSED_STATE);
+    send(viewControls({ surface: 'insights' }));
+    expect(clickables(refused.container)).toStrictEqual([TESTID.insightsRun, TESTID.insightsRawOutput]);
+    expect(chrome(refused.container)).toStrictEqual([]);
   });
 
   it('the ABOUT surface carries its tiles — and the lit Get tile only while no provider', () => {

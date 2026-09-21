@@ -831,6 +831,8 @@ describe('WEBVIEW_TO_HOST_TYPES is bound to the guard it describes', () => {
     aboutLink: { type: 'aboutLink', index: 0 },
     insightsGet: { type: 'insightsGet' },
     insightsRun: { type: 'insightsRun' },
+    // v0.9.0 DoD 9.40: "Show raw output" — no payload, like Run.
+    insightsRawOutput: { type: 'insightsRawOutput' },
   };
 
   it('`aboutLink` accepts an integer INSIDE the four links, and nothing else', () => {

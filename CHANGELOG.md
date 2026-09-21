@@ -56,9 +56,11 @@ All notable changes to Agent Deck are documented here.
   offers **Get Agent Deck Insights**, which opens the project page in your
   browser; with it installed, **Open Insights** and **Run Insights**, which run
   that extension's commands. Agent Deck activates Insights first when it is
-  not active, writes one line per run to its Agent Deck output channel, and
-  shows a message naming the command whenever one does not run. Agent Deck
-  never asks about your Insights licence.
+  not active, writes each step and the outcome to its Agent Deck output
+  channel, and shows a message naming the command whenever one does not run.
+  Insights 0.1.0 has no command for Open Insights to run, so that entry shows
+  a message saying so until Insights adds one. Agent Deck never asks about
+  your Insights licence.
 - **An About entry**, as **Agent Deck: About** in the Command Palette and in
   Menu. It opens a page in the deck's own look: a short introduction, four
   tiles - Portfolio, Repository, LinkedIn and Sponsor - and a footer with the

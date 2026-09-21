@@ -774,8 +774,9 @@ export function tweaksOf(settings: AgentDeckSettings): Record<string, boolean | 
  * `console` rather than an output channel, and that is a decision rather than
  * laziness: an output channel is a `vscode` object, so taking one would make
  * the OpenCode discovery decision untestable outside the editor — the double
- * in `test/vscode-mock.ts` has no `createOutputChannel` and this package does
- * not own that file. `console.info` from the extension host lands in the
+ * in `test/vscode-mock.ts` had no `createOutputChannel` when this was decided
+ * (it has one since v0.9.0 DoD 9.25, for the Insights entries; the decision
+ * stands on the injection argument). `console.info` from the extension host lands in the
  * "Extension Host" log, which is where a user is told to look anyway.
  */
 export type HostLogLevel = 'info' | 'error';
@@ -4370,8 +4371,8 @@ export interface AgentDeckHostOptions extends DataPathOptions {
   /**
    * Creates the diagnostics output channel (DoD 5.5.3). Omitted by every test
    * that does not assert on diagnostics, and by anything running outside a
-   * real editor — `test/vscode-mock.ts` has no `createOutputChannel`, which is
-   * the same reason `HostLogger` is injected rather than imported.
+   * real editor. Injected rather than imported for the reason `HostLogger` is;
+   * `activate()` passes the one shared "Agent Deck" channel (DoD 9.25).
    */
   createDiagnosticsSink?: DiagnosticsSinkFactory;
   /** Injected clock for the diagnostics timestamps. Defaults to `Date.now`. */
@@ -5959,7 +5960,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      * were `void executeCommand(id)`: a rejection reached nobody, so Open
      * Insights, whose id Insights 0.1.0 does not contribute, did nothing and
      * said nothing. Now Insights is activated first when it is not active,
-     * every outcome writes one line to the "Agent Deck" channel, and every
+     * every activation and outcome writes a line to the "Agent Deck" channel, and every
      * failure is an information message that names the command.
      */
     vscode.commands.registerCommand(INSIGHTS_SHOW_COMMAND, () =>
@@ -6288,10 +6289,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      * DoD 5.5.3. A FACTORY, not a channel: `DiagnosticsChannel` calls this on
      * its first line and never at construction, so a window where nothing
      * happens gets no "Agent Deck" entry in the Output dropdown. The `vscode`
-     * call lives here and nowhere deeper for the reason `HostLogger` does —
-     * `test/vscode-mock.ts` has no `createOutputChannel`, and a module that
-     * reached for one would take the whole data path out of reach of the
-     * tests.
+     * call lives here and nowhere deeper for the reason `HostLogger` does: a
+     * module that reached for one would take the whole data path out of reach
+     * of the tests. Since DoD 9.25 it is the SHARED channel the Insights
+     * entries also write to — see `sharedOutput` — and a test counts
+     * `createOutputChannel` calls to hold that.
      */
     createDiagnosticsSink: sharedOutput,
     /*

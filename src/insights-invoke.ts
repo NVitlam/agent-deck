@@ -23,7 +23,7 @@
  * So every invocation goes through {@link invokeInsights}: it finds the
  * extension, activates it when it is not active yet (the same order the
  * Insights side uses to reach this extension's API), runs the command,
- * writes one line to the output channel either way, and **turns any failure
+ * writes the activation and the outcome to the output channel, and **turns any failure
  * into an information message that names the command**. Nothing here can
  * end in silence.
  *
@@ -55,7 +55,7 @@ export interface InsightsInvokeDeps {
   executeCommand(command: string): PromiseLike<unknown>;
   /** `vscode.window.showInformationMessage`, message only. */
   showInformationMessage(message: string): void;
-  /** One line to the "Agent Deck" output channel. */
+  /** A line to the "Agent Deck" output channel. */
   log(line: string): void;
 }
 
@@ -103,7 +103,7 @@ function describe(error: unknown): string {
  * Run `command`, which belongs to Agent Deck Insights.
  *
  * Never throws and never resolves without leaving a trace: every path
- * writes one log line, and every path that did not run the command also
+ * writes at least one log line, and every path that did not run the command also
  * shows an information message naming it.
  */
 export async function invokeInsights(

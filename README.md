@@ -829,7 +829,7 @@ it.
   it opens no connection itself.
 - **Installed** — **Open Insights** and **Run Insights**, which run that extension's commands
   `agentDeckInsights.open` and `agentDeckInsights.run`. Agent Deck activates Insights first when
-  it is not active yet, writes one line per run to its **Agent Deck** output channel, and shows a
+  it is not active yet, writes each step and the outcome to its **Agent Deck** output channel, and shows a
   message naming the command whenever one does not run. Insights 0.1.0 has no
   `agentDeckInsights.open`, so Open Insights says so until Insights adds it.
 

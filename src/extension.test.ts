@@ -96,6 +96,7 @@ import {
   INSIGHTS_SHOW_COMMAND,
   INSIGHTS_EXTENSION_ID,
   INSIGHTS_OPEN_COMMAND,
+  SHOW_DIAGNOSTICS,
   EVEN_EDITOR_WIDTHS,
   SETTINGS_FILTER,
   StatsPipeline,
@@ -5645,7 +5646,8 @@ describe('hotfix 0.8.1 — Claude Code is enabled late, by its first hook event'
   /*
    * RULING 2026-09-15 (3): the ambiguous-folder explanation goes to the Agent
    * Deck output channel, no dialog. Driven through a whole host with a sink,
-   * because the `vscode` double has no `createOutputChannel` and NTFS cannot
+   * because (when this was written) the `vscode` double had no
+   * `createOutputChannel`, and NTFS cannot
    * hold the two case-variant directories that make `activate()` produce the
    * failure — the same constraint the (8b) block records. Both arms, so a
    * surface that took every kind (or none) goes red.
@@ -7095,7 +7097,9 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     panel?.fireMessage({ type: 'aboutLink', index: 1 });
     await new Promise((r) => setTimeout(r, 0));
     expect(mock.informationPrompts).toStrictEqual([
-      { message: 'Agent Deck will open github.com in your browser', items: ['Open'] },
+      // NOT modal (M3, verifier round 9.26): the brief asks for an information
+      // message with a button, and a modal would block the editor for a link.
+      { message: 'Agent Deck will open github.com in your browser', items: ['Open'], modal: false },
     ]);
     expect(mock.openedExternal).toStrictEqual([]);
 
@@ -8339,6 +8343,75 @@ describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () =>
     expect(api.getLiveStats()).toStrictEqual([]);
     const stored = await api.getStoredStats();
     expect(stored.map((r) => r.sessionId)).toStrictEqual([seeded.sessionId]);
+  });
+
+  it('the data path and the Insights entries share ONE "Agent Deck" channel — DoD 9.26', async () => {
+    /*
+     * VERIFIER ROUND 9.26: three wiring mutations survived every test —
+     * deleting `createDiagnosticsSink: sharedOutput` (M1), creating a channel
+     * per line (M5b), and never pushing the channel onto
+     * `context.subscriptions` (M6, and since the shared sink's `dispose` is a
+     * no-op, that push is the ONLY thing that disposes it). The Insights tests
+     * read each line's channel NAME, which cannot tell one channel from two
+     * with one name. This drives both writers through `activate()` and counts
+     * `createOutputChannel` calls.
+     */
+    process.env['CLAUDE_PROJECTS_ROOT'] = join(await makeTempDir(), 'no-such-projects-root');
+    const workspacePath = join(await makeTempDir(), 'ws');
+    const globalStorage = await makeTempDir();
+    let context: ReturnType<typeof extensionContext> | undefined;
+    await onFreePort<void>({
+      use: async (port) => {
+        resetVscodeMock();
+        mock.setWorkspaceFolder(workspacePath);
+        mock.setConfig(CONFIG_SECTION, { port });
+        mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, {
+          version: '0.1.0',
+          commands: [INSIGHTS_EXEC_COMMAND],
+        });
+        context = extensionContext(globalStorage);
+        await activate(context);
+      },
+      collided: () => currentHost()?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+      discard: async () => {
+        await deactivate();
+      },
+    });
+    expect(currentHost(), 'a folder is open, so this path has a host').not.toBeNull();
+
+    // The DATA PATH's writer. This window's host already has something to say
+    // at activation, and Show Diagnostics guarantees a line either way ("…
+    // nothing recorded yet" on a quiet one), all through `createDiagnosticsSink`.
+    // Nothing else has written yet, so every line so far is the data path's.
+    await mock.runCommand(SHOW_DIAGNOSTICS);
+    const dataPathLines = mock.outputLines.length;
+    expect(dataPathLines, 'the data path wrote nothing to the channel').toBeGreaterThan(0);
+    expect(
+      mock.outputLines.some((entry) => entry.line.includes('insights ')),
+      'an Insights line before any Insights command ran',
+    ).toBe(false);
+
+    // The INSIGHTS writer: activation, then the run.
+    await mock.runCommand(INSIGHTS_RUN_COMMAND);
+    expect(mock.outputLines.length).toBeGreaterThan(dataPathLines);
+    expect(mock.outputLines.map((entry) => entry.line).join('\n')).toContain(
+      `insights ${INSIGHTS_EXEC_COMMAND}: ran on`,
+    );
+
+    // ONE channel for both writers, created once.
+    expect(mock.outputChannelsCreated).toStrictEqual(['Agent Deck']);
+
+    // A host ending does NOT close the channel the Insights commands still use…
+    await deactivate();
+    expect(mock.outputChannelsDisposed).toStrictEqual([]);
+    await mock.runCommand(INSIGHTS_RUN_COMMAND);
+    expect(mock.outputChannelsCreated).toStrictEqual(['Agent Deck']);
+    // …and the extension's own teardown does.
+    for (const disposable of (context as unknown as { subscriptions: { dispose(): void }[] })
+      .subscriptions) {
+      disposable.dispose();
+    }
+    expect(mock.outputChannelsDisposed).toStrictEqual(['Agent Deck']);
   });
 
   it('a window WITH a folder and nothing to observe still returns the API', async () => {

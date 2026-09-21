@@ -332,9 +332,13 @@ interface MockState {
    * user was asked" are different claims, and only the second is the one the
    * About confirmation makes.
    */
-  informationPrompts: { message: string; items: string[] }[];
+  informationPrompts: { message: string; items: string[]; modal: boolean }[];
   /** Every line written to any output channel, with the channel's name. */
   outputLines: { channel: string; line: string }[];
+  /** The name of every `createOutputChannel` call, in order. */
+  outputChannelsCreated: string[];
+  /** The name of every output channel `dispose()`d, in order. */
+  outputChannelsDisposed: string[];
   /** Every URI handed to `env.openExternal`, in order (DoD 9.7). */
   openedExternal: string[];
   /** What the next modal returns, as if the user had pressed it (DoD 9.7). */
@@ -407,6 +411,8 @@ const state: MockState = {
   activeExtensions: new Set<string>(),
   informationPrompts: [],
   outputLines: [],
+  outputChannelsCreated: [],
+  outputChannelsDisposed: [],
   openedExternal: [] as string[],
   modalAnswer: undefined as string | undefined,
   panels: [],
@@ -450,6 +456,8 @@ export function resetVscodeMock(): void {
   state.activeExtensions = new Set();
   state.informationPrompts = [];
   state.outputLines = [];
+  state.outputChannelsCreated = [];
+  state.outputChannelsDisposed = [];
 }
 
 /**
@@ -515,12 +523,20 @@ export const mock = {
     return state.activeExtensions.has(id);
   },
   /** DoD 9.23 — every information message and the buttons it offered. */
-  get informationPrompts(): { message: string; items: string[] }[] {
+  get informationPrompts(): { message: string; items: string[]; modal: boolean }[] {
     return state.informationPrompts;
   },
   /** DoD 9.25 — every line written to an output channel. */
   get outputLines(): { channel: string; line: string }[] {
     return state.outputLines;
+  },
+  /** DoD 9.26 — every `createOutputChannel` call, by name. */
+  get outputChannelsCreated(): string[] {
+    return state.outputChannelsCreated;
+  },
+  /** DoD 9.26 — every output channel disposed, by name. */
+  get outputChannelsDisposed(): string[] {
+    return state.outputChannelsDisposed;
   },
   /** DoD 9.7 — every URI handed to `env.openExternal`, in order. */
   get openedExternal(): readonly string[] {
@@ -883,13 +899,20 @@ export const window = {
     show(preserveFocus?: boolean): void;
     dispose(): void;
   } {
+    // Creation and disposal are RECORDED, not just the lines: "one channel
+    // per window" is a claim about how many times this is called, and a
+    // line's channel NAME cannot tell one channel from two with one name
+    // (verifier round 9.26, mutations M1/M5b/M6 survived without this).
+    state.outputChannelsCreated.push(name);
     return {
       name,
       appendLine: (line: string) => {
         state.outputLines.push({ channel: name, line });
       },
       show: () => undefined,
-      dispose: () => undefined,
+      dispose: () => {
+        state.outputChannelsDisposed.push(name);
+      },
     };
   },
   showErrorMessage(message: string): Promise<undefined> {
@@ -917,7 +940,8 @@ export const window = {
     // other form and answers `undefined` to a question the user was asked.
     const items = typeof optionsOrItem === 'string' ? [optionsOrItem, ...rest] : rest;
     state.informationMessages.push(message);
-    state.informationPrompts.push({ message, items });
+    const modal = typeof optionsOrItem === 'object' && optionsOrItem.modal === true;
+    state.informationPrompts.push({ message, items, modal });
     if (items.length === 0) return Promise.resolve(undefined);
     // Only an answer that is one of the offered labels, because the editor
     // can only return one of them.

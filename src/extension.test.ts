@@ -7071,9 +7071,52 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
       expect(panel?.webview.html, link.label).toContain(link.label);
     }
 
+    mock.answerModal('Open');
     for (const index of ABOUT_LINKS.keys()) panel?.fireMessage({ type: 'aboutLink', index });
+    await new Promise((r) => setTimeout(r, 0));
     expect(mock.openedExternal).toStrictEqual(ABOUT_LINKS.map((link) => link.url));
     expect(new Set(mock.openedExternal).size).toBe(ABOUT_LINKS.length);
+  });
+
+  it('a tile ASKS FIRST: the confirmation, then openExternal — DoD 9.23', async () => {
+    /*
+     * The sequence, not only the end state. THE MUTATION THIS KILLS is
+     * `confirmThenOpen` opening without asking — dropping the
+     * `showInformationMessage` call or ignoring its answer. Either makes the
+     * dismissed arm below open a url, and the first loses the prompt.
+     */
+    resetVscodeMock();
+    await activate(extensionContext());
+    await mock.runCommand(ABOUT_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === ABOUT_PANEL_VIEW_TYPE);
+
+    // DISMISSED (or timed out): asked, and nothing opened.
+    mock.answerModal(undefined);
+    panel?.fireMessage({ type: 'aboutLink', index: 1 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.informationPrompts).toStrictEqual([
+      { message: 'Agent Deck will open github.com in your browser', items: ['Open'] },
+    ]);
+    expect(mock.openedExternal).toStrictEqual([]);
+
+    // OPEN pressed: asked again, and THEN opened — one prompt per open.
+    mock.answerModal('Open');
+    panel?.fireMessage({ type: 'aboutLink', index: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.informationPrompts.map((p) => p.message)).toStrictEqual([
+      'Agent Deck will open github.com in your browser',
+      'Agent Deck will open nvitlam.github.io in your browser',
+    ]);
+    expect(mock.openedExternal).toStrictEqual([ABOUT_LINKS[0]?.url]);
+  });
+
+  it('the About footer names the version read from the manifest at activation', async () => {
+    resetVscodeMock();
+    await activate(extensionContext());
+    await mock.runCommand(ABOUT_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === ABOUT_PANEL_VIEW_TYPE);
+    const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+    expect(panel?.webview.html).toContain(`Agent Deck ${manifest.version} · MIT licence`);
   });
 
   it('an About message the boundary refuses opens nothing at all', async () => {
@@ -7091,13 +7134,19 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     ]) {
       panel?.fireMessage(hostile);
     }
+    await new Promise((r) => setTimeout(r, 0));
     expect(mock.openedExternal).toStrictEqual([]);
+    // Refused at the boundary, so not even ASKED about: a hostile index must
+    // not be able to put a prompt in front of the user either.
+    expect(mock.informationPrompts).toStrictEqual([]);
     expect(mock.executed.map((e) => e.command)).not.toContain('workbench.action.closeWindow');
 
     // VACUITY CONTROL: this panel CAN open a link — the same path, one legal
     // message — so the empty list above is the guard working rather than the
     // handler never having been registered.
+    mock.answerModal('Open');
     panel?.fireMessage({ type: 'aboutLink', index: 0 });
+    await new Promise((r) => setTimeout(r, 0));
     expect(mock.openedExternal).toStrictEqual([ABOUT_LINKS[0]?.url]);
   });
 
@@ -9156,27 +9205,139 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     expect(mock.openedExternal.map(String)).toStrictEqual([INSIGHTS_PAGE_URL]);
   });
 
-  it('Open and Run invoke INSIGHTS’ OWN commands, and nothing else', async () => {
-    resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
-    await activate(extensionContext());
+  /**
+   * Insights 0.1.0's manifest, as far as the parent reads it — recorded
+   * 2026-09-21 from the installed
+   * `~/.vscode/extensions/nvitlam.agent-deck-insights-0.1.0/package.json`
+   * (read-only), and matching the Insights repository's own PLAN 3.5, which
+   * pins "exactly these four commands". `lab/docs/evidence/v0.9.0/open-insights.md`
+   * is the record.
+   *
+   * It is the fixture the 9.21 verifier said this repository did not have
+   * (its S3): until it existed every test read `INSIGHTS_OPEN_COMMAND` back
+   * as the same constant, so a command Insights never contributed was green.
+   */
+  const INSIGHTS_0_1_0 = {
+    version: '0.1.0',
+    commands: [
+      'agentDeckInsights.run',
+      'agentDeckInsights.pickAgent',
+      'agentDeckInsights.clearHistory',
+      'agentDeckInsights.showPayload',
+    ],
+  };
 
-    await mock.runCommand(INSIGHTS_SHOW_COMMAND);
-    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_OPEN_COMMAND);
-    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_EXEC_COMMAND);
+  const outputOf = (): string[] => mock.outputLines.map((entry) => entry.line);
+
+  it('Run activates Insights FIRST, then runs its own command, and logs it — DoD 9.25', async () => {
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, INSIGHTS_0_1_0);
+    await activate(extensionContext());
+    expect(mock.isExtensionActive(INSIGHTS_EXTENSION_ID)).toBe(false);
 
     await mock.runCommand(INSIGHTS_RUN_COMMAND);
-    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_EXEC_COMMAND);
 
+    // Activated, and the command reached the handler activation registered —
+    // in the double, as in the editor, an inactive extension's command does
+    // not exist until it activates.
+    expect(mock.isExtensionActive(INSIGHTS_EXTENSION_ID)).toBe(true);
+    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_EXEC_COMMAND);
+    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_OPEN_COMMAND);
     /*
      * THE PARENT NEVER KNOWS THE LICENCE STATE. It asks nothing about one
-     * and refuses nothing on its behalf: Insights refuses its own run. So
-     * the RUN reaches Insights whatever the licence is, and the only way to
-     * assert that is to note there is no branch — the same call is made and
-     * no message is shown.
+     * and refuses nothing on its behalf: Insights refuses its own run. A run
+     * that reached Insights shows no message of the parent's.
      */
     expect(mock.informationMessages).toStrictEqual([]);
     expect(mock.openedExternal).toStrictEqual([]);
+    // One line to the ONE "Agent Deck" channel, naming the command.
+    expect(mock.outputLines.map((entry) => entry.channel)).toStrictEqual([
+      'Agent Deck',
+      'Agent Deck',
+    ]);
+    expect(outputOf().join('\n')).toContain(`insights ${INSIGHTS_EXEC_COMMAND}: activated`);
+    expect(outputOf().join('\n')).toContain(`insights ${INSIGHTS_EXEC_COMMAND}: ran on`);
+  });
+
+  it('Open Insights on Insights 0.1.0 SAYS it has no such command — never silence', async () => {
+    /*
+     * THE OWN-EYES DEFECT ON 94c79db: no notification, no panel, no log line.
+     * The id was never Insights' and the rejection was thrown away by a
+     * `void`. With the recorded manifest, the parent now shows a message
+     * naming the command and logs what the manifest contributes.
+     */
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, INSIGHTS_0_1_0);
+    await activate(extensionContext());
+
+    await mock.runCommand(INSIGHTS_SHOW_COMMAND);
+
+    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_OPEN_COMMAND);
+    expect(mock.informationMessages).toStrictEqual([
+      `Agent Deck Insights 0.1.0 has no command ${INSIGHTS_OPEN_COMMAND}, so it was not run.`,
+    ]);
+    expect(outputOf().join('\n')).toContain(
+      `insights ${INSIGHTS_OPEN_COMMAND}: failed on Agent Deck Insights 0.1.0 (manifest contributes it: no)`,
+    );
+  });
+
+  it('the recorded Insights 0.1.0 manifest contributes Run and does NOT contribute Open', () => {
+    // Red the day either constant moves without the record moving with it,
+    // and red the day Insights adds `open` and the record is updated — which
+    // is when Open Insights stops needing its message.
+    expect(INSIGHTS_0_1_0.commands).toContain(INSIGHTS_EXEC_COMMAND);
+    expect(INSIGHTS_0_1_0.commands).not.toContain(INSIGHTS_OPEN_COMMAND);
+  });
+
+  it('an Insights that FAILS TO ACTIVATE is named in a message, and nothing runs', async () => {
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, {
+      ...INSIGHTS_0_1_0,
+      failOnActivate: 'boom at activation',
+    });
+    await activate(extensionContext());
+
+    await mock.runCommand(INSIGHTS_RUN_COMMAND);
+
+    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_EXEC_COMMAND);
+    expect(mock.informationMessages).toStrictEqual([
+      `Agent Deck Insights 0.1.0 failed to activate, so ${INSIGHTS_EXEC_COMMAND} was not run: boom at activation`,
+    ]);
+    expect(outputOf().join('\n')).toContain('failed to activate: boom at activation');
+  });
+
+  it('a command that THROWS inside Insights is named in a message with its error', async () => {
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, {
+      ...INSIGHTS_0_1_0,
+      commandErrors: { [INSIGHTS_EXEC_COMMAND]: 'store unreadable' },
+    });
+    await activate(extensionContext());
+
+    await mock.runCommand(INSIGHTS_RUN_COMMAND);
+
+    expect(mock.informationMessages).toStrictEqual([
+      `Agent Deck Insights 0.1.0 could not run ${INSIGHTS_EXEC_COMMAND}: store unreadable`,
+    ]);
+    expect(outputOf().join('\n')).toContain('(manifest contributes it: yes): store unreadable');
+  });
+
+  it('Open or Run with Insights NOT installed says so rather than doing nothing', async () => {
+    // The entries are hidden in this state, but the palette still reaches
+    // the commands; a palette run must not be the silent shape either.
+    resetVscodeMock();
+    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
+    await activate(extensionContext());
+
+    await mock.runCommand(INSIGHTS_SHOW_COMMAND);
+    await mock.runCommand(INSIGHTS_RUN_COMMAND);
+
+    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_OPEN_COMMAND);
+    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_EXEC_COMMAND);
+    expect(mock.informationMessages).toStrictEqual([
+      `Agent Deck Insights is not installed, so ${INSIGHTS_OPEN_COMMAND} was not run.`,
+      `Agent Deck Insights is not installed, so ${INSIGHTS_EXEC_COMMAND} was not run.`,
+    ]);
   });
 
   it('a host tells its panel the tweaks on open and on every change', async () => {

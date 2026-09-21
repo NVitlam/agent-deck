@@ -55,11 +55,15 @@ All notable changes to Agent Deck are documented here.
 - **An Insights tab in the sidebar.** With Agent Deck Insights not installed it
   offers **Get Agent Deck Insights**, which opens the project page in your
   browser; with it installed, **Open Insights** and **Run Insights**, which run
-  that extension's own commands. Agent Deck never asks about your Insights
-  licence.
+  that extension's commands. Agent Deck activates Insights first when it is
+  not active, writes one line per run to its Agent Deck output channel, and
+  shows a message naming the command whenever one does not run. Agent Deck
+  never asks about your Insights licence.
 - **An About entry**, as **Agent Deck: About** in the Command Palette and in
-  Menu. It opens a panel with what this is, and links to the project, the
-  author and the sponsor page. The links open in your browser through VS Code;
+  Menu. It opens a page in the deck's own look: a short introduction, four
+  tiles - Portfolio, Repository, LinkedIn and Sponsor - and a footer with the
+  version and the licence. A tile asks before it opens anything, naming the
+  host it will open in your browser, and the link then opens through VS Code;
   the extension itself still makes no network call.
 - **Which agent type a subagent was.** Each subagent in the statistics now
   carries the type Claude Code recorded for it. The description beside it is

@@ -35,15 +35,54 @@
  * `vscode.env.openExternal`.
  */
 
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { ABOUT_LINKS, ABOUT_TEXT } from './about.js';
+import { ABOUT_LICENCE, ABOUT_LINKS, ABOUT_TEXT, hostOf } from './about.js';
 import {
+  ABOUT_OPEN_BUTTON,
+  ABOUT_PANEL_CSS,
   ABOUT_PANEL_TITLE,
   ABOUT_PANEL_VIEW_TYPE,
+  aboutConfirmation,
+  aboutFooter,
   aboutLinkFor,
   aboutPanelHtml,
 } from './about-panel.js';
+
+/**
+ * The version the golden is rendered with. A FIXED string, not the
+ * manifest's: a golden that moved with every version bump would be a golden
+ * nobody reads. The real version reaching the real footer is asserted in
+ * `extension.test.ts`, through `activate()`.
+ */
+const GOLDEN_VERSION = '9.9.9';
+
+const GOLDEN_FILE = resolve('webview/goldens/about/panel.dom.txt');
+const UPDATING = process.env['AGENT_DECK_UPDATE_ABOUT_GOLDEN'] === '1';
+
+/** One line per element: indent, tag, classes, testid/role/aria, own text. */
+function outline(el: Element, depth: number, lines: string[]): string[] {
+  const parts = [`${'  '.repeat(depth)}${el.tagName.toLowerCase()}`];
+  for (const cls of Array.from(el.classList)) parts.push(`.${cls}`);
+  const kept = ['aria-label', 'data-index', 'data-testid', 'role', 'type'];
+  const attrs = Array.from(el.attributes)
+    .filter((a) => kept.includes(a.name))
+    .map((a) => `${a.name}=${JSON.stringify(a.value)}`)
+    .sort();
+  parts.push(...attrs);
+  let own = '';
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === 3) own += node.textContent ?? '';
+  }
+  own = own.replace(/\s+/g, ' ').trim();
+  if (own !== '') parts.push(JSON.stringify(own));
+  lines.push(parts.join(' '));
+  for (const child of Array.from(el.children)) outline(child, depth + 1, lines);
+  return lines;
+}
 
 /* ------------------------------------------------------------------------ *
  * The document, in a browser
@@ -57,7 +96,7 @@ interface Posted {
 /** Render the real document and return what its links post when clicked. */
 function clickEveryLink(): { labels: string[]; posted: Posted[] } {
 
-  const html = aboutPanelHtml('TESTNONCE', 'vscode-webview://cspSource');
+  const html = aboutPanelHtml('TESTNONCE', 'vscode-webview://cspSource', GOLDEN_VERSION);
   /*
    * The page's own head, body and SCRIPT, into the live document.
    *
@@ -97,7 +136,9 @@ function clickEveryLink(): { labels: string[]; posted: Posted[] } {
   // `Array.from`, not a spread: the host project's lib set has no DOM
   // iterator on `NodeListOf`, and this file pulls the lib in for itself.
   const buttons = Array.from(document.querySelectorAll('[data-testid="about-link"]'));
-  const labels = buttons.map((button) => button.textContent ?? '');
+  const labels = buttons.map(
+    (button) => button.querySelector('[data-testid="about-link-label"]')?.textContent ?? '',
+  );
   for (const button of buttons) button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   /*
    * READ BACK THROUGH THE DOM, not through `window`.
@@ -127,7 +168,7 @@ afterEach(() => {
 });
 
 describe('the page', () => {
-  it('carries the About paragraph verbatim and the four labels, in order', () => {
+  it('carries the About introduction verbatim and the four labels, in order', () => {
     const { labels } = clickEveryLink();
     expect(document.querySelector('[data-testid="about-text"]')?.textContent).toBe(ABOUT_TEXT);
     expect(labels).toStrictEqual(ABOUT_LINKS.map((link) => link.label));
@@ -176,6 +217,151 @@ describe('the page', () => {
     expect(document.querySelectorAll('a[href]')).toHaveLength(0);
     expect(document.querySelectorAll('[data-testid="about-link"]')).toHaveLength(
       ABOUT_LINKS.length,
+    );
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * The deck-themed layout — DoD 9.23
+ * ------------------------------------------------------------------------ */
+
+describe('the layout: intro, tiles, footer — DoD 9.23', () => {
+  it('matches the committed DOM golden', () => {
+    clickEveryLink();
+    const root = document.querySelector('[data-testid="about"]');
+    expect(root, 'the page has no [data-testid="about"] root').not.toBeNull();
+    /*
+     * The introduction is replaced by a TOKEN in the golden. It names the
+     * author, and a golden under `webview/` is not a path the privacy sweep
+     * exempts: the first commit of this file carried the name and the sweep's
+     * history leg refused it. The text is held verbatim three other ways —
+     * against the spec amendment (`about.test.ts`), in the rendered page
+     * (above), and through `activate()` (`extension.test.ts`) — so the golden
+     * pins the STRUCTURE and loses nothing. The replacement is asserted to
+     * have happened exactly once, so a changed text cannot slip past as a
+     * token that no longer matches anything.
+     */
+    const raw = `${outline(root as Element, 0, []).join('\n')}\n`;
+    const quoted = JSON.stringify(ABOUT_TEXT);
+    expect(raw.split(quoted).length - 1, 'the introduction is not in the page exactly once').toBe(1);
+    const actual = raw.split(quoted).join('"<ABOUT_TEXT>"');
+    if (UPDATING) {
+      mkdirSync(resolve('webview/goldens/about'), { recursive: true });
+      writeFileSync(GOLDEN_FILE, actual, 'utf8');
+    }
+    expect(existsSync(GOLDEN_FILE), 'webview/goldens/about/panel.dom.txt is missing').toBe(true);
+    // Line endings normalised on BOTH sides: the recorded CRLF-checkout trap.
+    expect(
+      actual.replace(/\r\n/g, '\n'),
+      'webview/goldens/about/panel.dom.txt is stale — re-run with ' +
+        'AGENT_DECK_UPDATE_ABOUT_GOLDEN=1 if the change is intended',
+    ).toBe(readFileSync(GOLDEN_FILE, 'utf8').replace(/\r\n/g, '\n'));
+  });
+
+  it('the golden is not being written by this run', () => {
+    expect(UPDATING, 'AGENT_DECK_UPDATE_ABOUT_GOLDEN is set: the golden was REWRITTEN').toBe(false);
+  });
+
+  it('the three blocks come in order: intro, then tiles, then footer', () => {
+    clickEveryLink();
+    const root = document.querySelector('[data-testid="about"]');
+    const order = Array.from(root?.children ?? []).map((el) => el.getAttribute('data-testid'));
+    expect(order).toStrictEqual(['about-intro', 'about-links', 'about-footer']);
+  });
+
+  it('each tile names its label AND the host it opens', () => {
+    clickEveryLink();
+    const tiles = Array.from(document.querySelectorAll('[data-testid="about-link"]'));
+    expect(
+      tiles.map((tile) => [
+        tile.querySelector('[data-testid="about-link-label"]')?.textContent,
+        tile.querySelector('[data-testid="about-link-host"]')?.textContent,
+      ]),
+    ).toStrictEqual(ABOUT_LINKS.map((link) => [link.label, hostOf(link.url)]));
+  });
+
+  it('the footer names the version and the MIT licence', () => {
+    clickEveryLink();
+    expect(document.querySelector('[data-testid="about-footer"]')?.textContent).toBe(
+      `Agent Deck ${GOLDEN_VERSION} · MIT licence`,
+    );
+    expect(ABOUT_LICENCE).toBe('MIT');
+    // An unread version is left out, never guessed.
+    expect(aboutFooter(null)).toBe('Agent Deck · MIT licence');
+  });
+
+  it('the body takes the DECK’s theme variables, read from App.svelte', () => {
+    /*
+     * "Same CSS variables, fonts and dark/light handling as the deck". The
+     * deck has no palette of its own — every colour is a VS Code theme
+     * variable, so the editor's light and dark themes both arrive through
+     * them — and this reads the deck's `.app` rule rather than a list typed
+     * here, so a later change to the deck that the page does not follow is
+     * red.
+     */
+    const app = readFileSync(resolve('webview/App.svelte'), 'utf8');
+    for (const declaration of [
+      'color: var(--vscode-foreground)',
+      'background: var(--vscode-editor-background)',
+      'font-family: var(--vscode-font-family, sans-serif)',
+      'font-size: var(--vscode-font-size, 13px)',
+    ]) {
+      expect(app, `the deck no longer declares ${declaration}`).toContain(declaration);
+      expect(ABOUT_PANEL_CSS, `the About body lacks ${declaration}`).toContain(declaration);
+    }
+  });
+
+  it('a tile takes the SESSION CARD’s border, fill, radius, hover and state colours', () => {
+    const card = readFileSync(resolve('webview/SessionCell.svelte'), 'utf8');
+    // Border and fill: `.border`. Hover: `.cell:hover .border`. The state
+    // edge: the live (warm) and ended (cool) strokes.
+    for (const variable of [
+      '--vscode-editorWidget-background',
+      '--vscode-panel-border',
+      '--vscode-focusBorder',
+      '--vscode-charts-yellow',
+      '--vscode-charts-blue',
+    ]) {
+      expect(card, `the session card no longer uses ${variable}`).toContain(`var(${variable}`);
+      expect(ABOUT_PANEL_CSS, `the tile does not use ${variable}`).toContain(`var(${variable}`);
+    }
+    // The card's corner radius and footprint, stated as constants there.
+    expect(card).toMatch(/const RADIUS = 10;/);
+    expect(ABOUT_PANEL_CSS).toContain('border-radius: 10px;');
+    expect(card).toMatch(/220 x 88/);
+    expect(ABOUT_PANEL_CSS).toContain('width: 220px;');
+    expect(ABOUT_PANEL_CSS).toContain('min-height: 88px;');
+    // Hover brightens the border and nothing else, as the card's does. Read
+    // from the RULES, not the whole sheet: `--vscode-focusBorder` also sits
+    // in the focus outline, so a sheet-wide containment passed with the
+    // hover rule's border colour deleted (mutation A4, 2026-09-21).
+    expect(card).toMatch(
+      /\.cell:hover \.border \{[^}]*stroke: var\(--vscode-focusBorder, currentColor\);/,
+    );
+    const hover = /\.tile:hover, \.tile:focus-visible \{([^}]*)\}/.exec(ABOUT_PANEL_CSS)?.[1] ?? '';
+    expect(hover, 'the tile has no hover rule').not.toBe('');
+    expect(hover).toContain('border-color: var(--vscode-focusBorder, currentColor);');
+    expect(hover).toContain('border-left-color: var(--vscode-charts-yellow, currentColor);');
+    // The resting edge is the COOL state colour; hover turns it WARM.
+    const tile = /\n {6}\.tile \{([^}]*)\}/.exec(ABOUT_PANEL_CSS)?.[1] ?? '';
+    expect(tile).toContain('border-left: 3px solid var(--vscode-charts-blue, currentColor);');
+    expect(ABOUT_PANEL_CSS).not.toMatch(/transform|box-shadow/);
+  });
+});
+
+describe('the confirmation — DoD 9.23', () => {
+  it('names the host the link opens, with one Open button', () => {
+    expect(ABOUT_LINKS.map((link) => aboutConfirmation(link))).toStrictEqual(
+      ABOUT_LINKS.map((link) => ({
+        message: `Agent Deck will open ${new URL(link.url).host} in your browser`,
+        button: 'Open',
+      })),
+    );
+    expect(ABOUT_OPEN_BUTTON).toBe('Open');
+    // A literal for one of them, so the check above is not only the
+    // implementation's own `new URL(...).host` read back to itself.
+    expect(aboutConfirmation(ABOUT_LINKS[1] as (typeof ABOUT_LINKS)[number]).message).toBe(
+      'Agent Deck will open github.com in your browser',
     );
   });
 });

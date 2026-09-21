@@ -25,6 +25,8 @@
  * {@link resetVscodeMock}.
  */
 
+import { readFileSync } from 'node:fs';
+
 // ---------------------------------------------------------------------------
 // Uri
 // ---------------------------------------------------------------------------
@@ -312,6 +314,27 @@ interface MockState {
   commands: Map<string, (...args: unknown[]) => unknown>;
   /** Extension ids this fake editor has installed (DoD 9.6). */
   extensions: Set<string>;
+  /**
+   * What an installed extension's record carries — DoD 9.25.
+   *
+   * The real `vscode.Extension` has a manifest and an activation state, and
+   * "Open Insights did nothing" was a question about both: which commands the
+   * manifest contributes, and whether the extension was active when the
+   * parent ran one. An installed id with no entry here gets
+   * {@link DEFAULT_EXTENSION_MANIFEST}.
+   */
+  extensionManifests: Map<string, MockExtensionManifest>;
+  /** Ids whose record reports `isActive: true`. */
+  activeExtensions: Set<string>;
+  /**
+   * Every `showInformationMessage` call, with the buttons it offered (DoD
+   * 9.23). The BUTTONS are recorded because "a message was shown" and "the
+   * user was asked" are different claims, and only the second is the one the
+   * About confirmation makes.
+   */
+  informationPrompts: { message: string; items: string[] }[];
+  /** Every line written to any output channel, with the channel's name. */
+  outputLines: { channel: string; line: string }[];
   /** Every URI handed to `env.openExternal`, in order (DoD 9.7). */
   openedExternal: string[];
   /** What the next modal returns, as if the user had pressed it (DoD 9.7). */
@@ -380,6 +403,10 @@ const state: MockState = {
   configuration: new Map(),
   commands: new Map(),
   extensions: new Set<string>(),
+  extensionManifests: new Map(),
+  activeExtensions: new Set<string>(),
+  informationPrompts: [],
+  outputLines: [],
   openedExternal: [] as string[],
   modalAnswer: undefined as string | undefined,
   panels: [],
@@ -419,7 +446,29 @@ export function resetVscodeMock(): void {
   state.modalAnswer = undefined;
   state.configurationWrites = [];
   state.configurationEmitter = new Emitter();
+  state.extensionManifests = new Map();
+  state.activeExtensions = new Set();
+  state.informationPrompts = [];
+  state.outputLines = [];
 }
+
+/**
+ * An installed extension's manifest, as far as this double needs one.
+ *
+ * `commands` is what `contributes.commands` lists; activating the extension
+ * registers a handler for each, which is what the real editor's activation
+ * of a contributing extension ends in. `failOnActivate` makes `activate()`
+ * reject, and `commandErrors` makes the named command's handler throw.
+ */
+export interface MockExtensionManifest {
+  version: string;
+  commands: string[];
+  failOnActivate?: string;
+  commandErrors?: Record<string, string>;
+}
+
+/** An installed extension with no manifest of its own. Contributes nothing. */
+export const DEFAULT_EXTENSION_MANIFEST: MockExtensionManifest = { version: '0.0.0', commands: [] };
 
 /** Test control surface. Never imported by production code. */
 export const mock = {
@@ -456,9 +505,22 @@ export const mock = {
     return state.commands.has(id);
   },
   /** DoD 9.6 — install or uninstall an extension in this fake editor. */
-  setExtensionInstalled(id: string, installed: boolean): void {
+  setExtensionInstalled(id: string, installed: boolean, manifest?: MockExtensionManifest): void {
     if (installed) state.extensions.add(id);
     else state.extensions.delete(id);
+    if (manifest !== undefined) state.extensionManifests.set(id, manifest);
+  },
+  /** DoD 9.25 — is that extension's record active now? */
+  isExtensionActive(id: string): boolean {
+    return state.activeExtensions.has(id);
+  },
+  /** DoD 9.23 — every information message and the buttons it offered. */
+  get informationPrompts(): { message: string; items: string[] }[] {
+    return state.informationPrompts;
+  },
+  /** DoD 9.25 — every line written to an output channel. */
+  get outputLines(): { channel: string; line: string }[] {
+    return state.outputLines;
   },
   /** DoD 9.7 — every URI handed to `env.openExternal`, in order. */
   get openedExternal(): readonly string[] {
@@ -597,8 +659,24 @@ export const commands = {
   executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
     state.executed.push({ command, args });
     const handler = state.commands.get(command);
-    if (handler === undefined) return Promise.resolve(undefined);
-    return Promise.resolve(handler(...args));
+    if (handler === undefined) {
+      /*
+       * THE REAL EDITOR REJECTS AN UNKNOWN COMMAND — DoD 9.25.
+       *
+       * This resolved `undefined` for every unregistered id until then,
+       * which is how "Open Insights" reached a command Insights does not
+       * contribute and every test called it a pass. `workbench.*` ids exist
+       * only in the editor and are still answered, because they are the
+       * editor's own and a test can only assert they were ASKED FOR.
+       */
+      if (command.startsWith('workbench.')) return Promise.resolve(undefined);
+      return Promise.reject(new Error(`command '${command}' not found`));
+    }
+    try {
+      return Promise.resolve(handler(...args));
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
   },
 };
 
@@ -625,8 +703,43 @@ export const env = {
 };
 
 export const extensions = {
-  getExtension(id: string): { id: string; isActive: boolean } | undefined {
-    return state.extensions.has(id) ? { id, isActive: false } : undefined;
+  /**
+   * A record shaped like `vscode.Extension`: `isActive`, `packageJSON` and
+   * `activate()` (DoD 9.25). Activating registers a handler for every command
+   * the manifest contributes — which is what the real editor's activation of
+   * a contributing extension ends in — and a command the manifest does NOT
+   * list stays unregistered, so `executeCommand` rejects it as the editor
+   * does.
+   */
+  getExtension(id: string):
+    | { id: string; isActive: boolean; packageJSON: unknown; activate(): Promise<void> }
+    | undefined {
+    if (!state.extensions.has(id)) return undefined;
+    const manifest = state.extensionManifests.get(id) ?? DEFAULT_EXTENSION_MANIFEST;
+    return {
+      id,
+      isActive: state.activeExtensions.has(id),
+      packageJSON: {
+        version: manifest.version,
+        contributes: { commands: manifest.commands.map((command) => ({ command })) },
+      },
+      activate: (): Promise<void> => {
+        if (manifest.failOnActivate !== undefined) {
+          return Promise.reject(new Error(manifest.failOnActivate));
+        }
+        if (!state.activeExtensions.has(id)) {
+          state.activeExtensions.add(id);
+          for (const command of manifest.commands) {
+            const failure = manifest.commandErrors?.[command];
+            state.commands.set(command, () => {
+              if (failure !== undefined) throw new Error(failure);
+              return undefined;
+            });
+          }
+        }
+        return Promise.resolve();
+      },
+    };
   },
 };
 
@@ -759,6 +872,26 @@ export const window = {
   get tabGroups(): { all: unknown[] } {
     return { all: Array.from({ length: state.editorGroups }, () => ({})) };
   },
+  /**
+   * `createOutputChannel`, recording every line with the channel's name
+   * (DoD 9.25). The double had none until then, which is why the host kept
+   * the call at the one production site where no test reached it.
+   */
+  createOutputChannel(name: string): {
+    name: string;
+    appendLine(line: string): void;
+    show(preserveFocus?: boolean): void;
+    dispose(): void;
+  } {
+    return {
+      name,
+      appendLine: (line: string) => {
+        state.outputLines.push({ channel: name, line });
+      },
+      show: () => undefined,
+      dispose: () => undefined,
+    };
+  },
   showErrorMessage(message: string): Promise<undefined> {
     state.errorMessages.push(message);
     return Promise.resolve(undefined);
@@ -775,10 +908,16 @@ export const window = {
    */
   showInformationMessage(
     message: string,
-    _options?: { modal?: boolean },
-    ...items: string[]
+    optionsOrItem?: { modal?: boolean } | string,
+    ...rest: string[]
   ): Promise<string | undefined> {
+    // BOTH real overloads: `(message, ...items)` and `(message, options,
+    // ...items)`. Reading the second argument as options unconditionally,
+    // as this did until DoD 9.23, silently drops the first button of the
+    // other form and answers `undefined` to a question the user was asked.
+    const items = typeof optionsOrItem === 'string' ? [optionsOrItem, ...rest] : rest;
     state.informationMessages.push(message);
+    state.informationPrompts.push({ message, items });
     if (items.length === 0) return Promise.resolve(undefined);
     // Only an answer that is one of the offered labels, because the editor
     // can only return one of them.
@@ -855,10 +994,15 @@ export function createExtensionContext(
   subscriptions: MockDisposable[];
   extensionUri: Uri;
   globalStorageUri: Uri;
+  extension: { packageJSON: unknown };
 } {
   return {
     subscriptions: [],
     extensionUri: Uri.file(extensionPath),
     globalStorageUri: Uri.file(globalStoragePath),
+    // The REAL manifest, read from the repository root the suite runs in —
+    // DoD 9.23's About footer names `packageJSON.version`, and a literal
+    // here would be a second copy of the version to keep in step.
+    extension: { packageJSON: JSON.parse(readFileSync('package.json', 'utf8')) as unknown },
   };
 }

@@ -487,7 +487,16 @@ const LIVE_SETTINGS: HookSettings | null = existsSync(LIVE_PATH)
   : null;
 
 describe('README exists and ships clean', () => {
-  it('names the two commands Insights contributes, so the ids have a SECOND anchor', () => {
+  it('names the two Insights commands the parent runs, so the ids have a SECOND anchor', () => {
+    /*
+     * CORRECTED 2026-09-21 (DoD 9.25). This test was titled "names the two
+     * commands Insights CONTRIBUTES", and one of them never was: Insights
+     * 0.1.0 contributes no `agentDeckInsights.open`. A second anchor that
+     * copies the first proves the two agree, not that either is right — the
+     * exact limit the paragraph below states. What Insights really
+     * contributes is now recorded, from its installed manifest, in
+     * `extension.test.ts`'s `INSIGHTS_0_1_0`.
+     */
     /*
      * THE THIRD SURVIVING MUTATION OF THE 9.21 VERIFIER ROUND.
      *

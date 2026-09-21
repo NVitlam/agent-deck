@@ -16,7 +16,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { ABOUT_COMMAND, ABOUT_LINKS, ABOUT_TEXT, SPONSOR_URL } from './about.js';
+import { ABOUT_COMMAND, ABOUT_LICENCE, ABOUT_LINKS, ABOUT_TEXT, SPONSOR_URL } from './about.js';
+import { INSIGHTS_PAGE_URL } from './extension.js';
 
 const SPEC_PATH = fileURLToPath(new URL('../agent-deck-spec.md', import.meta.url));
 const MANIFEST_PATH = fileURLToPath(new URL('../package.json', import.meta.url));
@@ -24,17 +25,43 @@ const SECURITY_PATH = fileURLToPath(new URL('../SECURITY.md', import.meta.url));
 
 const SPEC: string | null = existsSync(SPEC_PATH) ? readFileSync(SPEC_PATH, 'utf8') : null;
 
+/** The amendment that carries the About page since DoD 9.23. */
+const AMENDMENT_HEADING = '## Amendment 2026-09-21 — About page and Insights entries';
+
+/** That amendment alone: its heading up to the next `## ` heading. */
+function amendmentOf(spec: string): string {
+  const at = spec.indexOf(AMENDMENT_HEADING);
+  if (at === -1) return '';
+  const next = spec.indexOf('\n## ', at + 1);
+  return spec.slice(at, next === -1 ? undefined : next);
+}
+
 describe('the About text', () => {
-  it('is one paragraph, and names the person and the licence', () => {
+  it('is one paragraph of facts: what it does, how, and who built it', () => {
+    expect(ABOUT_TEXT).toContain('Claude Code, Codex and OpenCode');
+    expect(ABOUT_TEXT).toContain('read-only');
+    expect(ABOUT_TEXT).toContain('makes no network calls');
     expect(ABOUT_TEXT).toContain('Nadav Vitlam');
     expect(ABOUT_TEXT).toContain('AI Specialist and Solution Architect');
     expect(ABOUT_TEXT).toContain('Israel');
-    expect(ABOUT_TEXT).toContain('open source (MIT)');
-    expect(ABOUT_TEXT).toContain('read-only by design');
-    expect(ABOUT_TEXT).toContain('makes no network calls');
-    expect(ABOUT_TEXT).toContain('you can support the project');
     // One paragraph: no line break to reflow and nothing to wrap wrong.
     expect(ABOUT_TEXT).not.toContain('\n');
+  });
+
+  it('gives no advice — the deck’s voice states facts', () => {
+    /*
+     * DoD 9.23: "facts, no advice, no 'you should'". The 2026-09-20 text
+     * ended "If it saves you time, you can support the project", which is a
+     * sentence telling the reader what to do; the Sponsor tile carries that
+     * without one. Second person at all is the tell, so "you" is refused
+     * whole rather than phrase by phrase.
+     */
+    expect(ABOUT_TEXT).not.toMatch(/\byou\b|\byour\b|\bshould\b|\bplease\b/i);
+  });
+
+  it('the footer’s licence is the manifest’s licence', () => {
+    const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) as { license?: string };
+    expect(manifest.license).toBe(ABOUT_LICENCE);
   });
 
   // The spec lives behind a symlink into `lab/`. `skipIf` rather than a silent
@@ -42,7 +69,7 @@ describe('the About text', () => {
   describe.skipIf(SPEC === null)('against the spec', () => {
     it('is the amendment’s text, character for character', () => {
       if (SPEC === null) return;
-      const amendment = SPEC.slice(SPEC.indexOf('## Amendment 2026-09-20'));
+      const amendment = amendmentOf(SPEC);
       expect(amendment.length, 'the 0.9.0 amendment is not in the spec').toBeGreaterThan(100);
       /*
        * THE ABOUT SECTION, not the whole amendment.
@@ -75,14 +102,31 @@ describe('the About text', () => {
       expect(quoted).toBe(ABOUT_TEXT);
     });
 
-    it('the four links are the four the amendment names, in order', () => {
+    it('the Insights entry’s url stays, and the amendment says where it will move', () => {
+      // DoD 9.24: the link is unchanged for now, and the spec line recording
+      // that it moves to a dedicated subpage once the site builds one is
+      // held here, beside the constant it is about.
       if (SPEC === null) return;
-      const amendment = SPEC.slice(SPEC.indexOf('## Amendment 2026-09-20'));
+      // Whitespace collapsed: the spec wraps prose, and CRLF on disk.
+      const amendment = amendmentOf(SPEC).replace(/\s+/g, ' ');
+      expect(amendment).toContain(`\`${INSIGHTS_PAGE_URL}\``);
+      expect(amendment).toContain(
+        'It will point to a dedicated Insights subpage of the site once that page is built',
+      );
+    });
+
+    it('the four tiles are the four the amendment names, labels and urls, in order', () => {
+      if (SPEC === null) return;
+      const amendment = amendmentOf(SPEC);
+      expect(amendment.length, 'the 2026-09-21 amendment is not in the spec').toBeGreaterThan(100);
       for (const link of ABOUT_LINKS) {
         expect(amendment, `the spec does not name ${link.url}`).toContain(link.url);
+        expect(amendment, `the spec does not name the ${link.label} tile`).toContain(
+          `**${link.label}**`,
+        );
       }
       // Order, not just membership: the amendment lists them in one order and
-      // the modal shows them in one order.
+      // the page shows them in one order.
       const positions = ABOUT_LINKS.map((link) => amendment.indexOf(link.url));
       expect([...positions].sort((a, b) => a - b)).toStrictEqual(positions);
     });
@@ -93,8 +137,8 @@ describe('the links', () => {
   it('are exactly four, labelled and https, with no duplicates', () => {
     expect(ABOUT_LINKS).toHaveLength(4);
     expect(ABOUT_LINKS.map((l) => l.label)).toStrictEqual([
-      'Website',
-      'Project',
+      'Portfolio',
+      'Repository',
       'LinkedIn',
       'Sponsor',
     ]);
@@ -113,6 +157,17 @@ describe('the links', () => {
     expect(ABOUT_LINKS.find((l) => l.label === 'Sponsor')?.url).toBe(SPONSOR_URL);
   });
 
+  it('the Repository tile is the manifest’s repository, and not the site', () => {
+    // A tile called Repository that opened the project SITE would name one
+    // thing and open another, which is what it did as "Project".
+    const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) as {
+      repository?: { url?: string };
+    };
+    const repository = ABOUT_LINKS.find((l) => l.label === 'Repository')?.url;
+    expect(repository).toBe(manifest.repository?.url?.replace(/\.git$/, ''));
+    expect(repository).not.toContain('github.io');
+  });
+
   it('every link opens through the editor and nothing else', () => {
     /*
      * The claim SECURITY.md makes, checked against the source that makes it:
@@ -129,9 +184,19 @@ describe('the links', () => {
      *
      * Both halves are scanned: the command, and the PAGE it opens.
      */
-    const source = readFileSync(fileURLToPath(new URL('./extension.ts', import.meta.url)), 'utf8');
-    const about = source.slice(source.indexOf('export function showAbout'));
-    const body = about.slice(0, about.indexOf('\n}'));
+    const source = readFileSync(
+      fileURLToPath(new URL('./extension.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\r\n/g, '\n');
+    // The command AND the confirm-then-open it hands a tile to (DoD 9.23).
+    const bodyOf = (signature: string): string => {
+      const at = source.indexOf(signature);
+      expect(at, `extension.ts has no ${signature}`).toBeGreaterThan(-1);
+      const from = source.slice(at);
+      return from.slice(0, from.indexOf('\n}'));
+    };
+    const body = `${bodyOf('export function showAbout')}\n${bodyOf('async function confirmThenOpen')}`;
+    expect(body).toContain('confirmThenOpen(link)');
     expect(body).toContain('vscode.env.openExternal');
     const page = readFileSync(
       fileURLToPath(new URL('./about-panel.ts', import.meta.url)),

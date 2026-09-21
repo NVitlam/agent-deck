@@ -32,7 +32,12 @@ export interface AboutLink {
 }
 
 /**
- * The paragraph, VERBATIM from spec `Amendment 2026-09-20`.
+ * The introduction, VERBATIM from spec `Amendment 2026-09-21 — About page
+ * and Insights entries`, which supersedes the 2026-09-20 paragraph.
+ *
+ * In the deck's voice: facts about what the extension is and does, and no
+ * advice. The 2026-09-20 text ended "you can support the project"; the
+ * Sponsor tile says that without a sentence telling anybody what to do.
  *
  * Do not reflow it and do not "fix" its punctuation: `about.test.ts` compares
  * it to the amendment, so a change here without a change there is red, and a
@@ -40,17 +45,39 @@ export interface AboutLink {
  * (CLAUDE.md reserved decision 4).
  */
 export const ABOUT_TEXT =
-  'Agent Deck is built by Nadav Vitlam, AI Specialist and Solution Architect, Israel. ' +
-  'It is free, open source (MIT), read-only by design, and makes no network calls. ' +
-  'If it saves you time, you can support the project.';
+  'Agent Deck draws the sessions of Claude Code, Codex and OpenCode as a live deck, ' +
+  'from what those agents already write to disk. ' +
+  'It is read-only: it never launches, wraps or configures an agent, and it makes no network calls. ' +
+  'Built by Nadav Vitlam, AI Specialist and Solution Architect, Israel.';
 
-/** The four links, in the order the amendment names them. */
+/**
+ * The licence the footer names. `about.test.ts` holds it against
+ * `package.json`'s `license`, so the page cannot name a licence the package
+ * does not carry.
+ */
+export const ABOUT_LICENCE = 'MIT';
+
+/**
+ * The four links, in the order the amendment names them.
+ *
+ * 2026-09-21: "Website" is "Portfolio" and "Project" is "Repository". The
+ * Repository tile goes to the source repository — `package.json`'s
+ * `repository.url`, which `about.test.ts` holds it against — because a tile
+ * called Repository that opened the project SITE would name one thing and
+ * open another. The site stays reachable through the sidebar's "Get Agent
+ * Deck Insights" entry and from the repository's own page.
+ */
 export const ABOUT_LINKS: readonly AboutLink[] = Object.freeze([
-  Object.freeze({ label: 'Website', url: 'https://nvitlam.github.io/' }),
-  Object.freeze({ label: 'Project', url: 'https://nvitlam.github.io/agent-deck/' }),
+  Object.freeze({ label: 'Portfolio', url: 'https://nvitlam.github.io/' }),
+  Object.freeze({ label: 'Repository', url: 'https://github.com/NVitlam/agent-deck' }),
   Object.freeze({ label: 'LinkedIn', url: 'https://www.linkedin.com/in/nadav-vitlam' }),
   Object.freeze({ label: 'Sponsor', url: 'https://github.com/sponsors/NVitlam' }),
 ]);
+
+/** The host a link opens, as the confirmation names it. */
+export function hostOf(url: string): string {
+  return new URL(url).host;
+}
 
 /**
  * `package.json`'s `sponsor.url`, which VS Code renders as a Sponsor button on

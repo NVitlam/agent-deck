@@ -128,7 +128,15 @@ import { SessionBridge, isWebviewToHostMessage } from './bridge/messages.js';
 import type { BridgeDegradedState } from './bridge/messages.js';
 import { SIDEBAR_ROOT_ID, createNonce, webviewHtml } from './bridge/html.js';
 import { ABOUT_COMMAND } from './about.js';
-import { ABOUT_PANEL_TITLE, ABOUT_PANEL_VIEW_TYPE, aboutLinkFor, aboutPanelHtml } from './about-panel.js';
+import type { AboutLink } from './about.js';
+import {
+  ABOUT_PANEL_TITLE,
+  ABOUT_PANEL_VIEW_TYPE,
+  aboutConfirmation,
+  aboutLinkFor,
+  aboutPanelHtml,
+} from './about-panel.js';
+import { invokeInsights } from './insights-invoke.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
 import { StatsUpdateEmitter, createAgentDeckApi } from './api.js';
@@ -158,6 +166,7 @@ import type {
   DiagnosticsCounters,
   DiagnosticsEngine,
   DiagnosticsEvent,
+  DiagnosticsSink,
   DiagnosticsSinkFactory,
   DiagnosticsTelemetry,
 } from './bridge/diagnostics.js';
@@ -5188,9 +5197,11 @@ export const INSIGHTS_EXEC_COMMAND = 'agentDeckInsights.run';
  * shape`, which names this url in as many words.
  *
  * The PROJECT page, not the Marketplace listing: it is the page that explains
- * what Insights is before asking anybody to install anything, and it is the
- * same url `ABOUT_LINKS`'s Project entry carries. `about.test.ts` holds the
- * two against each other rather than letting them be two correct copies.
+ * what Insights is before asking anybody to install anything. Spec `Amendment
+ * 2026-09-21` keeps it here until a dedicated Insights subpage of the site is
+ * built, and `about.test.ts` holds this constant against that amendment. (Until
+ * 9.23 the About page's "Project" tile carried the same url; that tile is
+ * "Repository" now and opens the source repository.)
  *
  * Opened through `vscode.env.openExternal`, i.e. by the EDITOR. This
  * extension opens no socket for it, which is what lets `SECURITY.md` still
@@ -5214,14 +5225,46 @@ export const INSIGHTS_SHOW_COMMAND = 'agentDeck.insights.open';
 export const INSIGHTS_RUN_COMMAND = 'agentDeck.insights.run';
 
 /**
- * `agentDeck.about` — v0.9.0 DoD 9.7.
+ * `agentDeck.about` — v0.9.0 DoD 9.7, 9.14, 9.23.
  *
- * A modal with the paragraph and the four links. Each link opens through
+ * A panel with the introduction, four link tiles and a footer. A tile asks
+ * first ({@link confirmThenOpen}) and opens through
  * `vscode.env.openExternal`, which hands a URI to the EDITOR: the extension
  * opens no socket, so `SECURITY.md`’s "makes no network call" is unchanged
  * and `egress.test.ts`’s census of the bundle still finds one client.
  */
 let aboutPanel: vscode.WebviewPanel | null = null;
+
+/**
+ * The version the About footer names, taken from `context.extension` in
+ * `activate()`. `null` until then, and the footer says less rather than
+ * naming a version it did not read.
+ */
+let aboutVersion: string | null = null;
+
+/** Called once by `activate()`. Not a setting: a fact read off the manifest. */
+function setAboutVersion(packageJSON: unknown): void {
+  const version =
+    typeof packageJSON === 'object' && packageJSON !== null
+      ? (packageJSON as Record<string, unknown>)['version']
+      : undefined;
+  aboutVersion = typeof version === 'string' ? version : null;
+}
+
+/**
+ * Ask, then open — DoD 9.23.
+ *
+ * "Agent Deck will open <host> in your browser", with one button. Only that
+ * button opens anything: a dismissed or timed-out message answers
+ * `undefined`, and `undefined` opens nothing. The order is the point — a
+ * test drives it and a mutation that opens without asking is red.
+ */
+async function confirmThenOpen(link: AboutLink): Promise<void> {
+  const { message, button } = aboutConfirmation(link);
+  const answer = await vscode.window.showInformationMessage(message, {}, button);
+  if (answer !== button) return;
+  await vscode.env.openExternal(vscode.Uri.parse(link.url));
+}
 
 export function showAbout(): void {
   if (aboutPanel !== null) {
@@ -5240,14 +5283,14 @@ export function showAbout(): void {
     },
   );
   aboutPanel = panel;
-  panel.webview.html = aboutPanelHtml(createNonce(), panel.webview.cspSource);
+  panel.webview.html = aboutPanelHtml(createNonce(), panel.webview.cspSource, aboutVersion);
   panel.webview.onDidReceiveMessage((raw: unknown) => {
     const link = aboutLinkFor(raw);
     // An index that is not one of ours opens nothing. The page posts an
     // INDEX and never a url, so the only thing a renderer can name is one of
     // this extension's own four literals.
     if (link === undefined) return;
-    void vscode.env.openExternal(vscode.Uri.parse(link.url));
+    void confirmThenOpen(link);
   });
   panel.onDidDispose(() => {
     aboutPanel = null;
@@ -5610,6 +5653,11 @@ function statsDirFor(context: vscode.ExtensionContext): string | undefined {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<AgentDeckApi> {
+  // The About footer's version (DoD 9.23). Read defensively: a context
+  // built by hand — every test double — may carry no `extension` at all.
+  setAboutVersion(
+    (context as { extension?: { packageJSON?: unknown } }).extension?.packageJSON,
+  );
   /*
    * v0.7.0 DoD 5.1 — THE API, BUILT FIRST AND RETURNED FROM EVERY PATH.
    *
@@ -5863,8 +5911,63 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     );
   }
 
+  /*
+   * ONE "Agent Deck" output channel per window — DoD 9.25.
+   *
+   * Created on its first line and never at activation, for the reason
+   * `DiagnosticsChannel` gives: a window where nothing happens gets no entry
+   * in the Output dropdown. The data path's diagnostics and the Insights
+   * invocations share it, because two `createOutputChannel` calls with one
+   * name are two entries with one name. The shared sink's `dispose` is a
+   * no-op: a host ending must not close the channel the Insights commands
+   * still write to. The channel itself goes with `context.subscriptions`.
+   */
+  let outputChannel: DiagnosticsSink | undefined;
+  const sharedOutput = (): DiagnosticsSink => {
+    if (outputChannel === undefined) {
+      const created = vscode.window.createOutputChannel(DIAGNOSTICS_CHANNEL_NAME);
+      context.subscriptions.push(created);
+      outputChannel = created;
+    }
+    const channel = outputChannel;
+    return {
+      appendLine: (line: string) => channel.appendLine(line),
+      show: (preserveFocus?: boolean) => channel.show(preserveFocus),
+      dispose: () => undefined,
+    };
+  };
+  const insightsDeps = {
+    getExtension: () => vscode.extensions.getExtension(INSIGHTS_EXTENSION_ID),
+    executeCommand: (command: string) => vscode.commands.executeCommand(command),
+    showInformationMessage: (message: string) => {
+      void vscode.window.showInformationMessage(message);
+    },
+    log: (line: string) => {
+      try {
+        sharedOutput().appendLine(`[${new Date().toISOString()}] ${line}`);
+      } catch {
+        // G2: a channel that cannot be created must not turn a failure the
+        // user is about to be TOLD about into an exception nobody sees.
+      }
+    },
+  };
+
   const sidebarCommands = [
     vscode.window.registerWebviewViewProvider(SIDEBAR_VIEW_ID, sidebarProvider),
+    /*
+     * Open and Run go through `invokeInsights` — DoD 9.25. Until then both
+     * were `void executeCommand(id)`: a rejection reached nobody, so Open
+     * Insights, whose id Insights 0.1.0 does not contribute, did nothing and
+     * said nothing. Now Insights is activated first when it is not active,
+     * every outcome writes one line to the "Agent Deck" channel, and every
+     * failure is an information message that names the command.
+     */
+    vscode.commands.registerCommand(INSIGHTS_SHOW_COMMAND, () =>
+      invokeInsights(INSIGHTS_OPEN_COMMAND, insightsDeps),
+    ),
+    vscode.commands.registerCommand(INSIGHTS_RUN_COMMAND, () =>
+      invokeInsights(INSIGHTS_EXEC_COMMAND, insightsDeps),
+    ),
     /**
      * Reset view has ONE entry and the STORE decides which surface it means,
      * because the store is what knows the altitude. The host sends the
@@ -5915,12 +6018,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       // what lets `SECURITY.md` still say so: handing a URI to VS Code is not
       // making one.
       void vscode.env.openExternal(vscode.Uri.parse(INSIGHTS_PAGE_URL));
-    }),
-    vscode.commands.registerCommand(INSIGHTS_SHOW_COMMAND, () => {
-      void vscode.commands.executeCommand(INSIGHTS_OPEN_COMMAND);
-    }),
-    vscode.commands.registerCommand(INSIGHTS_RUN_COMMAND, () => {
-      void vscode.commands.executeCommand(INSIGHTS_EXEC_COMMAND);
     }),
   ];
 
@@ -6196,7 +6293,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      * reached for one would take the whole data path out of reach of the
      * tests.
      */
-    createDiagnosticsSink: () => vscode.window.createOutputChannel(DIAGNOSTICS_CHANNEL_NAME),
+    createDiagnosticsSink: sharedOutput,
     /*
      * DoD 3.1 and 3.7 — the ONE production call that names the store's
      * location, and it names it by asking `resolveStoreDir`.

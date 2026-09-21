@@ -827,8 +827,11 @@ it.
 - **Not installed** — one entry, **Get Agent Deck Insights**, which opens
   <https://nvitlam.github.io/agent-deck/> in your browser. Agent Deck hands the address to VS Code;
   it opens no connection itself.
-- **Installed** — **Open Insights** and **Run Insights**, which run that extension's own commands,
-  `agentDeckInsights.open` and `agentDeckInsights.run`.
+- **Installed** — **Open Insights** and **Run Insights**, which run that extension's commands
+  `agentDeckInsights.open` and `agentDeckInsights.run`. Agent Deck activates Insights first when
+  it is not active yet, writes one line per run to its **Agent Deck** output channel, and shows a
+  message naming the command whenever one does not run. Insights 0.1.0 has no
+  `agentDeckInsights.open`, so Open Insights says so until Insights adds it.
 
 **Agent Deck Insights** is a separate extension that reads the same local records and groups them
 into patterns across sessions. **Agent Deck never asks about your Insights licence** — whether a
@@ -840,10 +843,13 @@ project page; Agent Deck's own surface is the two entries above.)*
 
 ## About
 
-**Agent Deck: About** in the Command Palette, and a link in the deck header. It carries the
-project, the author and the sponsor page. The links open in your browser through VS Code — the
-extension opens no socket for them and makes no network call of its own. `SECURITY.md` §1 states
-that and names its proofs.
+**Agent Deck: About** in the Command Palette, and **About** in the sidebar's Menu. A page in the
+deck's own look: a short introduction, four tiles — **Portfolio**, **Repository**, **LinkedIn** and
+**Sponsor** — and a footer line with the version and the licence (MIT). A tile asks before it
+opens anything: *"Agent Deck will open `<host>` in your browser"*, with an **Open** button. The links
+open through VS Code — the extension opens no socket for them and makes no network call of its
+own. `SECURITY.md` §1 states that and names its proofs.
+
 ## Claude Code version window
 
 - **Anchor `2.1.246`** — the release the committed corpora were captured from. It is a

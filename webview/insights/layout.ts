@@ -55,12 +55,14 @@ export const INSIGHTS_WINDOW_DAYS = 7;
 const DAY_MS = 86_400_000;
 
 /**
- * The silence a gap must exceed to count as an idle resume.
- *
  * The `agentDeck.livenessThresholdMs` DEFAULT, bound to the manifest by
- * `src/insights-facts.test.ts` rather than written down twice. `timing.longestGapMs` is
- * "the largest interval between one call starting and the next STARTING", so
- * a gap in the record is a gap that ENDED — work resumed.
+ * `src/insights-facts.test.ts` rather than written down twice.
+ *
+ * Since v0.9.0 DoD 9.38 the threshold a long-idle resume is counted against
+ * is the user's SETTING, which the host sends on `settings`; this is only the
+ * value the store holds before that message arrives. `timing.longestGapMs`
+ * is "the largest interval between one call starting and the next STARTING",
+ * so a gap in the record is a gap that ENDED — work resumed.
  */
 export const IDLE_RESUME_MS = 120_000;
 
@@ -141,6 +143,7 @@ function formatCount(n: number): string {
 export function freeInsightsLayout(
   records: readonly StatsRecord[],
   nowMs: number,
+  idleThresholdMs: number,
 ): FreeInsightsLayout {
   const sinceMs = nowMs - INSIGHTS_WINDOW_DAYS * DAY_MS;
   const inWindow = records.filter((record) => (record.endedAt ?? record.startedAt) >= sinceMs);
@@ -162,7 +165,7 @@ export function freeInsightsLayout(
     byEngine[record.engine] += 1;
     compactions += record.totals.compactions;
     const gap = record.timing.longestGapMs;
-    if (gap !== undefined && gap >= IDLE_RESUME_MS) idleResumes += 1;
+    if (gap !== undefined && gap >= idleThresholdMs) idleResumes += 1;
     for (const loop of record.loops) {
       if (loop.class === 'read') rereadLoops += 1;
     }
@@ -198,7 +201,12 @@ export function freeInsightsLayout(
       ...(engineNote === '' ? {} : { note: engineNote }),
     },
     count('compactions', 'compactions', compactions),
-    count('idleResumes', 'long-idle resumes', idleResumes),
+    {
+      ...count('idleResumes', 'long-idle resumes', idleResumes),
+      // The threshold on the tile, because it is the user's setting now
+      // (DoD 9.38) and a count without its rule is not a fact anyone can check.
+      note: `sessions with a gap of ${formatCount(Math.round(idleThresholdMs / 1000))} s or more`,
+    },
     count('rereadLoops', 're-read loops', rereadLoops),
     count('failedCalls', 'failed tool calls', failedCalls),
     count('stalls', 'stalls', stalls),

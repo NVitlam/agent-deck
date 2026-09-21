@@ -59,9 +59,15 @@ All notable changes to Agent Deck are documented here.
   failed tool calls, stalls, silent subagents, prompt and output tokens, and
   the cost the engines reported themselves - each naming the field it was
   counted from, beside one of three labelled examples and a tile to get Agent
-  Deck Insights. With a provider registered it shows that provider's latest
-  findings, its run history and a Run action. The sidebar states which, beside
-  Open Insights, whether or not the panel is open.
+  Deck Insights. A long-idle resume is a gap of at least
+  `agentDeck.livenessThresholdMs`, and the tile states the threshold. The Get
+  tile, here and on About, opens the new Insights page of the project site,
+  which describes what Insights does and never does and carries the plans:
+  pay once for 1 month ($10), 6 months ($50) or 1 year ($100), or subscribe
+  monthly, every 6 months or yearly at the same amounts. With a provider
+  registered it shows that provider's latest findings, its run history and a
+  Run action. The sidebar states which, beside Open Insights, whether or not
+  the panel is open.
 - **Extension API version 2.** `registerInsightsProvider` lets one extension
   register as the Insights provider. Version 2 only adds to version 1. A
   provider's data is plain JSON, checked field by field, and never executed; a

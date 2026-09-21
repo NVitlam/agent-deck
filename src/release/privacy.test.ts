@@ -706,10 +706,13 @@ describe('privacy sweep against this repository', () => {
       'package-lock.json',
       'package.json',
       'site/index.html',
+      // v0.9.0 DoD 9.34: the Insights subpage, for the index page's reason —
+      // the repository, Sponsors and footer links the site amendment requires.
+      'site/insights.html',
       'src/about.test.ts',
       'src/about.ts',
     ]);
-    expect(report.config.identity.exemptPaths).toHaveLength(6);
+    expect(report.config.identity.exemptPaths).toHaveLength(7);
     expect(report.workingTree.identity.exemptHits).toBeGreaterThan(0);
   });
 

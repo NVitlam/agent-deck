@@ -85,6 +85,7 @@ import {
   zoomAbout,
 } from './viewport.js';
 import type { Rect, ViewportSize } from './viewport.js';
+import { IDLE_RESUME_MS } from './insights/layout.js';
 
 /* ------------------------------------------------------------------------ *
  * Auto-fit — the trigger table (v0.7.0 Phase 4, DoD 4.0)
@@ -602,6 +603,11 @@ export interface WebviewView {
    */
   canvasAutoFit: boolean;
   /**
+   * `agentDeck.livenessThresholdMs`, as the host last said (v0.9.0 DoD 9.38).
+   * The manifest default until a `settings` message arrives.
+   */
+  livenessThresholdMs: number;
+  /**
    * The six control values the HOST owns — v0.9.0 DoD 9.14.
    *
    * They were component-local until the amendment: `deckLayout`/`deckSort`
@@ -1020,6 +1026,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
 
   /* ----- auto-fit state (DoD 4.0) ----------------------------------------- */
   let canvasAutoFit = true;
+  let livenessThresholdMs = IDLE_RESUME_MS;
   let canvasFitEpoch = 0;
   /** Bumped by View ▸ Reset view inside a session (DoD 9.14, ruling 6). */
   let canvasResetEpoch = 0;
@@ -1480,6 +1487,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         canvasView: { ...canvasView },
         resyncs,
         canvasAutoFit,
+        livenessThresholdMs,
         deckLayout,
         deckSort,
         statsTab,
@@ -1542,6 +1550,12 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
           break;
         case 'settings':
           canvasAutoFit = message.canvasAutoFit;
+          {
+            // DoD 9.38. Read through a nullable alias like the tweaks below:
+            // a value that is not a positive whole number keeps the last one.
+            const ms = (message as { livenessThresholdMs?: unknown }).livenessThresholdMs;
+            if (typeof ms === 'number' && Number.isInteger(ms) && ms > 0) livenessThresholdMs = ms;
+          }
           // DoD 7.6. THREE of the four tweaks reach the renderer, and the
           // fourth does not: `defaultOrdering` seeds the HOST's `deckSort`
           // at activation (v0.9.0 DoD 9.14), so it arrives on `viewControls`

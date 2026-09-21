@@ -77,17 +77,18 @@ export const ABOUT_LINKS: readonly AboutLink[] = Object.freeze([
 ]);
 
 /**
- * Where "Get Agent Deck Insights" goes — spec `Amendment 2026-09-20 - Sidebar
- * shape` names this url, and `Amendment 2026-09-21 — One window` keeps it
- * ("subpage later"): it will point to a dedicated Insights subpage once the
- * site has one, and `about.test.ts` holds it against the amendment that says
- * so.
+ * Where "Get Agent Deck Insights" goes — the dedicated Insights subpage of the
+ * site, since spec `Amendment 2026-09-21 — Site: Insights subpage and plans`
+ * (v0.9.0 DoD 9.36) kept round 3's promise to move it there once the page
+ * existed. `about.test.ts` holds it against that amendment, and
+ * `site.test.ts` against the Pages address the manifest's repository implies
+ * and the page file it serves.
  *
  * HERE rather than in `extension.ts` since DoD 9.32: the About and Insights
  * surfaces both draw a Get tile that names this host, and the webview bundle
  * may not import the host. One literal, read by both.
  */
-export const INSIGHTS_PAGE_URL = 'https://nvitlam.github.io/agent-deck/';
+export const INSIGHTS_PAGE_URL = 'https://nvitlam.github.io/agent-deck/insights.html';
 
 /** The Get tile, as a link the confirmation can name. */
 export const INSIGHTS_GET_LINK: AboutLink = Object.freeze({

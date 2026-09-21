@@ -4629,6 +4629,8 @@ export class AgentDeckHost {
    * none.
    */
   #tweaks: Readonly<Record<string, boolean | string>>;
+  /** `agentDeck.livenessThresholdMs`, as last read (v0.9.0 DoD 9.38). */
+  #livenessThresholdMs: number;
   /**
    * How many flushes the pipeline had performed when the store was last read
    * for the wire, or -1 when it has never been read (or a reload made the
@@ -4663,6 +4665,7 @@ export class AgentDeckHost {
     if (onSurfaceIntent !== undefined) this.#onSurfaceIntent = onSurfaceIntent;
     this.#canvasAutoFit = options.settings['canvas.autoFit'];
     this.#tweaks = tweaksOf(options.settings);
+    this.#livenessThresholdMs = options.settings.livenessThresholdMs;
     if (nonce !== undefined) this.#nonce = nonce;
     this.#scheduler = options.scheduler ?? systemScheduler;
     const clock = options.now ?? ((): number => Date.now());
@@ -4972,11 +4975,23 @@ export class AgentDeckHost {
     this.#panel?.setSettings(this.#settingsMessage());
   }
 
+  /**
+   * `agentDeck.livenessThresholdMs` changed (v0.9.0 DoD 9.38). The data path
+   * takes it for liveness; the panel takes it for the free Insights view's
+   * long-idle count, which is why it rides on `settings` too.
+   */
+  setLivenessThresholdMs(ms: number): void {
+    this.#livenessThresholdMs = ms;
+    this.dataPath.setLivenessThresholdMs(ms);
+    this.#panel?.setSettings(this.#settingsMessage());
+  }
+
   /** What every surface is told, from the values held here. One builder. */
   #settingsMessage(): Omit<SettingsMessage, 'type'> {
     return {
       canvasAutoFit: this.#canvasAutoFit,
       tweaks: this.#tweaks,
+      livenessThresholdMs: this.#livenessThresholdMs,
     };
   }
 
@@ -6495,7 +6510,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       // socket and `previewBytes` is baked into every grafted node. Rebinding
       // or re-grafting silently under the user is worse than requiring a
       // reload for two settings that change once.
-      host.dataPath.setLivenessThresholdMs(next.livenessThresholdMs);
+      host.setLivenessThresholdMs(next.livenessThresholdMs);
       // ...and `canvas.autoFit` (DoD 4.0): one boolean the renderer reads on
       // its next fit decision, so it moves live too.
       host.setCanvasAutoFit(next['canvas.autoFit']);

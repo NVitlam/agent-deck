@@ -103,17 +103,21 @@ describe('the About text', () => {
       expect(quoted).toBe(ABOUT_TEXT);
     });
 
-    it('the Insights entry’s url stays, and the amendment says where it will move', () => {
-      // DoD 9.24: the link is unchanged for now, and the spec line recording
-      // that it moves to a dedicated subpage once the site builds one is
-      // held here, beside the constant it is about.
+    it('the Get tile opens the Insights subpage the site amendment names', () => {
+      // DoD 9.24 said the link would move to a dedicated subpage once the
+      // site built one; `Amendment 2026-09-21 — Site: Insights subpage and
+      // plans` is that move (DoD 9.36). Both are held: the promise, and the
+      // amendment that keeps it.
       if (SPEC === null) return;
       // Whitespace collapsed: the spec wraps prose, and CRLF on disk.
-      const amendment = amendmentOf(SPEC).replace(/\s+/g, ' ');
-      expect(amendment).toContain(`\`${INSIGHTS_PAGE_URL}\``);
-      expect(amendment).toContain(
+      expect(amendmentOf(SPEC).replace(/\s+/g, ' ')).toContain(
         'It will point to a dedicated Insights subpage of the site once that page is built',
       );
+      const heading = '## Amendment 2026-09-21 — Site: Insights subpage and plans';
+      const at = SPEC.indexOf(heading);
+      expect(at, 'the site amendment is not in the spec').toBeGreaterThan(-1);
+      const site = SPEC.slice(at, SPEC.indexOf('\n## ', at + 1));
+      expect(site).toContain(`\`${INSIGHTS_PAGE_URL}\``);
     });
 
     it('the four tiles are the four the amendment names, labels and urls, in order', () => {

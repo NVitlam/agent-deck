@@ -42,6 +42,7 @@
     provider,
     exampleCount,
     getHost,
+    idleThresholdMs,
     now = () => Date.now(),
     onget,
     onrun,
@@ -56,12 +57,14 @@
     exampleCount: number;
     /** The Get tile's host, from the page the host built; `null` before it. */
     getHost: string | null;
+    /** `agentDeck.livenessThresholdMs`, from the host's settings (DoD 9.38). */
+    idleThresholdMs: number;
     now?: () => number;
     onget: () => void;
     onrun: () => void;
   } = $props();
 
-  let free = $derived(freeInsightsLayout(records, now()));
+  let free = $derived(freeInsightsLayout(records, now(), idleThresholdMs));
   let example = $derived(exampleAt(exampleCount));
   let paid = $derived(provider === null ? null : providerInsightsLayout(provider));
 </script>

@@ -861,14 +861,15 @@ and no feature of Agent Deck moves behind it.
 
 **Free — no Insights provider registered.** The facts the stats history already holds for the last
 7 days, as tiles, each naming the record field it was counted from: sessions by engine,
-compactions, long-idle resumes (sessions whose longest gap between calls is 120 seconds or more —
-the default of `agentDeck.livenessThresholdMs`, fixed rather than read from your setting), re-read
+compactions, long-idle resumes (sessions whose longest gap between calls is at least your
+`agentDeck.livenessThresholdMs`, 120 seconds by default — the tile names the threshold), re-read
 loops, failed tool calls, stalls, silent subagents,
 prompt and output tokens, and the cost the engines reported themselves (cost estimated by Claude
 Code or from your prices is not added in). A session read only in part is not counted, and the
 surface says how many were left out. Below them, one of three examples, labelled *"Example, based on
 a real run"*, with made-up ids; it changes each time you come back. And one tile, **Get Agent Deck
-Insights**, which asks before it opens <https://nvitlam.github.io/agent-deck/> in your browser.
+Insights**, which asks before it opens <https://nvitlam.github.io/agent-deck/insights.html> in your browser — the Insights page, with
+what it does, what it never does, and the plans.
 
 **With a provider registered.** The provider's latest finding set, its run history, and a **Run**
 action that asks the provider to run once. What is shown comes from the provider through the

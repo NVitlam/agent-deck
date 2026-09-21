@@ -7413,6 +7413,8 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
       type: 'settings',
       canvasAutoFit: false,
       tweaks: tweaksOf(readSettings(undefined)),
+      // DoD 9.38: the manifest default, read the same way.
+      livenessThresholdMs: readSettings(undefined).livenessThresholdMs,
     });
     // v0.9.0 DoD 9.14: the CONTROLS follow the settings, which follow the
     // snapshot. Three messages, in one order, for the reason the two above
@@ -7452,6 +7454,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
       type: 'settings',
       canvasAutoFit: true,
       tweaks: tweaksOf(readSettings(undefined)),
+      livenessThresholdMs: readSettings(undefined).livenessThresholdMs,
     });
   });
 
@@ -7627,6 +7630,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     const sent = {
       canvasAutoFit: false,
       tweaks: { followNewSessions: true },
+      livenessThresholdMs: 300_000,
     };
     controller.setSettings(sent);
     expect(panel.posted).toStrictEqual([{ type: 'settings', ...sent }]);
@@ -7666,13 +7670,13 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
         dropped: 0,
       },
     };
-    controller.setSettings({ canvasAutoFit: false, tweaks: {} });
+    controller.setSettings({ canvasAutoFit: false, tweaks: {}, livenessThresholdMs: 300_000 });
     controller.sendViewControls(controls);
     controller.sendProviderState(provider);
     const before = panel.posted.length;
     panel.fireBecameVisible();
     expect(panel.posted.slice(before)).toStrictEqual([
-      { type: 'settings', canvasAutoFit: false, tweaks: {} },
+      { type: 'settings', canvasAutoFit: false, tweaks: {}, livenessThresholdMs: 300_000 },
       { type: 'viewControls', controls },
       { type: 'providerState', ...provider },
     ]);
@@ -9648,5 +9652,33 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     });
     // ...and the host's own copy agrees with what it sent.
     expect(host?.tweaks).toStrictEqual(after.at(-1)?.tweaks);
+  });
+
+  it('the panel is told agentDeck.livenessThresholdMs on open and on change (DoD 9.38)', async () => {
+    // The free Insights view counts long-idle resumes against the SETTING,
+    // so the value rides on `settings`: a non-default at activation, then a
+    // change, each reaching the panel AND the data path.
+    process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+    resetVscodeMock();
+    mock.setWorkspaceFolder(await capturedWorkspacePath());
+    mock.setConfig(CONFIG_SECTION, { livenessThresholdMs: 300_000 });
+    await activate(extensionContext());
+    await mock.runCommand(OPEN_COMMAND);
+    const settings = (): SettingsMessage[] =>
+      (mock.panels[0]?.webview.posted ?? []).filter(
+        (m): m is SettingsMessage => (m as { type?: string }).type === 'settings',
+      );
+    expect(settings().at(-1)?.livenessThresholdMs).toBe(300_000);
+    mock.setConfig(CONFIG_SECTION, { livenessThresholdMs: 600_000 });
+    mock.fireConfigurationChange(CONFIG_SECTION);
+    expect(settings().at(-1)?.livenessThresholdMs).toBe(600_000);
+    expect(currentHost()?.dataPath.liveness.mtimeThresholdMs).toBe(600_000);
+    // The host's own re-send, driven alone: in the configuration handler the
+    // autoFit and tweaks setters send the same message right after, which
+    // would hide this one going missing (mutation S6).
+    const before = settings().length;
+    currentHost()?.setLivenessThresholdMs(900_000);
+    expect(settings().length).toBe(before + 1);
+    expect(settings().at(-1)?.livenessThresholdMs).toBe(900_000);
   });
 });

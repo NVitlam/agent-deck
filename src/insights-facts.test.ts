@@ -113,10 +113,10 @@ describe('the free facts, from the REAL store, against a golden in the parent', 
     expect(records.filter(synthetic).length).toBeGreaterThan(10);
     expect(records.filter(captured).length).toBeGreaterThan(10);
 
-    const latest = freeInsightsLayout(records, nowAfter(records, captured));
+    const latest = freeInsightsLayout(records, nowAfter(records, captured), IDLE_RESUME_MS);
     // The synthetic population alone: a window counts every later record too,
     // so without the filter this window would be the whole store.
-    const syntheticWindow = freeInsightsLayout(records.filter(synthetic), nowAfter(records, synthetic));
+    const syntheticWindow = freeInsightsLayout(records.filter(synthetic), nowAfter(records, synthetic), IDLE_RESUME_MS);
     goldenCompare(GOLDEN_FILE, { latest, synthetic: syntheticWindow });
 
     // Not a vacuous golden: each window counted something, and the
@@ -131,7 +131,7 @@ describe('the free facts, from the REAL store, against a golden in the parent', 
   it('the engine-cost tile sums ONLY engine-reported cost — never user prices or telemetry', () => {
     const records = storedRecords();
     const synthetic = (r: StatsRecord): boolean => r.startedAt < 1_750_000_000_000;
-    const layout = freeInsightsLayout(records.filter(synthetic), nowAfter(records, synthetic));
+    const layout = freeInsightsLayout(records.filter(synthetic), nowAfter(records, synthetic), IDLE_RESUME_MS);
     const inWindow = records.filter(synthetic).filter((r) => r.coverage === 'full');
     // The window really holds all three sources, or "only engine" is untested.
     const sources = new Set(inWindow.map((r) => r.totals.costSource).filter(Boolean));
@@ -145,7 +145,7 @@ describe('the free facts, from the REAL store, against a golden in the parent', 
 
   it('VACUITY CONTROL: a window after every record counts nothing, and says so', () => {
     const records = storedRecords();
-    const after = freeInsightsLayout(records, Date.UTC(2099, 0, 1));
+    const after = freeInsightsLayout(records, Date.UTC(2099, 0, 1), IDLE_RESUME_MS);
     expect(after.counted).toBe(0);
     expect(after.excluded).toBe(0);
     for (const tile of after.tiles) expect(tile.count, tile.id).toBe(0);
@@ -197,7 +197,7 @@ const totals = (over: Partial<StatsRecord['totals']>): StatsRecord['totals'] => 
 });
 
 function counts(records: StatsRecord[]): Record<string, number> {
-  return Object.fromEntries(freeInsightsLayout(records, NOW).tiles.map((t) => [t.id, t.count]));
+  return Object.fromEntries(freeInsightsLayout(records, NOW, IDLE_RESUME_MS).tiles.map((t) => [t.id, t.count]));
 }
 
 describe('each fact is counted from its own field', () => {
@@ -226,6 +226,20 @@ describe('each fact is counted from its own field', () => {
     expect(Object.keys(INSIGHT_SOURCES).sort()).toStrictEqual(Object.keys(base).sort());
   });
 
+  it('the idle threshold is the one the caller passes — the user’s setting (DoD 9.38)', () => {
+    // A NON-default setting: five minutes. A 3-minute gap counts at the
+    // default and must not count here; a 5-minute gap counts at both.
+    const three = [record('s', { timing: { longestGapMs: 180_000 } })];
+    const five = [record('s', { timing: { longestGapMs: 300_000 } })];
+    const idle = (records: StatsRecord[], ms: number) =>
+      freeInsightsLayout(records, NOW, ms).tiles.find((tile) => tile.id === 'idleResumes');
+    expect(idle(three, IDLE_RESUME_MS)?.count).toBe(1);
+    expect(idle(three, 300_000)?.count).toBe(0);
+    expect(idle(five, 300_000)?.count).toBe(1);
+    // ...and the tile states the rule it counted by.
+    expect(idle(five, 300_000)?.note).toBe('sessions with a gap of 300 s or more');
+  });
+
   it('a gap BELOW the idle threshold is not a resume; AT it, it is', () => {
     expect(counts([record('s', { timing: { longestGapMs: IDLE_RESUME_MS - 1 } })])['idleResumes']).toBe(0);
     expect(counts([record('s', { timing: { longestGapMs: IDLE_RESUME_MS } })])['idleResumes']).toBe(1);
@@ -244,6 +258,7 @@ describe('each fact is counted from its own field', () => {
     const layout = freeInsightsLayout(
       [record('full', { totals: totals({ compactions: 1 }) }), record('part', { coverage: 'excluded:partial', totals: totals({ compactions: 9 }) })],
       NOW,
+      IDLE_RESUME_MS,
     );
     expect(layout.counted).toBe(1);
     expect(layout.excluded).toBe(1);
@@ -259,6 +274,7 @@ describe('each fact is counted from its own field', () => {
         record('open', { startedAt: edge + HOUR, endedAt: undefined }),
       ],
       NOW,
+      IDLE_RESUME_MS,
     );
     expect(layout.counted).toBe(2);
     expect(layout.sinceMs).toBe(edge);
@@ -268,6 +284,7 @@ describe('each fact is counted from its own field', () => {
     const layout = freeInsightsLayout(
       [record('a', { engine: 'opencode' }), record('b', { engine: 'cc' }), record('c', { engine: 'cc' })],
       NOW,
+      IDLE_RESUME_MS,
     );
     expect(layout.byEngine).toStrictEqual({ cc: 2, codex: 0, opencode: 1 });
     expect(layout.tiles[0]).toMatchObject({ id: 'sessions', count: 3, note: 'Claude Code 2 · OpenCode 1' });
@@ -322,7 +339,7 @@ describe('the example rotation', () => {
 describe('the Insights surface states facts and never advises', () => {
   /** Every string the surface can show, built from the DATA and the component. */
   function surfaceText(): string {
-    const layout = freeInsightsLayout(storedRecords(), NOW);
+    const layout = freeInsightsLayout(storedRecords(), NOW, IDLE_RESUME_MS);
     const provider: InsightsProviderSnapshot = {
       about: { name: 'Agent Deck Insights', version: '0.2.0' },
       latest: {

@@ -70,7 +70,7 @@ function rig(options: { autoFit?: boolean; enter?: boolean } = {}): Rig {
   }
   const { store } = out;
   store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
-  if (options.autoFit === false) store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {} });
+  if (options.autoFit === false) store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {}, livenessThresholdMs: 120_000 });
   if (options.enter !== false) store.enterSession('session-live');
   store.reportCanvasGeometry(GEOMETRY);
   // Everything above may have fitted; the assertions start from zero.
@@ -300,9 +300,9 @@ describe('DoD 4.0 — agentDeck.canvas.autoFit off: fit is never called after th
   it('defaults to on, and a settings message turns it off', () => {
     const store = createStore();
     expect(store.getView().canvasAutoFit).toBe(true);
-    store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {} });
+    store.handleMessage({ type: 'settings', canvasAutoFit: false, tweaks: {}, livenessThresholdMs: 120_000 });
     expect(store.getView().canvasAutoFit).toBe(false);
-    store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {} });
+    store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {}, livenessThresholdMs: 120_000 });
     expect(store.getView().canvasAutoFit).toBe(true);
   });
 
@@ -338,7 +338,7 @@ describe('DoD 4.0 — agentDeck.canvas.autoFit off: fit is never called after th
 
   it('turning the setting on later does not fit by itself; the next trigger does', () => {
     const r = rig({ autoFit: false });
-    r.store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {} });
+    r.store.handleMessage({ type: 'settings', canvasAutoFit: true, tweaks: {}, livenessThresholdMs: 120_000 });
     expect(r.fits).toBe(0);
     r.store.selectNode('tool-read');
     expect(r.fits).toBe(1);
@@ -569,7 +569,7 @@ describe('the message guard in main.ts and the contract agree', () => {
       { type: 'degraded', engine: 'cc', degraded: false },
       { type: 'statsSnapshot', records: [] },
       { type: 'statsStore', records: [], enabled: true },
-      { type: 'settings', canvasAutoFit: true, tweaks: {} },
+      { type: 'settings', canvasAutoFit: true, tweaks: {}, livenessThresholdMs: 120_000 },
       viewControls({ surface: 'stats' }),
       { type: 'viewAction', action: 'resetView' },
       { type: 'providerState', page: aboutPage('0.9.0'), provider: null },

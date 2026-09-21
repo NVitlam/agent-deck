@@ -282,6 +282,28 @@ describe('the Insights surface, FREE — DoD 9.29', () => {
     expect(value('engineCost')).toBe('—');
   });
 
+  it('counts long-idle resumes against the SETTING the host sent, not a fixed 120 s (DoD 9.38)', () => {
+    const panel = render();
+    send(NO_PROVIDER);
+    // A three-minute gap: a resume at the 120 s default, not at a 300 s setting.
+    send({
+      type: 'statsStore',
+      records: [record('gap', 1, { timing: { longestGapMs: 180_000 } })],
+      enabled: true,
+    });
+    send(viewControls({ surface: 'insights' }));
+    const idle = (): string =>
+      panel.container.querySelector('[data-fact="idleResumes"] [data-testid="insights-fact-value"]')
+        ?.textContent ?? '';
+    expect(idle()).toBe('1');
+    send({ type: 'settings', canvasAutoFit: true, tweaks: {}, livenessThresholdMs: 300_000 });
+    expect(idle()).toBe('0');
+    expect(
+      panel.container.querySelector('[data-fact="idleResumes"] [data-testid="insights-fact-note"]')
+        ?.textContent,
+    ).toBe('sessions with a gap of 300 s or more');
+  });
+
   it('says it has not read the store rather than counting nothing', () => {
     const panel = render();
     send(viewControls({ surface: 'insights' }));

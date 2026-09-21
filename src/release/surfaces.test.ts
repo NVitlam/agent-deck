@@ -66,6 +66,8 @@ const README = readText('README.md');
 const SECURITY = readText('SECURITY.md');
 const CHANGELOG = readText('CHANGELOG.md');
 const PAGE = readText('site/index.html');
+/** v0.9.0 DoD 9.34: the Insights subpage. */
+const INSIGHTS_PAGE = readText('site/insights.html');
 const RELEASE_YML = readText('.github/workflows/release.yml');
 
 interface ConfigProperty {
@@ -359,7 +361,8 @@ describe('6.D.2 (c) — every image either page references exists, is non-empty,
   const readmeImages = [...README.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)]
     .map((m) => m[1] ?? '')
     .filter((link) => !/^https?:/.test(link));
-  const pageImages = [...PAGE.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
+  // Both pages since v0.9.0 DoD 9.34.
+  const pageImages = [...(PAGE + INSIGHTS_PAGE).matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
 
   it('README: every local image is a non-empty file', () => {
     expect(readmeImages.length).toBeGreaterThan(0);
@@ -727,46 +730,108 @@ describe('6.D.5 — the GitHub Release body is the tag’s CHANGELOG section', (
  * v0.9.0 DoD 9.8 — the plans section, and the sponsor url across surfaces
  * ------------------------------------------------------------------------ */
 
-describe('9.8 — the site states the Insights plans', () => {
+describe('9.35 / 9.37 — the plans, on the index and on the Insights subpage', () => {
   /**
-   * The four literal placeholders the spec amendment names.
+   * The six checkouts, as spec `Amendment 2026-09-21 — Site: Insights subpage
+   * and plans` lists them, each with its plan and its amount.
    *
-   * PINNED BY EXACT LITERAL, and that is the whole point of pinning a
-   * placeholder: the page ships with these strings in it, so shipping one is
-   * a decision somebody takes rather than one that happens by being
-   * forgotten. When the real prices land, these assertions are what has to be
-   * edited, deliberately, in the same commit.
+   * WRITTEN OUT, not read off the page: a list derived from the page it checks
+   * can only ever agree with itself. A price or a checkout changes when this
+   * table is edited in the same commit, deliberately.
    */
-  const PLACEHOLDERS = ['PRICE_MONTHLY', 'PRICE_YEARLY', 'PRICE_LIFETIME', 'POLAR_URL'] as const;
+  const CHECKOUTS = [
+    ['Pay once', '1 month', '$10', 'https://buy.polar.sh/polar_cl_CSq61gqBDh6m23MVgywHa5ToM4fqELxhN2Ihz3N0Pik'],
+    ['Pay once', '6 months', '$50', 'https://buy.polar.sh/polar_cl_GCvmaLUxGjyRTAzCEFHEwWr7E3dPXGuHGF7x13OWJtR'],
+    ['Pay once', '1 year', '$100', 'https://buy.polar.sh/polar_cl_kt7PQf2lHFd4MKLuIk0rQTQnTBydOB073e1Vz1UryGH'],
+    ['Subscribe', 'Monthly', '$10', 'https://buy.polar.sh/polar_cl_jrxo7iIweohunHx0Tveoqfk7yWQ4YSmrHAWB22B04IC'],
+    ['Subscribe', 'Every 6 months', '$50', 'https://buy.polar.sh/polar_cl_rrZE2uiaJHdSWORJ0zqPQxAIACs09t50dXwwO05Zwhb'],
+    ['Subscribe', 'Yearly', '$100', 'https://buy.polar.sh/polar_cl_otLLhZiBYwb24LZmJNCd3U5VYp8hC3gFcs0Kk4WaZ7J'],
+  ] as const;
 
-  it('carries a plans section naming all three plans', () => {
-    expect(PAGE).toContain('id="plans"');
-    expect(PAGE).toContain('Monthly');
-    expect(PAGE).toContain('Yearly');
-    expect(PAGE).toContain('Lifetime, early bird');
+  const count = (text: string, needle: string): number => text.split(needle).length - 1;
+
+  it('every checkout link is on the subpage exactly once, and on the index not at all', () => {
+    expect(new Set(CHECKOUTS.map((c) => c[3])).size).toBe(6);
+    for (const [, , , url] of CHECKOUTS) {
+      expect(count(INSIGHTS_PAGE, url), url).toBe(1);
+      expect(count(PAGE, url), url).toBe(0);
+    }
+    // ...and there is no seventh checkout the table does not name.
+    expect(INSIGHTS_PAGE.match(/https:\/\/buy\.polar\.sh\/[^"]+/g)).toHaveLength(6);
   });
 
-  it('carries every placeholder, exactly once each', () => {
-    for (const token of PLACEHOLDERS) {
-      const count = PAGE.split(token).length - 1;
-      expect(count, `${token} appears ${String(count)} times, expected 1`).toBe(1);
+  it('each card is its plan, its amount and its own checkout, in its column', () => {
+    const column = (heading: string): string => {
+      const at = INSIGHTS_PAGE.indexOf(`<h3>${heading}</h3>`);
+      expect(at, heading).toBeGreaterThan(-1);
+      return INSIGHTS_PAGE.slice(at, INSIGHTS_PAGE.indexOf('</div>', at));
+    };
+    for (const [heading, plan, amount, url] of CHECKOUTS) {
+      const card = new RegExp(
+        `<article class="plan"><h4>${plan}</h4><p class="price">\\${amount}</p><p>[^<]+</p><a class="button primary" href="${url}">`,
+      );
+      expect(column(heading), `${heading} / ${plan}`).toMatch(card);
     }
   });
 
-  it('links Sponsors at the same url the About entry and the manifest use', () => {
-    // Three places carry that URL now. This is the one that compares them.
-    expect(PAGE).toContain(SPONSOR_URL);
+  it('the three amounts are the only prices on either page', () => {
+    for (const html of [PAGE, INSIGHTS_PAGE]) {
+      const prices = new Set(html.match(/\$\d+/g) ?? []);
+      expect([...prices].sort()).toStrictEqual(['$10', '$100', '$50']);
+    }
+  });
+
+  it('carries the one line under the plans, verbatim', () => {
+    expect(INSIGHTS_PAGE).toContain(
+      'Every plan is the same product; a subscription renews your key automatically, a one-time purchase does not.',
+    );
+  });
+
+  it('no placeholder and no lifetime plan survives, on either page', () => {
+    for (const html of [PAGE, INSIGHTS_PAGE]) {
+      for (const gone of ['POLAR_URL', 'PRICE_MONTHLY', 'PRICE_YEARLY', 'PRICE_LIFETIME']) {
+        expect(html, gone).not.toContain(gone);
+      }
+      expect(html).not.toMatch(/lifetime/i);
+    }
+    // Control: the pattern finds what was shipping before this delta.
+    expect(/lifetime/i.test('<b>Lifetime, early bird</b>')).toBe(true);
+  });
+
+  it('the index links the subpage from its nav and from a card, and states the amounts', () => {
+    expect(PAGE).toMatch(/<div class="links">[^]*?<a href="insights\.html">Insights<\/a>[^]*?<\/div>/);
+    expect(PAGE).toMatch(/<article class="card">[^]*?<a href="insights\.html">/);
+    const plans = PAGE.slice(PAGE.indexOf('id="plans"'));
+    for (const amount of ['$10', '$50', '$100']) expect(plans).toContain(amount);
+  });
+
+  it('links Sponsors at the same url the About entry and the manifest use, on both pages', () => {
+    for (const html of [PAGE, INSIGHTS_PAGE]) expect(html).toContain(SPONSOR_URL);
     const sponsor = (JSON.parse(readText('package.json')) as { sponsor?: { url?: string } })
       .sponsor?.url;
     expect(sponsor).toBe(SPONSOR_URL);
     expect(ABOUT_LINKS.find((link) => link.label === 'Sponsor')?.url).toBe(SPONSOR_URL);
   });
 
-  it('says Agent Deck itself is unaffected', () => {
-    // The claim the page has to keep making, because a plans section is the
-    // one place a free product starts reading as a trial.
-    expect(PAGE).toContain('Agent Deck itself is unaffected');
-    expect(PAGE).toContain('no feature moves behind a plan');
+  it('the subpage names the support address, and the never-list verbatim from the Insights spec', () => {
+    expect(INSIGHTS_PAGE).toContain('<a href="mailto:agent.deck.support@gmail.com">agent.deck.support@gmail.com</a>');
+    // agent-deck-insights-spec.md §A: "What is never done: reading
+    // transcripts, reading files, network calls from the extension, writing
+    // under any engine's data directory." Four items, in its order.
+    const never = /<article class="no">[^]*?<ul>([^]*?)<\/ul>/.exec(INSIGHTS_PAGE)?.[1] ?? '';
+    expect([...never.matchAll(/<li>([^<]*)<\/li>/g)].map((m) => m[1])).toStrictEqual([
+      'reading transcripts',
+      'reading files',
+      'network calls from the extension',
+      "writing under any engine's data directory",
+    ]);
+  });
+
+  it('says Agent Deck itself is unaffected, on both pages', () => {
+    for (const html of [PAGE, INSIGHTS_PAGE]) {
+      expect(html).toContain('Agent Deck itself is unaffected');
+      expect(html).toContain('no feature moves behind a plan');
+    }
   });
 });
 

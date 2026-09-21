@@ -1203,6 +1203,14 @@ export interface SettingsMessage {
    * untrusted input arrives.
    */
   tweaks: Readonly<Record<string, boolean | string>>;
+  /**
+   * `agentDeck.livenessThresholdMs`, as the host last read it — v0.9.0 DoD
+   * 9.38. The free Insights view counts a long-idle resume against it (spec
+   * `Amendment 2026-09-21 — Site: Insights subpage and plans`). REQUIRED, so
+   * a producer that forgets it breaks at compile time rather than letting the
+   * renderer fall back to the default without saying so.
+   */
+  livenessThresholdMs: number;
 }
 
 /**

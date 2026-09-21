@@ -230,6 +230,7 @@
       provider={view.insightsProvider}
       exampleCount={view.insightsExampleCount}
       getHost={view.aboutPage?.get.host ?? null}
+      idleThresholdMs={view.livenessThresholdMs}
       onget={() => store.getInsights()}
       onrun={() => store.runInsights()}
     />

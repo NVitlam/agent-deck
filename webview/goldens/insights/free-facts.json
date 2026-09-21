@@ -26,7 +26,8 @@
         "id": "idleResumes",
         "label": "long-idle resumes",
         "count": 2,
-        "value": "2"
+        "value": "2",
+        "note": "sessions with a gap of 120 s or more"
       },
       {
         "id": "rereadLoops",
@@ -100,7 +101,8 @@
         "id": "idleResumes",
         "label": "long-idle resumes",
         "count": 0,
-        "value": "0"
+        "value": "0",
+        "note": "sessions with a gap of 120 s or more"
       },
       {
         "id": "rereadLoops",

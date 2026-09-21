@@ -298,6 +298,12 @@ describe('the Insights surface, FREE — DoD 9.29', () => {
     expect(idle()).toBe('1');
     send({ type: 'settings', canvasAutoFit: true, tweaks: {}, livenessThresholdMs: 300_000 });
     expect(idle()).toBe('0');
+    // A LATER change moves it too (verifier round 9.39, V11: a store that
+    // kept the first value it heard stayed green on one send).
+    send({ type: 'settings', canvasAutoFit: true, tweaks: {}, livenessThresholdMs: 150_000 });
+    expect(idle()).toBe('1');
+    send({ type: 'settings', canvasAutoFit: true, tweaks: {}, livenessThresholdMs: 300_000 });
+    expect(idle()).toBe('0');
     expect(
       panel.container.querySelector('[data-fact="idleResumes"] [data-testid="insights-fact-note"]')
         ?.textContent,

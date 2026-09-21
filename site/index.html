@@ -42,9 +42,9 @@
   html{-webkit-text-size-adjust:100%}
   body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-primary);line-height:1.7;-webkit-font-smoothing:antialiased}
   a{color:var(--blue-light);text-decoration:none;transition:color var(--t-fast)}
-  a:hover{color:var(--blue-bright)}
+  a:hover{color:var(--blue-bright);text-decoration:underline;text-underline-offset:3px}
   a:focus-visible,summary:focus-visible{outline:2px solid var(--blue-bright);outline-offset:3px}
-  ::selection{background:var(--blue);color:var(--text-inverse)}
+  ::selection{background:var(--blue-light);color:var(--text-inverse)}
   code,.mono{font-family:var(--font-mono);font-size:.9em}
   code:not(.block){color:var(--blue-bright);background:var(--blue-soft);padding:.05em .35em;border-radius:var(--radius-sm)}
   h1,h2,h3{line-height:1.15;color:var(--text-primary)}
@@ -77,7 +77,7 @@
   .button{display:inline-block;padding:11px 20px;border:1px solid var(--bg-card-border-hv);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-mono);font-size:.84rem;font-weight:500;transition:all var(--t-base)}
   .button:hover{border-color:var(--blue-light);color:var(--blue-bright)}
   .button.primary{background:var(--blue-light);border-color:var(--blue-light);color:var(--text-inverse)}
-  .button.primary:hover{background:var(--blue-bright);border-color:var(--blue-bright);color:var(--text-inverse)}
+  .button.primary:hover{background:var(--blue-bright);border-color:var(--blue-bright);color:var(--text-inverse);text-decoration:none}
   .button .arrow{display:inline-block;transition:transform var(--t-base)}
   .button:hover .arrow{transform:translateX(4px)}
   figure{margin:0}
@@ -128,7 +128,7 @@
   .compat .row.head{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-secondary);background:var(--bg-secondary)}
   .compat .row b{color:var(--text-primary);font-weight:600}
   .compat .mono{color:var(--blue-bright)}
-  .callout{background:var(--orange-soft);border-left:2px solid var(--orange);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:14px 18px;max-width:var(--measure);margin:24px 0;color:var(--text-secondary)}
+  .callout{background:var(--orange-soft);border-left:2px solid var(--orange);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:14px 18px;max-width:var(--measure);margin:24px 0;color:var(--text-primary)}
   /* faq */
   .faq details{border-bottom:1px solid var(--border);padding:14px 0;max-width:var(--measure)}
   .faq summary{cursor:pointer;color:var(--text-primary);font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center}
@@ -163,7 +163,7 @@
       <span class="eyebrow"><i class="dot"></i> VS Code extension · Open source · <span id="version">0.9.0</span></span>
       <h1>See the shape of your agent work.</h1>
       <p class="intro">Agent Deck turns a scrolling swarm of coding-agent activity into a live, legible map—sessions, subagents, tool calls, and cost, all inside VS Code. Claude Code, OpenCode and Codex, side by side in one panel.</p>
-      <div class="actions"><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install Agent Deck <span>→</span></a><a class="button" href="#see">See how it works</a></div>
+      <div class="actions"><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install Agent Deck <span class="arrow">→</span></a><a class="button" href="#see">See how it works</a></div>
       <figure class="hero-shot">
         <img src="media/tree.png" alt="Agent Deck showing one session as a live tree: the root agent and the two subagents it spawned" width="1635" height="1804">
         <figcaption>One session, two subagents, live tree.</figcaption>

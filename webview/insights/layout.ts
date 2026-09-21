@@ -128,6 +128,18 @@ export interface FreeInsightsLayout {
   readonly tiles: readonly InsightTile[];
 }
 
+/**
+ * Milliseconds as seconds, EXACTLY: `120`, `90.5`, `1,800`. The tile states
+ * the rule it counted by, and a rounded rule is a different rule (verifier
+ * round 9.39, D11: 90,500 ms read "91 s").
+ */
+function secondsOf(ms: number): string {
+  const whole = Math.trunc(ms / 1000);
+  const rest = ms - whole * 1000;
+  const fraction = rest === 0 ? '' : `.${String(rest).padStart(3, '0').replace(/0+$/, '')}`;
+  return `${formatCount(whole)}${fraction}`;
+}
+
 /** A count as the surface prints it: `12,345`. */
 function formatCount(n: number): string {
   return String(Math.trunc(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -205,7 +217,7 @@ export function freeInsightsLayout(
       ...count('idleResumes', 'long-idle resumes', idleResumes),
       // The threshold on the tile, because it is the user's setting now
       // (DoD 9.38) and a count without its rule is not a fact anyone can check.
-      note: `sessions with a gap of ${formatCount(Math.round(idleThresholdMs / 1000))} s or more`,
+      note: `sessions with a gap of ${secondsOf(idleThresholdMs)} s or more`,
     },
     count('rereadLoops', 're-read loops', rereadLoops),
     count('failedCalls', 'failed tool calls', failedCalls),

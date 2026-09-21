@@ -800,7 +800,9 @@ describe('9.35 / 9.37 — the plans, on the index and on the Insights subpage', 
 
   it('the index links the subpage from its nav and from a card, and states the amounts', () => {
     expect(PAGE).toMatch(/<div class="links">[^]*?<a href="insights\.html">Insights<\/a>[^]*?<\/div>/);
-    expect(PAGE).toMatch(/<article class="card">[^]*?<a href="insights\.html">/);
+    // Inside ONE card (verifier round 9.39, D4): the lazy match crossed
+    // article boundaries, so any earlier card plus a later link satisfied it.
+    expect(PAGE).toMatch(/<article class="card">(?:(?!<\/article>)[^])*<a href="insights\.html">/);
     const plans = PAGE.slice(PAGE.indexOf('id="plans"'));
     for (const amount of ['$10', '$50', '$100']) expect(plans).toContain(amount);
   });

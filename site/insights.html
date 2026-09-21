@@ -43,9 +43,9 @@
   html{-webkit-text-size-adjust:100%}
   body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-primary);line-height:1.7;-webkit-font-smoothing:antialiased}
   a{color:var(--blue-light);text-decoration:none;transition:color var(--t-fast)}
-  a:hover{color:var(--blue-bright)}
+  a:hover{color:var(--blue-bright);text-decoration:underline;text-underline-offset:3px}
   a:focus-visible,summary:focus-visible{outline:2px solid var(--blue-bright);outline-offset:3px}
-  ::selection{background:var(--blue);color:var(--text-inverse)}
+  ::selection{background:var(--blue-light);color:var(--text-inverse)}
   code,.mono{font-family:var(--font-mono);font-size:.9em}
   code:not(.block){color:var(--blue-bright);background:var(--blue-soft);padding:.05em .35em;border-radius:var(--radius-sm)}
   h1,h2,h3{line-height:1.15;color:var(--text-primary)}
@@ -78,7 +78,7 @@
   .button{display:inline-block;padding:11px 20px;border:1px solid var(--bg-card-border-hv);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-mono);font-size:.84rem;font-weight:500;transition:all var(--t-base)}
   .button:hover{border-color:var(--blue-light);color:var(--blue-bright)}
   .button.primary{background:var(--blue-light);border-color:var(--blue-light);color:var(--text-inverse)}
-  .button.primary:hover{background:var(--blue-bright);border-color:var(--blue-bright);color:var(--text-inverse)}
+  .button.primary:hover{background:var(--blue-bright);border-color:var(--blue-bright);color:var(--text-inverse);text-decoration:none}
   .button .arrow{display:inline-block;transition:transform var(--t-base)}
   .button:hover .arrow{transform:translateX(4px)}
   figure{margin:0}
@@ -129,7 +129,7 @@
   .compat .row.head{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-secondary);background:var(--bg-secondary)}
   .compat .row b{color:var(--text-primary);font-weight:600}
   .compat .mono{color:var(--blue-bright)}
-  .callout{background:var(--orange-soft);border-left:2px solid var(--orange);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:14px 18px;max-width:var(--measure);margin:24px 0;color:var(--text-secondary)}
+  .callout{background:var(--orange-soft);border-left:2px solid var(--orange);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:14px 18px;max-width:var(--measure);margin:24px 0;color:var(--text-primary)}
   /* faq */
   .faq details{border-bottom:1px solid var(--border);padding:14px 0;max-width:var(--measure)}
   .faq summary{cursor:pointer;color:var(--text-primary);font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center}
@@ -164,7 +164,7 @@
     <section class="wrap" id="does"><span class="tag">What it does</span><h2>Your stats, your CLI, your click.</h2>
       <div class="facts">
         <article><h3>Sent on an explicit click</h3><p>Insights hands the Layer 1 stats Agent Deck recorded to the agent CLI you already have installed, with one prompt and a strict output schema. It happens when you click, and you see the exact bytes first.</p></article>
-        <article><h3>Evidence you can check</h3><p>Every finding carries evidence rows: a session, a stats key and a number. Each row resolves to a fact in Agent Deck’s own records.</p></article>
+        <article><h3>Evidence you can check</h3><p>Every finding carries evidence rows: a session, a stats key and a value. Each row resolves to a fact in Agent Deck’s own records.</p></article>
         <article><h3>An offline licence key</h3><p>The licence is a signed key pasted into a setting and verified on your machine. There is no activation server and no account check.</p></article>
         <article><h3>No network call from the extension</h3><p>The extension opens no connection. The CLI you run talks to its own provider, on your account, as it does whenever you use it.</p></article>
       </div>

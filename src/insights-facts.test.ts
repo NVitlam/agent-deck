@@ -238,6 +238,9 @@ describe('each fact is counted from its own field', () => {
     expect(idle(five, 300_000)?.count).toBe(1);
     // ...and the tile states the rule it counted by.
     expect(idle(five, 300_000)?.note).toBe('sessions with a gap of 300 s or more');
+    // EXACTLY, never rounded (verifier round 9.39, D11: 90,500 ms read "91 s").
+    expect(idle(five, 90_500)?.note).toBe('sessions with a gap of 90.5 s or more');
+    expect(idle(five, 1_800_250)?.note).toBe('sessions with a gap of 1,800.25 s or more');
   });
 
   it('a gap BELOW the idle threshold is not a resume; AT it, it is', () => {

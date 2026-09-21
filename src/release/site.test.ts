@@ -518,6 +518,109 @@ describe('v0.9.0 DoD 9.34 — the Insights subpage', () => {
     expect(stated(light, 'blue-light', 'bg-primary')).toBeCloseTo(7.0, 0);
   });
 
+  it('EVERY rule that sets a text colour meets AA on the ground it sits on, in both schemes', () => {
+    /*
+     * Verifier round 9.39, D3: the test above checks a GRID of chosen pairs, so
+     * a rule re-coloured to a token outside the grid — the eyebrow at 3.95:1,
+     * `::selection` at 4.39:1 — stayed green. This reads the RULES: every
+     * `color:var(--x)` in the sheet, on the rule's own `background:var(--y)`
+     * when it sets one (composited over every surface it can sit on), and on
+     * every surface otherwise.
+     */
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .map((m) => ({ selector: (m[1] ?? '').trim(), body: m[2] ?? '' }))
+      .filter((r) => /(^|;)color:var\(--/.test(r.body));
+    expect(rules.length, 'no rule sets a colour - the check would be vacuous').toBeGreaterThan(20);
+    const NON_TEXT = new Set(['li::marker']);
+    for (const selector of NON_TEXT) expect(rules.map((r) => r.selector)).toContain(selector);
+    let pairs = 0;
+    for (const [scheme, tokens] of [['dark', dark], ['light', light]] as const) {
+      const page = parseColour(tokens['bg-primary'] ?? '');
+      const surfaces = [
+        page,
+        over(parseColour(tokens['bg-secondary'] ?? ''), page),
+        over(parseColour(tokens['bg-card'] ?? ''), page),
+        over(parseColour(tokens['bg-card-hover'] ?? ''), page),
+        over(parseColour(tokens['bg-header'] ?? ''), page),
+      ];
+      for (const rule of rules) {
+        const ink = /(?:^|;)color:var\(--([a-z-]+)\)/.exec(rule.body)?.[1] ?? '';
+        const fill = /background:var\(--([a-z-]+)\)/.exec(rule.body)?.[1];
+        // A decorative mark sets no text; the grey is refused separately below.
+        const grounds =
+          fill === undefined
+            ? surfaces
+            : surfaces.map((s) => over(parseColour(tokens[fill] ?? ''), s));
+        // A list MARKER is a graphic, not text: the system's accent-cool-mid is
+        // "4.4:1 UI/large" and names list markers as a use, and WCAG's
+        // non-text threshold is 3:1. Named here, by selector, so no text rule
+        // can borrow the lower bar.
+        const floor = NON_TEXT.has(rule.selector) ? 3 : 4.5;
+        for (const ground of grounds) {
+          const r = ratio(parseColour(tokens[ink] ?? ''), ground);
+          pairs += 1;
+          expect(r, `${scheme}: ${rule.selector} sets --${ink}${fill ? ` on --${fill}` : ''} at ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(floor);
+        }
+      }
+    }
+    expect(pairs).toBeGreaterThan(200);
+  });
+
+  it('keeps the system’s shape rules: no drop shadow, the two radii, mono captions', () => {
+    // Verifier round 9.39, W3/W9: true today and untested. "No drop shadow,
+    // ever — depth is border + background lift only"; "radius-sm 4px, radius
+    // 8px, round 50% for status dots only; no larger radii"; captions in
+    // IBM Plex Mono .74rem.
+    const shadows = [...css.matchAll(/([^{}]+)\{[^{}]*box-shadow:([^;}]+)/g)].map((m) => (m[1] ?? '').trim());
+    // The one box-shadow is the brand dot's SPREAD ring (0 0 0 3px): a ring, not a shadow.
+    expect(shadows).toStrictEqual(['.mark']);
+    expect(css).toContain('box-shadow:0 0 0 3px var(--blue-soft)');
+    const radii = [...css.matchAll(/border-radius:([^;}]+)/g)].map((m) => (m[1] ?? '').trim());
+    expect(radii.length).toBeGreaterThan(8);
+    for (const value of radii) {
+      for (const part of value.split(/\s+/)) {
+        expect(['var(--radius)', 'var(--radius-sm)', '50%', '0'], `border-radius:${value}`).toContain(part);
+      }
+    }
+    expect(css).toContain('--radius:8px;--radius-sm:4px;');
+    const caption = /\n {2}figcaption\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(caption).toContain('font-family:var(--font-mono)');
+    expect(caption).toContain('font-size:.74rem');
+    expect(caption).toContain('letter-spacing:.04em');
+  });
+
+  it('underlines a link on hover, so colour is never the only signal', () => {
+    // Verifier round 9.39, D5. The primary button's second signal is its
+    // arrow, which moves; every other link and button underlines.
+    expect(css).toMatch(/\n {2}a:hover\{[^}]*text-decoration:underline/);
+    expect(css).toMatch(/\.button:hover \.arrow\{transform:translateX\(4px\)\}/);
+    for (const [name, html] of Object.entries(PAGES)) {
+      for (const button of html.match(/<a class="button primary"[^>]*>[^]*?<\/a>/g) ?? []) {
+        expect(button, `${name}: a primary button without the arrow that moves`).toContain('<span class="arrow">→</span>');
+      }
+    }
+  });
+
+  it('the hero is one sentence of fact, and the four things it does are the amendment’s four', () => {
+    // W5/W6. The hero sentence and the "what it does" titles, pinned; the
+    // whole subpage's own words scanned for advice with the G10 list.
+    const hero = /<p class="intro">([^<]+)<\/p>/.exec(INSIGHTS)?.[1] ?? '';
+    expect(hero.split(/[.!?](\s|$)/).filter((s) => s.trim().length > 0)).toHaveLength(1);
+    const does = /<section class="wrap" id="does">[^]*?<div class="facts">([^]*?)<\/div>/.exec(INSIGHTS)?.[1] ?? '';
+    expect([...does.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1])).toStrictEqual([
+      'Sent on an explicit click',
+      'Evidence you can check',
+      'An offline licence key',
+      'No network call from the extension',
+    ]);
+    const words = INSIGHTS.replace(/<style[^]*?<\/style>/, ' ').replace(/<[^>]+>/g, ' ');
+    for (const banned of ['should', 'recommend', 'consider', 'try', 'improve', 'better', 'bad', 'good', 'waste']) {
+      expect(new RegExp(`\\b${banned}\\b`, 'i').test(words), `insights.html says "${banned}"`).toBe(false);
+    }
+    // Control: the scan can fail.
+    expect(/\bshould\b/i.test('You should try it')).toBe(true);
+  });
+
   it('never sets TEXT in the decorative grey, which the system rules is not a text colour', () => {
     // #3E4758 is 2.1:1 on the dark page; the reference site used it for
     // captions, labels and comments, and the system demoted it.

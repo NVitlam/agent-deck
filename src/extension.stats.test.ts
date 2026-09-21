@@ -697,7 +697,10 @@ describe('DoD 4.11: a session with no patch in this process lifetime never flush
     }
     expect(h.pipeline.idleFlushes).toBe(0);
     expect(linesOn(h.dir)).toStrictEqual([]);
-  });
+    // 60 s, not vitest's 5 s default (v0.9.0 site-delta gate, 2026-09-21):
+    // 240 pumps over 28 sessions take 1.2 s alone and took 7.8 s in one full
+    // run under load. Budgeted rather than re-rolled — the recorded class.
+  }, 60_000);
 
   it('gates the ENDED path too, which is how a history is usually discovered', () => {
     // Measured before the fix: 28 appends, 0 idle flushes. The ended path has

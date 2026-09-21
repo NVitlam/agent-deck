@@ -133,7 +133,13 @@
  *    the host's table, it arrives on the `viewControls` message, and the
  *    unions here are checked against it rather than trusted.
  */
-export const CANVAS_CONTRACT_VERSION = 7;
+/*
+ * **8 is v0.9.0 DoD 9.27–9.32 — one window.** Spec `Amendment 2026-09-21 — One
+ * window, Insights provider, Menu-only entry`. {@link ViewMode} gains
+ * `'insights'` and `'about'`: both are surfaces of the one panel now, and the
+ * About panel is deleted. `TESTID` gains the ids the two surfaces emit.
+ */
+export const CANVAS_CONTRACT_VERSION = 8;
 
 /* ------------------------------------------------------------------------ *
  * Layout
@@ -258,11 +264,16 @@ export const DEFAULT_LIVENESS_FILTER: LivenessFilter = 'all';
  * THREE AGAIN, and `src/view/controls.ts` writes the same three for the host.
  * `controls.test.ts` holds the two lists against each other, because this
  * module is the renderer's and that one may not import it.
+ *
+ * **FIVE since v0.9.0 DoD 9.27** (spec `Amendment 2026-09-21 — One window`):
+ * Insights and About are SURFACES of the one panel, switched in place from the
+ * Menu, so the renderer has a mode for each. Insights comes back as a panel
+ * mode, which is what DoD 9.14 removed — a sidebar tab then, a surface now.
  */
-export type ViewMode = 'canvas' | 'list' | 'stats';
+export type ViewMode = 'canvas' | 'list' | 'stats' | 'insights' | 'about';
 
-/** The three modes, in the order the View submenu renders them. */
-export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats'];
+/** The five modes: the two session renderers, then the three other surfaces. */
+export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats', 'insights', 'about'];
 
 /** The default at startup and after a reload. Canvas, immediately, no setting. */
 export const DEFAULT_VIEW_MODE: ViewMode = 'canvas';
@@ -399,6 +410,23 @@ export const TESTID = {
   /** One ENGINE's line inside a series (DoD 4.12). Never shared across engines. */
   statsTrendLine: 'stats-trend-line',
   statsTrendPoint: 'stats-trend-point',
+  /* Insights surface — v0.9.0 DoD 9.29/9.30 */
+  /** The surface root. `data-state` is `free` (no provider) or `provider`. */
+  insightsSurface: 'insights-surface',
+  insightsFact: 'insights-fact',
+  insightsExample: 'insights-example',
+  insightsGetTile: 'insights-get-tile',
+  /** The paid state's Run action — it calls the registered provider. */
+  insightsRun: 'insights-run',
+  insightsLatest: 'insights-latest',
+  insightsFinding: 'insights-finding',
+  insightsHistoryRow: 'insights-history-row',
+  /* About surface — v0.9.0 DoD 9.32 */
+  aboutSurface: 'about',
+  aboutLink: 'about-link',
+  aboutGetTile: 'about-get-tile',
+  aboutProvider: 'about-provider',
+  aboutFooter: 'about-footer',
   /*
    * FORTY-TWO IDS WERE REMOVED HERE BY v0.9.0 DoD 9.14, and the removal is
    * the point rather than tidying: a testid with no element is a selector

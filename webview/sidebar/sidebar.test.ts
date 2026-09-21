@@ -53,7 +53,7 @@ import type { ControlSection, ViewControls } from '../../src/view/controls.js';
 import type { WebviewToHostMessage } from '../../src/model/events.js';
 import type { WebviewHarness } from '../testkit.js';
 import { all, loadHarness, one, press } from '../testkit.js';
-import { sidebarCommands } from './model.js';
+import { FREE_INSIGHTS_VALUE, OPEN_INSIGHTS_ID, sidebarCommands } from './model.js';
 import type { SidebarState } from './model.js';
 
 let harness: WebviewHarness;
@@ -76,12 +76,12 @@ interface Mounted {
 
 const mounted: Mounted[] = [];
 
-/** The default state: nothing set, nothing installed, no drawer. */
+/** The default state: nothing set, no provider registered, no drawer. */
 function baseState(over: Partial<SidebarState> = {}): SidebarState {
   return {
     controls: DEFAULT_VIEW_CONTROLS,
     tweaks: {},
-    insightsInstalled: false,
+    provider: null,
     drawerOpen: false,
     ...over,
   };
@@ -246,13 +246,14 @@ function golden(name: string, actual: string): void {
  * ------------------------------------------------------------------------ */
 
 describe('the strip', () => {
-  it('is the amendment’s four, with Menu open and ONE page showing', () => {
+  it('is the amendment’s three, with Menu open and ONE page showing', () => {
+    // Menu | View | Tweaks since v0.9.0 DoD 9.28 — the Insights tab is
+    // deleted, and Insights is a surface of the panel reached from Menu.
     const panel = mount();
     expect(all(panel.container, 'sidebar-tab').map((t) => t.textContent)).toStrictEqual([
       'Menu',
       'View',
       'Tweaks',
-      'Insights',
     ]);
     // ONE page at a time is the whole reason the strip exists: the native
     // tree that shipped in the morning showed all four at once and was
@@ -504,45 +505,59 @@ describe('the Tweaks page', () => {
   });
 });
 
-describe('the Insights page', () => {
-  it('offers ONE entry when Insights is not installed', () => {
-    const panel = mount(baseState({ insightsInstalled: false }));
-    openPage(panel, 'insights');
-    expect(all(panel.container, 'sidebar-row').map((r) => r.dataset['command'])).toStrictEqual([
-      'agentDeck.insights.get',
-    ]);
-    expect(all(panel.container, 'sidebar-detail').map((d) => d.textContent)).toStrictEqual([
-      'Opens the Insights page in your browser.',
-    ]);
+describe('the Insights state, on the Menu entry that opens it — DoD 9.28, 9.31', () => {
+  /*
+   * The Insights TAB is gone (spec `Amendment 2026-09-21 — One window`).
+   * What the sidebar still says about Insights it says on Menu ▸ Open
+   * Insights, as a grey value the way a collapsed group states its own: the
+   * registered provider's name and version, or "facts only". The state comes
+   * from the HOST — the next block drives that through `activate()` — so
+   * here it is the renderer's half: it shows what it was told, both ways.
+   */
+  const insightsValueOf = (panel: Mounted): string | null | undefined =>
+    row(panel, OPEN_INSIGHTS_ID).querySelector('[data-testid="sidebar-value"]')?.textContent;
+
+  function row(panel: Mounted, command: string): HTMLElement {
+    const found = all(panel.container, 'sidebar-row').find((r) => r.dataset['command'] === command);
+    if (found === undefined) throw new Error(`no row for ${command}`);
+    return found;
+  }
+
+  it('with NO provider registered: "facts only"', () => {
+    const panel = mount(baseState({ provider: null }));
+    expect(insightsValueOf(panel)).toBe(FREE_INSIGHTS_VALUE);
   });
 
-  it('offers TWO when it is, each with its own explanation', () => {
-    const panel = mount(baseState({ insightsInstalled: true }));
-    openPage(panel, 'insights');
-    expect(all(panel.container, 'sidebar-row').map((r) => r.dataset['command'])).toStrictEqual([
-      'agentDeck.insights.open',
-      'agentDeck.insights.run',
-    ]);
-    expect(all(panel.container, 'sidebar-detail')).toHaveLength(2);
+  it('with a provider registered: its name and version', () => {
+    const panel = mount(baseState({ provider: { name: 'Agent Deck Insights', version: '0.2.0' } }));
+    expect(insightsValueOf(panel)).toBe('Agent Deck Insights 0.2.0');
   });
 
-  it('NO COUNTS, NO EXAMPLES, and no licence anywhere', () => {
-    /*
-     * The amendment drops the 9.6 teaser from the parent: it belongs to the
-     * Insights extension's own window and to the site. Asserted over BOTH
-     * states and over the page's whole text, because a count row that came
-     * back under a different label would pass a check on the command list.
-     */
-    for (const installed of [true, false]) {
-      const panel = mount(baseState({ insightsInstalled: installed }));
-      openPage(panel, 'insights');
-      const text = one(panel.container, 'sidebar-page').textContent ?? '';
-      for (const gone of ['compaction', 're-read', 'See an example', 'Example', 'licen', 'session']) {
-        expect(text.toLowerCase(), `${String(installed)}: ${gone}`).not.toContain(
-          gone.toLowerCase(),
-        );
+  it('a state message moves it, both ways, with no reload', () => {
+    const panel = mount(baseState());
+    expect(insightsValueOf(panel)).toBe(FREE_INSIGHTS_VALUE);
+    send(baseState({ provider: { name: 'Agent Deck Insights', version: '0.2.0' } }));
+    expect(insightsValueOf(panel)).toBe('Agent Deck Insights 0.2.0');
+    send(baseState({ provider: null }));
+    expect(insightsValueOf(panel)).toBe(FREE_INSIGHTS_VALUE);
+  });
+
+  it('a malformed provider reads as NONE, never as "undefined undefined"', () => {
+    const panel = mount(baseState());
+    send({ ...baseState(), provider: { name: 7 } } as unknown as SidebarState);
+    expect(insightsValueOf(panel)).toBe(FREE_INSIGHTS_VALUE);
+  });
+
+  it('nothing on any page names installation, a licence, a count or an example', () => {
+    for (const provider of [null, { name: 'Agent Deck Insights', version: '0.2.0' }]) {
+      const panel = mount(baseState({ provider }));
+      for (const section of CONTROL_SECTIONS) {
+        openPage(panel, section.id);
+        const text = (one(panel.container, 'sidebar-page').textContent ?? '').toLowerCase();
+        for (const gone of ['install', 'licen', 'example', 'compaction']) {
+          expect(text, `${section.id}: ${gone}`).not.toContain(gone);
+        }
       }
-      expect(/\d/.test(text), `${String(installed)}: a number reached the page`).toBe(false);
       panel.dispose();
       mounted.pop();
     }
@@ -564,13 +579,12 @@ describe('the DOM goldens', () => {
     }
   });
 
-  it('Insights, in both of its two states', () => {
-    for (const [name, installed] of [
-      ['insights-missing', false],
-      ['insights-installed', true],
+  it('Menu, with a provider registered — the other Insights state', () => {
+    for (const [name, provider] of [
+      ['menu-provider', { name: 'Agent Deck Insights', version: '0.2.0' }],
     ] as const) {
-      const panel = mount(baseState({ insightsInstalled: installed }));
-      openPage(panel, 'insights');
+      const panel = mount(baseState({ provider }));
+      openPage(panel, 'menu');
       golden(name, domText(panel));
       panel.dispose();
       mounted.pop();
@@ -651,9 +665,9 @@ describe('every control the sidebar can send passes the host’s own guard', () 
    */
   function everyCommandPosted(): string[] {
     const posted: string[] = [];
-    for (const installed of [false, true]) {
+    for (const provider of [null, { name: 'Agent Deck Insights', version: '0.2.0' }]) {
       for (const drawerOpen of [false, true]) {
-        const panel = mount(baseState({ insightsInstalled: installed, drawerOpen }));
+        const panel = mount(baseState({ provider, drawerOpen }));
         for (const section of CONTROL_SECTIONS) {
           openPage(panel, section.id);
           /*
@@ -708,8 +722,10 @@ describe('every control the sidebar can send passes the host’s own guard', () 
   it('clicks every row, and the set is exactly what the model says it can send', () => {
     const posted = new Set(everyCommandPosted());
     const reachable = new Set([
-      ...sidebarCommands(baseState({ insightsInstalled: false, drawerOpen: false })),
-      ...sidebarCommands(baseState({ insightsInstalled: true, drawerOpen: true })),
+      ...sidebarCommands(baseState({ provider: null, drawerOpen: false })),
+      ...sidebarCommands(
+        baseState({ provider: { name: 'Agent Deck Insights', version: '0.2.0' }, drawerOpen: true }),
+      ),
     ]);
     expect([...posted].sort()).toStrictEqual([...reachable].sort());
     /*

@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { HostToWebviewMessage, ToolNode, WebviewToHostMessage } from '../src/model/events.js';
 import type { StatsRecord } from '../src/stats/schema.js';
 import { STATS_SCHEMA_VERSION } from '../src/stats/schema.js';
+import { aboutPage } from '../src/about.js';
 import { FIT_TRIGGERS, createStore } from './store.js';
 import type { CanvasGeometry, Store } from './store.js';
 import { VIEW_MODES } from './canvas-contract.js';
@@ -380,16 +381,19 @@ describe('DoD 4.1 — the stats messages land in the view, replaced whole', () =
 });
 
 describe('the third view mode (spec §G), as the HOST states it', () => {
-  it('VIEW_MODES lists the three, and the host names which one', () => {
+  it('VIEW_MODES lists the five, and the host names which one', () => {
     /*
-     * THREE AGAIN as of v0.9.0 DoD 9.14. `'insights'` was the fourth in
+     * FIVE as of v0.9.0 DoD 9.27: spec `Amendment 2026-09-21 — One window`
+     * makes Insights and About surfaces of this panel, so each is a mode.
+     *
+     * Before that: THREE as of v0.9.0 DoD 9.14. `'insights'` was the fourth in
      * v0.9.0 DoD 9.6; spec `Amendment 2026-09-20` moves that whole tab into
      * the native sidebar tree, which is not a panel mode. The list is pinned
      * as a SET AND A COUNT because `src/view/controls.ts` writes the same
      * three for the host and `controls.test.ts` holds the two against each
      * other.
      */
-    expect(VIEW_MODES).toStrictEqual(['canvas', 'list', 'stats']);
+    expect(VIEW_MODES).toStrictEqual(['canvas', 'list', 'stats', 'insights', 'about']);
 
     const store = createStore();
     for (const mode of VIEW_MODES) {
@@ -568,6 +572,7 @@ describe('the message guard in main.ts and the contract agree', () => {
       { type: 'settings', canvasAutoFit: true, tweaks: {} },
       viewControls({ surface: 'stats' }),
       { type: 'viewAction', action: 'resetView' },
+      { type: 'providerState', page: aboutPage('0.9.0'), provider: null },
     ];
     /*
      * THE GUARD COVERS BOTH SURFACES, AND THE STORE IS ONLY ONE OF THEM.
@@ -612,7 +617,7 @@ describe('the message guard in main.ts and the contract agree', () => {
       type: 'sidebarState',
       controls: DEFAULT_VIEW_CONTROLS,
       tweaks: {},
-      insightsInstalled: true,
+      provider: { name: 'Agent Deck Insights', version: '0.2.0' },
       drawerOpen: true,
     });
     expect(JSON.stringify(store.getView())).toBe(before);

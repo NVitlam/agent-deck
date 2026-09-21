@@ -33,6 +33,8 @@ import type { SessionEmission } from '../model/session.js';
 // The allow-list, from the one table. `controls.ts` has no imports at all, so
 // this adds nothing to the layer `apply.test.ts` pins.
 import { isControlCommand } from '../view/controls.js';
+// The About links, for the `aboutLink` index bound. `about.ts` has no imports.
+import { ABOUT_LINKS } from '../about.js';
 import { applySessionPatch } from './apply.js';
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,16 @@ export const WEBVIEW_TO_HOST_TYPES = [
    * reads it.
    */
   'drawerState',
+  /*
+   * v0.9.0 DoD 9.29–9.32 — the two surfaces that joined the panel. About's
+   * tile names a link BY INDEX, never by url; the Insights surface's Get tile
+   * and Run action carry nothing at all. Each is an intent the host checks
+   * again before acting: the index against the array, Get against the one
+   * url it holds, Run against whether a provider is registered.
+   */
+  'aboutLink',
+  'insightsGet',
+  'insightsRun',
 ] as const;
 
 /**
@@ -219,6 +231,22 @@ export function isWebviewToHostMessage(
         // A boolean and nothing else: no truthiness, because the next thing
         // the host does is state it to a second surface.
         return typeof ownDataProperty(value, 'open') === 'boolean';
+      case 'aboutLink': {
+        // An integer INSIDE the array, or nothing. The next thing the host
+        // does with it is ask to open a url, so a renderer may name one of
+        // our four links and never a value of its own.
+        const index = ownDataProperty(value, 'index');
+        return (
+          typeof index === 'number' &&
+          Number.isInteger(index) &&
+          index >= 0 &&
+          index < ABOUT_LINKS.length
+        );
+      }
+      case 'insightsGet':
+      case 'insightsRun':
+        // No payload. The type IS the whole message.
+        return true;
       default:
         return false;
     }

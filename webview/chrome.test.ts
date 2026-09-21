@@ -89,16 +89,44 @@ const ALLOWED: Readonly<Record<string, string>> = Object.freeze({
     'the Statistics window’s own tab strip — `Amendment 2026-09-20 — Sidebar shape` rules it ' +
     'back into the window as a third exception. It runs a host COMMAND, so the value still has ' +
     'one owner and Menu ▸ Open Statistics still lands on Files.',
+  /*
+   * v0.9.0 DoD 9.29–9.32. `Amendment 2026-09-21 — One window` makes About and
+   * Insights SURFACES of this panel and names what each carries: the About
+   * page's tiles (round 3, now in-window), a lit Get tile, and the Insights
+   * surface's Get tile and Run action. Each is an INTENT the host checks
+   * again — a tile asks before it opens anything, and Run calls the
+   * registered provider and nothing else.
+   */
+  [TESTID.aboutLink]:
+    'the About surface’s link tiles — `Amendment 2026-09-21 — One window` brings the round-3 ' +
+    'page into this panel. Each asks before it opens anything.',
+  [TESTID.aboutGetTile]:
+    'the About surface’s lit Get tile — `Amendment 2026-09-21 — One window`, shown only while ' +
+    'no Insights provider is registered. It asks before it opens anything.',
+  [TESTID.insightsGetTile]:
+    'the Insights surface’s Get tile — `Amendment 2026-09-21 — One window`, in the free state ' +
+    'only. It asks before it opens anything.',
+  [TESTID.insightsRun]:
+    'the Insights surface’s Run action — `Amendment 2026-09-21 — One window`, in the provider ' +
+    'state only. It calls the registered provider and nothing else.',
 });
 
 /**
  * Every exemption that is NOT a content interaction, pinned as a set.
  *
- * Two, and the amendments name both. This is what stops the allow-list
- * growing a fourth entry quietly: adding one means editing this array, which
- * is a line a reviewer reads.
+ * Six, and the amendments name every one: the dismiss, the Stats tabs, and
+ * the four the one-window amendment gives the About and Insights surfaces.
+ * This is what stops the allow-list growing an entry quietly: adding one
+ * means editing this array, which is a line a reviewer reads.
  */
-const EXCEPTIONS = ['degraded-dismiss', 'stats-tab'];
+const EXCEPTIONS = [
+  'degraded-dismiss',
+  'stats-tab',
+  TESTID.aboutLink,
+  TESTID.aboutGetTile,
+  TESTID.insightsGetTile,
+  TESTID.insightsRun,
+];
 
 /** Everything a browser treats as clickable, by selector. */
 const CLICKABLE = [
@@ -227,13 +255,15 @@ describe('the allow-list itself', () => {
         why.startsWith('content item') ||
           why.startsWith('expand/collapse') ||
           why.startsWith('the degraded-status dismiss') ||
-          why.startsWith('the Statistics window’s own tab strip'),
+          why.startsWith('the Statistics window’s own tab strip') ||
+          why.startsWith('the About surface’s') ||
+          why.startsWith('the Insights surface’s'),
         `${id}: ${why}`,
       ).toBe(true);
     }
   });
 
-  it('the dismiss and the Stats tabs are the ONLY non-content entries', () => {
+  it('the dismiss, the Stats tabs and the four surface intents are the ONLY non-content entries', () => {
     const notContent = Object.entries(ALLOWED).filter(
       ([, why]) => !why.startsWith('content item') && !why.startsWith('expand/collapse'),
     );
@@ -373,6 +403,82 @@ describe('every surface is content only', () => {
     expect(all(panel.container, TESTID.deckEmpty).length).toBe(1);
     expect(clickables(panel.container)).toStrictEqual([]);
   });
+
+  /** A registered provider's checked snapshot, as the host sends it. */
+  const PROVIDER_STATE = {
+    type: 'providerState',
+    page: { text: 'Agent Deck draws the sessions.', links: [{ label: 'Portfolio', host: 'nvitlam.github.io' }, { label: 'Repository', host: 'github.com' }, { label: 'LinkedIn', host: 'www.linkedin.com' }, { label: 'Sponsor', host: 'github.com' }], get: { label: 'Get Agent Deck Insights', host: 'nvitlam.github.io' }, footer: 'Agent Deck 0.9.0 · MIT licence' },
+    provider: {
+      about: { name: 'Agent Deck Insights', version: '0.2.0' },
+      latest: {
+        runId: 'run-1',
+        createdAt: 1_790_000_000_000,
+        agent: 'claude',
+        window: { sinceMs: 1_789_400_000_000, sessions: 3 },
+        findings: [
+          {
+            kind: 'stall',
+            confidence: 'medium',
+            evidence: [{ statsKey: 'sessions[0].totals.stalls', value: 2 }],
+          },
+        ],
+        findingsRejected: 0,
+      },
+      runs: [{ runId: 'run-1', createdAt: 1_790_000_000_000, outcome: 'findings', findings: 1 }],
+      running: false,
+      dropped: 0,
+    },
+  };
+
+  it('the INSIGHTS surface carries its Get tile (free) or Run (provider), and nothing else', () => {
+    // FREE: facts are content, not controls; the Get tile is the one intent.
+    const free = render();
+    const records = [record('s1'), record('s2')];
+    send({ type: 'statsStore', records, enabled: true });
+    send(viewControls({ surface: 'insights' }));
+    expect(all(free.container, TESTID.insightsSurface).length).toBe(1);
+    expect(all(free.container, TESTID.insightsFact).length).toBeGreaterThan(0);
+    expect(clickables(free.container)).toStrictEqual([TESTID.insightsGetTile]);
+    expect(chrome(free.container)).toStrictEqual([]);
+    free.dispose();
+    mounted.pop();
+
+    // PROVIDER: the finding, the history, and Run — Run is the one intent.
+    const paid = render();
+    send(PROVIDER_STATE);
+    send(viewControls({ surface: 'insights' }));
+    expect(all(paid.container, TESTID.insightsFinding).length).toBe(1);
+    expect(clickables(paid.container)).toStrictEqual([TESTID.insightsRun]);
+    expect(chrome(paid.container)).toStrictEqual([]);
+  });
+
+  it('the ABOUT surface carries its tiles — and the lit Get tile only while no provider', () => {
+    const free = render();
+    send({ ...PROVIDER_STATE, provider: null });
+    send(viewControls({ surface: 'about' }));
+    expect(all(free.container, TESTID.aboutSurface).length).toBe(1);
+    expect(clickables(free.container)).toStrictEqual([
+      TESTID.aboutLink,
+      TESTID.aboutLink,
+      TESTID.aboutLink,
+      TESTID.aboutLink,
+      TESTID.aboutGetTile,
+    ]);
+    expect(chrome(free.container)).toStrictEqual([]);
+    free.dispose();
+    mounted.pop();
+
+    const paid = render();
+    send(PROVIDER_STATE);
+    send(viewControls({ surface: 'about' }));
+    expect(clickables(paid.container)).toStrictEqual([
+      TESTID.aboutLink,
+      TESTID.aboutLink,
+      TESTID.aboutLink,
+      TESTID.aboutLink,
+    ]);
+    expect(chrome(paid.container)).toStrictEqual([]);
+  });
 });
 
 /* ------------------------------------------------------------------------ *
@@ -462,7 +568,9 @@ describe('the shipped bundle carries no control the DOM walk might miss', () => 
       'view-toggle',
       'stats-toggle',
       'insights-toggle',
-      'about-link',
+      // `about-link` was the chrome bar's About BUTTON until DoD 9.14. The
+      // id is back since DoD 9.32 as the About SURFACE's tiles — a ruled
+      // exception above — so it is no longer a removed id.
       'insights-view',
       'insights-action',
       'stats-engine-chip',

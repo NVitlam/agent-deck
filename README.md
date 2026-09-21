@@ -221,22 +221,29 @@ code --install-extension nvitlam.agent-deck
 ```
 
 **Where to find it: the Agent Deck icon in the activity bar.** It opens a sidebar with a strip
-of four tabs — **Menu · View · Tweaks · Insights** — one open at a time. The same four are on the
-view's title menu.
+of three tabs — **Menu · View · Tweaks** — one open at a time. The same three are on the view's
+title menu.
 
-**Everything is in that sidebar or that menu. The panels are content only** — no bars, no buttons,
-no chips, with one exception noted under Statistics below. You pan, drag, zoom and select;
-everything else is a sidebar entry, a menu entry or a keyboard shortcut.
+**One window.** Deck, Statistics, Insights and About are four surfaces of the one Agent Deck panel,
+and the Menu switches between them in place — nothing opens a second panel.
+
+**Everything is in that sidebar or that menu. The panel is content only** — no bars, no buttons,
+no chips, with the exceptions noted below: Statistics' tabs, and the tiles on Insights and About.
+You pan, drag, zoom and select; everything else is a sidebar entry, a menu entry or a keyboard
+shortcut.
 
 **Menu**
 
 - **Open Deck** — the session deck, in the first editor group. It comes back to the deck from
-  wherever you are, including from Statistics, and keeps the renderer you chose.
+  wherever you are, and keeps the renderer you chose.
 - **Open Statistics** — the same panel, on its Stats view, always on the **Files** tab.
+- **Open Insights** — the same panel, on its [Insights](#insights) surface. The sidebar shows
+  beside it which state that surface is in: *facts only*, or the name and version of the Insights
+  provider that is registered.
 - **Show Diagnostics** — the Agent Deck output channel.
 - **Settings** — VS Code's settings, filtered to Agent Deck.
 - **Clear Stats History** — removes the local stats history, after a confirmation.
-- **About** — a panel with what this is and where to find it.
+- **About** — the same panel, on a page with what this is and where to find it.
 
 **View** — five collapsible groups, each showing what it is set to and folding up again once you
 choose: **Renderer** (Canvas or List), **Sessions** and **Engines** (the two filters), **Layout**
@@ -248,12 +255,9 @@ sessions, open the drawer on entering a session, open the drawer expanded. Ticki
 setting; the sidebar keeps no value of its own and shows whatever the settings say. The deck's
 opening order is `agentDeck.defaultOrdering` in Settings — the deck's own order is View ▸ Sort.
 
-**Insights** — one entry to **Get Agent Deck Insights** when it is not installed, or **Open
-Insights** and **Run Insights** when it is, each with a line saying what it does. Agent Deck never
-asks about your Insights licence; Insights handles that itself.
-
-**Statistics keeps its five tabs inside its own window** — Files, Tools, Loops & churn, Tokens,
-Trends. They are the one thing left to press on a panel.
+**Statistics keeps its five tabs** — Files, Tools, Loops & churn, Tokens, Trends. **Insights and
+About carry tiles**, and a tile that opens a web page asks first; with an Insights provider
+registered, Insights carries its **Run** action. Nothing else on the panel is pressed.
 
 **The keyboard shortcuts are unchanged**, and they work while the deck panel has focus: `a` `c`
 `o` `x` for the engines, `1` `2` `3` for the layout, `l` `r` `e` for the sort. `Escape` walks
@@ -812,43 +816,76 @@ than shortened** — a shortened path is still a path — and the record names w
 session keeps every other number it has.
 ### For extension authors
 
-`vscode.extensions.getExtension('nvitlam.agent-deck')?.exports` is Agent Deck's extension API,
-`apiVersion` 1: `getLiveStats()`, `getStoredStats({ sinceMs, limit })` and the event
-`onDidUpdateStats`, which fires for every record written and, while a session changes, at most once
-every two seconds for that session. It hands out these records and nothing else — never a session's
-tree and never a preview.
+`vscode.extensions.getExtension('nvitlam.agent-deck')?.exports` is Agent Deck's extension API.
+`apiVersion` is `2`, and version 2 only adds to version 1: `getLiveStats()`,
+`getStoredStats({ sinceMs, limit })` and the event `onDidUpdateStats`, which fires for every record
+written and, while a session changes, at most once every two seconds for that session. It hands out
+these records and nothing else — never a session's tree and never a preview.
+
+Version 2 adds `registerInsightsProvider`: `registerInsightsProvider(provider)` returns a
+disposable. A provider is:
+
+```ts
+{
+  providerVersion: 1;
+  about: { name: string; version: string };
+  getLatest(): FindingSetView | null;
+  listRuns(): RunSummary[];
+  run(): Promise<void>;
+  onDidChange: Event<void>;
+}
+```
+
+`FindingSetView` and `RunSummary` are plain JSON types defined by Agent Deck. A finding is a
+**kind** from a fixed list (re-read loop, churn chain, context churn, stall, silent subagent,
+compaction, cache miss, other), a **confidence** (low, medium, high) and **numeric evidence**, each
+item a stats-record key and a number. `providerVersion` is `1`, and a provider fires `onDidChange`
+whenever what `getLatest` or `listRuns` would return has moved. There is no text field: every word the Insights surface shows
+about a finding is Agent Deck's own. One provider at a time — a second registration throws, naming
+both — and disposing the registration returns the surface to its free state.
+
+**What a provider hands over is data: provider data is plain JSON, checked field by field, and never
+executed.** Agent Deck reads only
+the provider's own data properties, never a getter; every string must match a fixed shape (an id,
+a stats key, a name, a version); every enum is checked against its list; lists are capped (64
+findings, 16 evidence items each, 50 runs). A value that fails is dropped and counted, and the
+surface says how many were dropped. Agent Deck calls `getLatest`, `listRuns` and `run` and nothing
+else.
 
 ## Insights
 
-The **Insights** tab of the sidebar, and it holds one or two entries depending on what is
-installed. Nothing Agent Deck does depends on Insights, and no feature of Agent Deck moves behind
-it.
+**Menu ▸ Open Insights** — a surface of the one panel. Nothing Agent Deck does depends on Insights,
+and no feature of Agent Deck moves behind it.
 
-- **Not installed** — one entry, **Get Agent Deck Insights**, which opens
-  <https://nvitlam.github.io/agent-deck/> in your browser. Agent Deck hands the address to VS Code;
-  it opens no connection itself.
-- **Installed** — **Open Insights** and **Run Insights**, which run that extension's commands
-  `agentDeckInsights.open` and `agentDeckInsights.run`. Agent Deck activates Insights first when
-  it is not active yet, writes each step and the outcome to its **Agent Deck** output channel, and shows a
-  message naming the command whenever one does not run. Insights 0.1.0 has no
-  `agentDeckInsights.open`, so Open Insights says so until Insights adds it.
+**Free — no Insights provider registered.** The facts the stats history already holds for the last
+7 days, as tiles, each naming the record field it was counted from: sessions by engine,
+compactions, long-idle resumes (a gap between calls of at least
+`agentDeck.livenessThresholdMs`), re-read loops, failed tool calls, stalls, silent subagents,
+prompt and output tokens, and the cost the engines reported themselves (cost estimated by Claude
+Code or from your prices is not added in). A session read only in part is not counted, and the
+surface says how many were left out. Below them, one of three examples, labelled *"Example, based on
+a real run"*, with made-up ids; it changes each time you come back. And one tile, **Get Agent Deck
+Insights**, which asks before it opens <https://nvitlam.github.io/agent-deck/> in your browser.
 
-**Agent Deck Insights** is a separate extension that reads the same local records and groups them
-into patterns across sessions. **Agent Deck never asks about your Insights licence** — whether a
-run is permitted is Insights' own business, and it says so itself.
+**With a provider registered.** The provider's latest finding set, its run history, and a **Run**
+action that asks the provider to run once. What is shown comes from the provider through the
+[extension API](#for-extension-authors), checked field by field.
 
-*(Until 0.9.0 this was a tab beside the canvas, counting four things across your recorded sessions
-and showing worked examples. That content moved to the Insights extension's own window and to the
-project page; Agent Deck's own surface is the two entries above.)*
+**Agent Deck Insights** is a separate extension that registers as that provider. **Agent Deck has
+no knowledge of your Insights licence** — Insights registers only once it has checked its own
+licence, and Agent Deck only asks whether a provider is registered. Whether Insights is installed
+is never consulted, and the sidebar states the same thing whether or not the panel is open.
 
 ## About
 
-**Agent Deck: About** in the Command Palette, and **About** in the sidebar's Menu. A page in the
-deck's own look: a short introduction, four tiles — **Portfolio**, **Repository**, **LinkedIn** and
-**Sponsor** — and a footer line with the version and the licence (MIT). A tile asks before it
-opens anything: *"Agent Deck will open `<host>` in your browser"*, with an **Open** button. The links
-open through VS Code — the extension opens no socket for them and makes no network call of its
-own. `SECURITY.md` §1 states that and names its proofs.
+**Agent Deck: About** in the Command Palette, and **About** in the sidebar's Menu. A surface of the
+one panel, in the deck's own look: a short introduction, four tiles — **Portfolio**, **Repository**,
+**LinkedIn** and **Sponsor** — and a footer line with the version and the licence (MIT). While no
+Insights provider is registered a fifth tile, **Get Agent Deck Insights**, is lit; once one is
+registered, About names it and its version instead. A tile asks before it opens anything:
+*"Agent Deck will open `<host>` in your browser"*, with an **Open** button. The links open through
+VS Code — the extension opens no socket for them and makes no network call of its own.
+`SECURITY.md` §1 states that and names its proofs.
 
 ## Claude Code version window
 

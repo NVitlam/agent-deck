@@ -1257,8 +1257,9 @@ export interface ViewActionMessage {
  * user would see a tick that disagreed with the panel beside it.
  *
  * Sent when the view is created, on every reload (the new document knows
- * nothing), after every control command, on every configuration change, and
- * when the panel reports its drawer opening or closing.
+ * nothing), after every control command, on every configuration change, when
+ * the panel reports its drawer opening or closing, and when an Insights
+ * provider registers or goes away.
  *
  * `drawerOpen` is what makes View ▸ Inspector appear and disappear, and it is
  * the PANEL's fact: the host learns it from {@link DrawerStateMessage} and
@@ -1276,8 +1277,152 @@ export interface SidebarStateMessage {
    * {@link SettingsMessage} gives about the same record.
    */
   tweaks: Readonly<Record<string, boolean | string>>;
-  insightsInstalled: boolean;
+  /**
+   * The registered Insights provider's about, or `null` — v0.9.0 DoD 9.31.
+   *
+   * It replaced `insightsInstalled`. Spec `Amendment 2026-09-21 — One
+   * window`: **"Installed" is never consulted by the UI; the only state is
+   * "provider registered or not"**, read from the HOST, so the sidebar says
+   * the same thing with the panel open or closed. The own-eyes pass on
+   * `160e448` found the sidebar wrong with the panel closed.
+   */
+  provider: InsightsProviderAbout | null;
   drawerOpen: boolean;
+}
+
+/* ------------------------------------------------------------------------ *
+ * API v2 — the Insights provider's view types (v0.9.0 DoD 9.30)
+ * ------------------------------------------------------------------------ *
+ *
+ * Spec `Amendment 2026-09-21 — One window, Insights provider, Menu-only
+ * entry`. A provider registers through `registerInsightsProvider` on the
+ * extension API and the parent RENDERS what it returns. These are the types
+ * it returns, defined in the PARENT, and they are plain JSON.
+ *
+ * **EVERY STRING IS ALLOW-LISTED AND NO RAW MODEL OUTPUT CROSSES.** A finding
+ * is its kind, its confidence and its numeric evidence — never the model's own
+ * prose. Insights' stored finding carries a `cause` and an `action` written by
+ * the model; neither has a field here, so neither can reach the panel. Every
+ * word the Insights surface prints about a finding is the parent's own, chosen
+ * by `kind`. `src/insights-provider.ts` enforces this at runtime on every
+ * value a provider returns: enumerations are checked against their lists, and
+ * every other string against a strict shape (an id, a stats key, a name, a
+ * version). A value that fails is dropped and counted, never repaired.
+ */
+
+/** A finding's kind. The same eight Insights' validator names. */
+export type InsightsFindingKind =
+  | 're-read-loop'
+  | 'churn-chain'
+  | 'context-churn'
+  | 'stall'
+  | 'silent-subagent'
+  | 'compaction'
+  | 'cache-miss'
+  | 'other';
+
+export type InsightsConfidence = 'low' | 'medium' | 'high';
+
+/**
+ * One piece of evidence: a path into the Layer 1 payload and the NUMBER there.
+ *
+ * Numbers only. Insights' own evidence may cite a string (a file path, a tool
+ * name) — that is Layer 1 data it read from this extension, and the parent
+ * already shows it on its own surfaces. Letting it back in through a provider
+ * would be a second, unchecked route for a string, so it does not cross.
+ */
+export interface FindingEvidenceView {
+  /** `sessions[0].totals.compactions`-shaped. Checked against a strict pattern. */
+  statsKey: string;
+  value: number;
+}
+
+export interface FindingView {
+  kind: InsightsFindingKind;
+  confidence: InsightsConfidence;
+  evidence: FindingEvidenceView[];
+}
+
+/** The latest finding set, as the provider states it. */
+export interface FindingSetView {
+  /** An id — `[A-Za-z0-9._:-]`, 1 to 128 characters. */
+  runId: string;
+  /** Epoch milliseconds. */
+  createdAt: number;
+  /** Which agent CLI produced it, or `null` when the provider does not say. */
+  agent: 'claude' | 'codex' | null;
+  /** The window the run read: since when, and how many sessions. */
+  window: { sinceMs: number; sessions: number };
+  findings: FindingView[];
+  /** How many findings the provider's own validator rejected. */
+  findingsRejected: number;
+}
+
+/** One run in the history list. */
+export interface RunSummary {
+  runId: string;
+  createdAt: number;
+  /** `findings` when the run produced a finding set; `refused` when it did not. */
+  outcome: 'findings' | 'refused';
+  findings: number;
+}
+
+/** The provider's name and version, as About and the sidebar state them. */
+export interface InsightsProviderAbout {
+  /** Letters, digits, spaces and `._-`, 1 to 64 characters. */
+  name: string;
+  /** `1.2.3`-shaped, optionally with a `-prerelease` tag. */
+  version: string;
+}
+
+/** What the Insights surface is told about a registered provider. */
+export interface InsightsProviderSnapshot {
+  about: InsightsProviderAbout;
+  latest: FindingSetView | null;
+  runs: RunSummary[];
+  /** True between a Run and the provider's promise settling. */
+  running: boolean;
+  /**
+   * How many values the provider returned that failed the allow-list and were
+   * dropped. Stated on the surface, because a drop nobody can see is how a
+   * silent partial render ships.
+   */
+  dropped: number;
+}
+
+/**
+ * Everything the Insights and About surfaces need from the host — v0.9.0
+ * DoD 9.29–9.32.
+ *
+ * ONE MESSAGE, re-sent whole whenever it moves: a provider registering,
+ * changing, running or going away. `provider: null` is the free state.
+ *
+ * The About PAGE rides here too, as text the host built: the introduction,
+ * each link's label and HOST, the Get tile, and the footer with the version.
+ * Never a url. The webview bundle therefore carries no link and no name —
+ * `webview/bundle.test.ts` holds it to zero url literals, and the author's
+ * paragraph stays in the one bundle `vsix.test.ts` enumerates for it. A tile
+ * posts an INDEX and the host, which holds the urls, asks and opens.
+ */
+export interface ProviderStateMessage {
+  type: 'providerState';
+  page: AboutPageView;
+  provider: InsightsProviderSnapshot | null;
+}
+
+/** One About tile as the webview shows it: a label and the host it opens. */
+export interface AboutLinkView {
+  label: string;
+  host: string;
+}
+
+/** The About page, built by the host (`src/about.ts` `aboutPage`). */
+export interface AboutPageView {
+  text: string;
+  links: AboutLinkView[];
+  /** The lit "Get Agent Deck Insights" tile, shown while no provider is registered. */
+  get: AboutLinkView;
+  footer: string;
 }
 
 export type HostToWebviewMessage =
@@ -1290,7 +1435,8 @@ export type HostToWebviewMessage =
   | SettingsMessage
   | ViewControlsMessage
   | ViewActionMessage
-  | SidebarStateMessage;
+  | SidebarStateMessage
+  | ProviderStateMessage;
 
 export interface ExpandNodeMessage {
   type: 'expandNode';
@@ -1378,12 +1524,46 @@ export interface DrawerStateMessage {
   open: boolean;
 }
 
+/**
+ * The About surface's tile was pressed — v0.9.0 DoD 9.32.
+ *
+ * The INDEX, never a url: the renderer names one of the four links this
+ * extension defines (`src/about.ts`) and the host looks it up, asks, and only
+ * then opens it. The guard refuses any index that is not an integer inside
+ * that array.
+ */
+export interface AboutLinkMessage {
+  type: 'aboutLink';
+  index: number;
+}
+
+/**
+ * The "Get Agent Deck Insights" tile was pressed, on the Insights or the
+ * About surface. No payload: there is one page it can open, and the host
+ * holds its url.
+ */
+export interface InsightsGetMessage {
+  type: 'insightsGet';
+}
+
+/**
+ * The Insights surface's Run action — it calls the registered provider's
+ * `run()` and nothing else. A message with no provider registered does
+ * nothing, because there is nothing to call.
+ */
+export interface InsightsRunMessage {
+  type: 'insightsRun';
+}
+
 export type WebviewToHostMessage =
   | ExpandNodeMessage
   | SelectSessionMessage
   | ResyncRequestMessage
   | RunCommandMessage
-  | DrawerStateMessage;
+  | DrawerStateMessage
+  | AboutLinkMessage
+  | InsightsGetMessage
+  | InsightsRunMessage;
 
 /**
  * One tree op that could not be applied, reported instead of thrown.

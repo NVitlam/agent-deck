@@ -17,6 +17,7 @@ import { LivenessEngine } from '../model/liveness.js';
 import { slugifyWorkspace } from '../parser/tailer.js';
 import { applySessionPatch } from './apply.js';
 import { CONTROL_COMMANDS } from '../view/controls.js';
+import { ABOUT_LINKS } from '../about.js';
 import {
   SessionBridge,
   WEBVIEW_TO_HOST_TYPES,
@@ -826,7 +827,30 @@ describe('WEBVIEW_TO_HOST_TYPES is bound to the guard it describes', () => {
     // below for the other half, which is that one it does not is refused.
     runCommand: { type: 'runCommand', command: 'agentDeck.open' },
     drawerState: { type: 'drawerState', open: true },
+    // v0.9.0 DoD 9.29–9.32: the About and Insights surfaces' intents.
+    aboutLink: { type: 'aboutLink', index: 0 },
+    insightsGet: { type: 'insightsGet' },
+    insightsRun: { type: 'insightsRun' },
   };
+
+  it('`aboutLink` accepts an integer INSIDE the four links, and nothing else', () => {
+    // The host's next act is to ask to open a url, so the renderer names one
+    // of our links by index and can never bring a url of its own.
+    for (let index = 0; index < ABOUT_LINKS.length; index += 1) {
+      expect(isWebviewToHostMessage({ type: 'aboutLink', index }), String(index)).toBe(true);
+    }
+    for (const bad of [
+      { type: 'aboutLink', index: ABOUT_LINKS.length },
+      { type: 'aboutLink', index: -1 },
+      { type: 'aboutLink', index: 1.5 },
+      { type: 'aboutLink', index: '0' },
+      { type: 'aboutLink', index: Number.NaN },
+      { type: 'aboutLink' },
+      { type: 'aboutLink', url: 'https://example.invalid/' },
+    ]) {
+      expect(isWebviewToHostMessage(bad), JSON.stringify(bad)).toBe(false);
+    }
+  });
 
   it('every listed type has a case that accepts a well-formed message', () => {
     expect(Object.keys(SAMPLES).sort()).toStrictEqual([...WEBVIEW_TO_HOST_TYPES].sort());
@@ -882,11 +906,13 @@ describe('WEBVIEW_TO_HOST_TYPES is bound to the guard it describes', () => {
         entry.command,
       ).toBe(true);
     }
-    // The two that were dead, by name, so the regression has a witness.
+    // The one that was dead, by name, so the regression has a witness. (Its
+    // sibling `agentDeck.insights.get` left the table in DoD 9.28 — the
+    // Insights tab is gone — and is refused now like any id outside it.)
     expect(isWebviewToHostMessage({ type: 'runCommand', command: 'agentDeck.about' })).toBe(true);
     expect(
       isWebviewToHostMessage({ type: 'runCommand', command: 'agentDeck.insights.get' }),
-    ).toBe(true);
+    ).toBe(false);
 
     for (const outside of [
       'workbench.action.closeWindow',

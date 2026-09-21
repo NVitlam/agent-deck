@@ -22,8 +22,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { ABOUT_COMMAND, ABOUT_LINKS, ABOUT_TEXT } from './about.js';
-import { ABOUT_PANEL_VIEW_TYPE } from './about-panel.js';
+import { ABOUT_COMMAND, ABOUT_LINKS, aboutPage } from './about.js';
+import type { InsightsProvider } from './insights-provider.js';
+import type { FindingSetView } from './model/events.js';
 import {
   appendFileSync,
   existsSync,
@@ -89,18 +90,12 @@ import {
   readSettings,
   OPEN_SETTINGS_COMMAND,
   OPEN_STATS_COMMAND,
-  INSIGHTS_EXEC_COMMAND,
-  INSIGHTS_GET_COMMAND,
   INSIGHTS_PAGE_URL,
-  INSIGHTS_RUN_COMMAND,
-  INSIGHTS_SHOW_COMMAND,
-  INSIGHTS_EXTENSION_ID,
-  INSIGHTS_OPEN_COMMAND,
+  OPEN_INSIGHTS_COMMAND,
   SHOW_DIAGNOSTICS,
   EVEN_EDITOR_WIDTHS,
   SETTINGS_FILTER,
   StatsPipeline,
-  disposeAboutPanel,
   WORKBENCH_OPEN_SETTINGS,
   statsSettingDefaults,
   tweaksOf,
@@ -150,6 +145,7 @@ import {
   CONTROL_COMMANDS,
   CONTROL_SECTIONS,
   DEFAULT_VIEW_CONTROLS,
+  PANEL_VIEW_TYPE,
   SIDEBAR_VIEW_ID,
   isCommandFrom,
 } from './view/controls.js';
@@ -2209,7 +2205,7 @@ function sidebarRows(view: MockWebviewView, section: ControlSection): readonly S
     | {
         controls: ViewControls;
         tweaks: Readonly<Record<string, boolean | string>>;
-        insightsInstalled: boolean;
+        provider: { name: string; version: string } | null;
         drawerOpen: boolean;
       }
     | undefined;
@@ -2217,7 +2213,7 @@ function sidebarRows(view: MockWebviewView, section: ControlSection): readonly S
   return sidebarPage(section, {
     controls: last.controls,
     tweaks: last.tweaks,
-    insightsInstalled: last.insightsInstalled,
+    provider: last.provider,
     drawerOpen: last.drawerOpen,
   });
 }
@@ -2236,6 +2232,86 @@ function sidebarText(view: MockWebviewView, section: ControlSection): string[] {
   };
   walk(sidebarRows(view, section), 0);
   return out;
+}
+
+/**
+ * `activate()` in a window WITH a folder, so there is a host and a panel —
+ * v0.9.0 DoD 9.27–9.32: Insights and About are surfaces of that panel.
+ *
+ * Over a projects root that does not exist, so no engine has anything to
+ * read and only the panel is under test. The CALLER's describe must restore
+ * `CLAUDE_PROJECTS_ROOT` and deactivate, as every block using this does.
+ */
+async function activateWithHost(): Promise<AgentDeckApi> {
+  process.env['CLAUDE_PROJECTS_ROOT'] = join(await makeTempDir(), 'no-such-projects-root');
+  const workspacePath = join(await makeTempDir(), 'ws');
+  return onFreePort<AgentDeckApi>({
+    use: async (port) => {
+      resetVscodeMock();
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+      return activate(extensionContext());
+    },
+    collided: () => currentHost()?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+    discard: async () => {
+      await deactivate();
+    },
+  });
+}
+
+/** A finding set in the parent's view shape, with `findings` findings. */
+function fakeFindingSet(findings: number): FindingSetView {
+  return {
+    runId: 'run-2026-09-21.1',
+    createdAt: 1_790_000_000_000,
+    agent: 'claude',
+    window: { sinceMs: 1_789_400_000_000, sessions: 5 },
+    findings: Array.from({ length: findings }, () => ({
+      kind: 're-read-loop' as const,
+      confidence: 'high' as const,
+      evidence: [{ statsKey: 'sessions[0].loops[1].count', value: 7 }],
+    })),
+    findingsRejected: 0,
+  };
+}
+
+/**
+ * An Insights provider of API v2's contract — DoD 9.30 — with its own change
+ * emitter and a run counter, for the tests that drive the registry through
+ * `activate()`.
+ */
+function fakeInsightsProvider(over: Partial<InsightsProvider> = {}): {
+  provider: InsightsProvider;
+  fire: () => void;
+  runs: () => number;
+} {
+  const listeners = new Set<() => unknown>();
+  let runs = 0;
+  const provider: InsightsProvider = {
+    providerVersion: 1,
+    about: { name: 'Agent Deck Insights', version: '0.2.0' },
+    getLatest: () => fakeFindingSet(1),
+    listRuns: () => [
+      { runId: 'run-1', createdAt: 1_790_000_000_000, outcome: 'findings', findings: 1 },
+    ],
+    run: () => {
+      runs += 1;
+      return Promise.resolve();
+    },
+    onDidChange: (listener) => {
+      const bound = (): unknown => listener(undefined);
+      listeners.add(bound);
+      return { dispose: () => listeners.delete(bound) };
+    },
+    ...over,
+  };
+  return {
+    provider,
+    fire: () => {
+      for (const listener of [...listeners]) listener();
+    },
+    runs: () => runs,
+  };
 }
 
 describe('activate', () => {
@@ -7000,81 +7076,152 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     const state = posted[0] as {
       controls: Record<string, unknown>;
       tweaks: Record<string, unknown>;
-      insightsInstalled: boolean;
+      provider: unknown;
       drawerOpen: boolean;
     };
     // All four facts, in one message, read at one instant.
     expect(state.controls['renderer']).toBe('canvas');
     expect(state.controls['surface']).toBe('sessions');
     expect(state.tweaks['followNewSessions']).toBe(true);
-    expect(state.insightsInstalled).toBe(false);
+    expect(state.provider).toBeNull();
     expect(state.drawerOpen).toBe(false);
   });
 
-  it('the strip is the amendment’s four pages, in its order', async () => {
+  it('the strip is the amendment’s three pages, in its order', async () => {
     resetVscodeMock();
     await activate(extensionContext());
     const view = resolveSidebar();
-    // The PAGES are the table's, and the host is what states the values each
-    // one renders; the rendering itself is `webview/sidebar`'s own tests.
+    // Menu | View | Tweaks since DoD 9.28 — the Insights tab is deleted.
     expect(CONTROL_SECTIONS.map((section) => section.label)).toStrictEqual([
       'Menu',
       'View',
       'Tweaks',
-      'Insights',
     ]);
     for (const section of CONTROL_SECTIONS) {
       expect(sidebarRows(view, section.id).length, section.id).toBeGreaterThan(0);
     }
   });
 
-  it('a sidebar row runs its command through the REAL boundary — the About defect', async () => {
+  /*
+   * ABOUT AND INSIGHTS ARE SURFACES OF THE ONE PANEL — v0.9.0 DoD 9.27, 9.32.
+   *
+   * Every test below needs a window WITH a host, because the panel is the
+   * host's. `withHost()` builds one over a projects root that does not exist,
+   * so no engine has anything to read and nothing but the panel is under
+   * test.
+   */
+  const withHost = (): Promise<AgentDeckApi> => activateWithHost();
+
+  /** The one deck panel, or a thrown error naming what is there instead. */
+  function deckPanel(): (typeof mock.panels)[number] {
+    const panels = mock.panels.filter((p) => !p.disposed);
+    expect(panels.map((p) => p.viewType), 'exactly one live panel').toStrictEqual([PANEL_VIEW_TYPE]);
+    return panels[0] as (typeof mock.panels)[number];
+  }
+
+  /** The surface the host last stated to the panel. */
+  function lastSurface(panel: (typeof mock.panels)[number]): unknown {
+    const states = panel.webview.posted.filter(
+      (m) => (m as { type?: string }).type === 'viewControls',
+    ) as { controls: ViewControls }[];
+    return states.at(-1)?.controls.surface;
+  }
+
+  it('a sidebar row runs About through the REAL boundary — and it switches the ONE panel', async () => {
     /*
-     * THE REGRESSION TEST FOR THE DEFECT THIS WHOLE DELTA EXISTS AROUND, and
-     * it is about the MECHANISM rather than about About.
-     *
-     * v0.9.0's sidebar posted `runCommand` and the host validated it against
-     * a five-entry menu list, so `agentDeck.about` and `agentDeck.insights`
-     * were dropped at the boundary and the handler that allowed them was
-     * unreachable — two dead buttons, one line, and the test that "covered"
-     * the Insights one stopped at `panel.sent`.
-     *
-     * So this asserts the HOST ACTED, not that a message was posted: the
-     * message goes in through `fireMessage`, which is the same event the
-     * editor fires, and what is checked is the panel that opened.
+     * The About defect's regression test (DoD 9.18), moved to the shape About
+     * has now: the message goes in through `fireMessage`, the same event the
+     * editor fires, and what is checked is what the HOST did — the deck panel
+     * is open on the About surface. No second panel of any type.
      */
-    resetVscodeMock();
-    await activate(extensionContext());
+    await withHost();
     const view = resolveSidebar();
     view.fireMessage({ type: 'runCommand', command: ABOUT_COMMAND });
     await new Promise((r) => setTimeout(r, 0));
-    expect(mock.panels.map((panel) => panel.viewType)).toContain(ABOUT_PANEL_VIEW_TYPE);
+    expect(lastSurface(deckPanel())).toBe('about');
   });
 
-  it('About opens a REAL panel, and each of its four links opens its OWN url', async () => {
-    /*
-     * THE AMENDMENT'S OWN CLAUSE: "a test drives the command through a real
-     * panel and asserts the links call `env.openExternal`".
-     *
-     * Both layers. `about-panel.test.ts` clicks the real page in jsdom and
-     * proves which INDEX each button posts; this feeds those indices through
-     * the panel the real command opened and proves which URL each one
-     * reaches. A constant — `ABOUT_LINKS[0]` for every link, the mutation
-     * that survived v0.9.0 — dies on the second assertion.
-     */
+  it('About in a window with NO folder says why, and opens nothing', async () => {
+    // About was a panel of its own until DoD 9.32 and worked here. It is a
+    // surface of the deck's panel now, and this window has no deck: the
+    // answer is the one Open Deck has always given in it.
     resetVscodeMock();
     await activate(extensionContext());
+    expect(currentHost()).toBeNull();
     await mock.runCommand(ABOUT_COMMAND);
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    expect(mock.panels).toStrictEqual([]);
+    expect(mock.informationMessages).toHaveLength(2);
+    for (const message of mock.informationMessages) expect(message).toMatch(/^Agent Deck: /);
+  });
 
-    const panel = mock.panels.find((p) => p.viewType === ABOUT_PANEL_VIEW_TYPE);
-    expect(panel, 'About opened no panel').toBeDefined();
-    expect(panel?.webview.html).toContain(ABOUT_TEXT);
-    for (const link of ABOUT_LINKS) {
-      expect(panel?.webview.html, link.label).toContain(link.label);
+  it('EVERY SURFACE TO EVERY OTHER, in place: one panel, and the renderer survives — DoD 9.27', async () => {
+    /*
+     * The four Menu entries that name a surface, from each to each: sixteen
+     * transitions. After every one the ONE panel is showing the target, no
+     * second panel exists, and the Canvas/List choice made at the start is
+     * still underneath — which is the reason `renderer` and `surface` are two
+     * fields.
+     */
+    await withHost();
+    await mock.runCommand('agentDeck.view.list');
+    const ENTRIES: [string, string][] = [
+      [OPEN_COMMAND, 'sessions'],
+      [OPEN_STATS_COMMAND, 'stats'],
+      [OPEN_INSIGHTS_COMMAND, 'insights'],
+      [ABOUT_COMMAND, 'about'],
+    ];
+    let transitions = 0;
+    for (const [fromCommand, fromSurface] of ENTRIES) {
+      for (const [toCommand, toSurface] of ENTRIES) {
+        await mock.runCommand(fromCommand);
+        expect(lastSurface(deckPanel()), `${fromCommand}`).toBe(fromSurface);
+        await mock.runCommand(toCommand);
+        const panel = deckPanel();
+        expect(lastSurface(panel), `${fromSurface} -> ${toSurface}`).toBe(toSurface);
+        const states = panel.webview.posted.filter(
+          (m) => (m as { type?: string }).type === 'viewControls',
+        ) as { controls: ViewControls }[];
+        expect(states.at(-1)?.controls.renderer, `${fromSurface} -> ${toSurface}`).toBe('list');
+        transitions += 1;
+      }
     }
+    expect(transitions).toBe(16);
+    expect(currentHost()?.panelsCreated).toBe(1);
+  });
 
+  it('Open Statistics with a session id switches the surface AND carries the selection', async () => {
+    await withHost();
+    await mock.runCommand(ABOUT_COMMAND);
+    await mock.runCommand(OPEN_STATS_COMMAND, 'ses-deep-link');
+    const states = deckPanel().webview.posted.filter(
+      (m) => (m as { type?: string }).type === 'viewControls',
+    ) as { controls: ViewControls }[];
+    expect(states.at(-1)?.controls).toMatchObject({
+      surface: 'stats',
+      statsTab: 'files',
+      focusSessionId: 'ses-deep-link',
+    });
+    // ...and leaving for another surface drops the focus with the link.
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const after = deckPanel().webview.posted.filter(
+      (m) => (m as { type?: string }).type === 'viewControls',
+    ) as { controls: ViewControls }[];
+    expect(after.at(-1)?.controls.focusSessionId).toBeUndefined();
+  });
+
+  it('each About tile opens its OWN url, asked first — through the one panel', async () => {
+    /*
+     * The amendment's clause, "a test drives the command through a real panel
+     * and asserts the links call `env.openExternal`", against the panel About
+     * lives in now. A constant — `ABOUT_LINKS[0]` for every link, the mutation
+     * that survived v0.9.0 — dies on the second link.
+     */
+    await withHost();
+    await mock.runCommand(ABOUT_COMMAND);
+    const panel = deckPanel();
     mock.answerModal('Open');
-    for (const index of ABOUT_LINKS.keys()) panel?.fireMessage({ type: 'aboutLink', index });
+    for (const index of ABOUT_LINKS.keys()) panel.fireMessage({ type: 'aboutLink', index });
     await new Promise((r) => setTimeout(r, 0));
     expect(mock.openedExternal).toStrictEqual(ABOUT_LINKS.map((link) => link.url));
     expect(new Set(mock.openedExternal).size).toBe(ABOUT_LINKS.length);
@@ -7087,16 +7234,16 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
      * `showInformationMessage` call or ignoring its answer. Either makes the
      * dismissed arm below open a url, and the first loses the prompt.
      */
-    resetVscodeMock();
-    await activate(extensionContext());
+    await withHost();
     await mock.runCommand(ABOUT_COMMAND);
-    const panel = mock.panels.find((p) => p.viewType === ABOUT_PANEL_VIEW_TYPE);
+    const panel = deckPanel();
+    const before = mock.informationPrompts.length;
 
     // DISMISSED (or timed out): asked, and nothing opened.
     mock.answerModal(undefined);
-    panel?.fireMessage({ type: 'aboutLink', index: 1 });
+    panel.fireMessage({ type: 'aboutLink', index: 1 });
     await new Promise((r) => setTimeout(r, 0));
-    expect(mock.informationPrompts).toStrictEqual([
+    expect(mock.informationPrompts.slice(before)).toStrictEqual([
       // NOT modal (M3, verifier round 9.26): the brief asks for an information
       // message with a button, and a modal would block the editor for a link.
       { message: 'Agent Deck will open github.com in your browser', items: ['Open'], modal: false },
@@ -7105,66 +7252,83 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
 
     // OPEN pressed: asked again, and THEN opened — one prompt per open.
     mock.answerModal('Open');
-    panel?.fireMessage({ type: 'aboutLink', index: 0 });
+    panel.fireMessage({ type: 'aboutLink', index: 0 });
     await new Promise((r) => setTimeout(r, 0));
-    expect(mock.informationPrompts.map((p) => p.message)).toStrictEqual([
+    expect(mock.informationPrompts.slice(before).map((p) => p.message)).toStrictEqual([
       'Agent Deck will open github.com in your browser',
       'Agent Deck will open nvitlam.github.io in your browser',
     ]);
     expect(mock.openedExternal).toStrictEqual([ABOUT_LINKS[0]?.url]);
   });
 
-  it('the About footer names the version read from the manifest at activation', async () => {
-    resetVscodeMock();
-    await activate(extensionContext());
-    await mock.runCommand(ABOUT_COMMAND);
-    const panel = mock.panels.find((p) => p.viewType === ABOUT_PANEL_VIEW_TYPE);
-    const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
-    expect(panel?.webview.html).toContain(`Agent Deck ${manifest.version} · MIT licence`);
+  it('the Get tile asks, then opens the Insights page — from the panel', async () => {
+    await withHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = deckPanel();
+    const before = mock.informationPrompts.length;
+    mock.answerModal('Open');
+    panel.fireMessage({ type: 'insightsGet' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.informationPrompts.slice(before).map((p) => p.message)).toStrictEqual([
+      'Agent Deck will open nvitlam.github.io in your browser',
+    ]);
+    expect(mock.openedExternal).toStrictEqual([INSIGHTS_PAGE_URL]);
   });
 
-  it('an About message the boundary refuses opens nothing at all', async () => {
-    resetVscodeMock();
-    await activate(extensionContext());
+  it('the About PAGE reaches the panel whole — labels, hosts, and the manifest’s version', async () => {
+    await withHost();
     await mock.runCommand(ABOUT_COMMAND);
-    const panel = mock.panels.find((p) => p.viewType === ABOUT_PANEL_VIEW_TYPE);
+    const states = deckPanel().webview.posted.filter(
+      (m) => (m as { type?: string }).type === 'providerState',
+    ) as { page: unknown }[];
+    const manifest = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+    expect(states.at(-1)?.page).toStrictEqual(aboutPage(manifest.version));
+    // Never a url: the webview bundle carries none, and the page is how.
+    expect(JSON.stringify(states.at(-1)?.page)).not.toMatch(/https?:/);
+    expect(aboutPage(manifest.version).footer).toContain(manifest.version);
+  });
+
+  it('an About message the boundary refuses opens nothing and asks nothing', async () => {
+    await withHost();
+    await mock.runCommand(ABOUT_COMMAND);
+    const panel = deckPanel();
+    const before = mock.informationPrompts.length;
 
     for (const hostile of [
       { type: 'aboutLink', index: ABOUT_LINKS.length },
       { type: 'aboutLink', index: -1 },
       { type: 'aboutLink', index: '0' },
       { type: 'aboutLink', url: 'https://example.invalid/' },
+      { type: 'insightsGet', url: 'https://example.invalid/' },
       { type: 'runCommand', command: 'workbench.action.closeWindow' },
     ]) {
-      panel?.fireMessage(hostile);
+      panel.fireMessage(hostile);
     }
     await new Promise((r) => setTimeout(r, 0));
+    // `insightsGet` carrying a url is accepted — the url is an extra key the
+    // guard does not read — and it opens OUR page, never the one it named.
     expect(mock.openedExternal).toStrictEqual([]);
-    // Refused at the boundary, so not even ASKED about: a hostile index must
-    // not be able to put a prompt in front of the user either.
-    expect(mock.informationPrompts).toStrictEqual([]);
+    expect(mock.informationPrompts.slice(before).map((p) => p.message)).toStrictEqual([
+      'Agent Deck will open nvitlam.github.io in your browser',
+    ]);
     expect(mock.executed.map((e) => e.command)).not.toContain('workbench.action.closeWindow');
 
     // VACUITY CONTROL: this panel CAN open a link — the same path, one legal
     // message — so the empty list above is the guard working rather than the
     // handler never having been registered.
     mock.answerModal('Open');
-    panel?.fireMessage({ type: 'aboutLink', index: 0 });
+    panel.fireMessage({ type: 'aboutLink', index: 0 });
     await new Promise((r) => setTimeout(r, 0));
     expect(mock.openedExternal).toStrictEqual([ABOUT_LINKS[0]?.url]);
   });
 
-  it('About reveals the panel it already opened rather than stacking a second', async () => {
-    resetVscodeMock();
-    await activate(extensionContext());
+  it('About twice is ONE panel, revealed — never a second', async () => {
+    await withHost();
     await mock.runCommand(ABOUT_COMMAND);
     await mock.runCommand(ABOUT_COMMAND);
-    expect(mock.panels.filter((p) => p.viewType === ABOUT_PANEL_VIEW_TYPE)).toHaveLength(1);
-    expect(mock.panels.find((p) => p.viewType === ABOUT_PANEL_VIEW_TYPE)?.revealCount).toBe(1);
-    // ...and once it is closed, the next About opens a new one.
-    disposeAboutPanel();
-    await mock.runCommand(ABOUT_COMMAND);
-    expect(mock.panels.filter((p) => p.viewType === ABOUT_PANEL_VIEW_TYPE)).toHaveLength(2);
+    expect(mock.panels.filter((p) => p.viewType === PANEL_VIEW_TYPE)).toHaveLength(1);
+    expect(deckPanel().revealCount).toBe(1);
+    expect(currentHost()?.panelsCreated).toBe(1);
   });
 
   it('agentDeck.openSettings runs the workbench settings command, filtered to this extension', async () => {
@@ -8339,7 +8503,7 @@ describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () =>
 
     const api: AgentDeckApi = await activate(extensionContext(globalStorage));
     expect(currentHost(), 'this path is meant to have no host').toBeNull();
-    expect(api.apiVersion).toBe(1);
+    expect(api.apiVersion).toBe(2);
     expect(api.getLiveStats()).toStrictEqual([]);
     const stored = await api.getStoredStats();
     expect(stored.map((r) => r.sessionId)).toStrictEqual([seeded.sessionId]);
@@ -8360,17 +8524,13 @@ describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () =>
     const workspacePath = join(await makeTempDir(), 'ws');
     const globalStorage = await makeTempDir();
     let context: ReturnType<typeof extensionContext> | undefined;
-    await onFreePort<void>({
+    const api = await onFreePort<AgentDeckApi>({
       use: async (port) => {
         resetVscodeMock();
         mock.setWorkspaceFolder(workspacePath);
         mock.setConfig(CONFIG_SECTION, { port });
-        mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, {
-          version: '0.1.0',
-          commands: [INSIGHTS_EXEC_COMMAND],
-        });
         context = extensionContext(globalStorage);
-        await activate(context);
+        return activate(context);
       },
       collided: () => currentHost()?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
       discard: async () => {
@@ -8391,21 +8551,27 @@ describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () =>
       'an Insights line before any Insights command ran',
     ).toBe(false);
 
-    // The INSIGHTS writer: activation, then the run.
-    await mock.runCommand(INSIGHTS_RUN_COMMAND);
+    // The INSIGHTS writer (DoD 9.30): the provider registry reports a run
+    // the provider refused on the same channel. Driven the production way —
+    // the panel's Run intent reaching the registered provider.
+    api.registerInsightsProvider(
+      fakeInsightsProvider({ run: () => Promise.reject(new Error('no licence')) }).provider,
+    );
+    await mock.runCommand(OPEN_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    panel?.fireMessage({ type: 'insightsRun' });
+    await new Promise((r) => setTimeout(r, 0));
     expect(mock.outputLines.length).toBeGreaterThan(dataPathLines);
     expect(mock.outputLines.map((entry) => entry.line).join('\n')).toContain(
-      `insights ${INSIGHTS_EXEC_COMMAND}: ran on`,
+      'insights provider: no licence',
     );
 
     // ONE channel for both writers, created once.
     expect(mock.outputChannelsCreated).toStrictEqual(['Agent Deck']);
 
-    // A host ending does NOT close the channel the Insights commands still use…
+    // A host ending does NOT close the channel the registry still writes to…
     await deactivate();
     expect(mock.outputChannelsDisposed).toStrictEqual([]);
-    await mock.runCommand(INSIGHTS_RUN_COMMAND);
-    expect(mock.outputChannelsCreated).toStrictEqual(['Agent Deck']);
     // …and the extension's own teardown does.
     for (const disposable of (context as unknown as { subscriptions: { dispose(): void }[] })
       .subscriptions) {
@@ -8442,7 +8608,7 @@ describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () =>
     });
     expect(currentHost(), 'a folder is open, so this path has a host').not.toBeNull();
     expect(currentHost()?.dataPath.diagnostics.ccEnabled).toBe(false);
-    expect(api?.apiVersion).toBe(1);
+    expect(api?.apiVersion).toBe(2);
     expect(api.getLiveStats()).toStrictEqual([]);
     const stored = await api.getStoredStats();
     expect(stored.map((r) => r.sessionId)).toStrictEqual([seeded.sessionId]);
@@ -8881,7 +9047,6 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
      * registration assertion sits beside it rather than instead of it.
      */
     resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
     await activate(extensionContext());
     const view = resolveSidebar();
 
@@ -9227,190 +9392,142 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     ).not.toContain('Inspector');
   });
 
-  it('the Insights page is two states, from the same probe, and never asks about a licence', async () => {
-    resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
-    mock.setConfig(CONFIG_SECTION, {});
-    await activate(extensionContext());
-    expect(sidebarText(resolveSidebar(), 'insights')).toStrictEqual([
-      'Open Insights||',
-      'Run Insights||',
-    ]);
-
-    // BOTH arms, or a label hard-coded to one of them passes the first.
-    resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
-    mock.setConfig(CONFIG_SECTION, {});
-    await activate(extensionContext());
-    expect(sidebarText(resolveSidebar(), 'insights')).toStrictEqual([
-      'Get Agent Deck Insights||',
-    ]);
-  });
-
-  it('NO COUNTS AND NO EXAMPLES reach the parent any more', async () => {
-    /*
-     * The 9.6 teaser is dropped from Agent Deck by the amendment: it belongs
-     * to the Insights extension's own window and to the site. Asserted as an
-     * exact page rather than by absence of a word, because a count row that
-     * came back under a different label would pass a `not.toContain`.
-     */
-    resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true);
-    await activate(extensionContext());
-    const rows = sidebarRows(resolveSidebar(), 'insights');
-    expect(rows.map((row) => row.label)).toStrictEqual(['Open Insights', 'Run Insights']);
-    for (const row of rows) expect(row.kind, row.label).toBe('action');
-    expect(mock.hasCommand('agentDeck.insights.nextExample')).toBe(false);
-  });
-
-  it('Get Agent Deck Insights opens the project page through the EDITOR', async () => {
-    resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
-    await activate(extensionContext());
-    await mock.runCommand(INSIGHTS_GET_COMMAND);
-    /*
-     * `env.openExternal`, i.e. the editor opens it. The extension opens no
-     * socket, which is what lets SECURITY.md still say it makes no network
-     * call — and it is a URL rather than the Marketplace page the previous
-     * shape opened inside VS Code, because the amendment says "opens the
-     * Insights page in your browser".
-     */
-    expect(mock.openedExternal.map(String)).toStrictEqual([INSIGHTS_PAGE_URL]);
-  });
-
-  /**
-   * Insights 0.1.0's manifest, as far as the parent reads it — recorded
-   * 2026-09-21 from the installed
-   * `~/.vscode/extensions/nvitlam.agent-deck-insights-0.1.0/package.json`
-   * (read-only), and matching the Insights repository's own PLAN 3.5, which
-   * pins "exactly these four commands". `lab/docs/evidence/v0.9.0/open-insights.md`
-   * is the record.
+  /* ---------------------------------------------------------------------- *
+   * API v2 — the Insights provider, through `activate()` (DoD 9.30, 9.31)
+   * ---------------------------------------------------------------------- *
    *
-   * It is the fixture the 9.21 verifier said this repository did not have
-   * (its S3): until it existed every test read `INSIGHTS_OPEN_COMMAND` back
-   * as the same constant, so a command Insights never contributed was green.
+   * The registry's two consumers are the SIDEBAR and the PANEL, and each is
+   * reached by one production assignment — `sidebarState()`'s `provider` and
+   * the host's `providerState` getter. This repository has shipped that shape
+   * dead six times, so every test here drives both the way production does:
+   * a provider registered through the returned API, and the surfaces read
+   * back off the messages the host posted.
    */
-  const INSIGHTS_0_1_0 = {
-    version: '0.1.0',
-    commands: [
-      'agentDeckInsights.run',
-      'agentDeckInsights.pickAgent',
-      'agentDeckInsights.clearHistory',
-      'agentDeckInsights.showPayload',
-    ],
-  };
 
-  const outputOf = (): string[] => mock.outputLines.map((entry) => entry.line);
+  /** The provider the host last stated to the panel, or `undefined` for none posted. */
+  function lastProviderState(): { provider: { about: { name: string } } | null } | undefined {
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE && !p.disposed);
+    const states = (panel?.webview.posted ?? []).filter(
+      (m) => (m as { type?: string }).type === 'providerState',
+    ) as { provider: { about: { name: string } } | null }[];
+    return states.at(-1);
+  }
 
-  it('Run activates Insights FIRST, then runs its own command, and logs it — DoD 9.25', async () => {
-    resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, INSIGHTS_0_1_0);
-    await activate(extensionContext());
-    expect(mock.isExtensionActive(INSIGHTS_EXTENSION_ID)).toBe(false);
-
-    await mock.runCommand(INSIGHTS_RUN_COMMAND);
-
-    // Activated, and the command reached the handler activation registered —
-    // in the double, as in the editor, an inactive extension's command does
-    // not exist until it activates.
-    expect(mock.isExtensionActive(INSIGHTS_EXTENSION_ID)).toBe(true);
-    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_EXEC_COMMAND);
-    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_OPEN_COMMAND);
-    /*
-     * THE PARENT NEVER KNOWS THE LICENCE STATE. It asks nothing about one
-     * and refuses nothing on its behalf: Insights refuses its own run. A run
-     * that reached Insights shows no message of the parent's.
-     */
-    expect(mock.informationMessages).toStrictEqual([]);
-    expect(mock.openedExternal).toStrictEqual([]);
-    // One line to the ONE "Agent Deck" channel, naming the command.
-    expect(mock.outputLines.map((entry) => entry.channel)).toStrictEqual([
-      'Agent Deck',
-      'Agent Deck',
-    ]);
-    expect(outputOf().join('\n')).toContain(`insights ${INSIGHTS_EXEC_COMMAND}: activated`);
-    expect(outputOf().join('\n')).toContain(`insights ${INSIGHTS_EXEC_COMMAND}: ran on`);
-  });
-
-  it('Open Insights on Insights 0.1.0 SAYS it has no such command — never silence', async () => {
-    /*
-     * THE OWN-EYES DEFECT ON 94c79db: no notification, no panel, no log line.
-     * The id was never Insights' and the rejection was thrown away by a
-     * `void`. With the recorded manifest, the parent now shows a message
-     * naming the command and logs what the manifest contributes.
-     */
-    resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, INSIGHTS_0_1_0);
-    await activate(extensionContext());
-
-    await mock.runCommand(INSIGHTS_SHOW_COMMAND);
-
-    expect(mock.executed.map((e) => e.command)).toContain(INSIGHTS_OPEN_COMMAND);
-    expect(mock.informationMessages).toStrictEqual([
-      `Agent Deck Insights 0.1.0 has no command ${INSIGHTS_OPEN_COMMAND}, so it was not run.`,
-    ]);
-    expect(outputOf().join('\n')).toContain(
-      `insights ${INSIGHTS_OPEN_COMMAND}: failed on Agent Deck Insights 0.1.0 (manifest contributes it: no)`,
+  /** What the sidebar's Open Insights row shows, from the last state posted. */
+  function openInsightsValue(view: MockWebviewView): string | undefined {
+    const row = sidebarRows(view, 'menu').find(
+      (r) => r.kind === 'action' && r.command === 'agentDeck.openInsights',
     );
-  });
+    return row?.kind === 'action' ? row.value : undefined;
+  }
 
-  it('the recorded Insights 0.1.0 manifest contributes Run and does NOT contribute Open', () => {
-    // Red the day either constant moves without the record moving with it,
-    // and red the day Insights adds `open` and the record is updated — which
-    // is when Open Insights stops needing its message.
-    expect(INSIGHTS_0_1_0.commands).toContain(INSIGHTS_EXEC_COMMAND);
-    expect(INSIGHTS_0_1_0.commands).not.toContain(INSIGHTS_OPEN_COMMAND);
-  });
-
-  it('an Insights that FAILS TO ACTIVATE is named in a message, and nothing runs', async () => {
+  it('a provider registered with the panel CLOSED: the sidebar states it — DoD 9.31', async () => {
+    /*
+     * THE OWN-EYES FINDING, as a test: the sidebar was wrong with the panel
+     * closed. No folder at all here, so there is no host and no panel — the
+     * sidebar's state can only have come from the registry `activate()`
+     * holds.
+     */
     resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, {
-      ...INSIGHTS_0_1_0,
-      failOnActivate: 'boom at activation',
+    const api = await activate(extensionContext());
+    expect(currentHost()).toBeNull();
+    const view = resolveSidebar();
+    expect(openInsightsValue(view)).toBe('facts only');
+
+    const handle = api.registerInsightsProvider(fakeInsightsProvider().provider);
+    expect(mock.panels).toStrictEqual([]);
+    expect(openInsightsValue(view)).toBe('Agent Deck Insights 0.2.0');
+
+    // ...and a sidebar RESOLVED AFTER the registration states it at once.
+    expect(openInsightsValue(resolveSidebar())).toBe('Agent Deck Insights 0.2.0');
+
+    handle.dispose();
+    expect(openInsightsValue(view)).toBe('facts only');
+  });
+
+  it('INSTALLED IS NEVER CONSULTED: an installed Insights with no provider is the free state', async () => {
+    resetVscodeMock();
+    mock.setExtensionInstalled('nvitlam.agent-deck-insights', true);
+    await activateWithHost();
+    const view = resolveSidebar();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    expect(openInsightsValue(view)).toBe('facts only');
+    expect(lastProviderState()?.provider).toBeNull();
+  });
+
+  it('a provider registered BEFORE the panel exists reaches the panel created after', async () => {
+    const api = await activateWithHost();
+    expect(mock.panels.filter((p) => p.viewType === PANEL_VIEW_TYPE)).toHaveLength(0);
+    api.registerInsightsProvider(fakeInsightsProvider().provider);
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const state = lastProviderState() as {
+      provider: {
+        about: { name: string; version: string };
+        latest: { runId: string; findings: unknown[] } | null;
+        runs: { runId: string }[];
+        running: boolean;
+        dropped: number;
+      } | null;
+    };
+    expect(state.provider?.about).toStrictEqual({ name: 'Agent Deck Insights', version: '0.2.0' });
+    expect(state.provider?.latest?.runId).toBe('run-2026-09-21.1');
+    expect(state.provider?.latest?.findings).toHaveLength(1);
+    expect(state.provider?.runs.map((r) => r.runId)).toStrictEqual(['run-1']);
+    expect(state.provider?.running).toBe(false);
+    expect(state.provider?.dropped).toBe(0);
+  });
+
+  it('with the panel OPEN: registering, a change and disposal each re-state it', async () => {
+    const api = await activateWithHost();
+    const view = resolveSidebar();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    expect(lastProviderState()?.provider).toBeNull();
+
+    let findings = 1;
+    const fake = fakeInsightsProvider({
+      getLatest: () => fakeFindingSet(findings),
     });
-    await activate(extensionContext());
+    const handle = api.registerInsightsProvider(fake.provider);
+    expect(lastProviderState()?.provider?.about.name).toBe('Agent Deck Insights');
 
-    await mock.runCommand(INSIGHTS_RUN_COMMAND);
+    // onDidChange RE-RENDERS: the provider says it moved, the panel is told.
+    findings = 3;
+    fake.fire();
+    const moved = lastProviderState() as unknown as { provider: { latest: { findings: unknown[] } } };
+    expect(moved.provider.latest.findings).toHaveLength(3);
 
-    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_EXEC_COMMAND);
-    expect(mock.informationMessages).toStrictEqual([
-      `Agent Deck Insights 0.1.0 failed to activate, so ${INSIGHTS_EXEC_COMMAND} was not run: boom at activation`,
-    ]);
-    expect(outputOf().join('\n')).toContain('failed to activate: boom at activation');
+    // DISPOSAL clears to the free state, on the panel AND the sidebar.
+    handle.dispose();
+    expect(lastProviderState()?.provider).toBeNull();
+    expect(openInsightsValue(view)).toBe('facts only');
   });
 
-  it('a command that THROWS inside Insights is named in a message with its error', async () => {
-    resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, true, {
-      ...INSIGHTS_0_1_0,
-      commandErrors: { [INSIGHTS_EXEC_COMMAND]: 'store unreadable' },
-    });
-    await activate(extensionContext());
+  it('Run from the panel calls the provider ONCE; with no provider it calls nothing', async () => {
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
 
-    await mock.runCommand(INSIGHTS_RUN_COMMAND);
+    // No provider: the intent reaches the registry, which has nothing to call.
+    panel?.fireMessage({ type: 'insightsRun' });
+    await new Promise((r) => setTimeout(r, 0));
 
-    expect(mock.informationMessages).toStrictEqual([
-      `Agent Deck Insights 0.1.0 could not run ${INSIGHTS_EXEC_COMMAND}: store unreadable`,
-    ]);
-    expect(outputOf().join('\n')).toContain('(manifest contributes it: yes): store unreadable');
+    const fake = fakeInsightsProvider();
+    api.registerInsightsProvider(fake.provider);
+    panel?.fireMessage({ type: 'insightsRun' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fake.runs()).toBe(1);
   });
 
-  it('Open or Run with Insights NOT installed says so rather than doing nothing', async () => {
-    // The entries are hidden in this state, but the palette still reaches
-    // the commands; a palette run must not be the silent shape either.
+  it('a SECOND provider is refused BY NAME through the API, and the first stays', async () => {
     resetVscodeMock();
-    mock.setExtensionInstalled(INSIGHTS_EXTENSION_ID, false);
-    await activate(extensionContext());
-
-    await mock.runCommand(INSIGHTS_SHOW_COMMAND);
-    await mock.runCommand(INSIGHTS_RUN_COMMAND);
-
-    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_OPEN_COMMAND);
-    expect(mock.executed.map((e) => e.command)).not.toContain(INSIGHTS_EXEC_COMMAND);
-    expect(mock.informationMessages).toStrictEqual([
-      `Agent Deck Insights is not installed, so ${INSIGHTS_OPEN_COMMAND} was not run.`,
-      `Agent Deck Insights is not installed, so ${INSIGHTS_EXEC_COMMAND} was not run.`,
-    ]);
+    const api = await activate(extensionContext());
+    api.registerInsightsProvider(fakeInsightsProvider().provider);
+    expect(() =>
+      api.registerInsightsProvider(
+        fakeInsightsProvider({ about: { name: 'Other Insights', version: '9.9.9' } }).provider,
+      ),
+    ).toThrow(/already registered \(Agent Deck Insights 0\.2\.0\); Other Insights 9\.9\.9 was refused/);
+    expect(openInsightsValue(resolveSidebar())).toBe('Agent Deck Insights 0.2.0');
   });
 
   it('a host tells its panel the tweaks on open and on every change', async () => {

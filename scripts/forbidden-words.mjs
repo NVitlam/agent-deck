@@ -114,6 +114,9 @@ const DEFAULT_SCOPES = [
   { kind: 'dir', dir: join(REPO_ROOT, 'src', 'sidebar'), label: 'src/sidebar' },
   { kind: 'dir', dir: join(REPO_ROOT, 'src', 'view'), label: 'src/view' },
   { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'sidebar'), label: 'webview/sidebar' },
+  // v0.9.0 DoD 9.29 — the Insights SURFACE: its fact labels, its examples and
+  // the parent's words for a provider's findings. Facts, never advice.
+  { kind: 'dir', dir: join(REPO_ROOT, 'webview', 'insights'), label: 'webview/insights' },
   {
     kind: 'block',
     file: join(REPO_ROOT, 'CHANGELOG.md'),

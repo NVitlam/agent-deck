@@ -77,6 +77,8 @@ function describe(message: HostToWebviewMessage): string {
       // it is a recording of the wrong surface, and the line says so rather
       // than the switch falling through to `undefined`.
       return 'sidebarState (not a panel message)';
+    case 'providerState':
+      return `providerState (${message.provider === null ? 'free' : 'provider registered'})`;
   }
 }
 

@@ -2,10 +2,12 @@
   The activity-bar sidebar — v0.9.0 DoD 9.17, spec `Amendment 2026-09-20 —
   Sidebar shape (supersedes the TreeView ruling)`.
 
-  A HORIZONTAL STRIP AND ONE PAGE. Menu | View | Tweaks | Insights, one open
-  at a time. The native `TreeView` that shipped in the morning put all four
-  sections on screen at once with no room for an explanation under anything;
-  this is the shape the user drew instead.
+  A HORIZONTAL STRIP AND ONE PAGE. Menu | View | Tweaks, one open at a time.
+  The native `TreeView` that shipped in the morning put every section on
+  screen at once with no room for an explanation under anything; this is the
+  shape the user drew instead. (The strip had a fourth tab, Insights, until
+  v0.9.0 DoD 9.28 — spec `Amendment 2026-09-21 — One window` made Insights a
+  surface of the panel, opened from Menu.)
 
   ONLY THE OPEN PAGE IS BUILT. A hidden page that stayed mounted would be a
   second place a value could persist across a page switch; a page rebuilt
@@ -76,7 +78,7 @@
    * a short page — is lost by the third click.
    *
    * `inGroup` is `undefined` for a row that sits directly on a page (Menu's
-   * six, Reset view, both Insights entries), and nothing collapses for those.
+   * seven, Reset view), and nothing collapses for those.
    */
   const run = (command: string, inGroup: string | undefined): void => {
     source.run(command);

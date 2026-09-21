@@ -158,7 +158,11 @@ export async function loadHarness(): Promise<WebviewHarness> {
  * sixty chances to write `surface: 'sessions'` and mean it.
  */
 export function controlsForMode(mode: ViewMode): Partial<ViewControls> {
-  return mode === 'stats' ? { surface: 'stats' } : { renderer: mode, surface: 'sessions' };
+  // The three non-session surfaces (v0.9.0 DoD 9.27) leave `renderer` alone,
+  // for the reason `stats` always has.
+  return mode === 'canvas' || mode === 'list'
+    ? { renderer: mode, surface: 'sessions' }
+    : { surface: mode };
 }
 
 export function viewControls(over: Partial<ViewControls> = {}): {

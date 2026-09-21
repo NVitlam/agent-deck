@@ -34,14 +34,28 @@ literal**: a second VS Code window asking the first for its event stream, from 0
 Receiving Claude Code's telemetry, from 0.7.1, added no way to send. Zero egress here is a property
 of what the build contains, and a test fails if that changes.
 
-**The extension itself makes no network call.** From 0.9.0 the About entry offers four links —
-a portfolio, the source repository, LinkedIn and a sponsor page. Each one asks first ("Agent Deck
+**The extension itself makes no network call.** From 0.9.0 the About page offers four links —
+a portfolio, the source repository, LinkedIn and a sponsor page — and, while no Insights provider
+is registered, a fifth to the Insights page. Each one asks first ("Agent Deck
 will open `<host>` in your browser") and only then is handed to the EDITOR through
 `vscode.env.openExternal`, which opens your browser. The extension opens no socket for
 any of them, fetches nothing, and checks nothing for reachability, so the census in §4 is
 unchanged by them: one client, one loopback destination.
 Proof: `src/about.test.ts` › "every link opens through the editor and nothing else";
 `src/hooks/egress.test.ts` › "contains a server and exactly one client, whose destination is the loopback literal".
+The urls live in the extension host only: the panel is sent each tile's label and host, and a
+tile sends back an index. `webview/bundle.test.ts` › "contains only justified URL literals" holds
+the panel's bundle to none.
+
+**An Insights provider is another extension, and what it hands over is data.** From 0.9.0 the
+extension API (`apiVersion` 2) lets one extension register as the Insights provider. The
+provider data is plain JSON, checked field by field, and never executed: Agent Deck reads only
+own data properties (never a getter), matches every string against a fixed shape, checks every enum
+against its list, caps every list, and drops and counts what fails. No text from a provider is
+shown — a finding is a kind, a confidence and numbers, and every word about it is Agent Deck's own.
+Agent Deck calls the provider's `getLatest`, `listRuns` and `run`, and nothing else; it asks no
+licence question and opens no connection for it.
+Proof: `src/insights-provider.test.ts`.
 
 ---
 

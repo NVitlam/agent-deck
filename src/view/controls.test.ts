@@ -46,7 +46,7 @@ import {
   tweakKeyOf,
   viewModeOf,
 } from './controls.js';
-import type { ControlFacts, ViewControls } from './controls.js';
+import type { ControlFacts, Renderer, Surface, ViewControls, ViewMode } from './controls.js';
 import { TWEAK_SETTINGS } from '../sidebar/tweaks.js';
 import {
   ENGINE_FILTERS as RENDERER_ENGINE_FILTERS,
@@ -128,7 +128,10 @@ describe('the host writes the renderer’s own values, and they are checked', ()
       ),
     );
     expect([...reachable].sort()).toStrictEqual([...VIEW_MODES].sort());
-    expect(RENDERERS).toStrictEqual(VIEW_MODES.filter((mode) => mode !== 'stats'));
+    // The renderers are the modes that are not also a surface of their own.
+    expect(RENDERERS).toStrictEqual(
+      VIEW_MODES.filter((mode) => !(SURFACES as readonly string[]).includes(mode)),
+    );
   });
 });
 
@@ -138,16 +141,12 @@ describe('the command table', () => {
     for (const id of CONTROL_COMMAND_IDS) expect(id.startsWith('agentDeck.'), id).toBe(true);
   });
 
-  it('the strip is the amendment’s four, in its order', () => {
-    expect(CONTROL_SECTIONS.map((s) => s.label)).toStrictEqual([
-      'Menu',
-      'View',
-      'Tweaks',
-      'Insights',
-    ]);
+  it('the strip is the amendment’s three, in its order', () => {
+    // Four until v0.9.0 DoD 9.28 deleted the Insights tab.
+    expect(CONTROL_SECTIONS.map((s) => s.label)).toStrictEqual(['Menu', 'View', 'Tweaks']);
   });
 
-  it('every row is on one of the four pages, or is the window’s', () => {
+  it('every row is on one of the three pages, or is the window’s', () => {
     const pages = new Set(CONTROL_SECTIONS.map((section) => section.id));
     for (const entry of CONTROL_COMMANDS) {
       expect(pages.has(entry.section) || entry.section === 'window', entry.command).toBe(true);
@@ -240,11 +239,12 @@ describe('the command table', () => {
      * choose is a filter that does not exist.
      *
      * `surface` is NOT in the table above and that is the reason it is not:
-     * both of its values are reached from Menu — Open Deck and Open
-     * Statistics — each of which reveals the panel as well as moving the
-     * value, so neither can be a plain value-setting row (the generic
-     * registration loop would register it twice). Both are asserted here, by
-     * command id, so "no row sets it" cannot quietly become "nothing sets it".
+     * all four of its values are reached from Menu — Open Deck, Open
+     * Statistics, Open Insights and About (v0.9.0 DoD 9.27) — each of which
+     * reveals the panel as well as moving the value, so none can be a plain
+     * value-setting row (the generic registration loop would register it
+     * twice). All four are asserted here, by command id, so "no row sets it"
+     * cannot quietly become "nothing sets it".
      */
     for (const [field, values] of Object.entries(admits)) {
       const offered = CONTROL_COMMANDS.filter((e) => e.sets?.field === field).map(
@@ -253,33 +253,41 @@ describe('the command table', () => {
       expect([...offered].sort(), field).toStrictEqual([...values].sort());
     }
     expect(CONTROL_COMMANDS.filter((e) => e.sets?.field === 'surface')).toStrictEqual([]);
-    expect(CONTROL_COMMAND_IDS).toContain('agentDeck.open');
-    expect(CONTROL_COMMAND_IDS).toContain('agentDeck.openStats');
+    expect(SURFACES).toStrictEqual(['sessions', 'stats', 'insights', 'about']);
+    for (const id of ['agentDeck.open', 'agentDeck.openStats', 'agentDeck.openInsights', 'agentDeck.about']) {
+      expect(CONTROL_COMMAND_IDS, id).toContain(id);
+    }
+  });
+
+  it('`viewModeOf`: a session surface shows the renderer, every other surface itself', () => {
+    // THE ONE PLACE `renderer` and `surface` combine (DoD 9.27): both
+    // renderers under each of the four surfaces.
+    const cases: [Renderer, Surface, ViewMode][] = [
+      ['canvas', 'sessions', 'canvas'],
+      ['list', 'sessions', 'list'],
+      ['canvas', 'stats', 'stats'],
+      ['list', 'stats', 'stats'],
+      ['canvas', 'insights', 'insights'],
+      ['list', 'insights', 'insights'],
+      ['canvas', 'about', 'about'],
+      ['list', 'about', 'about'],
+    ];
+    for (const [renderer, surface, mode] of cases) {
+      expect(viewModeOf({ renderer, surface }), `${renderer}/${surface}`).toBe(mode);
+    }
   });
 
   /* ---------------------------------------------------------------------- *
    * Visibility, surfaces and the palette
    * ---------------------------------------------------------------------- */
 
-  it('`controlVisible` answers the three conditions and defaults to shown', () => {
-    const none: ControlFacts = { drawerOpen: false, insightsInstalled: false };
-    const both: ControlFacts = { drawerOpen: true, insightsInstalled: true };
-    expect(controlVisible(undefined, none)).toBe(true);
-    expect(controlVisible(undefined, both)).toBe(true);
-    expect(controlVisible('drawerOpen', none)).toBe(false);
-    expect(controlVisible('drawerOpen', both)).toBe(true);
-    expect(controlVisible('insightsInstalled', none)).toBe(false);
-    expect(controlVisible('insightsInstalled', both)).toBe(true);
-    // The two Insights arms are EXCLUSIVE, so exactly one is shown whatever
-    // the editor holds — never both, and never neither.
-    for (const installed of [true, false]) {
-      const facts: ControlFacts = { drawerOpen: false, insightsInstalled: installed };
-      expect(
-        [controlVisible('insightsInstalled', facts), controlVisible('insightsMissing', facts)]
-          .filter(Boolean).length,
-        String(installed),
-      ).toBe(1);
-    }
+  it('`controlVisible` answers its one condition and defaults to shown', () => {
+    const shut: ControlFacts = { drawerOpen: false };
+    const open: ControlFacts = { drawerOpen: true };
+    expect(controlVisible(undefined, shut)).toBe(true);
+    expect(controlVisible(undefined, open)).toBe(true);
+    expect(controlVisible('drawerOpen', shut)).toBe(false);
+    expect(controlVisible('drawerOpen', open)).toBe(true);
   });
 
   it('the Inspector entries are the ONLY ones gated on a drawer', () => {
@@ -301,22 +309,34 @@ describe('the command table', () => {
     }
   });
 
-  it('the Insights page is two states and never asks about a licence', () => {
-    const insights = CONTROL_COMMANDS.filter((e) => e.section === 'insights');
-    expect(insights.map((e) => `${e.command} when=${String(e.when)}`)).toStrictEqual([
-      'agentDeck.insights.get when=insightsMissing',
-      'agentDeck.insights.open when=insightsInstalled',
-      'agentDeck.insights.run when=insightsInstalled',
+  it('THE INSIGHTS TAB IS GONE, and nothing is gated on what is installed', () => {
+    /*
+     * v0.9.0 DoD 9.28, spec `Amendment 2026-09-21 — One window`: the strip is
+     * Menu | View | Tweaks, Insights is a SURFACE reached from Menu, and
+     * "Installed" is never consulted by the UI. Asserted by absence against
+     * the TABLE, because a row nothing renders is invisible to every other
+     * test here.
+     */
+    expect(CONTROL_SECTIONS.map((s) => s.label)).toStrictEqual(['Menu', 'View', 'Tweaks']);
+    expect(CONTROL_COMMAND_IDS.filter((id) => id.startsWith('agentDeck.insights.'))).toStrictEqual([]);
+    // `ControlFacts` has ONE member: no installed, no licence, no provider.
+    const facts: ControlFacts = { drawerOpen: false };
+    expect(Object.keys(facts)).toStrictEqual(['drawerOpen']);
+    const serialised = JSON.stringify(CONTROL_COMMANDS);
+    expect(serialised).not.toContain('licen');
+    expect(serialised).not.toContain('installed');
+  });
+
+  it('the Menu is the ruled seven, in the ruled order', () => {
+    expect(MENU_COMMANDS.map((e) => e.label)).toStrictEqual([
+      'Open Deck',
+      'Open Statistics',
+      'Open Insights',
+      'Show Diagnostics',
+      'Settings',
+      'Clear Stats History',
+      'About',
     ]);
-    // Every one carries its one-line explanation: the mock asks for it, and
-    // an entry whose name is its only explanation is one people guess at.
-    for (const entry of insights) expect((entry.detail ?? '').length, entry.command).toBeGreaterThan(20);
-    // THE PARENT NEVER KNOWS THE LICENCE STATE. `ControlFacts` has two
-    // members and neither is one, so there is nothing to gate on — asserted
-    // against the shape rather than against a comment about it.
-    const facts: ControlFacts = { drawerOpen: false, insightsInstalled: false };
-    expect(Object.keys(facts).sort()).toStrictEqual(['drawerOpen', 'insightsInstalled']);
-    expect(JSON.stringify(CONTROL_COMMANDS)).not.toContain('licen');
   });
 
   it('every Tweaks row carries its one-line explanation', () => {
@@ -350,17 +370,15 @@ describe('the command table', () => {
     expect(isCommandFrom('panel', 'agentDeck.stats.clearHistory')).toBe(false);
   });
 
-  it('the palette shows the Menu six and the Insights three, and hides the rest', () => {
+  it('the palette shows the Menu seven and hides the rest', () => {
     expect(CONTROL_COMMANDS.filter(isPaletteVisible).map((e) => e.command)).toStrictEqual([
       'agentDeck.open',
       'agentDeck.openStats',
+      'agentDeck.openInsights',
       'agentDeck.showDiagnostics',
       'agentDeck.openSettings',
       'agentDeck.stats.clearHistory',
       'agentDeck.about',
-      'agentDeck.insights.get',
-      'agentDeck.insights.open',
-      'agentDeck.insights.run',
     ]);
   });
 

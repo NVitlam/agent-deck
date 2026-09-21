@@ -10,9 +10,12 @@ All notable changes to Agent Deck are documented here.
   tool-call drawer and the Stats view are content only now: no bars, no
   buttons, no chips, no counts, no legend. You pan, drag, zoom and select;
   everything else is a menu entry.
-- **The sidebar carries a strip of four tabs** - **Menu**, **View**,
-  **Tweaks** and **Insights** - one open at a time, and the same four are on
-  the view's title menu. Menu carries Open Deck, Open Statistics, Show
+- **One panel, four surfaces.** Deck, Statistics, Insights and About are
+  surfaces of the one Agent Deck panel, and the Menu switches between them in
+  place; nothing opens a second panel.
+- **The sidebar carries a strip of three tabs** - **Menu**, **View** and
+  **Tweaks** - one open at a time, and the same three are on the view's title
+  menu. Menu carries Open Deck, Open Statistics, Open Insights, Show
   Diagnostics, Settings, Clear Stats History and About. View carries Renderer,
   Sessions, Engines, Layout and Sort as collapsible groups, each showing what
   it is set to and folding up again once you choose, plus Inspector - the
@@ -24,12 +27,10 @@ All notable changes to Agent Deck are documented here.
 - **Tweaks is three settings, each with a line saying what it does.** The
   deck's opening order is `agentDeck.defaultOrdering` in Settings; the deck's
   own order is View - Sort.
-- **Insights offers Get Agent Deck Insights when it is not installed, or Open
-  Insights and Run Insights when it is**, each with a line saying what it does.
-  Agent Deck never asks about your Insights licence; Insights handles that
-  itself.
-- **The Statistics window keeps its five tabs** - Files, Tools, Loops & churn,
-  Tokens, Trends. They are the one thing left to press on a panel.
+- **Statistics keeps its five tabs** - Files, Tools, Loops & churn, Tokens,
+  Trends. Insights and About carry tiles, and a tile that opens a web page
+  asks first; with an Insights provider registered, Insights carries its Run
+  action. Nothing else on the panel is pressed.
 - **The keyboard shortcuts are unchanged and are the editor's now.** `a` `c`
   `o` `x` for the engines, `1` `2` `3` for the layout and `l` `r` `e` for
   the sort, while the deck panel has focus. `Escape` still walks back out of a
@@ -52,19 +53,26 @@ All notable changes to Agent Deck are documented here.
 
 ### Added
 
-- **An Insights tab in the sidebar.** With Agent Deck Insights not installed it
-  offers **Get Agent Deck Insights**, which opens the project page in your
-  browser; with it installed, **Open Insights** and **Run Insights**, which run
-  that extension's commands. Agent Deck activates Insights first when it is
-  not active, writes each step and the outcome to its Agent Deck output
-  channel, and shows a message naming the command whenever one does not run.
-  Insights 0.1.0 has no command for Open Insights to run, so that entry shows
-  a message saying so until Insights adds one. Agent Deck never asks about
-  your Insights licence.
+- **An Insights surface, from Menu - Open Insights.** With no Insights
+  provider registered it shows the facts the stats history holds for the last
+  7 days - sessions by engine, compactions, long-idle resumes, re-read loops,
+  failed tool calls, stalls, silent subagents, prompt and output tokens, and
+  the cost the engines reported themselves - each naming the field it was
+  counted from, beside one of three labelled examples and a tile to get Agent
+  Deck Insights. With a provider registered it shows that provider's latest
+  findings, its run history and a Run action. The sidebar states which, beside
+  Open Insights, whether or not the panel is open.
+- **Extension API version 2.** `registerInsightsProvider` lets one extension
+  register as the Insights provider. Version 2 only adds to version 1. A
+  provider's data is plain JSON, checked field by field, and never executed; a
+  finding is a kind, a confidence and numbers, and every word about it is
+  Agent Deck's own. Agent Deck never asks about your Insights licence.
 - **An About entry**, as **Agent Deck: About** in the Command Palette and in
-  Menu. It opens a page in the deck's own look: a short introduction, four
-  tiles - Portfolio, Repository, LinkedIn and Sponsor - and a footer with the
-  version and the licence. A tile asks before it opens anything, naming the
+  Menu. It switches the panel to a page in the deck's own look: a short
+  introduction, four tiles - Portfolio, Repository, LinkedIn and Sponsor - and
+  a footer with the version and the licence. While no Insights provider is
+  registered a fifth tile, Get Agent Deck Insights, is lit; once one is, About
+  names it and its version. A tile asks before it opens anything, naming the
   host it will open in your browser, and the link then opens through VS Code;
   the extension itself still makes no network call.
 - **Which agent type a subagent was.** Each subagent in the statistics now

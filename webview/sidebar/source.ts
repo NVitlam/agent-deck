@@ -30,25 +30,38 @@
  * state starts at the shipped defaults and the host re-sends on create.
  */
 
-import type { RunCommandMessage } from '../../src/model/events.js';
+import type { InsightsProviderAbout, RunCommandMessage } from '../../src/model/events.js';
 import { DEFAULT_VIEW_CONTROLS } from '../../src/view/controls.js';
 import type { SidebarState } from './model.js';
 
 /**
  * What the sidebar shows before the host has said anything.
  *
- * The host's own defaults, plus "no tweaks set", "Insights not installed"
- * and "no drawer open" — so a document that has just loaded draws the same
- * four pages it will draw a millisecond later, with nothing ticked that is
- * not really ticked. `DEFAULT_VIEW_CONTROLS` is imported rather than copied:
- * a second defaults object here would be the stale one.
+ * The host's own defaults, plus "no tweaks set", "no Insights provider
+ * registered" and "no drawer open" — so a document that has just loaded draws
+ * the same three pages it will draw a millisecond later, with nothing ticked
+ * that is not really ticked. `DEFAULT_VIEW_CONTROLS` is imported rather than
+ * copied: a second defaults object here would be the stale one.
  */
 export const EMPTY_SIDEBAR_STATE: SidebarState = Object.freeze({
   controls: DEFAULT_VIEW_CONTROLS,
   tweaks: {},
-  insightsInstalled: false,
+  provider: null,
   drawerOpen: false,
 });
+
+/**
+ * The provider's about from an unchecked message port, or `null`.
+ *
+ * The HOST checked it against the allow-list at registration; this only
+ * refuses a shape that is not two strings, so a malformed message reads as
+ * "none registered" rather than as a throw (G3) or as `undefined undefined`.
+ */
+function providerOf(value: unknown): InsightsProviderAbout | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { name, version } = value as { name?: unknown; version?: unknown };
+  return typeof name === 'string' && typeof version === 'string' ? { name, version } : null;
+}
 
 export interface SidebarSource {
   /** The last state the host sent, or the defaults until one arrives. */
@@ -87,7 +100,7 @@ export function createSidebarSource(
       state = {
         controls: next?.controls ?? EMPTY_SIDEBAR_STATE.controls,
         tweaks: next?.tweaks ?? EMPTY_SIDEBAR_STATE.tweaks,
-        insightsInstalled: next?.insightsInstalled === true,
+        provider: providerOf(next?.provider),
         drawerOpen: next?.drawerOpen === true,
       };
       for (const listener of [...listeners]) listener();

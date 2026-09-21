@@ -79,7 +79,10 @@ describe('CANVAS_CONTRACT_VERSION', () => {
     // If this fails, someone bumped the constant. That is fine and expected —
     // but SURFACE_AT_V3 and its name are now describing a version that no
     // longer exists, so both move together or neither does.
-    expect(CANVAS_CONTRACT_VERSION).toBe(7);
+    // 8 (v0.9.0 DoD 9.27): `ViewMode` gained `insights` and `about`, and
+    // `TESTID` the ids the two surfaces emit. The runtime NAMES below did
+    // not move — `VIEW_MODES` was already exported — so the list stands.
+    expect(CANVAS_CONTRACT_VERSION).toBe(8);
   });
 
   it('pins the shared runtime surface, so the shape cannot move silently', () => {

@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ABOUT_COMMAND, ABOUT_LICENCE, ABOUT_LINKS, ABOUT_TEXT, SPONSOR_URL } from './about.js';
 import { INSIGHTS_PAGE_URL } from './extension.js';
+import { contentSecurityPolicy } from './bridge/html.js';
 
 const SPEC_PATH = fileURLToPath(new URL('../agent-deck-spec.md', import.meta.url));
 const MANIFEST_PATH = fileURLToPath(new URL('../package.json', import.meta.url));
@@ -171,48 +172,39 @@ describe('the links', () => {
   it('every link opens through the editor and nothing else', () => {
     /*
      * The claim SECURITY.md makes, checked against the source that makes it:
-     * `showAbout` reaches `vscode.env.openExternal` and no fetch, no http, no
-     * https module, no XMLHttpRequest.
+     * a tile reaches `vscode.env.openExternal` through `confirmThenOpen`,
+     * and nothing on the way reaches fetch, http, https or XMLHttpRequest.
      *
-     * A TEXT SCAN, and v0.9.0 DoD 9.14 is the release that learned what that
-     * is worth: this was `showAbout`'s ONLY cover, and a verifier replaced
-     * the label->link lookup with `ABOUT_LINKS[0]` without moving a byte it
-     * reads. It stays because the claim it checks is about what the code
-     * CANNOT reach, which no behavioural test states — and the behaviour is
-     * now driven, twice, by `src/about-panel.test.ts` and by the four
-     * "About opens a REAL panel" tests in `src/extension.test.ts`.
+     * A TEXT SCAN, and it stays one because the claim is about what the code
+     * CANNOT reach, which no behavioural test states. The behaviour itself is
+     * driven through `activate()` in `src/extension.test.ts` (a tile press
+     * asks, and only Open opens) and through the mounted panel in
+     * `webview/surfaces.test.ts` (a tile posts its index).
      *
-     * Both halves are scanned: the command, and the PAGE it opens.
+     * Three halves since DoD 9.32 moved About into the one panel: the host's
+     * confirm-then-open, the SURFACE, and the panel's CSP.
      */
-    const source = readFileSync(
-      fileURLToPath(new URL('./extension.ts', import.meta.url)),
-      'utf8',
-    ).replace(/\r\n/g, '\n');
-    // The command AND the confirm-then-open it hands a tile to (DoD 9.23).
-    const bodyOf = (signature: string): string => {
-      const at = source.indexOf(signature);
-      expect(at, `extension.ts has no ${signature}`).toBeGreaterThan(-1);
-      const from = source.slice(at);
-      return from.slice(0, from.indexOf('\n}'));
-    };
-    const body = `${bodyOf('export function showAbout')}\n${bodyOf('async function confirmThenOpen')}`;
-    expect(body).toContain('confirmThenOpen(link)');
+    const read = (path: string): string =>
+      readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
+    const source = read('./extension.ts');
+    const at = source.indexOf('async function confirmThenOpen');
+    expect(at, 'extension.ts has no confirmThenOpen').toBeGreaterThan(-1);
+    const body = source.slice(at, at + source.slice(at).indexOf('\n}'));
+    expect(body).toContain('showInformationMessage');
     expect(body).toContain('vscode.env.openExternal');
-    const page = readFileSync(
-      fileURLToPath(new URL('./about-panel.ts', import.meta.url)),
-      'utf8',
-    );
+    const surface = read('../webview/AboutSurface.svelte');
     for (const banned of ['fetch(', 'XMLHttpRequest', "require('http", 'node:http', 'axios']) {
-      expect(body.includes(banned), `showAbout reaches ${banned}`).toBe(false);
-      expect(page.includes(banned), `the About page reaches ${banned}`).toBe(false);
+      expect(body.includes(banned), `confirmThenOpen reaches ${banned}`).toBe(false);
+      expect(surface.includes(banned), `the About surface reaches ${banned}`).toBe(false);
     }
-    // The page's own CSP denies a socket even if something in it tried:
-    // `default-src 'none'` with no `connect-src` of its own. Read as the
-    // POLICY STRING rather than as the file, because the file's own header
-    // argues about `connect-src` in prose and a whole-file scan would fail
-    // on the comment that explains the rule.
-    const policy = /content="(default-src[^"]+)"/.exec(page)?.[1] ?? '';
-    expect(policy, 'the About page states no CSP').not.toBe('');
+    // The surface holds no link and no anchor: a tile posts an INDEX, and an
+    // `<a href>` in a webview is opened by the editor without asking.
+    expect(surface).not.toMatch(/https?:\/\//);
+    // Markup only: the file's own header explains the rule in prose.
+    expect(surface.replace(/<!--[\s\S]*?-->/g, '')).not.toMatch(/<a[\s>]/);
+    // And the panel it renders in denies a socket even if something tried:
+    // `default-src 'none'` with no `connect-src` of its own.
+    const policy = contentSecurityPolicy({ nonce: 'a'.repeat(32), cspSource: 'vscode-resource:' });
     expect(policy).toContain("default-src 'none'");
     expect(policy).not.toContain('connect-src');
   });

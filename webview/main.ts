@@ -125,7 +125,7 @@ export function startSidebar(target: HTMLElement, api: VsCodeApi = acquireApi())
     source.accept({
       controls: message.controls,
       tweaks: message.tweaks,
-      insightsInstalled: message.insightsInstalled,
+      provider: message.provider,
       drawerOpen: message.drawerOpen,
     });
   };

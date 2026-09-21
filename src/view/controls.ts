@@ -55,17 +55,26 @@
 /** Which renderer draws sessions. The View ▸ Renderer choice. */
 export type Renderer = 'canvas' | 'list';
 
-/** Which surface the panel is showing. Menu ▸ Open Deck / Open Statistics. */
-export type Surface = 'sessions' | 'stats';
+/**
+ * Which surface the ONE panel is showing — v0.9.0 DoD 9.27, spec `Amendment
+ * 2026-09-21 — One window, Insights provider, Menu-only entry`.
+ *
+ * Four, and every one is a surface of the single Agent Deck panel. Menu ▸ Open
+ * Deck, Open Statistics, Open Insights and About each set this field and
+ * nothing else about the surface, so the panel switches IN PLACE. The
+ * separate About panel is gone; Statistics was already a surface.
+ */
+export type Surface = 'sessions' | 'stats' | 'insights' | 'about';
 
 /**
- * What the RENDERER sees — the three-valued mode `webview/` has always used.
+ * What the RENDERER sees.
  *
  * Derived from `renderer` and `surface` by {@link viewModeOf} and never
  * stored: a second field holding it would be the second owner this split
- * exists to remove.
+ * exists to remove. `canvas`/`list` are the two ways of drawing sessions; the
+ * other three are the other surfaces, one each.
  */
-export type ViewMode = 'canvas' | 'list' | 'stats';
+export type ViewMode = 'canvas' | 'list' | 'stats' | 'insights' | 'about';
 
 /** Show only sessions of this liveness, or all of them. */
 export type LivenessFilter = 'all' | 'live' | 'idle' | 'ended';
@@ -119,14 +128,15 @@ export interface ViewControls {
 }
 
 /**
- * The renderer's three-valued mode, from the two facts that decide it.
+ * The renderer's mode, from the two facts that decide it.
  *
- * THE ONE PLACE THEY ARE COMBINED. `surface` wins, because Statistics is a
- * different surface rather than a third way of drawing sessions; the renderer
- * choice survives underneath it and Menu ▸ Open Deck comes back to it.
+ * THE ONE PLACE THEY ARE COMBINED. A non-session `surface` wins, because
+ * Statistics, Insights and About are different surfaces rather than other
+ * ways of drawing sessions; the renderer choice survives underneath them and
+ * Menu ▸ Open Deck comes back to it.
  */
 export function viewModeOf(controls: Pick<ViewControls, 'renderer' | 'surface'>): ViewMode {
-  return controls.surface === 'stats' ? 'stats' : controls.renderer;
+  return controls.surface === 'sessions' ? controls.renderer : controls.surface;
 }
 
 /* ------------------------------------------------------------------------ *
@@ -134,8 +144,8 @@ export function viewModeOf(controls: Pick<ViewControls, 'renderer' | 'surface'>)
  * ------------------------------------------------------------------------ */
 
 export const RENDERERS: readonly Renderer[] = ['canvas', 'list'];
-export const SURFACES: readonly Surface[] = ['sessions', 'stats'];
-export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats'];
+export const SURFACES: readonly Surface[] = ['sessions', 'stats', 'insights', 'about'];
+export const VIEW_MODES: readonly ViewMode[] = ['canvas', 'list', 'stats', 'insights', 'about'];
 export const LIVENESS_FILTERS: readonly LivenessFilter[] = ['all', 'live', 'idle', 'ended'];
 export const ENGINE_FILTERS: readonly EngineFilter[] = ['all', 'cc', 'oc', 'cx'];
 export const DECK_LAYOUTS: readonly DeckLayout[] = ['list', 'grid', 'lanes'];
@@ -192,13 +202,14 @@ export const PANEL_VIEW_TYPE = 'agentDeck.panel';
 /**
  * Which page of the sidebar an entry belongs to.
  *
- * The amendment names four, and they are the four the strip shows. `window`
- * is the fifth member and is NOT a page: it marks a command that is
- * contributed and registered and reachable from the Statistics window's own
- * tab strip and from the palette, and that appears in no sidebar page at all.
- * The Stats tabs are the only members, by the amendment's ruled exception.
+ * Three pages — Menu | View | Tweaks — since spec `Amendment 2026-09-21 — One
+ * window` deleted the Insights tab: Insights is a SURFACE of the panel now,
+ * reached from Menu ▸ Open Insights. `window` is the fourth member and is NOT
+ * a page: it marks a command that is contributed and registered and reachable
+ * from the Statistics surface's own tab strip, and that appears in no sidebar
+ * page at all. The Stats tabs are the only members, by the ruled exception.
  */
-export type ControlSection = 'menu' | 'view' | 'tweaks' | 'insights' | 'window';
+export type ControlSection = 'menu' | 'view' | 'tweaks' | 'window';
 
 /**
  * Which webview may post a given command (DoD 9.18).
@@ -213,18 +224,22 @@ export type ControlSurface = 'sidebar' | 'panel';
 /**
  * A condition an entry is shown under, or `undefined` for always.
  *
- * Three, and the union is closed. They are DATA rather than a branch in a
+ * ONE, and the union is closed. It is DATA rather than a branch in a
  * component, so a test can assert "Inspector is absent with no drawer open"
  * against the table instead of against a rendering of it.
+ *
+ * `insightsInstalled` and `insightsMissing` were members until v0.9.0 DoD
+ * 9.28. Spec `Amendment 2026-09-21 — One window`: **"Installed" is never
+ * consulted by the UI**; the only Insights state is whether a provider is
+ * REGISTERED, and no sidebar row is shown or hidden by it — the Menu's seven
+ * are always seven.
  */
-export type ControlWhen = 'drawerOpen' | 'insightsInstalled' | 'insightsMissing';
+export type ControlWhen = 'drawerOpen';
 
 /** The facts {@link controlVisible} decides against. */
 export interface ControlFacts {
   /** True while the panel is showing a drawer. Reported by the panel. */
   readonly drawerOpen: boolean;
-  /** True when `nvitlam.agent-deck-insights` is installed in this editor. */
-  readonly insightsInstalled: boolean;
 }
 
 /**
@@ -233,12 +248,6 @@ export interface ControlFacts {
  * ONE PREDICATE, read by the sidebar and by every test, so "Inspector appears
  * only while a drawer is open" is a single fact rather than a rule restated
  * per surface.
- *
- * **The parent never knows the LICENCE state.** `insightsInstalled` is the
- * only thing it asks, because installation is a fact about this editor and a
- * licence is Insights' own business: Insights refuses its own run when
- * unlicensed, and a parent that guessed at it would show two different wrong
- * answers on two machines.
  */
 export function controlVisible(when: ControlWhen | undefined, facts: ControlFacts): boolean {
   switch (when) {
@@ -246,10 +255,6 @@ export function controlVisible(when: ControlWhen | undefined, facts: ControlFact
       return true;
     case 'drawerOpen':
       return facts.drawerOpen;
-    case 'insightsInstalled':
-      return facts.insightsInstalled;
-    case 'insightsMissing':
-      return !facts.insightsInstalled;
   }
 }
 
@@ -275,7 +280,7 @@ export interface ControlCommand {
   /**
    * One line of fact under the label, for the pages that carry explanations.
    *
-   * Tweaks and Insights have one on every row, because the mock asks for it
+   * Tweaks has one on every row, because the mock asks for it
    * and because a setting whose name is its only explanation is a setting
    * people guess at. G10 applies: a fact about what the control does, never
    * advice and never a recommendation.
@@ -356,13 +361,17 @@ export function groupOf(id: string): ControlGroup | undefined {
   return CONTROL_GROUPS.find((group) => group.id === id);
 }
 
-/** The four pages, in the order the strip shows them. */
+/**
+ * The three pages, in the order the strip shows them: Menu | View | Tweaks.
+ *
+ * The Insights tab was the fourth until v0.9.0 DoD 9.28 (spec `Amendment
+ * 2026-09-21 — One window`). Its content is a surface of the panel now.
+ */
 export const CONTROL_SECTIONS: readonly { readonly id: ControlSection; readonly label: string }[] =
   Object.freeze([
     Object.freeze({ id: 'menu' as const, label: 'Menu' }),
     Object.freeze({ id: 'view' as const, label: 'View' }),
     Object.freeze({ id: 'tweaks' as const, label: 'Tweaks' }),
-    Object.freeze({ id: 'insights' as const, label: 'Insights' }),
   ]);
 
 /** The page the sidebar opens on. The front door, as it has always been. */
@@ -371,14 +380,16 @@ export const DEFAULT_SECTION: ControlSection = 'menu';
 /**
  * Every command, in the order it is shown.
  *
- * The Menu page's six are the v0.7.0 sidebar's own list, in the user's locked
- * order (Open Deck · Open Statistics · Show Diagnostics · Settings · Clear
- * Stats History), with About added by the 2026-09-20 amendment.
+ * The Menu page's seven are in the ruled order of spec `Amendment 2026-09-21
+ * — One window`: Open Deck · Open Statistics · Open Insights · Show
+ * Diagnostics · Settings · Clear Stats History · About. Four of them switch
+ * the ONE panel's surface in place.
  */
 export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
   /* Menu ------------------------------------------------------------------ */
   { command: 'agentDeck.open', label: 'Open Deck', section: 'menu' },
   { command: 'agentDeck.openStats', label: 'Open Statistics', section: 'menu' },
+  { command: 'agentDeck.openInsights', label: 'Open Insights', section: 'menu' },
   { command: 'agentDeck.showDiagnostics', label: 'Show Diagnostics', section: 'menu' },
   { command: 'agentDeck.openSettings', label: 'Settings', section: 'menu' },
   { command: 'agentDeck.stats.clearHistory', label: 'Clear Stats History', section: 'menu' },
@@ -625,28 +636,14 @@ export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
     detail: 'The drawer opens at its expanded height rather than its collapsed one.',
   },
 
-  /* Insights — two states, and the parent never knows the licence ---------- */
-  {
-    command: 'agentDeck.insights.get',
-    label: 'Get Agent Deck Insights',
-    section: 'insights',
-    detail: 'Opens the Insights page in your browser.',
-    when: 'insightsMissing',
-  },
-  {
-    command: 'agentDeck.insights.open',
-    label: 'Open Insights',
-    section: 'insights',
-    detail: 'Shows the latest findings.',
-    when: 'insightsInstalled',
-  },
-  {
-    command: 'agentDeck.insights.run',
-    label: 'Run Insights',
-    section: 'insights',
-    detail: 'Builds the payload, shows it for review, then sends it to your agent CLI.',
-    when: 'insightsInstalled',
-  },
+  /*
+   * The Insights page's three were here until v0.9.0 DoD 9.28 — Get, Open and
+   * Run, shown by whether the Insights EXTENSION was installed. Spec
+   * `Amendment 2026-09-21 — One window` deletes the tab: Open Insights is a
+   * Menu entry that switches the panel's surface, and "Get" and "Run" are
+   * actions ON that surface (the Get tile, and the Run action that calls the
+   * registered provider), so neither is a command any more.
+   */
 ]);
 
 /**
@@ -727,7 +724,7 @@ export const CONTROL_KEYBINDINGS: readonly { readonly command: string; readonly 
 export const KEYBINDING_WHEN = "activeWebviewPanelId == 'agentDeck.panel'";
 
 /**
- * The Menu page's six, in the user's locked order.
+ * The Menu page's seven, in the ruled order.
  *
  * Derived from {@link CONTROL_COMMANDS} rather than written again, so the
  * order a reader sees in the table is the order the page shows.
@@ -761,15 +758,14 @@ export function isCommandFrom(surface: ControlSurface, command: string): boolean
 /**
  * Does this entry appear in the command palette?
  *
- * The Menu page's six and the Insights page's three — the entries a person
- * would think to search for by name. The thirty-two granular ones (a filter,
- * a layout, a sort, an inspector option, a Stats tab) are hidden, because
- * thirty-two entries reading `Agent Deck: All` would bury every other command
- * a user has. They are reachable from the sidebar, from the submenus and,
- * for ten of them, from the keyboard.
+ * The Menu page's seven — the entries a person would think to search for by
+ * name. The granular ones (a filter, a layout, a sort, an inspector option, a
+ * Stats tab) are hidden, because thirty-odd entries reading `Agent Deck: All`
+ * would bury every other command a user has. They are reachable from the
+ * sidebar, from the submenus and, for ten of them, from the keyboard.
  */
 export function isPaletteVisible(entry: ControlCommand): boolean {
-  return entry.section === 'menu' || entry.section === 'insights';
+  return entry.section === 'menu';
 }
 
 /**

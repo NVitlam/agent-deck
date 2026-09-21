@@ -9,6 +9,8 @@
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
   import StatsView from './stats/StatsView.svelte';
+  import InsightsSurface from './insights/InsightsSurface.svelte';
+  import AboutSurface from './AboutSurface.svelte';
   import { displayLiveness, formatTokens, formatWindowTokens } from './format.js';
   import { TESTID } from './canvas-contract.js';
   import { deckEngine } from './layout.js';
@@ -211,6 +213,36 @@
     <!-- The Layer 1 facts. Full stats live in the panel (locked open
          question); this is the whole field while the mode is on. -->
     <StatsView {store} {view} />
+  {:else if view.viewMode === 'insights'}
+    <!-- v0.9.0 DoD 9.29/9.30 — the Insights SURFACE, in this one panel (spec
+         `Amendment 2026-09-21 — One window`). Its facts are the STORED
+         history's; its state is whether a provider is registered, and that
+         is the host's `providerState`, never a guess made here.
+
+         EVERY PROP IS PASSED HERE AND THIS IS THE ONLY MOUNT. That sentence
+         has been paid for six times in this release line — a prop the
+         component honours and the parent never passes — so
+         `surfaces.test.ts` drives it through the mounted app. -->
+    <InsightsSurface
+      records={view.statsStored}
+      loaded={view.statsStoreLoaded}
+      enabled={view.statsStoreEnabled}
+      provider={view.insightsProvider}
+      exampleCount={view.insightsExampleCount}
+      getHost={view.aboutPage?.get.host ?? null}
+      onget={() => store.getInsights()}
+      onrun={() => store.runInsights()}
+    />
+  {:else if view.viewMode === 'about'}
+    <!-- v0.9.0 DoD 9.32 — About, in this one panel rather than a panel of
+         its own. Same rule as above: every prop is passed here, and the
+         mounted-app test is what can see one go missing. -->
+    <AboutSurface
+      provider={view.insightsProvider}
+      page={view.aboutPage}
+      onlink={(index) => store.openAboutLink(index)}
+      onget={() => store.getInsights()}
+    />
   {:else if view.viewMode === 'list'}
     <!-- Phase 3's renderer, kept for one release behind the toggle (C7.2).
          Both surfaces are projections of the same store, so the state grammar

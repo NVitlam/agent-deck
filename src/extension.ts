@@ -127,16 +127,16 @@ import * as vscode from 'vscode';
 import { SessionBridge, isWebviewToHostMessage } from './bridge/messages.js';
 import type { BridgeDegradedState } from './bridge/messages.js';
 import { SIDEBAR_ROOT_ID, createNonce, webviewHtml } from './bridge/html.js';
-import { ABOUT_COMMAND } from './about.js';
-import type { AboutLink } from './about.js';
 import {
-  ABOUT_PANEL_TITLE,
-  ABOUT_PANEL_VIEW_TYPE,
+  ABOUT_COMMAND,
+  ABOUT_LINKS,
+  INSIGHTS_GET_LINK,
+  INSIGHTS_PAGE_URL,
   aboutConfirmation,
-  aboutLinkFor,
-  aboutPanelHtml,
-} from './about-panel.js';
-import { invokeInsights } from './insights-invoke.js';
+  aboutPage,
+} from './about.js';
+import type { AboutLink } from './about.js';
+import { InsightsProviderRegistry } from './insights-provider.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
 import { StatsUpdateEmitter, createAgentDeckApi } from './api.js';
@@ -179,8 +179,12 @@ import { LivenessEngine } from './model/liveness.js';
 import { SessionModel, diffSessionState } from './model/session.js';
 import type { SessionDiff, SessionEmission } from './model/session.js';
 import type {
+  AboutLinkMessage,
   HostToWebviewMessage,
+  InsightsGetMessage,
+  InsightsRunMessage,
   NormalizedHookEvent,
+  ProviderStateMessage,
   SessionState,
   SettingsMessage,
   SidebarStateMessage,
@@ -3606,6 +3610,14 @@ export class PanelController {
   /** The last control state sent, re-posted on reload (DoD 9.14). */
   #viewControls: ViewControlsMessage | null = null;
 
+  /**
+   * The last Insights/About state sent, re-posted on reload (DoD 9.29–9.32),
+   * for the reason the two slots above give: a reloaded document knows
+   * nothing, and without this a hidden-then-shown panel would show the free
+   * Insights surface while a provider was registered.
+   */
+  #providerState: ProviderStateMessage | null = null;
+
   constructor(options: PanelControllerOptions) {
     this.#panel = options.panel;
     this.#onMessage = options.onMessage ?? ((): void => {});
@@ -3649,6 +3661,7 @@ export class PanelController {
         // which filter the user had chosen and the sidebar's tick would be
         // describing a state nothing was in.
         if (this.#viewControls !== null) this.#panel.postMessage(this.#viewControls);
+        if (this.#providerState !== null) this.#panel.postMessage(this.#providerState);
       }),
     );
     if (options.onDispose !== undefined) {
@@ -3713,6 +3726,20 @@ export class PanelController {
   sendViewAction(action: 'resetView' | 'openDeck'): void {
     if (this.#disposed) return;
     this.#panel.postMessage({ type: 'viewAction', action });
+  }
+
+  /**
+   * State the Insights and About surfaces' facts — v0.9.0 DoD 9.29–9.32.
+   *
+   * THE WHOLE STATE, every time, like {@link PanelController.sendViewControls}:
+   * the registered provider's checked snapshot or `null`, and the extension's
+   * version. Sent at creation, on reload, and whenever the registry reports a
+   * change.
+   */
+  sendProviderState(state: Omit<ProviderStateMessage, 'type'>): void {
+    if (this.#disposed) return;
+    this.#providerState = { type: 'providerState', ...state };
+    this.#panel.postMessage(this.#providerState);
   }
 
   /**
@@ -4341,6 +4368,27 @@ export interface AgentDeckHostOptions extends DataPathOptions {
    * mark as the panel's before this is ever reached.
    */
   onRunCommand?: (command: string) => void;
+  /**
+   * The Insights and About surfaces' state, READ at the moment a panel is
+   * created — v0.9.0 DoD 9.29–9.32.
+   *
+   * A GETTER, for the reason `viewControls` above is one and learned the
+   * hard way: the registry lives in `activate()`, because a provider can
+   * register in a window with no panel, and the host must ask for the
+   * current answer when it builds a panel rather than hold a copy. A later
+   * change reaches an OPEN panel through {@link AgentDeckHost.sendProviderState}.
+   */
+  providerState?: () => Omit<ProviderStateMessage, 'type'>;
+  /**
+   * The About tile, the Get tile and the Run action — DoD 9.29–9.32.
+   *
+   * Injected for the reason `onRunCommand` is: what they do (a confirmation,
+   * `openExternal`, the provider's `run()`) is the editor's and the
+   * registry's, and this class stays testable without either. The guard has
+   * already checked the message's shape; the handler checks it again against
+   * what it names.
+   */
+  onSurfaceIntent?: (message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage) => void;
   /** Injected so a test can assert the emitted document byte for byte. */
   nonce?: string;
   /**
@@ -4554,6 +4602,19 @@ export class AgentDeckHost {
   #onDrawerState: (open: boolean) => void = () => {};
   /** Where a panel's `runCommand` goes. A sink by default (DoD 9.18). */
   #onRunCommand: (command: string) => void = () => {};
+  /**
+   * How this host reads the Insights/About state (DoD 9.29–9.32). Defaults to
+   * the free state with no version, which is what a host test that is about
+   * something else gets — and `activate()` passes the real one.
+   */
+  #providerState: () => Omit<ProviderStateMessage, 'type'> = () => ({
+    page: aboutPage(null),
+    provider: null,
+  });
+  /** Where a surface's tile or Run action goes. A sink by default (DoD 9.29). */
+  #onSurfaceIntent: (
+    message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage,
+  ) => void = () => {};
   #panelsCreated = 0;
   #disposed = false;
   /** `agentDeck.canvas.autoFit`, as last read. Sent to every panel (DoD 4.0). */
@@ -4585,6 +4646,8 @@ export class AgentDeckHost {
       viewControls,
       onDrawerState,
       onRunCommand,
+      providerState,
+      onSurfaceIntent,
       nonce,
       onEmission,
       createDiagnosticsSink,
@@ -4596,6 +4659,8 @@ export class AgentDeckHost {
     if (viewControls !== undefined) this.#viewControls = viewControls;
     if (onDrawerState !== undefined) this.#onDrawerState = onDrawerState;
     if (onRunCommand !== undefined) this.#onRunCommand = onRunCommand;
+    if (providerState !== undefined) this.#providerState = providerState;
+    if (onSurfaceIntent !== undefined) this.#onSurfaceIntent = onSurfaceIntent;
     this.#canvasAutoFit = options.settings['canvas.autoFit'];
     this.#tweaks = tweaksOf(options.settings);
     if (nonce !== undefined) this.#nonce = nonce;
@@ -4935,6 +5000,15 @@ export class AgentDeckHost {
   }
 
   /**
+   * Tell an OPEN panel the Insights/About state moved (DoD 9.29–9.32). A
+   * no-op with no panel: the next `open()` reads the getter anyway, so a
+   * change while the deck is closed is not lost — it is simply read later.
+   */
+  sendProviderState(): void {
+    this.#panel?.sendProviderState(this.#providerState());
+  }
+
+  /**
    * Assemble the counters line from whatever is authoritative right now.
    *
    * Nothing is accumulated in the channel: `DiagnosticsCounters` documents why
@@ -5102,6 +5176,20 @@ export class AgentDeckHost {
           this.#onRunCommand(message.command);
           return;
         }
+        /*
+         * The About and Insights surfaces' three intents (DoD 9.29–9.32).
+         * Relayed, not acted on here: a confirmation, `openExternal` and a
+         * provider's `run()` are the editor's and the registry's, and
+         * `activate()` owns both.
+         */
+        if (
+          message.type === 'aboutLink' ||
+          message.type === 'insightsGet' ||
+          message.type === 'insightsRun'
+        ) {
+          this.#onSurfaceIntent(message);
+          return;
+        }
         if (message.type !== 'resyncRequest') return;
         this.diagnostics?.record({
           kind: 'resyncRequest',
@@ -5126,6 +5214,10 @@ export class AgentDeckHost {
     // the settings come after the snapshot: the renderer's default is the
     // host's default, so nothing is decided wrongly in the gap.
     controller.sendViewControls(this.#viewControls());
+    // ...and the Insights/About state (DoD 9.29–9.32), READ NOW from the
+    // getter: a provider that registered while no panel existed is exactly
+    // the case a held copy would miss.
+    controller.sendProviderState(this.#providerState());
     return controller;
   }
 
@@ -5172,74 +5264,39 @@ export const OPEN_SETTINGS_COMMAND = 'agentDeck.openSettings';
 /** The workbench command `agentDeck.openSettings` runs, and its argument. */
 export const WORKBENCH_OPEN_SETTINGS = 'workbench.action.openSettings';
 
-/**
- * Layer 2, as a separate extension — v0.9.0 DoD 9.6.
+/*
+ * `INSIGHTS_EXTENSION_ID`, the two command ids Insights was invoked by
+ * (`agentDeckInsights.open`/`.run`) and the parent's own three Insights
+ * commands (`agentDeck.insights.get`/`.open`/`.run`) were here until v0.9.0
+ * DoD 9.28–9.30, with `isInsightsInstalled()` and the About panel.
  *
- * Named here, once, and read by `#settingsMessage()` and by the command
- * below. Agent Deck never requires it, never activates it and never fails
- * because it is absent: everything Layer 1 does, it does alone.
+ * Spec `Amendment 2026-09-21 — One window, Insights provider, Menu-only
+ * entry` replaces all of it. **"Installed" is never consulted by the UI**; the
+ * only Insights state is whether a provider is REGISTERED through the API
+ * (`src/insights-provider.ts`), and the parent renders what it returns rather
+ * than running another extension's commands by name. About is a SURFACE of
+ * the one panel, not a panel of its own.
  */
-export const INSIGHTS_EXTENSION_ID = 'nvitlam.agent-deck-insights';
 
 /**
- * The two commands Insights contributes. Run only when it is installed.
- *
- * `open` shows its window; `run` builds a payload, shows it for review and
- * sends it to the user's agent CLI. **Whether the RUN is permitted is
- * Insights' own business** — it refuses when there is no licence — and this
- * extension never asks, because a parent guessing at a licence state would
- * show two different wrong answers on two machines.
+ * `agentDeck.openInsights` — the panel, on its Insights surface (DoD 9.27).
+ * Menu ▸ Open Insights; switches the one panel in place.
  */
-export const INSIGHTS_OPEN_COMMAND = 'agentDeckInsights.open';
-export const INSIGHTS_EXEC_COMMAND = 'agentDeckInsights.run';
-
-/**
- * Where "Get Agent Deck Insights" goes — spec `Amendment 2026-09-20 - Sidebar
- * shape`, which names this url in as many words.
- *
- * The PROJECT page, not the Marketplace listing: it is the page that explains
- * what Insights is before asking anybody to install anything. Spec `Amendment
- * 2026-09-21` keeps it here until a dedicated Insights subpage of the site is
- * built, and `about.test.ts` holds this constant against that amendment. (Until
- * 9.23 the About page's "Project" tile carried the same url; that tile is
- * "Repository" now and opens the source repository.)
- *
- * Opened through `vscode.env.openExternal`, i.e. by the EDITOR. This
- * extension opens no socket for it, which is what lets `SECURITY.md` still
- * say it makes no network call.
- */
-export const INSIGHTS_PAGE_URL = 'https://nvitlam.github.io/agent-deck/';
+export const OPEN_INSIGHTS_COMMAND = 'agentDeck.openInsights';
 
 /*
- * `WORKBENCH_OPEN_EXTENSION` was here until v0.9.0 DoD 9.17.
- *
- * v0.9.0 opened the Marketplace page inside VS Code when Insights was not
- * installed. The amendment says the entry "opens the Insights page in your
- * browser", which is a different page and a different opener, so the
- * workbench command has no caller and is gone rather than left exported with
- * nothing reading it.
+ * `INSIGHTS_PAGE_URL` and the Get tile's link live in `src/about.ts` since DoD
+ * 9.32, because the webview draws the tile and may not import this module.
+ * Re-exported for the callers that read it from here. Opened through
+ * `vscode.env.openExternal`, i.e. by the EDITOR, after the same confirmation
+ * every About tile asks: this extension opens no socket for it.
  */
-
-/** The parent's own three Insights commands (DoD 9.17). */
-export const INSIGHTS_GET_COMMAND = 'agentDeck.insights.get';
-export const INSIGHTS_SHOW_COMMAND = 'agentDeck.insights.open';
-export const INSIGHTS_RUN_COMMAND = 'agentDeck.insights.run';
+export { INSIGHTS_PAGE_URL };
 
 /**
- * `agentDeck.about` — v0.9.0 DoD 9.7, 9.14, 9.23.
- *
- * A panel with the introduction, four link tiles and a footer. A tile asks
- * first ({@link confirmThenOpen}) and opens through
- * `vscode.env.openExternal`, which hands a URI to the EDITOR: the extension
- * opens no socket, so `SECURITY.md`’s "makes no network call" is unchanged
- * and `egress.test.ts`’s census of the bundle still finds one client.
- */
-let aboutPanel: vscode.WebviewPanel | null = null;
-
-/**
- * The version the About footer names, taken from `context.extension` in
- * `activate()`. `null` until then, and the footer says less rather than
- * naming a version it did not read.
+ * The version the About surface's footer names, taken from
+ * `context.extension` in `activate()`. `null` until then, and the footer says
+ * less rather than naming a version it did not read.
  */
 let aboutVersion: string | null = null;
 
@@ -5253,10 +5310,11 @@ function setAboutVersion(packageJSON: unknown): void {
 }
 
 /**
- * Ask, then open — DoD 9.23.
+ * Ask, then open — DoD 9.23, and every tile on the About and Insights
+ * surfaces goes through it (DoD 9.29, 9.32).
  *
- * "Agent Deck will open <host> in your browser", with one button. Only that
- * button opens anything: a dismissed or timed-out message answers
+ * "Agent Deck will open <host> in your browser", with one button, non-modal.
+ * Only that button opens anything: a dismissed or timed-out message answers
  * `undefined`, and `undefined` opens nothing. The order is the point — a
  * test drives it and a mutation that opens without asking is red.
  */
@@ -5265,69 +5323,6 @@ async function confirmThenOpen(link: AboutLink): Promise<void> {
   const answer = await vscode.window.showInformationMessage(message, {}, button);
   if (answer !== button) return;
   await vscode.env.openExternal(vscode.Uri.parse(link.url));
-}
-
-export function showAbout(): void {
-  if (aboutPanel !== null) {
-    aboutPanel.reveal();
-    return;
-  }
-  const panel = vscode.window.createWebviewPanel(
-    ABOUT_PANEL_VIEW_TYPE,
-    ABOUT_PANEL_TITLE,
-    vscode.ViewColumn.Active,
-    {
-      enableScripts: true,
-      // NO resource roots at all: the document is self-contained, so there is
-      // nothing for it to load and nothing it may reach if it tries.
-      localResourceRoots: [],
-    },
-  );
-  aboutPanel = panel;
-  panel.webview.html = aboutPanelHtml(createNonce(), panel.webview.cspSource, aboutVersion);
-  panel.webview.onDidReceiveMessage((raw: unknown) => {
-    const link = aboutLinkFor(raw);
-    // An index that is not one of ours opens nothing. The page posts an
-    // INDEX and never a url, so the only thing a renderer can name is one of
-    // this extension's own four literals.
-    if (link === undefined) return;
-    void confirmThenOpen(link);
-  });
-  panel.onDidDispose(() => {
-    aboutPanel = null;
-  });
-}
-
-/**
- * Drop the About panel, for `deactivate()` and for test isolation.
- *
- * A module-level slot that survived a suite's `resetVscodeMock()` would
- * make the SECOND test in a file see a panel the first one opened, which is
- * the shape of every "green because the previous test did it" defect.
- */
-export function disposeAboutPanel(): void {
-  aboutPanel?.dispose();
-  aboutPanel = null;
-}
-
-/**
- * Is Layer 2 installed in this editor? — v0.9.0 DoD 9.6.
- *
- * `getExtension` ANSWERS WITHOUT ACTIVATING: it returns the extension’s
- * record, and `isActive` on that record is a different question nobody here
- * asks. So this is a statement about what the editor has, taken without
- * running anything of theirs.
- *
- * Wrapped, because it is read at activation and on every settings change,
- * and an editor that throws here must not take the panel down with it: a
- * failed probe reads as NOT INSTALLED, which is the state that still works.
- */
-export function isInsightsInstalled(): boolean {
-  try {
-    return vscode.extensions.getExtension(INSIGHTS_EXTENSION_ID) !== undefined;
-  } catch {
-    return false;
-  }
 }
 export const SETTINGS_FILTER = '@ext:nvitlam.agent-deck';
 
@@ -5690,12 +5685,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     },
   });
   context.subscriptions.push({ dispose: () => updates.dispose() });
+
+  /*
+   * API v2 — THE ONE INSIGHTS PROVIDER REGISTRY for this window (DoD 9.30).
+   *
+   * Built HERE, before the API and before the first early return, because a
+   * provider registers through the API and the API is returned from every
+   * path: a window with no folder still hands Insights a working door. Its
+   * change handler is what makes "the only state is provider registered or
+   * not" true on BOTH surfaces at once — the sidebar is re-stated and an open
+   * panel is told, whether or not a panel exists (DoD 9.31). Both functions
+   * it calls are declared below; nothing can register before `activate()`
+   * returns the API, so neither is reached before it exists.
+   */
+  const providers = new InsightsProviderRegistry({
+    onChange: () => {
+      refreshSidebar();
+      activeHost?.sendProviderState();
+    },
+    onError: (error: unknown) => {
+      try {
+        sharedOutput().appendLine(
+          `[${new Date().toISOString()}] insights provider: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } catch {
+        // G2: a channel that cannot be created must not take the caller down.
+      }
+    },
+  });
+  context.subscriptions.push({ dispose: () => providers.dispose() });
+
+  /** The Insights/About state, read at the moment of asking. */
+  const providerState = (): Omit<ProviderStateMessage, 'type'> => ({
+    page: aboutPage(aboutVersion),
+    provider: providers.snapshot(),
+  });
+
   const api = createAgentDeckApi(
     {
       liveRecords: () => activeHost?.stats?.liveRecords() ?? [],
       readStored: (query) => readStoredRecords(query),
     },
     updates,
+    providers,
     (reason) => {
       activeHost?.diagnostics?.record({ kind: 'engineDegraded', engine: 'cc', reason });
     },
@@ -5777,7 +5809,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
   const sidebarState = (): Omit<SidebarStateMessage, 'type'> => ({
     controls: viewControls,
     tweaks: tweaksOf(readSettings(vscode.workspace.getConfiguration(CONFIG_SECTION))),
-    insightsInstalled: isInsightsInstalled(),
+    // DoD 9.31: read from the HOST's registry, never from the panel, so the
+    // sidebar states the same thing whether or not a panel exists.
+    provider: providers.about(),
     drawerOpen,
   });
 
@@ -5918,10 +5952,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    * Created on its first line and never at activation, for the reason
    * `DiagnosticsChannel` gives: a window where nothing happens gets no entry
    * in the Output dropdown. The data path's diagnostics and the Insights
-   * invocations share it, because two `createOutputChannel` calls with one
-   * name are two entries with one name. The shared sink's `dispose` is a
-   * no-op: a host ending must not close the channel the Insights commands
-   * still write to. The channel itself goes with `context.subscriptions`.
+   * provider's errors share it, because two `createOutputChannel` calls with
+   * one name are two entries with one name. The shared sink's `dispose` is a
+   * no-op: a host ending must not close the channel the registry still writes
+   * to. The channel itself goes with `context.subscriptions`.
    */
   let outputChannel: DiagnosticsSink | undefined;
   const sharedOutput = (): DiagnosticsSink => {
@@ -5937,38 +5971,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       dispose: () => undefined,
     };
   };
-  const insightsDeps = {
-    getExtension: () => vscode.extensions.getExtension(INSIGHTS_EXTENSION_ID),
-    executeCommand: (command: string) => vscode.commands.executeCommand(command),
-    showInformationMessage: (message: string) => {
-      void vscode.window.showInformationMessage(message);
-    },
-    log: (line: string) => {
-      try {
-        sharedOutput().appendLine(`[${new Date().toISOString()}] ${line}`);
-      } catch {
-        // G2: a channel that cannot be created must not turn a failure the
-        // user is about to be TOLD about into an exception nobody sees.
+
+  /**
+   * Switch the ONE panel to a surface, in place — v0.9.0 DoD 9.27.
+   *
+   * Every Menu entry that names a surface comes through here except Open
+   * Statistics, which also resets its tab and may carry a focus. The controls
+   * are committed BEFORE `open()`, for the reason `agentDeck.open` gives: a
+   * panel created by that call is sent the current state as part of being
+   * created, so committing after would send the old surface and then correct
+   * it. A focus left by an Open Statistics deep link is cleared — a focus
+   * belongs to the link that set it.
+   *
+   * A window with no host has no panel, so the answer there is the one Open
+   * Deck has always given. That includes About, which until DoD 9.32 opened
+   * a panel of its own and worked in a window with no folder: About is a
+   * surface of the deck's panel now, and a window with no folder has none.
+   */
+  const openSurface = (surface: 'insights' | 'about'): void => {
+    const host = activeHost;
+    if (host === null) {
+      void vscode.window.showInformationMessage(
+        inactiveReason ?? 'Agent Deck: this workspace has no Claude Code project directory yet.',
+      );
+      return;
+    }
+    const { focusSessionId: _cleared, ...rest } = viewControls;
+    commitControls({ ...rest, surface });
+    host.open();
+  };
+
+  /**
+   * The About tile, the Get tile and the Run action — DoD 9.29–9.32.
+   *
+   * Each is checked again here, against what it names: the index against the
+   * four links this extension defines, Get against the one url it holds, and
+   * Run against whether a provider is registered (the registry's `run()` is a
+   * no-op without one). A tile that opens a page ASKS FIRST, through the same
+   * confirmation every About tile has used since DoD 9.23.
+   */
+  const onSurfaceIntent = (
+    message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage,
+  ): void => {
+    switch (message.type) {
+      case 'aboutLink': {
+        const link = ABOUT_LINKS[message.index];
+        if (link === undefined) return;
+        void confirmThenOpen(link);
+        return;
       }
-    },
+      case 'insightsGet':
+        void confirmThenOpen(INSIGHTS_GET_LINK);
+        return;
+      case 'insightsRun':
+        void providers.run();
+        return;
+    }
   };
 
   const sidebarCommands = [
     vscode.window.registerWebviewViewProvider(SIDEBAR_VIEW_ID, sidebarProvider),
-    /*
-     * Open and Run go through `invokeInsights` — DoD 9.25. Until then both
-     * were `void executeCommand(id)`: a rejection reached nobody, so Open
-     * Insights, whose id Insights 0.1.0 does not contribute, did nothing and
-     * said nothing. Now Insights is activated first when it is not active,
-     * every activation and outcome writes a line to the "Agent Deck" channel, and every
-     * failure is an information message that names the command.
-     */
-    vscode.commands.registerCommand(INSIGHTS_SHOW_COMMAND, () =>
-      invokeInsights(INSIGHTS_OPEN_COMMAND, insightsDeps),
-    ),
-    vscode.commands.registerCommand(INSIGHTS_RUN_COMMAND, () =>
-      invokeInsights(INSIGHTS_EXEC_COMMAND, insightsDeps),
-    ),
     /**
      * Reset view has ONE entry and the STORE decides which surface it means,
      * because the store is what knows the altitude. The host sends the
@@ -6001,25 +6063,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       commitControls({ ...viewControls, inspectorTool: picked });
     }),
     /*
-     * The three Insights entries — DoD 9.17.
-     *
-     * **THE PARENT NEVER KNOWS THE LICENCE STATE.** It knows one thing about
-     * Layer 2, `isInsightsInstalled()`, which is a fact about this editor
-     * taken without activating anything of theirs. Whether a licence is
-     * present is Insights' own business, and Insights refuses its own run
-     * when there is none; a parent that guessed at it would show two
-     * different wrong answers on two machines.
-     *
-     * Registered UNCONDITIONALLY, above the activation gates, like the
-     * sidebar and the clear command: a workspace with no observable engine
-     * can still reach all three.
+     * Menu ▸ Open Insights and Menu ▸ About — DoD 9.27, 9.32. Both switch the
+     * one panel's surface. Registered UNCONDITIONALLY, like the sidebar: the
+     * command must exist in every window, and `openSurface` says why a window
+     * with no folder answers with a message.
      */
-    vscode.commands.registerCommand(INSIGHTS_GET_COMMAND, () => {
-      // The EDITOR opens it. This extension makes no network call, which is
-      // what lets `SECURITY.md` still say so: handing a URI to VS Code is not
-      // making one.
-      void vscode.env.openExternal(vscode.Uri.parse(INSIGHTS_PAGE_URL));
-    }),
+    vscode.commands.registerCommand(OPEN_INSIGHTS_COMMAND, () => openSurface('insights')),
+    vscode.commands.registerCommand(ABOUT_COMMAND, () => openSurface('about')),
   ];
 
   context.subscriptions.push(...sidebarCommands);
@@ -6126,12 +6176,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     vscode.commands.registerCommand(OPEN_SETTINGS_COMMAND, () => {
       void vscode.commands.executeCommand(WORKBENCH_OPEN_SETTINGS, SETTINGS_FILTER);
     }),
-    // v0.9.0 DoD 9.7. Unconditional, like the sidebar: a window with no
-    // observable engine can still open About.
-    vscode.commands.registerCommand(ABOUT_COMMAND, () => showAbout()),
     /*
-     * The three Insights commands are registered beside the sidebar provider
-     * above, with the rest of what the Insights page runs.
+     * About and Open Insights are registered beside the sidebar provider
+     * above, with `openSurface` — both are surfaces of this panel now.
      */
     /*
      * v0.9.0 DoD 9.17 — keeping the sidebar current.
@@ -6352,6 +6399,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     onRunCommand: (command: string) => {
       void vscode.commands.executeCommand(command);
     },
+    /*
+     * THE INSIGHTS/ABOUT STATE, READ BY GETTER (DoD 9.29–9.32), and the three
+     * intents those surfaces post. Both are the only production assignment of
+     * their option — which this file records as the shape that ships dead
+     * when nothing drives it, so `extension.test.ts` drives both through
+     * `activate()`: a provider registered with no panel open reaches the
+     * panel created afterwards, and a tile's message reaches the confirmation.
+     */
+    providerState,
+    onSurfaceIntent,
     createPanel: () => {
       /*
        * v0.7.0 DoD 4.6c — THE DECK OPENS LEFT (locked open question,
@@ -6456,12 +6513,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
 
 /** Dispose everything. A bound socket or a live watcher after this is a defect. */
 export async function deactivate(): Promise<void> {
-  // v0.9.0 DoD 9.14. About is a module-level slot, because the command may
-  // run in a window with no host and a second press should reveal the panel
-  // rather than stack another. A slot that survived deactivation would be a
-  // reference to a disposed editor object, and in a test suite it is the
-  // shape of every "green because the previous test did it" defect.
-  disposeAboutPanel();
+  // The About panel's module-level slot was disposed here until v0.9.0 DoD
+  // 9.32. About is a surface of the one panel now, and the host disposes that.
   const host = activeHost;
   activeHost = null;
   inactiveReason = null;

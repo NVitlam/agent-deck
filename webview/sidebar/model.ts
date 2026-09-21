@@ -24,6 +24,7 @@
  * render time and stored nowhere.
  */
 
+import type { InsightsProviderAbout } from '../../src/model/events.js';
 import type {
   ControlCommand,
   ControlFacts,
@@ -44,8 +45,34 @@ export interface SidebarState {
   readonly controls: ViewControls;
   /** The three tweaks, keyed without the `agentDeck.` prefix. */
   readonly tweaks: Readonly<Record<string, boolean | string>>;
-  readonly insightsInstalled: boolean;
+  /**
+   * The registered Insights provider's about, or `null` — DoD 9.31. Read by
+   * the HOST from its registry, so it is the same with the panel open or
+   * closed.
+   */
+  readonly provider: InsightsProviderAbout | null;
   readonly drawerOpen: boolean;
+}
+
+/** The Menu entry that opens the Insights surface. */
+export const OPEN_INSIGHTS_ID = 'agentDeck.openInsights';
+
+/** Open Insights' grey suffix with no provider registered. */
+export const FREE_INSIGHTS_VALUE = 'facts only';
+
+/**
+ * Open Insights' grey suffix — the one place the sidebar states the Insights
+ * state (DoD 9.31).
+ *
+ * The Insights TAB is gone (spec `Amendment 2026-09-21 — One window`), so the
+ * state it used to show rides on the Menu entry that opens the surface, the
+ * way a collapsed group shows its value: the registered provider's name and
+ * version, or {@link FREE_INSIGHTS_VALUE} when none is — the free surface
+ * shows the Layer 1 facts and nothing a provider supplies. It names what IS
+ * registered, never what is installed and never a licence.
+ */
+export function insightsValue(provider: InsightsProviderAbout | null): string {
+  return provider === null ? FREE_INSIGHTS_VALUE : `${provider.name} ${provider.version}`;
 }
 
 /**
@@ -162,6 +189,7 @@ function rowOf(entry: ControlCommand, state: SidebarState): SidebarRow {
     ...(entry.command === 'agentDeck.inspector.tool'
       ? { value: toolLabel(state.controls.inspectorTool) }
       : {}),
+    ...(entry.command === OPEN_INSIGHTS_ID ? { value: insightsValue(state.provider) } : {}),
   };
 }
 
@@ -208,10 +236,7 @@ export function sidebarPage(
   section: ControlSection,
   state: SidebarState,
 ): readonly SidebarRow[] {
-  const facts: ControlFacts = {
-    drawerOpen: state.drawerOpen,
-    insightsInstalled: state.insightsInstalled,
-  };
+  const facts: ControlFacts = { drawerOpen: state.drawerOpen };
   const groups = CONTROL_GROUPS.filter(
     (group) =>
       group.section === section &&

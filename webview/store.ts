@@ -29,6 +29,9 @@
 import type {
   ApplyError,
   HostToWebviewMessage,
+  AboutLinkView,
+  AboutPageView,
+  InsightsProviderSnapshot,
   SessionState,
   TokenPair,
   TranscriptPartial,
@@ -664,6 +667,22 @@ export interface WebviewView {
    * can leave the view loading forever.
    */
   statsStoreLoaded: boolean;
+  /**
+   * The registered Insights provider's checked snapshot, or `null` — the free
+   * state (v0.9.0 DoD 9.29, 9.30). Assigned whole from `providerState`.
+   */
+  insightsProvider: InsightsProviderSnapshot | null;
+  /**
+   * The About page the host built (DoD 9.32) — labels and hosts, never urls.
+   * `null` until the host has stated it.
+   */
+  aboutPage: AboutPageView | null;
+  /**
+   * The Insights example rotation count (DoD 9.29). Webview-local, starts at
+   * 0, and advances when the Insights surface is LEFT — so the first open
+   * shows the first example and each later open the next.
+   */
+  insightsExampleCount: number;
 }
 
 export interface Store {
@@ -759,6 +778,24 @@ export interface Store {
    * happens.
    */
   runCommand(command: string): void;
+  /**
+   * An About tile was pressed — DoD 9.32. Posts the INDEX, never a url; the
+   * host looks it up, asks, and only then opens it. An index outside the
+   * four links posts nothing.
+   */
+  openAboutLink(index: number): void;
+  /**
+   * The "Get Agent Deck Insights" tile was pressed — DoD 9.29, 9.32. Posts
+   * `insightsGet`, and only while no provider is registered: the tile exists
+   * only in the free state, and a press that arrived after a provider
+   * registered describes a tile that is no longer on screen.
+   */
+  getInsights(): void;
+  /**
+   * The Insights surface's Run action — DoD 9.30. Posts `insightsRun`, and
+   * only while a provider is registered and not already running.
+   */
+  runInsights(): void;
   /** Open or shut the inspector panel without changing the selected node. */
   setInspectorOpen(open: boolean): void;
   /** Pan the deck by a delta in CLIENT pixels. `viewport.ts:panBy`. */
@@ -823,6 +860,28 @@ export type IntentSink = (message: WebviewToHostMessage) => void;
  * leaves a snapshot — otherwise the set would grow for the lifetime of the
  * window, which is exactly the accumulation "stateless" forbids.
  */
+/** One About tile off the wire, or `null` when it is not two strings. */
+function aboutLinkOf(value: unknown): AboutLinkView | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { label, host } = value as { label?: unknown; host?: unknown };
+  return typeof label === 'string' && typeof host === 'string' ? { label, host } : null;
+}
+
+/**
+ * The About page off the wire (DoD 9.32), or `null` when any part of it is
+ * not the shape the host builds. All or nothing: a page missing a tile would
+ * shift every later tile's INDEX, and the index is what the host opens.
+ */
+function aboutPageOf(value: unknown): AboutPageView | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { text, links, get, footer } = value as Record<string, unknown>;
+  if (typeof text !== 'string' || typeof footer !== 'string' || !Array.isArray(links)) return null;
+  const tiles = links.map(aboutLinkOf);
+  const getTile = aboutLinkOf(get);
+  if (getTile === null || tiles.some((tile) => tile === null)) return null;
+  return { text, links: tiles as AboutLinkView[], get: getTile, footer };
+}
+
 function expansionKey(sessionId: string, nodeId: string): string {
   return `${sessionId} ${nodeId}`;
 }
@@ -973,6 +1032,10 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let statsStored: readonly StatsRecord[] = [];
   let statsStoreEnabled = true;
   let statsStoreLoaded = false;
+  /* ----- the Insights and About surfaces (DoD 9.29–9.32) ------------------- */
+  let insightsProvider: InsightsProviderSnapshot | null = null;
+  let aboutPage: AboutPageView | null = null;
+  let insightsExampleCount = 0;
   /** Set between asking for a resync and the snapshot that answers it. */
   let resyncPending = false;
   let resyncs = 0;
@@ -1014,6 +1077,9 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     const nextMode = viewModeOf(next);
     const toCanvas = nextMode === 'canvas' && viewMode !== 'canvas';
     const engineMoved = next.engineFilter !== engineFilter;
+    // DoD 9.29: the example rotates when the Insights surface is LEFT, not
+    // when it is entered, so the first open shows the first example.
+    if (viewMode === 'insights' && nextMode !== 'insights') insightsExampleCount += 1;
     viewMode = nextMode;
     livenessFilter = next.livenessFilter;
     engineFilter = next.engineFilter;
@@ -1024,6 +1090,17 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     inspectorOrder = next.inspectorOrder;
     inspectorTool = next.inspectorTool;
     statsFocusSessionId = next.focusSessionId;
+    /*
+     * `agentDeck.openStats(sessionId)` "switches the surface and SELECTS the
+     * session" (spec `Amendment 2026-09-21 — One window`, DoD 9.27). The
+     * focus already highlights its Tokens card; this makes it the selected
+     * session too, so Open Deck afterwards lands on it. An id this window
+     * does not hold selects nothing and is not an error.
+     */
+    if (next.focusSessionId !== undefined && sessions.has(next.focusSessionId)) {
+      if (next.focusSessionId !== selectedSessionId) selectedNodeId = undefined;
+      selectedSessionId = next.focusSessionId;
+    }
     // The two trigger-table rows, in the order they are listed there.
     if (engineMoved) triggerFit();
     if (toCanvas) triggerFit();
@@ -1409,6 +1486,9 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         statsStored,
         statsStoreEnabled,
         statsStoreLoaded,
+        insightsProvider,
+        aboutPage,
+        insightsExampleCount,
       };
       if (detailActionId !== undefined) view.detailActionId = detailActionId;
       if (selectedSessionId !== undefined) view.selectedSessionId = selectedSessionId;
@@ -1582,6 +1662,15 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
           degradedReason = message.degraded ? message.reason : undefined;
           if (!message.degraded) degradedDismissed = false;
           break;
+        case 'providerState':
+          // DoD 9.29–9.32. Assigned WHOLE: the host re-sends the entire
+          // state whenever it moves, and `null` is the free state. Read
+          // through nullable aliases for the reason `settings` above gives —
+          // the port is not the contract.
+          insightsProvider =
+            (message.provider as InsightsProviderSnapshot | null | undefined) ?? null;
+          aboutPage = aboutPageOf(message.page);
+          break;
         case 'sidebarState':
           /*
            * THE SIDEBAR'S WHOLE RENDER, AND NOT THIS SURFACE'S (DoD 9.17).
@@ -1741,6 +1830,24 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       // the one place it must not silently half-work.
       if (!isCommandFrom('panel', command)) return;
       postIntent({ type: 'runCommand', command });
+    },
+
+    openAboutLink(index: number): void {
+      // The host refuses an index outside its links too; this stops our OWN
+      // component posting one, which is the failure that actually happens.
+      const count = aboutPage?.links.length ?? 0;
+      if (!Number.isInteger(index) || index < 0 || index >= count) return;
+      postIntent({ type: 'aboutLink', index });
+    },
+
+    getInsights(): void {
+      if (insightsProvider !== null) return;
+      postIntent({ type: 'insightsGet' });
+    },
+
+    runInsights(): void {
+      if (insightsProvider === null || insightsProvider.running) return;
+      postIntent({ type: 'insightsRun' });
     },
 
     setInspectorOpen(open: boolean): void {

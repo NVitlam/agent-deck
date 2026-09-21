@@ -80,7 +80,7 @@ import {
   CONTROL_SECTIONS,
   MENU_COMMANDS as SIDEBAR_MENU,
 } from '../view/controls.js';
-import { INSIGHTS_EXEC_COMMAND, INSIGHTS_OPEN_COMMAND, INSIGHTS_PAGE_URL } from '../extension.js';
+import { INSIGHTS_PAGE_URL } from '../extension.js';
 import { LOOP_MIN, SPIKE_TOKENS } from '../stats/constants.js';
 import { costOfSeries, parsePricing } from '../stats/pricing.js';
 import type { StatsRecord } from '../stats/schema.js';
@@ -487,51 +487,39 @@ const LIVE_SETTINGS: HookSettings | null = existsSync(LIVE_PATH)
   : null;
 
 describe('README exists and ships clean', () => {
-  it('names the two Insights commands the parent runs, so the ids have a SECOND anchor', () => {
+  it('documents API v2 — the provider contract, and that provider data is never executed', () => {
     /*
-     * CORRECTED 2026-09-21 (DoD 9.25). This test was titled "names the two
-     * commands Insights CONTRIBUTES", and one of them never was: Insights
-     * 0.1.0 contributes no `agentDeckInsights.open`. A second anchor that
-     * copies the first proves the two agree, not that either is right — the
-     * exact limit the paragraph below states. What Insights really
-     * contributes is now recorded, from its installed manifest, in
-     * `extension.test.ts`'s `INSIGHTS_0_1_0`.
+     * v0.9.0 DoD 9.33. The round-3 test here pinned two Insights COMMAND ids
+     * in the README as a second anchor; spec `Amendment 2026-09-21 — One
+     * window` removed the command relationship entirely, so those ids are
+     * gone from the product and must be gone from the page too. What the
+     * README states instead is the API a provider registers through, and a
+     * page that shipped without it would describe a door nobody can find.
      */
-    /*
-     * THE THIRD SURVIVING MUTATION OF THE 9.21 VERIFIER ROUND.
-     *
-     * `INSIGHTS_OPEN_COMMAND` and `INSIGHTS_EXEC_COMMAND` name commands in a
-     * DIFFERENT EXTENSION. The host runs them through `executeCommand`, and
-     * every test of that path reads the SAME constant back out of
-     * `mock.executed` — so they all pin that the handler forwards the
-     * constant, and none of them pins that the constant is right. Changing
-     * either literal to any other string left the whole suite green, and the
-     * user-visible result would be two dead buttons: exactly the defect this
-     * release exists to close, in the one place the boundary cannot help
-     * because the command belongs to somebody else.
-     *
-     * A second anchor is the only thing that can catch it, and it has to be
-     * a file that a fresh clone HAS: the spec amendment names the Insights
-     * page url, but that block is `skipIf(SPEC === null)` and skips on any
-     * runner without `lab/`. The README ships in the VSIX and is the
-     * Marketplace listing, so it is the right place for a user to read the
-     * ids anyway.
-     *
-     * This does NOT prove the ids are the ones Insights really contributes —
-     * nothing in this repository can, because that extension is not here. It
-     * proves they are stated twice and cannot drift apart silently, which is
-     * what turns a typo into a red test instead of a dead button.
-     */
-    for (const command of [INSIGHTS_OPEN_COMMAND, INSIGHTS_EXEC_COMMAND]) {
-      expect(README, `the README does not name ${command}`).toContain(`\`${command}\``);
+    for (const member of [
+      'registerInsightsProvider',
+      'providerVersion',
+      'getLatest',
+      'listRuns',
+      'onDidChange',
+      'FindingSetView',
+      'RunSummary',
+    ]) {
+      expect(README, `the README does not name ${member}`).toContain(`\`${member}\``);
     }
-    // Both, distinct, and neither is one of OUR ids: a constant that had
-    // drifted onto an `agentDeck.` command would satisfy a containment test
-    // over a README that names plenty of those.
-    expect(INSIGHTS_OPEN_COMMAND).not.toBe(INSIGHTS_EXEC_COMMAND);
-    for (const command of [INSIGHTS_OPEN_COMMAND, INSIGHTS_EXEC_COMMAND]) {
-      expect(command.startsWith('agentDeckInsights.'), command).toBe(true);
-      expect(CONTROL_COMMANDS.map((entry) => entry.command)).not.toContain(command);
+    expect(README).toContain('`apiVersion` is `2`');
+    // The trust sentence, in BOTH shipped documents that make trust claims.
+    for (const [name, text] of [
+      ['README.md', README],
+      ['SECURITY.md', readText('SECURITY.md')],
+    ] as const) {
+      expect(text.replace(/\s+/g, ' '), name).toContain(
+        'provider data is plain JSON, checked field by field, and never executed',
+      );
+    }
+    // The ids of the command relationship this release removed are gone.
+    for (const gone of ['agentDeckInsights.open', 'agentDeckInsights.run', 'agentDeck.insights.']) {
+      expect(README, gone).not.toContain(gone);
     }
   });
 

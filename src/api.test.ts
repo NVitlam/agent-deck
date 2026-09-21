@@ -38,6 +38,11 @@ import {
   refusalOf,
 } from './api.js';
 import type { AgentDeckApi, ApiSources } from './api.js';
+import { InsightsProviderRegistry } from './insights-provider.js';
+
+/** A registry nothing reads, for the tests that are about something else. */
+const registry = (): InsightsProviderRegistry =>
+  new InsightsProviderRegistry({ onChange: () => undefined });
 
 // ---------------------------------------------------------------------------
 // The type-level guards (DoD 5.1: "a type-level `never` guard")
@@ -165,25 +170,34 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     ]).toStrictEqual([true, true, true, true, true]);
   });
 
-  it('apiVersion 1, two getters and an event — and nothing else', () => {
+  it('apiVersion 2: two getters, an event and registerInsightsProvider — and nothing else', () => {
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], null), e);
-    expect(api.apiVersion).toBe(1);
-    expect(API_VERSION).toBe(1);
+    const api = createAgentDeckApi(sourcesOver([], null), e, registry());
+    // 2 since v0.9.0 DoD 9.30 — the amendment's own word: "additive;
+    // API_VERSION 2; existing v1 members unchanged".
+    expect(api.apiVersion).toBe(2);
+    expect(API_VERSION).toBe(2);
     expect(typeof api.getLiveStats).toBe('function');
     expect(typeof api.getStoredStats).toBe('function');
     expect(typeof api.onDidUpdateStats).toBe('function');
+    expect(typeof api.registerInsightsProvider).toBe('function');
     // The EXACT surface, not a containment: a fourth member is a promise to
     // every consumer, and it would arrive without anyone deciding to make it.
     expect(Object.keys(api).sort()).toStrictEqual(
-      ['apiVersion', 'getLiveStats', 'getStoredStats', 'onDidUpdateStats'].sort(),
+      [
+        'apiVersion',
+        'getLiveStats',
+        'getStoredStats',
+        'onDidUpdateStats',
+        'registerInsightsProvider',
+      ].sort(),
     );
     expect(Object.isFrozen(api)).toBe(true);
   });
 
   it('the event has the shape of vscode.Event: subscribe, dispose, disposables, thisArgs', () => {
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], null), e);
+    const api = createAgentDeckApi(sourcesOver([], null), e, registry());
     const bag: { dispose(): unknown }[] = [];
     const seen: string[] = [];
     const owner = { name: 'owner', push(record: StatsRecord): void { seen.push(`${this.name}:${record.sessionId}`); } };
@@ -213,7 +227,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
 
   it('getLiveStats: every golden comes back, every one validates, none carries a model key', () => {
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver(GOLDENS, null), e);
+    const api = createAgentDeckApi(sourcesOver(GOLDENS, null), e, registry());
     const live = api.getLiveStats();
     expect(live).toHaveLength(GOLDENS.length);
     for (const record of live) {
@@ -227,7 +241,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
   it('getStoredStats: every golden round-trips through a real store, and validates', async () => {
     const store = storeOfGoldens();
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], store), e);
+    const api = createAgentDeckApi(sourcesOver([], store), e, registry());
     const stored = await api.getStoredStats({});
     // Newest per session: the goldens are one record per session, so all of them.
     expect(stored).toHaveLength(new Set(GOLDENS.map((r) => r.sessionId)).size);
@@ -244,7 +258,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
   it('getStoredStats honours sinceMs and limit, through the store', async () => {
     const store = storeOfGoldens();
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], store), e);
+    const api = createAgentDeckApi(sourcesOver([], store), e, registry());
     const all = await api.getStoredStats();
     expect(await api.getStoredStats({ limit: 3 })).toStrictEqual(all.slice(0, 3));
     const newest = all[0];
@@ -255,7 +269,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
 
   it('getStoredStats refuses a query it would have to guess about', async () => {
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], null), e);
+    const api = createAgentDeckApi(sourcesOver([], null), e, registry());
     await expect(api.getStoredStats({ sinceMs: Number.NaN })).rejects.toThrow(TypeError);
     await expect(api.getStoredStats({ limit: -1 })).rejects.toThrow(TypeError);
     await expect(api.getStoredStats({ limit: 1.5 })).rejects.toThrow(TypeError);
@@ -295,6 +309,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
     const api = createAgentDeckApi(
       sourcesOver([numericLeak, base, previewLeak] as StatsRecord[], null),
       e,
+      registry(),
       (reason) => reasons.push(reason),
     );
     const live = api.getLiveStats();
@@ -317,7 +332,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
     const held = [structuredClone(GOLDENS[0]) as StatsRecord];
     const store = storeOfGoldens();
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver(held, store), e);
+    const api = createAgentDeckApi(sourcesOver(held, store), e, registry());
 
     const live = api.getLiveStats();
     (live[0] as StatsRecord).totals.prompt = -1;

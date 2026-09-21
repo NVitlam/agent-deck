@@ -30,6 +30,10 @@ export const HOST_MESSAGE_TYPES: readonly HostToWebviewMessage['type'][] = [
   // everything else; both are asserted, so neither surface is trusted to
   // ignore the other's traffic by accident.
   'sidebarState',
+  // The Insights and About surfaces' state (v0.9.0 DoD 9.29–9.32): the
+  // registered provider's checked snapshot, or `null`, and the extension's
+  // version for About's footer. The panel reads it; the sidebar drops it.
+  'providerState',
 ];
 
 /** Type guard for anything arriving on `window.message`. */

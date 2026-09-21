@@ -538,10 +538,13 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
     expect(new Set(contributed).size, 'a command id is contributed twice').toBe(contributed.length);
   });
 
-  it('the Menu section is the locked order, with About added by the amendment', () => {
+  it('the Menu section is the locked order — Open Insights third since 2026-09-21', () => {
+    // Spec `Amendment 2026-09-21 — One window, Insights provider, Menu-only
+    // entry` states the whole order, and this is it verbatim.
     expect(SIDEBAR_MENU.map((e) => e.label)).toStrictEqual([
       'Open Deck',
       'Open Statistics',
+      'Open Insights',
       'Show Diagnostics',
       'Settings',
       'Clear Stats History',
@@ -600,7 +603,7 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
     }
   });
 
-  it('the palette shows the Menu six and the Insights three, and hides the rest', async () => {
+  it('the palette shows the Menu seven, and hides the rest', async () => {
     /*
      * Thirty-two granular entries in the palette would bury every other
      * command a user has. They are reachable from the sidebar, from the
@@ -626,9 +629,6 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
     // ...and the rule is the one a reader would expect, stated once.
     expect(visible.map((entry) => entry.command)).toStrictEqual([
       ...SIDEBAR_MENU.map((entry) => entry.command),
-      'agentDeck.insights.get',
-      'agentDeck.insights.open',
-      'agentDeck.insights.run',
     ]);
   });
 

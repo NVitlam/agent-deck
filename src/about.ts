@@ -23,6 +23,8 @@
  * built from a value that came off the wire.
  */
 
+import type { AboutPageView } from './model/events.js';
+
 /** One link the About entry offers. */
 export interface AboutLink {
   /** What the user sees. */
@@ -74,9 +76,67 @@ export const ABOUT_LINKS: readonly AboutLink[] = Object.freeze([
   Object.freeze({ label: 'Sponsor', url: 'https://github.com/sponsors/NVitlam' }),
 ]);
 
+/**
+ * Where "Get Agent Deck Insights" goes — spec `Amendment 2026-09-20 - Sidebar
+ * shape` names this url, and `Amendment 2026-09-21 — One window` keeps it
+ * ("subpage later"): it will point to a dedicated Insights subpage once the
+ * site has one, and `about.test.ts` holds it against the amendment that says
+ * so.
+ *
+ * HERE rather than in `extension.ts` since DoD 9.32: the About and Insights
+ * surfaces both draw a Get tile that names this host, and the webview bundle
+ * may not import the host. One literal, read by both.
+ */
+export const INSIGHTS_PAGE_URL = 'https://nvitlam.github.io/agent-deck/';
+
+/** The Get tile, as a link the confirmation can name. */
+export const INSIGHTS_GET_LINK: AboutLink = Object.freeze({
+  label: 'Get Agent Deck Insights',
+  url: INSIGHTS_PAGE_URL,
+});
+
 /** The host a link opens, as the confirmation names it. */
 export function hostOf(url: string): string {
   return new URL(url).host;
+}
+
+/** The button on the confirmation. The only answer that opens anything. */
+export const ABOUT_OPEN_BUTTON = 'Open';
+
+/**
+ * What the host asks before opening `link` — DoD 9.23.
+ *
+ * Here rather than in the host since DoD 9.32 moved About into the one panel:
+ * the Insights surface's Get tile asks the same question, and one sentence
+ * written once is one sentence to keep right.
+ */
+export function aboutConfirmation(link: AboutLink): { message: string; button: string } {
+  return {
+    message: `Agent Deck will open ${hostOf(link.url)} in your browser`,
+    button: ABOUT_OPEN_BUTTON,
+  };
+}
+
+/**
+ * The About page as the host sends it — DoD 9.32.
+ *
+ * Labels and HOSTS, never urls: the webview renders this and posts an index
+ * back, and only the host, which holds {@link ABOUT_LINKS}, opens anything.
+ */
+export function aboutPage(version: string | null): AboutPageView {
+  return {
+    text: ABOUT_TEXT,
+    links: ABOUT_LINKS.map((link) => ({ label: link.label, host: hostOf(link.url) })),
+    get: { label: INSIGHTS_GET_LINK.label, host: hostOf(INSIGHTS_GET_LINK.url) },
+    footer: aboutFooter(version),
+  };
+}
+
+/** The footer line. `version` is `null` when the host could not read one. */
+export function aboutFooter(version: string | null): string {
+  return version === null
+    ? `Agent Deck · ${ABOUT_LICENCE} licence`
+    : `Agent Deck ${version} · ${ABOUT_LICENCE} licence`;
 }
 
 /**

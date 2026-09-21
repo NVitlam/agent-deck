@@ -842,6 +842,7 @@ API module with every type they use:
 
 ```ts
 FindingSetView {
+  runId: string;
   createdAt: number;
   agent: { kind: 'claude' | 'codex'; version: string };
   window: { sessions: number; excluded: number; sinceMs: number };
@@ -870,11 +871,9 @@ kind, confidence and "since last run" as words (never a score), the detail behin
 cause, then each piece of evidence under its label. Above them it states the run: when, which
 agent CLI and version, the window, and the run's own usage — marked *estimated by Claude Code*
 when the agent was Claude Code. A refused run shows the step and the reason, and a **Show raw
-output** action that opens that run's raw output as an untitled plain-text document. The action
-appears only when all three hold: the provider has `getRawOutput`; the latest set is refused; and
-exactly one run in `listRuns()` is refused and has the set's `createdAt`. **A provider must stamp a
-set and its run summary with the same `createdAt`** — the set carries no run id, and that instant
-is how Agent Deck knows which run to ask about; with no single match the action is not shown.
+output** action that asks `getRawOutput` for the set's own `runId` and opens what comes back as
+an untitled plain-text document. When the provider has no `getRawOutput`, the refused run says
+*No raw output for this run.* instead.
 One provider at a time — a second registration throws, naming both —
 and disposing the registration returns the surface to its free state.
 

@@ -2265,6 +2265,7 @@ async function activateWithHost(): Promise<AgentDeckApi> {
 /** A finding set in the parent's view shape (DoD 9.40), with `findings` findings. */
 function fakeFindingSet(findings: number): FindingSetView {
   return {
+    runId: 'run-2026-09-21.1',
     createdAt: 1_790_000_000_000,
     agent: { kind: 'claude', version: '2.1.246' },
     window: { sessions: 5, excluded: 0, sinceMs: 1_789_400_000_000 },
@@ -2289,6 +2290,7 @@ function fakeFindingSet(findings: number): FindingSetView {
 function fakeRefusedSet(): FindingSetView {
   return {
     ...fakeFindingSet(0),
+    runId: 'run-refused-1',
     state: 'refused',
     refusal: { step: 'validate', reason: 'The model returned no JSON object.' },
   };
@@ -9652,7 +9654,8 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
   it('9.40: every way it shows nothing SAYS so, and opens nothing', async () => {
     const cases: readonly [Partial<InsightsProvider>, string][] = [
       [{ getRawOutput: () => null }, 'Agent Deck: the Insights provider has no raw output for run run-refused-1.'],
-      [{ listRuns: () => [] }, 'Agent Deck: the latest refused set matches no single run in the history, so no raw output was asked for.'],
+      // Ruling 2026-09-22 (1): the history plays no part; only a set that is not refused has no run to ask about.
+      [{ getLatest: () => fakeFindingSet(1) }, 'Agent Deck: the latest finding set is not a refused run, so no raw output was asked for.'],
       [
         { getRawOutput: () => 'r'.repeat(RAW_OUTPUT_MAX_CHARS + 1) },
         `Agent Deck: the raw output for run run-refused-1 is ${String(RAW_OUTPUT_MAX_CHARS + 1)} characters, over the ${String(RAW_OUTPUT_MAX_CHARS)} Agent Deck opens; it is not shown and not cut.`,

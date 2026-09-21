@@ -148,6 +148,7 @@ function viewFinding(id: string, over: Record<string, unknown> = {}): Record<str
 /** The four latest sets DoD 9.41 names. */
 const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Record<string, unknown>>> = {
   ok: {
+    runId: 'run-1',
     createdAt: LATEST_AT,
     agent: { kind: 'claude', version: '2.1.246' },
     window: { sessions: 3, excluded: 1, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
@@ -160,6 +161,7 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
     state: 'ok',
   },
   empty: {
+    runId: 'run-empty',
     createdAt: LATEST_AT,
     agent: { kind: 'codex', version: '0.151.0' },
     window: { sessions: 2, excluded: 0, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
@@ -169,6 +171,7 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
     state: 'empty',
   },
   refused: {
+    runId: 'run-refused',
     createdAt: LATEST_AT,
     agent: { kind: 'claude', version: '2.1.246' },
     window: { sessions: 3, excluded: 0, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
@@ -179,6 +182,7 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
     refusal: { step: 'validate', reason: 'The response held no JSON object.' },
   },
   'mixed-evidence': {
+    runId: 'run-mixed',
     createdAt: LATEST_AT,
     agent: { kind: 'claude', version: '2.1.246' },
     window: { sessions: 3, excluded: 0, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
@@ -561,6 +565,8 @@ describe('the provider’s text, rendered — DoD 9.41', () => {
     expect(refusal.textContent).toContain('Refused at step: validate');
     expect(refusal.textContent).toContain('The response held no JSON object.');
     expect(all(panel.container, TESTID.insightsFinding)).toStrictEqual([]);
+    // Offered: the action, and not the sentence.
+    expect(all(panel.container, 'insights-raw-output-note')).toStrictEqual([]);
     click(one(panel.container, TESTID.insightsRawOutput));
     expect(intents(panel)).toStrictEqual([{ type: 'insightsRawOutput' }]);
   });
@@ -571,6 +577,10 @@ describe('the provider’s text, rendered — DoD 9.41', () => {
     send(viewControls({ surface: 'insights' }));
     expect(all(panel.container, TESTID.insightsRefusal)).toHaveLength(1);
     expect(all(panel.container, TESTID.insightsRawOutput)).toStrictEqual([]);
+    // Ruling 2026-09-22 (4): the refusal says so, in the refusal block.
+    const note = one(panel.container, 'insights-raw-output-note');
+    expect(note.textContent).toBe('No raw output for this run.');
+    expect(note.closest(`[data-testid="${TESTID.insightsRefusal}"]`)).not.toBeNull();
     panel.store.showInsightsRawOutput();
     expect(intents(panel)).toStrictEqual([]);
     // Nor on a set that was not refused, whatever the flag says.

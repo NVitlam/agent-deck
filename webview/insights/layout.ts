@@ -357,6 +357,12 @@ export const AGENT_LABELS: Readonly<Record<InsightsAgentKind, string>> = Object.
  */
 export const ESTIMATED_BY_CLAUDE_CODE = 'estimated by Claude Code';
 
+/**
+ * What a refused set says when there is no raw output to offer — verbatim,
+ * the ruling of 2026-09-22 (round 5, ruling 4).
+ */
+export const NO_RAW_OUTPUT = 'No raw output for this run.';
+
 /** "Since last run", as a word. No score, no arrow, no colour of its own. */
 export const SINCE_LAST_RUN_WORDS: Readonly<Record<FindingSinceLastRun, string>> = Object.freeze({
   new: 'new',
@@ -437,6 +443,11 @@ export interface ProviderInsightsLayout {
     readonly refusal?: { readonly step: string; readonly reason: string };
     /** Offer "Show raw output"? Only on a refused set the host could place. */
     readonly rawOutput: boolean;
+    /**
+     * On a refused set with no raw output to offer, {@link NO_RAW_OUTPUT} —
+     * the ruling of 2026-09-22 (round 5, ruling 4). Absent otherwise.
+     */
+    readonly rawOutputNote?: string;
     /** Present when the provider's own validator rejected any. */
     readonly rejected?: string;
   } | null;
@@ -499,6 +510,7 @@ function latestOf(
     ...(note === undefined ? {} : { note }),
     ...(set.refusal === undefined ? {} : { refusal: { step: set.refusal.step, reason: set.refusal.reason } }),
     rawOutput: set.state === 'refused' && rawOutput,
+    ...(set.state === 'refused' && !rawOutput ? { rawOutputNote: NO_RAW_OUTPUT } : {}),
     ...(set.rejected > 0
       ? { rejected: `${plural(set.rejected, 'finding')} rejected by the provider` }
       : {}),

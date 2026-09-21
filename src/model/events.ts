@@ -1405,6 +1405,12 @@ export interface FindingSetRefusalView {
 
 /** The latest finding set, as the provider states it. */
 export interface FindingSetView {
+  /**
+   * The run this set is from — an id, `[A-Za-z0-9._:-]`, 1 to 128 characters.
+   * By the ruling of 2026-09-22 (round 5, ruling 1), "Show raw output" asks
+   * the provider for THIS id; nothing is matched on `createdAt`.
+   */
+  runId: string;
   /** Epoch milliseconds. */
   createdAt: number;
   /** The agent CLI the run used, and its version. */
@@ -1456,11 +1462,10 @@ export interface InsightsProviderSnapshot {
   /**
    * True when the surface may offer "Show raw output" — v0.9.0 DoD 9.40.
    *
-   * All three must hold: the provider has the optional `getRawOutput`, the
-   * latest set is `refused`, and exactly ONE run in the history has that
-   * set's `createdAt` and is `refused`. The set view carries no run id, so
-   * that join is how the host knows which run to ask about; when it is not
-   * unique, the action is not offered rather than guessed (G3).
+   * Both must hold: the provider has the optional `getRawOutput`, and the
+   * latest set is `refused`. The run asked about is that set's own `runId`
+   * (ruling of 2026-09-22). When false on a refused set, the surface says
+   * "No raw output for this run." (the same ruling, 4).
    */
   rawOutput: boolean;
 }

@@ -40,6 +40,7 @@ import {
   EXAMPLES,
   EXAMPLE_LABEL,
   ESTIMATED_BY_CLAUDE_CODE,
+  NO_RAW_OUTPUT,
   FINDING_LABELS,
   IDLE_RESUME_MS,
   INSIGHTS_WINDOW_DAYS,
@@ -369,6 +370,7 @@ const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evide
   ok: {
     about: ABOUT,
     latest: {
+      runId: 'run-1',
       createdAt: NOW,
       agent: { kind: 'claude', version: '2.1.246' },
       window: { sessions: 12, excluded: 2, sinceMs: NOW - 7 * DAY },
@@ -389,6 +391,7 @@ const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evide
   empty: {
     about: ABOUT,
     latest: {
+      runId: 'run-2',
       createdAt: NOW,
       agent: { kind: 'codex', version: '0.151.0-alpha.7.2' },
       window: { sessions: 1, excluded: 0, sinceMs: NOW - DAY },
@@ -405,6 +408,7 @@ const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evide
   refused: {
     about: ABOUT,
     latest: {
+      runId: 'run-3',
       createdAt: NOW,
       agent: { kind: 'claude', version: '2.1.246' },
       window: { sessions: 4, excluded: 0, sinceMs: NOW - 7 * DAY },
@@ -422,6 +426,7 @@ const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evide
   'mixed-evidence': {
     about: ABOUT,
     latest: {
+      runId: 'run-4',
       createdAt: NOW,
       agent: { kind: 'claude', version: '2.1.246' },
       window: { sessions: 3, excluded: 0, sinceMs: NOW - 7 * DAY },
@@ -491,6 +496,17 @@ describe('the provider state’s renderer — DoD 9.41', () => {
     expect(providerInsightsLayout(PROVIDER_STATES.refused).latest?.rawOutput).toBe(true);
     expect(providerInsightsLayout({ ...PROVIDER_STATES.refused, rawOutput: false }).latest?.rawOutput).toBe(false);
     expect(providerInsightsLayout({ ...PROVIDER_STATES.ok, rawOutput: true }).latest?.rawOutput).toBe(false);
+  });
+
+  it('ruling 2026-09-22 (4): a refused set with no raw output says so, verbatim — and only then', () => {
+    expect(NO_RAW_OUTPUT).toBe('No raw output for this run.');
+    expect(providerInsightsLayout({ ...PROVIDER_STATES.refused, rawOutput: false }).latest?.rawOutputNote).toBe(NO_RAW_OUTPUT);
+    // Offered: the action, not the sentence.
+    expect(providerInsightsLayout(PROVIDER_STATES.refused).latest?.rawOutputNote).toBeUndefined();
+    // Not refused: neither, whatever the flag says.
+    for (const flag of [true, false]) {
+      expect(providerInsightsLayout({ ...PROVIDER_STATES.ok, rawOutput: flag }).latest?.rawOutputNote).toBeUndefined();
+    }
   });
 
   it('an ok set the parent emptied says so, and is not read as a run that found nothing', () => {

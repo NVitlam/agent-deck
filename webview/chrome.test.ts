@@ -426,6 +426,7 @@ describe('every surface is content only', () => {
     provider: {
       about: { name: 'Agent Deck Insights', version: '0.2.0' },
       latest: {
+        runId: 'run-1',
         createdAt: 1_790_000_000_000,
         agent: { kind: 'claude', version: '2.1.246' },
         window: { sessions: 3, excluded: 0, sinceMs: 1_789_400_000_000 },

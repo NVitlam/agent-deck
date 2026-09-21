@@ -168,6 +168,8 @@
                   data-testid={TESTID.insightsRawOutput}
                   onclick={() => onrawoutput()}>Show raw output</button
                 >
+              {:else if paid.latest.rawOutputNote !== undefined}
+                <p class="line" data-testid="insights-raw-output-note">{paid.latest.rawOutputNote}</p>
               {/if}
             </div>
           {/if}

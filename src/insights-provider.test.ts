@@ -86,6 +86,7 @@ interface AmendmentFinding {
 
 /** The amendment's set view, written out. */
 interface AmendmentSet {
+  runId: string;
   createdAt: number;
   agent: { kind: 'claude' | 'codex'; version: string };
   window: { sessions: number; excluded: number; sinceMs: number };
@@ -190,6 +191,7 @@ function finding(over: Obj = {}): Obj {
 
 function findingSet(over: Obj = {}): Obj {
   return {
+    runId: 'run-1',
     createdAt: 1_790_000_000_000,
     agent: { kind: 'claude', version: '2.1.246' },
     window: { sessions: 5, excluded: 1, sinceMs: 1_789_400_000_000 },
@@ -599,7 +601,10 @@ describe('the ENVELOPE: whole, self-consistent, or dropped as one', () => {
       findingSet({ findings: 'none' }),
       findingSet({ state: 'partial' }),
       findingSet({ note: 'an extra top-level key' }),
-      findingSet({ runId: 'run-1' }),
+      findingSet({ runId: 'run 1; <script>' }),
+      findingSet({ runId: '' }),
+      findingSet({ runId: 42 }),
+      Object.fromEntries(Object.entries(findingSet()).filter(([key]) => key !== 'runId')),
     ]) {
       expect(viewOfFindingSet(set), JSON.stringify(set).slice(0, 120)).toStrictEqual({ value: null, dropped: 1 });
     }
@@ -704,40 +709,12 @@ describe('the run history is checked the same way', () => {
   });
 });
 
-describe('refusedRunIdOf: the ONE refused run a refused set belongs to, or nothing', () => {
-  const latest = viewOfFindingSet(refusedSet()).value;
-  const at = 1_790_000_000_000;
-  const runs = (items: Obj[]): RunSummary[] => viewOfRuns(items).value;
-
-  it('joins on createdAt and state, and only when exactly one run matches', () => {
-    expect(latest).not.toBeNull();
-    expect(
-      refusedRunIdOf(latest, runs([run({ runId: 'r-9', createdAt: at, state: 'refused', findings: 0 }), run({ createdAt: 5 })])),
-    ).toBe('r-9');
-    // None.
-    expect(refusedRunIdOf(latest, runs([run({ createdAt: at })]))).toBeNull();
-    // Two at the same instant: not unique, so not guessed.
-    expect(
-      refusedRunIdOf(
-        latest,
-        runs([
-          run({ runId: 'a', createdAt: at, state: 'refused', findings: 0 }),
-          run({ runId: 'b', createdAt: at, state: 'refused', findings: 0 }),
-        ]),
-      ),
-    ).toBeNull();
-    // D4 (verifier round 9.43): a refused run at ANOTHER instant is not this
-    // set's run. The ordinary shape: the latest set's own run is missing from
-    // the history and an older refused one is present — its raw output must
-    // never open under this set's step and reason.
-    expect(
-      refusedRunIdOf(latest, runs([run({ runId: 'older', createdAt: at - 60_000, state: 'refused', findings: 0 })])),
-    ).toBeNull();
-    // A set that is not refused has no raw output to ask for.
-    expect(
-      refusedRunIdOf(viewOfFindingSet(findingSet()).value, runs([run({ createdAt: at, state: 'refused', findings: 0 })])),
-    ).toBeNull();
-    expect(refusedRunIdOf(null, [])).toBeNull();
+describe('refusedRunIdOf: a refused set names its OWN run (ruling 2026-09-22, 1)', () => {
+  it('is the set’s runId when refused, and nothing otherwise — the history plays no part', () => {
+    expect(refusedRunIdOf(viewOfFindingSet(refusedSet({ runId: 'r-9' })).value)).toBe('r-9');
+    expect(refusedRunIdOf(viewOfFindingSet(findingSet({ runId: 'r-9' })).value)).toBeNull();
+    expect(refusedRunIdOf(viewOfFindingSet(findingSet({ runId: 'r-9', findings: [], state: 'empty' })).value)).toBeNull();
+    expect(refusedRunIdOf(null)).toBeNull();
   });
 });
 
@@ -1082,8 +1059,8 @@ describe('raw output (DoD 9.40)', () => {
     expect(without.rawOutput()).toStrictEqual({ ok: false, reason: 'unsupported' });
     // Not refused.
     expect(registryWith({ getLatest: () => findingSet() }).registry.snapshot()?.rawOutput).toBe(false);
-    // Not placeable.
-    expect(registryWith({ listRuns: () => [] }).registry.snapshot()?.rawOutput).toBe(false);
+    // The history plays no part (ruling 1): with no run listed at all it is still offered.
+    expect(registryWith({ listRuns: () => [] }).registry.snapshot()?.rawOutput).toBe(true);
   });
 
   it('asks for the resolved run id and nothing else, and returns the text WHOLE', () => {
@@ -1093,7 +1070,7 @@ describe('raw output (DoD 9.40)', () => {
   });
 
   it('each way it shows nothing is named, with the run where there is one', () => {
-    expect(registryWith({ listRuns: () => [] }).registry.rawOutput()).toStrictEqual({ ok: false, reason: 'no-run' });
+    expect(registryWith({ getLatest: () => findingSet() }).registry.rawOutput()).toStrictEqual({ ok: false, reason: 'no-run' });
     expect(registryWith({ getRawOutput: () => null }).registry.rawOutput()).toStrictEqual({
       ok: false,
       reason: 'none',
@@ -1142,11 +1119,15 @@ describe('raw output (DoD 9.40)', () => {
     expect(ran).toBe(0);
   });
 
-  it('resolves from what the provider says NOW: a run placed after the snapshot is the one asked for', () => {
-    let runs: unknown[] = [];
-    const { registry, asked } = registryWith({ listRuns: () => runs });
-    expect(registry.snapshot()?.rawOutput).toBe(false);
-    runs = [run({ runId: 'run-late', state: 'refused', findings: 0 })];
+  it('asks for the latest set’s OWN runId as the provider states it NOW — never a run from the history', () => {
+    let latest: Obj = refusedSet({ runId: 'run-first' });
+    // A refused run in the history under ANOTHER id: it must never be the one asked for.
+    const { registry, asked } = registryWith({
+      getLatest: () => latest,
+      listRuns: () => [run({ runId: 'run-listed', state: 'refused', findings: 0 })],
+    });
+    expect(registry.snapshot()?.rawOutput).toBe(true);
+    latest = refusedSet({ runId: 'run-late' });
     expect(registry.rawOutput()).toMatchObject({ ok: true, runId: 'run-late' });
     expect(asked).toStrictEqual(['run-late']);
   });

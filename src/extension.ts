@@ -5411,7 +5411,7 @@ export function rawOutputRefusal(result: Extract<RawOutputResult, { ok: false }>
     case 'unsupported':
       return 'Agent Deck: the Insights provider offers no raw output.';
     case 'no-run':
-      return 'Agent Deck: the latest refused set matches no single run in the history, so no raw output was asked for.';
+      return 'Agent Deck: the latest finding set is not a refused run, so no raw output was asked for.';
     case 'none':
       return `Agent Deck: the Insights provider has no raw output for run ${result.runId}.`;
     case 'invalid':

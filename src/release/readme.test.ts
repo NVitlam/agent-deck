@@ -571,6 +571,11 @@ describe('README exists and ships clean', () => {
       expect(README, member).toContain(member);
     }
     expect(flat).toContain('dropped and counted, never shortened');
+    // Rulings of 2026-09-22 (round 5): the set names its own run, and a refused
+    // run with no raw output says so verbatim. The createdAt join is gone.
+    expect(README).toMatch(/FindingSetView \{\s+runId: string;/);
+    expect(flat).toContain('No raw output for this run.');
+    expect(flat).not.toMatch(/same `createdAt`|has the set's `createdAt`/);
     expect(flat).toContain('estimated by Claude Code');
     const security = readText('SECURITY.md').replace(/\s+/g, ' ');
     for (const fact of ['at most 64 characters', 'at most 1,024', 'at most 2,000', 'never shortened', 'bidirectional override']) {

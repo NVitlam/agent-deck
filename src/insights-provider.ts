@@ -446,7 +446,7 @@ export interface Checked<T> {
   dropped: number;
 }
 
-const SET_KEYS = ['createdAt', 'agent', 'window', 'usage', 'findings', 'rejected', 'state'];
+const SET_KEYS = ['runId', 'createdAt', 'agent', 'window', 'usage', 'findings', 'rejected', 'state'];
 
 /**
  * The latest finding set, checked and copied.
@@ -469,6 +469,7 @@ export function viewOfFindingSet(value: unknown): Checked<FindingSetView | null>
   const state = own(value, 'state');
   if (!isOneOf(state, RUN_STATES)) return dropSet;
   if (!hasExactly(value, state === 'refused' ? [...SET_KEYS, 'refusal'] : SET_KEYS)) return dropSet;
+  const runId = own(value, 'runId');
   const createdAt = own(value, 'createdAt');
   const agent = own(value, 'agent');
   const window = own(value, 'window');
@@ -481,6 +482,7 @@ export function viewOfFindingSet(value: unknown): Checked<FindingSetView | null>
   const excluded = own(window, 'excluded');
   const sinceMs = own(window, 'sinceMs');
   const envelopeOk =
+    matches(runId, ID_PATTERN) &&
     isInstant(createdAt) &&
     hasExactly(agent, ['kind', 'version']) &&
     isOneOf(kind, AGENTS) &&
@@ -515,6 +517,7 @@ export function viewOfFindingSet(value: unknown): Checked<FindingSetView | null>
   dropped += Math.max(0, items.length - MAX_FINDINGS);
   return {
     value: {
+      runId,
       createdAt,
       agent: { kind, version },
       window: { sessions, excluded, sinceMs },
@@ -566,20 +569,16 @@ export function viewOfRuns(value: unknown): Checked<RunSummary[]> {
 }
 
 /**
- * The run a refused latest set belongs to, or `null`.
+ * The run a refused latest set belongs to, or `null` when the set is not
+ * refused.
  *
- * The set view carries no run id (the amendment's shape), so the host joins
- * it to the history: EXACTLY ONE run whose `createdAt` equals the set's and
- * whose state is `refused`. None, or more than one, is `null` — the raw
- * output of a run the host had to guess at is not offered (G3).
+ * The set's OWN `runId` — the ruling of 2026-09-22 (round 5, ruling 1).
+ * Until then the set carried no run id and the host joined it to the history
+ * on `createdAt`; that join is gone, and the history plays no part in which
+ * run's raw output is asked for.
  */
-export function refusedRunIdOf(
-  latest: FindingSetView | null,
-  runs: readonly RunSummary[],
-): string | null {
-  if (latest === null || latest.state !== 'refused') return null;
-  const matched = runs.filter((run) => run.createdAt === latest.createdAt && run.state === 'refused');
-  return matched.length === 1 ? (matched[0] as RunSummary).runId : null;
+export function refusedRunIdOf(latest: FindingSetView | null): string | null {
+  return latest !== null && latest.state === 'refused' ? latest.runId : null;
 }
 
 /* ------------------------------------------------------------------------ *
@@ -766,23 +765,23 @@ export class InsightsProviderRegistry {
       runs,
       running: this.#running,
       dropped,
-      rawOutput: current.rawOutput && refusedRunIdOf(latest, runs) !== null,
+      rawOutput: current.rawOutput && refusedRunIdOf(latest) !== null,
     };
   }
 
   /**
    * The latest refused run's raw output — DoD 9.40.
    *
-   * Resolves the run from what the provider says NOW, not from a snapshot a
-   * surface may still be showing, and asks `getRawOutput` for that id alone.
-   * A string over {@link RAW_OUTPUT_MAX_CHARS} is refused whole, never cut.
+   * Reads the latest set NOW, not from a snapshot a surface may still be
+   * showing, and asks `getRawOutput` for that set's own `runId` alone. A
+   * string over {@link RAW_OUTPUT_MAX_CHARS} is refused whole, never cut.
    */
   rawOutput(): RawOutputResult {
     const current = this.#current;
     if (current === null) return { ok: false, reason: 'no-provider' };
     if (!current.rawOutput) return { ok: false, reason: 'unsupported' };
-    const { latest, runs } = this.#read(current);
-    const runId = refusedRunIdOf(latest, runs);
+    const { latest } = this.#read(current);
+    const runId = refusedRunIdOf(latest);
     if (runId === null) return { ok: false, reason: 'no-run' };
     let text: unknown;
     try {

@@ -227,7 +227,7 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     > = true;
     const set: Exact<
       keyof ApiFindingSetView,
-      'createdAt' | 'agent' | 'window' | 'usage' | 'findings' | 'rejected' | 'state' | 'refusal'
+      'runId' | 'createdAt' | 'agent' | 'window' | 'usage' | 'findings' | 'rejected' | 'state' | 'refusal'
     > = true;
     const refusalOptional: Exact<ApiFindingSetView['refusal'], ApiFindingSetRefusalView | undefined> = true;
     const run: Exact<keyof ApiRunSummary, 'runId' | 'createdAt' | 'state' | 'findings' | 'agentKind'> = true;
@@ -235,6 +235,7 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     const setWhole: Exact<
       ApiFindingSetView,
       {
+        runId: string;
         createdAt: number;
         agent: { kind: 'claude' | 'codex'; version: string };
         window: { sessions: number; excluded: number; sinceMs: number };
@@ -279,6 +280,7 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     const providers = registry();
     const api = createAgentDeckApi(sourcesOver([], null), e, providers);
     const latest: ApiFindingSetView = {
+      runId: 'run-1',
       createdAt: 1_790_000_000_000,
       agent: { kind: 'codex', version: '0.151.0' },
       window: { sessions: 2, excluded: 0, sinceMs: 1_789_400_000_000 },

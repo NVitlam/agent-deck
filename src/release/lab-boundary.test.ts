@@ -95,6 +95,20 @@ const ALLOWED: Readonly<Record<string, { readonly count: number; readonly why: s
     count: 1,
     why: 'the runner ledger it writes; a developer gate tool, never run in CI.',
   },
+  /*
+   * v0.9.0 DoD 9.30. Not a path: `evidence` is the finding field of the API v2
+   * provider contract (spec `Amendment 2026-09-21 — One window`), and a bare
+   * literal `evidence` is what the pattern's `(^|/)evidence(/|$)` arm matches.
+   * Enumerated rather than narrowing the pattern, which guards real paths.
+   */
+  'src/insights-provider.test.ts': {
+    count: 1,
+    why: 'the key `evidence` of FindingView in a type-equality check; a field name, never a path.',
+  },
+  'src/insights-provider.ts': {
+    count: 2,
+    why: 'the key `evidence` of FindingView, read off a provider’s object; a field name, never a path.',
+  },
   'src/release/changelog.test.ts': {
     count: 5,
     why: 'planted CHANGELOG text for the evidence-link guard; data, never a path read.',

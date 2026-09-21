@@ -164,6 +164,8 @@ describe.skipIf(!CENSUS_PRESENT)(
       });
       expect(out).toContain('OK');
       expect(out).toContain(TOOLCLASS_DIGEST.slice(0, 12));
-    }, 30_000);
+      // 120 s, this repository's budget for a subprocess (v0.9.0 site-delta
+      // gate, 2026-09-21: it passed 30 s in one run of a loaded block).
+    }, 120_000);
   },
 );

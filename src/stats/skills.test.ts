@@ -341,7 +341,9 @@ describe('args is prose and never reaches a record', () => {
     // The population is pinned non-empty: a walk that found no string would
     // otherwise report the same clean pass.
     expect(inspected).toBeGreaterThan(0);
-  });
+    // 60 s, not the 5 s default (v0.9.0 site-delta gate, 2026-09-21): it timed
+    // out in two runs of a loaded block. Budgeted rather than re-rolled.
+  }, 60_000);
 
   it('no args value appears in full anywhere in any record', async () => {
     // The total form, which admits no exemption at all: equality, not

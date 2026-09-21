@@ -58,9 +58,9 @@ key against a fixed shape, caps every list, and drops and counts what fails.
 provider's own words: an action (a lead of at most 15 words and a detail), a cause, and a label on
 each piece of evidence; a refused run carries the step it stopped at and the reason. Each is a
 name (at most 64 characters), a path (at most 1,024) or free text (at most 2,000) — the first two
-are the stats history's own caps — and none may carry a control character (free text may carry a
-line break or a tab), a bidirectional override, a line or paragraph separator, or a lone
-surrogate. A string that fails is **dropped and counted, never shortened**. A piece of evidence
+are the stats history's own caps — and none may carry a control or format character (Unicode Cc
+and Cf; free text may carry a tab and LF or CRLF line breaks), so no zero-width character and no
+bidirectional override, nor a line or paragraph separator, nor a lone surrogate. A string that fails is **dropped and counted, never shortened**. A piece of evidence
 may be text only on a stats-record field the history itself stores as text, under that field's
 cap. The panel renders all of it as text, never as markup. Agent Deck calls the provider's
 `getLatest`, `listRuns` and `run`, the optional `getRawOutput` only when you press **Show raw

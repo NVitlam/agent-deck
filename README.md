@@ -869,9 +869,13 @@ RunSummary { runId: string; createdAt: number; state: 'ok' | 'empty' | 'refused'
 kind, confidence and "since last run" as words (never a score), the detail behind an expand, the
 cause, then each piece of evidence under its label. Above them it states the run: when, which
 agent CLI and version, the window, and the run's own usage — marked *estimated by Claude Code*
-when the agent was Claude Code. A refused run shows the step and the reason, and, when the
-provider has `getRawOutput`, a **Show raw output** action that opens that run's raw output as an
-untitled plain-text document. One provider at a time — a second registration throws, naming both —
+when the agent was Claude Code. A refused run shows the step and the reason, and a **Show raw
+output** action that opens that run's raw output as an untitled plain-text document. The action
+appears only when all three hold: the provider has `getRawOutput`; the latest set is refused; and
+exactly one run in `listRuns()` is refused and has the set's `createdAt`. **A provider must stamp a
+set and its run summary with the same `createdAt`** — the set carries no run id, and that instant
+is how Agent Deck knows which run to ask about; with no single match the action is not shown.
+One provider at a time — a second registration throws, naming both —
 and disposing the registration returns the surface to its free state.
 
 **What a provider hands over is data: provider data is plain JSON, checked field by field, and never
@@ -881,10 +885,13 @@ must match a fixed shape; lists are capped (64 findings, 16 evidence items each,
 id, a finding id, or one stats key of one session that repeats is refused. **Every text is
 length-capped and checked**: a name (an evidence label, a refusal's step) at most 64 characters,
 a path at most 1,024, free text (an action, a cause, a refusal's reason) at most 2,000 — the
-first two are the stats history's own caps — with no non-printing character (free text may carry a
-line break or a tab), no bidirectional override, no line or paragraph separator and no lone
-surrogate. Evidence may be text only on a stats-record field the history itself stores as text,
-under that field's cap. A set whose state and findings disagree is refused whole. A value that
+first two are the stats history's own caps — with no character from the Unicode categories Cc
+and Cf (free text may carry a tab and line breaks, LF or CRLF): that excludes zero-width spaces
+and joiners, bidirectional marks and overrides, the soft hyphen, the byte-order mark and tag
+characters; nor a line or paragraph separator, nor a lone surrogate. Evidence may be text only on
+a stats-record field the history itself stores as text: a file path at most 1,024 characters (the
+history's cap), an agent type or skill name at most 64 (likewise), a project slug at most 1,024 and
+any other such field at most 64. A set whose state and findings disagree is refused whole. A value that
 fails is **dropped and counted, never shortened**, and the surface says how many were dropped.
 Raw output over 1,048,576 characters is not opened at all. Agent Deck calls `getLatest`,
 `listRuns` and `run`, `getRawOutput` only when you ask for a refused run's raw output, and

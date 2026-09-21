@@ -1322,8 +1322,9 @@ export interface SidebarStateMessage {
  * `src/insights-provider.ts` checks every value a provider returns: an
  * enumeration against its list, an id or a stats key against its pattern,
  * and every text against one of three classes — a NAME (64 characters), a
- * PATH (1,024) or FREE TEXT (2,000), with no control character and no
- * bidirectional override in any of them. A string evidence value is admitted
+ * PATH (1,024) or FREE TEXT (2,000), with no control or format character
+ * (Unicode Cc, Cf — zero-width and bidirectional characters among them) in
+ * any of them. A string evidence value is admitted
  * only on a stats key the store itself allow-lists as a string. A value that
  * fails is DROPPED AND COUNTED, never truncated and never repaired.
  */
@@ -1359,8 +1360,10 @@ export type FindingSinceLastRun = 'new' | 'still' | 'resolved';
  *
  * A STRING value is admitted only where the store itself allows a string —
  * `STATS_STRING_FIELDS` or `STATS_SCOPED_STRING_FIELDS` in
- * `src/stats/schema.ts`, judged on the key the path ends in — and under the
- * store's cap for that key. Anywhere else a string drops the finding.
+ * `src/stats/schema.ts`, judged on the key the path ends in — and under a cap:
+ * the store's where it has one (`filePath` 1,024; `agentType` and a skill's
+ * `name` 64), else the path cap for `projectSlug` and the name cap for any
+ * other key. Anywhere else a string drops the finding.
  */
 export interface FindingEvidenceView {
   /** A NAME: at most 64 characters, one line. */

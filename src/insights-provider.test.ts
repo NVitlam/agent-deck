@@ -52,6 +52,7 @@ import {
   viewOfAbout,
   viewOfFindingSet,
   viewOfRuns,
+  providerErrorText,
 } from './insights-provider.js';
 import { NAME_MAX_CHARS, PATH_MAX_CHARS, STATS_STRING_CAPS } from './stats/schema.js';
 
@@ -399,6 +400,51 @@ describe('TEXT: every field at its cap passes, one past it is dropped and counte
     }
   });
 
+  /** Every hostile character, built from its code point (never an escape a tool can decode). */
+  const HOSTILE_CODES = [
+    0x00, 0x0d, 0x1b, 0x7f, 0x85, 0x9f, // controls, CR alone included
+    0x202e, 0x2066, 0x2069, 0x061c, 0x200f, // bidi
+    0x200b, 0x200c, 0x200d, 0x2060, 0xfeff, 0x00ad, 0xfff9, 0xe0041, // format (D3)
+    0x2028, 0x2029, // separators
+    0xd800, 0xdc00, // lone surrogates
+  ];
+  const hostile = (code: number): string => `a${String.fromCodePoint(code)}b`;
+
+  it('9.43 D3: every FORMAT character is refused too — zero-width, soft hyphen, BOM, tags', () => {
+    for (const field of FINDING_TEXT) {
+      for (const code of [0x200b, 0x200d, 0x2060, 0xfeff, 0x00ad, 0xe0041]) {
+        expect(checkOne(withField(finding(), field.path, hostile(code))).kept, `${field.path} U+${code.toString(16)}`).toBe(0);
+      }
+      // A label made ONLY of zero-width spaces, which passed the old blank check.
+      expect(checkOne(withField(finding(), field.path, String.fromCodePoint(0x200b).repeat(3))).kept).toBe(0);
+    }
+  });
+
+  it('9.43 D1: evidence string values, a refusal’s step and its reason take every hostile character too', () => {
+    for (const code of HOSTILE_CODES) {
+      const text = hostile(code);
+      const onFile = checkOne(finding({ evidence: [evidence({ statsKey: 'sessions[0].files[0].filePath', value: text })] }));
+      expect(onFile.kept, `evidence U+${code.toString(16)}`).toBe(0);
+      for (const path of ['refusal.step', 'refusal.reason']) {
+        expect(viewOfFindingSet(withField(refusedSet(), path, text)), `${path} U+${code.toString(16)}`).toStrictEqual({
+          value: null,
+          dropped: 1,
+        });
+      }
+    }
+    // The controls: the same fields pass plain text.
+    expect(checkOne(finding({ evidence: [evidence({ statsKey: 'sessions[0].files[0].filePath', value: 'a/b.ts' })] })).kept).toBe(1);
+    expect(viewOfFindingSet(withField(refusedSet(), 'refusal.reason', 'plain')).dropped).toBe(0);
+  });
+
+  it('9.43: CRLF line ends are admitted where text may span lines, kept as sent; a CR alone never', () => {
+    const crlf = `one${String.fromCharCode(13, 10)}two`;
+    const { value } = viewOfFindingSet(findingSet({ findings: [finding({ cause: crlf })] }));
+    expect(value?.findings[0]?.cause).toBe(crlf);
+    expect(checkOne(withField(finding(), 'action.lead', crlf)).kept).toBe(0);
+    expect(checkOne(withField(finding(), 'cause', `one${String.fromCharCode(13)}two`)).kept).toBe(0);
+  });
+
   it('markup is TEXT, not refused: the renderer escapes it, and refusing it would refuse every code sample', () => {
     const checked = checkOne(withField(finding(), 'cause', 'The edit wrote <script>alert(1)</script> into a.ts.'));
     expect(checked.kept).toBe(1);
@@ -543,6 +589,8 @@ describe('the ENVELOPE: whole, self-consistent, or dropped as one', () => {
       findingSet({ window: { sessions: 1, sinceMs: 1 } }),
       findingSet({ window: { sessions: 1, excluded: -1, sinceMs: 1 } }),
       findingSet({ usage: { prompt: 1.5, output: 1 } }),
+      findingSet({ usage: { prompt: -1, output: 1 } }),
+      findingSet({ usage: { prompt: 1, output: -1 } }),
       findingSet({ usage: { prompt: 1, output: 1, costUsd: -0.01 } }),
       findingSet({ usage: { prompt: 1, output: 1, costUsd: Number.NaN } }),
       findingSet({ usage: { prompt: 1 } }),
@@ -677,6 +725,13 @@ describe('refusedRunIdOf: the ONE refused run a refused set belongs to, or nothi
           run({ runId: 'b', createdAt: at, state: 'refused', findings: 0 }),
         ]),
       ),
+    ).toBeNull();
+    // D4 (verifier round 9.43): a refused run at ANOTHER instant is not this
+    // set's run. The ordinary shape: the latest set's own run is missing from
+    // the history and an older refused one is present — its raw output must
+    // never open under this set's step and reason.
+    expect(
+      refusedRunIdOf(latest, runs([run({ runId: 'older', createdAt: at - 60_000, state: 'refused', findings: 0 })])),
     ).toBeNull();
     // A set that is not refused has no raw output to ask for.
     expect(
@@ -968,6 +1023,30 @@ describe('onDidChange, run and disposal', () => {
 /* ------------------------------------------------------------------------ *
  * 6. Raw output — optional, placed, and never cut
  * ------------------------------------------------------------------------ */
+
+describe('9.43 D2: a thrown provider message is provider text', () => {
+  it('passes as it is when it is free text; withheld with its length otherwise; never runs code', () => {
+    expect(providerErrorText(new Error('store unreadable'))).toBe('store unreadable');
+    expect(providerErrorText('plain string')).toBe('plain string');
+    const bidi = `abc${String.fromCharCode(0x202e)}def`;
+    expect(providerErrorText(new Error(bidi))).toBe('(a message of 7 characters that did not pass the check, not shown)');
+    expect(providerErrorText(new Error('x'.repeat(FREE_TEXT_MAX_CHARS + 1)))).toContain('2001 characters');
+    let ran = 0;
+    const sneaky = {
+      get message(): string {
+        ran += 1;
+        return 'from a getter';
+      },
+      toString(): string {
+        ran += 1;
+        return 'from toString';
+      },
+    };
+    expect(providerErrorText(sneaky)).toBe('(an error with no message)');
+    expect(providerErrorText(42)).toBe('(an error with no message)');
+    expect(ran).toBe(0);
+  });
+});
 
 describe('raw output (DoD 9.40)', () => {
   const REFUSED_RUN = run({ state: 'refused', findings: 0 });

@@ -535,10 +535,14 @@ describe('README exists and ships clean', () => {
     const changelog = readText('CHANGELOG.md');
     const block = changelog.slice(changelog.indexOf('## 0.9.0'), changelog.indexOf('\n## ', changelog.indexOf('## 0.9.0') + 1));
     expect(block.length).toBeGreaterThan(200);
+    // Verifier round 9.43, W7: the site pages too, and every text read with
+    // its curly apostrophes straightened, so `Deck’s` cannot slip a pattern.
     const shipped: readonly [string, string][] = [
       ['README.md', README],
       ['SECURITY.md', readText('SECURITY.md')],
       ['CHANGELOG.md 0.9.0', block],
+      ['site/index.html', readText('site/index.html')],
+      ['site/insights.html', readText('site/insights.html')],
     ];
     const STALE: readonly [RegExp, string][] = [
       [/there is no text field/i, 'There is no text field: every word the Insights surface shows'],
@@ -547,11 +551,18 @@ describe('README exists and ships clean', () => {
       [/the only provider strings (?:shown|displayed)/i, 'the only provider strings displayed are its name'],
       [/a finding is a kind, a confidence and numbers/i, 'a finding is a kind, a confidence and numbers'],
       [/\*\*numeric evidence\*\*/i, 'a **confidence** (low, medium, high) and **numeric evidence**'],
+      [
+        /provider(?:'s)? (?:text|prose|words?) (?:is|are) (?:never|not) (?:shown|displayed|rendered)/i,
+        'provider text is never displayed',
+      ],
     ];
+    const plain = (text: string): string => text.replace(/[‘’]/g, "'").replace(/\s+/g, ' ');
+    // The curly form the verifier planted (V28) is caught through `plain`.
+    expect(STALE[1]?.[0].test(plain('every word about it is Agent Deck’s own'))).toBe(true);
     for (const [pattern, sentence] of STALE) {
       expect(pattern.test(sentence), `the control for ${String(pattern)} does not match what shipped`).toBe(true);
       for (const [name, text] of shipped) {
-        expect(pattern.test(text.replace(/\s+/g, ' ')), `${name} still says ${String(pattern)}`).toBe(false);
+        expect(pattern.test(plain(text)), `${name} still says ${String(pattern)}`).toBe(false);
       }
     }
     // What is true now, stated where an extension author and a security reader look.

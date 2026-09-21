@@ -347,6 +347,8 @@ interface MockState {
    * user sees it" are two claims, and the raw-output action makes the second.
    */
   openedDocuments: { content: string; language: string | undefined; shown: boolean }[];
+  /** When set, the next `openTextDocument` rejects (verifier round 9.43, W2). */
+  openTextDocumentFails: boolean;
   /** What the next modal returns, as if the user had pressed it (DoD 9.7). */
   modalAnswer: string | undefined;
   panels: MockWebviewPanel[];
@@ -421,6 +423,7 @@ const state: MockState = {
   outputChannelsDisposed: [],
   openedExternal: [] as string[],
   openedDocuments: [] as { content: string; language: string | undefined; shown: boolean }[],
+  openTextDocumentFails: false,
   modalAnswer: undefined as string | undefined,
   panels: [],
   panelColumns: [],
@@ -457,6 +460,7 @@ export function resetVscodeMock(): void {
   state.warningAnswer = undefined;
   state.openedExternal = [];
   state.openedDocuments = [];
+  state.openTextDocumentFails = false;
   state.modalAnswer = undefined;
   state.configurationWrites = [];
   state.configurationEmitter = new Emitter();
@@ -553,6 +557,10 @@ export const mock = {
   /** DoD 9.40 — every untitled document opened with content, and whether shown. */
   get openedDocuments(): readonly { content: string; language: string | undefined; shown: boolean }[] {
     return state.openedDocuments;
+  },
+  /** Verifier round 9.43, W2 — make the next `openTextDocument` reject. */
+  failNextOpenTextDocument(): void {
+    state.openTextDocumentFails = true;
   },
   /** DoD 9.7 — answer the next modal as if the user had pressed that button. */
   answerModal(label: string | undefined): void {
@@ -671,6 +679,10 @@ export const workspace = {
   openTextDocument(options: { content?: string; language?: string }): Promise<{ index: number }> {
     if (typeof options !== 'object' || options === null || typeof options.content !== 'string') {
       return Promise.reject(new Error('vscode-mock: only the untitled { content } overload is modelled'));
+    }
+    if (state.openTextDocumentFails) {
+      state.openTextDocumentFails = false;
+      return Promise.reject(new Error('vscode-mock: the editor refused the document'));
     }
     state.openedDocuments.push({ content: options.content, language: options.language, shown: false });
     return Promise.resolve({ index: state.openedDocuments.length - 1 });

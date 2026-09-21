@@ -231,6 +231,38 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     > = true;
     const refusalOptional: Exact<ApiFindingSetView['refusal'], ApiFindingSetRefusalView | undefined> = true;
     const run: Exact<keyof ApiRunSummary, 'runId' | 'createdAt' | 'state' | 'findings' | 'agentKind'> = true;
+    // Verifier round 9.43, W5: the VALUE types too, not only the keys.
+    const setWhole: Exact<
+      ApiFindingSetView,
+      {
+        createdAt: number;
+        agent: { kind: 'claude' | 'codex'; version: string };
+        window: { sessions: number; excluded: number; sinceMs: number };
+        usage: { prompt: number; output: number; costUsd?: number } | null;
+        findings: ApiFindingView[];
+        rejected: number;
+        state: 'ok' | 'empty' | 'refused';
+        refusal?: { step: string; reason: string };
+      }
+    > = true;
+    const findingWhole: Exact<
+      ApiFindingView,
+      {
+        id: string;
+        kind: 're-read-loop' | 'churn-chain' | 'context-churn' | 'stall' | 'silent-subagent' | 'compaction' | 'cache-miss' | 'other';
+        confidence: 'low' | 'medium' | 'high';
+        action: { lead: string; detail: string };
+        cause: string;
+        evidence: { label: string; sessionId: string; statsKey: string; value: number | string }[];
+        sinceLastRun: 'new' | 'still' | 'resolved' | null;
+      }
+    > = true;
+    const runWhole: Exact<
+      ApiRunSummary,
+      { runId: string; createdAt: number; state: 'ok' | 'empty' | 'refused'; findings: number; agentKind: 'claude' | 'codex' }
+    > = true;
+    const refusalWhole: Exact<ApiFindingSetRefusalView, { step: string; reason: string }> = true;
+    expect([setWhole, findingWhole, runWhole, refusalWhole]).toStrictEqual([true, true, true, true]);
     const states: Exact<ApiInsightsRunState, 'ok' | 'empty' | 'refused'> = true;
     const since: Exact<ApiFindingSinceLastRun, 'new' | 'still' | 'resolved'> = true;
     const agents: Exact<ApiInsightsAgentKind, 'claude' | 'codex'> = true;

@@ -136,7 +136,7 @@ import {
   aboutPage,
 } from './about.js';
 import type { AboutLink } from './about.js';
-import { InsightsProviderRegistry, RAW_OUTPUT_MAX_CHARS } from './insights-provider.js';
+import { InsightsProviderRegistry, RAW_OUTPUT_MAX_CHARS, providerErrorText } from './insights-provider.js';
 import type { RawOutputResult } from './insights-provider.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
@@ -5399,28 +5399,6 @@ export function currentHost(): AgentDeckHost | null {
 }
 
 /**
- * The message the command shows when correlation refused, one arm per meaning.
- *
- * `ambiguousSlug` is the one failure kind that is NOT an absence. The
- * filesystem call succeeded and returned two project directories whose names
- * differ only by case; the tailer refuses to guess which one is this workspace
- * rather than picking one (G3). Sessions almost certainly exist, so the generic
- * "no sessions" wording states something false — the same class of defect as a
- * fabricated number, arriving as prose.
- *
- * Extracted from `activate()` rather than left inline so the branch can be
- * driven directly. `ambiguousSlug` requires two sibling directories differing
- * only by case, which NTFS cannot hold, so that arm is unreachable through the
- * real filesystem on a Windows dev box — `pathmatrix.test.ts` records the same
- * constraint for P4-B's probe ("case-insensitive filesystem", probe does not
- * run). `extension.test.ts` covers every kind through this function, and
- * separately ties `activate()`'s emitted message to this function's output on a
- * kind that IS reachable, so the two cannot drift apart.
- *
- * A new `DiscoveryFailureKind` lands in the absence arm by default. That is a
- * decision to make deliberately, not one to inherit.
- */
-/**
  * What "Show raw output" says when it shows nothing — v0.9.0 DoD 9.40. One
  * sentence per reason, naming the run where the registry resolved one, and
  * the length where the text was over the cap: the output is refused whole,
@@ -5448,6 +5426,28 @@ export function rawOutputRefusal(result: Extract<RawOutputResult, { ok: false }>
   }
 }
 
+/**
+ * The message the command shows when correlation refused, one arm per meaning.
+ *
+ * `ambiguousSlug` is the one failure kind that is NOT an absence. The
+ * filesystem call succeeded and returned two project directories whose names
+ * differ only by case; the tailer refuses to guess which one is this workspace
+ * rather than picking one (G3). Sessions almost certainly exist, so the generic
+ * "no sessions" wording states something false — the same class of defect as a
+ * fabricated number, arriving as prose.
+ *
+ * Extracted from `activate()` rather than left inline so the branch can be
+ * driven directly. `ambiguousSlug` requires two sibling directories differing
+ * only by case, which NTFS cannot hold, so that arm is unreachable through the
+ * real filesystem on a Windows dev box — `pathmatrix.test.ts` records the same
+ * constraint for P4-B's probe ("case-insensitive filesystem", probe does not
+ * run). `extension.test.ts` covers every kind through this function, and
+ * separately ties `activate()`'s emitted message to this function's output on a
+ * kind that IS reachable, so the two cannot drift apart.
+ *
+ * A new `DiscoveryFailureKind` lands in the absence arm by default. That is a
+ * decision to make deliberately, not one to inherit.
+ */
 export function inactiveReasonFor(failure: DiscoveryFailure): string {
   return failure.kind === 'ambiguousSlug'
     ? `Agent Deck: this workspace matches more than one Claude Code project directory, differing only by case. Refusing to guess which one (${failure.kind}).`
@@ -5752,7 +5752,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     onError: (error: unknown) => {
       try {
         sharedOutput().appendLine(
-          `[${new Date().toISOString()}] insights provider: ${error instanceof Error ? error.message : String(error)}`,
+          // The provider's own text, so it is checked like every other
+          // provider string — never `String(error)`, which runs its code
+          // (verifier round 9.43, D2).
+          `[${new Date().toISOString()}] insights provider: ${providerErrorText(error)}`,
         );
       } catch {
         // G2: a channel that cannot be created must not take the caller down.

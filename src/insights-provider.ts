@@ -43,9 +43,10 @@
  * {@link PATH_MAX_CHARS}, FREE TEXT at most {@link FREE_TEXT_MAX_CHARS}. The
  * store states the first two (`src/stats/schema.ts`); it has no free-text
  * class, because nothing in a stats record is prose, so the third is new
- * here and is the amendment's number. No text may carry a control character
- * (free text may carry a line break and a tab), a bidirectional override, a
- * line or paragraph separator, or a lone surrogate.
+ * here and is the amendment's number. No text may carry a control or FORMAT
+ * character (Unicode Cc, Cf — zero-width and bidirectional characters among
+ * them; free text may carry a tab and LF or CRLF line ends), a line or
+ * paragraph separator, or a lone surrogate.
  *
  * A value that fails is DROPPED and COUNTED — never truncated, never
  * repaired (G3) — and the count is shown on the surface. A truncated string
@@ -264,29 +265,52 @@ function itemsOf(value: unknown): readonly unknown[] | null {
  * ------------------------------------------------------------------------ */
 
 /**
- * Characters no provider text may carry, in any class: C0 controls other
- * than tab and line feed, DEL and the C1 controls, the line and paragraph
- * separators, and the bidirectional marks and overrides a renderer would
- * obey (the Trojan Source class).
+ * Characters no provider text may carry, in any class, by UNICODE CATEGORY
+ * rather than by a list of code points: every control (Cc) other than tab and
+ * line feed, every FORMAT character (Cf — zero-width spaces and joiners, the
+ * bidirectional marks, embeddings, overrides and isolates of the Trojan Source
+ * class, the soft hyphen, the byte-order mark, the tag characters), every lone
+ * surrogate (Cs, which a `u` pattern sees as its own code point), and the
+ * line and paragraph separators (Zl, Zp).
+ *
+ * By category since verifier round 9.43 (D3): the first rule listed code
+ * points and admitted U+200B and its kin, so a label made of zero-width
+ * spaces passed the blank check and rendered as nothing. A category cannot
+ * miss a member the way a list can.
  */
-const FORBIDDEN_CHARS =
-  // Matching control characters is this pattern's whole job.
-  // eslint-disable-next-line no-control-regex
-  /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u061C\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069]/;
-
-/** A high surrogate with no low after it, or a low with no high before it. */
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const FORBIDDEN_CHARS = /(?![\t\n])[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;
 
 /**
  * True iff `value` is text of `cls`: a string, not blank, within the class's
- * cap, free of {@link FORBIDDEN_CHARS} and lone surrogates — and, unless
- * `multiline`, with no line feed or tab.
+ * cap, free of {@link FORBIDDEN_CHARS} — and, unless `multiline`, with no line
+ * feed or tab. Text that may span lines may end its lines with CRLF: a CR is
+ * admitted only directly before a line feed (a provider on Windows writes
+ * them), and the text is kept as sent, never rewritten.
  */
 export function isText(value: unknown, cls: TextClass, multiline = false): value is string {
   if (typeof value !== 'string' || value.length > TEXT_CAPS[cls]) return false;
   if (value.trim() === '') return false;
   if (!multiline && /[\n\t]/.test(value)) return false;
-  return !FORBIDDEN_CHARS.test(value) && !LONE_SURROGATE.test(value);
+  const lines = multiline ? value.replace(/\r\n/g, '\n') : value;
+  return !FORBIDDEN_CHARS.test(lines);
+}
+
+/**
+ * What the Output channel may say about an error a PROVIDER threw — verifier
+ * round 9.43, D2.
+ *
+ * A provider's thrown value is its text, and the channel is a surface. So its
+ * message is read as an OWN DATA property (never a getter, never `toString`),
+ * and printed only when it is free text by {@link isText}; otherwise the line
+ * says the message was withheld and how long it was. Never cut.
+ */
+export function providerErrorText(error: unknown): string {
+  const message = typeof error === 'string' ? error : own(error, 'message');
+  if (isText(message, 'free', true)) return message;
+  if (typeof message === 'string') {
+    return `(a message of ${String(message.length)} characters that did not pass the check, not shown)`;
+  }
+  return '(an error with no message)';
 }
 
 /** An action's lead: one line of free text, at most {@link LEAD_MAX_WORDS} words. */

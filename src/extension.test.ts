@@ -9686,6 +9686,47 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     expect(mock.openedDocuments).toStrictEqual([]);
   });
 
+  it('9.43 W2: an editor that refuses the document is SAID, and logged', async () => {
+    const { panel } = await rawOutputPanel({});
+    mock.failNextOpenTextDocument();
+    panel?.fireMessage({ type: 'insightsRawOutput' });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.openedDocuments).toStrictEqual([]);
+    expect(mock.informationMessages).toContain(
+      'Agent Deck: the raw output for run run-refused-1 could not be opened.',
+    );
+    expect(mock.outputLines.map((l) => l.line).join('\n')).toContain(
+      'insights raw output: vscode-mock: the editor refused the document',
+    );
+  });
+
+  it('9.43 D2: a provider’s thrown message reaches the Output channel only as checked text', async () => {
+    const lines = (): string => mock.outputLines.map((l) => l.line).join('\n');
+    // A message that is text passes as it is.
+    const { panel } = await rawOutputPanel({
+      getRawOutput: () => {
+        throw new Error('store unreadable');
+      },
+    });
+    panel?.fireMessage({ type: 'insightsRawOutput' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(lines()).toContain('insights provider: store unreadable');
+    // A message carrying a bidi override is withheld, with its length, and never printed.
+    const hostile = `abc${String.fromCharCode(0x202e)}def`;
+    await deactivate();
+    resetVscodeMock();
+    const second = await rawOutputPanel({
+      getRawOutput: () => {
+        throw new Error(hostile);
+      },
+    });
+    second.panel?.fireMessage({ type: 'insightsRawOutput' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(lines()).not.toContain(hostile);
+    expect(lines()).toContain('insights provider: (a message of 7 characters that did not pass the check, not shown)');
+  });
+
   it('9.40: every refusal reason has its sentence, naming the run where there is one', () => {
     expect(rawOutputRefusal({ ok: false, reason: 'invalid', runId: 'r-1' })).toBe(
       'Agent Deck: the Insights provider returned raw output for run r-1 that is not text; it is not shown.',

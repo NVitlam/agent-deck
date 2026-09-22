@@ -12,7 +12,7 @@
       {
         "lead": "Lead line 0 for re-read-loop",
         "meta": "Re-read loop · low confidence · since last run: new",
-        "detail": "Detail paragraph 0.\nIt spans two lines.",
+        "detail": "",
         "cause": "Cause sentence 0.",
         "evidence": [
           {
@@ -38,7 +38,8 @@
         ]
       }
     ],
-    "rawOutput": false
+    "rawOutput": false,
+    "resolved": "No longer reported: Stall, Cache miss"
   },
   "history": [
     {

@@ -2270,6 +2270,7 @@ function fakeFindingSet(findings: number): FindingSetView {
     agent: { kind: 'claude', version: '2.1.246' },
     window: { sessions: 5, excluded: 0, sinceMs: 1_789_400_000_000 },
     usage: { prompt: 12_345, output: 2_345 },
+    resolvedKinds: [],
     findings: Array.from({ length: findings }, (_, index) => ({
       id: `f-${String(index)}`,
       kind: 're-read-loop' as const,

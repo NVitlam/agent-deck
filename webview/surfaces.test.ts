@@ -157,6 +157,7 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
       viewFinding('f-1', { kind: 'stall', confidence: 'medium', sinceLastRun: 'still' }),
       viewFinding('f-2', { sinceLastRun: null }),
     ],
+    resolvedKinds: [],
     rejected: 1,
     state: 'ok',
   },
@@ -167,6 +168,7 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
     window: { sessions: 2, excluded: 0, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
     usage: { prompt: 900, output: 40 },
     findings: [],
+    resolvedKinds: [],
     rejected: 0,
     state: 'empty',
   },
@@ -177,6 +179,7 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
     window: { sessions: 3, excluded: 0, sinceMs: Date.UTC(2026, 8, 14, 10, 0) },
     usage: null,
     findings: [],
+    resolvedKinds: [],
     rejected: 0,
     state: 'refused',
     refusal: { step: 'validate', reason: 'The response held no JSON object.' },
@@ -189,12 +192,14 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
     usage: null,
     findings: [
       viewFinding('f-1', {
+        action: { lead: 'Lead of f-1', detail: '' },
         evidence: [
           { label: 'Reads', sessionId: 'ses_example01', statsKey: 'sessions[0].loops[0].count', value: 7 },
           { label: 'File', sessionId: 'ses_example01', statsKey: 'sessions[0].files[2].filePath', value: 'repo/docs/schema.md' },
         ],
       }),
     ],
+    resolvedKinds: ['stall', 'compaction'],
     rejected: 0,
     state: 'ok',
   },
@@ -598,6 +603,30 @@ describe('the provider’s text, rendered — DoD 9.41', () => {
       'Reads 7 sessions[0].loops[0].count · ses_example01',
       'File repo/docs/schema.md sessions[0].files[2].filePath · ses_example01',
     ]);
+  });
+
+  it('round 5b: an EMPTY detail shows no expand; a detail shows one', () => {
+    const panel = render();
+    send(providerState({ latest: 'mixed-evidence' }));
+    send(viewControls({ surface: 'insights' }));
+    const [only] = all(panel.container, TESTID.insightsFinding);
+    expect(one(only as Element, 'insights-finding-lead').textContent).toBe('Lead of f-1');
+    expect(all(only as Element, TESTID.insightsDetail)).toStrictEqual([]);
+    expect((only as Element).querySelector('details')).toBeNull();
+    // The control: the ok set's findings carry a detail, and show the expand.
+    send(providerState({ latest: 'ok' }));
+    expect(all(panel.container, TESTID.insightsDetail)).toHaveLength(2);
+  });
+
+  it('round 5b: "No longer reported" is ONE line, shown only when kinds are named', () => {
+    const panel = render();
+    send(providerState({ latest: 'mixed-evidence' }));
+    send(viewControls({ surface: 'insights' }));
+    expect(all(panel.container, 'insights-resolved-kinds').map((el) => el.textContent)).toStrictEqual([
+      'No longer reported: Stall, Compaction',
+    ]);
+    send(providerState({ latest: 'ok' }));
+    expect(all(panel.container, 'insights-resolved-kinds')).toStrictEqual([]);
   });
 
   it('the history names each run’s state and agent', () => {

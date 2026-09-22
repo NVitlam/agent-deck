@@ -1379,7 +1379,11 @@ export interface FindingEvidenceView {
 export interface FindingActionView {
   /** At most 15 words, one line, imperative. */
   lead: string;
-  /** FREE TEXT, at most 2,000 characters. Shown behind an expand. */
+  /**
+   * FREE TEXT, at most 2,000 characters, shown behind an expand — or the
+   * EMPTY STRING, for a one-sentence action (round 5b, 2026-09-22), which
+   * shows no expand at all.
+   */
   detail: string;
 }
 
@@ -1419,6 +1423,12 @@ export interface FindingSetView {
   window: { sessions: number; excluded: number; sinceMs: number };
   /** What the run itself cost, as the agent reported it, or `null`. */
   usage: { prompt: number; output: number; costUsd?: number } | null;
+  /**
+   * Kinds present in the previous set and absent now — round 5b,
+   * 2026-09-22. Each is checked against the eight finding kinds; the surface
+   * says "No longer reported: <kinds>" when any remain.
+   */
+  resolvedKinds: string[];
   /** Empty unless `state` is `ok`. */
   findings: FindingView[];
   /** How many findings the provider's own validator rejected. */

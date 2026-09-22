@@ -363,6 +363,12 @@ export const ESTIMATED_BY_CLAUDE_CODE = 'estimated by Claude Code';
  */
 export const NO_RAW_OUTPUT = 'No raw output for this run.';
 
+/**
+ * The head of the line naming kinds no longer reported — verbatim, round 5b
+ * of 2026-09-22. The kinds follow in the parent's own labels.
+ */
+export const NO_LONGER_REPORTED = 'No longer reported:';
+
 /** "Since last run", as a word. No score, no arrow, no colour of its own. */
 export const SINCE_LAST_RUN_WORDS: Readonly<Record<FindingSinceLastRun, string>> = Object.freeze({
   new: 'new',
@@ -450,6 +456,11 @@ export interface ProviderInsightsLayout {
     readonly rawOutputNote?: string;
     /** Present when the provider's own validator rejected any. */
     readonly rejected?: string;
+    /**
+     * "No longer reported: <kinds>", when the set names kinds that were in the
+     * previous set and are absent now (round 5b, 2026-09-22). Absent otherwise.
+     */
+    readonly resolved?: string;
   } | null;
   readonly history: readonly HistoryRow[];
   readonly running: boolean;
@@ -511,6 +522,13 @@ function latestOf(
     ...(set.refusal === undefined ? {} : { refusal: { step: set.refusal.step, reason: set.refusal.reason } }),
     rawOutput: set.state === 'refused' && rawOutput,
     ...(set.state === 'refused' && !rawOutput ? { rawOutputNote: NO_RAW_OUTPUT } : {}),
+    ...(set.resolvedKinds.length > 0
+      ? {
+          resolved: `${NO_LONGER_REPORTED} ${set.resolvedKinds
+            .map((kind) => FINDING_LABELS[kind as InsightsFindingKind] ?? kind)
+            .join(', ')}`,
+        }
+      : {}),
     ...(set.rejected > 0
       ? { rejected: `${plural(set.rejected, 'finding')} rejected by the provider` }
       : {}),

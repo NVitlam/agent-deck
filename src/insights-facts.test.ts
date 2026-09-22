@@ -40,6 +40,7 @@ import {
   EXAMPLES,
   EXAMPLE_LABEL,
   ESTIMATED_BY_CLAUDE_CODE,
+  NO_LONGER_REPORTED,
   NO_RAW_OUTPUT,
   FINDING_LABELS,
   IDLE_RESUME_MS,
@@ -376,6 +377,7 @@ const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evide
       window: { sessions: 12, excluded: 2, sinceMs: NOW - 7 * DAY },
       usage: { prompt: 48_210, output: 3_904, costUsd: 0.2381 },
       findings: FINDING_KINDS.map((_, index) => viewFinding(index)),
+      resolvedKinds: [],
       rejected: 1,
       state: 'ok',
     },
@@ -397,6 +399,7 @@ const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evide
       window: { sessions: 1, excluded: 0, sinceMs: NOW - DAY },
       usage: { prompt: 9_000, output: 400 },
       findings: [],
+      resolvedKinds: [],
       rejected: 0,
       state: 'empty',
     },
@@ -414,6 +417,7 @@ const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evide
       window: { sessions: 4, excluded: 0, sinceMs: NOW - 7 * DAY },
       usage: null,
       findings: [],
+      resolvedKinds: [],
       rejected: 0,
       state: 'refused',
       refusal: { step: 'validate', reason: 'The response held no JSON object.\nNothing was stored.' },
@@ -433,6 +437,7 @@ const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evide
       usage: { prompt: 1_000, output: 100, costUsd: 0.004 },
       findings: [
         viewFinding(0, {
+          action: { lead: 'Lead line 0 for re-read-loop', detail: '' },
           evidence: [
             { label: 'Reads', sessionId: 'ses_example01', statsKey: 'sessions[0].loops[0].count', value: 7 },
             { label: 'File', sessionId: 'ses_example01', statsKey: 'sessions[0].files[2].filePath', value: 'repo/docs/schema.md' },
@@ -441,6 +446,7 @@ const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evide
           ],
         }),
       ],
+      resolvedKinds: ['stall', 'cache-miss'],
       rejected: 0,
       state: 'ok',
     },
@@ -507,6 +513,20 @@ describe('the provider state’s renderer — DoD 9.41', () => {
     for (const flag of [true, false]) {
       expect(providerInsightsLayout({ ...PROVIDER_STATES.ok, rawOutput: flag }).latest?.rawOutputNote).toBeUndefined();
     }
+  });
+
+  it('round 5b: "No longer reported" names the kinds in the parent\u2019s own labels, and only when there are any', () => {
+    expect(NO_LONGER_REPORTED).toBe('No longer reported:');
+    expect(providerInsightsLayout(PROVIDER_STATES['mixed-evidence']).latest?.resolved).toBe(
+      'No longer reported: Stall, Cache miss',
+    );
+    for (const state of ['ok', 'empty', 'refused'] as const) {
+      expect(providerInsightsLayout(PROVIDER_STATES[state]).latest?.resolved, state).toBeUndefined();
+    }
+  });
+
+  it('round 5b: an empty detail reaches the row empty — the component shows no expand for it', () => {
+    expect(providerInsightsLayout(PROVIDER_STATES['mixed-evidence']).latest?.findings[0]?.detail).toBe('');
   });
 
   it('an ok set the parent emptied says so, and is not read as a run that found nothing', () => {

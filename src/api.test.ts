@@ -227,7 +227,16 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     > = true;
     const set: Exact<
       keyof ApiFindingSetView,
-      'runId' | 'createdAt' | 'agent' | 'window' | 'usage' | 'findings' | 'rejected' | 'state' | 'refusal'
+      | 'runId'
+      | 'createdAt'
+      | 'agent'
+      | 'window'
+      | 'usage'
+      | 'resolvedKinds'
+      | 'findings'
+      | 'rejected'
+      | 'state'
+      | 'refusal'
     > = true;
     const refusalOptional: Exact<ApiFindingSetView['refusal'], ApiFindingSetRefusalView | undefined> = true;
     const run: Exact<keyof ApiRunSummary, 'runId' | 'createdAt' | 'state' | 'findings' | 'agentKind'> = true;
@@ -240,6 +249,7 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
         agent: { kind: 'claude' | 'codex'; version: string };
         window: { sessions: number; excluded: number; sinceMs: number };
         usage: { prompt: number; output: number; costUsd?: number } | null;
+        resolvedKinds: string[];
         findings: ApiFindingView[];
         rejected: number;
         state: 'ok' | 'empty' | 'refused';
@@ -285,6 +295,7 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
       agent: { kind: 'codex', version: '0.151.0' },
       window: { sessions: 2, excluded: 0, sinceMs: 1_789_400_000_000 },
       usage: { prompt: 900, output: 40 },
+      resolvedKinds: ['stall'],
       findings: [
         {
           id: 'f-1',

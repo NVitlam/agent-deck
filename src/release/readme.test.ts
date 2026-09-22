@@ -575,6 +575,10 @@ describe('README exists and ships clean', () => {
     // run with no raw output says so verbatim. The createdAt join is gone.
     expect(README).toMatch(/FindingSetView \{\s+runId: string;/);
     expect(flat).toContain('No raw output for this run.');
+    // Round 5b: the resolved kinds and the empty detail are documented.
+    expect(README).toMatch(/resolvedKinds: string\[\];/);
+    expect(flat).toContain('No longer reported:');
+    expect(flat).toContain("detail may be ''");
     expect(flat).not.toMatch(/same `createdAt`|has the set's `createdAt`/);
     expect(flat).toContain('estimated by Claude Code');
     const security = readText('SECURITY.md').replace(/\s+/g, ' ');

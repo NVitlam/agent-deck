@@ -91,6 +91,7 @@ interface AmendmentSet {
   agent: { kind: 'claude' | 'codex'; version: string };
   window: { sessions: number; excluded: number; sinceMs: number };
   usage: { prompt: number; output: number; costUsd?: number } | null;
+  resolvedKinds: string[];
   findings: FindingView[];
   rejected: number;
   state: 'ok' | 'empty' | 'refused';
@@ -196,6 +197,7 @@ function findingSet(over: Obj = {}): Obj {
     agent: { kind: 'claude', version: '2.1.246' },
     window: { sessions: 5, excluded: 1, sinceMs: 1_789_400_000_000 },
     usage: { prompt: 12_345, output: 2_345, costUsd: 0.42 },
+    resolvedKinds: [],
     findings: [finding()],
     rejected: 0,
     state: 'ok',
@@ -391,6 +393,10 @@ describe('TEXT: every field at its cap passes, one past it is dropped and counte
     ];
     for (const field of FINDING_TEXT) {
       for (const text of hostile) {
+        // Round 5b (2026-09-22): the EMPTY detail is a valid one-sentence
+        // action and is tested as such in its own block; every other blank,
+        // and the empty string in every other field, is still refused here.
+        if (text === '' && field.path === 'action.detail') continue;
         const checked = checkOne(withField(finding(), field.path, text));
         expect(checked.kept, `${field.path} ${JSON.stringify(text)}`).toBe(0);
         expect(checked.dropped).toBe(1);
@@ -450,6 +456,70 @@ describe('TEXT: every field at its cap passes, one past it is dropped and counte
   it('markup is TEXT, not refused: the renderer escapes it, and refusing it would refuse every code sample', () => {
     const checked = checkOne(withField(finding(), 'cause', 'The edit wrote <script>alert(1)</script> into a.ts.'));
     expect(checked.kept).toBe(1);
+  });
+});
+
+describe('round 5b (2026-09-22): an empty detail, and the kinds no longer reported', () => {
+  it('an EMPTY detail is a one-sentence action and passes; a blank that is not empty is still refused', () => {
+    expect(checkOne(withField(finding(), 'action.detail', '')).kept).toBe(1);
+    const { value } = viewOfFindingSet(findingSet({ findings: [finding({ action: { lead: 'One sentence', detail: '' } })] }));
+    expect(value?.findings[0]?.action).toStrictEqual({ lead: 'One sentence', detail: '' });
+    for (const blank of [' ', '\n', '\t ']) {
+      expect(checkOne(withField(finding(), 'action.detail', blank)).kept, JSON.stringify(blank)).toBe(0);
+    }
+    // Only the DETAIL may be empty: an empty lead or cause is still refused.
+    expect(checkOne(withField(finding(), 'action.lead', '')).kept).toBe(0);
+    expect(checkOne(withField(finding(), 'cause', '')).kept).toBe(0);
+  });
+
+  it('resolvedKinds: kinds from the eight, each once, none the set still lists — copied fresh', () => {
+    const input = findingSet({ resolvedKinds: ['stall', 'cache-miss'] });
+    const { value, dropped } = viewOfFindingSet(input);
+    expect(dropped).toBe(0);
+    expect(value?.resolvedKinds).toStrictEqual(['stall', 'cache-miss']);
+    expect(value?.resolvedKinds).not.toBe(input['resolvedKinds']);
+    // An empty list is the ordinary case.
+    expect(viewOfFindingSet(findingSet()).value?.resolvedKinds).toStrictEqual([]);
+  });
+
+  it('a bad entry is dropped and COUNTED, and the rest are shown', () => {
+    for (const [entries, kept] of [
+      [['stall', 'Stall'], ['stall']], // not a kind (case matters)
+      [['stall', 'stall'], ['stall']], // said twice
+      [['stall', 're-read-loop'], ['stall']], // the set still lists a re-read loop
+      [['stall', 42], ['stall']], // not a string
+      [['stall', 'other', 'nonsense'], ['stall', 'other']],
+    ] as const) {
+      const { value, dropped } = viewOfFindingSet(findingSet({ resolvedKinds: entries }));
+      expect(value?.resolvedKinds, JSON.stringify(entries)).toStrictEqual(kept);
+      expect(dropped, JSON.stringify(entries)).toBe(entries.length - kept.length);
+    }
+  });
+
+  it('a kind the set lists is refused even when the parent dropped that finding', () => {
+    // The provider says re-read-loop is present (a finding of it, though one the
+    // parent refuses) and also that it is no longer reported: a contradiction.
+    const bad = finding({ id: 'bad', kind: 'churn-chain', cause: '' });
+    const { value, dropped } = viewOfFindingSet(findingSet({ findings: [finding(), bad], resolvedKinds: ['churn-chain'] }));
+    expect(value?.resolvedKinds).toStrictEqual([]);
+    expect(dropped).toBe(2);
+  });
+
+  it('a non-array or a missing list drops the SET; past eight entries is counted', () => {
+    expect(viewOfFindingSet(findingSet({ resolvedKinds: 'stall' }))).toStrictEqual({ value: null, dropped: 1 });
+    expect(viewOfFindingSet(findingSet({ resolvedKinds: null }))).toStrictEqual({ value: null, dropped: 1 });
+    const without = Object.fromEntries(Object.entries(findingSet()).filter(([key]) => key !== 'resolvedKinds'));
+    expect(viewOfFindingSet(without)).toStrictEqual({ value: null, dropped: 1 });
+    const nine = [...FINDING_KINDS.filter((k) => k !== 're-read-loop'), 'stall', 'stall'];
+    const { value, dropped } = viewOfFindingSet(findingSet({ resolvedKinds: nine }));
+    expect(value?.resolvedKinds).toHaveLength(FINDING_KINDS.length - 1);
+    expect(dropped).toBe(2);
+  });
+
+  it('on an empty and on a refused set too — the field is on every set', () => {
+    const empty = viewOfFindingSet(findingSet({ findings: [], state: 'empty', resolvedKinds: ['re-read-loop'] }));
+    expect(empty.value?.resolvedKinds).toStrictEqual(['re-read-loop']);
+    expect(viewOfFindingSet(refusedSet({ resolvedKinds: ['stall'] })).value?.resolvedKinds).toStrictEqual(['stall']);
   });
 });
 

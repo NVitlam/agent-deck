@@ -847,6 +847,7 @@ FindingSetView {
   agent: { kind: 'claude' | 'codex'; version: string };
   window: { sessions: number; excluded: number; sinceMs: number };
   usage: { prompt: number; output: number; costUsd?: number } | null;
+  resolvedKinds: string[];      // kinds in the previous set and absent now
   findings: FindingView[];      // empty unless state is 'ok'
   rejected: number;
   state: 'ok' | 'empty' | 'refused';
@@ -857,7 +858,7 @@ FindingView {
   kind: 're-read-loop' | 'churn-chain' | 'context-churn' | 'stall'
       | 'silent-subagent' | 'compaction' | 'cache-miss' | 'other';
   confidence: 'low' | 'medium' | 'high';
-  action: { lead: string; detail: string }; // lead: at most 15 words, one line
+  action: { lead: string; detail: string }; // lead: at most 15 words, one line; detail may be ''
   cause: string;
   evidence: { label: string; sessionId: string; statsKey: string; value: number | string }[];
   sinceLastRun: 'new' | 'still' | 'resolved' | null;
@@ -867,8 +868,11 @@ RunSummary { runId: string; createdAt: number; state: 'ok' | 'empty' | 'refused'
 
 `providerVersion` is `1`, and a provider fires `onDidChange` whenever what `getLatest` or
 `listRuns` would return has moved. The Insights surface shows each finding's action lead first, its
-kind, confidence and "since last run" as words (never a score), the detail behind an expand, the
-cause, then each piece of evidence under its label. Above them it states the run: when, which
+kind, confidence and "since last run" as words (never a score), the detail behind an expand (no
+expand when the detail is empty: a one-sentence action), the cause, then each piece of evidence
+under its label. When the set names kinds that were in the previous set and are absent now, one
+line says *No longer reported:* and names them; each must be one of the eight kinds, said once,
+and not a kind the set still lists. Above them it states the run: when, which
 agent CLI and version, the window, and the run's own usage — marked *estimated by Claude Code*
 when the agent was Claude Code. A refused run shows the step and the reason, and a **Show raw
 output** action that asks `getRawOutput` for the set's own `runId` and opens what comes back as

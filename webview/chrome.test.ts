@@ -431,6 +431,7 @@ describe('every surface is content only', () => {
         agent: { kind: 'claude', version: '2.1.246' },
         window: { sessions: 3, excluded: 0, sinceMs: 1_789_400_000_000 },
         usage: null,
+        resolvedKinds: [],
         findings: [
           {
             id: 'f-1',

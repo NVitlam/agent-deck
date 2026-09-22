@@ -10,9 +10,6 @@ main .insights data-state="provider" data-testid="insights-surface"
       div .finding data-testid="insights-finding"
         span .lead .strong data-testid="insights-finding-lead" "Lead of f-1"
         span .note data-testid="insights-finding-meta" "Re-read loop · high confidence · since last run: new"
-        details .detail
-          summary data-testid="insights-detail" "Detail"
-          p .text data-testid="insights-finding-detail" "Detail of f-1. Second line."
         p .text data-testid="insights-finding-cause" "Cause of f-1."
           span .caption "Cause"
         ul .evidence
@@ -24,6 +21,7 @@ main .insights data-state="provider" data-testid="insights-surface"
             span .caption "File"
             span .strong "repo/docs/schema.md"
             span .source "sessions[0].files[2].filePath · ses_example01"
+      p .line data-testid="insights-resolved-kinds" "No longer reported: Stall, Compaction"
     h2 "History"
     ul .history
       li data-testid="insights-history-row" "· ·"

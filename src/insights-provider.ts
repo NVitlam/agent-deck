@@ -381,8 +381,11 @@ function viewOfAction(value: unknown): FindingActionView | null {
   if (!hasExactly(value, ['lead', 'detail'])) return null;
   const lead = own(value, 'lead');
   const detail = own(value, 'detail');
-  if (!isLead(lead) || !isText(detail, 'free', true)) return null;
-  return { lead, detail };
+  // The empty string is a valid detail: a one-sentence action (round 5b,
+  // 2026-09-22). Anything else must be free text — a blank that is not empty
+  // is still refused.
+  if (!isLead(lead) || (detail !== '' && !isText(detail, 'free', true))) return null;
+  return { lead, detail: detail as string };
 }
 
 const FINDING_KEYS = ['id', 'kind', 'confidence', 'action', 'cause', 'evidence', 'sinceLastRun'];
@@ -446,7 +449,17 @@ export interface Checked<T> {
   dropped: number;
 }
 
-const SET_KEYS = ['runId', 'createdAt', 'agent', 'window', 'usage', 'findings', 'rejected', 'state'];
+const SET_KEYS = [
+  'runId',
+  'createdAt',
+  'agent',
+  'window',
+  'usage',
+  'resolvedKinds',
+  'findings',
+  'rejected',
+  'state',
+];
 
 /**
  * The latest finding set, checked and copied.
@@ -476,6 +489,7 @@ export function viewOfFindingSet(value: unknown): Checked<FindingSetView | null>
   const rejected = own(value, 'rejected');
   const usage = viewOfUsage(own(value, 'usage'));
   const items = itemsOf(own(value, 'findings'));
+  const resolvedItems = itemsOf(own(value, 'resolvedKinds'));
   const kind = own(agent, 'kind');
   const version = own(agent, 'version');
   const sessions = own(window, 'sessions');
@@ -494,6 +508,7 @@ export function viewOfFindingSet(value: unknown): Checked<FindingSetView | null>
     usage !== undefined &&
     isCount(rejected) &&
     items !== null &&
+    resolvedItems !== null &&
     (state === 'ok' ? items.length > 0 : items.length === 0);
   if (!envelopeOk) return dropSet;
   let refusal: FindingSetRefusalView | null = null;
@@ -515,6 +530,18 @@ export function viewOfFindingSet(value: unknown): Checked<FindingSetView | null>
   // Past the cap is not "invalid", and it is not shown either — so it is
   // counted, because a drop nobody can see is the silent partial render.
   dropped += Math.max(0, items.length - MAX_FINDINGS);
+  // Round 5b, 2026-09-22 — kinds present in the previous set and absent now.
+  // Each entry must be one of the eight kinds, said once, and not a kind this
+  // very set still lists a finding of (that would be the set contradicting
+  // itself). An entry that fails is dropped and counted; the rest are shown.
+  const listedNow = new Set(items.map((item) => own(item, 'kind')));
+  const resolvedKinds: string[] = [];
+  for (const entry of resolvedItems.slice(0, FINDING_KINDS.length)) {
+    if (!isOneOf(entry, FINDING_KINDS) || resolvedKinds.includes(entry) || listedNow.has(entry)) {
+      dropped += 1;
+    } else resolvedKinds.push(entry);
+  }
+  dropped += Math.max(0, resolvedItems.length - FINDING_KINDS.length);
   return {
     value: {
       runId,
@@ -522,6 +549,7 @@ export function viewOfFindingSet(value: unknown): Checked<FindingSetView | null>
       agent: { kind, version },
       window: { sessions, excluded, sinceMs },
       usage,
+      resolvedKinds,
       findings,
       rejected,
       state,

@@ -180,10 +180,12 @@
             <div class="finding" data-testid={TESTID.insightsFinding}>
               <span class="lead strong" data-testid="insights-finding-lead">{finding.lead}</span>
               <span class="note" data-testid="insights-finding-meta">{finding.meta}</span>
-              <details class="detail">
-                <summary data-testid={TESTID.insightsDetail}>Detail</summary>
-                <p class="text" data-testid="insights-finding-detail">{finding.detail}</p>
-              </details>
+              {#if finding.detail !== ''}
+                <details class="detail">
+                  <summary data-testid={TESTID.insightsDetail}>Detail</summary>
+                  <p class="text" data-testid="insights-finding-detail">{finding.detail}</p>
+                </details>
+              {/if}
               <p class="text" data-testid="insights-finding-cause">
                 <span class="caption">Cause</span>
                 {finding.cause}
@@ -199,6 +201,9 @@
               </ul>
             </div>
           {/each}
+          {#if paid.latest.resolved !== undefined}
+            <p class="line" data-testid="insights-resolved-kinds">{paid.latest.resolved}</p>
+          {/if}
           {#if paid.latest.rejected !== undefined}
             <p class="line">{paid.latest.rejected}</p>
           {/if}

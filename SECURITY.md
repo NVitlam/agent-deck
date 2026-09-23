@@ -66,8 +66,8 @@ cap. The panel renders all of it as text, never as markup. Agent Deck calls the 
 `listRuns`, `getRun` for the report you select or export (a set naming any other run is dropped),
 the optional `getRawOutput` only when you press **Show raw output** on a refused run, the optional
 `pickAgent`, `showPayload` and `clearHistory` only when you press that sidebar row, and subscribes
-once through `onDidChange`; it calls nothing else — `getLatest` and `run` are required members it
-no longer calls — asks no licence question and opens no connection for it. Raw output opens as an untitled plain-text
+once through `onDidChange`; it calls nothing else — `getLatest` (required) and `run` (optional) are
+members it does not call — asks no licence question and opens no connection for it. Raw output opens as an untitled plain-text
 document — nothing is written to disk — and more than 1,048,576 characters is not opened at all.
 Proof: `src/insights-provider.test.ts`.
 
@@ -77,7 +77,9 @@ Proof: `src/insights-provider.test.ts`.
 
 These are build-time law in this repository, not guidelines. A change that breaks one fails review.
 
-- **G1 — read-only, always.** No writes to Claude Code settings, session files, or anything under
+- **G1 — read-only, always.** *Amended 2026-09-23:* Agent Deck writes only its stats history under
+  globalStorage and export files to a location the user chooses in a save dialog; never under any
+  engine's data directory or settings. No writes to Claude Code settings, session files, or anything under
   `~/.claude`, ever. Hook installation is a snippet the user pastes themselves; the extension never
   edits a settings file to install it. In this repository the hook block lives in the repo-local
   `.claude/settings.local.json` precisely so that `~/.claude` stays untouched.

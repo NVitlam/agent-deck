@@ -839,7 +839,7 @@ disposable. A provider is:
   getLatest(): FindingSetView | null;               // required; not called since 0.9.0's report list
   listRuns(): RunSummary[];
   getRun(runId: string): FindingSetView | null;     // the run the user selects or exports
-  run(): Promise<void>;                             // required; not called — no Run action
+  run?(): Promise<void>;                            // optional; not called — no Run action
   getRawOutput?(runId: string): string | null;      // optional
   pickAgent?(): Promise<void>;                      // optional — the sidebar's Pick Agent
   showPayload?(): Promise<void>;                    // optional — the sidebar's Show Payload
@@ -881,9 +881,9 @@ RunSummary { runId: string; createdAt: number; state: 'ok' | 'empty' | 'refused'
 would return has moved. The Insights surface lists `listRuns()` newest first — Agent Deck sorts it
 — and previews the run you select through `getRun(runId)`; a set whose own `runId` is not the one
 asked for is dropped. `about.status`, when present, is one line of at most 64 characters shown
-under the provider's name; one that fails the check is left out. `getLatest` and `run` are still
-required, so a provider written for the earlier contract registers unchanged, and Agent Deck no
-longer calls either. The preview shows each finding's action lead first, its
+under the provider's name; one that fails the check is left out. `getLatest` is still
+required and `run` is optional, so a provider written for the earlier contract registers
+unchanged; Agent Deck calls neither. The preview shows each finding's action lead first, its
 kind, confidence and "since last run" as words (never a score), the detail behind an expand (no
 expand when the detail is empty: a one-sentence action), the cause, then each piece of evidence
 under its label. When the set names kinds that were in the previous set and are absent now, one

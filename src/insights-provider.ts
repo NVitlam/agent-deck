@@ -25,11 +25,10 @@
  * on it**, and `insights-provider.test.ts` holds that with a provider wrapped
  * in a Proxy that records every property read.
  *
- * **`getLatest()` and `run()` are still REQUIRED and no longer called**
- * (v0.9.0 DoD 9.44, spec `Amendment 2026-09-23 — Paid Insights surface`):
- * the surface shows the selected run, not the latest, and has no Run action.
- * The amendment grows the contract and removes nothing, so a provider built
- * against round 5 still registers; dropping them is a ruling, not a tidy-up.
+ * **`getLatest()` is REQUIRED and `run()` OPTIONAL, and the parent calls
+ * neither** — the ruling of 2026-09-23 (round 6, 1). The surface shows the
+ * selected run, not the latest, and has no Run action (DoD 9.44). A `run`
+ * that is present must still be a function, like every optional member.
  *
  * Insights registers only after it has verified a licence signature, so the
  * parent never has licence knowledge: a provider being registered is the
@@ -203,8 +202,11 @@ export interface InsightsProvider {
    * for; any other answer is dropped and counted.
    */
   getRun(runId: string): FindingSetView | null;
-  /** REQUIRED and NOT CALLED since v0.9.0 DoD 9.44 — see the module header. */
-  run(): Promise<void>;
+  /**
+   * OPTIONAL since the ruling of 2026-09-23 (round 6, 1), and NOT CALLED: the
+   * surface has no Run action. Present, it must be a function.
+   */
+  run?(): Promise<void>;
   /**
    * OPTIONAL — a run's raw output, or `null` when the provider has none.
    * Asked only for a REFUSED run, when the user presses "Show raw output".
@@ -754,12 +756,12 @@ export class InsightsProviderRegistry {
         'Agent Deck: an Insights provider must state about { name, version } in the allowed shape.',
       );
     }
-    for (const member of ['getLatest', 'listRuns', 'getRun', 'run', 'onDidChange'] as const) {
+    for (const member of ['getLatest', 'listRuns', 'getRun', 'onDidChange'] as const) {
       if (typeof readMember(provider, member) !== 'function') {
         throw new TypeError(`Agent Deck: an Insights provider must have ${member}.`);
       }
     }
-    for (const member of ['getRawOutput', ...PROVIDER_ACTIONS] as const) {
+    for (const member of ['run', 'getRawOutput', ...PROVIDER_ACTIONS] as const) {
       const value = readMember(provider, member);
       if (value !== undefined && typeof value !== 'function') {
         throw new TypeError(`Agent Deck: an Insights provider’s ${member}, when present, must be a function.`);

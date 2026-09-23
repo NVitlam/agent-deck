@@ -75,7 +75,7 @@ interface AmendmentProvider {
   getLatest(): FindingSetView | null;
   listRuns(): RunSummary[];
   getRun(runId: string): FindingSetView | null;
-  run(): Promise<void>;
+  run?(): Promise<void>;
   getRawOutput?(runId: string): string | null;
   pickAgent?(): Promise<void>;
   showPayload?(): Promise<void>;
@@ -887,6 +887,20 @@ describe('the registry holds ONE provider', () => {
       expect(() => registry.register(bad), JSON.stringify(bad)).toThrow(TypeError);
     }
     expect(registry.registered).toBe(false);
+  });
+
+  it('ruling 2026-09-23 (1): run() is OPTIONAL — absent registers; present must be a function; getLatest stays required', () => {
+    const withoutRun = fakeProvider().provider as unknown as Record<string, unknown>;
+    delete withoutRun['run'];
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    expect(() => registry.register(withoutRun)).not.toThrow();
+    expect(registry.registered).toBe(true);
+    const other = new InsightsProviderRegistry({ onChange: () => undefined });
+    expect(() => other.register(fakeProvider({ run: 'not a function' }).provider)).toThrow(TypeError);
+    const withoutLatest = fakeProvider().provider as unknown as Record<string, unknown>;
+    delete withoutLatest['getLatest'];
+    expect(() => other.register(withoutLatest)).toThrow('an Insights provider must have getLatest.');
+    expect(other.registered).toBe(false);
   });
 
   it('a provider written as a CLASS (methods on the prototype) registers, getRawOutput included', () => {

@@ -285,12 +285,15 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     const pickAgent: Exact<ApiInsightsProvider['pickAgent'], (() => Promise<void>) | undefined> = true;
     const showPayload: Exact<ApiInsightsProvider['showPayload'], (() => Promise<void>) | undefined> = true;
     const clearHistory: Exact<ApiInsightsProvider['clearHistory'], (() => Promise<void>) | undefined> = true;
+    // The ruling of 2026-09-23 (round 6, 1): run is optional, getLatest required.
+    const runOptional: Exact<ApiInsightsProvider['run'], (() => Promise<void>) | undefined> = true;
+    const latestRequired: Exact<ApiInsightsProvider['getLatest'], () => ApiFindingSetView | null> = true;
     const about: Exact<ApiInsightsProviderAbout, { name: string; version: string; status?: string }> = true;
     const actions: Exact<ApiInsightsProviderAction, 'pickAgent' | 'showPayload' | 'clearHistory'> = true;
     expect([
       finding, action, evidence, set, refusalOptional, run, states, since, agents, rawOutput,
-      getRun, pickAgent, showPayload, clearHistory, about, actions,
-    ]).toStrictEqual(Array.from({ length: 16 }, () => true));
+      getRun, pickAgent, showPayload, clearHistory, about, actions, runOptional, latestRequired,
+    ]).toStrictEqual(Array.from({ length: 18 }, () => true));
     expect(API_VERSION).toBe(2);
     expect(PROVIDER_VERSION).toBe(1);
   });

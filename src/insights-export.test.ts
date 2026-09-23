@@ -49,7 +49,7 @@ import {
 } from './insights-export.js';
 import { reportOf } from './insights-report.js';
 import { viewOfFindingSet } from './insights-provider.js';
-import { HOSTILE_SET, REPORT_SETS } from './insights-report.testkit.js';
+import { HOSTILE_REFUSED_SET, HOSTILE_SET, REPORT_SETS } from './insights-report.testkit.js';
 
 const GOLDEN_DIR = resolve('webview/goldens/export');
 const UPDATING = process.env['AGENT_DECK_UPDATE_EXPORT_GOLDENS'] === '1';
@@ -58,6 +58,17 @@ const UPDATING = process.env['AGENT_DECK_UPDATE_EXPORT_GOLDENS'] === '1';
 const ALL_SETS: readonly [string, FindingSetView][] = [
   ...Object.entries(REPORT_SETS),
   ['hostile', HOSTILE_SET],
+  ['hostile-refused', HOSTILE_REFUSED_SET],
+];
+
+/**
+ * Every golden: each set as the check passed it whole, and one set with a
+ * DROP COUNT (verifier round 9.48, D3) — the report states the drop in every
+ * format, as the preview does.
+ */
+const ALL_EXPORTS: readonly [string, FindingSetView, number][] = [
+  ...ALL_SETS.map(([name, set]): [string, FindingSetView, number] => [name, set, 0]),
+  ['ok-dropped', REPORT_SETS.ok, 2],
 ];
 
 const FORMATS = [
@@ -90,13 +101,24 @@ describe('export goldens — every fixture set, every format', () => {
     expect(checked.value).toStrictEqual(HOSTILE_SET);
   });
 
-  for (const [name, set] of ALL_SETS) {
+  for (const [name, set, dropped] of ALL_EXPORTS) {
     for (const [format, ext] of FORMATS) {
       it(`${name} as ${format} matches webview/goldens/export/${name}.${ext}`, () => {
-        golden(`${name}.${ext}`, exportReport(set, format));
+        golden(`${name}.${ext}`, exportReport(set, format, dropped));
       });
     }
   }
+
+  it('D3: a DROP is stated in every format, in the words the preview uses — and only when there is one', () => {
+    const line = '2 values from this report did not pass the check and are not shown';
+    expect(reportOf(REPORT_SETS.ok, 2).dropped).toBe(line);
+    expect(exportText(REPORT_SETS.ok, 2)).toContain(line);
+    expect(exportMarkdown(REPORT_SETS.ok, 2)).toContain(line);
+    expect(parse(exportHtml(REPORT_SETS.ok, 2)).body.textContent).toContain(line);
+    for (const text of [exportText(REPORT_SETS.ok), exportMarkdown(REPORT_SETS.ok), exportHtml(REPORT_SETS.ok)]) {
+      expect(text).not.toContain('did not pass the check');
+    }
+  });
 
   it('the goldens are not being written by this run', () => {
     expect(UPDATING, 'AGENT_DECK_UPDATE_EXPORT_GOLDENS is set: the goldens were REWRITTEN').toBe(false);
@@ -194,6 +216,18 @@ describe('the HTML export loads nothing — parsed, not grepped', () => {
     for (const html of planted) expect(externalResources(`<!DOCTYPE html>${html}`), html).not.toStrictEqual([]);
   });
 
+  it('W1: the hostile REFUSED set’s step and reason reach the page as TEXT, and Markdown escapes them', () => {
+    const document = parse(exportHtml(HOSTILE_REFUSED_SET));
+    const text = document.body.textContent ?? '';
+    const refusal = HOSTILE_REFUSED_SET.refusal;
+    expect(refusal).toBeDefined();
+    expect(text).toContain(refusal?.step ?? '');
+    expect(text).toContain(refusal?.reason.split('\n')[0] ?? '');
+    const md = exportMarkdown(HOSTILE_REFUSED_SET);
+    expect(md).toContain('## Refused at step: \\<img src=x onerror=y\\> \\!\\[s\\](https://example.invalid/s.png)');
+    expect(md).toContain('\\<script src="https://example.invalid/r.js"\\>\\</script\\>');
+  });
+
   it('the hostile set’s markup reaches the page as TEXT, whole', () => {
     const document = parse(exportHtml(HOSTILE_SET));
     const text = document.body.textContent ?? '';
@@ -289,7 +323,10 @@ describe('every format is the preview’s report, in its order', () => {
     expect(formatOf('copy')).toBe('text');
     expect(formatOf('html')).toBe('html');
     expect(formatOf('markdown')).toBe('markdown');
-    const batch = exportTextBatch([REPORT_SETS.ok, REPORT_SETS.refused]);
+    const batch = exportTextBatch([
+      { set: REPORT_SETS.ok, dropped: 0 },
+      { set: REPORT_SETS.refused, dropped: 0 },
+    ]);
     const ok = exportText(REPORT_SETS.ok);
     const refused = exportText(REPORT_SETS.refused);
     expect(batch.startsWith(ok)).toBe(true);

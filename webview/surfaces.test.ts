@@ -575,6 +575,21 @@ describe('the Insights surface, PROVIDER — DoD 9.30, reshaped by DoD 9.46', ()
     expect(intents(panel)).toStrictEqual([]);
   });
 
+  it('9.48 D3: a report the check dropped part of says so, INSIDE the report the export is built from', () => {
+    // Fold mutation F5 survived without this: the layout carried the line,
+    // and nothing mounted the component with a drop to see it drawn.
+    const panel = render();
+    const state = providerState() as { provider: Record<string, unknown> };
+    send({
+      ...state,
+      provider: { ...state.provider, selected: { ...(state.provider['selected'] as object), dropped: 2 } },
+    });
+    send(viewControls({ surface: 'insights' }));
+    const line = one(panel.container, 'insights-preview-dropped');
+    expect(line.textContent).toBe('2 values from this report did not pass the check and are not shown');
+    expect(line.closest(`[data-testid="${TESTID.insightsLatest}"]`)).not.toBeNull();
+  });
+
   it('DoD 9.44: the provider’s status is one line under its name', () => {
     const panel = render();
     send(providerState({ status: 'licensed until 2027-09-23' }));

@@ -3040,6 +3040,24 @@ const STALE_PERSISTENCE_CLAIMS: ReadonlyArray<{ readonly re: RegExp; readonly sh
   { re: /\bno persistence\b/i, shipped: 'discards it when the window closes: no database, no cache file, no persistence.' },
   { re: /writes of any kind/i, shipped: 'Not implemented, and not accepted as contributions: writes of any kind' },
   { re: /historical replay or\s+persistence/i, shipped: 'writes of any kind · historical replay or\npersistence' },
+  /*
+   * v0.9.0 round 6 (verifier round 9.48, D1 and D2). An Insights export is a
+   * second write, made where the user chooses, so "the stats history is THE
+   * one write" became false in two shipped documents and one sentence on the
+   * site kept describing a surface without its fact tiles. Each pattern is
+   * paired with the sentence that really shipped; the qualified wording
+   * ("… on its own") passes.
+   */
+  {
+    re: /\bis the one write\b(?!\s+Agent\s+Deck\s+makes\s+on\s+its\s+own)/i,
+    shipped: 'The stats history in §1 is the one write, and it holds derived numbers',
+  },
+  {
+    re: /\bthe one file it writes\b(?!\s+on\s+its\s+own)/i,
+    shipped: 'Its own stats history is the one file it writes, in its own storage',
+  },
+  { re: /\bThe one thing written to disk\b/i, shipped: 'The one thing written to disk, from 0.7.0, is the stats history' },
+  { re: /findings and run history instead/i, shipped: 'it shows that extension&rsquo;s findings and run history instead.' },
 ];
 
 describe('DoD 5.3 — the shipped documents do not deny the history 0.7.0 keeps', () => {

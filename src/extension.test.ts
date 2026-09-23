@@ -9952,7 +9952,12 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     mock.answerQuickPick('Copy');
     panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['run-3', 'run-1'] });
     await settle();
-    expect(mock.clipboard).toBe(exportTextBatch([set('run-3'), set('run-1')]));
+    expect(mock.clipboard).toBe(
+      exportTextBatch([
+        { set: set('run-3'), dropped: 0 },
+        { set: set('run-1'), dropped: 0 },
+      ]),
+    );
     expect(mock.openDialogs).toStrictEqual([]);
 
     mock.answerQuickPick(undefined);
@@ -9971,14 +9976,76 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     expect(mock.quickPicks).toHaveLength(picks);
   });
 
-  it('9.47: a batch into an observed engine’s directory writes nothing', async () => {
+  it('9.47: a batch into an observed engine’s directory writes nothing, refused ONCE at the folder', async () => {
     const { panel } = await exportPanel();
     mock.answerQuickPick('HTML');
     mock.answerOpenDialog(join(homedir(), '.claude'));
+    // Two runs: a refusal made per FILE would say it twice (verifier round
+    // 9.48, V6 — the folder-level refusal was untested as its own layer).
+    panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['run-3', 'run-1'] });
+    await settle();
+    expect(mock.writtenFiles.size).toBe(0);
+    expect(mock.informationMessages.filter((m) => m.includes('which Agent Deck only reads'))).toHaveLength(1);
+  });
+
+  it('9.48 W3: a folder that cannot be LISTED gets nothing — "never overwrites" cannot be promised there', async () => {
+    const { panel } = await exportPanel();
+    mock.setDirectoryUnlistable('C:/locked');
+    mock.answerQuickPick('Markdown');
+    mock.answerOpenDialog('C:/locked');
     panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['run-1'] });
     await settle();
     expect(mock.writtenFiles.size).toBe(0);
-    expect(mock.informationMessages.some((m) => m.includes('which Agent Deck only reads'))).toBe(true);
+    expect(mock.informationMessages).toContain('Agent Deck: C:/locked could not be listed, so nothing was written into it.');
+  });
+
+  it('9.48 W2: two runs whose names COLLIDE in one batch get two files, never one written twice', async () => {
+    // `x:1` and `x-1` in the same minute spell the same file name once the
+    // colon becomes a dash; only the names taken DURING the batch keep them apart.
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    const at = 1_790_000_000_000;
+    api.registerInsightsProvider(
+      fakeInsightsProvider({
+        listRuns: () => [
+          { runId: 'x:1', createdAt: at, state: 'ok', findings: 1, agentKind: 'claude' },
+          { runId: 'x-1', createdAt: at, state: 'ok', findings: 1, agentKind: 'claude' },
+        ],
+        getRun: (runId) => ({ ...fakeFindingSet(1), runId, createdAt: at }),
+      }).provider,
+    );
+    mock.answerQuickPick('Markdown');
+    mock.answerOpenDialog('C:/out');
+    panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['x:1', 'x-1'] });
+    await settle();
+    const name = exportFileName({ ...fakeFindingSet(1), runId: 'x:1', createdAt: at }, 'markdown');
+    expect(exportFileName({ ...fakeFindingSet(1), runId: 'x-1', createdAt: at }, 'markdown')).toBe(name);
+    expect([...mock.writtenFiles.keys()].sort()).toStrictEqual(
+      [`C:/out/${name}`, `C:/out/${name.replace(/\.md$/u, '-2.md')}`].sort(),
+    );
+  });
+
+  it('9.48 D3: an export of a set the check DROPPED part of says so, exactly as the preview does', async () => {
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    // One good finding and one the check refuses (a lead of sixteen words).
+    const good = fakeFindingSet(1).findings[0] as FindingSetView['findings'][number];
+    const bad = { ...good, id: 'f-bad', action: { lead: 'w '.repeat(16).trim(), detail: '' } };
+    api.registerInsightsProvider(
+      fakeInsightsProvider({
+        getRun: (runId) => ({ ...fakeFindingSet(1), runId, findings: [...fakeFindingSet(1).findings, bad] }),
+      }).provider,
+    );
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+    const line = '1 value from this report did not pass the check and is not shown';
+    const preview = (lastProviderState()?.provider as { selected?: { dropped?: number } } | null)?.selected;
+    expect(preview?.dropped).toBe(1);
+    panel?.fireMessage({ type: 'insightsExport', target: 'copy' });
+    await settle();
+    expect(mock.clipboard).toContain(line);
+    expect(mock.clipboard).toBe(exportText({ ...fakeFindingSet(1), runId: 'run-1' }, 1));
   });
 
   /* ---------------------------------------------------------------------- *

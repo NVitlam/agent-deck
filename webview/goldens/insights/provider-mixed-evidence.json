@@ -32,7 +32,6 @@
   ],
   "preview": {
     "runId": "run-4",
-    "dropped": "1 value from this report did not pass the check and is not shown",
     "report": {
       "state": "ok",
       "facts": {
@@ -72,6 +71,7 @@
         }
       ],
       "resolved": "No longer reported: Stall, Cache miss",
+      "dropped": "1 value from this report did not pass the check and is not shown",
       "rawOutput": false
     }
   }

@@ -23,10 +23,17 @@
  * (`CODEX_HOME` when set) and the OpenCode data directory. Such a path is
  * answered with a message and NOTHING is written — resolved at the moment of
  * asking, from the same functions the engines resolve those roots with.
+ *
+ * **Through links, not only as text** (verifier round 9.48, W5): a junction
+ * or symlink that leads into one of those directories is the directory. So
+ * the chosen path and every root are compared both as written and as the
+ * file system resolves them — the nearest ancestor that exists, read through
+ * `realpath`, with the rest of the path appended.
  */
 
+import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import * as vscode from 'vscode';
 
@@ -46,11 +53,37 @@ export function observedRoots(env: NodeJS.ProcessEnv = process.env): string[] {
 }
 
 /**
- * Is `path` inside an observed engine's directory? Returns the root it is
- * inside, for the message, or `null`.
+ * `path` with every link on the way resolved: its nearest ancestor that
+ * exists, through `realpath`, and the rest appended. A path nothing of which
+ * exists, or one `realpath` cannot read, is returned resolved as written.
  */
-export function refusedExportPath(path: string): string | null {
-  return observedRootOf(path, observedRoots());
+export function realPathOf(path: string): string {
+  let head = resolve(path);
+  const rest: string[] = [];
+  while (!existsSync(head)) {
+    const up = dirname(head);
+    if (up === head) return resolve(path);
+    rest.unshift(basename(head));
+    head = up;
+  }
+  try {
+    return join(realpathSync.native(head), ...rest);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * Is `path` inside an observed engine's directory — as written, or through a
+ * link? Returns the root it is inside, for the message, or `null`.
+ */
+export function refusedExportPath(path: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const real = realPathOf(path);
+  for (const root of observedRoots(env)) {
+    if (observedRootOf(path, [root]) !== null) return root;
+    if (observedRootOf(real, [realPathOf(root)]) !== null) return root;
+  }
+  return null;
 }
 
 /** The sentence a refused path is answered with. */

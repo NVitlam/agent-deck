@@ -15,17 +15,17 @@
  *     logs; a good path writes the text as UTF-8.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import * as vscode from 'vscode';
 
 import { mock, resetVscodeMock } from '../test/vscode-mock.js';
 import { OPENCODE_DATA_ROOT_ENV } from './opencode/index.js';
-import { observedRoots, refusedExportPath, writeExportFile } from './insights-save.js';
+import { observedRoots, realPathOf, refusedExportPath, writeExportFile } from './insights-save.js';
 
 /** Every production `.ts` under `src/`, relative, with its text. */
 function productionSources(): [string, string][] {
@@ -84,6 +84,33 @@ describe('the observed roots', () => {
     expect(roots[0]).toBe(join(homedir(), '.claude'));
     expect(roots[1]).toBe(join(homedir(), '.claude', 'projects'));
     expect(roots).toHaveLength(4);
+  });
+});
+
+describe('through a LINK — verifier round 9.48, W5', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'adinsave-'));
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  it('a junction that leads into an observed root is that root: refused', () => {
+    const real = join(scratch, 'projects');
+    mkdirSync(real);
+    const link = join(scratch, 'innocent-looking');
+    // A directory junction: no privilege needed on Windows; a symlink elsewhere.
+    symlinkSync(real, link, process.platform === 'win32' ? 'junction' : 'dir');
+    const env = { CLAUDE_PROJECTS_ROOT: real };
+    const target = join(link, 'session', 'report.html');
+    expect(realPathOf(target).toLowerCase()).toBe(join(real, 'session', 'report.html').toLowerCase());
+    expect(refusedExportPath(target, env)).toBe(resolve(real));
+    // The control: a plain sibling that leads nowhere near it is not refused.
+    const sibling = join(scratch, 'exports');
+    mkdirSync(sibling);
+    expect(refusedExportPath(join(sibling, 'report.html'), env)).toBeNull();
+  });
+
+  it('realPathOf keeps the part that does not exist yet, under the part that does', () => {
+    expect(realPathOf(join(scratch, 'not', 'yet', 'here.md')).toLowerCase()).toBe(
+      join(realPathOf(scratch), 'not', 'yet', 'here.md').toLowerCase(),
+    );
   });
 });
 

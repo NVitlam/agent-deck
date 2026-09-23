@@ -107,6 +107,27 @@ export const REPORT_SETS: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-ev
 };
 
 /**
+ * A REFUSED set whose step and reason try to be markup — verifier round
+ * 9.48, W1: the hostile set above has no refusal, so the step's escaping in
+ * HTML and Markdown went unexercised.
+ */
+export const HOSTILE_REFUSED_SET: FindingSetView = {
+  runId: 'run-hostile-refused',
+  createdAt: REPORT_NOW - DAY,
+  agent: { kind: 'codex', version: '0.151.0' },
+  window: { sessions: 2, excluded: 1, sinceMs: REPORT_NOW - 3 * DAY },
+  usage: null,
+  findings: [],
+  resolvedKinds: [],
+  rejected: 0,
+  state: 'refused',
+  refusal: {
+    step: '<img src=x onerror=y> ![s](https://example.invalid/s.png)',
+    reason: '<script src="https://example.invalid/r.js"></script>\n[r](https://example.invalid/) | # *',
+  },
+};
+
+/**
  * A set whose provider text tries to be markup — HTML elements that load
  * things, a Markdown image and link, a code fence, a table cell — all of it
  * text the check admits (markup is not refused; it is escaped). Used to prove

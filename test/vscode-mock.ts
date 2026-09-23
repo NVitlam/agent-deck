@@ -422,6 +422,8 @@ interface MockState {
   writtenFiles: Map<string, string>;
   /** What `workspace.fs.readDirectory` lists, by folder `fsPath`. */
   directories: Map<string, string[]>;
+  /** Folders `readDirectory` REJECTS for (verifier round 9.48, W3). */
+  unlistable: Set<string>;
   /** Every `showSaveDialog` call's options, in order. */
   saveDialogs: { defaultUri: string | undefined; filters: Record<string, string[]> | undefined }[];
   /** What the next `showSaveDialog` returns — an `fsPath`, or `undefined` (cancelled). */
@@ -466,6 +468,7 @@ const state: MockState = {
   contexts: new Map(),
   writtenFiles: new Map(),
   directories: new Map(),
+  unlistable: new Set(),
   saveDialogs: [],
   saveDialogAnswer: undefined,
   openDialogs: [],
@@ -499,6 +502,7 @@ export function resetVscodeMock(): void {
   state.contexts = new Map();
   state.writtenFiles = new Map();
   state.directories = new Map();
+  state.unlistable = new Set();
   state.saveDialogs = [];
   state.saveDialogAnswer = undefined;
   state.openDialogs = [];
@@ -661,6 +665,10 @@ export const mock = {
   setDirectory(folder: string, names: string[]): void {
     state.directories.set(folder, [...names]);
   },
+  /** Verifier round 9.48, W3 — make `readDirectory` reject for this folder. */
+  setDirectoryUnlistable(folder: string): void {
+    state.unlistable.add(folder);
+  },
   /** DoD 9.47 — every save dialog shown. */
   get saveDialogs(): { defaultUri: string | undefined; filters: Record<string, string[]> | undefined }[] {
     return state.saveDialogs;
@@ -760,6 +768,9 @@ export const workspace = {
       return Promise.resolve();
     },
     readDirectory(uri: Uri): Promise<[string, number][]> {
+      if (state.unlistable.has(uri.fsPath)) {
+        return Promise.reject(new Error(`vscode-mock: ${uri.fsPath} cannot be listed`));
+      }
       const names = new Set(state.directories.get(uri.fsPath) ?? []);
       for (const path of state.writtenFiles.keys()) {
         const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));

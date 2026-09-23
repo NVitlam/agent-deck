@@ -152,6 +152,7 @@ import {
   formatOf,
   freeName,
 } from './insights-export.js';
+import type { ExportEntry } from './insights-export.js';
 import { refusedExportMessage, refusedExportPath, writeExportFile } from './insights-save.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
@@ -199,7 +200,6 @@ import type { SessionDiff, SessionEmission } from './model/session.js';
 import type {
   AboutLinkMessage,
   HostToWebviewMessage,
-  FindingSetView,
   InsightsExportBatchMessage,
   InsightsExportMessage,
   InsightsGetMessage,
@@ -6184,12 +6184,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
   const exportSelected = async (target: InsightsExportMessage['target']): Promise<void> => {
     const read = selectedRunId === null ? null : providers.readRun(selectedRunId);
     const set = read?.value ?? null;
+    // The check's drop count travels with the set, so the export says what
+    // the preview says (verifier round 9.48, D3).
+    const dropped = read?.dropped ?? 0;
     if (set === null) {
       void vscode.window.showInformationMessage('Agent Deck: the selected run has no report to export.');
       return;
     }
     const format = formatOf(target);
-    const text = exportReport(set, format);
+    const text = exportReport(set, format, dropped);
     if (format === 'text') {
       await vscode.env.clipboard.writeText(text);
       void vscode.window.showInformationMessage(`Agent Deck: the report of run ${set.runId} is on the clipboard.`);
@@ -6226,12 +6229,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     );
     const target = BATCH_FORMATS.find((entry) => entry.label === picked)?.target;
     if (target === undefined) return;
-    const sets: FindingSetView[] = [];
+    const sets: ExportEntry[] = [];
     const missing: string[] = [];
     for (const runId of runIds) {
-      const set = providers.readRun(runId)?.value ?? null;
-      if (set === null) missing.push(runId);
-      else sets.push(set);
+      const read = providers.readRun(runId);
+      if (read === null || read.value === null) missing.push(runId);
+      else sets.push({ set: read.value, dropped: read.dropped });
     }
     const unreported = missing.length === 0 ? '' : ` No report for ${missing.join(', ')}.`;
     if (sets.length === 0) {
@@ -6264,13 +6267,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     try {
       for (const [name] of await vscode.workspace.fs.readDirectory(folder)) taken.add(name);
     } catch {
-      // An unreadable folder names nothing; a write into it will say so.
+      // A folder that cannot be LISTED cannot be promised "never overwrites",
+      // so nothing is written into it (verifier round 9.48, W3).
+      void vscode.window.showInformationMessage(
+        `Agent Deck: ${folder.fsPath} could not be listed, so nothing was written into it.`,
+      );
+      return;
     }
     let written = 0;
-    for (const set of sets) {
+    for (const { set, dropped } of sets) {
       const name = freeName(exportFileName(set, format), taken);
       taken.add(name);
-      if (await writeExport(vscode.Uri.joinPath(folder, name), exportReport(set, format))) written += 1;
+      if (await writeExport(vscode.Uri.joinPath(folder, name), exportReport(set, format, dropped))) written += 1;
     }
     void vscode.window.showInformationMessage(
       `Agent Deck: exported ${String(written)} of ${String(sets.length)} report${sets.length === 1 ? '' : 's'} to ${folder.fsPath}.${unreported}`,

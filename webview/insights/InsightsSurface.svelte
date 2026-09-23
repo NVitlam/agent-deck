@@ -245,6 +245,9 @@
                     <p class="fact" data-testid="insights-run-usage">{report.facts.usage}</p>
                   {/if}
                 </div>
+                {#if report.dropped !== undefined}
+                  <p class="line" data-testid="insights-preview-dropped">{report.dropped}</p>
+                {/if}
                 {#if report.refusal !== undefined}
                   <div class="refusal" data-testid={TESTID.insightsRefusal}>
                     <span class="label strong">Refused at step: {report.refusal.step}</span>

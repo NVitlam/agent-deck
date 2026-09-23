@@ -22,8 +22,8 @@ Three kinds of source — the third optional — and none of them is a network c
 | **Claude Code telemetry** (optional, from 0.7.1) | Claude Code's own OpenTelemetry export, pointed by you at the same loopback listener, and accepted only while `agentDeck.telemetry.enabled` is on | a cost Claude Code estimates, and tool durations |
 
 Everything the extension knows comes from those, all local. The live deck is held in memory only
-and discarded when the window closes. The one thing written to disk, from 0.7.0, is the stats
-history: derived numbers, never session content, as append-only JSON Lines under VS Code's own
+and discarded when the window closes. The one thing Agent Deck writes to disk on its own, from
+0.7.0, is the stats history: derived numbers, never session content, as append-only JSON Lines under VS Code's own
 global-storage directory for the extension — never under any engine's directory or your workspace.
 It is retention-bounded, turned off by `agentDeck.stats.enabled`, emptied by **Clear Stats
 History**, and never read back into a session or a deck.
@@ -99,7 +99,9 @@ These are build-time law in this repository, not guidelines. A change that break
   link, no remote stylesheet, and a `Content-Security-Policy` of `default-src 'none';
   style-src 'unsafe-inline'` — and the Markdown escapes the provider's text so it cannot become an
   image or a link. **A path inside `~/.claude`, the Claude Code projects directory, the Codex
-  directory or OpenCode's data directory is refused, and nothing is written.** The write lives in
+  directory or OpenCode's data directory is refused, and nothing is written** — compared as written
+  and through any junction or symbolic link on the way. A batch into a folder that cannot be listed
+  writes nothing, because "never replacing a file" cannot be kept there. The write lives in
   one module, `src/insights-save.ts`, beside that refusal; `src/extension.ts` still names no write
   API. Exporting makes no network call.
   Proof: `src/insights-save.test.ts` (the one writer and its one importer, the refused roots);
@@ -544,6 +546,7 @@ about the command in that block matter for your own safety rather than ours:
 
 Not implemented, and not accepted as contributions: writes to anything an observed engine owns ·
 replay of a session, or persistence of its content · wrapping or launching any observed engine ·
-sending telemetry, or any egress. The stats history in §1 is the one write, and it holds derived numbers
-only, in the extension's own storage. Zero writes to what is observed is the trust anchor, and the
+sending telemetry, or any egress. The stats history in §1 is the one write Agent Deck makes on its own,
+and it holds derived numbers only, in the extension's own storage; an Insights export (§2, G1) is written
+only where you choose, and never into a directory an observed engine owns. Zero writes to what is observed is the trust anchor, and the
 point of writing it down is that it is easier to defend a boundary than to relocate one.

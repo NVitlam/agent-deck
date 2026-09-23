@@ -142,6 +142,22 @@ export interface RunReport {
   readonly rejected?: string;
   /** "No longer reported: <kinds>", when the set names any (round 5b). */
   readonly resolved?: string;
+  /**
+   * How many values of this set the PARENT's check dropped, as a sentence —
+   * present when any were. Part of the report, not of the preview, so an
+   * export says it too (verifier round 9.48, D3: a preview and its export
+   * disagreed about a set with a dropped finding).
+   */
+  readonly dropped?: string;
+}
+
+/**
+ * "N values ... did not pass the check and are not shown" — the one wording
+ * every surface and every export uses for a drop, or `undefined` for none.
+ */
+export function droppedLine(n: number, what: string): string | undefined {
+  if (n <= 0) return undefined;
+  return `${plural(n, 'value')} ${what} did not pass the check and ${n === 1 ? 'is' : 'are'} not shown`;
 }
 
 /** The heading's word. "Report", not "Latest run": an older run is not the latest. */
@@ -183,8 +199,12 @@ function findingOf(finding: FindingView): FindingRow {
   };
 }
 
-/** One run's report, from its checked set. */
-export function reportOf(set: FindingSetView): RunReport {
+/**
+ * One run's report, from its checked set and how many of its values the
+ * check dropped on the way (`Checked.dropped`, 0 when none).
+ */
+export function reportOf(set: FindingSetView, dropped = 0): RunReport {
+  const droppedText = droppedLine(dropped, 'from this report');
   const findings = set.findings.map(findingOf);
   let note: string | undefined;
   if (set.state === 'empty') note = 'The run read the window and recorded no findings.';
@@ -207,6 +227,7 @@ export function reportOf(set: FindingSetView): RunReport {
     ...(set.rejected > 0
       ? { rejected: `${plural(set.rejected, 'finding')} rejected by the provider` }
       : {}),
+    ...(droppedText === undefined ? {} : { dropped: droppedText }),
   };
 }
 

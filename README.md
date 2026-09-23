@@ -911,7 +911,9 @@ characters; nor a line or paragraph separator, nor a lone surrogate. Evidence ma
 a stats-record field the history itself stores as text: a file path at most 1,024 characters (the
 history's cap), an agent type or skill name at most 64 (likewise), a project slug at most 1,024 and
 any other such field at most 64. A set whose state and findings disagree is refused whole. A value that
-fails is **dropped and counted, never shortened**, and the surface says how many were dropped.
+fails is **dropped and counted, never shortened**, and the surface says how many were dropped — an
+export of that report says so too. (A status line that fails is simply left out: it is not part of
+any report.)
 Raw output over 1,048,576 characters is not opened at all. Agent Deck calls `listRuns`,
 `getRun` for the run you select or export, `getRawOutput` only when you ask for a refused run's
 raw output, `pickAgent`, `showPayload` or `clearHistory` only when you press that sidebar row, and
@@ -1005,7 +1007,9 @@ honesty is kept, and they were not loosened alongside it.
 - **No writes to anything it observes.** Not to `~/.claude`, not to your Claude Code settings, not
   to session files, not to OpenCode's database or its config, not to Codex's `hooks.json` or
   `config.toml`. The one qualification is stated in full under [Trust](#trust) rather than buried
-  here. Its own stats history is the one file it writes, in its own storage — see [Stats](#stats).
+  here. Its own stats history is the one file it writes on its own, in its own storage — see
+  [Stats](#stats); an [Insights](#insights) report you export is written only where you choose, and
+  never into a directory Agent Deck observes.
 - **No launching, wrapping or proxying any of the three engines.** It observes what is already there.
 - **No session replay.** Close the window and the live deck is gone. The one thing kept is the stats
   history — derived numbers, which you can turn off and clear — and it is never read back into a deck.

@@ -32,8 +32,8 @@
   ],
   "preview": {
     "runId": "run-2",
-    "dropped": "1 value from this report did not pass the check and is not shown",
     "report": null,
-    "missing": "The provider has no report for this run."
+    "missing": "The provider has no report for this run.",
+    "dropped": "1 value from this report did not pass the check and is not shown"
   }
 }

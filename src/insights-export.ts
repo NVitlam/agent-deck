@@ -79,10 +79,15 @@ function factLines(report: RunReport): string[] {
   return [report.facts.agent, report.facts.window, ...(report.facts.usage === null ? [] : [report.facts.usage])];
 }
 
-/** The report as plain text — the Copy action. */
-export function exportText(set: FindingSetView): string {
-  const report = reportOf(set);
+/**
+ * The report as plain text — the Copy action. `dropped` is how many of the
+ * set's values the check dropped (`Checked.dropped`); the report says so,
+ * exactly as the preview does.
+ */
+export function exportText(set: FindingSetView, dropped = 0): string {
+  const report = reportOf(set, dropped);
   const out: string[] = [report.facts.heading, ...factLines(report), ''];
+  if (report.dropped !== undefined) out.push(report.dropped, '');
   if (report.refusal !== undefined) {
     out.push(`Refused at step: ${report.refusal.step}`, lines(report.refusal.reason), '');
   }
@@ -132,11 +137,12 @@ function markdownBlock(text: string): string {
 }
 
 /** The report as Markdown. */
-export function exportMarkdown(set: FindingSetView): string {
-  const report = reportOf(set);
+export function exportMarkdown(set: FindingSetView, dropped = 0): string {
+  const report = reportOf(set, dropped);
   const out: string[] = [`# ${escapeMarkdown(report.facts.heading)}`, ''];
   for (const line of factLines(report)) out.push(`- ${escapeMarkdown(line)}`);
   out.push('');
+  if (report.dropped !== undefined) out.push(`*${escapeMarkdown(report.dropped)}*`, '');
   if (report.refusal !== undefined) {
     out.push(`## Refused at step: ${escapeMarkdown(report.refusal.step)}`, '', markdownBlock(report.refusal.reason), '');
   }
@@ -199,14 +205,15 @@ export const EXPORT_STYLE = [
 ].join('\n');
 
 /** The report as one self-contained HTML page. */
-export function exportHtml(set: FindingSetView): string {
-  const report = reportOf(set);
+export function exportHtml(set: FindingSetView, dropped = 0): string {
+  const report = reportOf(set, dropped);
   const e = escapeHtml;
   const body: string[] = [
     `<h1>${e(report.facts.heading)}</h1>`,
     '<div class="facts">',
     ...factLines(report).map((line) => `<p>${e(line)}</p>`),
     '</div>',
+    ...(report.dropped === undefined ? [] : [`<p class="line">${e(report.dropped)}</p>`]),
   ];
   if (report.refusal !== undefined) {
     body.push(
@@ -260,21 +267,29 @@ export function exportHtml(set: FindingSetView): string {
   ].join('\n');
 }
 
-/** A report in the given format. */
-export function exportReport(set: FindingSetView, format: ExportFormat): string {
+/** A report in the given format, with the check's drop count. */
+export function exportReport(set: FindingSetView, format: ExportFormat, dropped = 0): string {
   switch (format) {
     case 'html':
-      return exportHtml(set);
+      return exportHtml(set, dropped);
     case 'markdown':
-      return exportMarkdown(set);
+      return exportMarkdown(set, dropped);
     case 'text':
-      return exportText(set);
+      return exportText(set, dropped);
   }
 }
 
+/** One run's checked set, as an export takes it: the set and its drop count. */
+export interface ExportEntry {
+  readonly set: FindingSetView;
+  readonly dropped: number;
+}
+
 /** Several reports as one clipboard text — batch Copy. */
-export function exportTextBatch(sets: readonly FindingSetView[]): string {
-  return sets.map((set) => exportText(set)).join('\n----------------------------------------\n\n');
+export function exportTextBatch(entries: readonly ExportEntry[]): string {
+  return entries
+    .map((entry) => exportText(entry.set, entry.dropped))
+    .join('\n----------------------------------------\n\n');
 }
 
 /* ------------------------------------------------------------------------ *

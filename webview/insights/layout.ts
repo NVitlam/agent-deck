@@ -44,7 +44,14 @@
  * state sit below both.
  */
 
-import { AGENT_LABELS, formatCount, formatInstant, outcomeOf, plural, reportOf } from '../../src/insights-report.js';
+import {
+  AGENT_LABELS,
+  droppedLine,
+  formatCount,
+  formatInstant,
+  outcomeOf,
+  reportOf,
+} from '../../src/insights-report.js';
 import type { RunReport } from '../../src/insights-report.js';
 import type { InsightsProviderSnapshot, InsightsRunState } from '../../src/model/events.js';
 import type { StatsEngine, StatsRecord } from '../../src/stats/schema.js';
@@ -373,7 +380,12 @@ export interface ReportPreview {
   }) | null;
   /** Present when the provider had no report for this run. */
   readonly missing?: string;
-  /** Present when the parent dropped anything this set carried. */
+  /**
+   * Present when the parent dropped what the provider answered AND there is
+   * no report to carry the line. When there is one, the line is the report's
+   * own `dropped` — the same line every export prints (verifier round 9.48,
+   * D3).
+   */
   readonly dropped?: string;
 }
 
@@ -390,22 +402,25 @@ export interface ProviderInsightsLayout {
   readonly dropped?: string;
 }
 
-function droppedLine(n: number, what: string): string | undefined {
-  if (n <= 0) return undefined;
-  return `${plural(n, 'value')} ${what} did not pass the check and ${n === 1 ? 'is' : 'are'} not shown`;
-}
-
 function previewOf(snapshot: InsightsProviderSnapshot): ReportPreview | null {
   const selected = snapshot.selected;
   if (selected === null) return null;
-  const dropped = droppedLine(selected.dropped, 'from this report');
-  const base = { runId: selected.runId, ...(dropped === undefined ? {} : { dropped }) };
-  if (selected.set === null) return { ...base, report: null, missing: NO_REPORT };
+  if (selected.set === null) {
+    const dropped = droppedLine(selected.dropped, 'from this report');
+    return {
+      runId: selected.runId,
+      report: null,
+      missing: NO_REPORT,
+      ...(dropped === undefined ? {} : { dropped }),
+    };
+  }
   const refused = selected.set.state === 'refused';
   return {
-    ...base,
+    runId: selected.runId,
     report: {
-      ...reportOf(selected.set),
+      // The drop count goes INTO the report, so the preview and the export
+      // say the same thing (verifier round 9.48, D3).
+      ...reportOf(selected.set, selected.dropped),
       rawOutput: refused && selected.rawOutput,
       ...(refused && !selected.rawOutput ? { rawOutputNote: NO_RAW_OUTPUT } : {}),
     },

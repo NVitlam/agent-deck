@@ -33,28 +33,20 @@
  * ids only. They rotate one step each time the surface is LEFT, so the first
  * open shows the first and every later open shows the next.
  *
- * ## The provider state: the provider's text, in the amendment's order
+ * ## The provider state: a report list and the selected run
  *
- * Since DoD 9.40/9.41 (spec `Amendment 2026-09-22 — Provider contract v1
- * widened`) a finding carries the provider's text, every string of it
- * already allow-listed and length-capped by `src/insights-provider.ts`. The
- * order is the amendment's: the action's LEAD first, the detail behind an
- * expand, the cause, then the evidence with its labels. Kind, confidence and
- * "since last run" sit beside the lead as WORDS — no score. The run's own
- * facts head the set, and a Claude Code run's usage says it is
- * {@link ESTIMATED_BY_CLAUDE_CODE}. A refused set shows its step and reason.
+ * Since DoD 9.46 (spec `Amendment 2026-09-23 — Paid Insights surface`) the
+ * provider state is a REPORT LIST — date, findings count, engine, newest
+ * first — and a PREVIEW of the selected run, rendered by `reportOf` in
+ * `src/insights-report.ts` exactly as the latest report was, and exactly as
+ * Export writes it. Every string of it was already allow-listed and
+ * length-capped by `src/insights-provider.ts`. The fact tiles of the free
+ * state sit below both.
  */
 
-import type {
-  FindingSetView,
-  FindingSinceLastRun,
-  FindingView,
-  InsightsAgentKind,
-  InsightsFindingKind,
-  InsightsProviderSnapshot,
-  InsightsRunState,
-  RunSummary,
-} from '../../src/model/events.js';
+import { AGENT_LABELS, formatCount, formatInstant, outcomeOf, plural, reportOf } from '../../src/insights-report.js';
+import type { RunReport } from '../../src/insights-report.js';
+import type { InsightsProviderSnapshot, InsightsRunState } from '../../src/model/events.js';
 import type { StatsEngine, StatsRecord } from '../../src/stats/schema.js';
 
 /** The window the free state counts over. The amendment's "last 7 days". */
@@ -146,11 +138,6 @@ function secondsOf(ms: number): string {
   const rest = ms - whole * 1000;
   const fraction = rest === 0 ? '' : `.${String(rest).padStart(3, '0').replace(/0+$/, '')}`;
   return `${formatCount(whole)}${fraction}`;
-}
-
-/** A count as the surface prints it: `12,345`. */
-function formatCount(n: number): string {
-  return String(Math.trunc(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 /**
@@ -328,232 +315,117 @@ export function exampleAt(openCount: number): InsightExample {
 }
 
 /* ------------------------------------------------------------------------ *
- * The provider state
+ * The provider state — a report list and the selected run (DoD 9.46)
  * ------------------------------------------------------------------------ */
 
-/** The parent's own name for each finding kind, shown beside the provider's lead. */
-export const FINDING_LABELS: Readonly<Record<InsightsFindingKind, string>> = Object.freeze({
-  're-read-loop': 'Re-read loop',
-  'churn-chain': 'Churn chain',
-  'context-churn': 'Context churn',
-  stall: 'Stall',
-  'silent-subagent': 'Silent subagent',
-  compaction: 'Compaction',
-  'cache-miss': 'Cache miss',
-  other: 'Other pattern',
-});
-
-/** The agent CLI a run used, by the name the rest of the product gives it. */
-export const AGENT_LABELS: Readonly<Record<InsightsAgentKind, string>> = Object.freeze({
-  claude: 'Claude Code',
-  codex: 'Codex',
-});
-
-/**
- * The words on a Claude Code run's usage, verbatim from the amendment: Claude
- * Code's own usage and cost are its estimate, and the README already says so
- * about the cost figures on the Statistics surface. A Codex run's line carries
- * no such words.
+/*
+ * The report model lives in `src/insights-report.ts` since DoD 9.46, because
+ * the host renders it too (Export). Every name the surface and its tests
+ * imported from here is re-exported, so none of them moved.
  */
-export const ESTIMATED_BY_CLAUDE_CODE = 'estimated by Claude Code';
+export {
+  AGENT_LABELS,
+  ESTIMATED_BY_CLAUDE_CODE,
+  FINDING_LABELS,
+  NO_LONGER_REPORTED,
+  REPORT_HEADING,
+  SINCE_LAST_RUN_WORDS,
+  formatInstant,
+  reportOf,
+} from '../../src/insights-report.js';
+export type { EvidenceRow, FindingRow, RunFacts, RunReport } from '../../src/insights-report.js';
 
 /**
- * What a refused set says when there is no raw output to offer — verbatim,
+ * What a refused run says when there is no raw output to offer — verbatim,
  * the ruling of 2026-09-22 (round 5, ruling 4).
  */
 export const NO_RAW_OUTPUT = 'No raw output for this run.';
 
-/**
- * The head of the line naming kinds no longer reported — verbatim, round 5b
- * of 2026-09-22. The kinds follow in the parent's own labels.
- */
-export const NO_LONGER_REPORTED = 'No longer reported:';
+/** The right pane before any row is selected — verbatim, spec `Amendment 2026-09-23`. */
+export const SELECT_A_REPORT = 'Select a report to preview / download.';
 
-/** "Since last run", as a word. No score, no arrow, no colour of its own. */
-export const SINCE_LAST_RUN_WORDS: Readonly<Record<FindingSinceLastRun, string>> = Object.freeze({
-  new: 'new',
-  still: 'still',
-  resolved: 'resolved',
-});
+/** The preview when the provider answered `getRun` with no report. */
+export const NO_REPORT = 'The provider has no report for this run.';
 
-/** An instant as the surface prints it: `2026-09-21 14:05 UTC`. */
-export function formatInstant(ms: number): string {
-  const iso = new Date(ms).toISOString();
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
-}
+/** The list when the provider lists no run. */
+export const NO_RUNS = 'No run is recorded yet.';
 
-/**
- * A cost as the surface prints it. Two places, or four under a cent: a run
- * that cost 0.004 USD printed as `0.00 USD` is a confident zero standing
- * where a number is.
- */
-function formatUsd(usd: number): string {
-  return `${usd.toFixed(usd > 0 && usd < 0.01 ? 4 : 2)} USD`;
-}
-
-function plural(n: number, one: string, many: string = `${one}s`): string {
-  return `${formatCount(n)} ${n === 1 ? one : many}`;
-}
-
-/** One labelled piece of evidence. */
-export interface EvidenceRow {
-  readonly label: string;
-  /** The value as the provider stated it, a number or a string. */
-  readonly value: string;
-  /** Where it is from: `statsKey · sessionId`. */
-  readonly source: string;
-}
-
-/**
- * One finding, in the amendment's order: the action's LEAD first, then what
- * kind it is, the detail behind an expand, the cause, and the evidence.
- */
-export interface FindingRow {
-  readonly lead: string;
-  /** `Re-read loop · high confidence · since last run: new`. */
-  readonly meta: string;
-  readonly detail: string;
-  readonly cause: string;
-  readonly evidence: readonly EvidenceRow[];
-}
-
-/** The latest run's facts, above its findings. */
-export interface RunFacts {
-  readonly heading: string;
-  /** `Claude Code 2.1.246`. */
-  readonly agent: string;
-  readonly window: string;
-  /** The run's own usage, or `null` when the provider stated none. */
-  readonly usage: string | null;
-}
-
-/** One history row, as the surface prints it. */
-export interface HistoryRow {
+/** One row of the report list: date, findings count, engine. */
+export interface ReportListRow {
   readonly runId: string;
+  readonly state: InsightsRunState;
   readonly when: string;
+  /** `2 findings`, `no findings`, `refused`. */
   readonly outcome: string;
+  /** The engine, by its product name. */
   readonly agent: string;
+}
+
+/** The right pane, once a row is selected. */
+export interface ReportPreview {
+  readonly runId: string;
+  /** The report, or `null` when the provider had none for this run. */
+  readonly report: (RunReport & {
+    /** Offer "Show raw output"? Only on a refused run the provider can answer for. */
+    readonly rawOutput: boolean;
+    /** {@link NO_RAW_OUTPUT} on a refused run with none to offer. */
+    readonly rawOutputNote?: string;
+  }) | null;
+  /** Present when the provider had no report for this run. */
+  readonly missing?: string;
+  /** Present when the parent dropped anything this set carried. */
+  readonly dropped?: string;
 }
 
 /** Everything the provider state renders. */
 export interface ProviderInsightsLayout {
+  /** `Agent Deck Insights 0.2.0`. */
   readonly title: string;
-  /** `null` when the provider has no latest finding set yet. */
-  readonly latest: {
-    readonly state: InsightsRunState;
-    readonly facts: RunFacts;
-    readonly findings: readonly FindingRow[];
-    /** A line when there is no finding to show, saying which of two reasons. */
-    readonly note?: string;
-    /** A refused run's step and reason. */
-    readonly refusal?: { readonly step: string; readonly reason: string };
-    /** Offer "Show raw output"? Only on a refused set the host could place. */
-    readonly rawOutput: boolean;
-    /**
-     * On a refused set with no raw output to offer, {@link NO_RAW_OUTPUT} —
-     * the ruling of 2026-09-22 (round 5, ruling 4). Absent otherwise.
-     */
-    readonly rawOutputNote?: string;
-    /** Present when the provider's own validator rejected any. */
-    readonly rejected?: string;
-    /**
-     * "No longer reported: <kinds>", when the set names kinds that were in the
-     * previous set and are absent now (round 5b, 2026-09-22). Absent otherwise.
-     */
-    readonly resolved?: string;
-  } | null;
-  readonly history: readonly HistoryRow[];
-  readonly running: boolean;
-  /** Present when the parent dropped anything the provider returned. */
+  /** The provider's `about.status`, under the title, when it states one. */
+  readonly status?: string;
+  readonly rows: readonly ReportListRow[];
+  /** `null` until a row is selected. */
+  readonly preview: ReportPreview | null;
+  /** Present when the parent dropped anything the run list carried. */
   readonly dropped?: string;
 }
 
-function factsOf(set: FindingSetView): RunFacts {
-  const excluded = set.window.excluded > 0 ? `; ${formatCount(set.window.excluded)} excluded` : '';
-  let usage: string | null = null;
-  if (set.usage !== null) {
-    const parts = [
-      plural(set.usage.prompt, 'prompt token'),
-      plural(set.usage.output, 'output token'),
-      ...(set.usage.costUsd === undefined ? [] : [formatUsd(set.usage.costUsd)]),
-    ];
-    const estimated = set.agent.kind === 'claude' ? ` (${ESTIMATED_BY_CLAUDE_CODE})` : '';
-    usage = `Run usage: ${parts.join(' · ')}${estimated}`;
-  }
+function droppedLine(n: number, what: string): string | undefined {
+  if (n <= 0) return undefined;
+  return `${plural(n, 'value')} ${what} did not pass the check and ${n === 1 ? 'is' : 'are'} not shown`;
+}
+
+function previewOf(snapshot: InsightsProviderSnapshot): ReportPreview | null {
+  const selected = snapshot.selected;
+  if (selected === null) return null;
+  const dropped = droppedLine(selected.dropped, 'from this report');
+  const base = { runId: selected.runId, ...(dropped === undefined ? {} : { dropped }) };
+  if (selected.set === null) return { ...base, report: null, missing: NO_REPORT };
+  const refused = selected.set.state === 'refused';
   return {
-    heading: `Latest run · ${formatInstant(set.createdAt)}`,
-    agent: `${AGENT_LABELS[set.agent.kind]} ${set.agent.version}`,
-    window: `${plural(set.window.sessions, 'session')} since ${formatInstant(set.window.sinceMs)}${excluded}`,
-    usage,
+    ...base,
+    report: {
+      ...reportOf(selected.set),
+      rawOutput: refused && selected.rawOutput,
+      ...(refused && !selected.rawOutput ? { rawOutputNote: NO_RAW_OUTPUT } : {}),
+    },
   };
 }
 
-function findingOf(finding: FindingView): FindingRow {
-  const since =
-    finding.sinceLastRun === null ? '' : ` · since last run: ${SINCE_LAST_RUN_WORDS[finding.sinceLastRun]}`;
-  return {
-    lead: finding.action.lead,
-    meta: `${FINDING_LABELS[finding.kind]} · ${finding.confidence} confidence${since}`,
-    detail: finding.action.detail,
-    cause: finding.cause,
-    evidence: finding.evidence.map((item) => ({
-      label: item.label,
-      value: typeof item.value === 'number' ? String(item.value) : item.value,
-      source: `${item.statsKey} · ${item.sessionId}`,
-    })),
-  };
-}
-
-function latestOf(
-  set: FindingSetView,
-  rawOutput: boolean,
-): NonNullable<ProviderInsightsLayout['latest']> {
-  const findings = set.findings.map(findingOf);
-  let note: string | undefined;
-  if (set.state === 'empty') note = 'The run read the window and recorded no findings.';
-  // `ok` promises at least one finding; none left here means the parent
-  // dropped every one, and the drop line above says how many.
-  else if (set.state === 'ok' && findings.length === 0) note = 'No finding from this run passed the check.';
-  return {
-    state: set.state,
-    facts: factsOf(set),
-    findings,
-    ...(note === undefined ? {} : { note }),
-    ...(set.refusal === undefined ? {} : { refusal: { step: set.refusal.step, reason: set.refusal.reason } }),
-    rawOutput: set.state === 'refused' && rawOutput,
-    ...(set.state === 'refused' && !rawOutput ? { rawOutputNote: NO_RAW_OUTPUT } : {}),
-    ...(set.resolvedKinds.length > 0
-      ? {
-          resolved: `${NO_LONGER_REPORTED} ${set.resolvedKinds
-            .map((kind) => FINDING_LABELS[kind as InsightsFindingKind] ?? kind)
-            .join(', ')}`,
-        }
-      : {}),
-    ...(set.rejected > 0
-      ? { rejected: `${plural(set.rejected, 'finding')} rejected by the provider` }
-      : {}),
-  };
-}
-
-function historyOf(run: RunSummary): HistoryRow {
-  return {
-    runId: run.runId,
-    when: formatInstant(run.createdAt),
-    outcome:
-      run.state === 'refused' ? 'refused' : run.state === 'empty' ? 'no findings' : plural(run.findings, 'finding'),
-    agent: AGENT_LABELS[run.agentKind],
-  };
-}
-
-/** The provider state's rows, from the checked snapshot the host sent. */
+/** The provider state's rows and preview, from the checked snapshot the host sent. */
 export function providerInsightsLayout(snapshot: InsightsProviderSnapshot): ProviderInsightsLayout {
+  const dropped = droppedLine(snapshot.dropped, 'from the provider’s run list');
   return {
     title: `${snapshot.about.name} ${snapshot.about.version}`,
-    latest: snapshot.latest === null ? null : latestOf(snapshot.latest, snapshot.rawOutput),
-    history: snapshot.runs.map(historyOf),
-    running: snapshot.running,
-    ...(snapshot.dropped > 0
-      ? { dropped: `${plural(snapshot.dropped, 'value')} from the provider did not pass the check and ${snapshot.dropped === 1 ? 'is' : 'are'} not shown` }
-      : {}),
+    ...(snapshot.about.status === undefined ? {} : { status: snapshot.about.status }),
+    rows: snapshot.runs.map((run) => ({
+      runId: run.runId,
+      state: run.state,
+      when: formatInstant(run.createdAt),
+      outcome: outcomeOf(run),
+      agent: AGENT_LABELS[run.agentKind],
+    })),
+    preview: previewOf(snapshot),
+    ...(dropped === undefined ? {} : { dropped }),
   };
 }

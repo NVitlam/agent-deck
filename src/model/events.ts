@@ -1295,6 +1295,12 @@ export interface SidebarStateMessage {
    * `160e448` found the sidebar wrong with the panel closed.
    */
   provider: InsightsProviderAbout | null;
+  /**
+   * The registered provider's optional actions, in the Menu's order — v0.9.0
+   * DoD 9.45. Each is a row under Open Insights, shown only while the
+   * provider has it; empty when no provider is registered.
+   */
+  insightsActions: InsightsProviderAction[];
   drawerOpen: boolean;
 }
 
@@ -1454,30 +1460,65 @@ export interface InsightsProviderAbout {
   name: string;
   /** `1.2.3`-shaped, optionally with a `-prerelease` tag. */
   version: string;
+  /**
+   * OPTIONAL — one line under the name, e.g. "licensed until 2027-09-23"
+   * (spec `Amendment 2026-09-23`). A NAME by the text classes: one line, at
+   * most 64 characters. Absent when the provider states none or it failed
+   * the check.
+   */
+  status?: string;
 }
 
-/** What the Insights surface is told about a registered provider. */
+/**
+ * A provider's optional actions — spec `Amendment 2026-09-23`. Each is a
+ * sidebar row under Open Insights, shown only while the registered provider
+ * has it, and each calls that method and nothing else.
+ */
+export type InsightsProviderAction = 'pickAgent' | 'showPayload' | 'clearHistory';
+
+/**
+ * The run the user selected in the report list, as the host read it through
+ * `getRun(runId)` — v0.9.0 DoD 9.46.
+ */
+export interface InsightsRunPreview {
+  /** The run selected. Always one the current list holds. */
+  runId: string;
+  /**
+   * The checked set, or `null` — the provider answered `null`, threw, or
+   * returned a set that failed the check or named another run.
+   */
+  set: FindingSetView | null;
+  /** Values of this set that failed the check and were dropped. */
+  dropped: number;
+  /**
+   * True when the preview may offer "Show raw output": the provider has the
+   * optional `getRawOutput` and the set is `refused` (DoD 9.40, asked now for
+   * the SELECTED run). When false on a refused set, the surface says "No raw
+   * output for this run." (ruling of 2026-09-22, 4).
+   */
+  rawOutput: boolean;
+}
+
+/**
+ * What the Insights surface is told about a registered provider — reshaped
+ * by v0.9.0 DoD 9.46 (spec `Amendment 2026-09-23 — Paid Insights surface`).
+ *
+ * The latest set and the running flag were here until then. The surface
+ * shows a REPORT LIST and the SELECTED run instead, and it has no Run action,
+ * so neither is read any more.
+ */
 export interface InsightsProviderSnapshot {
   about: InsightsProviderAbout;
-  latest: FindingSetView | null;
+  /** The run history, checked, sorted by `createdAt`, newest first. */
   runs: RunSummary[];
-  /** True between a Run and the provider's promise settling. */
-  running: boolean;
   /**
-   * How many values the provider returned that failed the allow-list and were
+   * How many values `listRuns()` returned that failed the allow-list and were
    * dropped. Stated on the surface, because a drop nobody can see is how a
    * silent partial render ships.
    */
   dropped: number;
-  /**
-   * True when the surface may offer "Show raw output" — v0.9.0 DoD 9.40.
-   *
-   * Both must hold: the provider has the optional `getRawOutput`, and the
-   * latest set is `refused`. The run asked about is that set's own `runId`
-   * (ruling of 2026-09-22). When false on a refused set, the surface says
-   * "No raw output for this run." (the same ruling, 4).
-   */
-  rawOutput: boolean;
+  /** The selected run's report, or `null` while none is selected. */
+  selected: InsightsRunPreview | null;
 }
 
 /**
@@ -1636,25 +1677,56 @@ export interface InsightsGetMessage {
   type: 'insightsGet';
 }
 
-/**
- * The Insights surface's Run action — it calls the registered provider's
- * `run()` and nothing else. A message with no provider registered does
- * nothing, because there is nothing to call.
+/*
+ * `InsightsRunMessage` (`insightsRun`) was here until v0.9.0 DoD 9.46. Spec
+ * `Amendment 2026-09-23 — Paid Insights surface` enumerates what the
+ * registered surface may carry and Run is not among it — Send lives in
+ * Insights' own payload preview — so the intent left the wire with the button.
  */
-export interface InsightsRunMessage {
-  type: 'insightsRun';
-}
 
 /**
- * The Insights surface's "Show raw output" action on a refused set — v0.9.0
- * DoD 9.40. NO PAYLOAD: the host resolves which run it means from the
- * snapshot it built (the one refused run whose `createdAt` is the latest
- * set's), asks the provider's optional `getRawOutput`, and opens what comes
- * back as an untitled plain-text document. The renderer names no run id, for
- * the same reason `aboutLink` names no url.
+ * The preview's "Show raw output" action on a refused run — v0.9.0 DoD 9.40,
+ * asked for the SELECTED run since DoD 9.46. NO PAYLOAD: the host holds the
+ * selection, asks the provider's optional `getRawOutput` for that run, and
+ * opens what comes back as an untitled plain-text document. The renderer
+ * names no run id, for the same reason `aboutLink` names no url.
  */
 export interface InsightsRawOutputMessage {
   type: 'insightsRawOutput';
+}
+
+/**
+ * A row of the report list was clicked — v0.9.0 DoD 9.46. The id is checked
+ * at the guard (the id pattern) and again at the host, which acts only on a
+ * run its current list holds, then reads it through `getRun` and re-sends
+ * `providerState` with the preview.
+ */
+export interface InsightsSelectMessage {
+  type: 'insightsSelect';
+  runId: string;
+}
+
+/** What an Export action produces — a file of one format, or the clipboard. */
+export type InsightsExportTarget = 'html' | 'markdown' | 'copy';
+
+/**
+ * One of the preview's three Export actions — v0.9.0 DoD 9.47. It names the
+ * target only: the run is the host's selection, re-read through `getRun` at
+ * the moment of export, never what the renderer holds.
+ */
+export interface InsightsExportMessage {
+  type: 'insightsExport';
+  target: InsightsExportTarget;
+}
+
+/**
+ * "Export ticked (n)" — v0.9.0 DoD 9.47. The ticks are the renderer's, so
+ * the ids travel: each checked at the guard, and at the host against the
+ * current list. The format is asked by the host, after the press.
+ */
+export interface InsightsExportBatchMessage {
+  type: 'insightsExportBatch';
+  runIds: string[];
 }
 
 export type WebviewToHostMessage =
@@ -1665,8 +1737,10 @@ export type WebviewToHostMessage =
   | DrawerStateMessage
   | AboutLinkMessage
   | InsightsGetMessage
-  | InsightsRunMessage
-  | InsightsRawOutputMessage;
+  | InsightsRawOutputMessage
+  | InsightsSelectMessage
+  | InsightsExportMessage
+  | InsightsExportBatchMessage;
 
 /**
  * One tree op that could not be applied, reported instead of thrown.

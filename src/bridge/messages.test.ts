@@ -830,10 +830,53 @@ describe('WEBVIEW_TO_HOST_TYPES is bound to the guard it describes', () => {
     // v0.9.0 DoD 9.29–9.32: the About and Insights surfaces' intents.
     aboutLink: { type: 'aboutLink', index: 0 },
     insightsGet: { type: 'insightsGet' },
-    insightsRun: { type: 'insightsRun' },
-    // v0.9.0 DoD 9.40: "Show raw output" — no payload, like Run.
+    // v0.9.0 DoD 9.40: "Show raw output" — no payload.
     insightsRawOutput: { type: 'insightsRawOutput' },
+    // v0.9.0 DoD 9.46, 9.47: the report list and Export. (`insightsRun` is
+    // gone, and the test below holds that it is refused.)
+    insightsSelect: { type: 'insightsSelect', runId: 'run-2026-09-21.1' },
+    insightsExport: { type: 'insightsExport', target: 'html' },
+    insightsExportBatch: { type: 'insightsExportBatch', runIds: ['run-1', 'run-2'] },
   };
+
+  it('DoD 9.46: the removed Run intent is refused like any unknown type', () => {
+    expect(isWebviewToHostMessage({ type: 'insightsRun' })).toBe(false);
+  });
+
+  it('DoD 9.46/9.47: a run id must match the id pattern; a target is one of three; a batch is 1..50 distinct ids', () => {
+    for (const target of ['html', 'markdown', 'copy']) {
+      expect(isWebviewToHostMessage({ type: 'insightsExport', target }), target).toBe(true);
+    }
+    const bad: unknown[] = [
+      { type: 'insightsSelect' },
+      { type: 'insightsSelect', runId: '' },
+      { type: 'insightsSelect', runId: '<img src=x>' },
+      { type: 'insightsSelect', runId: 'r'.repeat(129) },
+      { type: 'insightsSelect', runId: 7 },
+      { type: 'insightsExport' },
+      { type: 'insightsExport', target: 'pdf' },
+      { type: 'insightsExport', target: 'HTML' },
+      { type: 'insightsExportBatch' },
+      { type: 'insightsExportBatch', runIds: [] },
+      { type: 'insightsExportBatch', runIds: 'run-1' },
+      { type: 'insightsExportBatch', runIds: ['run-1', 'run-1'] },
+      { type: 'insightsExportBatch', runIds: ['run-1', 'bad id'] },
+      { type: 'insightsExportBatch', runIds: [1] },
+      { type: 'insightsExportBatch', runIds: Array.from({ length: 51 }, (_, i) => `run-${String(i)}`) },
+    ];
+    for (const message of bad) expect(isWebviewToHostMessage(message), JSON.stringify(message)).toBe(false);
+    // The cap is fifty, the list's own cap: fifty distinct ids pass.
+    expect(
+      isWebviewToHostMessage({
+        type: 'insightsExportBatch',
+        runIds: Array.from({ length: 50 }, (_, i) => `run-${String(i)}`),
+      }),
+    ).toBe(true);
+    // A hole in the array is not an id: read by index, it is absent.
+    const sparse: unknown[] = ['run-1'];
+    sparse[2] = 'run-3';
+    expect(isWebviewToHostMessage({ type: 'insightsExportBatch', runIds: sparse })).toBe(false);
+  });
 
   it('`aboutLink` accepts an integer INSIDE the four links, and nothing else', () => {
     // The host's next act is to ask to open a url, so the renderer names one

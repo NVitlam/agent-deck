@@ -82,6 +82,7 @@ function baseState(over: Partial<SidebarState> = {}): SidebarState {
     controls: DEFAULT_VIEW_CONTROLS,
     tweaks: {},
     provider: null,
+    insightsActions: [],
     drawerOpen: false,
     ...over,
   };
@@ -178,6 +179,8 @@ const KEEP_ATTRS = new Set([
   'data-for',
   'data-group',
   'data-kind',
+  // DoD 9.45: a row drawn UNDER the one before it (the Insights actions).
+  'data-nested',
   'data-open',
   'data-section',
   'data-tab',
@@ -510,7 +513,8 @@ describe('the Insights state, on the Menu entry that opens it — DoD 9.28, 9.31
    * The Insights TAB is gone (spec `Amendment 2026-09-21 — One window`).
    * What the sidebar still says about Insights it says on Menu ▸ Open
    * Insights, as a grey value the way a collapsed group states its own: the
-   * registered provider's name and version, or "facts only". The state comes
+   * registered provider's name (its status as the detail line under it, and
+   * since DoD 9.45 its actions as rows beneath), or "Facts only". The state comes
    * from the HOST — the next block drives that through `activate()` — so
    * here it is the renderer's half: it shows what it was told, both ways.
    */
@@ -523,21 +527,67 @@ describe('the Insights state, on the Menu entry that opens it — DoD 9.28, 9.31
     return found;
   }
 
-  it('with NO provider registered: "facts only"', () => {
+  it('with NO provider registered: "Facts only"', () => {
     const panel = mount(baseState({ provider: null }));
     expect(insightsValueOf(panel)).toBe(FREE_INSIGHTS_VALUE);
   });
 
-  it('with a provider registered: its name and version', () => {
+  it('with a provider registered: its about.name (spec Amendment 2026-09-23)', () => {
     const panel = mount(baseState({ provider: { name: 'Agent Deck Insights', version: '0.2.0' } }));
-    expect(insightsValueOf(panel)).toBe('Agent Deck Insights 0.2.0');
+    expect(insightsValueOf(panel)).toBe('Agent Deck Insights');
+    expect(FREE_INSIGHTS_VALUE).toBe('Facts only');
+  });
+
+  it('DoD 9.45: the provider’s status is Open Insights’ detail line, and only when stated', () => {
+    const panel = mount(
+      baseState({ provider: { name: 'Agent Deck Insights', version: '0.2.0', status: 'licensed until 2027-09-23' } }),
+    );
+    const detail = all(panel.container, 'sidebar-detail').find((d) => d.dataset['for'] === OPEN_INSIGHTS_ID);
+    expect(detail?.textContent).toBe('licensed until 2027-09-23');
+    send(baseState({ provider: { name: 'Agent Deck Insights', version: '0.2.0' } }));
+    expect(all(panel.container, 'sidebar-detail').filter((d) => d.dataset['for'] === OPEN_INSIGHTS_ID)).toStrictEqual([]);
+  });
+
+  /** The Menu rows drawn UNDER Open Insights, as labels. */
+  const nestedRows = (panel: Mounted): string[] =>
+    all(panel.container, 'sidebar-row')
+      .filter((r) => r.dataset['nested'] === 'true')
+      .map((r) => r.textContent?.trim() ?? '');
+
+  it('DoD 9.45: Pick Agent, Show Payload, Clear History sit under Open Insights — each only while the provider has it', () => {
+    const provider = { name: 'Agent Deck Insights', version: '0.2.0' };
+    // No provider: none, whatever a malformed message claims.
+    const panel = mount(baseState({ provider: null, insightsActions: ['pickAgent', 'showPayload', 'clearHistory'] }));
+    expect(nestedRows(panel)).toStrictEqual([]);
+    // A provider with NO optional action: none.
+    send(baseState({ provider, insightsActions: [] }));
+    expect(nestedRows(panel)).toStrictEqual([]);
+    // Some: exactly those, in the Menu's order.
+    send(baseState({ provider, insightsActions: ['clearHistory', 'pickAgent'] }));
+    expect(nestedRows(panel)).toStrictEqual(['Pick Agent', 'Clear History']);
+    // All: directly under Open Insights, before Show Diagnostics, indented one step deeper.
+    send(baseState({ provider, insightsActions: ['pickAgent', 'showPayload', 'clearHistory'] }));
+    const labels = all(panel.container, 'sidebar-row').map((r) => r.textContent?.trim() ?? '');
+    const open = labels.findIndex((l) => l.startsWith('Open Insights'));
+    expect(labels.slice(open + 1, open + 5)).toStrictEqual(['Pick Agent', 'Show Payload', 'Clear History', 'Show Diagnostics']);
+    const style = (command: string): string =>
+      all(panel.container, 'sidebar-row').find((r) => r.dataset['command'] === command)?.getAttribute('style') ?? '';
+    expect(style('agentDeck.insights.pickAgent')).toMatch(/^padding-left: 32px;?$/u);
+    expect(style(OPEN_INSIGHTS_ID)).toMatch(/^padding-left: 16px;?$/u);
+    // A click runs the command, and nothing else.
+    const clear = all(panel.container, 'sidebar-row').find((r) => r.dataset['command'] === 'agentDeck.insights.clearHistory');
+    harness.flushSync(() => press(clear as Element));
+    expect(panel.sent).toStrictEqual([{ type: 'runCommand', command: 'agentDeck.insights.clearHistory' }]);
+    // A name the parent does not know is ignored, not drawn.
+    send({ ...baseState({ provider }), insightsActions: ['run', 'pickAgent'] } as unknown as SidebarState);
+    expect(nestedRows(panel)).toStrictEqual(['Pick Agent']);
   });
 
   it('a state message moves it, both ways, with no reload', () => {
     const panel = mount(baseState());
     expect(insightsValueOf(panel)).toBe(FREE_INSIGHTS_VALUE);
     send(baseState({ provider: { name: 'Agent Deck Insights', version: '0.2.0' } }));
-    expect(insightsValueOf(panel)).toBe('Agent Deck Insights 0.2.0');
+    expect(insightsValueOf(panel)).toBe('Agent Deck Insights');
     send(baseState({ provider: null }));
     expect(insightsValueOf(panel)).toBe(FREE_INSIGHTS_VALUE);
   });
@@ -550,7 +600,9 @@ describe('the Insights state, on the Menu entry that opens it — DoD 9.28, 9.31
 
   it('nothing on any page names installation, a licence, a count or an example', () => {
     for (const provider of [null, { name: 'Agent Deck Insights', version: '0.2.0' }]) {
-      const panel = mount(baseState({ provider }));
+      const panel = mount(
+        baseState({ provider, insightsActions: provider === null ? [] : ['pickAgent', 'showPayload', 'clearHistory'] }),
+      );
       for (const section of CONTROL_SECTIONS) {
         openPage(panel, section.id);
         const text = (one(panel.container, 'sidebar-page').textContent ?? '').toLowerCase();
@@ -579,11 +631,14 @@ describe('the DOM goldens', () => {
     }
   });
 
-  it('Menu, with a provider registered — the other Insights state', () => {
-    for (const [name, provider] of [
-      ['menu-provider', { name: 'Agent Deck Insights', version: '0.2.0' }],
+  it('Menu, with a provider registered — with no action, all three, and some (DoD 9.45)', () => {
+    const provider = { name: 'Agent Deck Insights', version: '0.2.0', status: 'licensed until 2027-09-23' };
+    for (const [name, insightsActions] of [
+      ['menu-provider', []],
+      ['menu-provider-actions', ['pickAgent', 'showPayload', 'clearHistory']],
+      ['menu-provider-some-actions', ['showPayload']],
     ] as const) {
-      const panel = mount(baseState({ provider }));
+      const panel = mount(baseState({ provider, insightsActions: [...insightsActions] }));
       openPage(panel, 'menu');
       golden(name, domText(panel));
       panel.dispose();
@@ -667,7 +722,10 @@ describe('every control the sidebar can send passes the host’s own guard', () 
     const posted: string[] = [];
     for (const provider of [null, { name: 'Agent Deck Insights', version: '0.2.0' }]) {
       for (const drawerOpen of [false, true]) {
-        const panel = mount(baseState({ provider, drawerOpen }));
+        // DoD 9.45: a registered provider with EVERY optional action, so the
+        // three rows under Open Insights are in the walk.
+        const insightsActions = provider === null ? [] : (['pickAgent', 'showPayload', 'clearHistory'] as const);
+        const panel = mount(baseState({ provider, drawerOpen, insightsActions: [...insightsActions] }));
         for (const section of CONTROL_SECTIONS) {
           openPage(panel, section.id);
           /*
@@ -724,7 +782,11 @@ describe('every control the sidebar can send passes the host’s own guard', () 
     const reachable = new Set([
       ...sidebarCommands(baseState({ provider: null, drawerOpen: false })),
       ...sidebarCommands(
-        baseState({ provider: { name: 'Agent Deck Insights', version: '0.2.0' }, drawerOpen: true }),
+        baseState({
+          provider: { name: 'Agent Deck Insights', version: '0.2.0' },
+          insightsActions: ['pickAgent', 'showPayload', 'clearHistory'],
+          drawerOpen: true,
+        }),
       ),
     ]);
     expect([...posted].sort()).toStrictEqual([...reachable].sort());

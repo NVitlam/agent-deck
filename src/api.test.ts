@@ -47,6 +47,8 @@ import type {
   FindingView as ApiFindingView,
   InsightsAgentKind as ApiInsightsAgentKind,
   InsightsProvider as ApiInsightsProvider,
+  InsightsProviderAbout as ApiInsightsProviderAbout,
+  InsightsProviderAction as ApiInsightsProviderAction,
   InsightsRunState as ApiInsightsRunState,
   RunSummary as ApiRunSummary,
 } from './api.js';
@@ -278,9 +280,17 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     const since: Exact<ApiFindingSinceLastRun, 'new' | 'still' | 'resolved'> = true;
     const agents: Exact<ApiInsightsAgentKind, 'claude' | 'codex'> = true;
     const rawOutput: Exact<ApiInsightsProvider['getRawOutput'], ((runId: string) => string | null) | undefined> = true;
-    expect([finding, action, evidence, set, refusalOptional, run, states, since, agents, rawOutput]).toStrictEqual(
-      Array.from({ length: 10 }, () => true),
-    );
+    // DoD 9.44 — the round-6 growth, written out.
+    const getRun: Exact<ApiInsightsProvider['getRun'], (runId: string) => ApiFindingSetView | null> = true;
+    const pickAgent: Exact<ApiInsightsProvider['pickAgent'], (() => Promise<void>) | undefined> = true;
+    const showPayload: Exact<ApiInsightsProvider['showPayload'], (() => Promise<void>) | undefined> = true;
+    const clearHistory: Exact<ApiInsightsProvider['clearHistory'], (() => Promise<void>) | undefined> = true;
+    const about: Exact<ApiInsightsProviderAbout, { name: string; version: string; status?: string }> = true;
+    const actions: Exact<ApiInsightsProviderAction, 'pickAgent' | 'showPayload' | 'clearHistory'> = true;
+    expect([
+      finding, action, evidence, set, refusalOptional, run, states, since, agents, rawOutput,
+      getRun, pickAgent, showPayload, clearHistory, about, actions,
+    ]).toStrictEqual(Array.from({ length: 16 }, () => true));
     expect(API_VERSION).toBe(2);
     expect(PROVIDER_VERSION).toBe(1);
   });
@@ -318,15 +328,19 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
       about: { name: 'Fake Insights', version: '1.0.0' },
       getLatest: () => latest,
       listRuns: () => [{ runId: 'run-1', createdAt: 1_790_000_000_000, state: 'ok', findings: 1, agentKind: 'codex' }],
+      getRun: (runId) => (runId === 'run-1' ? latest : null),
       run: () => Promise.resolve(),
+      clearHistory: () => Promise.resolve(),
       onDidChange: () => ({ dispose: () => undefined }),
     };
     const handle = api.registerInsightsProvider(provider);
-    const snapshot = providers.snapshot();
-    expect(snapshot?.latest).toStrictEqual(latest);
-    expect(snapshot?.latest).not.toBe(latest);
+    // DoD 9.44: the selected run arrives through getRun, whole and COPIED.
+    const snapshot = providers.snapshot('run-1');
+    expect(snapshot?.selected?.set).toStrictEqual(latest);
+    expect(snapshot?.selected?.set).not.toBe(latest);
     expect(snapshot?.dropped).toBe(0);
-    expect(snapshot?.rawOutput).toBe(false);
+    expect(snapshot?.selected?.rawOutput).toBe(false);
+    expect(providers.actions()).toStrictEqual(['clearHistory']);
     handle.dispose();
     expect(providers.snapshot()).toBeNull();
   });

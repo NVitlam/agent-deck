@@ -120,6 +120,7 @@
  */
 
 import { existsSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import * as vscode from 'vscode';
@@ -136,8 +137,22 @@ import {
   aboutPage,
 } from './about.js';
 import type { AboutLink } from './about.js';
-import { InsightsProviderRegistry, RAW_OUTPUT_MAX_CHARS, providerErrorText } from './insights-provider.js';
-import type { RawOutputResult } from './insights-provider.js';
+import {
+  InsightsProviderRegistry,
+  PROVIDER_ACTIONS,
+  RAW_OUTPUT_MAX_CHARS,
+  providerErrorText,
+} from './insights-provider.js';
+import type { ActionResult, RawOutputResult } from './insights-provider.js';
+import {
+  EXPORT_FILTERS,
+  exportFileName,
+  exportReport,
+  exportTextBatch,
+  formatOf,
+  freeName,
+} from './insights-export.js';
+import { refusedExportMessage, refusedExportPath, writeExportFile } from './insights-save.js';
 import { WEBVIEW_SCRIPT_SEGMENTS, WEBVIEW_STYLE_SEGMENTS } from './bridge/panel-assets.js';
 import { deepFreeze } from './bridge/apply.js';
 import { StatsUpdateEmitter, createAgentDeckApi } from './api.js';
@@ -147,6 +162,8 @@ import type { ViewControls } from './view/controls.js';
 import {
   CONTROL_COMMANDS,
   DEFAULT_VIEW_CONTROLS,
+  INSIGHTS_ACTION_COMMANDS,
+  INSIGHTS_ACTION_CONTEXT,
   INSPECTOR_TOOL_ALL,
   SIDEBAR_VIEW_ID,
   applyControlCommand,
@@ -182,9 +199,13 @@ import type { SessionDiff, SessionEmission } from './model/session.js';
 import type {
   AboutLinkMessage,
   HostToWebviewMessage,
+  FindingSetView,
+  InsightsExportBatchMessage,
+  InsightsExportMessage,
   InsightsGetMessage,
+  InsightsProviderAction,
   InsightsRawOutputMessage,
-  InsightsRunMessage,
+  InsightsSelectMessage,
   NormalizedHookEvent,
   ProviderStateMessage,
   SessionState,
@@ -4382,15 +4403,17 @@ export interface AgentDeckHostOptions extends DataPathOptions {
    */
   providerState?: () => Omit<ProviderStateMessage, 'type'>;
   /**
-   * The About tile, the Get tile and the Run action — DoD 9.29–9.32.
+   * The About tile, the Get tile, and the Insights surface's intents — DoD
+   * 9.29–9.32, and since DoD 9.46/9.47 the report list's select and the
+   * Export actions (the Run action is gone).
    *
    * Injected for the reason `onRunCommand` is: what they do (a confirmation,
-   * `openExternal`, the provider's `run()`) is the editor's and the
-   * registry's, and this class stays testable without either. The guard has
+   * `openExternal`, the provider's `getRun()`, a save dialog) is the editor's
+   * and the registry's, and this class stays testable without either. The guard has
    * already checked the message's shape; the handler checks it again against
    * what it names.
    */
-  onSurfaceIntent?: (message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage | InsightsRawOutputMessage) => void;
+  onSurfaceIntent?: (message: SurfaceIntent) => void;
   /** Injected so a test can assert the emitted document byte for byte. */
   nonce?: string;
   /**
@@ -4615,7 +4638,7 @@ export class AgentDeckHost {
   });
   /** Where a surface's tile or Run action goes. A sink by default (DoD 9.29). */
   #onSurfaceIntent: (
-    message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage | InsightsRawOutputMessage,
+    message: SurfaceIntent,
   ) => void = () => {};
   #panelsCreated = 0;
   #disposed = false;
@@ -5194,16 +5217,18 @@ export class AgentDeckHost {
           return;
         }
         /*
-         * The About and Insights surfaces' three intents (DoD 9.29–9.32).
-         * Relayed, not acted on here: a confirmation, `openExternal` and a
-         * provider's `run()` are the editor's and the registry's, and
-         * `activate()` owns both.
+         * The About and Insights surfaces' intents (DoD 9.29–9.32, 9.46,
+         * 9.47). Relayed, not acted on here: a confirmation, `openExternal`,
+         * a provider's `getRun()`, a dialog and a write are the editor's and
+         * the registry's, and `activate()` owns all of them.
          */
         if (
           message.type === 'aboutLink' ||
           message.type === 'insightsGet' ||
-          message.type === 'insightsRun' ||
-          message.type === 'insightsRawOutput'
+          message.type === 'insightsRawOutput' ||
+          message.type === 'insightsSelect' ||
+          message.type === 'insightsExport' ||
+          message.type === 'insightsExportBatch'
         ) {
           this.#onSurfaceIntent(message);
           return;
@@ -5393,6 +5418,18 @@ let activeHost: AgentDeckHost | null = null;
 /** Why the data path did not start, for the command to explain rather than fail silently. */
 let inactiveReason: string | null = null;
 
+/**
+ * Every intent the About and Insights surfaces post — relayed by the panel,
+ * acted on by `activate()` (DoD 9.29–9.32, 9.46, 9.47).
+ */
+export type SurfaceIntent =
+  | AboutLinkMessage
+  | InsightsGetMessage
+  | InsightsRawOutputMessage
+  | InsightsSelectMessage
+  | InsightsExportMessage
+  | InsightsExportBatchMessage;
+
 /** Test seam: the live host, or null. Never read by production code. */
 export function currentHost(): AgentDeckHost | null {
   return activeHost;
@@ -5411,7 +5448,7 @@ export function rawOutputRefusal(result: Extract<RawOutputResult, { ok: false }>
     case 'unsupported':
       return 'Agent Deck: the Insights provider offers no raw output.';
     case 'no-run':
-      return 'Agent Deck: the latest finding set is not a refused run, so no raw output was asked for.';
+      return 'Agent Deck: the selected run is not a refused run the provider lists, so no raw output was asked for.';
     case 'none':
       return `Agent Deck: the Insights provider has no raw output for run ${result.runId}.`;
     case 'invalid':
@@ -5746,6 +5783,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
    */
   const providers = new InsightsProviderRegistry({
     onChange: () => {
+      // A provider that went away takes its selection with it: a later one
+      // must not open on a run id from another extension's history.
+      if (!providers.registered) selectedRunId = null;
+      setActionContexts();
       refreshSidebar();
       activeHost?.sendProviderState();
     },
@@ -5764,10 +5805,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
   });
   context.subscriptions.push({ dispose: () => providers.dispose() });
 
+  /**
+   * The run the report list has SELECTED — v0.9.0 DoD 9.46. The host's, like
+   * every other control value: a click posts `insightsSelect`, this moves,
+   * and `providerState` carries the run's report back. Held here rather than
+   * in the renderer so a provider change re-reads the selected run and a
+   * reloaded panel shows the same one. `null` until a row is clicked.
+   */
+  let selectedRunId: string | null = null;
+
+  /**
+   * The editor's own menus gate each Insights action on a context key — DoD
+   * 9.45. Set from the registry on every change, so the Menu submenu and the
+   * palette offer exactly what the sidebar shows.
+   */
+  const setActionContexts = (): void => {
+    const present = providers.actions();
+    for (const action of PROVIDER_ACTIONS) {
+      void Promise.resolve(
+        vscode.commands.executeCommand('setContext', INSIGHTS_ACTION_CONTEXT[action], present.includes(action)),
+      ).catch(() => undefined);
+    }
+  };
+
   /** The Insights/About state, read at the moment of asking. */
   const providerState = (): Omit<ProviderStateMessage, 'type'> => ({
     page: aboutPage(aboutVersion),
-    provider: providers.snapshot(),
+    provider: providers.snapshot(selectedRunId),
   });
 
   const api = createAgentDeckApi(
@@ -5861,6 +5925,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
     // DoD 9.31: read from the HOST's registry, never from the panel, so the
     // sidebar states the same thing whether or not a panel exists.
     provider: providers.about(),
+    insightsActions: providers.actions(),
     drawerOpen,
   });
 
@@ -6051,17 +6116,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
   };
 
   /**
-   * The About tile, the Get tile and the Run action — DoD 9.29–9.32.
+   * The surfaces' intents — DoD 9.29–9.32, 9.46, 9.47.
    *
    * Each is checked again here, against what it names: the index against the
-   * four links this extension defines, Get against the one url it holds, and
-   * Run against whether a provider is registered (the registry's `run()` is a
-   * no-op without one). A tile that opens a page ASKS FIRST, through the same
-   * confirmation every About tile has used since DoD 9.23.
+   * four links this extension defines, Get against the one url it holds, a
+   * run id against the list the provider holds NOW. A tile that opens a page
+   * ASKS FIRST, through the same confirmation every About tile has used
+   * since DoD 9.23.
    */
-  const onSurfaceIntent = (
-    message: AboutLinkMessage | InsightsGetMessage | InsightsRunMessage | InsightsRawOutputMessage,
-  ): void => {
+  const onSurfaceIntent = (message: SurfaceIntent): void => {
     switch (message.type) {
       case 'aboutLink': {
         const link = ABOUT_LINKS[message.index];
@@ -6072,26 +6135,183 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       case 'insightsGet':
         void confirmThenOpen(INSIGHTS_GET_LINK);
         return;
-      case 'insightsRun':
-        void providers.run();
-        return;
       case 'insightsRawOutput':
         void showRawOutput();
+        return;
+      case 'insightsSelect':
+        // A run the list does not hold selects nothing: the renderer's id is
+        // a request, and the provider's list is what can grant it.
+        if (!providers.lists(message.runId)) return;
+        selectedRunId = message.runId;
+        activeHost?.sendProviderState();
+        return;
+      case 'insightsExport':
+        void exportSelected(message.target);
+        return;
+      case 'insightsExportBatch':
+        void exportBatch(message.runIds);
         return;
     }
   };
 
+  /** Write a line to the one shared channel. Never throws (G2). */
+  const logLine = (line: string): void => {
+    try {
+      sharedOutput().appendLine(`[${new Date().toISOString()}] ${line}`);
+    } catch {
+      // G2: a channel that cannot be created must not take the caller down.
+    }
+  };
+
+  /*
+   * THE WRITE ITSELF IS NOT HERE. `src/insights-save.ts` holds it, beside the
+   * G1 refusal of any path inside an observed engine's directory, so this
+   * file still names no write API — the arrangement the G7 amendment made
+   * for the stats store (DoD 9.47).
+   */
+  const writeExport = (uri: vscode.Uri, text: string): Promise<boolean> => writeExportFile(uri, text, logLine);
+
+  /** Where a dialog opens: the first workspace folder, else the home directory. */
+  const defaultFolder = (): vscode.Uri =>
+    vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(homedir());
+
   /**
-   * "Show raw output" on a refused set — v0.9.0 DoD 9.40.
+   * One of the preview's Export actions — DoD 9.47. The run is the host's
+   * SELECTION, re-read through `getRun` now: an export is built from what
+   * the provider says at the moment of export, never from what a surface
+   * may still be showing.
+   */
+  const exportSelected = async (target: InsightsExportMessage['target']): Promise<void> => {
+    const read = selectedRunId === null ? null : providers.readRun(selectedRunId);
+    const set = read?.value ?? null;
+    if (set === null) {
+      void vscode.window.showInformationMessage('Agent Deck: the selected run has no report to export.');
+      return;
+    }
+    const format = formatOf(target);
+    const text = exportReport(set, format);
+    if (format === 'text') {
+      await vscode.env.clipboard.writeText(text);
+      void vscode.window.showInformationMessage(`Agent Deck: the report of run ${set.runId} is on the clipboard.`);
+      return;
+    }
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.joinPath(defaultFolder(), exportFileName(set, format)),
+      filters: { [EXPORT_FILTERS[format]]: [format === 'html' ? 'html' : 'md'] },
+      saveLabel: 'Export',
+    });
+    if (uri === undefined) return;
+    if (await writeExport(uri, text)) {
+      void vscode.window.showInformationMessage(`Agent Deck: exported run ${set.runId} to ${uri.fsPath}.`);
+    }
+  };
+
+  /** The batch format choices, in the order the quick pick offers them. */
+  const BATCH_FORMATS: readonly { label: string; target: InsightsExportMessage['target'] }[] = [
+    { label: 'HTML', target: 'html' },
+    { label: 'Markdown', target: 'markdown' },
+    { label: 'Copy', target: 'copy' },
+  ];
+
+  /**
+   * "Export ticked (n)" — DoD 9.47. The format first, then (for a file) a
+   * folder; one file per run, never overwriting (an existing name gains
+   * `-2`, `-3`…); every run re-read through `getRun` now. Says how many
+   * were written and names the runs that had no report.
+   */
+  const exportBatch = async (runIds: readonly string[]): Promise<void> => {
+    const picked = await vscode.window.showQuickPick(
+      BATCH_FORMATS.map((entry) => entry.label),
+      { placeHolder: `Export ${String(runIds.length)} report${runIds.length === 1 ? '' : 's'} as` },
+    );
+    const target = BATCH_FORMATS.find((entry) => entry.label === picked)?.target;
+    if (target === undefined) return;
+    const sets: FindingSetView[] = [];
+    const missing: string[] = [];
+    for (const runId of runIds) {
+      const set = providers.readRun(runId)?.value ?? null;
+      if (set === null) missing.push(runId);
+      else sets.push(set);
+    }
+    const unreported = missing.length === 0 ? '' : ` No report for ${missing.join(', ')}.`;
+    if (sets.length === 0) {
+      void vscode.window.showInformationMessage(`Agent Deck: nothing was exported.${unreported}`);
+      return;
+    }
+    const format = formatOf(target);
+    if (format === 'text') {
+      await vscode.env.clipboard.writeText(exportTextBatch(sets));
+      void vscode.window.showInformationMessage(
+        `Agent Deck: ${String(sets.length)} report${sets.length === 1 ? ' is' : 's are'} on the clipboard.${unreported}`,
+      );
+      return;
+    }
+    const folders = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      defaultUri: defaultFolder(),
+      openLabel: 'Export here',
+    });
+    const folder = folders?.[0];
+    if (folder === undefined) return;
+    const inside = refusedExportPath(folder.fsPath);
+    if (inside !== null) {
+      void vscode.window.showInformationMessage(refusedExportMessage(folder.fsPath, inside));
+      return;
+    }
+    const taken = new Set<string>();
+    try {
+      for (const [name] of await vscode.workspace.fs.readDirectory(folder)) taken.add(name);
+    } catch {
+      // An unreadable folder names nothing; a write into it will say so.
+    }
+    let written = 0;
+    for (const set of sets) {
+      const name = freeName(exportFileName(set, format), taken);
+      taken.add(name);
+      if (await writeExport(vscode.Uri.joinPath(folder, name), exportReport(set, format))) written += 1;
+    }
+    void vscode.window.showInformationMessage(
+      `Agent Deck: exported ${String(written)} of ${String(sets.length)} report${sets.length === 1 ? '' : 's'} to ${folder.fsPath}.${unreported}`,
+    );
+  };
+
+  /**
+   * A sidebar row under Open Insights — DoD 9.45. Calls the provider's
+   * optional action and nothing else; any answer that did nothing says why.
+   */
+  const ACTION_LABELS: Readonly<Record<InsightsProviderAction, string>> = {
+    pickAgent: 'Pick Agent',
+    showPayload: 'Show Payload',
+    clearHistory: 'Clear History',
+  };
+  const runProviderAction = async (action: InsightsProviderAction): Promise<void> => {
+    const result: ActionResult = await providers.invoke(action);
+    if (result === 'no-provider') {
+      void vscode.window.showInformationMessage('Agent Deck: no Insights provider is registered.');
+    } else if (result === 'absent') {
+      void vscode.window.showInformationMessage(
+        `Agent Deck: the Insights provider does not offer ${ACTION_LABELS[action]}.`,
+      );
+    } else if (result === 'failed') {
+      void vscode.window.showInformationMessage(
+        `Agent Deck: the Insights provider failed during ${ACTION_LABELS[action]}.`,
+      );
+    }
+  };
+
+  /**
+   * "Show raw output" on the SELECTED refused run — v0.9.0 DoD 9.40, 9.46.
    *
-   * The registry resolves the run and asks the provider; the text opens as an
+   * The registry re-reads the selected run and asks the provider; the text opens as an
    * UNTITLED plain-text document, so nothing is written anywhere (G1) and the
    * model's words never enter the webview. Every answer that shows nothing
    * says why, naming the run where there is one — a press that does nothing
    * silently is the dead-button class this release has paid for twice.
    */
   const showRawOutput = async (): Promise<void> => {
-    const result = providers.rawOutput();
+    const result = providers.rawOutput(selectedRunId);
     if (!result.ok) {
       void vscode.window.showInformationMessage(rawOutputRefusal(result));
       return;
@@ -6158,7 +6378,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
      */
     vscode.commands.registerCommand(OPEN_INSIGHTS_COMMAND, () => openSurface('insights')),
     vscode.commands.registerCommand(ABOUT_COMMAND, () => openSurface('about')),
+    /*
+     * Menu ▸ Pick Agent, Show Payload, Clear History — DoD 9.45. Registered
+     * UNCONDITIONALLY: the sidebar and the editor's menus show each only while
+     * the provider has it, and a run that arrives anyway (a stale palette, a
+     * keybinding) says why it did nothing.
+     */
+    ...PROVIDER_ACTIONS.map((action) =>
+      vscode.commands.registerCommand(INSIGHTS_ACTION_COMMANDS[action], () => runProviderAction(action)),
+    ),
   ];
+  // The context keys start false, not unset: a menu gated on an unset key
+  // hides the entry too, but "false" is what the registry says.
+  setActionContexts();
 
   context.subscriptions.push(...sidebarCommands);
 

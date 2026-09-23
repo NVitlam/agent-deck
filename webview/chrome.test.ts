@@ -106,9 +106,26 @@ const ALLOWED: Readonly<Record<string, string>> = Object.freeze({
   [TESTID.insightsGetTile]:
     'the Insights surface’s Get tile — `Amendment 2026-09-21 — One window`, in the free state ' +
     'only. It asks before it opens anything.',
-  [TESTID.insightsRun]:
-    'the Insights surface’s Run action — `Amendment 2026-09-21 — One window`, in the provider ' +
-    'state only. It calls the registered provider and nothing else.',
+  /*
+   * v0.9.0 DoD 9.46/9.47. `Amendment 2026-09-23 — Paid Insights surface` is a
+   * RULED EXCEPTION to the clean-windows law, for the Insights surface only
+   * while a provider is registered, and it enumerates what it allows: a
+   * report list (click selects, tick boxes for batch), Export HTML /
+   * Markdown / Copy in the preview's header, and "Export ticked (n)" under
+   * the list. Each is one entry here. The Run action it replaced is gone.
+   */
+  [TESTID.insightsReportSelect]:
+    'content item: one run in the Insights report list. Selecting it previews that report ' +
+    '(`Amendment 2026-09-23`).',
+  [TESTID.insightsReportTick]:
+    'the Insights surface’s report tick box — `Amendment 2026-09-23` rules it in, for a batch ' +
+    'export. It changes view state and posts nothing.',
+  [TESTID.insightsExport]:
+    'the Insights surface’s Export actions, HTML / Markdown / Copy in the preview header — ' +
+    '`Amendment 2026-09-23`. The host re-reads the selected run and asks where to save.',
+  [TESTID.insightsExportTicked]:
+    'the Insights surface’s "Export ticked (n)" under the report list — `Amendment 2026-09-23`. ' +
+    'The host asks the format and the folder.',
   /*
    * v0.9.0 DoD 9.41. `Amendment 2026-09-22 — Provider contract v1 widened`
    * names both: a finding's detail "behind expand", and "show raw output" on
@@ -139,8 +156,12 @@ const EXCEPTIONS = [
   TESTID.aboutLink,
   TESTID.aboutGetTile,
   TESTID.insightsGetTile,
-  TESTID.insightsRun,
   TESTID.insightsRawOutput,
+  // v0.9.0 DoD 9.46/9.47 — the ruled exception of `Amendment 2026-09-23`.
+  // The report list's SELECT is a content item and is not here.
+  TESTID.insightsReportTick,
+  TESTID.insightsExport,
+  TESTID.insightsExportTicked,
 ];
 
 /** Everything a browser treats as clickable, by selector. */
@@ -278,7 +299,7 @@ describe('the allow-list itself', () => {
     }
   });
 
-  it('the dismiss, the Stats tabs and the five surface intents are the ONLY non-content entries', () => {
+  it('the dismiss, the Stats tabs and the surface intents are the ONLY non-content entries', () => {
     const notContent = Object.entries(ALLOWED).filter(
       ([, why]) => !why.startsWith('content item') && !why.startsWith('expand/collapse'),
     );
@@ -425,7 +446,11 @@ describe('every surface is content only', () => {
     page: { text: 'Agent Deck draws the sessions.', links: [{ label: 'Portfolio', host: 'nvitlam.github.io' }, { label: 'Repository', host: 'github.com' }, { label: 'LinkedIn', host: 'www.linkedin.com' }, { label: 'Sponsor', host: 'github.com' }], get: { label: 'Get Agent Deck Insights', host: 'nvitlam.github.io' }, footer: 'Agent Deck 0.9.0 · MIT licence' },
     provider: {
       about: { name: 'Agent Deck Insights', version: '0.2.0' },
-      latest: {
+      selected: {
+        runId: 'run-1',
+        dropped: 0,
+        rawOutput: false,
+        set: {
         runId: 'run-1',
         createdAt: 1_790_000_000_000,
         agent: { kind: 'claude', version: '2.1.246' },
@@ -445,31 +470,39 @@ describe('every surface is content only', () => {
         ],
         rejected: 0,
         state: 'ok',
+        },
       },
       runs: [{ runId: 'run-1', createdAt: 1_790_000_000_000, state: 'ok', findings: 1, agentKind: 'claude' }],
-      running: false,
       dropped: 0,
-      rawOutput: false,
     },
   };
 
-  /** The same provider, its latest set REFUSED and its raw output offered (DoD 9.41). */
+  /** The same provider with NOTHING selected — the list, and the empty preview. */
+  const NONE_SELECTED = {
+    ...PROVIDER_STATE,
+    provider: { ...PROVIDER_STATE.provider, selected: null },
+  };
+
+  /** The same provider, the selected run REFUSED and its raw output offered (DoD 9.41, 9.46). */
   const REFUSED_STATE = {
     ...PROVIDER_STATE,
     provider: {
       ...PROVIDER_STATE.provider,
-      latest: {
-        ...PROVIDER_STATE.provider.latest,
-        findings: [],
-        state: 'refused',
-        refusal: { step: 'validate', reason: 'No JSON object.' },
+      selected: {
+        ...PROVIDER_STATE.provider.selected,
+        rawOutput: true,
+        set: {
+          ...PROVIDER_STATE.provider.selected.set,
+          findings: [],
+          state: 'refused',
+          refusal: { step: 'validate', reason: 'No JSON object.' },
+        },
       },
       runs: [{ runId: 'run-1', createdAt: 1_790_000_000_000, state: 'refused', findings: 0, agentKind: 'claude' }],
-      rawOutput: true,
     },
   };
 
-  it('the INSIGHTS surface carries its Get tile (free) or Run (provider), and nothing else', () => {
+  it('the INSIGHTS surface carries its Get tile (free), or the ruled exception (provider), and nothing else', () => {
     // FREE: facts are content, not controls; the Get tile is the one intent.
     const free = render();
     const records = [record('s1'), record('s2')];
@@ -482,22 +515,53 @@ describe('every surface is content only', () => {
     free.dispose();
     mounted.pop();
 
-    // PROVIDER: the finding, the history, Run — and each finding's detail
-    // toggle (DoD 9.41), which reveals content and posts nothing.
+    // PROVIDER, NOTHING SELECTED (DoD 9.46): the list's row — its tick and
+    // its select — and "Export ticked", and nothing in the empty preview.
+    const none = render();
+    send(NONE_SELECTED);
+    send(viewControls({ surface: 'insights' }));
+    expect(clickables(none.container)).toStrictEqual([
+      TESTID.insightsReportTick,
+      TESTID.insightsReportSelect,
+      TESTID.insightsExportTicked,
+    ]);
+    expect(chrome(none.container)).toStrictEqual([]);
+    none.dispose();
+    mounted.pop();
+
+    // PROVIDER, A RUN SELECTED: the same, plus the preview header's three
+    // Export actions and the finding's detail toggle (DoD 9.41), which
+    // reveals content and posts nothing. NO Run (DoD 9.46).
     const paid = render();
     send(PROVIDER_STATE);
     send(viewControls({ surface: 'insights' }));
     expect(all(paid.container, TESTID.insightsFinding).length).toBe(1);
-    expect(clickables(paid.container)).toStrictEqual([TESTID.insightsRun, TESTID.insightsDetail]);
+    expect(clickables(paid.container)).toStrictEqual([
+      TESTID.insightsReportTick,
+      TESTID.insightsReportSelect,
+      TESTID.insightsExportTicked,
+      TESTID.insightsExport,
+      TESTID.insightsExport,
+      TESTID.insightsExport,
+      TESTID.insightsDetail,
+    ]);
     expect(chrome(paid.container)).toStrictEqual([]);
     paid.dispose();
     mounted.pop();
 
-    // REFUSED: Run and "Show raw output", and no finding to expand.
+    // REFUSED: "Show raw output" in place of a finding to expand.
     const refused = render();
     send(REFUSED_STATE);
     send(viewControls({ surface: 'insights' }));
-    expect(clickables(refused.container)).toStrictEqual([TESTID.insightsRun, TESTID.insightsRawOutput]);
+    expect(clickables(refused.container)).toStrictEqual([
+      TESTID.insightsReportTick,
+      TESTID.insightsReportSelect,
+      TESTID.insightsExportTicked,
+      TESTID.insightsExport,
+      TESTID.insightsExport,
+      TESTID.insightsExport,
+      TESTID.insightsRawOutput,
+    ]);
     expect(chrome(refused.container)).toStrictEqual([]);
   });
 

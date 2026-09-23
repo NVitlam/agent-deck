@@ -30,7 +30,11 @@
  * state starts at the shipped defaults and the host re-sends on create.
  */
 
-import type { InsightsProviderAbout, RunCommandMessage } from '../../src/model/events.js';
+import type {
+  InsightsProviderAbout,
+  InsightsProviderAction,
+  RunCommandMessage,
+} from '../../src/model/events.js';
 import { DEFAULT_VIEW_CONTROLS } from '../../src/view/controls.js';
 import type { SidebarState } from './model.js';
 
@@ -47,6 +51,7 @@ export const EMPTY_SIDEBAR_STATE: SidebarState = Object.freeze({
   controls: DEFAULT_VIEW_CONTROLS,
   tweaks: {},
   provider: null,
+  insightsActions: [],
   drawerOpen: false,
 });
 
@@ -56,11 +61,21 @@ export const EMPTY_SIDEBAR_STATE: SidebarState = Object.freeze({
  * The HOST checked it against the allow-list at registration; this only
  * refuses a shape that is not two strings, so a malformed message reads as
  * "none registered" rather than as a throw (G3) or as `undefined undefined`.
+ * A `status` that is not a string is left out (DoD 9.45).
  */
 function providerOf(value: unknown): InsightsProviderAbout | null {
   if (typeof value !== 'object' || value === null) return null;
-  const { name, version } = value as { name?: unknown; version?: unknown };
-  return typeof name === 'string' && typeof version === 'string' ? { name, version } : null;
+  const { name, version, status } = value as { name?: unknown; version?: unknown; status?: unknown };
+  if (typeof name !== 'string' || typeof version !== 'string') return null;
+  return typeof status === 'string' ? { name, version, status } : { name, version };
+}
+
+/** The three action names, and nothing else, from an unchecked port (DoD 9.45). */
+const ACTIONS: readonly InsightsProviderAction[] = ['pickAgent', 'showPayload', 'clearHistory'];
+
+function actionsOf(value: unknown): InsightsProviderAction[] {
+  if (!Array.isArray(value)) return [];
+  return ACTIONS.filter((action) => (value as unknown[]).includes(action));
 }
 
 export interface SidebarSource {
@@ -101,6 +116,9 @@ export function createSidebarSource(
         controls: next?.controls ?? EMPTY_SIDEBAR_STATE.controls,
         tweaks: next?.tweaks ?? EMPTY_SIDEBAR_STATE.tweaks,
         provider: providerOf(next?.provider),
+        // No actions without a provider, whatever the message says: the rows
+        // exist only while one is registered.
+        insightsActions: providerOf(next?.provider) === null ? [] : actionsOf(next?.insightsActions),
         drawerOpen: next?.drawerOpen === true,
       };
       for (const listener of [...listeners]) listener();

@@ -61,6 +61,10 @@
       <p class="provider" data-testid={TESTID.aboutProvider}>
         Insights provider: {provider.about.name} {provider.about.version}
       </p>
+      <!-- DoD 9.44: the provider's status, under its name, when it states one. -->
+      {#if provider.about.status !== undefined}
+        <p class="provider" data-testid="about-provider-status">{provider.about.status}</p>
+      {/if}
     {/if}
   </section>
   <nav class="tiles" data-testid="about-links" aria-label="Links">

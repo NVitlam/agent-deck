@@ -126,6 +126,10 @@ export function startSidebar(target: HTMLElement, api: VsCodeApi = acquireApi())
       controls: message.controls,
       tweaks: message.tweaks,
       provider: message.provider,
+      // DoD 9.45. This forward was MISSING on the first build of round 6 and
+      // the rows under Open Insights never drew — the forwarding-site class,
+      // caught by `sidebar.test.ts` driving the shipped bundle.
+      insightsActions: message.insightsActions,
       drawerOpen: message.drawerOpen,
     });
   };

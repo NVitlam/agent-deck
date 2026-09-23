@@ -83,10 +83,13 @@ import {
   MENU_COMMANDS as SIDEBAR_MENU,
   commandSurface,
   isPaletteVisible,
+  INSIGHTS_ACTION_COMMANDS,
+  INSIGHTS_ACTION_CONTEXT,
   PANEL_VIEW_TYPE as CONTROLS_PANEL_VIEW_TYPE,
   SIDEBAR_CONTAINER_ID,
   SIDEBAR_VIEW_ID,
 } from '../view/controls.js';
+import { PROVIDER_ACTIONS } from '../insights-provider.js';
 
 const REPO_ROOT = new URL('../../', import.meta.url);
 
@@ -541,15 +544,42 @@ describe('the activity-bar sidebar (v0.7.0 Phase 4)', () => {
   it('the Menu section is the locked order — Open Insights third since 2026-09-21', () => {
     // Spec `Amendment 2026-09-21 — One window, Insights provider, Menu-only
     // entry` states the whole order, and this is it verbatim.
+    // Spec `Amendment 2026-09-23` puts three rows UNDER Open Insights, each
+    // shown only while a registered provider has that action (DoD 9.45).
     expect(SIDEBAR_MENU.map((e) => e.label)).toStrictEqual([
       'Open Deck',
       'Open Statistics',
       'Open Insights',
+      'Pick Agent',
+      'Show Payload',
+      'Clear History',
       'Show Diagnostics',
       'Settings',
       'Clear Stats History',
       'About',
     ]);
+  });
+
+  it('DoD 9.45: the editor’s Menu submenu and palette gate each Insights action on the key the host sets', async () => {
+    const manifest = (await readManifest()) as unknown as {
+      contributes?: { menus?: Record<string, { command?: string; when?: string; group?: string }[]> };
+    };
+    const menus = manifest.contributes?.menus ?? {};
+    const gated = (rows: { command?: string; when?: string }[] | undefined): [string, string][] =>
+      (rows ?? [])
+        .filter((row) => row.when !== undefined && row.when !== 'false' && !row.when.startsWith('view =='))
+        .map((row) => [String(row.command), String(row.when)]);
+    const expected = PROVIDER_ACTIONS.map((action): [string, string] => [
+      INSIGHTS_ACTION_COMMANDS[action],
+      INSIGHTS_ACTION_CONTEXT[action],
+    ]);
+    // Exactly the three, each on its own key — in the Menu submenu AND the palette.
+    expect(gated(menus['agentDeck.submenu.menu'])).toStrictEqual(expected);
+    expect(gated(menus['commandPalette'])).toStrictEqual(expected);
+    // The Menu submenu keeps the table's order, and its ordinals say so.
+    const menu = menus['agentDeck.submenu.menu'] ?? [];
+    expect(menu.map((row) => row.command)).toStrictEqual(SIDEBAR_MENU.map((e) => e.command));
+    expect(menu.map((row) => row.group)).toStrictEqual(menu.map((_, i) => `1_items@${String(i + 1)}`));
   });
 
   it('every section and group is a submenu, and every submenu is reachable', async () => {

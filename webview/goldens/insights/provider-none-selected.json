@@ -1,0 +1,36 @@
+{
+  "title": "Agent Deck Insights 0.2.0",
+  "status": "licensed until 2027-09-23",
+  "rows": [
+    {
+      "runId": "run-3",
+      "state": "ok",
+      "when": "2026-09-21 12:00 UTC",
+      "outcome": "8 findings",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-2",
+      "state": "empty",
+      "when": "2026-09-20 12:00 UTC",
+      "outcome": "no findings",
+      "agent": "Codex"
+    },
+    {
+      "runId": "run-1",
+      "state": "refused",
+      "when": "2026-09-19 12:00 UTC",
+      "outcome": "refused",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-4",
+      "state": "ok",
+      "when": "2026-09-18 12:00 UTC",
+      "outcome": "1 finding",
+      "agent": "Claude Code"
+    }
+  ],
+  "preview": null,
+  "dropped": "2 values from the provider’s run list did not pass the check and are not shown"
+}

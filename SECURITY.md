@@ -63,9 +63,11 @@ and Cf; free text may carry a tab and LF or CRLF line breaks), so no zero-width 
 bidirectional override, nor a line or paragraph separator, nor a lone surrogate. A string that fails is **dropped and counted, never shortened**. A piece of evidence
 may be text only on a stats-record field the history itself stores as text, under that field's
 cap. The panel renders all of it as text, never as markup. Agent Deck calls the provider's
-`getLatest`, `listRuns` and `run`, the optional `getRawOutput` only when you press **Show raw
-output** on a refused run, and subscribes once through `onDidChange`; it calls nothing else, asks
-no licence question and opens no connection for it. Raw output opens as an untitled plain-text
+`listRuns`, `getRun` for the report you select or export (a set naming any other run is dropped),
+the optional `getRawOutput` only when you press **Show raw output** on a refused run, the optional
+`pickAgent`, `showPayload` and `clearHistory` only when you press that sidebar row, and subscribes
+once through `onDidChange`; it calls nothing else — `getLatest` and `run` are required members it
+no longer calls — asks no licence question and opens no connection for it. Raw output opens as an untitled plain-text
 document — nothing is written to disk — and more than 1,048,576 characters is not opened at all.
 Proof: `src/insights-provider.test.ts`.
 
@@ -89,6 +91,21 @@ These are build-time law in this repository, not guidelines. A change that break
   naming any other key, or a value the setting cannot take, is refused before the call.
   Proof: `src/extension.test.ts` › "an updateTweak writes through workspace.getConfiguration().update, to Global";
   `src/sidebar/provider.test.ts` › "drops a runCommand naming anything off the menu, and every other message type".
+
+  **A second write, from 0.9.0: an Insights report you export.** HTML and Markdown are saved where
+  you choose, through the editor's own save dialog (one file) or folder dialog (one file per ticked
+  report, never replacing a file already there); Copy writes to the clipboard only. The export is
+  built from the checked finding set alone. The HTML page loads nothing — no script, no image, no
+  link, no remote stylesheet, and a `Content-Security-Policy` of `default-src 'none';
+  style-src 'unsafe-inline'` — and the Markdown escapes the provider's text so it cannot become an
+  image or a link. **A path inside `~/.claude`, the Claude Code projects directory, the Codex
+  directory or OpenCode's data directory is refused, and nothing is written.** The write lives in
+  one module, `src/insights-save.ts`, beside that refusal; `src/extension.ts` still names no write
+  API. Exporting makes no network call.
+  Proof: `src/insights-save.test.ts` (the one writer and its one importer, the refused roots);
+  `src/insights-export.test.ts` (every HTML golden parsed for anything that loads; the Markdown
+  escaping; no network import); `src/extension.test.ts` › "9.47 G1: a path inside an observed
+  engine’s directory is refused and NOTHING is written".
   `src/hooks/listener.ts` imports no filesystem API at all, and a test asserts that against the
   source text — including that it never resolves a home directory.
 

@@ -35,13 +35,16 @@ import type { StatsRecord } from './stats/schema.js';
 import { STATS_SCHEMA_VERSION } from './stats/schema.js';
 import { StatsStore } from './stats/store.js';
 import { STATS_GOLDEN_DIR } from './stats/corpus.stats.testkit.js';
-import type { FindingSetView, FindingView, InsightsProviderSnapshot } from './model/events.js';
+import type { FindingSetView, InsightsProviderSnapshot, RunSummary } from './model/events.js';
 import {
   EXAMPLES,
   EXAMPLE_LABEL,
   ESTIMATED_BY_CLAUDE_CODE,
   NO_LONGER_REPORTED,
   NO_RAW_OUTPUT,
+  NO_REPORT,
+  REPORT_HEADING,
+  SELECT_A_REPORT,
   FINDING_LABELS,
   IDLE_RESUME_MS,
   INSIGHTS_WINDOW_DAYS,
@@ -51,6 +54,7 @@ import {
   providerInsightsLayout,
 } from '../webview/insights/layout.js';
 import { FINDING_KINDS } from './insights-provider.js';
+import { FINDING_SINCE, REPORT_NOW, REPORT_SETS } from './insights-report.testkit.js';
 
 const GOLDEN_FILE = resolve('webview/goldens/insights/free-facts.json');
 const ROTATION_FILE = resolve('webview/goldens/insights/rotation.json');
@@ -162,7 +166,8 @@ describe('the free facts, from the REAL store, against a golden in the parent', 
  * ------------------------------------------------------------------------ */
 
 /** A record with nothing in it, ending one hour before `NOW`. */
-const NOW = Date.UTC(2026, 8, 21, 12, 0, 0);
+/** The shared instant (`src/insights-report.testkit.ts`): the free facts and the report sets are stated against one clock. */
+const NOW = REPORT_NOW;
 function record(sessionId: string, over: Partial<StatsRecord> = {}): StatsRecord {
   return {
     statsSchemaVersion: STATS_SCHEMA_VERSION,
@@ -342,122 +347,69 @@ describe('the example rotation', () => {
  * DoD 9.41 — the provider state's renderer, against goldens
  * ------------------------------------------------------------------------ */
 
-const SINCE = ['new', 'still', 'resolved', null] as const;
-
-/** A checked finding as the host would send it. Neutral text: see `surfaceText`. */
-function viewFinding(index: number, over: Partial<FindingView> = {}): FindingView {
-  const kind = FINDING_KINDS[index % FINDING_KINDS.length] as FindingView['kind'];
-  return {
-    id: `f-${String(index)}`,
-    kind,
-    confidence: (['low', 'medium', 'high'] as const)[index % 3] as FindingView['confidence'],
-    action: {
-      lead: `Lead line ${String(index)} for ${kind}`,
-      detail: `Detail paragraph ${String(index)}.\nIt spans two lines.`,
-    },
-    cause: `Cause sentence ${String(index)}.`,
-    evidence: [
-      { label: 'Prompt tokens', sessionId: 'ses_example01', statsKey: 'sessions[0].totals.prompt', value: 128_400 },
-    ],
-    sinceLastRun: SINCE[index % SINCE.length] ?? null,
-    ...over,
-  };
-}
+const SINCE = FINDING_SINCE;
 
 const ABOUT = { name: 'Agent Deck Insights', version: '0.2.0' };
 
-/** The four states DoD 9.41 names, as checked snapshots. */
-const PROVIDER_STATES: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', InsightsProviderSnapshot>> = {
-  ok: {
+/** The four sets DoD 9.41 names — from `src/insights-report.testkit.ts`, which the export goldens read too. */
+const SETS = REPORT_SETS;
+
+/** The report list every state shows: the four runs, newest first (DoD 9.46). */
+const RUNS: RunSummary[] = [
+  { runId: 'run-3', createdAt: NOW, state: 'ok', findings: 8, agentKind: 'claude' },
+  { runId: 'run-2', createdAt: NOW - DAY, state: 'empty', findings: 0, agentKind: 'codex' },
+  { runId: 'run-1', createdAt: NOW - 2 * DAY, state: 'refused', findings: 0, agentKind: 'claude' },
+  { runId: 'run-4', createdAt: NOW - 3 * DAY, state: 'ok', findings: 1, agentKind: 'claude' },
+];
+
+/** A snapshot with the given set selected — the host's shape since DoD 9.46. */
+function selecting(set: FindingSetView, over: { rawOutput?: boolean; dropped?: number } = {}): InsightsProviderSnapshot {
+  return {
     about: ABOUT,
-    latest: {
-      runId: 'run-1',
-      createdAt: NOW,
-      agent: { kind: 'claude', version: '2.1.246' },
-      window: { sessions: 12, excluded: 2, sinceMs: NOW - 7 * DAY },
-      usage: { prompt: 48_210, output: 3_904, costUsd: 0.2381 },
-      findings: FINDING_KINDS.map((_, index) => viewFinding(index)),
-      resolvedKinds: [],
-      rejected: 1,
-      state: 'ok',
+    runs: RUNS,
+    dropped: 0,
+    selected: {
+      runId: set.runId,
+      set,
+      dropped: over.dropped ?? 0,
+      rawOutput: over.rawOutput ?? set.state === 'refused',
     },
-    runs: [
-      { runId: 'run-3', createdAt: NOW, state: 'ok', findings: 8, agentKind: 'claude' },
-      { runId: 'run-2', createdAt: NOW - DAY, state: 'empty', findings: 0, agentKind: 'codex' },
-      { runId: 'run-1', createdAt: NOW - 2 * DAY, state: 'refused', findings: 0, agentKind: 'claude' },
-    ],
-    running: false,
+  };
+}
+
+/**
+ * The states the goldens pin: nothing selected, each of DoD 9.41's four sets
+ * selected, and a selected run the provider had no report for.
+ */
+const PROVIDER_STATES: Readonly<
+  Record<'none-selected' | 'ok' | 'empty' | 'refused' | 'mixed-evidence' | 'missing', InsightsProviderSnapshot>
+> = {
+  'none-selected': {
+    about: { ...ABOUT, status: 'licensed until 2027-09-23' },
+    runs: RUNS,
     dropped: 2,
-    rawOutput: false,
+    selected: null,
   },
-  empty: {
+  ok: selecting(SETS.ok),
+  empty: selecting(SETS.empty),
+  refused: selecting(SETS.refused),
+  'mixed-evidence': selecting(SETS['mixed-evidence'], { dropped: 1 }),
+  missing: {
     about: ABOUT,
-    latest: {
-      runId: 'run-2',
-      createdAt: NOW,
-      agent: { kind: 'codex', version: '0.151.0-alpha.7.2' },
-      window: { sessions: 1, excluded: 0, sinceMs: NOW - DAY },
-      usage: { prompt: 9_000, output: 400 },
-      findings: [],
-      resolvedKinds: [],
-      rejected: 0,
-      state: 'empty',
-    },
-    runs: [{ runId: 'run-9', createdAt: NOW, state: 'empty', findings: 0, agentKind: 'codex' }],
-    running: false,
+    runs: RUNS,
     dropped: 0,
-    rawOutput: false,
-  },
-  refused: {
-    about: ABOUT,
-    latest: {
-      runId: 'run-3',
-      createdAt: NOW,
-      agent: { kind: 'claude', version: '2.1.246' },
-      window: { sessions: 4, excluded: 0, sinceMs: NOW - 7 * DAY },
-      usage: null,
-      findings: [],
-      resolvedKinds: [],
-      rejected: 0,
-      state: 'refused',
-      refusal: { step: 'validate', reason: 'The response held no JSON object.\nNothing was stored.' },
-    },
-    runs: [{ runId: 'run-5', createdAt: NOW, state: 'refused', findings: 0, agentKind: 'claude' }],
-    running: false,
-    dropped: 0,
-    rawOutput: true,
-  },
-  'mixed-evidence': {
-    about: ABOUT,
-    latest: {
-      runId: 'run-4',
-      createdAt: NOW,
-      agent: { kind: 'claude', version: '2.1.246' },
-      window: { sessions: 3, excluded: 0, sinceMs: NOW - 7 * DAY },
-      usage: { prompt: 1_000, output: 100, costUsd: 0.004 },
-      findings: [
-        viewFinding(0, {
-          action: { lead: 'Lead line 0 for re-read-loop', detail: '' },
-          evidence: [
-            { label: 'Reads', sessionId: 'ses_example01', statsKey: 'sessions[0].loops[0].count', value: 7 },
-            { label: 'File', sessionId: 'ses_example01', statsKey: 'sessions[0].files[2].filePath', value: 'repo/docs/schema.md' },
-            { label: 'Skill', sessionId: 'ses_example02', statsKey: 'sessions[1].skills[0].name', value: 'phase' },
-            { label: 'Cache ratio', sessionId: 'ses_example02', statsKey: 'sessions[1].totals.prompt', value: 0.11 },
-          ],
-        }),
-      ],
-      resolvedKinds: ['stall', 'cache-miss'],
-      rejected: 0,
-      state: 'ok',
-    },
-    runs: [{ runId: 'run-7', createdAt: NOW, state: 'ok', findings: 1, agentKind: 'claude' }],
-    running: true,
-    dropped: 1,
-    rawOutput: false,
+    selected: { runId: 'run-2', set: null, dropped: 1, rawOutput: false },
   },
 };
 
-describe('the provider state’s renderer — DoD 9.41', () => {
+/** The selected report's rows, or undefined. */
+function reportIn(snapshot: InsightsProviderSnapshot): ReturnType<typeof providerInsightsLayout>['preview'] extends infer P
+  ? P extends { report: infer R } ? R | undefined : never
+  : never {
+  return providerInsightsLayout(snapshot).preview?.report ?? undefined;
+}
+
+describe('the provider state’s renderer — DoD 9.41, 9.46', () => {
   for (const [name, snapshot] of Object.entries(PROVIDER_STATES)) {
     it(`${name}: matches webview/goldens/insights/provider-${name}.json`, () => {
       goldenCompare(resolve(`webview/goldens/insights/provider-${name}.json`), providerInsightsLayout(snapshot));
@@ -465,7 +417,7 @@ describe('the provider state’s renderer — DoD 9.41', () => {
   }
 
   it('a finding reads in the amendment’s order: the LEAD, then kind, confidence and since-last-run as words', () => {
-    const rows = providerInsightsLayout(PROVIDER_STATES.ok).latest?.findings ?? [];
+    const rows = reportIn(PROVIDER_STATES.ok)?.findings ?? [];
     expect(rows.map((r) => r.lead)).toStrictEqual(FINDING_KINDS.map((kind, i) => `Lead line ${String(i)} for ${kind}`));
     expect(rows.map((r) => r.meta)).toStrictEqual(
       FINDING_KINDS.map((kind, i) => {
@@ -478,18 +430,18 @@ describe('the provider state’s renderer — DoD 9.41', () => {
   });
 
   it('"estimated by Claude Code" is on a Claude Code run’s usage, and never on a Codex run’s', () => {
-    const claude = providerInsightsLayout(PROVIDER_STATES.ok).latest?.facts.usage ?? '';
-    const codex = providerInsightsLayout(PROVIDER_STATES.empty).latest?.facts.usage ?? '';
+    const claude = reportIn(PROVIDER_STATES.ok)?.facts.usage ?? '';
+    const codex = reportIn(PROVIDER_STATES.empty)?.facts.usage ?? '';
     expect(claude).toContain(`(${ESTIMATED_BY_CLAUDE_CODE})`);
     expect(codex).not.toContain('estimated');
     expect(codex).toBe('Run usage: 9,000 prompt tokens · 400 output tokens');
     expect(ESTIMATED_BY_CLAUDE_CODE).toBe('estimated by Claude Code');
     // No usage: no line.
-    expect(providerInsightsLayout(PROVIDER_STATES.refused).latest?.facts.usage).toBeNull();
+    expect(reportIn(PROVIDER_STATES.refused)?.facts.usage).toBeNull();
   });
 
   it('a string and a number sit side by side in one finding, each under its label', () => {
-    const evidence = providerInsightsLayout(PROVIDER_STATES['mixed-evidence']).latest?.findings[0]?.evidence;
+    const evidence = reportIn(PROVIDER_STATES['mixed-evidence'])?.findings[0]?.evidence;
     expect(evidence).toStrictEqual([
       { label: 'Reads', value: '7', source: 'sessions[0].loops[0].count · ses_example01' },
       { label: 'File', value: 'repo/docs/schema.md', source: 'sessions[0].files[2].filePath · ses_example01' },
@@ -499,45 +451,78 @@ describe('the provider state’s renderer — DoD 9.41', () => {
   });
 
   it('raw output is offered only on a REFUSED set, and only when the host said so', () => {
-    expect(providerInsightsLayout(PROVIDER_STATES.refused).latest?.rawOutput).toBe(true);
-    expect(providerInsightsLayout({ ...PROVIDER_STATES.refused, rawOutput: false }).latest?.rawOutput).toBe(false);
-    expect(providerInsightsLayout({ ...PROVIDER_STATES.ok, rawOutput: true }).latest?.rawOutput).toBe(false);
+    expect(reportIn(PROVIDER_STATES.refused)?.rawOutput).toBe(true);
+    expect(reportIn(selecting(SETS.refused, { rawOutput: false }))?.rawOutput).toBe(false);
+    expect(reportIn(selecting(SETS.ok, { rawOutput: true }))?.rawOutput).toBe(false);
   });
 
   it('ruling 2026-09-22 (4): a refused set with no raw output says so, verbatim — and only then', () => {
     expect(NO_RAW_OUTPUT).toBe('No raw output for this run.');
-    expect(providerInsightsLayout({ ...PROVIDER_STATES.refused, rawOutput: false }).latest?.rawOutputNote).toBe(NO_RAW_OUTPUT);
+    expect(reportIn(selecting(SETS.refused, { rawOutput: false }))?.rawOutputNote).toBe(NO_RAW_OUTPUT);
     // Offered: the action, not the sentence.
-    expect(providerInsightsLayout(PROVIDER_STATES.refused).latest?.rawOutputNote).toBeUndefined();
+    expect(reportIn(PROVIDER_STATES.refused)?.rawOutputNote).toBeUndefined();
     // Not refused: neither, whatever the flag says.
     for (const flag of [true, false]) {
-      expect(providerInsightsLayout({ ...PROVIDER_STATES.ok, rawOutput: flag }).latest?.rawOutputNote).toBeUndefined();
+      expect(reportIn(selecting(SETS.ok, { rawOutput: flag }))?.rawOutputNote).toBeUndefined();
     }
   });
 
   it('round 5b: "No longer reported" names the kinds in the parent\u2019s own labels, and only when there are any', () => {
     expect(NO_LONGER_REPORTED).toBe('No longer reported:');
-    expect(providerInsightsLayout(PROVIDER_STATES['mixed-evidence']).latest?.resolved).toBe(
+    expect(reportIn(PROVIDER_STATES['mixed-evidence'])?.resolved).toBe(
       'No longer reported: Stall, Cache miss',
     );
     for (const state of ['ok', 'empty', 'refused'] as const) {
-      expect(providerInsightsLayout(PROVIDER_STATES[state]).latest?.resolved, state).toBeUndefined();
+      expect(reportIn(PROVIDER_STATES[state])?.resolved, state).toBeUndefined();
     }
   });
 
   it('round 5b: an empty detail reaches the row empty — the component shows no expand for it', () => {
-    expect(providerInsightsLayout(PROVIDER_STATES['mixed-evidence']).latest?.findings[0]?.detail).toBe('');
+    expect(reportIn(PROVIDER_STATES['mixed-evidence'])?.findings[0]?.detail).toBe('');
   });
 
   it('an ok set the parent emptied says so, and is not read as a run that found nothing', () => {
-    const emptied = providerInsightsLayout({
-      ...PROVIDER_STATES.ok,
-      latest: { ...(PROVIDER_STATES.ok.latest as FindingSetView), findings: [] },
-    });
-    expect(emptied.latest?.note).toBe('No finding from this run passed the check.');
-    expect(providerInsightsLayout(PROVIDER_STATES.empty).latest?.note).toBe(
+    const emptied = reportIn(selecting({ ...SETS.ok, findings: [] }));
+    expect(emptied?.note).toBe('No finding from this run passed the check.');
+    expect(reportIn(PROVIDER_STATES.empty)?.note).toBe(
       'The run read the window and recorded no findings.',
     );
+  });
+
+  it('DoD 9.46: the report list reads date, findings count and engine, in the list order the host sent', () => {
+    const rows = providerInsightsLayout(PROVIDER_STATES['none-selected']).rows;
+    expect(rows.map((r) => [r.runId, r.state, r.outcome, r.agent])).toStrictEqual([
+      ['run-3', 'ok', '8 findings', 'Claude Code'],
+      ['run-2', 'empty', 'no findings', 'Codex'],
+      ['run-1', 'refused', 'refused', 'Claude Code'],
+      ['run-4', 'ok', '1 finding', 'Claude Code'],
+    ]);
+    expect(rows[0]?.when).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/u);
+  });
+
+  it('DoD 9.46: nothing selected says so, verbatim; a selection with no report says that instead', () => {
+    expect(SELECT_A_REPORT).toBe('Select a report to preview / download.');
+    expect(providerInsightsLayout(PROVIDER_STATES['none-selected']).preview).toBeNull();
+    const missing = providerInsightsLayout(PROVIDER_STATES.missing).preview;
+    expect(missing).toStrictEqual({
+      runId: 'run-2',
+      report: null,
+      missing: NO_REPORT,
+      dropped: '1 value from this report did not pass the check and is not shown',
+    });
+  });
+
+  it('DoD 9.46: the heading says Report, not Latest run — an older run is not the latest', () => {
+    expect(REPORT_HEADING).toBe('Report');
+    expect(reportIn(PROVIDER_STATES.refused)?.facts.heading).toMatch(/^Report · /u);
+    for (const state of Object.values(PROVIDER_STATES)) {
+      expect(JSON.stringify(providerInsightsLayout(state))).not.toContain('Latest run');
+    }
+  });
+
+  it('DoD 9.44: the provider’s status sits under its title, and only when it states one', () => {
+    expect(providerInsightsLayout(PROVIDER_STATES['none-selected']).status).toBe('licensed until 2027-09-23');
+    expect(providerInsightsLayout(PROVIDER_STATES.ok).status).toBeUndefined();
   });
 });
 
@@ -559,7 +544,7 @@ describe('the Insights surface states facts and never advises', () => {
     const layout = freeInsightsLayout(storedRecords(), NOW, IDLE_RESUME_MS);
     const shownOf = (snapshot: InsightsProviderSnapshot): string[] => {
       const paid = providerInsightsLayout(snapshot);
-      const latest = paid.latest;
+      const latest = paid.preview?.report ?? null;
       return [
         paid.title,
         latest?.facts.heading ?? '',
@@ -569,8 +554,11 @@ describe('the Insights surface states facts and never advises', () => {
         latest?.note ?? '',
         latest?.rejected ?? '',
         ...(latest?.findings ?? []).flatMap((f) => [f.meta, ...f.evidence.map((e) => e.source)]),
-        ...paid.history.flatMap((h) => [h.when, h.outcome, h.agent]),
+        ...paid.rows.flatMap((h) => [h.when, h.outcome, h.agent]),
         paid.dropped ?? '',
+        paid.preview?.missing ?? '',
+        paid.preview?.dropped ?? '',
+        latest?.rawOutputNote ?? '',
       ];
     };
     // The component's own fixed sentences, read from its source.

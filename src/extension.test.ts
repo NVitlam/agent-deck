@@ -25,6 +25,13 @@ import { execFileSync } from 'node:child_process';
 import { ABOUT_COMMAND, ABOUT_LINKS, aboutPage } from './about.js';
 import type { InsightsProvider } from './insights-provider.js';
 import { RAW_OUTPUT_MAX_CHARS } from './insights-provider.js';
+import {
+  exportFileName,
+  exportHtml,
+  exportMarkdown,
+  exportText,
+  exportTextBatch,
+} from './insights-export.js';
 import type { FindingSetView } from './model/events.js';
 import {
   appendFileSync,
@@ -49,7 +56,7 @@ import {
   utimes,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -2208,7 +2215,8 @@ function sidebarRows(view: MockWebviewView, section: ControlSection): readonly S
     | {
         controls: ViewControls;
         tweaks: Readonly<Record<string, boolean | string>>;
-        provider: { name: string; version: string } | null;
+        provider: { name: string; version: string; status?: string } | null;
+        insightsActions: ('pickAgent' | 'showPayload' | 'clearHistory')[];
         drawerOpen: boolean;
       }
     | undefined;
@@ -2217,6 +2225,7 @@ function sidebarRows(view: MockWebviewView, section: ControlSection): readonly S
     controls: last.controls,
     tweaks: last.tweaks,
     provider: last.provider,
+    insightsActions: last.insightsActions,
     drawerOpen: last.drawerOpen,
   });
 }
@@ -2316,6 +2325,8 @@ function fakeInsightsProvider(over: Partial<InsightsProvider> = {}): {
     listRuns: () => [
       { runId: 'run-1', createdAt: 1_790_000_000_000, state: 'ok', findings: 1, agentKind: 'claude' },
     ],
+    // DoD 9.44: any run asked for, as that run — the set names its own id.
+    getRun: (runId) => ({ ...fakeFindingSet(1), runId }),
     run: () => {
       runs += 1;
       return Promise.resolve();
@@ -7685,11 +7696,9 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
       page: aboutPage('0.9.0'),
       provider: {
         about: { name: 'Agent Deck Insights', version: '0.2.0' },
-        latest: null,
         runs: [],
-        running: false,
         dropped: 0,
-        rawOutput: false,
+        selected: null,
       },
     };
     controller.setSettings({ canvasAutoFit: false, tweaks: {}, livenessThresholdMs: 300_000 });
@@ -8638,15 +8647,14 @@ describe('DoD 5.1/5.2: activate() returns the API, and the host feeds it', () =>
       'an Insights line before any Insights command ran',
     ).toBe(false);
 
-    // The INSIGHTS writer (DoD 9.30): the provider registry reports a run
-    // the provider refused on the same channel. Driven the production way —
-    // the panel's Run intent reaching the registered provider.
+    // The INSIGHTS writer (DoD 9.30): the provider registry reports a
+    // provider failure on the same channel. Driven the production way — the
+    // Menu's Pick Agent command reaching the registered provider's optional
+    // action (DoD 9.45; the Run intent this drove until then is gone).
     api.registerInsightsProvider(
-      fakeInsightsProvider({ run: () => Promise.reject(new Error('no licence')) }).provider,
+      fakeInsightsProvider({ pickAgent: () => Promise.reject(new Error('no licence')) }).provider,
     );
-    await mock.runCommand(OPEN_COMMAND);
-    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
-    panel?.fireMessage({ type: 'insightsRun' });
+    await mock.runCommand('agentDeck.insights.pickAgent');
     await new Promise((r) => setTimeout(r, 0));
     expect(mock.outputLines.length).toBeGreaterThan(dataPathLines);
     expect(mock.outputLines.map((entry) => entry.line).join('\n')).toContain(
@@ -9519,17 +9527,17 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     const api = await activate(extensionContext());
     expect(currentHost()).toBeNull();
     const view = resolveSidebar();
-    expect(openInsightsValue(view)).toBe('facts only');
+    expect(openInsightsValue(view)).toBe('Facts only');
 
     const handle = api.registerInsightsProvider(fakeInsightsProvider().provider);
     expect(mock.panels).toStrictEqual([]);
-    expect(openInsightsValue(view)).toBe('Agent Deck Insights 0.2.0');
+    expect(openInsightsValue(view)).toBe('Agent Deck Insights');
 
     // ...and a sidebar RESOLVED AFTER the registration states it at once.
-    expect(openInsightsValue(resolveSidebar())).toBe('Agent Deck Insights 0.2.0');
+    expect(openInsightsValue(resolveSidebar())).toBe('Agent Deck Insights');
 
     handle.dispose();
-    expect(openInsightsValue(view)).toBe('facts only');
+    expect(openInsightsValue(view)).toBe('Facts only');
   });
 
   it('INSTALLED IS NEVER CONSULTED: an installed Insights with no provider is the free state', async () => {
@@ -9538,7 +9546,7 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     await activateWithHost();
     const view = resolveSidebar();
     await mock.runCommand(OPEN_INSIGHTS_COMMAND);
-    expect(openInsightsValue(view)).toBe('facts only');
+    expect(openInsightsValue(view)).toBe('Facts only');
     expect(lastProviderState()?.provider).toBeNull();
   });
 
@@ -9550,20 +9558,16 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     const state = lastProviderState() as {
       provider: {
         about: { name: string; version: string };
-        latest: FindingSetView | null;
         runs: { runId: string }[];
-        running: boolean;
         dropped: number;
-        rawOutput: boolean;
+        selected: unknown;
       } | null;
     };
     expect(state.provider?.about).toStrictEqual({ name: 'Agent Deck Insights', version: '0.2.0' });
-    // The widened view reaches the panel whole — the provider's text included.
-    expect(state.provider?.latest).toStrictEqual(fakeFindingSet(1));
     expect(state.provider?.runs.map((r) => r.runId)).toStrictEqual(['run-1']);
-    expect(state.provider?.running).toBe(false);
     expect(state.provider?.dropped).toBe(0);
-    expect(state.provider?.rawOutput).toBe(false);
+    // DoD 9.46: nothing is selected until a row is clicked.
+    expect(state.provider?.selected).toBeNull();
   });
 
   it('with the panel OPEN: registering, a change and disposal each re-state it', async () => {
@@ -9574,37 +9578,117 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
 
     let findings = 1;
     const fake = fakeInsightsProvider({
-      getLatest: () => fakeFindingSet(findings),
+      getRun: (runId) => ({ ...fakeFindingSet(findings), runId }),
     });
     const handle = api.registerInsightsProvider(fake.provider);
     expect(lastProviderState()?.provider?.about.name).toBe('Agent Deck Insights');
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
 
-    // onDidChange RE-RENDERS: the provider says it moved, the panel is told.
+    // onDidChange RE-RENDERS: the provider says it moved, the panel is told,
+    // and the SELECTED run is read again (DoD 9.46).
     findings = 3;
     fake.fire();
-    const moved = lastProviderState() as unknown as { provider: { latest: { findings: unknown[] } } };
-    expect(moved.provider.latest.findings).toHaveLength(3);
+    const moved = lastProviderState() as unknown as {
+      provider: { selected: { runId: string; set: { findings: unknown[] } } };
+    };
+    expect(moved.provider.selected.runId).toBe('run-1');
+    expect(moved.provider.selected.set.findings).toHaveLength(3);
 
     // DISPOSAL clears to the free state, on the panel AND the sidebar.
     handle.dispose();
     expect(lastProviderState()?.provider).toBeNull();
-    expect(openInsightsValue(view)).toBe('facts only');
+    expect(openInsightsValue(view)).toBe('Facts only');
   });
 
-  it('Run from the panel calls the provider ONCE; with no provider it calls nothing', async () => {
+  it('9.46: a row click SELECTS a listed run, previews it through getRun, and an unlisted id selects nothing', async () => {
     const api = await activateWithHost();
     await mock.runCommand(OPEN_INSIGHTS_COMMAND);
     const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    const asked: string[] = [];
+    api.registerInsightsProvider(
+      fakeInsightsProvider({
+        getRun: (runId) => {
+          asked.push(runId);
+          return { ...fakeFindingSet(1), runId };
+        },
+      }).provider,
+    );
+    const selected = (): unknown =>
+      (lastProviderState()?.provider as { selected?: unknown } | null)?.selected;
+    // Not in the list: nothing selected, nothing asked, nothing re-sent.
+    const before = panel?.webview.posted.length ?? 0;
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-404' });
+    expect(panel?.webview.posted.length).toBe(before);
+    expect(selected()).toBeNull();
+    // A hostile id never passes the guard.
+    panel?.fireMessage({ type: 'insightsSelect', runId: '<img src=x>' });
+    expect(selected()).toBeNull();
+    expect(asked).toStrictEqual([]);
+    // Listed: selected, read, and sent.
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+    expect(selected()).toStrictEqual({
+      runId: 'run-1',
+      set: { ...fakeFindingSet(1), runId: 'run-1' },
+      dropped: 0,
+      rawOutput: false,
+    });
+    expect(asked).toStrictEqual(['run-1']);
+  });
 
-    // No provider: the intent reaches the registry, which has nothing to call.
-    panel?.fireMessage({ type: 'insightsRun' });
+  it('9.46: a provider going away takes its selection with it — the next opens on nothing selected', async () => {
+    // Mutation H6 survived without this: a selection held across providers
+    // would open the next one on a run id from another extension's history.
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    const selected = (): unknown =>
+      (lastProviderState()?.provider as { selected?: unknown } | null)?.selected;
+    const handle = api.registerInsightsProvider(fakeInsightsProvider().provider);
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+    expect(selected()).not.toBeNull();
+    handle.dispose();
+    // The next provider lists a run with the SAME id: it must still open on nothing.
+    api.registerInsightsProvider(fakeInsightsProvider({ about: { name: 'Next Insights', version: '1.0.0' } }).provider);
+    expect(lastProviderState()?.provider?.about.name).toBe('Next Insights');
+    expect(selected()).toBeNull();
+  });
+
+  it('9.46: Show raw output with NOTHING selected asks the provider nothing, and says why', async () => {
+    // Mutation W11 survived without this: every raw-output test selected the
+    // same run, so a host that asked for a fixed id instead of the selection
+    // was green.
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    const asked: string[] = [];
+    api.registerInsightsProvider(
+      fakeInsightsProvider({
+        listRuns: () => [
+          { runId: 'run-refused-1', createdAt: 1_790_000_000_000, state: 'refused', findings: 0, agentKind: 'claude' },
+        ],
+        getRun: () => fakeRefusedSet(),
+        getRawOutput: (runId: string) => (asked.push(runId), 'raw'),
+      }).provider,
+    );
+    panel?.fireMessage({ type: 'insightsRawOutput' });
     await new Promise((r) => setTimeout(r, 0));
+    expect(asked).toStrictEqual([]);
+    expect(mock.openedDocuments).toStrictEqual([]);
+    expect(mock.informationMessages).toContain(
+      'Agent Deck: the selected run is not a refused run the provider lists, so no raw output was asked for.',
+    );
+  });
 
+  it('9.46: the old Run intent is refused at the boundary and runs nothing', async () => {
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
     const fake = fakeInsightsProvider();
     api.registerInsightsProvider(fake.provider);
     panel?.fireMessage({ type: 'insightsRun' });
     await new Promise((r) => setTimeout(r, 0));
-    expect(fake.runs()).toBe(1);
+    expect(fake.runs()).toBe(0);
   });
 
   /*
@@ -9629,8 +9713,8 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     const asked: string[] = [];
     api.registerInsightsProvider(
       fakeInsightsProvider({
-        getLatest: () => fakeRefusedSet(),
         listRuns: () => [REFUSED_RUN],
+        getRun: () => fakeRefusedSet(),
         getRawOutput: (runId: string) => {
           asked.push(runId);
           return `raw output of ${runId}\nsecond line`;
@@ -9638,12 +9722,16 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
         ...over,
       }).provider,
     );
+    // DoD 9.46: raw output is asked for the SELECTED run.
+    panel?.fireMessage({ type: 'insightsSelect', runId: REFUSED_RUN.runId });
     return { panel, asked };
   }
 
   it('9.40: the snapshot OFFERS raw output on a placed refused set, and the press opens it untitled and shown', async () => {
     const { panel, asked } = await rawOutputPanel({});
-    expect((lastProviderState()?.provider as { rawOutput?: boolean } | null)?.rawOutput).toBe(true);
+    expect(
+      (lastProviderState()?.provider as { selected?: { rawOutput?: boolean } } | null)?.selected?.rawOutput,
+    ).toBe(true);
     panel?.fireMessage({ type: 'insightsRawOutput' });
     await new Promise((r) => setTimeout(r, 0));
     expect(asked).toStrictEqual(['run-refused-1']);
@@ -9655,8 +9743,11 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
   it('9.40: every way it shows nothing SAYS so, and opens nothing', async () => {
     const cases: readonly [Partial<InsightsProvider>, string][] = [
       [{ getRawOutput: () => null }, 'Agent Deck: the Insights provider has no raw output for run run-refused-1.'],
-      // Ruling 2026-09-22 (1): the history plays no part; only a set that is not refused has no run to ask about.
-      [{ getLatest: () => fakeFindingSet(1) }, 'Agent Deck: the latest finding set is not a refused run, so no raw output was asked for.'],
+      // DoD 9.46: the SELECTED run must be refused, read now.
+      [
+        { getRun: () => ({ ...fakeFindingSet(1), runId: 'run-refused-1' }) },
+        'Agent Deck: the selected run is not a refused run the provider lists, so no raw output was asked for.',
+      ],
       [
         { getRawOutput: () => 'r'.repeat(RAW_OUTPUT_MAX_CHARS + 1) },
         `Agent Deck: the raw output for run run-refused-1 is ${String(RAW_OUTPUT_MAX_CHARS + 1)} characters, over the ${String(RAW_OUTPUT_MAX_CHARS)} Agent Deck opens; it is not shown and not cut.`,
@@ -9681,9 +9772,12 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(mock.informationMessages).toContain('Agent Deck: no Insights provider is registered.');
     api.registerInsightsProvider(
-      fakeInsightsProvider({ getLatest: () => fakeRefusedSet(), listRuns: () => [REFUSED_RUN] }).provider,
+      fakeInsightsProvider({ getRun: () => fakeRefusedSet(), listRuns: () => [REFUSED_RUN] }).provider,
     );
-    expect((lastProviderState()?.provider as { rawOutput?: boolean } | null)?.rawOutput).toBe(false);
+    panel?.fireMessage({ type: 'insightsSelect', runId: REFUSED_RUN.runId });
+    expect(
+      (lastProviderState()?.provider as { selected?: { rawOutput?: boolean } } | null)?.selected?.rawOutput,
+    ).toBe(false);
     panel?.fireMessage({ type: 'insightsRawOutput' });
     await new Promise((r) => setTimeout(r, 0));
     expect(mock.informationMessages).toContain('Agent Deck: the Insights provider offers no raw output.');
@@ -9743,6 +9837,198 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     }
   });
 
+  /* ---------------------------------------------------------------------- *
+   * DoD 9.47 — Export, from the panel message to the bytes written
+   * ---------------------------------------------------------------------- */
+
+  /** A provider listing three runs; run-2 has no report. The panel is open and run-1 selected. */
+  async function exportPanel(): Promise<{
+    panel: ReturnType<typeof mock.panels.find>;
+    set: (runId: string) => FindingSetView;
+  }> {
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    const set = (runId: string): FindingSetView => ({
+      ...fakeFindingSet(2),
+      runId,
+      createdAt: runId === 'run-3' ? 1_790_000_200_000 : 1_790_000_000_000,
+    });
+    api.registerInsightsProvider(
+      fakeInsightsProvider({
+        listRuns: () => [
+          { runId: 'run-3', createdAt: 1_790_000_200_000, state: 'ok', findings: 2, agentKind: 'claude' },
+          { runId: 'run-2', createdAt: 1_790_000_100_000, state: 'ok', findings: 2, agentKind: 'claude' },
+          { runId: 'run-1', createdAt: 1_790_000_000_000, state: 'ok', findings: 2, agentKind: 'claude' },
+        ],
+        getRun: (runId) => (runId === 'run-2' ? null : set(runId)),
+      }).provider,
+    );
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+    return { panel, set };
+  }
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 5; i += 1) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  it('9.47: HTML and Markdown go through the SAVE DIALOG and write exactly the export of the selected run', async () => {
+    const { panel, set } = await exportPanel();
+    mock.answerSaveDialog('C:/exports/report.html');
+    panel?.fireMessage({ type: 'insightsExport', target: 'html' });
+    await settle();
+    expect(mock.writtenFiles.get('C:/exports/report.html')).toBe(exportHtml(set('run-1')));
+    expect(mock.saveDialogs.at(-1)?.defaultUri?.endsWith(exportFileName(set('run-1'), 'html'))).toBe(true);
+    expect(mock.saveDialogs.at(-1)?.filters).toStrictEqual({ HTML: ['html'] });
+
+    mock.answerSaveDialog('C:/exports/report.md');
+    panel?.fireMessage({ type: 'insightsExport', target: 'markdown' });
+    await settle();
+    expect(mock.writtenFiles.get('C:/exports/report.md')).toBe(exportMarkdown(set('run-1')));
+    expect(mock.saveDialogs.at(-1)?.filters).toStrictEqual({ Markdown: ['md'] });
+    expect(mock.informationMessages).toContain('Agent Deck: exported run run-1 to C:/exports/report.md.');
+  });
+
+  it('9.47: Copy puts the plain text on the clipboard and opens no dialog', async () => {
+    const { panel, set } = await exportPanel();
+    panel?.fireMessage({ type: 'insightsExport', target: 'copy' });
+    await settle();
+    expect(mock.clipboard).toBe(exportText(set('run-1')));
+    expect(mock.saveDialogs).toStrictEqual([]);
+    expect(mock.writtenFiles.size).toBe(0);
+  });
+
+  it('9.47: a cancelled dialog writes nothing; no selection, and a run with no report, export nothing and say so', async () => {
+    const { panel } = await exportPanel();
+    mock.answerSaveDialog(undefined);
+    panel?.fireMessage({ type: 'insightsExport', target: 'html' });
+    await settle();
+    expect(mock.saveDialogs).toHaveLength(1);
+    expect(mock.writtenFiles.size).toBe(0);
+    // run-2 is listed and has no report.
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-2' });
+    panel?.fireMessage({ type: 'insightsExport', target: 'html' });
+    await settle();
+    expect(mock.saveDialogs).toHaveLength(1);
+    expect(mock.informationMessages).toContain('Agent Deck: the selected run has no report to export.');
+    expect(mock.writtenFiles.size).toBe(0);
+  });
+
+  it('9.47 G1: a path inside an observed engine’s directory is refused and NOTHING is written', async () => {
+    const { panel } = await exportPanel();
+    for (const target of [
+      join(homedir(), '.claude', 'report.html'),
+      join(process.env['CLAUDE_PROJECTS_ROOT'] ?? '', 'report.html'),
+    ]) {
+      mock.answerSaveDialog(target);
+      panel?.fireMessage({ type: 'insightsExport', target: 'html' });
+      await settle();
+      expect(mock.writtenFiles.has(target), target).toBe(false);
+      expect(mock.informationMessages.some((m) => m.includes('which Agent Deck only reads')), target).toBe(true);
+    }
+    expect(mock.writtenFiles.size).toBe(0);
+  });
+
+  it('9.47: a BATCH asks the format, then a folder, writes one file per run, never overwrites, and names the unreported', async () => {
+    const { panel, set } = await exportPanel();
+    const taken = exportFileName(set('run-3'), 'markdown');
+    mock.setDirectory('C:/out', [taken]);
+    mock.answerQuickPick('Markdown');
+    mock.answerOpenDialog('C:/out');
+    panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['run-3', 'run-2', 'run-1'] });
+    await settle();
+    expect(mock.quickPicks.at(-1)?.items).toStrictEqual(['HTML', 'Markdown', 'Copy']);
+    expect(mock.openDialogs.at(-1)).toStrictEqual({ canSelectFolders: true, canSelectFiles: false });
+    const second = taken.replace(/\.md$/u, '-2.md');
+    expect([...mock.writtenFiles.keys()].sort()).toStrictEqual(
+      [`C:/out/${second}`, `C:/out/${exportFileName(set('run-1'), 'markdown')}`].sort(),
+    );
+    expect(mock.writtenFiles.get(`C:/out/${second}`)).toBe(exportMarkdown(set('run-3')));
+    expect(mock.informationMessages).toContain('Agent Deck: exported 2 of 2 reports to C:/out. No report for run-2.');
+  });
+
+  it('9.47: a batch Copy puts every run on the clipboard; a cancelled pick or folder does nothing', async () => {
+    const { panel, set } = await exportPanel();
+    mock.answerQuickPick('Copy');
+    panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['run-3', 'run-1'] });
+    await settle();
+    expect(mock.clipboard).toBe(exportTextBatch([set('run-3'), set('run-1')]));
+    expect(mock.openDialogs).toStrictEqual([]);
+
+    mock.answerQuickPick(undefined);
+    panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['run-1'] });
+    await settle();
+    mock.answerQuickPick('HTML');
+    mock.answerOpenDialog(undefined);
+    panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['run-1'] });
+    await settle();
+    expect(mock.writtenFiles.size).toBe(0);
+    // A batch naming ids the guard refuses posts nothing at all.
+    const picks = mock.quickPicks.length;
+    panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['run-1', 'run-1'] });
+    panel?.fireMessage({ type: 'insightsExportBatch', runIds: [] });
+    await settle();
+    expect(mock.quickPicks).toHaveLength(picks);
+  });
+
+  it('9.47: a batch into an observed engine’s directory writes nothing', async () => {
+    const { panel } = await exportPanel();
+    mock.answerQuickPick('HTML');
+    mock.answerOpenDialog(join(homedir(), '.claude'));
+    panel?.fireMessage({ type: 'insightsExportBatch', runIds: ['run-1'] });
+    await settle();
+    expect(mock.writtenFiles.size).toBe(0);
+    expect(mock.informationMessages.some((m) => m.includes('which Agent Deck only reads'))).toBe(true);
+  });
+
+  /* ---------------------------------------------------------------------- *
+   * DoD 9.45 — the three rows under Open Insights
+   * ---------------------------------------------------------------------- */
+
+  it('9.45: each action is a row under Open Insights ONLY while the provider has it, and the context keys agree', async () => {
+    resetVscodeMock();
+    const api = await activate(extensionContext());
+    const view = resolveSidebar();
+    const actionRows = (): string[] =>
+      sidebarRows(view, 'menu')
+        .filter((row) => row.kind === 'action' && row.nested === true)
+        .map((row) => row.label);
+    expect(actionRows()).toStrictEqual([]);
+    for (const key of ['pickAgent', 'showPayload', 'clearHistory']) {
+      expect(mock.contexts.get(`agentDeck.insights.${key}`), key).toBe(false);
+    }
+    const calls: string[] = [];
+    const handle = api.registerInsightsProvider(
+      fakeInsightsProvider({
+        about: { name: 'Agent Deck Insights', version: '0.2.0', status: 'licensed until 2027-09-23' },
+        pickAgent: () => (calls.push('pickAgent'), Promise.resolve()),
+        clearHistory: () => (calls.push('clearHistory'), Promise.resolve()),
+      }).provider,
+    );
+    expect(actionRows()).toStrictEqual(['Pick Agent', 'Clear History']);
+    expect(mock.contexts.get('agentDeck.insights.pickAgent')).toBe(true);
+    expect(mock.contexts.get('agentDeck.insights.showPayload')).toBe(false);
+    expect(mock.contexts.get('agentDeck.insights.clearHistory')).toBe(true);
+    // The status is Open Insights' detail line.
+    const open = sidebarRows(view, 'menu').find((row) => row.kind === 'action' && row.command === 'agentDeck.openInsights');
+    expect(open?.kind === 'action' ? open.detail : undefined).toBe('licensed until 2027-09-23');
+
+    // A row runs through the SIDEBAR's own port and reaches the provider.
+    view.fireMessage({ type: 'runCommand', command: 'agentDeck.insights.clearHistory' });
+    await settle();
+    expect(calls).toStrictEqual(['clearHistory']);
+    // An action the provider lacks, run anyway, says so.
+    await mock.runCommand('agentDeck.insights.showPayload');
+    expect(mock.informationMessages).toContain('Agent Deck: the Insights provider does not offer Show Payload.');
+
+    handle.dispose();
+    expect(actionRows()).toStrictEqual([]);
+    expect(mock.contexts.get('agentDeck.insights.pickAgent')).toBe(false);
+    await mock.runCommand('agentDeck.insights.pickAgent');
+    expect(mock.informationMessages).toContain('Agent Deck: no Insights provider is registered.');
+    expect(calls).toStrictEqual(['clearHistory']);
+  });
+
   it('a SECOND provider is refused BY NAME through the API, and the first stays', async () => {
     resetVscodeMock();
     const api = await activate(extensionContext());
@@ -9752,7 +10038,7 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
         fakeInsightsProvider({ about: { name: 'Other Insights', version: '9.9.9' } }).provider,
       ),
     ).toThrow(/already registered \(Agent Deck Insights 0\.2\.0\); Other Insights 9\.9\.9 was refused/);
-    expect(openInsightsValue(resolveSidebar())).toBe('Agent Deck Insights 0.2.0');
+    expect(openInsightsValue(resolveSidebar())).toBe('Agent Deck Insights');
   });
 
   it('the registry goes with the extension: once its subscriptions are disposed, nothing registers', async () => {

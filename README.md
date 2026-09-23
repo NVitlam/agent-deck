@@ -238,8 +238,13 @@ shortcut.
   wherever you are, and keeps the renderer you chose.
 - **Open Statistics** — the same panel, on its Stats view, always on the **Files** tab.
 - **Open Insights** — the same panel, on its [Insights](#insights) surface. The sidebar shows
-  beside it which state that surface is in: *facts only*, or the name and version of the Insights
-  provider that is registered.
+  beside it which state that surface is in: *Facts only*, or the name of the Insights provider
+  that is registered, with the provider's status line under it when it states one.
+- **Pick Agent** — under Open Insights, only while the registered provider offers it: asks the
+  provider to let you choose the agent CLI it sends to.
+- **Show Payload** — likewise: asks the provider to show the payload it would send, for review.
+- **Clear History** — likewise: asks the provider to clear its stored reports. Agent Deck asks
+  nothing first; a confirmation, if there is one, is the provider's.
 - **Show Diagnostics** — the Agent Deck output channel.
 - **Settings** — VS Code's settings, filtered to Agent Deck.
 - **Clear Stats History** — removes the local stats history, after a confirmation.
@@ -256,8 +261,10 @@ setting; the sidebar keeps no value of its own and shows whatever the settings s
 opening order is `agentDeck.defaultOrdering` in Settings — the deck's own order is View ▸ Sort.
 
 **Statistics keeps its five tabs** — Files, Tools, Loops & churn, Tokens, Trends. **Insights and
-About carry tiles**, and a tile that opens a web page asks first; with an Insights provider
-registered, Insights carries its **Run** action. Nothing else on the panel is pressed.
+About carry tiles**, and a tile that opens a web page asks first. With an Insights provider
+registered, Insights carries its report list — click a report to preview it, tick reports for a
+batch — the preview's **HTML**, **Markdown** and **Copy** export actions, and **Export ticked**.
+Nothing else on the panel is pressed.
 
 **The keyboard shortcuts are unchanged**, and they work while the deck panel has focus: `a` `c`
 `o` `x` for the engines, `1` `2` `3` for the layout, `l` `r` `e` for the sort. `Escape` walks
@@ -828,11 +835,15 @@ disposable. A provider is:
 ```ts
 {
   providerVersion: 1;
-  about: { name: string; version: string };
-  getLatest(): FindingSetView | null;
+  about: { name: string; version: string; status?: string }; // status: one line, e.g. "licensed until 2027-09-23"
+  getLatest(): FindingSetView | null;               // required; not called since 0.9.0's report list
   listRuns(): RunSummary[];
-  run(): Promise<void>;
-  getRawOutput?(runId: string): string | null; // optional
+  getRun(runId: string): FindingSetView | null;     // the run the user selects or exports
+  run(): Promise<void>;                             // required; not called — no Run action
+  getRawOutput?(runId: string): string | null;      // optional
+  pickAgent?(): Promise<void>;                      // optional — the sidebar's Pick Agent
+  showPayload?(): Promise<void>;                    // optional — the sidebar's Show Payload
+  clearHistory?(): Promise<void>;                   // optional — the sidebar's Clear History
   onDidChange: Event<void>;
 }
 ```
@@ -866,8 +877,13 @@ FindingView {
 RunSummary { runId: string; createdAt: number; state: 'ok' | 'empty' | 'refused'; findings: number; agentKind: 'claude' | 'codex' }
 ```
 
-`providerVersion` is `1`, and a provider fires `onDidChange` whenever what `getLatest` or
-`listRuns` would return has moved. The Insights surface shows each finding's action lead first, its
+`providerVersion` is `1`, and a provider fires `onDidChange` whenever what `listRuns` or `getRun`
+would return has moved. The Insights surface lists `listRuns()` newest first — Agent Deck sorts it
+— and previews the run you select through `getRun(runId)`; a set whose own `runId` is not the one
+asked for is dropped. `about.status`, when present, is one line of at most 64 characters shown
+under the provider's name; one that fails the check is left out. `getLatest` and `run` are still
+required, so a provider written for the earlier contract registers unchanged, and Agent Deck no
+longer calls either. The preview shows each finding's action lead first, its
 kind, confidence and "since last run" as words (never a score), the detail behind an expand (no
 expand when the detail is empty: a one-sentence action), the cause, then each piece of evidence
 under its label. When the set names kinds that were in the previous set and are absent now, one
@@ -875,8 +891,8 @@ line says *No longer reported:* and names them; each must be one of the eight ki
 and not a kind the set still lists. Above them it states the run: when, which
 agent CLI and version, the window, and the run's own usage — marked *estimated by Claude Code*
 when the agent was Claude Code. A refused run shows the step and the reason, and a **Show raw
-output** action that asks `getRawOutput` for the set's own `runId` and opens what comes back as
-an untitled plain-text document. When the provider has no `getRawOutput`, the refused run says
+output** action that asks `getRawOutput` for the selected run's `runId` and opens what comes back
+as an untitled plain-text document. When the provider has no `getRawOutput`, the refused run says
 *No raw output for this run.* instead.
 One provider at a time — a second registration throws, naming both —
 and disposing the registration returns the surface to its free state.
@@ -896,8 +912,9 @@ a stats-record field the history itself stores as text: a file path at most 1,02
 history's cap), an agent type or skill name at most 64 (likewise), a project slug at most 1,024 and
 any other such field at most 64. A set whose state and findings disagree is refused whole. A value that
 fails is **dropped and counted, never shortened**, and the surface says how many were dropped.
-Raw output over 1,048,576 characters is not opened at all. Agent Deck calls `getLatest`,
-`listRuns` and `run`, `getRawOutput` only when you ask for a refused run's raw output, and
+Raw output over 1,048,576 characters is not opened at all. Agent Deck calls `listRuns`,
+`getRun` for the run you select or export, `getRawOutput` only when you ask for a refused run's
+raw output, `pickAgent`, `showPayload` or `clearHistory` only when you press that sidebar row, and
 subscribes once through `onDidChange`; it calls nothing else.
 
 ## Insights
@@ -917,9 +934,22 @@ a real run"*, with made-up ids; it changes each time you come back. And one tile
 Insights**, which asks before it opens <https://nvitlam.github.io/agent-deck/insights.html> in your browser — the Insights page, with
 what it does, what it never does, and the plans.
 
-**With a provider registered.** The provider's latest finding set, its run history, and a **Run**
-action that asks the provider to run once. What is shown comes from the provider through the
-[extension API](#for-extension-authors), checked field by field.
+**With a provider registered.** On the left, the provider's reports — each with its date, how many
+findings it has and the agent CLI it used, newest first, a refused one marked *refused*. On the
+right, *Select a report to preview / download.* until you click one; then that report, exactly as
+the [extension API](#for-extension-authors) section describes it. The same fact tiles as the free
+state sit below both. There is no Run button here: a run is started from Insights' own window.
+
+**Export.** The preview's header carries **HTML**, **Markdown** and **Copy**. HTML is one
+self-contained page — its own stylesheet, no script, no image, nothing it loads, and a content
+security policy that forbids loading anything; Markdown escapes the provider's text so none of it
+becomes a link, an image or HTML; Copy puts plain text on the clipboard. HTML and Markdown ask
+where to save with the editor's own save dialog. Tick reports in the list and **Export ticked
+(n)** asks the format, then a folder, and writes one file per report there, never replacing a file
+already in it (a name that is taken gains `-2`, `-3`…). Every export is built from what the
+provider returns for that run at that moment, checked as above. Agent Deck refuses to write an
+export into a directory it only reads — `~/.claude`, the Claude Code projects directory, the Codex
+directory or OpenCode's data directory — and says so. Exporting makes no network call.
 
 **Agent Deck Insights** is a separate extension that registers as that provider. **Agent Deck has
 no knowledge of your Insights licence** — Insights registers only once it has checked its own
@@ -932,7 +962,7 @@ is never consulted, and the sidebar states the same thing whether or not the pan
 one panel, in the deck's own look: a short introduction, four tiles — **Portfolio**, **Repository**,
 **LinkedIn** and **Sponsor** — and a footer line with the version and the licence (MIT). While no
 Insights provider is registered a fifth tile, **Get Agent Deck Insights**, is lit; once one is
-registered, About names it and its version instead. A tile asks before it opens anything:
+registered, About names it and its version instead, with its status line when it states one. A tile asks before it opens anything:
 *"Agent Deck will open `<host>` in your browser"*, with an **Open** button. The links open through
 VS Code — the extension opens no socket for them and makes no network call of its own.
 `SECURITY.md` §1 states that and names its proofs.

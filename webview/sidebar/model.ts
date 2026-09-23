@@ -24,7 +24,7 @@
  * render time and stored nowhere.
  */
 
-import type { InsightsProviderAbout } from '../../src/model/events.js';
+import type { InsightsProviderAbout, InsightsProviderAction } from '../../src/model/events.js';
 import type {
   ControlCommand,
   ControlFacts,
@@ -51,14 +51,22 @@ export interface SidebarState {
    * closed.
    */
   readonly provider: InsightsProviderAbout | null;
+  /**
+   * The registered provider's optional actions — DoD 9.45. Each is a row
+   * under Open Insights; empty when no provider is registered.
+   */
+  readonly insightsActions: readonly InsightsProviderAction[];
   readonly drawerOpen: boolean;
 }
 
 /** The Menu entry that opens the Insights surface. */
 export const OPEN_INSIGHTS_ID = 'agentDeck.openInsights';
 
-/** Open Insights' grey suffix with no provider registered. */
-export const FREE_INSIGHTS_VALUE = 'facts only';
+/**
+ * Open Insights' grey suffix with no provider registered — "Facts only", the
+ * words of spec `Amendment 2026-09-23` (it read `facts only` until DoD 9.45).
+ */
+export const FREE_INSIGHTS_VALUE = 'Facts only';
 
 /**
  * Open Insights' grey suffix — the one place the sidebar states the Insights
@@ -66,13 +74,15 @@ export const FREE_INSIGHTS_VALUE = 'facts only';
  *
  * The Insights TAB is gone (spec `Amendment 2026-09-21 — One window`), so the
  * state it used to show rides on the Menu entry that opens the surface, the
- * way a collapsed group shows its value: the registered provider's name and
- * version, or {@link FREE_INSIGHTS_VALUE} when none is — the free surface
- * shows the Layer 1 facts and nothing a provider supplies. It names what IS
- * registered, never what is installed and never a licence.
+ * way a collapsed group shows its value: the registered provider's
+ * `about.name` (spec `Amendment 2026-09-23`; it carried the version too
+ * until DoD 9.45), or {@link FREE_INSIGHTS_VALUE} when none is — the free
+ * surface shows the Layer 1 facts and nothing a provider supplies. It names
+ * what IS registered, never what is installed and never a licence. The
+ * provider's `about.status`, when it states one, is the row's detail line.
  */
 export function insightsValue(provider: InsightsProviderAbout | null): string {
-  return provider === null ? FREE_INSIGHTS_VALUE : `${provider.name} ${provider.version}`;
+  return provider === null ? FREE_INSIGHTS_VALUE : provider.name;
 }
 
 /**
@@ -90,6 +100,11 @@ export interface ActionRow {
   readonly command: string;
   readonly detail?: string;
   readonly value?: string;
+  /**
+   * Drawn one step indented under the row before it — the three Insights
+   * actions under Open Insights (DoD 9.45). From the table's `under`.
+   */
+  readonly nested?: true;
 }
 
 /** One value inside a group. Ticked when the host holds it. */
@@ -190,6 +205,12 @@ function rowOf(entry: ControlCommand, state: SidebarState): SidebarRow {
       ? { value: toolLabel(state.controls.inspectorTool) }
       : {}),
     ...(entry.command === OPEN_INSIGHTS_ID ? { value: insightsValue(state.provider) } : {}),
+    // The provider's status line under its name (DoD 9.44/9.45). Open
+    // Insights has no table detail of its own, so this is the only one.
+    ...(entry.command === OPEN_INSIGHTS_ID && state.provider?.status !== undefined
+      ? { detail: state.provider.status }
+      : {}),
+    ...(entry.under === undefined ? {} : { nested: true as const }),
   };
 }
 
@@ -236,7 +257,10 @@ export function sidebarPage(
   section: ControlSection,
   state: SidebarState,
 ): readonly SidebarRow[] {
-  const facts: ControlFacts = { drawerOpen: state.drawerOpen };
+  const facts: ControlFacts = {
+    drawerOpen: state.drawerOpen,
+    insightsActions: state.insightsActions,
+  };
   const groups = CONTROL_GROUPS.filter(
     (group) =>
       group.section === section &&

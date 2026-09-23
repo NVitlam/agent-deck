@@ -45,7 +45,10 @@ import {
   isPaletteVisible,
   tweakKeyOf,
   viewModeOf,
+  INSIGHTS_ACTION_COMMANDS,
+  INSIGHTS_ACTION_CONTEXT,
 } from './controls.js';
+import { PROVIDER_ACTIONS } from '../insights-provider.js';
 import type { ControlFacts, Renderer, Surface, ViewControls, ViewMode } from './controls.js';
 import { TWEAK_SETTINGS } from '../sidebar/tweaks.js';
 import {
@@ -282,12 +285,42 @@ describe('the command table', () => {
    * ---------------------------------------------------------------------- */
 
   it('`controlVisible` answers its one condition and defaults to shown', () => {
-    const shut: ControlFacts = { drawerOpen: false };
-    const open: ControlFacts = { drawerOpen: true };
+    const shut: ControlFacts = { drawerOpen: false, insightsActions: [] };
+    const open: ControlFacts = { drawerOpen: true, insightsActions: [] };
     expect(controlVisible(undefined, shut)).toBe(true);
     expect(controlVisible(undefined, open)).toBe(true);
     expect(controlVisible('drawerOpen', shut)).toBe(false);
     expect(controlVisible('drawerOpen', open)).toBe(true);
+  });
+
+  it('DoD 9.45: each Insights action row is shown by ITS OWN action, and by nothing else', () => {
+    const when = {
+      pickAgent: 'insightsPickAgent',
+      showPayload: 'insightsShowPayload',
+      clearHistory: 'insightsClearHistory',
+    } as const;
+    for (const action of PROVIDER_ACTIONS) {
+      const only: ControlFacts = { drawerOpen: true, insightsActions: [action] };
+      for (const other of PROVIDER_ACTIONS) {
+        expect(controlVisible(when[other], only), `${action} shows ${other}`).toBe(other === action);
+      }
+      expect(controlVisible(when[action], { drawerOpen: true, insightsActions: [] })).toBe(false);
+    }
+  });
+
+  it('DoD 9.45: the three rows sit UNDER Open Insights, in the Menu order, and the maps name them', () => {
+    const rows = CONTROL_COMMANDS.filter((e) => e.under !== undefined);
+    expect(rows.map((e) => [e.command, e.label, e.under, e.when])).toStrictEqual([
+      ['agentDeck.insights.pickAgent', 'Pick Agent', 'agentDeck.openInsights', 'insightsPickAgent'],
+      ['agentDeck.insights.showPayload', 'Show Payload', 'agentDeck.openInsights', 'insightsShowPayload'],
+      ['agentDeck.insights.clearHistory', 'Clear History', 'agentDeck.openInsights', 'insightsClearHistory'],
+    ]);
+    const ids = CONTROL_COMMAND_IDS;
+    const open = ids.indexOf('agentDeck.openInsights');
+    expect(ids.slice(open + 1, open + 4)).toStrictEqual(rows.map((e) => e.command));
+    expect(PROVIDER_ACTIONS.map((a) => INSIGHTS_ACTION_COMMANDS[a])).toStrictEqual(rows.map((e) => e.command));
+    expect(Object.keys(INSIGHTS_ACTION_CONTEXT)).toStrictEqual([...PROVIDER_ACTIONS]);
+    for (const row of rows) expect(row.section, row.command).toBe('menu');
   });
 
   it('the Inspector entries are the ONLY ones gated on a drawer', () => {
@@ -309,7 +342,7 @@ describe('the command table', () => {
     }
   });
 
-  it('THE INSIGHTS TAB IS GONE, and nothing is gated on what is installed', () => {
+  it('THE INSIGHTS TAB IS GONE, and nothing is gated on what is installed or licensed', () => {
     /*
      * v0.9.0 DoD 9.28, spec `Amendment 2026-09-21 — One window`: the strip is
      * Menu | View | Tweaks, Insights is a SURFACE reached from Menu, and
@@ -318,20 +351,30 @@ describe('the command table', () => {
      * test here.
      */
     expect(CONTROL_SECTIONS.map((s) => s.label)).toStrictEqual(['Menu', 'View', 'Tweaks']);
-    expect(CONTROL_COMMAND_IDS.filter((id) => id.startsWith('agentDeck.insights.'))).toStrictEqual([]);
-    // `ControlFacts` has ONE member: no installed, no licence, no provider.
-    const facts: ControlFacts = { drawerOpen: false };
-    expect(Object.keys(facts)).toStrictEqual(['drawerOpen']);
+    // DoD 9.45: the only `agentDeck.insights.*` rows are the three actions a
+    // REGISTERED provider has — never a row for an installed extension.
+    expect(CONTROL_COMMAND_IDS.filter((id) => id.startsWith('agentDeck.insights.'))).toStrictEqual([
+      'agentDeck.insights.pickAgent',
+      'agentDeck.insights.showPayload',
+      'agentDeck.insights.clearHistory',
+    ]);
+    // `ControlFacts` has TWO members: a drawer, and the registered provider's
+    // actions. No installed, no licence.
+    const facts: ControlFacts = { drawerOpen: false, insightsActions: [] };
+    expect(Object.keys(facts)).toStrictEqual(['drawerOpen', 'insightsActions']);
     const serialised = JSON.stringify(CONTROL_COMMANDS);
     expect(serialised).not.toContain('licen');
     expect(serialised).not.toContain('installed');
   });
 
-  it('the Menu is the ruled seven, in the ruled order', () => {
+  it('the Menu is the ruled seven, in the ruled order — and the three Insights actions under Open Insights', () => {
     expect(MENU_COMMANDS.map((e) => e.label)).toStrictEqual([
       'Open Deck',
       'Open Statistics',
       'Open Insights',
+      'Pick Agent',
+      'Show Payload',
+      'Clear History',
       'Show Diagnostics',
       'Settings',
       'Clear Stats History',
@@ -370,11 +413,14 @@ describe('the command table', () => {
     expect(isCommandFrom('panel', 'agentDeck.stats.clearHistory')).toBe(false);
   });
 
-  it('the palette shows the Menu seven and hides the rest', () => {
+  it('the palette shows the Menu (the three actions gated on their context keys) and hides the rest', () => {
     expect(CONTROL_COMMANDS.filter(isPaletteVisible).map((e) => e.command)).toStrictEqual([
       'agentDeck.open',
       'agentDeck.openStats',
       'agentDeck.openInsights',
+      'agentDeck.insights.pickAgent',
+      'agentDeck.insights.showPayload',
+      'agentDeck.insights.clearHistory',
       'agentDeck.showDiagnostics',
       'agentDeck.openSettings',
       'agentDeck.stats.clearHistory',

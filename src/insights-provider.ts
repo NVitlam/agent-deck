@@ -16,13 +16,20 @@
  *
  * ## What the parent may do with a provider — and nothing else
  *
- * It reads `providerVersion`, `about` and whether `getRawOutput` exists once,
- * at registration. It calls `getLatest()` and `listRuns()` to build a
- * snapshot, `run()` when the user presses Run, `getRawOutput(runId)` when
- * the user asks for a refused run's raw output, and subscribes to
- * `onDidChange`. **It calls nothing else on it**, and
- * `insights-provider.test.ts` holds that with a provider wrapped in a Proxy
- * that records every property read.
+ * It reads `providerVersion`, `about`, and which optional members exist once,
+ * at registration. It calls `listRuns()` to build the report list,
+ * `getRun(runId)` for the run the user selected or exports,
+ * `getRawOutput(runId)` when the user asks for a refused run's raw output,
+ * `pickAgent()`, `showPayload()` or `clearHistory()` when the user presses
+ * that sidebar row, and subscribes to `onDidChange`. **It calls nothing else
+ * on it**, and `insights-provider.test.ts` holds that with a provider wrapped
+ * in a Proxy that records every property read.
+ *
+ * **`getLatest()` and `run()` are still REQUIRED and no longer called**
+ * (v0.9.0 DoD 9.44, spec `Amendment 2026-09-23 — Paid Insights surface`):
+ * the surface shows the selected run, not the latest, and has no Run action.
+ * The amendment grows the contract and removes nothing, so a provider built
+ * against round 5 still registers; dropping them is a ruling, not a tidy-up.
  *
  * Insights registers only after it has verified a licence signature, so the
  * parent never has licence knowledge: a provider being registered is the
@@ -69,7 +76,9 @@ import type {
   InsightsConfidence,
   InsightsFindingKind,
   InsightsProviderAbout,
+  InsightsProviderAction,
   InsightsProviderSnapshot,
+  InsightsRunPreview,
   InsightsRunState,
   RunSummary,
 } from './model/events.js';
@@ -106,6 +115,16 @@ export const SINCE_LAST_RUN: readonly FindingSinceLastRun[] = Object.freeze([
 ]);
 
 export const AGENTS: readonly InsightsAgentKind[] = Object.freeze(['claude', 'codex']);
+
+/**
+ * The provider's optional actions, in the order the sidebar shows them under
+ * Open Insights (spec `Amendment 2026-09-23`).
+ */
+export const PROVIDER_ACTIONS: readonly InsightsProviderAction[] = Object.freeze([
+  'pickAgent',
+  'showPayload',
+  'clearHistory',
+]);
 
 /** An id — a run's, a finding's, a session's. No character that means anything to a renderer. */
 export const ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -171,18 +190,36 @@ export type ProviderEvent<T> = (
 export interface InsightsProvider {
   readonly providerVersion: typeof PROVIDER_VERSION;
   readonly about: InsightsProviderAbout;
-  /** The latest finding set, or `null` when there is none yet. */
+  /**
+   * The latest finding set, or `null` when there is none yet. REQUIRED and
+   * NOT CALLED since v0.9.0 DoD 9.44 — see the module header.
+   */
   getLatest(): FindingSetView | null;
   /** The run history, newest first. */
   listRuns(): RunSummary[];
-  /** Run once. The parent awaits it and shows `running` until it settles. */
+  /**
+   * One run's finding set, or `null` when the provider holds none for it —
+   * spec `Amendment 2026-09-23`. The set's own `runId` must be the one asked
+   * for; any other answer is dropped and counted.
+   */
+  getRun(runId: string): FindingSetView | null;
+  /** REQUIRED and NOT CALLED since v0.9.0 DoD 9.44 — see the module header. */
   run(): Promise<void>;
   /**
    * OPTIONAL — a run's raw output, or `null` when the provider has none.
    * Asked only for a REFUSED run, when the user presses "Show raw output".
    */
   getRawOutput?(runId: string): string | null;
-  /** Fires when anything `getLatest` or `listRuns` would return has moved. */
+  /** OPTIONAL — the sidebar's Pick Agent row. The parent awaits it and nothing else. */
+  pickAgent?(): Promise<void>;
+  /** OPTIONAL — the sidebar's Show Payload row. */
+  showPayload?(): Promise<void>;
+  /**
+   * OPTIONAL — the sidebar's Clear History row. The parent asks nothing
+   * before calling it; a confirmation, if any, is the provider's.
+   */
+  clearHistory?(): Promise<void>;
+  /** Fires when anything `listRuns` or `getRun` would return has moved. */
   readonly onDidChange: ProviderEvent<void>;
 }
 
@@ -353,13 +390,23 @@ export function stringEvidenceClass(statsKey: string): TextClass | null {
  * The views
  * ------------------------------------------------------------------------ */
 
-/** A provider's about, checked, as a fresh object — or `null`. */
+/**
+ * A provider's about, checked, as a fresh object — or `null`.
+ *
+ * `status` is OPTIONAL (spec `Amendment 2026-09-23`) and a NAME: one line,
+ * at most {@link NAME_MAX_CHARS} characters, the character rule. A status
+ * that fails is left out and refuses nothing else — a registration is not
+ * worth losing over its one line of text. Any key but these three still
+ * refuses the about, as it always has.
+ */
 export function viewOfAbout(value: unknown): InsightsProviderAbout | null {
-  if (!hasExactly(value, ['name', 'version'])) return null;
+  const withStatus = hasExactly(value, ['name', 'version', 'status']);
+  if (!withStatus && !hasExactly(value, ['name', 'version'])) return null;
   const name = own(value, 'name');
   const version = own(value, 'version');
   if (!matches(name, NAME_PATTERN) || !matches(version, VERSION_PATTERN)) return null;
-  return { name, version };
+  const status = withStatus ? own(value, 'status') : undefined;
+  return isText(status, 'name') ? { name, version, status } : { name, version };
 }
 
 function viewOfEvidence(value: unknown): FindingEvidenceView | null {
@@ -559,6 +606,19 @@ export function viewOfFindingSet(value: unknown): Checked<FindingSetView | null>
   };
 }
 
+/**
+ * A set `getRun(runId)` returned, checked — v0.9.0 DoD 9.44.
+ *
+ * {@link viewOfFindingSet}, plus one rule: the set must be THE RUN ASKED FOR.
+ * A set naming another run is dropped and counted, never shown under the row
+ * the user clicked — that would be one run's findings presented as another's.
+ */
+export function viewOfRunSet(value: unknown, runId: string): Checked<FindingSetView | null> {
+  const checked = viewOfFindingSet(value);
+  if (checked.value !== null && checked.value.runId !== runId) return { value: null, dropped: 1 };
+  return checked;
+}
+
 function viewOfRun(value: unknown): RunSummary | null {
   if (!hasExactly(value, ['runId', 'createdAt', 'state', 'findings', 'agentKind'])) return null;
   const runId = own(value, 'runId');
@@ -574,8 +634,23 @@ function viewOfRun(value: unknown): RunSummary | null {
   return { runId, createdAt, state, findings, agentKind };
 }
 
-/** The run history, checked and copied, capped at {@link MAX_RUNS}. */
+/**
+ * The run history, checked, copied, capped at {@link MAX_RUNS} and SORTED by
+ * `createdAt`, newest first — v0.9.0 DoD 9.46 ("sorted newest first" is the
+ * amendment's, so the parent sorts rather than trusting the provider's order).
+ *
+ * The cap reads the first {@link MAX_RUNS} items AS GIVEN (the contract says
+ * newest first) and sorts those; the sort is stable, so the provider's order
+ * breaks a tie.
+ */
 export function viewOfRuns(value: unknown): Checked<RunSummary[]> {
+  const checked = viewOfRunsAsGiven(value);
+  // `Array.prototype.sort` is stable, so a tie keeps the provider's order.
+  checked.value.sort((a, b) => b.createdAt - a.createdAt);
+  return checked;
+}
+
+function viewOfRunsAsGiven(value: unknown): Checked<RunSummary[]> {
   const items = itemsOf(value);
   if (items === null) return { value: [], dropped: value === undefined ? 0 : 1 };
   const runs: RunSummary[] = [];
@@ -596,27 +671,14 @@ export function viewOfRuns(value: unknown): Checked<RunSummary[]> {
   return { value: runs, dropped };
 }
 
-/**
- * The run a refused latest set belongs to, or `null` when the set is not
- * refused.
- *
- * The set's OWN `runId` — the ruling of 2026-09-22 (round 5, ruling 1).
- * Until then the set carried no run id and the host joined it to the history
- * on `createdAt`; that join is gone, and the history plays no part in which
- * run's raw output is asked for.
- */
-export function refusedRunIdOf(latest: FindingSetView | null): string | null {
-  return latest !== null && latest.state === 'refused' ? latest.runId : null;
-}
-
 /* ------------------------------------------------------------------------ *
  * The registry — one provider at a time
  * ------------------------------------------------------------------------ */
 
 export interface InsightsProviderRegistryOptions {
-  /** Anything a surface shows moved: registered, changed, running, gone. */
+  /** Anything a surface shows moved: registered, changed, gone. */
   onChange: () => void;
-  /** A provider method threw, or its `run()` rejected. Never rethrown. */
+  /** A provider method threw, or an action rejected. Never rethrown. */
   onError?: (error: unknown) => void;
 }
 
@@ -626,6 +688,8 @@ interface Registration {
   readonly about: InsightsProviderAbout;
   /** Whether the provider had `getRawOutput` when it registered. */
   readonly rawOutput: boolean;
+  /** The optional actions it had when it registered, in the Menu's order. */
+  readonly actions: readonly InsightsProviderAction[];
   readonly subscription: ProviderDisposable | null;
 }
 
@@ -642,6 +706,9 @@ export type RawOutputResult =
   | { ok: false; reason: 'none' | 'invalid' | 'threw'; runId: string }
   | { ok: false; reason: 'too-large'; runId: string; length: number };
 
+/** What pressing an action's sidebar row came to. */
+export type ActionResult = 'done' | 'no-provider' | 'absent' | 'failed';
+
 /**
  * Holds the ONE registered provider.
  *
@@ -653,7 +720,6 @@ export class InsightsProviderRegistry {
   readonly #onChange: () => void;
   readonly #onError: ((error: unknown) => void) | undefined;
   #current: Registration | null = null;
-  #running = false;
   #disposed = false;
 
   constructor(options: InsightsProviderRegistryOptions) {
@@ -668,9 +734,11 @@ export class InsightsProviderRegistry {
    * contract's version, and an `Error` naming both parties when one is
    * already registered. A registration that throws changes nothing.
    *
-   * `getRawOutput` is OPTIONAL: absent, the surface never offers raw output;
-   * present, it must be a function. Given as a getter it reads as absent,
-   * because a getter would run the provider's code in the middle of a check.
+   * `getRun` is REQUIRED since v0.9.0 DoD 9.44. `getRawOutput`, `pickAgent`,
+   * `showPayload` and `clearHistory` are OPTIONAL: absent, the surface or the
+   * sidebar never offers them; present, each must be a function. Given as a
+   * getter, one reads as absent, because a getter would run the provider's
+   * code in the middle of a check.
    */
   register(provider: unknown): ProviderDisposable {
     if (this.#disposed) throw new Error('Agent Deck: the extension is shutting down; no provider can register.');
@@ -686,14 +754,16 @@ export class InsightsProviderRegistry {
         'Agent Deck: an Insights provider must state about { name, version } in the allowed shape.',
       );
     }
-    for (const member of ['getLatest', 'listRuns', 'run', 'onDidChange'] as const) {
+    for (const member of ['getLatest', 'listRuns', 'getRun', 'run', 'onDidChange'] as const) {
       if (typeof readMember(provider, member) !== 'function') {
         throw new TypeError(`Agent Deck: an Insights provider must have ${member}.`);
       }
     }
-    const rawOutput = readMember(provider, 'getRawOutput');
-    if (rawOutput !== undefined && typeof rawOutput !== 'function') {
-      throw new TypeError('Agent Deck: an Insights provider’s getRawOutput, when present, must be a function.');
+    for (const member of ['getRawOutput', ...PROVIDER_ACTIONS] as const) {
+      const value = readMember(provider, member);
+      if (value !== undefined && typeof value !== 'function') {
+        throw new TypeError(`Agent Deck: an Insights provider’s ${member}, when present, must be a function.`);
+      }
     }
     const current = this.#current;
     if (current !== null) {
@@ -714,7 +784,8 @@ export class InsightsProviderRegistry {
     const registration: Registration = {
       provider: typed,
       about,
-      rawOutput: rawOutput !== undefined,
+      rawOutput: readMember(provider, 'getRawOutput') !== undefined,
+      actions: PROVIDER_ACTIONS.filter((action) => readMember(provider, action) !== undefined),
       subscription,
     };
     this.#current = registration;
@@ -728,7 +799,6 @@ export class InsightsProviderRegistry {
         // from an earlier provider must not unregister the one after it.
         if (this.#current !== registration) return;
         this.#current = null;
-        this.#running = false;
         try {
           registration.subscription?.dispose();
         } catch (error) {
@@ -751,66 +821,97 @@ export class InsightsProviderRegistry {
   }
 
   /**
-   * `getLatest()` and `listRuns()`, checked and copied. A method that throws
-   * reads as nothing and counts as one drop.
+   * The registered provider's optional actions, in the Menu's order — empty
+   * with no provider. Read at registration, like `about`.
    */
-  #read(current: Registration): { latest: FindingSetView | null; runs: RunSummary[]; dropped: number } {
-    let dropped = 0;
-    let latest: FindingSetView | null = null;
+  actions(): InsightsProviderAction[] {
+    return [...(this.#current?.actions ?? [])];
+  }
+
+  /** `listRuns()`, checked, copied and sorted. A throw reads as nothing and one drop. */
+  #runs(current: Registration): Checked<RunSummary[]> {
     try {
-      const checked = viewOfFindingSet(current.provider.getLatest());
-      latest = checked.value;
-      dropped += checked.dropped;
+      return viewOfRuns(current.provider.listRuns());
     } catch (error) {
-      dropped += 1;
       this.#report(error);
+      return { value: [], dropped: 1 };
     }
-    let runs: RunSummary[] = [];
+  }
+
+  /** `getRun(runId)`, checked against the run asked for. A throw is one drop. */
+  #run(current: Registration, runId: string): Checked<FindingSetView | null> {
     try {
-      const checked = viewOfRuns(current.provider.listRuns());
-      runs = checked.value;
-      dropped += checked.dropped;
+      return viewOfRunSet(current.provider.getRun(runId), runId);
     } catch (error) {
-      dropped += 1;
       this.#report(error);
+      return { value: null, dropped: 1 };
     }
-    return { latest, runs, dropped };
   }
 
   /**
    * What the Insights surface is told, or `null` in the free state.
    *
-   * Calls `getLatest()` and `listRuns()` — two of the five members the parent
-   * may call — and checks and copies what they return.
+   * Calls `listRuns()`, and `getRun(selected)` when `selected` names a run
+   * that list holds. A selection the list no longer holds — cleared history,
+   * a run the provider dropped — previews nothing: the host's id is a
+   * request, and the list is what says whether it can be met.
    */
-  snapshot(): InsightsProviderSnapshot | null {
+  snapshot(selected: string | null = null): InsightsProviderSnapshot | null {
     const current = this.#current;
     if (current === null) return null;
-    const { latest, runs, dropped } = this.#read(current);
+    const runs = this.#runs(current);
+    let preview: InsightsRunPreview | null = null;
+    if (selected !== null && runs.value.some((run) => run.runId === selected)) {
+      const set = this.#run(current, selected);
+      preview = {
+        runId: selected,
+        set: set.value,
+        dropped: set.dropped,
+        rawOutput: current.rawOutput && set.value?.state === 'refused',
+      };
+    }
     return {
       about: { ...current.about },
-      latest,
-      runs,
-      running: this.#running,
-      dropped,
-      rawOutput: current.rawOutput && refusedRunIdOf(latest) !== null,
+      runs: runs.value,
+      dropped: runs.dropped,
+      selected: preview,
     };
   }
 
   /**
-   * The latest refused run's raw output — DoD 9.40.
-   *
-   * Reads the latest set NOW, not from a snapshot a surface may still be
-   * showing, and asks `getRawOutput` for that set's own `runId` alone. A
-   * string over {@link RAW_OUTPUT_MAX_CHARS} is refused whole, never cut.
+   * Is `runId` a run the provider lists NOW? The host's second check on an
+   * id a renderer sent, after the guard's pattern.
    */
-  rawOutput(): RawOutputResult {
+  lists(runId: string): boolean {
+    const current = this.#current;
+    return current !== null && this.#runs(current).value.some((run) => run.runId === runId);
+  }
+
+  /**
+   * One run's set, READ NOW for an export — DoD 9.47. `null` when no provider
+   * is registered or the list does not hold the run; otherwise the checked
+   * answer, which may itself be `null`.
+   */
+  readRun(runId: string): Checked<FindingSetView | null> | null {
+    const current = this.#current;
+    if (current === null || !this.lists(runId)) return null;
+    return this.#run(current, runId);
+  }
+
+  /**
+   * A refused run's raw output — DoD 9.40, for the SELECTED run since 9.46.
+   *
+   * Reads the run NOW through `getRun`, not from a snapshot a surface may
+   * still be showing, and asks `getRawOutput` only when that run is listed
+   * and refused. A string over {@link RAW_OUTPUT_MAX_CHARS} is refused whole,
+   * never cut.
+   */
+  rawOutput(runId: string | null): RawOutputResult {
     const current = this.#current;
     if (current === null) return { ok: false, reason: 'no-provider' };
     if (!current.rawOutput) return { ok: false, reason: 'unsupported' };
-    const { latest } = this.#read(current);
-    const runId = refusedRunIdOf(latest);
-    if (runId === null) return { ok: false, reason: 'no-run' };
+    const set = runId === null ? null : this.readRun(runId);
+    if (runId === null || set?.value?.state !== 'refused') return { ok: false, reason: 'no-run' };
     let text: unknown;
     try {
       text = (current.provider.getRawOutput as (id: string) => unknown).call(current.provider, runId);
@@ -827,25 +928,23 @@ export class InsightsProviderRegistry {
   }
 
   /**
-   * Run the provider once. A no-op with no provider, and while a run is
-   * already in flight — one Run at a time, the same rule Insights keeps.
+   * Call one optional action — DoD 9.45. Awaited; a throw or a rejection is
+   * reported and answered `failed`, never rethrown. The action is looked up
+   * in what the provider had AT REGISTRATION, so a member added later is not
+   * called and one present then is called through the same object.
    */
-  async run(): Promise<void> {
+  async invoke(action: InsightsProviderAction): Promise<ActionResult> {
     const current = this.#current;
-    if (current === null || this.#running) return;
-    this.#running = true;
-    this.#onChange();
+    if (current === null) return 'no-provider';
+    if (!current.actions.includes(action)) return 'absent';
     try {
-      await current.provider.run();
+      const method = readMember(current.provider, action) as (() => unknown) | undefined;
+      if (typeof method !== 'function') return 'absent';
+      await method.call(current.provider);
+      return 'done';
     } catch (error) {
       this.#report(error);
-    } finally {
-      // Only if the SAME registration is still here: a provider that went
-      // away mid-run already reset the flag and announced the free state.
-      if (this.#current === current) {
-        this.#running = false;
-        this.#onChange();
-      }
+      return 'failed';
     }
   }
 
@@ -855,7 +954,6 @@ export class InsightsProviderRegistry {
     this.#disposed = true;
     const current = this.#current;
     this.#current = null;
-    this.#running = false;
     try {
       current?.subscription?.dispose();
     } catch {

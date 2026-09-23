@@ -109,8 +109,9 @@
       data-testid="sidebar-row"
       data-kind="action"
       data-command={row.command}
+      data-nested={row.nested === true ? 'true' : undefined}
       role="menuitem"
-      style={indent(1)}
+      style={indent(row.nested === true ? 2 : 1)}
       onclick={() => onrun(row.command, group)}
     >
       <span class="lbl">{row.label}</span>

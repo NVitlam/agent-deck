@@ -16,7 +16,9 @@ All notable changes to Agent Deck are documented here.
 - **The sidebar carries a strip of three tabs** - **Menu**, **View** and
   **Tweaks** - one open at a time, and the same three are on the view's title
   menu. Menu carries Open Deck, Open Statistics, Open Insights, Show
-  Diagnostics, Settings, Clear Stats History and About. View carries Renderer,
+  Diagnostics, Settings, Clear Stats History and About, and under Open
+  Insights, while an Insights provider offers them, Pick Agent, Show Payload
+  and Clear History. View carries Renderer,
   Sessions, Engines, Layout and Sort as collapsible groups, each showing what
   it is set to and folding up again once you choose, plus Inspector - the
   drawer's status, order and tool filters - which appears while a drawer is
@@ -29,8 +31,9 @@ All notable changes to Agent Deck are documented here.
   own order is View - Sort.
 - **Statistics keeps its five tabs** - Files, Tools, Loops & churn, Tokens,
   Trends. Insights and About carry tiles, and a tile that opens a web page
-  asks first; with an Insights provider registered, Insights carries its Run
-  action. Nothing else on the panel is pressed.
+  asks first; with an Insights provider registered, Insights carries its
+  report list, its tick boxes and its export actions. Nothing else on the
+  panel is pressed.
 - **The keyboard shortcuts are unchanged and are the editor's now.** `a` `c`
   `o` `x` for the engines, `1` `2` `3` for the layout and `l` `r` `e` for
   the sort, while the deck panel has focus. `Escape` still walks back out of a
@@ -65,9 +68,16 @@ All notable changes to Agent Deck are documented here.
   which describes what Insights does and never does and carries the plans:
   pay once for 1 month ($10), 6 months ($50) or 1 year ($100), or subscribe
   monthly, every 6 months or yearly at the same amounts. With a provider
-  registered it shows that provider's latest findings, its run history and a
-  Run action. The sidebar states which, beside Open Insights, whether or not
-  the panel is open.
+  registered it shows that provider's reports on the left, newest first, and
+  the one you select on the right, with the same fact tiles below both. The
+  sidebar states which, beside Open Insights, whether or not the panel is
+  open.
+- **Insights reports export as HTML, Markdown or plain text.** The preview's
+  header carries HTML, Markdown and Copy; ticked reports export together, one
+  file per report into a folder you choose, never replacing a file already
+  there. The HTML page is self-contained and loads nothing; the Markdown
+  escapes the provider's text. Agent Deck will not write an export into a
+  directory it only reads, and exporting makes no network call.
 - **Extension API version 2.** `registerInsightsProvider` lets one extension
   register as the Insights provider. Version 2 only adds to version 1. A
   provider's data is plain JSON, checked field by field, and never executed. A
@@ -78,7 +88,10 @@ All notable changes to Agent Deck are documented here.
   never shortened. The Insights surface shows the lead first, the detail
   behind an expand, the cause, then the evidence, with the run's facts above
   them; a refused run shows its step and reason and can open its raw output
-  as an untitled document. Agent Deck never asks about your Insights licence.
+  as an untitled document. A provider also answers for one run by id
+  (`getRun`), may offer Pick Agent, Show Payload and Clear History, and may
+  state one line of status under its name. Agent Deck never asks about your
+  Insights licence.
 - **An About entry**, as **Agent Deck: About** in the Command Palette and in
   Menu. It switches the panel to a page in the deck's own look: a short
   introduction, four tiles - Portfolio, Repository, LinkedIn and Sponsor - and

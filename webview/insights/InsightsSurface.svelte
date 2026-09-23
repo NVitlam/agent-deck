@@ -1,6 +1,7 @@
 <!--
-  The Insights SURFACE — v0.9.0 DoD 9.29 and 9.30, spec `Amendment
-  2026-09-21 — One window, Insights provider, Menu-only entry`.
+  The Insights SURFACE — v0.9.0 DoD 9.29, 9.30, and since DoD 9.46 the
+  two-pane registered state of spec `Amendment 2026-09-23 — Paid Insights
+  surface, export, provider v1 growth`.
 
   A surface of the ONE panel, switched in place from Menu ▸ Open Insights. Two
   states, decided by ONE fact the host states — whether an Insights provider is
@@ -11,17 +12,18 @@
   example, labelled as an example; and one tile, "Get Agent Deck Insights",
   that asks before it opens the page.
 
-  PROVIDER: the latest finding set, the run history, and a Run action that
-  calls the provider — rendered from the snapshot the host checked. Since
-  DoD 9.41 a finding carries the provider's text, every string of it
-  allow-listed and capped at the boundary: the action's lead first, the
-  detail behind an expand, the cause, then the labelled evidence. A refused
-  set shows its step and reason, and "Show raw output" when the host could
-  place the run and the provider offers it.
+  PROVIDER: a REPORT LIST on the left — date, findings count, engine, newest
+  first, a tick box per row and "Export ticked (n)" under it — and a PREVIEW
+  on the right: "Select a report to preview / download." until a row is
+  selected, then that run rendered exactly as the latest report was, with
+  Export HTML / Markdown / Copy in its header. The fact tiles sit below both.
+  Those controls are the amendment's RULED EXCEPTION to the clean-windows law,
+  enumerated in `webview/chrome.test.ts`; there is no Run action.
 
-  IT DECIDES NOTHING. `layout.ts` computes every tile and row; this renders
-  them. The clock is read here, once per render, because the window is "the
-  last 7 days" of NOW and the layout is a pure function that takes it.
+  IT DECIDES NOTHING. `layout.ts` computes every tile, row and line; the host
+  holds the selection; the store holds the ticks; this renders them. The clock
+  is read here, once per render, because the window is "the last 7 days" of
+  NOW and the layout is a pure function that takes it.
 -->
 <script lang="ts">
   import type { InsightsProviderSnapshot } from '../../src/model/events.js';
@@ -31,6 +33,8 @@
     EXAMPLE_LABEL,
     INSIGHTS_WINDOW_DAYS,
     INSIGHT_SOURCES,
+    NO_RUNS,
+    SELECT_A_REPORT,
     exampleAt,
     formatInstant,
     freeInsightsLayout,
@@ -42,13 +46,17 @@
     loaded,
     enabled,
     provider,
+    ticks,
     exampleCount,
     getHost,
     idleThresholdMs,
     now = () => Date.now(),
     onget,
-    onrun,
     onrawoutput,
+    onselect,
+    ontick,
+    onexport,
+    onexportticked,
   }: {
     /** The STORED history — "the facts the store already holds". */
     records: readonly StatsRecord[];
@@ -57,6 +65,8 @@
     /** `agentDeck.stats.enabled`. A disabled store holds nothing to count. */
     enabled: boolean;
     provider: InsightsProviderSnapshot | null;
+    /** The ticked run ids (DoD 9.46) — the store's view state. */
+    ticks: readonly string[];
     exampleCount: number;
     /** The Get tile's host, from the page the host built; `null` before it. */
     getHost: string | null;
@@ -64,14 +74,29 @@
     idleThresholdMs: number;
     now?: () => number;
     onget: () => void;
-    onrun: () => void;
-    /** "Show raw output" on a refused set (DoD 9.40). */
+    /** "Show raw output" on the selected refused run (DoD 9.40, 9.46). */
     onrawoutput: () => void;
+    /** A report-list row was clicked (DoD 9.46). */
+    onselect: (runId: string) => void;
+    /** A row's tick box (DoD 9.46). */
+    ontick: (runId: string) => void;
+    /** One of the preview's Export actions (DoD 9.47). */
+    onexport: (target: 'html' | 'markdown' | 'copy') => void;
+    /** "Export ticked (n)" (DoD 9.47). */
+    onexportticked: () => void;
   } = $props();
 
   let free = $derived(freeInsightsLayout(records, now(), idleThresholdMs));
   let example = $derived(exampleAt(exampleCount));
   let paid = $derived(provider === null ? null : providerInsightsLayout(provider));
+  let report = $derived(paid?.preview?.report ?? null);
+
+  /** The three Export actions, in the amendment's order. */
+  const EXPORTS: readonly { target: 'html' | 'markdown' | 'copy'; label: string }[] = [
+    { target: 'html', label: 'HTML' },
+    { target: 'markdown', label: 'Markdown' },
+    { target: 'copy', label: 'Copy' },
+  ];
 </script>
 
 <main
@@ -79,9 +104,9 @@
   data-testid={TESTID.insightsSurface}
   data-state={provider === null ? 'free' : 'provider'}
 >
-  {#if paid === null}
+  {#snippet facts()}
     <section class="facts">
-      <h1>Insights</h1>
+      {#if paid === null}<h1>Insights</h1>{:else}<h2>Stored facts</h2>{/if}
       {#if !loaded}
         <p class="line" data-testid="insights-facts-state" data-reason="loading">
           The stored history has not been read yet.
@@ -111,6 +136,10 @@
         </div>
       {/if}
     </section>
+  {/snippet}
+
+  {#if paid === null}
+    {@render facts()}
     <section class="example" data-testid={TESTID.insightsExample} data-example={example.id}>
       <p class="example-label">{EXAMPLE_LABEL}</p>
       <h2>{example.title}</h2>
@@ -134,93 +163,144 @@
   {:else}
     <section class="provider">
       <h1>{paid.title}</h1>
-      <button
-        type="button"
-        class="run"
-        data-testid={TESTID.insightsRun}
-        data-running={String(paid.running)}
-        disabled={paid.running}
-        onclick={() => onrun()}>{paid.running ? 'Running' : 'Run'}</button
-      >
+      {#if paid.status !== undefined}
+        <p class="line" data-testid="insights-status">{paid.status}</p>
+      {/if}
       {#if paid.dropped !== undefined}
         <p class="line" data-testid="insights-dropped">{paid.dropped}</p>
       {/if}
-      <div class="latest" data-testid={TESTID.insightsLatest} data-state={paid.latest?.state ?? 'none'}>
-        {#if paid.latest === null}
-          <p class="line">No finding set is recorded yet.</p>
-        {:else}
-          <div class="facts-block" data-testid={TESTID.insightsRunFacts}>
-            <h2>{paid.latest.facts.heading}</h2>
-            <p class="fact">{paid.latest.facts.agent}</p>
-            <p class="fact">{paid.latest.facts.window}</p>
-            {#if paid.latest.facts.usage !== null}
-              <p class="fact" data-testid="insights-run-usage">{paid.latest.facts.usage}</p>
-            {/if}
-          </div>
-          {#if paid.latest.refusal !== undefined}
-            <div class="refusal" data-testid={TESTID.insightsRefusal}>
-              <span class="label strong">Refused at step: {paid.latest.refusal.step}</span>
-              <p class="text">{paid.latest.refusal.reason}</p>
-              {#if paid.latest.rawOutput}
+      <div class="panes">
+        <div class="list" data-testid={TESTID.insightsReportList}>
+          <h2>Reports</h2>
+          {#if paid.rows.length === 0}
+            <p class="line">{NO_RUNS}</p>
+          {:else}
+            <!-- Keyed by POSITION: run ids are the provider's data (round 4, D1). -->
+            {#each paid.rows as row, at (at)}
+              <div
+                class="report-row"
+                data-testid={TESTID.insightsReportRow}
+                data-run={row.runId}
+                data-state={row.state}
+                data-selected={String(paid.preview?.runId === row.runId)}
+                data-ticked={String(ticks.includes(row.runId))}
+              >
+                <input
+                  type="checkbox"
+                  data-testid={TESTID.insightsReportTick}
+                  aria-label={`Tick the report of ${row.when}`}
+                  checked={ticks.includes(row.runId)}
+                  onchange={() => ontick(row.runId)}
+                />
                 <button
                   type="button"
-                  class="run"
-                  data-testid={TESTID.insightsRawOutput}
-                  onclick={() => onrawoutput()}>Show raw output</button
+                  class="report-select"
+                  data-testid={TESTID.insightsReportSelect}
+                  aria-pressed={paid.preview?.runId === row.runId}
+                  onclick={() => onselect(row.runId)}
                 >
-              {:else if paid.latest.rawOutputNote !== undefined}
-                <p class="line" data-testid="insights-raw-output-note">{paid.latest.rawOutputNote}</p>
-              {/if}
-            </div>
+                  <span class="strong">{row.when}</span>
+                  <span class="note">{row.outcome} · {row.agent}</span>
+                </button>
+              </div>
+            {/each}
           {/if}
-          {#if paid.latest.note !== undefined}
-            <p class="line" data-testid="insights-latest-note">{paid.latest.note}</p>
-          {/if}
-          {#each paid.latest.findings as finding, index (index)}
-            <div class="finding" data-testid={TESTID.insightsFinding}>
-              <span class="lead strong" data-testid="insights-finding-lead">{finding.lead}</span>
-              <span class="note" data-testid="insights-finding-meta">{finding.meta}</span>
-              {#if finding.detail !== ''}
-                <details class="detail">
-                  <summary data-testid={TESTID.insightsDetail}>Detail</summary>
-                  <p class="text" data-testid="insights-finding-detail">{finding.detail}</p>
-                </details>
-              {/if}
-              <p class="text" data-testid="insights-finding-cause">
-                <span class="caption">Cause</span>
-                {finding.cause}
-              </p>
-              <ul class="evidence">
-                {#each finding.evidence as item, at (at)}
-                  <li data-testid={TESTID.insightsEvidence}>
-                    <span class="caption">{item.label}</span>
-                    <span class="strong">{item.value}</span>
-                    <span class="source">{item.source}</span>
-                  </li>
+          <button
+            type="button"
+            class="action"
+            data-testid={TESTID.insightsExportTicked}
+            disabled={ticks.length === 0}
+            onclick={() => onexportticked()}>Export ticked ({ticks.length})</button
+          >
+        </div>
+        <div class="preview" data-testid={TESTID.insightsPreview} data-run={paid.preview?.runId ?? ''}>
+          {#if paid.preview === null}
+            <p class="line" data-testid="insights-preview-empty">{SELECT_A_REPORT}</p>
+          {:else}
+            {#if paid.preview.dropped !== undefined}
+              <p class="line" data-testid="insights-preview-dropped">{paid.preview.dropped}</p>
+            {/if}
+            {#if report === null}
+              <p class="line" data-testid="insights-preview-missing">{paid.preview.missing}</p>
+            {:else}
+              <div class="latest" data-testid={TESTID.insightsLatest} data-state={report.state}>
+                <div class="facts-block" data-testid={TESTID.insightsRunFacts}>
+                  <div class="head">
+                    <h2>{report.facts.heading}</h2>
+                    <span class="exports">
+                      {#each EXPORTS as item (item.target)}
+                        <button
+                          type="button"
+                          class="action"
+                          data-testid={TESTID.insightsExport}
+                          data-target={item.target}
+                          onclick={() => onexport(item.target)}>{item.label}</button
+                        >
+                      {/each}
+                    </span>
+                  </div>
+                  <p class="fact">{report.facts.agent}</p>
+                  <p class="fact">{report.facts.window}</p>
+                  {#if report.facts.usage !== null}
+                    <p class="fact" data-testid="insights-run-usage">{report.facts.usage}</p>
+                  {/if}
+                </div>
+                {#if report.refusal !== undefined}
+                  <div class="refusal" data-testid={TESTID.insightsRefusal}>
+                    <span class="label strong">Refused at step: {report.refusal.step}</span>
+                    <p class="text">{report.refusal.reason}</p>
+                    {#if report.rawOutput}
+                      <button
+                        type="button"
+                        class="action"
+                        data-testid={TESTID.insightsRawOutput}
+                        onclick={() => onrawoutput()}>Show raw output</button
+                      >
+                    {:else if report.rawOutputNote !== undefined}
+                      <p class="line" data-testid="insights-raw-output-note">{report.rawOutputNote}</p>
+                    {/if}
+                  </div>
+                {/if}
+                {#if report.note !== undefined}
+                  <p class="line" data-testid="insights-latest-note">{report.note}</p>
+                {/if}
+                {#each report.findings as finding, index (index)}
+                  <div class="finding" data-testid={TESTID.insightsFinding}>
+                    <span class="lead strong" data-testid="insights-finding-lead">{finding.lead}</span>
+                    <span class="note" data-testid="insights-finding-meta">{finding.meta}</span>
+                    {#if finding.detail !== ''}
+                      <details class="detail">
+                        <summary data-testid={TESTID.insightsDetail}>Detail</summary>
+                        <p class="text" data-testid="insights-finding-detail">{finding.detail}</p>
+                      </details>
+                    {/if}
+                    <p class="text" data-testid="insights-finding-cause">
+                      <span class="caption">Cause</span>
+                      {finding.cause}
+                    </p>
+                    <ul class="evidence">
+                      {#each finding.evidence as item, at (at)}
+                        <li data-testid={TESTID.insightsEvidence}>
+                          <span class="caption">{item.label}</span>
+                          <span class="strong">{item.value}</span>
+                          <span class="source">{item.source}</span>
+                        </li>
+                      {/each}
+                    </ul>
+                  </div>
                 {/each}
-              </ul>
-            </div>
-          {/each}
-          {#if paid.latest.resolved !== undefined}
-            <p class="line" data-testid="insights-resolved-kinds">{paid.latest.resolved}</p>
+                {#if report.resolved !== undefined}
+                  <p class="line" data-testid="insights-resolved-kinds">{report.resolved}</p>
+                {/if}
+                {#if report.rejected !== undefined}
+                  <p class="line">{report.rejected}</p>
+                {/if}
+              </div>
+            {/if}
           {/if}
-          {#if paid.latest.rejected !== undefined}
-            <p class="line">{paid.latest.rejected}</p>
-          {/if}
-        {/if}
+        </div>
       </div>
-      <h2>History</h2>
-      {#if paid.history.length === 0}
-        <p class="line">No run is recorded yet.</p>
-      {:else}
-        <ul class="history">
-          {#each paid.history as row, at (at)}
-            <li data-testid={TESTID.insightsHistoryRow}>
-              <span>{row.when}</span> · <span>{row.outcome}</span> · <span>{row.agent}</span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
+      {@render facts()}
     </section>
   {/if}
 </main>
@@ -231,7 +311,7 @@
     flex-direction: column;
     gap: 24px;
     padding: 32px 24px;
-    max-width: 60em;
+    max-width: 72em;
     overflow: auto;
     user-select: text;
     -webkit-user-select: text;
@@ -326,7 +406,7 @@
     line-height: 1.5;
   }
 
-  .run {
+  .action {
     align-self: flex-start;
     font: inherit;
     padding: 4px 16px;
@@ -338,7 +418,7 @@
     border-radius: 4px;
   }
 
-  .run:disabled {
+  .action:disabled {
     cursor: default;
     opacity: 0.6;
   }
@@ -354,9 +434,93 @@
     border-radius: 6px;
   }
 
-  .history {
-    margin: 0;
-    padding-left: 18px;
+  /* DoD 9.46 — the report list on the left, the preview on the right. */
+  .panes {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 24px;
+  }
+
+  .list {
+    flex: 0 0 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-right: 12px;
+    border-right: 1px solid var(--vscode-panel-border, currentColor);
+  }
+
+  .preview {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .report-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px;
+    border-radius: 4px;
+  }
+
+  .report-row[data-selected='true'] {
+    background: var(--vscode-list-activeSelectionBackground, transparent);
+    color: var(--vscode-list-activeSelectionForeground, inherit);
+  }
+
+  .report-row input {
+    margin: 3px 0 0;
+  }
+
+  .report-select {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .report-select:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder, currentColor);
+  }
+
+  .list > .action {
+    margin-top: 12px;
+  }
+
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 16px;
+  }
+
+  .exports {
+    display: flex;
+    gap: 6px;
+  }
+
+  .exports .action {
+    margin-bottom: 0;
+    padding: 2px 10px;
+  }
+
+  @media (max-width: 720px) {
+    .panes {
+      flex-direction: column;
+    }
+
+    .list {
+      flex: none;
+      border-right: none;
+      padding-right: 0;
+    }
   }
 
   .facts-block {

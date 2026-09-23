@@ -1,54 +1,78 @@
 {
   "title": "Agent Deck Insights 0.2.0",
-  "latest": {
-    "state": "ok",
-    "facts": {
-      "heading": "Latest run · 2026-09-21 12:00 UTC",
-      "agent": "Claude Code 2.1.246",
-      "window": "3 sessions since 2026-09-14 12:00 UTC",
-      "usage": "Run usage: 1,000 prompt tokens · 100 output tokens · 0.0040 USD (estimated by Claude Code)"
-    },
-    "findings": [
-      {
-        "lead": "Lead line 0 for re-read-loop",
-        "meta": "Re-read loop · low confidence · since last run: new",
-        "detail": "",
-        "cause": "Cause sentence 0.",
-        "evidence": [
-          {
-            "label": "Reads",
-            "value": "7",
-            "source": "sessions[0].loops[0].count · ses_example01"
-          },
-          {
-            "label": "File",
-            "value": "repo/docs/schema.md",
-            "source": "sessions[0].files[2].filePath · ses_example01"
-          },
-          {
-            "label": "Skill",
-            "value": "phase",
-            "source": "sessions[1].skills[0].name · ses_example02"
-          },
-          {
-            "label": "Cache ratio",
-            "value": "0.11",
-            "source": "sessions[1].totals.prompt · ses_example02"
-          }
-        ]
-      }
-    ],
-    "rawOutput": false,
-    "resolved": "No longer reported: Stall, Cache miss"
-  },
-  "history": [
+  "rows": [
     {
-      "runId": "run-7",
+      "runId": "run-3",
+      "state": "ok",
       "when": "2026-09-21 12:00 UTC",
+      "outcome": "8 findings",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-2",
+      "state": "empty",
+      "when": "2026-09-20 12:00 UTC",
+      "outcome": "no findings",
+      "agent": "Codex"
+    },
+    {
+      "runId": "run-1",
+      "state": "refused",
+      "when": "2026-09-19 12:00 UTC",
+      "outcome": "refused",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-4",
+      "state": "ok",
+      "when": "2026-09-18 12:00 UTC",
       "outcome": "1 finding",
       "agent": "Claude Code"
     }
   ],
-  "running": true,
-  "dropped": "1 value from the provider did not pass the check and is not shown"
+  "preview": {
+    "runId": "run-4",
+    "dropped": "1 value from this report did not pass the check and is not shown",
+    "report": {
+      "state": "ok",
+      "facts": {
+        "heading": "Report · 2026-09-18 12:00 UTC",
+        "agent": "Claude Code 2.1.246",
+        "window": "3 sessions since 2026-09-11 12:00 UTC",
+        "usage": "Run usage: 1,000 prompt tokens · 100 output tokens · 0.0040 USD (estimated by Claude Code)"
+      },
+      "findings": [
+        {
+          "lead": "Lead line 0 for re-read-loop",
+          "meta": "Re-read loop · low confidence · since last run: new",
+          "detail": "",
+          "cause": "Cause sentence 0.",
+          "evidence": [
+            {
+              "label": "Reads",
+              "value": "7",
+              "source": "sessions[0].loops[0].count · ses_example01"
+            },
+            {
+              "label": "File",
+              "value": "repo/docs/schema.md",
+              "source": "sessions[0].files[2].filePath · ses_example01"
+            },
+            {
+              "label": "Skill",
+              "value": "phase",
+              "source": "sessions[1].skills[0].name · ses_example02"
+            },
+            {
+              "label": "Cache ratio",
+              "value": "0.11",
+              "source": "sessions[1].totals.prompt · ses_example02"
+            }
+          ]
+        }
+      ],
+      "resolved": "No longer reported: Stall, Cache miss",
+      "rawOutput": false
+    }
+  }
 }

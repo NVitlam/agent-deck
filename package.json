@@ -59,6 +59,21 @@
         "category": "Agent Deck"
       },
       {
+        "command": "agentDeck.insights.pickAgent",
+        "title": "Insights: Pick Agent",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.insights.showPayload",
+        "title": "Insights: Show Payload",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.insights.clearHistory",
+        "title": "Insights: Clear History",
+        "category": "Agent Deck"
+      },
+      {
         "command": "agentDeck.showDiagnostics",
         "title": "Show Diagnostics",
         "category": "Agent Deck"
@@ -317,20 +332,35 @@
           "group": "1_items@3"
         },
         {
+          "command": "agentDeck.insights.pickAgent",
+          "group": "1_items@4",
+          "when": "agentDeck.insights.pickAgent"
+        },
+        {
+          "command": "agentDeck.insights.showPayload",
+          "group": "1_items@5",
+          "when": "agentDeck.insights.showPayload"
+        },
+        {
+          "command": "agentDeck.insights.clearHistory",
+          "group": "1_items@6",
+          "when": "agentDeck.insights.clearHistory"
+        },
+        {
           "command": "agentDeck.showDiagnostics",
-          "group": "1_items@4"
+          "group": "1_items@7"
         },
         {
           "command": "agentDeck.openSettings",
-          "group": "1_items@5"
+          "group": "1_items@8"
         },
         {
           "command": "agentDeck.stats.clearHistory",
-          "group": "1_items@6"
+          "group": "1_items@9"
         },
         {
           "command": "agentDeck.about",
-          "group": "1_items@7"
+          "group": "1_items@10"
         }
       ],
       "agentDeck.submenu.view": [
@@ -621,6 +651,18 @@
         {
           "command": "agentDeck.tweak.drawerExpandedByDefault",
           "when": "false"
+        },
+        {
+          "command": "agentDeck.insights.pickAgent",
+          "when": "agentDeck.insights.pickAgent"
+        },
+        {
+          "command": "agentDeck.insights.showPayload",
+          "when": "agentDeck.insights.showPayload"
+        },
+        {
+          "command": "agentDeck.insights.clearHistory",
+          "when": "agentDeck.insights.clearHistory"
         }
       ]
     },

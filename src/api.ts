@@ -94,6 +94,7 @@ export type {
   InsightsConfidence,
   InsightsFindingKind,
   InsightsProviderAbout,
+  InsightsProviderAction,
   InsightsRunState,
   RunSummary,
 } from './model/events.js';

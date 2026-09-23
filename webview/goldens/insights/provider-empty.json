@@ -1,24 +1,48 @@
 {
   "title": "Agent Deck Insights 0.2.0",
-  "latest": {
-    "state": "empty",
-    "facts": {
-      "heading": "Latest run · 2026-09-21 12:00 UTC",
-      "agent": "Codex 0.151.0-alpha.7.2",
-      "window": "1 session since 2026-09-20 12:00 UTC",
-      "usage": "Run usage: 9,000 prompt tokens · 400 output tokens"
-    },
-    "findings": [],
-    "note": "The run read the window and recorded no findings.",
-    "rawOutput": false
-  },
-  "history": [
+  "rows": [
     {
-      "runId": "run-9",
+      "runId": "run-3",
+      "state": "ok",
       "when": "2026-09-21 12:00 UTC",
+      "outcome": "8 findings",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-2",
+      "state": "empty",
+      "when": "2026-09-20 12:00 UTC",
       "outcome": "no findings",
       "agent": "Codex"
+    },
+    {
+      "runId": "run-1",
+      "state": "refused",
+      "when": "2026-09-19 12:00 UTC",
+      "outcome": "refused",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-4",
+      "state": "ok",
+      "when": "2026-09-18 12:00 UTC",
+      "outcome": "1 finding",
+      "agent": "Claude Code"
     }
   ],
-  "running": false
+  "preview": {
+    "runId": "run-2",
+    "report": {
+      "state": "empty",
+      "facts": {
+        "heading": "Report · 2026-09-20 12:00 UTC",
+        "agent": "Codex 0.151.0-alpha.7.2",
+        "window": "1 session since 2026-09-19 12:00 UTC",
+        "usage": "Run usage: 9,000 prompt tokens · 400 output tokens"
+      },
+      "findings": [],
+      "note": "The run read the window and recorded no findings.",
+      "rawOutput": false
+    }
+  }
 }

@@ -17,9 +17,12 @@
  *  3. ONE PROVIDER AT A TIME, a second refused BY NAME.
  *  4. THE PARENT CALLS NOTHING ELSE: a provider wrapped in a Proxy records
  *     every property the registry touches.
- *  5. `onDidChange`, `run()` and DISPOSAL.
- *  6. RAW OUTPUT: optional, asked only for the one refused run the host can
- *     place, refused whole over its cap.
+ *  5. `onDidChange`, the optional ACTIONS (DoD 9.44) and DISPOSAL.
+ *  6. RAW OUTPUT: optional, asked only for the SELECTED run when it is listed
+ *     and refused, refused whole over its cap.
+ *  7. DoD 9.44 — `getRun` answers for the run ASKED, the list is sorted
+ *     newest first, the selection previews only a listed run, and
+ *     `about.status` is a name.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -31,7 +34,9 @@ import type {
   FindingView,
   InsightsConfidence,
   InsightsFindingKind,
+  InsightsProviderAction,
   InsightsProviderSnapshot,
+  InsightsRunPreview,
   RunSummary,
 } from './model/events.js';
 import type { InsightsProvider, ProviderEvent, TextClass } from './insights-provider.js';
@@ -45,12 +50,13 @@ import {
   MAX_FINDINGS,
   MAX_RUNS,
   PROVIDER_VERSION,
+  PROVIDER_ACTIONS,
   RAW_OUTPUT_MAX_CHARS,
   TEXT_CAPS,
-  refusedRunIdOf,
   stringEvidenceClass,
   viewOfAbout,
   viewOfFindingSet,
+  viewOfRunSet,
   viewOfRuns,
   providerErrorText,
 } from './insights-provider.js';
@@ -65,11 +71,15 @@ type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 /** The amendment's provider shape, written out, and held equal to the export. */
 interface AmendmentProvider {
   readonly providerVersion: 1;
-  readonly about: { name: string; version: string };
+  readonly about: { name: string; version: string; status?: string };
   getLatest(): FindingSetView | null;
   listRuns(): RunSummary[];
+  getRun(runId: string): FindingSetView | null;
   run(): Promise<void>;
   getRawOutput?(runId: string): string | null;
+  pickAgent?(): Promise<void>;
+  showPayload?(): Promise<void>;
+  clearHistory?(): Promise<void>;
   readonly onDidChange: ProviderEvent<void>;
 }
 
@@ -113,10 +123,9 @@ const setShape: Exact<FindingSetView, AmendmentSet> = true;
 const runShape: Exact<RunSummary, AmendmentRun> = true;
 const actionKeys: Exact<keyof FindingActionView, 'lead' | 'detail'> = true;
 const evidenceKeys: Exact<keyof FindingEvidenceView, 'label' | 'sessionId' | 'statsKey' | 'value'> = true;
-const snapshotKeys: Exact<
-  keyof InsightsProviderSnapshot,
-  'about' | 'latest' | 'runs' | 'running' | 'dropped' | 'rawOutput'
-> = true;
+const snapshotKeys: Exact<keyof InsightsProviderSnapshot, 'about' | 'runs' | 'dropped' | 'selected'> = true;
+const previewKeys: Exact<keyof InsightsRunPreview, 'runId' | 'set' | 'dropped' | 'rawOutput'> = true;
+const actionNames: Exact<InsightsProviderAction, 'pickAgent' | 'showPayload' | 'clearHistory'> = true;
 const kindsExhaustive: Exact<(typeof FINDING_KINDS)[number], InsightsFindingKind> = true;
 const confidencesExhaustive: Exact<(typeof CONFIDENCES)[number], InsightsConfidence> = true;
 
@@ -130,9 +139,13 @@ describe('the contract types', () => {
       actionKeys,
       evidenceKeys,
       snapshotKeys,
+      previewKeys,
+      actionNames,
       kindsExhaustive,
       confidencesExhaustive,
-    ]).toStrictEqual(Array.from({ length: 9 }, () => true));
+    ]).toStrictEqual(Array.from({ length: 11 }, () => true));
+    // The actions, in the Menu's order (DoD 9.45).
+    expect([...PROVIDER_ACTIONS]).toStrictEqual(['pickAgent', 'showPayload', 'clearHistory']);
     // Pre-publish widening: neither version moved (the amendment's title).
     expect(PROVIDER_VERSION).toBe(1);
   });
@@ -254,6 +267,8 @@ function fakeProvider(over: Partial<Record<string, unknown>> = {}): {
     about: { name: 'Agent Deck Insights', version: '0.2.0' },
     getLatest: () => findingSet() as unknown as FindingSetView,
     listRuns: () => [run() as unknown as RunSummary],
+    // DoD 9.44: the set of the run asked for — `run-1` is the only one held.
+    getRun: (runId: string) => (runId === 'run-1' ? (findingSet() as unknown as FindingSetView) : null),
     run: () => {
       state.runs += 1;
       return Promise.resolve();
@@ -763,11 +778,33 @@ describe('the run history is checked the same way', () => {
     expect(checked.dropped).toBe(1);
   });
 
-  it('about is two strings in their shapes, and nothing else', () => {
+  it('about is two strings in their shapes and an optional status, and nothing else', () => {
     expect(viewOfAbout({ name: 'Agent Deck Insights', version: '0.2.0' })).toStrictEqual({
       name: 'Agent Deck Insights',
       version: '0.2.0',
     });
+    // DoD 9.44: status is a NAME — one line, at most 64 characters.
+    expect(viewOfAbout({ name: 'Insights', version: '0.2.0', status: 'licensed until 2027-09-23' })).toStrictEqual({
+      name: 'Insights',
+      version: '0.2.0',
+      status: 'licensed until 2027-09-23',
+    });
+    const at = 's'.repeat(NAME_MAX_CHARS);
+    expect(viewOfAbout({ name: 'Insights', version: '0.2.0', status: at })?.status).toBe(at);
+    // A status that fails is LEFT OUT and refuses nothing else — never cut.
+    for (const status of [
+      's'.repeat(NAME_MAX_CHARS + 1),
+      'two\nlines',
+      `zero${String.fromCharCode(0x200b)}width`,
+      '   ',
+      42,
+      null,
+    ]) {
+      expect(viewOfAbout({ name: 'Insights', version: '0.2.0', status }), JSON.stringify(status)).toStrictEqual({
+        name: 'Insights',
+        version: '0.2.0',
+      });
+    }
     for (const bad of [
       { name: '<img src=x>', version: '0.2.0' },
       { name: 'Insights', version: 'latest' },
@@ -779,12 +816,24 @@ describe('the run history is checked the same way', () => {
   });
 });
 
-describe('refusedRunIdOf: a refused set names its OWN run (ruling 2026-09-22, 1)', () => {
-  it('is the set’s runId when refused, and nothing otherwise — the history plays no part', () => {
-    expect(refusedRunIdOf(viewOfFindingSet(refusedSet({ runId: 'r-9' })).value)).toBe('r-9');
-    expect(refusedRunIdOf(viewOfFindingSet(findingSet({ runId: 'r-9' })).value)).toBeNull();
-    expect(refusedRunIdOf(viewOfFindingSet(findingSet({ runId: 'r-9', findings: [], state: 'empty' })).value)).toBeNull();
-    expect(refusedRunIdOf(null)).toBeNull();
+describe('viewOfRunSet: a set answers for the run ASKED (DoD 9.44)', () => {
+  it('the set of the run asked for passes; one naming another run is dropped and counted', () => {
+    expect(viewOfRunSet(findingSet({ runId: 'r-9' }), 'r-9').value?.runId).toBe('r-9');
+    expect(viewOfRunSet(findingSet({ runId: 'r-9' }), 'r-8')).toStrictEqual({ value: null, dropped: 1 });
+    // Null is "no report", not a drop.
+    expect(viewOfRunSet(null, 'r-9')).toStrictEqual({ value: null, dropped: 0 });
+    // Every other rule still applies.
+    expect(viewOfRunSet(findingSet({ runId: 'r-9', state: 'nope' }), 'r-9')).toStrictEqual({ value: null, dropped: 1 });
+  });
+
+  it('the list is SORTED newest first, whatever order the provider gave, ties in its order', () => {
+    const { value } = viewOfRuns([
+      run({ runId: 'old', createdAt: 1_000 }),
+      run({ runId: 'new', createdAt: 3_000 }),
+      run({ runId: 'tie-a', createdAt: 2_000 }),
+      run({ runId: 'tie-b', createdAt: 2_000 }),
+    ]);
+    expect(value.map((r) => r.runId)).toStrictEqual(['new', 'tie-a', 'tie-b', 'old']);
   });
 });
 
@@ -828,6 +877,12 @@ describe('the registry holds ONE provider', () => {
       fakeProvider({ onDidChange: undefined }).provider,
       fakeProvider({ getRawOutput: 'not a function' }).provider,
       fakeProvider({ getRawOutput: null }).provider,
+      // DoD 9.44: getRun is REQUIRED; each optional action is a function or absent.
+      fakeProvider({ getRun: undefined }).provider,
+      fakeProvider({ getRun: 'not a function' }).provider,
+      fakeProvider({ pickAgent: 'x' }).provider,
+      fakeProvider({ showPayload: null }).provider,
+      fakeProvider({ clearHistory: 1 }).provider,
     ]) {
       expect(() => registry.register(bad), JSON.stringify(bad)).toThrow(TypeError);
     }
@@ -844,6 +899,12 @@ describe('the registry holds ONE provider', () => {
       listRuns(): unknown[] {
         return [run({ state: 'refused', findings: 0 })];
       }
+      getRun(runId: string): unknown {
+        return refusedSet({ runId });
+      }
+      pickAgent(): Promise<void> {
+        return Promise.resolve();
+      }
       run(): Promise<void> {
         return Promise.resolve();
       }
@@ -856,9 +917,11 @@ describe('the registry holds ONE provider', () => {
     }
     const registry = new InsightsProviderRegistry({ onChange: () => undefined });
     registry.register(new Provider());
-    expect(registry.snapshot()?.rawOutput).toBe(true);
+    expect(registry.snapshot('run-1')?.selected?.rawOutput).toBe(true);
     // `this` is the provider: a prototype method is called ON it.
-    expect(registry.rawOutput()).toStrictEqual({ ok: true, runId: 'run-1', text: 'raw for run-1 from Class Insights' });
+    expect(registry.rawOutput('run-1')).toStrictEqual({ ok: true, runId: 'run-1', text: 'raw for run-1 from Class Insights' });
+    // An optional action on the prototype is found too (DoD 9.44).
+    expect(registry.actions()).toStrictEqual(['pickAgent']);
   });
 });
 
@@ -873,7 +936,11 @@ describe('the parent reads and calls ONLY the contract’s members', () => {
     const base = fakeProvider({
       getLatest: () => refusedSet(),
       listRuns: () => [run({ state: 'refused', findings: 0 })],
+      getRun: (runId: string) => refusedSet({ runId }),
       getRawOutput: () => 'raw',
+      pickAgent: () => Promise.resolve(),
+      showPayload: () => Promise.resolve(),
+      clearHistory: () => Promise.resolve(),
     }).provider as unknown as Record<string, unknown>;
     const wrap = (key: string, value: unknown): unknown =>
       typeof value === 'function'
@@ -902,17 +969,33 @@ describe('the parent reads and calls ONLY the contract’s members', () => {
     const registry = new InsightsProviderRegistry({ onChange: () => undefined });
     const handle = registry.register(spy);
     registry.snapshot();
-    await registry.run();
-    // Snapshots and runs never ask for raw output.
+    registry.snapshot('run-1');
+    // Snapshots never ask for raw output, and never run an action.
     expect(called).not.toContain('getRawOutput');
-    expect(registry.rawOutput()).toMatchObject({ ok: true, text: 'raw' });
+    expect(called).not.toContain('pickAgent');
+    expect(registry.rawOutput('run-1')).toMatchObject({ ok: true, text: 'raw' });
+    for (const action of PROVIDER_ACTIONS) await registry.invoke(action);
     handle.dispose();
 
-    const CONTRACT = ['providerVersion', 'about', 'getLatest', 'listRuns', 'run', 'getRawOutput', 'onDidChange'];
+    const CONTRACT = [
+      'providerVersion',
+      'about',
+      'getLatest',
+      'listRuns',
+      'getRun',
+      'run',
+      'getRawOutput',
+      'pickAgent',
+      'showPayload',
+      'clearHistory',
+      'onDidChange',
+    ];
     expect([...touched].filter((key) => !CONTRACT.includes(key))).toStrictEqual([]);
     expect([...touched].sort()).toStrictEqual([...CONTRACT].sort());
+    // DoD 9.44: getLatest and run are READ at registration (still required)
+    // and CALLED by nothing — the surface shows the selected run and has no Run.
     expect([...new Set(called)].sort()).toStrictEqual(
-      ['getLatest', 'listRuns', 'onDidChange', 'run', 'getRawOutput'].sort(),
+      ['listRuns', 'getRun', 'onDidChange', 'getRawOutput', 'pickAgent', 'showPayload', 'clearHistory'].sort(),
     );
   });
 });
@@ -932,55 +1015,116 @@ describe('onDidChange, run and disposal', () => {
     expect(changes).toBe(3);
   });
 
-  it('run() calls the provider once, shows running, and ignores a second press meanwhile', async () => {
-    const states: boolean[] = [];
+  it('DoD 9.44: actions() names the optional actions the provider HAS, in the Menu order', () => {
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    expect(registry.actions()).toStrictEqual([]);
+    registry.register(
+      fakeProvider({ clearHistory: () => Promise.resolve(), pickAgent: () => Promise.resolve() }).provider,
+    );
+    expect(registry.actions()).toStrictEqual(['pickAgent', 'clearHistory']);
+  });
+
+  it('DoD 9.44: invoke() calls the action ONCE, awaits it, and answers what it came to', async () => {
+    const calls: string[] = [];
     let release: () => void = () => undefined;
-    const fake = fakeProvider({
-      run: () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-        }),
-    });
-    let calls = 0;
-    const counting = { ...fake.provider, run: () => ((calls += 1), fake.provider.run()) };
-    const registry = new InsightsProviderRegistry({
-      onChange: () => states.push(registry.snapshot()?.running ?? false),
-    });
-    registry.register(counting);
-    const first = registry.run();
-    const second = registry.run();
-    await second;
-    expect(calls).toBe(1);
-    expect(registry.snapshot()?.running).toBe(true);
-    release();
-    await first;
-    expect(registry.snapshot()?.running).toBe(false);
-    expect(states).toStrictEqual([false, true, false]);
-  });
-
-  it('a rejected run is reported, never thrown, and running resets', async () => {
     const errors: unknown[] = [];
-    const registry = new InsightsProviderRegistry({
-      onChange: () => undefined,
-      onError: (error) => errors.push(error),
-    });
-    registry.register(fakeProvider({ run: () => Promise.reject(new Error('no licence')) }).provider);
-    await expect(registry.run()).resolves.toBeUndefined();
-    expect(errors.map((e) => (e as Error).message)).toStrictEqual(['no licence']);
-    expect(registry.snapshot()?.running).toBe(false);
-  });
-
-  it('a throwing getLatest reads as nothing and counts one drop', () => {
-    const registry = new InsightsProviderRegistry({ onChange: () => undefined, onError: () => undefined });
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined, onError: (e) => errors.push(e) });
+    expect(await registry.invoke('pickAgent')).toBe('no-provider');
     registry.register(
       fakeProvider({
-        getLatest: () => {
-          throw new Error('store unreadable');
+        pickAgent: () => {
+          calls.push('pickAgent');
+          return new Promise<void>((resolve) => (release = resolve));
+        },
+        clearHistory: () => {
+          calls.push('clearHistory');
+          return Promise.reject(new Error('disk full'));
         },
       }).provider,
     );
-    expect(registry.snapshot()?.latest).toBeNull();
-    expect(registry.snapshot()?.dropped).toBe(1);
+    let settled = false;
+    const pending = registry.invoke('pickAgent').then((result) => {
+      settled = true;
+      return result;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release();
+    expect(await pending).toBe('done');
+    expect(await registry.invoke('showPayload')).toBe('absent');
+    expect(await registry.invoke('clearHistory')).toBe('failed');
+    expect(errors.map((e) => (e as Error).message)).toStrictEqual(['disk full']);
+    expect(calls).toStrictEqual(['pickAgent', 'clearHistory']);
+  });
+
+  it('DoD 9.44: an action ADDED after registration is not called — what it had then is what it has', async () => {
+    // Mutation C3 survived without this: the registry checks the actions it
+    // recorded at registration, and nothing drove a member that arrived later.
+    let calls = 0;
+    const provider = fakeProvider().provider as unknown as Record<string, unknown>;
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    registry.register(provider);
+    provider['showPayload'] = () => ((calls += 1), Promise.resolve());
+    expect(registry.actions()).toStrictEqual([]);
+    expect(await registry.invoke('showPayload')).toBe('absent');
+    expect(calls).toBe(0);
+  });
+
+  it('DoD 9.44: an action given as a GETTER reads as absent and never runs', async () => {
+    let ran = 0;
+    const provider = fakeProvider().provider as unknown as Record<string, unknown>;
+    Object.defineProperty(provider, 'showPayload', {
+      enumerable: true,
+      get: () => {
+        ran += 1;
+        return () => Promise.resolve();
+      },
+    });
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    registry.register(provider);
+    expect(registry.actions()).toStrictEqual([]);
+    expect(await registry.invoke('showPayload')).toBe('absent');
+    expect(ran).toBe(0);
+  });
+
+  it('DoD 9.44: a throwing listRuns or getRun reads as nothing and counts one drop', () => {
+    const throws = (): never => {
+      throw new Error('store unreadable');
+    };
+    const noList = new InsightsProviderRegistry({ onChange: () => undefined, onError: () => undefined });
+    noList.register(fakeProvider({ listRuns: throws }).provider);
+    expect(noList.snapshot('run-1')).toMatchObject({ runs: [], dropped: 1, selected: null });
+    const noRun = new InsightsProviderRegistry({ onChange: () => undefined, onError: () => undefined });
+    noRun.register(fakeProvider({ getRun: throws }).provider);
+    expect(noRun.snapshot('run-1')?.selected).toStrictEqual({ runId: 'run-1', set: null, dropped: 1, rawOutput: false });
+  });
+
+  it('DoD 9.44: the selection previews ONLY a run the list holds, read through getRun', () => {
+    const asked: string[] = [];
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    registry.register(
+      fakeProvider({
+        getRun: (runId: string) => {
+          asked.push(runId);
+          return findingSet({ runId });
+        },
+      }).provider,
+    );
+    expect(registry.snapshot()?.selected).toBeNull();
+    expect(registry.snapshot('run-404')?.selected).toBeNull();
+    expect(asked).toStrictEqual([]);
+    expect(registry.snapshot('run-1')?.selected?.set?.runId).toBe('run-1');
+    expect(asked).toStrictEqual(['run-1']);
+    expect(registry.lists('run-1')).toBe(true);
+    expect(registry.lists('run-404')).toBe(false);
+    expect(registry.readRun('run-404')).toBeNull();
+    expect(registry.readRun('run-1')?.value?.runId).toBe('run-1');
+  });
+
+  it('DoD 9.44: a getRun answer naming ANOTHER run is dropped, never shown under the row clicked', () => {
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    registry.register(fakeProvider({ getRun: () => findingSet({ runId: 'run-other' }) }).provider);
+    expect(registry.snapshot('run-1')?.selected).toStrictEqual({ runId: 'run-1', set: null, dropped: 1, rawOutput: false });
   });
 
   it('DISPOSAL returns to the free state, unsubscribes, and allows the next provider', () => {
@@ -1030,32 +1174,16 @@ describe('onDidChange, run and disposal', () => {
     expect(registry.registered).toBe(false);
   });
 
-  it('V14/V18: a provider disposed MID-RUN leaves the next one free to run, and its late settle changes nothing', async () => {
-    let releaseA: () => void = () => undefined;
-    const a = fakeProvider({ run: () => new Promise<void>((resolve) => (releaseA = resolve)) });
-    let releaseB: () => void = () => undefined;
-    let bRuns = 0;
-    const b = fakeProvider({
-      about: { name: 'Second', version: '1.0.0' },
-      run: () => {
-        bRuns += 1;
-        return new Promise<void>((resolve) => (releaseB = resolve));
-      },
-    });
+  it('an action pressed after its provider went away answers no-provider and calls nothing', async () => {
+    let calls = 0;
     const registry = new InsightsProviderRegistry({ onChange: () => undefined });
-    const handleA = registry.register(a.provider);
-    const runA = registry.run();
-    handleA.dispose();
-    registry.register(b.provider);
-    expect(registry.snapshot()?.running).toBe(false);
-    const runB = registry.run();
-    expect(bRuns).toBe(1);
-    releaseA();
-    await runA;
-    expect(registry.snapshot()?.running).toBe(true);
-    releaseB();
-    await runB;
-    expect(registry.snapshot()?.running).toBe(false);
+    const handle = registry.register(
+      fakeProvider({ pickAgent: () => ((calls += 1), Promise.resolve()) }).provider,
+    );
+    handle.dispose();
+    expect(await registry.invoke('pickAgent')).toBe('no-provider');
+    expect(registry.actions()).toStrictEqual([]);
+    expect(calls).toBe(0);
   });
 
   it('V15: after the registry is disposed (deactivation) nothing can register', () => {
@@ -1095,7 +1223,7 @@ describe('9.43 D2: a thrown provider message is provider text', () => {
   });
 });
 
-describe('raw output (DoD 9.40)', () => {
+describe('raw output (DoD 9.40), for the SELECTED run (DoD 9.46)', () => {
   const REFUSED_RUN = run({ state: 'refused', findings: 0 });
 
   function registryWith(over: Partial<Record<string, unknown>>): {
@@ -1110,6 +1238,7 @@ describe('raw output (DoD 9.40)', () => {
       fakeProvider({
         getLatest: () => refusedSet(),
         listRuns: () => [REFUSED_RUN],
+        getRun: (runId: string) => (runId === 'run-1' ? refusedSet() : null),
         getRawOutput: (runId: string) => {
           asked.push(runId);
           return `raw output of ${runId}`;
@@ -1120,33 +1249,38 @@ describe('raw output (DoD 9.40)', () => {
     return { registry, asked, errors };
   }
 
-  it('offered only when ALL THREE hold: the method, a refused set, and one run that places it', () => {
-    expect(registryWith({}).registry.snapshot()?.rawOutput).toBe(true);
+  it('offered only when both hold: the method, and the SELECTED run refused', () => {
+    expect(registryWith({}).registry.snapshot('run-1')?.selected?.rawOutput).toBe(true);
     // No method.
     const without = new InsightsProviderRegistry({ onChange: () => undefined });
-    without.register(fakeProvider({ getLatest: () => refusedSet(), listRuns: () => [REFUSED_RUN] }).provider);
-    expect(without.snapshot()?.rawOutput).toBe(false);
-    expect(without.rawOutput()).toStrictEqual({ ok: false, reason: 'unsupported' });
+    without.register(
+      fakeProvider({ listRuns: () => [REFUSED_RUN], getRun: () => refusedSet() }).provider,
+    );
+    expect(without.snapshot('run-1')?.selected?.rawOutput).toBe(false);
+    expect(without.rawOutput('run-1')).toStrictEqual({ ok: false, reason: 'unsupported' });
     // Not refused.
-    expect(registryWith({ getLatest: () => findingSet() }).registry.snapshot()?.rawOutput).toBe(false);
-    // The history plays no part (ruling 1): with no run listed at all it is still offered.
-    expect(registryWith({ listRuns: () => [] }).registry.snapshot()?.rawOutput).toBe(true);
+    expect(registryWith({ getRun: () => findingSet() }).registry.snapshot('run-1')?.selected?.rawOutput).toBe(false);
+    // Not selected: no preview, nothing offered.
+    expect(registryWith({}).registry.snapshot()?.selected).toBeNull();
   });
 
   it('asks for the resolved run id and nothing else, and returns the text WHOLE', () => {
     const { registry, asked } = registryWith({});
-    expect(registry.rawOutput()).toStrictEqual({ ok: true, runId: 'run-1', text: 'raw output of run-1' });
+    expect(registry.rawOutput('run-1')).toStrictEqual({ ok: true, runId: 'run-1', text: 'raw output of run-1' });
     expect(asked).toStrictEqual(['run-1']);
   });
 
   it('each way it shows nothing is named, with the run where there is one', () => {
-    expect(registryWith({ getLatest: () => findingSet() }).registry.rawOutput()).toStrictEqual({ ok: false, reason: 'no-run' });
-    expect(registryWith({ getRawOutput: () => null }).registry.rawOutput()).toStrictEqual({
+    expect(registryWith({ getRun: () => findingSet() }).registry.rawOutput('run-1')).toStrictEqual({ ok: false, reason: 'no-run' });
+    // A run the list does not hold, and no selection at all, ask nothing.
+    expect(registryWith({}).registry.rawOutput('run-404')).toStrictEqual({ ok: false, reason: 'no-run' });
+    expect(registryWith({}).registry.rawOutput(null)).toStrictEqual({ ok: false, reason: 'no-run' });
+    expect(registryWith({ getRawOutput: () => null }).registry.rawOutput('run-1')).toStrictEqual({
       ok: false,
       reason: 'none',
       runId: 'run-1',
     });
-    expect(registryWith({ getRawOutput: () => 42 }).registry.rawOutput()).toStrictEqual({
+    expect(registryWith({ getRawOutput: () => 42 }).registry.rawOutput('run-1')).toStrictEqual({
       ok: false,
       reason: 'invalid',
       runId: 'run-1',
@@ -1156,24 +1290,24 @@ describe('raw output (DoD 9.40)', () => {
         throw new Error('gone');
       },
     });
-    expect(threw.registry.rawOutput()).toStrictEqual({ ok: false, reason: 'threw', runId: 'run-1' });
+    expect(threw.registry.rawOutput('run-1')).toStrictEqual({ ok: false, reason: 'threw', runId: 'run-1' });
     expect(threw.errors.map((e) => (e as Error).message)).toStrictEqual(['gone']);
-    expect(new InsightsProviderRegistry({ onChange: () => undefined }).rawOutput()).toStrictEqual({
+    expect(new InsightsProviderRegistry({ onChange: () => undefined }).rawOutput('run-1')).toStrictEqual({
       ok: false,
       reason: 'no-provider',
     });
   });
 
   it(`at ${String(RAW_OUTPUT_MAX_CHARS)} characters it opens; one more is refused whole, with its length`, () => {
-    const at = registryWith({ getRawOutput: () => 'r'.repeat(RAW_OUTPUT_MAX_CHARS) }).registry.rawOutput();
+    const at = registryWith({ getRawOutput: () => 'r'.repeat(RAW_OUTPUT_MAX_CHARS) }).registry.rawOutput('run-1');
     expect(at.ok && at.text.length).toBe(RAW_OUTPUT_MAX_CHARS);
-    const past = registryWith({ getRawOutput: () => 'r'.repeat(RAW_OUTPUT_MAX_CHARS + 1) }).registry.rawOutput();
+    const past = registryWith({ getRawOutput: () => 'r'.repeat(RAW_OUTPUT_MAX_CHARS + 1) }).registry.rawOutput('run-1');
     expect(past).toStrictEqual({ ok: false, reason: 'too-large', runId: 'run-1', length: RAW_OUTPUT_MAX_CHARS + 1 });
   });
 
   it('a getRawOutput given as a getter reads as ABSENT and never runs', () => {
     let ran = 0;
-    const provider = fakeProvider({ getLatest: () => refusedSet(), listRuns: () => [REFUSED_RUN] })
+    const provider = fakeProvider({ listRuns: () => [REFUSED_RUN], getRun: () => refusedSet() })
       .provider as unknown as Record<string, unknown>;
     Object.defineProperty(provider, 'getRawOutput', {
       enumerable: true,
@@ -1184,21 +1318,19 @@ describe('raw output (DoD 9.40)', () => {
     });
     const registry = new InsightsProviderRegistry({ onChange: () => undefined });
     registry.register(provider);
-    expect(registry.snapshot()?.rawOutput).toBe(false);
-    expect(registry.rawOutput()).toStrictEqual({ ok: false, reason: 'unsupported' });
+    expect(registry.snapshot('run-1')?.selected?.rawOutput).toBe(false);
+    expect(registry.rawOutput('run-1')).toStrictEqual({ ok: false, reason: 'unsupported' });
     expect(ran).toBe(0);
   });
 
-  it('asks for the latest set’s OWN runId as the provider states it NOW — never a run from the history', () => {
-    let latest: Obj = refusedSet({ runId: 'run-first' });
-    // A refused run in the history under ANOTHER id: it must never be the one asked for.
+  it('reads the selected run NOW through getRun: a run that stopped being refused asks nothing', () => {
+    let refused = true;
     const { registry, asked } = registryWith({
-      getLatest: () => latest,
-      listRuns: () => [run({ runId: 'run-listed', state: 'refused', findings: 0 })],
+      getRun: (runId: string) => (refused ? refusedSet({ runId }) : findingSet({ runId })),
     });
-    expect(registry.snapshot()?.rawOutput).toBe(true);
-    latest = refusedSet({ runId: 'run-late' });
-    expect(registry.rawOutput()).toMatchObject({ ok: true, runId: 'run-late' });
-    expect(asked).toStrictEqual(['run-late']);
+    expect(registry.snapshot('run-1')?.selected?.rawOutput).toBe(true);
+    refused = false;
+    expect(registry.rawOutput('run-1')).toStrictEqual({ ok: false, reason: 'no-run' });
+    expect(asked).toStrictEqual([]);
   });
 });

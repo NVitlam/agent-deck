@@ -618,6 +618,7 @@ describe('the message guard in main.ts and the contract agree', () => {
       controls: DEFAULT_VIEW_CONTROLS,
       tweaks: {},
       provider: { name: 'Agent Deck Insights', version: '0.2.0' },
+      insightsActions: ['pickAgent'],
       drawerOpen: true,
     });
     expect(JSON.stringify(store.getView())).toBe(before);

@@ -231,16 +231,62 @@ export type ControlSurface = 'sidebar' | 'panel';
  * `insightsInstalled` and `insightsMissing` were members until v0.9.0 DoD
  * 9.28. Spec `Amendment 2026-09-21 — One window`: **"Installed" is never
  * consulted by the UI**; the only Insights state is whether a provider is
- * REGISTERED, and no sidebar row is shown or hidden by it — the Menu's seven
- * are always seven.
+ * REGISTERED.
+ *
+ * The three `insights*` members joined in v0.9.0 DoD 9.45 (spec `Amendment
+ * 2026-09-23 — Paid Insights surface`): Pick Agent, Show Payload and Clear
+ * History sit under Open Insights only while the registered provider has
+ * that action. Each names ONE action, so a provider with two of the three
+ * shows two rows — never a row that answers "not offered".
  */
-export type ControlWhen = 'drawerOpen';
+export type ControlWhen =
+  | 'drawerOpen'
+  | 'insightsPickAgent'
+  | 'insightsShowPayload'
+  | 'insightsClearHistory';
+
+/**
+ * A provider's optional action, as {@link ControlFacts} carries it. The same
+ * three names as `InsightsProviderAction` in `src/model/events.ts`, written
+ * here because this module imports nothing; `controls.test.ts` holds the two
+ * lists equal.
+ */
+export type ControlInsightsAction = 'pickAgent' | 'showPayload' | 'clearHistory';
 
 /** The facts {@link controlVisible} decides against. */
 export interface ControlFacts {
   /** True while the panel is showing a drawer. Reported by the panel. */
   readonly drawerOpen: boolean;
+  /**
+   * The registered Insights provider's optional actions — empty when none is
+   * registered. The HOST's fact, read from its registry (DoD 9.45).
+   */
+  readonly insightsActions: readonly ControlInsightsAction[];
 }
+
+/**
+ * The context key the editor's own menus gate each Insights action on —
+ * the Menu submenu and the palette in `package.json` (DoD 9.45). The host
+ * sets all three from the registry on every provider change, so the editor's
+ * menus and the sidebar answer from one fact.
+ */
+export const INSIGHTS_ACTION_CONTEXT: Readonly<Record<ControlInsightsAction, string>> = Object.freeze({
+  pickAgent: 'agentDeck.insights.pickAgent',
+  showPayload: 'agentDeck.insights.showPayload',
+  clearHistory: 'agentDeck.insights.clearHistory',
+});
+
+/**
+ * The command each Insights action runs — the rows' ids in
+ * {@link CONTROL_COMMANDS}, by action. The same strings as the context keys,
+ * which is a coincidence of naming and not a rule: `controls.test.ts` holds
+ * this map to the table, and the manifest holds the keys to this map.
+ */
+export const INSIGHTS_ACTION_COMMANDS: Readonly<Record<ControlInsightsAction, string>> = Object.freeze({
+  pickAgent: 'agentDeck.insights.pickAgent',
+  showPayload: 'agentDeck.insights.showPayload',
+  clearHistory: 'agentDeck.insights.clearHistory',
+});
 
 /**
  * Is an entry shown?
@@ -255,6 +301,12 @@ export function controlVisible(when: ControlWhen | undefined, facts: ControlFact
       return true;
     case 'drawerOpen':
       return facts.drawerOpen;
+    case 'insightsPickAgent':
+      return facts.insightsActions.includes('pickAgent');
+    case 'insightsShowPayload':
+      return facts.insightsActions.includes('showPayload');
+    case 'insightsClearHistory':
+      return facts.insightsActions.includes('clearHistory');
   }
 }
 
@@ -288,6 +340,12 @@ export interface ControlCommand {
   readonly detail?: string;
   /** The condition this entry is shown under. `undefined` means always. */
   readonly when?: ControlWhen;
+  /**
+   * The command this entry sits UNDER on its page — drawn one step indented
+   * below it, with no twisty (DoD 9.45). Only the three Insights actions,
+   * under Open Insights; a collapsible parent is still a group.
+   */
+  readonly under?: string;
   /**
    * The `ViewControls` field this entry SETS, and the value it sets it to.
    *
@@ -383,13 +441,42 @@ export const DEFAULT_SECTION: ControlSection = 'menu';
  * The Menu page's seven are in the ruled order of spec `Amendment 2026-09-21
  * — One window`: Open Deck · Open Statistics · Open Insights · Show
  * Diagnostics · Settings · Clear Stats History · About. Four of them switch
- * the ONE panel's surface in place.
+ * the ONE panel's surface in place. Since DoD 9.45 three more sit under Open
+ * Insights — Pick Agent, Show Payload, Clear History — each shown only while
+ * the registered provider has that action (`Amendment 2026-09-23`).
  */
 export const CONTROL_COMMANDS: readonly ControlCommand[] = Object.freeze([
   /* Menu ------------------------------------------------------------------ */
   { command: 'agentDeck.open', label: 'Open Deck', section: 'menu' },
   { command: 'agentDeck.openStats', label: 'Open Statistics', section: 'menu' },
   { command: 'agentDeck.openInsights', label: 'Open Insights', section: 'menu' },
+  /*
+   * v0.9.0 DoD 9.45 — spec `Amendment 2026-09-23`: under Open Insights, only
+   * while a provider is registered AND has the action. Each calls the
+   * provider's optional method and nothing else. No Run entry: Send lives in
+   * Insights' own payload preview.
+   */
+  {
+    command: 'agentDeck.insights.pickAgent',
+    label: 'Pick Agent',
+    section: 'menu',
+    when: 'insightsPickAgent',
+    under: 'agentDeck.openInsights',
+  },
+  {
+    command: 'agentDeck.insights.showPayload',
+    label: 'Show Payload',
+    section: 'menu',
+    when: 'insightsShowPayload',
+    under: 'agentDeck.openInsights',
+  },
+  {
+    command: 'agentDeck.insights.clearHistory',
+    label: 'Clear History',
+    section: 'menu',
+    when: 'insightsClearHistory',
+    under: 'agentDeck.openInsights',
+  },
   { command: 'agentDeck.showDiagnostics', label: 'Show Diagnostics', section: 'menu' },
   { command: 'agentDeck.openSettings', label: 'Settings', section: 'menu' },
   { command: 'agentDeck.stats.clearHistory', label: 'Clear Stats History', section: 'menu' },
@@ -724,7 +811,8 @@ export const CONTROL_KEYBINDINGS: readonly { readonly command: string; readonly 
 export const KEYBINDING_WHEN = "activeWebviewPanelId == 'agentDeck.panel'";
 
 /**
- * The Menu page's seven, in the ruled order.
+ * The Menu page's entries, in the ruled order — the seven, and the three
+ * Insights actions under Open Insights (DoD 9.45).
  *
  * Derived from {@link CONTROL_COMMANDS} rather than written again, so the
  * order a reader sees in the table is the order the page shows.
@@ -758,8 +846,10 @@ export function isCommandFrom(surface: ControlSurface, command: string): boolean
 /**
  * Does this entry appear in the command palette?
  *
- * The Menu page's seven — the entries a person would think to search for by
- * name. The granular ones (a filter, a layout, a sort, an inspector option, a
+ * The Menu page's entries — the ones a person would think to search for by
+ * name. The three Insights actions are gated in the manifest on the context
+ * keys in {@link INSIGHTS_ACTION_CONTEXT}, so the palette offers each only
+ * while the provider has it. The granular ones (a filter, a layout, a sort, an inspector option, a
  * Stats tab) are hidden, because thirty-odd entries reading `Agent Deck: All`
  * would bury every other command a user has. They are reachable from the
  * sidebar, from the submenus and, for ten of them, from the keyboard.

@@ -1,27 +1,51 @@
 {
   "title": "Agent Deck Insights 0.2.0",
-  "latest": {
-    "state": "refused",
-    "facts": {
-      "heading": "Latest run · 2026-09-21 12:00 UTC",
-      "agent": "Claude Code 2.1.246",
-      "window": "4 sessions since 2026-09-14 12:00 UTC",
-      "usage": null
-    },
-    "findings": [],
-    "refusal": {
-      "step": "validate",
-      "reason": "The response held no JSON object.\nNothing was stored."
-    },
-    "rawOutput": true
-  },
-  "history": [
+  "rows": [
     {
-      "runId": "run-5",
+      "runId": "run-3",
+      "state": "ok",
       "when": "2026-09-21 12:00 UTC",
+      "outcome": "8 findings",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-2",
+      "state": "empty",
+      "when": "2026-09-20 12:00 UTC",
+      "outcome": "no findings",
+      "agent": "Codex"
+    },
+    {
+      "runId": "run-1",
+      "state": "refused",
+      "when": "2026-09-19 12:00 UTC",
       "outcome": "refused",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-4",
+      "state": "ok",
+      "when": "2026-09-18 12:00 UTC",
+      "outcome": "1 finding",
       "agent": "Claude Code"
     }
   ],
-  "running": false
+  "preview": {
+    "runId": "run-1",
+    "report": {
+      "state": "refused",
+      "facts": {
+        "heading": "Report · 2026-09-19 12:00 UTC",
+        "agent": "Claude Code 2.1.246",
+        "window": "4 sessions since 2026-09-12 12:00 UTC",
+        "usage": null
+      },
+      "findings": [],
+      "refusal": {
+        "step": "validate",
+        "reason": "The response held no JSON object.\nNothing was stored."
+      },
+      "rawOutput": true
+    }
+  }
 }

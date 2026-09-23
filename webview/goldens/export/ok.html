@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report · 2026-09-21 12:00 UTC</title>
+<style>
+:root { color-scheme: light dark; --fg: #1f1f1f; --dim: #5f5f5f; --line: #d0d0d0; --bg: #ffffff; --panel: #f5f5f5; }
+@media (prefers-color-scheme: dark) { :root { --fg: #d4d4d4; --dim: #9d9d9d; --line: #3c3c3c; --bg: #1e1e1e; --panel: #252526; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 52em; margin: 0 auto; padding: 32px 24px; }
+h1 { font-size: 1.5em; margin: 0 0 8px; }
+h2 { font-size: 1.1em; margin: 0 0 4px; }
+.facts p, .line { margin: 2px 0; color: var(--dim); }
+.finding, .refusal { margin: 16px 0; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.meta { color: var(--dim); font-size: 0.9em; margin: 0 0 6px; }
+.caption { font-size: 0.85em; color: var(--dim); margin: 8px 0 2px; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+ul { margin: 4px 0 0; padding-left: 18px; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.9em; color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+<h1>Report · 2026-09-21 12:00 UTC</h1>
+<div class="facts">
+<p>Claude Code 2.1.246</p>
+<p>12 sessions since 2026-09-14 12:00 UTC; 2 excluded</p>
+<p>Run usage: 48,210 prompt tokens · 3,904 output tokens · 0.24 USD (estimated by Claude Code)</p>
+</div>
+<section class="finding">
+<h2>Lead line 0 for re-read-loop</h2>
+<p class="meta">Re-read loop · low confidence · since last run: new</p>
+<p class="caption">Detail</p>
+<p class="text">Detail paragraph 0.
+It spans two lines.</p>
+<p class="caption">Cause</p>
+<p class="text">Cause sentence 0.</p>
+<p class="caption">Evidence</p>
+<ul>
+<li>Prompt tokens: <strong>128400</strong> <code>sessions[0].totals.prompt · ses_example01</code></li>
+</ul>
+</section>
+<section class="finding">
+<h2>Lead line 1 for churn-chain</h2>
+<p class="meta">Churn chain · medium confidence · since last run: still</p>
+<p class="caption">Detail</p>
+<p class="text">Detail paragraph 1.
+It spans two lines.</p>
+<p class="caption">Cause</p>
+<p class="text">Cause sentence 1.</p>
+<p class="caption">Evidence</p>
+<ul>
+<li>Prompt tokens: <strong>128400</strong> <code>sessions[0].totals.prompt · ses_example01</code></li>
+</ul>
+</section>
+<section class="finding">
+<h2>Lead line 2 for context-churn</h2>
+<p class="meta">Context churn · high confidence · since last run: resolved</p>
+<p class="caption">Detail</p>
+<p class="text">Detail paragraph 2.
+It spans two lines.</p>
+<p class="caption">Cause</p>
+<p class="text">Cause sentence 2.</p>
+<p class="caption">Evidence</p>
+<ul>
+<li>Prompt tokens: <strong>128400</strong> <code>sessions[0].totals.prompt · ses_example01</code></li>
+</ul>
+</section>
+<section class="finding">
+<h2>Lead line 3 for stall</h2>
+<p class="meta">Stall · low confidence</p>
+<p class="caption">Detail</p>
+<p class="text">Detail paragraph 3.
+It spans two lines.</p>
+<p class="caption">Cause</p>
+<p class="text">Cause sentence 3.</p>
+<p class="caption">Evidence</p>
+<ul>
+<li>Prompt tokens: <strong>128400</strong> <code>sessions[0].totals.prompt · ses_example01</code></li>
+</ul>
+</section>
+<section class="finding">
+<h2>Lead line 4 for silent-subagent</h2>
+<p class="meta">Silent subagent · medium confidence · since last run: new</p>
+<p class="caption">Detail</p>
+<p class="text">Detail paragraph 4.
+It spans two lines.</p>
+<p class="caption">Cause</p>
+<p class="text">Cause sentence 4.</p>
+<p class="caption">Evidence</p>
+<ul>
+<li>Prompt tokens: <strong>128400</strong> <code>sessions[0].totals.prompt · ses_example01</code></li>
+</ul>
+</section>
+<section class="finding">
+<h2>Lead line 5 for compaction</h2>
+<p class="meta">Compaction · high confidence · since last run: still</p>
+<p class="caption">Detail</p>
+<p class="text">Detail paragraph 5.
+It spans two lines.</p>
+<p class="caption">Cause</p>
+<p class="text">Cause sentence 5.</p>
+<p class="caption">Evidence</p>
+<ul>
+<li>Prompt tokens: <strong>128400</strong> <code>sessions[0].totals.prompt · ses_example01</code></li>
+</ul>
+</section>
+<section class="finding">
+<h2>Lead line 6 for cache-miss</h2>
+<p class="meta">Cache miss · low confidence · since last run: resolved</p>
+<p class="caption">Detail</p>
+<p class="text">Detail paragraph 6.
+It spans two lines.</p>
+<p class="caption">Cause</p>
+<p class="text">Cause sentence 6.</p>
+<p class="caption">Evidence</p>
+<ul>
+<li>Prompt tokens: <strong>128400</strong> <code>sessions[0].totals.prompt · ses_example01</code></li>
+</ul>
+</section>
+<section class="finding">
+<h2>Lead line 7 for other</h2>
+<p class="meta">Other pattern · medium confidence</p>
+<p class="caption">Detail</p>
+<p class="text">Detail paragraph 7.
+It spans two lines.</p>
+<p class="caption">Cause</p>
+<p class="text">Cause sentence 7.</p>
+<p class="caption">Evidence</p>
+<ul>
+<li>Prompt tokens: <strong>128400</strong> <code>sessions[0].totals.prompt · ses_example01</code></li>
+</ul>
+</section>
+<p class="line">1 finding rejected by the provider</p>
+</main>
+</body>
+</html>

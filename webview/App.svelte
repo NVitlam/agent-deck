@@ -228,12 +228,16 @@
       loaded={view.statsStoreLoaded}
       enabled={view.statsStoreEnabled}
       provider={view.insightsProvider}
+      ticks={view.insightsTicks}
       exampleCount={view.insightsExampleCount}
       getHost={view.aboutPage?.get.host ?? null}
       idleThresholdMs={view.livenessThresholdMs}
       onget={() => store.getInsights()}
-      onrun={() => store.runInsights()}
       onrawoutput={() => store.showInsightsRawOutput()}
+      onselect={(runId) => store.selectInsightsRun(runId)}
+      ontick={(runId) => store.toggleInsightsTick(runId)}
+      onexport={(target) => store.exportInsights(target)}
+      onexportticked={() => store.exportTickedInsights()}
     />
   {:else if view.viewMode === 'about'}
     <!-- v0.9.0 DoD 9.32 — About, in this one panel rather than a panel of

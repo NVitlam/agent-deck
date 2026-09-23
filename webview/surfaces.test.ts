@@ -92,7 +92,14 @@ afterEach(() => {
 /** Intents the panel posted, without the ready/handshake traffic. */
 function intents(panel: Panel): WebviewToHostMessage[] {
   return panel.posted.filter((m) =>
-    ['aboutLink', 'insightsGet', 'insightsRun', 'insightsRawOutput'].includes(m.type),
+    [
+      'aboutLink',
+      'insightsGet',
+      'insightsRawOutput',
+      'insightsSelect',
+      'insightsExport',
+      'insightsExportBatch',
+    ].includes(m.type),
   );
 }
 
@@ -205,24 +212,46 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
   },
 };
 
-/** A registered provider's checked snapshot, as the host sends it. */
+/**
+ * A registered provider's checked snapshot, as the host sends it — the
+ * REPORT LIST and the host's SELECTION since DoD 9.46. `latest` names which
+ * of the four sets is selected; `selected: false` is the list with nothing
+ * selected yet.
+ */
 function providerState(
-  over: { running?: boolean; latest?: keyof typeof LATEST; rawOutput?: boolean } = {},
+  over: {
+    latest?: keyof typeof LATEST;
+    rawOutput?: boolean;
+    selected?: boolean;
+    status?: string;
+    runs?: unknown[];
+  } = {},
 ): unknown {
   const latest = over.latest ?? 'ok';
+  const set = LATEST[latest];
   return {
     type: 'providerState',
     page: PAGE,
     provider: {
-      about: { name: 'Agent Deck Insights', version: '0.2.0' },
-      latest: LATEST[latest],
-      runs: [
+      about: {
+        name: 'Agent Deck Insights',
+        version: '0.2.0',
+        ...(over.status === undefined ? {} : { status: over.status }),
+      },
+      runs: over.runs ?? [
         { runId: 'run-1', createdAt: LATEST_AT, state: 'ok', findings: 2, agentKind: 'claude' },
         { runId: 'run-0', createdAt: Date.UTC(2026, 8, 20, 9, 30), state: 'refused', findings: 0, agentKind: 'codex' },
       ],
-      running: over.running ?? false,
       dropped: 0,
-      rawOutput: over.rawOutput ?? latest === 'refused',
+      selected:
+        over.selected === false
+          ? null
+          : {
+              runId: set['runId'],
+              set,
+              dropped: 0,
+              rawOutput: over.rawOutput ?? latest === 'refused',
+            },
     },
   };
 }
@@ -395,11 +424,12 @@ describe('the Insights surface, FREE — DoD 9.29', () => {
     expect(one(panel.container, TESTID.aboutSurface)).toBeTruthy();
   });
 
-  it('the Get tile posts insightsGet — and there is no Run while no provider', () => {
+  it('the Get tile posts insightsGet — and there is no report list while no provider', () => {
     const panel = render();
     send(NO_PROVIDER);
     send(viewControls({ surface: 'insights' }));
-    expect(all(panel.container, TESTID.insightsRun)).toStrictEqual([]);
+    expect(all(panel.container, TESTID.insightsReportList)).toStrictEqual([]);
+    expect(all(panel.container, TESTID.insightsExport)).toStrictEqual([]);
     click(one(panel.container, TESTID.insightsGetTile));
     expect(intents(panel)).toStrictEqual([{ type: 'insightsGet' }]);
   });
@@ -409,31 +439,149 @@ describe('the Insights surface, FREE — DoD 9.29', () => {
  * DoD 9.30 — the provider state, mounted
  * ------------------------------------------------------------------------ */
 
-describe('the Insights surface, PROVIDER — DoD 9.30', () => {
-  it('renders the latest set, the history and Run from the snapshot, and no free facts', () => {
+describe('the Insights surface, PROVIDER — DoD 9.30, reshaped by DoD 9.46', () => {
+  it('renders the report list, the selected report and the fact tiles below both — and no Run', () => {
     const panel = render();
     send({ type: 'statsStore', records: [record('s1', 1)], enabled: true });
     send(providerState());
     send(viewControls({ surface: 'insights' }));
     const surface = one(panel.container, TESTID.insightsSurface);
     expect(surface.getAttribute('data-state')).toBe('provider');
+    expect(all(panel.container, TESTID.insightsReportRow)).toHaveLength(2);
     expect(all(panel.container, TESTID.insightsFinding)).toHaveLength(2);
-    expect(all(panel.container, TESTID.insightsHistoryRow)).toHaveLength(2);
-    expect(all(panel.container, TESTID.insightsFact)).toStrictEqual([]);
+    // "Fact tiles below both" (spec `Amendment 2026-09-23`): the free state's
+    // tiles, after the two panes, and neither the example nor the Get tile.
+    const facts = all(panel.container, TESTID.insightsFact);
+    expect(facts.length).toBeGreaterThan(0);
+    const preview = one(panel.container, TESTID.insightsPreview);
+    expect(preview.compareDocumentPosition(facts[0] as Element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(all(panel.container, TESTID.insightsExample)).toStrictEqual([]);
     expect(all(panel.container, TESTID.insightsGetTile)).toStrictEqual([]);
-    click(one(panel.container, TESTID.insightsRun));
-    expect(intents(panel)).toStrictEqual([{ type: 'insightsRun' }]);
+    expect(panel.container.querySelector('[data-testid="insights-run"]')).toBeNull();
+    expect([...panel.container.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toContain('Run');
   });
 
-  it('a RUNNING provider shows Running and posts nothing', () => {
+  it('NOTHING SELECTED: the preview says so, verbatim, and holds no report and no Export', () => {
     const panel = render();
-    send(providerState({ running: true }));
+    send(providerState({ selected: false }));
     send(viewControls({ surface: 'insights' }));
-    const run = one(panel.container, TESTID.insightsRun);
-    expect(run.textContent?.trim()).toBe('Running');
-    expect(run.hasAttribute('disabled')).toBe(true);
-    panel.store.runInsights();
+    expect(one(panel.container, 'insights-preview-empty').textContent).toBe('Select a report to preview / download.');
+    expect(all(panel.container, TESTID.insightsLatest)).toStrictEqual([]);
+    expect(all(panel.container, TESTID.insightsExport)).toStrictEqual([]);
+    expect(one(panel.container, TESTID.insightsPreview).getAttribute('data-run')).toBe('');
+    for (const row of all(panel.container, TESTID.insightsReportRow)) {
+      expect(row.getAttribute('data-selected')).toBe('false');
+    }
+  });
+
+  it('a row click posts insightsSelect for THAT run; the selection shown is the HOST’s', () => {
+    const panel = render();
+    send(providerState({ selected: false }));
+    send(viewControls({ surface: 'insights' }));
+    const selects = all(panel.container, TESTID.insightsReportSelect);
+    click(selects[1] as Element);
+    expect(intents(panel)).toStrictEqual([{ type: 'insightsSelect', runId: 'run-0' }]);
+    // Nothing moves until the host answers: the selection is the host's.
+    expect(one(panel.container, TESTID.insightsPreview).getAttribute('data-run')).toBe('');
+    send(providerState({ latest: 'ok' }));
+    const rows = all(panel.container, TESTID.insightsReportRow);
+    expect(rows.map((row) => row.getAttribute('data-selected'))).toStrictEqual(['true', 'false']);
+    // The store refuses a run the list does not hold.
+    panel.store.selectInsightsRun('run-404');
+    expect(intents(panel)).toHaveLength(1);
+  });
+
+  it('ticks are view state: they post nothing, count on the button, and batch in LIST order', () => {
+    const panel = render();
+    send(providerState({ selected: false }));
+    send(viewControls({ surface: 'insights' }));
+    const button = one(panel.container, TESTID.insightsExportTicked);
+    expect(button.textContent?.trim()).toBe('Export ticked (0)');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    panel.store.exportTickedInsights();
     expect(intents(panel)).toStrictEqual([]);
+    const ticks = all(panel.container, TESTID.insightsReportTick);
+    // Ticked in REVERSE: the batch still reads newest first, like the list.
+    click(ticks[1] as Element);
+    click(ticks[0] as Element);
+    expect(intents(panel)).toStrictEqual([]);
+    expect(all(panel.container, TESTID.insightsReportRow).map((r) => r.getAttribute('data-ticked'))).toStrictEqual([
+      'true',
+      'true',
+    ]);
+    expect(one(panel.container, TESTID.insightsExportTicked).textContent?.trim()).toBe('Export ticked (2)');
+    click(one(panel.container, TESTID.insightsExportTicked));
+    expect(intents(panel)).toStrictEqual([{ type: 'insightsExportBatch', runIds: ['run-1', 'run-0'] }]);
+    // Untick one.
+    click(all(panel.container, TESTID.insightsReportTick)[0] as Element);
+    expect(one(panel.container, TESTID.insightsExportTicked).textContent?.trim()).toBe('Export ticked (1)');
+  });
+
+  it('a tick names a run the list holds, or it goes: a shorter list prunes it; the free state clears all', () => {
+    const panel = render();
+    send(providerState({ selected: false }));
+    send(viewControls({ surface: 'insights' }));
+    for (const tick of all(panel.container, TESTID.insightsReportTick)) click(tick);
+    expect(panel.store.getView().insightsTicks).toStrictEqual(['run-1', 'run-0']);
+    send(
+      providerState({
+        selected: false,
+        runs: [{ runId: 'run-0', createdAt: Date.UTC(2026, 8, 20, 9, 30), state: 'refused', findings: 0, agentKind: 'codex' }],
+      }),
+    );
+    expect(panel.store.getView().insightsTicks).toStrictEqual(['run-0']);
+    send(NO_PROVIDER);
+    expect(panel.store.getView().insightsTicks).toStrictEqual([]);
+    // A tick for a run the list never held is refused.
+    send(providerState({ selected: false }));
+    panel.store.toggleInsightsTick('run-404');
+    expect(panel.store.getView().insightsTicks).toStrictEqual([]);
+  });
+
+  it('the preview header’s Export actions post their target, in the amendment’s order', () => {
+    const panel = render();
+    send(providerState());
+    send(viewControls({ surface: 'insights' }));
+    const exports = all(panel.container, TESTID.insightsExport);
+    expect(exports.map((el) => [el.getAttribute('data-target'), el.textContent?.trim()])).toStrictEqual([
+      ['html', 'HTML'],
+      ['markdown', 'Markdown'],
+      ['copy', 'Copy'],
+    ]);
+    // In the preview's HEADER, beside the report's heading.
+    for (const el of exports) expect(el.closest(`[data-testid="${TESTID.insightsRunFacts}"]`)).not.toBeNull();
+    for (const el of exports) click(el);
+    expect(intents(panel)).toStrictEqual([
+      { type: 'insightsExport', target: 'html' },
+      { type: 'insightsExport', target: 'markdown' },
+      { type: 'insightsExport', target: 'copy' },
+    ]);
+  });
+
+  it('a selected run with NO report says so, and offers no Export', () => {
+    const panel = render();
+    const state = providerState() as { provider: Record<string, unknown> };
+    send({
+      ...state,
+      provider: { ...state.provider, selected: { runId: 'run-0', set: null, dropped: 1, rawOutput: false } },
+    });
+    send(viewControls({ surface: 'insights' }));
+    expect(one(panel.container, 'insights-preview-missing').textContent).toBe('The provider has no report for this run.');
+    expect(one(panel.container, 'insights-preview-dropped').textContent).toBe(
+      '1 value from this report did not pass the check and is not shown',
+    );
+    expect(all(panel.container, TESTID.insightsExport)).toStrictEqual([]);
+    panel.store.exportInsights('html');
+    expect(intents(panel)).toStrictEqual([]);
+  });
+
+  it('DoD 9.44: the provider’s status is one line under its name', () => {
+    const panel = render();
+    send(providerState({ status: 'licensed until 2027-09-23' }));
+    send(viewControls({ surface: 'insights' }));
+    const status = one(panel.container, 'insights-status');
+    expect(status.textContent).toBe('licensed until 2027-09-23');
+    expect(status.previousElementSibling?.tagName).toBe('H1');
   });
 
   it('a provider registering, changing and disposing re-renders the OPEN surface', () => {
@@ -457,19 +605,23 @@ describe('the Insights surface, PROVIDER — DoD 9.30', () => {
     const state = providerState() as { provider: Record<string, unknown> };
     const run = { runId: 'run-1', createdAt: LATEST_AT, state: 'ok', findings: 1, agentKind: 'claude' };
     const evidence = { label: 'Stalls', sessionId: 'ses_example01', statsKey: 'sessions[0].totals.stalls', value: 2 };
+    const selected = state.provider['selected'] as Record<string, unknown>;
     send({
       ...state,
       provider: {
         ...state.provider,
-        latest: {
-          ...(state.provider['latest'] as Record<string, unknown>),
-          findings: [viewFinding('f-1', { evidence: [evidence, evidence] }), viewFinding('f-1')],
+        selected: {
+          ...selected,
+          set: {
+            ...(selected['set'] as Record<string, unknown>),
+            findings: [viewFinding('f-1', { evidence: [evidence, evidence] }), viewFinding('f-1')],
+          },
         },
         runs: [run, run],
       },
     });
     send(viewControls({ surface: 'insights' }));
-    expect(all(panel.container, TESTID.insightsHistoryRow)).toHaveLength(2);
+    expect(all(panel.container, TESTID.insightsReportRow)).toHaveLength(2);
     expect(all(panel.container, TESTID.insightsFinding)).toHaveLength(2);
     expect(all(panel.container, TESTID.insightsEvidence)).toHaveLength(3);
   });
@@ -525,13 +677,17 @@ describe('the provider’s text, rendered — DoD 9.41', () => {
   it('provider text is TEXT: markup in it renders as characters, never as elements', () => {
     const panel = render();
     const state = providerState() as { provider: Record<string, unknown> };
+    const selected = state.provider['selected'] as Record<string, unknown>;
     send({
       ...state,
       provider: {
         ...state.provider,
-        latest: {
-          ...(state.provider['latest'] as Record<string, unknown>),
-          findings: [viewFinding('f-x', { cause: 'wrote <img src=x onerror=alert(1)> into a.ts' })],
+        selected: {
+          ...selected,
+          set: {
+            ...(selected['set'] as Record<string, unknown>),
+            findings: [viewFinding('f-x', { cause: 'wrote <img src=x onerror=alert(1)> into a.ts' })],
+          },
         },
       },
     });
@@ -629,15 +785,19 @@ describe('the provider’s text, rendered — DoD 9.41', () => {
     expect(all(panel.container, 'insights-resolved-kinds')).toStrictEqual([]);
   });
 
-  it('the history names each run’s state and agent', () => {
+  it('the report list names each run’s date, findings count and engine, and a refused run’s state', () => {
     const panel = render();
     send(providerState());
     send(viewControls({ surface: 'insights' }));
     expect(
-      all(panel.container, TESTID.insightsHistoryRow).map((el) => el.textContent?.replace(/\s+/g, ' ').trim()),
+      all(panel.container, TESTID.insightsReportRow).map((el) => el.textContent?.replace(/\s+/g, ' ').trim()),
     ).toStrictEqual([
-      '2026-09-21 10:00 UTC · 2 findings · Claude Code',
-      '2026-09-20 09:30 UTC · refused · Codex',
+      '2026-09-21 10:00 UTC 2 findings · Claude Code',
+      '2026-09-20 09:30 UTC refused · Codex',
+    ]);
+    expect(all(panel.container, TESTID.insightsReportRow).map((el) => el.getAttribute('data-state'))).toStrictEqual([
+      'ok',
+      'refused',
     ]);
   });
 });
@@ -671,6 +831,17 @@ describe('the About surface — DoD 9.32', () => {
     expect(one(panel.container, TESTID.aboutProvider).textContent?.replace(/\s+/g, ' ').trim()).toBe(
       'Insights provider: Agent Deck Insights 0.2.0',
     );
+    // DoD 9.44: no status stated, no status line.
+    expect(all(panel.container, 'about-provider-status')).toStrictEqual([]);
+  });
+
+  it('DoD 9.44: the provider’s status is one line under its name on About, when it states one', () => {
+    const panel = render();
+    send(providerState({ status: 'licensed until 2027-09-23' }));
+    send(viewControls({ surface: 'about' }));
+    const status = one(panel.container, 'about-provider-status');
+    expect(status.textContent).toBe('licensed until 2027-09-23');
+    expect(status.previousElementSibling?.getAttribute('data-testid')).toBe(TESTID.aboutProvider);
   });
 
   it('renders the PAGE the host sent — text, tiles and footer — and nothing before it', () => {
@@ -847,7 +1018,7 @@ describe('DOM goldens of both surfaces in both states', () => {
     // that stood here until 9.40 was the `ok` state and is `-ok` now.
   });
 
-  it('Insights with a provider, in each of DoD 9.41’s four states', () => {
+  it('Insights with a provider, each of DoD 9.41’s four sets SELECTED (DoD 9.46)', () => {
     for (const latest of ['ok', 'empty', 'refused', 'mixed-evidence'] as const) {
       const panel = render();
       send(providerState({ latest }));
@@ -856,6 +1027,21 @@ describe('DOM goldens of both surfaces in both states', () => {
       panel.dispose();
       mounted.pop();
     }
+  });
+
+  it('Insights with a provider, NOTHING selected, and with TICKS (DoD 9.46)', () => {
+    const none = render();
+    send(providerState({ selected: false, status: 'licensed until 2027-09-23' }));
+    send(viewControls({ surface: 'insights' }));
+    golden('insights-provider-none-selected', one(none.container, TESTID.insightsSurface));
+    none.dispose();
+    mounted.pop();
+
+    const ticked = render();
+    send(providerState({ latest: 'refused' }));
+    send(viewControls({ surface: 'insights' }));
+    for (const tick of all(ticked.container, TESTID.insightsReportTick)) click(tick);
+    golden('insights-provider-ticks', one(ticked.container, TESTID.insightsSurface));
   });
 
   it('the goldens are not being written by this run', () => {

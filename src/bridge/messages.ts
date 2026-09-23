@@ -35,6 +35,9 @@ import type { SessionEmission } from '../model/session.js';
 import { isControlCommand } from '../view/controls.js';
 // The About links, for the `aboutLink` index bound. `about.ts` has no imports.
 import { ABOUT_LINKS } from '../about.js';
+// The run id's pattern and the list's cap, for the report list's intents
+// (DoD 9.46, 9.47) — the same two numbers the registry checks a provider by.
+import { ID_PATTERN, MAX_RUNS } from '../insights-provider.js';
 import { applySessionPatch } from './apply.js';
 
 // ---------------------------------------------------------------------------
@@ -106,13 +109,22 @@ export const WEBVIEW_TO_HOST_TYPES = [
    */
   'aboutLink',
   'insightsGet',
-  'insightsRun',
   /*
    * v0.9.0 DoD 9.40 — "Show raw output" on a refused set. No payload: the
    * host resolves the run from the snapshot it built and asks the provider,
    * so a renderer can name no run id of its own.
    */
   'insightsRawOutput',
+  /*
+   * v0.9.0 DoD 9.46, 9.47 — the report list and Export. A row names its run
+   * by id (checked here against the id pattern, and at the host against the
+   * list it holds); an Export action names its target and nothing else (the
+   * run is the host's selection); "Export ticked" names the ticked ids.
+   * `insightsRun` was here until DoD 9.46: the surface has no Run action.
+   */
+  'insightsSelect',
+  'insightsExport',
+  'insightsExportBatch',
 ] as const;
 
 /**
@@ -250,10 +262,31 @@ export function isWebviewToHostMessage(
         );
       }
       case 'insightsGet':
-      case 'insightsRun':
       case 'insightsRawOutput':
         // No payload. The type IS the whole message.
         return true;
+      case 'insightsSelect': {
+        const runId = ownDataProperty(value, 'runId');
+        return typeof runId === 'string' && ID_PATTERN.test(runId);
+      }
+      case 'insightsExport': {
+        const target = ownDataProperty(value, 'target');
+        return target === 'html' || target === 'markdown' || target === 'copy';
+      }
+      case 'insightsExportBatch': {
+        // A real array of 1 to MAX_RUNS distinct ids, each read by index as
+        // an own data property — never through an iterator a hostile
+        // object could supply.
+        const runIds = ownDataProperty(value, 'runIds');
+        if (!Array.isArray(runIds) || runIds.length === 0 || runIds.length > MAX_RUNS) return false;
+        const seen = new Set<string>();
+        for (let i = 0; i < runIds.length; i += 1) {
+          const id = ownDataProperty(runIds, String(i));
+          if (typeof id !== 'string' || !ID_PATTERN.test(id) || seen.has(id)) return false;
+          seen.add(id);
+        }
+        return true;
+      }
       default:
         return false;
     }

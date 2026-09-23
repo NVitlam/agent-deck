@@ -408,6 +408,30 @@ interface MockState {
    */
   configurationWrites: { section: string; key: string; value: unknown; target: number | undefined }[];
   configurationEmitter: Emitter<{ affectsConfiguration(section: string): boolean }>;
+  /**
+   * v0.9.0 DoD 9.45 — every `setContext` the extension ran, by key, holding
+   * the LAST value. The real editor keeps exactly that; a test reads it to
+   * see what the Menu submenu and the palette would show.
+   */
+  contexts: Map<string, unknown>;
+  /**
+   * v0.9.0 DoD 9.47 — every file `workspace.fs.writeFile` wrote, by `fsPath`,
+   * as UTF-8 text. IN MEMORY: the double writes nothing to disk, so a test
+   * can assert the bytes an export produced without a scratch directory.
+   */
+  writtenFiles: Map<string, string>;
+  /** What `workspace.fs.readDirectory` lists, by folder `fsPath`. */
+  directories: Map<string, string[]>;
+  /** Every `showSaveDialog` call's options, in order. */
+  saveDialogs: { defaultUri: string | undefined; filters: Record<string, string[]> | undefined }[];
+  /** What the next `showSaveDialog` returns — an `fsPath`, or `undefined` (cancelled). */
+  saveDialogAnswer: string | undefined;
+  /** Every `showOpenDialog` call's options, in order. */
+  openDialogs: { canSelectFolders: boolean; canSelectFiles: boolean }[];
+  /** What the next `showOpenDialog` returns — a folder `fsPath`, or `undefined`. */
+  openDialogAnswer: string | undefined;
+  /** What `env.clipboard.writeText` last wrote, or `undefined`. */
+  clipboard: string | undefined;
 }
 
 const state: MockState = {
@@ -439,6 +463,14 @@ const state: MockState = {
   warningAnswer: undefined,
   configurationWrites: [],
   configurationEmitter: new Emitter(),
+  contexts: new Map(),
+  writtenFiles: new Map(),
+  directories: new Map(),
+  saveDialogs: [],
+  saveDialogAnswer: undefined,
+  openDialogs: [],
+  openDialogAnswer: undefined,
+  clipboard: undefined,
 };
 
 /** Drop every piece of mock state. Call in `beforeEach`. */
@@ -464,6 +496,14 @@ export function resetVscodeMock(): void {
   state.modalAnswer = undefined;
   state.configurationWrites = [];
   state.configurationEmitter = new Emitter();
+  state.contexts = new Map();
+  state.writtenFiles = new Map();
+  state.directories = new Map();
+  state.saveDialogs = [];
+  state.saveDialogAnswer = undefined;
+  state.openDialogs = [];
+  state.openDialogAnswer = undefined;
+  state.clipboard = undefined;
   state.extensionManifests = new Map();
   state.activeExtensions = new Set();
   state.informationPrompts = [];
@@ -609,6 +649,38 @@ export const mock = {
   answerQuickPick(answer: string | undefined): void {
     state.quickPickAnswer = answer;
   },
+  /** DoD 9.45 — the last value `setContext` gave each key. */
+  get contexts(): ReadonlyMap<string, unknown> {
+    return state.contexts;
+  },
+  /** DoD 9.47 — every file written through `workspace.fs`, by `fsPath`. */
+  get writtenFiles(): ReadonlyMap<string, string> {
+    return state.writtenFiles;
+  },
+  /** DoD 9.47 — make `readDirectory` list these names in `folder`. */
+  setDirectory(folder: string, names: string[]): void {
+    state.directories.set(folder, [...names]);
+  },
+  /** DoD 9.47 — every save dialog shown. */
+  get saveDialogs(): { defaultUri: string | undefined; filters: Record<string, string[]> | undefined }[] {
+    return state.saveDialogs;
+  },
+  /** DoD 9.47 — the next save dialog returns this path, or `undefined` (cancel). */
+  answerSaveDialog(fsPath: string | undefined): void {
+    state.saveDialogAnswer = fsPath;
+  },
+  /** DoD 9.47 — every folder dialog shown. */
+  get openDialogs(): { canSelectFolders: boolean; canSelectFiles: boolean }[] {
+    return state.openDialogs;
+  },
+  /** DoD 9.47 — the next folder dialog returns this folder, or `undefined` (cancel). */
+  answerOpenDialog(fsPath: string | undefined): void {
+    state.openDialogAnswer = fsPath;
+  },
+  /** DoD 9.47 — what the clipboard holds. */
+  get clipboard(): string | undefined {
+    return state.clipboard;
+  },
   get errorMessages(): string[] {
     return state.errorMessages;
   },
@@ -676,6 +748,26 @@ export const workspace = {
    * extension opens nothing from disk and a test reaching for it has found a
    * write-shaped path worth failing on.
    */
+  /**
+   * `vscode.workspace.fs` — DoD 9.47. Two methods, both IN MEMORY:
+   * `writeFile` records the bytes by `fsPath` (decoded as UTF-8, which is
+   * what an export writes) and `readDirectory` lists what a test set with
+   * `mock.setDirectory` plus anything already written into that folder.
+   */
+  fs: {
+    writeFile(uri: Uri, content: Uint8Array): Promise<void> {
+      state.writtenFiles.set(uri.fsPath, Buffer.from(content).toString('utf8'));
+      return Promise.resolve();
+    },
+    readDirectory(uri: Uri): Promise<[string, number][]> {
+      const names = new Set(state.directories.get(uri.fsPath) ?? []);
+      for (const path of state.writtenFiles.keys()) {
+        const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        if (cut > 0 && path.slice(0, cut) === uri.fsPath) names.add(path.slice(cut + 1));
+      }
+      return Promise.resolve([...names].map((name) => [name, 1]));
+    },
+  },
   openTextDocument(options: { content?: string; language?: string }): Promise<{ index: number }> {
     if (typeof options !== 'object' || options === null || typeof options.content !== 'string') {
       return Promise.reject(new Error('vscode-mock: only the untitled { content } overload is modelled'));
@@ -710,6 +802,15 @@ export const commands = {
    * as asked-for.
    */
   executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
+    // `setContext` is the editor's own built-in command (DoD 9.45): it sets
+    // a context key a manifest `when` clause reads, and it always exists.
+    // Recorded in `contexts` and NOT in `executed`: every test reading
+    // `executed` asks which commands the extension RAN, and a context key
+    // is state, not an act.
+    if (command === 'setContext') {
+      state.contexts.set(String(args[0]), args[1]);
+      return Promise.resolve(undefined);
+    }
     state.executed.push({ command, args });
     const handler = state.commands.get(command);
     if (handler === undefined) {
@@ -749,6 +850,13 @@ export const commands = {
  * survived before this existed.
  */
 export const env = {
+  /** DoD 9.47 — the Copy export. Holds the last text written. */
+  clipboard: {
+    writeText(text: string): Promise<void> {
+      state.clipboard = text;
+      return Promise.resolve();
+    },
+  },
   openExternal(target: unknown): Promise<boolean> {
     state.openedExternal.push(String((target as { toString(): string }).toString()));
     return Promise.resolve(true);
@@ -951,6 +1059,25 @@ export const window = {
         state.outputChannelsDisposed.push(name);
       },
     };
+  },
+  /**
+   * `showSaveDialog` — DoD 9.47. Recorded with its default and filters, and
+   * answered with `mock.answerSaveDialog`; `undefined` is a cancel, the
+   * default and the honest one.
+   */
+  showSaveDialog(options?: { defaultUri?: Uri; filters?: Record<string, string[]> }): Promise<Uri | undefined> {
+    state.saveDialogs.push({ defaultUri: options?.defaultUri?.fsPath, filters: options?.filters });
+    const answer = state.saveDialogAnswer;
+    return Promise.resolve(answer === undefined ? undefined : Uri.file(answer));
+  },
+  /** `showOpenDialog` — DoD 9.47, the batch export's folder. Same rules. */
+  showOpenDialog(options?: { canSelectFolders?: boolean; canSelectFiles?: boolean }): Promise<Uri[] | undefined> {
+    state.openDialogs.push({
+      canSelectFolders: options?.canSelectFolders === true,
+      canSelectFiles: options?.canSelectFiles !== false,
+    });
+    const answer = state.openDialogAnswer;
+    return Promise.resolve(answer === undefined ? undefined : [Uri.file(answer)]);
   },
   /** `vscode.window.showTextDocument` for a document {@link workspace.openTextDocument} made. */
   showTextDocument(document: { index: number }): Promise<undefined> {

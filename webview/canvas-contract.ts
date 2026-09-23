@@ -416,12 +416,33 @@ export const TESTID = {
   insightsFact: 'insights-fact',
   insightsExample: 'insights-example',
   insightsGetTile: 'insights-get-tile',
-  /** The paid state's Run action — it calls the registered provider. */
-  insightsRun: 'insights-run',
+  /*
+   * `insightsRun` (the Run action) and `insightsHistoryRow` were here until
+   * DoD 9.46: the registered surface has no Run, and the history became the
+   * report list below.
+   */
+  /**
+   * DoD 9.46: the selected run's report in the preview pane — it was the
+   * LATEST set's block until then, and kept its name's meaning as "the
+   * report shown". `data-state` is the run's state.
+   */
   insightsLatest: 'insights-latest',
   insightsFinding: 'insights-finding',
-  insightsHistoryRow: 'insights-history-row',
-  /** DoD 9.41: the latest run's facts, above its findings. */
+  /** DoD 9.46: the report list's container. */
+  insightsReportList: 'insights-report-list',
+  /** DoD 9.46: one run in the report list. `data-run`, `data-selected`, `data-ticked`. */
+  insightsReportRow: 'insights-report-row',
+  /** DoD 9.46: the row's select action — a content item: it selects the run. */
+  insightsReportSelect: 'insights-report-select',
+  /** DoD 9.46: the row's tick box, for a batch export. */
+  insightsReportTick: 'insights-report-tick',
+  /** DoD 9.46: "Export ticked (n)", under the list. */
+  insightsExportTicked: 'insights-export-ticked',
+  /** DoD 9.46: the preview pane. `data-run` names the selected run, when one is. */
+  insightsPreview: 'insights-preview',
+  /** DoD 9.47: one of the preview header's Export actions. `data-target`. */
+  insightsExport: 'insights-export',
+  /** DoD 9.41: a run's facts, above its findings. */
   insightsRunFacts: 'insights-run-facts',
   /** DoD 9.41: a finding's detail toggle — the `<summary>` of its `<details>`. */
   insightsDetail: 'insights-detail',

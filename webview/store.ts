@@ -679,6 +679,13 @@ export interface WebviewView {
    */
   insightsProvider: InsightsProviderSnapshot | null;
   /**
+   * The report list's TICKED run ids, in the list's order — v0.9.0 DoD 9.46.
+   * The renderer's own view state (the host holds the SELECTION, never the
+   * ticks), pruned to the runs the latest snapshot lists, so a tick can never
+   * name a run that is no longer there.
+   */
+  insightsTicks: readonly string[];
+  /**
    * The About page the host built (DoD 9.32) — labels and hosts, never urls.
    * `null` until the host has stated it.
    */
@@ -797,16 +804,32 @@ export interface Store {
    * registered describes a tile that is no longer on screen.
    */
   getInsights(): void;
-  /**
-   * The Insights surface's Run action — DoD 9.30. Posts `insightsRun`, and
-   * only while a provider is registered and not already running.
+  /*
+   * `runInsights` was here until DoD 9.46: the registered surface has no Run
+   * action (spec `Amendment 2026-09-23`).
    */
-  runInsights(): void;
   /**
-   * "Show raw output" on a refused set — DoD 9.40. Posts `insightsRawOutput`,
-   * and only while the snapshot says the provider offers it for this set.
+   * "Show raw output" on the selected refused run — DoD 9.40, 9.46. Posts
+   * `insightsRawOutput`, and only while the preview offers it.
    */
   showInsightsRawOutput(): void;
+  /**
+   * A report-list row was clicked — DoD 9.46. Posts `insightsSelect`, and
+   * only for a run the snapshot lists; the host reads it and re-sends.
+   */
+  selectInsightsRun(runId: string): void;
+  /** A row's tick box — DoD 9.46. View state only; posts nothing. */
+  toggleInsightsTick(runId: string): void;
+  /**
+   * One of the preview's three Export actions — DoD 9.47. Posts
+   * `insightsExport`, and only while the preview has a report to export.
+   */
+  exportInsights(target: 'html' | 'markdown' | 'copy'): void;
+  /**
+   * "Export ticked (n)" — DoD 9.47. Posts `insightsExportBatch` with the
+   * ticked ids in the list's order, and nothing while none is ticked.
+   */
+  exportTickedInsights(): void;
   /** Open or shut the inspector panel without changing the selected node. */
   setInspectorOpen(open: boolean): void;
   /** Pan the deck by a delta in CLIENT pixels. `viewport.ts:panBy`. */
@@ -1046,6 +1069,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
   let statsStoreLoaded = false;
   /* ----- the Insights and About surfaces (DoD 9.29–9.32) ------------------- */
   let insightsProvider: InsightsProviderSnapshot | null = null;
+  let insightsTicks: readonly string[] = [];
   let aboutPage: AboutPageView | null = null;
   let insightsExampleCount = 0;
   /** Set between asking for a resync and the snapshot that answers it. */
@@ -1250,6 +1274,9 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     reportedDrawerOpen = open;
     postIntent({ type: 'drawerState', open });
   };
+
+  /** The run ids the latest snapshot lists, in its order. */
+  const listedRunIds = (): string[] => insightsProvider?.runs.map((run) => run.runId) ?? [];
 
   const notify = (): void => {
     reportDrawer();
@@ -1506,6 +1533,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
         statsStoreEnabled,
         statsStoreLoaded,
         insightsProvider,
+        insightsTicks,
         aboutPage,
         insightsExampleCount,
       };
@@ -1695,6 +1723,9 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
           insightsProvider =
             (message.provider as InsightsProviderSnapshot | null | undefined) ?? null;
           aboutPage = aboutPageOf(message.page);
+          // DoD 9.46: a tick names a run the list holds, or it goes. A cleared
+          // history, a dropped run or the provider leaving empties it.
+          insightsTicks = listedRunIds().filter((id) => insightsTicks.includes(id));
           break;
         case 'sidebarState':
           /*
@@ -1870,14 +1901,38 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       postIntent({ type: 'insightsGet' });
     },
 
-    runInsights(): void {
-      if (insightsProvider === null || insightsProvider.running) return;
-      postIntent({ type: 'insightsRun' });
+    showInsightsRawOutput(): void {
+      const preview = insightsProvider?.selected;
+      if (preview?.rawOutput !== true || preview.set?.state !== 'refused') return;
+      postIntent({ type: 'insightsRawOutput' });
     },
 
-    showInsightsRawOutput(): void {
-      if (insightsProvider?.rawOutput !== true) return;
-      postIntent({ type: 'insightsRawOutput' });
+    selectInsightsRun(runId: string): void {
+      // Only a run the list holds: the host refuses any other too, and this
+      // stops our OWN component posting one, which is what actually happens.
+      if (!listedRunIds().includes(runId)) return;
+      postIntent({ type: 'insightsSelect', runId });
+    },
+
+    toggleInsightsTick(runId: string): void {
+      const listed = listedRunIds();
+      if (!listed.includes(runId)) return;
+      const ticked = new Set(insightsTicks);
+      if (!ticked.delete(runId)) ticked.add(runId);
+      // The LIST's order, whatever order the boxes were ticked in, so a batch
+      // is written newest first like the list reads.
+      insightsTicks = listed.filter((id) => ticked.has(id));
+      notify();
+    },
+
+    exportInsights(target: 'html' | 'markdown' | 'copy'): void {
+      if (insightsProvider?.selected?.set == null) return;
+      postIntent({ type: 'insightsExport', target });
+    },
+
+    exportTickedInsights(): void {
+      if (insightsTicks.length === 0) return;
+      postIntent({ type: 'insightsExportBatch', runIds: [...insightsTicks] });
     },
 
     setInspectorOpen(open: boolean): void {

@@ -143,7 +143,7 @@ import {
   RAW_OUTPUT_MAX_CHARS,
   providerErrorText,
 } from './insights-provider.js';
-import type { ActionResult, RawOutputResult } from './insights-provider.js';
+import type { ActionResult, ProviderLifecycleEvent, RawOutputResult } from './insights-provider.js';
 import {
   EXPORT_FILTERS,
   exportFileName,
@@ -3550,7 +3550,16 @@ export interface PanelSurface {
   asWebviewUri(...segments: string[]): string;
   postMessage(message: HostToWebviewMessage): void;
   onDidReceiveMessage(handler: (raw: unknown) => void): Unsubscribe;
-  /** Fired when the webview becomes visible again — i.e. the bundle re-ran. */
+  /**
+   * Whether the document survives being hidden (`retainContextWhenHidden`) —
+   * v0.9.0 DoD 9.49. Read off the editor's own panel, so it says what the
+   * panel WAS created with rather than what this file meant to ask for.
+   */
+  readonly retainsContext: boolean;
+  /**
+   * Fired when the webview becomes visible again. Without a retained context
+   * that means the bundle re-ran; with one, the document was kept.
+   */
   onDidBecomeVisible(handler: () => void): Unsubscribe;
   onDidDispose(handler: () => void): Unsubscribe;
   reveal(): void;
@@ -3665,11 +3674,21 @@ export class PanelController {
       this.#panel.onDidReceiveMessage((raw: unknown) => {
         this.#receive(raw);
       }),
-      // VS Code re-runs the bundle when a hidden panel is restored (the default
-      // is `retainContextWhenHidden: false`), so the document on the other end
-      // is a NEW one that knows nothing. Resetting the bridge is what stops the
-      // next diff being applied to a state that no longer exists.
+      // VS Code re-runs the bundle when a hidden panel is restored unless it
+      // retains its context, so the document on the other end is a NEW one
+      // that knows nothing. Resetting the bridge is what stops the next diff
+      // being applied to a state that no longer exists.
+      //
+      // v0.9.0 DoD 9.49: the panel is created RETAINED, and then there is no
+      // new document and nothing to repair. The resend is skipped rather than
+      // run anyway, because it is not free: its snapshot refits the canvas
+      // (the user's pan and zoom, lost on every tab switch) and it re-reads
+      // the whole stats store. It stays for a surface that does not retain,
+      // which is what the 2026-09-24 own-eyes break showed it cannot fix on
+      // its own: it posts inside the visibility callback, and the rebuilt
+      // document came back empty all the same.
       this.#panel.onDidBecomeVisible(() => {
+        if (this.#panel.retainsContext) return;
         this.#counts.reloads += 1;
         this.bridge.reset();
         this.#onNeedsSnapshot();
@@ -5583,6 +5602,28 @@ export function codexRootExists(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
+ * The Agent Deck channel's line for one provider lifecycle event — v0.9.0
+ * DoD 9.51. Every string in it is either this file's own words, the checked
+ * about, or the registry's own refusal message; nothing the provider wrote
+ * reaches it unchecked.
+ */
+export function providerLifecycleLine(event: ProviderLifecycleEvent): string {
+  switch (event.kind) {
+    case 'registered':
+      return `insights provider registered: ${event.name} ${event.version}`;
+    case 'deregistered':
+      return (
+        `insights provider deregistered: ${event.name} ${event.version} ` +
+        (event.reason === 'disposed'
+          ? '(reason: the provider disposed its registration)'
+          : '(reason: the window is closing)')
+      );
+    case 'refused':
+      return `insights provider refused: ${event.message}`;
+  }
+}
+
+/**
  * Adapt a real `vscode.WebviewPanel` to {@link PanelSurface}.
  *
  * The one place where the editor API and this file's own vocabulary meet.
@@ -5596,6 +5637,9 @@ export function adaptWebviewPanel(
   return {
     get cspSource(): string {
       return panel.webview.cspSource;
+    },
+    get retainsContext(): boolean {
+      return panel.options.retainContextWhenHidden === true;
     },
     setHtml: (html: string): void => {
       panel.webview.html = html;
@@ -5800,6 +5844,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
         );
       } catch {
         // G2: a channel that cannot be created must not take the caller down.
+      }
+    },
+    /*
+     * ONE LINE PER LIFECYCLE EVENT — v0.9.0 DoD 9.51. The own-eyes break of
+     * 2026-09-24 left this channel silent while the surfaces disagreed about
+     * whether a provider was there; a register, a deregister with its reason
+     * and a refusal are each written now, so the channel says which it was.
+     */
+    onLifecycle: (event) => {
+      try {
+        sharedOutput().appendLine(`[${new Date().toISOString()}] ${providerLifecycleLine(event)}`);
+      } catch {
+        // G2, as above.
       }
     },
   });
@@ -6142,7 +6199,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
         // A run the list does not hold selects nothing: the renderer's id is
         // a request, and the provider's list is what can grant it.
         if (!providers.lists(message.runId)) return;
-        selectedRunId = message.runId;
+        // v0.9.0 DoD 9.52: the row ALREADY selected, clicked again, clears the
+        // selection and the preview returns to its prompt. The host decides,
+        // because the host holds the selection; the renderer posts the same
+        // message either way and never guesses which one this is.
+        selectedRunId = selectedRunId === message.runId ? null : message.runId;
         activeHost?.sendProviderState();
         return;
       case 'insightsExport':
@@ -6760,6 +6821,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
           // with the CSP in `html.ts`, the renderer's reachable surface is
           // two files.
           localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist')],
+          /*
+           * v0.9.0 DoD 9.49 — THE PANEL SURVIVES BEING HIDDEN. Own-eyes break,
+           * 2026-09-24: another extension opened a preview in this group, and
+           * on its close the deck read "waiting for a session to start" over
+           * eleven discovered sessions until the next state send. The resend
+           * on `onDidChangeViewState` was already there and did not fix it.
+           * Retaining the context was chosen over a fuller resend because no
+           * perf budget measures a hidden document's memory, while the resend
+           * re-reads the stats store (`stats.store.read.dod`) and refits the
+           * canvas on every show. Delta 2026-09-24 records the choice.
+           */
+          retainContextWhenHidden: true,
         },
       );
       if (editorGroupCount() > 1) {

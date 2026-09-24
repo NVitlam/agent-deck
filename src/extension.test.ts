@@ -109,6 +109,7 @@ import {
   statsSettingDefaults,
   tweaksOf,
   workspacePathsOf,
+  providerLifecycleLine,
 } from './extension.js';
 import type {
   AgentDeckSettings,
@@ -686,7 +687,7 @@ interface FakePanel {
   fireDisposed(): void;
 }
 
-function fakePanel(options: { throwOnPost?: boolean } = {}): FakePanel {
+function fakePanel(options: { throwOnPost?: boolean; retainsContext?: boolean } = {}): FakePanel {
   const messageHandlers = new Set<(raw: unknown) => void>();
   const visibleHandlers = new Set<() => void>();
   const disposeHandlers = new Set<() => void>();
@@ -717,6 +718,9 @@ function fakePanel(options: { throwOnPost?: boolean } = {}): FakePanel {
     },
     surface: {
       cspSource: MEASURED_CSP_SOURCE,
+      // False by default, so the controller tests below keep driving the
+      // reload branch; DoD 9.49's retained branch asks for true.
+      retainsContext: options.retainsContext ?? false,
       setHtml: (html: string) => {
         fake.html = html;
       },
@@ -2269,6 +2273,53 @@ async function activateWithHost(): Promise<AgentDeckApi> {
       await deactivate();
     },
   });
+}
+
+/**
+ * `activateWithHost` over the CAPTURED corpus — v0.9.0 DoD 9.49, 9.50. The
+ * deck has sessions on it, so "the deck is untouched" compares a real
+ * snapshot rather than two empty ones. Returns the API and the context, so a
+ * test can dispose `context.subscriptions` the way the editor does.
+ */
+async function activateCapturedWithApi(): Promise<{
+  api: AgentDeckApi;
+  context: { subscriptions: { dispose(): unknown }[] };
+}> {
+  process.env['CLAUDE_PROJECTS_ROOT'] = CAPTURED_ROOT;
+  const workspacePath = await capturedWorkspacePath();
+  return onFreePort({
+    use: async (port) => {
+      resetVscodeMock();
+      mock.setWorkspaceFolder(workspacePath);
+      mock.setConfig(CONFIG_SECTION, { port });
+      const context = extensionContext();
+      const api = await activate(context);
+      return { api, context: context as unknown as { subscriptions: { dispose(): unknown }[] } };
+    },
+    collided: () => currentHost()?.dataPath.diagnostics.bindError?.code === 'EADDRINUSE',
+    discard: async () => {
+      await deactivate();
+    },
+  });
+}
+
+/**
+ * The deck and Statistics messages a panel's DOCUMENT holds, in order —
+ * DoD 9.49, 9.50. Serialised, so "identical" is byte-identical.
+ */
+const DECK_AND_STATS_TYPES = new Set(['snapshot', 'diff', 'degraded', 'statsSnapshot', 'statsStore']);
+function deckAndStatsOf(held: readonly unknown[]): string {
+  return JSON.stringify(
+    held.filter((m) => DECK_AND_STATS_TYPES.has((m as { type?: string }).type ?? '')),
+  );
+}
+
+/** The sessions of the last snapshot a panel's document holds. */
+function heldSessions(held: readonly unknown[]): unknown[] {
+  const snapshots = held.filter((m) => (m as { type?: string }).type === 'snapshot') as {
+    sessions: unknown[];
+  }[];
+  return snapshots.at(-1)?.sessions ?? [];
 }
 
 /** A finding set in the parent's view shape (DoD 9.40), with `findings` findings. */
@@ -7714,6 +7765,34 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     controller.dispose();
   });
 
+  it('9.49: a RETAINED panel becoming visible is not a reload — nothing is reset and nothing re-sent', () => {
+    /*
+     * The document lived through the hide, so the resend would only cost: its
+     * snapshot refits the canvas (the user's pan and zoom) and it re-reads the
+     * stats store. Mutation: drop the `retainsContext` early return and this
+     * counts a reload and re-posts.
+     */
+    const panel = fakePanel({ retainsContext: true });
+    let snapshots = 0;
+    const controller = new PanelController({
+      panel: panel.surface,
+      nonce: 'AAAAAAAA',
+      onNeedsSnapshot: () => {
+        snapshots += 1;
+      },
+    });
+    controller.setSettings({ canvasAutoFit: false, tweaks: {}, livenessThresholdMs: 300_000 });
+    controller.sendViewControls(DEFAULT_VIEW_CONTROLS);
+    const before = panel.posted.length;
+    panel.fireBecameVisible();
+    expect(controller.counters.reloads).toBe(0);
+    // No snapshot was asked for, so the pump never ran and the bridge was
+    // never reset: the next publish is still a diff stream.
+    expect(snapshots).toBe(0);
+    expect(panel.posted).toHaveLength(before);
+    controller.dispose();
+  });
+
   it('DoD 4.1: a record with an extra string field is dropped and counted; the rest go out', () => {
     const goldenDir = fileURLToPath(new URL('../fixtures/golden/stats/', import.meta.url));
     const names = readdirSync(goldenDir).filter((n) => n.endsWith('.json')).sort();
@@ -9634,6 +9713,187 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
       rawOutput: false,
     });
     expect(asked).toStrictEqual(['run-1']);
+  });
+
+  /* ---------------------------------------------------------------------- *
+   * v0.9.0 round 7 — panel state and provider lifecycle (DoD 9.49–9.52)
+   * ---------------------------------------------------------------------- */
+
+  /** The Open Insights action rows under the sidebar's Menu, by command id. */
+  function insightsActionRows(view: MockWebviewView): string[] {
+    return sidebarRows(view, 'menu')
+      .filter((row) => row.kind === 'action' && row.command.startsWith('agentDeck.insights.'))
+      .map((row) => (row.kind === 'action' ? row.command : ''));
+  }
+
+  /** The last `sidebarState` a view was sent, serialised. */
+  function lastSidebarState(view: MockWebviewView): string {
+    return JSON.stringify(
+      view.webview.posted.filter((m) => (m as { type?: string }).type === 'sidebarState').at(-1),
+    );
+  }
+
+  /** Every provider-lifecycle line on the Agent Deck channel, time stamp dropped. */
+  function lifecycleLines(): string[] {
+    return mock.outputLines
+      .filter((entry) => entry.channel === 'Agent Deck' && / insights provider (registered|deregistered|refused):/.test(entry.line))
+      .map((entry) => entry.line.replace(/^\[[^\]]+\] /, ''));
+  }
+
+  it('9.49: the panel is created RETAINED, and a hide by another editor leaves the deck and the sidebar as they were', async () => {
+    /*
+     * The own-eyes break of 2026-09-24: an Insights preview opened in the
+     * deck's group and closed again, and the deck read "waiting for a session
+     * to start" over the sessions it had. `hideThenShow` is that sequence on
+     * the double, which tears a NON-retained document down and drops what the
+     * host posts inside the visibility callback, as observed. Mutation: delete
+     * `retainContextWhenHidden: true` and the document comes back empty.
+     */
+    const { api } = await activateCapturedWithApi();
+    const view = resolveSidebar();
+    api.registerInsightsProvider(
+      fakeInsightsProvider({
+        pickAgent: () => Promise.resolve(),
+        showPayload: () => Promise.resolve(),
+        clearHistory: () => Promise.resolve(),
+      }).provider,
+    );
+    await mock.runCommand(OPEN_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    if (panel === undefined) throw new Error('no panel');
+    expect(panel.options.retainContextWhenHidden).toBe(true);
+    await waitFor(() => heldSessions(panel.document).length > 0, 'the deck to hold sessions');
+
+    const deckBefore = deckAndStatsOf(panel.document);
+    const heldBefore = JSON.stringify(panel.document);
+    const sidebarBefore = lastSidebarState(view);
+    expect(heldSessions(panel.document).length, 'a deck with sessions, not two empty ones').toBeGreaterThan(0);
+    expect(insightsActionRows(view)).toHaveLength(3);
+
+    panel.hideThenShow();
+
+    expect(deckAndStatsOf(panel.document)).toBe(deckBefore);
+    // The WHOLE document, not only the deck: controls, settings and the
+    // Insights surface's state are what the break lost too.
+    expect(JSON.stringify(panel.document)).toBe(heldBefore);
+    expect(lastSidebarState(view)).toBe(sidebarBefore);
+    expect(insightsActionRows(view)).toHaveLength(3);
+    // Retained: nothing was reloaded, so nothing was re-sent.
+    expect(currentHost()?.panel?.counters.reloads).toBe(0);
+  });
+
+  it('9.50: deregistering reverts the sidebar and the Insights surface to free, and leaves Deck and Statistics untouched', async () => {
+    const { api } = await activateCapturedWithApi();
+    const view = resolveSidebar();
+    const actions = {
+      pickAgent: (): Promise<void> => Promise.resolve(),
+      showPayload: (): Promise<void> => Promise.resolve(),
+      clearHistory: (): Promise<void> => Promise.resolve(),
+    };
+    const handle = api.registerInsightsProvider(fakeInsightsProvider(actions).provider);
+    await mock.runCommand(OPEN_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    if (panel === undefined) throw new Error('no panel');
+    await waitFor(() => heldSessions(panel.document).length > 0, 'the deck to hold sessions');
+    expect(openInsightsValue(view)).toBe('Agent Deck Insights');
+    expect(insightsActionRows(view)).toStrictEqual([
+      'agentDeck.insights.pickAgent',
+      'agentDeck.insights.showPayload',
+      'agentDeck.insights.clearHistory',
+    ]);
+    expect(lastProviderState()?.provider).not.toBeNull();
+
+    const deckBefore = deckAndStatsOf(panel.document);
+    expect(heldSessions(panel.document).length).toBeGreaterThan(0);
+    const sentBefore = panel.webview.posted.length;
+
+    // DEREGISTER: Facts only, no rows, the free Insights view.
+    handle.dispose();
+    expect(openInsightsValue(view)).toBe('Facts only');
+    expect(insightsActionRows(view)).toStrictEqual([]);
+    expect(lastProviderState()?.provider).toBeNull();
+
+    // RE-REGISTER a second fake: the rows and the surface come back.
+    api.registerInsightsProvider(
+      fakeInsightsProvider({ ...actions, about: { name: 'Next Insights', version: '1.0.0' } }).provider,
+    );
+    expect(openInsightsValue(view)).toBe('Next Insights');
+    expect(insightsActionRows(view)).toHaveLength(3);
+    expect(lastProviderState()?.provider?.about.name).toBe('Next Insights');
+
+    // Deck and Statistics: not one message of theirs went out across the
+    // whole cycle, and what the document holds is byte-identical.
+    expect(
+      panel.webview.posted.slice(sentBefore).map((m) => (m as { type: string }).type),
+    ).toStrictEqual(['providerState', 'providerState']);
+    expect(deckAndStatsOf(panel.document)).toBe(deckBefore);
+  });
+
+  it('9.51: register, deregister (with its reason) and every refusal write ONE line each to the Agent Deck channel', async () => {
+    const { api, context } = await activateCapturedWithApi();
+    expect(lifecycleLines()).toStrictEqual([]);
+
+    const first = api.registerInsightsProvider(fakeInsightsProvider().provider);
+    expect(lifecycleLines()).toStrictEqual(['insights provider registered: Agent Deck Insights 0.2.0']);
+
+    // A second provider is refused, by name.
+    expect(() =>
+      api.registerInsightsProvider(
+        fakeInsightsProvider({ about: { name: 'Other Insights', version: '2.0.0' } }).provider,
+      ),
+    ).toThrow();
+    // A malformed one is refused too.
+    expect(() => api.registerInsightsProvider({ providerVersion: 9 } as never)).toThrow(TypeError);
+
+    first.dispose();
+    first.dispose(); // idempotent: no second line
+
+    // One more, left registered for the window to close over.
+    api.registerInsightsProvider(fakeInsightsProvider({ about: { name: 'Last Insights', version: '1.0.0' } }).provider);
+    await deactivate();
+    // The editor disposes the context's subscriptions in order; the registry
+    // was pushed before the lazily created channel, so its line lands first.
+    for (const subscription of context.subscriptions) subscription.dispose();
+
+    expect(lifecycleLines()).toStrictEqual([
+      'insights provider registered: Agent Deck Insights 0.2.0',
+      'insights provider refused: Agent Deck: an Insights provider is already registered (Agent Deck Insights 0.2.0); Other Insights 2.0.0 was refused.',
+      'insights provider refused: Agent Deck: an Insights provider must state providerVersion 1.',
+      'insights provider deregistered: Agent Deck Insights 0.2.0 (reason: the provider disposed its registration)',
+      'insights provider registered: Last Insights 1.0.0',
+      'insights provider deregistered: Last Insights 1.0.0 (reason: the window is closing)',
+    ]);
+  });
+
+  it('9.51: the line builder states each event in the words the channel carries', () => {
+    expect(providerLifecycleLine({ kind: 'registered', name: 'A', version: '1.0.0' })).toBe(
+      'insights provider registered: A 1.0.0',
+    );
+    expect(providerLifecycleLine({ kind: 'deregistered', name: 'A', version: '1.0.0', reason: 'disposed' })).toBe(
+      'insights provider deregistered: A 1.0.0 (reason: the provider disposed its registration)',
+    );
+    expect(providerLifecycleLine({ kind: 'deregistered', name: 'A', version: '1.0.0', reason: 'shutdown' })).toBe(
+      'insights provider deregistered: A 1.0.0 (reason: the window is closing)',
+    );
+    expect(providerLifecycleLine({ kind: 'refused', message: 'no' })).toBe('insights provider refused: no');
+  });
+
+  it('9.52: selecting the SELECTED run again deselects it; a third click selects it again', async () => {
+    // Mutation: drop the toggle and the second click re-selects run-1.
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    api.registerInsightsProvider(fakeInsightsProvider().provider);
+    const selected = (): { runId: string } | null | undefined =>
+      (lastProviderState()?.provider as { selected?: { runId: string } | null } | null)?.selected;
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+    expect(selected()?.runId).toBe('run-1');
+    const sent = panel?.webview.posted.length ?? 0;
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+    expect(panel?.webview.posted.length, 'the deselection is SENT, not only held').toBe(sent + 1);
+    expect(selected()).toBeNull();
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+    expect(selected()?.runId).toBe('run-1');
   });
 
   it('9.46: a provider going away takes its selection with it — the next opens on nothing selected', async () => {

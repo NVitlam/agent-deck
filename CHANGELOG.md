@@ -100,6 +100,17 @@ All notable changes to Agent Deck are documented here.
   names it and its version. A tile asks before it opens anything, naming the
   host it will open in your browser, and the link then opens through VS Code;
   the extension itself still makes no network call.
+- **The panel keeps what it shows while another editor covers it.** Opening
+  an editor in the panel's group, such as another extension's preview, and
+  closing it again used to bring the deck back reading "waiting for a session
+  to start" until the next update. The panel now keeps its document while it
+  is hidden.
+- **Insights provider lifecycle on the Agent Deck output channel.** One line
+  each time a provider registers, deregisters (saying whether it disposed its
+  registration or the window closed) or is refused. When a provider
+  deregisters, the sidebar and the Insights surface go back to the free state
+  and the deck and Statistics are left as they were. Clicking the selected
+  report again clears the preview.
 - **Which agent type a subagent was.** Each subagent in the statistics now
   carries the type Claude Code recorded for it. The description beside it is
   not carried, and a test holds the captured descriptions against every record

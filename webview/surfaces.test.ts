@@ -1059,6 +1059,35 @@ describe('DOM goldens of both surfaces in both states', () => {
     golden('insights-provider-ticks', one(ticked.container, TESTID.insightsSurface));
   });
 
+  it('9.52: the SELECTED row clicked again posts its own id, and the host’s deselection renders the prompt', () => {
+    /*
+     * The toggle is the HOST's (it holds the selection); what the renderer
+     * owes is to post the same run again rather than swallow a click on the
+     * row it shows pressed, and to render "nothing selected" exactly as the
+     * first-open state does. The golden is byte-compared to that one.
+     */
+    const status = 'licensed until 2027-09-23';
+    const panel = render();
+    send(providerState({ latest: 'ok', status }));
+    send(viewControls({ surface: 'insights' }));
+    const pressed = all(panel.container, TESTID.insightsReportSelect).filter(
+      (b) => b.getAttribute('aria-pressed') === 'true',
+    );
+    expect(pressed).toHaveLength(1);
+    const selectedRun = one(panel.container, TESTID.insightsPreview).getAttribute('data-run');
+    expect(selectedRun).not.toBe('');
+    click(pressed[0] as Element);
+    expect(intents(panel)).toStrictEqual([{ type: 'insightsSelect', runId: selectedRun }]);
+    send(providerState({ selected: false, status }));
+    expect(one(panel.container, 'insights-preview-empty').textContent).toBe('Select a report to preview / download.');
+    golden('insights-provider-deselected', one(panel.container, TESTID.insightsSurface));
+    if (!UPDATING) {
+      expect(readFileSync(resolve(GOLDEN_DIR, 'insights-provider-deselected.dom.txt'), 'utf8')).toBe(
+        readFileSync(resolve(GOLDEN_DIR, 'insights-provider-none-selected.dom.txt'), 'utf8'),
+      );
+    }
+  });
+
   it('the goldens are not being written by this run', () => {
     expect(UPDATING, 'AGENT_DECK_UPDATE_SURFACE_GOLDENS is set: the goldens were REWRITTEN').toBe(false);
   });

@@ -1700,6 +1700,10 @@ export interface InsightsRawOutputMessage {
  * at the guard (the id pattern) and again at the host, which acts only on a
  * run its current list holds, then reads it through `getRun` and re-sends
  * `providerState` with the preview.
+ *
+ * v0.9.0 DoD 9.52: naming the run ALREADY selected clears the selection, so a
+ * second click on the selected row deselects it. The message is the same one;
+ * the host, which holds the selection, is the party that tells the two apart.
  */
 export interface InsightsSelectMessage {
   type: 'insightsSelect';

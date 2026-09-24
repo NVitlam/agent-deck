@@ -682,7 +682,30 @@ export interface InsightsProviderRegistryOptions {
   onChange: () => void;
   /** A provider method threw, or an action rejected. Never rethrown. */
   onError?: (error: unknown) => void;
+  /**
+   * A provider registered, left, or was refused — v0.9.0 DoD 9.51. One call
+   * per event, so the host can write one line per event. Never rethrown.
+   */
+  onLifecycle?: (event: ProviderLifecycleEvent) => void;
 }
+
+/**
+ * Why a provider stopped being registered — DoD 9.51. `disposed`: its own
+ * handle was disposed. `shutdown`: the window is closing and the registry
+ * went with it.
+ */
+export type DeregisterReason = 'disposed' | 'shutdown';
+
+/**
+ * One provider lifecycle event — DoD 9.51. `name` and `version` are the
+ * checked about, so a line built from them carries only strings that passed
+ * {@link viewOfAbout}. A refusal carries this registry's own message, never
+ * the provider's text.
+ */
+export type ProviderLifecycleEvent =
+  | { kind: 'registered'; name: string; version: string }
+  | { kind: 'deregistered'; name: string; version: string; reason: DeregisterReason }
+  | { kind: 'refused'; message: string };
 
 /** One registration, held with the facts checked when it was made. */
 interface Registration {
@@ -721,12 +744,41 @@ export type ActionResult = 'done' | 'no-provider' | 'absent' | 'failed';
 export class InsightsProviderRegistry {
   readonly #onChange: () => void;
   readonly #onError: ((error: unknown) => void) | undefined;
+  readonly #onLifecycle: ((event: ProviderLifecycleEvent) => void) | undefined;
   #current: Registration | null = null;
   #disposed = false;
 
   constructor(options: InsightsProviderRegistryOptions) {
     this.#onChange = options.onChange;
     this.#onError = options.onError;
+    this.#onLifecycle = options.onLifecycle;
+  }
+
+  /** Report one lifecycle event. A throwing listener is swallowed (G2). */
+  #lifecycle(event: ProviderLifecycleEvent): void {
+    try {
+      this.#onLifecycle?.(event);
+    } catch {
+      // The channel is a record; it must not decide whether a provider registers.
+    }
+  }
+
+  /**
+   * Register `provider`, or throw — and say which, once (DoD 9.51). Every
+   * refusal is reported with this registry's own message before it is
+   * rethrown, so a refused provider is on the channel even when the caller
+   * swallows the error.
+   */
+  register(provider: unknown): ProviderDisposable {
+    try {
+      return this.#register(provider);
+    } catch (error) {
+      this.#lifecycle({
+        kind: 'refused',
+        message: error instanceof Error ? error.message : 'Agent Deck: the provider was refused.',
+      });
+      throw error;
+    }
   }
 
   /**
@@ -742,7 +794,7 @@ export class InsightsProviderRegistry {
    * getter, one reads as absent, because a getter would run the provider's
    * code in the middle of a check.
    */
-  register(provider: unknown): ProviderDisposable {
+  #register(provider: unknown): ProviderDisposable {
     if (this.#disposed) throw new Error('Agent Deck: the extension is shutting down; no provider can register.');
     const version = readMember(provider, 'providerVersion');
     if (version !== PROVIDER_VERSION) {
@@ -791,6 +843,7 @@ export class InsightsProviderRegistry {
       subscription,
     };
     this.#current = registration;
+    this.#lifecycle({ kind: 'registered', name: about.name, version: about.version });
     this.#onChange();
     let released = false;
     return {
@@ -806,6 +859,12 @@ export class InsightsProviderRegistry {
         } catch (error) {
           this.#report(error);
         }
+        this.#lifecycle({
+          kind: 'deregistered',
+          name: registration.about.name,
+          version: registration.about.version,
+          reason: 'disposed',
+        });
         this.#onChange();
       },
     };
@@ -960,6 +1019,14 @@ export class InsightsProviderRegistry {
       current?.subscription?.dispose();
     } catch {
       // Shutting down; a throwing disposable must not block the rest.
+    }
+    if (current !== null) {
+      this.#lifecycle({
+        kind: 'deregistered',
+        name: current.about.name,
+        version: current.about.version,
+        reason: 'shutdown',
+      });
     }
   }
 

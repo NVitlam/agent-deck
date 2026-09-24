@@ -219,18 +219,41 @@ export class MockWebviewPanel {
   disposed = false;
   revealCount = 0;
 
+  /**
+   * `vscode.WebviewPanel.options` — the PANEL's options, which is where
+   * `retainContextWhenHidden` lives (the webview's own options are
+   * `webview.options`). The real API hands back what `createWebviewPanel` was
+   * given; so does this.
+   */
+  readonly options: { retainContextWhenHidden?: boolean };
+
   readonly webview: MockWebview;
+
+  /**
+   * What the DOCUMENT on the other end has received since it last loaded —
+   * v0.9.0 DoD 9.49. `webview.posted` is what the host SENT, which survives a
+   * hide; this is what the renderer HOLDS, which does not unless the panel
+   * retains its context. See {@link MockWebviewPanel.hideThenShow}.
+   */
+  readonly document: unknown[] = [];
 
   readonly #inbound = new Emitter<unknown>();
   readonly #viewState = new Emitter<{ webviewPanel: MockWebviewPanel }>();
   readonly #onDispose = new Emitter<void>();
   readonly #posted: unknown[] = [];
+  #documentLive = true;
 
   constructor(viewType: string, title: string, options: unknown) {
     this.viewType = viewType;
     this.title = title;
+    const retain =
+      typeof options === 'object' && options !== null &&
+      (options as { retainContextWhenHidden?: unknown }).retainContextWhenHidden === true;
+    this.options = retain ? { retainContextWhenHidden: true } : {};
     const posted = this.#posted;
     const inbound = this.#inbound;
+    const held = this.document;
+    const live = (): boolean => this.#documentLive;
     this.webview = {
       html: '',
       options,
@@ -248,6 +271,7 @@ export class MockWebviewPanel {
       asWebviewUri: (uri: Uri) => uri,
       postMessage: (message: unknown) => {
         posted.push(message);
+        if (live()) held.push(message);
         return Promise.resolve(true);
       },
       onDidReceiveMessage: (listener: (raw: unknown) => void) => inbound.event(listener),
@@ -293,6 +317,34 @@ export class MockWebviewPanel {
   fireViewStateChange(visible: boolean): void {
     this.visible = visible;
     this.#viewState.fire({ webviewPanel: this });
+  }
+
+  /**
+   * Another editor covers the panel in its group, then goes away — the
+   * own-eyes break of 2026-09-24 (v0.9.0 DoD 9.49).
+   *
+   * RETAINED (`options.retainContextWhenHidden`): the document lives through
+   * the hide and everything posted reaches it.
+   *
+   * NOT RETAINED: the document is torn down on the hide, and what the host
+   * posts INSIDE the visibility callback does not reach the rebuilt one; it is
+   * live again only after the callback returns. That second half is the FIELD
+   * OBSERVATION, not a measured mechanism: the host's resend ran in exactly
+   * that callback and the deck still came back empty until the next state
+   * send. It is modelled as observed, so a test on this double reproduces the
+   * break rather than the resend's intent.
+   */
+  hideThenShow(): void {
+    this.visible = false;
+    this.#viewState.fire({ webviewPanel: this });
+    const retained = this.options.retainContextWhenHidden === true;
+    if (!retained) {
+      this.document.length = 0;
+      this.#documentLive = false;
+    }
+    this.visible = true;
+    this.#viewState.fire({ webviewPanel: this });
+    this.#documentLive = true;
   }
 
   get subscriberCount(): number {

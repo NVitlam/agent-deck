@@ -939,8 +939,12 @@ what it does, what it never does, and the plans.
 **With a provider registered.** On the left, the provider's reports — each with its date, how many
 findings it has and the agent CLI it used, newest first, a refused one marked *refused*. On the
 right, *Select a report to preview / download.* until you click one; then that report, exactly as
-the [extension API](#for-extension-authors) section describes it. The same fact tiles as the free
-state sit below both. There is no Run button here: a run is started from Insights' own window.
+the [extension API](#for-extension-authors) section describes it. Click the selected report again
+and the preview goes back to that prompt. The same fact tiles as the free state sit below both.
+There is no Run button here: a run is started from Insights' own window. If the provider goes away,
+the sidebar reads *Facts only* again, its rows under Open Insights go, and this surface shows the
+free view; the deck and Statistics are left as they were. The Agent Deck output channel writes one
+line each time a provider registers, deregisters (with the reason) or is refused.
 
 **Export.** The preview's header carries **HTML**, **Markdown** and **Copy**. HTML is one
 self-contained page — its own stylesheet, no script, no image, nothing it loads, and a content

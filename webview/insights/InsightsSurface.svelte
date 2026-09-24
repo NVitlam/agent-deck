@@ -16,7 +16,8 @@
   first, a tick box per row and "Export ticked (n)" under it — and a PREVIEW
   on the right: "Select a report to preview / download." until a row is
   selected, then that run rendered exactly as the latest report was, with
-  Export HTML / Markdown / Copy in its header. The fact tiles sit below both.
+  Export HTML / Markdown / Copy in its header, and "Investigate Report"
+  beside them while the provider has `investigate` (DoD 9.54). The fact tiles sit below both.
   Those controls are the amendment's RULED EXCEPTION to the clean-windows law,
   enumerated in `webview/chrome.test.ts`; there is no Run action.
 
@@ -57,6 +58,7 @@
     ontick,
     onexport,
     onexportticked,
+    oninvestigate,
   }: {
     /** The STORED history — "the facts the store already holds". */
     records: readonly StatsRecord[];
@@ -84,6 +86,8 @@
     onexport: (target: 'html' | 'markdown' | 'copy') => void;
     /** "Export ticked (n)" (DoD 9.47). */
     onexportticked: () => void;
+    /** "Investigate Report" on the selected run (DoD 9.54). */
+    oninvestigate: () => void;
   } = $props();
 
   let free = $derived(freeInsightsLayout(records, now(), idleThresholdMs));
@@ -237,6 +241,14 @@
                           onclick={() => onexport(item.target)}>{item.label}</button
                         >
                       {/each}
+                      {#if report.investigate}
+                        <button
+                          type="button"
+                          class="action"
+                          data-testid={TESTID.insightsInvestigate}
+                          onclick={() => oninvestigate()}>Investigate Report</button
+                        >
+                      {/if}
                     </span>
                   </div>
                   <p class="fact">{report.facts.agent}</p>

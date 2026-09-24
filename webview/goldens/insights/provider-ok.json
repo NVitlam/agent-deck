@@ -147,7 +147,8 @@
         }
       ],
       "rejected": "1 finding rejected by the provider",
-      "rawOutput": false
+      "rawOutput": false,
+      "investigate": false
     }
   }
 }

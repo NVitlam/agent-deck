@@ -99,6 +99,7 @@ function intents(panel: Panel): WebviewToHostMessage[] {
       'insightsSelect',
       'insightsExport',
       'insightsExportBatch',
+      'insightsInvestigate',
     ].includes(m.type),
   );
 }
@@ -222,6 +223,7 @@ function providerState(
   over: {
     latest?: keyof typeof LATEST;
     rawOutput?: boolean;
+    investigate?: boolean;
     selected?: boolean;
     status?: string;
     runs?: unknown[];
@@ -251,6 +253,7 @@ function providerState(
               set,
               dropped: 0,
               rawOutput: over.rawOutput ?? latest === 'refused',
+              investigate: over.investigate ?? false,
             },
     },
   };
@@ -563,7 +566,7 @@ describe('the Insights surface, PROVIDER — DoD 9.30, reshaped by DoD 9.46', ()
     const state = providerState() as { provider: Record<string, unknown> };
     send({
       ...state,
-      provider: { ...state.provider, selected: { runId: 'run-0', set: null, dropped: 1, rawOutput: false } },
+      provider: { ...state.provider, selected: { runId: 'run-0', set: null, dropped: 1, rawOutput: false, investigate: true } },
     });
     send(viewControls({ surface: 'insights' }));
     expect(one(panel.container, 'insights-preview-missing').textContent).toBe('The provider has no report for this run.');
@@ -571,8 +574,37 @@ describe('the Insights surface, PROVIDER — DoD 9.30, reshaped by DoD 9.46', ()
       '1 value from this report did not pass the check and is not shown',
     );
     expect(all(panel.container, TESTID.insightsExport)).toStrictEqual([]);
+    // DoD 9.54: the provider offers investigate, and a run with no report
+    // still offers nothing to investigate.
+    expect(all(panel.container, TESTID.insightsInvestigate)).toStrictEqual([]);
     panel.store.exportInsights('html');
+    panel.store.investigateInsights();
     expect(intents(panel)).toStrictEqual([]);
+  });
+
+  it('9.54: "Investigate Report" sits beside Export while the provider has investigate, and posts no run id', () => {
+    const panel = render();
+    send(providerState({ investigate: true }));
+    send(viewControls({ surface: 'insights' }));
+    const button = one(panel.container, TESTID.insightsInvestigate);
+    expect(button.textContent?.trim()).toBe('Investigate Report');
+    // Beside Export: the same header group, after the three of them.
+    const group = button.parentElement;
+    expect(group?.classList.contains('exports')).toBe(true);
+    expect([...(group?.children ?? [])].map((el) => el.getAttribute('data-testid'))).toStrictEqual([
+      TESTID.insightsExport,
+      TESTID.insightsExport,
+      TESTID.insightsExport,
+      TESTID.insightsInvestigate,
+    ]);
+    click(button);
+    // No payload: the run is the host's selection.
+    expect(intents(panel)).toStrictEqual([{ type: 'insightsInvestigate' }]);
+    // Absent: no button, and the store posts nothing even if asked.
+    send(providerState({ investigate: false }));
+    expect(all(panel.container, TESTID.insightsInvestigate)).toStrictEqual([]);
+    panel.store.investigateInsights();
+    expect(intents(panel)).toStrictEqual([{ type: 'insightsInvestigate' }]);
   });
 
   it('9.48 D3: a report the check dropped part of says so, INSIDE the report the export is built from', () => {
@@ -1042,6 +1074,23 @@ describe('DOM goldens of both surfaces in both states', () => {
       panel.dispose();
       mounted.pop();
     }
+  });
+
+  it('9.55: Investigate Report PRESENT is one golden; ABSENT is the `ok` golden, byte for byte', () => {
+    const present = render();
+    send(providerState({ latest: 'ok', investigate: true }));
+    send(viewControls({ surface: 'insights' }));
+    golden('insights-provider-investigate', one(present.container, TESTID.insightsSurface));
+    present.dispose();
+    mounted.pop();
+
+    // The harness's default is investigate: false, so every other provider
+    // golden is the ABSENT case; this one says so for the `ok` set.
+    const absent = render();
+    send(providerState({ latest: 'ok', investigate: false }));
+    send(viewControls({ surface: 'insights' }));
+    expect(all(absent.container, TESTID.insightsInvestigate)).toStrictEqual([]);
+    golden('insights-provider-ok', one(absent.container, TESTID.insightsSurface));
   });
 
   it('Insights with a provider, NOTHING selected, and with TICKS (DoD 9.46)', () => {

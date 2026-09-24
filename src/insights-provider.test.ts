@@ -80,6 +80,7 @@ interface AmendmentProvider {
   pickAgent?(): Promise<void>;
   showPayload?(): Promise<void>;
   clearHistory?(): Promise<void>;
+  investigate?(runId: string): Promise<void>;
   readonly onDidChange: ProviderEvent<void>;
 }
 
@@ -124,7 +125,7 @@ const runShape: Exact<RunSummary, AmendmentRun> = true;
 const actionKeys: Exact<keyof FindingActionView, 'lead' | 'detail'> = true;
 const evidenceKeys: Exact<keyof FindingEvidenceView, 'label' | 'sessionId' | 'statsKey' | 'value'> = true;
 const snapshotKeys: Exact<keyof InsightsProviderSnapshot, 'about' | 'runs' | 'dropped' | 'selected'> = true;
-const previewKeys: Exact<keyof InsightsRunPreview, 'runId' | 'set' | 'dropped' | 'rawOutput'> = true;
+const previewKeys: Exact<keyof InsightsRunPreview, 'runId' | 'set' | 'dropped' | 'rawOutput' | 'investigate'> = true;
 const actionNames: Exact<InsightsProviderAction, 'pickAgent' | 'showPayload' | 'clearHistory'> = true;
 const kindsExhaustive: Exact<(typeof FINDING_KINDS)[number], InsightsFindingKind> = true;
 const confidencesExhaustive: Exact<(typeof CONFIDENCES)[number], InsightsConfidence> = true;
@@ -883,6 +884,9 @@ describe('the registry holds ONE provider', () => {
       fakeProvider({ pickAgent: 'x' }).provider,
       fakeProvider({ showPayload: null }).provider,
       fakeProvider({ clearHistory: 1 }).provider,
+      // DoD 9.54: investigate is optional; present, it must be a function.
+      fakeProvider({ investigate: 'x' }).provider,
+      fakeProvider({ investigate: null }).provider,
     ]) {
       expect(() => registry.register(bad), JSON.stringify(bad)).toThrow(TypeError);
     }
@@ -955,6 +959,7 @@ describe('the parent reads and calls ONLY the contract’s members', () => {
       pickAgent: () => Promise.resolve(),
       showPayload: () => Promise.resolve(),
       clearHistory: () => Promise.resolve(),
+      investigate: () => Promise.resolve(),
     }).provider as unknown as Record<string, unknown>;
     const wrap = (key: string, value: unknown): unknown =>
       typeof value === 'function'
@@ -989,6 +994,8 @@ describe('the parent reads and calls ONLY the contract’s members', () => {
     expect(called).not.toContain('pickAgent');
     expect(registry.rawOutput('run-1')).toMatchObject({ ok: true, text: 'raw' });
     for (const action of PROVIDER_ACTIONS) await registry.invoke(action);
+    expect(called).not.toContain('investigate');
+    expect(await registry.investigate('run-1')).toBe('done');
     handle.dispose();
 
     const CONTRACT = [
@@ -1002,6 +1009,7 @@ describe('the parent reads and calls ONLY the contract’s members', () => {
       'pickAgent',
       'showPayload',
       'clearHistory',
+      'investigate',
       'onDidChange',
     ];
     expect([...touched].filter((key) => !CONTRACT.includes(key))).toStrictEqual([]);
@@ -1009,7 +1017,7 @@ describe('the parent reads and calls ONLY the contract’s members', () => {
     // DoD 9.44: getLatest and run are READ at registration (still required)
     // and CALLED by nothing — the surface shows the selected run and has no Run.
     expect([...new Set(called)].sort()).toStrictEqual(
-      ['listRuns', 'getRun', 'onDidChange', 'getRawOutput', 'pickAgent', 'showPayload', 'clearHistory'].sort(),
+      ['listRuns', 'getRun', 'onDidChange', 'getRawOutput', 'pickAgent', 'showPayload', 'clearHistory', 'investigate'].sort(),
     );
   });
 });
@@ -1110,7 +1118,7 @@ describe('onDidChange, run and disposal', () => {
     expect(noList.snapshot('run-1')).toMatchObject({ runs: [], dropped: 1, selected: null });
     const noRun = new InsightsProviderRegistry({ onChange: () => undefined, onError: () => undefined });
     noRun.register(fakeProvider({ getRun: throws }).provider);
-    expect(noRun.snapshot('run-1')?.selected).toStrictEqual({ runId: 'run-1', set: null, dropped: 1, rawOutput: false });
+    expect(noRun.snapshot('run-1')?.selected).toStrictEqual({ runId: 'run-1', set: null, dropped: 1, rawOutput: false, investigate: false });
   });
 
   it('DoD 9.44: the selection previews ONLY a run the list holds, read through getRun', () => {
@@ -1138,7 +1146,7 @@ describe('onDidChange, run and disposal', () => {
   it('DoD 9.44: a getRun answer naming ANOTHER run is dropped, never shown under the row clicked', () => {
     const registry = new InsightsProviderRegistry({ onChange: () => undefined });
     registry.register(fakeProvider({ getRun: () => findingSet({ runId: 'run-other' }) }).provider);
-    expect(registry.snapshot('run-1')?.selected).toStrictEqual({ runId: 'run-1', set: null, dropped: 1, rawOutput: false });
+    expect(registry.snapshot('run-1')?.selected).toStrictEqual({ runId: 'run-1', set: null, dropped: 1, rawOutput: false, investigate: false });
   });
 
   it('DISPOSAL returns to the free state, unsubscribes, and allows the next provider', () => {
@@ -1346,5 +1354,105 @@ describe('raw output (DoD 9.40), for the SELECTED run (DoD 9.46)', () => {
     refused = false;
     expect(registry.rawOutput('run-1')).toStrictEqual({ ok: false, reason: 'no-run' });
     expect(asked).toStrictEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * Investigate Report — DoD 9.54
+ * ------------------------------------------------------------------------ */
+
+describe('investigate (DoD 9.54): optional, called with the selected run id and nothing else', () => {
+  it('absent: the preview offers nothing and the registry calls nothing', async () => {
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    expect(await registry.investigate('run-1')).toBe('no-provider');
+    registry.register(fakeProvider().provider);
+    expect(registry.snapshot('run-1')?.selected?.investigate).toBe(false);
+    expect(await registry.investigate('run-1')).toBe('absent');
+  });
+
+  it('present: the preview offers it, and a press passes exactly the run id, awaited', async () => {
+    const calls: unknown[][] = [];
+    let release: () => void = () => undefined;
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    registry.register(
+      fakeProvider({
+        investigate: (...args: unknown[]) => {
+          calls.push(args);
+          return new Promise<void>((resolve) => (release = resolve));
+        },
+      }).provider,
+    );
+    expect(registry.snapshot('run-1')?.selected?.investigate).toBe(true);
+    // Nothing selected: no preview to offer it on.
+    expect(registry.snapshot()?.selected).toBeNull();
+    let settled = false;
+    const pending = registry.investigate('run-1').then((result) => {
+      settled = true;
+      return result;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release();
+    expect(await pending).toBe('done');
+    expect(calls).toStrictEqual([['run-1']]);
+  });
+
+  it('no selection, or a run the list no longer holds, calls nothing', async () => {
+    let calls = 0;
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    registry.register(
+      fakeProvider({
+        investigate: () => {
+          calls += 1;
+          return Promise.resolve();
+        },
+      }).provider,
+    );
+    expect(await registry.investigate(null)).toBe('no-run');
+    expect(await registry.investigate('run-404')).toBe('no-run');
+    expect(calls).toBe(0);
+  });
+
+  it('a throw and a rejection are each reported once and answered failed, never rethrown', async () => {
+    for (const investigate of [
+      () => {
+        throw new Error('no agent CLI');
+      },
+      () => Promise.reject(new Error('no agent CLI')),
+    ]) {
+      const errors: unknown[] = [];
+      const registry = new InsightsProviderRegistry({ onChange: () => undefined, onError: (e) => errors.push(e) });
+      registry.register(fakeProvider({ investigate }).provider);
+      expect(await registry.investigate('run-1')).toBe('failed');
+      expect(errors.map((e) => (e as Error).message)).toStrictEqual(['no agent CLI']);
+    }
+  });
+
+  it('given as a getter it reads as ABSENT and never runs; added after registration it is not called', async () => {
+    let ran = 0;
+    const provider = fakeProvider().provider as unknown as Record<string, unknown>;
+    Object.defineProperty(provider, 'investigate', {
+      enumerable: true,
+      configurable: true,
+      get: () => {
+        ran += 1;
+        return () => Promise.resolve();
+      },
+    });
+    const registry = new InsightsProviderRegistry({ onChange: () => undefined });
+    registry.register(provider);
+    expect(registry.snapshot('run-1')?.selected?.investigate).toBe(false);
+    expect(await registry.investigate('run-1')).toBe('absent');
+    expect(ran).toBe(0);
+    const later = fakeProvider().provider as unknown as Record<string, unknown>;
+    const other = new InsightsProviderRegistry({ onChange: () => undefined });
+    other.register(later);
+    let calls = 0;
+    later['investigate'] = () => {
+      calls += 1;
+      return Promise.resolve();
+    };
+    expect(await other.investigate('run-1')).toBe('absent');
+    expect(calls).toBe(0);
   });
 });

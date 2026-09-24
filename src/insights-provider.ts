@@ -21,8 +21,9 @@
  * `getRun(runId)` for the run the user selected or exports,
  * `getRawOutput(runId)` when the user asks for a refused run's raw output,
  * `pickAgent()`, `showPayload()` or `clearHistory()` when the user presses
- * that sidebar row, and subscribes to `onDidChange`. **It calls nothing else
- * on it**, and `insights-provider.test.ts` holds that with a provider wrapped
+ * that sidebar row, `investigate(runId)` with the selected run when the user
+ * presses Investigate Report (DoD 9.54), and subscribes to `onDidChange`.
+ * **It calls nothing else on it**, and `insights-provider.test.ts` holds that with a provider wrapped
  * in a Proxy that records every property read.
  *
  * **`getLatest()` is REQUIRED and `run()` OPTIONAL, and the parent calls
@@ -221,6 +222,13 @@ export interface InsightsProvider {
    * before calling it; a confirmation, if any, is the provider's.
    */
   clearHistory?(): Promise<void>;
+  /**
+   * OPTIONAL — the preview header's "Investigate Report" (spec `Amendment
+   * 2026-09-24 — Investigate Report`, v0.9.0 DoD 9.54). Called with the
+   * SELECTED run's id and nothing else; the parent awaits it. What it does
+   * — a prompt, a process, a mode — is the provider's alone.
+   */
+  investigate?(runId: string): Promise<void>;
   /** Fires when anything `listRuns` or `getRun` would return has moved. */
   readonly onDidChange: ProviderEvent<void>;
 }
@@ -713,6 +721,8 @@ interface Registration {
   readonly about: InsightsProviderAbout;
   /** Whether the provider had `getRawOutput` when it registered. */
   readonly rawOutput: boolean;
+  /** Whether the provider had `investigate` when it registered (DoD 9.54). */
+  readonly investigate: boolean;
   /** The optional actions it had when it registered, in the Menu's order. */
   readonly actions: readonly InsightsProviderAction[];
   readonly subscription: ProviderDisposable | null;
@@ -733,6 +743,13 @@ export type RawOutputResult =
 
 /** What pressing an action's sidebar row came to. */
 export type ActionResult = 'done' | 'no-provider' | 'absent' | 'failed';
+
+/**
+ * What pressing Investigate Report came to — DoD 9.54. `no-run`: nothing is
+ * selected, or the list no longer holds the selection, so the provider was
+ * not called.
+ */
+export type InvestigateResult = ActionResult | 'no-run';
 
 /**
  * Holds the ONE registered provider.
@@ -789,7 +806,7 @@ export class InsightsProviderRegistry {
    * already registered. A registration that throws changes nothing.
    *
    * `getRun` is REQUIRED since v0.9.0 DoD 9.44. `getRawOutput`, `pickAgent`,
-   * `showPayload` and `clearHistory` are OPTIONAL: absent, the surface or the
+   * `showPayload`, `clearHistory` and (DoD 9.54) `investigate` are OPTIONAL: absent, the surface or the
    * sidebar never offers them; present, each must be a function. Given as a
    * getter, one reads as absent, because a getter would run the provider's
    * code in the middle of a check.
@@ -813,7 +830,7 @@ export class InsightsProviderRegistry {
         throw new TypeError(`Agent Deck: an Insights provider must have ${member}.`);
       }
     }
-    for (const member of ['run', 'getRawOutput', ...PROVIDER_ACTIONS] as const) {
+    for (const member of ['run', 'getRawOutput', 'investigate', ...PROVIDER_ACTIONS] as const) {
       const value = readMember(provider, member);
       if (value !== undefined && typeof value !== 'function') {
         throw new TypeError(`Agent Deck: an Insights provider’s ${member}, when present, must be a function.`);
@@ -839,6 +856,7 @@ export class InsightsProviderRegistry {
       provider: typed,
       about,
       rawOutput: readMember(provider, 'getRawOutput') !== undefined,
+      investigate: readMember(provider, 'investigate') !== undefined,
       actions: PROVIDER_ACTIONS.filter((action) => readMember(provider, action) !== undefined),
       subscription,
     };
@@ -929,6 +947,7 @@ export class InsightsProviderRegistry {
         set: set.value,
         dropped: set.dropped,
         rawOutput: current.rawOutput && set.value?.state === 'refused',
+        investigate: current.investigate,
       };
     }
     return {
@@ -1002,6 +1021,29 @@ export class InsightsProviderRegistry {
       const method = readMember(current.provider, action) as (() => unknown) | undefined;
       if (typeof method !== 'function') return 'absent';
       await method.call(current.provider);
+      return 'done';
+    } catch (error) {
+      this.#report(error);
+      return 'failed';
+    }
+  }
+
+  /**
+   * Investigate Report — DoD 9.54. Calls the provider's optional
+   * `investigate` with `runId` and nothing else, only when a provider that
+   * had it at registration is registered and its list holds the run NOW.
+   * Awaited; a throw or a rejection is reported (one line on the channel)
+   * and answered `failed`, never rethrown.
+   */
+  async investigate(runId: string | null): Promise<InvestigateResult> {
+    const current = this.#current;
+    if (current === null) return 'no-provider';
+    if (!current.investigate) return 'absent';
+    if (runId === null || !this.lists(runId)) return 'no-run';
+    try {
+      const method = readMember(current.provider, 'investigate') as ((id: string) => unknown) | undefined;
+      if (typeof method !== 'function') return 'absent';
+      await method.call(current.provider, runId);
       return 'done';
     } catch (error) {
       this.#report(error);

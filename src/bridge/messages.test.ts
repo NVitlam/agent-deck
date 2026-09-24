@@ -837,6 +837,8 @@ describe('WEBVIEW_TO_HOST_TYPES is bound to the guard it describes', () => {
     insightsSelect: { type: 'insightsSelect', runId: 'run-2026-09-21.1' },
     insightsExport: { type: 'insightsExport', target: 'html' },
     insightsExportBatch: { type: 'insightsExportBatch', runIds: ['run-1', 'run-2'] },
+    // v0.9.0 DoD 9.54: Investigate Report — no payload, the host's selection.
+    insightsInvestigate: { type: 'insightsInvestigate' },
   };
 
   it('DoD 9.46: the removed Run intent is refused like any unknown type', () => {

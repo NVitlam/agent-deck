@@ -126,6 +126,10 @@ const ALLOWED: Readonly<Record<string, string>> = Object.freeze({
   [TESTID.insightsExportTicked]:
     'the Insights surface’s "Export ticked (n)" under the report list — `Amendment 2026-09-23`. ' +
     'The host asks the format and the folder.',
+  [TESTID.insightsInvestigate]:
+    'the Insights surface’s "Investigate Report" beside Export — `Amendment 2026-09-24 — ' +
+    'Investigate Report`, on the same ruled exception. Shown only while the provider has ' +
+    '`investigate`; the host calls it with the selected run id.',
   /*
    * v0.9.0 DoD 9.41. `Amendment 2026-09-22 — Provider contract v1 widened`
    * names both: a finding's detail "behind expand", and "show raw output" on
@@ -162,6 +166,8 @@ const EXCEPTIONS = [
   TESTID.insightsReportTick,
   TESTID.insightsExport,
   TESTID.insightsExportTicked,
+  // v0.9.0 DoD 9.54 — `Amendment 2026-09-24 — Investigate Report`.
+  TESTID.insightsInvestigate,
 ];
 
 /** Everything a browser treats as clickable, by selector. */
@@ -450,6 +456,7 @@ describe('every surface is content only', () => {
         runId: 'run-1',
         dropped: 0,
         rawOutput: false,
+        investigate: false,
         set: {
         runId: 'run-1',
         createdAt: 1_790_000_000_000,
@@ -563,6 +570,28 @@ describe('every surface is content only', () => {
       TESTID.insightsRawOutput,
     ]);
     expect(chrome(refused.container)).toStrictEqual([]);
+    refused.dispose();
+    mounted.pop();
+
+    // DoD 9.54: a provider with `investigate` — "Investigate Report" after
+    // the three Export actions, in the same header, and nothing else new.
+    const investigate = render();
+    send({
+      ...PROVIDER_STATE,
+      provider: { ...PROVIDER_STATE.provider, selected: { ...PROVIDER_STATE.provider.selected, investigate: true } },
+    });
+    send(viewControls({ surface: 'insights' }));
+    expect(clickables(investigate.container)).toStrictEqual([
+      TESTID.insightsReportTick,
+      TESTID.insightsReportSelect,
+      TESTID.insightsExportTicked,
+      TESTID.insightsExport,
+      TESTID.insightsExport,
+      TESTID.insightsExport,
+      TESTID.insightsInvestigate,
+      TESTID.insightsDetail,
+    ]);
+    expect(chrome(investigate.container)).toStrictEqual([]);
   });
 
   it('the ABOUT surface carries its tiles — and the lit Get tile only while no provider', () => {

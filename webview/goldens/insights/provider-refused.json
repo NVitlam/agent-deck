@@ -45,7 +45,8 @@
         "step": "validate",
         "reason": "The response held no JSON object.\nNothing was stored."
       },
-      "rawOutput": true
+      "rawOutput": true,
+      "investigate": false
     }
   }
 }

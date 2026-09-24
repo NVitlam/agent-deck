@@ -9711,6 +9711,7 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
       set: { ...fakeFindingSet(1), runId: 'run-1' },
       dropped: 0,
       rawOutput: false,
+      investigate: false,
     });
     expect(asked).toStrictEqual(['run-1']);
   });
@@ -9938,6 +9939,107 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     expect(mock.informationMessages).toContain(
       'Agent Deck: the selected run is not a refused run the provider lists, so no raw output was asked for.',
     );
+  });
+
+  /*
+   * DoD 9.54, 9.55 — Investigate Report, driven the production way: the
+   * panel's intent through the guard, the relay and the host's handler, to
+   * the provider's optional `investigate`, with the SELECTED run's id.
+   */
+  async function investigatePanel(
+    over: Partial<InsightsProvider>,
+  ): Promise<{ panel: ReturnType<typeof mock.panels.find>; api: Awaited<ReturnType<typeof activateWithHost>> }> {
+    const api = await activateWithHost();
+    await mock.runCommand(OPEN_INSIGHTS_COMMAND);
+    const panel = mock.panels.find((p) => p.viewType === PANEL_VIEW_TYPE);
+    api.registerInsightsProvider(
+      fakeInsightsProvider({
+        listRuns: () => [
+          { runId: 'run-2', createdAt: 1_790_000_100_000, state: 'ok', findings: 1, agentKind: 'codex' },
+          { runId: 'run-1', createdAt: 1_790_000_000_000, state: 'ok', findings: 1, agentKind: 'claude' },
+        ],
+        ...over,
+      }).provider,
+    );
+    return { panel, api };
+  }
+
+  const investigateOffered = (): unknown =>
+    (lastProviderState()?.provider as { selected?: { investigate?: boolean } } | null)?.selected?.investigate;
+
+  it('9.55: the press calls the provider’s investigate with the SELECTED run id and nothing else', async () => {
+    const calls: unknown[][] = [];
+    const { panel } = await investigatePanel({
+      investigate: (...args: unknown[]) => {
+        calls.push(args);
+        return Promise.resolve();
+      },
+    });
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+    expect(investigateOffered()).toBe(true);
+    const before = mock.informationMessages.length;
+    panel?.fireMessage({ type: 'insightsInvestigate' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toStrictEqual([['run-1']]);
+    // The other run, selected, is the one named: never a fixed id.
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-2' });
+    panel?.fireMessage({ type: 'insightsInvestigate' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toStrictEqual([['run-1'], ['run-2']]);
+    // A success says nothing: what happens next is the provider's.
+    expect(mock.informationMessages.slice(before)).toStrictEqual([]);
+    // A renderer cannot name a run: an id on the message is ignored.
+    panel?.fireMessage({ type: 'insightsInvestigate', runId: 'run-404' } as unknown as { type: 'insightsInvestigate' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toStrictEqual([['run-1'], ['run-2'], ['run-2']]);
+  });
+
+  it('9.55: absent — the preview does not offer it, and a forced intent calls nothing and says why', async () => {
+    const { panel } = await investigatePanel({});
+    panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+    expect(investigateOffered()).toBe(false);
+    panel?.fireMessage({ type: 'insightsInvestigate' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mock.informationMessages).toContain('Agent Deck: the Insights provider does not offer Investigate Report.');
+  });
+
+  it('9.55: nothing selected calls nothing and says why', async () => {
+    let calls = 0;
+    const { panel } = await investigatePanel({
+      investigate: () => {
+        calls += 1;
+        return Promise.resolve();
+      },
+    });
+    panel?.fireMessage({ type: 'insightsInvestigate' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toBe(0);
+    expect(mock.informationMessages).toContain('Agent Deck: select a report to investigate.');
+  });
+
+  it.each([
+    ['a rejection', (): Promise<void> => Promise.reject(new Error('no agent CLI on PATH'))],
+    [
+      'a throw',
+      (): Promise<void> => {
+        throw new Error('no agent CLI on PATH');
+      },
+    ],
+  ])('9.55: %s is ONE channel line and a message naming the action', async (_name, investigate) => {
+    {
+      const { panel } = await investigatePanel({ investigate });
+      panel?.fireMessage({ type: 'insightsSelect', runId: 'run-1' });
+      const lines = mock.outputLines.length;
+      const messages = mock.informationMessages.length;
+      panel?.fireMessage({ type: 'insightsInvestigate' });
+      await new Promise((r) => setTimeout(r, 0));
+      const written = mock.outputLines.slice(lines).map((entry) => entry.line);
+      expect(written).toHaveLength(1);
+      expect(written[0]).toContain('insights provider: no agent CLI on PATH');
+      expect(mock.informationMessages.slice(messages)).toStrictEqual([
+        'Agent Deck: the Insights provider failed during Investigate Report.',
+      ]);
+    }
   });
 
   it('9.46: the old Run intent is refused at the boundary and runs nothing', async () => {

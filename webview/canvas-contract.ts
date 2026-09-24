@@ -442,6 +442,8 @@ export const TESTID = {
   insightsPreview: 'insights-preview',
   /** DoD 9.47: one of the preview header's Export actions. `data-target`. */
   insightsExport: 'insights-export',
+  /** DoD 9.54: "Investigate Report" beside Export, while the provider offers it. */
+  insightsInvestigate: 'insights-investigate',
   /** DoD 9.41: a run's facts, above its findings. */
   insightsRunFacts: 'insights-run-facts',
   /** DoD 9.41: a finding's detail toggle — the `<summary>` of its `<details>`. */

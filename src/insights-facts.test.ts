@@ -373,6 +373,7 @@ function selecting(set: FindingSetView, over: { rawOutput?: boolean; dropped?: n
       set,
       dropped: over.dropped ?? 0,
       rawOutput: over.rawOutput ?? set.state === 'refused',
+      investigate: false,
     },
   };
 }
@@ -398,7 +399,7 @@ const PROVIDER_STATES: Readonly<
     about: ABOUT,
     runs: RUNS,
     dropped: 0,
-    selected: { runId: 'run-2', set: null, dropped: 1, rawOutput: false },
+    selected: { runId: 'run-2', set: null, dropped: 1, rawOutput: false, investigate: false },
   },
 };
 

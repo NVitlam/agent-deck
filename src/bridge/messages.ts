@@ -125,6 +125,11 @@ export const WEBVIEW_TO_HOST_TYPES = [
   'insightsSelect',
   'insightsExport',
   'insightsExportBatch',
+  /*
+   * v0.9.0 DoD 9.54 — Investigate Report. No payload, like Export: the run
+   * is the host's selection, and the host calls the provider with its id.
+   */
+  'insightsInvestigate',
 ] as const;
 
 /**
@@ -263,6 +268,7 @@ export function isWebviewToHostMessage(
       }
       case 'insightsGet':
       case 'insightsRawOutput':
+      case 'insightsInvestigate':
         // No payload. The type IS the whole message.
         return true;
       case 'insightsSelect': {

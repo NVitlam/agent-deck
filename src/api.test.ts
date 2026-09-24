@@ -290,10 +290,12 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     const latestRequired: Exact<ApiInsightsProvider['getLatest'], () => ApiFindingSetView | null> = true;
     const about: Exact<ApiInsightsProviderAbout, { name: string; version: string; status?: string }> = true;
     const actions: Exact<ApiInsightsProviderAction, 'pickAgent' | 'showPayload' | 'clearHistory'> = true;
+    // DoD 9.54 — Investigate Report: optional, called with the selected run id.
+    const investigate: Exact<ApiInsightsProvider['investigate'], ((runId: string) => Promise<void>) | undefined> = true;
     expect([
       finding, action, evidence, set, refusalOptional, run, states, since, agents, rawOutput,
-      getRun, pickAgent, showPayload, clearHistory, about, actions, runOptional, latestRequired,
-    ]).toStrictEqual(Array.from({ length: 18 }, () => true));
+      getRun, pickAgent, showPayload, clearHistory, about, actions, runOptional, latestRequired, investigate,
+    ]).toStrictEqual(Array.from({ length: 19 }, () => true));
     expect(API_VERSION).toBe(2);
     expect(PROVIDER_VERSION).toBe(1);
   });

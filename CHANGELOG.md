@@ -32,7 +32,8 @@ All notable changes to Agent Deck are documented here.
 - **Statistics keeps its five tabs** - Files, Tools, Loops & churn, Tokens,
   Trends. Insights and About carry tiles, and a tile that opens a web page
   asks first; with an Insights provider registered, Insights carries its
-  report list, its tick boxes and its export actions. Nothing else on the
+  report list, its tick boxes, its export actions and Investigate Report when
+  the provider offers it. Nothing else on the
   panel is pressed.
 - **The keyboard shortcuts are unchanged and are the editor's now.** `a` `c`
   `o` `x` for the engines, `1` `2` `3` for the layout and `l` `r` `e` for
@@ -78,6 +79,11 @@ All notable changes to Agent Deck are documented here.
   there. The HTML page is self-contained and loads nothing; the Markdown
   escapes the provider's text. Agent Deck will not write an export into a
   directory it only reads, and exporting makes no network call.
+- **Investigate Report.** When the Insights provider offers it, the preview's
+  header carries Investigate Report beside Export. Pressing it hands the
+  selected report's run id to the provider and nothing else: Agent Deck builds
+  no prompt and starts no process. A provider that fails writes one line to
+  the Agent Deck output channel, and a message names the action.
 - **Extension API version 2.** `registerInsightsProvider` lets one extension
   register as the Insights provider. Version 2 only adds to version 1. A
   provider's data is plain JSON, checked field by field, and never executed. A
@@ -89,7 +95,8 @@ All notable changes to Agent Deck are documented here.
   behind an expand, the cause, then the evidence, with the run's facts above
   them; a refused run shows its step and reason and can open its raw output
   as an untitled document. A provider also answers for one run by id
-  (`getRun`), may offer Pick Agent, Show Payload and Clear History, and may
+  (`getRun`), may offer Pick Agent, Show Payload, Clear History and
+  Investigate Report (`investigate`), and may
   state one line of status under its name. Agent Deck never asks about your
   Insights licence.
 - **An About entry**, as **Agent Deck: About** in the Command Palette and in

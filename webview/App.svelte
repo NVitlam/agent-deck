@@ -238,6 +238,7 @@
       ontick={(runId) => store.toggleInsightsTick(runId)}
       onexport={(target) => store.exportInsights(target)}
       onexportticked={() => store.exportTickedInsights()}
+      oninvestigate={() => store.investigateInsights()}
     />
   {:else if view.viewMode === 'about'}
     <!-- v0.9.0 DoD 9.32 — About, in this one panel rather than a panel of

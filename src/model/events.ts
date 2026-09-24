@@ -1497,6 +1497,13 @@ export interface InsightsRunPreview {
    * output for this run." (ruling of 2026-09-22, 4).
    */
   rawOutput: boolean;
+  /**
+   * True when the preview's header may offer "Investigate Report": the
+   * provider had the optional `investigate` when it registered — v0.9.0 DoD
+   * 9.54 (spec `Amendment 2026-09-24 — Investigate Report`). REQUIRED, so a
+   * producer that forgets it breaks at compile time rather than defaulting.
+   */
+  investigate: boolean;
 }
 
 /**
@@ -1733,6 +1740,16 @@ export interface InsightsExportBatchMessage {
   runIds: string[];
 }
 
+/**
+ * The preview header's "Investigate Report" — v0.9.0 DoD 9.54. NO PAYLOAD,
+ * like Export: the run is the host's selection, and the host calls the
+ * provider's optional `investigate(runId)` with that id and nothing else.
+ * The parent builds no prompt, spawns nothing and never knows the mode.
+ */
+export interface InsightsInvestigateMessage {
+  type: 'insightsInvestigate';
+}
+
 export type WebviewToHostMessage =
   | ExpandNodeMessage
   | SelectSessionMessage
@@ -1744,7 +1761,8 @@ export type WebviewToHostMessage =
   | InsightsRawOutputMessage
   | InsightsSelectMessage
   | InsightsExportMessage
-  | InsightsExportBatchMessage;
+  | InsightsExportBatchMessage
+  | InsightsInvestigateMessage;
 
 /**
  * One tree op that could not be applied, reported instead of thrown.

@@ -42,7 +42,8 @@
       },
       "findings": [],
       "note": "The run read the window and recorded no findings.",
-      "rawOutput": false
+      "rawOutput": false,
+      "investigate": false
     }
   }
 }

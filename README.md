@@ -844,6 +844,7 @@ disposable. A provider is:
   pickAgent?(): Promise<void>;                      // optional — the sidebar's Pick Agent
   showPayload?(): Promise<void>;                    // optional — the sidebar's Show Payload
   clearHistory?(): Promise<void>;                   // optional — the sidebar's Clear History
+  investigate?(runId: string): Promise<void>;       // optional — the preview's Investigate Report
   onDidChange: Event<void>;
 }
 ```
@@ -894,6 +895,11 @@ when the agent was Claude Code. A refused run shows the step and the reason, and
 output** action that asks `getRawOutput` for the selected run's `runId` and opens what comes back
 as an untitled plain-text document. When the provider has no `getRawOutput`, the refused run says
 *No raw output for this run.* instead.
+When the provider has `investigate`, the preview's header shows **Investigate Report** beside
+Export; pressing it calls `investigate` with the selected run's `runId` and nothing else. Agent
+Deck builds no prompt, starts no process and does not know what the provider does next. Without
+`investigate` there is no button. If the provider throws or its promise rejects, the Agent Deck
+output channel gets one line and a message names the action.
 One provider at a time — a second registration throws, naming both —
 and disposing the registration returns the surface to its free state.
 
@@ -916,8 +922,9 @@ export of that report says so too. (A status line that fails is simply left out:
 any report.)
 Raw output over 1,048,576 characters is not opened at all. Agent Deck calls `listRuns`,
 `getRun` for the run you select or export, `getRawOutput` only when you ask for a refused run's
-raw output, `pickAgent`, `showPayload` or `clearHistory` only when you press that sidebar row, and
-subscribes once through `onDidChange`; it calls nothing else.
+raw output, `pickAgent`, `showPayload` or `clearHistory` only when you press that sidebar row,
+`investigate` only when you press Investigate Report, and subscribes once through `onDidChange`; it
+calls nothing else.
 
 ## Insights
 
@@ -946,7 +953,9 @@ the sidebar reads *Facts only* again, its rows under Open Insights go, and this 
 free view; the deck and Statistics are left as they were. The Agent Deck output channel writes one
 line each time a provider registers, deregisters (with the reason) or is refused.
 
-**Export.** The preview's header carries **HTML**, **Markdown** and **Copy**. HTML is one
+**Export.** The preview's header carries **HTML**, **Markdown** and **Copy** — and
+**Investigate Report** beside them when the provider offers it, which hands the selected report to
+the provider. HTML is one
 self-contained page — its own stylesheet, no script, no image, nothing it loads, and a content
 security policy that forbids loading anything; Markdown escapes the provider's text so none of it
 becomes a link, an image or HTML; Copy puts plain text on the clipboard. HTML and Markdown ask

@@ -377,6 +377,8 @@ export interface ReportPreview {
     readonly rawOutput: boolean;
     /** {@link NO_RAW_OUTPUT} on a refused run with none to offer. */
     readonly rawOutputNote?: string;
+    /** Offer "Investigate Report" beside Export? The provider has `investigate` (DoD 9.54). */
+    readonly investigate: boolean;
   }) | null;
   /** Present when the provider had no report for this run. */
   readonly missing?: string;
@@ -423,6 +425,7 @@ function previewOf(snapshot: InsightsProviderSnapshot): ReportPreview | null {
       ...reportOf(selected.set, selected.dropped),
       rawOutput: refused && selected.rawOutput,
       ...(refused && !selected.rawOutput ? { rawOutputNote: NO_RAW_OUTPUT } : {}),
+      investigate: selected.investigate,
     },
   };
 }

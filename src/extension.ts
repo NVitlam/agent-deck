@@ -203,6 +203,7 @@ import type {
   InsightsExportBatchMessage,
   InsightsExportMessage,
   InsightsGetMessage,
+  InsightsInvestigateMessage,
   InsightsProviderAction,
   InsightsRawOutputMessage,
   InsightsSelectMessage,
@@ -5247,7 +5248,8 @@ export class AgentDeckHost {
           message.type === 'insightsRawOutput' ||
           message.type === 'insightsSelect' ||
           message.type === 'insightsExport' ||
-          message.type === 'insightsExportBatch'
+          message.type === 'insightsExportBatch' ||
+          message.type === 'insightsInvestigate'
         ) {
           this.#onSurfaceIntent(message);
           return;
@@ -5447,7 +5449,8 @@ export type SurfaceIntent =
   | InsightsRawOutputMessage
   | InsightsSelectMessage
   | InsightsExportMessage
-  | InsightsExportBatchMessage;
+  | InsightsExportBatchMessage
+  | InsightsInvestigateMessage;
 
 /** Test seam: the live host, or null. Never read by production code. */
 export function currentHost(): AgentDeckHost | null {
@@ -6212,6 +6215,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       case 'insightsExportBatch':
         void exportBatch(message.runIds);
         return;
+      case 'insightsInvestigate':
+        void investigateSelected();
+        return;
     }
   };
 
@@ -6367,6 +6373,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<AgentD
       void vscode.window.showInformationMessage(
         `Agent Deck: the Insights provider failed during ${ACTION_LABELS[action]}.`,
       );
+    }
+  };
+
+  /**
+   * Investigate Report on the SELECTED run — v0.9.0 DoD 9.54 (spec
+   * `Amendment 2026-09-24 — Investigate Report`). The registry calls the
+   * provider's optional `investigate` with the selection's id and nothing
+   * else; the parent builds no prompt and spawns nothing. A throw or a
+   * rejection is one line on the channel (the registry's `onError`) and an
+   * information message naming the action; every other answer that called
+   * nothing says why, so the press is never silent.
+   */
+  const investigateSelected = async (): Promise<void> => {
+    const result = await providers.investigate(selectedRunId);
+    if (result === 'no-provider') {
+      void vscode.window.showInformationMessage('Agent Deck: no Insights provider is registered.');
+    } else if (result === 'absent') {
+      void vscode.window.showInformationMessage('Agent Deck: the Insights provider does not offer Investigate Report.');
+    } else if (result === 'no-run') {
+      void vscode.window.showInformationMessage('Agent Deck: select a report to investigate.');
+    } else if (result === 'failed') {
+      void vscode.window.showInformationMessage('Agent Deck: the Insights provider failed during Investigate Report.');
     }
   };
 

@@ -830,6 +830,11 @@ export interface Store {
    * ticked ids in the list's order, and nothing while none is ticked.
    */
   exportTickedInsights(): void;
+  /**
+   * "Investigate Report" — DoD 9.54. Posts `insightsInvestigate`, and only
+   * while the preview has a report and the provider offers it.
+   */
+  investigateInsights(): void;
   /** Open or shut the inspector panel without changing the selected node. */
   setInspectorOpen(open: boolean): void;
   /** Pan the deck by a delta in CLIENT pixels. `viewport.ts:panBy`. */
@@ -1933,6 +1938,12 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     exportTickedInsights(): void {
       if (insightsTicks.length === 0) return;
       postIntent({ type: 'insightsExportBatch', runIds: [...insightsTicks] });
+    },
+
+    investigateInsights(): void {
+      const preview = insightsProvider?.selected;
+      if (preview?.investigate !== true || preview.set == null) return;
+      postIntent({ type: 'insightsInvestigate' });
     },
 
     setInspectorOpen(open: boolean): void {

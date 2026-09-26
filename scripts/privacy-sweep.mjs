@@ -148,6 +148,24 @@ import { fileURLToPath } from 'node:url';
  * Findings print `path:line` and the token's `note`. They NEVER print the
  * matched text: a report that quotes what it found is a copy of the thing it
  * is there to keep out of the repository, and this report is committed.
+ *
+ * RETIRED TOKENS (2026-09-26, the custom-domain change). The file may carry a
+ * second list, `retired`, of the same `{match, flags?, note}` shape: strings
+ * that were once public on purpose and are no longer - the support address
+ * that moved to the project's own domain is the first. They differ from
+ * `tokens` in exactly two ways, and both are deliberate:
+ *
+ *   - `exemptPaths` DO NOT COVER THEM. The pages that are exempt for the
+ *     repository URL are precisely where a retired address used to live, so an
+ *     exemption would blind the check at the only place it can fire.
+ *   - they are checked in the WORKING-TREE leg only. History holds what was
+ *     written before the retirement; a retirement is forward-looking, and a
+ *     history-wide rule would fail every ref that predates it.
+ *
+ * A retired hit is an identity hit: it lands in the same list, fails the same
+ * gate and prints the same `path:line` plus note. Its replacement (for the
+ * address, the one on the project's own domain) matches no pattern, which is
+ * all "allowed" has to mean for a class with no allow rule.
  * ------------------------------------------------------------------ */
 
 /** Where the private checkout is expected, relative to the repository root. */
@@ -167,7 +185,13 @@ function loadIdentity(root, override = null) {
   try {
     raw = fs.readFileSync(file, 'utf8');
   } catch {
-    return { status: 'SKIPPED', reason: `no ${IDENTITY_FILE}`, tokens: [], exemptPaths: [] };
+    return {
+      status: 'SKIPPED',
+      reason: `no ${IDENTITY_FILE}`,
+      tokens: [],
+      retired: [],
+      exemptPaths: [],
+    };
   }
   const doc = JSON.parse(raw);
   if (doc.version !== 1) {
@@ -176,20 +200,28 @@ function loadIdentity(root, override = null) {
   if (!Array.isArray(doc.tokens) || doc.tokens.length === 0) {
     throw new Error(`${IDENTITY_FILE}: no tokens`);
   }
-  const tokens = doc.tokens.map((t, i) => {
+  const compile = (kind) => (t, i) => {
     if (typeof t.match !== 'string' || typeof t.note !== 'string' || t.note === '') {
-      throw new Error(`${IDENTITY_FILE}: token ${String(i)} is malformed`);
+      throw new Error(`${IDENTITY_FILE}: ${kind} ${String(i)} is malformed`);
     }
     // `g` is forced on; the file's flags say only whether the token is
     // case-sensitive. Exactly one is - see that token's note.
     const insensitive = (t.flags ?? 'gi').includes('i');
     return { re: new RegExp(t.match, insensitive ? 'gi' : 'g'), note: t.note };
-  });
+  };
+  const tokens = doc.tokens.map(compile('token'));
+  // Optional, and malformed is still refused: an absent list is a supported
+  // state, a list that is not an array is a broken control.
+  if (doc.retired !== undefined && !Array.isArray(doc.retired)) {
+    throw new Error(`${IDENTITY_FILE}: retired is not a list`);
+  }
+  const retired = (doc.retired ?? []).map(compile('retired token'));
   return {
     status: 'RUN',
     reason: null,
     file,
     tokens,
+    retired,
     exemptPaths: Array.isArray(doc.exemptPaths) ? doc.exemptPaths : [],
   };
 }
@@ -1175,8 +1207,8 @@ function redactSecret(value) {
  * `docs/evidence/privacy/report.json`: the single largest concentration in the
  * tree, larger than either captured database.
  */
-function scanIdentity(text, starts, relPath, identity, sink) {
-  for (const token of identity.tokens) {
+function scanIdentity(text, starts, relPath, tokens, sink) {
+  for (const token of tokens) {
     token.re.lastIndex = 0;
     let m;
     while ((m = token.re.exec(text)) !== null) {
@@ -1545,7 +1577,7 @@ function newLeg() {
   };
 }
 
-function scanUnit(leg, relPath, body, identity) {
+function scanUnit(leg, relPath, body, identity, workingTree) {
   const text = body.toString('latin1');
   const starts = lineIndex(text);
   leg.filesScanned += 1;
@@ -1562,10 +1594,14 @@ function scanUnit(leg, relPath, body, identity) {
     // the same "its ABSENCE would be its own defect" reasoning
     // `src/release/vsix.test.ts` already applies to the packaged artifact.
     const exempt = identity.exemptPaths.includes(relPath);
-    scanIdentity(text, starts, relPath, identity, (hit) => {
+    scanIdentity(text, starts, relPath, identity.tokens, (hit) => {
       if (exempt) leg.identity.exemptHits += 1;
       else leg.identity.hits.push(hit);
     });
+    // Retired tokens: no exemption, working tree only. See the class header.
+    if (workingTree) {
+      scanIdentity(text, starts, relPath, identity.retired, (hit) => leg.identity.hits.push(hit));
+    }
   }
 
   scanSecrets(text, starts, relPath, (hit) => leg.secrets.push(hit));
@@ -1631,7 +1667,7 @@ export function sweep(options = {}) {
     } catch {
       continue; // deleted between enumeration and read; nothing to scan.
     }
-    scanUnit(wt, rel, body, identity);
+    scanUnit(wt, rel, body, identity, true);
   }
   finaliseLeg(wt);
   activeLeg = null;
@@ -1658,7 +1694,7 @@ export function sweep(options = {}) {
       // A blob stored at several paths is scanned once per path, so a path that
       // is exempt in one place and not in another is judged in each.
       const at = blob.paths.length > 0 ? blob.paths : [`<unnamed-blob>/${blob.sha}`];
-      for (const rel of at) scanUnit(hist, rel, blob.body, identity);
+      for (const rel of at) scanUnit(hist, rel, blob.body, identity, false);
     }
     finaliseLeg(hist);
     activeLeg = null;
@@ -1692,6 +1728,7 @@ export function sweep(options = {}) {
         status: identity.status,
         reason: identity.reason,
         tokenCount: identity.tokens.length,
+        retiredCount: identity.retired.length,
         exemptPaths: identity.exemptPaths,
       },
       ownProject: OWN_PROJECT,

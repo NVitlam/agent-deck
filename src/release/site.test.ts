@@ -135,6 +135,26 @@ describe('the page exists as a publishable tree', () => {
     expect(TRACKED_SITE).toContain('site/.nojekyll');
   });
 
+  it('carries the custom domain in site/CNAME, exactly and alone', () => {
+    // 2026-09-26: the site moves to its own domain. The workflow uploads
+    // `site/` whole, so the file must be inside it. GitHub documents that a
+    // custom Actions workflow IGNORES a CNAME file and takes the domain from
+    // the repository's Pages setting; the file is kept as the in-tree record
+    // of the domain, and the setting is the user's step.
+    expect(TRACKED_SITE).toContain('site/CNAME');
+    expect(readFileSync(join(ROOT, 'site/CNAME'), 'utf8')).toBe('agent-deck.app');
+  });
+
+  it('assumes no /agent-deck/ sub-path: no root-relative link, no <base>', () => {
+    // Served from https://agent-deck.app/, a link written for the project
+    // sub-path (`/agent-deck/...`) would 404. Every page link stays relative.
+    for (const page of TRACKED_SITE.filter((p) => p.endsWith('.html'))) {
+      const text = readText(page);
+      expect(text, `${page} carries a <base>`).not.toMatch(/<base[\s>]/i);
+      expect(text, `${page} carries a root-relative link`).not.toMatch(/(?:href|src)="\/(?!\/)/i);
+    }
+  });
+
   it('tracks exactly the seven images, both ways, with the count pinned beside the set', () => {
     // RULE 19, applied to `site/media/` rather than to the VSIX. The failure
     // this catches is a file nobody meant to publish - the recorded case is a

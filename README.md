@@ -950,7 +950,7 @@ Code or from your prices is not added in). A session read only in part is not co
 surface says how many were left out. Under the tiles, one line of fact: *Deliberate failures
 (test-driven breakage) and accidental ones are indistinguishable in this data.* Below them, one of three examples, labelled *"Example, based on
 a real run"*, with made-up ids; it changes each time you come back. And one tile, **Get Agent Deck
-Insights**, which asks before it opens <https://nvitlam.github.io/agent-deck/insights.html> in your browser — the Insights page, with
+Insights**, which asks before it opens <https://agent-deck.app/insights.html> in your browser — the Insights page, with
 what it does, what it never does, and the plans.
 
 **With a provider registered.** On the left, the provider's reports — each with its date, how many

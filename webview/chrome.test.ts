@@ -449,7 +449,7 @@ describe('every surface is content only', () => {
   /** A registered provider's checked snapshot, as the host sends it. */
   const PROVIDER_STATE = {
     type: 'providerState',
-    page: { text: 'Agent Deck draws the sessions.', links: [{ label: 'Portfolio', host: 'nvitlam.github.io' }, { label: 'Repository', host: 'github.com' }, { label: 'LinkedIn', host: 'www.linkedin.com' }, { label: 'Sponsor', host: 'github.com' }], get: { label: 'Get Agent Deck Insights', host: 'nvitlam.github.io' }, footer: 'Agent Deck 0.9.0 · MIT licence' },
+    page: { text: 'Agent Deck draws the sessions.', links: [{ label: 'Portfolio', host: 'nvitlam.github.io' }, { label: 'Repository', host: 'github.com' }, { label: 'LinkedIn', host: 'www.linkedin.com' }, { label: 'Sponsor', host: 'github.com' }], get: { label: 'Get Agent Deck Insights', host: 'agent-deck.app' }, footer: 'Agent Deck 0.9.0 · MIT licence' },
     provider: {
       about: { name: 'Agent Deck Insights', version: '0.2.0' },
       selected: {

@@ -88,7 +88,7 @@ export const ABOUT_LINKS: readonly AboutLink[] = Object.freeze([
  * surfaces both draw a Get tile that names this host, and the webview bundle
  * may not import the host. One literal, read by both.
  */
-export const INSIGHTS_PAGE_URL = 'https://nvitlam.github.io/agent-deck/insights.html';
+export const INSIGHTS_PAGE_URL = 'https://agent-deck.app/insights.html';
 
 /** The Get tile, as a link the confirmation can name. */
 export const INSIGHTS_GET_LINK: AboutLink = Object.freeze({

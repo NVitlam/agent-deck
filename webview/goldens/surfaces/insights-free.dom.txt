@@ -56,4 +56,4 @@ main .insights data-state="free" data-testid="insights-surface"
   div .tiles
     button .tile .get data-testid="insights-get-tile"
       span .label .strong "Get Agent Deck Insights"
-      span .source "nvitlam.github.io"
+      span .source "agent-deck.app"

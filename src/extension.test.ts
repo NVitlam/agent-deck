@@ -7374,7 +7374,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     panel.fireMessage({ type: 'insightsGet' });
     await new Promise((r) => setTimeout(r, 0));
     expect(mock.informationPrompts.slice(before).map((p) => p.message)).toStrictEqual([
-      'Agent Deck will open nvitlam.github.io in your browser',
+      'Agent Deck will open agent-deck.app in your browser',
     ]);
     expect(mock.openedExternal).toStrictEqual([INSIGHTS_PAGE_URL]);
   });
@@ -7413,7 +7413,7 @@ describe('v0.7.0 Phase 4 — sidebar, ViewColumn.One, and the stats wire', () =>
     // guard does not read — and it opens OUR page, never the one it named.
     expect(mock.openedExternal).toStrictEqual([]);
     expect(mock.informationPrompts.slice(before).map((p) => p.message)).toStrictEqual([
-      'Agent Deck will open nvitlam.github.io in your browser',
+      'Agent Deck will open agent-deck.app in your browser',
     ]);
     expect(mock.executed.map((e) => e.command)).not.toContain('workbench.action.closeWindow');
 

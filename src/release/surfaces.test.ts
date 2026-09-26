@@ -816,7 +816,7 @@ describe('9.35 / 9.37 — the plans, on the index and on the Insights subpage', 
   });
 
   it('the subpage names the support address, and the never-list verbatim from the Insights spec', () => {
-    expect(INSIGHTS_PAGE).toContain('<a href="mailto:agent.deck.support@gmail.com">agent.deck.support@gmail.com</a>');
+    expect(INSIGHTS_PAGE).toContain('<a href="mailto:support@agent-deck.app">support@agent-deck.app</a>');
     // agent-deck-insights-spec.md §A: "What is never done: reading
     // transcripts, reading files, network calls from the extension, writing
     // under any engine's data directory." Four items, in its order.

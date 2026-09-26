@@ -159,6 +159,7 @@ interface SweepReport {
       status: 'RUN' | 'SKIPPED';
       reason: string | null;
       tokenCount: number;
+      retiredCount: number;
       exemptPaths: string[];
     };
     ownProject: string;
@@ -1948,3 +1949,104 @@ describe('the exemption reasons are composed from the run, not written down', ()
   });
 });
 
+
+/* ------------------------------------------------------------------ *
+ * Retired tokens (2026-09-26, the custom-domain change)
+ * ------------------------------------------------------------------ */
+
+/**
+ * A retired string is one that was public on purpose and is not any more - the
+ * support address that moved to the project's own domain is the first. The
+ * token file carries it in a second list, `retired`, which `exemptPaths` do not
+ * cover and which only the working-tree leg checks. Both halves are pinned
+ * here against a real git repository, so the history leg runs.
+ *
+ * The address below is invented: the real retired pattern lives in the private
+ * token file and this repository never names it.
+ */
+describe('retired tokens', () => {
+  const RETIRED = 'old-desk@retired.invalid';
+  /** The replacement the site now carries. It must match no pattern. */
+  const REPLACEMENT = 'support@agent-deck.app';
+  const RETIRED_NOTE = 'an invented retired support address';
+  let repo = '';
+  let report: SweepReport;
+
+  beforeAll(() => {
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-deck-retired-'));
+    const run = (...args: string[]): void => {
+      execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' });
+    };
+    const write = (rel: string, body: string): void => {
+      fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+      fs.writeFileSync(path.join(repo, rel), body);
+    };
+    run('init', '-q');
+    run('config', 'user.email', 'control@example.invalid');
+    run('config', 'user.name', 'control');
+
+    // History: the retired address beside an ordinary token, then deleted.
+    // The ordinary token is the control that the blob was READ at all.
+    write('old/contact.txt', `Write to ${RETIRED}. ${NEEDLE}\n`);
+    run('add', '-A');
+    run('commit', '-qm', 'before the retirement');
+    run('rm', '-q', 'old/contact.txt');
+
+    // Working tree: the retired address inside an EXEMPT page, and the
+    // replacement on another page.
+    write('site/page.html', `<a href="mailto:${RETIRED}">${NEEDLE}</a>\n`);
+    write('site/new.html', `<a href="mailto:${REPLACEMENT}">${REPLACEMENT}</a>\n`);
+    run('add', '-A');
+    run('commit', '-qm', 'after the retirement');
+
+    const identityFile = path.join(repo, '..', `${path.basename(repo)}-identity.json`);
+    fs.writeFileSync(
+      identityFile,
+      `${JSON.stringify({
+        version: 1,
+        exemptPaths: ['site/page.html'],
+        dbColumns: [],
+        tokens: [{ match: NEEDLE, replace: 'nobody', note: 'an invented given name' }],
+        retired: [{ match: RETIRED.replace(/[.]/g, '[.]'), note: RETIRED_NOTE }],
+      })}\n`,
+      'utf8',
+    );
+    report = sweep({ root: repo, stamp: '1970-01-01T00:00:00.000Z', identityFile });
+    fs.rmSync(identityFile, { force: true });
+  }, 120_000);
+
+  afterAll(() => {
+    if (repo !== '') fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('loads the retired list beside the tokens and reports its count', () => {
+    expect(report.config.identity.status).toBe('RUN');
+    expect(report.config.identity.tokenCount).toBe(1);
+    expect(report.config.identity.retiredCount).toBe(1);
+  });
+
+  it('flags the retired address inside an exempt path, where the token is diverted', () => {
+    const page = report.workingTree.identity.hits.filter((h) => h.path === 'site/page.html');
+    expect(page).toHaveLength(1);
+    expect(page[0]?.notes).toEqual([RETIRED_NOTE]);
+    // The ordinary token on the same line was diverted, not missed.
+    expect(report.workingTree.identity.exemptHits).toBeGreaterThan(0);
+    expect(report.verdict.pass).toBe(false);
+  });
+
+  it('does not flag the replacement address', () => {
+    expect(report.workingTree.identity.hits.some((h) => h.path === 'site/new.html')).toBe(false);
+  });
+
+  it('does not flag the retired address in history, while the same blob is read', () => {
+    expect(report.history).not.toBeNull();
+    const old = report.history?.identity.hits.filter((h) => h.path === 'old/contact.txt') ?? [];
+    // Read: the ordinary token in that blob is a finding...
+    expect(old).toHaveLength(1);
+    // ...and the retired address on the same line is not one of its notes.
+    expect(old[0]?.notes).toEqual(['an invented given name']);
+    expect(
+      report.history?.identity.hits.some((h) => h.notes.includes(RETIRED_NOTE)) ?? true,
+    ).toBe(false);
+  });
+});

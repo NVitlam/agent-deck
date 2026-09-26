@@ -97,11 +97,20 @@ export const REPORT_SETS: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-ev
           { label: 'File', sessionId: 'ses_example01', statsKey: 'sessions[0].files[2].filePath', value: 'repo/docs/schema.md' },
           { label: 'Skill', sessionId: 'ses_example02', statsKey: 'sessions[1].skills[0].name', value: 'phase' },
           { label: 'Cache ratio', sessionId: 'ses_example02', statsKey: 'sessions[1].totals.prompt', value: 0.11 },
-          // DoD 9.59 — two `...Ms` values, which print with a duration, and
-          // one `durationMsSum`, which does not end in `Ms` and prints bare.
+          // DoD 9.59 and round 9b — every `Ms` key prints with a duration:
+          // `longestGapMs`, `gapBeforeMs`, `durationMsSum` and `durationMsMax`.
           { label: 'Longest gap', sessionId: 'ses_example01', statsKey: 'sessions[0].timing.longestGapMs', value: 28_100_113 },
           { label: 'Gap before spike', sessionId: 'ses_example02', statsKey: 'sessions[1].contextChurn[0].gapBeforeMs', value: 312_450 },
           { label: 'Duration sum', sessionId: 'ses_example02', statsKey: 'sessions[1].tools[0].durationMsSum', value: 90_500 },
+          { label: 'Duration max', sessionId: 'ses_example02', statsKey: 'sessions[1].tools[0].durationMsMax', value: 61_250 },
+          // Round 9b — floats: a cost and a ratio to two places, a
+          // per-minute rate to a whole number, the exact value beside.
+          { label: 'Cost', sessionId: 'ses_example01', statsKey: 'sessions[0].totals.costUsd', value: 0.238149 },
+          { label: 'Cost per hour', sessionId: 'ses_example01', statsKey: 'sessions[0].timing.costPerHourUsd', value: 0.37125 },
+          { label: 'Cache ratio', sessionId: 'ses_example01', statsKey: 'sessions[0].agents[0].cacheRatio', value: 0.8234567 },
+          { label: 'Context fill', sessionId: 'ses_example01', statsKey: 'sessions[0].totals.contextFill', value: 0.4 },
+          { label: 'Tokens per minute', sessionId: 'ses_example01', statsKey: 'sessions[0].timing.tokensPerMin', value: 1_234.5678 },
+          { label: 'Calls per minute', sessionId: 'ses_example01', statsKey: 'sessions[0].timing.callsPerMin', value: 3 },
         ],
       }),
     ],

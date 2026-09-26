@@ -890,8 +890,12 @@ required and `run` is optional, so a provider written for the earlier contract r
 unchanged; Agent Deck calls neither. The preview shows each finding's action lead first, its
 kind, confidence and "since last run" as words (never a score), the detail behind an expand (no
 expand when the detail is empty: a one-sentence action), the cause, then each piece of evidence
-under its label. A number whose `statsKey` ends in `Ms` is printed whole with a duration beside
-it — *28,100,113 ms · 7 h 48 m* — in the preview and in every export. When the set names kinds that were in the previous set and are absent now, one
+under its label. A number whose `statsKey` names milliseconds (its last part carries `Ms` as a
+word: `longestGapMs`, `durationMsSum`, `durationMsMax`) is printed whole with a duration beside it
+— *28,100,113 ms · 7 h 48 m*. A cost (`costUsd`, `costPerHourUsd`) and a ratio (`cacheRatio`,
+`contextFill`) are shown to two places and a per-minute rate as a whole number, with the exact
+value in the tooltip. Every export prints the same, with the exact value as the HTML title and
+beside the value in Markdown and plain text. When the set names kinds that were in the previous set and are absent now, one
 line says *No longer reported:* and names them; each must be one of the eight kinds, said once,
 and not a kind the set still lists. Above them it states the run: when, which
 agent CLI and version, the window, and the run's own usage — marked *estimated by Claude Code*

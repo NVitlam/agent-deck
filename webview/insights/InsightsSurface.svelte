@@ -300,7 +300,7 @@
                       {#each finding.evidence as item, at (at)}
                         <li data-testid={TESTID.insightsEvidence}>
                           <span class="caption">{item.label}</span>
-                          <span class="strong">{item.value}</span>
+                          <span class="strong" title={item.exact}>{item.value}</span>
                           <span class="source">{item.source}</span>
                         </li>
                       {/each}

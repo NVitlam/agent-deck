@@ -204,8 +204,12 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
         evidence: [
           { label: 'Reads', sessionId: 'ses_example01', statsKey: 'sessions[0].loops[0].count', value: 7 },
           { label: 'File', sessionId: 'ses_example01', statsKey: 'sessions[0].files[2].filePath', value: 'repo/docs/schema.md' },
-          // DoD 9.59 — a `...Ms` value renders with its duration beside it.
+          // DoD 9.59 and round 9b — every `Ms` key renders with its duration.
           { label: 'Longest gap', sessionId: 'ses_example01', statsKey: 'sessions[0].timing.longestGapMs', value: 28_100_113 },
+          { label: 'Duration sum', sessionId: 'ses_example01', statsKey: 'sessions[0].tools[0].durationMsSum', value: 90_500 },
+          { label: 'Duration max', sessionId: 'ses_example01', statsKey: 'sessions[0].tools[0].durationMsMax', value: 61_250 },
+          // Round 9b — a rounded float, its exact value in the tooltip.
+          { label: 'Cost', sessionId: 'ses_example01', statsKey: 'sessions[0].totals.costUsd', value: 0.238149 },
         ],
       }),
     ],
@@ -824,7 +828,16 @@ describe('the provider’s text, rendered — DoD 9.41', () => {
       'File repo/docs/schema.md sessions[0].files[2].filePath · ses_example01',
       // DoD 9.59 — the raw number, its duration, and the key as stated.
       'Longest gap 28,100,113 ms · 7 h 48 m sessions[0].timing.longestGapMs · ses_example01',
+      // Round 9b — the sum and the max render as the gap does; a cost is rounded.
+      'Duration sum 90,500 ms · 1 m 30 s sessions[0].tools[0].durationMsSum · ses_example01',
+      'Duration max 61,250 ms · 1 m 1 s sessions[0].tools[0].durationMsMax · ses_example01',
+      'Cost 0.24 sessions[0].totals.costUsd · ses_example01',
     ]);
+    // ...and the exact value is the rounded one's tooltip, and only its.
+    const titles = all(panel.container, TESTID.insightsEvidence).map(
+      (el) => el.querySelector('.strong')?.getAttribute('title') ?? null,
+    );
+    expect(titles).toStrictEqual([null, null, null, null, null, '0.238149']);
   });
 
   it('round 5b: an EMPTY detail shows no expand; a detail shows one', () => {

@@ -65,9 +65,12 @@ All notable changes to Agent Deck are documented here.
   added to the record's rows without a new format version; a stored record
   written before them reads with `fileErrors:absent` or `gapBeforeMs:absent`.
 - **Milliseconds read as durations on the Insights surface.** Every evidence
-  value whose field ends in `Ms` shows the number whole with a duration
+  value whose field names milliseconds - `longestGapMs`, `durationMsSum`,
+  `durationMsMax` and the rest - shows the number whole with a duration
   beside it - `28,100,113 ms · 7 h 48 m` - in the preview, in the HTML,
-  Markdown and Copy exports, and on the long-idle resume tile. The Insights
+  Markdown and Copy exports, and on the long-idle resume tile. Costs and
+  ratios show two decimal places and per-minute rates a whole number, with the
+  exact value in the tooltip (and beside the value in the exports). The Insights
   surface also carries one line under its fact tiles, with or without a
   provider: deliberate failures (test-driven breakage) and accidental ones are
   indistinguishable in this data.

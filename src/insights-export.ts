@@ -96,7 +96,11 @@ export function exportText(set: FindingSetView, dropped = 0): string {
     out.push(`${String(index + 1)}. ${finding.lead}`, `   ${finding.meta}`);
     if (finding.detail !== '') out.push('', 'Detail', lines(finding.detail));
     out.push('', 'Cause', lines(finding.cause), '', 'Evidence');
-    for (const item of finding.evidence) out.push(`- ${item.label}: ${item.value} (${item.source})`);
+    for (const item of finding.evidence) {
+      // Round 9b: a rounded number carries its exact value beside it.
+      const exact = item.exact === undefined ? '' : ` (exact ${item.exact})`;
+      out.push(`- ${item.label}: ${item.value}${exact} (${item.source})`);
+    }
     out.push('');
   });
   if (report.resolved !== undefined) out.push(report.resolved, '');
@@ -154,7 +158,8 @@ export function exportMarkdown(set: FindingSetView, dropped = 0): string {
     // The source is a stats key and a session id, both checked against
     // patterns that admit no backtick, so a code span holds them safely.
     for (const item of finding.evidence) {
-      out.push(`- ${escapeMarkdown(item.label)}: **${escapeMarkdown(item.value)}** \`${item.source}\``);
+      const exact = item.exact === undefined ? '' : ` (exact ${escapeMarkdown(item.exact)})`;
+      out.push(`- ${escapeMarkdown(item.label)}: **${escapeMarkdown(item.value)}**${exact} \`${item.source}\``);
     }
     out.push('');
   });
@@ -239,7 +244,8 @@ export function exportHtml(set: FindingSetView, dropped = 0): string {
       '<p class="caption">Evidence</p>',
       '<ul>',
       ...finding.evidence.map(
-        (item) => `<li>${e(item.label)}: <strong>${e(item.value)}</strong> <code>${e(item.source)}</code></li>`,
+        (item) =>
+          `<li>${e(item.label)}: <strong${item.exact === undefined ? '' : ` title="${e(item.exact)}"`}>${e(item.value)}</strong> <code>${e(item.source)}</code></li>`,
       ),
       '</ul>',
       '</section>',

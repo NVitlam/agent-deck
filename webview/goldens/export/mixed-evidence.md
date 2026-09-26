@@ -20,6 +20,13 @@ Cause sentence 0.
 - Cache ratio: **0.11** `sessions[1].totals.prompt · ses_example02`
 - Longest gap: **28,100,113 ms · 7 h 48 m** `sessions[0].timing.longestGapMs · ses_example01`
 - Gap before spike: **312,450 ms · 5 m 12 s** `sessions[1].contextChurn[0].gapBeforeMs · ses_example02`
-- Duration sum: **90500** `sessions[1].tools[0].durationMsSum · ses_example02`
+- Duration sum: **90,500 ms · 1 m 30 s** `sessions[1].tools[0].durationMsSum · ses_example02`
+- Duration max: **61,250 ms · 1 m 1 s** `sessions[1].tools[0].durationMsMax · ses_example02`
+- Cost: **0.24** (exact 0.238149) `sessions[0].totals.costUsd · ses_example01`
+- Cost per hour: **0.37** (exact 0.37125) `sessions[0].timing.costPerHourUsd · ses_example01`
+- Cache ratio: **0.82** (exact 0.8234567) `sessions[0].agents[0].cacheRatio · ses_example01`
+- Context fill: **0.40** (exact 0.4) `sessions[0].totals.contextFill · ses_example01`
+- Tokens per minute: **1,235** (exact 1234.5678) `sessions[0].timing.tokensPerMin · ses_example01`
+- Calls per minute: **3** `sessions[0].timing.callsPerMin · ses_example01`
 
 No longer reported: Stall, Cache miss

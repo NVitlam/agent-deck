@@ -126,18 +126,66 @@ export function formatMs(ms: number): string {
 }
 
 /**
- * Whether a `statsKey` names a millisecond value: its last segment ends in
- * `Ms` (`timing.longestGapMs`, `contextChurn[0].gapBeforeMs`). Keys such as
- * `durationMsSum` do not end in `Ms` and are not durations by this rule.
+ * A `statsKey`'s last segment, its array index dropped:
+ * `sessions[0].tools[2].durationMsMax` → `durationMsMax`.
+ */
+function lastSegment(statsKey: string): string {
+  const tail = statsKey.slice(statsKey.lastIndexOf('.') + 1);
+  return tail.replace(/\[\d+\]$/, '');
+}
+
+/**
+ * Whether a `statsKey` names a millisecond value — round 9b: its last
+ * segment carries `Ms` as a camel-case WORD, at its end or before another
+ * word. So `longestGapMs`, `gapBeforeMs`, `durationMsSum` and
+ * `durationMsMax` all render alike (the Insights v3 smoke found the last two
+ * printed raw under the round-9 rule, which read "ends in `Ms`"). Every such
+ * key in the stats record is a duration; none is an instant.
  */
 export function isMsKey(statsKey: string): boolean {
-  return statsKey.endsWith('Ms');
+  return /Ms(?=[A-Z]|$)/.test(lastSegment(statsKey));
+}
+
+/** The ratios the stats record carries, printed to two places (round 9b). */
+const RATIO_KEYS: ReadonlySet<string> = new Set(['cacheRatio', 'contextFill']);
+
+/**
+ * How a number at this key is SHOWN — round 9b. `null` prints it as stated.
+ *
+ *   - a cost (`costUsd`, `costPerHourUsd`: the segment ends in `Usd`) and a
+ *     ratio ({@link RATIO_KEYS}): two places;
+ *   - a per-minute rate (`tokensPerMin`, `callsPerMin`): a whole number.
+ *
+ * `costPerHourUsd` is a per-hour rate AND a cost; it is printed as a cost,
+ * because a whole number of dollars an hour reads a 0.37 USD hour as `0`.
+ */
+function roundedOf(statsKey: string, value: number): string | null {
+  const segment = lastSegment(statsKey);
+  if (segment.endsWith('Usd') || RATIO_KEYS.has(segment)) return value.toFixed(2);
+  if (/Per(?:Min|Hour)$/.test(segment)) return formatCount(Math.round(value));
+  return null;
+}
+
+/** An evidence value as the report prints it, and the exact number when that differs. */
+export interface EvidenceText {
+  readonly value: string;
+  /** The number as stated, present only when {@link EvidenceText.value} rounds it. */
+  readonly exact?: string;
 }
 
 /** An evidence value as the report prints it. */
+export function evidenceText(statsKey: string, value: number | string): EvidenceText {
+  if (typeof value !== 'number') return { value };
+  if (isMsKey(statsKey)) return { value: formatMs(value) };
+  const exact = String(value);
+  const rounded = roundedOf(statsKey, value);
+  if (rounded === null || rounded === exact) return { value: exact };
+  return { value: rounded, exact };
+}
+
+/** {@link evidenceText}'s printed half. */
 export function evidenceValue(statsKey: string, value: number | string): string {
-  if (typeof value !== 'number') return value;
-  return isMsKey(statsKey) ? formatMs(value) : String(value);
+  return evidenceText(statsKey, value).value;
 }
 
 /** An instant as the surfaces print it: `2026-09-21 14:05 UTC`. */
@@ -162,8 +210,14 @@ export function plural(n: number, one: string, many: string = `${one}s`): string
 /** One labelled piece of evidence. */
 export interface EvidenceRow {
   readonly label: string;
-  /** The value as the provider stated it, a number or a string. */
+  /** The value as the report prints it — see {@link evidenceText}. */
   readonly value: string;
+  /**
+   * The number exactly as the provider stated it, present only where
+   * `value` rounds it (round 9b): the surface's tooltip, the HTML export's
+   * `title`, and beside the value in Markdown and plain text.
+   */
+  readonly exact?: string;
   /** Where it is from: `statsKey · sessionId`. */
   readonly source: string;
 }
@@ -257,9 +311,11 @@ function findingOf(finding: FindingView): FindingRow {
     cause: finding.cause,
     evidence: finding.evidence.map((item) => ({
       label: item.label,
-      // DoD 9.59 — a `...Ms` number carries its duration beside it. The
-      // source line is untouched: provenance is the statsKey as stated.
-      value: evidenceValue(item.statsKey, item.value),
+      // DoD 9.59 and round 9b — a `...Ms` number carries its duration; a
+      // cost, a ratio or a per-minute rate is rounded, with the exact number
+      // kept beside it. The source line is untouched: provenance is the
+      // statsKey as stated.
+      ...evidenceText(item.statsKey, item.value),
       source: `${item.statsKey} · ${item.sessionId}`,
     })),
   };

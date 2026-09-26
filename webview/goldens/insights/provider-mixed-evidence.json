@@ -79,8 +79,48 @@
             },
             {
               "label": "Duration sum",
-              "value": "90500",
+              "value": "90,500 ms · 1 m 30 s",
               "source": "sessions[1].tools[0].durationMsSum · ses_example02"
+            },
+            {
+              "label": "Duration max",
+              "value": "61,250 ms · 1 m 1 s",
+              "source": "sessions[1].tools[0].durationMsMax · ses_example02"
+            },
+            {
+              "label": "Cost",
+              "value": "0.24",
+              "exact": "0.238149",
+              "source": "sessions[0].totals.costUsd · ses_example01"
+            },
+            {
+              "label": "Cost per hour",
+              "value": "0.37",
+              "exact": "0.37125",
+              "source": "sessions[0].timing.costPerHourUsd · ses_example01"
+            },
+            {
+              "label": "Cache ratio",
+              "value": "0.82",
+              "exact": "0.8234567",
+              "source": "sessions[0].agents[0].cacheRatio · ses_example01"
+            },
+            {
+              "label": "Context fill",
+              "value": "0.40",
+              "exact": "0.4",
+              "source": "sessions[0].totals.contextFill · ses_example01"
+            },
+            {
+              "label": "Tokens per minute",
+              "value": "1,235",
+              "exact": "1234.5678",
+              "source": "sessions[0].timing.tokensPerMin · ses_example01"
+            },
+            {
+              "label": "Calls per minute",
+              "value": "3",
+              "source": "sessions[0].timing.callsPerMin · ses_example01"
             }
           ]
         }

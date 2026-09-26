@@ -139,9 +139,8 @@
             </div>
           {/each}
         </div>
-        {#if paid === null}
-          <p class="line" data-testid="insights-failure-kinds">{FAILURE_KINDS_FACT}</p>
-        {/if}
+        <!-- The ruling of 2026-09-26 (round 9): in both states, under the tiles. -->
+        <p class="line" data-testid="insights-failure-kinds">{FAILURE_KINDS_FACT}</p>
       {/if}
     </section>
   {/snippet}

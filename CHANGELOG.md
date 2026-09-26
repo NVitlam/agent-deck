@@ -67,10 +67,10 @@ All notable changes to Agent Deck are documented here.
 - **Milliseconds read as durations on the Insights surface.** Every evidence
   value whose field ends in `Ms` shows the number whole with a duration
   beside it - `28,100,113 ms · 7 h 48 m` - in the preview, in the HTML,
-  Markdown and Copy exports, and on the long-idle resume tile. The free
-  surface also carries one line under its tiles: deliberate failures
-  (test-driven breakage) and accidental ones are indistinguishable in this
-  data.
+  Markdown and Copy exports, and on the long-idle resume tile. The Insights
+  surface also carries one line under its fact tiles, with or without a
+  provider: deliberate failures (test-driven breakage) and accidental ones are
+  indistinguishable in this data.
 - **An Insights surface, from Menu - Open Insights.** With no Insights
   provider registered it shows the facts the stats history holds for the last
   7 days - sessions by engine, compactions, long-idle resumes, re-read loops,

@@ -75,8 +75,9 @@ const DAY_MS = 86_400_000;
 export const IDLE_RESUME_MS = 120_000;
 
 /**
- * The free state's one fact line under the tiles — verbatim, spec
- * `Amendment 2026-09-26 — Facts for report quality` (DoD 9.60). A statement
+ * The one fact line under the fact tiles, in BOTH states (the ruling of
+ * 2026-09-26, round 9) — verbatim, spec `Amendment 2026-09-26 — Facts for
+ * report quality` (DoD 9.60). A statement
  * about what the data can and cannot tell apart, beside the failed-calls
  * tile it bears on; no advice, and G10 scans it here, at its source.
  */

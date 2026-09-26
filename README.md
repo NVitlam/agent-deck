@@ -953,7 +953,7 @@ what it does, what it never does, and the plans.
 findings it has and the agent CLI it used, newest first, a refused one marked *refused*. On the
 right, *Select a report to preview / download.* until you click one; then that report, exactly as
 the [extension API](#for-extension-authors) section describes it. Click the selected report again
-and the preview goes back to that prompt. The same fact tiles as the free state sit below both.
+and the preview goes back to that prompt. The same fact tiles as the free state sit below both, with the same line of fact under them.
 There is no Run button here: a run is started from Insights' own window. If the provider goes away,
 the sidebar reads *Facts only* again, its rows under Open Insights go, and this surface shows the
 free view; the deck and Statistics are left as they were. The Agent Deck output channel writes one

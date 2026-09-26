@@ -471,8 +471,14 @@ describe('the Insights surface, PROVIDER — DoD 9.30, reshaped by DoD 9.46', ()
     expect(all(panel.container, TESTID.insightsGetTile)).toStrictEqual([]);
     expect(panel.container.querySelector('[data-testid="insights-run"]')).toBeNull();
     expect([...panel.container.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toContain('Run');
-    // DoD 9.60 — the fact line is the FREE surface's; the provider state does not carry it.
-    expect(all(panel.container, 'insights-failure-kinds')).toStrictEqual([]);
+    // DoD 9.60, the ruling of 2026-09-26 (round 9): the fact line shows in BOTH
+    // states — here, once, after the last fact tile below the report list.
+    const lines = all(panel.container, 'insights-failure-kinds');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.textContent).toBe(
+      'Deliberate failures (test-driven breakage) and accidental ones are indistinguishable in this data.',
+    );
+    expect((facts.at(-1) as Element).compareDocumentPosition(lines[0] as Element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('NOTHING SELECTED: the preview says so, verbatim, and holds no report and no Export', () => {
@@ -1087,6 +1093,20 @@ describe('DOM goldens of both surfaces in both states', () => {
       panel.dispose();
       mounted.pop();
     }
+  });
+
+  it('the ruling of 2026-09-26 (round 9): with a provider AND a read history, the tiles and the fact line below the list', () => {
+    // The four goldens above render before the store is read, so they show
+    // no tile; this one is the provider state with the history loaded.
+    const panel = render();
+    send({
+      type: 'statsStore',
+      records: [record('a', 1, { tools: [{ toolName: 'Bash', class: 'shell', calls: 3, errors: 1 }] })],
+      enabled: true,
+    });
+    send(providerState({ latest: 'ok' }));
+    send(viewControls({ surface: 'insights' }));
+    golden('insights-provider-facts', one(panel.container, TESTID.insightsSurface));
   });
 
   it('9.55: Investigate Report PRESENT is one golden; ABSENT is the `ok` golden, byte for byte', () => {

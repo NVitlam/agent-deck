@@ -76,6 +76,70 @@ export function formatCount(n: number): string {
   return String(Math.trunc(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+/**
+ * A number as stated, with its whole part grouped: `28,100,113`, `1,234.5`.
+ * Unlike {@link formatCount} it drops nothing: the raw number stays whole
+ * beside its duration (DoD 9.59).
+ */
+function groupedRaw(n: number): string {
+  const text = String(n);
+  const dot = text.indexOf('.');
+  const whole = dot === -1 ? text : text.slice(0, dot);
+  const rest = dot === -1 ? '' : text.slice(dot);
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${rest}`;
+}
+
+const SECOND_MS = 1_000;
+const MINUTE_MS = 60 * SECOND_MS;
+const HOUR_MS = 60 * MINUTE_MS;
+const DURATION_DAY_MS = 24 * HOUR_MS;
+
+/**
+ * Milliseconds as a human duration — v0.9.0 DoD 9.59: `7 h 48 m`, `2 m`,
+ * `12 s`, `under 1 s`. At most two units, the smaller left out when it is
+ * zero; every unit TRUNCATED, never rounded, so the duration never claims
+ * more time than the number beside it. Deterministic: no clock, no locale.
+ */
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms)) return String(ms);
+  const sign = ms < 0 ? '-' : '';
+  const abs = Math.abs(ms);
+  const pair = (big: number, bigUnit: string, unit: number, smallUnit: string): string => {
+    const high = Math.trunc(abs / big);
+    const low = Math.trunc((abs - high * big) / unit);
+    return `${sign}${String(high)} ${bigUnit}${low === 0 ? '' : ` ${String(low)} ${smallUnit}`}`;
+  };
+  if (abs < SECOND_MS) return `${sign}under 1 s`;
+  if (abs < MINUTE_MS) return `${sign}${String(Math.trunc(abs / SECOND_MS))} s`;
+  if (abs < HOUR_MS) return pair(MINUTE_MS, 'm', SECOND_MS, 's');
+  if (abs < DURATION_DAY_MS) return pair(HOUR_MS, 'h', MINUTE_MS, 'm');
+  return pair(DURATION_DAY_MS, 'd', HOUR_MS, 'h');
+}
+
+/**
+ * A millisecond value as every Insights surface prints it — DoD 9.59:
+ * `28,100,113 ms · 7 h 48 m`. The raw number first and whole, the duration
+ * beside it.
+ */
+export function formatMs(ms: number): string {
+  return `${groupedRaw(ms)} ms · ${formatDuration(ms)}`;
+}
+
+/**
+ * Whether a `statsKey` names a millisecond value: its last segment ends in
+ * `Ms` (`timing.longestGapMs`, `contextChurn[0].gapBeforeMs`). Keys such as
+ * `durationMsSum` do not end in `Ms` and are not durations by this rule.
+ */
+export function isMsKey(statsKey: string): boolean {
+  return statsKey.endsWith('Ms');
+}
+
+/** An evidence value as the report prints it. */
+export function evidenceValue(statsKey: string, value: number | string): string {
+  if (typeof value !== 'number') return value;
+  return isMsKey(statsKey) ? formatMs(value) : String(value);
+}
+
 /** An instant as the surfaces print it: `2026-09-21 14:05 UTC`. */
 export function formatInstant(ms: number): string {
   const iso = new Date(ms).toISOString();
@@ -193,7 +257,9 @@ function findingOf(finding: FindingView): FindingRow {
     cause: finding.cause,
     evidence: finding.evidence.map((item) => ({
       label: item.label,
-      value: typeof item.value === 'number' ? String(item.value) : item.value,
+      // DoD 9.59 — a `...Ms` number carries its duration beside it. The
+      // source line is untouched: provenance is the statsKey as stated.
+      value: evidenceValue(item.statsKey, item.value),
       source: `${item.statsKey} · ${item.sessionId}`,
     })),
   };

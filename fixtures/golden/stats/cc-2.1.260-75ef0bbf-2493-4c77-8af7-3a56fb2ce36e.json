@@ -876,7 +876,8 @@
         27,
         28
       ],
-      "errors": 1
+      "errors": 1,
+      "fileErrors": 0
     },
     {
       "agentId": "root",
@@ -1021,7 +1022,8 @@
         208,
         209
       ],
-      "errors": 6
+      "errors": 6,
+      "fileErrors": 0
     },
     {
       "agentId": "root",
@@ -1082,7 +1084,8 @@
         138,
         139
       ],
-      "errors": 4
+      "errors": 4,
+      "fileErrors": 0
     },
     {
       "agentId": "root",
@@ -1140,7 +1143,8 @@
         136,
         137
       ],
-      "errors": 4
+      "errors": 4,
+      "fileErrors": 0
     },
     {
       "agentId": "root",
@@ -1154,7 +1158,8 @@
         96,
         97
       ],
-      "errors": 2
+      "errors": 2,
+      "fileErrors": 0
     },
     {
       "agentId": "root",
@@ -1298,7 +1303,8 @@
         242,
         243
       ],
-      "errors": 3
+      "errors": 3,
+      "fileErrors": 0
     },
     {
       "agentId": "root",
@@ -1310,7 +1316,8 @@
         129,
         130
       ],
-      "errors": 1
+      "errors": 1,
+      "fileErrors": 0
     }
   ],
   "skills": [
@@ -1331,97 +1338,116 @@
     {
       "agentId": "root",
       "ordinal": 32,
-      "delta": 43817
+      "delta": 43817,
+      "gapBeforeMs": 13718
     },
     {
       "agentId": "root",
       "ordinal": 57,
-      "delta": 6706
+      "delta": 6706,
+      "gapBeforeMs": 90670
     },
     {
       "agentId": "root",
       "ordinal": 90,
-      "delta": 15364
+      "delta": 15364,
+      "gapBeforeMs": 13268
     },
     {
       "agentId": "root",
       "ordinal": 124,
-      "delta": 7886
+      "delta": 7886,
+      "gapBeforeMs": 653857
     },
     {
       "agentId": "root",
       "ordinal": 157,
-      "delta": 359980
+      "delta": 359980,
+      "gapBeforeMs": 13096145
     },
     {
       "agentId": "root",
       "ordinal": 160,
-      "delta": 5785
+      "delta": 5785,
+      "gapBeforeMs": 856888
     },
     {
       "agentId": "root",
       "ordinal": 205,
-      "delta": 445971
+      "delta": 445971,
+      "gapBeforeMs": 3704000
     },
     {
       "agentId": "root",
       "ordinal": 217,
-      "delta": 46368
+      "delta": 46368,
+      "gapBeforeMs": 10535
     },
     {
       "agentId": "root",
       "ordinal": 269,
-      "delta": 6127
+      "delta": 6127,
+      "gapBeforeMs": 742899
     },
     {
       "agentId": "root",
       "ordinal": 277,
-      "delta": 50288
+      "delta": 50288,
+      "gapBeforeMs": 13087
     },
     {
       "agentId": "root",
       "ordinal": 287,
-      "delta": 710119
+      "delta": 710119,
+      "gapBeforeMs": 206623039
     },
     {
       "agentId": "root",
       "ordinal": 290,
-      "delta": 9337
+      "delta": 9337,
+      "gapBeforeMs": 3940
     },
     {
       "agentId": "root",
       "ordinal": 299,
-      "delta": 6189
+      "delta": 6189,
+      "gapBeforeMs": 5054
     },
     {
       "agentId": "root",
       "ordinal": 311,
-      "delta": 13010
+      "delta": 13010,
+      "gapBeforeMs": 4019
     },
     {
       "agentId": "root",
       "ordinal": 315,
-      "delta": 8656
+      "delta": 8656,
+      "gapBeforeMs": 4320
     },
     {
       "agentId": "root",
       "ordinal": 316,
-      "delta": 11662
+      "delta": 11662,
+      "gapBeforeMs": 5009
     },
     {
       "agentId": "root",
       "ordinal": 321,
-      "delta": 6789
+      "delta": 6789,
+      "gapBeforeMs": 4867
     },
     {
       "agentId": "root",
       "ordinal": 323,
-      "delta": 101798
+      "delta": 101798,
+      "gapBeforeMs": 149888
     },
     {
       "agentId": "root",
       "ordinal": 326,
-      "delta": 23016
+      "delta": 23016,
+      "gapBeforeMs": 3560
     }
   ],
   "compactions": [

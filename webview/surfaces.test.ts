@@ -204,6 +204,8 @@ const LATEST: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-evidence', Rec
         evidence: [
           { label: 'Reads', sessionId: 'ses_example01', statsKey: 'sessions[0].loops[0].count', value: 7 },
           { label: 'File', sessionId: 'ses_example01', statsKey: 'sessions[0].files[2].filePath', value: 'repo/docs/schema.md' },
+          // DoD 9.59 — a `...Ms` value renders with its duration beside it.
+          { label: 'Longest gap', sessionId: 'ses_example01', statsKey: 'sessions[0].timing.longestGapMs', value: 28_100_113 },
         ],
       }),
     ],
@@ -373,6 +375,13 @@ describe('the Insights surface, FREE — DoD 9.29', () => {
     expect(value('compactions')).toBe('2');
     expect(value('promptTokens')).toBe('2,000');
     expect(value('engineCost')).toBe('—');
+    // DoD 9.60 — the one fact line, verbatim, after the tiles.
+    const line = one(panel.container, 'insights-failure-kinds');
+    expect(line.textContent).toBe(
+      'Deliberate failures (test-driven breakage) and accidental ones are indistinguishable in this data.',
+    );
+    const tiles = all(panel.container, TESTID.insightsFact);
+    expect((tiles.at(-1) as Element).compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('counts long-idle resumes against the SETTING the host sent, not a fixed 120 s (DoD 9.38)', () => {
@@ -400,7 +409,7 @@ describe('the Insights surface, FREE — DoD 9.29', () => {
     expect(
       panel.container.querySelector('[data-fact="idleResumes"] [data-testid="insights-fact-note"]')
         ?.textContent,
-    ).toBe('sessions with a gap of 300 s or more');
+    ).toBe('sessions with a gap of 300,000 ms · 5 m or more');
   });
 
   it('says it has not read the store rather than counting nothing', () => {
@@ -462,6 +471,8 @@ describe('the Insights surface, PROVIDER — DoD 9.30, reshaped by DoD 9.46', ()
     expect(all(panel.container, TESTID.insightsGetTile)).toStrictEqual([]);
     expect(panel.container.querySelector('[data-testid="insights-run"]')).toBeNull();
     expect([...panel.container.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toContain('Run');
+    // DoD 9.60 — the fact line is the FREE surface's; the provider state does not carry it.
+    expect(all(panel.container, 'insights-failure-kinds')).toStrictEqual([]);
   });
 
   it('NOTHING SELECTED: the preview says so, verbatim, and holds no report and no Export', () => {
@@ -805,6 +816,8 @@ describe('the provider’s text, rendered — DoD 9.41', () => {
     ).toStrictEqual([
       'Reads 7 sessions[0].loops[0].count · ses_example01',
       'File repo/docs/schema.md sessions[0].files[2].filePath · ses_example01',
+      // DoD 9.59 — the raw number, its duration, and the key as stated.
+      'Longest gap 28,100,113 ms · 7 h 48 m sessions[0].timing.longestGapMs · ses_example01',
     ]);
   });
 

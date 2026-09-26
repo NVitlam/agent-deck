@@ -57,6 +57,20 @@ All notable changes to Agent Deck are documented here.
 
 ### Added
 
+- **Two facts for reports, in the stats history.** A churn chain now carries
+  `fileErrors`, how many of the failing calls between its two writes named
+  the chain's own file (`errors` still counts every failing call between
+  them). A context-churn turn now carries `gapBeforeMs`, the time between it
+  and the turn before, or `null` where the engine states no time. Both are
+  added to the record's rows without a new format version; a stored record
+  written before them reads with `fileErrors:absent` or `gapBeforeMs:absent`.
+- **Milliseconds read as durations on the Insights surface.** Every evidence
+  value whose field ends in `Ms` shows the number whole with a duration
+  beside it - `28,100,113 ms · 7 h 48 m` - in the preview, in the HTML,
+  Markdown and Copy exports, and on the long-idle resume tile. The free
+  surface also carries one line under its tiles: deliberate failures
+  (test-driven breakage) and accidental ones are indistinguishable in this
+  data.
 - **An Insights surface, from Menu - Open Insights.** With no Insights
   provider registered it shows the facts the stats history holds for the last
   7 days - sessions by engine, compactions, long-idle resumes, re-read loops,

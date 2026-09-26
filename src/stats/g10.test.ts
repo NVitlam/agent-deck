@@ -29,6 +29,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { FAILURE_KINDS_FACT } from '../../webview/insights/layout.js';
+
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const SCRIPT = fileURLToPath(new URL('../../scripts/forbidden-words.mjs', import.meta.url));
 
@@ -278,4 +280,28 @@ describe('the gate can still see a violation — the REAL script, on a planted o
     const { status } = run(['--scope', dir]);
     expect(status).toBe(1);
   }, 30_000);
+});
+
+describe('DoD 9.60 — the free Insights surface’s fact line passes G10, through the real script', () => {
+  it('is the amendment’s sentence, verbatim', () => {
+    expect(FAILURE_KINDS_FACT).toBe(
+      'Deliberate failures (test-driven breakage) and accidental ones are indistinguishable in this data.',
+    );
+  });
+
+  it('planted as a literal, it is scanned and raises no violation; with one word of advice added, it does', () => {
+    // One spawn per arm, the same pipeline as the controls above. The clean
+    // arm pins that the literal was READ (literals >= 1), so a zero is not a
+    // zero over nothing.
+    const clean = run(['--scope', plant(`export const LINE = ${JSON.stringify(FAILURE_KINDS_FACT)};\n`)]);
+    expect(clean.status).toBe(0);
+    expect(clean.report.violations).toEqual([]);
+    expect(clean.report.literals).toBeGreaterThanOrEqual(1);
+    const advised = run([
+      '--scope',
+      plant(`export const LINE = ${JSON.stringify(`${FAILURE_KINDS_FACT} Consider tagging them.`)};\n`),
+    ]);
+    expect(advised.status).toBe(1);
+    expect(advised.report.violations.map((v) => v.word)).toStrictEqual(['consider']);
+  }, 60_000);
 });

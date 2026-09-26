@@ -110,7 +110,8 @@
     {
       "agentId": "a3ecf86bbfb853726",
       "ordinal": 3,
-      "delta": 5460
+      "delta": 5460,
+      "gapBeforeMs": 6276
     }
   ],
   "compactions": [],

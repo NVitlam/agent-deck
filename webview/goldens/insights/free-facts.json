@@ -27,7 +27,7 @@
         "label": "long-idle resumes",
         "count": 2,
         "value": "2",
-        "note": "sessions with a gap of 120 s or more"
+        "note": "sessions with a gap of 120,000 ms · 2 m or more"
       },
       {
         "id": "rereadLoops",
@@ -102,7 +102,7 @@
         "label": "long-idle resumes",
         "count": 0,
         "value": "0",
-        "note": "sessions with a gap of 120 s or more"
+        "note": "sessions with a gap of 120,000 ms · 2 m or more"
       },
       {
         "id": "rereadLoops",

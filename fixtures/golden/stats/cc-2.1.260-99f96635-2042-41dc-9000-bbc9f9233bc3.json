@@ -426,57 +426,68 @@
     {
       "agentId": "a0ed8c3aae39da276",
       "ordinal": 5,
-      "delta": 5808
+      "delta": 5808,
+      "gapBeforeMs": 2552
     },
     {
       "agentId": "a7d51ba7a0fe16c4b",
       "ordinal": 4,
-      "delta": 6319
+      "delta": 6319,
+      "gapBeforeMs": 13620
     },
     {
       "agentId": "a982bfcc574017a33",
       "ordinal": 2,
-      "delta": 99859
+      "delta": 99859,
+      "gapBeforeMs": 6603
     },
     {
       "agentId": "a982bfcc574017a33",
       "ordinal": 10,
-      "delta": 6631
+      "delta": 6631,
+      "gapBeforeMs": 2204
     },
     {
       "agentId": "root",
       "ordinal": 61,
-      "delta": 5210
+      "delta": 5210,
+      "gapBeforeMs": 69522
     },
     {
       "agentId": "root",
       "ordinal": 98,
-      "delta": 11992
+      "delta": 11992,
+      "gapBeforeMs": 110516
     },
     {
       "agentId": "root",
       "ordinal": 111,
-      "delta": 71894
+      "delta": 71894,
+      "gapBeforeMs": 13580
     },
     {
       "agentId": "root",
       "ordinal": 134,
-      "delta": 6023
+      "delta": 6023,
+      "gapBeforeMs": 97698
     },
     {
       "agentId": "root",
       "ordinal": 148,
-      "delta": 487446
+      "delta": 487446,
+      "gapBeforeMs": 1138747
     },
     {
       "agentId": "root",
       "ordinal": 161,
-      "delta": 72318
+      "delta": 72318,
+      "gapBeforeMs": 14266
     },
     {
       "agentId": "root",
       "ordinal": 164,
-      "delta": 5711
+      "delta": 5711,
+      "gapBeforeMs": 8390
     }
   ],
   "compactions": [],

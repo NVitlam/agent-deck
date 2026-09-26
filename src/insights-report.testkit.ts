@@ -97,6 +97,11 @@ export const REPORT_SETS: Readonly<Record<'ok' | 'empty' | 'refused' | 'mixed-ev
           { label: 'File', sessionId: 'ses_example01', statsKey: 'sessions[0].files[2].filePath', value: 'repo/docs/schema.md' },
           { label: 'Skill', sessionId: 'ses_example02', statsKey: 'sessions[1].skills[0].name', value: 'phase' },
           { label: 'Cache ratio', sessionId: 'ses_example02', statsKey: 'sessions[1].totals.prompt', value: 0.11 },
+          // DoD 9.59 — two `...Ms` values, which print with a duration, and
+          // one `durationMsSum`, which does not end in `Ms` and prints bare.
+          { label: 'Longest gap', sessionId: 'ses_example01', statsKey: 'sessions[0].timing.longestGapMs', value: 28_100_113 },
+          { label: 'Gap before spike', sessionId: 'ses_example02', statsKey: 'sessions[1].contextChurn[0].gapBeforeMs', value: 312_450 },
+          { label: 'Duration sum', sessionId: 'ses_example02', statsKey: 'sessions[1].tools[0].durationMsSum', value: 90_500 },
         ],
       }),
     ],

@@ -63,7 +63,8 @@
       "ordinals": [
         1
       ],
-      "errors": 1
+      "errors": 1,
+      "fileErrors": 0
     }
   ],
   "skills": [],

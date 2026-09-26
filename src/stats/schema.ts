@@ -251,8 +251,20 @@ export interface ChurnRecord {
   toOrdinal: number;
   /** Every tool ordinal STRICTLY between the two writes, ascending. */
   ordinals: number[];
-  /** How many of `ordinals` errored. >= 1, or this is not a churn chain. */
+  /**
+   * How many of `ordinals` errored — EVERY failure in the gap, whatever it
+   * named. >= 1, or this is not a churn chain.
+   */
   errors: number;
+  /**
+   * How many of `ordinals` errored AND name this chain's `filePath` — v0.9.0
+   * DoD 9.57, spec `Amendment 2026-09-26 — Facts for report quality`. 0 when
+   * every failure in the gap named another file or none. Always written by
+   * the deriver; OPTIONAL on the type because a record written before 9.57
+   * carries none, and such a record reads with `fileErrors:absent` in
+   * `unavailable` (see {@link upgradeStatsRecord}).
+   */
+  fileErrors?: number;
 }
 
 /** F7 — one turn whose cache-creation rose by at least `spikeTokens`. */
@@ -262,6 +274,16 @@ export interface ContextChurnRecord {
   ordinal: number;
   /** `cacheCreation(this turn) - cacheCreation(previous turn)`. */
   delta: number;
+  /**
+   * `atMs(this turn) - atMs(previous turn)`, the same two turns `delta` is
+   * taken between — v0.9.0 DoD 9.58. A cache rebuilt after an idle gap
+   * reads a large value here; a spike from a large tool result reads a small
+   * one. `null` where the engine stated no instant for either turn. Always
+   * written by the deriver; OPTIONAL on the type because a record written
+   * before 9.58 carries none, and such a record reads with
+   * `gapBeforeMs:absent` in `unavailable`.
+   */
+  gapBeforeMs?: number | null;
 }
 
 /**
@@ -763,11 +785,44 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Row fields added WITHOUT a schema bump — v0.9.0 DoD 9.57 and 9.58, spec
+ * `Amendment 2026-09-26 — Facts for report quality`. Both are additive, so
+ * `statsSchemaVersion` stays 3 and a v3 record written before them is still
+ * a v3 record. Which records lack them is therefore read off the ROWS, not
+ * off the version: a record any of whose rows lacks the field names
+ * `<field>:absent`, whatever version wrote it. A record with no such row
+ * has nothing to mark — an empty `churn` states no chain, under any deriver.
+ */
+export const ROW_FIELDS_ADDED: readonly {
+  readonly section: 'churn' | 'contextChurn';
+  readonly field: string;
+  readonly marker: string;
+}[] = [
+  { section: 'churn', field: 'fileErrors', marker: 'fileErrors:absent' },
+  { section: 'contextChurn', field: 'gapBeforeMs', marker: 'gapBeforeMs:absent' },
+];
+
+function rowFieldMarkers(value: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const { section, field, marker } of ROW_FIELDS_ADDED) {
+    const rows = value[section];
+    if (!Array.isArray(rows)) continue;
+    if (rows.some((row: unknown) => isPlainObject(row) && !Object.hasOwn(row, field))) {
+      out.push(marker);
+    }
+  }
+  return out;
+}
+
+/**
  * A stored line, as the current reader sees it — v0.8.0 DoD 7.14.
  *
- * A current-version record, and anything that is not a version-1 record, is
- * returned AS IS: validation is still {@link validateStatsRecord}'s job, and
- * a version this reader does not know is still refused there.
+ * A current-version record is returned AS IS unless a row lacks a field of
+ * {@link ROW_FIELDS_ADDED} (v0.9.0 DoD 9.57/9.58), when it is returned as a
+ * new object whose `unavailable` names the gap and nothing else changes.
+ * Anything that is not a readable record is returned as is: validation is
+ * still {@link validateStatsRecord}'s job, and a version this reader does not
+ * know is still refused there.
  *
  * A version-1 record is returned as a NEW object in the current shape: an
  * empty `timing` block (the shape a session stating no instant already has),
@@ -786,9 +841,21 @@ export function upgradeStatsRecord(value: unknown): unknown {
   // what decides, so removing a version from it makes that version's lines
   // refused again (the validator then sees the old number) — verifier round 2
   // found the list declared and consulted by nothing.
-  if (typeof version !== 'number' || version === STATS_SCHEMA_VERSION) return value;
+  if (typeof version !== 'number') return value;
+  if (version === STATS_SCHEMA_VERSION) {
+    // DoD 9.57/9.58 — a current-version record written before the row
+    // fields existed. Returned AS IS when it lacks none, so a record the
+    // current deriver wrote is the same object the store read.
+    const markers = rowFieldMarkers(value);
+    const unavailable = value['unavailable'];
+    if (markers.length === 0 || !Array.isArray(unavailable)) return value;
+    return {
+      ...value,
+      unavailable: [...new Set([...(unavailable as unknown[]), ...markers])].sort(),
+    };
+  }
   if (!READABLE_STATS_SCHEMA_VERSIONS.includes(version)) return value;
-  const absent = HISTORY_ABSENT_FACTS[version] ?? [];
+  const absent = [...(HISTORY_ABSENT_FACTS[version] ?? []), ...rowFieldMarkers(value)];
   const agents = value['agents'];
   const unavailable = value['unavailable'];
   return {

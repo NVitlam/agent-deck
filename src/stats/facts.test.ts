@@ -136,6 +136,8 @@ describe('F4 — churn chains', () => {
       toOrdinal: 2,
       ordinals: [1],
       errors: 1,
+      // DoD 9.57 — the one failure in the gap is a Bash call naming no file.
+      fileErrors: 0,
     });
   });
 
@@ -189,7 +191,8 @@ describe('F7 — context churn', () => {
   it('POSITIVE: a delta at or above SPIKE_TOKENS.cc is reported', () => {
     const spike = record('04-context-spike');
     expect(spike.contextChurn).toHaveLength(1);
-    expect(spike.contextChurn[0]).toEqual({ agentId: 'root', ordinal: 1, delta: 6_000 });
+    // DoD 9.58 — the synthetic series states no instant, so the gap is null.
+    expect(spike.contextChurn[0]).toEqual({ agentId: 'root', ordinal: 1, delta: 6_000, gapBeforeMs: null });
   });
 
   it('NEGATIVE: a delta of 4,999 — one short — is not', () => {

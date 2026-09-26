@@ -66,6 +66,21 @@
               "label": "Cache ratio",
               "value": "0.11",
               "source": "sessions[1].totals.prompt · ses_example02"
+            },
+            {
+              "label": "Longest gap",
+              "value": "28,100,113 ms · 7 h 48 m",
+              "source": "sessions[0].timing.longestGapMs · ses_example01"
+            },
+            {
+              "label": "Gap before spike",
+              "value": "312,450 ms · 5 m 12 s",
+              "source": "sessions[1].contextChurn[0].gapBeforeMs · ses_example02"
+            },
+            {
+              "label": "Duration sum",
+              "value": "90500",
+              "source": "sessions[1].tools[0].durationMsSum · ses_example02"
             }
           ]
         }

@@ -28,7 +28,8 @@
     {
       "agentId": "root",
       "ordinal": 1,
-      "delta": 6000
+      "delta": 6000,
+      "gapBeforeMs": null
     }
   ],
   "compactions": [],

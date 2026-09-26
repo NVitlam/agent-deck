@@ -40,6 +40,7 @@ import {
   EXAMPLES,
   EXAMPLE_LABEL,
   ESTIMATED_BY_CLAUDE_CODE,
+  FAILURE_KINDS_FACT,
   NO_LONGER_REPORTED,
   NO_RAW_OUTPUT,
   NO_REPORT,
@@ -245,10 +246,12 @@ describe('each fact is counted from its own field', () => {
     expect(idle(three, 300_000)?.count).toBe(0);
     expect(idle(five, 300_000)?.count).toBe(1);
     // ...and the tile states the rule it counted by.
-    expect(idle(five, 300_000)?.note).toBe('sessions with a gap of 300 s or more');
-    // EXACTLY, never rounded (verifier round 9.39, D11: 90,500 ms read "91 s").
-    expect(idle(five, 90_500)?.note).toBe('sessions with a gap of 90.5 s or more');
-    expect(idle(five, 1_800_250)?.note).toBe('sessions with a gap of 1,800.25 s or more');
+    expect(idle(five, 300_000)?.note).toBe('sessions with a gap of 300,000 ms · 5 m or more');
+    // EXACTLY, never rounded (verifier round 9.39, D11: 90,500 ms read "91 s"):
+    // the raw milliseconds stay whole, and the duration beside them is
+    // TRUNCATED, so it never claims more than the number (DoD 9.59).
+    expect(idle(five, 90_500)?.note).toBe('sessions with a gap of 90,500 ms · 1 m 30 s or more');
+    expect(idle(five, 1_800_250)?.note).toBe('sessions with a gap of 1,800,250 ms · 30 m or more');
   });
 
   it('a gap BELOW the idle threshold is not a resume; AT it, it is', () => {
@@ -448,6 +451,18 @@ describe('the provider state’s renderer — DoD 9.41, 9.46', () => {
       { label: 'File', value: 'repo/docs/schema.md', source: 'sessions[0].files[2].filePath · ses_example01' },
       { label: 'Skill', value: 'phase', source: 'sessions[1].skills[0].name · ses_example02' },
       { label: 'Cache ratio', value: '0.11', source: 'sessions[1].totals.prompt · ses_example02' },
+      // DoD 9.59 — a `...Ms` number carries its duration; the source is the key as stated.
+      {
+        label: 'Longest gap',
+        value: '28,100,113 ms · 7 h 48 m',
+        source: 'sessions[0].timing.longestGapMs · ses_example01',
+      },
+      {
+        label: 'Gap before spike',
+        value: '312,450 ms · 5 m 12 s',
+        source: 'sessions[1].contextChurn[0].gapBeforeMs · ses_example02',
+      },
+      { label: 'Duration sum', value: '90500', source: 'sessions[1].tools[0].durationMsSum · ses_example02' },
     ]);
   });
 
@@ -568,6 +583,7 @@ describe('the Insights surface states facts and never advises', () => {
     const shown = [
       ...layout.tiles.flatMap((t) => [t.label, t.value, t.note ?? '']),
       EXAMPLE_LABEL,
+      FAILURE_KINDS_FACT,
       ...EXAMPLES.flatMap((e) => [e.title, ...e.lines]),
       ...Object.values(PROVIDER_STATES).flatMap(shownOf),
       markup.replace(/<[^>]*>/g, ' ').replace(/\{[^}]*\}/g, ' '),

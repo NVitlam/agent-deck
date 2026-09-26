@@ -704,10 +704,11 @@ Seven things have names. Each is a rule over a session's tool calls and token co
   with any other tool is listed as a loop.
 - **Churn chain** — one agent edits or writes a file, a later call by the same agent ends in an
   error, and the agent edits or writes that file again. The chain lists every call between the two
-  writes.
+  writes, how many of them failed, and how many of those failures named that same file.
 - **Context churn** — a turn in which the tokens written to the prompt cache rose by 5,000 or more
-  over the previous turn (the measurement parameter `SPIKE_TOKENS`). Claude Code only: it is the one
-  engine the threshold was measured on.
+  over the previous turn (the measurement parameter `SPIKE_TOKENS`), with the time between the two
+  turns where the engine states both. Claude Code only: it is the one engine the threshold was
+  measured on.
 - **Silent subagent** — a subagent that was spawned and made no tool call at all.
 - **Compaction** — the engine's own record that it compacted the conversation, with the prompt size
   before and after where the engine states them.
@@ -790,7 +791,9 @@ a record or is reloaded. A session still running refills the history as it goes.
 
 **Records from 0.7.x are read; time facts are absent for them.** Nothing on disk is rewritten. Stored
 history is what Trends draws: such a record is a point in every Trends series except tokens per minute,
-and the footer counts it as `F14:absent`.
+and the footer counts it as `F14:absent`. A stored record written before a churn chain carried its
+same-file failure count, or before a context-churn turn carried its time since the turn before,
+names the gap as `fileErrors:absent` or `gapBeforeMs:absent`.
 
 **Nothing leaves the machine.** No upload, no sync, and no telemetry sent. The history is kept in VS Code's
 global storage for this extension, as one JSON Lines file per week — not under `~/.claude`, not
@@ -887,7 +890,8 @@ required and `run` is optional, so a provider written for the earlier contract r
 unchanged; Agent Deck calls neither. The preview shows each finding's action lead first, its
 kind, confidence and "since last run" as words (never a score), the detail behind an expand (no
 expand when the detail is empty: a one-sentence action), the cause, then each piece of evidence
-under its label. When the set names kinds that were in the previous set and are absent now, one
+under its label. A number whose `statsKey` ends in `Ms` is printed whole with a duration beside
+it — *28,100,113 ms · 7 h 48 m* — in the preview and in every export. When the set names kinds that were in the previous set and are absent now, one
 line says *No longer reported:* and names them; each must be one of the eight kinds, said once,
 and not a kind the set still lists. Above them it states the run: when, which
 agent CLI and version, the window, and the run's own usage — marked *estimated by Claude Code*
@@ -934,11 +938,13 @@ and no feature of Agent Deck moves behind it.
 **Free — no Insights provider registered.** The facts the stats history already holds for the last
 7 days, as tiles, each naming the record field it was counted from: sessions by engine,
 compactions, long-idle resumes (sessions whose longest gap between calls is at least your
-`agentDeck.livenessThresholdMs`, 120 seconds by default — the tile names the threshold), re-read
+`agentDeck.livenessThresholdMs`, 120 seconds by default — the tile names the threshold in
+milliseconds with its duration beside it, *120,000 ms · 2 m*), re-read
 loops, failed tool calls, stalls, silent subagents,
 prompt and output tokens, and the cost the engines reported themselves (cost estimated by Claude
 Code or from your prices is not added in). A session read only in part is not counted, and the
-surface says how many were left out. Below them, one of three examples, labelled *"Example, based on
+surface says how many were left out. Under the tiles, one line of fact: *Deliberate failures
+(test-driven breakage) and accidental ones are indistinguishable in this data.* Below them, one of three examples, labelled *"Example, based on
 a real run"*, with made-up ids; it changes each time you come back. And one tile, **Get Agent Deck
 Insights**, which asks before it opens <https://nvitlam.github.io/agent-deck/insights.html> in your browser — the Insights page, with
 what it does, what it never does, and the plans.

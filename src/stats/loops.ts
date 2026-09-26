@@ -156,6 +156,12 @@ export function deriveChurn(
         const between = ordered.slice(from + 1, to);
         const errors = between.filter((t) => t.status === 'error').length;
         if (errors === 0) continue;
+        // DoD 9.57 — the failures in the gap that name THIS file. `errors`
+        // keeps counting every failure in the gap, so the two can differ, and
+        // a chain whose failures are all elsewhere reads `fileErrors: 0`.
+        const fileErrors = between.filter(
+          (t) => t.status === 'error' && t.filePath === filePath,
+        ).length;
         const fromTool = ordered[from];
         const toTool = ordered[to];
         if (fromTool === undefined || toTool === undefined) continue;
@@ -166,6 +172,7 @@ export function deriveChurn(
           toOrdinal: toTool.ordinal ?? -1,
           ordinals: between.map((t) => t.ordinal ?? -1),
           errors,
+          fileErrors,
         });
       }
     }

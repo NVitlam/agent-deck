@@ -32,6 +32,7 @@
   import { TESTID } from '../canvas-contract.js';
   import {
     EXAMPLE_LABEL,
+    FAILURE_KINDS_FACT,
     INSIGHTS_WINDOW_DAYS,
     INSIGHT_SOURCES,
     NO_RUNS,
@@ -138,6 +139,9 @@
             </div>
           {/each}
         </div>
+        {#if paid === null}
+          <p class="line" data-testid="insights-failure-kinds">{FAILURE_KINDS_FACT}</p>
+        {/if}
       {/if}
     </section>
   {/snippet}

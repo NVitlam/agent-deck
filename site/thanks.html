@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Deck Insights — patterns across your sessions</title>
-<meta name="description" content="Agent Deck Insights sends the stats Agent Deck recorded to the agent CLI you already use, when you click, and shows each finding beside the recorded facts it cites.">
+<title>Payment received — Agent Deck</title>
+<meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 
 <style>
@@ -164,34 +164,22 @@
 </style>
 </head>
 <body>
-  <header class="top"><nav class="wrap nav"><a class="brand" href="index.html"><i class="mark"></i>Agent Deck</a><div class="links"><a href="#does">What it does</a><a href="#never">Never</a><a href="#plans">Plans</a><a href="#support">Support</a></div><a class="github" href="https://github.com/NVitlam/agent-deck">View on GitHub ↗</a></nav></header>
+  <header class="top"><nav class="wrap nav"><a class="brand" href="index.html"><i class="mark"></i>Agent Deck</a><div class="links"><a href="insights.html">Insights</a></div><a class="github" href="https://github.com/NVitlam/agent-deck">View on GitHub ↗</a></nav></header>
   <main id="top">
-    <section class="wrap hero"><span class="tag">Agent Deck Insights</span><h1>Agent Deck Insights</h1><p class="intro">Agent Deck Insights sends the stats Agent Deck already recorded to the agent CLI you have installed, when you click, and shows each finding beside the recorded facts it cites.</p><div class="actions"><a class="button primary" href="#plans">See the plans <span class="arrow">→</span></a><a class="button" href="index.html">Agent Deck</a></div></section>
-    <section class="wrap" id="does"><span class="tag">What it does</span><h2>Your stats, your CLI, your click.</h2>
-      <div class="facts">
-        <article><h3>Sent on an explicit click</h3><p>Insights hands the Layer 1 stats Agent Deck recorded to the agent CLI you already have installed, with one prompt and a strict output schema. It happens when you click, and you see the exact bytes first.</p></article>
-        <article><h3>Evidence you can check</h3><p>Every finding carries evidence rows: a session, a stats key and a value. Each row resolves to a fact in Agent Deck’s own records.</p></article>
-        <article><h3>An offline licence key</h3><p>The licence is a signed key pasted into a setting and verified on your machine. There is no activation server and no account check.</p></article>
-        <article><h3>No network call from the extension</h3><p>The extension opens no connection. The CLI you run talks to its own provider, on your account, as it does whenever you use it.</p></article>
-      </div>
-      <div class="shots">
-        <figure><img src="media/insights-preview.png" alt="The Insights payload preview: the agent, the window of sessions, and the exact bytes written to the agent CLI" width="1642" height="1685"><figcaption>The payload preview: the exact bytes the agent CLI receives, before Send.</figcaption></figure>
-        <figure><img src="media/insights-panel.png" alt="The Insights panel: a finding with its kind, confidence and evidence rows" width="1642" height="1665"><figcaption>A finding with its kind, its confidence and the evidence rows it cites.</figcaption></figure>
-      </div>
-    </section>
-    <section class="wrap" id="never"><span class="tag">The boundary</span><h2>What it never does.</h2>
-      <div class="limits one"><article class="no"><h3>Never</h3><ul><li>reading transcripts</li><li>reading files</li><li>network calls from the extension</li><li>writing under any engine's data directory</li></ul></article></div>
-    </section>
-    <section class="wrap" id="plans"><span class="tag">Plans</span><h2>Pay once, or subscribe.</h2>
-      <div class="plans">
-        <div><h3>Pay once</h3><article class="plan"><h4>1 month</h4><p class="price">$10</p><p>One licence key, valid for one month.</p><a class="button primary" href="https://buy.polar.sh/polar_cl_CSq61gqBDh6m23MVgywHa5ToM4fqELxhN2Ihz3N0Pik">Buy 1 month <span class="arrow">→</span></a></article><article class="plan"><h4>6 months</h4><p class="price">$50</p><p>One licence key, valid for six months.</p><a class="button primary" href="https://buy.polar.sh/polar_cl_GCvmaLUxGjyRTAzCEFHEwWr7E3dPXGuHGF7x13OWJtR">Buy 6 months <span class="arrow">→</span></a></article><article class="plan"><h4>1 year</h4><p class="price">$100</p><p>One licence key, valid for a year.</p><a class="button primary" href="https://buy.polar.sh/polar_cl_kt7PQf2lHFd4MKLuIk0rQTQnTBydOB073e1Vz1UryGH">Buy 1 year <span class="arrow">→</span></a></article></div>
-        <div><h3>Subscribe</h3><article class="plan"><h4>Monthly</h4><p class="price">$10</p><p>Billed every month; the key renews with each payment.</p><a class="button primary" href="https://buy.polar.sh/polar_cl_jrxo7iIweohunHx0Tveoqfk7yWQ4YSmrHAWB22B04IC">Buy monthly <span class="arrow">→</span></a></article><article class="plan"><h4>Every 6 months</h4><p class="price">$50</p><p>Billed every six months; the key renews with each payment.</p><a class="button primary" href="https://buy.polar.sh/polar_cl_rrZE2uiaJHdSWORJ0zqPQxAIACs09t50dXwwO05Zwhb">Buy every 6 months <span class="arrow">→</span></a></article><article class="plan"><h4>Yearly</h4><p class="price">$100</p><p>Billed every year; the key renews with each payment.</p><a class="button primary" href="https://buy.polar.sh/polar_cl_otLLhZiBYwb24LZmJNCd3U5VYp8hC3gFcs0Kk4WaZ7J">Buy yearly <span class="arrow">→</span></a></article></div>
-      </div>
-      <p class="lead">Every plan is the same product; a subscription renews your key automatically, a one-time purchase does not.</p>
-      <div class="callout">Agent Deck itself is unaffected: no feature moves behind a plan, and nothing it already does depends on Insights being installed.</div>
-    </section>
-    <section class="wrap" id="support"><span class="tag">Support</span><h2>Questions and licence keys.</h2>
-      <p>Write to <a href="mailto:support@agent-deck.app">support@agent-deck.app</a>. Agent Deck is also supported through <a href="https://github.com/sponsors/NVitlam">Sponsors</a>.</p>
+    <section class="wrap hero">
+      <article class="card receipt">
+        <h1>Payment received</h1>
+        <p>Your Agent Deck Insights license key is on its way to the email address you used at checkout — usually within a minute.</p>
+        <h2>Next steps</h2>
+        <ol class="steps">
+          <li>Install <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Agent Deck</a> and <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck-insights">Agent Deck Insights</a> from the VS Code Marketplace.</li>
+          <li>In VS Code, open the Command Palette and run “Agent Deck Insights: Set License Key”.</li>
+          <li>Paste the key from the email.</li>
+        </ol>
+        <h2>No email after a few minutes?</h2>
+        <p>Check your spam folder first. Then write to <a href="mailto:support@agent-deck.app">support@agent-deck.app</a> from the address you used at checkout and we will resend the key.</p>
+        <p><a class="button" href="insights.html">Back to Agent Deck Insights</a></p>
+      </article>
     </section>
   </main>
   <footer class="footer"><div class="wrap"><span><b>Agent Deck</b> · Live observability for coding-agent swarms.</span><span><a href="https://github.com/NVitlam/agent-deck/blob/main/LICENSE">MIT License</a> · <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">VS Code Marketplace</a> · <a href="https://github.com/NVitlam/agent-deck">GitHub</a></span></div></footer>

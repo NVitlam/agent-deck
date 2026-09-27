@@ -93,7 +93,16 @@ const TRACKED_SITE: readonly string[] = execFileSync('git', ['ls-files', '--', '
 const PAGE = readText('site/index.html');
 /** v0.9.0 DoD 9.34: the Insights subpage, held to every rule the index is. */
 const INSIGHTS = readText('site/insights.html');
-const PAGES: Readonly<Record<string, string>> = { 'index.html': PAGE, 'insights.html': INSIGHTS };
+/**
+ * 2026-09-28: the post-payment page. Polar sends a buyer to
+ * `thanks.html?checkout_id=...`; the page reads nothing from that address.
+ */
+const THANKS = readText('site/thanks.html');
+const PAGES: Readonly<Record<string, string>> = {
+  'index.html': PAGE,
+  'insights.html': INSIGHTS,
+  'thanks.html': THANKS,
+};
 const MANIFEST = JSON.parse(readText('package.json')) as {
   publisher: string;
   repository: { url: string };
@@ -157,7 +166,12 @@ describe('the page exists as a publishable tree', () => {
     expect(existsSync(join(ROOT, 'site/index.html'))).toBe(true);
     expect(TRACKED_SITE).toContain('site/index.html');
     expect(TRACKED_SITE).toContain('site/insights.html');
+    expect(TRACKED_SITE).toContain('site/thanks.html');
     expect(TRACKED_SITE).toContain('site/.nojekyll');
+    // Every tracked page is one PAGES holds to the rules below, both ways.
+    expect(TRACKED_SITE.filter((p) => p.endsWith('.html')).sort()).toStrictEqual(
+      Object.keys(PAGES).map((n) => `site/${n}`).sort(),
+    );
   });
 
   it('carries the custom domain in site/CNAME, exactly and alone', () => {
@@ -310,7 +324,7 @@ describe('the page reaches nothing it should not', () => {
      * all three have to agree.
      */
     const SPONSORS_PATH = '/sponsors/';
-    const repoLinks = [...pageUrls(), ...pageUrls(INSIGHTS)]
+    const repoLinks = [...pageUrls(), ...pageUrls(INSIGHTS), ...pageUrls(THANKS)]
       .filter((u) => new URL(u).host === 'github.com')
       .filter((u) => !new URL(u).pathname.startsWith(SPONSORS_PATH));
     expect(repoLinks.length).toBeGreaterThan(0);
@@ -323,7 +337,7 @@ describe('the page reaches nothing it should not', () => {
       expect(new URL(link).pathname.startsWith(repoPath), `${link} is not this repository`).toBe(true);
     }
 
-    const marketLinks = pageUrls().filter(
+    const marketLinks = [...pageUrls(), ...pageUrls(THANKS)].filter(
       (u) => new URL(u).host === 'marketplace.visualstudio.com',
     );
     expect(marketLinks.length).toBeGreaterThan(0);
@@ -467,6 +481,7 @@ describe('v0.9.0 DoD 9.34 — the Insights subpage', () => {
   it('carries the index page’s stylesheet byte for byte — one stylesheet, two pages', () => {
     expect(css.length).toBeGreaterThan(1000);
     expect(styleOf(INSIGHTS)).toBe(css);
+    expect(styleOf(THANKS)).toBe(css);
     // And no page has a second one, inline or linked.
     for (const [name, html] of Object.entries(PAGES)) {
       expect(html.split('<style').length - 1, name).toBe(1);
@@ -476,12 +491,17 @@ describe('v0.9.0 DoD 9.34 — the Insights subpage', () => {
   });
 
   it('loads nothing external: every src is a file under site/, and the sheet imports nothing', () => {
+    // thanks.html carries no image, so the non-vacuity count is over the
+    // pages together, and it is the two image-carrying pages it counts.
+    let total = 0;
     for (const [name, html] of Object.entries(PAGES)) {
       const srcs = [...html.matchAll(/\ssrc="([^"]+)"/g)].map((m) => m[1] ?? '');
-      expect(srcs.length, name).toBeGreaterThan(0);
+      total += srcs.length;
       for (const src of srcs) expect(src, `${name}: ${src} is not a local file`).not.toMatch(/^(https?:)?\/\//);
       expect(html, name).not.toMatch(/<(link|iframe|object|embed|video|audio|source)\b/i);
     }
+    expect(total).toBeGreaterThan(0);
+    expect(THANKS).not.toMatch(/\ssrc="/);
     expect(css).not.toMatch(/@import|url\(/);
   });
 
@@ -653,6 +673,7 @@ describe('v0.9.0 DoD 9.34 — the Insights subpage', () => {
     const footer = (html: string): string => /<footer class="footer">[\s\S]*?<\/footer>/.exec(html)?.[0] ?? '';
     expect(footer(PAGE).length).toBeGreaterThan(100);
     expect(footer(INSIGHTS)).toBe(footer(PAGE));
+    expect(footer(THANKS)).toBe(footer(PAGE));
   });
 
   it('every screenshot on the subpage carries a one-sentence caption', () => {
@@ -683,5 +704,45 @@ describe('v0.9.0 DoD 9.36 — the extension’s Get tile opens this page', () =>
     expect(aboutConfirmation(INSIGHTS_GET_LINK).message).toBe(
       `Agent Deck will open ${domain} in your browser`,
     );
+  });
+});
+
+describe('2026-09-28 — the post-payment page', () => {
+  /** The card's visible text, tags stripped and whitespace collapsed. */
+  const text = (html: string): string => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const card = /<article class="card receipt">([\s\S]*?)<\/article>/.exec(THANKS)?.[1] ?? '';
+
+  it('is titled, kept out of search, and is ONE card', () => {
+    expect(THANKS).toContain('<title>Payment received — Agent Deck</title>');
+    expect(THANKS).toContain('<meta name="robots" content="noindex">');
+    const main = /<main[^>]*>([\s\S]*?)<\/main>/.exec(THANKS)?.[1] ?? '';
+    expect([...main.matchAll(/<article\b/g)]).toHaveLength(1);
+    expect(card.length).toBeGreaterThan(200);
+  });
+
+  it('says exactly the agreed text, in order', () => {
+    const headings = [...card.matchAll(/<(h[12])>([^<]+)<\/h[12]>/g)].map((m) => `${m[1]}:${m[2]}`);
+    expect(headings).toStrictEqual(['h1:Payment received', 'h2:Next steps', 'h2:No email after a few minutes?']);
+    const paragraphs = [...card.matchAll(/<p>([\s\S]*?)<\/p>/g)].map((m) => text(m[1] ?? ''));
+    expect(paragraphs).toStrictEqual([
+      'Your Agent Deck Insights license key is on its way to the email address you used at checkout — usually within a minute.',
+      'Check your spam folder first. Then write to support@agent-deck.app from the address you used at checkout and we will resend the key.',
+      'Back to Agent Deck Insights',
+    ]);
+    const steps = [...card.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => text(m[1] ?? ''));
+    expect(steps).toStrictEqual([
+      'Install Agent Deck and Agent Deck Insights from the VS Code Marketplace.',
+      'In VS Code, open the Command Palette and run “Agent Deck Insights: Set License Key”.',
+      'Paste the key from the email.',
+    ]);
+  });
+
+  it('links both Marketplace listings, the support address, and back to insights.html relatively', () => {
+    expect(card).toContain('href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck"');
+    expect(card).toContain('href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck-insights"');
+    expect(card).toContain('href="mailto:support@agent-deck.app"');
+    expect(card).toContain('<a class="button" href="insights.html">Back to Agent Deck Insights</a>');
+    // The page is a receipt, not a checkout: it links to no payment host.
+    expect(THANKS).not.toContain('buy.polar.sh');
   });
 });

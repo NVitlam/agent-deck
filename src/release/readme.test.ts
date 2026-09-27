@@ -543,6 +543,7 @@ describe('README exists and ships clean', () => {
       ['CHANGELOG.md 0.9.0', block],
       ['site/index.html', readText('site/index.html')],
       ['site/insights.html', readText('site/insights.html')],
+      ['site/thanks.html', readText('site/thanks.html')],
     ];
     const STALE: readonly [RegExp, string][] = [
       [/there is no text field/i, 'There is no text field: every word the Insights surface shows'],

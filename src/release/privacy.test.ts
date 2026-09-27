@@ -710,10 +710,12 @@ describe('privacy sweep against this repository', () => {
       // v0.9.0 DoD 9.34: the Insights subpage, for the index page's reason —
       // the repository, Sponsors and footer links the site amendment requires.
       'site/insights.html',
+      // 2026-09-28: the post-payment page carries the same nav and footer.
+      'site/thanks.html',
       'src/about.test.ts',
       'src/about.ts',
     ]);
-    expect(report.config.identity.exemptPaths).toHaveLength(7);
+    expect(report.config.identity.exemptPaths).toHaveLength(8);
     expect(report.workingTree.identity.exemptHits).toBeGreaterThan(0);
   });
 

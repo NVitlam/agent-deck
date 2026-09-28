@@ -1,6 +1,6 @@
 # Agent Deck
 
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/nvitlam.agent-deck?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck)
+[Agent Deck on the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck)
 
 **Live observability for agent swarms, inside VS Code.** When a coding agent spawns subagents, the
 terminal shows you one scrolling column and no shape. Agent Deck shows you the shape: every session

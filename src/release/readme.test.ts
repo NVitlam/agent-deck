@@ -751,16 +751,12 @@ describe('README exists and ships clean', () => {
     // is the case that would otherwise ship a broken marketplace page.
     const links = [...README.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1] ?? '');
     expect(links.length).toBeGreaterThan(0);
-    // The ONE remote image allowed, and the exemption is narrow on purpose: the
-    // marketplace version badge. It renders on the marketplace listing and on
-    // GitHub, both of which are pages a browser loads anyway - it is never
-    // fetched by extension code, so it does not touch the zero-egress claim,
-    // which is about what the extension does at runtime. Every other image
-    // stays local, which is still what keeps a screenshot from silently
-    // becoming a third-party request.
-    const BADGE_HOST = /^https:\/\/img\.shields\.io\/visual-studio-marketplace\//;
+    // NO REMOTE IMAGE AT ALL, since 0.9.1. Until then the marketplace version
+    // badge (img.shields.io/visual-studio-marketplace) was exempted here, and
+    // shields.io retired that family: the 0.9.0 listing rendered "retired
+    // badge" beside the name. The README now links the listing in plain text;
+    // `images.test.ts` holds every reader-facing page to the same rule.
     for (const link of links) {
-      if (BADGE_HOST.test(link)) continue;
       expect(link, `remote asset in README: ${link}`).not.toMatch(/^[a-z]+:\/\//i);
       // NO EXEMPTION. Until 2026-08-30 the four release slots were skipped
       // here because their bytes were deferred; they are on disk now, so

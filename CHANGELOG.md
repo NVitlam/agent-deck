@@ -2,6 +2,13 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.9.1 - 2026-09-28 - Marketplace badge
+
+### Fixed
+
+- The Marketplace listing no longer shows "retired badge" beside the name: the README's
+  shields.io version badge, a badge family shields.io has retired, is now a plain link to the listing.
+
 ## 0.9.0 - 2026-09-28 - Clean windows, Insights, About
 
 ### Changed

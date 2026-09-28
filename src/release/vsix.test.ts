@@ -558,7 +558,8 @@ const IDENTITY_REQUIRED_IN_ARTIFACT: ReadonlyArray<{ readonly re: RegExp; readon
 // embed the publisher id `nvitlam`, which contains the surname. Before the
 // listing existed the file was clean, which is why it was not enumerated here
 // and why the always-on leg went red the moment the badge landed - working as
-// intended.
+// intended. (0.9.1 removed the badge; the plain listing link still carries the
+// publisher id.)
 // `dist/extension.cjs` joined it at 0.9.0, and for the same kind of reason:
 // DoD 9.7’s About paragraph NAMES THE AUTHOR, the spec amendment quotes it
 // verbatim, and so the host bundle compiles the string in. Enumerated rather
